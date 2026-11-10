@@ -236,8 +236,13 @@ function vp3_agent_tool_internal_action_v400(array $action,array $user,string $q
         $approved=$GLOBALS['vp3_chat_email_review_v1']??[];
         if(($approved['owner']??0)!==(int)$user['id'] || ($approved['id']??null)!==($action['id']??null)
             || !has_permission('chat.access',$user)) return null;
-        return ['type'=>'email_review','id'=>$approved['id'],'conversation_id'=>$approved['conversation_id'],'label'=>'Review email',
-            'auto'=>false,'policy'=>['version'=>'v4.00','domain'=>'connections_email','risk'=>'high','requires_approval'=>true,'authorized'=>true]];
+        $sent=($approved['sent']??false)===true;
+        $reply=($approved['is_reply']??false)===true;
+        return ['type'=>'email_review','id'=>$approved['id'],'conversation_id'=>$approved['conversation_id'],
+            'label'=>$sent?'View sent reply':($reply?'Review reply':'Review email'),
+            'auto'=>false,'policy'=>['version'=>'v4.00','domain'=>'connections_email','risk'=>$sent?'low':'high',
+                'requires_approval'=>!$sent,'authorized'=>true]]
+            +($reply?['is_reply'=>true]:[])+($sent?['sent'=>true]:[]);
     }
     if($type==='participant_setup'){
         $token=$action['token']??'';$approved=is_string($token)?($GLOBALS['VP3_PARTICIPANT_CARDS_V2'][$token]??null):null;

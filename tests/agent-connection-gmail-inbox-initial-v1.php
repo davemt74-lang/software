@@ -223,6 +223,35 @@ try {
         && count($summaries) === 1 && $noticeRows(1) === $notices,
         'first review leaves the incremental cursor untouched and completed work cannot replay');
 
+    $ref = $report['items'][0]['item_ref'];
+    $stored = json_decode($row(1)['report_json'],true,12,JSON_THROW_ON_ERROR)['items'][0];
+    $chatView = agent_connection_gmail_inbox_initial_view_v1($pdo,$users[1],includeChatResult:true);
+    first_review_check(ai_decrypt_secret($stored['message_id_enc']) === 'good'
+        && !isset($report['items'][0]['message_id_enc'],$rail['chat_result'])
+        && $chatView['chat_result']['items'][0]['item_ref'] === $ref
+        && !isset($chatView['chat_result']['items'][0]['message_id'],$chatView['chat_result']['items'][0]['message_id_enc']),
+        'the saved ID is encrypted and explicit private views expose only an opaque exact item selector');
+    $reads = 0;
+    $openHttp = static function(string $method, string $url, array $headers) use (&$reads): array {
+        if ($method !== 'GET' || !str_ends_with($url,'/messages/good?format=full')
+            || !in_array('Authorization: Bearer fixture-inbox-access-1',$headers,true)) {
+            throw new LogicException('Opening the report item must fetch only its exact original message and account.');
+        }
+        $reads++;
+        return ['status'=>200,'json'=>['id'=>'good','threadId'=>'original-thread','labelIds'=>['INBOX'],
+            'payload'=>['mimeType'=>'text/plain','body'=>['data'=>rtrim(strtr(base64_encode('Exact fixture body.'),'+/','-_'),'=')],
+                'headers'=>[['name'=>'From','value'=>'sender@example.test'],['name'=>'Subject','value'=>'Exact fixture subject'],
+                    ['name'=>'Message-ID','value'=>'<original@example.test>']]]]];
+    };
+    $opened = agent_connection_gmail_inbox_open_item_v1($pdo,$users[1],$ref,$openHttp);
+    first_review_check($opened === ['subject'=>'Exact fixture subject','from'=>'sender@example.test','body'=>'Exact fixture body.','auto_reply'=>false]
+        && $reads === 1,'explicit Open reads one exact message and returns plain text without provider IDs');
+    foreach ([[$users[2],$ref],[$users[1],str_repeat('0',64)]] as [$wrongUser,$wrongRef]) {
+        try { agent_connection_gmail_inbox_open_item_v1($pdo,$wrongUser,$wrongRef,$openHttp); }
+        catch (DomainException $error) { if (!in_array($error->getCode(),[403,404],true)) throw $error; }
+    }
+    first_review_check($reads === 1,'an unknown or cross-owner review reference never reaches Gmail');
+
     $start(2, 1);
     $pages[2] = [$page([])];
     first_review_check($advance(2, $view(2)['run_id']) && $view(2, true)['report']['total'] === 0
@@ -256,6 +285,9 @@ try {
     });
     $changedRules = ['ignore_senders'=>'changed@example.test'];
     agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, $changedRules), $http);
+    try { agent_connection_gmail_inbox_open_item_v1($pdo,$users[1],$ref,$openHttp); }
+    catch (DomainException $error) { if (!in_array($error->getCode(),[403,404],true)) throw $error; }
+    first_review_check($reads === 1,'a replaced review grant or policy invalidates old item references before Gmail access');
     first_review_check($view(1, true)['state'] === 'needs_start' && $row(1) === null && !$advance(1, $run)
         && array_column($noticeRows(1), 'title') === ['Gmail inbox review']
         && $view(2, true) === $otherReport && $profileCalls === [1, 2, 3],

@@ -105,6 +105,7 @@
     } catch (_) { return {}; }
   }
   function keepDraft(text, id = conversationId) {
+    if (gmailReviewActionLabel(text)) return;
     const value = recoveryDrafts();
     const target=initiativeReplyTarget && initiativeReplyTarget.conversation_id===Number(id) && initiativeIdentityMatchesV1()
       ? initiativeReplyTarget : null;
@@ -139,7 +140,7 @@
     let button=document.getElementById('chatStopButton');
     if(!button){button=document.createElement('button');button.id='chatStopButton';button.type='button';button.textContent='■';button.setAttribute('aria-label','Stop response');form.appendChild(button);button.addEventListener('click',()=>{
       const request=pendingSend;if(!request)return;
-      leaveChat({preserveInitiativeReply:true}); if(!input.value)input.value=request.message;autoSize();keepDraft(input.value,request.conversationId);
+      leaveChat({preserveInitiativeReply:true}); if(!input.value&&!gmailReviewActionLabel(request.message))input.value=request.message;autoSize();keepDraft(input.value,request.conversationId);
       recoveryStatus('Response stopped.');
     });}
     button.hidden=!pendingSend;
@@ -1592,7 +1593,8 @@
   function agentActionHtml(action) {
     if (!action) return '';
     if (action.type === 'email_review' && /^[a-f0-9]{32}$/.test(String(action.id || '')) && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {
-      return '<button class="chat-agent-action-button" type="button" data-chat-email-review="'+escapeHtml(action.id)+'" data-chat-email-conversation="'+action.conversation_id+'">Review email</button>';
+      const label = action.sent === true ? 'View sent reply' : (action.is_reply === true ? 'Review reply' : 'Review email');
+      return '<button class="chat-agent-action-button" type="button" data-chat-email-review="'+escapeHtml(action.id)+'" data-chat-email-conversation="'+action.conversation_id+'">'+label+'</button>';
     }
     if(action.type==='participant_setup'&&/^[a-f0-9]{32}$/.test(String(action.token||''))&&Number.isInteger(action.conversation_id)&&action.conversation_id>0)return '<button class="chat-agent-action-button" type="button" data-participant-setup-token="'+escapeHtml(action.token)+'" data-participant-setup-conversation="'+action.conversation_id+'">Review participant setup</button>';
     if (action.type === 'voice_enrollment') return '<button class="chat-agent-action-button" type="button" data-voice-enrollment-open>Learn my voice</button>';
@@ -3846,6 +3848,11 @@
     if (!input.value.trim()) void runYoutubeLocalTurn('/youtube history', 'recent');
   });
 
+  function gmailReviewActionLabel(message) {
+    const match = /^(Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}$/.exec(message);
+    return match ? match[1] + ' to selected Gmail message' : '';
+  }
+
   async function sendMessage(message, inputMode = 'text') {
     if (busy || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
     if(initiativePosts.size&&!initiativeIdentityMatchesV1()){
@@ -3863,7 +3870,12 @@
     }
     const initiativeReply=initiativeReplyForSendV1(message);
     if(initiativeReply===false)return;
-    if (navigator.onLine === false) { keepDraft(message); recoveryStatus('You are offline. Your message is kept.'); return; }
+    const gmailAction = gmailReviewActionLabel(message);
+    if (navigator.onLine === false) {
+      keepDraft(message);
+      recoveryStatus(gmailAction ? 'You are offline. Reopen the Gmail message to try again.' : 'You are offline. Your message is kept.');
+      return;
+    }
     recoveryStatus();
 
     const workingContextRef=window.VP3_COGNITIVE_PRESENTATION?.followUpReference?.(conversationId);
@@ -3892,7 +3904,7 @@
       setVoiceStatus('Thinking…', 'thinking');
     }
 
-    const userMessage=addMessage('user', message.trim());
+    const userMessage=addMessage('user', gmailAction || message.trim());
     visualTurn.elements.push(userMessage);
     input.value = '';
     autoSize();
@@ -4002,6 +4014,9 @@
         && ['watch_sender','stop_sender_watch'].includes(data.tool_receipt.operation)) {
         window.dispatchEvent(new Event('vp3:chat-email-watch-changed'));
       }
+      if (data.tool_receipt?.capability === 'email.send' && data.tool_receipt.status === 'completed') {
+        window.dispatchEvent(new Event('vp3:chat-email-watch-changed'));
+      }
       applyInitiativeFollowthroughV1(data.initiative_followthrough);
       bindInitiativeActionV1(reply,data.initiative_action,data.initiative_followthrough);
       if (data.canvas_media?.generation_ids?.length) {
@@ -4021,7 +4036,7 @@
       }
     } catch (error) {
       if(pendingSend!==request||request.revision!==chatRevision)return;
-      if(!input.value){input.value=message;autoSize();}
+      if(!input.value&&!gmailAction){input.value=message;autoSize();}
       if(initiativeIdentityMatchesV1()&&(request.initiativeReply||/^initiative_reply_(?:stale|forbidden|unavailable)$/.test(String(error.message || ''))||!error.status)){
         initiativeVisualRetry=visualTurn;
       }
@@ -4268,6 +4283,12 @@
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isReady:() => contextReady,
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,
+    requestGmailReviewAction: command => {
+      if (!gmailReviewActionLabel(command) || !contextReady || busy || initialRestorePending
+          || restoringConversation > 0 || input.value.trim()) return false;
+      void sendMessage(command);
+      return true;
+    },
     openConversation:async (id, options = {}) => {
       const target = Number(id);
       const sourceMessageId = options.messageId === undefined ? 0 : options.messageId;

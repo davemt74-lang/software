@@ -32,11 +32,13 @@ try {
     if (!is_array($body) || array_is_list($body)) throw new RuntimeException('Request object required.', 422);
 
     $action = $body['action'] ?? null;
-    $fields = ['action', 'owner_key', 'csrf_token', 'include_report'];
+    $fields = ['action', 'owner_key', 'csrf_token'];
+    if ($action !== 'open_item') $fields[] = 'include_report';
     if ($action === 'start') $fields = [...$fields, 'days', 'start_token'];
     if ($action === 'advance') $fields[] = 'run_id';
-    if ($action !== 'start') $fields[] = 'include_chat_result';
-    if (!in_array($action, ['status', 'start', 'advance'], true) || array_diff(array_keys($body), $fields)
+    if (in_array($action, ['status', 'advance'], true)) $fields[] = 'include_chat_result';
+    if ($action === 'open_item') $fields[] = 'item_ref';
+    if (!in_array($action, ['status', 'start', 'advance', 'open_item'], true) || array_diff(array_keys($body), $fields)
         || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))
         || (array_key_exists('include_chat_result', $body) && !is_bool($body['include_chat_result']))
         || (!empty($body['include_report']) && !empty($body['include_chat_result']))) {
@@ -59,11 +61,20 @@ try {
     if ($action === 'advance' && (!is_string($runId) || !preg_match('/\A[a-f0-9]{32}\z/D', $runId))) {
         throw new RuntimeException('Invalid review ID.', 422);
     }
+    $itemRef = $body['item_ref'] ?? null;
+    if ($action === 'open_item' && (!is_string($itemRef) || !preg_match('/\A[a-f0-9]{64}\z/D', $itemRef))) {
+        throw new RuntimeException('Invalid review item.', 422);
+    }
 
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Review storage unavailable.', 503);
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
+    if ($action === 'open_item') {
+        echo json_encode(['ok'=>true,'item'=>agent_connection_gmail_inbox_open_item_v1($pdo,$user,$itemRef)],
+            JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+        return;
+    }
     if ($action === 'start') agent_connection_gmail_inbox_initial_start_v1($pdo, $user, $days, $startToken);
     if ($action === 'advance') agent_connection_gmail_inbox_initial_advance_v1($pdo, $user, $runId);
     $review = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, $body['include_report'] ?? false,

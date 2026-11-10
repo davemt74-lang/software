@@ -354,6 +354,14 @@ function vp3_agent_chat_followthrough_recover_v2160(PDO $pdo,array $user,?array 
 }
 
 /** Lost typed responses reuse the existing private idempotency store, not a second queue. */
+function vp3_agent_chat_public_prompt_v2160(string $query): string
+{
+    if(preg_match('/\A(Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}\z/D',$query,$mailAction)){
+        return $mailAction[1].' to selected Gmail message';
+    }
+    return $query;
+}
+
 function vp3_agent_chat_send_v2160(PDO $pdo,array $user,?array $activeAgent,array $principal,array $input,bool $brainAllowed,?callable $currentAuthority=null,bool $allowConnectedSites=false): array
 {
     $explicit=array_key_exists('initiative_reply',$input);
@@ -555,7 +563,7 @@ $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
 if($userId<1)throw new RuntimeException('Agent Chat user context is invalid.');
 $query=trim((string)($input['message']??''));$conversationId=(int)($input['conversation_id']??0);$inputMode=(string)($input['input_mode']??'text');$inputMode=$inputMode==='voice'?'voice':'text';if($query==='')throw new RuntimeException('Enter a message.');if(mb_strlen($query)>6000)throw new RuntimeException('That message is too long.');$ephemeralProtocol=!empty($input['ephemeral_protocol']);
 $activeAgentId=vp3_agent_chat_agent_id_v380($activeAgent);
-if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,$query,$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!vp3_agent_chat_runtime_conversation_v2160($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
+if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,vp3_agent_chat_public_prompt_v2160($query),$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!vp3_agent_chat_runtime_conversation_v2160($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
 $participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);
 $initiativeStatusRead=!$ephemeralProtocol&&in_array(vp3_initiative_command_v1($query),['status','findings'],true);
 $youtubeHistoryRequest=$allowConnectedSites&&!$ephemeralProtocol&&agent_connection_youtube_history_request_v1($query);
@@ -626,7 +634,7 @@ if(!$ephemeralProtocol){
     }else{
         $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,?,?,?,?)');
         $userContext=$initiativeStatusRead?'{"initiative_status_read_v1":true,"skip_brain_archive":true}':($emailRequest?'{"skip_brain_archive":true}':null);
-        $stmt->execute([$conversationId,$userId,'user',$query,$userContext]);
+        $stmt->execute([$conversationId,$userId,'user',vp3_agent_chat_public_prompt_v2160($query),$userContext]);
         $userMessageId=(int)$pdo->lastInsertId();
     }
     $initiativeProgress=['user_message_id'=>$userMessageId];
@@ -875,17 +883,39 @@ if($youtubeSearchResults!==null){
 if($knowledgeDraft){$r9Recheck();foreach($knowledgeDraft['drafts'] as $r9Draft)knowledge_r9_validate($pdo,$user,'cloud:'.$conversationId,$r6Namespace,$r9Draft);}
 $messageContext['chat_user_message_id']=$userMessageId;
 $contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
-$assistantMessageId=0;
-if(!$ephemeralProtocol){
-    $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');
-    $stmt->execute([$conversationId,'assistant',$storedAnswer,$contextJson]);
-    $assistantMessageId=(int)$pdo->lastInsertId();
-    if($youtubeSearchResults!==null){
-        try{agent_connection_youtube_results_save_v1($pdo,$userId,$conversationId,$assistantMessageId,$youtubeSearchResults);}
-        catch(PDOException $error){error_log('VP3 YouTube result history could not be saved.');}
+$assistantMessageId=0;$verifiedEmailReceipt=null;
+if(!$ephemeralProtocol&&!empty($toolResult['email_outcome_chat_message_id'])){
+    // The send transaction has already posted the one verified outcome.
+    $receiptMessage=$pdo->prepare("SELECT m.id,m.message,m.context_json,m.created_at FROM chat_messages m
+        JOIN chat_conversations c ON c.id=m.conversation_id WHERE m.id=? AND m.conversation_id=?
+            AND c.user_id=? AND m.role='assistant'");
+    $receiptMessage->execute([(int)$toolResult['email_outcome_chat_message_id'],$conversationId,$userId]);
+    $verifiedEmailReceipt=$receiptMessage->fetch(PDO::FETCH_ASSOC);
+    $receiptContext=json_decode((string)($verifiedEmailReceipt['context_json']??''),true);
+    if(($receiptContext['source']??null)!=='agent_connection_email'
+        ||($receiptContext['email_outcome']['mode']??null)!=='auto_reply'){
+        throw new RuntimeException('The Gmail outcome is no longer available in this Chat.',409);
     }
-    if($brainAllowed&&empty($toolResult['transcript_context'])&&!isset($toolResult['connected_site_context_v1'])&&empty($toolResult['email_private_read_v1'])&&!$publicResearchTool&&!$initiativeStatusRead)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);
-    $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
+    $assistantMessageId=(int)$verifiedEmailReceipt['id'];
+}
+if($assistantMessageId===0){
+    if(!$ephemeralProtocol){
+        $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,?,?,?)');
+        $stmt->execute([$conversationId,'assistant',$storedAnswer,$contextJson]);
+        $assistantMessageId=(int)$pdo->lastInsertId();
+        if($youtubeSearchResults!==null){
+            try{agent_connection_youtube_results_save_v1($pdo,$userId,$conversationId,$assistantMessageId,$youtubeSearchResults);}
+            catch(PDOException $error){error_log('VP3 YouTube result history could not be saved.');}
+        }
+        if($brainAllowed&&empty($toolResult['transcript_context'])&&!isset($toolResult['connected_site_context_v1'])&&empty($toolResult['email_private_read_v1'])&&!$publicResearchTool&&!$initiativeStatusRead)agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,$inputMode);
+        $pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=?')->execute([$conversationId]);
+    }
+}elseif($verifiedEmailReceipt&&$brainAllowed&&function_exists('agent_brain_archive_message')){
+    // History and Brain index the same generic Chat receipt, without any draft/body.
+    try{
+        agent_brain_archive_message($user,$conversationId,$assistantMessageId,'assistant',
+            (string)$verifiedEmailReceipt['message'],$inputMode,(string)$verifiedEmailReceipt['created_at']);
+    }catch(Throwable $e){error_log('VP3 could not immediately index the verified Gmail receipt.');}
 }
 if(function_exists('vp3_live_session_note_action_v2370')){
     try{

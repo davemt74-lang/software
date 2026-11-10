@@ -4,7 +4,8 @@
   if (!cfg?.endpoint || !cfg.connectionsUrl || !cfg.csrf || typeof cfg.ownerKey !== 'string' || !/^[1-9]\d*$/.test(cfg.ownerKey)) return;
   const endpoint = new URL(cfg.endpoint, location.href);
   const destination = new URL(cfg.connectionsUrl, location.href);
-  if (endpoint.origin !== location.origin || destination.origin !== location.origin) return;
+  const chatUrl = new URL(cfg.chatUrl || '/chat.php',location.href);
+  if (endpoint.origin !== location.origin || destination.origin !== location.origin || chatUrl.origin !== location.origin) return;
 
   const host = document.querySelector('[data-gmail-initial-review]');
   const thread = host ? null : document.getElementById('chatThread');
@@ -12,18 +13,20 @@
   const form = host?.querySelector('[data-gmail-review-start]');
   const status = host?.querySelector('[data-gmail-review-status]');
   const result = host?.querySelector('[data-gmail-review-report]');
+  const latestSection = app?.querySelector('[data-gmail-review-latest-section]');
   const start = form?.querySelector('button[type="submit"]');
   // A paid start belongs to the mailbox and settings rendered with this page.
   const renderedToken = cfg.initialReview?.start_token;
   const startToken = host && typeof renderedToken === 'string' && /^[a-f0-9]{64}$/.test(renderedToken) ? renderedToken : null;
   const reloadMessage = 'Gmail or Inbox review settings changed. Reload to continue.';
   const owner = cfg.ownerKey;
+  const composeKey = `vp3:gmail-review-compose:${owner}`;
   const agent = cfg.agentId;
   const binding = window.STONEFELLOW_CHAT?.workingAttentionBinding;
   const key = 'gmail-inbox-review';
   const daysAllowed = [1,3,7,14,30];
   const labels = {unavailable:'First review is unavailable.',disabled:'Enable Inbox review to begin.',needs_start:'Choose how far back to review.',queued:'Queued',working:'Working',ready:'Ready',failed:'Failed'};
-  const categories = {new:'New',important:'Important',reply:'Reply'};
+  const categories = {new:'New',important:'Important',reply:'Incoming reply'};
   const states = new Set(Object.keys(labels));
   const timestamp = value => typeof value === 'string'
     ? Date.parse(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(value) ? value.replace(' ','T') + 'Z' : value) : NaN;
@@ -47,7 +50,9 @@
   let publishedWork = false;
   let completion = null;
   let completionSignature = '';
+  let reportSignature = '';
   let reviewSignal = null;
+  let openedMessage = null;
 
   function inScope() {
     if (stopped || denied || document.hidden || window.VP3_GMAIL_INBOX_INITIAL_V1 !== cfg || cfg.ownerKey !== owner
@@ -66,6 +71,140 @@
     if (className) element.className = className;
     return element;
   };
+  const itemRef = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  const replyCommand = value => /^(?:Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}$/.test(value);
+  function itemButton(label,action,handler) {
+    const button = node('button',label);
+    button.type = 'button';
+    button.dataset.gmailReviewAction = action;
+    button.addEventListener('click',event => { if (event.isTrusted && inScope()) handler(button); });
+    return button;
+  }
+
+  function compose(command) {
+    if (!inScope()) return false;
+    if (host) {
+      try { sessionStorage.setItem(composeKey,JSON.stringify({command,at:Date.now()})); }
+      catch (_) { return false; }
+      location.assign(chatUrl.href);
+      return true;
+    }
+    const input = document.getElementById('chatInput');
+    const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    if (!input || input.value.trim() || chat?.isBusy?.()) return false;
+    if (replyCommand(command)) return chat?.requestGmailReviewAction?.(command) === true;
+    chat?.showChatView?.();
+    input.value = command;
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    input.focus();
+    return true;
+  }
+
+  function restoreCompose() {
+    if (host || !inScope()) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(composeKey) || 'null');
+      if (!saved) return;
+      sessionStorage.removeItem(composeKey);
+      if (Number.isSafeInteger(saved.at) && saved.at <= Date.now() && Date.now()-saved.at < 120000
+        && typeof saved.command === 'string' && saved.command.length <= 500
+        && /^(?:(?:Draft reply|Reply) to Gmail review item [a-f0-9]{64}$|Search Gmail for from:)/.test(saved.command)) compose(saved.command);
+    } catch (_) { /* No private composer handoff is available. */ }
+  }
+
+  function closeMessage() {
+    if (!openedMessage) return;
+    openedMessage.controller.abort();
+    openedMessage.button.setAttribute('aria-expanded','false');
+    openedMessage.panel.remove();
+    openedMessage = null;
+  }
+
+  async function openMessage(row,ref,button) {
+    const toggle = openedMessage?.button === button;
+    closeMessage();
+    if (toggle) return;
+    const controller = new AbortController();
+    const panel = node('div','','gmail-review-open-message');
+    const status = node('p','Opening this Gmail message…');
+    status.setAttribute('role','status');
+    panel.append(status);
+    row.append(panel);
+    button.setAttribute('aria-expanded','true');
+    const selection = openedMessage = {controller,panel,button};
+    const current = () => openedMessage === selection && panel.isConnected && inScope();
+    const timeout = setTimeout(() => controller.abort(),12000);
+    try {
+      const response = await send({action:'open_item',item_ref:ref},controller.signal);
+      const data = await response.json();
+      if (!current()) return;
+      const message = data?.item;
+      if (!response.ok || data.ok !== true || !['subject','from','body'].every(field => typeof message?.[field] === 'string')) {
+        throw Error('Gmail item unavailable');
+      }
+      panel.replaceChildren(node('strong',message.subject || '(No subject)'),node('small',message.from),
+        node('p',message.body || 'No readable text in this message.'));
+      if (thread && message.auto_reply === true && typeof message.auto_reply_to === 'string' && message.auto_reply_to) {
+        panel.append(node('small','Auto reply sends to ' + message.auto_reply_to + '.'));
+        panel.append(itemButton('Auto reply and send (uses tokens)','auto-reply',auto => {
+          if (compose(`Auto reply to Gmail review item ${ref}`)) {
+            auto.disabled = true;
+            return;
+          }
+          status.textContent = 'Finish your current Chat draft before using Auto reply.';
+          panel.append(status);
+        }));
+      }
+    } catch (_) {
+      if (current()) status.textContent = 'This Gmail message could not be opened. Check Inbox Review and try again.';
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function attachItemActions(row,item) {
+    const actions = node('div','','gmail-review-item-actions');
+    const feedback = node('small');
+    feedback.setAttribute('role','status');
+    const request = command => {
+      feedback.textContent = compose(command) ? '' : 'Finish your current Chat draft or open Agent Chat first.';
+    };
+    const ref = item.item_ref;
+    if (itemRef(ref)) {
+      const open = itemButton('Open','open',button => void openMessage(row,ref,button));
+      open.setAttribute('aria-expanded','false');
+      actions.append(open,itemButton('Reply','reply',() => request(`Reply to Gmail review item ${ref}`)),
+        itemButton('Draft reply (uses tokens)','draft-reply',() => request(`Draft reply to Gmail review item ${ref}`)));
+    } else if (/^[^\s"\\]+@[^\s"\\]+$/.test(item.from)) {
+      const subject = item.subject.replace(/["\\\r\n]/g,' ').trim().slice(0,180);
+      const query = `from:${item.from}` + (subject ? ` subject:"${subject}"` : '');
+      actions.append(itemButton('Find matches in Chat','find-matches',() => request(`Search Gmail for ${query}`)));
+    }
+    if (actions.children.length) row.append(actions,feedback);
+  }
+
+  function itemList(items) {
+    if (!Array.isArray(items)) return null;
+    const list = node('ul','','connections-inbox-messages gmail-review-items');
+    list.setAttribute('role','list');
+    for (const item of items.slice(0,8)) {
+      if (!item || typeof item.subject !== 'string' || typeof item.from !== 'string') continue;
+      const row = node('li');
+      row.append(node('strong',item.subject.slice(0,500) || '(No subject)'),
+        node('span',item.from.slice(0,500),'connections-muted'),node('span',categories[item.category] || 'New','connections-badge'));
+      attachItemActions(row,item);
+      list.append(row);
+    }
+    return list.children.length ? list : null;
+  }
+
+  function appendItems(parent,label,items) {
+    const list = itemList(items);
+    if (!list) return;
+    const details = node('details','','gmail-review-item-group');
+    details.append(node('summary',`${label} (${list.children.length})`),list);
+    parent.append(details);
+  }
   function detail(value) {
     if (active(value) && value.stage === 'summary') return value.state === 'working' ? 'Preparing the AI summary.' : 'AI summary is queued.';
     if (active(value) && Number.isSafeInteger(value.scanned) && value.scanned > 0 && value.scanned <= 50) {
@@ -105,6 +244,7 @@
       && Number.isSafeInteger(review.total) && review.total >= 0 && review.total <= 50;
     const progress = visible && (active(review) || review?.state === 'failed');
     if (!ready && !progress) {
+      if (openedMessage && completion?.contains(openedMessage.panel)) closeMessage();
       completion?.remove();
       completion = null;
       completionSignature = '';
@@ -122,8 +262,9 @@
       && [latest.important,latest.replies].every(count => Number.isSafeInteger(count) && count >= 0 && count <= latest.total)
       ? `Latest inbox update · ${new Date(batchAt).toLocaleString()} · ${latest.total} new · ${latest.important} important · ${latest.replies} ${latest.replies === 1 ? 'reply' : 'replies'}`
       : '';
-    const signature = JSON.stringify([review.run_id,headline,summary,batch]);
+    const signature = JSON.stringify([review.run_id,headline,summary,batch,saved?.items,latest?.items]);
     if (completion?.isConnected && completionSignature === signature) return;
+    closeMessage();
     const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 100;
     if (!completion?.isConnected) {
       completion = node('div','','vp3-chat-gmail-review');
@@ -142,7 +283,9 @@
     header.append(status,link);
     completion.replaceChildren(header);
     if (summary) completion.append(node('p',summary));
+    appendItems(completion,'Messages in first review',saved?.items);
     if (batch) completion.append(node('small',batch));
+    if (batch) appendItems(completion,'Messages in latest update',latest?.items);
     if (nearBottom) thread.scrollTop = thread.scrollHeight;
   }
 
@@ -158,6 +301,10 @@
 
   function renderReport(report) {
     if (!result) return;
+    const signature = report ? JSON.stringify(report) : '';
+    if (signature === reportSignature) return;
+    reportSignature = signature;
+    if (openedMessage && result.contains(openedMessage.panel)) closeMessage();
     result.replaceChildren();
     if (!report || typeof report !== 'object' || !daysAllowed.includes(report.days)) return;
     const time = timestamp(report.at);
@@ -180,18 +327,8 @@
     if (summary) result.append(node('p',summary,'connections-inbox-review-summary'));
     result.append(node('small',Number.isSafeInteger(report.tokens_charged) && report.tokens_charged >= 0
       ? `${report.tokens_charged.toLocaleString()} VP3 tokens charged` : 'VP3 tokens charged: unknown','connections-muted'));
-    if (Array.isArray(report.items) && report.items.length) {
-      const list = node('ul','','connections-inbox-messages');
-      list.setAttribute('role','list');
-      for (const item of report.items.slice(0,8)) {
-        if (!item || typeof item.subject !== 'string' || typeof item.from !== 'string') continue;
-        const row = node('li');
-        row.append(node('strong',item.subject.slice(0,500) || '(No subject)'),
-          node('span',item.from.slice(0,500),'connections-muted'),node('span',categories[item.category] || 'New','connections-badge'));
-        list.append(row);
-      }
-      if (list.children.length) result.append(list);
-    }
+    const list = itemList(report.items);
+    if (list) result.append(list);
   }
 
   function render() {
@@ -206,6 +343,7 @@
       start.disabled = Boolean(pending);
       start.textContent = review?.state === 'failed' ? 'Retry first review' : 'Start first review';
     }
+    if (latestSection) latestSection.hidden = denied || !review || ['unavailable','disabled'].includes(review.state);
     renderReport(startToken && review?.has_report === true ? review.report : null);
   }
 
@@ -231,10 +369,11 @@
   function send(payload,signal) {
     return fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,
       headers:{'Content-Type':'application/json'},body:JSON.stringify({owner_key:owner,csrf_token:cfg.csrf,
-        ...(host ? {include_report:true} : thread ? {include_chat_result:true} : {}),...payload})});
+        ...(payload.action === 'open_item' ? {} : host ? {include_report:true} : thread ? {include_chat_result:true} : {}),...payload})});
   }
   function accept(value, expectedRunId = null) {
     if (host && (value.start_token ?? null) !== startToken) {
+      closeMessage();
       denied = true;
       review = null;
       pageError = reloadMessage;
@@ -297,6 +436,7 @@
       const data = await response.json();
       if (current !== epoch || !inScope()) return;
       if ([401,403,409,419].includes(response.status)) {
+        closeMessage();
         denied = true;
         review = null;
         pageError = 'Reload to check Inbox review for your current account.';
@@ -328,12 +468,14 @@
   }
   function refresh() {
     clearTimeout(timer);
-    if (!inScope()) { publishWork(); renderRailUnavailable(); renderCompletion(); return; }
+    if (!inScope()) { closeMessage(); publishWork(); renderRailUnavailable(); renderCompletion(); return; }
+    restoreCompose();
     if (pending) refreshPending = true;
     else schedule('status',0);
   }
   function invalidate() {
     epoch++;
+    closeMessage();
     clearTimeout(timer);
     stopProgress();
     if (pending?.action === 'status') pending.controller.abort();
@@ -369,6 +511,10 @@
   window.addEventListener('vp3:participant-task-context',event => { participant = Number(event.detail?.participant_id) || 0; invalidate(); refresh(); });
   window.addEventListener('pagehide',() => { stopped = true; reviewSignal?.close(); reviewSignal = null; invalidate(); });
   window.addEventListener('pageshow',() => { stopped = false; listenForReviewChanges(); refresh(); });
+  for (const row of app?.querySelectorAll('[data-gmail-review-latest-item]') || []) {
+    attachItemActions(row,{item_ref:row.dataset.itemRef,from:row.querySelector('[data-gmail-review-sender]')?.textContent || '',
+      subject:row.dataset.subject || ''});
+  }
   listenForReviewChanges();
   render();
   refresh();

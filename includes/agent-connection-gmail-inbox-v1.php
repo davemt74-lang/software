@@ -92,6 +92,7 @@ function agent_connection_gmail_inbox_review_message_v1(array $metadata): ?array
     $from = agent_connection_gmail_inbox_mailboxes_v1($headers['from']??null);
     if (count($from) !== 1) return null;
     return [
+        'message_id'=>agent_connection_gmail_id_v1($metadata['message_id']??null),
         'from'=>$from[0],
         'cc'=>$headers['cc']??'',
         'subject'=>trim(preg_replace('/[\x00-\x1f\x7f]+/',' ',$headers['subject']??'')??''),
@@ -120,7 +121,19 @@ function agent_connection_gmail_inbox_metadata_v1(string $access, string $id, in
     if (str_starts_with($receivedAt,'-') || agent_connection_gmail_inbox_compare_cursor_v1($receivedAt,(string)$enabledAt)<=0
         || ($upperMs !== null && agent_connection_gmail_inbox_compare_cursor_v1($receivedAt,(string)$upperMs)>=0)
         || !in_array('INBOX',$labels,true) || array_intersect(['SENT','DRAFT','TRASH','SPAM'],$labels)) return null;
-    return ['received_at_ms'=>$receivedAt,'labels'=>$labels,'headers'=>(array)($message['payload']['headers']??[])];
+    return ['message_id'=>$id,'received_at_ms'=>$receivedAt,'labels'=>$labels,'headers'=>(array)($message['payload']['headers']??[])];
+}
+
+function agent_connection_gmail_inbox_saved_item_v1(array $message): array
+{
+    $item = ['from'=>$message['from'],'subject'=>mb_substr($message['subject'],0,240,'UTF-8'),
+        'category'=>$message['reply']?'reply':($message['important']?'important':'new')];
+    $id = agent_connection_gmail_id_v1($message['message_id']??null);
+    if ($id !== '') {
+        // Losing a reference must not drop the corresponding review or its counts.
+        try { $item['message_id_enc'] = ai_encrypt_secret($id); } catch (Throwable) {}
+    }
+    return $item;
 }
 
 function agent_connection_gmail_inbox_key_v1(array $policy, string $value): string
@@ -246,8 +259,7 @@ function agent_connection_gmail_inbox_review_v1(PDO $pdo, array $policy, array $
         $review['total']++;
         $review['important'] += (int)$message['important'];
         $review['replies'] += (int)$message['reply'];
-        $review['items'][] = ['from'=>$message['from'],'subject'=>mb_substr($message['subject'],0,240,'UTF-8'),
-            'category'=>$message['reply']?'reply':($message['important']?'important':'new')];
+        $review['items'][] = agent_connection_gmail_inbox_saved_item_v1($message);
     }
     return $review;
 }

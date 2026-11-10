@@ -37,8 +37,11 @@ function curl_exec(object $handle): string
     $scenario = $GLOBALS['gmailSummaryScenario'] ?? 'valid';
     if ($scenario === 'rejected') { $handle->status=429; return '{}'; }
     if ($scenario === 'unknown') { $handle->status=503; return '{}'; }
-    $answer = $scenario === 'invalid' ? '{"topics":[{"theme":"billing","refs":[99]}]}'
-        : '{"topics":[{"theme":"scheduling","refs":[1]},{"theme":"billing","refs":[2]}]}';
+    $answer = match ($scenario) {
+        'invalid'=>'{"topics":[{"theme":"billing","refs":[99]}]}',
+        'reply'=>'{"body":"Thanks for the update."}',
+        default=>'{"topics":[{"theme":"scheduling","refs":[1]},{"theme":"billing","refs":[2]}]}',
+    };
     return json_encode(['output_text'=>$answer,'content'=>[['type'=>'text','text'=>$answer]],
         'usage'=>['input_tokens'=>120,'output_tokens'=>20,'total_tokens'=>140]],JSON_THROW_ON_ERROR);
 }
@@ -218,4 +221,37 @@ check_gmail_summary($result['status']==='ready' && $result['tokens_charged']===0
     && end($GLOBALS['gmailSummaryDispatch'])['funding']==='own_key'
     && (int)$pdo->query('SELECT COUNT(*) FROM ai_usage_ledger')->fetchColumn()===2,
     'personal funding uses the account key and records no VP3 token debit');
+$pdo->exec("UPDATE user_llm_preferences SET route='system' WHERE user_id=1");
+vp3_ai_service_save_model_v1($pdo,'openai','fixture-model','Fixture',['initiative','conversation']);
+vp3_ai_service_save_model_v1($pdo,'anthropic','fixture-model','Fixture fallback',['initiative','conversation']);
+vp3_ai_service_save_route_v1($pdo,'conversation',['provider'=>'openai','model'=>'fixture-model'],
+    ['provider'=>'anthropic','model'=>'fixture-model']);
+$reply = static fn(Closure $guard): array => ai_v100_with_service_context(['service'=>'conversation',
+    'stage'=>'vp3.gmail-reply-draft.v1','job_key'=>'fixture-reply-'.bin2hex(random_bytes(8))],
+    static fn()=>ai_generate_chat_response('{"owner_instruction":"","mode":"auto","original_message":{"excerpt":"exact private source"}}',
+        [['role'=>'assistant','message'=>'unrelated previous message']], [['title'=>'unrelated private context']],$owner,'main_ai',
+        ['surface'=>'tool_json','protocol'=>'vp3.gmail-reply-draft.v1','before_gmail_reply_dispatch'=>$guard]));
+$callCount = count($GLOBALS['gmailSummaryDispatch']);
+$reservationHeld = false;
+$blockedReply = $reply(static function() use ($pdo,&$reservationHeld): bool {
+    $reservationHeld = (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations WHERE user_id=1')->fetchColumn() === 1;
+    return false;
+});
+check_gmail_summary($reservationHeld && empty($blockedReply['ok']) && count($GLOBALS['gmailSummaryDispatch']) === $callCount
+    && (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn() === 0,
+    'Gmail reply revocation after usage reservation aborts before provider dispatch');
+$GLOBALS['gmailSummaryScenario'] = 'reply';
+$draft = $reply(static fn(): bool=>true);
+$replyCall = end($GLOBALS['gmailSummaryDispatch']);
+$replyWire = json_encode($replyCall['payload'],JSON_THROW_ON_ERROR);
+$replyLedger = $pdo->query("SELECT * FROM ai_execution_ledger WHERE service_stage='vp3.gmail-reply-draft.v1' ORDER BY id DESC LIMIT 1")->fetch();
+check_gmail_summary(!empty($draft['ok']) && $draft['answer'] === '{"body":"Thanks for the update."}'
+    && $replyLedger['service_key'] === 'conversation' && (int)$replyLedger['is_background'] === 0 && (int)$replyLedger['cloud_tokens_charged'] === 140
+    && count($GLOBALS['gmailSummaryDispatch']) === $callCount+1 && str_contains($replyWire,'exact private source')
+    && !str_contains($replyWire,'unrelated previous message') && !str_contains($replyWire,'unrelated private context') && !str_contains($replyWire,'private-chat-persona'),
+    'Gmail reply sends one isolated foreground request and charges its measured tokens');
+$GLOBALS['gmailSummaryScenario'] = 'rejected';
+$rejectedReply = $reply(static fn(): bool=>true);
+check_gmail_summary(empty($rejectedReply['ok']) && count($GLOBALS['gmailSummaryDispatch']) === $callCount+2,
+    'a rejected Gmail reply draft makes no retry or fallback request');
 echo 'GMAIL_INBOX_INITIAL_SUMMARY_V1=PASS'.PHP_EOL;

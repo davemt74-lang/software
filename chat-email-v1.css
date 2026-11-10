@@ -63,6 +63,32 @@
 .vp3-chat-gmail-review a { color: inherit; font-weight: 700; text-decoration: underline; }
 .vp3-chat-gmail-review p { margin: .45rem 0 0; white-space: pre-wrap; }
 .vp3-chat-gmail-review small { display: block; margin-top: .4rem; }
+.gmail-review-item-group { margin-top: .45rem; }
+.gmail-review-item-group summary { cursor: pointer; font-weight: 600; }
+.vp3-chat-gmail-review .gmail-review-items { list-style: none; margin: .5rem 0; padding: 0; }
+.vp3-chat-gmail-review .gmail-review-items li { padding: .5rem 0; border-top: 1px solid var(--line, #c8cfdb); }
+.vp3-chat-gmail-review .gmail-review-items li > span { display: block; }
+.gmail-review-item-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin-top: .35rem;
+}
+.gmail-review-item-actions button, .gmail-review-open-message button {
+  border: 1px solid #c8cfdb;
+  border-radius: .4rem;
+  padding: .35rem .55rem;
+  background: #fff;
+  color: #172032;
+  font: inherit;
+  cursor: pointer;
+}
+.gmail-review-item-actions + small { grid-column: 1 / -1; }
+.gmail-review-item-actions + small:empty { display: none; }
+.gmail-review-open-message { grid-column: 1 / -1; margin-top: .45rem; overflow-wrap: anywhere; }
+.gmail-review-open-message > small { display: block; }
+.gmail-review-open-message > p { white-space: pre-wrap; }
 @media (min-width: 761px) {
   body:has(#sfOnlineRailV109:not([hidden]) [data-chat-specialist="gmail-inbox-review"])
     .vp3-chat-gmail-review:not([data-gmail-review-complete]) { display: none; }

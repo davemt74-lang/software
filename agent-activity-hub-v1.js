@@ -8,7 +8,7 @@
   const groups = [
     {title:'Needs attention',ids:['reminders','tasks','lists','calendar']},
     {title:'Continue',ids:['history','youtube','songs']},
-    {title:'Agent work',ids:['missions','canvases','suggestions']}
+    {title:'Agent work',ids:['missions','canvases','suggestions','gmail_outcomes']}
   ];
   const kinds = new Set(['url','chat','task_notes','mission','canvas','youtube','song']);
   const continuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;

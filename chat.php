@@ -492,7 +492,7 @@ if (has_permission('account.access',$user)) {
     $initiativeWorkbenchRuntime .= '<script>window.VP3_GMAIL_INBOX_INITIAL_V1='.json_encode([
         'endpoint'=>url('/api/gmail-inbox-initial-v1.php'),'csrf'=>csrf_token(),
         'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
-        'connectionsUrl'=>url('/connections.php?app=gmail#gmail-inbox-review'),
+        'connectionsUrl'=>url('/connections.php?app=gmail#gmail-inbox-review'),'chatUrl'=>url('/chat.php'),
     ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
     . '<script src="'.e(url('/gmail-inbox-initial-v1.js?v='.substr(hash_file('sha256',__DIR__.'/gmail-inbox-initial-v1.js'),0,12))).'" defer></script>';
 }

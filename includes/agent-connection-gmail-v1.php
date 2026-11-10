@@ -300,13 +300,14 @@ function agent_connection_gmail_message_v1(array $message): array
     ];
 }
 
-function agent_connection_gmail_get_v1(string $accessToken, string $id, bool $full, ?callable $http): array
+function agent_connection_gmail_get_v1(string $accessToken, string $id, bool $full, ?callable $http, bool $replyHeaders = false): array
 {
     if (agent_connection_gmail_id_v1($id) === '') {
         throw new AgentConnectionGmailExceptionV1('Choose a valid Gmail message.', 400);
     }
+    $metadata = agent_connection_gmail_metadata_query_v1() . ($replyHeaders ? '&metadataHeaders=Reply-To' : '');
     $message = agent_connection_gmail_api_v1(
-        $accessToken, '/messages/' . $id . '?' . ($full ? 'format=full' : agent_connection_gmail_metadata_query_v1()), null, $http
+        $accessToken, '/messages/' . $id . '?' . ($full ? 'format=full' : $metadata), null, $http
     );
     if (($message['id'] ?? null) !== $id) {
         throw new AgentConnectionGmailExceptionV1('Gmail returned a different message.');
@@ -393,7 +394,11 @@ function agent_connection_gmail_body_parts_v1(array $part, array &$plain, array 
 
 function agent_connection_gmail_read_v1(string $accessToken, string $messageId, ?callable $http = null): array
 {
-    $message = agent_connection_gmail_get_v1($accessToken, $messageId, true, $http);
+    return agent_connection_gmail_read_message_v1(agent_connection_gmail_get_v1($accessToken, $messageId, true, $http));
+}
+
+function agent_connection_gmail_read_message_v1(array $message): array
+{
     $plain = $html = [];
     agent_connection_gmail_body_parts_v1((array)($message['payload'] ?? []), $plain, $html);
     $body = implode("\n", $plain);
@@ -405,6 +410,89 @@ function agent_connection_gmail_read_v1(string $accessToken, string $messageId, 
     $body = trim(preg_replace('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', $body) ?? '');
     $result = agent_connection_gmail_message_v1($message);
     return $result + ['body' => mb_substr($body === '' ? $result['snippet'] : $body, 0, 8000)];
+}
+
+/** Accept only the printable RFC dot-atom form safe to put in one MIME header line. */
+function agent_connection_gmail_reply_rfc_id_v1(string $id): bool
+{
+    $atom = <<<'PATTERN'
+[A-Za-z0-9!#$%&'*+\-/=?^_`{|}\~]+
+PATTERN;
+    $dotAtom = $atom.'(?:\.'. $atom.')*';
+    return strlen($id) <= 500 && preg_match('~\A<'.$dotAtom.'@'.$dotAtom.'>\z~D', $id) === 1;
+}
+
+function agent_connection_gmail_reply_binding_v1(array $reply): array
+{
+    $message = agent_connection_gmail_id_v1($reply['message_id'] ?? null);
+    $thread = agent_connection_gmail_id_v1($reply['thread_id'] ?? null);
+    $parent = $reply['in_reply_to'] ?? '';
+    $refs = $reply['references'] ?? null;
+    if (count($reply) !== 4 || $message === '' || $thread === '' || !is_string($parent)
+        || !agent_connection_gmail_reply_rfc_id_v1($parent) || !is_array($refs) || !array_is_list($refs)
+        || !$refs || count($refs) > 60 || $refs[array_key_last($refs)] !== $parent) {
+        throw new AgentConnectionGmailExceptionV1('The original Gmail thread could not be verified.', 409);
+    }
+    foreach ($refs as $ref) {
+        if (!is_string($ref) || !agent_connection_gmail_reply_rfc_id_v1($ref)) {
+            throw new AgentConnectionGmailExceptionV1('The original Gmail reply headers could not be verified.', 409);
+        }
+    }
+    return ['message_id'=>$message, 'thread_id'=>$thread, 'in_reply_to'=>$parent, 'references'=>$refs];
+}
+
+/** Exact inbound message and single reply address; never infer a thread from matching subjects. */
+function agent_connection_gmail_reply_source_v1(
+    string $accessToken, string $messageId, string $mailbox, bool $withBody, ?callable $http = null
+): array {
+    $message = agent_connection_gmail_get_v1($accessToken, $messageId, $withBody, $http, true);
+    return agent_connection_gmail_reply_from_message_v1($message, $mailbox, $withBody);
+}
+
+function agent_connection_gmail_reply_from_message_v1(array $message, string $mailbox, bool $withBody = false): array
+{
+    $mail = agent_connection_gmail_message_v1($message);
+    if (array_intersect(['SENT','DRAFT','SPAM','TRASH'], $mail['labels'])) {
+        throw new AgentConnectionGmailExceptionV1('Choose a received message outside Spam and Trash to reply.', 409);
+    }
+    $headers = [];
+    foreach ((array)($message['payload']['headers'] ?? []) as $header) {
+        if (!is_array($header) || !is_string($header['name'] ?? null)) continue;
+        $name = strtolower($header['name']);
+        if (!in_array($name, ['from','reply-to','subject','message-id','in-reply-to','references'], true)) continue;
+        $value = is_string($header['value'] ?? null) ? preg_replace('/\r?\n[ \t]+/', ' ', $header['value']) : null;
+        if (isset($headers[$name]) || $value === null || strlen($value) > 16000 || !mb_check_encoding($value, 'UTF-8')
+            || preg_match('/[\x00-\x08\x0a-\x1f\x7f]/', $value) !== 0) {
+            throw new AgentConnectionGmailExceptionV1('The original Gmail reply headers could not be verified.', 409);
+        }
+        $headers[$name] = trim($value);
+    }
+    $address = $headers['reply-to'] ?? $headers['from'] ?? '';
+    $displayAddress = <<<'PATTERN'
+/\A(?:"(?:[^"\\]|\\.)*"|[^,;:<>"\\]*)[ \t]*<([^<>]+)>\z/D
+PATTERN;
+    if (preg_match($displayAddress, $address, $match) === 1) $address = $match[1];
+    $recipient = agent_connection_gmail_sender_v1($address);
+    if ($recipient === '' || $recipient === strtolower($mailbox)) {
+        throw new AgentConnectionGmailExceptionV1('Gmail did not return one reply address for that message.', 409);
+    }
+    $subject = mb_decode_mimeheader($headers['subject'] ?? '');
+    if (!mb_check_encoding($subject, 'UTF-8') || strlen($subject) > 980 || preg_match('/[\x00-\x1f\x7f]/', $subject) !== 0) {
+        throw new AgentConnectionGmailExceptionV1('The original Gmail subject could not be verified.', 409);
+    }
+    $parent = $headers['message-id'] ?? '';
+    $chain = $headers['references'] ?? '';
+    if ($chain === '' && agent_connection_gmail_reply_rfc_id_v1($headers['in-reply-to'] ?? '')) {
+        $chain = $headers['in-reply-to'];
+    }
+    $references = $chain === '' ? [] : preg_split('/[ \t]+/', $chain);
+    $reply = agent_connection_gmail_reply_binding_v1([
+        'message_id'=>$mail['message_id'], 'thread_id'=>$mail['thread_id'],
+        'in_reply_to'=>$parent, 'references'=>[...$references, $parent],
+    ]);
+    $source = ['to'=>$recipient, 'subject'=>$subject, 'reply'=>$reply];
+    if ($withBody) $source['body'] = mb_strcut(agent_connection_gmail_read_message_v1($message)['body'], 0, 4000, 'UTF-8');
+    return $source;
 }
 
 function agent_connection_gmail_thread_v1(string $accessToken, string $threadId, ?callable $http = null): array
@@ -433,26 +521,39 @@ function agent_connection_gmail_rfc_message_id_v1(string $operationKey): string
 }
 
 function agent_connection_gmail_send_v1(
-    string $accessToken, string $from, string $to, string $subject, string $body, string $operationKey, ?callable $http = null
+    string $accessToken, string $from, string $to, string $subject, string $body, string $operationKey,
+    ?callable $http = null, ?array $reply = null
 ): array {
     if (!filter_var($from, FILTER_VALIDATE_EMAIL) || !filter_var($to, FILTER_VALIDATE_EMAIL)
         || preg_match('/[\x00-\x1f\x7f]/', $from . $to . $subject) !== 0
-        || trim($subject) === '' || strlen($subject) > 980 || !mb_check_encoding($subject, 'UTF-8')
+        || ($reply === null && trim($subject) === '') || strlen($subject) > 980 || !mb_check_encoding($subject, 'UTF-8')
         || trim($body) === '' || strlen($body) > 80000 || !mb_check_encoding($body, 'UTF-8')) {
         throw new AgentConnectionGmailExceptionV1('Enter a valid recipient, subject, and message.', 400);
     }
     $rfcId = agent_connection_gmail_rfc_message_id_v1($operationKey);
     $subject = mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n", strlen('Subject: '));
     $normalizedBody = preg_replace('/\r\n|\r|\n/', "\r\n", $body) ?? $body;
-    $mime = implode("\r\n", [
+    $headers = [
         'Date: ' . gmdate(DATE_RFC2822), 'From: ' . $from, 'To: ' . $to, 'Subject: ' . $subject, 'Message-ID: ' . $rfcId,
-        'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64',
+    ];
+    $request = [];
+    if ($reply !== null) {
+        $reply = agent_connection_gmail_reply_binding_v1($reply);
+        $headers[] = 'In-Reply-To: ' . $reply['in_reply_to'];
+        $headers[] = 'References: ' . implode("\r\n ", $reply['references']);
+        $request['threadId'] = $reply['thread_id'];
+    }
+    $mime = implode("\r\n", [
+        ...$headers, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64',
         '', chunk_split(base64_encode($normalizedBody)),
     ]);
-    $raw = rtrim(strtr(base64_encode($mime), '+/', '-_'), '=');
+    $request['raw'] = rtrim(strtr(base64_encode($mime), '+/', '-_'), '=');
     try {
-        $sent = agent_connection_gmail_api_v1($accessToken, '/messages/send', ['raw' => $raw], $http);
+        $sent = agent_connection_gmail_api_v1($accessToken, '/messages/send', $request, $http);
         $receipt = agent_connection_gmail_message_v1($sent);
+        if ($reply !== null && $receipt['thread_id'] !== $reply['thread_id']) {
+            throw new AgentConnectionGmailSendUnknownV1('Gmail did not verify delivery in the original thread.');
+        }
     } catch (AgentConnectionGmailExceptionV1 $e) {
         $status = $e->getCode();
         if ($status >= 400 && $status < 500 && $status !== 408) throw $e;

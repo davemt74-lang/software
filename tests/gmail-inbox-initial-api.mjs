@@ -50,6 +50,11 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
     if (isset($_SERVER['HTTP_X_FIXTURE_PROVIDER_FAILURE'])) throw new RuntimeException('Private provider detail.', 502);
     return true;
 }
+function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref): array {
+    fixture_record('open_item', $user, $ref);
+    if ($ref !== str_repeat('c',64)) throw new DomainException('Private source detail.',404);
+    return ['subject'=>'Fixture subject','from'=>'sender@example.test','body'=>'Exact fixture body.','auto_reply'=>false];
+}
 `);
 
   const socket = createServer();
@@ -96,12 +101,23 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
   const advance = await request({body:{action:'advance', run_id:runId}});
   assert.equal(advance.status, 200);
   assert.deepEqual(advance.data.review.calls, [['advance', 1, runId], ['status', 1, false]]);
+  const itemRef = 'c'.repeat(64);
+  const open = await request({body:{action:'open_item',item_ref:itemRef}});
+  assert.equal(open.headers.get('x-fixture-dispatch'),'open_item');
+  assert.deepEqual(open.data,{ok:true,item:{subject:'Fixture subject',from:'sender@example.test',
+    body:'Exact fixture body.',auto_reply:false}});
+  const staleItem = await request({body:{action:'open_item',item_ref:'d'.repeat(64)}});
+  assert.equal(staleItem.status,404);
+  assert.doesNotMatch(staleItem.data.error,/Private source detail/);
 
   for (const [code, options] of [
     [405, {method:'GET'}],
     [401, {headers:{'X-Fixture-Anonymous':'1'}}],
     [403, {headers:{'X-Fixture-Participant':'1'}}],
     [403, {headers:{'X-Fixture-Participant':'1'},body:{include_chat_result:true}}],
+    [403, {headers:{'X-Fixture-Participant':'1'},body:{action:'open_item',item_ref:itemRef}}],
+    [422, {body:{action:'open_item',item_ref:'raw-provider-id'}}],
+    [422, {body:{action:'open_item',item_ref:itemRef,include_chat_result:true}}],
     [403, {headers:{'X-Fixture-Deny':'account.access'}}],
     [403, {headers:{'X-Fixture-Deny':'chat.access'}}],
     [409, {headers:{'X-Fixture-Owner':'2'}}],

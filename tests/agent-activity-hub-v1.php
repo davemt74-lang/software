@@ -213,6 +213,15 @@ $insertCanvas->execute([$canvasId,1,11,11,1,'Saved draft',2]);
 $insertCanvas->execute(['9a000000-0000-4000-8000-000000000002',1,12,12,2,'Secret other Agent Canvas',3]);
 $pdo->prepare('INSERT INTO vp3_coding_canvas_versions_v1(canvas_id,revision,code_item_id,artifact_hash) VALUES(?,1,1,?)')
     ->execute([$canvasId,str_repeat('0',64)]);
+$pdo->exec('CREATE TABLE agent_connection_email_drafts_v1(id CHAR(32) PRIMARY KEY);
+    ALTER TABLE chat_messages ADD COLUMN context_json TEXT;
+    ALTER TABLE chat_messages ADD COLUMN created_at DATETIME');
+$gmailOutcome=$pdo->prepare("INSERT INTO chat_messages (id,conversation_id,role,message,context_json,created_at)
+    VALUES (?,?,'assistant','PRIVATE SENTINEL',?,?)");
+foreach ([[40,13,'auto_reply'],[41,12,'auto_reply'],[42,20,'auto_reply'],[43,13,'manual']] as [$id,$cid,$mode]) {
+    $gmailOutcome->execute([$id,$cid,json_encode(['source'=>'agent_connection_email','email_outcome'=>['mode'=>$mode]],JSON_THROW_ON_ERROR),
+        gmdate('Y-m-d H:i:s')]);
+}
 
 if ($mysql) $pdo->exec('START TRANSACTION READ ONLY');
 else $pdo->exec('PRAGMA query_only=ON');
@@ -224,6 +233,11 @@ $state = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding);
 $sections = activity_sections($state);
 activity_check($state['agent_name']==='Longfellow' && $state['current_chat']===['id'=>13,'title'=>'Latest project'], 'Agent and current Chat metadata reflect the exact owned scope');
 activity_check(array_column($sections['history']['items'],'title')===['Latest project','First project'], 'History spans only the selected Agent Chats and is newest first');
+$gmail = $sections['gmail_outcomes']['items'];
+activity_check(count($gmail)===1 && $gmail[0]['id']==='gmail:sent:40'
+    && $gmail[0]['actions'][0]['conversation_id']===13 && $gmail[0]['actions'][0]['message_id']===40
+    && !str_contains(json_encode($gmail,JSON_THROW_ON_ERROR),'PRIVATE SENTINEL'),
+    'Top of Mind reuses the exact confirmed auto reply in this Agent and omits other scopes and private text');
 activity_check(array_column($sections['tasks']['items'],'title')===['Named task'], 'Tasks exclude other owners, other Agents, denied data and completed work');
 activity_check($sections['tasks']['items'][0]['actions'][0]['list_id']===2, 'A task can open its actual existing parent list');
 activity_check(array_column($sections['lists']['items'],'title')===['Named list'] && $sections['lists']['items'][0]['detail']==='1 open task', 'List count includes only permitted canonical members');

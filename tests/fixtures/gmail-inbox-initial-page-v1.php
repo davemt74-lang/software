@@ -24,10 +24,23 @@ function agent_connections_summary_v1(int $owner, string $provider): array
 
 function agent_connection_gmail_inbox_storage_ready_v1(PDO $pdo): bool { return true; }
 function agent_connection_gmail_inbox_authority_v1(array $user, array $connection): bool { return true; }
+function agent_connection_gmail_autosend_settings_v1(PDO $pdo, array $user, int $connection): array
+{
+    return ['ready'=>true,'available'=>true,'enabled'=>false,'addresses'=>[],'revision'=>''];
+}
 function agent_connection_gmail_inbox_policy_v1(PDO $pdo, int $owner): array
 {
     return ['connection_id'=>9,'authorization_key'=>str_repeat('a',64),'revision'=>str_repeat('b',32),
-        'enabled'=>true,'rules'=>[],'last_status'=>'waiting'];
+        'enabled'=>true,'rules'=>[],'last_status'=>'waiting',
+        'last_review_json'=>isset($GLOBALS['fixtureReview']['chat_result']['latest'])?'{}':''];
+}
+
+function agent_connection_gmail_inbox_latest_view_v1(PDO $pdo, array $user, string $revision): ?array
+{
+    if ($revision !== str_repeat('b',32)) throw new RuntimeException('Latest review requires the rendered grant.');
+    $latest = $GLOBALS['fixtureReview']['chat_result']['latest'] ?? null;
+    if ($latest !== null) $latest['at'] = rtrim(str_replace('T',' ',$latest['at']),'Z');
+    return $latest;
 }
 
 function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, bool $includeReport = false, ?string $expectedRevision = null): array
@@ -36,6 +49,7 @@ function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, boo
         throw new RuntimeException('Connections must bind the report view to the rendered Inbox review settings.');
     }
     $review = $GLOBALS['fixtureReview'];
+    unset($review['chat_result']);
     if (!$includeReport) unset($review['report'], $review['start_token']);
     return $review;
 }

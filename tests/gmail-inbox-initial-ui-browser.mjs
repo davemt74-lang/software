@@ -10,6 +10,12 @@ const runId = 'a'.repeat(32);
 const startToken = 'b'.repeat(64);
 const privateSubject = 'Private budget <img src=x onerror=alert(1)>';
 const privateSummary = 'The sampled subjects suggest billing <b>follow-up</b>.';
+const privateBody = 'Exact saved message body <img src=x onerror=alert(1)>.';
+const firstRef = 'c'.repeat(64);
+const latestRef = 'd'.repeat(64);
+const firstItem = {subject:privateSubject,from:'private@example.test',category:'reply',item_ref:firstRef};
+const legacyItem = {subject:'Older header only',from:'older@example.test',category:'new'};
+const latestItem = {subject:'Latest item',from:'later@example.test',category:'important',item_ref:latestRef};
 const connectionsUrl = '/connections.php?app=gmail#gmail-inbox-review';
 const script = 'gmail-inbox-initial-v1.js';
 const chatScripts = ['chat.js','team-chat-admin-v109.js','chat-specialist-rail-v1.js','agent-eyes-core.js',
@@ -39,8 +45,9 @@ const summarizing = () => ({...inProgress('working'),stage:'summary',scanned:50,
 const completed = () => ({...inProgress('ready'),stage:'summary',scanned:50,truncated:true,has_report:true,total:3,
   report:{at:'2026-11-10 12:00:00',days:14,scanned:50,limit:50,truncated:true,total:3,important:1,replies:1,filtered:2,
     summary_status:'ready',summary:'The sampled subjects suggest billing.',tokens_charged:114,
-    items:[{subject:privateSubject,from:'Sender <private@example.test>',category:'reply'}]},
-  chat_result:{summary:privateSummary,latest:{total:2,important:1,replies:1,at:'2026-11-10T13:00:00Z'}}});
+    items:[firstItem,legacyItem]},
+  chat_result:{summary:privateSummary,items:[firstItem,legacyItem],
+    latest:{total:2,important:1,replies:1,at:'2026-11-10T13:00:00Z',items:[latestItem]}}});
 let review = needsStart();
 let initialViewToken = startToken;
 let apiViewToken = startToken;
@@ -48,6 +55,7 @@ let advanceGate = null;
 let statusGate = null;
 let workerStartsReview = false;
 const requests = [];
+const turns = [];
 const count = (action,surface) => requests.filter(row => row.action === action && (!surface || row.surface === surface)).length;
 const project = (includeReport,token = apiViewToken,includeChatResult = false) => {
   const view = structuredClone(review);
@@ -101,7 +109,7 @@ try {
     }
     if (url.pathname === '/connections.php') {
       return route.fulfill({contentType:'text/html; charset=utf-8',
-        body:execFileSync('php',[phpFixture,url.search.slice(1),JSON.stringify(project(true,initialViewToken))],{encoding:'utf8'})});
+        body:execFileSync('php',[phpFixture,url.search.slice(1),JSON.stringify(project(true,initialViewToken,true))],{encoding:'utf8'})});
     }
     if (url.pathname === '/chat.php') {
       const body = url.searchParams.has('without_review')
@@ -110,6 +118,11 @@ try {
     }
     if (url.pathname === '/api/chat.php') {
       const body = request.postDataJSON() || {};
+      if (body.action === 'send') {
+        turns.push(body.message);
+        return route.fulfill({json:{ok:true,conversation_id:42,user_message_id:2*turns.length,assistant_message_id:2*turns.length+1,
+          answer:`Fixture Chat result ${turns.length}.`}});
+      }
       return route.fulfill({json:{ok:true,conversation_id:42,conversations:[],latest_message_id:1,
         messages:body.action==='load'?[{id:1,role:'assistant',message:'Existing conversation'}]:[],updates:[]}});
     }
@@ -129,6 +142,14 @@ try {
     assert.equal(request.method(),'POST');
     const body = request.postDataJSON();
     const surface = new URL(request.frame().url()).pathname;
+    if (body.action === 'open_item') {
+      assert.deepEqual(body,{action:'open_item',owner_key:'1',csrf_token:'fixture',item_ref:body.item_ref});
+      assert.ok([firstRef,latestRef].includes(body.item_ref));
+      requests.push({...body,surface});
+      const item = body.item_ref === firstRef ? firstItem : latestItem;
+      return route.fulfill({json:{ok:true,item:{subject:item.subject,from:item.from,body:privateBody,
+        auto_reply:body.item_ref===firstRef,...(body.item_ref===firstRef?{auto_reply_to:'approved@example.test'}:{})}}});
+    }
     const includeReport = surface === '/connections.php';
     const expected = {action:body.action,owner_key:'1',csrf_token:'fixture',
       ...(includeReport ? {include_report:true} : {include_chat_result:true})};
@@ -159,6 +180,9 @@ try {
   });
 
   await page.goto(origin+connectionsUrl);
+  const autoSend = page.getByRole('checkbox',{name:/Enable Auto Send/});
+  assert.equal(await autoSend.isChecked(),false,'Auto Send is off by default.');
+  assert.equal(await page.getByRole('textbox',{name:'Approved email addresses'}).inputValue(),'');
   const startForm = page.locator('[data-gmail-review-start]');
   const windowSelect = startForm.locator('select[name="days"]');
   const report = page.locator('[data-gmail-review-report]');
@@ -186,10 +210,19 @@ try {
   assert.equal(await report.getByText('114 VP3 tokens charged',{exact:true}).isVisible(),true);
   assert.equal(await report.getByText('This review reached the 50-header limit.',{exact:true}).isVisible(),true);
   assert.equal(await report.getByText('Replies',{exact:true}).isVisible(),true);
-  assert.equal(await report.getByText('Reply',{exact:true}).isVisible(),true);
+  assert.equal(await report.getByText('Incoming reply',{exact:true}).isVisible(),true);
   assert.equal(await report.locator('img,script').count(),0,'Report metadata renders as text.');
+  assert.equal(count('open_item'),0,'The initial report never opens a message without a click.');
+  await report.getByRole('listitem').filter({hasText:privateSubject}).getByRole('button',{name:'Open',exact:true}).click();
+  await report.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(await report.getByRole('button',{name:/Auto reply/}).count(),0);
+  assert.equal(count('open_item','/connections.php'),1);
   await page.reload();
   await report.getByText(privateSubject,{exact:true}).waitFor();
+  const latestConnectionRow = page.locator('[data-gmail-review-latest-item]').filter({hasText:latestItem.subject});
+  await latestConnectionRow.getByRole('button',{name:'Open',exact:true}).click();
+  await latestConnectionRow.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(requests.filter(row=>row.action==='open_item' && row.surface==='/connections.php').at(-1).item_ref,latestRef);
   await screenshot(page,'report',report);
   assert.equal(count('start','/connections.php'),1);
   assert.equal(count('advance','/connections.php'),1,'Refreshing a completed report does not scan again.');
@@ -204,8 +237,41 @@ try {
   await completion.getByText(/Latest inbox update.*2 new.*1 important.*1 reply/).waitFor();
   assert.equal(await completion.locator('b,img,script').count(),0,'Saved AI text is never interpreted as markup.');
   assert.equal(await page.locator('#chatThread .message').count(),1,'The saved review projection does not add a stored turn.');
-  assert.equal(await page.getByText(privateSubject,{exact:true}).count(),0);
+  assert.equal(await page.getByText(privateSubject,{exact:true}).isVisible(),false);
   assert.equal(count('advance','/chat.php'),0,'Showing the saved result does not restart the review.');
+  assert.equal(count('open_item','/chat.php'),0);
+  assert.equal(turns.length,0);
+  await completion.getByText('Messages in first review (2)',{exact:true}).click();
+  const firstRow = completion.getByRole('listitem').filter({hasText:privateSubject});
+  await firstRow.getByRole('button',{name:'Open',exact:true}).click();
+  await firstRow.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(await firstRow.locator('img').count(),0);
+  assert.equal(await firstRow.getByRole('button',{name:'Auto reply and send (uses tokens)'}).isVisible(),true);
+  await firstRow.getByRole('button',{name:'Draft reply (uses tokens)'}).click();
+  await page.getByText('Fixture Chat result 1.',{exact:true}).waitFor();
+  assert.equal(await page.locator('#chatInput').inputValue(),'');
+  assert.equal(await page.locator('#chatThread').getByText(new RegExp(firstRef)).count(),0,'The reference is never shown as a Chat turn.');
+  assert.deepEqual(turns,[`Draft reply to Gmail review item ${firstRef}`]);
+  await firstRow.getByRole('button',{name:'Auto reply and send (uses tokens)'}).click();
+  await page.getByText('Fixture Chat result 2.',{exact:true}).waitFor();
+  assert.deepEqual(turns,[`Draft reply to Gmail review item ${firstRef}`,`Auto reply to Gmail review item ${firstRef}`]);
+  const legacyRow = completion.getByRole('listitem').filter({hasText:legacyItem.subject});
+  assert.equal(await legacyRow.getByRole('button',{name:'Open',exact:true}).count(),0);
+  await legacyRow.getByRole('button',{name:'Find matches in Chat'}).click();
+  assert.equal(await page.locator('#chatInput').inputValue(),'Search Gmail for from:older@example.test subject:"Older header only"');
+  assert.equal(turns.length,2,'An older header never silently picks or opens a match.');
+  await page.locator('#chatInput').fill('');
+  await completion.getByText('Messages in latest update (1)',{exact:true}).click();
+  const latestRow = completion.getByRole('listitem').filter({hasText:latestItem.subject});
+  await latestRow.getByRole('button',{name:'Open',exact:true}).click();
+  await latestRow.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(await completion.getByRole('button',{name:/Auto reply/}).count(),0,'An ineligible exact recipient has no Auto reply button.');
+  assert.equal(requests.filter(row=>row.action==='open_item' && row.surface==='/chat.php').map(row=>row.item_ref).join(','),firstRef+','+latestRef);
+  await latestRow.getByRole('button',{name:'Reply',exact:true}).click();
+  await page.getByText('Fixture Chat result 3.',{exact:true}).waitFor();
+  assert.deepEqual(turns,[`Draft reply to Gmail review item ${firstRef}`,`Auto reply to Gmail review item ${firstRef}`,
+    `Reply to Gmail review item ${latestRef}`]);
+  console.log('PASS exact first/latest message actions, legacy search, and per-message Auto reply visibility');
 
   review = needsStart();
   const initialStatus = page.waitForResponse(response => response.url().endsWith(endpoint) && response.request().postDataJSON()?.action === 'status');
@@ -279,7 +345,7 @@ try {
   assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot()
     .some(item => item.key === 'gmail-inbox-review')),false,'A completed review does not keep a duplicate rail entry.');
   assert.equal(await orb.getAttribute('data-working'),'false');
-  assert.equal(await page.getByText(privateSubject,{exact:true}).count(),0,'Chat never renders private report metadata.');
+  assert.equal(await page.getByText(privateSubject,{exact:true}).isVisible(),false,'Chat keeps the private item list collapsed by default.');
   assert.equal(count('advance','/chat.php'),1);
   assert.equal(count('start','/chat.php'),0);
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this draft');

@@ -336,6 +336,35 @@ function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
     ])];
 }
 
+/** The same confirmed outcome that was saved to Chat and indexed by Brain. */
+function vp3_agent_activity_gmail_outcomes_v1(PDO $pdo, array $scope, DateTimeImmutable $now): array
+{
+    if (!table_exists('agent_connection_email_drafts_v1')) return [];
+    [$where, $params] = vp3_agent_chat_scope_sql_v380($scope['agent'], 'c');
+    $context = "CASE WHEN JSON_VALID(m.context_json) THEN m.context_json ELSE '{}' END";
+    $source = "JSON_EXTRACT($context,'$.source')";
+    $mode = "JSON_EXTRACT($context,'$.email_outcome.mode')";
+    if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) !== 'sqlite') {
+        $source = "JSON_UNQUOTE($source)";
+        $mode = "JSON_UNQUOTE($mode)";
+    }
+    $query = $pdo->prepare("SELECT m.id,m.conversation_id FROM chat_messages m
+        JOIN chat_conversations c ON c.id=m.conversation_id
+        WHERE c.user_id=? AND $where AND m.role='assistant' AND m.created_at>=?
+        AND $source='agent_connection_email' AND $mode='auto_reply'
+        ORDER BY m.id DESC LIMIT 1");
+    $query->execute([(int)$scope['user']['id'], ...$params, $now->modify('-7 days')->format('Y-m-d H:i:s')]);
+    $row = $query->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return [];
+    $id = (int)$row['id'];
+    $conversation = (int)$row['conversation_id'];
+    return [vp3_agent_activity_card_v1('gmail:sent:'.$id, 'gmail_outcome', 'Gmail reply sent',
+        'Gmail confirmed the automatic reply.', [
+            ['kind'=>'chat','label'=>'View in Chat','conversation_id'=>$conversation,'message_id'=>$id,
+                'href'=>vp3_agent_activity_chat_href_v1($scope['agent_id'],$conversation)],
+        ])];
+}
+
 /** Bounded owner projections only. Reading this feed never starts or advances work. */
 function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $conversationId = 0): array
 {
@@ -351,6 +380,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         'canvases'=>['Canvas work', static fn() => vp3_agent_activity_canvases_v1($pdo, $scope)],
         'suggestions'=>['Agent suggestions', static fn() => vp3_agent_activity_suggestions_v1($pdo, $scope)],
         'gmail_inbox'=>['Gmail Inbox Review', static fn() => vp3_agent_activity_gmail_review_v1($pdo, $scope)],
+        'gmail_outcomes'=>['Gmail', static fn() => vp3_agent_activity_gmail_outcomes_v1($pdo, $scope, $now)],
     ];
     $sections = [];
     $coverage = [];

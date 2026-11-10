@@ -744,6 +744,23 @@ try{
  const youtubeEndpoint='chat-v236.php?agent=7';
  const sourceChat=(await post(youtubeEndpoint,'',{action:'new'})).data.conversation_id;
  const recallChat=(await post(youtubeEndpoint,'',{action:'new'})).data.conversation_id;
+ const gmailVoice='chat-stream-v121.php';
+ const gmailQuery='Auto reply to Gmail review item '+'a'.repeat(64);
+ const gmailTurn={conversation_id:recallChat,idempotency_key:'gmail-auto-exact-replay'};
+ const gmailOriginal=await post(gmailVoice,gmailQuery,gmailTurn);
+ const gmailRetry=await post(gmailVoice,gmailQuery,gmailTurn);
+ check(gmailOriginal.data?.ok===true&&gmailOriginal.data?.tool_receipt?.capability==='email.send'
+   &&gmailRetry.data?.replayed===true&&gmailRetry.data?.assistant_message_id===gmailOriginal.data.assistant_message_id,
+   'voice replays only the exact Gmail auto-reply request with no new turn: '+gmailOriginal.body);
+ for(const [query,turn] of [
+   ['Auto reply to Gmail review item '+'b'.repeat(64),gmailTurn],
+   [gmailQuery,{...gmailTurn,conversation_id:sourceChat}],
+   ['What is on my calendar?',gmailTurn],
+ ]){
+   const mismatched=await post(gmailVoice,query,turn);
+   check(mismatched.data?.ok!==true&&!mismatched.data?.replayed&&mismatched.data?.tool_receipt===undefined,
+     'voice rejects reuse of a Gmail receipt for another request or Chat: '+mismatched.body);
+ }
  const youtubeFixture=base+'/youtube-recall-fixture.php';
  for(const endpoint of [youtubeEndpoint,'chat-stream-v121.php','chat.php']){
   const cases=[
