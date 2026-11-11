@@ -3,9 +3,8 @@
 const cfg=window.VP3_CANVAS_MEDIA_V1||{};if(!cfg.endpoint||!cfg.csrf)return;
 const states=new WeakMap(),started=new Set(),running=new Set();
 const orbJobs=new Map();
+const specialistJobs=new Map();
 const inProgress={queued:'Queued · waiting for Cloud worker',generating:'Generating image…',paused:'Paused'};
-const specialistKey='image-generator';
-let specialistJob=null;
 const make=(tag,text)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=String(text);return e;};
 const continuity=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
 function scope(){return Number(continuity()?.conversationId?.()??window.STONEFELLOW_CHAT?.initialConversationId??0);}
@@ -46,21 +45,29 @@ function syncOrbJobs(force=false){
 }
 function clearOrbJobs(){orbJobs.clear();syncOrbJobs(true);}
 function stop(s){clearTimeout(s.timer);s.timer=null;}
-function clearSpecialist(s=specialistJob){
- if(!s||specialistJob!==s)return;
- specialistJob=null;
- window.VP3ChatSpecialists?.remove(specialistKey);
+function clearSpecialist(s){
+ const key=s.specialistKey;
+ if(!key||specialistJobs.get(key)!==s)return;
+ specialistJobs.delete(key);
+ s.specialistKey=null;
+ window.VP3ChatSpecialists?.remove(key);
+}
+function clearSpecialists(){
+ for(const job of specialistJobs.values())clearSpecialist(job);
 }
 function showSpecialist(s,card,g,expiresAt){
- if(!active(s)||!chatVisible()||!expiresAt){clearSpecialist(s);return;}
- if(specialistJob&&specialistJob!==s&&active(specialistJob)&&specialistJob.expiresAt>Date.now()&&!s.launch)return;
+ const state=expiresAt?'running':g.status==='queued'||g.status==='paused'?g.status:'';
+ if(!active(s)||!chatVisible()||!state){clearSpecialist(s);return;}
  const rail=window.VP3ChatSpecialists;if(!rail)return;
- specialistJob=s;
- s.expiresAt=expiresAt;
- rail.update(specialistKey,{label:'Image Generator',title:g.title||'Requested image',status:inProgress.generating,expiresAt,
+ const key='image-generator:'+g.id;
+ const existing=specialistJobs.get(key);
+ if(existing&&existing!==s&&active(existing))return;
+ s.specialistKey=key;
+ specialistJobs.set(key,s);
+ rail.update(key,{type:'image-generator',state,label:'Image Generator',title:g.title||'Requested image',
+  status:inProgress[g.status],expiresAt:expiresAt||Date.now()+7500,desktop:state==='running',inline:false,
   detail:[g.model,g.size,g.quality,g.background==='transparent'?'Transparent background':''].filter(Boolean).join(' · '),
   onView:()=>{if(active(s)){card.scrollIntoView({block:'center'});card.focus({preventScroll:true});}}});
- s.launch=false;
 }
 function failure(s,card,error){
  const id='image:'+card.dataset.generationId;
@@ -89,7 +96,7 @@ function renderJob(s,card,g){
   else if(orbJobs.delete(id))syncOrbJobs(true);
  }
  showSpecialist(s,card,g,expiresAt);
- if(!Object.hasOwn(inProgress,g.status)){stop(s);s.launch=false;}
+ if(!Object.hasOwn(inProgress,g.status))stop(s);
  // Keep focused controls and expanded details in place on unchanged polls.
  const signature=JSON.stringify(cardData);
  if(s.generation&&signature===s.generation.signature)return;
@@ -134,7 +141,7 @@ async function poll(s,card,id,manual=false){
 }
 function mount(host,ref){
  if(states.has(host)||!ref||!host.isConnected)return;
- const s={host,cid:scope(),agentId:selectedAgent(),timer:null,ticket:0,launch:host.dataset.specialistLaunch==='true'};
+ const s={host,cid:scope(),agentId:selectedAgent(),timer:null,ticket:0};
  if(!active(s))return;states.set(host,s);host.replaceChildren();
  const ids=Array.isArray(ref.asset_ids)?ref.asset_ids.filter(i=>Number.isSafeInteger(i)&&i>0).slice(0,12):[];
  const prefill=ref.marketing_prefill;
@@ -154,7 +161,7 @@ function mount(host,ref){
 }
 function scan(){
  syncOrbJobs();
- if(specialistJob&&!active(specialistJob))clearSpecialist();
+ for(const job of specialistJobs.values())if(!active(job))clearSpecialist(job);
  for(const host of document.querySelectorAll('.vp3-canvas-media')){
   const s=states.get(host);
   if(s&&!matchesScope(s)){
@@ -166,7 +173,7 @@ function scan(){
  }
 }
 function refreshJobs(){
- if(!chatVisible()){clearSpecialist();clearOrbJobs();return;}
+ if(!chatVisible()){clearSpecialists();clearOrbJobs();return;}
  syncOrbJobs();
  for(const host of document.querySelectorAll('.vp3-canvas-media')){
   const s=states.get(host),card=host.querySelector('[data-generation-id]');
@@ -174,12 +181,12 @@ function refreshJobs(){
  }
 }
 window.VP3CanvasMedia={mount};new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});
-window.addEventListener('stonefellow:chat-context-changing',()=>{clearSpecialist();clearOrbJobs();});
-window.addEventListener('vp3:participant-task-context',clearOrbJobs);
+window.addEventListener('stonefellow:chat-context-changing',()=>{clearSpecialists();clearOrbJobs();});
+window.addEventListener('vp3:participant-task-context',()=>{clearSpecialists();clearOrbJobs();});
 window.addEventListener('vp3:agent-orb-ready',()=>syncOrbJobs(true));
 window.addEventListener('vp3:chat-context-ready',()=>{refreshJobs();scan();});
 window.addEventListener('vp3:chat-canvas-view-changed',refreshJobs);
 document.addEventListener('visibilitychange',refreshJobs);
-window.addEventListener('pagehide',()=>{clearSpecialist();clearOrbJobs();});
+window.addEventListener('pagehide',()=>{clearSpecialists();clearOrbJobs();});
 scan();
 })();

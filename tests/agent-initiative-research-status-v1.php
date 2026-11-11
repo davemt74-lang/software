@@ -44,8 +44,9 @@ $beforeScope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??null;
 $beforeWrites=(int)$pdo->query('SELECT total_changes()')->fetchColumn();
 $pdo->exec('PRAGMA query_only=ON');
 $queued=$read();
+$queuedItem=['run_id'=>$run,'kind'=>'topic','state'=>'queued','subject'=>$topic];
 scope_check($queued===['owner_user_id'=>1,'agent_id'=>17,'conversation_id'=>170,
-    'specialist'=>['run_id'=>$run,'kind'=>'topic','state'=>'queued','subject'=>$topic]],
+    'specialist'=>$queuedItem,'specialists'=>[$queuedItem]],
     'read-only queued status exposes only the authorized source title, state and IDs');
 scope_check($beforeWrites===(int)$pdo->query('SELECT total_changes()')->fetchColumn()
     &&($GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??null)===$beforeScope,
@@ -64,9 +65,15 @@ $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1,'agent'=>17,'participa
 scope_check($denied($read),'participant scope cannot read owner research progress');
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
 $claim=scope_claim($user,$run);
-$running=$read()['specialist'];
+$nextRun=$enqueue('research-status-second-visible',$goal);
+$simultaneous=$read();
+$running=$simultaneous['specialist'];
 scope_check($running['state']==='running'&&$running['run_id']===$run&&strtotime($running['lease_expires_at'])>time(),
     'running progress requires the canonical worker’s unexpired lease');
+scope_check(array_column($simultaneous['specialists'],'run_id')===[$run,$nextRun]
+    &&array_column($simultaneous['specialists'],'state')===['running','queued'],
+    'simultaneous Research assignments keep separate run IDs and verified states');
+$pdo->prepare("UPDATE agent_workflow_runs SET status='cancelled' WHERE id=?")->execute([$nextRun]);
 $lease=$pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?');
 $lease->execute([gmdate('Y-m-d H:i:s',time()-1),$run]);
 scope_check($read()['specialist']===null,'expired execution disappears without inventing progress or failure');
@@ -80,7 +87,26 @@ scope_check($read()['specialist']===null,'a terminal failure disappears after it
 $run=$enqueue('research-status-complete',$goal);
 $completed=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$run),null,
     ['search'=>static fn():array=>['ok'=>true,'results'=>[]]]);
-scope_check($completed['ok']&&$read()['specialist']===null,'verified no-match completion leaves progress to the saved Chat result');
+$pending=$read();
+scope_check($completed['ok']&&$pending['specialist']===null&&count($pending['specialists'])===1
+    &&$pending['specialists'][0]['run_id']===$run&&$pending['specialists'][0]['state']==='ready'
+    &&!isset($pending['specialists'][0]['message_id']),
+    'verified completion awaiting delivery has no Chat result link and preserves the legacy alias');
+$ageReports->execute([$oldReportAt]);
+scope_check(vp3_initiative_deliver_pending_v1($pdo,$user,17),'the current report delivers the verified Research result');
+$delivered=$read()['specialists'][0]??[];
+$message=$pdo->prepare("SELECT id FROM chat_messages WHERE conversation_id=170 AND role='assistant' AND id=?");
+$message->execute([$delivered['message_id']??0]);
+scope_check($delivered['run_id']===$run&&$delivered['state']==='completed'&&(int)$message->fetchColumn()===$delivered['message_id'],
+    'a delivered assignment links to its exact saved Chat result');
+$receipt=$pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');
+$receipt->execute([$run]);$verifiedReceipt=$receipt->fetchColumn();
+$setReceipt=$pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE run_id=?');
+$setReceipt->execute(['{}',$run]);
+scope_check($read()['specialists']===[],'an inconsistent worker receipt cannot supply a completed result link');
+$setReceipt->execute([$verifiedReceipt,$run]);
+$ageReports->execute([$oldReportAt]);
+scope_check($read()['specialists']===[],'old delivered results remain in Chat instead of replaying as status');
 $enqueue('research-status-revoked',$goal);
 scope_check($read()['specialist']!==null,'a fresh reportable research run is eligible under current consent');
 vp3_youtube_research_save_v1($pdo,1,'topic',false);

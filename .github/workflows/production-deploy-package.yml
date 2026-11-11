@@ -361,6 +361,7 @@ jobs:
           test -f _deploy/includes/transcript-knowledge-highlight-v1.php
           test -f _deploy/api/initiative-research-status-v1.php
           test -f _deploy/chat-research-specialist-v1.js
+          test -f _deploy/chat-mobile-specialists-v1.js
           test -f _deploy/chat-research-specialist-v1.css
           test -f _deploy/chat-coding-canvas-v1.js
           test -f _deploy/chat-coding-canvas-v1.css

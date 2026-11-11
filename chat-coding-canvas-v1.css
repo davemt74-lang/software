@@ -84,6 +84,11 @@
 @media (min-width:761px) {
   body:has(#sfOnlineRailV109:not([hidden])) .vp3-coding-canvas-worker { display:none; }
 }
+@media (max-width:820px) {
+  body:has(#chatSidebar[data-chat-mobile-specialists-ready]) :is(.vp3-coding-canvas-worker,.vp3-coding-canvas-dock-status) {
+    display:none;
+  }
+}
 .vp3-coding-canvas button:disabled {
   opacity:.48;
   cursor:default;

@@ -306,6 +306,7 @@ async function scheduleOperation(action,id){
 // A5C8: one durable feed updates Chat, Brain and notification surfaces.
 let missionNotices={items:[],unread:0},progressInflight=false,progressConnected=false,progressReceived=0;
 let missionOrbGeneration=0,missionOrbPageActive=true;
+const missionSpecialistKeys=new Set();
 const noticeHost=el('section','vp3-mission-notifications');noticeHost.setAttribute('aria-label','Mission notifications');
 root.querySelector('.vp3-teams-body').insertBefore(noticeHost,list);
 const liveSummary=el('section','vp3-mission-live-summary');liveSummary.setAttribute('aria-label','Live mission progress');liveSummary.setAttribute('aria-live','polite');
@@ -320,13 +321,24 @@ function workerProgress(t){
  const a=t.activity;
  return (a?.stage||t.status||'queued')+' · Last activity '+fmt(a?.last_activity_at||t.completed_at||t.started_at);
 }
+function syncMissionSpecialists(specialists=new Map()){
+ const registry=window.VP3ChatSpecialists;
+ for(const key of missionSpecialistKeys){if(!specialists.has(key))registry?.remove(key);}
+ missionSpecialistKeys.clear();
+ for(const [key,assignment] of specialists){
+  registry?.update(key,assignment);
+  missionSpecialistKeys.add(key);
+ }
+}
 function clearMissionOrbJobs(){
  missionOrbGeneration++;
  window.VP3AgentOrb?.setJobs?.('mission',[]);
+ syncMissionSpecialists();
 }
 function publishMissionOrbJobs(response){
- if(window.VP3ParticipantContinuity?.selectedContext?.()){clearMissionOrbJobs();return;}
+ if(activityMissionParticipant>0||window.VP3ParticipantContinuity?.selectedContext?.()){clearMissionOrbJobs();return;}
  const jobs=new Map(),now=Date.now(),snapshotExpiresAt=now+12000;
+ const specialists=new Map(),context=taskContext(),contextKey=JSON.stringify(context);
  const idPart=value=>typeof value==='string'&&/^[a-z0-9-]{1,48}$/i.test(value)?value.toLowerCase():'';
  const homeUnavailable=response.homeserver_updates_unavailable||response.runtimes?.homeserver===false;
  for(const mission of response.items){
@@ -343,9 +355,23 @@ function publishMissionOrbJobs(response){
    const expiresAt=mission.execution_target==='cloud'?Math.min(snapshotExpiresAt,leaseExpiresAt):snapshotExpiresAt;
    const id='mission:'+missionId+':'+workerId;
    jobs.set(id,{id,expiresAt});
+   if(context.thread_id>0&&mission.chat_task?.draft?.thread_id===context.thread_id){
+    const key='mission:'+workerId;
+    specialists.set(key,{
+     type:'mission',state:'running',label:worker.title||worker.role||'Mission specialist',
+     title:mission.objective||'Mission',status:worker.activity?.stage==='running'?'Working':worker.activity?.stage||'Working',
+     expiresAt,viewLabel:'Open Mission',desktop:false,inline:true,
+     onView:()=>{
+      if(Date.now()>=expiresAt||JSON.stringify(taskContext())!==contextKey||activityMissionParticipant>0||window.VP3ParticipantContinuity?.selectedContext?.())return;
+      if(mission.execution_target==='cloud')void openActivityMission(missionId);
+      else void operation('open-team-chat',missionId,workerId);
+     },
+    });
+   }
   }
  }
  window.VP3AgentOrb?.setJobs?.('mission',[...jobs.values()]);
+ syncMissionSpecialists(specialists);
 }
 function renderLiveSummary(){
  liveSummary.replaceChildren();

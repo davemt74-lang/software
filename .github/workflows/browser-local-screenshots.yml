@@ -25,7 +25,7 @@ jobs:
           coverage: none
           extensions: pdo_sqlite, fileinfo
       - run: npm install --no-save --ignore-scripts playwright@1.51.1
-      - run: npx playwright install --with-deps chromium
+      - run: bash tools/install-ci-chromium.sh
       - name: Dropdown, entire-page capture and native Chrome acceptance
         env:
           SCREENSHOT_EXTENSION_INTEGRATION: '1'

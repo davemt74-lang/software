@@ -12,6 +12,7 @@ const errors = [];
 const subject = 'Bridge repair <img src=x onerror=alert(1)>';
 const job = {run_id:27,kind:'topic',subject,state:'queued'};
 let specialist = job;
+let concurrent = null;
 let wrongBinding = false;
 let delayed;
 let denied = false;
@@ -32,12 +33,14 @@ await page.route('**/api/**', async route => {
     assert.equal(request.postData(),null);
     assert.equal(request.headers()['x-vp3-working-attention'],binding);
     assert.equal(url.searchParams.get('agent_id'),'7');
+    assert.equal(url.searchParams.get('view'),'assignments');
     const conversationId = Number(url.searchParams.get('conversation_id'));
     assert.ok([42,43].includes(conversationId));
     requests.push(conversationId);
     const json = {ok:true,owner_user_id:1,agent_id:7,conversation_id:conversationId,
       working_attention_binding:wrongBinding?'other-session':binding,
-      specialist:conversationId===42?specialist:null};
+      specialist:conversationId===42?specialist:null,
+      ...(concurrent ? {specialists:conversationId===42?concurrent:[]} : {})};
     if (denied) return route.fulfill({status:403,json:{ok:false}});
     if (delayed && conversationId===42) {
       const gate = delayed;
@@ -53,8 +56,8 @@ await page.route('**/api/**', async route => {
   return route.fulfill({json:{ok:true,conversation_id:payload.conversation_id,conversations:[],updates:[],messages:[]}});
 });
 
-const button = page.getByRole('button',{name:'Research Specialist',exact:true});
-const panel = page.locator('[data-chat-specialist-panel="research"]');
+const button = page.locator('[data-chat-specialist="research:27"]:not([hidden])');
+const panel = page.locator('[data-chat-specialist-panel="research:27"]');
 const inline = page.locator('.vp3-chat-research-specialist-status');
 const progress = page.getByRole('button',{name:'View research progress'});
 const refresh = () => page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
@@ -89,6 +92,11 @@ try {
   assert.equal(await panel.locator('.vp3-chat-specialist-title').textContent(),subject);
   await panel.getByText('Topic research',{exact:true}).waitFor();
 
+  concurrent = [running(), {...running(),run_id:28,subject:'Second research assignment'}];
+  await refresh();
+  await page.locator('[data-chat-specialist="research:28"][data-chat-specialist-type="research"]').waitFor();
+  assert.equal(await page.locator('[data-chat-specialist-type="research"]:not([hidden])').count(),2);
+
   await page.setViewportSize({width:390,height:780});
   await inline.waitFor();
   assert.match(await inline.textContent(),/Research Specialist · Researching public sources/);
@@ -99,10 +107,25 @@ try {
   await panel.getByText('Researching public sources',{exact:true}).waitFor();
   assert.equal(await page.locator('#chatThread .message').count(),0,'Progress stays outside saved message history');
 
+  concurrent = [{...job,state:'completed',message_id:62,expires_at:new Date(Date.now()+60000).toISOString()}];
+  await page.evaluate(() => {
+    const row=document.createElement('div');
+    row.dataset.chatMessageId='62';
+    row.dataset.chatConversationId='42';
+    row.scrollIntoView=()=>{ row.dataset.resultOpened='1'; };
+    document.getElementById('chatThread').append(row);
+  });
+  await refresh();
+  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot({includeResults:true}).some(item=>item.key==='research:27'&&item.state==='completed'&&item.canView));
+  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.view('research:27')),true);
+  assert.equal(await page.locator('[data-chat-message-id="62"]').getAttribute('data-result-opened'),'1');
+
+  concurrent = null;
   specialist = null;
   await refresh();
   await inline.waitFor({state:'hidden'});
   await panel.waitFor({state:'detached'});
+  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot({includeResults:true}).length===0);
   specialist = {...job,state:'failed'};
   await page.clock.fastForward(12500);
   await inline.waitFor();

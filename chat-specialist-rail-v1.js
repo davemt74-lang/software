@@ -4,6 +4,9 @@
 
   const entries = new Map();
   const compact = window.matchMedia('(max-width: 760px)');
+  const drawer = window.matchMedia('(max-width: 820px)');
+  const activeStates = new Set(['queued','running','paused']);
+  const assignmentStates = new Set([...activeStates,'ready','completed','failed','stopped']);
   const icons = {
     'image-generator':'M4 4h16v16H4z M4 16l5-5 4 4 2-2 5 5 M15 8h.01',
     'email':'M3 6h18v12H3z M3 7l9 6 9-6',
@@ -12,6 +15,7 @@
     'coding':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
     'research':'M10 3a7 7 0 1 0 0 14 7 7 0 1 0 0-14 M15 15l5 5',
     'brainstorm':'M9 18h6 M10 21h4 M8 14a6 6 0 1 1 8 0l-1 2H9z',
+    'mission':'M4 6h16v14H4z M8 6V3h8v3M4 12h16M10 12v3h4v-3',
     generic:'M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M5.6 18.4l2.1-2.1 M16.3 7.7l2.1-2.1'
   };
   let opened = null;
@@ -50,8 +54,9 @@
   }
 
   function dock() {
-    if (!entries.size || !document.body) return false;
-    const rail = compact.matches ? null : document.getElementById('sfOnlineRailV109');
+    const mobileDrawer = drawer.matches && document.querySelector('[data-chat-mobile-specialists]');
+    const hasDesktopWork = [...entries.values()].some(entry => entry.desktop);
+    const rail = compact.matches || mobileDrawer || !hasDesktopWork ? null : document.getElementById('sfOnlineRailV109');
     if (!rail || rail.hidden) {
       const keepPanel = opened && (compact.matches || !host.contains(opened.trigger));
       const focused = host.contains(document.activeElement) || (!keepPanel && opened?.panel.contains(document.activeElement));
@@ -147,25 +152,32 @@
   // Producers publish only verified active work and remove it on completion or scope changes.
   // A supplied lease or freshness deadline also retires the indicator and panel automatically.
   function update(key, options = {}) {
-    if (suspended || privateContext() || typeof key !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(key) || !document.body) return;
+    if (suspended || privateContext() || typeof key !== 'string' || !/^[a-z][a-z0-9-]{0,47}(?::[a-z0-9][a-z0-9-]{0,63})?$/.test(key) || !document.body) return;
     const expiresAt = Number.isSafeInteger(options.expiresAt) ? options.expiresAt : 0;
     if (expiresAt && expiresAt <= Date.now()) { remove(key); return; }
+    const type = Object.hasOwn(icons,options.type) ? options.type : key.split(':',1)[0];
     let entry = entries.get(key);
     if (!entry) {
       const button = makeButton();
       const panelId = 'vp3-chat-specialist-panel-' + key;
       button.dataset.chatSpecialist = key;
+      button.dataset.chatSpecialistType = type;
       button.className = 'vp3-chat-worker-indicator';
       button.setAttribute('aria-controls',panelId);
       button.setAttribute('aria-expanded','false');
       button.setAttribute('aria-haspopup','dialog');
-      button.append(makeIcon(key));
+      button.append(makeIcon(type));
       entry = {key,button,panelId};
       button.addEventListener('click', () => open(key,button));
       if (!entries.size) observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
       entries.set(key,entry);
       host.append(button);
     }
+    entry.state = assignmentStates.has(options.state) ? options.state : 'running';
+    entry.desktop = options.desktop !== false && activeStates.has(entry.state);
+    entry.inline = options.inline !== false;
+    entry.button.hidden = !entry.desktop;
+    if (opened?.entry === entry && !activeStates.has(entry.state)) closePanel(true);
     entry.label = String(options.label || 'Specialist');
     entry.status = String(options.status || 'Working');
     entry.title = String(options.title || '');
@@ -200,11 +212,12 @@
     if (!entries.size) {
       observer.disconnect();
       host.remove();
-    }
+    } else dock();
     if (hadFocus) ((host.isConnected && host.querySelector('button')) || document.getElementById('chatInput'))?.focus();
   }
 
   compact.addEventListener('change',dock);
+  drawer.addEventListener('change',dock);
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || event.defaultPrevented || !opened) return;
     const focusInside = opened.panel.contains(document.activeElement);
@@ -217,11 +230,12 @@
   });
   window.addEventListener('pageshow', () => { suspended = false; });
 
-  function snapshot() {
+  function snapshot({includeResults = false} = {}) {
     if (suspended || privateContext()) return [];
-    return [...entries.values()].map(entry => ({
+    return [...entries.values()].filter(entry => includeResults || activeStates.has(entry.state)).map(entry => ({
       key:entry.key,label:entry.label,status:entry.status,title:entry.title,
-      detail:entry.detail,viewLabel:entry.viewLabel,canView:Boolean(entry.onView)
+      detail:entry.detail,viewLabel:entry.viewLabel,canView:Boolean(entry.onView),
+      state:entry.state,inline:entry.inline
     }));
   }
 

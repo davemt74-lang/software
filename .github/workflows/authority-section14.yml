@@ -178,7 +178,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-save --ignore-scripts playwright@1.62.1
-      - run: npx playwright install --with-deps chromium
+      - run: bash tools/install-ci-chromium.sh
       - name: Profile owner thread selection, drafts and refresh
         run: node tests/profile-owner-threads-pa1-browser.mjs
       - name: Profile checkout review, retry and accurate status

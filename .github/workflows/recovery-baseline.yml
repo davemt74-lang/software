@@ -284,7 +284,7 @@ jobs:
       - name: Install Chromium for the shipped Chat tools
         run: |
           npm install --no-save --ignore-scripts playwright@1.62.1
-          npx playwright install --with-deps chromium
+          bash tools/install-ci-chromium.sh
       - name: Test pairing, the installed agent name and disconnect in Chat
         run: node tests/connected-sites-browser.mjs
 

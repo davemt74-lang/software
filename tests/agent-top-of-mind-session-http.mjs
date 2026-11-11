@@ -89,6 +89,10 @@ try{
   assert.equal(research.status,200);assert.equal(research.headers.get('cache-control'),'no-store');
   assert.deepEqual(await research.json(),{ok:true,working_attention_binding:session.binding,
     owner_user_id:1,agent_id:7,conversation_id:11,specialist:null});
+  const assignments=await fetch(exactResearch+'&view=assignments',{headers,signal:AbortSignal.timeout(2000)});
+  assert.equal(assignments.status,200);
+  assert.deepEqual(await assignments.json(),{ok:true,working_attention_binding:session.binding,
+    owner_user_id:1,agent_id:7,conversation_id:11,specialist:null,specialists:[]});
   assert.equal(existsSync(gate+'.release'),false);
   writeFileSync(gate+'.release','1');
   const brain=await held;held=null;assert.equal(brain.status,200);

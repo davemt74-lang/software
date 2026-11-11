@@ -4142,9 +4142,6 @@
       applyInitiativeFollowthroughV1(data.initiative_followthrough);
       bindInitiativeActionV1(reply,data.initiative_action,data.initiative_followthrough);
       bindMeetingActionV1(reply,data.meeting_action);
-      if (data.canvas_media?.generation_ids?.length) {
-        reply.querySelector('.vp3-canvas-media')?.setAttribute('data-specialist-launch', 'true');
-      }
       if (/^\/initiative (?:on|off|screen on|screen off)$/i.test(request.message.trim())) {
         window.dispatchEvent(new Event('vp3:initiative-setting-changed'));
       }

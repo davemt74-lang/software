@@ -7,7 +7,7 @@ const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CH
 const page=await browser.newPage({viewport:{width:1280,height:800}}),calls=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
 const mid='11111111-1111-4111-8111-111111111111',tid='22222222-2222-4222-8222-222222222222';
 const bad='<img src=x onerror=alert(1)>';
-let mission={id:mid,objective:'Review '+bad,status:'running',execution_target:'cloud',tools_enabled:false,authority_current:true,progress:{state:'running',checked_at:'2030-01-01T00:00:00Z',completed_workers:0,total_workers:1},tasks:[{id:tid,title:'Researcher '+bad,role:'researcher',status:'running',activity:{stage:'Choosing a read',last_activity_at:'2030-01-01 00:00:00'}}]};
+let mission={id:mid,objective:'Review '+bad,status:'running',execution_target:'cloud',tools_enabled:false,authority_current:true,chat_task:{draft:{thread_id:77}},progress:{state:'running',checked_at:'2030-01-01T00:00:00Z',completed_workers:0,total_workers:1},tasks:[{id:tid,title:'Researcher '+bad,role:'researcher',status:'running',activity:{stage:'Choosing a read',last_activity_at:'2030-01-01 00:00:00'}}]};
 let notices={items:[{id:4,mission_id:mid,title:'Review required '+bad,level:'action_required',created_at:'2030-01-01 00:00:00',read_at:null}],unread:1};
 let disconnected=false,blocked=false,release=null,gate=null,feeds=0;
 const html='<div class="topbar"><div class="top-actions"></div></div><div class="chat-topbar-actions"><div id="chatNotificationMenu"><button id="chatNotificationButton">Notifications</button></div><div id="chatProfileMenu"></div></div><div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput"></textarea><button type="submit">Send</button></form></div><div id="chatMessages"></div><div id="conversationList"></div>';
@@ -30,11 +30,13 @@ await page.route('**/api/**',async r=>{
 });
 try{
  await page.goto('http://a5c8.test/');
- await page.evaluate(()=>{window.VP3_AGENT_TEAMS_A3={endpoint:'/api/missions',csrf:'fixture'};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>77};window.HomeServerAgentRouting={getActiveConversationId:()=> 'a'.repeat(32),getSelectedAgentId:()=>7};window.STONEFELLOW_NOTIFICATION_DRAWER={endpoint:'/api/notifications-fixture',csrf:'fixture'};window.VP3_COGNITIVE_PRESENTATION_V510={ownsAttention:true,ownsBrainPresentation:true};window.confirm=()=>false;});
+ await page.evaluate(()=>{window.VP3_AGENT_TEAMS_A3={endpoint:'/api/missions',csrf:'fixture'};window.currentMissionChat=77;window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentMissionChat};window.HomeServerAgentRouting={getActiveConversationId:()=> 'a'.repeat(32),getSelectedAgentId:()=>7};window.STONEFELLOW_NOTIFICATION_DRAWER={endpoint:'/api/notifications-fixture',csrf:'fixture'};window.VP3_COGNITIVE_PRESENTATION_V510={ownsAttention:true,ownsBrainPresentation:true};window.confirm=()=>false;});
  await page.evaluate(()=>{
   window.VP3ParticipantContinuity={selectedContext:()=>window.participant};
   window.missionSnapshots=0;
   window.VP3AgentOrb={setJobs(source,jobs){if(source==='mission'){window.missionJobs=jobs;window.missionSnapshots++;}}};
+  window.missionSpecialists=new Map();
+  window.VP3ChatSpecialists={update:(key,assignment)=>window.missionSpecialists.set(key,assignment),remove:key=>window.missionSpecialists.delete(key)};
  });
  const leaseExpiresAt=Date.now()+10000;
  mission.tasks[0].active_lease_expires_at=leaseExpiresAt;
@@ -42,16 +44,26 @@ try{
  await page.addScriptTag({content:script});
  await page.waitForFunction(()=>document.querySelector('.vp3-mission-live-card')?.dataset.progressState==='running');
  assert.deepEqual(await page.evaluate(()=>window.missionJobs),[{id:'mission:'+mid+':'+tid,expiresAt:leaseExpiresAt}]);
+ const specialist=await page.evaluate(key=>{const {onView,...assignment}=window.missionSpecialists.get(key);return {...assignment,canView:typeof onView==='function'};},'mission:'+tid);
+ assert.deepEqual(specialist,{type:'mission',state:'running',label:'Researcher '+bad,title:'Review '+bad,status:'Choosing a read',
+  expiresAt:leaseExpiresAt,viewLabel:'Open Mission',desktop:false,inline:true,canView:true});
  mission.tasks[0].active_lease_expires_at=Date.now()-1;
  await page.evaluate(()=>window.dispatchEvent(new Event('online')));
  await page.waitForFunction(()=>window.missionJobs.length===0);
+ assert.equal(await page.evaluate(()=>window.missionSpecialists.size),0,'Expired Mission lease retires its specialist row');
  assert.equal(await page.locator('.vp3-mission-live-card').getAttribute('data-progress-state'),'running','Expired lease suppresses only the Orb signal');
  mission.tasks[0].active_lease_expires_at=Date.now()+10000;
  await page.evaluate(()=>window.dispatchEvent(new Event('online')));
  await page.waitForFunction(()=>window.missionJobs.length===1);
+ const switched=await page.evaluate(()=>{const before=window.missionSnapshots;window.currentMissionChat=78;window.dispatchEvent(new Event('vp3:chat-conversation-changed'));window.dispatchEvent(new Event('online'));return before;});
+ await page.waitForFunction(before=>window.missionSnapshots>=before+2,switched);
+ assert.equal(await page.evaluate(()=>window.missionSpecialists.size),0,'Owner-wide Mission feed does not expose another Chat’s specialist row');
+ await page.evaluate(()=>{window.currentMissionChat=77;window.dispatchEvent(new Event('vp3:chat-conversation-changed'));window.dispatchEvent(new Event('online'));});
+ await page.waitForFunction(()=>window.missionSpecialists.size===1);
  const participantBaseline=await page.evaluate(()=>{const before=window.missionSnapshots;window.participant={participant_id:'selected'};window.dispatchEvent(new Event('vp3:participant-task-context'));window.dispatchEvent(new Event('online'));return before;});
  await page.waitForFunction(before=>window.missionSnapshots>=before+2,participantBaseline);
  assert.deepEqual(await page.evaluate(()=>window.missionJobs),[],'Participant context clears and suppresses Mission snapshots');
+ assert.equal(await page.evaluate(()=>window.missionSpecialists.size),0,'Participant context clears the shared specialist row');
  await page.evaluate(()=>{window.participant=null;});
  assert.match(await page.locator('.vp3-mission-live-summary').textContent(),/Working.*Last activity/s);
  assert.equal(await page.locator('.vp3-mission-live-summary img').count(),0);

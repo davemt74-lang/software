@@ -65,8 +65,8 @@ async function boot(withOrb=true){
  }
 }
 let checks=0;async function check(label,fn){await fn();checks++;console.log('PASS '+label);}
-const specialist = page.locator('[data-chat-specialist="image-generator"]');
-const panel = page.locator('[data-chat-specialist-panel="image-generator"]');
+const specialist = page.locator('[data-chat-specialist][data-chat-specialist-type="image-generator"]');
+const panel = page.getByRole('dialog',{name:'Image Generator',exact:true});
 const readyMessage = page.getByText('Image Generator finished. Your image is ready.', {exact:true});
 const cardFor = generationId => page.locator(`#chatThread .message.assistant .vp3-canvas-media-card[data-generation-id="${generationId}"]`);
 const tickCount = generationId => calls.filter(call => call.action==='tick' && call.generation_id===generationId).length;
@@ -252,6 +252,8 @@ try{
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
   await cardFor(first).getByText('Generating image…',{exact:true}).waitFor();
   await cardFor(second).getByText('Generating image…',{exact:true}).waitFor();
+  await page.waitForFunction(ids => ids.every(id => window.VP3ChatSpecialists.snapshot()
+    .some(item => item.key===`image-generator:${id}` && item.status==='Generating image…')),[first,second]);
   assert.deepEqual(await page.evaluate(()=>window.orbJobs),[]);
   await page.evaluate(()=>{window.mountFixtureOrb();window.dispatchEvent(new Event('vp3:agent-orb-ready'));});
   await expectOrbJobs(first,second);

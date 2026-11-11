@@ -30,7 +30,7 @@ function e($value){return htmlspecialchars((string)$value,ENT_QUOTES,'UTF-8');}
 function csrf_token(){return 'layout-fixture';}
 function db(){return null;}
 function notification_recent($user,$limit){return [];}
-function notification_unread_count($user){return 0;}
+function notification_unread_count($user){return 31;}
 function member_agent_voice_enabled($user){return false;}
 function member_agent_voice_toggle_html($user){return '';}
 function user_avatar_url($user){return '';}
@@ -49,17 +49,21 @@ $mainSidebarHistoryRows=[['id'=>42,'title'=>'Workshop research','updated_at'=>'2
  ['id'=>43,'title'=>'Ideas for the next project','updated_at'=>'2026-11-09 14:00:00']];
 ob_start();require $root.'/includes/main-sidebar.php';$sidebar=ob_get_clean();
 $memberHeaderTitle='Agent Chat';$memberHeaderSubtitle='Longfellow';$memberHeaderActiveKey='chat';$memberHeaderShowAgentOrb=false;
+$memberHeaderActions='<button type="button" class="chat-transcription-canvas-button" aria-label="Open Transcription Intelligence"></button>'
+ . '<button type="button" class="chat-profile-activity-button" aria-label="Open Profile Activity"><em>28</em></button>';
 ob_start();require $root.'/includes/member-header.php';$header=ob_get_clean();
 echo json_encode(['sidebar'=>$sidebar,'header'=>$header],JSON_THROW_ON_ERROR);
 `);
 const shell=JSON.parse(execFileSync(process.env.VP3_PHP_BINARY||'php',[fixture,root],{encoding:'utf8'}));
 const inertScripts=html=>html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,'');
 const styles=['chat-cognitive-presentation-v510.css','chat-tools.css','chat-specialist-rail-v1.css','agent-orb.css',
-  'agent-orb-particles.css','agent-activity-hub-v1.css','agent-top-of-mind-v1.css'];
+  'agent-orb-particles.css','agent-activity-hub-v1.css','agent-top-of-mind-v1.css','chat-transcription-canvas.css',
+  'profile-activity-chat.css','reward-tray-v110.css'];
 const scripts=['chat.js','chat-tools.js','chat-agent-identity-v236.js','agent-ui-v034.js','coding-canvas-sidebar-v1.js',
-  'agent-eyes-core.js','chat-specialist-rail-v1.js','agent-activity-hub-v1.js','agent-top-of-mind-v1.js',
-  'agent-orb.js','agent-orb-particles.js','chat-cognitive-presentation-v510.js'];
+  'agent-eyes-core.js','chat-specialist-rail-v1.js','chat-mobile-specialists-v1.js','agent-activity-hub-v1.js','agent-top-of-mind-v1.js',
+  'agent-orb.js','agent-orb-particles.js','chat-cognitive-presentation-v510.js','reward-tray-v110.js'];
 const origin='https://clean-chat.test';
+const rewardCounts={inbox:2,sent:3,claimed:4};
 const messages=[
   {id:1,role:'user',message:'Can you help organize the research for the workshop?'},
   {id:2,role:'assistant',message:'Yes. We can keep the sources, notes, and next steps together. What would you like to start with?'},
@@ -92,6 +96,11 @@ try{
         {id:42,title:'Workshop research',updated_at:'2026-11-10 08:00:00'},
         {id:43,title:'Ideas for the next project',updated_at:'2026-11-09 14:00:00'}],items:[],updates:[]});
     }
+    if(pathname==='/api/reward-tray-v110.php'){
+      assert.equal(request.method(),'GET');
+      assert.equal(url.searchParams.get('action'),'state');
+      return reply({ok:true,tray:{counts:rewardCounts},contacts:[]});
+    }
     if(pathname==='/api/coding-canvas-settings-v1.php'&&unavailable)return reply({ok:true,state:{funding:'system',selected:null,
       default:null,options:[],unavailable:unavailableReason},balance:{unlimited:true}});
     if(pathname==='/api/coding-canvas-settings-v1.php')return reply({ok:true,state:{funding:'system',selected:null,
@@ -115,6 +124,7 @@ try{
       window.STONEFELLOW_AGENT_IDENTITY_V236={displayName:'Longfellow',systemName:'Longfellow',showOnboarding:false,agentId:7};
       window.VP3_COGNITIVE_PRESENTATION_V510={endpoint:'/api/presentation',agentId:7,csrf:'layout-fixture',workingAttentionBinding:'layout-binding',liveContext:false,initiativeRuntime:false};
       window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,shape:'orbit',workingAttentionBinding:'layout-binding',activityEndpoint:'/api/hub'};
+      window.VP3_REWARD_TRAY_V110={endpoint:'/api/reward-tray-v110.php',csrf:'layout-fixture'};
       window.VP3ParticipantContinuity={selectedContext:()=>null};
       window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',isMainChat:()=>true,state:()=>({state:'idle'}),
         conversationRef:()=>({id:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||42,agent:7}),focusChat:()=>document.getElementById('chatInput').focus(),stop:()=>{}};
@@ -174,6 +184,104 @@ try{
     await page.evaluate(()=>window.VP3AgentActivityHub.close(false));
     console.log('PASS integrated Chat '+viewport.width+(limited?' unavailable/Admin':' configured'));
   }
+
+  unavailable=false;
+  await page.setViewportSize({width:320,height:660});
+  await page.goto(origin+'/chat.php?agent=7&conversation_id=42');
+  await page.getByText(messages[3].message,{exact:true}).waitFor();
+  const menu=page.locator('#openChatSidebar');
+  const header=page.locator('.chat-topbar');
+  const tray=header.locator(':scope > #rewardTrayTabs');
+  await tray.waitFor();
+  await page.waitForFunction(() => document.querySelector('[data-reward-count="claimed"]')?.textContent==='4');
+  for(const [key,count] of Object.entries(rewardCounts)){
+    const link=page.locator(`[data-reward-tray-tab="${key}"]`);
+    assert.equal(await link.count(),1,'Only one control should render for '+key);
+    assert.equal(await link.getAttribute('href'),`/reward-${key}.php`);
+    assert.equal(await link.locator('[data-reward-count]').textContent(),String(count));
+    assert.equal(await tray.getByRole('link',{name:new RegExp(key,'i')}).isVisible(),true);
+  }
+  for(const width of [320,390]){
+    await page.setViewportSize({width,height:740});
+    const headerBox=await header.boundingBox(), menuBox=await menu.boundingBox();
+    const actionsBox=await header.locator('.chat-topbar-actions').boundingBox(), trayBox=await tray.boundingBox();
+    for(const box of [menuBox,actionsBox,trayBox]){
+      assert.ok(box.x>=headerBox.x-1&&box.x+box.width<=headerBox.x+headerBox.width+1,'Mobile controls fit the header at '+width);
+      assert.ok(Math.abs(box.y+box.height/2-menuBox.y-menuBox.height/2)<=3,'Mobile controls sit on the same header row at '+width);
+    }
+    assert.ok(trayBox.x>=menuBox.x+menuBox.width-1&&actionsBox.x>=trayBox.x+trayBox.width-1,'Mobile header controls have room to tap at '+width);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  }
+
+  const dot=menu.locator('[data-chat-specialist-dot]');
+  const logoRow=page.locator('#chatSidebar .chat-sidebar-top');
+  const home=logoRow.locator('[data-chat-mobile-tab="home"]');
+  const specialists=logoRow.locator('[data-chat-mobile-tab="specialists"]');
+  const panel=page.locator('[data-chat-mobile-specialists]');
+  const first=panel.locator('[data-chat-mobile-specialist="research:41"]');
+  const second=panel.locator('[data-chat-mobile-specialist="research:42"]');
+  const notice=key=>page.locator(`[data-chat-specialist-notice="${key}"]`);
+  const publish=jobs=>page.evaluate(jobs=>{
+    for(const {id,title,state,status} of jobs){
+      window.VP3ChatSpecialists.update('research:'+id,{type:'research',label:'Research',title,state,status,
+        expiresAt:Date.now()+60000,onView:()=>{document.body.dataset.openedSpecialistResult=String(id);}});
+    }
+  },jobs);
+  const jobs=[
+    {id:41,title:'Compare supplier quotes',state:'running',status:'Checking public sources'},
+    {id:42,title:'Check shipping terms',state:'running',status:'Reading supplier pages'}
+  ];
+  assert.equal(await dot.isVisible(),false);
+  await publish(jobs);
+  await dot.waitFor();
+  assert.match(await menu.getAttribute('aria-label'),/specialists working/i);
+  assert.notEqual(await dot.evaluate(element=>getComputedStyle(element).animationName),'none');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await dot.evaluate(element=>getComputedStyle(element).animationName),'none');
+  assert.equal(await dot.isVisible(),true,'Reduced motion keeps a steady activity indicator');
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await notice('research:41').waitFor();
+  await notice('research:42').waitFor();
+  assert.equal(await notice('research:41').count(),1);
+
+  await menu.click();
+  await home.waitFor();
+  await specialists.waitFor();
+  assert.equal(await home.getAttribute('aria-selected'),'true');
+  assert.equal(await home.locator('svg').count(),1);
+  assert.equal(await specialists.locator('svg').count(),1);
+  await dot.waitFor({state:'hidden'});
+  await specialists.click();
+  await panel.waitFor();
+  assert.equal(await specialists.getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#chatHistory').isVisible(),false);
+  await first.getByText(jobs[0].title,{exact:true}).waitFor();
+  await second.getByText(jobs[1].title,{exact:true}).waitFor();
+  await specialists.press('ArrowLeft');
+  await panel.waitFor({state:'hidden'});
+  await page.locator('#chatHistory').waitFor();
+  assert.equal(await home.getAttribute('aria-selected'),'true');
+  await page.locator('#closeChatSidebar').click();
+  await dot.waitFor();
+
+  await publish([{...jobs[0],state:'ready',status:'Comparison ready'}]);
+  await notice('research:41').getByText('Comparison ready',{exact:false}).waitFor();
+  assert.equal(await notice('research:41').count(),1,'A completed assignment updates its notice');
+  assert.equal(await dot.isVisible(),true,'A second running assignment keeps the dot visible');
+  await notice('research:41').getByRole('button',{name:/view/i}).click();
+  assert.equal(await page.locator('body').getAttribute('data-opened-specialist-result'),'41');
+  await page.evaluate(()=>window.VP3ChatSpecialists.remove('research:42'));
+  await dot.waitFor({state:'hidden'});
+  await notice('research:42').waitFor({state:'hidden'});
+  await notice('research:41').waitFor();
+
+  await page.evaluate(()=>{
+    window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:5})};
+    window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+  });
+  await notice('research:41').waitFor({state:'hidden'});
+  console.log('PASS mobile logo tabs, compact header counts, concurrent specialist rows, status dot and in-Chat result notice');
+
   assert.ok(presentationReads.length>=3);assert.deepEqual(errors,[]);
   console.log('CHAT_CLEAN_LAYOUT=PASS shipped sidebar/header/conversation/composer desktop1440+1024/mobile390; no automatic dashboard/digest; draft and shared Top of Mind preserved');
 }finally{await browser.close();fs.rmSync(temp,{recursive:true,force:true});}

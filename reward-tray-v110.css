@@ -8,8 +8,7 @@
 .reward-tray-count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#eef0f3;color:#4b5563;font-size:10px;letter-spacing:0}
 .reward-tray-tab.active .reward-tray-count{background:#111827;color:#fff}
 .reward-tray-tab{text-decoration:none}
-.reward-tray-subheader{display:none;background:#fff;border-bottom:1px solid #e5e7eb;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}
-.reward-tray-subheader::-webkit-scrollbar{display:none}
+.reward-tray-icon{display:none}
 .reward-page-main{min-height:0}
 .reward-page-canvas{overflow-y:auto}
 .reward-tray-canvas{min-height:100%;padding:24px 28px 120px;background:#f7f7f8}
@@ -55,19 +54,32 @@
 .reward-claim-success{padding:12px;border-radius:9px;background:#ecfdf3;color:#146c43;font-size:12px;font-weight:700}
 body.reward-tray-open .chat-composer-shell{display:none!important}
 @media(max-width:760px){
-  /* Keep the live Reward navigation inside the header on narrow screens. */
-  body.reward-tray-ready .chat-main{grid-template-rows:auto minmax(0,1fr) auto}
-  body.reward-page .reward-page-main{grid-template-rows:auto minmax(0,1fr)}
-  body.reward-tray-ready .chat-topbar{height:auto;min-height:58px;flex:0 0 auto;flex-wrap:wrap;gap:0 10px;padding:8px 10px 0}
-  body.reward-tray-ready .chat-topbar>.reward-tray-tabs-desktop{display:flex!important;order:99;flex:0 0 100%;width:100%;min-width:0;margin-top:6px;overflow:visible}
-  body.reward-tray-ready .chat-topbar>.reward-tray-tabs-desktop .reward-tray-tab{flex:1 1 0;min-width:0;min-height:44px;padding:0 4px;gap:4px;letter-spacing:.02em}
-  .reward-tray-subheader{display:none!important}
+  body.reward-tray-ready:not(.reward-page) .chat-topbar{gap:6px;padding-inline:8px}
+  body.reward-tray-ready:not(.reward-page) .chat-topbar-spacer{display:none}
+  body.reward-tray-ready:not(.reward-page) .chat-topbar-actions{gap:6px}
+  body.reward-tray-ready:not(.reward-page) .reward-tray-tab{padding:0 5px;gap:4px;letter-spacing:.02em}
+  body.reward-page .reward-page-main{grid-template-rows:auto minmax(0,1fr)!important}
+  body.reward-page .chat-topbar{height:auto;min-height:58px;flex:0 0 auto;flex-wrap:wrap;gap:0 10px;padding:8px 10px 0}
+  body.reward-page .chat-topbar>.reward-tray-tabs{order:1;flex:0 0 100%;margin-top:6px}
+  body.reward-page .reward-tray-tab{flex:1 1 0;min-width:0;padding:0 4px}
   .reward-tray-canvas{padding:18px 14px 90px}
   .reward-tray-list{grid-template-columns:1fr}
   .reward-claim-layout{grid-template-columns:1fr}
   .reward-claim-qr{justify-self:center}
 }
-@media(max-width:420px){
-  .reward-tray-tab{flex:1 0 88px;font-size:10px;padding:0 8px}
-  .reward-tray-count{min-width:19px;height:19px;padding:0 5px}
+@media(max-width:480px){
+  body.reward-tray-ready:not(.reward-page) .chat-topbar{gap:4px}
+  body.reward-tray-ready:not(.reward-page) .chat-topbar-actions{gap:4px}
+  body.reward-tray-ready:not(.reward-page) .chat-topbar-title{display:none}
+  body.reward-tray-ready:not(.reward-page) .reward-tray-tabs{gap:0;overflow:visible}
+  body.reward-tray-ready:not(.reward-page) .reward-tray-tab{
+    position:relative;
+    flex:0 0 34px;
+    flex-direction:column;
+    gap:2px;
+    padding:0;
+  }
+  .reward-tray-icon{display:block;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .reward-tray-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .reward-tray-count{display:block;min-width:15px;max-width:100%;height:14px;padding:0 3px;overflow:hidden;font-size:9px;line-height:14px;text-align:center;text-overflow:ellipsis}
 }

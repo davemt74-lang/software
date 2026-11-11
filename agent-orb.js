@@ -216,7 +216,7 @@
         }
         return false;
       }
-      const announceSpecialists=()=>parent.postMessage({channel:'vp3-orb',kind:'activity-specialists',ownerKey:adapter.ownerKey,conversation:adapter.conversationRef?.(),items:window.VP3ChatSpecialists?.snapshot?.()||[],activity_context:activityContext()},origin);
+      const announceSpecialists=()=>parent.postMessage({channel:'vp3-orb',kind:'activity-specialists',ownerKey:adapter.ownerKey,conversation:adapter.conversationRef?.(),items:(window.VP3ChatSpecialists?.snapshot?.()||[]).slice(0,12),activity_context:activityContext()},origin);
       window.addEventListener('vp3:chat-specialists-changed',announceSpecialists);
       window.VP3AgentOrb={
         state,isWorking:()=>working,
