@@ -784,7 +784,17 @@
   async function attachContext(payload){
     const speaker=window.VP3VoiceGuard?.takeContext(payload.message)||(!window.VP3VoiceGuard?.wasVoiceTurn?.(payload.message)?window.VP3ParticipantContinuity?.selectedContext():null);
     let context=payload.agent_context;
+    const transcriptKeys=['transcript_session_id','transcript_selected_text','transcript_source_selected','transcript_source_cleared'];
+    const initialTranscript=transcriptKeys.some(key=>Object.hasOwn(context||{},key))?context:AgentContext?.snapshot?.();
     if(AgentContext)try{context=await AgentContext.refresh(false);}catch(error){context=AgentContext.snapshot?.()||{};}
+    // A background context refresh must not replace the source selected when this turn was sent.
+    if(context){
+      context={...context};
+      for(const key of transcriptKeys){
+        if(Object.hasOwn(initialTranscript||{},key))context[key]=initialTranscript[key];
+        else delete context[key];
+      }
+    }
     const screenContext=window.VP3AgentScreenShare?.contextForPrompt?.(payload.message);
     if(screenContext){
       context={...context};

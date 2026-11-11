@@ -19,11 +19,107 @@ let canvas=null,backdrop=null,button=null,badge=null,observer=null,canvasOpen=fa
 let recordings=[],sessions=[],currentSession=null,currentRecording=null,currentIntelligence=null,currentView='home';
 let seen=new Set(),seenLoaded=false,loadToken=0;
 const intelligenceCache=new Map();
+const pageIdentity=chatIdentity();
+const clearStorageKey='stonefellow:chat-transcript-clears:v1';
+let sourceScope=null,activeSource=null,sourceCleared=false,sourceFence=0,chatSourceChip=null;
 
 const proof=window.STONEFELLOW_TRANSCRIPTION_CANVAS_V308={
   build:BUILD,loaded:true,opens:0,newRecordingOpens:0,audioErrors:0,intelligenceLoads:0,lastError:'',
 };
 window.STONEFELLOW_TRANSCRIPTION_CANVAS_V243=proof;
+
+function chatIdentity(){
+  const chat=window.STONEFELLOW_CHAT;
+  const owner=Number(chat?.userId||0),agent=Number(chat?.agentId||0);
+  if(!Number.isSafeInteger(owner)||owner<1||!Number.isSafeInteger(agent)||agent<0||!chat?.workingAttentionBinding||!chat?.csrf||!chat?.endpoint)return '';
+  return JSON.stringify([owner,agent,String(chat.workingAttentionBinding),String(chat.csrf),String(chat.endpoint)]);
+}
+function pageIsCurrent(){return !!pageIdentity&&chatIdentity()===pageIdentity;}
+function chatRuntime(){return window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;}
+function chatScope(){
+  if(!pageIsCurrent()||window.VP3ParticipantContinuity?.selectedContext?.())return null;
+  const chat=chatRuntime();
+  if(!chat||Number(chat.agentId?.()||0)!==Number(window.STONEFELLOW_CHAT.agentId||0))return null;
+  const conversationId=Number(chat.conversationId?.());
+  return Number.isSafeInteger(conversationId)&&conversationId>=0?conversationId:null;
+}
+function sourceScopeIsCurrent(scope){return scope!==null&&sourceScope===scope&&chatScope()===scope;}
+function clearReference(scope){
+  const chat=window.STONEFELLOW_CHAT;
+  return pageIsCurrent()&&scope>0?JSON.stringify([Number(chat.userId),Number(chat.agentId||0),String(chat.workingAttentionBinding),scope]):'';
+}
+function storedClears(){
+  try{const rows=JSON.parse(sessionStorage.getItem(clearStorageKey)||'[]');return Array.isArray(rows)?rows.filter(row=>typeof row==='string'&&row.length>0&&row.length<=256).slice(-12):[];}
+  catch(_error){return [];}
+}
+function rememberClear(scope,cleared){
+  const reference=clearReference(scope);if(!reference)return;
+  try{const rows=storedClears().filter(row=>row!==reference);if(cleared)rows.push(reference);sessionStorage.setItem(clearStorageKey,JSON.stringify(rows.slice(-12)));}
+  catch(_error){}
+}
+function publishSource(){
+  window.dispatchEvent(new CustomEvent('vp3:transcript-source-changed',{detail:{
+    session_id:activeSource?.session_id||0,conversation_id:sourceScope,cleared:sourceCleared,
+  }}));
+}
+function renderSourceChip(){
+  chatSourceChip?.remove();chatSourceChip=null;
+  const form=document.getElementById('chatForm');
+  if(!form||!activeSource||!sourceScopeIsCurrent(sourceScope))return;
+  const source=activeSource;
+  chatSourceChip=document.createElement('div');chatSourceChip.id='chatTranscriptSource';
+  chatSourceChip.className='chat-transcript-source';chatSourceChip.setAttribute('role','group');chatSourceChip.setAttribute('aria-label','Transcription context');
+  const label=document.createElement('span');label.textContent=`Transcription · ${source.title}`;label.title=source.title;
+  const open=document.createElement('button');open.type='button';open.textContent='Open';open.setAttribute('aria-label','Open active transcription');
+  open.addEventListener('click',()=>{if(sourceContext()?.session_id===source.session_id)void openRef(source.session_id,'');});
+  const clear=document.createElement('button');clear.type='button';clear.textContent='Clear';clear.setAttribute('aria-label','Clear transcription from Chat');
+  clear.addEventListener('click',()=>{if(sourceContext()?.session_id===source.session_id)clearSource();});
+  chatSourceChip.append(label,open,clear);form.before(chatSourceChip);
+}
+function invalidateSourceContext(){
+  const hadSource=!!activeSource||sourceCleared;
+  closeCanvas();sourceScope=null;activeSource=null;sourceCleared=false;
+  const body=canvas?.querySelector('[data-transcription-body]');
+  body?.querySelector('[data-transcription-audio]')?.pause();
+  if(body)body.innerHTML='<div class="transcription-canvas-empty">Loading transcriptions…</div>';
+  currentSession=null;currentRecording=null;currentIntelligence=null;intelligenceCache.clear();
+  if(!pageIsCurrent()){sessions=[];recordings=[];updateBadge();}
+  clearInterval(sourceFence);sourceFence=0;renderSourceChip();
+  if(hadSource)publishSource();
+}
+function beginSourceScope(){
+  const scope=chatScope();
+  if(scope===null){if(sourceScope!==null)invalidateSourceContext();return null;}
+  if(sourceScope!==null&&sourceScope!==scope)invalidateSourceContext();
+  if(sourceScope===null)sourceCleared=storedClears().includes(clearReference(scope));
+  sourceScope=scope;
+  if(!sourceFence)sourceFence=window.setInterval(()=>{if(!sourceScopeIsCurrent(sourceScope))invalidateSourceContext();},250);
+  return scope;
+}
+function activateSource(session,scope){
+  const chat=chatRuntime();
+  if(!sourceScopeIsCurrent(scope)||chat?.isReady?.()===false||chat?.isRestoring?.())return;
+  const next={session_id:sessionIdOf(session),title:sessionTitle(session).slice(0,200),revision:loadToken};
+  if(!Number.isSafeInteger(next.session_id)||next.session_id<1)return;
+  const changed=sourceCleared||activeSource?.session_id!==next.session_id||activeSource.title!==next.title;
+  activeSource=next;sourceCleared=false;rememberClear(scope,false);
+  if(changed){renderSourceChip();publishSource();}
+}
+function sourceContext(){
+  if(!sourceScopeIsCurrent(sourceScope)){
+    if(sourceScope!==null)invalidateSourceContext();
+    const scope=chatScope(),chat=chatRuntime();
+    if(!scope||chat?.isReady?.()===false||chat?.isRestoring?.()||!storedClears().includes(clearReference(scope)))return null;
+    beginSourceScope();
+  }
+  if(sourceCleared)return {session_id:0,cleared:true};
+  return activeSource?{...activeSource}:null;
+}
+function clearSource(expected=null){
+  const source=sourceContext();
+  if(!source?.session_id||expected&&(source.session_id!==expected.session_id||source.revision!==expected.revision))return false;
+  closeCanvas();activeSource=null;sourceCleared=true;rememberClear(sourceScope,true);renderSourceChip();publishSource();return true;
+}
 
 function recordingApi(){return window.STONEFELLOW_ARTIST_RECORDINGS_V198?.api||null;}
 async function waitForRecordingApi(timeout=5000){
@@ -119,14 +215,17 @@ function closeCanvas(){
 
 async function refreshRecordings(force=true){
   const api=await waitForRecordingApi();
+  if(!pageIsCurrent())return [];
   if(!api){recordings=[];updateBadge();return recordings;}
   const state=force?await api.refresh():api.getState();
+  if(!pageIsCurrent())return [];
   recordings=Array.isArray(state?.library)?state.library:[];updateBadge();return recordings;
 }
 async function refreshSessions(){
   const url=new URL(listeningEndpoint,location.href);url.searchParams.set('action','bootstrap');
   const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
   const data=await response.json().catch(()=>null);
+  if(!pageIsCurrent())return [];
   if(!response.ok||!data?.ok)throw new Error(clean(data?.error)||'Could not load your transcriptions.');
   sessions=asArray(data.sessions).filter(row=>sessionIdOf(row)>0);
   return sessions;
@@ -139,7 +238,6 @@ async function fetchIntelligence(sessionId,{force=false}={}){
   const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
   const data=await response.json().catch(()=>null);
   if(!response.ok||!data?.ok)throw new Error(clean(data?.error)||'Could not load transcription intelligence.');
-  intelligenceCache.set(sessionId,data);proof.intelligenceLoads++;
   return data;
 }
 function recordingsForSession(sessionId){return recordings.filter(row=>Math.max(0,Number(row?.session_id||0))===Math.max(0,Number(sessionId||0)));}
@@ -355,46 +453,51 @@ function bindAudioStatus(audio){
   const error=()=>{proof.audioErrors++;if(host)host.textContent='Recording audio could not be loaded. The transcript and intelligence remain available.';};
   audio.addEventListener('loadedmetadata',ready,{once:true});audio.addEventListener('durationchange',ready,{once:true});audio.addEventListener('error',error,{once:true});
 }
-async function selectSession(sessionId,{force=false,key='',isNew=false}={}){
+async function selectSession(sessionId,{force=false,key='',isNew=false,scope=sourceScope}={}){
   const token=++loadToken;sessionId=Math.max(0,Number(sessionId||0));
-  if(sessionId<1)return;
-  currentSession=sessions.find(row=>sessionIdOf(row)===sessionId)||currentSession;
+  if(sessionId<1||!sourceScopeIsCurrent(scope))return;
+  const session=sessions.find(row=>sessionIdOf(row)===sessionId);
+  if(!session)return;
+  currentSession=session;
   currentRecording=preferredRecording(sessionId,key);if(currentRecording)markSeen(currentRecording);
   currentIntelligence=null;currentView='home';openShell();renderWorkspace();
   try{
-    const data=await fetchIntelligence(sessionId,{force});if(token!==loadToken)return;
-    currentIntelligence=data;proof.lastError='';renderWorkspace();
+    const data=await fetchIntelligence(sessionId,{force});if(token!==loadToken||!sourceScopeIsCurrent(scope))return;
+    intelligenceCache.set(sessionId,data);proof.intelligenceLoads++;
+    currentIntelligence=data;proof.lastError='';renderWorkspace();activateSource(session,scope);
     if(isNew)proof.newRecordingOpens++;
     window.dispatchEvent(new CustomEvent('stonefellow:transcription-canvas-opened',{detail:{sessionId,key:String(key||''),isNew,view:'home'}}));
-  }catch(error){if(token!==loadToken)return;proof.lastError=String(error?.message||error);renderError(proof.lastError);}
+  }catch(error){if(token!==loadToken||!sourceScopeIsCurrent(scope))return;proof.lastError=String(error?.message||error);renderError(proof.lastError);}
 }
 async function refreshAll(){
-  const token=loadToken;
+  const token=loadToken,scope=sourceScope;
   await Promise.allSettled([refreshSessions(),refreshRecordings(true)]);
-  if(!canvasOpen||token!==loadToken)return;
+  if(!canvasOpen||token!==loadToken||!sourceScopeIsCurrent(scope))return;
   if(currentSession){const sid=sessionIdOf(currentSession);currentSession=sessions.find(row=>sessionIdOf(row)===sid)||currentSession;intelligenceCache.delete(sid);await selectSession(sid,{force:true,key:currentRecording?.key||''});}
 }
 async function openLatestSession(){
+  const scope=beginSourceScope();if(scope===null)return;
   openShell();
   const token=++loadToken;
   try{
     await Promise.all([refreshSessions(),refreshRecordings(true)]);
-    if(!canvasOpen||token!==loadToken)return;
+    if(!canvasOpen||token!==loadToken||!sourceScopeIsCurrent(scope))return;
     const target=currentSession&&sessions.some(row=>sessionIdOf(row)===sessionIdOf(currentSession))?currentSession:sessions[0];
-    if(target)await selectSession(sessionIdOf(target));else renderWorkspace();
-  }catch(error){proof.lastError=String(error?.message||error);renderError(proof.lastError);}
+    if(target)await selectSession(sessionIdOf(target),{scope});else renderWorkspace();
+  }catch(error){if(token!==loadToken||!sourceScopeIsCurrent(scope))return;proof.lastError=String(error?.message||error);renderError(proof.lastError);}
 }
 async function openRef(sessionId,key,options={}){
+  const scope=beginSourceScope();if(scope===null)return;
   openShell();
   const token=++loadToken;
   try{
     await Promise.all([refreshSessions(),refreshRecordings(true)]);
-    if(!canvasOpen||token!==loadToken)return;
+    if(!canvasOpen||token!==loadToken||!sourceScopeIsCurrent(scope))return;
     const sid=Math.max(0,Number(sessionId||0));
     const session=sessions.find(row=>sessionIdOf(row)===sid);
     if(!session)throw new Error('That transcription is no longer available.');
-    await selectSession(sid,{key,isNew:!!options.isNew});
-  }catch(error){proof.lastError=String(error?.message||error);renderError(proof.lastError);}
+    await selectSession(sid,{key,isNew:!!options.isNew,scope});
+  }catch(error){if(token!==loadToken||!sourceScopeIsCurrent(scope))return;proof.lastError=String(error?.message||error);renderError(proof.lastError);}
 }
 async function handleCanvasChange(event){
   const select=event.target.closest('[data-transcription-session-select]');
@@ -446,11 +549,23 @@ async function bootstrap(){
 window.STONEFELLOW_TRANSCRIPTION_CANVAS={
   open:async(args={})=>{if(args.sessionId)return openRef(args.sessionId,args.key||'',args);return openLatestSession();},
   close:closeCanvas,
-  selection:()=>{if(!canvasOpen||!canvas||canvas.hidden)return null;const s=window.getSelection?.();const text=s?.anchorNode&&canvas.contains(s.anchorNode)&&s?.focusNode&&canvas.contains(s.focusNode)?String(s.toString()).slice(0,6000):'';return {session_id:sessionIdOf(currentSession),selected_text:text,view:currentView};},
+  selection:()=>{if(!canvasOpen||!canvas||canvas.hidden||!currentIntelligence||!sourceScopeIsCurrent(sourceScope))return null;const s=window.getSelection?.();const text=s?.anchorNode&&canvas.contains(s.anchorNode)&&s?.focusNode&&canvas.contains(s.focusNode)?String(s.toString()).slice(0,6000):'';return {session_id:sessionIdOf(currentSession),selected_text:text,view:currentView};},
+  sourceContext,
+  clearSourceForTurn:expected=>expected?clearSource(expected):false,
   refresh:async()=>{await refreshAll();return {sessions:[...sessions],recordings:[...recordings],currentSession:currentSession?{...currentSession}:null,currentView};},
   showHome:()=>{if(currentIntelligence){currentView='home';renderWorkspace();}},
 };
 
-window.addEventListener('pagehide',()=>observer?.disconnect(),{once:true});
+window.addEventListener('stonefellow:chat-context-changing',event=>{if(!event.detail?.preserveTranscriptSource)invalidateSourceContext();});
+for(const event of ['stonefellow:chat-conversation-changed','vp3:agent-changed','vp3:participant-selection-changed','vp3:participant-task-context']){
+  window.addEventListener(event,invalidateSourceContext);
+}
+window.addEventListener('vp3:chat-conversation-bound',event=>{
+  const next=Number(event.detail?.conversation_id);
+  if(sourceScope===0&&event.detail?.previous_conversation_id===0&&next>0&&chatScope()===next){
+    sourceScope=next;if(sourceCleared)rememberClear(next,true);renderSourceChip();if(activeSource||sourceCleared)publishSource();
+  }
+});
+window.addEventListener('pagehide',()=>{observer?.disconnect();invalidateSourceContext();},{once:true});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>void bootstrap(),{once:true});else void bootstrap();
 })();

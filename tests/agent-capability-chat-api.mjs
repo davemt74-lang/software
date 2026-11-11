@@ -248,7 +248,7 @@ try{
   response=await post(endpoint,'Highlight the selected transcript quote',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:21,transcript_selected_text:'The agreed pizza price is twenty dollars.'}},{'X-Fixture-Brain-Ready':'1'});
   check(response.data?.ok===true&&response.data.tool_receipt?.capability==='transcripts.highlight'&&response.data.tool_receipt.changes_applied,'exact selected quote is retained through '+endpoint+': '+response.body);
   response=await post(endpoint,'Read the selected transcript',{...named,conversation_id:longfellowConversation,agent_context:{user_agent_id:7,transcript_session_id:22}});
-  check(response.data?.ok===true&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='failed','forged foreign selection fails closed through '+endpoint);
+  check(response.data?.ok===true&&!response.data.answer.includes('SECRET')&&response.data.tool_receipt?.status==='failed','forged foreign selection fails closed through '+endpoint+': '+response.body);
  }
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
   let n=await post(endpoint,'Load from the asteroid you saved me',named);const cid=n.data.conversation_id;
@@ -321,6 +321,41 @@ try{
   response=await post(endpoint,'Tell me about this transcription',{...named,conversation_id:longfellowConversation});
   check(response.data?.tool_receipt?.record_id===24&&response.data.tool_receipt.operation==='discuss','single catalog result supports this transcript follow-up through '+endpoint);
  }
+ const beforeSelectedSource=(await state()).reminders;
+ for(const [endpoint,input_mode,question] of [
+  ['chat-v236.php?agent=7','text','What do you think?'],
+  ['chat-stream-v121.php','voice','Any suggestions?'],
+  ['chat.php','voice','What do you think?'],
+ ]){
+  const attached=await post(endpoint,'Summarize the transcription titled jcal',{...named,input_mode});
+  const conversation_id=attached.data?.conversation_id;
+  check(attached.data?.tool_receipt?.record_id===24&&conversation_id>0,'establish a prior recording in a saved Chat through '+endpoint);
+  const selected={conversation_id,input_mode,agent_context:{...named.agent_context,transcript_session_id:21,
+   transcript_source_selected:true,transcript_selected_text:'The agreed pizza price'}};
+  const reply=await post(endpoint,question,selected);
+  check(reply.data?.tool_receipt?.operation==='discuss'&&reply.data.tool_receipt.record_id===21
+   &&reply.data.answer.includes('twenty dollars')&&/segment #1\b/.test(reply.data.answer)
+   &&!reply.data.answer.includes('project budget'),
+   'current recording selection grounds a natural follow-up instead of the prior attached source through '+endpoint+': '+reply.body);
+  const reminder=await post(endpoint,'Can you set a reminder',selected);
+  check(reminder.data?.tool_receipt?.capability==='reminders.manage'&&reminder.data.tool_receipt.status==='clarification_required',
+   'selected recording does not consume an unrelated reminder request through '+endpoint);
+  const history=await post('chat-v236.php?agent=7','',{...named,action:'load',conversation_id});
+  const saved=history.data?.messages?.find(message=>Number(message.id)===Number(reply.data.assistant_message_id));
+  const context=JSON.parse(saved?.context_json||'{}');
+  check(saved&&context.transcript_context?.session_id===21
+   &&!Object.hasOwn(context.agent_context??{},'transcript_selected_text'),
+   'saved answer binds the exact recording without archiving raw selection metadata through '+endpoint);
+  const clear=await post(endpoint,'Tell me about this transcription',{conversation_id,input_mode,
+   agent_context:{...named.agent_context,transcript_source_cleared:true}});
+  check(clear.data?.tool_receipt?.status==='clarification_required'&&!clear.data.answer.includes('twenty dollars'),
+   'explicit Clear excludes the previous recording through '+endpoint);
+  const afterClear=await post(endpoint,question,{...named,conversation_id,input_mode});
+  check(afterClear.data?.ok===true&&afterClear.data.tool_receipt?.capability!=='transcripts.read'
+   &&!afterClear.data.answer.includes('twenty dollars')&&!afterClear.data.answer.includes('project budget'),
+   'a later turn without client selection does not revive the cleared recording through '+endpoint);
+ }
+ check((await state()).reminders===beforeSelectedSource,'recording discussion and source changes leave reminder schedules unchanged');
  const beforeReads=(await state()).reminders;
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
   for(const phrase of ['What was on my uh reminder list','What did I have planned for today on my reminders','Yeah check my open reminders']){

@@ -23,6 +23,7 @@ $recordingUiBuild = 'chat-recording-results-v206-20260901';
 $recordingPersistenceBuild = 'chat-recordings-v242-20260902';
 $transcriptionCanvasBuild = 'transcription-intelligence-home-v308-20260907';
 $transcriptionCanvasBuild .= '-transcripts-s3-close';
+$transcriptionCanvasBuild .= '-' . substr(hash('sha256', hash_file('sha256', __DIR__ . '/chat-transcription-canvas.js') . hash_file('sha256', __DIR__ . '/chat-transcription-canvas.css')), 0, 12);
 $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001';

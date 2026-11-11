@@ -201,6 +201,41 @@ transcript_capability_check(count($recent)===4&&$coverage['transcripts']==='limi
     &&array_intersect(array_keys($recent),['transcript:106','transcript:107','transcript:108','transcript:109'])===[],
     'recent discovery is bounded and excludes foreign owner, other Agent, discarded and old recordings');
 transcript_capability_check(isset(transcript_capability_evidence(['transcript:109'])['transcript:109']),'explicit current-source verification can read an older authorized source without a time-varying expiry hash');
+$focusDetails=['conversation_id'=>170,'visible'=>true,'focused'=>true,'chat_focused'=>true,
+    'transcript_focus'=>['session_id'=>109,'agent_id'=>17,'conversation_id'=>170,'title'=>'UNTRUSTED CLIENT TITLE']];
+transcript_capability_mutate(function(PDO $db)use($focusDetails,$now):void{
+    $db->exec('CREATE TABLE agent_activity_state(user_id INTEGER PRIMARY KEY,surface TEXT,context_key TEXT,last_heartbeat_at TEXT,details_json TEXT)');
+    $db->prepare('INSERT INTO agent_activity_state VALUES(1,?,?,?,?)')->execute(['chat','chat:170',$now->format('Y-m-d H:i:s'),json_encode($focusDetails)]);
+    transcript_capability_analysis(109,[
+        'followup'=>['items'=>[['item_id'=>'pending-quote','follow_up'=>'Check the quote with the supplier.','status'=>'waiting']]],
+        'opportunities'=>['items'=>[['item_id'=>'research-prices','opportunity'=>'Compare prices','type'=>'research',
+            'validation_step'=>'Review published supplier prices.']]],
+    ]);
+});
+$coverage=[];$focused=vp3_initiative_transcript_capabilities_evidence_v1($pdo,$scope,$binding,$now,null,$coverage);
+transcript_capability_check(array_key_first($focused)==='transcript:109'&&count($focused)===4
+    &&str_contains($focused['transcript:109']['detail'],'selected this recording'),'a current authorized sidebar source is prioritized within the bounded scan even when older');
+$focusRead=transcript_capability_read(['transcript:109'],$focused);
+$pluginContext=$focusRead['records'][1]['data']['plugin_attention'];
+transcript_capability_check($focused['transcript:109']['pending_suggestions']===['followup'=>1,'research'=>1]
+    &&$pluginContext['suggestion_counts']===['followup'=>1,'research'=>1]
+    &&count($pluginContext['modules'])===2&&count($focusRead['sources'])===3
+    &&str_contains(json_encode($focusRead['sources']),'item=research-prices')
+    &&str_contains($focusRead['records'][1]['text'],'opportunities:')&&str_contains($focusRead['records'][1]['text'],'followup:'),
+    'the worker sees both applied reports and exact links to follow-up and research items');
+$focusView=vp3_transcript_focus_view_v1($pdo,$user,$principal,170,$now);
+transcript_capability_check($focusView===['session_id'=>109,'title'=>'Older selected recording','url'=>'/artist-listening.php?session=109'],
+    'Top of Mind projects canonical recording metadata and never uses a browser title');
+transcript_capability_check(vp3_transcript_focus_id_v1($pdo,1,18,170,$now)===0
+    &&vp3_transcript_focus_id_v1($pdo,1,17,180,$now)===0
+    &&vp3_transcript_focus_id_v1($pdo,1,17,170,$now->modify('+91 seconds'))===0,
+    'source hints cannot cross Agent/Chat scope or outlive the current activity window');
+$focusDetails['transcript_focus']['session_id']=106;
+transcript_capability_mutate(fn(PDO $db)=>$db->prepare('UPDATE agent_activity_state SET details_json=? WHERE user_id=1')->execute([json_encode($focusDetails)]));
+$coverage=[];$focused=vp3_initiative_transcript_capabilities_evidence_v1($pdo,$scope,$binding,$now,null,$coverage);
+transcript_capability_check(!isset($focused['transcript:106'])&&vp3_transcript_focus_view_v1($pdo,$user,$principal,170,$now)===null,
+    'a forged sidebar hint cannot make a foreign recording visible or available to Initiative');
+transcript_capability_mutate(fn(PDO $db)=>$db->exec('DELETE FROM agent_activity_state'));
 foreach([106,107,108,999] as $id){
     $coverage=[];$denied=vp3_initiative_transcript_capabilities_evidence_v1($pdo,$scope,$binding,$now,['transcript:'.$id],$coverage);
     transcript_capability_check($denied===[],'source selection does not grant foreign, other-Agent or deleted access '.$id);

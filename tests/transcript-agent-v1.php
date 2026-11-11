@@ -21,6 +21,14 @@ $run=function($plan,$context=[])use($pdo,$u,$p){return vp3_transcript_chat_v1($p
 foreach(['Check my open reminders','Do I have events on my calendar','Hello'] as $other){$r=vp3_transcript_chat_v1($pdo,$u,$p,$other,['transcript_session_id'=>1],[],fn()=>throw new RuntimeException('Unrelated turn must not reach transcript inference'));ck(!$r['handled'],'selected transcript does not intercept '.$other);}
 $r=vp3_transcript_chat_v1($pdo,$u,$p,'Can you set a reminder',['transcript_session_id'=>1],[],fn()=>throw new RuntimeException('Selected transcript must not intercept bare reminder setup'));ck(!$r['handled'],'selected transcript does not steal a reminder setup turn');
 $r=$run(['operation'=>'read'],['transcript_session_id'=>1]);ck($r['tool_receipt']['status']==='read_complete'&&!$r['tool_receipt']['changes_applied'],'selected transcript is read with a server execution receipt');
+$r=vp3_transcript_chat_v1($pdo,$u,$p,'What does this transcript analysis say?',['transcript_session_id'=>1],[],fn()=>['ok'=>true,'answer'=>'{"operation":"run_analysis","session_id":1}']);
+ck(!$r['handled'],'a model-selected fresh analysis does not run for a question about saved analysis');
+$r=vp3_transcript_chat_v1($pdo,$u,$p,'Highlight the selected transcript quote',['transcript_session_id'=>1,'transcript_selected_text'=>'invented sidebar quote'],[],static function($prompt){
+    $data=json_decode(substr($prompt,strpos($prompt,"\n")+1),true);
+    ck($data['selected_text']==='','an unverified browser quote is withheld from transcript inference');
+    return ['ok'=>true,'answer'=>'{"operation":"highlight"}'];
+});
+ck($r['tool_receipt']['status']==='clarification_required','an invalid selected quote never becomes a whole-recording save');
 $r=$run(['operation'=>'read']);ck($r['tool_receipt']['status']==='clarification_required','missing transcript selection never silently chooses latest');
 $r=$run(['operation'=>'read','session_id'=>3]);ck(!str_contains($r['answer'],'Foreign secret')&&$r['tool_receipt']['status']==='failed','model cannot grant access using a foreign ID');
 $r=vp3_transcript_chat_v1($pdo,$u,$p,'Tell me about the transcription from October 30th',['timezone'=>'America/Phoenix'],[],fn()=>['ok'=>true,'answer'=>'{"operation":"read","date":"2026-10-30"}']);

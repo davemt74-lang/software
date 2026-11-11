@@ -268,6 +268,13 @@
   }
   function baseContext(){
     const active=currentActivity();
+    const transcriptCanvas=window.STONEFELLOW_TRANSCRIPTION_CANVAS;
+    const transcriptSource=transcriptCanvas?.sourceContext?.();
+    const transcriptSelection=transcriptCanvas?.selection?.();
+    const transcriptSessionId=Number(transcriptSource?.session_id??transcriptSelection?.session_id??window.STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT?.api?.getState?.()?.sessionId??0);
+    const transcriptText=transcriptSource
+      ? (transcriptSessionId>0&&transcriptSelection?.session_id===transcriptSessionId?transcriptSelection.selected_text:'')
+      : (transcriptSelection?.selected_text||window.STONEFELLOW_ARTIST_LISTENING_WORKSPACE?.api?.getSelection?.()?.text?.value||'');
     return {
       build:BUILD,
       timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -282,8 +289,9 @@
       path:location.pathname+location.search,
       visible:document.visibilityState!=='hidden',
       screen_observation:window.VP3AgentScreenShare?.context()||null,
-      transcript_selected_text:String(window.STONEFELLOW_TRANSCRIPTION_CANVAS?.selection?.()?.selected_text||window.STONEFELLOW_ARTIST_LISTENING_WORKSPACE?.api?.getSelection?.()?.text?.value||'').slice(0,6000),
-      transcript_session_id:Number(window.STONEFELLOW_TRANSCRIPTION_CANVAS?.selection?.()?.session_id||window.STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT?.api?.getState?.()?.sessionId||0),
+      transcript_selected_text:String(transcriptText||'').slice(0,6000),
+      transcript_session_id:transcriptSessionId,
+      ...(transcriptSource?.cleared?{transcript_source_cleared:true}:transcriptSource?.session_id?{transcript_source_selected:true}:{}),
       voice:voiceSession?{
         session_id:cleanText(voiceSession.id||voiceSession.sessionId||'',120),
         state:cleanText(voiceSession.state||'',30),

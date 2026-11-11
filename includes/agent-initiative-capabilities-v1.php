@@ -210,9 +210,12 @@ function vp3_initiative_capability_execute_v1(PDO $pdo,array $scope,array $bindi
     $read=vp3_initiative_capability_snapshot_v1($pdo,$scope,$binding,$tool,$job,$evidence);
     $fingerprint=vp3_initiative_capability_fingerprint_v1($read);
     $meetingPrep=$tool==='calendar.read'&&isset($evidence[$job['primary']]['meeting_prep'])&&empty($job['owner_continuation']);
+    $transcriptNote=$tool==='transcripts.read'
+        ?' Consider all listed saved plugins, including their freshness and review states. Make note of useful open follow-ups and research suggestions with their exact saved plugin and item reference. Treat them as suggestions for owner review; do not claim that research or follow-up work has started. If the evidence is bounded, do not claim the omitted items were reviewed.'
+        :'';
     $draft=$meetingPrep?VP3_INITIATIVE_MEETING_PREP_MARKER_V1:vp3_initiative_tools_report_v1($pdo,$scope['user'],$job,$evidence,[
         'tool'=>$tool,'status'=>$read['records']?'read_complete':'no_matches','records'=>$read['records'],'coverage'=>$read['coverage'],
-        'effect'=>'Authorized saved records were read. Prepare useful private analysis, a draft, or one focused question. Saved AI analysis is interpretation, never a transcript quotation or independently verified fact. An absent association does not prove missing promotion. No research, new transcript analysis, image generation, publication, communication, task/calendar change or purchase was performed.',
+        'effect'=>'Authorized saved records were read. Prepare useful private analysis, a draft, or one focused question. Saved AI analysis is interpretation, never a transcript quotation or independently verified fact. An absent association does not prove missing promotion. No research, new transcript analysis, image generation, publication, communication, task/calendar change or purchase was performed.'.$transcriptNote,
     ],$model);
     $scope=vp3_initiative_capability_scope_v1($pdo,$scope,$binding);
     $fresh=vp3_initiative_capability_snapshot_v1($pdo,$scope,$binding,$tool,$job,$evidence);

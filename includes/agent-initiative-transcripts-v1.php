@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/transcript-agent-v1.php';
+require_once __DIR__.'/agent-transcript-focus-v1.php';
 
 const VP3_INITIATIVE_TRANSCRIPTS_V1='vp3.initiative-transcripts.v1';
 
@@ -182,7 +183,11 @@ function vp3_initiative_transcript_capabilities_snapshot_v1(PDO $pdo,array $scop
     }
     $counts=[];
     foreach(['accepted','unreviewed','rejected'] as $key)$counts[$key]=max(0,(int)($analysis['review_counts'][$key]??0));
+    $attention=$analysis['plugin_attention']??[];
+    $suggestions=[];
+    foreach(['followup','research'] as $kind)$suggestions[$kind]=max(0,(int)($attention['suggestion_counts'][$kind]??0));
     $metadata=['analysis_state'=>$state,'review_counts'=>$counts,'reviewed_actions'=>$actions,
+        'plugin_count'=>count($attention['modules']??[]),'pending_suggestions'=>$suggestions,
         'page_count'=>(int)$map['page_count'],'source_hash'=>(string)$map['source_hash']];
     $revision=hash('sha256',json_encode([VP3_INITIATIVE_TRANSCRIPTS_V1,(int)$scope['user']['id'],
         $scope['agent_id'],$scope['conversation_id'],vp3_initiative_transcript_capabilities_semantic_session_v1($pdo,$scope,$session),$map['source_hash'],$saved,$metadata,
@@ -200,6 +205,7 @@ function vp3_initiative_transcript_capabilities_evidence_v1(PDO $pdo,array $scop
         $coverage['transcripts']='unavailable';return [];
     }
     $ids=[];
+    $focused=vp3_transcript_focus_id_v1($pdo,(int)$scope['user']['id'],$scope['agent_id'],$scope['conversation_id'],$now);
     if($selectedRefs===null){
         $catalog=vp3_transcript_catalog_v1($pdo,$scope['user'],$scope['principal']);
         foreach($catalog['sessions'] as $row){
@@ -208,6 +214,7 @@ function vp3_initiative_transcript_capabilities_evidence_v1(PDO $pdo,array $scop
                 ||$stamp>$now||$stamp->getTimestamp()<$now->getTimestamp()-7*86400)continue;
             $ids[]=(int)$row['id'];
         }
+        if($focused>0)$ids=array_values(array_unique([$focused,...$ids]));
         if(count($ids)>4||($catalog['next_before']??null)!==null)$coverage['transcripts']='limited';
         $ids=array_slice($ids,0,4);
     }else{
@@ -243,12 +250,40 @@ function vp3_initiative_transcript_capabilities_evidence_v1(PDO $pdo,array $scop
             'fresh'=>'A saved recording has current analysis and can be read for a source-grounded private follow-up. Interpretations and reviewed decisions remain distinct.',
             default=>'A saved recording can be read, but saved analysis storage is unavailable. Analysis absence and completion are unverified.',
         };
+        if($id===$focused)$detail='The owner selected this recording in the current Chat. '.$detail;
+        if($state==='fresh'&&array_sum($metadata['pending_suggestions'])>0){
+            $detail.=' Saved plugins contain '.$metadata['pending_suggestions']['followup'].' open follow-ups and '
+                .$metadata['pending_suggestions']['research'].' research suggestions. Consider the exact source items for a private note.';
+        }
         $ref='transcript:'.$id;
         $evidence[$ref]=['ref'=>$ref,'kind'=>'transcript','title'=>mb_substr((string)$session['title'],0,170),
             'detail'=>$detail,'url'=>url('/artist-listening.php?session='.$id),'revision'=>$snapshot['revision'],
-            'analysis_state'=>$state,'review_counts'=>$metadata['review_counts'],'reviewed_actions'=>$metadata['reviewed_actions']];
+            'analysis_state'=>$state,'review_counts'=>$metadata['review_counts'],'reviewed_actions'=>$metadata['reviewed_actions'],
+            'plugin_count'=>$metadata['plugin_count'],'pending_suggestions'=>$metadata['pending_suggestions']];
     }
     return $evidence;
+}
+
+/** Keep every saved module's state in view. Sample the exact open items across
+ * modules within the shared read budget, with honest continuation coverage. */
+function vp3_initiative_transcript_plugin_context_v1(array $attention): array
+{
+    $out=['modules'=>[],'suggestion_counts'=>['followup'=>0,'research'=>0],'suggestions'=>[],
+        'suggestions_truncated'=>!empty($attention['truncated'])];
+    foreach($attention['modules']??[] as $module){
+        $out['modules'][$module['plugin']]=$module['state'];
+    }
+    foreach($out['suggestion_counts'] as $kind=>$unused)$out['suggestion_counts'][$kind]=max(0,(int)($attention['suggestion_counts'][$kind]??0));
+    foreach($attention['suggestions']??[] as $row){
+        $item=array_intersect_key($row,array_flip(['kind','plugin','section','item_id','review_state','source_url']));
+        $item['text']=vp3_initiative_transcript_capabilities_text_v1((string)$row['text'],260,440);
+        $candidate=$out;$candidate['suggestions'][]=$item;
+        if(count($out['suggestions'])>=6||strlen(json_encode($candidate,JSON_THROW_ON_ERROR))>3000){
+            $out['suggestions_truncated']=true;continue;
+        }
+        $out['suggestions'][]=$item;
+    }
+    return $out;
 }
 
 /** Bounded canonical passages retain segment/page/time locators and truthful coverage. */
@@ -307,16 +342,32 @@ function vp3_initiative_transcript_capabilities_read_v1(PDO $pdo,array $scope,ar
         $sources[]=['source'=>$ref,'title'=>$title,'url'=>$url];
         $analysis=$snapshot['analysis'];$state=$snapshot['metadata']['analysis_state'];
         $analysisText=$state==='fresh'?(string)($analysis['text']??''):'';
-        $boundedAnalysis=vp3_initiative_transcript_capabilities_text_v1($analysisText,2000,3000);
+        $pluginContext=vp3_initiative_transcript_plugin_context_v1($analysis['plugin_attention']??[]);
+        $reports=array_filter($analysis['plugin_attention']['modules']??[],static fn(array $module):bool=>
+            $module['state']==='fresh'&&!empty($module['report_excerpt']));
+        $perModule=max(28,intdiv(2200,max(1,count($reports))));$excerpts=[];
+        foreach($reports as $module){
+            $label=$module['plugin'].': ';
+            $excerpts[]=$label.vp3_initiative_transcript_capabilities_text_v1($module['report_excerpt'],480,max(16,$perModule-strlen($label)-4));
+        }
+        $boundedAnalysis=vp3_initiative_transcript_capabilities_text_v1($excerpts?implode("\n",$excerpts):$analysisText,1800,2400);
         $analysisComplete=$state==='fresh'&&$boundedAnalysis===$analysisText;
+        foreach(array_slice($pluginContext['suggestions'],0,2) as $suggestion){
+            if(empty($suggestion['source_url']))continue;
+            $sources[]=['source'=>$ref.'#'.$suggestion['plugin'].':'.$suggestion['item_id'],
+                'title'=>($suggestion['kind']==='research'?'Research suggestion':'Follow-up').' · '.$title,
+                'url'=>$suggestion['source_url']];
+        }
         $records[]=['source'=>'transcript-analysis:'.$id,'title'=>$title.' — saved analysis',
             'text'=>$boundedAnalysis,'url'=>$url,
             'data'=>['kind'=>'saved_interpretation','analysis_state'=>$state,'generated'=>$state!=='missing'&&$state!=='unavailable',
                 'fresh'=>$state==='fresh','review_counts'=>$snapshot['metadata']['review_counts'],
                 'complete'=>$analysisComplete,
+                'plugin_attention'=>$pluginContext,
                 'new_analysis_performed'=>false,'interpretation_is_not_verified_fact'=>true]];
-        $coverage['items'][$ref]=['transcript'=>$passages['coverage'],'analysis_state'=>$state,'analysis_complete'=>$analysisComplete];
-        if(!$passages['coverage']['complete']||!$analysisComplete)$coverage['state']='limited';
+        $coverage['items'][$ref]=['transcript'=>$passages['coverage'],'analysis_state'=>$state,'analysis_complete'=>$analysisComplete,
+            'plugin_attention_complete'=>!$pluginContext['suggestions_truncated']];
+        if(!$passages['coverage']['complete']||!$analysisComplete||$pluginContext['suggestions_truncated'])$coverage['state']='limited';
     }
     return ['records'=>$records,'sources'=>$sources,'coverage'=>$coverage];
 }

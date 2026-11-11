@@ -216,7 +216,7 @@ function vp3_capability_contract_adapters_v1(): array
         'transcripts.read'=>['transcript','transcripts.read','office.transcripts','read','transcript:',
             'agent-initiative-transcripts-v1.php','vp3_initiative_transcript_capabilities_read_v1',
             'vp3_initiative_transcript_capabilities_evidence_v1',
-            'Read the exact authorized saved transcript and existing analysis, disclose coverage and freshness, and prepare a private source-grounded follow-up. No fresh analysis, research or reviewed-action execution.',
+            'Read the exact authorized saved transcript and applied plugin results, disclose coverage and freshness, and prepare a private note about useful open follow-ups or research suggestions. No fresh analysis, research or reviewed-action execution.',
             'Discuss the evidence or explicitly request analysis or a domain action through its existing executor.'],
         'missions.evidence.read'=>['mission','workflows.read','missions.workflows','read','mission-evidence:',
             'agent-initiative-mission-evidence-v1.php','vp3_initiative_mission_capabilities_read_v1',

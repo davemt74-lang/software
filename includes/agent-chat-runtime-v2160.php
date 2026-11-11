@@ -364,6 +364,51 @@ function vp3_agent_chat_public_prompt_v2160(string $query): string
 }
 
 /** Hydrate private tool cards from their owning stores at each Chat read. */
+/** Display history stays intact. Prior source-bound answers can only inform a
+ * new model turn while the exact recording and processing grant are current. */
+function vp3_agent_chat_transcript_model_history_v2160(PDO $pdo,array $user,array $principal,int $conversation,array $rows,array $context): array
+{
+    $checked=[];$reports=[];$context['conversation_id']=$conversation;
+    $selected=($context['transcript_source_selected']??null)===true;
+    $cleared=($context['transcript_source_cleared']??null)===true;
+    $detached=null;
+    foreach($rows as &$row){
+        if(($row['role']??null)!=='assistant')continue;
+        $data=json_decode((string)($row['context_json']??''),true,32);
+        $binding=$data['transcript_context']??null;
+        if(!is_array($binding)||($binding['contract']??null)!==VP3_TRANSCRIPT_CONTEXT_V1||($binding['state']??null)!=='active'
+            ||!is_int($binding['session_id']??null)||$binding['session_id']<1)continue;
+        $id=$binding['session_id'];
+        if(!$selected&&$detached===null){
+            try{$detached=(vp3_transcript_context_v1($pdo,$user,$principal,$context)['state']??null)==='detached';}
+            catch(Throwable $ignored){$detached=true;}
+        }
+        if($cleared||$detached===true||($selected&&($context['transcript_session_id']??null)!==$id)){
+            $row['message']='A previous recording is no longer the current source for this Chat.';continue;
+        }
+        if(!array_key_exists($id,$checked)){
+            $checked[$id]='';
+            try{
+                vp3_transcript_cloud_session_v1($pdo,$user,$principal,$id,$context);
+                $map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,$id));
+                $checked[$id]=$map['source_hash'];
+            }catch(Throwable $ignored){}
+        }
+        if($checked[$id]===''||(!empty($binding['source_hash'])&&$binding['source_hash']!==$checked[$id])){
+            $row['message']='A previous transcript answer is unavailable as current source evidence.';
+            continue;
+        }
+        if(isset($binding['report_snapshot_hash'])){
+            if(!array_key_exists($id,$reports)){
+                try{[, , $reports[$id]]=vp3_transcript_discussion_reports_v1($pdo,$user,$principal,$id,$checked[$id],'');}
+                catch(Throwable $ignored){$reports[$id]=null;}
+            }
+            if($reports[$id]!==$binding['report_snapshot_hash'])$row['message']='A previous transcript answer is unavailable as current source evidence.';
+        }
+    }unset($row);
+    return $rows;
+}
+
 function vp3_agent_chat_history_content_v2160(PDO $pdo,array $user,int $agentId,int $conversationId,array $rows): array
 {
     $ownerId=(int)$user['id'];
@@ -700,6 +745,7 @@ $emailRequest=$connectedSitePlan===null&&$allowConnectedSites&&!$ephemeralProtoc
     &&knowledge_retrieval_v162_owner_session($user,$principal)&&agent_connection_email_chat_plan_v1($query,$inputMode==='voice')!==null;
 $historyStmt=$pdo->prepare('SELECT role,message,context_json FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
 $historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$historyStmt->closeCursor();$userMessageId=0;
+$history=vp3_agent_chat_transcript_model_history_v2160($pdo,$user,$principal,$conversationId,$history,$rawAgentContext);
 $history=vp3_meeting_chat_model_history_v1($pdo,$user,$principal,$conversationId,$history);
 if(!$ephemeralProtocol){
     if($initiativeProgress!==null){
@@ -798,6 +844,7 @@ if($capabilityTool===null){
 $persistedAgentContext=$agentContext;
 unset($persistedAgentContext['browser_context']);
 unset($persistedAgentContext['screen_observations']);
+unset($persistedAgentContext['transcript_selected_text']);
 $agentContext['chat_user_message_id']=$userMessageId;
 if($capabilityTool===null&&$brainAllowed&&$userMessageId>0)agent_brain_archive_and_parse($user,$conversationId,$userMessageId,'user',$query,$inputMode);
 if($capabilityTool===null&&!$ephemeralProtocol){$capabilityCandidate=vp3_capability_chat_v1($pdo,$user,$principal,$query,$agentContext,!empty($r6Packet['active'])?$r6Packet['state']['scope']:($input['knowledge_scope']??null),$history,null,$currentAuthority);if(!empty($capabilityCandidate['handled']))$capabilityTool=$capabilityCandidate;}

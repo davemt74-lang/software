@@ -57,6 +57,11 @@ function calendar_schedule_awareness_snapshot_v1330(...$args){if(isset($_SERVER[
 function user_account_types_for_user_id(...$args){return ['member'];}
 function user_has_role(...$args){return false;}
 function vp3_agent_runtime_plan_v420(...$args){return ['route'=>'vp3_cloud','cloud'=>['ready'=>true],'effective_preference'=>'vp3_cloud'];}
+// Match the fixture's Cloud route when the real meeting reader checks saved compute policy.
+function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $owner,int $agent):array
+{
+    return ['effective_preference'=>'vp3_cloud'];
+}
 function vp3_agent_runtime_tool_plan_v420(...$args){return ['route'=>'vp3_tool'];}
 function vp3_agent_runtime_capability_route_v420($plan,$execution,...$args){return ['supported'=>true,'ready'=>true,'actual_source'=>$execution['source']??'vp3_cloud'];}
 function vp3_agent_runtime_finalize_v420($plan,$execution,...$args){return $execution;}
@@ -137,7 +142,12 @@ function ai_generate_chat_response($prompt,...$args){
     if(str_starts_with($prompt,'VP3_PARTICIPANT_TASKS_V1')){file_put_contents(__DIR__.'/../participant-prompt.txt',$prompt);return ['ok'=>true,'answer'=>$_SERVER['HTTP_X_FIXTURE_PARTICIPANT_PLAN']??'{"operation":"show","kind":"all","id":0}'];}
     if(!str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')&&str_contains($prompt,'personal reminder commands.')&&str_contains($prompt,'Show reminders'))return ['ok'=>true,'answer'=>'{"operation":"list","view":"open"}'];
     if(str_starts_with($prompt,'VP3_TRANSCRIPT_ANSWER_V1')){
-        $data=json_decode(substr($prompt,strpos($prompt,"\n")+1),true);$segments=$data['evidence']['segments'];return ['ok'=>true,'answer'=>json_encode(['answer'=>'The discussion covers the project budget and delivery date.','citations'=>[(int)$segments[0]['id']]])];
+        $data=json_decode(substr($prompt,strpos($prompt,"\n")+1),true);
+        $segment=$data['evidence']['segments'][0];
+        $answer=in_array($data['request'],['What do you think?','Any suggestions?'],true)
+            ?'I’d confirm the recorded agreement before following up. '.$segment['text']
+            :'The discussion covers the project budget and delivery date.';
+        return ['ok'=>true,'answer'=>json_encode(['answer'=>$answer,'citations'=>[(int)$segment['id']]])];
     }
 
     if(str_starts_with($prompt,'VP3_TRANSCRIPT_PLAN_V1')){
@@ -146,7 +156,7 @@ function ai_generate_chat_response($prompt,...$args){
         if($json['request']==='Find the transcription titled jcal')return ['ok'=>true,'answer'=>'{"operation":"list","query":"jcal"}'];
         if($json['request']==='Can you read transcripts?')return ['ok'=>true,'answer'=>'{"operation":"none"}'];
         if($json['request']==='Detach this transcript')return ['ok'=>true,'answer'=>'{"operation":"detach"}'];
-        if(in_array($json['request'],['Tell me about this transcription','What did they say about the budget?','What were the main issues?'],true))return ['ok'=>true,'answer'=>json_encode($json['selected_session_id']?['operation'=>'discuss']:['operation'=>'clarify','question'=>'Which transcript should I use?'])];
+        if(in_array($json['request'],['Tell me about this transcription','What did they say about the budget?','What were the main issues?','What do you think?','Any suggestions?'],true))return ['ok'=>true,'answer'=>json_encode($json['selected_session_id']?['operation'=>'discuss']:['operation'=>'clarify','question'=>'Which transcript should I use?'])];
         if($json['request']==='The first one')return ['ok'=>true,'answer'=>'{"operation":"read","session_id":23}'];if(str_contains($json['request'],'October 30th'))return ['ok'=>true,'answer'=>'{"operation":"read","date":"2026-10-30"}'];return ['ok'=>true,'answer'=>json_encode(['query'=>$json['selected_text']??'','operation'=>str_starts_with($json['request'],'Highlight')?'highlight':(str_contains($json['request'],'saved analysis')?'read_analysis':'read'),'session_id'=>(int)((str_contains($json['request'],'selected')?($json['ui_selected_session_id']??0):0)?:$json['selected_session_id']?:21)])];
     }
     if(str_starts_with($prompt,'VP3_CAPABILITY_DISCOVERY_V1')){
@@ -170,6 +180,12 @@ function ai_generate_chat_response($prompt,...$args){
         if($taskPlan)return ['ok'=>true,'answer'=>json_encode(['operation'=>'task_list','ids'=>['tasks.lists']]+$taskPlan)];
         if($q==='Show reminders')return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];
         if($q==='What were the main issues?')return ['ok'=>true,'answer'=>'{"operation":"transcript_read","ids":["transcripts.read"]}'];
+        if(in_array($q,['What do you think?','Any suggestions?'],true)){
+            $source=$json['conversation_transcript']??null;
+            return ['ok'=>true,'answer'=>json_encode(($source['state']??null)==='active'
+                ?['operation'=>'transcript_read','ids'=>['transcripts.read']]
+                :['operation'=>'continue','ids'=>[]])];
+        }
         if(in_array($q,['Tell me about this transcription','Can you read transcripts?'],true))return ['ok'=>true,'answer'=>'{"operation":"inspect","ids":["transcripts.read"]}'];
         if(in_array($q,['What did they say about the budget?','Detach this transcript'],true))return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];
         if($q==='The first one')return ['ok'=>true,'answer'=>'{"operation":"continue","ids":[]}'];

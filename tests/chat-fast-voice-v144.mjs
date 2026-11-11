@@ -51,6 +51,7 @@ function makePremium(){return {
 
 const encoder=new TextEncoder();
 const fetchCalls=[];
+let submittedTranscript={transcript_session_id:21,transcript_source_selected:true};
 const nativeFetch=async(inputArg,init={})=>{
   const url=String(typeof inputArg==='string'?inputArg:inputArg?.url||'');
   let payload={};try{payload=JSON.parse(String(init.body||'{}'));}catch(error){}
@@ -77,7 +78,7 @@ const nativeFetch=async(inputArg,init={})=>{
 const window={
   STONEFELLOW_CHAT:{userId:1,endpoint:'/api/chat.php',csrf:'csrf',initialConversationId:0,initialView:'chat'},
   STONEFELLOW_CHAT_VOICE_BOOT:{button:elements.chatVoiceButtonLegacyDormant,intro:null,legacyDormant:true},
-  SpeechRecognition:Recognition,webkitSpeechRecognition:null,StonefellowAgentContext:{refresh:async()=>({surface:'chat'}),snapshot:()=>({surface:'chat'}),setConversationId(){}},StonefellowPremiumVoiceV122:makePremium,
+  SpeechRecognition:Recognition,webkitSpeechRecognition:null,StonefellowAgentContext:{refresh:async()=>({surface:'chat',transcript_session_id:22,transcript_source_selected:true}),snapshot:()=>({surface:'chat',...submittedTranscript}),setConversationId(){}},StonefellowPremiumVoiceV122:makePremium,
   fetch:nativeFetch,addEventListener(){},removeEventListener(){},dispatchEvent(){return true;},setTimeout,clearTimeout,setInterval,clearInterval,
   speechSynthesis:{cancel(){},speak(){systemSpeakCalls+=1;}},SpeechSynthesisUtterance:class{constructor(text){this.text=text;this.onstart=null;this.onend=null;this.onerror=null;}}
 };
@@ -86,7 +87,7 @@ const location={href:'https://stonefellow.com/chat.php',origin:'https://stonefel
 const sandbox={window,document,navigator,localStorage,location,CustomEvent,Event,URL,URLSearchParams,Response,AbortController,ReadableStream,TextEncoder,TextDecoder,console,setTimeout,clearTimeout,setInterval,clearInterval,queueMicrotask};
 Object.assign(window,{window,document,navigator,localStorage,location,CustomEvent,Event,URL,URLSearchParams,Response,AbortController,ReadableStream,TextEncoder,TextDecoder});
 let lastResponse;
-elements.chatForm.requestSubmit=()=>{lastResponse=window.fetch('/api/chat.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',conversation_id:0,message:elements.chatInput.value,input_mode:'text',csrf_token:'csrf'})});};
+elements.chatForm.requestSubmit=()=>{lastResponse=window.fetch('/api/chat.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',conversation_id:0,message:elements.chatInput.value,input_mode:'text',csrf_token:'csrf',agent_context:submittedTranscript})});};
 
 vm.runInNewContext(source,sandbox,{filename:'chat-voice.js'});
 
@@ -110,6 +111,8 @@ await sleep(120);
 assert(!fetchCalls.some(call=>call.url.includes('chat-stream-v121.php')),'fast voice does not start while the user may only be pausing');
 await sleep(1780);
 assert(fetchCalls.some(call=>call.url.includes('chat-stream-v121.php')),'ready ElevenLabs uses the streaming Chat response transport after the quiet-window');
+const selectedContext=fetchCalls.find(call=>call.url.includes('chat-stream-v121.php'))?.payload.agent_context;
+assert(selectedContext?.transcript_session_id===21&&selectedContext.transcript_source_selected===true,'the voice stream keeps the exact transcription selected when the turn was sent');
 assert(premiumPushes[0]==='I can hear you. ','first streamed AI sentence is pushed directly into ElevenLabs');
 assert(premiumStartedBeforeDone===true,'ElevenLabs begins before the AI done event/full answer');
 assert(systemSpeakCalls===0,'system/browser TTS does not play when ElevenLabs is ready');
@@ -122,9 +125,12 @@ assert(window.STONEFELLOW_CHAT_VOICE.premiumAudibleStarts===1,'runtime separatel
 
 await sleep(500);
 const audioBeforeGmail=premiumPushes.length;
+submittedTranscript={transcript_session_id:0,transcript_source_cleared:true};
 recognizers.at(-1).onresult({resultIndex:0,results:[{0:{transcript:'search Gmail for project notes'},isFinal:true}]});
 await sleep(1900);
 const privateResult=await (await lastResponse).json();
+const clearedContext=fetchCalls.find(call=>call.payload.message==='search Gmail for project notes')?.payload.agent_context;
+assert(clearedContext?.transcript_session_id===0&&clearedContext.transcript_source_cleared===true&&clearedContext.transcript_source_selected===undefined,'the voice stream retains a source clear even when background context still names a transcription');
 assert(privateResult.answer==='Private project notes'&&privateResult.actions[0].type==='gmail_message',
   'voice Gmail delivers the private text and its action to Chat');
 assert(premiumPushes.slice(audioBeforeGmail).join('')==='I put the private Gmail result in Chat.',
