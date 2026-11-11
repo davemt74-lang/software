@@ -153,6 +153,15 @@ function vp3_agent_activity_history_v1(PDO $pdo, array $scope): array
     return $items;
 }
 
+function vp3_agent_activity_recording_v1(PDO $pdo,array $scope,DateTimeImmutable $now): array
+{
+    require_once __DIR__.'/agent-transcript-focus-v1.php';
+    $recording=vp3_transcript_focus_view_v1($pdo,$scope['user'],$scope['principal'],$scope['conversation_id'],$now);
+    if($recording===null)return [];
+    return [vp3_agent_activity_card_v1('transcript:'.$recording['session_id'],'transcript',$recording['title'],
+        'Current recording source for this Chat.',[['kind'=>'url','label'=>'Open recording','href'=>$recording['url']]])];
+}
+
 function vp3_agent_activity_calendar_v1(PDO $pdo, array $scope, DateTimeImmutable $now): array
 {
     if (!user_calendar_schema_ready_v1300($pdo)) throw new RuntimeException('Calendar storage is unavailable.', 503);
@@ -450,6 +459,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         'tasks'=>['Tasks', static fn() => vp3_agent_activity_tasks_v1($pdo, $scope)],
         'lists'=>['Task lists', static fn() => vp3_agent_activity_lists_v1($pdo, $scope)],
         'history'=>['Recent Chats', static fn() => vp3_agent_activity_history_v1($pdo, $scope)],
+        'recording'=>['Recording in this Chat', static fn() => vp3_agent_activity_recording_v1($pdo, $scope, $now)],
         'calendar'=>['Upcoming events', static fn() => vp3_agent_activity_calendar_v1($pdo, $scope, $now)],
         'missions'=>['Missions', static fn() => vp3_agent_activity_missions_v1($pdo, $scope, $now)],
         'canvases'=>['Canvas work', static fn() => vp3_agent_activity_canvases_v1($pdo, $scope)],
@@ -469,6 +479,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
             $items = [];
             $coverage[$id] = $error->getCode() === 403 ? 'forbidden' : 'unavailable';
         }
+        if($id==='recording'&&!$items){unset($coverage[$id]);continue;}
         $sections[] = ['id'=>$id, 'label'=>$label, 'items'=>array_slice($items, 0, 3)];
     }
     require_once __DIR__.'/agent-activity-media-v1.php';

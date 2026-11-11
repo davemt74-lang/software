@@ -7,7 +7,7 @@
   const initialBinding = String(window.STONEFELLOW_CHAT?.workingAttentionBinding || cfg.workingAttentionBinding || '');
   const groups = [
     {title:'Needs attention',ids:['reminders','tasks','lists','calendar']},
-    {title:'Continue',ids:['history','youtube','songs']},
+    {title:'Continue',ids:['recording','history','youtube','songs']},
     {title:'Agent work',ids:['missions','canvases','suggestions','gmail_outcomes']}
   ];
   const kinds = new Set(['url','chat','task_notes','mission','canvas','youtube','song']);
@@ -200,7 +200,7 @@
     return data?.contract === 'vp3.agent.activity.v1' && data.owner_user_id === current.owner && data.agent_id === current.agent &&
       data.conversation_id === current.cid && data.working_attention_binding === current.binding &&
       typeof data.observed_at === 'string' && Number.isFinite(Date.parse(data.observed_at)) && Array.isArray(data.sections) &&
-      data.sections.length <= 12 && data.sections.every(section => typeof section.id === 'string' && typeof section.label === 'string' &&
+      data.sections.length <= 13 && data.sections.every(section => typeof section.id === 'string' && typeof section.label === 'string' &&
         Array.isArray(section.items) && section.items.length <= 12 && section.items.every(item => typeof item.id === 'string' &&
           typeof item.title === 'string' && item.title.length <= 500 && (item.detail === undefined || typeof item.detail === 'string' && item.detail.length <= 1600) &&
           Array.isArray(item.actions) && item.actions.length <= 4 && item.actions.every(action => kinds.has(action?.kind) &&

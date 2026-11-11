@@ -115,6 +115,11 @@
       if(currentContext){
         const openAgenda=host.querySelector('[data-top-of-mind-agenda][open]')?.dataset.topOfMindAgenda;
         markup+=renderCalendar(snapshot.calendar?.[0],openAgenda);
+        const recording=snapshot.recording, recordingUrl=safeUrl(recording?.url);
+        if(recordingUrl&&typeof recording?.title==='string'){
+          markup+=`<section class="agent-top-of-mind-context" aria-label="Recording in this Chat">
+            <strong>Recording in this Chat</strong><p>${esc(recording.title)}</p><a href="${esc(recordingUrl)}">Open recording</a></section>`;
+        }
         markup+=renderYoutube(current,snapshot.youtube_search,snapshot.artist_research,snapshot.topic_research);
       }
       const music=currentContext?snapshot.music:null;

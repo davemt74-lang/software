@@ -299,8 +299,12 @@ function vp3_initiative_live_revision_v1(PDO $pdo,array $user,array $policy): st
     if(!table_exists('agent_activity_state'))return '';
     require_once __DIR__.'/agent-live-context-v1.php';
     $principal=vp3_initiative_principal_v1($pdo,$user,vp3_initiative_binding_agent_v1($policy));
-    $snapshot=vp3_live_context_snapshot_v1($pdo,$user,$principal,(int)($policy['conversation_id']??0));
-    return $snapshot['revision']??'';
+    $conversation=(int)($policy['conversation_id']??0);
+    $snapshot=vp3_live_context_snapshot_v1($pdo,$user,$principal,$conversation);
+    require_once __DIR__.'/agent-transcript-focus-v1.php';
+    $focus=vp3_transcript_focus_id_v1($pdo,(int)$user['id'],(int)$principal['agent_id'],$conversation);
+    $revision=$snapshot['revision']??'';
+    return $focus>0?hash('sha256',$revision.'|transcript:'.$focus):$revision;
 }
 
 function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user,?array $selectedRefs=null): void

@@ -96,6 +96,16 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
         $packet=vp3_live_context_sanitize_v1($context['live_context'],$context['_vp3_live_binding']);
         if($packet!==null)$details['live_context']=$packet;
     }
+    $source=$context['transcript_source_id']??null;
+    $sourceBinding=$context['_vp3_live_binding']??null;
+    if($state!=='logged_out'&&$surface==='chat'&&($details['chat_focused']??false)===true
+        &&is_int($source)&&$source>0&&is_array($sourceBinding)
+        &&($sourceBinding['owner_user_id']??null)===$uid&&($sourceBinding['conversation_id']??null)===$conversationId
+        &&($sourceBinding['activity_tab']??null)===$tab&&is_int($sourceBinding['agent_id']??null)){
+        // Selection is operational context only; the transcript reader checks
+        // ownership, current source text and processing policy before use.
+        $details['transcript_focus']=['session_id'=>$source,'agent_id'=>$sourceBinding['agent_id'],'conversation_id'=>$conversationId];
+    }
     $idleSince=$state==='idle' ? date('Y-m-d H:i:s') : null;
     $lastTask=$state==='working' ? date('Y-m-d H:i:s') : (string)($prev['last_task_at']??date('Y-m-d H:i:s'));
     $sql="INSERT INTO agent_activity_state (user_id,surface,context_key,task_kind,task_title,activity_state,last_input_at,last_task_at,last_heartbeat_at,idle_since_at,details_json,updated_at) VALUES (?,?,?,?,?,?,NOW(),?,NOW(),?,?,NOW()) ON DUPLICATE KEY UPDATE surface=VALUES(surface),context_key=VALUES(context_key),task_kind=VALUES(task_kind),task_title=VALUES(task_title),activity_state=VALUES(activity_state),last_input_at=IF(VALUES(activity_state)='working',NOW(),last_input_at),last_task_at=IF(VALUES(activity_state)='working',NOW(),last_task_at),last_heartbeat_at=NOW(),idle_since_at=IF(VALUES(activity_state)='idle',COALESCE(idle_since_at,NOW()),NULL),details_json=VALUES(details_json),updated_at=NOW()";
@@ -104,7 +114,7 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
     if($changed){
         // Live observations belong only to the bounded current-context cache.
         // Activity history records navigation/state, never a sensory packet.
-        $historyDetails=$details;unset($historyDetails['live_context']);
+        $historyDetails=$details;unset($historyDetails['live_context'],$historyDetails['transcript_focus']);
         $e=$pdo->prepare('INSERT INTO agent_activity_events (user_id,surface,context_key,task_kind,task_title,previous_state,activity_state,reason,details_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,NOW())');
         $e->execute([$uid,$surface,$contextKey,$taskKind,$taskTitle,(string)($prev['activity_state']??''),$state,mb_substr($reason,0,120),json_encode($historyDetails,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);
     }
@@ -114,7 +124,7 @@ function agent_activity_v94_record(array $user,string $surface,string $state,arr
     // or roll back a caller's still-active transaction.
     if(!$pdo->inTransaction()&&function_exists('vp3_live_session_record_activity_v2370')){
         $liveContext=$context;
-        unset($liveContext['live_context'],$liveContext['_vp3_live_binding']);
+        unset($liveContext['live_context'],$liveContext['_vp3_live_binding'],$liveContext['transcript_source_id']);
         $liveContext['task_title']=$taskTitle;
         $liveContext['task_kind']=$taskKind;
         try{vp3_live_session_record_activity_v2370($user,$surface,$state,$liveContext,$reason,$changed);}catch(Throwable $e){error_log('VP3 live session bridge failed: '.$e->getMessage());}

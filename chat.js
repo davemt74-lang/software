@@ -163,7 +163,7 @@
     chatRevision++;
     cancelYoutubeLocalTurn();
     if (pendingSend) { clearTimeout(pendingSend.timer); pendingSend.controller.abort(); pendingSend.typing?.remove(); pendingSend = null; busy = false; send.disabled = false; input.disabled=false; showStop(); }
-    window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+    window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:options.preserveInitiativeReply===true}}));
     recoveryStatus();
   }
   function clearPrivateYoutubeHistory() {
@@ -202,7 +202,7 @@
     if (event.target !== form || (contextReady && !initialRestorePending && !restoringConversation && navigator.onLine !== false)) return;
     event.preventDefault(); event.stopImmediatePropagation();
     if (!initialRestorePending && !restoringConversation) keepDraft(input.value);
-    window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+    window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:true}}));
     recoveryStatus(!contextReady ? 'Open a conversation or start a new chat before sending.' : navigator.onLine === false ? 'You are offline. Your message is kept.' : 'Restoring your conversation. Your message is kept.');
   }, true);
   let voiceMode = false;
@@ -4039,8 +4039,15 @@
       if(window.VP3ProjectKnowledgeR6)payload.project_knowledge_r6=window.VP3ProjectKnowledgeR6.value();
       const revision=window.VP3KnowledgeRevisionsR11?.value(message);if(revision)payload.knowledge_revision=revision;
       if(browserAgentContext)payload.agent_context=browserAgentContext;
-      const transcriptSelection=window.STONEFELLOW_TRANSCRIPTION_CANVAS?.selection?.();
-      if(transcriptSelection?.session_id)payload.agent_context={...(payload.agent_context||{}),transcript_session_id:Number(transcriptSelection.session_id),transcript_selected_text:String(transcriptSelection.selected_text||'').slice(0,6000)};
+      const transcriptCanvas=window.STONEFELLOW_TRANSCRIPTION_CANVAS;
+      const transcriptSource=transcriptCanvas?.sourceContext?.();
+      const transcriptSelection=transcriptCanvas?.selection?.();
+      const transcriptSessionId=Number(transcriptSource?.session_id??transcriptSelection?.session_id??0);
+      if(transcriptSource?.cleared||transcriptSessionId>0){
+        payload.agent_context={...(payload.agent_context||{}),transcript_session_id:transcriptSessionId,
+          transcript_selected_text:transcriptSelection?.session_id===transcriptSessionId?String(transcriptSelection.selected_text||'').slice(0,6000):'',
+          ...(transcriptSource?.cleared?{transcript_source_cleared:true}:transcriptSource?.session_id?{transcript_source_selected:true}:{})};
+      }
       const screenShare=window.VP3AgentScreenShare;
       const screenContext=screenShare?.contextForPrompt?.(payload.message);
       if(screenContext){
@@ -4086,7 +4093,13 @@
       window.VP3TaskNotes?.consume(data.sticky_notes || []);
       if(lastParticipantQuestion?.message===request.message){lastParticipantQuestion.conversation_id=Number(data.conversation_id);lastParticipantQuestion.at=Date.now();}
       conversationId = Number(data.conversation_id); rememberConversation();
+      if(request.conversationId===0)window.dispatchEvent(new CustomEvent('vp3:chat-conversation-bound',{detail:{previous_conversation_id:0,conversation_id:conversationId}}));
       const storedUserId=Number(data.user_message_id),storedAssistantId=Number(data.assistant_message_id);
+      const receipt=data.tool_receipt;
+      if(transcriptSource?.session_id>0&&Number.isSafeInteger(storedAssistantId)&&storedAssistantId>0
+        &&(request.conversationId===0||request.conversationId===conversationId)
+        &&receipt?.contract==='vp3.tool-receipt.v1'&&receipt.capability==='transcripts.read'
+        &&receipt.operation==='detach'&&receipt.status==='read_complete')transcriptCanvas?.clearSourceForTurn?.(transcriptSource);
       const storedRow=(id,role)=>Number.isSafeInteger(id)&&id>0?thread.querySelector('[data-chat-message-id="'+id+'"][data-chat-conversation-id="'+conversationId+'"][data-chat-message-role="'+role+'"]'):null;
       const existingUser=storedRow(storedUserId,'user');
       if(returnedFollowthrough){

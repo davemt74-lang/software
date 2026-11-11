@@ -56,6 +56,10 @@
       const live=window.VP3LiveContext?.snapshot?.()||null;
       value.owner_user_id=pageOwner;value.agent_id=pageAgent;
       value.live_context=value.chat_focused===true&&clockAnchored?live:null;
+      const source=window.STONEFELLOW_TRANSCRIPTION_CANVAS?.sourceContext?.();
+      if(value.chat_focused===true&&Number.isSafeInteger(source?.session_id)&&source.session_id>0){
+        value.transcript_source_id=source.session_id;
+      }
     }
     return value;
   }
@@ -129,6 +133,7 @@
   window.addEventListener('pageshow',()=>{closed=false;void heartbeat('pageshow',true);});
   window.addEventListener('vp3:chat-context-ready',()=>void heartbeat('chat_ready',true));
   window.addEventListener('vp3:live-context-changed',scheduleLive);
+  window.addEventListener('vp3:transcript-source-changed',scheduleLive);
   window.addEventListener('vp3:live-context-ready',()=>{window.VP3LiveContext?.bindActivity?.(activityTab,clockOffset);scheduleLive();});
   window.StonefellowAgentActivity={activityTab:()=>activityTab,markTask:(title,key='')=>{taskTitle=String(title||taskTitle);taskKey=String(key||taskKey);meaningful('task_mark');},snapshot:()=>({state:classify(),taskTitle,taskKey}),
     refreshCoreContext:()=>{lastSentContext='';return heartbeat('retry',true);},

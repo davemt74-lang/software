@@ -172,10 +172,16 @@ try{
  await state('compute_local');
  const privateDiscussion=await post('chat-v236.php?agent=7','Help me with that',localArgs,
   {'X-Fixture-Owner-Trap':null,'X-Fixture-Model-Fail':null,'X-Fixture-History-Capture':'local-only'});
- const localModelHistory=JSON.stringify(modelHistory('local-only'));
+ const localModelHistory=JSON.stringify(modelHistory('local-only')??null);
  check(privateDiscussion.data?.ok===true&&!localModelHistory.includes('Assign an owner for the revised delivery plan')
   &&localModelHistory.includes('unavailable to Cloud AI processing'),
-  'HomeServer-only meeting policy excludes private reviewed details from the Cloud conversation model');
+  'HomeServer-only meeting policy excludes private reviewed details from the Cloud conversation model: '+privateDiscussion.body);
+ const privateTranscript=await post('chat-v236.php?agent=7','Read the selected transcript',localArgs,
+  {'X-Fixture-Owner-Trap':null,'X-Fixture-Model-Fail':null,'X-Fixture-History-Capture':'local-only-transcript'});
+ check(privateTranscript.data?.tool_receipt?.capability==='transcripts.read'
+  &&privateTranscript.data.tool_receipt.status!=='read_complete'&&!modelHistory('local-only-transcript')
+  &&!privateTranscript.body.includes('The revised delivery plan needs an owner by Friday.'),
+  'an explicit read of the HomeServer-only transcript remains protected: '+privateTranscript.body);
  await state('compute_cloud');
  const cancellationChat=(await post('chat-v236.php?agent=7','',{action:'new'})).data.conversation_id;
  const cancellationArgs={conversation_id:cancellationChat};

@@ -178,7 +178,7 @@ function agent_surface_v131_sanitize(array $raw): array
         'participants'=>null,
         'transcription'=>null,
         'transcript_selected_text'=>agent_surface_v131_text($raw['transcript_selected_text']??'',6000),
-        'transcript_session_id'=>max(0,(int)($raw['transcript_session_id']??0)),
+        'transcript_session_id'=>is_int($raw['transcript_session_id']??null)?max(0,$raw['transcript_session_id']):0,
         'editor_capabilities'=>null,
         'browser_context'=>null,
         'screen_observation'=>$screenObservations===null?agent_surface_v131_screen_observation($raw):null,
@@ -186,6 +186,13 @@ function agent_surface_v131_sanitize(array $raw): array
         'proactive'=>[],
         'events'=>[],
     ];
+    if($surface==='chat'&&($raw['transcript_source_cleared']??false)===true){
+        $out['transcript_source_cleared']=true;
+        $out['transcript_session_id']=0;
+        $out['transcript_selected_text']='';
+    }elseif($surface==='chat'&&$out['transcript_session_id']>0&&($raw['transcript_source_selected']??false)===true){
+        $out['transcript_source_selected']=true;
+    }
     if($screenObservations!==null)$out['screen_observations']=$screenObservations;
     if($surface==='chat'&&is_string($raw['working_context_ref']??null)&&preg_match('/^[a-f0-9]{64}$/D',$raw['working_context_ref'])){
         $out['working_context_ref']=$raw['working_context_ref'];
@@ -474,6 +481,10 @@ function agent_surface_v131_context_items(array $context): array
             $safe['transcription']=agent_surface_v131_transcription($pdo,$user,max(0,(int)($safe['conversation_id']??0)));
         }
     }catch(Throwable $e){$safe['transcription']=null;}
+    // The transcript reader alone resolves sidebar selections, exact passages,
+    // and Cloud processing authority. General model context gets state only.
+    unset($safe['transcript_selected_text'],$safe['transcript_session_id'],
+        $safe['transcript_source_selected'],$safe['transcript_source_cleared'],$safe['transcription']['title']);
     $safe=agent_surface_v131_scope_screen($safe,(int)($user['id']??0));
     $items=agent_surface_v131_comparison_context_items($safe['screen_observations']??null);
     if(isset($safe['working_context_ref'])&&isset($pdo,$user)&&$pdo&&is_array($user)){

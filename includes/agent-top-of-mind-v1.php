@@ -93,11 +93,18 @@ function vp3_top_of_mind_media_href_v1(int $agentId,int $conversationId,int $mes
 }
 
 /** Calendar stays in this Chat. Media context follows the authenticated Agent across Chats. */
-function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now): array
+function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now,?array $principal=null): array
 {
     require_once __DIR__.'/agent-calendar-prep-v1.php';
     require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
     $context=['calendar'=>[],'music'=>null,'youtube_search'=>null,'artist_research'=>null,'topic_research'=>null];
+    if($conversationId>0&&$principal!==null){
+        require_once __DIR__.'/agent-transcript-focus-v1.php';
+        try{
+            $recording=vp3_transcript_focus_view_v1($pdo,$user,$principal,$conversationId,new DateTimeImmutable('@'.$now));
+            if($recording!==null)$context['recording']=$recording;
+        }catch(PDOException $error){}catch(RuntimeException $error){if($error->getCode()!==503)throw $error;}
+    }
     try{
         if($conversationId>0)$context['calendar']=array_slice(vp3_calendar_prep_today_v1($pdo,$user,$agentId,$conversationId,new DateTimeImmutable('@'.$now)),0,1);
     }catch(PDOException $error){}catch(RuntimeException $error){
@@ -211,7 +218,7 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             ($policy['enabled']??null)===false=>'paused',
             default=>'ready',
         };
-        if($out['state']!=='ready')return $out+vp3_top_of_mind_chat_context_v1($pdo,$live,$agentId,$cid,$now);
+        if($out['state']!=='ready')return $out+vp3_top_of_mind_chat_context_v1($pdo,$live,$agentId,$cid,$now,$principal);
         $live=vp3_initiative_access_v1($pdo,$live,$policy);
         $byId=[];
         foreach(array_merge(vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy,false,true),
@@ -329,6 +336,6 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             $out['items'][]=$item;
         }
         if(count($out['items'])!==$before)$out['coverage']['initiative']='limited';
-        return $out+vp3_top_of_mind_chat_context_v1($pdo,$fresh['user'],$agentId,$cid,$now);
+        return $out+vp3_top_of_mind_chat_context_v1($pdo,$fresh['user'],$agentId,$cid,$now,$principal);
     });
 }
