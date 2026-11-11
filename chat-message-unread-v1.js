@@ -15,9 +15,13 @@
   let loading = false;
   let queued = false;
   let refreshTimer = 0;
+  let acknowledging = false;
+  let acknowledgeRetryAt = 0;
+  let touchStart = null;
+  let scrollbar = null;
   const requests = new Set();
   const unread = new Set();
-  const visibleSince = new Map();
+  const pendingReadIds = new Set();
   let messages = new Map();
   const continuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const positiveId = value => Number.isSafeInteger(Number(value)) && Number(value) > 0;
@@ -43,7 +47,8 @@
     for (const controller of requests) controller.abort();
     requests.clear();
     unread.clear();
-    visibleSince.clear();
+    clearScrollInput();
+    acknowledgeRetryAt = 0;
     messages.clear();
     thread.querySelectorAll('[data-chat-message-new]').forEach(badge => badge.remove());
   }
@@ -144,12 +149,13 @@
         const fresh = new Set(state.unread_message_ids);
         for (const messageId of batch) {
           if (fresh.has(messageId)) unread.add(messageId);
-          else { unread.delete(messageId); visibleSince.delete(messageId); }
+          else unread.delete(messageId);
         }
         paint();
       }
     } finally {
       loading = false;
+      void acknowledgeScrolled();
       if (queued) { queued = false; scheduleRefresh(); }
     }
   }
@@ -176,54 +182,117 @@
     return hit === target || target.contains(hit);
   }
 
-  let acknowledging = false;
-  let acknowledgeRetryAt = 0;
-  async function acknowledgeVisible() {
-    if (acknowledging || loading || !conversationId || Date.now() < acknowledgeRetryAt) return;
-    if (!configurationMatches()) { reset(true); return; }
-    if (currentConversation() !== conversationId) { reset(); return; }
-    const now = Date.now();
-    const ids = [];
-    for (const messageId of unread) {
-      if (!isVisible(messages.get(messageId))) { visibleSince.delete(messageId); continue; }
-      if (!visibleSince.has(messageId)) visibleSince.set(messageId,now);
-      if (now - visibleSince.get(messageId) >= 1000) ids.push(messageId);
-    }
-    if (!ids.length) return;
-    acknowledging = true;
+  function clearScrollInput() {
+    pendingReadIds.clear();
+    touchStart = null;
+    scrollbar = null;
+  }
+
+  function visibleUnread() {
+    return [...unread].filter(messageId => isVisible(messages.get(messageId)));
+  }
+
+  function recordScrollInput(messageIds) {
+    if (!conversationId || !scoped(epoch,conversationId) || Date.now() < acknowledgeRetryAt) return;
+    // Scroll events also fire for automatic positioning. Capture the exact
+    // posts visible at the user's input so a later post cannot inherit it.
+    for (const messageId of messageIds ?? visibleUnread()) pendingReadIds.add(messageId);
+    void acknowledgeScrolled();
+  }
+
+  async function acknowledgeScrolled() {
+    if (acknowledging || loading || !pendingReadIds.size) return;
     const id = conversationId;
     const token = epoch;
+    if (!id || !scoped(token,id) || document.hidden || !document.hasFocus() || thread.dataset.view !== 'chat') {
+      clearScrollInput();
+      return;
+    }
+    const batch = [...pendingReadIds].filter(messageId => unread.has(messageId)).slice(0,100);
+    if (!batch.length) { pendingReadIds.clear(); return; }
+    batch.forEach(messageId => pendingReadIds.delete(messageId));
+    acknowledging = true;
     try {
-      const batch = ids.slice(0,100);
       const result = await request('POST',batch,token,id);
       if (!scoped(token,id)) return;
-      if (!result) { acknowledgeRetryAt = Date.now() + 5000; return; }
+      if (!result) {
+        pendingReadIds.clear();
+        acknowledgeRetryAt = Date.now() + 5000;
+        return;
+      }
       acknowledgeRetryAt = 0;
       const pending = new Set(result.unread_message_ids);
       for (const messageId of batch) {
-        if (!pending.has(messageId)) { unread.delete(messageId); visibleSince.delete(messageId); }
+        if (!pending.has(messageId)) unread.delete(messageId);
       }
       paint();
       try { localStorage.setItem('vp3:chat-read:v1:' + ownerId + ':' + agentId + ':' + id,String(Date.now())); } catch (_error) {}
     } finally {
       acknowledging = false;
+      void acknowledgeScrolled();
       if (queued) { queued = false; scheduleRefresh(); }
     }
   }
 
+  if (!thread.hasAttribute('tabindex')) thread.tabIndex = 0;
+  thread.addEventListener('wheel',event => {
+    if (event.isTrusted && !event.defaultPrevented && !event.ctrlKey && Math.abs(event.deltaY) > Math.abs(event.deltaX)) recordScrollInput();
+  },{passive:true});
+  thread.addEventListener('touchstart',event => {
+    touchStart = event.isTrusted && event.touches.length === 1 ? event.touches[0] : null;
+  },{passive:true});
+  thread.addEventListener('touchmove',event => {
+    const touch = event.touches.length === 1 ? event.touches[0] : null;
+    if (!event.isTrusted || event.defaultPrevented || !touchStart || touch?.identifier !== touchStart.identifier) return;
+    const dx = Math.abs(touch.clientX - touchStart.clientX);
+    const dy = Math.abs(touch.clientY - touchStart.clientY);
+    if (Math.max(dx,dy) < 5) return;
+    touchStart = touch;
+    if (dy > dx) recordScrollInput();
+  },{passive:true});
+  for (const event of ['touchend','touchcancel']) thread.addEventListener(event,() => { touchStart = null; },{passive:true});
+  const scrollKeys = new Set(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' ']);
+  thread.addEventListener('keydown',event => {
+    if (!event.isTrusted || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !scrollKeys.has(event.key)
+      || event.target.closest('input,textarea,select,button,a[href],[contenteditable],[role="button"]')) return;
+    recordScrollInput();
+  });
+  // A native scrollbar can move without wheel or keyboard events.
+  thread.addEventListener('pointerdown',event => {
+    if (!event.isTrusted || event.defaultPrevented || event.pointerType !== 'mouse' || event.button !== 0
+      || event.target !== thread || thread.scrollHeight <= thread.clientHeight) return;
+    const bounds = thread.getBoundingClientRect();
+    const style = getComputedStyle(thread);
+    const left = bounds.left + thread.clientLeft;
+    const right = left + thread.clientWidth;
+    const inGutter = event.clientX >= bounds.left + parseFloat(style.borderLeftWidth) && event.clientX < left
+      || event.clientX >= right && event.clientX < bounds.right - parseFloat(style.borderRightWidth);
+    if (inGutter) scrollbar = {pointerId:event.pointerId,position:thread.scrollTop,expiresAt:Infinity,messageIds:visibleUnread()};
+  },{passive:true});
+  window.addEventListener('pointerup',event => {
+    if (event.isTrusted && scrollbar?.pointerId === event.pointerId) scrollbar.expiresAt = Date.now() + 300;
+  },{capture:true,passive:true});
+  window.addEventListener('pointercancel',event => {
+    if (scrollbar?.pointerId === event.pointerId) scrollbar = null;
+  },{capture:true,passive:true});
+  thread.addEventListener('scroll',event => {
+    if (!event.isTrusted || !scrollbar) return;
+    if (Date.now() <= scrollbar.expiresAt && thread.scrollTop !== scrollbar.position) recordScrollInput(scrollbar.messageIds);
+    scrollbar = null;
+  },{passive:true});
+
   window.addEventListener('stonefellow:chat-context-changing',() => reset());
   window.addEventListener('vp3:chat-context-ready',scheduleRefresh);
-  window.addEventListener('vp3:chat-canvas-view-changed',() => { visibleSince.clear(); scheduleRefresh(); });
+  window.addEventListener('vp3:chat-canvas-view-changed',() => { clearScrollInput(); scheduleRefresh(); });
   window.addEventListener('vp3:chat-message-persisted',scheduleRefresh);
-  window.addEventListener('focus',() => { visibleSince.clear(); scheduleRefresh(); });
-  window.addEventListener('blur',() => visibleSince.clear());
-  document.addEventListener('visibilitychange',() => { visibleSince.clear(); if (!document.hidden) scheduleRefresh(); });
+  window.addEventListener('focus',scheduleRefresh);
+  window.addEventListener('blur',clearScrollInput);
+  document.addEventListener('visibilitychange',() => { clearScrollInput(); if (!document.hidden) scheduleRefresh(); });
   window.addEventListener('storage',event => {
     if (event.key === 'vp3:chat-read:v1:' + ownerId + ':' + agentId + ':' + conversationId) scheduleRefresh();
   });
   window.addEventListener('pagehide',() => { suspended = true; reset(); });
   window.addEventListener('pageshow',() => { suspended = false; scheduleRefresh(); });
-  setInterval(() => void acknowledgeVisible(),250);
   setInterval(() => void refresh(),15000);
   window.VP3_CHAT_MESSAGE_UNREAD = {refresh};
   scheduleRefresh();

@@ -102,6 +102,32 @@ try{
  await page.evaluate(()=>{window.dispatchEvent(new Event('stonefellow:chat-context-changing'));proof.cid=43;window.dispatchEvent(new Event('vp3:chat-context-ready'));releaseAnalysis();});await page.clock.runFor(500);
  await check('saved Chat switching fences an old in-flight share and its source binding',async()=>{assert.equal(await page.evaluate(()=>VP3LiveContext.snapshot()),null);assert.equal(await page.evaluate(()=>VP3AgentScreenShare.isActive()),false);assert.equal(await page.evaluate(()=>tracks.at(-1).readyState),'ended');});
  await page.close();
+ const inputPage=await open();
+ await check('camera presence stays distinct from recent trusted input in the same foreground Chat',async()=>{
+  await inputPage.evaluate(()=>presence());
+  const eyes=()=>inputPage.evaluate(()=>VP3LiveContext.snapshot()?.eyes);
+  assert.equal((await eyes()).recent_chat_input,false);
+  await inputPage.evaluate(()=>document.querySelector('#chatInput').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
+  assert.equal((await eyes()).recent_chat_input,false);
+  await inputPage.locator('#chatInput').press('ArrowRight');await inputPage.clock.runFor(2500);
+  assert.equal((await eyes()).recent_chat_input,true);
+  const active=requests.at(-1).body.context.live_context.eyes;
+  assert.equal(active.recent_chat_input,true);assert.equal(typeof active.chat_input_observed_at,'string');
+  assert.ok(!JSON.stringify(active).includes('ArrowRight'));
+  await inputPage.clock.runFor(30000);await inputPage.evaluate(()=>presence({last_event:'steady'}));
+  assert.equal((await eyes()).recent_chat_input,false);
+  await inputPage.locator('#chatInput').click();
+  assert.equal((await eyes()).recent_chat_input,true);
+  await inputPage.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  assert.equal((await eyes()).recent_chat_input,false);
+  await inputPage.locator('#chatInput').press('ArrowRight');
+  assert.equal((await eyes()).recent_chat_input,true);
+  await inputPage.evaluate(()=>{window.dispatchEvent(new Event('stonefellow:chat-context-changing'));proof.cid=43;presence();});
+  assert.equal((await eyes()).recent_chat_input,false);
+  await inputPage.evaluate(()=>presence({rows:[]}));
+  assert.equal((await eyes()).recent_chat_input,undefined);
+ });
+ await inputPage.close();
  const many=await open();await many.getByRole('button',{name:'Share screen',exact:true}).click();await many.waitForFunction(()=>VP3LiveContext.snapshot()?.screens.length===1);
  for(let index=1;index<3;index++){
   await many.getByRole('button',{name:'Add tab',exact:true}).click();const panel=many.locator('#vp3-screen-source-panel-'+index);

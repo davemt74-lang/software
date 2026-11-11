@@ -241,6 +241,7 @@ try{
       assert.equal(goal.tool,mobile?'tasks.lists.read':'live.context.read');
       if(mobile){assert.equal(goal.primary,'task-list:600');assert.ok(Object.keys(goal.sources).some(ref=>ref.startsWith('live-context:')));}
       await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+      if(!mobile)await until(async()=>currentPacket(await control())?.eyes?.recent_chat_input===true);
       const feed=page.locator('[data-agent-top-of-mind]');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="queued"]').waitFor();
       await control('claim');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="working"]').waitFor();
       let state=await execute();const {post}=verifiedResult(state,id,goal.tool);

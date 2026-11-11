@@ -139,7 +139,8 @@ if($idempotencyKey!==''){
                 agent_connection_email_chat_authority_v1($pdo,$user,$principal,$replayConversationId,$emailAuthority);
                 if(!empty($replay['private_email_read'])&&in_array($emailPlan['operation'],['search','read','review_status'],true)){
                     $read=agent_connection_email_chat_v1($pdo,$user,$principal,$query,$replayConversationId,
-                        (int)$replay['user_message_id'],$emailAuthority,true,privateVoiceSurface:true);
+                        (int)$replay['user_message_id'],$emailAuthority,true,privateVoiceSurface:true,
+                        timezone:is_string($input['reminder_timezone']??null)?$input['reminder_timezone']:null);
                     if(is_array($read)){
                         $read=vp3_agent_tool_authorize_result_v400($read,$user,$query,['conversation_id'=>$replayConversationId],$principal);
                         foreach(['answer','actions','sources','tool_receipt'] as $field)$replay[$field]=$read[$field]??null;

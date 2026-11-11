@@ -3986,6 +3986,9 @@
   });
 
   function gmailReviewActionLabel(message) {
+    if (/^Draft reply to Gmail (?:follow-up [1-9][0-9]{0,14}|search item [a-f0-9]{2,1500}): [^\u0000-\u001f\u007f-\u009f\u2028\u2029]{1,600}$/u.test(message)) {
+      return 'Draft reply to selected Gmail message';
+    }
     const match = /^(?:(Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}|(Reply|Draft reply) to Gmail (?:matched item [a-f0-9]{64} [a-zA-Z0-9_-]{1,190} [a-f0-9]{64}|follow-up [1-9][0-9]{0,15}|search item [a-f0-9]{2,1500}))$/.exec(message);
     return match ? (match[1] || match[2]) + ' to selected Gmail message' : '';
   }
@@ -4032,7 +4035,9 @@
       &&initiativeVisualRetry.message===message.trim()&&initiativeVisualRetry.association===visualAssociation?initiativeVisualRetry:
       {conversationId,message:message.trim(),association:visualAssociation,elements:[]};
     initiativeVisualRetry=null;
-    const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim(),initiativeReply,visualTurn};pendingSend=request;lastParticipantQuestion={message:request.message,conversation_id:request.conversationId,at:Date.now(),submitted:true};
+    const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim(),initiativeReply,visualTurn};
+    pendingSend=request;
+    lastParticipantQuestion=gmailAction?null:{message:request.message,conversation_id:request.conversationId,at:Date.now(),submitted:true};
     request.timer=setTimeout(() => request.controller.abort(),120000);showStop();
     keepDraft(request.message,request.conversationId);
     send.disabled = true; input.disabled=true;
@@ -4425,7 +4430,14 @@
       thread.scrollTop = thread.scrollHeight;
       return element;
     },
-    pendingParticipantQuestion:()=>pendingSend?{message:pendingSend.message,conversation_id:pendingSend.conversationId,submitted:true}:lastParticipantQuestion&&Date.now()-lastParticipantQuestion.at<120000&&lastParticipantQuestion.conversation_id===Number(conversationId||0)?{...lastParticipantQuestion}:null,
+    pendingParticipantQuestion:()=>{
+      if(pendingSend){
+        if(gmailReviewActionLabel(pendingSend.message))return null;
+        return {message:pendingSend.message,conversation_id:pendingSend.conversationId,submitted:true};
+      }
+      return lastParticipantQuestion&&Date.now()-lastParticipantQuestion.at<120000
+        &&lastParticipantQuestion.conversation_id===Number(conversationId||0)?{...lastParticipantQuestion}:null;
+    },
     isVoice:() => Boolean(voiceMode),
     conversationId:() => Number(conversationId || 0),
     agentId:() => Number(cfg.agentId || 0),
@@ -4439,7 +4451,7 @@
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,
     requestGmailReviewAction: command => {
       if (!gmailReviewActionLabel(command) || !contextReady || busy || initialRestorePending
-          || restoringConversation > 0 || input.value.trim()) return false;
+          || restoringConversation > 0 || initiativeReplyTarget || input.value.trim()) return false;
       void sendMessage(command,'text',true);
       return true;
     },

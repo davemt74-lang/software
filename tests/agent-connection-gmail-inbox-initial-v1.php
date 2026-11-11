@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-initial-v1.php';
 require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-status-v1.php';
+require_once dirname(__DIR__).'/includes/agent-connection-email-chat-v1.php';
 require_once dirname(__DIR__).'/includes/user-agent-system-v236.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
@@ -233,7 +234,7 @@ try {
         'old'=>first_review_message('old', $lower-1, 'customer@example.test', 'Outside lookback'),
         'boundary'=>first_review_message('boundary', $lower, 'customer@example.test', 'At start boundary'),
         'github-ci'=>first_review_message('github-ci', $lower+2000, 'notifications@github.com', 'CI update', ['INBOX'], 'ci_activity@noreply.github.com'),
-        'reply'=>first_review_message('reply', $startedAt-1, 'reply@example.test', 'Just before end boundary', ['INBOX', 'IMPORTANT'], '', '<original@example.test>'),
+        'reply'=>first_review_message('reply', $startedAt-1, 'reply@example.test', 'Action required: Just before end boundary', ['INBOX', 'IMPORTANT'], '', '<original@example.test>'),
     ];
     $expectedQuery = ['q'=>'after:'.(intdiv($lower, 1000)-1).' before:'.(int)ceil($startedAt/1000),
         'labelIds'=>'INBOX', 'includeSpamTrash'=>'false', 'maxResults'=>'5', 'fields'=>'messages(id),nextPageToken'];
@@ -252,7 +253,7 @@ try {
     $rail = $view(1);
     first_review_check($report['days'] === 14 && $report['scanned'] === 10 && $report['total'] === 3
         && $report['filtered'] === 2 && $report['important'] === 1 && $report['replies'] === 1
-        && array_column($report['items'], 'subject') === ['PRIVATE_SUBJECT_SENTINEL', 'At start boundary', 'Just before end boundary']
+        && array_column($report['items'], 'subject') === ['PRIVATE_SUBJECT_SENTINEL', 'At start boundary', 'Action required: Just before end boundary']
         && $report['summary'] === 'Fixture subject theme.' && $report['summary_status'] === 'ready' && $report['tokens_charged'] === 247,
         'the saved report applies Inbox membership, exact cutoffs, owner filters, and summary token receipt');
     $notices = $noticeRows(1);
@@ -274,6 +275,11 @@ try {
         && $chatView['chat_result']['items'][0]['item_ref'] === $ref
         && !isset($chatView['chat_result']['items'][0]['message_id'],$chatView['chat_result']['items'][0]['message_id_enc']),
         'the saved ID is encrypted and explicit private views expose only an opaque exact item selector');
+    $replyItem = $report['items'][2];
+    first_review_check($replyItem['category'] === 'reply' && ($replyItem['important'] ?? false) === true
+        && ($replyItem['priority_signals'] ?? []) === ['action required']
+        && $chatView['chat_result']['items'][2] === $replyItem,
+        'the first review and Chat retain Gmail importance and matching subject words on the same exact reply');
 
     $beforeDeliveryCalls = [$profileCalls,$listCalls,$metadataCalls,count($summaries)];
     $deliveryRejected = static function(int $agent,int $cid,string $runId,int $status) use ($pdo,$users): bool {
@@ -486,6 +492,22 @@ try {
     ] && $background(agent:18)['latest'] === null && $background(2)['latest'] === null
         && $background(includeResults:false)['latest'] === null && $updateCalls === 6,
         'status exposes only the exact verified recurring update for the selected owner Agent');
+    $latestPrompt = agent_connection_email_chat_plan_v1('Show my latest Gmail inbox review report');
+    $firstPrompt = agent_connection_email_chat_plan_v1('Show my first Gmail inbox review report');
+    $latestReviewChat = agent_connection_email_inbox_review_chat_v1($pdo,$users[1],!empty($latestPrompt['first_review']));
+    $firstReviewChat = agent_connection_email_inbox_review_chat_v1($pdo,$users[1],!empty($firstPrompt['first_review']));
+    $otherReviewChat = agent_connection_email_inbox_review_chat_v1($pdo,$users[2],false);
+    [$storedLatest,$storedLatestContext] = agent_connection_email_chat_view_v1($latestReviewChat,$latestReviewChat['answer'],[]);
+    $reviewChatLink = '/chat.php?agent=17&conversation_id=170&message_id=';
+    first_review_check($latestPrompt['operation'] === 'review_status' && $firstPrompt['operation'] === 'review_status'
+        && agent_connection_email_chat_plan_v1('Show my latest Gmail update') === $latestPrompt
+        && $latestReviewChat['tool_receipt']['status'] === 'read_complete'
+        && $latestReviewChat['actions'][0]['url'] === $reviewChatLink.$updatePosts[2]['id']
+        && $firstReviewChat['actions'][0]['url'] === $reviewChatLink.$fullDelivery['delivery']['message_id']
+        && !str_contains(json_encode($otherReviewChat,JSON_THROW_ON_ERROR),$reviewChatLink)
+        && $storedLatest === 'A private Gmail result was displayed for this turn.' && $storedLatestContext['skip_brain_archive']
+        && $updateCalls === 6,
+        'latest Gmail review links to its verified originating post while explicit first review and owner privacy are preserved');
     $rehydrated = agent_connection_gmail_inbox_chat_history_v1($contender,$users[1],17,170,$updatePosts);
     $updateRefs = [];
     foreach ($rehydrated as $message) {
@@ -503,13 +525,94 @@ try {
     first_review_check(agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],18,180,$rehydrated) === $updatePosts
         && agent_connection_gmail_inbox_chat_history_v1($pdo,$users[2],0,190,$rehydrated) === $updatePosts,
         'a replay in another Agent or owner strips mailbox projections from persisted update markers');
+
+    $chatView = static fn(int $owner=1): array => agent_connection_gmail_inbox_initial_view_v1($pdo,$users[$owner],includeChatResult:true);
+    $lastChecked = agent_connection_gmail_inbox_policy_v1($pdo,1)['last_checked_at'];
+    $writeStatus->execute(['checked',$lastChecked,gmdate('Y-m-d H:i:s',time()-30),null]);
+    first_review_check($chatView()['inbox_background']['state'] === 'checked' && !isset($chatView()['inbox_background']['check_ref']),
+        'the private Chat gives the normal worker its scheduled grace period');
+    $dueAt = gmdate('Y-m-d H:i:s',time()-180);
+    $writeStatus->execute(['checked',$lastChecked,$dueAt,null]);
+    $beforeOverdue = agent_connection_gmail_inbox_policy_v1($pdo,1);
+    $overdue = $chatView()['inbox_background'];
+    $oldRef = $overdue['check_ref'] ?? '';
+    first_review_check($overdue['state'] === 'overdue' && preg_match('/\A[a-f0-9]{64}\z/D',$oldRef)
+        && !isset($view(1,true)['inbox_background']) && !isset($background()['check_ref'])
+        && agent_connection_gmail_inbox_policy_v1($pdo,1) === $beforeOverdue,
+        'only the private Chat gets an overdue reference and reads never take a lease or change the policy');
+
+    $unexpectedCalls = 0;
+    $unexpectedCheck = static function() use (&$unexpectedCalls): never {
+        $unexpectedCalls++;
+        throw new LogicException('An ineligible overdue request touched Gmail.');
+    };
+    agent_connection_gmail_inbox_save_v1($pdo,$users[1],$form(1,$changedRules),$http);
+    $checkRef = $chatView()['inbox_background']['check_ref'];
+    agent_connection_gmail_inbox_check_overdue_v1($pdo,$users[1],$oldRef,$unexpectedCheck);
+    $otherDue = $pdo->prepare('UPDATE agent_connection_gmail_inbox_v1 SET next_check_at=? WHERE owner_user_id=2');
+    $otherDue->execute([$dueAt]);
+    $otherBeforeCheck = agent_connection_gmail_inbox_policy_v1($pdo,2);
+    agent_connection_gmail_inbox_check_overdue_v1($pdo,$users[2],$checkRef,$unexpectedCheck);
+    $participantScope = ['id'=>9];
+    agent_connection_gmail_inbox_check_overdue_v1($pdo,$users[1],$checkRef,$unexpectedCheck);
+    unset($participantScope);
+    first_review_check($checkRef !== $oldRef && $unexpectedCalls === 0
+        && agent_connection_gmail_inbox_policy_v1($pdo,2) === $otherBeforeCheck,
+        'old policy revisions, a different overdue owner and participant sessions cannot claim the check');
+    $otherDue->execute(['2099-01-01 00:00:00']);
+
+    $checkCalls = [];
+    $simultaneousSweep = null;
+    $checkProvider = static function(string $method,string $url,array $headers) use (
+        $pdo,$contender,$users,$checkRef,$unexpectedCheck,&$checkCalls,&$simultaneousSweep
+    ): array {
+        if ($method !== 'GET' || $pdo->inTransaction() || !in_array('Authorization: Bearer fixture-inbox-access-1',$headers,true)) {
+            throw new LogicException('The check used an unexpected grant or database transaction.');
+        }
+        $path = basename((string)parse_url($url,PHP_URL_PATH));
+        $checkCalls[] = $path;
+        if ($path === 'history') {
+            parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+            if (($query['startHistoryId'] ?? '') !== '18446744073709551603') throw new LogicException('The check reset the cursor.');
+            agent_connection_gmail_inbox_check_overdue_v1($contender,$users[1],$checkRef,$unexpectedCheck);
+            $simultaneousSweep = agent_connection_gmail_inbox_sweep_v1($contender,1,$unexpectedCheck);
+            return ['status'=>200,'json'=>['historyId'=>'18446744073709551604',
+                'history'=>[['id'=>'18446744073709551604','messagesAdded'=>[['message'=>['id'=>'overdue_update']]]]]]];
+        }
+        if ($path !== 'overdue_update') throw new LogicException('Unexpected check message reference.');
+        return ['status'=>200,'json'=>first_review_message('overdue_update',(int)floor(microtime(true)*1000),
+            'update@example.test','Private overdue update')];
+    };
+    agent_connection_gmail_inbox_check_overdue_v1($pdo,$users[1],$checkRef,$checkProvider);
+    agent_connection_gmail_inbox_check_overdue_v1($contender,$users[1],$checkRef,$unexpectedCheck);
+    $afterOverdue = $chatView();
+    first_review_check($checkCalls === ['history','overdue_update'] && $unexpectedCalls === 0
+        && $simultaneousSweep === ['processed'=>0,'reviewed'=>0] && $afterOverdue['inbox_background']['state'] === 'checked'
+        && !isset($afterOverdue['inbox_background']['check_ref']) && !$afterOverdue['inbox_updates']['pending']
+        && $afterOverdue['inbox_updates']['latest']['conversation_id'] === 170
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE conversation_id=170')->fetchColumn() === 4,
+        'one overdue slice uses the original cursor, shares its lease with the worker and posts the new batch once');
     $disable = $form(1,$changedRules);
     unset($disable['enabled']);
-    agent_connection_gmail_inbox_save_v1($pdo,$users[1],$disable,$http);
+    $writeStatus->execute(['checked',$lastChecked,$dueAt,null]);
+    $revokedRef = $chatView()['inbox_background']['check_ref'];
+    $revokedReads = [];
+    $revokeDuringHistory = static function(string $method,string $url,array $headers) use ($contender,$users,$disable,&$revokedReads): array {
+        $path = basename((string)parse_url($url,PHP_URL_PATH));
+        $revokedReads[] = $path;
+        if ($method !== 'GET' || $path !== 'history' || !in_array('Authorization: Bearer fixture-inbox-access-1',$headers,true)) {
+            throw new LogicException('A revoked check continued to Gmail metadata.');
+        }
+        agent_connection_gmail_inbox_save_v1($contender,$users[1],$disable);
+        return ['status'=>200,'json'=>['historyId'=>'18446744073709551605',
+            'history'=>[['id'=>'18446744073709551605','messagesAdded'=>[['message'=>['id'=>'revoked_update']]]]]]];
+    };
+    agent_connection_gmail_inbox_check_overdue_v1($pdo,$users[1],$revokedRef,$revokeDuringHistory);
+    agent_connection_gmail_inbox_check_overdue_v1($pdo,$users[1],$revokedRef,$unexpectedCheck);
     first_review_check(agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],17,170,$rehydrated) === $updatePosts
         && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE owner_user_id=1')->fetchColumn() === 0
-        && $background() === null,
-        'revoking Inbox Review removes private batch data while leaving only the generic Chat markers');
+        && $background() === null && $unexpectedCalls === 0 && $revokedReads === ['history'],
+        'revoking Inbox Review during an overdue check stops metadata reads and removes private batch data');
 
     echo 'AGENT_CONNECTION_GMAIL_INBOX_INITIAL=PASS ('.$checks.' checks; native MySQL)'.PHP_EOL;
 } finally {

@@ -207,7 +207,15 @@
   overflow-wrap: anywhere;
 }
 .connections-inbox-messages li .connections-muted { grid-row: 2; font-size: .85rem; }
-.connections-inbox-messages li .connections-badge { grid-column: 2; grid-row: 1 / span 2; }
+.connections-inbox-messages li .gmail-review-item-labels {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: .2rem;
+}
+.connections-inbox-messages li .gmail-review-item-priority { grid-column: 1 / -1; }
 .connections-disconnect { margin-top: 1rem; padding-top: .7rem; border-top: 1px solid #e3e8ef; }
 .connections-disconnect summary { width: fit-content; padding: .45rem 0; color: #852535; cursor: pointer; }
 .connections-disconnect form { margin-top: .5rem; }

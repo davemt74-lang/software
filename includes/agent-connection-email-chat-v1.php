@@ -46,11 +46,16 @@ function agent_connection_email_chat_plan_v1(string $query, bool $spoken=false):
     $query = trim($query);
     $query = preg_replace('/\A(?:please\s+|(?:can|could|would) you\s+)+/iu', '', $query) ?? $query;
     $command = rtrim($query,'.?!');
-    if (preg_match('/\A(?:(draft) )?reply to gmail follow-up ([1-9][0-9]{0,14})\z/iu', $command, $match)) {
-        return ['operation'=>'reply','mode'=>$match[1] === '' ? 'manual' : 'draft','instruction'=>'','followup_id'=>(int)$match[2]];
+    $exactReplySuffix = '(?:[.?!]*|: ([^\p{Cc}\p{Zl}\p{Zp}]{1,600}))';
+    if (preg_match('/\A(?:(draft) )?reply to gmail follow-up ([1-9][0-9]{0,14})'.$exactReplySuffix.'\z/iu', $query, $match)) {
+        $instruction = trim($match[3] ?? '');
+        if ($match[1] === '' && $instruction !== '') return null;
+        return ['operation'=>'reply','mode'=>$match[1] === '' ? 'manual' : 'draft','instruction'=>$instruction,'followup_id'=>(int)$match[2]];
     }
-    if (preg_match('/\A(?:(draft) )?reply to gmail search item ((?-i:[a-f0-9]{2,1500}))\z/iu', $command, $match)) {
-        return ['operation'=>'reply','mode'=>$match[1] === '' ? 'manual' : 'draft','instruction'=>'','search_ref'=>$match[2]];
+    if (preg_match('/\A(?:(draft) )?reply to gmail search item ((?-i:[a-f0-9]{2,1500}))'.$exactReplySuffix.'\z/iu', $query, $match)) {
+        $instruction = trim($match[3] ?? '');
+        if ($match[1] === '' && $instruction !== '') return null;
+        return ['operation'=>'reply','mode'=>$match[1] === '' ? 'manual' : 'draft','instruction'=>$instruction,'search_ref'=>$match[2]];
     }
     if (preg_match('/\A(?:(draft) )?reply to gmail matched item ((?-i:[a-f0-9]{64})) ([a-z0-9_-]{1,190}) ((?-i:[a-f0-9]{64}))\z/iu', $command, $match)) {
         return ['operation'=>'reply','mode'=>$match[1] === '' ? 'manual' : 'draft','instruction'=>'',
@@ -76,6 +81,10 @@ function agent_connection_email_chat_plan_v1(string $query, bool $spoken=false):
     if (preg_match('/\A(?:find|show|search|filter)\s+(?:(?:me|my)\s+)?(?:gmail(?: inbox)?(?:\s+for)?(?:\s+(?:e-?mails?|messages?))?|(?:inbound )?e-?mails?)\s+from\s+(.+)\z/iu',$command,$match)) {
         return ['operation'=>'search','sender'=>agent_connection_email_chat_sender_v1($match[1],$spoken)];
     }
+    if (preg_match('/\A(?:(?:show|find|check)(?: me)? |do i have |are there |what are )?(?:my |any |the )?(unread )?(urgent|important|priority)( unread)? (?:gmail(?: messages?| e-?mails?)?|e-?mails?)( today)?\z/iu', $command, $match)) {
+        return ['operation'=>'search','priority'=>strtolower($match[2]),'unread'=>$match[1] !== '' || !empty($match[3]),
+            'today'=>!empty($match[4])];
+    }
     if (preg_match('/\A(?:gmail search\s*:\s*|search (?:my )?gmail(?: inbox)?(?: for)?\s+)(.{1,500})\z/isu', $query, $match)) {
         return ['operation'=>'search','query'=>trim($match[1])];
     }
@@ -85,21 +94,27 @@ function agent_connection_email_chat_plan_v1(string $query, bool $spoken=false):
     if (preg_match('/\A(?:read|show|open) (?:my )?gmail message\s+([a-z0-9_-]{1,128})[.?!]?\z/iu', $query, $match)) {
         return ['operation'=>'read','message_id'=>$match[1]];
     }
-    if (!preg_match('/\A(?:(?:draft|write|compose|prepare|send)\s+(?:me\s+)?(?:(?:an?|the)\s+)?(?:gmail\s+)?e-?mail\b|e-?mail(?=\s+[^\s]+@))(?=\s|\z)(.*)\z/isu', $query, $match)) {
+    if (!preg_match('/\A(?:(?:draft|write|compose|prepare|send)\s+(?:me\s+)?(?:(?:an?|the)\s+)?(?:new\s+)?(?:gmail\s+)?e-?mail\b|e-?mail(?=\s+[^\s]+@))(?=\s|\z)(.*)\z/isu', $query, $match)) {
+        if (preg_match('/\b(?:first|initial)\s+(?:gmail(?:\s+inbox)?|inbox|e-?mail)\s+(?:review|reveiw|scan)\b/iu',$command)) {
+            return ['operation'=>'review_status','first_review'=>true];
+        }
         if (strcasecmp($command, '/gmail review') === 0
-            || preg_match('/\b(?:first|initial)\s+(?:gmail(?:\s+inbox)?|inbox|e-?mail)\s+(?:review|reveiw|scan)\b/iu',$command)
-            || preg_match('/\A(?:(?:show|open|read|find)(?: me)? |where (?:is|are) )?(?:my |the )?(?:latest |last )?(?:gmail(?: inbox)?|inbox|e-?mail) (?:review|scan)(?: results?| report)?\z/iu',$command)) {
+            || preg_match('/\A(?:(?:show|open|read|find)(?: me)? |where (?:is|are) )?(?:my |the )?(?:latest |last )?(?:gmail(?: inbox)?|inbox|e-?mail) (?:review|scan|updates?)(?: results?| report)?\z/iu',$command)) {
             return ['operation'=>'review_status'];
         }
         return null;
     }
     $request = trim($match[1]);
     if ($request !== '' && !preg_match('/\A(?:to\s+|[^\s]+@|(?:about|for|saying|with|asking|telling)\b)/iu', $request)) return null;
-    if (!preg_match('/\A(?:to\s+)?([^\s,;<>]+@[^\s,;<>]+?)(?=\s|,|\z)(.*)\z/su', $request, $target)
+    if (!preg_match('/\A(?:to\s+)?([^\s,;<>]+@[^\s,;<>]+?)(?=[\s,;]|\z)(.*)\z/su', $request, $target)
         || !filter_var($target[1], FILTER_VALIDATE_EMAIL) || strlen($target[1]) > 254) {
         return ['operation'=>'draft','to'=>'','instruction'=>''];
     }
-    $instruction = ltrim($target[2], " \t\n\r,");
+    $instruction = ltrim($target[2], " \t\n\r,;");
+    if (preg_match('/\A(?:(?:and|or)\s+)?(?:(?:cc|bcc|copy)\b\s*:?\s*(?:to\s+)?)?<?([^\s,;<>]+@[^\s,;<>]+)(?=[\s,;>]|\z)/iu', $instruction, $extra)
+        && filter_var(rtrim($extra[1], '.?!'), FILTER_VALIDATE_EMAIL)) {
+        return ['operation'=>'draft','to'=>'','instruction'=>''];
+    }
     if (preg_match('/\A(?:subject|subject line):[\t ]*([^\r\n]+)\R(?:body|message):[\t ]*(.*)\z/isu', $instruction, $exact)) {
         return ['operation'=>'draft','to'=>$target[1],'subject'=>trim($exact[1]),'body'=>trim($exact[2]),'instruction'=>''];
     }
@@ -117,6 +132,38 @@ function agent_connection_email_chat_text_v1(mixed $value, int $limit, bool $mul
         throw new InvalidArgumentException('Use a subject of up to 200 characters and a message of up to 6,000 characters.');
     }
     return $value;
+}
+
+function agent_connection_email_chat_priority_v1(PDO $pdo, array $user, array $plan, string $accessToken, ?callable $http, ?string $timezone): array
+{
+    if ($timezone === null || !in_array($timezone, DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC), true)) {
+        $timezone = function_exists('user_calendar_default_timezone_v1300') ? user_calendar_default_timezone_v1300($pdo, $user) : 'UTC';
+    }
+    $zone = new DateTimeZone($timezone);
+    $today = $plan['today'] ? new DateTimeImmutable('today', $zone) : null;
+    $start = $today?->getTimestamp() ?? 0;
+    $end = $today?->modify('+1 day')->getTimestamp() ?? PHP_INT_MAX;
+    $query = 'in:inbox'.($plan['unread'] ? ' is:unread' : '');
+    if ($today) $query .= ' after:'.($start - 1).' before:'.$end;
+    $subjectSignals = $plan['priority'] === 'important' ? ['important'] : AGENT_CONNECTION_GMAIL_PRIORITY_PHRASES_V1;
+    $terms = ['is:important'];
+    foreach ($subjectSignals as $phrase) $terms[] = 'subject:"'.$phrase.'"';
+    $query .= ' {'.implode(' ', $terms).'}';
+    $scope = ($plan['unread'] ? 'Unread Gmail inbox' : 'Gmail inbox').($today ? ' today ('.$zone->getName().')' : '');
+    $messages = [];
+    foreach (agent_connection_gmail_search_v1($accessToken, $query, 5, $http) as $mail) {
+        $received = intdiv($mail['received_at_ms'], 1000);
+        if (!in_array('INBOX', $mail['labels'], true) || ($plan['unread'] && !in_array('UNREAD', $mail['labels'], true))
+            || ($today && ($received < $start || $received >= $end))) continue;
+        $signals = in_array('IMPORTANT', $mail['labels'], true) ? ['Gmail marked this Important'] : [];
+        foreach (array_intersect(agent_connection_gmail_subject_priority_signals_v1($mail['subject']), $subjectSignals) as $phrase) {
+            $signals[] = 'Subject says “'.$phrase.'”';
+        }
+        if (!$signals) continue;
+        $messages[] = ['mail'=>$mail, 'signals'=>implode(' · ', $signals), 'received'=>$received > 0
+            ? (new DateTimeImmutable('@'.$received))->setTimezone($zone)->format('M j, Y g:i A T') : ''];
+    }
+    return ['scope'=>$scope, 'matches'=>$messages];
 }
 
 function agent_connection_email_chat_compose_v1(PDO $pdo, array $user, int $agentId, array $plan): array
@@ -210,10 +257,22 @@ function agent_connection_email_chat_view_v1(array $result, string $answer, arra
     return ['A private Gmail result was displayed for this turn.', $context];
 }
 
-function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user): array
+function agent_connection_email_inbox_review_chat_v1(PDO $pdo, array $user, bool $firstReview): array
 {
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
     $view = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, includeChatResult: true);
+    $latestDelivery = $firstReview ? null : ($view['inbox_updates']['latest'] ?? null);
+    if ($latestDelivery !== null) {
+        return [
+            'handled'=>true,
+            'answer'=>'Your latest Gmail inbox update is ready in Chat.',
+            'actions'=>[['type'=>'open_url','label'=>'View latest Gmail update in Chat',
+                'url'=>url('/chat.php?agent='.($latestDelivery['agent_id'] ?: 'system').'&conversation_id='.$latestDelivery['conversation_id'].'&message_id='.$latestDelivery['message_id'])]],
+            'sources'=>[],
+            'email_private_read_v1'=>true,
+            'tool_receipt'=>vp3_tool_receipt_v1('email.read','review_status','read_complete'),
+        ];
+    }
     $state = $view['state'];
     $answer = match ($state) {
         'ready' => 'Your '.$view['days'].'-day first Gmail review is ready.',
@@ -260,7 +319,8 @@ function agent_connection_email_first_review_chat_v1(PDO $pdo, array $user): arr
 }
 
 function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal, string $query, int $conversationId, int $userMessageId,
-    ?callable $authority=null, bool $voice=false, ?callable $http=null, ?callable $replyModel=null, bool $privateVoiceSurface=false): ?array
+    ?callable $authority=null, bool $voice=false, ?callable $http=null, ?callable $replyModel=null, bool $privateVoiceSurface=false,
+    ?string $timezone=null): ?array
 {
     $plan = agent_connection_email_chat_plan_v1($query,$voice);
     if ($plan === null || !knowledge_retrieval_v162_owner_session($user, $principal) || vp3_participant_scope_v1() !== null) return null;
@@ -276,7 +336,7 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
     try {
         $live = agent_connection_email_chat_authority_v1($pdo, $user, $principal, $conversationId, $authority);
         if ($operation === 'review_status') {
-            return agent_connection_email_first_review_chat_v1($pdo, $live);
+            return agent_connection_email_inbox_review_chat_v1($pdo, $live, !empty($plan['first_review']));
         }
         $owner = (int)$live['id'];
         $agent = (int)($principal['agent_id']??0);
@@ -335,7 +395,21 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
                 $refs[$ref] = $label;
                 $actions[] = ['type'=>'gmail_message','item_ref'=>$ref,'label'=>$label,'conversation_id'=>$conversationId];
             };
-            if ($operation === 'search') {
+            if (isset($plan['priority'])) {
+                $priority = agent_connection_email_chat_priority_v1($pdo, $live, $plan, $access['access_token'], $http, $timezone);
+                $lines = [];
+                foreach ($priority['matches'] as $match) {
+                    $mail = $match['mail'];
+                    $lines[] = ($mail['subject'] ?: '(No subject)')."\nFrom: ".$mail['from']
+                        .($match['received'] ? "\nReceived: ".$match['received'] : '')."\n".$match['signals'];
+                    $addAction($mail, 'Open result '.count($lines));
+                }
+                $count = count($lines);
+                $answer = $priority['scope'].($lines
+                    ? "\nPossible priorities from labels and subject lines\n\n".implode("\n\n", $lines)
+                        ."\n\nOpen a result to read the exact email or start a reply."
+                    : "\nI found no matches among the latest Gmail search results.");
+            } elseif ($operation === 'search') {
                 $messages = isset($plan['sender'])
                     ? agent_connection_gmail_search_sender_v1($access['access_token'],$plan['sender'],5,$http)
                     : agent_connection_gmail_search_v1($access['access_token'],$plan['query'],5,$http);

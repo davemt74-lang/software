@@ -49,6 +49,36 @@ function vp3_initiative_runtime_runs_v1(PDO $pdo,int $uid,int $agentId,array $po
     }));
 }
 
+function vp3_initiative_runtime_assessment_v1(PDO $pdo,int $owner,array $run): ?array
+{
+    $failed=$run['status']==='failed';
+    $errorClass=$failed?'assessment_unverified':'';
+    $query=$pdo->prepare("SELECT a.result_json,r.result_json AS receipt_json,a.completed_at FROM agent_workflow_actions a
+        JOIN agent_workflow_receipts r ON r.run_id=a.run_id AND r.action_id=a.id AND r.owner_user_id=a.owner_user_id
+        WHERE a.run_id=? AND a.owner_user_id=? AND a.capability_key='initiative.plan'
+            AND a.status=? AND r.status=a.status AND a.error_class=? AND r.error_class=a.error_class
+        ORDER BY r.id DESC LIMIT 1");
+    $query->execute([(int)$run['id'],$owner,$run['status'],$errorClass]);$row=$query->fetch(PDO::FETCH_ASSOC);
+    if(!$row||$row['result_json']!==$row['receipt_json'])return null;
+    $completed=agent_job_utc_timestamp_v1900($row['completed_at']??null);
+    if($completed<1||$completed>time())return null;
+    $at=gmdate(DATE_ATOM,$completed);
+    $result=json_decode((string)$row['result_json'],true);
+    if($failed){
+        $code=$result['assessment_error']??null;
+        if(!in_array($code,Vp3InitiativePlanValidationV1::CODES,true))return null;
+        $bytes=filter_var($result['assessment_output_bytes']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>0,'max_range'=>65536]]);
+        $diagnostic=['code'=>$code,'at'=>$at];
+        if($bytes!==false)$diagnostic['output_bytes']=$bytes;
+        return $diagnostic;
+    }
+    $outcome=$result['effect_state']??null;
+    $jobs=filter_var($result['jobs']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>0,'max_range'=>8]]);
+    if(!in_array($outcome,['idle','existing_assignments','assignments_queued'],true)||$jobs===false
+        ||($outcome==='assignments_queued')!==($jobs>0))return null;
+    return ['outcome'=>$outcome,'queued'=>$jobs,'at'=>$at];
+}
+
 /** Read-only projection. Schema/configuration availability is not worker life. */
 function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $cid): array
 {
@@ -56,7 +86,8 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
         'conversation_id'=>$cid,'policy_revision'=>'','paused'=>false,'policy_exists'=>false,
         'knowledge_scope'=>['mode'=>'off','folder_id'=>0],'configuration_ready'=>false,
         'execution_ready'=>false,'pump_available'=>false,'runner_state'=>'never_seen','active_jobs'=>[],
-        'runner_observation_scope'=>'server','runner_last_success_at'=>'','last_checked_at'=>'','last_execution_at'=>'','retry_due_at'=>'','route'=>''];
+        'runner_observation_scope'=>'server','runner_last_success_at'=>'','last_checked_at'=>'','last_execution_at'=>'',
+        'last_assessment'=>null,'assessment_error'=>null,'retry_due_at'=>'','route'=>'','policy_reason'=>''];
     try{
         return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$cid,$base):array{
             $context=vp3_initiative_runtime_context_v1($pdo,$user,$agentId,$cid);
@@ -88,11 +119,20 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
             $health['reason']=match($runner['state']){
                 'fresh'=>$health['last_checked_at']!==''?'checked':'waiting_for_review',
                 'stale'=>'worker_stale','failed'=>'worker_failed','unknown'=>'worker_observation_unavailable',default=>'worker_missing'};
-            $latest=true;
+            $latest=true;$assessmentRead=false;$rejectionRead=false;
             foreach(vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy) as $run){
-                $completed=strtotime((string)($run['completed_at']??''))?:0;
-                if($run['status']==='completed'&&$completed>0&&$completed<=time()&&$health['last_execution_at']===''){
-                    $health['last_execution_at']=gmdate(DATE_ATOM,$completed);
+                $completed=agent_job_utc_timestamp_v1900($run['completed_at']??null);
+                if($run['status']==='completed'&&$completed>0&&$completed<=time()){
+                    if($health['last_execution_at']==='')$health['last_execution_at']=gmdate(DATE_ATOM,$completed);
+                    if(!$assessmentRead&&($run['capability_key']??'')==='initiative.plan'){
+                        $assessmentRead=true;
+                        $health['last_assessment']=vp3_initiative_runtime_assessment_v1($pdo,(int)$live['id'],$run);
+                    }
+                }
+                if(!$rejectionRead&&$run['capability_key']==='initiative.plan'&&$run['status']==='failed'
+                    &&$run['last_error_class']==='assessment_unverified'){
+                    $rejectionRead=true;
+                    $health['assessment_error']=vp3_initiative_runtime_assessment_v1($pdo,(int)$live['id'],$run);
                 }
                 if($run['status']==='executing'&&!empty($run['lease_expires_at'])){
                     $expiresAt=strtotime($run['lease_expires_at'].' UTC');
@@ -140,7 +180,7 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
             if(empty($inference['ready'])){
                 $reason=in_array($inference['reason']??'', ['quota_exhausted','model_unavailable','route_unavailable'],true)
                     ?$inference['reason']:'model_unavailable';
-                return array_replace($health,['state'=>'blocked','reason'=>$reason]);
+                return array_replace($health,['state'=>'blocked','reason'=>$reason,'policy_reason'=>(string)($inference['policy_reason']??'')]);
             }
             $health['execution_ready']=true;$health['pump_available']=true;
             return $health;

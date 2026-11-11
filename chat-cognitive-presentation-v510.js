@@ -55,6 +55,9 @@
   let initiativeError = '';
   let initiativeHealthError = '';
   let initiativeRetry = null;
+  let initiativeDebug = null;
+  let initiativeDebugKeys = 0;
+  let initiativeDebugKeyAt = 0;
   const initiativeSupersededRevisions = new Set();
   const greetingReasons = {
     agent_busy:'Your Agent is working.',
@@ -262,6 +265,13 @@
     if (initiativeSettingBusy) return 'Saving the background preparation setting.';
     if (initiativeBusy) return health?.state === 'running'
       ? 'The Agent is advancing background work.' : 'Checking for permitted background work.';
+    switch (health?.policy_reason) {
+      case 'service_disabled': return 'Initiative is disabled in AI service settings.';
+      case 'background_disabled': return 'Background Initiative is disabled in AI service settings.';
+      case 'service_budget_exhausted': return 'The Initiative service token limit blocks background work.';
+      case 'service_model_forbidden': return 'The Initiative service has no permitted model.';
+      case 'service_policy_unavailable': return 'Initiative could not read its AI service settings.';
+    }
     switch (health?.reason) {
       case 'automatic_startup': return 'The Agent is connecting this Chat.';
       case 'initiative_paused': return 'Agent background work is paused.';
@@ -316,14 +326,151 @@
     const verifiedAt = Date.parse(health?.last_execution_at || health?.last_checked_at || '');
     const verified = Number.isFinite(verifiedAt) ? (health?.last_execution_at ? ' Latest completed step: ' : ' Sources last checked: ')
       + new Date(verifiedAt).toLocaleString() + '.' : '';
+    const assessment = health?.last_assessment;
+    const decision = assessment?.outcome === 'idle' ? ' The last assessment selected no new work.'
+      : assessment?.outcome === 'existing_assignments' ? ' The last assessment found work already assigned.'
+      : assessment?.outcome === 'assignments_queued' && Number.isSafeInteger(assessment.queued) && assessment.queued > 0
+        ? ' The last assessment queued ' + assessment.queued + (assessment.queued === 1 ? ' item.' : ' items.') : '';
+    const worker = enabled && health?.runner_state === 'never_seen' && health?.reason !== 'worker_missing'
+      ? ' No server worker check-in is recorded.' : '';
     const connectionWarning = health && health.state !== 'starting' && initiativeHealthError ? ' ' + initiativeHealthError : '';
     return {
-      label, detail:(knowledge + verified + connectionWarning).trim(),
+      label, detail:(knowledge + verified + decision + worker + connectionWarning).trim(),
       setting:canChange ? (enabled && !linked ? 'off' : 'on') : '',
       settingBusy:initiativeSettingBusy,
       retry:Boolean(initiativeHealthError) || health?.state === 'unavailable',
       retryBusy:Boolean(initiativeRetry)
     };
+  }
+
+  const initiativeDebugValues = {
+    state: ['unavailable','starting','off','paused','linked_elsewhere','blocked','waiting','checked','running','failed'],
+    reason: ['automatic_startup','initiative_paused','initiative_off','linked_elsewhere','context_unavailable',
+      'runtime_unavailable','storage_unavailable','quota_exhausted','model_unavailable','route_unavailable','worker_missing',
+      'worker_stale','worker_failed','worker_observation_unavailable','assessment_sources_changed','assessment_unverified',
+      'review_failed','worker_interrupted','retry_scheduled','reviewing','checked','waiting_for_review'],
+    policy_reason: ['service_disabled','background_disabled','service_budget_exhausted','service_model_forbidden','service_policy_unavailable'],
+    route: ['none','vp3_cloud','homeserver'],
+    runner_state: ['never_seen','fresh','stale','failed','unknown'],
+    outcome: ['idle','existing_assignments','assignments_queued'],
+    rejection: ['output_too_large','invalid_json','invalid_envelope','invalid_job','invalid_job_sources','invalid_opportunities']
+  };
+
+  function initiativeDebugReport(health) {
+    if (!health) return 'Waiting for verified status for this Chat.';
+    const known = (field, value) => initiativeDebugValues[field].includes(value) ? value : '—';
+    const time = value => {
+      if (typeof value !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?(?:Z|[+-]\d\d:\d\d)$/.test(value)) return '—';
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) ? date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'long'}) : '—';
+    };
+    const rows = [
+      ['State',known('state',health.state)],
+      ['Reason',known('reason',health.reason)],
+      ['Initiative',health.enabled ? 'On' : 'Off'],
+      ['Route',known('route',health.route)],
+      ['Execution ready',health.execution_ready === true ? 'Yes' : 'No'],
+      ['Server worker',known('runner_state',health.runner_state)],
+      ['Last worker check-in',time(health.runner_last_success_at)],
+      ['Sources last checked',time(health.last_checked_at)],
+      ['Last execution',time(health.last_execution_at)]
+    ];
+    if (initiativeDebugValues.policy_reason.includes(health.policy_reason)) rows.push(['AI service policy',health.policy_reason]);
+    const retryAt = time(health.retry_due_at);
+    if (retryAt !== '—') rows.push(['Retry due',retryAt]);
+    const assessment = health.last_assessment;
+    if (initiativeDebugValues.outcome.includes(assessment?.outcome)) {
+      rows.push(['Last verified assessment',assessment.outcome],['Plan verified at',time(assessment.at)]);
+      if (Number.isSafeInteger(assessment.queued) && assessment.queued >= 0 && assessment.queued <= 8) {
+        rows.push(['Jobs queued',assessment.queued]);
+      }
+    }
+    const rejection = health.assessment_error;
+    if (initiativeDebugValues.rejection.includes(rejection?.code)) {
+      rows.push(['Assessment rejection',rejection.code],['Plan rejected at',time(rejection.at)]);
+      if (Number.isSafeInteger(rejection.output_bytes) && rejection.output_bytes >= 0 && rejection.output_bytes <= 65536) {
+        rows.push(['Planner response bytes',rejection.output_bytes]);
+      }
+    }
+    return rows.map(([label,value]) => `${label}: ${value}`).join('\n');
+  }
+
+  function closeInitiativeDebug(restoreFocus = false) {
+    initiativeDebugKeys = 0;
+    const current = initiativeDebug;
+    initiativeDebug = null;
+    current?.panel.remove();
+    if (restoreFocus && current?.returnFocus?.isConnected) current.returnFocus.focus({preventScroll:true});
+  }
+
+  function updateInitiativeDebug() {
+    const current = initiativeDebug;
+    if (!current) return false;
+    if (initiativeDebugConversation() !== current.conversationId || initiativeDebug !== current) {
+      closeInitiativeDebug();
+      return false;
+    }
+    const text = current.conversationId === 0 ? 'Send a message to save this Chat and start background work.'
+      : initiativeDebugReport(initiativeHealth());
+    if (current.report.textContent !== text) current.report.textContent = text;
+    return true;
+  }
+
+  function initiativeDebugConversation() {
+    if (cfg.initiativeRuntime !== true || !pageChatOwner || pageController.signal.aborted) return null;
+    return liveConversation() ?? (initiativeNewChat() ? 0 : null);
+  }
+
+  function openInitiativeDebug(conversationId) {
+    const panel = document.createElement('section');
+    panel.className = 'chat-initiative-debug';
+    panel.setAttribute('aria-labelledby','chatInitiativeDebugTitle');
+    panel.innerHTML = '<header><h2 id="chatInitiativeDebugTitle">Initiative Debug</h2><div>' +
+      '<button type="button" data-initiative-debug-copy>Copy</button>' +
+      '<button type="button" data-initiative-debug-close>Close</button></div></header>' +
+      '<pre data-initiative-debug-report></pre><p role="status" data-initiative-debug-copy-status></p>';
+    const copy = panel.querySelector('[data-initiative-debug-copy]');
+    const status = panel.querySelector('[data-initiative-debug-copy-status]');
+    const current = {panel,conversationId,report:panel.querySelector('pre'),returnFocus:document.activeElement};
+    initiativeDebug = current;
+    if (!updateInitiativeDebug()) return;
+    copy.addEventListener('click', async () => {
+      if (!updateInitiativeDebug()) return;
+      try {
+        await navigator.clipboard.writeText(`Initiative Debug\n${current.report.textContent}`);
+        if (initiativeDebug === current) status.textContent = 'Copied.';
+      } catch (_error) {
+        if (initiativeDebug !== current) return;
+        window.getSelection()?.selectAllChildren(current.report);
+        status.textContent = 'Copy the selected report.';
+      }
+    });
+    panel.querySelector('[data-initiative-debug-close]').addEventListener('click', () => closeInitiativeDebug(true));
+    document.body.append(panel);
+    copy.focus({preventScroll:true});
+  }
+
+  function initiativeDebugShortcut(event) {
+    if (cfg.initiativeRuntime !== true || !pageChatOwner || pageController.signal.aborted) return;
+    if (event.key !== 'z' || event.defaultPrevented || event.repeat || event.isComposing || event.ctrlKey || event.metaKey ||
+        event.altKey || event.shiftKey || event.composedPath().some(node => node instanceof Element &&
+        (node.isContentEditable || node.matches('input, textarea, select, [role="textbox"]')))) {
+      initiativeDebugKeys = 0;
+      return;
+    }
+    const conversationId = initiativeDebugConversation();
+    if (conversationId === null) {
+      initiativeDebugKeys = 0;
+      return;
+    }
+    const now = performance.now();
+    initiativeDebugKeys = now - initiativeDebugKeyAt <= 750 ? initiativeDebugKeys + 1 : 1;
+    initiativeDebugKeyAt = now;
+    if (initiativeDebugKeys < 3) return;
+    event.preventDefault();
+    initiativeDebugKeys = 0;
+    if (initiativeDebug) closeInitiativeDebug(true);
+    else openInitiativeDebug(conversationId);
   }
 
   function useOrbInitiativeAction(action) {
@@ -334,6 +481,7 @@
   }
 
   function updateOrbInitiativeStatus() {
+    updateInitiativeDebug();
     const orb = window.VP3AgentOrb;
     orb?.setInitiativeStatus?.(initiativeRuntimeStatus(), useOrbInitiativeAction);
     if (!orb?.setJobs) return;
@@ -1096,6 +1244,7 @@
 
   function stopUpdates() {
     pageController.abort();
+    closeInitiativeDebug();
     readController?.abort();
     initiativeController?.abort();
     window.clearInterval(timer);
@@ -1334,7 +1483,10 @@
     closePopup();
   });
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') closePopup();
+    if (event.key === 'Escape') {
+      closePopup();
+      closeInitiativeDebug(true);
+    } else initiativeDebugShortcut(event);
   });
 
   form.addEventListener('submit', () => {
@@ -1362,6 +1514,7 @@
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) { showAwaitingInitiativeHealth(); void refresh(); }
     else {
+      closeInitiativeDebug();
       clearWorkingAttention();
       clearLiveContext();
     }
@@ -1380,6 +1533,7 @@
       if (liveConversation() !== null || initiativeNewChat()) void refresh();
     });
     window.addEventListener('vp3:chat-canvas-view-changed', () => {
+      closeInitiativeDebug();
       clearLiveContext();
       showAwaitingInitiativeHealth();
       if (liveConversation() !== null || initiativeNewChat()) void refresh();
@@ -1399,6 +1553,7 @@
   }
   window.addEventListener('stonefellow:chat-context-changing', () => {
     githubVoiceEpoch++;
+    closeInitiativeDebug();
   });
   window.addEventListener('stonefellow:agent-voice', event => {
     githubVoiceEnabled = event.detail?.enabled !== false;
@@ -1451,6 +1606,7 @@
   function participantChanged() {
     briefEpoch++;
     closePopup();
+    closeInitiativeDebug();
     readController?.abort();
     if (participantContext()) clearPrivatePresentation();
     else void refresh();

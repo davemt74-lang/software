@@ -91,6 +91,16 @@ $GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=['user_id'=>1,'user_agent_id'=>7];
 $catalog=vp3_initiative_tools_catalog_v1($pdo,$user,$binding,$evidence);
 tool_check($catalog['brain.read']['ready']&&$catalog['knowledge.search']['ready']&&$catalog['missions.prepare']['mode']==='review'
     &&!isset($catalog['images.generate']),'catalog exposes connected reads and review, never a paid image bypass');
+$researchRef='transcript-research:44';
+$meetingRef='calendar:event:42';
+$restrictedEvidence=$evidence+[
+    $researchRef=>array_replace($anchor,['ref'=>$researchRef,'kind'=>'transcript_research']),
+    $meetingRef=>array_replace($anchor,['ref'=>$meetingRef,'kind'=>'event','meeting_prep'=>['key'=>'meeting-test']]),
+];
+$restrictedCatalog=vp3_initiative_tools_catalog_v1($pdo,$user,$binding,$restrictedEvidence);
+tool_check($restrictedCatalog['canvas.prepare']['source_refs']===[$anchor['ref']]
+    &&$restrictedCatalog['topic.research']['source_refs']===[$researchRef],
+    'Canvas does not advertise exact meeting and research sources reserved for other adapters');
 $GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=['user_id'=>99,'user_agent_id'=>100];
 $brain=vp3_initiative_tool_execute_v1($pdo,$user,$binding,$job,$evidence,hash('sha256','brain'),$report);
 tool_check(strlen($brain['draft'])>490&&$brain['tool_receipt']['capability']==='brain.read'

@@ -15,7 +15,12 @@ function vp3_initiative_inference_health_v1(PDO $pdo,array $user,int $agentId,bo
         $context=['service'=>'initiative','background'=>$background];
         if(function_exists('ai_v100_service_policy')){
             $policy=ai_v100_service_policy($pdo,$user,$context);
-            if($policy!==null&&empty($policy['enabled']))return $blocked;
+            if($policy!==null&&empty($policy['enabled'])){
+                $reason=$policy['reason']??'';
+                if(in_array($reason,['service_disabled','background_disabled','service_budget_exhausted',
+                    'service_model_forbidden','service_policy_unavailable'],true))$blocked['policy_reason']=$reason;
+                return $blocked;
+            }
         }
         $plan=vp3_agent_runtime_plan_v420($pdo,$user,$agentId,'chat',$context);
         if(!empty($plan['blocked'])){

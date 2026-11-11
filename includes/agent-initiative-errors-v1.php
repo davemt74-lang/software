@@ -19,11 +19,26 @@ final class Vp3InitiativeSourcesChangedV1 extends RuntimeException
     }
 }
 
+/** Stable diagnostic codes carry no model output or source data. */
+final class Vp3InitiativePlanValidationV1 extends InvalidArgumentException
+{
+    public const CODES=['output_too_large','invalid_json','invalid_envelope','invalid_job','invalid_job_sources','invalid_opportunities'];
+
+    public function __construct(public readonly string $diagnostic,string $message,?Throwable $previous=null)
+    {
+        parent::__construct($message,0,$previous);
+    }
+}
+
 /** The assessment output failed the closed planner contract. */
 final class Vp3InitiativeInvalidAssessmentV1 extends RuntimeException
 {
-    public function __construct(Throwable $previous)
+    public readonly string $diagnostic;
+
+    public function __construct(Throwable $previous,public readonly int $outputBytes)
     {
+        $this->diagnostic=$previous instanceof Vp3InitiativePlanValidationV1?$previous->diagnostic
+            :($previous instanceof JsonException?'invalid_json':'invalid_job');
         parent::__construct('Initiative assessment was not verified.',0,$previous);
     }
 }

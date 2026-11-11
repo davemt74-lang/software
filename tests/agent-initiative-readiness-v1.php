@@ -76,8 +76,15 @@ $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY,email TEXT,display_name TE
     CREATE TABLE merchant_profiles(merchant_id INTEGER,description TEXT,website_url TEXT,public_contact_json TEXT);
     INSERT INTO merchant_profiles VALUES(401,'','','{}'),(402,'Other private description','https://other.test','{}');
     CREATE TABLE campaigns(id INTEGER PRIMARY KEY,merchant_id INTEGER,name TEXT,status TEXT,environment TEXT,starts_at TEXT,ends_at TEXT,updated_at TEXT);
+    CREATE TABLE merchant_locations(merchant_id INTEGER,is_active INTEGER);
+    INSERT INTO merchant_locations VALUES(401,0),(402,1);
+    CREATE TABLE merchant_claim_codes(merchant_id INTEGER,status TEXT,active_from TEXT,active_until TEXT,code_hash TEXT);
+    INSERT INTO merchant_claim_codes VALUES(401,'active',NULL,'2026-11-01','PRIVATE_EXPIRED_HASH'),(402,'active',NULL,NULL,'PRIVATE_OTHER_HASH');
+    CREATE TABLE reward_products(merchant_id INTEGER,is_active INTEGER);
+    INSERT INTO reward_products VALUES(401,0),(402,1);
     CREATE TABLE agent_scheduling_schedules(id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,is_active INTEGER,is_default INTEGER);
     CREATE TABLE agent_scheduling_event_types(id INTEGER PRIMARY KEY,schedule_id INTEGER,is_active INTEGER,sort_order INTEGER,title TEXT);
+    CREATE TABLE agent_scheduling_availability(schedule_id INTEGER,event_type_id INTEGER,weekday INTEGER,start_minute INTEGER,end_minute INTEGER,is_active INTEGER);
     CREATE TABLE agent_scheduling_bookings(id INTEGER PRIMARY KEY,owner_user_id INTEGER,status TEXT,start_at_utc TEXT,end_at_utc TEXT,
         event_title TEXT,location_value TEXT,organizer_timezone TEXT,source TEXT,schedule_id INTEGER);
     CREATE TABLE user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,title TEXT,description TEXT,location TEXT,start_at_utc TEXT,
@@ -95,7 +102,7 @@ $owner=['id'=>1,'is_active'=>1];$system=vp3_agent_chat_principal_v380($owner,nul
 $before=(int)$pdo->query('SELECT total_changes()')->fetchColumn();
 [$all,$coverage]=readiness_read($owner,$system);
 readiness_check(isset($all['account-readiness:1'])&&$all['account-readiness:1']['readiness']['missing_fields']===['profile'],'canonical onboarding skill contributes the exact missing required identity choice');
-readiness_check(isset($all['scheduling-readiness:1:0'])&&$all['scheduling-readiness:1:0']['readiness']['missing_fields']===['schedule','meeting_type'],'selected booking workflow contributes existing scheduling readiness');
+readiness_check(isset($all['scheduling-readiness:1:0'])&&$all['scheduling-readiness:1:0']['readiness']['missing_fields']===['schedule','meeting_type','weekly_hours'],'selected booking workflow identifies a missing schedule, appointment type and weekly hours');
 readiness_check(isset($all['product-readiness:101'],$all['product-readiness:102'])&&!isset($all['product-readiness:201']),'canonical product reader filters another owner’s workspace product from private evidence');
 readiness_check($all['product-readiness:101']['readiness']['source_asset_id']===301&&in_array('price',$all['product-readiness:101']['readiness']['missing_fields'],true),'private photo listing retains only owned canonical media and unfinished terms');
 readiness_check($all['product-readiness:102']['readiness']['product_media_link']==='not_assessed'&&$all['product-readiness:102']['readiness']['promotion_state']==='not_assessed','no recorded media link is not falsely reported as no image or no external promotion');
@@ -162,12 +169,55 @@ readiness_check(!$one,'explicitly dismissed booking does not become an optional 
 $pdo->exec("UPDATE user_agent_preferences SET feature_interest_json='{\"workflow.booking\":true,\"activation.defer.workflow.booking\":\"2027-01-01T00:00:00Z\"}' WHERE user_id=1");
 [$one,$singleCoverage]=readiness_read($owner,$system,['scheduling-readiness:1:0']);
 readiness_check($one===[]&&$singleCoverage['scheduling_readiness']==='ready','owner’s saved booking deferral stays quiet at the observation time');
-$pdo->exec("UPDATE user_agent_preferences SET feature_interest_json='{\"workflow.booking\":true}' WHERE user_id=1; INSERT INTO agent_scheduling_schedules VALUES(501,1,11,1,1); INSERT INTO agent_scheduling_event_types VALUES(601,501,1,0,'Consultation')");
+$pdo->exec("UPDATE user_agent_preferences SET feature_interest_json='{\"workflow.booking\":true}' WHERE user_id=1;
+    INSERT INTO agent_scheduling_schedules VALUES(501,1,11,1,1),(502,1,12,1,0),(503,2,21,1,1);
+    INSERT INTO agent_scheduling_event_types VALUES(601,501,1,0,'Consultation'),(603,501,0,0,'Inactive');
+    INSERT INTO agent_scheduling_availability VALUES(502,NULL,1,540,600,1),(503,NULL,1,540,600,1),
+        (501,603,1,540,600,1),(501,NULL,1,540,600,0),(501,NULL,1,600,540,1)");
 [$one,$singleCoverage]=readiness_read($owner,$named,['scheduling-readiness:1:11']);
-readiness_check($one===[]&&$singleCoverage['scheduling_readiness']==='ready','canonical named schedule and active meeting type resolve the preparation gap');
+$bookingReadiness=$one['scheduling-readiness:1:11'];
+readiness_check($bookingReadiness['readiness']['schedule_id']===501
+    &&$bookingReadiness['readiness']['active_event_types']&&!$bookingReadiness['readiness']['weekly_hours_configured']
+    &&$bookingReadiness['readiness']['missing_fields']===['weekly_hours']&&$singleCoverage['scheduling_readiness']==='ready'
+    &&$bookingReadiness['url']==='/vp3/scheduling.php?schedule=501&tab=availability',
+    'an active appointment type with no valid hours in its own schedule links to the exact availability editor');
+$pdo->exec('INSERT INTO agent_scheduling_availability VALUES(501,601,1,540,600,1)');
+[$one,$singleCoverage]=readiness_read($owner,$named,['scheduling-readiness:1:11']);
+readiness_check($one===[]&&$singleCoverage['scheduling_readiness']==='ready','a valid type-specific weekly window resolves the setup gap');
+$pdo->exec("INSERT INTO agent_scheduling_event_types VALUES(602,501,1,0,'Review')");
+[$one]=readiness_read($owner,$named,['scheduling-readiness:1:11']);
+readiness_check($one['scheduling-readiness:1:11']['readiness']['active_event_types_with_weekly_hours']===1
+    &&$one['scheduling-readiness:1:11']['readiness']['missing_fields']===['weekly_hours'],
+    'adding an active appointment type without shared or type-specific hours creates a new gap');
+$pdo->exec('INSERT INTO agent_scheduling_availability VALUES(501,NULL,1,540,600,1)');
+[$one,$singleCoverage]=readiness_read($owner,$named,['scheduling-readiness:1:11']);
+readiness_check($one===[]&&$singleCoverage['scheduling_readiness']==='ready','valid schedule-wide weekly hours cover all active appointment types');
+$pdo->exec('DROP TABLE agent_scheduling_availability');
+[$one,$singleCoverage]=readiness_read($owner,$named,['scheduling-readiness:1:11']);
+readiness_check($one===[]&&$singleCoverage['scheduling_readiness']==='unavailable','missing availability storage is not a verified weekly-hours gap');
 $pdo->exec("UPDATE merchant_profiles SET description='Owner description',website_url='https://owner.test' WHERE merchant_id=401; INSERT INTO campaigns VALUES(701,401,'Launch','active','production',NULL,NULL,'2026-11-05')");
 [$one,$singleCoverage]=readiness_read($owner,$system,['business-readiness:401']);
-readiness_check($one===[]&&$singleCoverage['business_readiness']==='ready','business profile and real active campaign resolve the recorded readiness opportunity');
+$merchantSetup=$one['business-readiness:401'];
+readiness_check($merchantSetup['readiness']['next_setup_step']==='location'&&str_ends_with($merchantSetup['url'],'#location-editor'),
+    'a verified empty active Merchant Location inventory has an exact first setup step');
+$pdo->exec('INSERT INTO merchant_locations VALUES(401,1)');
+[$one]=readiness_read($owner,$system,['business-readiness:401']);
+readiness_check($one['business-readiness:401']['readiness']['next_setup_step']==='claim_code'
+    &&$one['business-readiness:401']['revision']!==$merchantSetup['revision']
+    &&!str_contains(json_encode($one,JSON_THROW_ON_ERROR),'PRIVATE_')&&str_ends_with($one['business-readiness:401']['url'],'#claim-code-editor'),
+    'a saved location advances to Claim Code setup without exposing expired or other merchant credentials');
+$GLOBALS['readiness_merchant_denied']=[401=>['claim_codes.manage']];
+[$one]=readiness_read($owner,$system,['business-readiness:401']);
+readiness_check(!$one,'a restricted Claim Code setup step is quiet and does not infer later readiness');
+unset($GLOBALS['readiness_merchant_denied']);
+$pdo->exec("INSERT INTO merchant_claim_codes VALUES(401,'active',NULL,NULL,'PRIVATE_OWNER_HASH')");
+[$one]=readiness_read($owner,$system,['business-readiness:401']);
+readiness_check($one['business-readiness:401']['readiness']['next_setup_step']==='reward_product'
+    &&str_ends_with($one['business-readiness:401']['url'],'#reward-editor'),
+    'an active Claim Code advances to the exact Reward Product editor');
+$pdo->exec('INSERT INTO reward_products VALUES(401,1)');
+[$one,$singleCoverage]=readiness_read($owner,$system,['business-readiness:401']);
+readiness_check($one===[]&&$singleCoverage['business_readiness']==='ready','completed merchant setup and campaign gaps are quiet on the next assessment');
 $GLOBALS['readiness_plugin_disabled']=[1];
 [$one,$singleCoverage]=readiness_read($owner,$system,['business-readiness:401']);
 readiness_check($one===[]&&$singleCoverage['business_readiness']==='forbidden','revoked campaign plugin access is not mistaken for an empty business inventory');

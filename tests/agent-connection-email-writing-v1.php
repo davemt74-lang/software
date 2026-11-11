@@ -34,6 +34,30 @@ function writing_reject(int $code,callable $work,string $label): void
     throw new RuntimeException($label);
 }
 
+$newEmail = agent_connection_email_chat_plan_v1("Could you write a new email to buyer@example.test\nSubject: Contact\nBody: Reply to support@example.test.");
+writing_check($newEmail === ['operation'=>'draft','to'=>'buyer@example.test','subject'=>'Contact',
+    'body'=>'Reply to support@example.test.','instruction'=>''],
+    'ordinary new-email wording prepares a draft and preserves literal message text');
+$sendEmail = agent_connection_email_chat_plan_v1('Send a new email to buyer@example.test asking them to contact support@example.test.');
+writing_check($sendEmail === ['operation'=>'draft','to'=>'buyer@example.test',
+    'instruction'=>'asking them to contact support@example.test.'],
+    'a new-email send request prepares a draft and accepts addresses in writing instructions');
+foreach ([', support@example.test','; support@example.test',' and support@example.test',' and CC: <support@example.test>'] as $extraRecipient) {
+    $multiple = agent_connection_email_chat_plan_v1('Draft an email to buyer@example.test'.$extraRecipient.' about the order');
+    writing_check($multiple === ['operation'=>'draft','to'=>'','instruction'=>''],
+        'the draft requests one recipient when the address list continues with '.$extraRecipient);
+}
+
+$followup = 'Draft reply to Gmail follow-up 123';
+writing_check(agent_connection_email_chat_plan_v1($followup.': Ask about Friday?') === [
+    'operation'=>'reply','mode'=>'draft','instruction'=>'Ask about Friday?','followup_id'=>123,
+] && agent_connection_email_chat_plan_v1($followup)['instruction']==='',
+    'an exact Gmail follow-up accepts optional instructions and preserves punctuation');
+writing_check(agent_connection_email_chat_plan_v1('Reply to Gmail follow-up 123: Ask about Friday?')===null
+    && agent_connection_email_chat_plan_v1($followup.': '.str_repeat('x',601))===null
+    && agent_connection_email_chat_plan_v1($followup.": First line\nSecond line")===null,
+    'a manual reply, oversized instruction or multiline instruction cannot request Auto Compose');
+
 $dsn = (string)getenv('VP3_TEST_MYSQL_DSN');
 if (!str_starts_with($dsn,'mysql:')) throw new RuntimeException('Native MySQL is required for the Gmail writing fixture.');
 $login = getenv('VP3_TEST_MYSQL_USER') ?: 'root';
@@ -100,7 +124,54 @@ try {
     $opened = agent_connection_email_chat_open_search_v1($pdo,$owner,$principal,11,$ref,$transport);
     writing_check($opened['body']===$source && $opened['can_reply'],'the search action opens the exact body and reply capability');
 
-    $command = 'Draft reply to Gmail search item '.$ref;
+    $day = new DateTimeImmutable('today', new DateTimeZone('UTC'));
+    $dayStart = $day->getTimestamp();
+    $dayEnd = $day->modify('+1 day')->getTimestamp();
+    $priorityMail = [
+        'important_reply'=>['Account update',['INBOX','UNREAD','IMPORTANT'],$dayStart],
+        'action_required'=>['Action required for the quote',['INBOX','UNREAD'],$dayStart],
+        'routine'=>['Shipping update is not urgent',['INBOX','UNREAD'],$dayStart],
+        'yesterday'=>['Urgent request from yesterday',['INBOX','UNREAD'],$dayStart-60],
+        'archived'=>['Urgent archived email',['IMPORTANT'],$dayStart],
+    ];
+    $priorityQueries = [];
+    $priorityTransport = static function(string $method,string $url,array $headers,?array $payload,bool $form) use ($priorityMail,&$priorityQueries): array {
+        $path = (string)parse_url($url,PHP_URL_PATH);
+        parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+        if ($method !== 'GET' || $payload !== null || $form) throw new RuntimeException('Priority search must only read metadata.');
+        if (str_ends_with($path,'/messages')) {
+            $priorityQueries[] = $query;
+            return ['status'=>200,'json'=>['messages'=>array_map(static fn($id)=>['id'=>$id],array_keys($priorityMail))]];
+        }
+        $id = basename($path);
+        if (($query['format']??'') !== 'metadata' || !isset($priorityMail[$id])) throw new RuntimeException('Unexpected Gmail read.');
+        [$subject,$labels,$received] = $priorityMail[$id];
+        return ['status'=>200,'json'=>['id'=>$id,'threadId'=>'priority_thread','labelIds'=>$labels,'internalDate'=>(string)($received*1000),
+            'payload'=>['headers'=>[['name'=>'Subject','value'=>$subject],['name'=>'From','value'=>'buyer@example.test']]]]];
+    };
+    $priority = static fn(string $query,?string $zone=null): array => agent_connection_email_chat_v1(
+        $pdo,$owner,$principal,$query,11,24,null,false,$priorityTransport,timezone:$zone);
+    $urgent = $priority('Any urgent emails today?');
+    writing_check($urgent['email_private_read_v1'] && $urgent['tool_receipt']['status']==='read_complete'
+        && $priorityQueries[0]['maxResults']==='5' && $priorityQueries[0]['q']==='in:inbox after:'.($dayStart-1).' before:'.$dayEnd
+            .' {is:important subject:"urgent" subject:"important" subject:"action required" subject:"past due"}'
+        && str_contains($urgent['answer'],'Gmail marked this Important') && str_contains($urgent['answer'],'Subject says “action required”')
+        && !str_contains($urgent['answer'],'Shipping update') && !str_contains($urgent['answer'],'Urgent request from yesterday')
+        && !str_contains($urgent['answer'],'Urgent archived email') && count($urgent['actions'])===2
+        && agent_connection_email_chat_search_item_v1($pdo,1,0,11,$urgent['actions'][1]['item_ref'])['message_id']==='action_required',
+        'priority search explains exact inbox signals within the day and opens only verified matching messages');
+    $important = $priority('Show my unread important Gmail');
+    writing_check($priorityQueries[1]['q']==='in:inbox is:unread {is:important subject:"important"}' && count($important['actions'])===1
+        && str_contains($important['answer'],'Account update') && !str_contains($important['answer'],'Action required'),
+        'important unread search uses only the Gmail Important label and important subject signal');
+    $localDay = new DateTimeImmutable('today', new DateTimeZone('America/Phoenix'));
+    $localPriority = $priority('Any urgent emails today?', 'America/Phoenix');
+    writing_check(str_contains($localPriority['answer'],'today (America/Phoenix)')
+        && str_contains($priorityQueries[2]['q'],'after:'.($localDay->getTimestamp()-1).' before:'.$localDay->modify('+1 day')->getTimestamp()),
+        'priority search uses the owner Chat timezone for today');
+
+    $instruction = 'Ask whether Friday works?';
+    $command = 'Draft reply to Gmail search item '.$ref.': '.$instruction;
     $before = count($requests);
     $queued = $chat($command,4);
     $draft = $queued['actions'][0]['id'];
@@ -108,10 +179,10 @@ try {
         && $act($draft,'review')['status']==='write_queued' && agent_connection_email_chat_writing_status_v1($pdo,$owner,$principal,11)===null,
         'Auto Compose saves one queued exact reply without reading its body or running inference in the Chat request');
     $calls = 0;
-    $compose = static function (string $json,array $service,array $control) use ($pdo,$owner,$principal,$act,$draft,$source,&$calls): array {
+    $compose = static function (string $json,array $service,array $control) use ($pdo,$owner,$principal,$act,$draft,$source,$instruction,&$calls): array {
         $calls++;
         $data = json_decode($json,true,8,JSON_THROW_ON_ERROR);
-        writing_check($data['original_message']['excerpt']===$source && $service['service']==='conversation'
+        writing_check($data['original_message']['excerpt']===$source && $data['owner_instruction']===$instruction && $service['service']==='conversation'
             && $control['before_gmail_reply_dispatch']() && !$control['before_gmail_reply_dispatch'](),
             'the writer dispatches the original message once under its metered owner lease');
         writing_check(agent_connection_email_chat_writing_status_v1($pdo,$owner,$principal,11)['work']==='compose'

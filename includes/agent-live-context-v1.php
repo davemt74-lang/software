@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** Current browser observations, never an identity, instruction or durable memory grant. */
 const VP3_LIVE_CONTEXT_V1='vp3.live-context.v1';
 const VP3_LIVE_CONTEXT_TTL_MS_V1=90000;
+const VP3_LIVE_CONTEXT_CHAT_INPUT_TTL_MS_V1=30000;
 
 function vp3_live_context_uuid_v1(mixed $value): bool
 {
@@ -108,6 +109,12 @@ function vp3_live_context_eyes_v1(array $raw,int $now): ?array
         'participant_count'=>$raw['participant_count'],'known_count'=>$raw['known_count'],'unknown_count'=>$raw['unknown_count'],
         'identity_provisional'=>true,'authentication_authority'=>false,'instructions_authority'=>false,
         'greetings_allowed'=>($raw['greetings_allowed']??null)===true];
+    if($safe['participant_count']>0&&is_bool($raw['recent_chat_input']??null)){
+        $inputAt=vp3_live_context_time_v1($raw['chat_input_observed_at']??null);
+        $safe['recent_chat_input']=$raw['recent_chat_input']&&vp3_live_context_fresh_v1($inputAt,$now)
+            &&$now-$inputAt<VP3_LIVE_CONTEXT_CHAT_INPUT_TTL_MS_V1;
+        if($safe['recent_chat_input'])$safe['chat_input_observed_at']=$raw['chat_input_observed_at'];
+    }
     if(in_array($raw['last_event']??null,['arrival','departure'],true)
         &&vp3_live_context_fresh_v1(vp3_live_context_time_v1($raw['last_event_at']??null),$now)){
         $safe['last_event']=$raw['last_event'];$safe['last_event_at']=$raw['last_event_at'];
@@ -183,7 +190,8 @@ function vp3_live_context_semantic_v1(array $packet): array
             foreach($screen['tab_audio']['audio_events'] as &$event)unset($event['start_seconds'],$event['end_seconds']);unset($event);
         }
     }unset($screen);
-    if(is_array($safe['eyes']))unset($safe['eyes']['observed_at'],$safe['eyes']['last_event_at'],$safe['eyes']['active'],$safe['eyes']['context_allowed']);
+    if(is_array($safe['eyes']))unset($safe['eyes']['observed_at'],$safe['eyes']['last_event_at'],$safe['eyes']['chat_input_observed_at'],
+        $safe['eyes']['active'],$safe['eyes']['context_allowed']);
     if(is_array($safe['microphone']))unset($safe['microphone']['observed_at'],$safe['microphone']['quiet_duration_ms'],
         $safe['microphone']['observed_window_ms'],$safe['microphone']['active'],$safe['microphone']['context_allowed']);
     return $safe;
@@ -199,7 +207,11 @@ function vp3_live_context_revision_v1(array $packet): string
 {
     $binding=array_intersect_key($packet,array_flip(['owner_user_id','agent_id','conversation_id','activity_tab','session_id']));
     $shares=[];foreach($packet['screens'] as $screen)$shares[$screen['source_id']]=$screen['session_id'];
-    return vp3_live_context_fingerprint_v1(['binding'=>$binding,'shares'=>$shares,'semantic'=>vp3_live_context_semantic_v1($packet)]);
+    $semantic=vp3_live_context_semantic_v1($packet);
+    // Chat input is current engagement context. Opening the work view or
+    // letting the input signal expire does not replace the camera source.
+    unset($semantic['eyes']['recent_chat_input']);
+    return vp3_live_context_fingerprint_v1(['binding'=>$binding,'shares'=>$shares,'semantic'=>$semantic]);
 }
 
 /** Reuse the canonical owner/Agent/conversation boundary; reported presence never supplies a principal. */

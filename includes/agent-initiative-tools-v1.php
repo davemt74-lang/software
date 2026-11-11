@@ -177,7 +177,8 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $canvasFeedback=vp3_initiative_canvas_feedback_v1($pdo,$scope['user'],$scope['agent_id'],$evidence);
     $canvasRefs=[];
     foreach($evidence as $ref=>$source){
-        if(($source['kind']??'')==='youtube_interest_checkin'||($canvasFeedback[$ref]['disposition']??'')==='suppress')continue;
+        if(isset($source['meeting_prep'])||in_array($source['kind']??'',['transcript_research','youtube_interest_checkin'],true)
+            ||($canvasFeedback[$ref]['disposition']??'')==='suppress')continue;
         $canvasRefs[]=$ref;
     }
     $catalog['canvas.prepare']=['id'=>'canvas.prepare','capability'=>'coding.build','mode'=>'prepare',

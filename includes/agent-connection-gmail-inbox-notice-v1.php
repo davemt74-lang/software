@@ -54,6 +54,10 @@ function agent_connection_gmail_inbox_notify_v1(PDO $pdo, int $owner, array $rev
     $body = $first ? 'Your first Gmail review is ready. Reviewed '.$total.' inbox message'.($total===1?'':'s').'.'
         : 'Reviewed '.$total.' new Gmail message'.($total === 1 ? '' : 's').'. '
             .$important.' marked important, '.$replies.' '.($replies === 1 ? 'reply' : 'replies').'.';
+    if (!$first) {
+        $priority = count(array_filter((array)($review['items'] ?? []),static fn($item): bool => !empty($item['priority_signals'])));
+        if ($priority > 0) $body .= ' '.$priority.' '.($priority === 1 ? 'message' : 'messages').' with priority keywords in the subject.';
+    }
     $utc = new DateTimeZone('UTC');
     $at = (new DateTimeImmutable($review['at'] ?? 'now',$utc))->setTimezone($utc)->format('Y-m-d H:i:s');
     // Each committed review is a separate bell event. Sharing its generation

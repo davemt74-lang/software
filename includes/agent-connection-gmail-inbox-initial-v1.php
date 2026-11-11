@@ -128,6 +128,8 @@ function agent_connection_gmail_inbox_review_items_v1(array $report, array $scop
         if (!is_array($item) || !is_string($item['from'] ?? null) || !is_string($item['subject'] ?? null)) continue;
         $view = ['from'=>$item['from'],'subject'=>$item['subject'],
             'category'=>in_array($item['category']??null,['reply','important'],true)?$item['category']:'new'];
+        if (($item['important'] ?? false) === true) $view['important'] = true;
+        if (!empty($item['priority_signals'])) $view['priority_signals'] = $item['priority_signals'];
         $ref = agent_connection_gmail_inbox_item_reference_v1($scope,$version,$index,$item);
         if ($ref !== null) $view['item_ref'] = $ref;
         elseif ($includeLegacyMatches) {
@@ -372,6 +374,8 @@ function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, boo
     $updates = [];
     if ($includeChatResult) {
         $updates = agent_connection_gmail_inbox_update_state_v1($pdo,$scope);
+        require_once __DIR__.'/agent-connection-gmail-inbox-status-v1.php';
+        $updates['inbox_background'] = agent_connection_gmail_inbox_background_view_v1($pdo,$scope,includeResults:false,includeCheckRef:true);
         $policy = $scope['policy'];
         if (!empty($policy['claim_key']) && (string)$policy['next_check_at'] > agent_commerce_time_pa2()) {
             $updates['inbox_working_until'] = str_replace(' ', 'T', $policy['next_check_at']).'Z';

@@ -357,6 +357,9 @@ function vp3_agent_chat_followthrough_recover_v2160(PDO $pdo,array $user,?array 
 /** Lost typed responses reuse the existing private idempotency store, not a second queue. */
 function vp3_agent_chat_public_prompt_v2160(string $query): string
 {
+    if(preg_match('/\ADraft reply to Gmail (?:follow-up [1-9][0-9]{0,14}|search item [a-f0-9]{2,1500}): [^\p{Cc}\p{Zl}\p{Zp}]{1,600}\z/u',$query)){
+        return 'Draft reply to selected Gmail message';
+    }
     if(preg_match('/\A(?:(Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}|(Reply|Draft reply) to Gmail (?:matched item [a-f0-9]{64} [a-zA-Z0-9_-]{1,190} [a-f0-9]{64}|follow-up [1-9][0-9]{0,15}|search item [a-f0-9]{2,1500}))\z/D',$query,$mailAction)){
         return ($mailAction[1] ?: $mailAction[2]).' to selected Gmail message';
     }
@@ -799,7 +802,8 @@ if($connectedSitePlan!==null){
 }
 if($capabilityTool===null&&$emailRequest)
     $capabilityTool=agent_connection_email_chat_v1($pdo,$user,$principal,$query,$conversationId,$userMessageId,
-        $connectionAuthority,$inputMode==='voice',privateVoiceSurface:true);
+        $connectionAuthority,$inputMode==='voice',privateVoiceSurface:true,
+        timezone:is_string($input['reminder_timezone']??null)?$input['reminder_timezone']:null);
 if($capabilityTool===null&&$publicResearchPlan!==null){
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $capabilityTool=vp3_public_research_chat_v1($pdo,$user,$principal,$publicResearchPlan,$conversationId,$userMessageId,$connectionAuthority);

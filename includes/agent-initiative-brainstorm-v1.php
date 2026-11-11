@@ -50,7 +50,7 @@ function vp3_initiative_brainstorm_tool_scope_v1(array $job,array $tools): void
 {
     $tool=$tools[$job['tool']]??null;
     if(is_array($tool)&&isset($tool['source_refs'])&&!in_array($job['primary'],$tool['source_refs'],true)){
-        throw new InvalidArgumentException('The selected tool does not accept this situation source.');
+        throw new Vp3InitiativePlanValidationV1('invalid_job_sources','The selected tool does not accept this situation source.');
     }
 }
 

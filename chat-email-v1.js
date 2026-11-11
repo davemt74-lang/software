@@ -399,10 +399,15 @@
     if (editing) body.focus();
   }
 
-  function replyToResult(mode, target) {
+  function replyToResult(mode, target, instruction = '') {
+    if (dialog.open && navigator.onLine === false) {
+      status.textContent = 'Reconnect to prepare this Gmail reply.';
+      return;
+    }
     const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     const verb = mode === 'compose' ? 'Draft reply' : 'Reply';
-    const opened = chat?.requestGmailReviewAction?.(`${verb} to Gmail ${target}`) === true;
+    const suffix = mode === 'compose' && instruction ? ': ' + instruction : '';
+    const opened = chat?.requestGmailReviewAction?.(`${verb} to Gmail ${target}${suffix}`) === true;
     if (opened && dialog.open) dialog.close();
     if (!opened && dialog.open) status.textContent = 'Finish the current Chat message before opening the reply editor.';
   }
@@ -436,8 +441,24 @@
       const body = element('p',message.body || 'This message has no readable text.');
       body.className = 'vp3-chat-email-message-body';
       details.append(headers,body);
-      if (message.can_reply) actions.append(button('Reply',() => replyToResult('reply',target)),
-        button('Auto Compose (uses tokens)',() => replyToResult('compose',target)));
+      if (message.can_reply) {
+        const instruction = element('input');
+        instruction.type = 'text';
+        instruction.maxLength = 600;
+        details.append(labelField('Auto Compose instructions (optional)',instruction));
+        actions.append(button('Reply',() => {
+          if (valid(selection)) replyToResult('reply',target);
+        }),button('Auto Compose (uses tokens)',() => {
+          if (!valid(selection)) return;
+          const text = instruction.value.trim();
+          if (text && !/^[^\u0000-\u001f\u007f-\u009f\u2028\u2029]{1,600}$/u.test(text)) {
+            status.textContent = 'Enter up to 600 characters on one line.';
+            instruction.focus();
+            return;
+          }
+          replyToResult('compose',target,text);
+        }));
+      }
       status.textContent = '';
     } catch (error) {
       if (valid(selection) && pending === controller) status.textContent = error.name === 'AbortError'
@@ -706,7 +727,7 @@
     const link = element('a','Open Connections');
     link.href = cfg.connectionsUrl;
     help.append(element('summary','Gmail'),
-      element('p','Try “Show emails from buyer@example.com” or “Draft an email to buyer@example.com about our launch.”'),
+      element('p','Try “Any urgent emails today?” or “Write a new email to buyer@example.com about our launch.”'),
       element('p','To get one notification in this Chat, ask “Notify me when I get an email from buyer@example.com.” To end the watch, ask “Stop watching for emails from buyer@example.com.”'));
     tools.append(help);
     installGithubWorkflowReview(help);

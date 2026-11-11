@@ -201,7 +201,7 @@ $memberHeaderActions=implode(' ',$headerActions);
 </div>
 
 <div class="cr-grid">
-<section class="cr-card"><header><div><span>Claim security</span><h2>Merchant Claim Codes</h2></div><?php if($canClaim):?><a class="cr-btn primary" href="<?= e(url('/campaign-claim.php?merchant='.$merchantId)) ?>">Claim Terminal</a><?php endif;?></header>
+<section class="cr-card" id="claim-code-editor"><header><div><span>Claim security</span><h2>Merchant Claim Codes</h2></div><?php if($canClaim):?><a class="cr-btn primary" href="<?= e(url('/campaign-claim.php?merchant='.$merchantId)) ?>">Claim Terminal</a><?php endif;?></header>
 <div class="cr-list"><?php foreach($claimCodes as $code):?><article><div><strong><?= e((string)$code['display_name']) ?></strong><small>••••<?= e((string)$code['code_last4']) ?> · <?= e(ucfirst((string)$code['status'])) ?><?= !empty($code['last_used_at'])?' · Last used '.e(date('M j',strtotime((string)$code['last_used_at']))):'' ?></small></div></article><?php endforeach;?><?php if(!$claimCodes):?><p>No Merchant Claim Codes yet.</p><?php endif;?></div>
 <?php if($canClaimCodes):?><form method="post" class="cr-form cr-subform"><?= csrf_field() ?><input type="hidden" name="action" value="claim_code_create"><input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
 <h3>Create Claim Code</h3><label>Name<input name="display_name" required placeholder="Front register"></label>

@@ -143,7 +143,8 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use(&$dup
 };
 $plan=scope_make_plan($user,17,'Reject duplicate canonical task assignments');
 $duplicate=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan));
-capability_pipeline_check(empty($duplicate['ok'])&&$duplicateCalls===1&&count(scope_runs(1,17,'initiative.prepare'))===$beforeJobs
-    &&count(scope_messages())===$messages,'different tools targeting the same canonical task cannot queue duplicate private jobs or report twice');
+capability_pipeline_check(empty($duplicate['ok'])&&$duplicate['reason']==='assessment_unverified'
+    &&$duplicateCalls===2&&count(scope_runs(1,17,'initiative.prepare'))===$beforeJobs
+    &&count(scope_messages())===$messages,'duplicate canonical task assignments stay rejected after the single source repair');
 echo 'AGENT_INITIATIVE_TASK_LISTS_PIPELINE_V1=PASS ('.($GLOBALS['capabilityPipelineChecks']-$listPipelineStart)
     ." focused cases; actual source/model/queue/action/receipt/Chat/Brain)\n";

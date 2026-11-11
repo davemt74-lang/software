@@ -5,13 +5,14 @@
   if(window.VP3LiveContext)return;
   const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
   const TAB=/^[a-f0-9]{32}$/;
-  const ttl=90000,skew=5000;
+  const ttl=90000,skew=5000,chatInputTtl=30000;
   const pageChat=window.STONEFELLOW_CHAT,pagePath=location.pathname;
   const owner=Number(pageChat?.userId||window.VP3_ORB_CONFIG?.ownerKey||0);
   const pageAgent=Number(pageChat?.agentId??window.VP3_ORB_CONFIG?.agentId??0);
   const pageBinding=String(pageChat?.workingAttentionBinding||window.VP3_ORB_CONFIG?.workingAttentionBinding||'');
   let activityTab='',session='',identityKey='',cutoff=Date.now(),eyes=null,microphone=null,clockOffset=0;
   let sequence=0,lastSemantic='null',pending=[],refreshing=false,closed=false,eyeOrder=[0,-1],microphoneOrder=[0,-1],energySince=0;
+  let recentChatInputAt=0;
   const integer=(value,min,max)=>Number.isSafeInteger(value)&&value>=min&&value<=max;
   const clean=(value,max)=>typeof value==='string'?[...value.replace(/[\u0000-\u001f\u007f]/g,' ')].slice(0,max).join(''):'';
   const clone=value=>value===null?null:JSON.parse(JSON.stringify(value));
@@ -35,7 +36,7 @@
     if(!value)return null;
     const copy=clone(value);delete copy.observed_at;
     for(const row of copy.screens||[]){delete row.captured_at;if(row.tab_audio){delete row.tab_audio.captured_at;delete row.tab_audio.duration_seconds;delete row.tab_audio.capture_id;delete row.tab_audio.session_id;for(const event of row.tab_audio.audio_events||[]){delete event.start_seconds;delete event.end_seconds;}}}
-    if(copy.eyes){delete copy.eyes.observed_at;delete copy.eyes.last_event_at;}
+    if(copy.eyes){delete copy.eyes.observed_at;delete copy.eyes.last_event_at;delete copy.eyes.chat_input_observed_at;}
     if(copy.microphone){delete copy.microphone.observed_at;copy.microphone.quiet_duration_bucket=quietBucket(copy.microphone.quiet_duration_ms||0);delete copy.microphone.quiet_duration_ms;delete copy.microphone.observed_window_ms;}
     return copy;
   }
@@ -47,7 +48,7 @@
     window.dispatchEvent(new CustomEvent('vp3:live-context-changed',{detail:{...event}}));
   }
   function clear(reason='cleared'){
-    cutoff=Date.now();eyes=microphone=null;session='';identityKey='';eyeOrder=microphoneOrder=[0,-1];energySince=0;
+    cutoff=Date.now();eyes=microphone=null;session='';identityKey='';eyeOrder=microphoneOrder=[0,-1];energySince=0;recentChatInputAt=0;
     if(lastSemantic!=='null')pending=[];
     announce(null,reason);
   }
@@ -104,6 +105,11 @@
       }
       if(!session)session=crypto.randomUUID();
       const safeEyes=eye?.active?{...clone(eye),observed_at:wireTime(eye.observed_at),...(eye.last_event_at?{last_event_at:wireTime(eye.last_event_at)}:{})}:null;
+      if(safeEyes?.participant_count){
+        const age=Date.now()-recentChatInputAt;
+        safeEyes.recent_chat_input=recentChatInputAt>0&&age>=0&&age<chatInputTtl;
+        if(safeEyes.recent_chat_input)safeEyes.chat_input_observed_at=wireTime(new Date(recentChatInputAt).toISOString());
+      }
       const safeMic=mic?.active?{...clone(mic),observed_at:wireTime(mic.observed_at)}:null;
       const value={contract:'vp3.live-context.v1',session_id:session,...current,activity_tab:activityTab,observed_at:wireTime(nowIso()),screens,
         ...(safeEyes?{eyes:safeEyes}:{}),...(safeMic?{microphone:safeMic}:{})};
@@ -120,11 +126,18 @@
     if(!fresh(value.observed_at)||!integer(value.sequence,0,Number.MAX_SAFE_INTEGER))return false;
     const at=stamp(value.observed_at);return at>order[0]||at===order[0]&&value.sequence>order[1];
   }
+  function noteChatInput(event){
+    if(!(event instanceof Event)||!event.isTrusted||!['pointerdown','keydown'].includes(event.type)
+      ||document.hidden||!document.hasFocus()||!TAB.test(activityTab)||!eyes?.participant_count||!fresh(eyes.observed_at))return;
+    const current=binding();
+    if(current&&JSON.stringify(current)===identityKey)recentChatInputAt=Date.now();
+  }
   window.addEventListener('vp3:participant-presence',event=>{
     const value=event.detail;if(!eventBinding(value)||!newer(value,eyeOrder))return;eyeOrder=[stamp(value.observed_at),value.sequence];
-    if(value.active!==true||value.context_allowed!==true){eyes=null;snapshot();return;}
+    if(value.active!==true||value.context_allowed!==true){eyes=null;recentChatInputAt=0;snapshot();return;}
     if(!fresh(value.observed_at)||!Array.isArray(value.rows))return;
     const rows=value.rows.slice(0,8);const known=rows.filter(row=>typeof row?.participant_id==='string'&&row.participant_id!=='').length;
+    if(!rows.length)recentChatInputAt=0;
     eyes={active:true,context_allowed:true,observed_at:value.observed_at,participant_count:rows.length,known_count:known,unknown_count:rows.length-known,
       identity_provisional:true,authentication_authority:false,greetings_allowed:value.greetings_allowed===true,
       last_event:['arrival','departure','steady','unknown'].includes(value.last_event)?value.last_event:'unknown'};
@@ -145,10 +158,11 @@
   ['vp3:screen-live-context','vp3:screen-share-stopped','vp3:screen-observation-reviewed','vp3:chat-context-ready'].forEach(name=>window.addEventListener(name,()=>snapshot()));
   window.addEventListener('stonefellow:chat-context-changing',()=>clear('conversation_changed'));
   document.addEventListener('visibilitychange',()=>{if(document.hidden)clear('hidden');else snapshot();});
+  window.addEventListener('blur',()=>{recentChatInputAt=0;});
   window.addEventListener('pagehide',()=>{clear('pagehide');closed=true;});
   window.addEventListener('pageshow',()=>{closed=false;snapshot();});
   window.addEventListener('popstate',()=>clear('route_changed'));
-  window.VP3LiveContext=Object.freeze({snapshot,semantic,clear,
+  window.VP3LiveContext=Object.freeze({snapshot,semantic,clear,noteChatInput,
     voiceDeferral:()=>{const active=snapshot()?.microphone;const defer=active?.activity==='energy'&&energySince>0&&Date.now()-energySince>=750;return {defer,reason:defer?'microphone_activity':''};},
     bindActivity:(tab,offset=0)=>{if(TAB.test(tab||''))activityTab=tab;if(Number.isFinite(offset)&&Math.abs(offset)<=86400000)clockOffset=offset;},
     pendingEvents:()=>pending.map(event=>({...event})),

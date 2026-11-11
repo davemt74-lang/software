@@ -26,7 +26,13 @@ function has_permission(string $capability, array $user): bool {
 function vp3_participant_scope_v1(): ?array {
     return isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT']) ? ['participant_id'=>3] : null;
 }
+function vp3_catch_up_page_binding_v1(array $user): string { return str_repeat($user['id'] === 1 ? 'd' : 'e',64); }
 function db(): PDO { return new PDO('sqlite::memory:'); }
+`);
+  writeFileSync(join(root, 'includes', 'agent-connection-gmail-inbox-status-v1.php'), `<?php
+function agent_connection_gmail_inbox_check_overdue_v1(PDO $pdo, array $user, string $checkRef): void {
+    fixture_record('check_overdue', $user, $checkRef);
+}
 `);
   writeFileSync(join(root, 'includes', 'agent-connection-gmail-inbox-initial-v1.php'), `<?php
 $calls = [];
@@ -106,6 +112,11 @@ function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, strin
   assert.deepEqual(status.data, {ok:true, review:{calls:[['status', 1, false]]}});
   const chatStatus = await request({body:{include_chat_result:true}});
   assert.deepEqual(chatStatus.data, {ok:true, review:{calls:[['status', 1, false]],chat_result:{summary:'Fixture saved summary.'}}});
+  const checkRef = 'a'.repeat(64);
+  const overdueCheck = {action:'check_overdue',check_ref:checkRef,working_attention_binding:'d'.repeat(64),include_chat_result:true};
+  const catchUp = await request({body:overdueCheck});
+  assert.equal(catchUp.status, 200);
+  assert.deepEqual(catchUp.data.review, {calls:[['check_overdue',1,checkRef],['status',1,false]],chat_result:{summary:'Fixture saved summary.'}});
   const privateStatus = await request({body:{include_report:true}});
   const startToken = privateStatus.data.review.start_token;
   assert.match(startToken, /^[a-f0-9]{64}$/);
@@ -145,6 +156,16 @@ function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, strin
     [403, {headers:{'X-Fixture-Participant':'1'}}],
     [403, {headers:{'X-Fixture-Participant':'1'},body:{include_chat_result:true}}],
     [403, {headers:{'X-Fixture-Participant':'1'},body:{action:'open_item',item_ref:itemRef}}],
+    [403, {headers:{'X-Fixture-Participant':'1'},body:overdueCheck}],
+    [403, {headers:{'X-Fixture-Owner':'2'},body:{...overdueCheck,owner_key:'2'}}],
+    [403, {body:{...overdueCheck,working_attention_binding:'e'.repeat(64)}}],
+    [419, {body:{...overdueCheck,csrf_token:'wrong'}}],
+    [422, {body:{...overdueCheck,check_ref:'raw-provider-id'}}],
+    [422, {body:{...overdueCheck,working_attention_binding:'wrong'}}],
+    [422, {body:{...overdueCheck,include_chat_result:false}}],
+    [422, {body:{...overdueCheck,include_report:true}}],
+    [422, {body:{...overdueCheck,owner_id:2}}],
+    [422, {body:{action:'status',check_ref:checkRef}}],
     [422, {body:{action:'open_item',item_ref:'raw-provider-id'}}],
     [422, {body:{action:'open_item',item_ref:itemRef,include_chat_result:true}}],
     [403, {headers:{'X-Fixture-Participant':'1'},body:{action:'find_matches',legacy_ref:legacyRef}}],

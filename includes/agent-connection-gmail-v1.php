@@ -4,6 +4,7 @@ declare(strict_types=1);
 const VP3_GMAIL_API_V1 = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const VP3_GMAIL_READ_SCOPE_V1 = 'https://www.googleapis.com/auth/gmail.readonly';
 const VP3_GMAIL_SEND_SCOPE_V1 = 'https://www.googleapis.com/auth/gmail.send';
+const AGENT_CONNECTION_GMAIL_PRIORITY_PHRASES_V1 = ['urgent', 'important', 'action required', 'past due'];
 
 class AgentConnectionGmailExceptionV1 extends RuntimeException
 {
@@ -269,6 +270,28 @@ function agent_connection_gmail_metadata_query_v1(): string
 {
     $headers = ['From', 'To', 'Subject', 'Message-ID', 'In-Reply-To', 'References', 'Authentication-Results'];
     return 'format=metadata&metadataHeaders=' . implode('&metadataHeaders=', $headers);
+}
+
+/** Return the explicit priority wording in a Gmail subject. */
+function agent_connection_gmail_subject_priority_signals_v1(string $subject): array
+{
+    static $pattern = null;
+    $pattern ??= '/(?<![\p{L}\p{M}\p{N}_])(?:'.implode('|',array_map(
+        static fn(string $phrase): string => str_replace(' ','[\h\p{Pd}]+',$phrase),
+        AGENT_CONNECTION_GMAIL_PRIORITY_PHRASES_V1
+    )).')(?![\p{L}\p{M}\p{N}_])/iu';
+    if (!preg_match_all($pattern,$subject,$matches,PREG_OFFSET_CAPTURE)) return [];
+
+    $signals = [];
+    foreach ($matches[0] as [$phrase,$offset]) {
+        $prefix = substr($subject,0,$offset);
+        if (preg_match("/(?<![\p{L}\p{M}\p{N}_])(?:not|never|no|non|(?:is|are|was|were|does|do|need|should|ca|could|would|wo)n['’]t)"
+            ."[\h\p{Pd}]+(?:(?:longer|yet|an?|the|very|really|particularly|especially|immediate|urgent|important)[\h\p{Pd}]+){0,3}"
+            ."(?:or\h+)?\z/iu",$prefix)) continue;
+        $signal = preg_replace('/[\h\p{Pd}]+/u',' ',strtolower($phrase));
+        if (in_array($signal,AGENT_CONNECTION_GMAIL_PRIORITY_PHRASES_V1,true)) $signals[$signal] = true;
+    }
+    return array_keys($signals);
 }
 
 function agent_connection_gmail_message_v1(array $message): array
