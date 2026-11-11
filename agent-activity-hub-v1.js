@@ -11,6 +11,15 @@
     {title:'Agent work',ids:['missions','canvases','suggestions','gmail_outcomes']}
   ];
   const kinds = new Set(['url','chat','task_notes','mission','canvas','youtube','song']);
+  const gmailMonitorLabels = {
+    scheduled:'Background check scheduled.',
+    checked:'Last check completed.',
+    working:'Checking Gmail for new messages.',
+    overdue:'A scheduled Gmail check is overdue.',
+    retrying:'The last check failed. A retry is scheduled.',
+    restart_required:'Restart inbox monitoring in Gmail settings.',
+    unavailable:'Gmail monitoring status is unavailable.'
+  };
   const continuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   let host = null;
   let root = null;
@@ -83,6 +92,17 @@
     label.title = title;
     copy.append(label);
     if (detail) copy.append(itemDetail(detail,key,title));
+    return copy;
+  }
+  function gmailMonitorCopy(item) {
+    const monitor = item.monitor;
+    const state = monitor.state === 'working' && !(Date.parse(monitor.lease_until) > Date.now()) ? 'overdue' : monitor.state;
+    const copy = itemCopy(item.title,gmailMonitorLabels[state],item.id);
+    if (monitor.pending === true) copy.append(node('small','An inbox update is waiting to post to Chat.'));
+    for (const [label,value] of [['Last check',monitor.last_checked_at],['Next check',monitor.next_check_at]]) {
+      const time = Date.parse(value);
+      if (Number.isFinite(time)) copy.append(node('small',label+' '+new Date(time).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})));
+    }
     return copy;
   }
   function stop() {
@@ -162,18 +182,19 @@
   function renderSpecialists() {
     const current = scope();
     if (!specialistsHost || !opened || !current) return;
-    const entries = specialistSnapshot();
-    // The live rail supplies the same Gmail review in Chat. Elsewhere the
-    // owner-scoped activity read provides a link, with no Gmail headers.
-    const inbox = !entries.some(item => item.key === 'gmail-inbox-review')
-      && snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items[0];
+    const inbox = snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items || [];
+    const monitor = inbox.find(item => item.id === 'gmail:inbox-monitor')?.monitor;
+    const firstReviewWorking = inbox.some(item => item.id === 'gmail:first-review' && item.review_state === 'working');
+    const recurringCheck = monitor?.state === 'working' && !firstReviewWorking;
+    const entries = specialistSnapshot().filter(item => !recurringCheck || item.key !== 'gmail-inbox-review');
+    const selected = recurringCheck && selectedSpecialist === 'gmail-inbox-review' ? 'gmail-inbox-monitor' : selectedSpecialist;
     specialistsHost.replaceChildren();
-    if (!entries.length && !inbox) return;
+    if (!entries.length && !inbox.length) return;
     specialistsHost.append(node('h3','Specialists'));
     for (const item of entries) {
       const article = node('article','','vp3-agent-activity-item');
       article.dataset.activitySpecialist = item.key;
-      article.classList.toggle('selected',item.key === selectedSpecialist);
+      article.classList.toggle('selected',item.key === selected);
       const copy = itemCopy([item.label || 'Specialist',item.title].filter(Boolean).join(' · '),item.status || '', 'specialist:' + item.key + ':status');
       if (item.detail) copy.append(itemDetail(item.detail,'specialist:' + item.key + ':detail',item.label || 'Specialist'));
       article.append(copy);
@@ -186,12 +207,14 @@
       article.append(actions);
       specialistsHost.append(article);
     }
-    if (inbox) {
+    for (const item of inbox) {
+      if (item.id === 'gmail:first-review' && entries.some(entry => entry.key === 'gmail-inbox-review')) continue;
       const article = node('article','','vp3-agent-activity-item');
-      article.dataset.activitySpecialist = 'gmail-inbox-review';
-      article.append(itemCopy(inbox.title,inbox.detail,inbox.id));
+      article.dataset.activitySpecialist = item.id === 'gmail:inbox-monitor' ? 'gmail-inbox-monitor' : 'gmail-inbox-review';
+      article.classList.toggle('selected',article.dataset.activitySpecialist === selected);
+      article.append(item.monitor ? gmailMonitorCopy(item) : itemCopy(item.title,item.detail,item.id));
       const actions = node('div','','vp3-agent-activity-actions');
-      for (const action of inbox.actions) actions.append(button(action.label,event => void act(action,current,event)));
+      for (const action of item.actions) actions.append(button(action.label,event => void act(action,current,event)));
       article.append(actions);
       specialistsHost.append(article);
     }
@@ -203,6 +226,7 @@
       data.sections.length <= 13 && data.sections.every(section => typeof section.id === 'string' && typeof section.label === 'string' &&
         Array.isArray(section.items) && section.items.length <= 12 && section.items.every(item => typeof item.id === 'string' &&
           typeof item.title === 'string' && item.title.length <= 500 && (item.detail === undefined || typeof item.detail === 'string' && item.detail.length <= 1600) &&
+          (item.monitor === undefined || section.id === 'gmail_inbox' && item.id === 'gmail:inbox-monitor' && Object.hasOwn(gmailMonitorLabels,item.monitor?.state)) &&
           Array.isArray(item.actions) && item.actions.length <= 4 && item.actions.every(action => kinds.has(action?.kind) &&
             typeof action.label === 'string' && action.label.length <= 120)));
   }
@@ -285,7 +309,8 @@
       }
       if (found.length) nodes.push(section);
     }
-    if (!nodes.length && !specialistSnapshot().length && !listening?.childElementCount) nodes.push(node('p','No current items to show.'));
+    if (!nodes.length && !specialistSnapshot().length && !listening?.childElementCount &&
+      !snapshot.sections.some(section => section.id === 'gmail_inbox' && section.items.length)) nodes.push(node('p','No current items to show.'));
     sections.replaceChildren(...nodes);
     contextLabel.textContent = [snapshot.agent_name,snapshot.current_chat?.title].filter(value => typeof value === 'string' && value.trim()).join(' · ');
     const checked = new Date(snapshot.observed_at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
@@ -328,7 +353,10 @@
     } finally {
       clearTimeout(timeout);
       if (controller === request) controller = null;
-      if (visible() && mine === generation) timer = setTimeout(() => void read(),12000);
+      if (visible() && mine === generation) {
+        const monitor = snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items.find(item => item.id === 'gmail:inbox-monitor')?.monitor;
+        timer = setTimeout(() => void read(),monitor?.state === 'working' ? 2500 : 12000);
+      }
     }
   }
   function open(options = {}) {

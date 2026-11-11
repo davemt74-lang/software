@@ -742,6 +742,30 @@ small{color:#7f766d;line-height:1.45}
 
 
 /* Stonefellow v9 — AI / API Settings */
+.ai-admin-disclosure>summary{
+  cursor:pointer;
+  font-size:1rem;
+  font-weight:750;
+}
+.ai-admin-disclosure[open]>summary{margin-bottom:16px}
+.ai-admin-disclosure>.ai-provider-card+.ai-provider-card,
+.ai-admin-disclosure>#ai-service-routes{margin-top:12px}
+.ai-admin-page .ai-coding-model-groups{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.ai-coding-model-group{
+  min-width:0;
+  margin:0;
+  padding:10px;
+  border:1px solid var(--admin-line);
+  border-radius:8px;
+}
+.ai-coding-model-group legend{padding:0 4px;font-weight:750}
+.ai-coding-model-group .admin-check-grid{grid-template-columns:1fr!important}
+.ai-coding-model-group input[type="checkbox"]{flex:0 0 auto}
+@media(max-width:760px){.ai-admin-page .ai-coding-model-groups{grid-template-columns:1fr}}
 .ai-settings-heading{
   display:flex;
   align-items:flex-start;

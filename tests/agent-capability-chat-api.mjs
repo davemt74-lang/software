@@ -1030,7 +1030,7 @@ try{
    &&link.searchParams.get('conversation_id')===String(gmailChat)
    &&link.searchParams.get('message_id')===String(gmailMarker.message_id);
  };
- check(gmailLinkPointsToPost(gmailLinks.notification)&&gmailLinks.activity?.[0]?.actions?.some(action=>gmailLinkPointsToPost(action.href)),
+ check(gmailLinkPointsToPost(gmailLinks.notification)&&gmailLinks.activity?.some(item=>item.actions?.some(action=>gmailLinkPointsToPost(action.href))),
   'the existing bell event and Top of Mind link to the exact saved Gmail Chat message');
  const gmailConnections=await requestGmail({action:'status',include_report:true});
  check(gmailConnections.data?.review?.report?.summary===gmailSummary

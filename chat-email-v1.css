@@ -72,6 +72,7 @@
 .vp3-chat-gmail-review a { color: inherit; font-weight: 700; text-decoration: underline; }
 .vp3-chat-gmail-review p { margin: .45rem 0 0; white-space: pre-wrap; }
 .vp3-chat-gmail-review small { display: block; margin-top: .4rem; }
+.vp3-chat-gmail-result-time { display: block; margin: .25rem 0; color: var(--muted, #5f6b7a); font-size: .75rem; font-weight: 400; text-transform: none; }
 .gmail-review-item-group { margin-top: .45rem; }
 .gmail-review-item-group summary { cursor: pointer; font-weight: 600; }
 .vp3-chat-gmail-review .gmail-review-items { list-style: none; margin: .5rem 0; padding: 0; }

@@ -79,6 +79,16 @@
     if (className) element.className = className;
     return element;
   };
+  function resultTime(createdAt, completedAt) {
+    const postedAt = timestamp(createdAt);
+    const savedAt = Number.isFinite(postedAt) ? postedAt : timestamp(completedAt);
+    if (!Number.isFinite(savedAt)) return null;
+    const date = new Date(savedAt);
+    const label = Number.isFinite(postedAt) ? 'Posted' : 'Review completed';
+    const time = node('time',label+' '+date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}),'vp3-chat-gmail-result-time');
+    time.dateTime = date.toISOString();
+    return time;
+  }
   const itemRef = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
   const messageId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,190}$/.test(value);
   const reviewReply = /^(?:Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}$/;
@@ -403,7 +413,7 @@
     if (!inScope() || pageError || !valid(review)) return null;
     const initial = review.state === 'working';
     const expiresAt = timestamp(initial ? review.next_attempt_at : review.inbox_working_until);
-    return expiresAt > Date.now() ? {id:'gmail:'+(review.run_id || 'inbox-updates'),expiresAt} : null;
+    return expiresAt > Date.now() ? {id:initial ? 'gmail:'+review.run_id : 'gmail:inbox-updates',expiresAt} : null;
   }
   function renderRail() {
     const lease = workLease();
@@ -495,8 +505,10 @@
         if (updateCards.get(row)?.isConnected) continue;
         const panel = node('div','','vp3-chat-gmail-review');
         panel.dataset.gmailInboxUpdate = marker.run_id;
-        const headline = `${value.total} new Gmail ${value.total === 1 ? 'message' : 'messages'} · ${new Date(at).toLocaleString()}`;
+        const headline = `${value.total} new Gmail ${value.total === 1 ? 'message' : 'messages'}`;
         panel.append(node('strong',headline));
+        const time = resultTime(row.dataset.chatCreatedAt,value.at);
+        if (time) panel.append(time);
         if ([value.important,value.replies].every(count => Number.isSafeInteger(count) && count >= 0 && count <= value.total)) {
           panel.append(node('small',`${value.important} important · ${value.replies} ${value.replies === 1 ? 'reply' : 'replies'}`));
         }
@@ -547,6 +559,7 @@
     const headline = ready ? `Reviewed ${reviewed}.`
       : [`Gmail Inbox Review · ${labels[review.state]}`,liveWork ? '' : detail(review)].filter(Boolean).join('. ');
     const saved = ready ? review.chat_result : null;
+    const time = ready ? resultTime(row?.dataset.chatCreatedAt,review.updated_at) : null;
     const summary = typeof saved?.summary === 'string' ? saved.summary.slice(0,8000).trim() : '';
     const latest = saved?.latest;
     const batchAt = timestamp(latest?.at);
@@ -554,7 +567,7 @@
       && [latest.important,latest.replies].every(count => Number.isSafeInteger(count) && count >= 0 && count <= latest.total)
       ? `Latest inbox update · ${new Date(batchAt).toLocaleString()} · ${latest.total} new · ${latest.important} important · ${latest.replies} ${latest.replies === 1 ? 'reply' : 'replies'}`
       : '';
-    const signature = JSON.stringify([review.run_id,headline,summary,batch,saved?.items,latest?.items]);
+    const signature = JSON.stringify([review.run_id,headline,time?.dateTime,time?.textContent,summary,batch,saved?.items,latest?.items]);
     if (completion?.isConnected && completionSignature === signature) {
       void readWatchlist();
       return;
@@ -591,6 +604,7 @@
       header.append(viewWork);
     }
     completion.replaceChildren(header);
+    if (time) completion.append(time);
     if (summary) completion.append(node('p',summary));
     if (Array.isArray(saved?.items) && saved.items.length < review.total) {
       completion.append(node('small',`Saved details are available for ${saved.items.length} of ${review.total} reviewed messages.`));

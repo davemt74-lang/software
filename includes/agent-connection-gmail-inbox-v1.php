@@ -240,6 +240,26 @@ function agent_connection_gmail_inbox_grant_v1(array $user, ?array $connection, 
         && hash_equals((string)$connection['authorization_key'],(string)$policy['authorization_key']);
 }
 
+/** Lock in the same order as Inbox Review settings and normal cursor commits. */
+function agent_connection_gmail_inbox_bound_scope_v1(PDO $pdo, array $user, bool $lock=false): array
+{
+    $owner = (int)($user['id']??0);
+    if ($owner<1 || (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1()!==null)) return ['state'=>'disabled'];
+    $live = agent_connection_gmail_inbox_user_v1($pdo,$owner,$lock);
+    if (!$live || empty($live['is_active']) || !has_permission('account.access',$live) || !has_permission('chat.access',$live)) return ['state'=>'disabled'];
+    if (!agent_connection_gmail_inbox_ready_v1($pdo)) return ['state'=>'disabled'];
+    $policy = agent_connection_gmail_inbox_policy_v1($pdo,$owner);
+    if (empty($policy['enabled'])) return ['state'=>'disabled'];
+    $connection = agent_connections_find_v1($pdo,$owner,(int)$policy['connection_id'],$lock && !agent_commerce_sqlite_pa2($pdo));
+    if ($lock) $policy = agent_connection_gmail_inbox_policy_v1($pdo,$owner,true);
+    if (empty($policy['enabled'])) return ['state'=>'disabled'];
+    if (!agent_connection_gmail_inbox_grant_v1($live,$connection,$policy)) return ['state'=>'unavailable'];
+    return ['state'=>'ready','owner'=>$owner,'user'=>$live,'policy'=>$policy,
+        'generation'=>agent_connection_gmail_inbox_notice_generation_v1($policy),
+        'provider_ready'=>agent_connection_gmail_ready_v1()
+            && hash_equals((string)$connection['client_fingerprint'],agent_connections_client_fingerprint_v1())];
+}
+
 function agent_connection_gmail_inbox_review_v1(PDO $pdo, array $policy, array $messages, string $now): array
 {
     $owner = (int)$policy['owner_user_id'];

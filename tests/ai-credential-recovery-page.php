@@ -26,7 +26,7 @@ foreach ([
  'admin/ai.php', 'admin/ai-service-rules.php', 'admin/_ai-service-controls-v1.php', 'api/admin-elevenlabs-v102.php',
  'includes/ai-credential-recovery.php', 'includes/agent-image-provider-v1.php', 'includes/ai-service-policy-v1.php',
  'includes/ai-service-model-test-v1.php', 'includes/ai-runtime-v100.php', 'includes/ai-service-usage-v1.php',
- 'includes/ai-settings.php', 'includes/user-llm-v1.php',
+ 'includes/ai-settings.php', 'includes/user-llm-v1.php', 'includes/coding-canvas-model-v1.php',
  'api/user-llm-v1.php', 'settings-ai-providers.php',
 ] as $file) copy($repo.'/'.$file,$root.'/'.$file);
 $bootstrap= <<<'PHP'
@@ -84,6 +84,8 @@ function request(string $path,?array $body=null,bool $json=false,string $role='a
  return [(int)explode(' ',$http_response_header[0])[1],(string)$result,$http_response_header];
 }
 function rows():array{global $pdo;return $pdo->query('SELECT * FROM settings ORDER BY setting_key')->fetchAll(PDO::FETCH_ASSOC);}
+$serviceConfigKey='vp3_ai_service_configuration_v1';
+$otherSettings=static fn(array $rows): array=>array_values(array_filter($rows,static fn(array $row): bool=>$row['setting_key']!==$serviceConfigKey));
 try{
  for($i=0;$i<50;$i++){$ready=@stream_socket_client('tcp://'.$address,$errno,$errstr,.1);if($ready){fclose($ready);break;}usleep(100000);}
  [$status,$html]=request('/admin/ai.php');
@@ -91,6 +93,7 @@ try{
  check(str_contains($html,'<h3>Reconnect saved services</h3>'),'Primary recovery form visible without opening a details control');
  check(str_contains($html,'recovery_keys[ai_anthropic_api_key]')&&str_contains($html,'recovery_keys[ai_elevenlabs_api_key]'),'One form includes Claude and ElevenLabs');
  check(!str_contains($html,'ai-overview-panel')&&!str_contains($html,'Save AI / API Settings'),'Conflicting normal save controls not rendered');
+ check(str_contains($html,'Save Coding Agent models'),'Coding Agent model choices remain available during credential recovery');
  check(!str_contains($html,'Restore /private/ai-key.php from the previous installation'),'Missing-key page does not repeat the file-hunting warning');
  preg_match('/name="csrf_token" value="([^"]+)"/',$html,$match);$csrf=$match[1]??'';check($csrf!=='','Production CSRF field present');
  preg_match('/<button\b[^>]*>Test Claude<\/button>/',$html,$testButton);
@@ -103,6 +106,14 @@ try{
   check($status===200&&str_contains($html,'credential_missing_key'),'Connection test reports the actual missing-key code');
   check(rows()===$before&&!is_file($root.'/private/ai-key.php'),'Connection test never replaces keys or changes settings');
  }
+ [$status,,$headers]=request('/admin/ai.php',['action'=>'save_coding_models','csrf_token'=>$csrf,
+    'coding_models'=>['anthropic:claude-haiku-4-5'],'default_coding_model'=>'anthropic:claude-haiku-4-5']);
+ $modelRows=rows();
+ check($status===302&&in_array('Location: /admin/ai.php#coding-models',$headers,true)
+    &&count($modelRows)===count($before)+1&&!is_file($root.'/private/ai-key.php')
+    &&$otherSettings($modelRows)===$before,
+    'A Coding Agent model save during recovery changes only the model list and leaves the locked credentials intact');
+ $pdo->prepare('DELETE FROM settings WHERE setting_key=?')->execute([$serviceConfigKey]);
  [$status]=request('/admin/ai.php',['action'=>'test','provider'=>'chat','csrf_token'=>$csrf],false,'viewer');
  check($status===403,'Connection tests retain administrator permission checks');
  [$status]=request('/admin/ai.php',['action'=>'test','provider'=>'chat','csrf_token'=>'invalid']);
@@ -259,6 +270,71 @@ try{
  check($status===200&&($memberState['route']??null)==='own_key'&&empty($memberState['providers']['anthropic']['configured']),'Removing the key preserves the account funding choice');
  [$status,$json]=request($memberApi,array_replace($select,['route'=>'system','provider'=>'']),true,'member');
  check($status===200&&(json_decode($json,true)['state']['route']??null)==='system','The member can explicitly switch all Cloud AI back to VP3 keys');
+
+ $customCoding=array_replace($model,['model'=>'fixture-coding:2026','label'=>'Fixture Coding','services'=>['code_build','code_repair']]);
+ [$status]=request('/admin/ai.php',$customCoding);
+ check($status===302,'The advanced model registry still accepts a custom Coding Agent model');
+ [$status,,$headers]=request('/admin/ai.php',array_replace($route,['service'=>'code_build','primary_model'=>'anthropic:fixture-coding:2026']));
+ check($status===302&&in_array('Location: /admin/ai.php?route=code_build#ai-service-route-code_build',$headers,true),
+    'A legacy advanced Coding Agent route can use its existing custom model');
+ $legacyBuiltin=array_replace($customCoding,['provider'=>'openai','model'=>'gpt-5.6-luna','label'=>'Legacy Luna',
+    'services'=>['conversation','initiative','code_build','code_repair']]);
+ request('/admin/ai.php',$legacyBuiltin);
+ [$status,,$headers]=request('/admin/ai.php',array_replace($route,['service'=>'code_repair','primary_model'=>'openai:gpt-5.6-luna']));
+ check($status===302&&in_array('Location: /admin/ai.php?route=code_repair#ai-service-route-code_repair',$headers,true),
+    'A legacy route can select an already registered built-in model');
+ [$status,$html]=request('/admin/ai.php');
+ preg_match('/<section class="panel" id="coding-models".*?<\/section>/s',$html,$codingForm);
+ check($status===200&&str_contains($codingForm[0]??'','<legend>OpenAI</legend>')
+    &&str_contains($codingForm[0]??'','<legend>Anthropic</legend>')
+    &&str_contains($codingForm[0]??'','name="coding_models[]"')&&str_contains($codingForm[0]??'','name="default_coding_model"')
+    &&!str_contains($codingForm[0]??'','api_key')&&!str_contains($codingForm[0]??'','Exact API model ID'),
+    'The normal model form offers grouped built-in choices and a default with no credential or model entry fields');
+ check(!str_contains($codingForm[0]??'','fixture-coding:2026')
+    &&preg_match('/id="advanced-model-settings"\s*>/',$html)===1
+    &&preg_match('/id="provider-api-settings"\s*>/',$html)===1,
+    'Custom registration and credential settings are collapsed on the regular models page');
+ [$status,$html]=request('/admin/ai.php?models=anthropic');
+ check($status===200&&str_contains($html,'id="advanced-model-settings" open')
+    &&str_contains($html,'id="provider-models-anthropic" open'),
+    'A direct registry link opens advanced settings and the selected provider');
+
+ $beforeModels=rows();
+ $readConfig=$pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');
+ $readConfig->execute([$serviceConfigKey]);
+ $beforeModelConfig=json_decode((string)$readConfig->fetchColumn(),true,12,JSON_THROW_ON_ERROR);
+ $readConfig->closeCursor();
+ $modelSelection=['action'=>'save_coding_models','csrf_token'=>$csrf,'coding_models'=>['openai:gpt-5.6-luna','anthropic:claude-haiku-5-5'],
+    'default_coding_model'=>'openai:gpt-5.6-luna'];
+ [$status]=request('/admin/ai.php',$modelSelection,false,'users_only');
+ check($status===403&&rows()===$beforeModels,'Changing Coding Agent models requires AI settings permission');
+ [$status]=request('/admin/ai.php',array_replace($modelSelection,['csrf_token'=>'invalid']));
+ check($status===302&&rows()===$beforeModels,'Changing Coding Agent models requires CSRF');
+ [$status]=request('/admin/ai.php',array_replace($modelSelection,['default_coding_model'=>'anthropic:claude-sonnet-5']));
+ check($status===302&&rows()===$beforeModels,'A default outside the enabled models is rejected without writes');
+ [$status]=request('/admin/ai.php',array_replace($modelSelection,['coding_models'=>['anthropic:fixture-coding:2026'],
+    'default_coding_model'=>'anthropic:fixture-coding:2026']));
+ check($status===302&&rows()===$beforeModels,'Manual model IDs cannot be added through the built-in Coding Agent form');
+ [$status,,$headers]=request('/admin/ai.php',$modelSelection+['openai_api_key'=>'must-not-be-saved']);
+ check($status===302&&in_array('Location: /admin/ai.php#coding-models',$headers,true),
+    'A model-only save succeeds without a configured credential and returns to the Coding Agent model form');
+ [$status,$html]=request('/admin/ai.php');
+ check($status===200&&str_contains($html,'Coding Agent models saved.')
+    &&str_contains($html,'name="coding_models[]" value="openai:gpt-5.6-luna" checked')
+    &&str_contains($html,'name="coding_models[]" value="anthropic:claude-haiku-5-5" checked')
+    &&str_contains($html,'<option value="openai:gpt-5.6-luna" selected>'),
+    'Reload shows both saved models and the exact default');
+ $readConfig->execute([$serviceConfigKey]);
+ $modelConfig=json_decode((string)$readConfig->fetchColumn(),true,12,JSON_THROW_ON_ERROR);
+ $readConfig->closeCursor();
+ check(($modelConfig['coding_catalog']??null)===['enabled'=>$modelSelection['coding_models'],'default'=>$modelSelection['default_coding_model']],
+    'The saved coding catalog contains the selected models and exact default');
+ unset($modelConfig['coding_catalog']);
+ check(!isset($modelConfig['routes']['code_build'])&&($modelConfig['routes']['code_repair']??null)===$beforeModelConfig['routes']['code_repair'],
+    'The model save removes the custom Coding Agent route and retains the route using a checked built-in model');
+ unset($beforeModelConfig['routes']['code_build']);
+ check($otherSettings(rows())===$otherSettings($beforeModels)&&$modelConfig===$beforeModelConfig,
+    'Saving Coding Agent models preserves system credentials, Chat defaults, the model registry, and unrelated service routes');
  echo 'AI_CREDENTIAL_RECOVERY_PAGE=PASS ('.$checks." assertions; actual production page/API over HTTP)\n";
 }finally{
  proc_terminate($process);proc_close($process);

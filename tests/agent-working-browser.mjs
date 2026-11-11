@@ -19,6 +19,10 @@ const server=http.createServer((req,res)=>{
       const state={contract:'vp3.agent.work.v1',owner_user_id:1,agent_id:7,conversation_id:42,working_attention_binding:'private-session',
         observed_at:new Date(Date.now()-(mode==='stale'?60000:0)).toISOString(),
         health:{state:mode==='idle'?'waiting':'running',enabled:true,active_jobs:mode==='idle'?[]:[{id:'workflow:21',kind:'assessment',step:'Brainstorming useful opportunities',expiresAt:Date.now()+60000}]}};
+      if(mode==='gmail'){
+        state.health={state:'idle',enabled:false,active_jobs:[]};
+        state.gmail_job={id:'gmail:inbox-updates',expiresAt:Date.now()+60000};
+      }
       if(mode==='owner')state.owner_user_id=2;
       if(mode==='agent')state.agent_id=8;
       if(mode==='binding')state.working_attention_binding='other';
@@ -257,6 +261,22 @@ try{
       assert.equal(workRequests.length,before);
       await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
       await page.locator('[data-working="true"]').waitFor();
+    }finally{await page.close();}
+  });
+  await check('The global orb follows an independent Gmail lease and returns to its idle polling cadence',async()=>{
+    workMode='gmail';
+    const page=await pageAt('/workspace?work=1',{clock:true});
+    try{
+      const tracks=page.locator('[data-orb-job-ids="gmail:inbox-updates"]');
+      await tracks.waitFor();
+      assert.equal(await page.locator('iframe').count(),0);
+      assert.equal(await page.evaluate(()=>VP3ChatSpecialists.snapshot().length),0);
+      workMode='idle';
+      await page.clock.fastForward(2600);
+      await tracks.waitFor({state:'detached'});
+      const before=workRequests.length;
+      await page.clock.fastForward(2600);
+      assert.equal(workRequests.length,before);
     }finally{await page.close();}
   });
   await check('Stale, mismatched and denied global work clears its dot and specialist',async()=>{

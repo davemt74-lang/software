@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  const jobPrefixes={initiative:'workflow:',initiative_work:'workflow:',image:'image:',development:'development:',mission:'mission:',gmail:'gmail:'};
+  const jobPrefixes={initiative:'workflow:',initiative_work:'workflow:',image:'image:',development:'development:',mission:'mission:',gmail:'gmail:',gmail_work:'gmail:'};
   function normalizeJobs(source,jobs){
     if(typeof source!=='string'||!Object.hasOwn(jobPrefixes,source)||!Array.isArray(jobs))return null;
     const now=Date.now(),prefix=jobPrefixes[source];
@@ -502,7 +502,7 @@
       const data=event.data;if(data.kind==='ready'){if(frameActivityContext)clearJobs();frameActivityContext=null;}if(data.activity_context)receiveActivityContext(data.activity_context);if(data.kind==='ready'&&data.conversation)rememberRef(data.conversation);if(data.kind==='ready'){ready=true;if(pendingListen){pendingListen=false;command('listen');}if(pendingReplyWindow){pendingReplyWindow=false;command('response-window');}if(pendingText)frame.contentWindow.postMessage({channel:'vp3-orb',kind:'compose',text:pendingText},origin);if(pendingVoiceEnrollment){frame.contentWindow.postMessage({channel:'vp3-orb',kind:'voice-enroll',id:pendingVoiceEnrollment},origin);pendingVoiceEnrollment='';}}
       if(data.kind==='agent-orb-shape'&&String(data.ownerKey)===String(adapter.ownerKey)
         &&(data.shape==='orbit'||data.shape==='particle_face'))window.dispatchEvent(new CustomEvent('vp3:agent-orb-shape',{detail:{shape:data.shape}}));
-      if(data.kind==='jobs'&&String(data.ownerKey)===String(adapter.ownerKey)&&frameJobsAllowed(data.activity_context))setJobs(data.source,data.jobs);
+      if(data.kind==='jobs'&&data.source!=='gmail_work'&&String(data.ownerKey)===String(adapter.ownerKey)&&frameJobsAllowed(data.activity_context))setJobs(data.source,data.jobs);
       if(data.kind==='voice-filter-status')window.dispatchEvent(new CustomEvent('vp3:voice-filter-remote-status',{detail:{message:String(data.message||'').slice(0,300)}}));
       if(data.kind==='open-eyes-gallery'){const panel=document.querySelector('.vp3-eyes-panel');if(panel?.hidden)window.VP3AgentEyes?.toggle?.();document.querySelector('.vp3-eyes-portraits')?.scrollIntoView({block:'nearest'});}
       if(data.kind==='user-turn')void Promise.resolve(window.VP3AgentEyes?.hear?.(String(data.text||'').slice(0,240),{voice:data.voice===true,known_voice:data.known_voice===true})).finally(()=>{if(typeof data.photoRoute==='string'&&data.photoRoute.length<=64)frame?.contentWindow?.postMessage({channel:'vp3-orb',kind:'photo-reply-complete',id:data.photoRoute},origin);}).catch(()=>{});
@@ -548,7 +548,11 @@
     function stopWorkPoll(){
       clearTimeout(workPollTimer);workPollTimer=0;
       if(workController){workGeneration++;workController.abort();workController=null;}
-      if(jobSnapshots.delete('initiative_work'))refreshJobs();
+      clearWorkPollJobs();
+    }
+    function clearWorkPollJobs(){
+      const hadInitiative=jobSnapshots.delete('initiative_work');
+      if(jobSnapshots.delete('gmail_work')||hadInitiative)refreshJobs();
     }
     async function pollWork(){
       if(workController||workDenied||!canPollWork())return;
@@ -571,14 +575,18 @@
           ||!Number.isSafeInteger(view.conversation_id)||view.conversation_id<0||!Number.isFinite(observed)
           ||observed<Date.now()-10000||observed>Date.now()+5000||typeof health?.enabled!=='boolean'
           ||!Array.isArray(health.active_jobs)||health.active_jobs.length>25)throw Error('Work status could not be verified.');
+        const gmailJobs=normalizeJobs('gmail_work',view.gmail_job?.id==='gmail:inbox-updates'?[view.gmail_job]:[]);
+        if(gmailJobs?.length)jobSnapshots.set('gmail_work',gmailJobs);
+        else jobSnapshots.delete('gmail_work');
         setJobs('initiative_work',health.enabled?health.active_jobs:[]);
       }catch(_){
-        if(generation===workGeneration&&jobSnapshots.delete('initiative_work'))refreshJobs();
+        if(generation===workGeneration)clearWorkPollJobs();
       }finally{
         clearTimeout(timeout);
         if(generation===workGeneration){
           workController=null;
-          if(!workDenied&&canPollWork())workPollTimer=setTimeout(()=>{workPollTimer=0;void pollWork();},jobSnapshots.get('initiative_work')?.length?2500:8000);
+          if(!workDenied&&canPollWork())workPollTimer=setTimeout(()=>{workPollTimer=0;void pollWork();},
+            jobSnapshots.get('initiative_work')?.length||jobSnapshots.get('gmail_work')?.length?2500:8000);
         }
       }
     }

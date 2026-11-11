@@ -32,7 +32,7 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#f4f5f7">
 <title><?= e($adminTitle) ?> | <?= e($siteBrandName) ?> Admin</title>
-<link rel="stylesheet" href="<?= e(url('/admin/admin.css?v=77')) ?>">
+<link rel="stylesheet" href="<?= e(url('/admin/admin.css?v=79')) ?>">
 <link data-admin-tech-theme rel="stylesheet" href="<?= e(url('/admin/admin-tech.css?v=admin-operating-center-20260907')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
 </head>

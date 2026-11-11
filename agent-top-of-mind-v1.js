@@ -7,6 +7,15 @@
   const initialBinding=String(window.STONEFELLOW_CHAT?.workingAttentionBinding||window.STONEFELLOW_NOTIFICATION_DRAWER?.workingAttentionBinding||window.VP3_ORB_CONFIG?.workingAttentionBinding||'');
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const labels={working:'Working',queued:'Queued',interrupted:'Interrupted — worker lease expired',failed:'Failed',superseded:'Sources changed. Waiting for the next review.',cancelled:'Cancelled',paused:'Paused',unknown:'Status unknown',unverified:'Completion not verified',withheld:'Withheld — source or conversation changed',waiting_owner:'Waiting for your review',ready_to_report:'Prepared — waiting to report',completed:'Completed private preparation',assessed:'Assessment complete'};
+  const gmailMonitorLabels={
+    scheduled:'Background check scheduled.',
+    checked:'Last check completed.',
+    working:'Checking Gmail for new messages.',
+    overdue:'A scheduled Gmail check is overdue.',
+    retrying:'The last check failed. A retry is scheduled.',
+    restart_required:'Restart inbox monitoring in Gmail settings.',
+    unavailable:'Gmail monitoring status is unavailable.'
+  };
   const participantSelected=()=>!!window.VP3ParticipantContinuity?.selectedContext?.();
   function scope(){
     const cfg=window.STONEFELLOW_NOTIFICATION_DRAWER||{},chat=window.STONEFELLOW_CHAT;
@@ -38,6 +47,22 @@
       &&Number.isSafeInteger(cid)&&cid>0
       ?` data-top-of-mind-source="${record.message_id}" data-top-of-mind-conversation="${cid}"`:'';
     return `<a${source} href="${esc(url)}">${esc(label)}</a>`;
+  }
+  function renderGmail(current,monitor){
+    if(!Object.hasOwn(gmailMonitorLabels,monitor?.state))return '';
+    const working=monitor.state==='working'&&Date.parse(monitor.lease_until)>Date.now();
+    const state=monitor.state==='working'&&!working?'overdue':monitor.state;
+    const settings=safeUrl(monitor.settings_url);
+    const times=[['Last check',monitor.last_checked_at],['Next check',monitor.next_check_at]].map(([label,value])=>{
+      const time=Date.parse(value);
+      return Number.isFinite(time)?`<small>${label} <time datetime="${esc(value)}">${esc(new Date(time).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}))}</time></small>`:'';
+    }).join('');
+    return `<section class="agent-top-of-mind-context" aria-label="Gmail inbox monitoring" data-work-state="${state}">
+      <strong>Gmail inbox monitoring</strong><p>${gmailMonitorLabels[state]}</p>${times}
+      ${monitor.pending===true?'<small>An inbox update is waiting to post to Chat.</small>':''}
+      ${monitor.latest?.agent_id===current.agent?sourceLink(current,monitor.latest,'View latest update'):''}
+      ${settings?`<a href="${esc(settings)}">Gmail settings</a>`:''}
+    </section>`;
   }
   function renderCalendar(entry,openAgenda){
     if(!entry||typeof entry.title!=='string')return '';
@@ -114,6 +139,7 @@
       const currentContext=!staleSnapshot&&!participantSelected();
       if(currentContext){
         const openAgenda=host.querySelector('[data-top-of-mind-agenda][open]')?.dataset.topOfMindAgenda;
+        markup+=renderGmail(current,snapshot.gmail_inbox);
         markup+=renderCalendar(snapshot.calendar?.[0],openAgenda);
         const recording=snapshot.recording, recordingUrl=safeUrl(recording?.url);
         if(recordingUrl&&typeof recording?.title==='string'){
@@ -152,7 +178,7 @@
     }
     host.innerHTML=markup;
   }
-  function schedule(){window.clearTimeout(timer);timer=0;const active=snapshot?.items?.some(x=>['working','queued'].includes(x.state));const delay=failures?Math.min(30000,2500*2**Math.min(failures,4)):(active?2500:8000);if(visible())timer=window.setTimeout(()=>void refresh(),delay);}
+  function schedule(){window.clearTimeout(timer);timer=0;const active=snapshot?.gmail_inbox?.state==='working'||snapshot?.items?.some(x=>['working','queued'].includes(x.state));const delay=failures?Math.min(30000,2500*2**Math.min(failures,4)):(active?2500:8000);if(visible())timer=window.setTimeout(()=>void refresh(),delay);}
   async function refresh(){
     if(!visible()||controller||participantSelected())return;
     const sent=scope();
