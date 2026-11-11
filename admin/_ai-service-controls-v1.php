@@ -1,6 +1,56 @@
 <?php
 declare(strict_types=1);
 
+function vp3_admin_coding_models_v1(PDO $pdo): void
+{
+    $state = vp3_coding_canvas_model_admin_state_v1($pdo);
+    $options = ['openai'=>[], 'anthropic'=>[]];
+    foreach ($state['options'] as $option) {
+        $options[$option['provider']][] = $option;
+    }
+    $default = $state['default'];
+    $defaultKey = $default === null ? '' : $default['provider'].':'.$default['model'];
+    $providers = ['openai'=>'OpenAI', 'anthropic'=>'Anthropic'];
+    ?>
+    <section class="panel" id="coding-models" aria-labelledby="coding-models-title">
+      <h2 id="coding-models-title">Coding Agent models</h2>
+      <p class="muted">Choose the models members can select for the Coding Agent. The default is used when the sidebar is set to Automatic. For VP3 Cloud, each provider’s models share one saved system credential.</p>
+      <form method="post" class="grid-form">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="save_coding_models">
+        <div class="field full ai-coding-model-groups">
+          <?php foreach ($providers as $provider => $label): ?>
+            <fieldset class="ai-coding-model-group">
+              <legend><?= e($label) ?></legend>
+              <div class="admin-check-grid">
+                <?php foreach ($options[$provider] as $option): ?>
+                  <label><input type="checkbox" name="coding_models[]" value="<?= e($provider.':'.$option['model']) ?>" <?= $option['enabled'] ? 'checked' : '' ?>> <?= e($option['label']) ?></label>
+                <?php endforeach; ?>
+              </div>
+            </fieldset>
+          <?php endforeach; ?>
+        </div>
+        <label class="field full">Default Coding Agent model
+          <select name="default_coding_model" aria-describedby="default-coding-model-help" required>
+            <option value="" <?= $defaultKey === '' ? 'selected' : '' ?> disabled>Select a model</option>
+            <?php foreach ($providers as $provider => $label): ?>
+              <optgroup label="<?= e($label) ?>">
+                <?php foreach ($options[$provider] as $option): $key = $provider.':'.$option['model']; ?>
+                  <option value="<?= e($key) ?>" <?= $defaultKey === $key ? 'selected' : '' ?>><?= e($option['label']) ?></option>
+                <?php endforeach; ?>
+              </optgroup>
+            <?php endforeach; ?>
+          </select>
+          <small id="default-coding-model-help">Choose one of the checked models.</small>
+        </label>
+        <div class="field full actions">
+          <button class="btn primary" type="submit">Save Coding Agent models</button>
+        </div>
+      </form>
+    </section>
+    <?php
+}
+
 function vp3_admin_ai_service_post_string_v1(string $field): string
 {
     if (!array_key_exists($field, $_POST)) return '';
@@ -68,7 +118,7 @@ function vp3_admin_ai_service_provider_registry_v1(PDO $pdo, string $provider): 
         </div>
       </fieldset>
       <p class="muted">Enter an existing ID to update its display name and service eligibility.</p>
-      <p class="muted">Register a model for both Code Build and Code Repair to offer it in the Coding Agent picker.</p>
+      <p class="muted">Use Coding Agent models above to manage the sidebar choices.</p>
       <button class="btn" type="submit" form="<?= e($saveForm) ?>">Save model</button>
     </details>
     <?php
@@ -97,7 +147,7 @@ function vp3_admin_ai_service_routes_v1(PDO $pdo): void
       <h2 id="ai-service-routes-title">AI service routes</h2>
       <p class="muted">Choose the primary and fallback models for each available service. A route can inherit the existing setup.</p>
       <p class="muted">Primary and fallback models use the same account funding source. VP3 Cloud is the default. Members who choose My API keys in AI Providers need a saved key for each provider their routes use.</p>
-      <p class="muted">Code Build and Code Repair routes help choose the automatic coding model. Members can select any model eligible for both services. A coding run keeps its chosen model through build and repair.</p>
+      <p class="muted">Code Build and Code Repair routes can use the enabled Coding Agent models. A coding run keeps its chosen model through build and repair.</p>
       <?php foreach ($catalog as $id => $service):
           if (!$service['wired']) continue;
           $route = vp3_ai_service_read_route_v1($pdo, $id);

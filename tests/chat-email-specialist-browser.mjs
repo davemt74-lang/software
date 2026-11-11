@@ -118,9 +118,11 @@ await page.route('**/api/**', async route => {
       answer = watching ? 'Gmail watch is active.' : 'Gmail watch stopped.';
       tool_receipt = {capability:'email.followups',operation:watching ? 'watch_sender' : 'stop_sender_watch',status:'completed'};
     }
+    tool_receipt = {...tool_receipt,contract:'vp3.tool-receipt.v1',checked_at:'2026-11-10T12:30:00Z'};
     const user_message_id = nextId++;
     const assistant_message_id = nextId++;
-    messages.push({id:user_message_id,role:'user',message:payload.message},{id:assistant_message_id,role:'assistant',message:answer});
+    messages.push({id:user_message_id,role:'user',message:payload.message},{
+      id:assistant_message_id,role:'assistant',message:answer,created_at:'2026-11-10 12:30:05',context_json:JSON.stringify({tool_receipt})});
     const actions = payload.message === `Show emails from ${sender}`
       ? [{type:'gmail_message',item_ref:searchRef,conversation_id:42,label:'Open result 1'}] : [];
     return ok({conversation_id:42,user_message_id,assistant_message_id,answer,tool_receipt,actions});
@@ -179,15 +181,18 @@ try {
   await page.waitForFunction(() => window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady());
   await send(`Show emails from ${sender}`);
   await page.getByText('Email search completed.',{exact:true}).waitFor();
+  await page.locator('time[datetime="2026-11-10T12:30:00.000Z"]').getByText(/^Result /).waitFor();
   await page.getByRole('button',{name:'Open result 1'}).click();
   const messageReview = page.getByRole('dialog',{name:'Gmail message'});
   await messageReview.getByText('This is the exact private body.',{exact:true}).waitFor();
   assert.equal(await messageReview.getByRole('button',{name:'Reply',exact:true}).isVisible(),true);
   await messageReview.getByRole('button',{name:'Close'}).click();
-  messages.push({id:followupId,role:'assistant',message:'Gmail watch found a reply.',context_json:JSON.stringify({actions:[{
+  messages.push({id:followupId,role:'assistant',message:'Gmail watch found a reply.',created_at:'2026-11-10 13:00:00',context_json:JSON.stringify({actions:[{
     type:'gmail_followup',message_id:followupId,conversation_id:42,can_reply:true,
   }]})});
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await page.locator('time[datetime="2026-11-10T12:30:05.000Z"]').getByText(/^Posted /).waitFor();
+  await page.locator('time[datetime="2026-11-10T13:00:00.000Z"]').getByText(/^Posted /).waitFor();
   await page.getByRole('button',{name:'Open message',exact:true}).click();
   await messageReview.getByText('This is the exact private body.',{exact:true}).waitFor();
   await messageReview.getByRole('button',{name:'Close'}).click();

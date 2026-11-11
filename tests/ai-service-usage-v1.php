@@ -6,6 +6,7 @@ require_once __DIR__.'/../includes/subscription-quota.php';
 require_once __DIR__.'/../includes/ai-settings.php';
 require_once __DIR__.'/../includes/ai-service-policy-v1.php';
 require_once __DIR__.'/../includes/user-llm-v1.php';
+require_once __DIR__.'/../includes/coding-canvas-model-v1.php';
 
 function usage_check(bool $condition,string $message): void
 {
@@ -213,6 +214,16 @@ try{
     vp3_ai_service_save_rule_v1($pdo,'site',0,'code_repair',['allowed_models'=>['openai:coding-default']]);
     usage_rejects(403,fn()=>$coding($cloudActor,'code_build','system',$codingChoice));
     usage_rejects(403,fn()=>$coding($cloudActor,'code_repair','system',$codingChoice));
+
+    vp3_ai_service_save_rule_v1($pdo,'site',0,'code_repair',[]);
+    $haiku=['provider'=>'anthropic','model'=>'claude-haiku-5-5'];
+    vp3_coding_canvas_model_admin_save_v1($pdo,['anthropic:claude-haiku-5-5'],'anthropic:claude-haiku-5-5');
+    foreach(VP3_AI_CODING_SERVICES_V1 as $stage){
+        usage_rejects(403,fn()=>$coding($cloudActor,$stage,'system',$codingChoice));
+        $approved=$coding($cloudActor,$stage,'system',$haiku);
+        usage_check(vp3_ai_service_usage_finish_v1($pdo,$approved,$actual)['cloud_tokens_charged']===40,
+            'An admin-checked built-in is accepted for each coding stage without manual registration.');
+    }
 
     echo "AI service usage, budget reservations and canonical package billing passed.\n";
 }finally{

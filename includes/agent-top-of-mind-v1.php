@@ -36,10 +36,14 @@ function vp3_top_of_mind_work_v1(PDO $pdo,array $user,int $agentId,int $conversa
             if(isset($active['kind'])&&is_string($job['step']??null))$active['step']=vp3_top_of_mind_text_v1($job['step'],240);
             $jobs[]=$active;
         }
-        return ['contract'=>'vp3.agent.work.v1','owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId,
+        $gmail=vp3_top_of_mind_gmail_v1($pdo,$live,$agentId,new DateTimeImmutable('@'.intdiv($now,1000)),false);
+        $gmailExpiresAt=($gmail['state']??null)==='working'?strtotime($gmail['lease_until']??'')*1000:0;
+        $out=['contract'=>'vp3.agent.work.v1','owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId,
             'conversation_id'=>$cid,'observed_at'=>gmdate(DATE_ATOM),
             'health'=>['state'=>vp3_top_of_mind_text_v1($health['state']??'unavailable',40),
                 'enabled'=>($health['enabled']??false)===true,'active_jobs'=>$jobs]];
+        if($gmailExpiresAt>$now)$out['gmail_job']=['id'=>'gmail:inbox-updates','expiresAt'=>$gmailExpiresAt];
+        return $out;
     });
 }
 
@@ -92,12 +96,32 @@ function vp3_top_of_mind_media_href_v1(int $agentId,int $conversationId,int $mes
     return url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$conversationId.'&message_id='.$messageId);
 }
 
+function vp3_top_of_mind_gmail_v1(PDO $pdo,array $user,int $agentId,DateTimeImmutable $now,bool $includeResults=true): ?array
+{
+    try{
+        if(!table_exists('agent_connection_gmail_inbox_v1'))return null;
+        require_once __DIR__.'/agent-connection-gmail-inbox-status-v1.php';
+        $monitor=agent_connection_gmail_inbox_background_status_v1($pdo,$user,$agentId,$now,$includeResults);
+        if($monitor===null||!$includeResults)return $monitor;
+        $monitor['settings_url']=url('/connections.php?app=gmail#gmail-inbox-review');
+        if($monitor['latest']!==null){
+            $latest=$monitor['latest'];
+            $monitor['latest']['chat_url']=vp3_top_of_mind_media_href_v1($agentId,$latest['conversation_id'],$latest['message_id']);
+        }
+        return $monitor;
+    }catch(PDOException $error){
+        return null;
+    }
+}
+
 /** Calendar stays in this Chat. Media context follows the authenticated Agent across Chats. */
 function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now,?array $principal=null): array
 {
     require_once __DIR__.'/agent-calendar-prep-v1.php';
     require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
     $context=['calendar'=>[],'music'=>null,'youtube_search'=>null,'artist_research'=>null,'topic_research'=>null];
+    $gmail=vp3_top_of_mind_gmail_v1($pdo,$user,$agentId,new DateTimeImmutable('@'.$now));
+    if($gmail!==null)$context['gmail_inbox']=$gmail;
     if($conversationId>0&&$principal!==null){
         require_once __DIR__.'/agent-transcript-focus-v1.php';
         try{

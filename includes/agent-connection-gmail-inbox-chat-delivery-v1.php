@@ -141,12 +141,14 @@ function agent_connection_gmail_inbox_update_scope_ref_v1(array $scope): string
     return agent_connection_gmail_inbox_key_v1($scope['policy'],'review-updates-scope-v1:'.$scope['generation']);
 }
 
-function agent_connection_gmail_inbox_update_latest_v1(PDO $pdo,array $scope): ?array
+function agent_connection_gmail_inbox_update_latest_v1(PDO $pdo,array $scope,?int $agentId=null): ?array
 {
     $query = $pdo->prepare('SELECT batch_id,agent_id,conversation_id,message_id FROM agent_connection_gmail_inbox_batches_v1
         WHERE owner_user_id=? AND connection_id=? AND generation_id=? AND message_id IS NOT NULL
-        ORDER BY message_id DESC LIMIT 1');
-    $query->execute([$scope['owner'],$scope['policy']['connection_id'],$scope['generation']]);
+        '.($agentId === null ? '' : 'AND agent_id=?').' ORDER BY message_id DESC LIMIT 1');
+    $params = [$scope['owner'],$scope['policy']['connection_id'],$scope['generation']];
+    if ($agentId !== null) $params[] = $agentId;
+    $query->execute($params);
     $row = $query->fetch(PDO::FETCH_ASSOC);
     if (!is_array($row)) return null;
     $binding = agent_connection_gmail_inbox_update_binding_v1($scope,$row);
@@ -162,19 +164,23 @@ function agent_connection_gmail_inbox_update_pending_v1(PDO $pdo,array $scope): 
     return $query->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function agent_connection_gmail_inbox_update_state_v1(PDO $pdo,array $scope): array
+function agent_connection_gmail_inbox_update_has_pending_v1(PDO $pdo,array $scope): bool
 {
-    if (!agent_connection_gmail_inbox_batches_ready_v1($pdo)) return [];
-    $latest = agent_connection_gmail_inbox_update_latest_v1($pdo,$scope);
     $raw = (string)($scope['policy']['last_review_json'] ?? '');
-    $unarchived = agent_connection_gmail_inbox_batch_report_v1($raw) !== null
-        && agent_connection_gmail_inbox_batch_v1($pdo,$scope,agent_connection_gmail_inbox_batch_id_v1($scope['policy'],$raw)) === null;
+    if (agent_connection_gmail_inbox_batch_report_v1($raw) !== null
+        && agent_connection_gmail_inbox_batch_v1($pdo,$scope,agent_connection_gmail_inbox_batch_id_v1($scope['policy'],$raw)) === null) return true;
     $query = $pdo->prepare('SELECT 1 FROM agent_connection_gmail_inbox_batches_v1
         WHERE owner_user_id=? AND connection_id=? AND generation_id=? AND message_id IS NULL LIMIT 1');
     $query->execute([$scope['owner'],$scope['policy']['connection_id'],$scope['generation']]);
-    $pending = $unarchived || $query->fetchColumn() !== false;
+    return $query->fetchColumn() !== false;
+}
+
+function agent_connection_gmail_inbox_update_state_v1(PDO $pdo,array $scope): array
+{
+    if (!agent_connection_gmail_inbox_batches_ready_v1($pdo)) return [];
     return ['inbox_updates'=>['scope_ref'=>agent_connection_gmail_inbox_update_scope_ref_v1($scope),
-        'pending'=>$pending,'latest'=>$latest]];
+        'pending'=>agent_connection_gmail_inbox_update_has_pending_v1($pdo,$scope),
+        'latest'=>agent_connection_gmail_inbox_update_latest_v1($pdo,$scope)]];
 }
 
 /** Run inside the same private Inbox transaction that owns these unposted batches. */

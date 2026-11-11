@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-initial-v1.php';
+require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-status-v1.php';
 require_once dirname(__DIR__).'/includes/user-agent-system-v236.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
@@ -17,6 +18,7 @@ function has_permission(string $permission, array $user): bool
 {
     return !empty($user['is_active']) && in_array($permission, ['account.access', 'chat.access'], true);
 }
+function vp3_participant_scope_v1(): ?array { return $GLOBALS['participantScope'] ?? null; }
 function first_review_check(bool $passed, string $label): void
 {
     if (!$passed) throw new RuntimeException($label);
@@ -126,6 +128,8 @@ try {
     };
     $view = static fn(int $owner, bool $report=false, ?string $expectedRevision=null): array =>
         agent_connection_gmail_inbox_initial_view_v1($pdo, $users[$owner], $report, $expectedRevision);
+    $background = static fn(int $owner=1, ?int $agent=17, ?DateTimeImmutable $now=null, bool $includeResults=true): ?array =>
+        agent_connection_gmail_inbox_background_status_v1($pdo,$users[$owner],$agent,$now,$includeResults);
     $start = static function(int $owner, int $days, ?string $token=null) use ($pdo, $users, $view): void {
         agent_connection_gmail_inbox_initial_start_v1($pdo, $users[$owner], $days, $token ?? $view($owner, true)['start_token']);
     };
@@ -161,8 +165,8 @@ try {
     };
     $advance = static fn(int $owner, string $runId): bool => agent_connection_gmail_inbox_initial_advance_v1($pdo, $users[$owner], $runId, $http, $summarize);
 
-    first_review_check($view(1) === ['state'=>'disabled', 'limit'=>50] && agent_connection_gmail_inbox_initial_sweep_v1($pdo) === 0,
-        'a connected mailbox alone leaves the first review disabled');
+    first_review_check($view(1) === ['state'=>'disabled', 'limit'=>50] && agent_connection_gmail_inbox_initial_sweep_v1($pdo) === 0
+        && $background() === null, 'a connected mailbox alone leaves both reviews disabled');
     first_review_check($startRejected(1, str_repeat('a', 64)), 'first review requires explicit Inbox Review consent');
     $rules = ['ignore_senders'=>'muted@example.test', 'ignore_github_actions'=>'1'];
     agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, $rules), $http);
@@ -172,6 +176,38 @@ try {
     first_review_check($profileCalls === [1, 2, 3] && $cursorBefore['history_id'] === $baseline
         && $view(1)['state'] === 'needs_start' && agent_connection_gmail_inbox_initial_sweep_v1($pdo) === 0
         && $listCalls === [] && $summaries === [], 'enabling Inbox Review only verifies the mailbox cursor and waits for explicit first review');
+
+    $statusClock = new DateTimeImmutable('2026-11-11T12:00:00Z');
+    $writeStatus = $pdo->prepare('UPDATE agent_connection_gmail_inbox_v1 SET last_status=?,last_checked_at=?,next_check_at=?,claim_key=? WHERE owner_user_id=1');
+    $writeStatus->execute(['waiting',null,'2026-11-11 12:01:00',null]);
+    $scheduled = ['state'=>'scheduled','last_checked_at'=>null,'next_check_at'=>'2026-11-11T12:01:00Z',
+        'lease_until'=>null,'pending'=>false,'latest'=>null];
+    $beforeStatusRead = agent_connection_gmail_inbox_policy_v1($pdo,1);
+    first_review_check($background(now:$statusClock) === $scheduled && $view(1)['state'] === 'needs_start'
+        && agent_connection_gmail_inbox_policy_v1($pdo,1) === $beforeStatusRead,
+        'a saved schedule is visible before first review and reading it leaves the policy untouched');
+    $writeStatus->execute(['checked','2026-11-11 11:54:30','2026-11-11 11:59:30',null]);
+    $checked = $background(now:$statusClock);
+    first_review_check($checked['state'] === 'checked' && $checked['last_checked_at'] === '2026-11-11T11:54:30Z'
+        && !$checked['pending'] && $background(now:$statusClock->modify('+90 seconds'))['state'] === 'overdue',
+        'quiet completed checks stay visible and an unclaimed schedule becomes overdue after cron grace');
+    $writeStatus->execute(['checked','2026-11-11 11:55:00','2026-11-11 12:03:00',str_repeat('f',32)]);
+    $working = $background(now:$statusClock,includeResults:false);
+    $expired = $background(now:$statusClock->modify('+3 minutes'));
+    first_review_check($working['state'] === 'working' && $working['lease_until'] === '2026-11-11T12:03:00Z'
+        && $working['next_check_at'] === null && $expired['state'] === 'overdue' && $expired['lease_until'] === null,
+        'only an unexpired claim exposes a lease and its deadline never masquerades as the next check');
+    $writeStatus->execute(['retrying','2026-11-11 11:55:00','2026-11-11 12:10:00',null]);
+    $retrying = $background(now:$statusClock);
+    $writeStatus->execute(['restart_required','2026-11-11 11:55:00',null,null]);
+    $restart = $background(now:$statusClock);
+    first_review_check($retrying['state'] === 'retrying' && $retrying['next_check_at'] === '2026-11-11T12:10:00Z'
+        && $restart['state'] === 'restart_required' && $restart['next_check_at'] === null,
+        'temporary retry and expired Gmail history have distinct saved statuses');
+    $participantScope = ['id'=>9];
+    first_review_check($background(now:$statusClock) === null,'participant sessions cannot inspect owner inbox status');
+    unset($participantScope);
+    $writeStatus->execute([$cursorBefore['last_status'],$cursorBefore['last_checked_at'],$cursorBefore['next_check_at'],$cursorBefore['claim_key']]);
 
     $initialToken = $view(1, true)['start_token'];
     $start(1, 14, $initialToken);
@@ -403,6 +439,10 @@ try {
         && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE message_id IS NULL')->fetchColumn() === 2
         && count($noticeRows(1)) === 2,
         'two inbox updates received while away each retain their own report and private bell event');
+    $pendingStatus = $background();
+    first_review_check($pendingStatus['state'] === 'checked' && $pendingStatus['pending'] && $pendingStatus['latest'] === null
+        && !$background(includeResults:false)['pending'] && !$background(2)['pending'] && $view(1)['state'] === 'needs_start',
+        'saved recurring updates remain visible before first review and stay private to their owner');
 
     $onMetadata = null;
     $start(1,7);
@@ -440,6 +480,12 @@ try {
         'the worker delivers new inbox updates to the established Chat without a browser request');
     $updatePosts = $pdo->query("SELECT id,role,message,context_json FROM chat_messages WHERE conversation_id=170
         AND context_json LIKE '%gmail_inbox_update_v1%' ORDER BY id")->fetchAll();
+    $latestStatus = $background();
+    first_review_check(!$latestStatus['pending'] && $latestStatus['latest'] === [
+        'agent_id'=>17,'conversation_id'=>170,'message_id'=>(int)$updatePosts[2]['id'],
+    ] && $background(agent:18)['latest'] === null && $background(2)['latest'] === null
+        && $background(includeResults:false)['latest'] === null && $updateCalls === 6,
+        'status exposes only the exact verified recurring update for the selected owner Agent');
     $rehydrated = agent_connection_gmail_inbox_chat_history_v1($contender,$users[1],17,170,$updatePosts);
     $updateRefs = [];
     foreach ($rehydrated as $message) {
@@ -461,7 +507,8 @@ try {
     unset($disable['enabled']);
     agent_connection_gmail_inbox_save_v1($pdo,$users[1],$disable,$http);
     first_review_check(agent_connection_gmail_inbox_chat_history_v1($pdo,$users[1],17,170,$rehydrated) === $updatePosts
-        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE owner_user_id=1')->fetchColumn() === 0,
+        && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE owner_user_id=1')->fetchColumn() === 0
+        && $background() === null,
         'revoking Inbox Review removes private batch data while leaving only the generic Chat markers');
 
     echo 'AGENT_CONNECTION_GMAIL_INBOX_INITIAL=PASS ('.$checks.' checks; native MySQL)'.PHP_EOL;

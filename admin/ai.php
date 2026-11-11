@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/includes/agent-image-provider-v1.php';
 require_once dirname(__DIR__).'/includes/ai-credential-recovery.php';
 require_once dirname(__DIR__).'/includes/ai-service-policy-v1.php';
 require_once dirname(__DIR__).'/includes/ai-service-model-test-v1.php';
+require_once dirname(__DIR__).'/includes/coding-canvas-model-v1.php';
 require_once __DIR__.'/_ai-service-controls-v1.php';
 header('Cache-Control: no-store');
 
@@ -48,6 +49,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($credentialRecoveryRequired && in_array($action, ['save', 'save_provider_model', 'provider_model_command', 'save_service_route'], true)) {
             flash('error', 'Reconnect the saved services using the recovery form. Your credentials and settings have not been changed.');
             redirect(url('/admin/ai.php').'#credential-recovery');
+        }
+        if ($action === 'save_coding_models') {
+            $models = $_POST['coding_models'] ?? [];
+            if (!is_array($models)) throw new InvalidArgumentException('Select the models to offer for the Coding Agent.');
+            $default = vp3_admin_ai_service_post_string_v1('default_coding_model');
+            vp3_coding_canvas_model_admin_save_v1($pdo, $models, $default !== '' ? $default : null);
+            flash('notice', 'Coding Agent models saved.');
+            redirect(url('/admin/ai.php').'#coding-models');
         }
         if ($action === 'save_provider_model') {
             $provider = vp3_admin_ai_service_post_string_v1('provider');
@@ -173,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             flash('notice', 'AI, API, and system agent settings saved.');
-            redirect(url('/admin/ai.php'));
+            redirect(url('/admin/ai.php?provider_settings=1').'#provider-api-settings');
         }
 
         if ($action === 'test_cpanel') {
@@ -211,7 +220,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
-        redirect(url('/admin/ai.php'));
+        redirect(match ($action) {
+            'save_coding_models' => url('/admin/ai.php').'#coding-models',
+            'save' => url('/admin/ai.php?provider_settings=1').'#provider-api-settings',
+            default => url('/admin/ai.php'),
+        });
     }
 }
 
@@ -288,15 +301,15 @@ require __DIR__ . '/_header.php';
   <?php endif; ?>
 </section>
 <?php endif; ?>
+<?php vp3_admin_coding_models_v1($pdo); ?>
+
 <?php if (!$credentialRecoveryRequired): ?>
-<div class="panel ai-overview-panel">
+<details class="panel ai-overview-panel ai-admin-disclosure" id="provider-api-settings" <?= ($_GET['provider_settings'] ?? '') === '1' ? 'open' : '' ?>>
+  <summary>Provider and API settings</summary>
   <div class="ai-settings-heading">
     <div>
-      <span class="status">Stonefellow Chat</span>
-      <h2>System Agent & AI Provider</h2>
-      <p class="muted">Set the system agent identity, manage VP3 Cloud provider keys, and configure service models. Database and knowledge-base permissions are filtered before context is sent to the provider.</p>
+      <p class="muted">Manage the system agent, shared provider credentials, image generation, and Cloud Hosting.</p>
     </div>
-
     <div class="ai-provider-status">
       <span>Default Chat provider</span>
       <strong><?= e(ai_provider_labels()[$activeProvider] ?? 'Local Retrieval Only') ?></strong>
@@ -329,7 +342,7 @@ require __DIR__ . '/_header.php';
           <span class="ai-provider-mark">O</span>
           <div>
             <h3>OpenAI</h3>
-            <p>Chat and image generation</p>
+            <p>Chat, coding, and image generation</p>
           </div>
         </div>
 
@@ -366,8 +379,6 @@ require __DIR__ . '/_header.php';
       <?php if (ai_provider_has_saved_key('openai')): ?>
         <label class="admin-inline-check ai-remove-key"><input type="checkbox" name="remove_openai_key" value="1"> Remove saved OpenAI key</label>
       <?php endif; ?>
-
-      <?php vp3_admin_ai_service_provider_registry_v1($pdo, 'openai'); ?>
 
       <div class="ai-provider-actions">
         <span class="ai-ready-state <?= ai_provider_ready('openai') ? 'ready' : '' ?>">
@@ -413,8 +424,6 @@ require __DIR__ . '/_header.php';
       <?php if (ai_provider_has_saved_key('anthropic')): ?>
         <label class="admin-inline-check ai-remove-key"><input type="checkbox" name="remove_anthropic_key" value="1"> Remove saved Claude / Anthropic key</label>
       <?php endif; ?>
-
-      <?php vp3_admin_ai_service_provider_registry_v1($pdo, 'anthropic'); ?>
 
       <div class="ai-provider-actions">
         <span class="ai-ready-state <?= ai_provider_ready('anthropic') ? 'ready' : '' ?>">
@@ -482,8 +491,10 @@ require __DIR__ . '/_header.php';
       <button class="btn primary" type="submit">Save AI / API Settings</button>
     </div>
   </form>
-</div>
+</details>
 
+<details class="panel ai-admin-disclosure" id="advanced-model-settings" <?= isset($_GET['models']) || isset($_GET['route']) ? 'open' : '' ?>>
+  <summary>Advanced model settings</summary>
 <?php foreach (['openai', 'anthropic'] as $provider): ?>
   <form id="ai-model-save-<?= e($provider) ?>" method="post" hidden>
     <?= csrf_field() ?>
@@ -495,8 +506,13 @@ require __DIR__ . '/_header.php';
     <input type="hidden" name="action" value="provider_model_command">
     <input type="hidden" name="provider" value="<?= e($provider) ?>">
   </form>
+  <section class="ai-provider-card">
+    <h3><?= e(ai_provider_labels()[$provider]) ?></h3>
+    <?php vp3_admin_ai_service_provider_registry_v1($pdo, $provider); ?>
+  </section>
 <?php endforeach; ?>
 <?php vp3_admin_ai_service_routes_v1($pdo); ?>
+</details>
 
 <?php endif; ?>
 <div class="panel" id="connection-tests">

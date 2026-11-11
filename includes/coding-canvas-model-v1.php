@@ -5,6 +5,68 @@ require_once __DIR__.'/ai-service-policy-v1.php';
 require_once __DIR__.'/ai-service-usage-v1.php';
 require_once __DIR__.'/user-llm-v1.php';
 
+function vp3_coding_canvas_model_admin_state_v1(PDO $pdo): array
+{
+    $config = vp3_ai_service_config_v1($pdo);
+    $catalog = vp3_ai_service_coding_catalog_v1($config);
+    $builtins = vp3_ai_service_coding_builtin_models_v1();
+    $enabled = $catalog['enabled'] ?? [];
+    $default = $catalog['default'] ?? null;
+    if ($catalog === null) {
+        $legacy = vp3_ai_service_coding_models_v1($config);
+        foreach ($builtins as $key => $model) {
+            if (isset($legacy[$model['provider']][$model['model']])) $enabled[] = $key;
+        }
+        if (!$enabled && isset($builtins[VP3_AI_CODING_DEFAULT_MODEL_V1])) $enabled[] = VP3_AI_CODING_DEFAULT_MODEL_V1;
+        $default = in_array(VP3_AI_CODING_DEFAULT_MODEL_V1, $enabled, true) ? VP3_AI_CODING_DEFAULT_MODEL_V1 : ($enabled[0] ?? null);
+        foreach (VP3_AI_CODING_SERVICES_V1 as $service) {
+            if (!isset($config['routes'][$service])) continue;
+            foreach (vp3_ai_service_stored_route_v1($config['routes'][$service]) as $target) {
+                if ($target === null) continue;
+                $key = $target['provider'].':'.$target['model'];
+                if (in_array($key, $enabled, true)) {
+                    $default = $key;
+                    break 2;
+                }
+            }
+        }
+    }
+    $options = [];
+    foreach ($builtins as $key => $target) $options[] = $target + ['enabled'=>in_array($key, $enabled, true)];
+    return ['options'=>$options, 'default'=>$default === null ? null : ($builtins[$default] ?? null)];
+}
+
+function vp3_coding_canvas_model_admin_save_v1(PDO $pdo, array $enabled, ?string $default): void
+{
+    $builtins = vp3_ai_service_coding_builtin_models_v1();
+    if (!array_is_list($enabled) || count($enabled) > count($builtins)) {
+        throw new InvalidArgumentException('Choose models from the Coding Agent list.');
+    }
+    foreach ($enabled as $key) {
+        if (!is_string($key) || !isset($builtins[$key])) throw new InvalidArgumentException('Choose models from the Coding Agent list.');
+    }
+    if ($default === null || !in_array($default, $enabled, true)) {
+        throw new InvalidArgumentException('Enable at least one Coding Agent model and choose an enabled default.');
+    }
+    $enabled = array_values(array_unique($enabled));
+    vp3_ai_service_change_config_v1($pdo, static function (array $config) use ($enabled, $default): array {
+        $config['coding_catalog'] = compact('enabled', 'default');
+        foreach (VP3_AI_CODING_SERVICES_V1 as $service) {
+            if (!isset($config['routes'][$service])) continue;
+            $route = vp3_ai_service_stored_route_v1($config['routes'][$service]);
+            foreach ($route as $slot => $target) {
+                if ($target !== null && !in_array($target['provider'].':'.$target['model'], $enabled, true)) $route[$slot] = null;
+            }
+            if ($route['primary'] === null && $route['fallback'] !== null) {
+                $route = ['primary'=>$route['fallback'], 'fallback'=>null];
+            }
+            if ($route['primary'] === null) unset($config['routes'][$service]);
+            else $config['routes'][$service] = $route;
+        }
+        return $config;
+    });
+}
+
 function vp3_coding_canvas_model_policies_v1(PDO $pdo, array $user, bool $background = false): array
 {
     $policies = [];
@@ -36,7 +98,9 @@ function vp3_coding_canvas_model_state_v1(PDO $pdo, array $user): array
     $selected = $preference ? vp3_ai_service_target_v1($preference) : null;
     $funding = vp3_user_llm_v1_preference($pdo, $owner);
     $policies = vp3_coding_canvas_model_policies_v1($pdo, $user);
-    $models = vp3_ai_service_coding_models_v1(vp3_ai_service_config_v1($pdo));
+    $config = vp3_ai_service_config_v1($pdo);
+    $catalog = vp3_ai_service_coding_catalog_v1($config);
+    $models = vp3_ai_service_coding_models_v1($config);
     $options = [];
     foreach ($models as $provider => $byModel) {
         if (!$byModel || vp3_coding_canvas_model_provider_key_v1($pdo, $owner, $funding, $provider) === '') continue;
@@ -48,12 +112,14 @@ function vp3_coding_canvas_model_state_v1(PDO $pdo, array $user): array
         }
     }
     ksort($options, SORT_STRING);
-    $default = null;
-    foreach ($policies as $policy) {
-        foreach ([$policy['primary'], $policy['fallback']] as $target) {
-            if ($target !== null && isset($options[$target['provider'].':'.$target['model']])) {
-                $default = $options[$target['provider'].':'.$target['model']];
-                break 2;
+    $default = $options[$catalog['default'] ?? ''] ?? null;
+    if ($catalog === null) {
+        foreach ($policies as $policy) {
+            foreach ([$policy['primary'], $policy['fallback']] as $target) {
+                if ($target !== null && isset($options[$target['provider'].':'.$target['model']])) {
+                    $default = $options[$target['provider'].':'.$target['model']];
+                    break 2;
+                }
             }
         }
     }
@@ -74,6 +140,7 @@ function vp3_coding_canvas_model_state_v1(PDO $pdo, array $user): array
         in_array('service_budget_exhausted', $blocked, true) => 'The Coding Agent token budget is exhausted.',
         in_array('service_disabled', $blocked, true) => 'Coding Agent is unavailable for this account.',
         $selected !== null && $options !== [] => 'Your saved coding model is unavailable. Choose an available model.',
+        !array_filter($models) => 'Choose Coding Agent models in Admin → AI / API.',
         default => 'No coding model is available for your account funding and access.',
     };
     return [

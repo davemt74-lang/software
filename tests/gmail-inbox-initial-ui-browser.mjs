@@ -69,6 +69,7 @@ const completed = () => ({...inProgress('ready'),stage:'summary',scanned:50,trun
   chat_result:{summary:privateSummary,items:[firstItem,legacyItem],
     latest:{total:2,important:1,replies:1,at:'2026-11-10T13:00:00Z',items:[latestItem,repeatedSender]}}});
 let review = needsStart();
+let showMonitor = false;
 let initialViewToken = startToken;
 let apiViewToken = startToken;
 let advanceGate = null;
@@ -165,14 +166,16 @@ try {
         const legacyChat = new URL(request.frame().url()).searchParams.has('legacy_chat');
         const reviewContext = review.state === 'ready' && !legacyChat
           ? {source:'agent_connection_gmail_first_review',gmail_inbox_review_v1:{...delivered,review:project(false,undefined,true)}} : {};
-        messages.push({id:savedMessageId,role:'assistant',message:'Your first Gmail inbox review is ready.',context_json:JSON.stringify(reviewContext)});
+        messages.push({id:savedMessageId,role:'assistant',message:'Your first Gmail inbox review is ready.',
+          created_at:'2026-11-10 12:15:00',context_json:JSON.stringify(reviewContext)});
       }
       for (const batch of batchPosts) {
         if (batch.conversation_id !== conversation || !['load','messages_after'].includes(body.action)
             || (body.action === 'messages_after' && (body.after_id || 0) >= batch.message_id)) continue;
         const context = review.state === 'ready'
           ? {source:'agent_connection_gmail_inbox_update',gmail_inbox_review_v1:batch} : {};
-        messages.push({id:batch.message_id,role:'assistant',message:'Your Gmail inbox update is ready.',context_json:JSON.stringify(context)});
+        messages.push({id:batch.message_id,role:'assistant',message:'Your Gmail inbox update is ready.',
+          created_at:'2026-11-10 15:20:00',context_json:JSON.stringify(context)});
       }
       return route.fulfill({json:{ok:true,conversation_id:conversation,conversations:[],latest_message_id:batchPosts.at(-1)?.message_id || delivered?.message_id || 1,
         messages,updates:[]}});
@@ -216,6 +219,12 @@ try {
         id:'gmail:first-review',kind:'gmail_inbox_review',title:'Gmail Inbox Review',detail,
         actions,
       }]}];
+      if (showMonitor) sections[0].items.unshift({
+        id:'gmail:inbox-monitor',kind:'gmail_inbox_monitor',title:'Gmail inbox monitoring',detail:'',
+        monitor:{state:'checked',last_checked_at:new Date(Date.now()-60000).toISOString(),
+          next_check_at:new Date(Date.now()+240000).toISOString(),lease_until:null,pending:true},
+        actions:[{kind:'chat',label:'View latest update',conversation_id:42,message_id:101,href:'/chat.php?agent=7&conversation_id=42&message_id=101'}],
+      });
       return route.fulfill({json:{ok:true,state:{contract:'vp3.agent.activity.v1',owner_user_id:1,agent_id:7,
         conversation_id:42,working_attention_binding:'review-fixture',agent_name:'Longfellow',
         observed_at:new Date().toISOString(),sections}}});
@@ -622,6 +631,7 @@ try {
   await screenshot(page,'mobile');
   chatAdvance.release.resolve();
   await completion.waitFor();
+  await completion.locator('time[datetime="2026-11-10T12:15:00.000Z"]').getByText(/^Posted /).waitFor();
   await gmailWork.waitFor({state:'detached'});
   assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot()
     .some(item => item.key === 'gmail-inbox-review')),false,'A completed review does not keep a duplicate rail entry.');
@@ -637,12 +647,13 @@ try {
     document.body.dataset.stonefellowAgentState = 'listening';
     window.dispatchEvent(new Event('focus'));
   });
-  await gmailWork.waitFor();
+  const recurringWork = orb.locator('[data-orb-job-ids="gmail:inbox-updates"]');
+  await recurringWork.waitFor();
   await page.waitForFunction(() => document.querySelector('.vp3-orb-root').dataset.state === 'listening');
   assert.equal(await orb.getAttribute('data-working'),'true','A verified new-mail lease is visible while the Agent listens.');
   assert.equal(await completion.count(),1);
   review = completed();
-  await gmailWork.waitFor({state:'detached'});
+  await recurringWork.waitFor({state:'detached'});
   assert.equal(await orb.getAttribute('data-state'),'listening','Ending Gmail work preserves the foreground listening state.');
   await page.evaluate(() => { delete document.body.dataset.stonefellowAgentState; });
   await page.evaluate(() => {
@@ -799,6 +810,7 @@ try {
   assert.equal(requests.filter(row => row.action === 'open_item').at(-1).item_ref,fullItems[9].item_ref);
   const cards = page.locator('[data-gmail-inbox-update]');
   await cards.first().getByText('Messages in inbox update (1)',{exact:true}).click();
+  await cards.first().locator('time[datetime="2026-11-10T15:20:00.000Z"]').getByText(/^Posted /).waitFor();
   await cards.first().getByText('First saved batch',{exact:true}).waitFor();
   batchPosts.push(batchPost(101,'Second saved batch','8'.repeat(64)));
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -813,6 +825,18 @@ try {
   assert.equal(requests.filter(row => row.action === 'open_item').at(-1).item_ref,'7'.repeat(64));
   assert.deepEqual({deliver:count('deliver_updates'),advance:count('advance')},
     {deliver:beforeUpdates.deliver+1,advance:beforeUpdates.advance});
+  showMonitor = true;
+  await page.locator('.vp3-orb-ball').hover();
+  await page.locator('[data-orb-activity]').click();
+  const monitor = hub.locator('[data-activity-specialist="gmail-inbox-monitor"]');
+  await monitor.getByText('Last check completed.',{exact:true}).waitFor();
+  assert.equal(await monitor.getByText(/^Last check /).count(),2);
+  assert.equal(await monitor.getByText(/^Next check /).count(),1);
+  assert.equal(await monitor.getByText('An inbox update is waiting to post to Chat.').count(),1);
+  await monitor.getByRole('button',{name:'View latest update'}).click();
+  await hub.waitFor({state:'hidden'});
+  await page.locator('[data-chat-message-id="101"][data-chat-conversation-id="42"]').waitFor();
+  showMonitor = false;
   review = {state:'disabled',limit:50};
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await cards.first().waitFor({state:'detached'});

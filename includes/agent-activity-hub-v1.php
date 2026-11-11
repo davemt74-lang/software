@@ -326,9 +326,29 @@ function vp3_agent_activity_suggestions_v1(PDO $pdo, array $scope): array
     return ['items'=>$items, 'coverage'=>$coverage];
 }
 
-function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
+function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope, ?DateTimeImmutable $now = null): array
 {
-    if (!table_exists('agent_connection_gmail_inbox_initial_v1')) return [];
+    $items = [];
+    $monitor = null;
+    if (table_exists('agent_connection_gmail_inbox_v1')) {
+        require_once __DIR__.'/agent-connection-gmail-inbox-status-v1.php';
+        $monitor = agent_connection_gmail_inbox_background_status_v1($pdo, $scope['user'], $scope['agent_id'], $now);
+    }
+    if ($monitor !== null) {
+        $actions = [['kind'=>'url','label'=>'Gmail settings','href'=>url('/connections.php?app=gmail#gmail-inbox-review')]];
+        $latest = $monitor['latest'];
+        unset($monitor['latest']);
+        if ($latest !== null) {
+            array_unshift($actions, [
+                'kind'=>'chat','label'=>'View latest update','conversation_id'=>$latest['conversation_id'],
+                'message_id'=>$latest['message_id'],
+                'href'=>vp3_agent_activity_chat_href_v1($latest['agent_id'],$latest['conversation_id']).'&message_id='.$latest['message_id'],
+            ]);
+        }
+        $items[] = vp3_agent_activity_card_v1('gmail:inbox-monitor', 'gmail_inbox_monitor',
+            'Gmail inbox monitoring', '', $actions) + ['monitor'=>$monitor];
+    }
+    if (!table_exists('agent_connection_gmail_inbox_initial_v1')) return $items;
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
     $view = agent_connection_gmail_inbox_initial_view_v1($pdo, $scope['user']);
     $detail = match ($view['state'] ?? '') {
@@ -339,20 +359,8 @@ function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
         'failed'=>'Failed · Open Connections to retry',
         default=>'',
     };
-    if ($detail === '') return [];
+    if ($detail === '') return $items;
     if ($view['state'] === 'ready') {
-        if (agent_connection_gmail_inbox_batches_ready_v1($pdo)) {
-            $inboxScope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$scope['user']);
-            $latest = $inboxScope['state'] === 'ready' ? agent_connection_gmail_inbox_update_latest_v1($pdo,$inboxScope) : null;
-            if ($latest && $latest['agent_id'] === $scope['agent_id']) {
-                return [vp3_agent_activity_card_v1('gmail:inbox-update:'.$latest['message_id'], 'gmail_inbox_review',
-                    'Latest Gmail inbox update', 'Ready to read in Chat', [[
-                        'kind'=>'chat','label'=>'View in Chat','conversation_id'=>$latest['conversation_id'],
-                        'message_id'=>$latest['message_id'],
-                        'href'=>vp3_agent_activity_chat_href_v1($latest['agent_id'],$latest['conversation_id']).'&message_id='.$latest['message_id'],
-                    ]])];
-            }
-        }
         $delivery = agent_connection_gmail_inbox_chat_delivery_current_v1($pdo, $scope['user']);
         $cid = $delivery['conversation_id'] ?? $scope['conversation_id'];
         $href = vp3_agent_activity_chat_href_v1($delivery['agent_id'] ?? $scope['agent_id'], $cid);
@@ -366,7 +374,9 @@ function vp3_agent_activity_gmail_review_v1(PDO $pdo, array $scope): array
     } else {
         $action = ['kind'=>'url', 'label'=>'Open Connections', 'href'=>url('/connections.php?app=gmail#gmail-inbox-review')];
     }
-    return [vp3_agent_activity_card_v1('gmail:first-review', 'gmail_inbox_review', 'Gmail Inbox Review', $detail, [$action])];
+    $items[] = vp3_agent_activity_card_v1('gmail:first-review', 'gmail_inbox_review', 'Gmail Inbox Review', $detail, [$action])
+        + ['review_state'=>$view['state']];
+    return $items;
 }
 
 /** Live watches span the selected Agent's private Chats and the current Gmail grant. */
@@ -464,7 +474,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         'missions'=>['Missions', static fn() => vp3_agent_activity_missions_v1($pdo, $scope, $now)],
         'canvases'=>['Canvas work', static fn() => vp3_agent_activity_canvases_v1($pdo, $scope)],
         'suggestions'=>['Agent suggestions', static fn() => vp3_agent_activity_suggestions_v1($pdo, $scope)],
-        'gmail_inbox'=>['Gmail Inbox Review', static fn() => vp3_agent_activity_gmail_review_v1($pdo, $scope)],
+        'gmail_inbox'=>['Gmail Inbox Review', static fn() => vp3_agent_activity_gmail_review_v1($pdo, $scope, $now)],
         'gmail_outcomes'=>['Gmail', static fn() => vp3_agent_activity_gmail_outcomes_v1($pdo, $scope, $now)],
     ];
     $sections = [];

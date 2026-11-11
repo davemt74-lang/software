@@ -1453,6 +1453,7 @@
 
     return {
       source:typeof raw.source==='string' ? raw.source : '',
+      tool_receipt:raw.tool_receipt,
       sources:Array.isArray(raw.sources) ? raw.sources : [],
       media:Array.isArray(raw.media) ? raw.media : [],
       stem_media:Array.isArray(raw.stem_media) ? raw.stem_media : [],
@@ -1793,6 +1794,34 @@
     element.dataset.profileHandoffRevision=String(marker.revision);
     element.dataset.profileHandoffConversation=String(marker.conversation_id);
     window.dispatchEvent(new CustomEvent('vp3:profile-handoff-message',{detail:{element}}));
+  }
+
+  function bindGmailResultTime(element, context, createdAt = '') {
+    if (!element?.dataset.chatMessageId || element.dataset.chatMessageRole !== 'assistant'
+      || ['agent_connection_gmail_first_review','agent_connection_gmail_inbox_update'].includes(context.source)) return;
+    const receipt = context.tool_receipt;
+    const gmailReceipt = receipt?.contract === 'vp3.tool-receipt.v1'
+      && ['email.read','email.send','email.followups'].includes(receipt.capability);
+    const gmailPost = ['agent_connection_email','agent_connection_email_followup'].includes(context.source)
+      || Array.isArray(context.actions) && context.actions.some(action => ['email_review','gmail_followup','gmail_message'].includes(action?.type));
+    if (!gmailReceipt && !gmailPost) return;
+
+    const parse = value => typeof value === 'string'
+      ? Date.parse(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(value) ? value.replace(' ','T')+'Z' : value) : NaN;
+    const posted = parse(createdAt);
+    const checked = gmailReceipt ? parse(receipt.checked_at) : NaN;
+    const at = Number.isFinite(posted) ? posted : checked;
+    const heading = element.querySelector('.message-role');
+    if (!Number.isFinite(at) || !heading) return;
+    const date = new Date(at);
+    let time = heading.querySelector('.vp3-chat-gmail-result-time');
+    if (!time) {
+      time = document.createElement('time');
+      time.className = 'vp3-chat-gmail-result-time';
+      heading.append(time);
+    }
+    time.dateTime = date.toISOString();
+    time.textContent = (Number.isFinite(posted) ? 'Posted ' : 'Result ')+date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
   }
 
   function initiativeIdentityMatchesV1() {
@@ -3794,6 +3823,7 @@
         if(context.gmail_inbox_review_v1)renderedMessage._vp3GmailInboxReviewV1=context.gmail_inbox_review_v1;
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if(message.role==='assistant')bindGmailResultTime(renderedMessage,context,message.created_at);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
@@ -3831,6 +3861,7 @@
       const stored=thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]');
       if(stored){
         if(typeof message.created_at==='string'&&message.created_at)stored.dataset.chatCreatedAt=message.created_at;
+        if(message.role==='assistant')bindGmailResultTime(stored,context,message.created_at);
         if(message.role==='assistant'&&stored.querySelector('[data-meeting-action-plan]')
           &&bindMeetingActionV1(stored,context.meeting_action)&&context.meeting_action.status!=='approval_pending'
           &&typeof message.message==='string')stored.querySelector('.message-text').textContent=message.message;
@@ -3846,6 +3877,7 @@
         if(context.gmail_inbox_review_v1)renderedMessage._vp3GmailInboxReviewV1=context.gmail_inbox_review_v1;
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if(message.role==='assistant')bindGmailResultTime(renderedMessage,context,message.created_at);
       const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
       if(next)thread.insertBefore(renderedMessage,next);
@@ -4129,6 +4161,7 @@
         data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
+      if(!existingReply)bindGmailResultTime(reply,data);
       if (openGmailDraft && gmailAction && !gmailAction.startsWith('Auto reply ')) {
         gmailDraft = reply.querySelector('[data-chat-email-review]');
       }

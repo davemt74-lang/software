@@ -4,6 +4,7 @@ declare(strict_types=1);
 const VP3_AI_SERVICE_CONFIG_KEY_V1 = 'vp3_ai_service_configuration_v1';
 const VP3_AI_SERVICE_TOKEN_LIMITS_V1 = ['job_tokens', 'daily_tokens', 'monthly_tokens', 'background_daily_tokens', 'background_monthly_tokens'];
 const VP3_AI_CODING_SERVICES_V1 = ['code_build', 'code_repair'];
+const VP3_AI_CODING_DEFAULT_MODEL_V1 = 'anthropic:claude-haiku-5-5';
 
 function vp3_ai_service_catalog_v1(): array
 {
@@ -144,10 +145,11 @@ function vp3_ai_service_save_model_v1(PDO $pdo, string $provider, string $model,
         }
         $config['models'][$key] = compact('provider', 'model', 'label', 'services');
         foreach ($config['routes'] as $service => $route) {
-            $required = in_array($service, VP3_AI_CODING_SERVICES_V1, true) ? VP3_AI_CODING_SERVICES_V1 : [$service];
             foreach (['primary', 'fallback'] as $slot) {
-                if (($route[$slot]['provider'] ?? null) === $provider && ($route[$slot]['model'] ?? null) === $model
-                    && array_diff($required, $services)) throw new InvalidArgumentException('A service route still uses this model.');
+                if (($route[$slot]['provider'] ?? null) !== $provider || ($route[$slot]['model'] ?? null) !== $model) continue;
+                $eligible = in_array($service, VP3_AI_CODING_SERVICES_V1, true)
+                    ? isset(vp3_ai_service_coding_models_v1($config)[$provider][$model]) : in_array($service, $services, true);
+                if (!$eligible) throw new InvalidArgumentException('A service route still uses this model.');
             }
         }
         return $config;
@@ -160,14 +162,15 @@ function vp3_ai_service_remove_model_v1(PDO $pdo, string $provider, string $mode
         throw new InvalidArgumentException('Select a valid registered model.');
     }
     vp3_ai_service_change_config_v1($pdo, static function (array $config) use ($provider, $model): array {
-        foreach ($config['routes'] as $route) {
+        unset($config['models'][$provider . ':' . $model]);
+        foreach ($config['routes'] as $service => $route) {
             foreach (['primary', 'fallback'] as $slot) {
-                if (($route[$slot]['provider'] ?? null) === $provider && ($route[$slot]['model'] ?? null) === $model) {
-                    throw new InvalidArgumentException('A service route still uses this model.');
-                }
+                if (($route[$slot]['provider'] ?? null) !== $provider || ($route[$slot]['model'] ?? null) !== $model) continue;
+                if (in_array($service, VP3_AI_CODING_SERVICES_V1, true)
+                    && isset(vp3_ai_service_coding_models_v1($config)[$provider][$model])) continue;
+                throw new InvalidArgumentException('A service route still uses this model.');
             }
         }
-        unset($config['models'][$provider . ':' . $model]);
         return $config;
     });
 }
@@ -225,7 +228,7 @@ function vp3_ai_service_save_route_v1(PDO $pdo, string $service, ?array $primary
         foreach ([$primary, $fallback] as $target) {
             if ($target !== null && !isset($models[$target['provider']][$target['model']])) {
                 throw new InvalidArgumentException($coding
-                    ? 'Register the selected model for both Code Build and Code Repair.'
+                    ? 'Choose a model available to both Code Build and Code Repair.'
                     : 'Register the selected model for this service first.');
             }
         }
@@ -307,14 +310,55 @@ function vp3_ai_service_target_allowed_v1(array $policy, array $target): bool
     return $models === null || in_array($target['provider'] . ':' . $target['model'], $models, true);
 }
 
-/** A coding run can only use a model approved for each model-backed stage. */
+/** The picker uses the providers' built-in identities and display names. */
+function vp3_ai_service_coding_builtin_models_v1(): array
+{
+    $catalog = function_exists('ai_model_catalog') ? ai_model_catalog() : [];
+    $models = [];
+    foreach (vp3_ai_service_catalog_v1()['code_build']['providers'] as $provider) {
+        foreach ($catalog[$provider] ?? [] as $model => $label) {
+            $models[$provider.':'.$model] = ['provider'=>$provider, 'model'=>$model, 'label'=>explode(' — ', $label, 2)[0]];
+        }
+    }
+    return $models;
+}
+
+function vp3_ai_service_coding_catalog_v1(array $config): ?array
+{
+    if (!array_key_exists('coding_catalog', $config)) return null;
+    $catalog = $config['coding_catalog'];
+    if (!is_array($catalog) || !is_array($catalog['enabled'] ?? null) || !array_is_list($catalog['enabled'])
+        || !is_string($catalog['default'] ?? null) || !in_array($catalog['default'], $catalog['enabled'], true)) {
+        throw new UnexpectedValueException('Stored Coding Agent models are invalid.');
+    }
+    foreach ($catalog['enabled'] as $key) {
+        if (!is_string($key)) throw new UnexpectedValueException('Stored Coding Agent models are invalid.');
+    }
+    return $catalog;
+}
+
+/** The saved catalog applies to both coding stages. Existing inventories remain usable until it is set. */
 function vp3_ai_service_coding_models_v1(array $config): array
 {
+    $catalog = vp3_ai_service_coding_catalog_v1($config);
+    if ($catalog !== null) {
+        $models = [];
+        $builtins = vp3_ai_service_coding_builtin_models_v1();
+        foreach ($catalog['enabled'] as $key) {
+            $target = $builtins[$key] ?? null;
+            if ($target !== null) $models[$target['provider']][$target['model']] = $target['label'];
+        }
+        return $models;
+    }
     $build = vp3_ai_service_models_from_config_v1($config, 'code_build');
     $repair = vp3_ai_service_models_from_config_v1($config, 'code_repair');
     $models = [];
     foreach ($build as $provider => $byModel) {
         $models[$provider] = array_intersect_key($byModel, $repair[$provider] ?? []);
+    }
+    if (!array_filter($models)) {
+        $default = vp3_ai_service_coding_builtin_models_v1()[VP3_AI_CODING_DEFAULT_MODEL_V1] ?? null;
+        if ($default !== null) $models[$default['provider']][$default['model']] = $default['label'];
     }
     return $models;
 }
@@ -376,7 +420,8 @@ function vp3_ai_service_policy_v1(PDO $pdo, ?array $user, string $service, bool 
         }
         if ($policy['configured']) {
             $route = vp3_ai_service_stored_route_v1($config['routes'][$service]);
-            $models = vp3_ai_service_models_from_config_v1($config, $service);
+            $models = in_array($service, VP3_AI_CODING_SERVICES_V1, true)
+                ? vp3_ai_service_coding_models_v1($config) : vp3_ai_service_models_from_config_v1($config, $service);
             foreach ($route as $slot => $target) {
                 if ($target !== null && isset($models[$target['provider']][$target['model']])
                     && vp3_ai_service_target_allowed_v1($policy, $target)) {
