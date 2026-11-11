@@ -1146,11 +1146,12 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         $transientContext=(bool)array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')==='live_context');
         $verifyBeforeInference=$transientContext||(bool)array_filter($evidence,
             static fn(array $row):bool=>($row['kind']??'')==='transcript_research');
-        $beforeInference=$verifyBeforeInference?static function()use($pdo,&$live,$binding,$sources,$includeScreen,$canonicalSources,$agentId,$payload,$checkLease):void{
+        $verifySources=static function()use($pdo,&$live,$binding,$sources,$includeScreen,$canonicalSources,$agentId,$payload,$checkLease):void{
             $currentUser=vp3_initiative_access_v1($pdo,$live,$binding);
             vp3_initiative_current_sources_v1($pdo,$currentUser,$sources,$includeScreen,$canonicalSources,$agentId,$payload['capability_sources']??[]);
             $checkLease();
-        }:null;
+        };
+        $beforeInference=$verifyBeforeInference?$verifySources:null;
         $job=['background'=>true,'run_id'=>(int)$run['id'],'conversation_id'=>(int)$binding['conversation_id']];
         $provider=$model??static function(string $prompt,string $protocol)use($pdo,&$live,$agentId,$transientContext,$beforeInference,$job):string{
             return vp3_initiative_model_v1($pdo,$live,$prompt,$protocol,$agentId,$transientContext,$beforeInference,$job);
@@ -1179,17 +1180,31 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         $topicRefs=!empty($tools['topic.research']['ready'])?$tools['topic.research']['source_refs']:[];
         if($planning){
             require_once __DIR__.'/agent-initiative-engagement-feedback-v1.php';
-            $answer=$infer(json_encode(['evidence'=>$modelEvidence,'tools'=>$tools,'budget'=>$limits+['max_opportunities'=>8],
+            require_once __DIR__.'/agent-inference-budget-v1.php';
+            $request=['evidence'=>$modelEvidence,'tools'=>$tools,'budget'=>$limits+['max_opportunities'=>8],
                 'canvas_feedback'=>vp3_initiative_canvas_feedback_v1($pdo,$live,$agentId,$evidence),
-                'owner_context'=>vp3_initiative_owner_context_v1($pdo,$live,$binding)],JSON_THROW_ON_ERROR),'vp3.initiative-plan.v1');
-            $allowed=['work.prepare_private'];
-            foreach($tools as $id=>$entry)if(!empty($entry['ready']))$allowed[]=$id;
-            try{
-                $assessment=vp3_initiative_assessment_v1($answer,$evidence,array_values(array_unique($allowed)),$tools);
-                $jobs=$assessment['jobs'];$opportunities=$assessment['opportunities'];
-            }catch(InvalidArgumentException|JsonException $error){
-                throw new Vp3InitiativeInvalidAssessmentV1($error,strlen($answer));
-            }
+                'owner_context'=>vp3_initiative_owner_context_v1($pdo,$live,$binding)];
+            $allowed=array_keys(array_filter($tools,static fn(array $entry):bool=>!empty($entry['ready'])));
+            $assessment=vp3_ai_with_budget_v1(55,static function()use($request,$infer,$verifySources,$evidence,$allowed,$tools):array{
+                $assess=static function(array $input)use($infer,$evidence,$allowed,$tools):array{
+                    $answer=$infer(json_encode($input,JSON_THROW_ON_ERROR),'vp3.initiative-plan.v1');
+                    try{
+                        return vp3_initiative_assessment_v1($answer,$evidence,$allowed,$tools);
+                    }catch(InvalidArgumentException|JsonException $error){
+                        throw new Vp3InitiativeInvalidAssessmentV1($error,strlen($answer));
+                    }
+                };
+                try{
+                    return $assess($request);
+                }catch(Vp3InitiativeInvalidAssessmentV1 $error){
+                    if($error->diagnostic!=='invalid_job_sources'||vp3_ai_budget_remaining_v1()<1)throw $error;
+                    $verifySources();
+                    // A fresh plan may use only verified input, with no rejected model output.
+                    $request['source_repair']='Use exactly one eligible primary reference per job and opportunity, with refs equal to [primary]. Skip entries without an eligible source.';
+                    return $assess($request);
+                }
+            });
+            $jobs=$assessment['jobs'];$opportunities=$assessment['opportunities'];
         }else{
             $tool=$payload['tool']??'work.prepare_private';
             if(!is_string($tool)||!array_key_exists($tool,$tools)||($tool!=='work.prepare_private'&&empty($tools[$tool]['ready']))){

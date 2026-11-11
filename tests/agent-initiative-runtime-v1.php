@@ -242,12 +242,23 @@ runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['assessment_error
 
 $GLOBALS['runtimeCalendarTitle']='Assessment with an invented source';
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
-$badSource=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static fn():string=>
-    '{"jobs":[{"tool":"work.prepare_private","primary":"event:42","refs":["event:42","PRIVATE_UNKNOWN_SOURCE"],"focus":"Prepare","report":true}]}');
+$inventedSourcePlan='{"jobs":[{"tool":"work.prepare_private","primary":"calendar:event:42","refs":["calendar:event:42","PRIVATE_UNKNOWN_SOURCE"],"focus":"Prepare","report":true}]}';
+$sourceRepairPrompts=[];$sourceRepairBudgets=[];
+$badSource=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],
+    static function(string $prompt)use($inventedSourcePlan,&$sourceRepairPrompts,&$sourceRepairBudgets):string{
+        $sourceRepairPrompts[]=json_decode($prompt,true,16,JSON_THROW_ON_ERROR);
+        $sourceRepairBudgets[]=vp3_ai_budget_remaining_v1();
+        return $inventedSourcePlan;
+    });
 runtime_check(!$badSource['ok']&&$badSource['reason']==='assessment_unverified'
     &&($badSource['health']['assessment_error']['code']??null)==='invalid_job_sources'
-    &&$prepareCount()===$preparationsBeforeInvalid&&!str_contains(json_encode($badSource),'PRIVATE_UNKNOWN_SOURCE'),
-    'a well-formed plan with an invented source exposes only the safe source diagnostic and dispatches nothing');
+    &&($badSource['health']['assessment_error']['output_bytes']??null)===strlen($inventedSourcePlan)
+    &&$prepareCount()===$preparationsBeforeInvalid&&count($sourceRepairPrompts)===2
+    &&isset($sourceRepairPrompts[1]['source_repair'])&&!isset($sourceRepairPrompts[0]['source_repair'])
+    &&array_diff_key($sourceRepairPrompts[1],['source_repair'=>true])===$sourceRepairPrompts[0]
+    &&$sourceRepairBudgets[0]>0&&$sourceRepairBudgets[1]>0&&$sourceRepairBudgets[1]<=$sourceRepairBudgets[0]
+    &&!str_contains(json_encode([$badSource,$sourceRepairPrompts]),'PRIVATE_UNKNOWN_SOURCE'),
+    'invalid sources get one fresh assessment within the same budget, with no copied model text or queued work');
 
 $namedPolicy=runtime_enable($user,7,11);
 $named=vp3_initiative_worker_health_v1($pdo,$user,7,11);
@@ -344,6 +355,36 @@ $revokedRetry=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static 
 $lastReceipt=$pdo->query('SELECT status FROM agent_workflow_receipts ORDER BY id DESC LIMIT 1')->fetchColumn();
 runtime_check(!$revokedRetry['ok']&&$revokedRetry['reason']==='initiative_unconfirmed'&&$lastReceipt==='failed'
     &&$revokedRetry['health']['state']==='paused','a concurrent owner opt-out prevents even a genuine 503 from scheduling another attempt');
+
+$policy=runtime_enable($user,0,42);
+$GLOBALS['runtimeCalendarTitle']='Source checked before assessment repair';
+$pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
+$beforeRepair=$prepareCount();$staleRepairCalls=0;
+$staleRepair=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],
+    static function()use($inventedSourcePlan,&$staleRepairCalls):string{
+        $staleRepairCalls++;
+        $GLOBALS['runtimeCalendarTitle']='Updated preparation after a source change';
+        return $inventedSourcePlan;
+    });
+runtime_check(!$staleRepair['ok']&&$staleRepair['reason']==='assessment_sources_changed'
+    &&$staleRepairCalls===1&&$prepareCount()===$beforeRepair,
+    'a changed source withdraws the stale plan before a second model call');
+
+$pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
+$repairCalls=0;
+$repaired=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],
+    static function(string $prompt)use($inventedSourcePlan,&$repairCalls):string{
+        $repairCalls++;
+        if($repairCalls===1)return $inventedSourcePlan;
+        if(!str_contains($prompt,'Updated preparation after a source change'))throw new LogicException('Missing current evidence.');
+        return '{"jobs":[{"tool":"work.prepare_private","primary":"calendar:event:42","refs":["calendar:event:42"],"focus":"Review this calendar event","report":false}]}';
+    });
+$repairedGoal=json_decode($pdo->query("SELECT goal FROM agent_workflow_runs WHERE capability_key='initiative.prepare' ORDER BY id DESC LIMIT 1")->fetchColumn(),true);
+runtime_check($repaired['ok']&&$repaired['reason']==='completed'&&$repaired['health']['assessment_error']===null
+    &&$repairCalls===2&&$prepareCount()===$beforeRepair+1&&$repairedGoal['primary']==='calendar:event:42'
+    &&array_keys($repairedGoal['sources'])===['calendar:event:42'],
+    'a valid second assessment clears the diagnostic and queues exactly one preparation for the current source');
+
 require_once dirname(__DIR__).'/includes/cognitive-runtime-v500.php';
 require_once dirname(__DIR__).'/includes/cognitive-continuity-v2440.php';
 require_once dirname(__DIR__).'/includes/cognitive-supervision-v2460.php';
