@@ -78,6 +78,9 @@ live_check($semanticInput['eyes']['recent_chat_input']===true&&$semanticInput['e
     &&!isset($semanticInput['eyes']['chat_input_observed_at'])&&$expiredInput['eyes']['recent_chat_input']===false
     &&!isset($expiredInput['eyes']['chat_input_observed_at'])&&$expiredInput['eyes']['participant_count']===2,
     'recent input enters model context as a coarse flag and expires on reread while camera presence remains current');
+live_check(vp3_live_context_revision_v1($activeInput)===vp3_live_context_revision_v1($packet)
+    &&vp3_live_context_revision_v1($activeInput)===vp3_live_context_revision_v1($expiredInput),
+    'current input can inform the Agent without replacing the same live source when input starts or expires');
 $renewedInput=$withInput;$renewedInput['eyes']['chat_input_observed_at']=live_iso($now-500);
 $absentFace=$withInput;$absentFace['eyes']['participant_count']=$absentFace['eyes']['known_count']=$absentFace['eyes']['unknown_count']=0;
 $invalidInput=$withInput;$invalidInput['eyes']['chat_input_observed_at']=live_iso($now+5001);

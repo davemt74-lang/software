@@ -207,7 +207,11 @@ function vp3_live_context_revision_v1(array $packet): string
 {
     $binding=array_intersect_key($packet,array_flip(['owner_user_id','agent_id','conversation_id','activity_tab','session_id']));
     $shares=[];foreach($packet['screens'] as $screen)$shares[$screen['source_id']]=$screen['session_id'];
-    return vp3_live_context_fingerprint_v1(['binding'=>$binding,'shares'=>$shares,'semantic'=>vp3_live_context_semantic_v1($packet)]);
+    $semantic=vp3_live_context_semantic_v1($packet);
+    // Chat input is current engagement context. Opening the work view or
+    // letting the input signal expire does not replace the camera source.
+    unset($semantic['eyes']['recent_chat_input']);
+    return vp3_live_context_fingerprint_v1(['binding'=>$binding,'shares'=>$shares,'semantic'=>$semantic]);
 }
 
 /** Reuse the canonical owner/Agent/conversation boundary; reported presence never supplies a principal. */
