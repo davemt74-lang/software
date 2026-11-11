@@ -14,6 +14,18 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
+async function debugShortcut(page){
+  await page.evaluate(()=>{
+    window.debugShortcutTime=0;
+    // Keep the key window independent of runner delays between real key events.
+    Object.defineProperty(performance,'now',{configurable:true,value:()=>window.debugShortcutTime});
+  });
+  return {
+    press:async()=>{ for(let i=0;i<3;i++) await page.keyboard.press('z'); },
+    advance:ms=>page.evaluate(ms=>{window.debugShortcutTime+=ms;},ms)
+  };
+}
+
 async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason='',activeJobs=[],returnDigest=null,noBriefButton=false,debugHealth={}}={}){
   const context=await browser.newContext();
   const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[],digestActions=[],githubClaims=[];
@@ -274,17 +286,18 @@ try{
   try{
     const page=await debug.open();
     const panel=page.getByRole('region',{name:'Initiative Debug'});
-    const pressZ=async()=>{ for(let i=0;i<3;i++) await page.keyboard.press('z'); };
+    const shortcut=await debugShortcut(page);
     await page.setViewportSize({width:360,height:640});
     await page.addStyleTag({content:await fs.readFile(new URL('../chat-cognitive-presentation-v510.css',import.meta.url),'utf8')});
     await page.locator('[data-agent-initiative-status]').getByText('The last assessment did not produce a verified plan.',{exact:true}).waitFor();
     assert.equal(await panel.count(),0);
     const composer=page.locator('#chatInput');
     await composer.focus();
-    await pressZ();
+    await shortcut.press();
     assert.equal(await composer.inputValue(),'zzz');
     assert.equal(await panel.count(),0);
-    await composer.blur();
+    const chatButton=page.locator('#newChatButton');
+    await chatButton.focus();
     await page.keyboard.down('z');
     await page.keyboard.down('z');
     await page.keyboard.down('z');
@@ -292,11 +305,13 @@ try{
     assert.equal(await panel.count(),0);
     await page.keyboard.press('z');
     await page.keyboard.press('z');
-    await page.clock.fastForward(751);
+    await shortcut.advance(751);
     await page.keyboard.press('z');
     assert.equal(await panel.count(),0);
     await page.keyboard.press('Control+z');
-    await pressZ();
+    await chatButton.focus();
+    await shortcut.press();
+    assert.equal(await panel.count(),1,'the three-key shortcut opens Initiative Debug');
     const bounds=await panel.boundingBox();
     assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=360&&bounds.y+bounds.height<=640);
     const report=await panel.locator('pre').textContent();
@@ -312,17 +327,17 @@ try{
     await panel.getByRole('button',{name:'Copy',exact:true}).click();
     await panel.getByRole('status').getByText('Copied.').waitFor();
     assert.equal(await page.evaluate(()=>window.copiedDebug),'Initiative Debug\n'+report);
-    await pressZ();
+    await shortcut.press();
     assert.equal(await panel.count(),0);
-    await pressZ();
+    await shortcut.press();
     await panel.getByRole('button',{name:'Close',exact:true}).click();
     assert.equal(await panel.count(),0);
-    await pressZ();
+    await shortcut.press();
     assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43)),true);
     await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===43);
     assert.equal(await panel.count(),0);
     await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:9}})));
-    await pressZ();
+    await shortcut.press();
     assert.equal(await panel.count(),0);
     assert.deepEqual(debug.errors,[]);
     console.log('PASS Initiative Debug toggles with zzz, preserves text editing, copies only scoped diagnostics, and clears on Chat and participant changes');
@@ -464,8 +479,14 @@ try{
       await page.clock.fastForward(16000);
       assert.equal(f.ticks.length,count);
       f.block('');f.fail(true);
-      await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
-      await status.getByText('The background connection was interrupted. The next check will retry.',{exact:true}).waitFor();
+      await Promise.all([
+        status.getByText('The background connection was interrupted. The next check will retry.',{exact:true}).waitFor(),
+        (async()=>{
+          await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+          // If a refresh was already in flight, let the scheduled cycle see the restored route.
+          await page.clock.fastForward(31000);
+        })()
+      ]);
       f.fail(false);
       await page.clock.fastForward(16000);
       await status.getByText('No background worker has been observed. This open Chat can advance permitted work.',{exact:true}).waitFor();
@@ -552,15 +573,18 @@ try{
   try{
     const page=await newAfterSaved.open();
     const debugPanel=page.getByRole('region',{name:'Initiative Debug'});
-    for(let i=0;i<3;i++) await page.keyboard.press('z');
+    const shortcut=await debugShortcut(page);
+    const chatButton=page.locator('#newChatButton');
+    await chatButton.focus();
+    await shortcut.press();
     await debugPanel.getByText('Server worker:',{exact:false}).waitFor();
     await page.waitForFunction(()=>!document.querySelector('[data-agent-worker-details] .vp3-orb-initiative-actions button')?.disabled);
     const before=newAfterSaved.ticks.length;
     await page.getByRole('button',{name:'New Chat',exact:true}).click();
     await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===0);
     assert.equal(await debugPanel.count(),0);
-    await page.locator('#chatInput').blur();
-    for(let i=0;i<3;i++) await page.keyboard.press('z');
+    await chatButton.focus();
+    await shortcut.press();
     assert.equal(await debugPanel.locator('pre').textContent(),'Send a message to save this Chat and start background work.');
     await page.clock.fastForward(35000);
     assert.equal(newAfterSaved.activities.at(-1).context.conversation_id,0,'New Chat must not reuse the rendered old saved conversation');
