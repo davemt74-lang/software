@@ -8,7 +8,15 @@ import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-capability-chat-'));
 fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
 for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php','agent-catch-up-v1.php','gmail-inbox-initial-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
-for(const name of ['agent-runtime-routing-v420.php','ai-settings.php','agent-scheduling-v430.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
+for(const name of ['ai-settings.php','agent-scheduling-v430.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
+// This suite pins inference to Cloud. Keep its preference shim local so suites
+// exercising saved policy transitions can supply the real preference reader.
+fs.writeFileSync(path.join(tmp,'includes','agent-runtime-routing-v420.php'),`<?php
+function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $owner,int $agent):array
+{
+    return ['effective_preference'=>'vp3_cloud'];
+}
+`);
 fs.copyFileSync('tests/fixtures/capability-chat-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 const gelatoConnector=path.join(tmp,'includes/connected-gelato-v1.php');
 const gelatoSource=fs.readFileSync(gelatoConnector,'utf8');

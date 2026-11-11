@@ -57,11 +57,6 @@ function calendar_schedule_awareness_snapshot_v1330(...$args){if(isset($_SERVER[
 function user_account_types_for_user_id(...$args){return ['member'];}
 function user_has_role(...$args){return false;}
 function vp3_agent_runtime_plan_v420(...$args){return ['route'=>'vp3_cloud','cloud'=>['ready'=>true],'effective_preference'=>'vp3_cloud'];}
-// Match the fixture's Cloud route when the real meeting reader checks saved compute policy.
-function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $owner,int $agent):array
-{
-    return ['effective_preference'=>'vp3_cloud'];
-}
 function vp3_agent_runtime_tool_plan_v420(...$args){return ['route'=>'vp3_tool'];}
 function vp3_agent_runtime_capability_route_v420($plan,$execution,...$args){return ['supported'=>true,'ready'=>true,'actual_source'=>$execution['source']??'vp3_cloud'];}
 function vp3_agent_runtime_finalize_v420($plan,$execution,...$args){return $execution;}

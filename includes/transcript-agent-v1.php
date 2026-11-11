@@ -132,7 +132,13 @@ function vp3_transcript_chat_v1(PDO $pdo,array $user,array $principal,string $qu
         $modelSource=$attached===null?null:['state'=>$attached['state'],'session_id'=>0];
         if($selected>0){
             $user=vp3_transcript_live_user_v1($pdo,$user,$principal,$context,$authority);
-            $session=vp3_transcript_cloud_session_v1($pdo,$user,$principal,$selected,$context);
+            try {
+                $session=vp3_transcript_cloud_session_v1($pdo,$user,$principal,$selected,$context);
+            } catch (RuntimeException $error) {
+                // A pronoun alone does not identify an unavailable recording as the subject.
+                if (!$mentionsTranscript && !$thought && !$readsOnly) return $empty;
+                throw $error;
+            }
             if($thought)return vp3_transcript_conversation_v1($pdo,$user,$principal,['operation'=>'discuss'],$selected,$query,$context,$attached,$model,$authority);
             $modelSource=['state'=>'active','session_id'=>$selected,'title'=>mb_substr((string)$session['title'],0,160),
                 'source'=>$selection['explicit']?'selected_recording':'conversation_recording'];
