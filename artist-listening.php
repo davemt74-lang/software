@@ -73,6 +73,7 @@ $config = [
     'initialSessionId'=>$initialSessionId,
     'canProjectNotes'=>$canProjectNotes,
     'canKnowledge'=>$canKnowledge,
+    'canSavePersonalKnowledge'=>personal_capability_has_v242('personal_knowledge.manage', $user),
     'tracks'=>$tracks,
 ];
 ?>
@@ -266,7 +267,7 @@ $config = [
   <script src="<?= e(url('/artist-listening-workspace.js?v=artist-listening-normalized-20260903-highlights-s3&capture=interactive-transcription-section3-20261003&integrity=section4-20261003&transfer=section7-20261004')) ?>"></script>
   <script src="<?= e(url('/artist-listening.js?v=9ac023be&capture=interactive-transcription-section3-20261003&integrity=section4-20261003&transfer=section7-20261004&startup=20261022')) ?>"></script>
   <script src="<?= e(url('/artist-listening-recordings.js?v=artist-listening-normalized-20260903')) ?>"></script>
-  <script src="<?= e(url('/artist-listening-naming.js?v=transcription-folder-hotfix-20260913')) ?>"></script>
+  <script src="<?= e(url('/artist-listening-naming.js?v=transcription-folder-hotfix-20260913&highlight=knowledge-20261111')) ?>"></script>
   <script>window.STONEFELLOW_ARTIST_LISTENING_V172=Object.assign(window.STONEFELLOW_ARTIST_LISTENING_V172||{},window.STONEFELLOW_ARTIST_LISTENING_CONFIG||{});</script>
   <script src="<?= e(url('/artist-listening-ai.js?v=transcription-deeper-v307-20260907-highlights-s3')) ?>"></script>
   <script src="<?= e(url('/artist-listening-ui.js?v=artist-listening-normalized-20260903')) ?>"></script>

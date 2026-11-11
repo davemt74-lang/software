@@ -141,8 +141,10 @@ function vp3_initiative_tools_evidence_v1(PDO $pdo,array $user,array $binding,?a
     $current=vp3_initiative_capabilities_evidence_v1($pdo,$scope,$binding,$now,$selectedRefs,$coverage);
     require_once __DIR__.'/agent-initiative-artist-v1.php';
     require_once __DIR__.'/agent-initiative-task-research-v1.php';
+    require_once __DIR__.'/agent-initiative-transcript-research-v1.php';
     return array_replace($evidence,$current,vp3_initiative_research_evidence_v1($pdo,$scope,$now,$selectedRefs,$coverage),
-        vp3_initiative_task_research_evidence_v1($pdo,$scope,$selectedRefs,$coverage));
+        vp3_initiative_task_research_evidence_v1($pdo,$scope,$selectedRefs,$coverage),
+        vp3_initiative_transcript_research_evidence_v1($pdo,$scope,$binding,$now,$selectedRefs,$coverage));
 }
 
 /** Tool IDs and readiness come from the same authenticated capability inventory used by Chat. */
@@ -195,14 +197,14 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
         'description'=>'Save an exact source-grounded specialist/research Mission for owner assignment review. Creates a real pending-review Mission; does not start research, grant tools or claim completed work.'];
     foreach(['artist','topic'] as $kind){
         $refs=array_keys(array_filter($evidence,static fn(array $row):bool=>($row['kind']??'')===$kind.'_interest'
-            ||($kind==='topic'&&($row['kind']??'')==='task_research')));
+            ||($kind==='topic'&&in_array($row['kind']??'', ['task_research','transcript_research'], true))));
         if(!$refs)continue;
         $id=$kind.'.research';
         $catalog[$id]=['id'=>$id,'capability'=>$id,'mode'=>'read',
             'ready'=>true,'reason'=>'ready','source_refs'=>$refs,
             'description'=>$kind==='artist'
                 ?'Use the exact named artist from this verified interest pattern to prepare a private, sourced result. Choose only when research would add value. Set focus to overview, news, shows, merch, videos, or playlist. For playlist or videos set report to true so any verified playable picks can reach private Chat.'
-                :'Use the exact public topic from a verified interest pattern or an owner-approved open task. Choose only when a reliable explanation, practical next step, or new development would help. For a YouTube interest, choose playlist as the focus and report to true when a playable collection would help. For task_research, report the sourced result back to private Chat. Treat activity as tentative evidence of interest.'];
+                :'Use the exact public topic from a verified interest pattern or an owner-approved open task. For transcript_research, choose the exact saved suggestion. The worker will verify the source and prepare a public search topic independently of your focus text. Choose only when a reliable explanation, practical next step, or new development would help. For a YouTube interest, choose playlist as the focus and report to true when a playable collection would help. Report task and transcript research results to private Chat. Treat activity as tentative evidence of interest.'];
     }
     foreach(['product','screen','mission','marketing'] as $tool){
         $refs=[];
@@ -235,11 +237,11 @@ function vp3_initiative_tools_sources_v1(array $evidence): array
     return [$sources,$canonical];
 }
 
-function vp3_initiative_tools_current_v1(PDO $pdo,array $user,array $binding,array $evidence): array
+function vp3_initiative_tools_current_v1(PDO $pdo,array $user,array $binding,array $evidence,?array &$current=null): array
 {
     $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);
     [$sources,$canonical]=vp3_initiative_tools_sources_v1($evidence);
-    vp3_initiative_current_sources_v1($pdo,$scope['user'],$sources,!empty($binding['screen_enabled']),$canonical,null,vp3_initiative_capability_source_map_v1($evidence,array_keys($evidence)));
+    $current=vp3_initiative_current_sources_v1($pdo,$scope['user'],$sources,!empty($binding['screen_enabled']),$canonical,null,vp3_initiative_capability_source_map_v1($evidence,array_keys($evidence)));
     return $scope;
 }
 
@@ -352,6 +354,16 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
                 if(!$current||$current['revision']!==($goal['sources'][$primary]??null)||$current['title']!==($output['public_topic']??null)){
                     throw new RuntimeException('The open task or its public research choice changed.',409);
                 }
+            }elseif(vp3_public_research_transcript_ref_v1($primary)){
+                require_once __DIR__.'/agent-initiative-transcript-research-v1.php';
+                $coverage=[];
+                $current=vp3_initiative_transcript_research_evidence_v1($pdo,$scope,$binding,
+                    new DateTimeImmutable('now',new DateTimeZone('UTC')),[$primary],$coverage)[$primary]??null;
+                if(($coverage['transcript_research']??null)==='unavailable')throw new RuntimeException('Transcript research verification is unavailable.',503);
+                if(($coverage['transcript_research']??null)==='forbidden')throw new RuntimeException('Transcript research access changed.',403);
+                if(!$current||$current['revision']!==($goal['sources'][$primary]??null)||vp3_initiative_research_tool_result_v1($toolResult)===null){
+                    throw new RuntimeException('The transcript research suggestion changed.',409);
+                }
             }elseif(str_starts_with($primary,'native-artist-interest:')){
                 $coverage=[];
                 $current=vp3_initiative_native_music_evidence_v1($pdo,$scope,new DateTimeImmutable('now',new DateTimeZone('UTC')),[$primary],$coverage)[$primary]??null;
@@ -454,29 +466,49 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             $kind=$tool==='artist.research'?'artist':'topic';
             $primary=$job['primary'];$source=$evidence[$primary];$focus=trim($job['focus']);
             $task=($source['kind']??null)==='task_research';
-            if($task&&($job['report']??null)!==true)throw new InvalidArgumentException('Task research must report to its saved Chat.');
-            $plan=['mode'=>'direct',$kind=>$source['title']];
-            if($kind==='artist')$plan+=['location'=>'',
-                'focus'=>$focus==='playlist'?'videos':(in_array($focus,['news','shows','merch','videos'],true)?$focus:'overview')];
-            $authorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):void{
+            $transcript=($source['kind']??null)==='transcript_research';
+            $scopedTopic=$task||$transcript;
+            if($scopedTopic&&($job['report']??null)!==true)throw new InvalidArgumentException('Source research must report to its saved Chat.');
+            $authorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):array{
                 if($checkLease!==null)$checkLease();
-                vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
+                vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence,$current);
+                if($checkLease!==null)$checkLease();
+                return $current;
             };
+            if($transcript){
+                require_once __DIR__.'/agent-transcript-research-plan-v1.php';
+                if($checkLease===null)throw new RuntimeException('Transcript research requires an active worker lease.',409);
+                if($model===null)throw new RuntimeException('Public transcript research planning is unavailable.',503);
+                $source=$authorize()[$primary];
+                $public=vp3_initiative_transcript_research_plan_v1($pdo,$scope,$source,$model);
+                $authorize();
+                if($public!==null&&(array_keys($public)!==['topic']||!is_string($public['topic'])
+                    ||!vp3_topic_research_subject_valid_v1($public['topic']))){
+                    throw new RuntimeException('The public transcript research topic could not be verified.',409);
+                }
+                $plan=$public===null?null:['mode'=>'direct','topic'=>$public['topic']];
+            }else{
+                $plan=['mode'=>'direct',$kind=>$source['title']];
+                if($kind==='artist')$plan+=['location'=>'',
+                    'focus'=>$focus==='playlist'?'videos':(in_array($focus,['news','shows','merch','videos'],true)?$focus:'overview')];
+            }
             // Synthesis stays with the leased Initiative inference path, including its funding and budget.
             $transport=$model?['model'=>$model]:[];
             $transport+=array_intersect_key($researchTransport??[],['search'=>true,'request'=>true]);
-            $research=vp3_public_research_collect_v1($pdo,$scope['user'],$scope['agent_id'],$plan,$authorize,
-                $transport);
+            $research=$plan===null?[
+                'status'=>'no_matches','reason'=>'','answer'=>'The saved transcript suggestion remains available for private follow-up.',
+                'sources'=>[],'checked_at'=>gmdate('Y-m-d\TH:i:s\Z'),
+            ]:vp3_public_research_collect_v1($pdo,$scope['user'],$scope['agent_id'],$plan,$authorize,$transport);
             $authorize();
             if(!in_array($research['status']??null,['read_complete','no_matches'],true)||!vp3_public_research_result_valid_v1($research,$kind)){
                 throw new RuntimeException('Public research could not be verified.',503);
             }
             $result=['draft'=>$research['answer'],'sources'=>$research['sources'],
-                'tool_receipt'=>vp3_tool_receipt_v1($tool,'search',$research['status'],'',0,count($research['sources'])),
+                'tool_receipt'=>vp3_tool_receipt_v1($tool,$plan===null?'prepare':'search',$research['status'],'',0,count($research['sources'])),
                 'output'=>['type'=>'initiative_'.$kind.'_research','status'=>$research['status'],'reason'=>$research['reason'],
                     'checked_at'=>$research['checked_at'],'source_ref'=>$primary,'source_revision'=>$source['revision']]
-                    +($task?['public_topic'=>$source['title']]:[])];
-            if(!$task&&($job['report']??null)===true&&$research['status']==='read_complete'){
+                    +($plan===null?['public_topic_unavailable'=>true]:($scopedTopic?['public_topic'=>$plan['topic']]:[]))];
+            if(!$scopedTopic&&($job['report']??null)===true&&$research['status']==='read_complete'){
                 require_once __DIR__.'/agent-initiative-youtube-playlist-v1.php';
                 $playlist=vp3_initiative_youtube_playlist_prepare_v1($pdo,(int)$scope['user']['id'],$source['title'],$kind,
                     $focus,$research['sources'],$authorize,$researchTransport['youtube_http']??null);

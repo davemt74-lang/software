@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-top-of-mind-v1.php';
 require_once __DIR__.'/agent-initiative-artist-v1.php';
 require_once __DIR__.'/agent-initiative-tools-v1.php';
 require_once __DIR__.'/agent-initiative-task-research-v1.php';
+require_once __DIR__.'/agent-initiative-transcript-research-v1.php';
 
 /** Read only the reportable research lane of the exact saved policy. */
 function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $agentId,array $policy,int $now): array
@@ -81,8 +82,11 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
         if(!$candidates)return $status;
         $coverage=[];
         $scope=vp3_initiative_tools_scope_v1($pdo,$live,$policy);
-        $sources=vp3_initiative_research_evidence_v1($pdo,$scope,new DateTimeImmutable('now',new DateTimeZone('UTC')),array_keys($refs),$coverage)
-            +vp3_initiative_task_research_evidence_v1($pdo,$scope,array_keys($refs),$coverage);
+        $currentTime=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+        $selectedRefs=array_keys($refs);
+        $sources=vp3_initiative_research_evidence_v1($pdo,$scope,$currentTime,$selectedRefs,$coverage)
+            +vp3_initiative_task_research_evidence_v1($pdo,$scope,$selectedRefs,$coverage)
+            +vp3_initiative_transcript_research_evidence_v1($pdo,$scope,$policy,$currentTime,$selectedRefs,$coverage);
         vp3_initiative_access_v1($pdo,$live,$policy);
         foreach($candidates as $candidate){
             $source=$sources[$candidate['primary']]??null;
@@ -90,6 +94,8 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
             if(($source['revision']??null)!==$candidate['revision']||($candidate['expires']!==null&&$candidate['expires']<=time()))continue;
             if(str_starts_with($candidate['primary'],'task-research:')){
                 if(($source['kind']??null)!=='task_research')continue;
+            }elseif(vp3_public_research_transcript_ref_v1($candidate['primary'])){
+                if($item['kind']!=='topic'||($source['kind']??null)!=='transcript_research')continue;
             }elseif(str_starts_with($candidate['primary'],'native-artist-interest:')){
                 if($item['kind']!=='artist'||($source['interest']['basis']??null)!=='native_music_listening')continue;
             }elseif(($source['kind']??null)!==$item['kind'].'_interest'||!agent_connection_youtube_enabled_v1()

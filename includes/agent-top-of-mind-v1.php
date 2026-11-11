@@ -264,6 +264,7 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
                 $q->execute([(int)$run['id'],(int)$live['id']]);$action=$q->fetch(PDO::FETCH_ASSOC);
                 if(!$action)continue;
                 $result=json_decode((string)($action['result_json']??''),true);$result=is_array($result)?$result:[];
+                if(($result['initiative_tool_result']['output']['public_topic_unavailable']??false)===true)continue;
                 // A delivered check-in legitimately precedes later owner turns.
                 // Its source authority remains current; its old delivery-tail
                 // guard is not a permanent read permission.
@@ -276,8 +277,10 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
                     $q->execute([(int)$run['id'],(int)$action['id'],(int)$live['id']]);$receipt=$q->fetch(PDO::FETCH_ASSOC)?:null;
                 }
                 $state=vp3_top_of_mind_state_v1($run,$action,$receipt,$result,$now);
+                $primary=$sources[$goal['primary']??'']??[];
+                $objective=($primary['kind']??null)==='transcript_research'?$primary['title']:($goal['focus']??$run['title']??'Private preparation');
                 $item=['run_id'=>(int)$run['id'],'state'=>$state,'kind'=>$assessment?'assessment':'preparation',
-                    'objective'=>$assessment?'Assess useful next steps':vp3_top_of_mind_text_v1($goal['focus']??$run['title']??'Private preparation'),
+                    'objective'=>$assessment?'Assess useful next steps':vp3_top_of_mind_text_v1($objective),
                     'step'=>$state==='working'?($assessment?'Assessing the current situation':vp3_top_of_mind_text_v1($run['progress_message']??$action['label']??'',240)):'',
                     'progress'=>$state==='working'?max(0,min(99,(int)($run['progress_percent']??0))):null,
                     'observed_at'=>gmdate(DATE_ATOM,$now),'updated_at'=>vp3_top_of_mind_text_v1($run['updated_at']??$run['created_at']??'',40),

@@ -354,6 +354,11 @@ jobs:
           test -f _deploy/includes/ai-direct-account-v1.php
           test -f _deploy/includes/agent-initiative-research-canvas-v1.php
           test -f _deploy/includes/agent-initiative-research-status-v1.php
+          test -f _deploy/includes/agent-initiative-transcript-research-v1.php
+          test -f _deploy/includes/agent-transcript-research-plan-v1.php
+          test -f _deploy/includes/agent-transcript-research-policy-v1.php
+          test -f _deploy/includes/agent-transcript-research-knowledge-v1.php
+          test -f _deploy/includes/transcript-knowledge-highlight-v1.php
           test -f _deploy/api/initiative-research-status-v1.php
           test -f _deploy/chat-research-specialist-v1.js
           test -f _deploy/chat-research-specialist-v1.css

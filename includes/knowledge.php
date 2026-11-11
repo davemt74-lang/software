@@ -195,7 +195,16 @@ function personal_knowledge_resolve_folder_id(PDO $pdo, array $user, int $folder
 
 function personal_knowledge_note_marker(string $key): string
 {
-    return 'personal-'.sha1(trim($key)).'.txt';
+    $key = trim($key);
+    if (preg_match('/\Atranscript-knowledge-highlight:([1-9][0-9]{0,17}):([a-f0-9]{64})\z/D', $key, $match)) {
+        return personal_knowledge_transcript_highlight_prefix_v1((int)$match[1]).$match[2].'.txt';
+    }
+    return 'personal-'.sha1($key).'.txt';
+}
+
+function personal_knowledge_transcript_highlight_prefix_v1(int $sessionId): string
+{
+    return 'personal-transcript-highlight-'.$sessionId.'-';
 }
 
 function personal_knowledge_note_by_key(PDO $pdo, array $user, string $key, bool $withFolder = false): ?array

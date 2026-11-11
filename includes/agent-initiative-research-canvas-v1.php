@@ -92,14 +92,20 @@ function vp3_initiative_research_canvas_card_v1(array $goal, array $result, arra
     require_once __DIR__.'/agent-artist-research-v1.php';
     $verified = vp3_initiative_research_tool_result_v1($toolResult);
     if ($verified === null || $verified['tool_receipt'] !== ($context['tool_receipt'] ?? null)) return null;
+    $transcript = vp3_public_research_transcript_ref_v1($primary);
+    if ($transcript && !empty($output['public_topic_unavailable'])) return null;
 
     foreach (is_array($context['sources'] ?? null) ? $context['sources'] : [] as $source) {
-        if (!is_array($source)) continue;
-        $title = $source['title'] ?? null;
-        if (($source['source'] ?? null) !== $primary || !is_string($title) || !vp3_topic_research_subject_valid_v1($title)) continue;
-        $titleMatches = str_starts_with($primary, 'task-research:') ? $title === ($output['public_topic'] ?? null)
-            : $primary === $kind.'-interest:'.hash('sha256', mb_strtolower($title));
-        if (!$titleMatches) continue;
+        if (!is_array($source) || ($source['source'] ?? null) !== $primary) continue;
+        // Transcript provenance keeps its private finding title on the Chat message.
+        // The Canvas research title comes from the verified public query receipt.
+        $title = $transcript ? ($output['public_topic'] ?? null) : ($source['title'] ?? null);
+        if (!is_string($title) || !vp3_topic_research_subject_valid_v1($title)) continue;
+        if (!$transcript) {
+            $titleMatches = str_starts_with($primary, 'task-research:') ? $title === ($output['public_topic'] ?? null)
+                : $primary === $kind.'-interest:'.hash('sha256', mb_strtolower($title));
+            if (!$titleMatches) continue;
+        }
         return [
             'kind'=>$kind, 'title'=>$title, 'status'=>$output['status'], 'checked_at'=>$output['checked_at'],
             'sources'=>array_map(static fn(array $row): array=>array_intersect_key($row, [

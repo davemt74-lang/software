@@ -76,7 +76,7 @@ function vp3_public_research_collect_v1(PDO $pdo,array $user,int $agentId,array 
         $authority();
         try{
             $domain=(string)parse_url($source['url'],PHP_URL_HOST);
-            $response=($transport['request']??'cloud_mission_web_request_v1')($source['url'],[$domain],static function():void{},null,$overview?3:5);
+            $response=($transport['request']??'cloud_mission_web_request_v1')($source['url'],[$domain],$authority,null,$overview?3:5);
             $page=cloud_mission_web_extract_v1($response);
         }catch(Throwable $e){$page=null;}
         $authority();
@@ -166,13 +166,18 @@ function vp3_initiative_research_tool_result_v1(array $value): ?array
     if($kind===null||!in_array($output['status']??null,['read_complete','no_matches'],true)
         ||!is_string($output['source_ref']??null)||!vp3_public_research_source_ref_valid_v1($kind,$output['source_ref'])
         ||!is_string($output['source_revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$output['source_revision']))return null;
-    $task=str_starts_with($output['source_ref'],'task-research:');
-    if($task&&(!is_string($output['public_topic']??null)||!vp3_topic_research_subject_valid_v1($output['public_topic'])))return null;
-    if(isset($output['playlist_run_id'])&&($task||!is_int($output['playlist_run_id'])||$output['playlist_run_id']<1))return null;
+    $transcript = vp3_public_research_transcript_ref_v1($output['source_ref']);
+    $scopedTopic = $transcript || str_starts_with($output['source_ref'], 'task-research:');
+    $topicUnavailable = ($output['public_topic_unavailable'] ?? null) === true;
+    if (array_key_exists('public_topic_unavailable', $output)
+        && (!$transcript || !$topicUnavailable || $output['status'] !== 'no_matches' || array_key_exists('public_topic', $output))) return null;
+    if ($scopedTopic && !$topicUnavailable
+        && (!is_string($output['public_topic'] ?? null) || !vp3_topic_research_subject_valid_v1($output['public_topic']))) return null;
+    if(isset($output['playlist_run_id'])&&($scopedTopic||!is_int($output['playlist_run_id'])||$output['playlist_run_id']<1))return null;
     $receipt=vp3_tool_receipt_normalize_v1($value['tool_receipt']??null);
     $sources=$value['sources']??null;
     $draft=$value['draft']??null;
-    if($receipt===null||$receipt['capability']!==$kind.'.research'||$receipt['operation']!=='search'
+    if($receipt===null||$receipt['capability']!==$kind.'.research'||$receipt['operation']!==($topicUnavailable?'prepare':'search')
         ||$receipt['status']!==$output['status']||$receipt['record_id']!==0||!is_array($sources)||$receipt['count']!==count($sources)
         ||!vp3_public_research_result_valid_v1([
             'status'=>$output['status'],'reason'=>$output['reason']??null,'answer'=>$draft,
@@ -185,7 +190,7 @@ function vp3_initiative_research_tool_result_v1(array $value): ?array
         ])),$sources),
         'tool_receipt'=>$receipt,
         'output'=>array_intersect_key($output,array_flip(['type','status','reason','checked_at','source_ref','source_revision','playlist_run_id']))
-            +($task?['public_topic'=>$output['public_topic']]:[]),
+            +($topicUnavailable ? ['public_topic_unavailable' => true] : ($scopedTopic ? ['public_topic' => $output['public_topic']] : [])),
     ];
 }
 

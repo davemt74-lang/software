@@ -141,6 +141,8 @@ jobs:
           php tests/transcript-agent-v1.php
           php tests/transcript-conversation-v1.php
           php tests/transcript-agent-intelligence-v1.php
+          php tests/agent-initiative-transcript-research-v1.php
+          php tests/agent-transcript-research-knowledge-v1.php
           php tests/transcript-brain-v1.php
           python3 tools/check_agent_capability_inventory.py
 

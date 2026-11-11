@@ -237,6 +237,7 @@ jobs:
           node tests/meeting-chat-actions-api.mjs
           node tests/meeting-chat-action-review-browser.mjs
           php tests/agent-initiative-task-research-pipeline-v1.php
+          php tests/agent-initiative-transcript-research-pipeline-v1.php
           php tests/agent-initiative-canvas-v1.php
           php tests/agent-initiative-canvas-feedback-v1.php
           php tests/agent-initiative-canvas-pipeline-v1.php

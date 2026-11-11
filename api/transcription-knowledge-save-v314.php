@@ -81,6 +81,34 @@ function transcription_knowledge_v315_state(PDO $pdo, array $user, array $sessio
     ];
 }
 
+function transcription_knowledge_highlight_save_v1(PDO $pdo, array $user, array $session, int $folderId, array $input): array
+{
+    require_once dirname(__DIR__) . '/includes/transcript-knowledge-highlight-v1.php';
+    $page = $input['page'] ?? null;
+    $segmentId = $input['segment_id'] ?? null;
+    $start = $input['start'] ?? null;
+    $text = $input['text'] ?? null;
+    if (!is_int($page) || $page < 1 || !is_int($segmentId) || $segmentId < 0 || !is_int($start) || !is_string($text)) {
+        throw new RuntimeException('Choose an exact selection from the saved transcript.');
+    }
+    $sessionId = (int)$session['id'];
+    $folder = $folderId > 0 ? personal_knowledge_folder($pdo, $user, $folderId, true) : null;
+    if ($folderId > 0 && !$folder) throw new RuntimeException('The selected Knowledge folder is no longer available.');
+    $highlight = vp3_transcript_knowledge_highlight_v1($session, artist_listening_v172_segments($pdo, $sessionId), $page, $segmentId, $start, $text);
+    $title = 'Transcript highlight · '.artist_listening_v172_clean_title((string)$session['title']);
+    $id = personal_knowledge_store($user, $highlight['key'], $title, 'Evidence: '.$highlight['source_url']."\n\n".$highlight['text'],
+        'Source: Artist Listening · transcription #'.$sessionId.' · highlight from page '.$page, $folderId);
+    $saved = personal_knowledge_note_by_key($pdo, $user, $highlight['key'], true);
+    if ((int)($saved['id'] ?? 0) !== $id || (int)($saved['folder_id'] ?? 0) !== $folderId) {
+        throw new RuntimeException('The highlight could not be verified in the selected Knowledge folder.');
+    }
+    return ['knowledge_id'=>$id, 'scope'=>'personal', 'kind'=>'highlight',
+        'folder'=>['id'=>$folderId, 'name'=>$folder['folder_name'] ?? 'Unfiled'],
+        'source'=>['url'=>$highlight['source_url'], 'session_id'=>$sessionId, 'page'=>$page, 'segment_ids'=>$highlight['segment_ids']],
+        'view_url'=>url('/knowledge.php?'.http_build_query(['folder'=>$folderId > 0 ? $folderId : 'unfiled', 'edit'=>$id]).'#knowledge-form'),
+        'saved_at'=>gmdate('c')];
+}
+
 $user = current_user();
 if (!$user) {
     transcription_knowledge_v314_json(false, ['error'=>'Sign in to use transcription knowledge.'], 401);
@@ -129,6 +157,9 @@ try {
 
     $sessionId = max(0, (int)($input['session_id'] ?? 0));
     $folderId = max(0, (int)($input['folder_id'] ?? 0));
+    if (array_key_exists('highlight', $input) && function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null) {
+        transcription_knowledge_v314_json(false, ['error'=>'Save transcript highlights from your private owner workspace.'], 403);
+    }
 
     $pdo->beginTransaction();
     try {
@@ -137,6 +168,15 @@ try {
         $session = artist_listening_v172_session($pdo, $user, $sessionId, true);
         if ((string)($session['status'] ?? '') === 'discarded') {
             throw new RuntimeException('Restore this transcription before saving it to My Knowledge.');
+        }
+
+        if (array_key_exists('highlight', $input)) {
+            if (!is_array($input['highlight']) || !is_int($input['folder_id'] ?? null) || $input['folder_id'] < 0) {
+                throw new RuntimeException('Choose a Knowledge folder and select text to highlight.');
+            }
+            $result = transcription_knowledge_highlight_save_v1($pdo, $user, $session, $folderId, $input['highlight']);
+            $pdo->commit();
+            transcription_knowledge_v314_json(true, $result);
         }
 
         $folder = null;
