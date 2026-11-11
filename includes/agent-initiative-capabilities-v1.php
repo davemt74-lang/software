@@ -276,8 +276,12 @@ function vp3_initiative_capability_result_current_v1(PDO $pdo,array $scope,array
 /** Declared sources require a short serializable final transaction, including ordinary preparation. */
 function vp3_initiative_capability_sources_present_v1(array $sources): bool
 {
-    foreach(array_keys($sources) as $ref)foreach(vp3_capability_contract_adapters_v1() as $entry){
-        if(is_string($ref)&&vp3_initiative_capability_source_matches_v1($ref,$entry))return true;
+    foreach(array_keys($sources) as $ref){
+        if(!is_string($ref))continue;
+        if(preg_match('/\Atranscript-research:[1-9][0-9]{0,17}:[a-f0-9]{64}\z/D',$ref))return true;
+        foreach(vp3_capability_contract_adapters_v1() as $entry){
+            if(vp3_initiative_capability_source_matches_v1($ref,$entry))return true;
+        }
     }
     return false;
 }

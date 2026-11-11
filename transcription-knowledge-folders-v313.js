@@ -8,6 +8,7 @@
     loaded: true,
     saves: 0,
     transcriptSaves: 0,
+    highlightSaves: 0,
     statusLoads: 0,
     lastFolderId: 0,
     lastKnowledgeId: 0,
@@ -19,6 +20,7 @@
   const transcriptEndpoint = new URL('api/transcription-knowledge-save-v314.php', location.href).toString();
   let statusSessionId = 0;
   let statusRequestId = 0;
+  let highlightSelection = null;
 
   function workspaceState() {
     try {
@@ -95,15 +97,17 @@
     }
   }
 
-  function workspaceStatus(message, state = 'idle', viewUrl = '') {
-    let node = document.querySelector('[data-transcription-knowledge-status]');
+  function workspaceStatus(message, state = 'idle', viewUrl = '', highlight = false) {
+    const selector = highlight ? '[data-transcription-knowledge-highlight-status]' : '[data-transcription-knowledge-status]';
+    let node = document.querySelector(selector);
     if (!node) {
       const button = document.querySelector('[data-listening-workspace-knowledge]');
       const actions = button?.closest('.sf-listening-workspace-inspector-actions');
       if (!actions) return;
       node = document.createElement('div');
       node.className = 'sf-transcription-knowledge-status';
-      node.dataset.transcriptionKnowledgeStatus = '1';
+      node.setAttribute(selector.slice(1, -1), '1');
+      node.setAttribute('aria-live', 'polite');
       node.innerHTML = '<span data-transcription-knowledge-message></span><a data-transcription-knowledge-view target="_blank" rel="noopener" hidden>View in My Knowledge</a>';
       actions.insertAdjacentElement('afterend', node);
     }
@@ -216,6 +220,15 @@
     if (button.title !== 'Save this transcription to My Knowledge in its selected folder') {
       button.title = 'Save this transcription to My Knowledge in its selected folder';
     }
+    if (cfg.canSavePersonalKnowledge && !button.parentElement.querySelector('[data-listening-workspace-knowledge-highlight]')) {
+      const highlight = document.createElement('button');
+      highlight.type = 'button';
+      highlight.className = 'sf-listening-workspace-btn';
+      highlight.dataset.listeningWorkspaceKnowledgeHighlight = '1';
+      highlight.textContent = 'Save highlight to My Knowledge';
+      highlight.title = 'Save selected transcript text to the current Knowledge folder';
+      button.insertAdjacentElement('afterend', highlight);
+    }
     if (!document.querySelector('[data-transcription-knowledge-status]')) {
       workspaceStatus('Checking My Knowledge…', 'loading');
     }
@@ -299,6 +312,53 @@
     }
   }
 
+  function rememberHighlight(editor) {
+    if (!editor?.matches?.('[data-listening-workspace-editor], [data-listening-workspace-turn-text]')) return;
+    const start = editor.selectionStart;
+    const text = editor.value.slice(start, editor.selectionEnd);
+    const sessionId = currentSessionId();
+    const transcript = window.STONEFELLOW_ARTIST_LISTENING_TRANSCRIPT?.api?.getState?.();
+    const page = transcript?.sessionId === sessionId ? transcript.page : 1;
+    const segmentId = Number(editor.closest('[data-listening-workspace-turn]')?.dataset.segmentId || 0);
+    highlightSelection = text.trim() ? {sessionId, page, start, text, segment_id:segmentId} : null;
+  }
+
+  async function saveHighlightToKnowledge(button) {
+    rememberHighlight(document.activeElement);
+    const sessionId = currentSessionId();
+    const selected = highlightSelection;
+    if (!selected || selected.sessionId !== sessionId) {
+      workspaceStatus('Select text in the saved transcript first.', 'error', '', true);
+      return;
+    }
+    const {page, start, text, segment_id} = selected;
+    const folderId = currentFolderId();
+    button.disabled = true;
+    workspaceStatus(`Saving highlight to My Knowledge · ${currentFolderName(folderId)}…`, 'saving', '', true);
+    try {
+      const response = await fetch(transcriptEndpoint, {
+        method: 'POST', credentials: 'same-origin',
+        headers: {Accept:'application/json','Content-Type':'application/json'},
+        body: JSON.stringify({csrf_token:String(cfg.csrf || ''), session_id:sessionId, folder_id:folderId, highlight:{page, start, text, segment_id}}),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(String(data.error || `Save failed (${response.status}).`));
+      const knowledgeId = Number(data.knowledge_id);
+      if (data.kind !== 'highlight' || !Number.isSafeInteger(knowledgeId) || knowledgeId < 1 || data.folder?.id !== folderId) {
+        throw new Error('The saved highlight could not be verified.');
+      }
+      proof.highlightSaves += 1;
+      if (currentSessionId() === sessionId) {
+        workspaceStatus(`Highlight saved to My Knowledge · ${data.folder.name}`, 'saved', data.view_url, true);
+      }
+      window.dispatchEvent(new CustomEvent('vp3:transcription-knowledge-saved', {detail:{sessionId, folderId, knowledgeId, source:'highlight'}}));
+    } catch (error) {
+      if (currentSessionId() === sessionId) workspaceStatus(String(error.message || error), 'error', '', true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   async function saveToFolder(button) {
     const sessionId = currentSessionId();
     if (!sessionId) throw new Error('Choose a transcription before saving its AI summary.');
@@ -345,7 +405,14 @@
     }
   }
 
+  document.addEventListener('focusout', event => rememberHighlight(event.target), true);
   document.addEventListener('click', event => {
+    const highlightButton = event.target.closest?.('[data-listening-workspace-knowledge-highlight]');
+    if (highlightButton) {
+      event.preventDefault();
+      void saveHighlightToKnowledge(highlightButton);
+      return;
+    }
     const transcriptButton = event.target.closest?.('[data-listening-workspace-knowledge]');
     if (transcriptButton) {
       event.preventDefault();
@@ -361,6 +428,8 @@
   }, true);
 
   window.addEventListener('stonefellow:artist-listening-document-selected', () => {
+    highlightSelection = null;
+    document.querySelector('[data-transcription-knowledge-highlight-status]')?.remove();
     statusRequestId += 1;
     statusSessionId = 0;
     workspaceStatus('Checking My Knowledge…', 'loading');

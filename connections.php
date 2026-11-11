@@ -9,6 +9,7 @@ require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-settings-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
 require_once __DIR__ . '/includes/agent-initiative-native-music-v1.php';
+require_once __DIR__ . '/includes/agent-transcript-research-policy-v1.php';
 require_permission('account.access');
 
 $user = current_user();
@@ -32,6 +33,26 @@ $youtubeArtistResearch = $youtubeEnabled && vp3_youtube_artist_research_enabled_
 $youtubeTopicResearch = $youtubeEnabled && vp3_youtube_research_enabled_v1($pdo, (int)$user['id'], 'topic');
 $youtubeWatchResearch = $youtubeEnabled && vp3_youtube_watch_research_enabled_v1($pdo, (int)$user['id']);
 $canChat = has_permission('chat.access', $user);
+$canManageTranscriptResearch = $canChat && (int)$user['id'] > 0
+    && (!function_exists('vp3_participant_scope_v1') || vp3_participant_scope_v1() === null);
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'save_transcript_research') {
+    $saved = false;
+    $preference = $_POST['transcript_research'] ?? '';
+    if ($pdo && $canManageTranscriptResearch && ($_POST['transcript_research_owner'] ?? null) === (string)$user['id']
+        && in_array($preference, ['', '1'], true)
+        && is_string($_POST['csrf_token'] ?? null) && verify_csrf()) {
+        try {
+            vp3_transcript_research_save_v1($pdo, (int)$user['id'], $preference === '1');
+            $saved = true;
+        } catch (PDOException | DomainException) {}
+    }
+    redirect(url('/connections.php?transcript_research=' . ($saved ? 'saved' : 'failed') . '#transcript-research'));
+}
+$transcriptResearch = false;
+if ($pdo && $canManageTranscriptResearch) {
+    try { $transcriptResearch = vp3_transcript_research_grant_v1($pdo, (int)$user['id']) !== ''; }
+    catch (PDOException) {}
+}
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') === 'save_native_music_research') {
     $saved = false;
     if ($pdo && $canChat && verify_csrf()) {
@@ -579,6 +600,27 @@ header('Cache-Control: private, no-store');
                 <span>Use recent VP3 Music listening for artist research</span>
               </label>
               <p class="connections-muted">With Initiative enabled, separate Music Player listening sessions in the past seven days can prompt research about artists with a public profile. Sessions need a 15-minute break between them. Plays started from Chat suggestions stay outside this setting. Public searches use the artist name. Research can use tokens and reports can appear in your private Agent Chat.</p>
+              <button class="connections-button" type="submit">Save preference</button>
+            </form>
+          </section>
+        <?php endif; ?>
+        <?php if ($pdo && $canManageTranscriptResearch): ?>
+          <section class="connections-section" id="transcript-research" aria-labelledby="transcript-research-title">
+            <h2 id="transcript-research-title">Saved Transcripts</h2>
+            <?php if (($_GET['transcript_research'] ?? '') === 'saved'): ?>
+              <p class="connections-notice connections-success" role="status">Transcript research preference saved.</p>
+            <?php elseif (($_GET['transcript_research'] ?? '') === 'failed'): ?>
+              <p class="connections-notice connections-error" role="alert">Transcript research preference could not be saved.</p>
+            <?php endif; ?>
+            <form method="post" action="<?= e(url('/connections.php')) ?>">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="save_transcript_research">
+              <input type="hidden" name="transcript_research_owner" value="<?= e((string)$user['id']) ?>">
+              <label class="connections-permission">
+                <input type="checkbox" name="transcript_research" value="1" <?= $transcriptResearch ? 'checked' : '' ?>>
+                <span>Use research questions from saved transcript findings</span>
+              </label>
+              <p class="connections-muted">With Initiative enabled, your configured Agent model can assess saved questions and suggested checks you allow it to read. VP3 sends generated public search terms to DuckDuckGo and shares findings in your private Agent Chat. Research can use tokens.</p>
               <button class="connections-button" type="submit">Save preference</button>
             </form>
           </section>

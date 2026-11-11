@@ -80,6 +80,7 @@ if (($argv[1]??'') === '--chat-review-runtime') {
     return;
 }
 require_once $root.'/includes/agent-initiative-native-music-v1.php';
+require_once $root.'/includes/agent-transcript-research-policy-v1.php';
 $source = file_get_contents($root.'/connections.php');
 $source = preg_replace('/^declare\(strict_types=1\);\R|^require(?:_once)? __DIR__ \. \'\/includes\/[^\']+\';\R/m', '', $source);
 $source = str_replace(

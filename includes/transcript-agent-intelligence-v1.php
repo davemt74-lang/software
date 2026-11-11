@@ -42,6 +42,73 @@ function vp3_transcript_suggestion_completion_v1(array $item): string
     return 'open';
 }
 
+/** Reconstruct the existing evidence link from canonical and retained page locators. */
+function vp3_transcript_suggestion_origin_v1(array $master, array $item, string $plugin, string $section, int|string $index, array $map, int $sessionId): array
+{
+    $references = [];
+    $raw = $master['analysis']['modules'][$plugin]['result'][$section][$index] ?? [];
+    $rawRefs = is_array($raw) && ($raw['item_id'] ?? null) === $item['item_id'] ? (array)($raw['evidence_refs'] ?? []) : [];
+    foreach (array_merge($item['evidence_refs'], $rawRefs) as $reference) {
+        $page = $reference['page'] ?? null;
+        if (!is_int($page) || $page < 1 || $page > $map['page_count']) continue;
+        $references[$page] = ['page' => $page, 'label' => 'Page '.$page];
+    }
+    ksort($references);
+    return transcription_intelligence_origin_v309(['id' => $sessionId], $plugin, $section, [
+        'item_id' => $item['item_id'],
+        'evidence_refs' => array_values(array_slice($references, 0, 4, true)),
+    ]);
+}
+
+/** Private planner input. Only the worker's independently authorized public topic may leave this scope. */
+function vp3_transcript_research_candidates_v1(array $master, array $modules, array $appStatus, array $map, int $sessionId): array
+{
+    if (empty($master['fresh'])) return [];
+    $normalized = transcription_deeper_normalize_modules_v307($modules);
+    $candidates = [];
+    foreach (transcription_app_registry_v307() as $plugin => $definition) {
+        if (empty($appStatus[$plugin]['fresh']) || !isset($normalized[$plugin])) continue;
+        $seen = [];
+        foreach ($definition['sections'] as $section) {
+            $key = $section['key'];
+            foreach ((array)($normalized[$plugin]['result'][$key] ?? []) as $index => $item) {
+                $id = $item['item_id'] ?? null;
+                if (!is_string($id) || !preg_match('/\A[A-Za-z0-9_.:-]{1,190}\z/D', $id) || isset($seen[$id])) continue;
+                $seen[$id] = true;
+                if ($item['review_state'] === 'rejected' || vp3_transcript_suggestion_completion_v1($item) !== 'open') continue;
+                $suggestion = vp3_transcript_suggestion_v1($plugin, $key, $section['primary'], $item);
+                if ($suggestion === null) continue;
+
+                $primary = $item[$section['primary']] ?? null;
+                $question = is_string($primary) ? transcription_app_clean_v300($primary, 1400) : '';
+                if ($question === '') $question = $suggestion['text'];
+                $nextStep = $question === $suggestion['text'] ? '' : $suggestion['text'];
+                $keyText = trim(preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($question)) ?? '');
+                if ($keyText === '') continue;
+
+                $origin = vp3_transcript_suggestion_origin_v1($master, $item, $plugin, $key, $index, $map, $sessionId);
+                $itemKey = hash('sha256', json_encode([$plugin, $key, $id], JSON_THROW_ON_ERROR));
+                $candidate = [
+                    'session_id' => $sessionId, 'plugin' => $plugin, 'section' => $key, 'item_id' => $id,
+                    'question' => transcription_app_clean_v300($question, 300), 'next_step' => $nextStep, 'review_state' => $item['review_state'],
+                    'kind' => $suggestion['kind'], 'source_url' => $origin['source_url'],
+                    'source_hash' => $map['source_hash'], 'topic_key' => hash('sha256', $keyText),
+                    'item_revision' => hash('sha256', json_encode($item, JSON_THROW_ON_ERROR)),
+                ];
+                $knowledge = $item['actions']['personal_knowledge'] ?? [];
+                if (is_int($knowledge['record_id'] ?? null) && $knowledge['record_id'] > 0) {
+                    $candidate['actions'] = ['personal_knowledge' => array_intersect_key($knowledge, ['record_id' => true, 'source' => true])];
+                }
+                $candidates[$itemKey] = $candidate;
+            }
+        }
+    }
+    // An explicit next check is more useful than an equivalent bare question.
+    uasort($candidates, static fn(array $left, array $right): int =>
+        ($right['next_step'] !== '') <=> ($left['next_step'] !== ''));
+    return $candidates;
+}
+
 /** Project saved plugin results for attention without executing any plugin or action. */
 function vp3_transcript_plugin_attention_v1(array $master, array $modules, array $appStatus, array $map, int $sessionId, int $analyzedPages, bool $includeReports = false): array
 {
@@ -95,27 +162,14 @@ function vp3_transcript_plugin_attention_v1(array $master, array $modules, array
                 $suggestionCounts[$suggestion['kind']]++;
                 if (count($queue) >= $limit) continue;
 
-                $references = [];
-                $raw = $master['analysis']['modules'][$plugin]['result'][$key][$index] ?? [];
-                $rawRefs = is_array($raw) && ($raw['item_id'] ?? null) === $itemId ? (array)($raw['evidence_refs'] ?? []) : [];
-                foreach (array_merge($item['evidence_refs'], $rawRefs) as $reference) {
-                    $page = $reference['page'] ?? null;
-                    if (!is_int($page) || $page < 1 || $page > $map['page_count']) continue;
-                    $references[$page] = ['page' => $page, 'label' => 'Page '.$page];
-                }
-                ksort($references);
-                $references = array_values(array_slice($references, 0, 4, true));
-                $origin = transcription_intelligence_origin_v309(['id' => $sessionId], $plugin, $key, [
-                    'item_id' => $itemId,
-                    'evidence_refs' => $references,
-                ]);
+                $origin = vp3_transcript_suggestion_origin_v1($master, $item, $plugin, $key, $index, $map, $sessionId);
                 $queue[] = $suggestion + [
                     'plugin' => $plugin,
                     'section' => $key,
                     'item_id' => $itemId,
                     'review_state' => $review,
                     'completion_state' => $completion,
-                    'evidence_refs' => $references,
+                    'evidence_refs' => $origin['evidence_refs'],
                     'source_hash' => (string)$module['source_hash'],
                     'source_url' => $origin['source_url'],
                 ];
@@ -160,10 +214,15 @@ function vp3_transcript_intelligence_v1(PDO $pdo,array $user,array $principal,in
     $map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,$id));$saved=artist_listening_v237_analysis_status($pdo,$id,$map);$m=$saved['master'];
     $p=['session_id'=>$id,'title'=>$s['title'],'source_hash'=>$map['source_hash'],'page_count'=>$map['page_count'],'generated'=>is_array($m),'fresh'=>!empty($m['fresh']),'text'=>'','sources'=>[],
         'plugin_attention'=>['modules'=>[],'suggestions'=>[],'suggestion_counts'=>['followup'=>0,'research'=>0],'truncated'=>false]];
+    if($view==='research_candidates')$p['research_candidates']=[];
     if(!$m)return $p;
     $p['generated_at']=$m['generated_at'];$p['analyzed_pages']=$saved['analyzed_pages'];
     $mods=transcription_app_modules_v306($m['analysis'],$m);
     $status=$p['fresh']?transcription_deeper_advanced_status_v307($pdo,$user,$s,$m,$map):[];
+    if($view==='research_candidates'){
+        $p['research_candidates']=vp3_transcript_research_candidates_v1($m,$mods,$status['app_status']??[],$map,$id);
+        return $p;
+    }
     $p['plugin_attention']=vp3_transcript_plugin_attention_v1($m,$mods,$status['app_status']??[],$map,$id,$saved['analyzed_pages'],in_array($view,['analysis','discussion'],true));
     if(!$p['fresh']||$view==='discussion')return $p;
     $items=[];$counts=['accepted'=>0,'unreviewed'=>0,'rejected'=>0];

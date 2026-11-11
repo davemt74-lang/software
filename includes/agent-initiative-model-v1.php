@@ -73,7 +73,7 @@ function vp3_initiative_transient_route_current_v1(PDO $pdo,array $user,int $age
 function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol,bool $transientContext=false,?callable $beforeInference=null,array $job=[]): string
 {
     $GLOBALS['vp3_initiative_inference_last_v1']=[];
-    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1'],true)
+    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1'],true)
         ||trim($prompt)===''||strlen($prompt)>200000){
         throw new InvalidArgumentException('Invalid initiative inference request.');
     }

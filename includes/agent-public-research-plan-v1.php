@@ -109,7 +109,13 @@ function vp3_public_research_source_ref_valid_v1(string $kind,string $ref): bool
 {
     return (in_array($kind,['artist','topic'],true)&&preg_match('/\A'.$kind.'-interest:[a-f0-9]{64}\z/D',$ref))
         ||($kind==='artist'&&preg_match('/\Anative-artist-interest:[a-f0-9]{64}\z/D',$ref))
-        ||($kind==='topic'&&preg_match('/\Atask-research:[1-9][0-9]{0,17}\z/D',$ref));
+        ||($kind==='topic'&&(preg_match('/\Atask-research:[1-9][0-9]{0,17}\z/D',$ref)
+            ||vp3_public_research_transcript_ref_v1($ref)));
+}
+
+function vp3_public_research_transcript_ref_v1(string $ref): bool
+{
+    return preg_match('/\Atranscript-research:[1-9][0-9]{0,17}:[a-f0-9]{64}\z/D', $ref) === 1;
 }
 
 function vp3_artist_research_plan_valid_v1(array $plan): bool
