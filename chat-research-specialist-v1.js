@@ -128,6 +128,7 @@
     const url = new URL(endpoint);
     url.searchParams.set('agent_id', String(agentId));
     url.searchParams.set('conversation_id', String(conversationId));
+    url.searchParams.set('view', 'assignments');
     let delay = 20000;
     try {
       const response = await fetch(url, {method: 'GET', credentials: 'same-origin', cache: 'no-store',

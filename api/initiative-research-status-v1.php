@@ -24,6 +24,7 @@ try{
     }
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     $state=vp3_initiative_research_status_v1(db(),$user,(int)$rawAgent,(int)$rawChat);
+    if(($_GET['view']??null)!=='assignments')unset($state['specialists']);
     echo json_encode(['ok'=>true,'working_attention_binding'=>$binding]+$state,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $error){
     $status=in_array($error->getCode(),[403,405,409,422,503],true)?(int)$error->getCode():503;

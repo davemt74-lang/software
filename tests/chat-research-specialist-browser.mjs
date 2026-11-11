@@ -33,6 +33,7 @@ await page.route('**/api/**', async route => {
     assert.equal(request.postData(),null);
     assert.equal(request.headers()['x-vp3-working-attention'],binding);
     assert.equal(url.searchParams.get('agent_id'),'7');
+    assert.equal(url.searchParams.get('view'),'assignments');
     const conversationId = Number(url.searchParams.get('conversation_id'));
     assert.ok([42,43].includes(conversationId));
     requests.push(conversationId);
