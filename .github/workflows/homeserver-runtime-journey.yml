@@ -68,7 +68,7 @@ jobs:
           node-version: '22'
       - run: |
           npm install --no-save --ignore-scripts playwright@1.62.1
-          npx playwright install --with-deps chromium
+          bash tools/install-ci-chromium.sh
       - run: node tests/transfer-section7.mjs
       - name: Fresh installation Agent core foundations
         run: php tests/agent-core-install-parity-v1.php
