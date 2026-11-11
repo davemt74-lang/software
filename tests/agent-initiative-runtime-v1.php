@@ -384,6 +384,15 @@ runtime_check($repaired['ok']&&$repaired['reason']==='completed'&&$repaired['hea
     &&$repairCalls===2&&$prepareCount()===$beforeRepair+1&&$repairedGoal['primary']==='calendar:event:42'
     &&array_keys($repairedGoal['sources'])===['calendar:event:42'],
     'a valid second assessment clears the diagnostic and queues exactly one preparation for the current source');
+$privatePreparation=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static function(string $prompt,string $protocol):string{
+    if($protocol!=='vp3.initiative-draft.v1')throw new LogicException('Expected the queued preparation.');
+    return '{"draft":"I reviewed the saved calendar event and prepared the next steps privately."}';
+});
+runtime_check($privatePreparation['ok']&&$privatePreparation['reason']==='completed'&&$reports()===1,
+    'the corrected assignment runs once and stays private as planned');
+
+// The worker health suite reuses this fixture and starts from a fresh policy.
+vp3_initiative_chat_v1($pdo,$user,vp3_agent_chat_principal_v380($user,null),['conversation_id'=>42],'off',null);
 
 require_once dirname(__DIR__).'/includes/cognitive-runtime-v500.php';
 require_once dirname(__DIR__).'/includes/cognitive-continuity-v2440.php';
