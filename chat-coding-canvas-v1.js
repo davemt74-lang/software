@@ -14,6 +14,8 @@
   const maxText = 32768;
   const jobLabels = {queued:'Waiting to build',running:'Working on the canvas',ready:'Draft ready to test',failed:'Coding Agent could not complete this run',stopped:'Build stopped'};
   const activeJob = job => ['queued','running'].includes(job?.state);
+  const specialistKey = job => Number.isSafeInteger(job?.run_id) && job.run_id > 0 ? 'coding:' + job.run_id : '';
+  const specialistJobs = new Set();
   const chat = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const scope = () => Number(chat()?.conversationId()) || 0;
   let participantActor = 0;
@@ -367,18 +369,20 @@
   const launch = button('Code / App Canvas',() => void openPanel());
   launch.setAttribute('aria-controls',panel.id);
   launch.setAttribute('aria-expanded','false');
-  const worker = button('Coding Agent · Working on the canvas',() => window.VP3ChatSpecialists?.open('coding',worker));
+  const worker = button('Coding Agent · Working on the canvas',() => window.VP3ChatSpecialists?.open(specialistKey(job),worker));
   worker.className = 'vp3-coding-canvas-worker';
-  worker.setAttribute('aria-controls','vp3-chat-specialist-panel-coding');
   worker.setAttribute('aria-expanded','false');
   worker.setAttribute('aria-haspopup','dialog');
   worker.hidden = true;
-  const dockStatus = node('span');
+  const dockStatus = node('span','','vp3-coding-canvas-dock-status');
   dockStatus.setAttribute('aria-live','polite');
   dock.append(launch,worker,dockStatus);
   shell.append(dock);
   window.addEventListener('vp3:chat-specialists-changed',() => {
-    worker.hidden = !window.VP3ChatSpecialists?.snapshot().some(entry => entry.key === 'coding');
+    const key = specialistKey(job);
+    worker.hidden = job?.state !== 'running' || !window.VP3ChatSpecialists?.snapshot().some(entry => entry.key === key);
+    if (worker.hidden) worker.removeAttribute('aria-controls');
+    else worker.setAttribute('aria-controls','vp3-chat-specialist-panel-' + key);
   });
 
   let epoch = 0;
@@ -635,18 +639,45 @@
     catch (error) { if (version === epoch && shown()) report(error.message); }
   }
 
+  function publishSpecialist(next, status, model) {
+    const rail = window.VP3ChatSpecialists;
+    if (!rail) return;
+    if (!next) {
+      for (const key of specialistJobs) rail.remove(key);
+      specialistJobs.clear();
+      return;
+    }
+    const key = specialistKey(next);
+    if (!key || !status) return;
+    specialistJobs.add(key);
+    if (specialistJobs.size > 8) {
+      const oldest = specialistJobs.values().next().value;
+      specialistJobs.delete(oldest);
+      rail.remove(oldest);
+    }
+    const ready = next.state === 'ready';
+    const working = activeJob(next);
+    rail.update(key, {
+      type:'coding',state:next.state,label:'Coding Agent',title:model,
+      status:next.state === 'failed' && next.reason ? next.reason : status,
+      detail:'Building a private app draft for this Chat.',
+      expiresAt:working ? Date.now()+12000 : 0,
+      desktop:next.state === 'running',inline:true,
+      viewLabel:ready ? 'Open draft' : 'Open Code / App Canvas',
+      onView:ready || working ? () => {
+        if (!matches() || next.conversation_id !== scope()) return;
+        if (ready) void window.VP3CodingCanvasV1.open(next.canvas_id,next.revision);
+        else if (job?.run_id === next.run_id) void openPanel();
+      } : null,
+    });
+  }
+
   function renderJob(next) {
     const changed = job?.state !== next?.state || job?.run_id !== next?.run_id;
     job = next;
     const status = jobLabels[next?.state] || '';
     const model = next?.model?.model;
-    if (next?.state === 'running') {
-      window.VP3ChatSpecialists?.update('coding',{
-        label:'Coding Agent',status,title:model,detail:'Building a private app draft for this Chat.',
-        expiresAt:Date.now()+12000,viewLabel:'Open Code / App Canvas',
-        onView:() => { if (job?.state === 'running' && job.run_id === next.run_id) void openPanel(); },
-      });
-    } else window.VP3ChatSpecialists?.remove('coding');
+    publishSpecialist(next,status,model);
     if (!changed) return;
     dockStatus.textContent = next?.state === 'running' ? '' : status;
     if (next) {
@@ -692,7 +723,7 @@
       await advance(data.job,version,conversation);
     } catch (error) {
       if (suspended || version !== epoch || job?.run_id !== runId || !activeJob(job)) return;
-      window.VP3ChatSpecialists?.remove('coding');
+      window.VP3ChatSpecialists?.remove(specialistKey(job));
       if (!pollingError) report(error.message + ' Checking again…');
       pollingError = true;
       poll = setTimeout(() => void pollJob(runId,version,conversation),2600);

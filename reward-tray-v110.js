@@ -95,8 +95,16 @@ function render(bucket){
   list.innerHTML=rows.length?rows.map(r=>card(r,bucket)).join(''):'<div class="reward-tray-empty"><strong>No '+esc(names[bucket][0].toLowerCase())+' certificates</strong><span>Your Reward activity will appear here.</span></div>';
 }
 
+const tabIcons={
+  inbox:'M4 5h16l2 9v5H2v-5l2-9Zm-2 9h6l2 2h4l2-2h6',
+  sent:'m3 10 18-7-7 18-4-7-7-4Zm7 4 11-11',
+  claimed:'M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 8 2 2 4-4'
+};
+
 function tabHtml(key){
-  return '<a class="reward-tray-tab" href="'+esc(routes[key])+'" data-reward-tray-tab="'+key+'">'+key.toUpperCase()+' <span class="reward-tray-count" data-reward-count="'+key+'">0</span></a>';
+  return '<a class="reward-tray-tab" href="'+esc(routes[key])+'" data-reward-tray-tab="'+key+'" title="'+key[0].toUpperCase()+key.slice(1)+'">'+
+    '<svg class="reward-tray-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="'+tabIcons[key]+'"/></svg>'+
+    '<span class="reward-tray-label">'+key.toUpperCase()+'</span> <span class="reward-tray-count" data-reward-count="'+key+'">0</span></a>';
 }
 
 function ensureHeaderTabs(){
@@ -107,19 +115,12 @@ function ensureHeaderTabs(){
   if(!qs('#rewardTrayTabs')){
     const nav=document.createElement('nav');
     nav.id='rewardTrayTabs';
-    nav.className='reward-tray-tabs reward-tray-tabs-desktop';
+    nav.className='reward-tray-tabs';
     nav.setAttribute('aria-label','Reward certificates');
     nav.innerHTML=['inbox','sent','claimed'].map(tabHtml).join('');
     top.insertBefore(nav,spacer||actions||top.firstChild);
   }
 
-  if(!qs('.reward-tray-subheader')){
-    const sub=document.createElement('nav');
-    sub.className='reward-tray-subheader';
-    sub.setAttribute('aria-label','Reward certificates mobile');
-    sub.innerHTML=['inbox','sent','claimed'].map(tabHtml).join('');
-    top.insertAdjacentElement('afterend',sub);
-  }
   document.body.classList.add('reward-tray-ready');
 }
 

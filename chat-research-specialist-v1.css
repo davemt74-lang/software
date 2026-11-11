@@ -24,7 +24,12 @@
   pointer-events: auto;
 }
 @media (min-width: 761px) {
-  body:has(#sfOnlineRailV109:not([hidden]) [data-chat-specialist="research"]) .vp3-chat-research-specialist-status {
+  body:has(#sfOnlineRailV109:not([hidden]) [data-chat-specialist-type="research"]:not([hidden])) .vp3-chat-research-specialist-status {
+    display: none;
+  }
+}
+@media (max-width: 820px) {
+  body:has(#chatSidebar[data-chat-mobile-specialists-ready]) .vp3-chat-research-specialist-status {
     display: none;
   }
 }

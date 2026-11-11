@@ -156,7 +156,7 @@
   function specialistSnapshot() {
     const entries = window.VP3AgentOrb?.activitySpecialists?.() || window.VP3ChatSpecialists?.snapshot?.() || [];
     return Array.isArray(entries) ? entries.slice(0,12).filter(item => typeof item?.key === 'string' &&
-      /^[a-z][a-z0-9-]{0,63}$/.test(item.key) && ['label','status','title','detail','viewLabel'].every(key =>
+      /^[a-z][a-z0-9-]{0,47}(?::[a-z0-9][a-z0-9-]{0,63})?$/.test(item.key) && ['label','status','title','detail','viewLabel'].every(key =>
         item[key] === undefined || typeof item[key] === 'string' && item[key].length <= 1200)) : [];
   }
   function renderSpecialists() {

@@ -13,13 +13,16 @@
   try { endpoint = new URL(cfg.endpoint, location.href); } catch (_error) { return; }
   if (endpoint.origin !== location.origin || endpoint.username || endpoint.password) return;
 
-  const specialistKey = 'research';
   const label = 'Research Specialist';
   const statuses = {
     queued: 'Waiting for the research worker',
     running: 'Researching public sources',
+    ready: 'Research is ready to report',
+    completed: 'Research is ready in Chat',
     failed: 'Research did not finish'
   };
+  let assignments = new Map();
+  const keyFor = id => `research:${id}`;
   const inline = document.createElement('div');
   inline.className = 'vp3-chat-research-specialist-status';
   inline.hidden = true;
@@ -32,7 +35,9 @@
   progress.setAttribute('aria-haspopup', 'dialog');
   progress.setAttribute('aria-expanded', 'false');
   progress.hidden = true;
-  progress.addEventListener('click', () => window.VP3ChatSpecialists?.open(specialistKey, progress));
+  progress.addEventListener('click', () => {
+    if (fallbackKey) window.VP3ChatSpecialists?.open(fallbackKey, progress);
+  });
   inline.append(inlineStatus, ' ', progress);
   composer.prepend(inline);
 
@@ -40,11 +45,12 @@
   let timer = 0;
   let leaseTimer = 0;
   let suspended = false;
-  let shown = '';
+  let fallbackKey = '';
 
+  const chatContinuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   function currentConversation() {
     const chat = window.STONEFELLOW_CHAT;
-    const continuity = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+    const continuity = chatContinuity();
     if (suspended || document.hidden || navigator.onLine === false || thread.dataset.view !== 'chat' ||
         Number(chat?.userId) !== ownerId || Number(chat?.agentId || 0) !== agentId ||
         chat?.workingAttentionBinding !== binding || continuity?.agentId?.() !== agentId ||
@@ -54,39 +60,61 @@
     return Number.isSafeInteger(conversationId) && conversationId > 0 ? conversationId : 0;
   }
 
-  function show(status) {
-    const running = status?.state === 'running';
-    const expiresAt = running ? Date.parse(status.lease_expires_at) : 0;
-    const valid = Number.isSafeInteger(status?.run_id) && status.run_id > 0 &&
-      (status.kind === 'topic' || status.kind === 'artist') && Object.hasOwn(statuses, status.state) &&
-      typeof status.subject === 'string' && status.subject.trim() && Array.from(status.subject).length <= 120 &&
-      (!running || expiresAt > Date.now());
-    const signature = valid ? JSON.stringify([status.run_id, status.state, status.kind, status.subject, expiresAt]) : '';
-    if (signature === shown) return;
-    shown = signature;
-    clearTimeout(leaseTimer);
-    progress.hidden = !signature || !running;
-    if (!signature || !running) window.VP3ChatSpecialists?.remove(specialistKey);
-    if (!signature) {
-      inline.hidden = true;
-      inlineStatus.textContent = '';
-      return;
+  function showResult(conversationId, messageId) {
+    if (currentConversation() !== conversationId) return;
+    const row = thread.querySelector(`[data-chat-message-id="${messageId}"][data-chat-conversation-id="${conversationId}"]`);
+    if (row) row.scrollIntoView({block:'center'});
+    else {
+      const chat = chatContinuity();
+      if (!chat?.isBusy?.()) void chat?.openConversation?.(conversationId,{messageId})?.catch(() => {});
     }
-    const caption = statuses[status.state];
-    const description = `${label} · ${caption} · ${status.subject}`;
+  }
+
+  function show(records, conversationId) {
+    const now = Date.now();
+    const next = new Map();
+    for (const status of records) {
+      const id = status?.run_id;
+      if (!Number.isSafeInteger(id) || id < 1 || next.has(id) ||
+          (status.kind !== 'topic' && status.kind !== 'artist') || !Object.hasOwn(statuses, status.state) ||
+          typeof status.subject !== 'string' || !status.subject.trim() || Array.from(status.subject).length > 120) continue;
+      const expiresAt = status.state === 'running' ? Date.parse(status.lease_expires_at) :
+        status.expires_at ? Date.parse(status.expires_at) : 0;
+      if ((status.state === 'running' || status.expires_at) && !(expiresAt > now)) continue;
+      const messageId = status.state === 'completed' ? status.message_id : 0;
+      if (status.state === 'completed' && (!assignments.has(id) || !Number.isSafeInteger(messageId) || messageId < 1)) continue;
+      const signature = JSON.stringify([status.state,status.kind,status.subject,expiresAt,messageId]);
+      const row = {status,expiresAt,signature};
+      next.set(id,row);
+      if (assignments.get(id)?.signature === signature) continue;
+      window.VP3ChatSpecialists?.update(keyFor(id), {
+        type:'research', state:status.state, label, title:status.subject, status:statuses[status.state], expiresAt,
+        desktop:status.state === 'running',
+        detail:status.kind === 'artist' ? 'Artist research' : 'Topic research',
+        ...(messageId ? {viewLabel:'View result', onView:() => showResult(conversationId,messageId)} : {})
+      });
+    }
+    for (const id of assignments.keys()) {
+      if (!next.has(id)) window.VP3ChatSpecialists?.remove(keyFor(id));
+    }
+    assignments = next;
+    clearTimeout(leaseTimer);
+    const deadline = Math.min(...[...next.values()].map(row => row.expiresAt || Infinity));
+    if (Number.isFinite(deadline)) leaseTimer = setTimeout(() => show([...next.values()].map(row => row.status),conversationId),
+      Math.max(0,deadline-Date.now()));
+    const fallback = [...next.values()].find(row => ['queued','running','failed'].includes(row.status.state))?.status;
+    fallbackKey = fallback ? keyFor(fallback.run_id) : '';
+    progress.hidden = fallback?.state !== 'running';
+    const description = fallback ? `${label} · ${statuses[fallback.state]} · ${fallback.subject}` : '';
     if (inlineStatus.textContent !== description) inlineStatus.textContent = description;
-    inline.hidden = false;
-    if (!running) return;
-    window.VP3ChatSpecialists?.update(specialistKey, {label, title: status.subject, status: caption, expiresAt,
-      detail: status.kind === 'artist' ? 'Artist research' : 'Topic research'});
-    leaseTimer = setTimeout(() => show(null), Math.max(0, expiresAt - Date.now()));
+    inline.hidden = !fallback;
   }
 
   function clear() {
     clearTimeout(timer);
     request?.abort();
     request = null;
-    show(null);
+    show([]);
   }
 
   async function read() {
@@ -108,18 +136,18 @@
       if (!current()) return;
       if (!response.ok || data?.ok !== true || data.owner_user_id !== ownerId || data.agent_id !== agentId ||
           data.conversation_id !== conversationId || data.working_attention_binding !== binding) {
-        show(null);
+        show([]);
         if (response.ok || response.status < 500) delay = 0;
         return;
       }
-      show(data.specialist);
-      delay = shown ? 5000 : 12000;
+      show(Array.isArray(data.specialists) ? data.specialists : [data.specialist],conversationId);
+      delay = assignments.size ? 5000 : 12000;
     } catch (_error) {
-      if (current()) show(null);
+      if (current()) show([]);
     } finally {
       clearTimeout(timeout);
       if (request === controller) {
-        if (!current()) show(null);
+        if (!current()) show([]);
         else if (delay) timer = setTimeout(read, delay);
         request = null;
       }

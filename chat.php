@@ -459,13 +459,11 @@ $cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href=
 
 $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialist-rail-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.css'),0,12))).'">'
     . '<script src="'.e(url('/chat-specialist-rail-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.js'),0,12))).'"></script>'
+    . '<script src="'.e(url('/chat-mobile-specialists-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-mobile-specialists-v1.js'),0,12))).'" defer></script>'
     . '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
     . '<script>window.VP3_CANVAS_MEDIA_V1='.json_encode(['endpoint'=>url('/api/chat-canvas-media-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-canvas-media-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.js'),0,12))).'"></script>';
-if ($youtubePdo && agent_connection_youtube_enabled_v1()
-    && agent_connection_youtube_consent_v1($youtubePdo,(int)$user['id'])
-    && (vp3_youtube_research_enabled_v1($youtubePdo,(int)$user['id'],'topic')
-        || vp3_youtube_research_enabled_v1($youtubePdo,(int)$user['id'],'artist'))
+if ($pdoForAgent && agent_brain_schema_ready() && has_permission('account.access',$user)
     && personal_capability_has_v242('agent_brain.access',$user) && personal_knowledge_available($user)) {
     $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-research-specialist-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-research-specialist-v1.css'),0,12))).'">'
         . '<script>window.VP3_CHAT_RESEARCH_SPECIALIST_V1='.json_encode([
@@ -614,7 +612,7 @@ $notificationDrawerRuntime = '<link rel="stylesheet" href="' . e(url('/agent-top
     . '<script data-brain-learning-history-v317 src="' . e(url('/chat-brain-learning-history-v317.js?v=' . $brainLearningBuild)) . '"></script>';
 
 $rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready')
-    ? '<link rel="stylesheet" data-reward-tray-v110 href="' . e(url('/reward-tray-v110.css?v=113-mobile-header-v114')) . '">'
+    ? '<link rel="stylesheet" data-reward-tray-v110 href="' . e(url('/reward-tray-v110.css?v=113-header-row')) . '">'
         . '<script data-reward-tray-config-v110>window.VP3_REWARD_TRAY_V110={endpoint:'
         . json_encode(url('/api/reward-tray-v110.php'),JSON_UNESCAPED_SLASHES)
         . ',csrf:' . json_encode(csrf_token(),JSON_UNESCAPED_SLASHES)
@@ -625,7 +623,7 @@ $rewardTrayRuntime = function_exists('campaigns_rewards_v110_schema_ready')
         ],JSON_UNESCAPED_SLASHES)
         . '};</script>'
         . '<script data-reward-qr-v110 src="' . e(url('/reward-qr-v110.js?v=113')) . '"></script>'
-        . '<script data-reward-tray-v110 src="' . e(url('/reward-tray-v110.js?v=113')) . '"></script>'
+        . '<script data-reward-tray-v110 src="' . e(url('/reward-tray-v110.js?v=113-header-row')) . '"></script>'
     : '';
 
 $runtime = $headerUiRuntime

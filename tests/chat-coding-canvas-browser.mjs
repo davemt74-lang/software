@@ -165,7 +165,7 @@ const panel = page.locator('#chatCodingCanvasV1');
 const status = panel.getByRole('status');
 const preview = panel.frameLocator('iframe');
 const launch = page.getByRole('button',{name:'Code / App Canvas',exact:true});
-const codingWorker = page.locator('[data-chat-specialist="coding"]');
+const codingWorker = page.locator('[data-chat-specialist][data-chat-specialist-type="coding"]');
 const mobileWorker = page.locator('.vp3-coding-canvas-worker');
 const workerPanel = page.getByRole('dialog',{name:'Coding Agent',exact:true});
 const codePrompt = panel.getByRole('textbox');
@@ -238,7 +238,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:-1}})));
   releaseResume();
   await resumedAfterClear;
-  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding')),false,'A delayed resume cannot restore owner progress across a participant change');
+  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot().some(item => item.key.startsWith('coding:'))),false,'A delayed resume cannot restore owner progress across a participant change');
   assert.equal(await input.inputValue(),'Keep my conversational draft');
 
   let beganAgentResume,releaseAgentResume;
@@ -254,7 +254,7 @@ try {
   releaseAgentResume();
   await (await staleAgentResponse).finished();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding')),false,'A delayed resume cannot paint the old Agent after the selected Agent changes');
+  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.snapshot().some(item => item.key.startsWith('coding:'))),false,'A delayed resume cannot paint the old Agent after the selected Agent changes');
   assert.equal(await panel.isHidden(),true);
   assert.equal(await input.inputValue(),'Keep my conversational draft');
   job = null;
@@ -286,7 +286,7 @@ try {
   const existingPreview = await panel.locator('iframe').elementHandle();
   job = {run_id:++jobNumber,conversation_id:42,canvas_id:'01234567-89ab-4cde-8f01-0123456789ac',state:'running',revision:null,model:{model:'background-coder'}};
   await page.evaluate(() => window.dispatchEvent(new Event('vp3:chat-history-updated')));
-  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key === 'coding' && item.title === 'background-coder'));
+  await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot().some(item => item.key.startsWith('coding:') && item.title === 'background-coder'));
   job = {...job,state:'ready',revision:1};
   await codingWorker.waitFor({state:'detached'});
   await status.getByText('Draft ready to test · background-coder',{exact:true}).waitFor();

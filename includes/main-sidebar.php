@@ -154,6 +154,16 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 >
   <div class="chat-sidebar-top">
     <a class="chat-brand" href="<?= e(url('/home.php')) ?>" aria-label="VP3 Home">VP3</a>
+    <?php if ($mainSidebarIsChat && $mainSidebarCanChat): ?>
+      <div class="vp3-chat-mobile-tabs" role="tablist" aria-label="Chat menu" hidden>
+        <button id="chatMobileHomeTab" type="button" role="tab" data-chat-mobile-tab="home" aria-label="Home menu" title="Home menu" aria-selected="true" aria-controls="chatMobileHomePanel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>
+        </button>
+        <button id="chatMobileSpecialistsTab" type="button" role="tab" data-chat-mobile-tab="specialists" aria-label="Specialists" title="Specialists" aria-selected="false" aria-controls="chatMobileSpecialistsPanel" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 7V3m-2 0h4M1 12v3m22-3v3M9 12h.01M15 12h.01M9 16h6"/></svg>
+        </button>
+      </div>
+    <?php endif; ?>
     <div class="vp3-homeserver-head-actions">
       <button class="vp3-homeserver-status" id="vp3HomeServerStatus" type="button" data-state="unpaired" data-status-url="<?= e(url('/api/homeserver-status.php')) ?>" data-csrf="<?= e(csrf_token()) ?>" aria-haspopup="dialog" aria-controls="vp3HomeServerModal" title="HomeServer status">
         <span class="vp3-homeserver-dot" aria-hidden="true"></span><span class="vp3-homeserver-status-label">HomeServer</span>
@@ -162,7 +172,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
     </div>
   </div>
 
-  <div class="chat-sidebar-sections">
+  <div class="chat-sidebar-sections"<?= $mainSidebarIsChat && $mainSidebarCanChat ? ' id="chatMobileHomePanel"' : '' ?>>
     <section class="chat-sidebar-nav-section" aria-label="VP3 workspace navigation">
       <nav class="chat-sidebar-nav agent-primary-nav" data-agent-primary-nav>
         <?php $lastPrimarySection=''; foreach ($mainSidebarPrimaryLinks as $link):
@@ -203,6 +213,14 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
       </section>
     <?php endif; ?>
   </div>
+
+  <?php if ($mainSidebarIsChat && $mainSidebarCanChat): ?>
+    <section class="vp3-chat-mobile-specialists" id="chatMobileSpecialistsPanel" data-chat-mobile-specialists role="tabpanel" aria-labelledby="chatMobileSpecialistsTab" hidden>
+      <h2>Specialists</h2>
+      <p data-chat-specialist-mobile-empty>No specialist activity in this chat.</p>
+      <ul data-chat-specialist-mobile-list></ul>
+    </section>
+  <?php endif; ?>
 
   <?php if ($mainSidebarUser): ?>
     <footer class="agent-sidebar-footer" data-agent-user-footer>

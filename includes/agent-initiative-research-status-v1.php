@@ -6,6 +6,7 @@ require_once __DIR__.'/agent-initiative-artist-v1.php';
 require_once __DIR__.'/agent-initiative-tools-v1.php';
 require_once __DIR__.'/agent-initiative-task-research-v1.php';
 require_once __DIR__.'/agent-initiative-transcript-research-v1.php';
+require_once __DIR__.'/agent-initiative-research-canvas-v1.php';
 
 /** Read only the reportable research lane of the exact saved policy. */
 function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $agentId,array $policy,int $now): array
@@ -21,30 +22,75 @@ function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $a
     $report=$json('r.goal','$.report');
     $true=$sqlite?'1':"'true'";
     $stmt=$pdo->prepare("SELECT r.id AS run_id,r.goal,r.status AS run_status,r.lease_expires_at,
-        a.id AS action_id,a.result_json,a.completed_at AS action_completed_at
+        a.id AS action_id,a.attempt_count,a.result_json,a.completed_at AS action_completed_at
         FROM agent_workflow_runs r JOIN agent_workflow_actions a
             ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id AND a.sequence_no=1
             AND a.action_key='initiative.prepare' AND a.capability_key='initiative.prepare' AND a.execution_target='cloud'
         WHERE r.owner_user_id=? AND CAST(COALESCE(r.agent_id,0) AS CHAR)=?
-            AND r.source_kind='agent_initiative' AND r.capability_key='initiative.prepare' AND r.execution_target='cloud'
+            AND r.workflow_type='initiative' AND r.source_kind='agent_initiative'
+            AND r.capability_key='initiative.prepare' AND r.execution_target='cloud'
             AND CAST($conversation AS CHAR)=? AND $revision=?
             AND $tool IN ('topic.research','artist.research') AND $report=$true
             AND ((r.status='executing' AND a.status='executing' AND r.current_action_id=a.id AND r.lease_expires_at>?)
                 OR (r.status IN ('queued','approved') AND a.status='queued')
-                OR (r.status='failed' AND a.status='failed' AND a.completed_at>=?))
-        ORDER BY CASE r.status WHEN 'executing' THEN 0 WHEN 'failed' THEN 2 ELSE 1 END,r.id DESC LIMIT 8");
+                OR (r.status='failed' AND a.status='failed' AND a.completed_at>=?)
+                OR (r.status='completed' AND a.status='completed' AND (a.completed_at>=? OR a.updated_at>=?)))
+        ORDER BY CASE r.status WHEN 'executing' THEN 0 WHEN 'failed' THEN 2 WHEN 'completed' THEN 3 ELSE 1 END,r.id DESC LIMIT 8");
+    $recent=gmdate('Y-m-d H:i:s',$now-120);
     $stmt->execute([$owner,(string)$agentId,(string)$policy['conversation_id'],$policy['revision'],
-        gmdate('Y-m-d H:i:s',$now),gmdate('Y-m-d H:i:s',$now-120)]);
+        gmdate('Y-m-d H:i:s',$now),$recent,$recent,$recent]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-function vp3_initiative_research_status_failed_v1(PDO $pdo,int $owner,array $row): bool
+function vp3_initiative_research_status_receipt_v1(PDO $pdo,int $owner,array $row): bool
 {
     $stmt=$pdo->prepare('SELECT status,result_json FROM agent_workflow_receipts
-        WHERE owner_user_id=? AND run_id=? AND action_id=? ORDER BY id DESC LIMIT 1');
-    $stmt->execute([$owner,(int)$row['run_id'],(int)$row['action_id']]);
+        WHERE owner_user_id=? AND run_id=? AND action_id=? AND attempt_no=? AND executor=\'cloud\'
+        ORDER BY id DESC LIMIT 1');
+    $stmt->execute([$owner,(int)$row['run_id'],(int)$row['action_id'],(int)$row['attempt_count']]);
     $receipt=$stmt->fetch(PDO::FETCH_ASSOC);
-    return ($receipt['status']??null)==='failed'&&($receipt['result_json']??null)===$row['result_json'];
+    return ($receipt['status']??null)===$row['run_status']
+        &&($receipt['result_json']??null)===$row['result_json'];
+}
+
+/** Only the exact worker receipt and linked saved Chat result can establish completion. */
+function vp3_initiative_research_status_completion_v1(PDO $pdo,int $owner,int $agentId,int $cid,array $row,array $goal,int $now): ?array
+{
+    if(!is_string($row['result_json'])||!vp3_initiative_research_status_receipt_v1($pdo,$owner,$row))return null;
+    $result=json_decode($row['result_json'],true);
+    $toolResult=$result['initiative_tool_result']??null;
+    $research=is_array($toolResult)?vp3_initiative_research_tool_result_v1($toolResult):null;
+    $output=$research['output']??null;
+    $kind=$goal['tool']==='artist.research'?'artist':'topic';
+    if(($result['effect_state']??null)!=='private_draft_ready'||$research===null
+        ||($output['type']??null)!=='initiative_'.$kind.'_research'
+        ||($output['source_ref']??null)!==$goal['primary']
+        ||($output['source_revision']??null)!==$goal['sources'][$goal['primary']]
+        ||!empty($output['public_topic_unavailable'])
+        ||($result['initiative_draft']??null)!==$research['draft'])return null;
+    $delivery=$result['initiative_delivery']??null;
+    if($delivery==='pending'){
+        $ended=vp3_top_of_mind_lease_time_v1($row['action_completed_at']);
+        return $ended>$now-120&&$ended<=$now?['state'=>'ready','expires_at'=>gmdate(DATE_ATOM,$ended+120)]:null;
+    }
+    $messageId=filter_var($result['initiative_message_id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+    if($delivery!=='delivered'||$messageId===false)return null;
+    $stmt=$pdo->prepare("SELECT message,context_json,created_at FROM chat_messages
+        WHERE id=? AND conversation_id=? AND role='assistant' LIMIT 1");
+    $stmt->execute([$messageId,$cid]);
+    $message=$stmt->fetch(PDO::FETCH_ASSOC);
+    if(!$message)return null;
+    $posted=vp3_top_of_mind_lease_time_v1($message['created_at']);
+    if($posted<=$now-120||$posted>$now)return null;
+    $context=json_decode((string)$message['context_json'],true);
+    $runId=(int)$row['run_id'];
+    if(($context['source']??null)!=='agent_initiative'||($context['initiative_run_id']??null)!==$runId
+        ||($context['initiative_work']['owner_user_id']??null)!==$owner
+        ||($context['initiative_work']['agent_id']??null)!==$agentId
+        ||($context['initiative_work']['conversation_id']??null)!==$cid
+        ||($context['initiative_work']['run_id']??null)!==$runId
+        ||vp3_initiative_research_canvas_card_v1($goal,$result,$context,$message['message'])===null)return null;
+    return ['state'=>'completed','message_id'=>$messageId,'expires_at'=>gmdate(DATE_ATOM,$posted+120)];
 }
 
 /** Current private Chat status only. Polling neither starts work nor delivers it. */
@@ -53,7 +99,7 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
     return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$cid):array{
         $context=vp3_initiative_runtime_context_v1($pdo,$user,$agentId,$cid);
         $live=$context['user'];$policy=$context['policy'];$owner=(int)$live['id'];
-        $status=['owner_user_id'=>$owner,'agent_id'=>$agentId,'conversation_id'=>$cid,'specialist'=>null];
+        $status=['owner_user_id'=>$owner,'agent_id'=>$agentId,'conversation_id'=>$cid,'specialist'=>null,'specialists'=>[]];
         if(($policy['enabled']??false)!==true||($policy['conversation_id']??null)!==$cid)return $status;
         $live=vp3_initiative_access_v1($pdo,$live,$policy);
         $now=time();$candidates=[];$refs=[];
@@ -73,8 +119,13 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
                 $item['state']='running';$item['lease_expires_at']=gmdate(DATE_ATOM,$expires);
             }elseif($row['run_status']==='failed'){
                 $ended=vp3_top_of_mind_lease_time_v1($row['action_completed_at']);
-                if($ended<=$now-120||$ended>$now||!vp3_initiative_research_status_failed_v1($pdo,$owner,$row))continue;
+                if($ended<=$now-120||$ended>$now||!vp3_initiative_research_status_receipt_v1($pdo,$owner,$row))continue;
                 $expires=$ended+120;$item['state']='failed';
+            }elseif($row['run_status']==='completed'){
+                $completion=vp3_initiative_research_status_completion_v1($pdo,$owner,$agentId,$cid,$row,$goal,$now);
+                if($completion===null)continue;
+                $item=array_replace($item,$completion);
+                $expires=strtotime($item['expires_at']);
             }
             $candidates[]=['primary'=>$primary,'revision'=>$sources[$primary],'expires'=>$expires,'item'=>$item];
             $refs[$primary]=true;
@@ -102,8 +153,10 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
                 ||!agent_connection_youtube_consent_v1($pdo,$owner)||!vp3_youtube_research_enabled_v1($pdo,$owner,$item['kind']))continue;
             $subject=vp3_top_of_mind_text_v1($source['title']??null,120);
             if($subject==='')continue;
-            $status['specialist']=$item+['subject'=>$subject];
-            break;
+            $item['subject']=$subject;
+            if($status['specialist']===null&&in_array($item['state'],['queued','running','failed'],true))$status['specialist']=$item;
+            if($item['state']==='failed')$item['expires_at']=gmdate(DATE_ATOM,$candidate['expires']);
+            $status['specialists'][]=$item;
         }
         return $status;
     });

@@ -21,7 +21,7 @@ $memberHeaderTitle='';
 $memberHeaderSubtitle='';
 $memberHeaderShowTitle=false;
 $memberHeaderActions='';
-$memberHeaderLeadingHtml='<nav id="rewardTrayTabs" class="reward-tray-tabs reward-tray-tabs-desktop" aria-label="Reward certificates">'
+$memberHeaderLeadingHtml='<nav id="rewardTrayTabs" class="reward-tray-tabs" aria-label="Reward certificates">'
     .implode('',array_map(static function(string $key)use($bucket,$routes,$labels):string{
         $active=$key===$bucket;
         return '<a class="reward-tray-tab'.($active?' active':'').'" href="'.e($routes[$key]).'" data-reward-tray-tab="'.e($key).'"'.($active?' aria-current="page"':'').'>'.strtoupper($labels[$key]).' <span class="reward-tray-count" data-reward-count="'.e($key).'">0</span></a>';
@@ -36,7 +36,7 @@ $memberHeaderLeadingHtml='<nav id="rewardTrayTabs" class="reward-tray-tabs rewar
 <meta name="theme-color" content="#f7f7f8">
 <title>VP3 | Rewards · <?= e($labels[$bucket]) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" data-reward-tray-v113 href="<?= e(url('/reward-tray-v110.css?v=113-mobile-header-v114')) ?>">
+<link rel="stylesheet" data-reward-tray-v113 href="<?= e(url('/reward-tray-v110.css?v=113-header-row')) ?>">
 </head>
 <body class="reward-page reward-tray-ready" data-reward-page="<?= e($bucket) ?>">
 <div class="chat-app">
@@ -48,11 +48,6 @@ require __DIR__.'/workspace-sidebar-v82.php';
 <div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
 <main class="chat-main reward-page-main" data-reward-page-main>
 <?php require __DIR__.'/member-header.php'; ?>
-<nav class="reward-tray-subheader" aria-label="Reward certificates mobile">
-<?php foreach(['inbox','sent','claimed'] as $key): $active=$key===$bucket; ?>
-<a class="reward-tray-tab<?= $active?' active':'' ?>" href="<?= e($routes[$key]) ?>" data-reward-tray-tab="<?= e($key) ?>"<?= $active?' aria-current="page"':'' ?>><?= e(strtoupper($labels[$key])) ?> <span class="reward-tray-count" data-reward-count="<?= e($key) ?>">0</span></a>
-<?php endforeach; ?>
-</nav>
 <section id="rewardTrayCanvas" class="reward-tray-canvas reward-page-canvas">
 <?php if(!$schemaReady): ?>
 <div id="rewardTrayStatus" class="reward-tray-status error">Rewards needs the latest VP3 database upgrade.<?php if(user_has_role('admin',$user)): ?> <a href="<?= e(url('/upgrade.php')) ?>">Run upgrade</a>.<?php endif; ?></div>
@@ -72,6 +67,6 @@ require __DIR__.'/workspace-sidebar-v82.php';
     'autoClaimPublicId'=>$autoClaimPublicId,
 ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script>
 <script data-reward-qr-v113 src="<?= e(url('/reward-qr-v110.js?v=113')) ?>"></script>
-<script data-reward-tray-v113 src="<?= e(url('/reward-tray-v110.js?v=114-voucher-foundation')) ?>"></script>
+<script data-reward-tray-v113 src="<?= e(url('/reward-tray-v110.js?v=114-voucher-foundation-header-row')) ?>"></script>
 </body>
 </html>
