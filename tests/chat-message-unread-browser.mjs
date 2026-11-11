@@ -5,7 +5,7 @@ import {chromium} from 'playwright';
 const root = new URL('../',import.meta.url);
 const sources = Object.fromEntries(await Promise.all(['chat.js','chat-message-unread-v1.js','chat-message-unread-v1.css','chat-voice.js']
   .map(async name => [name,await fs.readFile(new URL(name,root),'utf8')])));
-const browser = await chromium.launch({headless:true,
+const browser = await chromium.launch({headless:true,ignoreDefaultArgs:['--hide-scrollbars'],
   ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? {executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH} : {})});
 const context = await browser.newContext({viewport:{width:1000,height:720}});
 const origin = 'https://chat-message-read.test';
@@ -109,11 +109,35 @@ const page = await context.newPage();
 observe(page);
 const badge = id => page.locator(`[data-chat-message-id="${id}"] [data-chat-message-new]`);
 const overlay = async shown => page.evaluate(shown => { document.getElementById('readingOverlay').hidden = !shown; },shown);
+async function wheelChat(targetPage,deltaY) {
+  const thread = targetPage.locator('#chatThread');
+  const box = await thread.boundingBox();
+  const delta = deltaY ?? await thread.evaluate(node => node.scrollTop > 0 ? -36 : 36);
+  await targetPage.mouse.move(box.x + box.width / 2,box.y + box.height / 2);
+  await targetPage.mouse.wheel(0,delta);
+}
+async function touchScrollChat(targetPage) {
+  const client = await context.newCDPSession(targetPage);
+  try {
+    await client.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+    const box = await targetPage.locator('#chatThread').boundingBox();
+    const x = Math.round(box.x + box.width / 2);
+    const y = Math.round(box.y + box.height / 2);
+    await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y+48}]});
+    await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  } finally {
+    await client.detach();
+  }
+}
+const acknowledges = (request,id) => request.method() === 'POST'
+  && new URL(request.url()).pathname === '/api/agent-chat-read-v1.php'
+  && request.postDataJSON().message_ids.includes(id);
 const refresh = () => page.evaluate(() => window.VP3_CHAT_MESSAGE_UNREAD.refresh());
 const sync = () => page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.syncConversation(42));
-const addAssistant = text => {
+const addAssistant = (text, context) => {
   const id = ++nextId;
-  history.get(42).push({id,role:'assistant',message:text});
+  history.get(42).push({id,role:'assistant',message:text,...(context ? {context_json:JSON.stringify(context)} : {})});
   return id;
 };
 
@@ -134,20 +158,45 @@ try {
   const savedTypedId = Number(await page.locator('.message.assistant').last().getAttribute('data-chat-message-id'));
   assert.ok(savedTypedId >= typedId);
   await badge(savedTypedId).waitFor();
-  await page.waitForTimeout(1400);
+  await page.evaluate(() => {
+    document.getElementById('readingOverlay').addEventListener('wheel',event => {
+      window.overlayReceivedWheel = event.isTrusted;
+    },{once:true,passive:true});
+  });
+  await wheelChat(page);
+  await page.waitForFunction(() => window.overlayReceivedWheel === true);
   assert.ok(!read.has(savedTypedId));
   assert.equal(await page.evaluate(() => window.speechCalls),0);
   console.log('PASS a direct typed response binds its persisted ID and stays NEW behind a covering UI');
 
-  failAck = true;
   await overlay(false);
-  await page.waitForRequest(req => req.method() === 'POST' && new URL(req.url()).pathname === '/api/agent-chat-read-v1.php');
+  await page.evaluate(() => {
+    const thread = document.getElementById('chatThread');
+    thread.scrollTop = 0;
+    thread.scrollTop = thread.scrollHeight;
+    thread.dispatchEvent(new WheelEvent('wheel',{bubbles:true,deltaY:36}));
+  });
+  await page.locator('#chatInput').press('ArrowDown');
+  await page.waitForTimeout(1400);
+  assert.equal(calls.filter(call => call.method === 'POST').length,0);
+  assert.ok(!read.has(savedTypedId));
+  assert.equal(await badge(savedTypedId).count(),1,JSON.stringify({errors,calls}));
+  console.log('PASS focused visibility, programmatic movement, synthetic wheel and a composer key leave NEW in place');
+
+  failAck = true;
+  const failedAck = page.waitForResponse(response => acknowledges(response.request(),savedTypedId));
+  await wheelChat(page);
+  assert.equal((await failedAck).status(),503);
   await badge(savedTypedId).waitFor();
   assert.ok(!read.has(savedTypedId));
   failAck = false;
+  await page.waitForTimeout(5200);
+  assert.equal(calls.filter(call => call.method === 'POST' && call.ids.includes(savedTypedId)).length,1);
+  await badge(savedTypedId).waitFor();
+  await wheelChat(page);
   await badge(savedTypedId).waitFor({state:'detached',timeout:8000});
   assert.ok(read.has(savedTypedId));
-  console.log('PASS NEW clears only after the visible message receives a successful server acknowledgement');
+  console.log('PASS a user scroll clears NEW only after a successful server acknowledgement');
 
   await overlay(true);
   interleaveNext = true;
@@ -174,10 +223,37 @@ try {
   assert.equal(await badge(systemId).count(),0);
   assert.ok(calls.every(call => !call.ids.includes(systemId)));
   await overlay(false);
+  await wheelChat(page);
   await badge(sparseIds.at(-1)).waitFor({state:'detached'});
   assert.ok(!read.has(sparseIds[0]));
   await badge(sparseIds[0]).waitFor();
-  console.log('PASS only visible worker posts are acknowledged while earlier offscreen posts remain NEW');
+  console.log('PASS scrolling acknowledges visible worker posts while earlier offscreen posts remain NEW');
+
+  const gmailId = addAssistant('Your Gmail inbox update is ready.',{source:'agent_connection_gmail_inbox_update'});
+  await sync();
+  await refresh();
+  await badge(gmailId).waitFor();
+  await page.waitForTimeout(1400);
+  assert.ok(!read.has(gmailId));
+  await wheelChat(page,36);
+  await badge(gmailId).waitFor({state:'detached'});
+  assert.ok(read.has(gmailId));
+  console.log('PASS an arriving Gmail update stays NEW until a fresh wheel gesture at the bottom of Chat');
+
+  const scrollbarId = addAssistant('A new post while using the native scrollbar');
+  await sync();
+  await refresh();
+  await badge(scrollbarId).waitFor();
+  const track = await page.locator('#chatThread').evaluate(node => {
+    const bounds = node.getBoundingClientRect();
+    const contentRight = bounds.left + node.clientLeft + node.clientWidth;
+    return {x:(contentRight + bounds.right - 1)/2,y:bounds.top + 16,width:bounds.right - 1 - contentRight};
+  });
+  assert.ok(track.width > 0,'The native vertical scrollbar must be visible.');
+  await page.mouse.click(track.x,track.y);
+  await badge(scrollbarId).waitFor({state:'detached'});
+  assert.ok(read.has(scrollbarId));
+  console.log('PASS a native scrollbar track click acknowledges the visible post when the viewport moves');
 
   await page.reload();
   await page.getByText('Worker result 5',{exact:true}).waitFor();
@@ -194,6 +270,7 @@ try {
   const threadBox = await page.locator('#chatThread').boundingBox();
   assert.ok(headerBox.y < threadBox.y);
   await overlay(false);
+  await wheelChat(page);
   await badge(longId).waitFor({state:'detached'});
   assert.ok(read.has(longId));
   assert.ok(!read.has(sparseIds[0]));
@@ -250,6 +327,7 @@ try {
   await sync();
   await refresh();
   await badge(mobileId).waitFor();
+  await wheelChat(page);
   await page.waitForTimeout(1500);
   assert.ok(!read.has(mobileId),JSON.stringify({old:await page.evaluate(() => ({hidden:document.hidden,focus:document.hasFocus()})),
     sibling:await sibling.evaluate(() => ({hidden:document.hidden,focus:document.hasFocus(),covered:!document.getElementById('readingOverlay').hidden})),
@@ -257,10 +335,12 @@ try {
   await sibling.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.syncConversation(42));
   await sibling.locator(`[data-chat-message-id="${mobileId}"] [data-chat-message-new]`).waitFor();
   await sibling.evaluate(() => { document.getElementById('readingOverlay').hidden = true; });
+  await sibling.bringToFront();
+  await touchScrollChat(sibling);
   await sibling.locator(`[data-chat-message-id="${mobileId}"] [data-chat-message-new]`).waitFor({state:'detached'});
   await page.waitForFunction(id => !document.querySelector(`[data-chat-message-id="${id}"] [data-chat-message-new]`),mobileId);
   assert.ok(read.has(mobileId));
-  console.log('PASS a hidden mobile tab retains NEW until another visible tab confirms viewing the exact post');
+  console.log('PASS a hidden mobile tab retains NEW until a touch scroll in another visible tab confirms viewing the exact post');
   await sibling.close();
 
   await page.bringToFront();
@@ -369,11 +449,13 @@ try {
     window.VP3ConversationControls.stop();
     document.getElementById('readingOverlay').hidden = true;
   });
+  await streamed.locator('#chatThread').focus();
+  await streamed.keyboard.press('PageDown');
   await streamedMessage.locator('[data-chat-message-new]').waitFor({state:'detached'});
   assert.ok(read.has(streamedId));
   assert.equal(await streamed.evaluate(() => window.speechCalls),speechBeforeRead);
   assert.deepEqual(errors,[]);
-  console.log('PASS a confirmed NDJSON reply uses the canonical saved-message renderer and read acknowledgement creates no speech');
+  console.log('PASS a confirmed NDJSON reply clears NEW on keyboard scrolling without replaying speech');
 } finally {
   await browser.close();
 }

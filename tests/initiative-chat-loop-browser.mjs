@@ -14,7 +14,7 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
-async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason='',activeJobs=[],returnDigest=null,noBriefButton=false}={}){
+async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initialConversationId=42,presentationUnavailable=false,initialDraft=false,runtimeUnavailable=false,omitRuntime=false,failedTickReason='',activeJobs=[],returnDigest=null,noBriefButton=false,debugHealth={}}={}){
   const context=await browser.newContext();
   const pages=[],errors=[],reads=[],ticks=[],settings=[],activities=[],digestActions=[],githubClaims=[];
   let githubVoice=null;
@@ -26,7 +26,7 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
     paused:exists&&!policy,policy_exists:exists,
     agent_id:agentId,conversation_id:cid,policy_revision:runtimeUnavailable?'':policyRevision,configuration_ready:!runtimeUnavailable,execution_ready:!runtimeUnavailable&&policy&&!blockedReason&&cid===policyCid,
     knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen',
-    active_jobs:!runtimeUnavailable&&policy&&cid===policyCid?activeJobs:[]});
+    active_jobs:!runtimeUnavailable&&policy&&cid===policyCid?activeJobs:[], ...debugHealth});
   await context.addInitScript(()=>{
     window.speechCalls=0;window.announcementCalls=0;
     window.SpeechRecognition=undefined;window.webkitSpeechRecognition=undefined;
@@ -263,6 +263,71 @@ try{
   }
   console.log('PASS an authenticated HTTP 200 failed assessment renders its actual verified status');
 
+  const debug=await fixture(17,{enabled:true,failedTickReason:'assessment_unverified',debugHealth:{
+    state:'failed',reason:'assessment_unverified',
+    route:'vp3_cloud',runner_state:'fresh',runner_last_success_at:'2026-11-11T19:30:21+00:00',
+    last_checked_at:'2026-11-11T19:30:26+00:00',
+    last_assessment:{outcome:'assignments_queued',queued:1,at:'2026-11-11T19:25:00+00:00',source:'PRIVATE_SOURCE'},
+    assessment_error:{code:'invalid_json',at:'2026-11-11T19:30:28+00:00',output_bytes:801,answer:'PRIVATE_MODEL_ANSWER'},
+    private_config:'PRIVATE_CONFIG'
+  }});
+  try{
+    const page=await debug.open();
+    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const pressZ=async()=>{ for(let i=0;i<3;i++) await page.keyboard.press('z'); };
+    await page.setViewportSize({width:360,height:640});
+    await page.addStyleTag({content:await fs.readFile(new URL('../chat-cognitive-presentation-v510.css',import.meta.url),'utf8')});
+    await page.locator('[data-agent-initiative-status]').getByText('The last assessment did not produce a verified plan.',{exact:true}).waitFor();
+    assert.equal(await panel.count(),0);
+    const composer=page.locator('#chatInput');
+    await composer.focus();
+    await pressZ();
+    assert.equal(await composer.inputValue(),'zzz');
+    assert.equal(await panel.count(),0);
+    await composer.blur();
+    await page.keyboard.down('z');
+    await page.keyboard.down('z');
+    await page.keyboard.down('z');
+    await page.keyboard.up('z');
+    assert.equal(await panel.count(),0);
+    await page.keyboard.press('z');
+    await page.keyboard.press('z');
+    await page.clock.fastForward(751);
+    await page.keyboard.press('z');
+    assert.equal(await panel.count(),0);
+    await page.keyboard.press('Control+z');
+    await pressZ();
+    const bounds=await panel.boundingBox();
+    assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=360&&bounds.y+bounds.height<=640);
+    const report=await panel.locator('pre').textContent();
+    assert.match(report,/Reason: assessment_unverified/);
+    assert.match(report,/Route: vp3_cloud/);
+    assert.match(report,/Server worker: fresh/);
+    assert.match(report,/Sources last checked: (?!—)/);
+    assert.match(report,/Last verified assessment: assignments_queued/);
+    assert.match(report,/Assessment rejection: invalid_json/);
+    assert.match(report,/Planner response bytes: 801/);
+    assert.doesNotMatch(report,/PRIVATE_|owner-a|fixture|a{32}/);
+    await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{ window.copiedDebug=text; }}}));
+    await panel.getByRole('button',{name:'Copy',exact:true}).click();
+    await panel.getByRole('status').getByText('Copied.').waitFor();
+    assert.equal(await page.evaluate(()=>window.copiedDebug),'Initiative Debug\n'+report);
+    await pressZ();
+    assert.equal(await panel.count(),0);
+    await pressZ();
+    await panel.getByRole('button',{name:'Close',exact:true}).click();
+    assert.equal(await panel.count(),0);
+    await pressZ();
+    assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43)),true);
+    await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===43);
+    assert.equal(await panel.count(),0);
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:9}})));
+    await pressZ();
+    assert.equal(await panel.count(),0);
+    assert.deepEqual(debug.errors,[]);
+    console.log('PASS Initiative Debug toggles with zzz, preserves text editing, copies only scoped diagnostics, and clears on Chat and participant changes');
+  }finally{await debug.context.close();}
+
   const expiresAt=Date.now()+240000;
   const running=await fixture(17,{enabled:true,noBriefButton:true,activeJobs:[
     {id:'workflow:71',expiresAt,kind:'assessment',step:'Considering current opportunities',private_detail:'Never send this to the orb'},
@@ -486,10 +551,17 @@ try{
   const newAfterSaved=await fixture(17,{enabled:true});
   try{
     const page=await newAfterSaved.open();
+    const debugPanel=page.getByRole('region',{name:'Initiative Debug'});
+    for(let i=0;i<3;i++) await page.keyboard.press('z');
+    await debugPanel.getByText('Server worker:',{exact:false}).waitFor();
     await page.waitForFunction(()=>!document.querySelector('[data-agent-worker-details] .vp3-orb-initiative-actions button')?.disabled);
     const before=newAfterSaved.ticks.length;
     await page.getByRole('button',{name:'New Chat',exact:true}).click();
     await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===0);
+    assert.equal(await debugPanel.count(),0);
+    await page.locator('#chatInput').blur();
+    for(let i=0;i<3;i++) await page.keyboard.press('z');
+    assert.equal(await debugPanel.locator('pre').textContent(),'Send a message to save this Chat and start background work.');
     await page.clock.fastForward(35000);
     assert.equal(newAfterSaved.activities.at(-1).context.conversation_id,0,'New Chat must not reuse the rendered old saved conversation');
     assert.equal(newAfterSaved.ticks.length,before);

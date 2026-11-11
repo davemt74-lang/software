@@ -66,16 +66,34 @@ scope_check(count($sources)===3 && isset($sourceByItem['public-guidance'], $sour
     'an enabled owner’s older saved plugin findings are eligible with no open slideout');
 
 $before = count(scope_runs(1, 17, 'initiative.prepare'));
+$ref = $sourceByItem['public-guidance'];
+vp3_initiative_in_scope_v1($user,17,static fn()=>vp3_initiative_schedule_scoped_v1($pdo,$user,[$ref]));
+$fallbackPlan = (int)array_slice(scope_runs(1,17,'initiative.plan'),-1)[0]['id'];
+$fallbackPlanned = vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$fallbackPlan),
+    static function(string $prompt,string $protocol)use($ref):string{
+        $input=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
+        scope_check($protocol==='vp3.initiative-plan.v1'&&($input['tools']['topic.research']['source_refs']??null)===[$ref],
+            'an exact saved transcript question is eligible for the normal assessment');
+        return '{"jobs":[],"opportunities":[]}';
+    });
+$fallbackRuns = array_slice(scope_runs(1,17,'initiative.prepare'),$before);
+$fallbackGoal = json_decode((string)($fallbackRuns[0]['goal']??'{}'),true,24,JSON_THROW_ON_ERROR);
+scope_check($fallbackPlanned['ok']&&count($fallbackRuns)===1&&($fallbackGoal['tool']??null)==='topic.research'
+    && ($fallbackGoal['primary']??null)===$ref&&($fallbackGoal['sources']??null)===[$ref=>$sources[$ref]['revision']]
+    && ($fallbackGoal['report']??null)===true,
+    'an empty model assessment admits one exact authorized transcript research job');
+
+$remaining = array_diff_key($sourceByItem,['public-guidance'=>true]);
 $planId = scope_make_plan($user, 17, 'Transcript research pipeline fixture');
 $planned = vp3_initiative_execute_v1($pdo, $user, scope_claim($user, $planId),
-    static function (string $prompt, string $protocol) use ($sourceByItem): string {
+    static function (string $prompt, string $protocol) use ($remaining,$ref): string {
         $input = json_decode($prompt, true, 32, JSON_THROW_ON_ERROR);
         $eligible = $input['tools']['topic.research']['source_refs'] ?? [];
-        scope_check($protocol==='vp3.initiative-plan.v1' && !array_diff($sourceByItem, $eligible),
-            'the real assessment offers public research for the exact saved plugin sources');
+        scope_check($protocol==='vp3.initiative-plan.v1' && !array_diff($remaining, $eligible) && !in_array($ref,$eligible,true),
+            'the normal assessment still offers exact saved plugin sources and excludes active research');
         $jobs = [];
-        foreach ($sourceByItem as $ref) {
-            $jobs[] = ['tool'=>'topic.research', 'primary'=>$ref, 'refs'=>[$ref],
+        foreach ($remaining as $primary) {
+            $jobs[] = ['tool'=>'topic.research', 'primary'=>$primary, 'refs'=>[$primary],
                 'focus'=>'Use the private Supplier Delta quote', 'report'=>true];
         }
         return json_encode(['jobs'=>$jobs], JSON_THROW_ON_ERROR);
@@ -87,9 +105,8 @@ foreach ($runs as $run) {
     $runBySource[$goal['primary']] = (int)$run['id'];
 }
 scope_check($planned['ok'] && count($runs)===3 && !array_diff($sourceByItem, array_keys($runBySource)),
-    'the assessment queues three leased jobs tied to their saved findings');
+    'model selections and the bounded fallback share the exact leased research queue');
 
-$ref = $sourceByItem['public-guidance'];
 $otherRef = 'transcript-research:940203:'.str_repeat('a',64);
 $duplicate = array_replace($sources[$ref],['ref'=>$otherRef,'revision'=>str_repeat('b',64)]);
 scope_check(vp3_initiative_unassigned_transcript_research_v1($pdo,1,$binding,$sources+[$otherRef=>$duplicate])===[],

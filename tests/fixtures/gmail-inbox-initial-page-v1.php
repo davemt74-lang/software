@@ -35,6 +35,12 @@ function agent_connection_gmail_inbox_policy_v1(PDO $pdo, int $owner): array
         'last_review_json'=>isset($GLOBALS['fixtureReview']['chat_result']['latest'])?'{}':''];
 }
 
+function agent_connection_gmail_inbox_background_status_v1(PDO $pdo, array $user, bool $includeResults = true): ?array
+{
+    if ($includeResults) throw new RuntimeException('Connections only needs check status here.');
+    return $GLOBALS['fixtureReview']['inbox_background'] ?? null;
+}
+
 function agent_connection_gmail_inbox_latest_view_v1(PDO $pdo, array $user, string $revision): ?array
 {
     if ($revision !== str_repeat('b',32)) throw new RuntimeException('Latest review requires the rendered grant.');

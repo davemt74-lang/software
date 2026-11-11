@@ -9,7 +9,7 @@ const endpoint = '/api/gmail-inbox-initial-v1.php';
 const emailEndpoint = '/api/chat-email-v1.php';
 const runId = 'a'.repeat(32);
 const startToken = 'b'.repeat(64);
-const privateSubject = 'Private budget <img src=x onerror=alert(1)>';
+const privateSubject = 'Urgent private budget <img src=x onerror=alert(1)>';
 const privateSummary = 'The sampled subjects suggest billing <b>follow-up</b>.';
 const privateBody = 'Exact saved message body <img src=x onerror=alert(1)>.';
 const firstRef = 'c'.repeat(64);
@@ -17,10 +17,11 @@ const latestRef = 'd'.repeat(64);
 const reportRef = 'e'.repeat(64);
 const legacyRef = 'f'.repeat(64);
 const savedMessageId = 50;
-const firstItem = {subject:privateSubject,from:'private@example.test',category:'reply',item_ref:firstRef};
+const firstItem = {subject:privateSubject,from:'private@example.test',category:'reply',important:true,priority_signals:['urgent'],item_ref:firstRef};
 const legacyItem = {subject:'Older header only',from:'older@example.test',category:'new',legacy_ref:legacyRef};
-const latestItem = {subject:'Latest item',from:'later@example.test',category:'important',item_ref:latestRef};
+const latestItem = {subject:'Action required: Latest item',from:'later@example.test',category:'reply',important:true,priority_signals:['action required'],item_ref:latestRef};
 const repeatedSender = {subject:'New message from an existing sender',from:'PRIVATE@example.test',category:'new',item_ref:'1'.repeat(64)};
+const itemLabels = row => row.locator('.gmail-review-item-labels .connections-badge').allTextContents();
 const legacyMatches = [
   {message_id:'gmail_candidate_first',match_token:'2'.repeat(64),from:legacyItem.from,subject:legacyItem.subject,
     received_at:'2026-11-07T09:00:00Z',snippet:'First message <img src=x onerror=alert(1)>.'},
@@ -74,6 +75,8 @@ let initialViewToken = startToken;
 let apiViewToken = startToken;
 let advanceGate = null;
 let statusGate = null;
+let inboxBackground = null;
+let checkOverdue = null;
 let workerStartsReview = false;
 let delivered = null;
 let pendingUpdate = null;
@@ -90,7 +93,10 @@ const project = (includeReport,token = apiViewToken,includeChatResult = false) =
   if (!includeReport) delete view.report;
   else if (token !== null) view.start_token = token;
   if (!includeChatResult) delete view.chat_result;
-  else if (view.state === 'ready' && (pendingUpdate || batchPosts.length)) view.inbox_updates = inboxUpdates();
+  else {
+    if (view.state === 'ready' && (pendingUpdate || batchPosts.length)) view.inbox_updates = inboxUpdates();
+    if (inboxBackground) view.inbox_background = inboxBackground;
+  }
   return view;
 };
 async function screenshot(page,name,view) {
@@ -279,6 +285,15 @@ try {
       pendingUpdate = null;
       return route.fulfill({json:{ok:true,inbox_updates:inboxUpdates()}});
     }
+    if (body.action === 'check_overdue') {
+      assert.equal(surface,'/chat.php');
+      assert.equal(inboxBackground?.state,'overdue');
+      assert.deepEqual(body,{action:'check_overdue',owner_key:'1',csrf_token:'fixture',
+        check_ref:inboxBackground.check_ref,working_attention_binding:'review-fixture',include_chat_result:true});
+      requests.push({...body,surface});
+      assert.ok(checkOverdue,'Only a scheduled test check can ask for Gmail work.');
+      return route.fulfill(checkOverdue());
+    }
     const includeReport = surface === '/connections.php';
     const expected = {action:body.action,owner_key:'1',csrf_token:'fixture',
       ...(includeReport ? {include_report:true} : {include_chat_result:true})};
@@ -343,10 +358,12 @@ try {
   assert.equal(await report.getByText('114 VP3 tokens charged',{exact:true}).isVisible(),true);
   assert.equal(await report.getByText('This review reached the 50-header limit.',{exact:true}).isVisible(),true);
   assert.equal(await report.getByText('Replies',{exact:true}).isVisible(),true);
-  assert.equal(await report.getByText('Incoming reply',{exact:true}).isVisible(),true);
+  const firstConnectionRow = report.getByRole('listitem').filter({hasText:privateSubject});
+  assert.deepEqual(await itemLabels(firstConnectionRow),['Incoming reply','Important']);
+  assert.equal(await firstConnectionRow.getByText('Priority keywords in subject · urgent',{exact:true}).isVisible(),true);
   assert.equal(await report.locator('img,script').count(),0,'Report metadata renders as text.');
   assert.equal(count('open_item'),0,'The initial report never opens a message without a click.');
-  await report.getByRole('listitem').filter({hasText:privateSubject}).getByRole('button',{name:'Open',exact:true}).click();
+  await firstConnectionRow.getByRole('button',{name:'Open',exact:true}).click();
   await report.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(await report.getByRole('button',{name:/Auto reply/}).count(),0);
   assert.equal(await report.getByRole('checkbox').count(),0,'Watching a sender belongs to its notification Chat.');
@@ -354,6 +371,8 @@ try {
   await page.reload();
   await report.getByText(privateSubject,{exact:true}).waitFor();
   const latestConnectionRow = page.locator('[data-gmail-review-latest-item]').filter({hasText:latestItem.subject});
+  assert.deepEqual(await itemLabels(latestConnectionRow),['Incoming reply','Important']);
+  assert.equal(await latestConnectionRow.getByText('Priority keywords in subject · action required',{exact:true}).isVisible(),true);
   await latestConnectionRow.getByRole('button',{name:'Open',exact:true}).click();
   await latestConnectionRow.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(requests.filter(row=>row.action==='open_item' && row.surface==='/connections.php').at(-1).item_ref,latestRef);
@@ -382,6 +401,8 @@ try {
   await completion.getByText('Messages in first review (2)',{exact:true}).click();
   const reviewRows = completion.locator('.gmail-review-items > li');
   const firstRow = reviewRows.filter({hasText:privateSubject});
+  assert.deepEqual(await itemLabels(firstRow),['Incoming reply','Important']);
+  assert.equal(await firstRow.getByText('Priority keywords in subject · urgent',{exact:true}).isVisible(),true);
   await firstRow.getByRole('button',{name:'Open',exact:true}).click();
   await firstRow.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(await firstRow.locator('img').count(),0);
@@ -441,6 +462,8 @@ try {
   assert.equal(count('advance','/chat.php'),0,'Resolving old headers does not repeat the paid review.');
   await completion.getByText('Messages in latest update (2)',{exact:true}).click();
   const latestRow = reviewRows.filter({hasText:latestItem.subject});
+  assert.deepEqual(await itemLabels(latestRow),['Incoming reply','Important']);
+  assert.equal(await latestRow.getByText('Priority keywords in subject · action required',{exact:true}).isVisible(),true);
   await latestRow.getByRole('button',{name:'Open',exact:true}).click();
   await latestRow.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(await completion.getByRole('button',{name:/Auto reply/}).count(),0,'An ineligible exact recipient has no Auto reply button.');
@@ -797,7 +820,8 @@ try {
       conversation_id:42,message_id:id,review:{state:'ready',run_id,total:1,important:0,replies:0,
         at:'2026-11-10T15:00:00Z',items:[{subject,from:'same@example.test',category:'new',item_ref}]}};
   };
-  pendingUpdate = batchPost(100,'First saved batch','7'.repeat(64));
+  pendingUpdate = batchPost(100,'First saved batch · Past due','7'.repeat(64));
+  pendingUpdate.review.items[0].priority_signals = ['past due'];
   const beforeUpdates = {deliver:count('deliver_updates'),advance:count('advance')};
   await page.goto(origin+'/chat.php');
   const firstList = completion.getByText('Messages in first review (10)',{exact:true});
@@ -811,12 +835,14 @@ try {
   const cards = page.locator('[data-gmail-inbox-update]');
   await cards.first().getByText('Messages in inbox update (1)',{exact:true}).click();
   await cards.first().locator('time[datetime="2026-11-10T15:20:00.000Z"]').getByText(/^Posted /).waitFor();
-  await cards.first().getByText('First saved batch',{exact:true}).waitFor();
+  await cards.first().getByText('First saved batch · Past due',{exact:true}).waitFor();
+  assert.equal(await cards.first().getByText('1 message with priority keywords in the subject.',{exact:true}).isVisible(),true);
+  assert.equal(await cards.first().getByText('Priority keywords in subject · past due',{exact:true}).isVisible(),true);
   batchPosts.push(batchPost(101,'Second saved batch','8'.repeat(64)));
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await cards.nth(1).getByText('Messages in inbox update (1)',{exact:true}).click();
   await cards.nth(1).getByText('Second saved batch',{exact:true}).waitFor();
-  assert.equal(await cards.first().getByText('First saved batch',{exact:true}).count(),1);
+  assert.equal(await cards.first().getByText('First saved batch · Past due',{exact:true}).count(),1);
   await page.reload();
   await cards.nth(1).waitFor();
   await cards.first().getByText('Messages in inbox update (1)',{exact:true}).click();
@@ -837,11 +863,102 @@ try {
   await hub.waitFor({state:'hidden'});
   await page.locator('[data-chat-message-id="101"][data-chat-conversation-id="42"]').waitFor();
   showMonitor = false;
+
+  const priorChecks = count('check_overdue');
+  const priorStarts = count('start');
+  const priorAdvances = count('advance');
+  const firstOverdueRef = 'a'.repeat(64);
+  const refreshInbox = async action => {
+    const response = page.waitForResponse(reply => reply.url().endsWith(endpoint) && reply.request().postDataJSON()?.action === action);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    return response;
+  };
+  const backgroundTimes = {last_checked_at:'2026-11-10T15:00:00Z',next_check_at:new Date(Date.now()-180000).toISOString()};
+  inboxBackground = {state:'checked',...backgroundTimes,check_ref:firstOverdueRef};
+  await refreshInbox('status');
+  await page.waitForTimeout(150);
+  assert.equal(count('check_overdue'),priorChecks,'A current inbox check is read only.');
+
+  inboxBackground = {state:'overdue',...backgroundTimes,check_ref:firstOverdueRef};
+  await page.evaluate(() => {
+    document.getElementById('chatThread').dataset.view = 'saved';
+    window.dispatchEvent(new Event('vp3:chat-canvas-view-changed'));
+  });
+  await refreshInbox('status');
+  await page.waitForTimeout(150);
+  assert.equal(count('check_overdue'),priorChecks,'A non-Chat view cannot recover an overdue scan.');
+
+  await page.evaluate(() => {
+    document.getElementById('chatThread').dataset.view = 'chat';
+    const live = window.STONEFELLOW_CHAT_CONTINUITY_V87;
+    window.fixtureOriginalBusy = live.isBusy;
+    live.isBusy = () => true;
+  });
+  await refreshInbox('status');
+  await page.waitForTimeout(150);
+  assert.equal(count('check_overdue'),priorChecks,'An active Chat request leaves overdue work alone.');
+
+  review = inProgress('working');
+  await page.evaluate(() => { window.STONEFELLOW_CHAT_CONTINUITY_V87.isBusy = window.fixtureOriginalBusy; });
+  await refreshInbox('status');
+  await tile.waitFor();
+  assert.equal(count('check_overdue'),priorChecks,'The first review owns Gmail work while its slice is active.');
+
+  review = completed();
+  checkOverdue = () => ({status:503,json:{ok:false}});
+  assert.equal((await refreshInbox('check_overdue')).status(),503);
+  await completion.getByText('First inbox review',{exact:true}).waitFor();
+  await completion.locator('time[datetime="2026-11-10T12:15:00.000Z"]').waitFor();
+  await refreshInbox('status');
+  await page.waitForTimeout(150);
+  assert.equal(count('check_overdue'),priorChecks+1,'Repeated status or focus cannot immediately retry the same reference.');
+
+  checkOverdue = () => {
+    batchPosts.push(batchPost(102,'Inbox mail from the overdue check','0'.repeat(64)));
+    return {json:{ok:true,review:project(false,undefined,true)}};
+  };
+  await page.evaluate(() => {
+    window.fixtureRealNow = Date.now;
+    Date.now = () => window.fixtureRealNow()+61000;
+  });
+  assert.equal((await refreshInbox('check_overdue')).ok(),true);
+  const overdueResult = page.locator('[data-chat-message-id="102"][data-chat-conversation-id="42"] [data-gmail-inbox-update]');
+  await overdueResult.getByText('Messages in inbox update (1)',{exact:true}).click();
+  await overdueResult.getByText('Inbox mail from the overdue check',{exact:true}).waitFor();
+  assert.equal(await completion.count(),1,'The current batch appears separately from the first import.');
+  assert.equal(count('start'),priorStarts);
+  assert.equal(count('advance'),priorAdvances);
+  await page.evaluate(() => { Date.now = () => window.fixtureRealNow()+122000; });
+  await refreshInbox('status');
+  await page.waitForTimeout(150);
+  assert.equal(count('check_overdue'),priorChecks+2,'Repeated attempts on a stalled reference back off.');
+
+  await page.evaluate(() => { Date.now = () => window.fixtureRealNow()+362000; });
+  checkOverdue = () => {
+    inboxBackground = {state:'checked',...backgroundTimes};
+    return {json:{ok:true,review:project(false,undefined,true)}};
+  };
+  assert.equal((await refreshInbox('check_overdue')).ok(),true,'A stalled reference can recover after the longer cooldown.');
+  await page.evaluate(() => { Date.now = window.fixtureRealNow; });
+  assert.equal(count('check_overdue'),priorChecks+3);
+  console.log('PASS overdue Gmail check is owner-Chat scoped, bounded, and keeps yesterday’s first review');
+
   review = {state:'disabled',limit:50};
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await cards.first().waitFor({state:'detached'});
-  assert.equal(await page.getByText('Your Gmail inbox update is ready.',{exact:true}).count(),2);
+  assert.equal(await page.getByText('Your Gmail inbox update is ready.',{exact:true}).count(),3);
   console.log('PASS all first-review rows are pageable and separate inbox updates remain actionable after reload');
+
+  review = needsStart();
+  inboxBackground = {state:'overdue',...backgroundTimes,check_ref:'b'.repeat(64)};
+  const beforeEmptyCheck = {new:newConversations,start:count('start'),deliver:count('deliver'),updates:count('deliver_updates')};
+  await page.evaluate(() => localStorage.clear());
+  const emptyCheck = page.waitForResponse(reply => reply.url().endsWith(endpoint) && reply.request().postDataJSON()?.action === 'check_overdue');
+  await page.goto(origin+'/chat.php?empty_chat=1');
+  assert.equal((await emptyCheck).ok(),true);
+  assert.equal(await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()),0);
+  assert.deepEqual({new:newConversations,start:count('start'),deliver:count('deliver'),updates:count('deliver_updates')},beforeEmptyCheck,
+    'Checking Gmail from the empty private Chat creates no conversation or review.');
 
   assert.deepEqual(errors,[]);
   console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, private report, progress and stale settings)');

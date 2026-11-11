@@ -162,10 +162,13 @@ $pdo->exec("ALTER TABLE users ADD COLUMN display_name VARCHAR(100); ALTER TABLE 
     INSERT INTO user_profiles VALUES(1,'fixture','Collects neighborhood photographs',0);
     CREATE TABLE user_agent_preferences(user_id INTEGER PRIMARY KEY,onboarding_dismissed INTEGER,voice_preference VARCHAR(20),
         onboarding_step VARCHAR(40),onboarding_draft_json TEXT,feature_interest_json TEXT,last_trial_notice_threshold INTEGER,last_trial_notice_at DATETIME);
-    INSERT INTO user_agent_preferences VALUES(1,1,NULL,'complete',NULL,'{}',NULL,NULL);
+    INSERT INTO user_agent_preferences VALUES(1,1,NULL,'complete',NULL,'{\"workflow.booking\":true}',NULL,NULL);
     CREATE TABLE agent_scheduling_schedules(id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,is_active INTEGER,is_default INTEGER);
     CREATE TABLE agent_scheduling_event_types(id INTEGER PRIMARY KEY,schedule_id INTEGER,is_active INTEGER,sort_order INTEGER,title VARCHAR(100),minimum_notice_minutes INTEGER);
-    CREATE TABLE agent_scheduling_availability(id INTEGER PRIMARY KEY); CREATE TABLE agent_scheduling_overrides(id INTEGER PRIMARY KEY);
+    INSERT INTO agent_scheduling_schedules VALUES(501,1,8,1,1);
+    INSERT INTO agent_scheduling_event_types VALUES(601,501,1,0,'Consultation',0);
+    CREATE TABLE agent_scheduling_availability(id INTEGER PRIMARY KEY,schedule_id INTEGER,event_type_id INTEGER,weekday INTEGER,start_minute INTEGER,end_minute INTEGER,is_active INTEGER);
+    CREATE TABLE agent_scheduling_overrides(id INTEGER PRIMARY KEY);
     CREATE TABLE agent_scheduling_bookings(id INTEGER PRIMARY KEY,start_at_utc DATETIME,public_token VARCHAR(32),buffer_before_minutes INTEGER,buffer_after_minutes INTEGER)");
 $quiet=['surface'=>'chat','conversation_id'=>12,'visible'=>true,'focused'=>true,'chat_focused'=>true,'chat_busy'=>false,
     'activity_tab'=>str_repeat('b',32),'activity_observed_at'=>(int)floor(microtime(true)*1000),'activity_sequence'=>1];
@@ -178,12 +181,13 @@ vp3_initiative_schedule_v1($pdo,$owner,8);
 $quietPlans=canvas_pipeline_runs('initiative.plan');$quietPlan=end($quietPlans);
 $quietGoal=json_decode($quietPlan['goal'],true,32,JSON_THROW_ON_ERROR);
 canvas_pipeline_check((int)$quietPlan['agent_id']===8&&isset($quietGoal['sources']['account-readiness:1'],$quietGoal['sources']['scheduling-readiness:1:8']),
-    'the existing scheduler admits one assessment with the authorized completed profile and verified empty appointment setup');
+    'the existing scheduler admits one assessment with the authorized profile and missing weekly appointment hours');
 $GLOBALS['pipelineModel']=static function(string $prompt,string $protocol): string{
     $evidence=array_column(json_decode($prompt,true,32,JSON_THROW_ON_ERROR)['evidence'],null,'ref');
     canvas_pipeline_check($evidence['account-readiness:1']['readiness']['bio']==='Collects neighborhood photographs'
-        &&$evidence['scheduling-readiness:1:8']['readiness']['active_event_types']===false,
-        'the canonical evidence is reloaded into the same planner and check-in at execution');
+        &&$evidence['scheduling-readiness:1:8']['readiness']['active_event_types']===true
+        &&$evidence['scheduling-readiness:1:8']['readiness']['missing_fields']===['weekly_hours'],
+        'the verified weekly-hours gap reaches both the planner and check-in with the same active appointment evidence');
     return $protocol==='vp3.initiative-plan.v1'
         ?json_encode(['jobs'=>[['tool'=>'chat.check_in','primary'=>'account-readiness:1','refs'=>['account-readiness:1','scheduling-readiness:1:8'],
             'focus'=>'Ask how the owner wants to use their photo collection','report'=>true]]],JSON_THROW_ON_ERROR)

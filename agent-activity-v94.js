@@ -124,7 +124,11 @@
     }
   }
   function meaningful(reason='interaction'){lastMeaningful=Date.now();if(document.hidden)return;const prior=lastState;lastState='';heartbeat(reason,true);if(prior==='idle'||prior==='paused')document.dispatchEvent(new CustomEvent('stonefellow:proactive-refresh'));}
-  ['pointerdown','keydown','input','change','submit','dragstart','drop'].forEach(type=>document.addEventListener(type,e=>{if(type==='keydown'&&['Shift','Control','Alt','Meta'].includes(e.key))return;meaningful(type);},{capture:true,passive:type==='pointerdown'}));
+  ['pointerdown','keydown','input','change','submit','dragstart','drop'].forEach(type=>document.addEventListener(type,e=>{
+    if(type==='keydown'&&['Shift','Control','Alt','Meta'].includes(e.key))return;
+    if((type==='pointerdown'||type==='keydown')&&(cfg.surface||'chat')==='chat')window.VP3LiveContext?.noteChatInput?.(e);
+    meaningful(type);
+  },{capture:true,passive:type==='pointerdown'}));
   document.addEventListener('stonefellow:task-start',e=>{taskTitle=String(e.detail?.title||taskTitle);taskKey=String(e.detail?.key||taskKey);meaningful('task_start');});
   document.addEventListener('visibilitychange',()=>{hiddenAt=document.hidden?Date.now():0;heartbeat(document.hidden?'hidden':'visible',true);});
   window.addEventListener('focus',()=>heartbeat('focus',true));

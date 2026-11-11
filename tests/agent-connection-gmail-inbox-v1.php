@@ -126,8 +126,8 @@ try {
     $enabledAt = (int)$reviewRow()['enabled_at_ms'];
     $arrived = $enabledAt+1000;
     $messages = [
-        'new_mail'=>inbox_message('new_mail',$arrived,'Customer <customer@example.test>','Customer update'),
-        'reply_mail'=>inbox_message('reply_mail',$arrived,'reply@example.test','Re: Customer update',['INBOX','IMPORTANT'],'','<original@example.test>'),
+        'new_mail'=>inbox_message('new_mail',$arrived,'Customer <customer@example.test>','No action required: Customer update'),
+        'reply_mail'=>inbox_message('reply_mail',$arrived,'reply@example.test','Re: Urgent customer update · Action required',['INBOX','IMPORTANT'],'','<original@example.test>'),
         'blocked_sender'=>inbox_message('blocked_sender',$arrived,'Muted <muted@example.test>','Blocked sender subject'),
         'blocked_domain'=>inbox_message('blocked_domain',$arrived,'sender@blocked.example.test','Blocked domain subject'),
         'blocked_subject'=>inbox_message('blocked_subject',$arrived,'newsletter@example.test',str_repeat('x',300).'PRIVATE TOKEN PHRASE'),
@@ -167,6 +167,16 @@ try {
         && !isset($itemView['items'][0]['message_id_enc'])
         && agent_connection_gmail_inbox_item_v1($pdo,$owner,$itemRef)['message_id'] === 'new_mail',
         'the latest batch exposes a protected selector for its exact saved message');
+    $replyItem = $itemView['items'][1];
+    inbox_check($replyItem['category'] === 'reply' && ($replyItem['important'] ?? false) === true
+        && !isset($itemView['items'][0]['important'])
+        && agent_connection_gmail_inbox_item_v1($pdo,$owner,$replyItem['item_ref'])['message_id'] === 'reply_mail',
+        'the exact reply keeps both Gmail labels without marking other mail important');
+    inbox_check(($replyItem['priority_signals'] ?? []) === ['urgent','action required']
+        && !isset($itemView['items'][0]['priority_signals'])
+        && str_contains($notices()[0]['body'],'1 message with priority keywords in the subject.')
+        && !str_contains($notices()[0]['body'],'Urgent customer update'),
+        'the background review counts matching messages and keeps exact priority wording inside the private report');
     inbox_check($sweep() === ['processed'=>1,'reviewed'=>1] && array_slice($metadataIds,10) === ['tail','deleted']
         && $review()['total'] === 1 && $reviewRow()['pending_event_id'] === $first,
         'changed provider event membership or ordering restarts the slice without duplicate reads or lost tail mail');

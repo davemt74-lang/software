@@ -128,9 +128,13 @@ function agent_connection_gmail_inbox_saved_item_v1(array $message): array
 {
     $id = agent_connection_gmail_id_v1($message['message_id']??null);
     if ($id === '') throw new UnexpectedValueException('Gmail review message ID is missing or invalid.');
-    return ['from'=>$message['from'],'subject'=>mb_substr($message['subject'],0,240,'UTF-8'),
+    $item = ['from'=>$message['from'],'subject'=>mb_substr($message['subject'],0,240,'UTF-8'),
         'category'=>$message['reply']?'reply':($message['important']?'important':'new'),
+        'important'=>$message['important'],
         'message_id_enc'=>ai_encrypt_secret($id)];
+    $signals = agent_connection_gmail_subject_priority_signals_v1($message['subject']);
+    if ($signals) $item['priority_signals'] = $signals;
+    return $item;
 }
 
 function agent_connection_gmail_inbox_key_v1(array $policy, string $value): string
@@ -338,7 +342,49 @@ function agent_connection_gmail_inbox_finish_v1(PDO $pdo, array $policy, string 
     });
 }
 
-/** Run only on the Cloud worker. Gmail network activity never runs inside inbox state locks. */
+/** Process one exact due checkpoint outside inbox state locks. Null means the claim changed. */
+function agent_connection_gmail_inbox_run_due_v1(PDO $pdo, array $policy, ?callable $http=null): ?bool
+{
+    if ($pdo->inTransaction()) return null;
+    $now = agent_commerce_time_pa2();
+    $claim = bin2hex(random_bytes(16));
+    $reserve = $pdo->prepare("UPDATE agent_connection_gmail_inbox_v1 SET claim_key=?,next_check_at=?
+        WHERE owner_user_id=? AND connection_id=? AND authorization_key=? AND revision=? AND enabled=1
+          AND next_check_at=? AND COALESCE(claim_key,'')=? AND next_check_at<=?");
+    $reserve->execute([$claim,gmdate('Y-m-d H:i:s',time()+180),$policy['owner_user_id'],$policy['connection_id'],
+        $policy['authorization_key'],$policy['revision'],$policy['next_check_at'],(string)$policy['claim_key'],$now]);
+    if ($reserve->rowCount() !== 1) return null;
+
+    $owner = (int)$policy['owner_user_id'];
+    $connectionId = (int)$policy['connection_id'];
+    $scan = ['status'=>'retrying'];
+    try {
+        $connection = agent_connections_find_v1($pdo,$owner,$connectionId);
+        if (agent_connection_gmail_inbox_grant_v1(agent_connection_gmail_inbox_user_v1($pdo,$owner),$connection,$policy)
+            && agent_connection_gmail_ready_v1()
+            && hash_equals((string)$connection['client_fingerprint'],agent_connections_client_fingerprint_v1())
+            && agent_connection_gmail_inbox_claim_current_v1($pdo,$policy,$claim)) {
+            $access = agent_connections_access_v1($owner,$connectionId,'read',$http,(string)$policy['authorization_key']);
+            if (hash_equals((string)$access['authorization_key'],(string)$policy['authorization_key'])) {
+                $scan = agent_connection_gmail_inbox_scan_v1($pdo,$policy,$claim,$access['access_token'],$http);
+            }
+        }
+    } catch (Throwable $error) {
+        if (function_exists('agent_runtime_v125_trace')) {
+            agent_runtime_v125_trace('worker.gmail_inbox.poll_failed',['error_class'=>get_class($error)]);
+        }
+    }
+    try {
+        return agent_connection_gmail_inbox_finish_v1($pdo,$policy,$claim,$scan);
+    } catch (Throwable $error) {
+        if (function_exists('agent_runtime_v125_trace')) {
+            agent_runtime_v125_trace('worker.gmail_inbox.commit_failed',['error_class'=>get_class($error)]);
+        }
+        return false;
+    }
+}
+
+/** Find due reviews on the Cloud worker. */
 function agent_connection_gmail_inbox_sweep_v1(PDO $pdo, int $limit=5, ?callable $http=null): array
 {
     $counts = ['processed'=>0,'reviewed'=>0];
@@ -348,41 +394,11 @@ function agent_connection_gmail_inbox_sweep_v1(PDO $pdo, int $limit=5, ?callable
     $due = $pdo->prepare('SELECT * FROM agent_connection_gmail_inbox_v1 WHERE enabled=1 AND next_check_at<=?
         ORDER BY next_check_at,owner_user_id LIMIT '.min($limit,5));
     $due->execute([agent_commerce_time_pa2()]);
-    $reserve = $pdo->prepare('UPDATE agent_connection_gmail_inbox_v1 SET claim_key=?,next_check_at=?
-        WHERE owner_user_id=? AND connection_id=? AND authorization_key=? AND revision=? AND enabled=1 AND next_check_at<=?');
     foreach ($due->fetchAll(PDO::FETCH_ASSOC) as $policy) {
-        $now = agent_commerce_time_pa2();
-        $claim = bin2hex(random_bytes(16));
-        $reserve->execute([$claim,gmdate('Y-m-d H:i:s',time()+180),$policy['owner_user_id'],$policy['connection_id'],
-            $policy['authorization_key'],$policy['revision'],$now]);
-        if ($reserve->rowCount() !== 1) continue;
+        $reviewed = agent_connection_gmail_inbox_run_due_v1($pdo,$policy,$http);
+        if ($reviewed === null) continue;
         $counts['processed']++;
-        $owner = (int)$policy['owner_user_id'];
-        $connectionId = (int)$policy['connection_id'];
-        $scan = ['status'=>'retrying'];
-        try {
-            $connection = agent_connections_find_v1($pdo,$owner,$connectionId);
-            if (agent_connection_gmail_inbox_grant_v1(agent_connection_gmail_inbox_user_v1($pdo,$owner),$connection,$policy)
-                && agent_connection_gmail_ready_v1()
-                && hash_equals((string)$connection['client_fingerprint'],agent_connections_client_fingerprint_v1())
-                && agent_connection_gmail_inbox_claim_current_v1($pdo,$policy,$claim)) {
-                $access = agent_connections_access_v1($owner,$connectionId,'read',$http,(string)$policy['authorization_key']);
-                if (hash_equals((string)$access['authorization_key'],(string)$policy['authorization_key'])) {
-                    $scan = agent_connection_gmail_inbox_scan_v1($pdo,$policy,$claim,$access['access_token'],$http);
-                }
-            }
-        } catch (Throwable $error) {
-            if (function_exists('agent_runtime_v125_trace')) {
-                agent_runtime_v125_trace('worker.gmail_inbox.poll_failed',['error_class'=>get_class($error)]);
-            }
-        }
-        try {
-            if (agent_connection_gmail_inbox_finish_v1($pdo,$policy,$claim,$scan)) $counts['reviewed']++;
-        } catch (Throwable $error) {
-            if (function_exists('agent_runtime_v125_trace')) {
-                agent_runtime_v125_trace('worker.gmail_inbox.commit_failed',['error_class'=>get_class($error)]);
-            }
-        }
+        if ($reviewed) $counts['reviewed']++;
     }
     return $counts;
 }

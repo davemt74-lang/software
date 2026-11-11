@@ -150,9 +150,15 @@ try{
       thread.scrollTop=thread.scrollHeight;
       document.getElementById('cover').hidden=true;
     });
+    // Keep the post visible past the former automatic acknowledgement delay.
+    await page.waitForTimeout(1500);
+    check(await visible.count()===1&&JSON.stringify((await request({ids:'3,4'})).data.unread_message_ids)==='[3,4]',
+      'programmatic scrolling and visible idle time preserve NEW and the unread receipts');
+    await page.mouse.move(120,120);
+    await page.mouse.wheel(0,-24);
     await visible.waitFor({state:'detached'});
     check(await earlier.count()===1&&JSON.stringify((await request({ids:'3,4'})).data.unread_message_ids)==='[3]',
-      'the real Chromium badge acknowledges its one visible post through the production PHP API and leaves its offscreen sibling unread');
+      'a trusted Chromium scroll acknowledges its one visible post through the production PHP API and leaves its offscreen sibling unread');
     check(errors.length===0,'the read widget and production HTTP receipt flow finish without browser errors');
   }finally{await browser.close();}
   console.log(`AGENT_CHAT_READ_API=PASS (${checks} cases; production HTTP endpoint and SQLite receipts)`);

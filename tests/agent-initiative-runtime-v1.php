@@ -102,6 +102,15 @@ $model=static function(string $prompt,string $protocol)use(&$calls,&$duplicate,$
 $planned=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check($planned['ok']&&$planned['reason']==='completed'&&$calls===1&&$duplicate['reason']==='already_running',
     'overlapping foreground pumps share the canonical lease and run one assessment');
+$assessment=$planned['health']['last_assessment'];
+runtime_check($assessment['outcome']==='assignments_queued'&&$assessment['queued']===1&&strtotime($assessment['at'])>0,
+    'owner health distinguishes a verified completed assessment from an observed worker');
+$receipt=$pdo->query('SELECT id,result_json FROM agent_workflow_receipts ORDER BY id DESC LIMIT 1')->fetch();
+$modifyReceipt=$pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE id=?');
+$modifyReceipt->execute(['{"effect_state":"idle","jobs":0}',$receipt['id']]);
+runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['last_assessment']===null,
+    'a mismatched receipt cannot falsely report an idle assessment');
+$modifyReceipt->execute([$receipt['result_json'],$receipt['id']]);
 $prepared=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check($prepared['ok']&&$calls===2&&(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_receipts')->fetchColumn()===2,
     'the next bounded pump executes the queued preparation through canonical receipts');
@@ -128,6 +137,10 @@ $quota=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check(!$quota['ok']&&$quota['health']['reason']==='quota_exhausted'&&$calls===2,'exhausted quota blocks foreground preparation before a model call');
 $GLOBALS['runtimePlan']=['route'=>'homeserver_local','blocked'=>false,'effective_preference'=>'homeserver_only'];
 runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['reason']==='route_unavailable','HomeServer-only policy is reported without silently routing work to Cloud');
+$GLOBALS['runtimeInference']=['ready'=>false,'route'=>'none','reason'=>'route_unavailable','policy_reason'=>'service_model_forbidden'];
+$health=vp3_initiative_worker_health_v1($pdo,$user,0,42);
+runtime_check(!$health['execution_ready']&&$health['policy_reason']==='service_model_forbidden',
+    'owner health names the Initiative service policy blocker separately from the worker');
 $GLOBALS['runtimeInference']=['ready'=>true,'route'=>'homeserver_local','reason'=>'ready'];
 runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['pump_available'],
     'an authorized canonical HomeServer inference adapter is allowed without requiring Cloud quota');
@@ -191,15 +204,56 @@ runtime_check(!$providerFailure['ok']&&$providerFailure['reason']==='model_unava
 
 $GLOBALS['runtimeCalendarTitle']='Assessment with malformed output';
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
-$invalid=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static fn():string=>'PRIVATE_BAD_PLAN');
+$badPlan='PRIVATE_BAD_PLAN';
+$badPlanCalls=0;
+$prepareCount=static fn():int=>(int)$pdo->query("SELECT COUNT(*) FROM agent_workflow_runs WHERE capability_key='initiative.prepare'")->fetchColumn();
+$preparationsBeforeInvalid=$prepareCount();
+$invalid=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static function()use($badPlan,&$badPlanCalls):string{
+    $badPlanCalls++;
+    return $badPlan;
+});
+$assessmentError=$invalid['health']['assessment_error']??[];
 runtime_check(!$invalid['ok']&&$invalid['reason']==='assessment_unverified'&&$invalid['health']['state']==='failed'
-    &&$invalid['health']['reason']==='assessment_unverified'&&!str_contains(json_encode($invalid),'PRIVATE_BAD_PLAN'),
-    'malformed planner output is reported as unverified without exposing the model text');
+    &&$invalid['health']['reason']==='assessment_unverified'&&$invalid['health']['retry_due_at']===''
+    &&($assessmentError['code']??null)==='invalid_json'&&($assessmentError['output_bytes']??null)===strlen($badPlan)
+    &&strtotime($assessmentError['at']??'')>0&&$badPlanCalls===1&&$prepareCount()===$preparationsBeforeInvalid
+    &&!str_contains(json_encode($invalid),$badPlan),
+    'malformed planner output exposes a safe verified diagnostic without retry, dispatch or model text');
+
+$failedReceipt=$pdo->query("SELECT id,action_id,result_json FROM agent_workflow_receipts
+    WHERE owner_user_id=1 AND error_class='assessment_unverified' ORDER BY id DESC LIMIT 1")->fetch();
+$modifyAction=$pdo->prepare('UPDATE agent_workflow_actions SET result_json=? WHERE id=?');
+$mismatched=str_replace('invalid_json','invalid_job',$failedReceipt['result_json']);
+$modifyReceipt->execute([$mismatched,$failedReceipt['id']]);
+runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['assessment_error']===null,
+    'a mismatched failure receipt cannot publish an assessment diagnostic');
+$forged=str_replace('invalid_json','PRIVATE_UNKNOWN_REASON',$failedReceipt['result_json']);
+$modifyReceipt->execute([$forged,$failedReceipt['id']]);
+$modifyAction->execute([$forged,$failedReceipt['action_id']]);
+$forgedHealth=vp3_initiative_worker_health_v1($pdo,$user,0,42);
+runtime_check($forgedHealth['assessment_error']===null&&!str_contains(json_encode($forgedHealth),'PRIVATE_UNKNOWN_REASON'),
+    'a matching failed action and receipt still cannot publish an unknown diagnostic');
+$modifyReceipt->execute([$failedReceipt['result_json'],$failedReceipt['id']]);
+$modifyAction->execute([$failedReceipt['result_json'],$failedReceipt['action_id']]);
+runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['assessment_error']===$assessmentError
+    &&vp3_initiative_worker_health_v1($pdo,['id'=>2,'is_active'=>1],0,42)['assessment_error']===null
+    &&vp3_initiative_worker_health_v1($pdo,$user,7,42)['assessment_error']===null,
+    'assessment diagnostics stay within the exact account, Agent and Chat');
+
+$GLOBALS['runtimeCalendarTitle']='Assessment with an invented source';
+$pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
+$badSource=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static fn():string=>
+    '{"jobs":[{"tool":"work.prepare_private","primary":"event:42","refs":["event:42","PRIVATE_UNKNOWN_SOURCE"],"focus":"Prepare","report":true}]}');
+runtime_check(!$badSource['ok']&&$badSource['reason']==='assessment_unverified'
+    &&($badSource['health']['assessment_error']['code']??null)==='invalid_job_sources'
+    &&$prepareCount()===$preparationsBeforeInvalid&&!str_contains(json_encode($badSource),'PRIVATE_UNKNOWN_SOURCE'),
+    'a well-formed plan with an invented source exposes only the safe source diagnostic and dispatches nothing');
 
 $namedPolicy=runtime_enable($user,7,11);
 $named=vp3_initiative_worker_health_v1($pdo,$user,7,11);
 runtime_check($named['enabled']&&$named['policy_revision']===$namedPolicy['revision']&&$named['agent_id']===7
-    &&end($GLOBALS['runtimeRoutes'])===[1,7],'named Agent health uses its exact persisted opt-in and compute route');
+    &&$named['assessment_error']===null&&end($GLOBALS['runtimeRoutes'])===[1,7],
+    'named Agent health uses its exact persisted opt-in and compute route without System diagnostics');
 $temp=sys_get_temp_dir().'/vp3-runner-health-'.bin2hex(random_bytes(6));mkdir($temp,0700);
 try{
     runtime_check(agent_worker_health_read_v1($temp,2000)['state']==='never_seen','a configured schema does not invent a runner heartbeat');

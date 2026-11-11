@@ -60,6 +60,7 @@
   let watchlist = null;
   let watchRequest = null;
   let watchReadAfter = 0;
+  let lastCheckAttempt = null;
   const continuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
 
   function inScope() {
@@ -348,6 +349,12 @@
     if (actions.children.length) row.append(actions,feedback);
   }
 
+  function priorityKeywordSummary(items) {
+    if (!Array.isArray(items)) return '';
+    const count = items.filter(item => Array.isArray(item?.priority_signals) && item.priority_signals.length).length;
+    return count ? `${count} ${count === 1 ? 'message' : 'messages'} with priority keywords in the subject.` : '';
+  }
+
   function itemList(items,seenSenders = null) {
     if (!Array.isArray(items)) return null;
     const entries = items.slice(0,50).filter(item => item && typeof item.subject === 'string' && typeof item.from === 'string');
@@ -359,8 +366,16 @@
       const offset = list.children.length;
       for (const item of entries.slice(offset,offset+pageSize)) {
         const row = node('li');
+        const labels = node('div','','gmail-review-item-labels');
+        labels.append(node('span',categories[item.category] || 'New','connections-badge'));
+        if (item.category === 'reply' && item.important === true) {
+          labels.append(node('span',categories.important,'connections-badge'));
+        }
         row.append(node('strong',item.subject.slice(0,500) || '(No subject)'),
-          node('span',item.from.slice(0,500),'connections-muted'),node('span',categories[item.category] || 'New','connections-badge'));
+          node('span',item.from.slice(0,500),'connections-muted'),labels);
+        if (Array.isArray(item.priority_signals) && item.priority_signals.length) {
+          row.append(node('small','Priority keywords in subject · ' + item.priority_signals.join(', '),'gmail-review-item-priority'));
+        }
         attachItemActions(row,item,seenSenders);
         list.append(row);
       }
@@ -474,6 +489,18 @@
       && !continuity()?.isBusy?.();
   }
 
+  function overdueCheckRef(conversationId) {
+    const monitor = review?.inbox_background;
+    if (conversationId === null || typeof binding !== 'string' || binding === '' || pending || active(review)
+        || !['needs_start','ready','failed'].includes(review?.state) || continuity()?.isBusy?.()
+        || monitor?.state !== 'overdue' || !itemRef(monitor.check_ref)) return null;
+    // The worker owns the lease. Slow repeated attempts on the same reference
+    // so a temporarily stalled check can recover without repeated requests.
+    const delay = lastCheckAttempt?.ref === monitor.check_ref && lastCheckAttempt.count >= 2 ? 300000 : 60000;
+    if (lastCheckAttempt && Date.now() - lastCheckAttempt.at < delay) return null;
+    return monitor.check_ref;
+  }
+
   async function syncUpdates() {
     const latest = review?.inbox_updates?.latest;
     const target = chatTarget();
@@ -512,6 +539,8 @@
         if ([value.important,value.replies].every(count => Number.isSafeInteger(count) && count >= 0 && count <= value.total)) {
           panel.append(node('small',`${value.important} important · ${value.replies} ${value.replies === 1 ? 'reply' : 'replies'}`));
         }
+        const priority = priorityKeywordSummary(value.items);
+        if (priority) panel.append(node('small',priority));
         appendItems(panel,'Messages in inbox update',value.items,new Set());
         parent.append(panel);
         updateCards.set(row,panel);
@@ -604,15 +633,22 @@
       header.append(viewWork);
     }
     completion.replaceChildren(header);
+    if (ready) completion.append(node('small','First inbox review'));
     if (time) completion.append(time);
+    const firstPriority = priorityKeywordSummary(saved?.items);
+    if (firstPriority) completion.append(node('small',firstPriority));
     if (summary) completion.append(node('p',summary));
     if (Array.isArray(saved?.items) && saved.items.length < review.total) {
       completion.append(node('small',`Saved details are available for ${saved.items.length} of ${review.total} reviewed messages.`));
     }
     const seenSenders = new Set();
     appendItems(completion,'Messages in first review',saved?.items,seenSenders);
-    if (batch) completion.append(node('small',batch));
-    if (batch) appendItems(completion,'Messages in latest update',latest?.items,seenSenders);
+    if (batch) {
+      completion.append(node('small',batch));
+      const latestPriority = priorityKeywordSummary(latest.items);
+      if (latestPriority) completion.append(node('small',latestPriority));
+      appendItems(completion,'Messages in latest update',latest.items,seenSenders);
+    }
     syncWatchControls();
     void readWatchlist();
     if (ready && mounted && location.hash === '#gmail-inbox-review') completion.scrollIntoView({block:'center'});
@@ -647,6 +683,8 @@
       counts.append(row);
     }
     result.append(node('p',period.join(' · '),'connections-muted'),counts);
+    const priority = priorityKeywordSummary(report.items);
+    if (priority) result.append(node('p',priority,'connections-muted'));
     if (report.truncated === true) result.append(node('p',report.scanned >= 50
       ? 'This review reached the 50-header limit.' : 'More matching mail may be available.','connections-muted'));
     const summary = report.summary_status === 'ready' && typeof report.summary === 'string' && report.summary.trim()
@@ -694,6 +732,10 @@
         schedule('deliver_updates',0);
         return;
       }
+      if (overdueCheckRef(chatTarget())) {
+        schedule('check_overdue',0);
+        return;
+      }
       // A review can start in Connections and finish in a separate worker.
       if (thread && ['needs_start','ready','failed'].includes(review?.state)) {
         schedule('status',inboxWorking(review) ? 2000 : 15000);
@@ -720,8 +762,8 @@
       return;
     }
     if (expectedRunId !== null && value.run_id !== expectedRunId) return;
-    const {state,run_id,stage,scanned,next_attempt_at,has_report,total,chat_result,inbox_working_until,inbox_updates} = value;
-    review = host ? value : {state,run_id,stage,scanned,next_attempt_at,has_report,total,chat_result,inbox_working_until,inbox_updates};
+    const {state,run_id,stage,scanned,updated_at,next_attempt_at,has_report,total,chat_result,inbox_working_until,inbox_updates,inbox_background} = value;
+    review = host ? value : {state,run_id,stage,scanned,updated_at,next_attempt_at,has_report,total,chat_result,inbox_working_until,inbox_updates,inbox_background};
     pageError = '';
   }
   function stopProgress() {
@@ -756,9 +798,15 @@
   async function request(action, days) {
     if (pending || !inScope()) return;
     const payload = {action};
-    const target = ['deliver','deliver_updates'].includes(action) ? chatTarget() : null;
+    const target = ['deliver','deliver_updates','check_overdue'].includes(action) ? chatTarget() : null;
     if (action === 'deliver' && !needsDelivery(target)) return;
     if (action === 'deliver_updates' && !needsUpdateDelivery(target)) return;
+    if (action === 'check_overdue') {
+      const ref = overdueCheckRef(target);
+      if (!ref) { nextCheck(); return; }
+      lastCheckAttempt = {ref,at:Date.now(),count:lastCheckAttempt?.ref === ref ? lastCheckAttempt.count+1 : 1};
+      Object.assign(payload,{check_ref:ref,working_attention_binding:binding,include_chat_result:true});
+    }
     if (action === 'start') {
       if (!host || !startToken || !canStart(review) || !daysAllowed.includes(days)) return;
       payload.days = days;
@@ -771,7 +819,7 @@
     const current = epoch;
     pending = {action,controller};
     if (start) start.disabled = true;
-    const timeout = setTimeout(() => controller.abort(),{status:8000,start:15000,advance:120000,deliver:18000,deliver_updates:18000}[action]);
+    const timeout = setTimeout(() => controller.abort(),{status:8000,start:15000,advance:120000,deliver:18000,deliver_updates:18000,check_overdue:120000}[action]);
     let failed = false;
     try {
       if (action === 'deliver') {
@@ -791,7 +839,8 @@
       const response = await send(payload,controller.signal);
       const data = await response.json();
       if (current !== epoch || !inScope()) return;
-      if (action === 'deliver' && response.status === 409) {
+      if (action === 'check_overdue' && target !== chatTarget()) return;
+      if (['deliver','check_overdue'].includes(action) && response.status === 409) {
         failed = true;
         return;
       }
@@ -833,6 +882,7 @@
     } catch (_) {
       if (current !== epoch || !inScope()) return;
       failed = true;
+      if (action === 'check_overdue') return;
       if (action !== 'status' || review?.state !== 'ready' || !savedReviewRow(chatTarget(),review.run_id)) {
         pageError = 'Inbox review could not be checked. Try again shortly.';
       }
@@ -867,7 +917,7 @@
     watchReadAfter = 0;
     clearTimeout(timer);
     stopProgress();
-    if (['status','deliver','deliver_updates'].includes(pending?.action)) pending.controller.abort();
+    if (['status','deliver','deliver_updates','check_overdue'].includes(pending?.action)) pending.controller.abort();
     review = null;
     delivery = null;
     if (!denied) pageError = '';

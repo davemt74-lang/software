@@ -24,6 +24,14 @@ function initial_scan_message(string $id, int $date, array $labels=['INBOX'], st
             'body'=>['data'=>'BODY_SENTINEL']]]];
 }
 
+initial_scan_check(agent_connection_gmail_subject_priority_signals_v1('URGENT · Past-due · Action required · urgent · Important')
+    === ['urgent','past due','action required','important'], 'subject signals match complete keywords and phrases once');
+initial_scan_check(agent_connection_gmail_subject_priority_signals_v1("Not urgent, non-important, no immediate action required, isn’t yet past due") === []
+    && agent_connection_gmail_subject_priority_signals_v1('Not urgent or important') === []
+    && agent_connection_gmail_subject_priority_signals_v1('Unimportant and urgently, action requirements, past dues') === []
+    && agent_connection_gmail_subject_priority_signals_v1('Not urgent, but action required') === ['action required'],
+    'subject signals ignore word fragments and direct negation without hiding unrelated positive phrases');
+
 $start=1794337890123;
 $lower=$start-7*86400000;
 $policy=['enabled_at_ms'=>$start,'authorization_key'=>str_repeat('a',64)];

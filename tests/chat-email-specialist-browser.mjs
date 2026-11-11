@@ -24,6 +24,7 @@ const replyCalls = [];
 const searchRef = 'a1'.repeat(64);
 const followupId = 800;
 const readActions = [];
+const composePrompts = [];
 let writingGate = null;
 let writingFails = true;
 const workflowFolder = 'Member workflow reviews';
@@ -112,6 +113,12 @@ await page.route('**/api/**', async route => {
   if (payload.action === 'send') {
     let answer = 'Email search completed.';
     let tool_receipt = {capability:'email.read',operation:'search',status:'read_complete'};
+    const compose = payload.message.startsWith('Draft reply to Gmail ');
+    if (compose) {
+      composePrompts.push(payload.message);
+      answer = 'Auto Compose queued a draft for review.';
+      tool_receipt = {capability:'email.send',operation:'prepare',status:'clarification_required'};
+    }
     if (payload.message === watchPrompt || payload.message === stopPrompt) {
       const watching = payload.message === watchPrompt;
       status = watching ? 'watching' : 'idle';
@@ -121,7 +128,7 @@ await page.route('**/api/**', async route => {
     tool_receipt = {...tool_receipt,contract:'vp3.tool-receipt.v1',checked_at:'2026-11-10T12:30:00Z'};
     const user_message_id = nextId++;
     const assistant_message_id = nextId++;
-    messages.push({id:user_message_id,role:'user',message:payload.message},{
+    messages.push({id:user_message_id,role:'user',message:compose ? 'Draft reply to selected Gmail message' : payload.message},{
       id:assistant_message_id,role:'assistant',message:answer,created_at:'2026-11-10 12:30:05',context_json:JSON.stringify({tool_receipt})});
     const actions = payload.message === `Show emails from ${sender}`
       ? [{type:'gmail_message',item_ref:searchRef,conversation_id:42,label:'Open result 1'}] : [];
@@ -186,16 +193,27 @@ try {
   const messageReview = page.getByRole('dialog',{name:'Gmail message'});
   await messageReview.getByText('This is the exact private body.',{exact:true}).waitFor();
   assert.equal(await messageReview.getByRole('button',{name:'Reply',exact:true}).isVisible(),true);
-  await messageReview.getByRole('button',{name:'Close'}).click();
+  await messageReview.getByLabel('Auto Compose instructions (optional)').fill('Keep it brief, and ask about Friday?');
+  await messageReview.getByRole('button',{name:'Auto Compose (uses tokens)',exact:true}).click();
+  await page.getByText('Auto Compose queued a draft for review.',{exact:true}).waitFor();
+  assert.equal(await page.getByText('Draft reply to selected Gmail message',{exact:true}).count(),1);
+  assert.equal(await page.locator('#chatThread').getByText('Keep it brief', {exact:false}).count(),0);
   messages.push({id:followupId,role:'assistant',message:'Gmail watch found a reply.',created_at:'2026-11-10 13:00:00',context_json:JSON.stringify({actions:[{
     type:'gmail_followup',message_id:followupId,conversation_id:42,can_reply:true,
   }]})});
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
-  await page.locator('time[datetime="2026-11-10T12:30:05.000Z"]').getByText(/^Posted /).waitFor();
+  await page.getByRole('article').filter({hasText:'Email search completed.'})
+    .locator('time[datetime="2026-11-10T12:30:05.000Z"]').getByText(/^Posted /).waitFor();
   await page.locator('time[datetime="2026-11-10T13:00:00.000Z"]').getByText(/^Posted /).waitFor();
   await page.getByRole('button',{name:'Open message',exact:true}).click();
   await messageReview.getByText('This is the exact private body.',{exact:true}).waitFor();
-  await messageReview.getByRole('button',{name:'Close'}).click();
+  await messageReview.getByLabel('Auto Compose instructions (optional)').fill('Thank them for their update.');
+  await messageReview.getByRole('button',{name:'Auto Compose (uses tokens)',exact:true}).click();
+  await page.getByText('Auto Compose queued a draft for review.',{exact:true}).nth(1).waitFor();
+  assert.deepEqual(composePrompts,[
+    `Draft reply to Gmail search item ${searchRef}: Keep it brief, and ask about Friday?`,
+    `Draft reply to Gmail follow-up ${followupId}: Thank them for their update.`,
+  ]);
   assert.deepEqual(readActions,['open_search','open_followup']);
   assert.equal(await specialist.count(),0);
   assert.equal(await inline.isVisible(),false);

@@ -7,6 +7,10 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
     $GLOBALS['routes'][]=[(int)$user['id'],$agentId,$surface];
     return $GLOBALS['plan'];
 }
+function ai_v100_service_policy(PDO $pdo,array $user,array $context): ?array
+{
+    return $GLOBALS['initiativeServicePolicy']??null;
+}
 function homeserver_execution_v220_registry(int $owner):array
 {
     $GLOBALS['probes'][]=$owner;
@@ -45,6 +49,11 @@ $home=['route'=>'homeserver','effective_preference'=>'homeserver_only','blocked'
     'try_homeserver'=>true,'home'=>['supported'=>true],'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted']];
 $GLOBALS['plan']=$cloud;$GLOBALS['safeHome']=true;
 $GLOBALS['routes']=$GLOBALS['probes']=$GLOBALS['homeCalls']=$GLOBALS['cloudCalls']=[];
+$GLOBALS['initiativeServicePolicy']=['enabled'=>false,'reason'=>'background_disabled'];
+check_model(vp3_initiative_inference_health_v1($pdo,$user,17)===['ready'=>false,'route'=>'none','reason'=>'route_unavailable',
+        'policy_reason'=>'background_disabled']&&$GLOBALS['routes']===[],
+    'a disabled background Initiative service reports its exact policy blocker before routing');
+unset($GLOBALS['initiativeServicePolicy']);
 check_model(vp3_initiative_infer_v1($pdo,$user,17,'{"evidence":[]}','vp3.initiative-plan.v1')==='{"jobs":[]}',
     'configured Cloud inference uses the canonical tool-json provider');
 check_model($GLOBALS['routes']===[[9,17,'chat']]&&$GLOBALS['probes']===[]&&$GLOBALS['homeCalls']===[],

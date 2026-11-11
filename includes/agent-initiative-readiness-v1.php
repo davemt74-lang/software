@@ -75,20 +75,53 @@ function vp3_initiative_readiness_scheduling_v1(PDO $pdo,array $user,array $prin
     if(!empty($interests['activation.dismiss.workflow.booking']))return ['ready',[]];
     $until=$interests['activation.defer.workflow.booking']??null;
     if(is_string($until)&&($at=strtotime($until))!==false&&$at>$now->getTimestamp())return ['ready',[]];
-    if(!function_exists('agent_scheduling_tools_ready_v460')||!agent_scheduling_tools_ready_v460($pdo))return ['unavailable',[]];
+    if(!function_exists('agent_scheduling_tools_ready_v460')||!agent_scheduling_tools_ready_v460($pdo)
+        ||!table_exists('agent_scheduling_availability'))return ['unavailable',[]];
     $schedule=agent_scheduling_tools_schedule_v460($pdo,$user,$agent);
     $events=$schedule?agent_scheduling_tools_events_v460($pdo,$user,$schedule):[];
-    if($events)return ['ready',[]];
+    $eventCount=count($events);$scheduleId=(int)($schedule['id']??0);
+    $hasWeeklyHours=false;$typesWithHours=0;
+    if($schedule){
+        $q=$pdo->prepare('SELECT MAX(CASE WHEN a.event_type_id IS NULL THEN 1 ELSE 0 END) AS shared_hours,
+            COUNT(DISTINCT e.id) AS types_with_hours
+            FROM agent_scheduling_availability a LEFT JOIN agent_scheduling_event_types e
+                ON e.id=a.event_type_id AND e.schedule_id=a.schedule_id AND e.is_active=1
+            WHERE a.schedule_id=? AND a.is_active=1 AND a.weekday BETWEEN 0 AND 6
+                AND a.start_minute>=0 AND a.end_minute<=1440 AND a.end_minute>a.start_minute');
+        $q->execute([$scheduleId]);$hours=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$hours)return ['unavailable',[]];
+        $sharedHours=!empty($hours['shared_hours']);
+        $typesWithHours=$sharedHours?$eventCount:(int)$hours['types_with_hours'];
+        $hasWeeklyHours=$sharedHours||($eventCount>0&&$typesWithHours===$eventCount);
+    }
+    if($events&&$hasWeeklyHours)return ['ready',[]];
     $selectedBooking=!empty($interests['workflow.booking']);
+    $missing=[];
+    if($selectedBooking){
+        if(!$schedule)$missing[]='schedule';
+        if(!$events)$missing[]='meeting_type';
+        if(!$hasWeeklyHours)$missing[]='weekly_hours';
+    }
     $state=['owner_user_id'=>$owner,'agent_id'=>$agent,'workflow_selected'=>$selectedBooking,
-        'schedule_id'=>(int)($schedule['id']??0),'schedule_revision'=>$schedule?hash('sha256',json_encode($schedule,JSON_THROW_ON_ERROR)):null,'active_event_types'=>false,
-        'missing_fields'=>$selectedBooking?($schedule?['meeting_type']:['schedule','meeting_type']):[],
+        'schedule_id'=>$scheduleId,'schedule_revision'=>$schedule?hash('sha256',json_encode($schedule,JSON_THROW_ON_ERROR)):null,
+        'active_event_types'=>$eventCount>0,'active_event_type_count'=>$eventCount,'active_event_types_with_weekly_hours'=>$typesWithHours,
+        'weekly_hours_configured'=>$hasWeeklyHours,'missing_fields'=>$missing,
         'requires_owner_input'=>$selectedBooking,'auto_provision'=>false];
+    $detail=match(true){
+        !$events&&!$hasWeeklyHours=>'The schedule available in this Chat has no active appointment type or weekly booking hours.',
+        !$events=>'The schedule available in this Chat has weekly booking hours but no active appointment type.',
+        default=>'At least one active appointment type on the schedule available in this Chat has no weekly booking hours.',
+    };
+    $detail.=$selectedBooking
+        ?' The owner selected booking. Offer help choosing the appointment type, duration, or weekly hours and time zone as needed, and use Scheduling to save the owner’s choices.'
+        :' Booking has not been selected. Consider this only if it relates to the owner’s goals.';
+    $path=match(true){
+        !$schedule=>'/scheduling.php',
+        !$events=>'/scheduling-type.php?schedule='.$scheduleId,
+        default=>'/scheduling.php?schedule='.$scheduleId.'&tab=availability',
+    };
     $row=vp3_initiative_readiness_row_v1($ref,'scheduling_readiness','Appointment setup',
-        $selectedBooking
-            ?'The owner selected booking, but no active appointment type is recorded on the schedule available in this Chat. Obtain the owner’s offer and availability choices before creating anything.'
-            :'No active appointment type is recorded on the schedule available in this Chat. Booking has not been selected. Consider this only if it relates to the owner’s goals.',
-        '/scheduling.php',$state);
+        $detail,$path,$state);
     return ['ready',[$ref=>$row]];
 }
 
@@ -172,6 +205,32 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
     return [$limited?'limited':'ready',$evidence];
 }
 
+/** Rebuild one exact setup step without reading Claim Code material or creating records. */
+function vp3_initiative_readiness_merchant_setup_v1(PDO $pdo,int $merchant,int $owner,string $at): ?array
+{
+    $steps=[
+        'location'=>['merchant_locations','locations.manage',
+            'SELECT 1 FROM merchant_locations WHERE merchant_id=? AND is_active=1 LIMIT 1',[$merchant],
+            '/campaigns.php?merchant='.$merchant.'#location-editor',
+            'No active Merchant Location is recorded. For in-person rewards, ask which location the owner wants to use and help collect its name and details.'],
+        'claim_code'=>['merchant_claim_codes','claim_codes.manage',
+            "SELECT 1 FROM merchant_claim_codes WHERE merchant_id=? AND status='active'
+                AND (active_from IS NULL OR active_from<=?) AND (active_until IS NULL OR active_until>?) LIMIT 1",[$merchant,$at,$at],
+            '/rewards.php?merchant='.$merchant.'#claim-code-editor',
+            'The merchant has a location and no currently active Claim Code. For in-person claims, discuss the location, device and limits, then offer the secure Claim Code editor.'],
+        'reward_product'=>['reward_products','rewards.manage',
+            'SELECT 1 FROM reward_products WHERE merchant_id=? AND is_active=1 LIMIT 1',[$merchant],
+            '/rewards.php?merchant='.$merchant.'#reward-editor',
+            'The merchant has a location and an active Claim Code but no active Reward Product. Ask what customers should receive and discuss fulfillment before opening the Reward Product editor.'],
+    ];
+    foreach($steps as $key=>[$table,$permission,$sql,$params,$path,$detail]){
+        if(!table_exists($table)||!campaigns_rewards_platform_can_v100($pdo,$merchant,$owner,$permission))return null;
+        $q=$pdo->prepare($sql);$q->execute($params);
+        if($q->fetchColumn()===false)return ['next_step'=>$key,'path'=>$path,'detail'=>$detail];
+    }
+    return null;
+}
+
 function vp3_initiative_readiness_business_v1(PDO $pdo,array $user,array $principal,DateTimeImmutable $now,?array $selected): array
 {
     if(($principal['kind']??'')!=='system')return ['forbidden',[]];
@@ -196,6 +255,7 @@ function vp3_initiative_readiness_business_v1(PDO $pdo,array $user,array $princi
         if($q->fetchColumn()===false)continue;
         $merchant=campaigns_rewards_merchant_v100($pdo,$id);if($merchant)$merchants[]=$merchant;
     }
+    $at=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
     foreach($merchants as $merchant){
         $id=(int)$merchant['id'];$ref='business-readiness:'.$id;
         if($selected!==null&&!in_array($ref,$selected,true))continue;
@@ -204,23 +264,29 @@ function vp3_initiative_readiness_business_v1(PDO $pdo,array $user,array $princi
         $missing=[];
         foreach(['description','website_url'] as $field)if(trim((string)($merchant[$field]??''))==='')$missing[]=$field;
         $promotion='not_permitted';$campaigns=[];
+        $setup=null;
+        if(function_exists('campaigns_rewards_platform_can_v100')){
+            $setup=vp3_initiative_readiness_merchant_setup_v1($pdo,$id,$owner,$at);
+        }
         if(function_exists('campaigns_rewards_platform_can_v100')&&campaigns_rewards_platform_can_v100($pdo,$id,$owner,'campaigns.view')){
             $q=$pdo->prepare("SELECT id,name,status,environment,starts_at,ends_at,updated_at FROM campaigns
                 WHERE merchant_id=? AND status='active' AND environment='production'
                     AND (starts_at IS NULL OR starts_at<=?) AND (ends_at IS NULL OR ends_at>?) ORDER BY id LIMIT 26");
-            $at=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');$q->execute([$id,$at,$at]);
+            $q->execute([$id,$at,$at]);
             $campaigns=$q->fetchAll(PDO::FETCH_ASSOC);$promotion=$campaigns?'active_campaign_recorded':'no_active_campaign_recorded';
             if(count($campaigns)>=26)$limited=true;
         }
-        if(!$missing&&$promotion!=='no_active_campaign_recorded')continue;
+        if(!$setup&&!$missing&&$promotion!=='no_active_campaign_recorded')continue;
         $state=['owner_user_id'=>$owner,'merchant_id'=>$id,'optional_profile_gaps'=>$missing,
             'description'=>vp3_initiative_readiness_text_v1($merchant['description']??'',1000),
             'promotion_state'=>$promotion,'requires_owner_review'=>true,
             'canonical_revision'=>hash('sha256',json_encode([$merchant,$campaigns],JSON_THROW_ON_ERROR))];
-        $detail='An existing owned business has optional profile or recorded promotion opportunities. These are discussion context, not required setup or permission to publish.';
+        if($setup)$state['next_setup_step']=$setup['next_step'];
+        $detail=$setup ? $setup['detail'].' Guide this one step at a time and wait for owner input.'
+            :'An existing owned business has optional profile or recorded promotion opportunities. These are discussion context, not required setup or permission to publish.';
         if($promotion==='no_active_campaign_recorded')$detail.=' No currently active production campaign is recorded in this VP3 merchant workspace; external promotion has not been assessed.';
         $evidence[$ref]=vp3_initiative_readiness_row_v1($ref,'business_readiness',(string)($merchant['name']??'Business profile'),$detail,
-            '/campaigns.php?merchant='.$id,$state);
+            $setup['path']??'/campaigns.php?merchant='.$id,$state);
         if($selected===null&&count($evidence)>=10){$limited=true;break;}
     }
     return [$limited?'limited':'ready',$evidence];

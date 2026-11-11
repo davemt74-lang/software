@@ -38,11 +38,12 @@ try {
     if ($action === 'advance') $fields[] = 'run_id';
     if ($action === 'deliver') $fields = [...$fields, 'run_id', 'agent_id', 'conversation_id', 'working_attention_binding'];
     if ($action === 'deliver_updates') $fields = [...$fields, 'agent_id', 'conversation_id', 'working_attention_binding'];
+    if ($action === 'check_overdue') $fields = [...$fields, 'check_ref', 'include_chat_result', 'working_attention_binding'];
     if (in_array($action, ['status', 'advance'], true)) $fields[] = 'include_chat_result';
     if ($action === 'open_item') $fields[] = 'item_ref';
     if (in_array($action,['find_matches','open_match'],true)) $fields[] = 'legacy_ref';
     if ($action === 'open_match') $fields = [...$fields,'message_id','match_token'];
-    if (!in_array($action, ['status', 'start', 'advance', 'open_item', 'deliver', 'deliver_updates', 'find_matches', 'open_match'], true) || array_diff(array_keys($body), $fields)
+    if (!in_array($action, ['status', 'start', 'advance', 'open_item', 'deliver', 'deliver_updates', 'check_overdue', 'find_matches', 'open_match'], true) || array_diff(array_keys($body), $fields)
         || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))
         || (array_key_exists('include_chat_result', $body) && !is_bool($body['include_chat_result']))
         || (!empty($body['include_report']) && !empty($body['include_chat_result']))) {
@@ -65,13 +66,22 @@ try {
     if (in_array($action,['advance','deliver'],true) && (!is_string($runId) || !preg_match('/\A[a-f0-9]{32}\z/D', $runId))) {
         throw new RuntimeException('Invalid review ID.', 422);
     }
+    $checkRef = $body['check_ref'] ?? null;
+    if ($action === 'check_overdue' && (($body['include_chat_result'] ?? false) !== true
+        || !is_string($checkRef) || !preg_match('/\A[a-f0-9]{64}\z/D',$checkRef))) {
+        throw new RuntimeException('Invalid inbox check.',422);
+    }
     if (in_array($action,['deliver','deliver_updates'],true)) {
         $agentId = $body['agent_id'] ?? null;
         $conversationId = $body['conversation_id'] ?? null;
-        $binding = $body['working_attention_binding'] ?? null;
         if (!is_int($agentId) || $agentId < 0 || $agentId > 9007199254740991
-            || !is_int($conversationId) || $conversationId < 1 || $conversationId > 9007199254740991
-            || !is_string($binding) || !preg_match('/\A[a-f0-9]{64}\z/D',$binding)) {
+            || !is_int($conversationId) || $conversationId < 1 || $conversationId > 9007199254740991) {
+            throw new RuntimeException('Choose an exact private Agent Chat.',422);
+        }
+    }
+    if (in_array($action,['deliver','deliver_updates','check_overdue'],true)) {
+        $binding = $body['working_attention_binding'] ?? null;
+        if (!is_string($binding) || !preg_match('/\A[a-f0-9]{64}\z/D',$binding)) {
             throw new RuntimeException('Choose an exact private Agent Chat.',422);
         }
         if (!function_exists('vp3_catch_up_page_binding_v1')) require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
@@ -124,6 +134,10 @@ try {
     }
     if ($action === 'start') agent_connection_gmail_inbox_initial_start_v1($pdo, $user, $days, $startToken);
     if ($action === 'advance') agent_connection_gmail_inbox_initial_advance_v1($pdo, $user, $runId);
+    if ($action === 'check_overdue') {
+        require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-status-v1.php';
+        agent_connection_gmail_inbox_check_overdue_v1($pdo,$user,$checkRef);
+    }
     $review = agent_connection_gmail_inbox_initial_view_v1($pdo, $user, $body['include_report'] ?? false,
         includeChatResult: $body['include_chat_result'] ?? false, includeLegacyMatches: true);
     echo json_encode(['ok'=>true, 'review'=>$review], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);

@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-settings-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
+require_once __DIR__ . '/includes/agent-connection-gmail-inbox-status-v1.php';
 require_once __DIR__ . '/includes/agent-initiative-native-music-v1.php';
 require_once __DIR__ . '/includes/agent-transcript-research-policy-v1.php';
 require_permission('account.access');
@@ -83,10 +84,13 @@ if ($inboxGrantChanged) {
 $inboxCanEnable = $inboxReady && $providerReady && agent_connection_gmail_inbox_authority_v1($user, $connection);
 $inboxEnabled = !empty($inboxPolicy['enabled']);
 $inboxActive = $inboxCanEnable && $inboxEnabled;
-$inboxStatus = $inboxActive ? ($inboxPolicy['last_status'] ?? '') : '';
+$inboxMonitor = $inboxActive ? agent_connection_gmail_inbox_background_status_v1($pdo, $user, includeResults: false) : null;
+$inboxStatus = $inboxMonitor['state'] ?? ($inboxActive ? ($inboxPolicy['last_status'] ?? '') : '');
 $inboxCheckedAt = $inboxActive ? ($inboxPolicy['last_checked_at'] ?? '') : '';
+$inboxNextCheckAt = $inboxMonitor['next_check_at'] ?? '';
 $inboxReview = $inboxActive && !empty($inboxPolicy['last_review_json'])
     ? agent_connection_gmail_inbox_latest_view_v1($pdo, $user, $inboxPolicy['revision']) : null;
+$inboxPriorityCount = count(array_filter($inboxReview['items'] ?? [], static fn(array $item): bool => !empty($item['priority_signals'])));
 $inboxInitialReview = $inboxActive ? agent_connection_gmail_inbox_initial_view_v1($pdo, $user, true, $inboxPolicy['revision']) : null;
 $inboxRuleFields = [
     'senders' => ['Sender addresses', 'person@example.com'],
@@ -329,7 +333,7 @@ header('Cache-Control: private, no-store');
                                 <?php else: ?>
                                   <?php if (!$inboxCanEnable): ?>
                                     <p class="connections-notice">Inbox review requires a working Gmail connection, permission to search and read Gmail, and access to Agent Chat.</p>
-                                  <?php elseif ($inboxGrantChanged): ?>
+                                  <?php elseif (!$inboxEnabled): ?>
                                     <p class="connections-notice">Inbox review is off for this Gmail connection. Your ignore list is still available below.</p>
                                   <?php elseif ($inboxStatus === 'restart_required'): ?>
                                     <form class="connections-notice" method="post" action="<?= e(url('/connection-gmail-inbox.php')) ?>">
@@ -340,13 +344,24 @@ header('Cache-Control: private, no-store');
                                       <p>Gmail’s review position expired. Restart to review messages that arrive from now on.</p>
                                       <button class="connections-button connections-secondary" type="submit" name="action" value="restart">Restart Inbox review</button>
                                     </form>
+                                  <?php elseif ($inboxStatus === 'overdue'): ?>
+                                    <p class="connections-notice">The new-mail check is overdue. <a href="<?= e(url('/chat.php')) ?>">Open Agent Chat</a> to catch up.</p>
+                                  <?php elseif ($inboxStatus === 'working'): ?>
+                                    <p class="connections-muted">Checking new Gmail messages.</p>
                                   <?php elseif ($inboxStatus === 'retrying'): ?>
                                     <p class="connections-notice">The last background check could not finish. Inbox review will try again.</p>
+                                  <?php elseif ($inboxStatus === 'unavailable'): ?>
+                                    <p class="connections-notice">New-mail checking is unavailable. Check Gmail connection and database upgrade status.</p>
                                   <?php elseif ($inboxStatus === 'checked' && !is_array($inboxReview)): ?>
                                     <p class="connections-muted">No new inbox messages found yet.</p>
                                   <?php endif; ?>
                                   <?php if ($inboxCheckedAt): ?>
                                     <p class="connections-muted connections-inbox-time">Last checked <time datetime="<?= e(str_replace(' ', 'T', $inboxCheckedAt) . 'Z') ?>"><?= e($inboxCheckedAt) ?> UTC</time></p>
+                                  <?php elseif ($inboxActive): ?>
+                                    <p class="connections-muted connections-inbox-time">Last checked · No recurring check recorded yet</p>
+                                  <?php endif; ?>
+                                  <?php if ($inboxNextCheckAt): ?>
+                                    <p class="connections-muted connections-inbox-time"><?= $inboxStatus === 'overdue' ? 'Check due' : 'Next check' ?> <time datetime="<?= e($inboxNextCheckAt) ?>"><?= e(str_replace('T', ' ', substr($inboxNextCheckAt, 0, 19))) ?> UTC</time></p>
                                   <?php endif; ?>
                                   <?php if ($inboxInitialReview !== null): ?>
                                     <section class="connections-inbox-latest" data-gmail-initial-review aria-labelledby="gmail-initial-review-title">
@@ -374,6 +389,9 @@ header('Cache-Control: private, no-store');
                                         <div><dt>New messages</dt><dd><?= (int)($inboxReview['total'] ?? 0) ?></dd></div>
                                         <div><dt>Important</dt><dd><?= (int)($inboxReview['important'] ?? 0) ?></dd></div>
                                         <div><dt>Incoming replies</dt><dd><?= (int)($inboxReview['replies'] ?? 0) ?></dd></div>
+                                        <?php if ($inboxPriorityCount > 0): ?>
+                                          <div><dt>Subjects with priority keywords</dt><dd><?= $inboxPriorityCount ?></dd></div>
+                                        <?php endif; ?>
                                         <div><dt>Ignored</dt><dd><?= (int)($inboxReview['filtered'] ?? 0) ?></dd></div>
                                       </dl>
                                       <?php if (!empty($inboxReview['items'])): ?>
@@ -383,7 +401,15 @@ header('Cache-Control: private, no-store');
                                             <li data-gmail-review-latest-item data-item-ref="<?= e($item['item_ref'] ?? '') ?>" data-legacy-ref="<?= e($item['legacy_ref'] ?? '') ?>">
                                               <strong><?= e(($item['subject'] ?? '') ?: '(No subject)') ?></strong>
                                               <span class="connections-muted" data-gmail-review-sender><?= e($item['from'] ?? '') ?></span>
-                                              <span class="connections-badge"><?= e($inboxCategories[$item['category'] ?? ''] ?? 'New') ?></span>
+                                              <div class="gmail-review-item-labels">
+                                                <span class="connections-badge"><?= e($inboxCategories[$item['category'] ?? ''] ?? 'New') ?></span>
+                                                <?php if (($item['category'] ?? '') === 'reply' && ($item['important'] ?? false) === true): ?>
+                                                  <span class="connections-badge"><?= e($inboxCategories['important']) ?></span>
+                                                <?php endif; ?>
+                                              </div>
+                                              <?php if (!empty($item['priority_signals'])): ?>
+                                                <small class="gmail-review-item-priority">Priority keywords in subject · <?= e(implode(', ', $item['priority_signals'])) ?></small>
+                                              <?php endif; ?>
                                             </li>
                                           <?php endforeach; ?>
                                         </ul>
