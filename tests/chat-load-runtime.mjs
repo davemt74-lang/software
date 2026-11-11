@@ -11,7 +11,7 @@ const initiativeState=source.slice(source.indexOf('  let initiativeReplyTarget =
 const initiativeHelpers=source.slice(source.indexOf('  function initiativeIdentityMatchesV1()'),source.indexOf('  function bindInitiativeWorkV1('));
 assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity status must not be referenced');
 let response,requestCount=0,timer,delay,cleared=0;
-const requestBodies=[],syncedConversations=[];
+const requestBodies=[],syncedConversations=[],pendingMeetingReviews=[];
 const context={AbortController,document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7,userId:1,workingAttentionBinding:'fixture-page-binding'},
     window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;}},
     fetch:async(_url,options)=>{requestCount++;requestBodies.push(JSON.parse(options.body));return response(options.signal);},
@@ -19,6 +19,7 @@ const context={AbortController,document:{hidden:false,getElementById:()=>null},c
     syncConversationMessagesV101:async id=>{syncedConversations.push(id);},activityBusy:false,activityCursor:0,
     conversationId:1,chatRevision:0,lastLoadedMessageId:0,pendingConversationSync:0,busy:false,
     pendingAssistantMessages:new Map(),
+    thread:{querySelectorAll:()=>pendingMeetingReviews},
     contextReady:false,initialRestorePending:true,restoringConversation:1};
 context.window.STONEFELLOW_CHAT=context.cfg;
 // Polling shares the actual reply-state/page fence even when no proposal is
@@ -52,6 +53,14 @@ response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conve
 await context.poll(true);
 assert.deepEqual(syncedConversations,[1],'A pending message cannot sync a different conversation returned by activity');
 context.pendingAssistantMessages.clear();
+// A saved review can change status without receiving a new message ID.
+response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conversation_id:1,latest_message_id:5})});
+pendingMeetingReviews.push({closest:()=>({dataset:{chatMessageId:'3'}})});
+await context.poll(true);
+assert.deepEqual(syncedConversations,[1,1],'A pending meeting review must refresh even when history IDs are unchanged');
+pendingMeetingReviews.length=0;
+await context.poll(true);
+assert.deepEqual(syncedConversations,[1,1],'Resolved meeting reviews must stop forcing history refresh');
 context.document.hidden=true;const count=requestCount;await context.poll();assert.equal(requestCount,count);await context.poll(true);assert.equal(requestCount,count+1);
 assert.deepEqual(requestBodies.at(-1),{action:'activity',after_id:9,conversation_id:1,agent_context:{user_agent_id:7},csrf_token:'token'});
 assert.equal(cleared,requestCount,'Polling timers leaked');

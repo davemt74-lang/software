@@ -173,8 +173,13 @@ try {
         $conversationId=$scope['conversation_id'];
         if($conversationId<1)throw new RuntimeException('Conversation not found.');
         $afterId=max(0,(int)($input['after_id']??0));
-        $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND id>? ORDER BY id ASC LIMIT 80');
-        $stmt->execute([$conversationId,$afterId]);
+        $pending=$input['pending_message_ids']??[];
+        if(!is_array($pending)||!array_is_list($pending)||count($pending)>40)throw new RuntimeException('Invalid pending message IDs.',422);
+        foreach($pending as $id)if(!is_int($id)||$id<1||$id>9007199254740991)throw new RuntimeException('Invalid pending message ID.',422);
+        $pending=array_values(array_unique($pending));
+        $retry=$pending?' OR id IN ('.implode(',',array_fill(0,count($pending),'?')).')':'';
+        $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND (id>?'.$retry.') ORDER BY id ASC LIMIT '.(80+count($pending)));
+        $stmt->execute([$conversationId,$afterId,...$pending]);
         $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$scope['agent_id'],$conversationId,$stmt->fetchAll());
         echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$messages],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         exit;

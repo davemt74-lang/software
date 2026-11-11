@@ -30,6 +30,7 @@ require_once __DIR__.'/video-meetings-memory-v18120.php';
 require_once __DIR__.'/video-meetings-commitment-command-v18230-chat.php';
 require_once __DIR__.'/agent-initiative-followthrough-v1.php';
 require_once __DIR__.'/agent-inference-budget-v1.php';
+require_once __DIR__.'/agent-meeting-chat-actions-v1.php';
 
 class VP3InitiativeReplyExceptionV2160 extends RuntimeException {}
 
@@ -373,7 +374,13 @@ function vp3_agent_chat_history_content_v2160(PDO $pdo,array $user,int $agentId,
     foreach($rows as &$row){
         if(($row['role']??null)!=='assistant')continue;
         $context=json_decode((string)($row['context_json']??''),true);
-        if(is_array($context['meeting_prep_v1']??null)){
+        if(is_array($context['meeting_action_review_v1']??null)){
+            $agent=$agentId>0?vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId):null;
+            $principal=vp3_agent_chat_principal_v380($user,$agent);
+            $view=vp3_meeting_chat_projection_v1($pdo,$user,$principal,$conversationId,$context['meeting_action_review_v1']);
+            $row['message']=$view['answer'];$context['meeting_action']=$view['meeting_action'];
+            unset($context['meeting_action_review_v1']);
+        }elseif(is_array($context['meeting_prep_v1']??null)){
             $prep=vp3_agent_chat_meeting_prep_projection_v2160($pdo,$user,$agentId,$conversationId,$context['meeting_prep_v1']);
             $row['message']=$prep['answer'];
             foreach(['actions','sources','tool_receipt'] as $key)$context[$key]=$prep[$key];
@@ -415,6 +422,15 @@ function vp3_agent_chat_voice_text_v2160(array $response): string
 
 function vp3_agent_chat_send_v2160(PDO $pdo,array $user,?array $activeAgent,array $principal,array $input,bool $brainAllowed,?callable $currentAuthority=null,bool $allowConnectedSites=false): array
 {
+    if(!array_key_exists('initiative_reply',$input)&&empty($input['ephemeral_protocol'])
+        &&is_string($input['message']??null)&&vp3_meeting_chat_request_v1($pdo,$user,vp3_agent_chat_agent_id_v380($activeAgent),(int)($input['conversation_id']??0),$input['message'],(string)($input['idempotency_key']??''))){
+        vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
+        if((int)($input['conversation_id']??0)<1){
+            $conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,vp3_agent_chat_public_prompt_v2160($input['message']),artist_workspace_v181_scope_id($user));
+            $input['conversation_id']=(int)$conversation['id'];
+        }
+        return vp3_meeting_chat_send_v1($pdo,$user,$activeAgent,$principal,$input,$currentAuthority);
+    }
     $explicit=array_key_exists('initiative_reply',$input);
     $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
     $cid=(int)($input['conversation_id']??0);
@@ -682,8 +698,9 @@ $connectedSitePlan=$allowConnectedSites&&!$ephemeralProtocol
     ?vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$query):null;
 $emailRequest=$connectedSitePlan===null&&$allowConnectedSites&&!$ephemeralProtocol&&vp3_participant_scope_v1()===null
     &&knowledge_retrieval_v162_owner_session($user,$principal)&&agent_connection_email_chat_plan_v1($query,$inputMode==='voice')!==null;
-$historyStmt=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
+$historyStmt=$pdo->prepare('SELECT role,message,context_json FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
 $historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$historyStmt->closeCursor();$userMessageId=0;
+$history=vp3_meeting_chat_model_history_v1($pdo,$user,$principal,$conversationId,$history);
 if(!$ephemeralProtocol){
     if($initiativeProgress!==null){
         $userMessageId=vp3_agent_chat_followthrough_save_user_v2160($pdo,$user,$activeAgent,$principal,$conversationId,$query,$currentAuthority,$initiativeProgress['implicit_reply']??null);

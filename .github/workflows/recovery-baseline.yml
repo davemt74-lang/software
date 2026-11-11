@@ -61,6 +61,8 @@ jobs:
           php tests/agent-catch-up-v1.php
           php tests/agent-catch-up-meeting-prep-v1.php
           php tests/agent-calendar-meeting-prep-v1.php
+          php tests/agent-meeting-command-v1.php
+          php tests/agent-meeting-action-sources-v1.php
           php tests/agent-catch-up-profile-calls-v1.php
           node tests/cognitive-presentation-account-binding.mjs
           php tests/agent-initiative-v1.php
@@ -131,6 +133,7 @@ jobs:
           php tests/agent-app-operations-v1.php
           php tests/homeserver-read-receipts-v1.php
           node tests/agent-capability-chat-api.mjs
+          node tests/meeting-chat-actions-api.mjs
           php tests/agent-tool-receipts-v1.php
           php tests/tool-json-provider-v1.php
           php tests/reminder-read-repair-v1.php

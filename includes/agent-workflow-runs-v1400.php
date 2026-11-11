@@ -267,13 +267,25 @@ function agent_workflow_events_v1400(PDO $pdo,int $ownerUserId,int $runId,int $l
     return $stmt->fetchAll()?:[];
 }
 
-function agent_workflow_public_action_v1400(array $row): array
+/** These actions bind approval and source access to one saved owner Chat. */
+function agent_workflow_owner_chat_action_v1400(array $row): bool
+{
+    return in_array($row['capability_key']??'',['initiative.action','meeting.chat_action'],true)
+        ||in_array($row['source_kind']??'',['agent_initiative_action','meeting_chat_action'],true);
+}
+
+function agent_workflow_assert_generic_v1400(array $row): void
+{
+    if(agent_workflow_owner_chat_action_v1400($row))throw new RuntimeException('Review this action in its original owner Chat.',409);
+}
+
+function agent_workflow_public_action_v1400(array $row,bool $private=false): array
 {
     return [
         'id'=>(int)($row['id']??0),'sequence_no'=>(int)($row['sequence_no']??0),'action_key'=>(string)($row['action_key']??''),'action_type'=>(string)($row['action_type']??''),
         'label'=>(string)($row['label']??''),'summary'=>(string)($row['summary']??''),'status'=>(string)($row['status']??''),'requires_approval'=>!empty($row['requires_approval']),
         'execution_target'=>(string)($row['execution_target']??'cloud'),'capability_key'=>(string)($row['capability_key']??''),'attempt_count'=>(int)($row['attempt_count']??0),
-        'result_summary'=>(string)($row['result_summary']??''),'result'=>agent_workflow_public_json_v1400((string)($row['result_json']??'')),'error_class'=>(string)($row['error_class']??''),
+        'result_summary'=>(string)($row['result_summary']??''),'result'=>$private||agent_workflow_owner_chat_action_v1400($row)?[]:agent_workflow_public_json_v1400((string)($row['result_json']??'')),'error_class'=>(string)($row['error_class']??''),
         'started_at'=>(string)($row['started_at']??''),'completed_at'=>(string)($row['completed_at']??''),'updated_at'=>(string)($row['updated_at']??''),
     ];
 }
@@ -285,15 +297,15 @@ function agent_workflow_public_event_v1400(array $row): array
 
 function agent_workflow_public_run_v1400(PDO $pdo,array $row,bool $includeHistory=false): array
 {
-    $ownerUserId=(int)($row['owner_user_id']??0);$runId=(int)($row['id']??0);
+    $ownerUserId=(int)($row['owner_user_id']??0);$runId=(int)($row['id']??0);$private=agent_workflow_owner_chat_action_v1400($row);
     $out=[
         'id'=>$runId,'workflow_type'=>(string)($row['workflow_type']??''),'origin'=>(string)($row['origin']??''),'source_kind'=>(string)($row['source_kind']??''),'source_key'=>(string)($row['source_key']??''),
-        'title'=>(string)($row['title']??''),'goal'=>in_array($row['source_kind']??'',['agent_initiative','agent_initiative_action','coding_canvas'],true)?'':(string)($row['goal']??''),'decision_summary'=>(string)($row['decision_summary']??''),'status'=>(string)($row['status']??''),'risk_level'=>(string)($row['risk_level']??'low'),
+        'title'=>(string)($row['title']??''),'goal'=>$private||in_array($row['source_kind']??'',['agent_initiative','agent_initiative_action','coding_canvas'],true)?'':(string)($row['goal']??''),'decision_summary'=>(string)($row['decision_summary']??''),'status'=>(string)($row['status']??''),'risk_level'=>(string)($row['risk_level']??'low'),
         'requires_approval'=>!empty($row['requires_approval']),'approval_status'=>(string)($row['approval_status']??'not_required'),'execution_target'=>(string)($row['execution_target']??'cloud'),'capability_key'=>(string)($row['capability_key']??''),
         'current_action_id'=>(int)($row['current_action_id']??0),'attempt_count'=>(int)($row['attempt_count']??0),'last_error_class'=>(string)($row['last_error_class']??''),'started_at'=>(string)($row['started_at']??''),'approved_at'=>(string)($row['approved_at']??''),
         'completed_at'=>(string)($row['completed_at']??''),'cancelled_at'=>(string)($row['cancelled_at']??''),'created_at'=>(string)($row['created_at']??''),'updated_at'=>(string)($row['updated_at']??''),
     ];
-    if($includeHistory&&$ownerUserId>0&&$runId>0){$out['actions']=array_map('agent_workflow_public_action_v1400',agent_workflow_actions_v1400($pdo,$ownerUserId,$runId));$out['events']=array_map('agent_workflow_public_event_v1400',agent_workflow_events_v1400($pdo,$ownerUserId,$runId));}
+    if($includeHistory&&$ownerUserId>0&&$runId>0){$out['actions']=array_map(static fn(array $action):array=>agent_workflow_public_action_v1400($action,$private),agent_workflow_actions_v1400($pdo,$ownerUserId,$runId));$out['events']=array_map('agent_workflow_public_event_v1400',agent_workflow_events_v1400($pdo,$ownerUserId,$runId));}
     return $out;
 }
 
@@ -373,7 +385,7 @@ function agent_workflow_create_from_priority_v1400(PDO $pdo,array $user,array $p
 function agent_workflow_approve_v1400(PDO $pdo,array $user,int $runId,string $actorKind='user'): array
 {
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');
-    $ownsTransaction=!$pdo->inTransaction();try{if($ownsTransaction)$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');if(($row['capability_key']??'')==='initiative.action')throw new RuntimeException('Review this action in its original owner Chat.',409);if((string)$row['status']!=='approval_pending')throw new RuntimeException('This workflow is not waiting for approval.');
+    $ownsTransaction=!$pdo->inTransaction();try{if($ownsTransaction)$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');agent_workflow_assert_generic_v1400($row);if((string)$row['status']!=='approval_pending')throw new RuntimeException('This workflow is not waiting for approval.');
         $pdo->prepare("UPDATE agent_workflow_runs SET status='approved',approval_status='approved',approved_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_actions SET status='queued' WHERE run_id=? AND owner_user_id=? AND status='approval_pending'")->execute([$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'approved','approval_pending','approved',$actorKind,$actorKind==='scheduler'?'Scheduled plan approved under the owner’s recurring grant.':'User explicitly approved the workflow plan.');if($ownsTransaction)$pdo->commit();
     }catch(Throwable $e){if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();throw $e;}
     $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);return agent_workflow_public_run_v1400($pdo,$row?:[],true);
@@ -382,7 +394,7 @@ function agent_workflow_approve_v1400(PDO $pdo,array $user,int $runId,string $ac
 function agent_workflow_cancel_v1400(PDO $pdo,array $user,int $runId,string $actorKind='user'): array
 {
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');
-    try{$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');$from=(string)$row['status'];if(in_array($from,['completed','cancelled'],true))throw new RuntimeException('This workflow is already closed.');
+    try{$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');agent_workflow_assert_generic_v1400($row);$from=(string)$row['status'];if(in_array($from,['completed','cancelled'],true))throw new RuntimeException('This workflow is already closed.');
         $pdo->prepare("UPDATE agent_workflow_runs SET status='cancelled',approval_status=IF(approval_status='pending','rejected',approval_status),cancelled_at=UTC_TIMESTAMP(),current_action_id=NULL WHERE id=? AND owner_user_id=?")->execute([$runId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_actions SET status='cancelled',completed_at=COALESCE(completed_at,UTC_TIMESTAMP()) WHERE run_id=? AND owner_user_id=? AND status NOT IN ('completed','cancelled','failed')")->execute([$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'cancelled',$from,'cancelled',$actorKind,'Workflow cancelled before further execution.');$pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     $row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId);return agent_workflow_public_run_v1400($pdo,$row?:[],true);
@@ -391,7 +403,7 @@ function agent_workflow_cancel_v1400(PDO $pdo,array $user,int $runId,string $act
 function agent_workflow_retry_v1400(PDO $pdo,array $user,int $runId): array
 {
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');
-    try{$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');if((string)$row['status']!=='failed')throw new RuntimeException('Only a failed workflow can be retried.');
+    try{$pdo->beginTransaction();$row=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$row)throw new RuntimeException('Workflow not found.');agent_workflow_assert_generic_v1400($row);if((string)$row['status']!=='failed')throw new RuntimeException('Only a failed workflow can be retried.');
         if (($row['source_kind'] ?? '') === 'coding_canvas') throw new RuntimeException('Start a new Coding Agent request from Chat.',409);
         $pdo->prepare("UPDATE agent_workflow_runs SET status='queued',last_error_class='',current_action_id=NULL,started_at=NULL,completed_at=NULL WHERE id=? AND owner_user_id=?")->execute([$runId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_actions SET status=CASE WHEN requires_approval=1 AND ?='pending' THEN 'approval_pending' ELSE 'queued' END,result_summary='',result_json=NULL,error_class='',started_at=NULL,completed_at=NULL WHERE run_id=? AND owner_user_id=? AND status='failed'")->execute([(string)$row['approval_status'],$runId,$ownerUserId]);
         $next=(string)$row['approval_status']==='pending'?'approval_pending':'approved';$pdo->prepare('UPDATE agent_workflow_runs SET status=? WHERE id=? AND owner_user_id=?')->execute([$next,$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'retry_requested','failed',$next,'user','User requested a retry of the failed workflow.');$pdo->commit();
@@ -405,12 +417,12 @@ function agent_workflow_claim_next_action_v1400(PDO $pdo,array $user,int $runId,
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1||!in_array($executor,['cloud','homeserver'],true))return null;
     try{
         $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);
-        if(!$run||($run['capability_key']??'')==='initiative.action'||!in_array((string)$run['status'],['approved','executing'],true)){if($pdo->inTransaction())$pdo->rollBack();return null;}
+        if(!$run||agent_workflow_owner_chat_action_v1400($run)||!in_array((string)$run['status'],['approved','executing'],true)){if($pdo->inTransaction())$pdo->rollBack();return null;}
         // The locked run row is the single-executor gate. A second caller must wait until the active action reports a result.
         if((string)$run['status']==='executing'&&(int)($run['current_action_id']??0)>0){$pdo->commit();return null;}
         // Global sequence wins over runtime affinity: neither Cloud nor HomeServer may skip an earlier queued step.
         $stmt=$pdo->prepare("SELECT * FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=? AND status='queued' ORDER BY sequence_no,id LIMIT 1 FOR UPDATE");$stmt->execute([$runId,$ownerUserId]);$action=$stmt->fetch();
-        if(!$action){$pdo->commit();return null;}
+        if(!$action||agent_workflow_owner_chat_action_v1400($action)){$pdo->commit();return null;}
         if((string)($action['execution_target']??'cloud')!==$executor){$pdo->commit();return null;}
         $actionId=(int)$action['id'];$from=(string)$run['status'];$pdo->prepare("UPDATE agent_workflow_actions SET status='executing',attempt_count=attempt_count+1,started_at=COALESCE(started_at,UTC_TIMESTAMP()) WHERE id=? AND owner_user_id=? AND status='queued'")->execute([$actionId,$ownerUserId]);$pdo->prepare("UPDATE agent_workflow_runs SET status='executing',current_action_id=?,attempt_count=attempt_count+IF(status='approved',1,0),started_at=COALESCE(started_at,UTC_TIMESTAMP()) WHERE id=? AND owner_user_id=?")->execute([$actionId,$runId,$ownerUserId]);
         if($from==='approved')agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'execution_started','approved','executing','executor','Workflow execution started.',['executor'=>$executor]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'action_started','executing','executing','executor','Workflow action started.',['action_id'=>$actionId,'executor'=>$executor]);$pdo->commit();
@@ -423,8 +435,8 @@ function agent_workflow_record_action_result_v1400(PDO $pdo,array $user,int $run
 {
     $ownerUserId=(int)($user['id']??0);if($ownerUserId<1)throw new RuntimeException('A signed-in account is required.');$summary=agent_workflow_text_v1400($summary,1500);$errorClass=agent_workflow_text_v1400($errorClass,80);
     try{
-        $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if(!$run||(string)$run['status']!=='executing'||(int)($run['current_action_id']??0)!==$actionId)throw new RuntimeException('Workflow action is not the active execution.');
-        $stmt=$pdo->prepare('SELECT * FROM agent_workflow_actions WHERE id=? AND run_id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([$actionId,$runId,$ownerUserId]);$action=$stmt->fetch();if(!$action||(string)$action['status']!=='executing')throw new RuntimeException('Workflow action is not executing.');
+        $pdo->beginTransaction();$run=agent_workflow_row_v1400($pdo,$ownerUserId,$runId,true);if($run)agent_workflow_assert_generic_v1400($run);if(!$run||(string)$run['status']!=='executing'||(int)($run['current_action_id']??0)!==$actionId)throw new RuntimeException('Workflow action is not the active execution.');
+        $stmt=$pdo->prepare('SELECT * FROM agent_workflow_actions WHERE id=? AND run_id=? AND owner_user_id=? LIMIT 1 FOR UPDATE');$stmt->execute([$actionId,$runId,$ownerUserId]);$action=$stmt->fetch();if(!$action||(string)$action['status']!=='executing')throw new RuntimeException('Workflow action is not executing.');agent_workflow_assert_generic_v1400($action);
         $safeResult=$result?agent_workflow_public_json_v1400(agent_workflow_json_v1400($result)):[];
         $actionStatus=$success?'completed':'failed';$pdo->prepare('UPDATE agent_workflow_actions SET status=?,result_summary=?,result_json=?,error_class=?,completed_at=UTC_TIMESTAMP() WHERE id=? AND owner_user_id=?')->execute([$actionStatus,$summary,$safeResult?agent_workflow_json_v1400($safeResult):null,$success?'':$errorClass,$actionId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,$success?'action_completed':'action_failed','executing','executing','executor',$summary!==''?$summary:($success?'Workflow action completed.':'Workflow action failed.'),['action_id'=>$actionId,'error_class'=>$success?'':$errorClass]);
         if(!$success){$pdo->prepare("UPDATE agent_workflow_runs SET status='failed',current_action_id=NULL,last_error_class=? WHERE id=? AND owner_user_id=?")->execute([$errorClass!==''?$errorClass:'execution_failed',$runId,$ownerUserId]);agent_workflow_event_v1400($pdo,$ownerUserId,$runId,'failed','executing','failed','executor','Workflow stopped after an action failure.',['error_class'=>$errorClass]);}

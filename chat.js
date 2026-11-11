@@ -1471,6 +1471,7 @@
       gmail_inbox_review_v1:['agent_connection_gmail_first_review','agent_connection_gmail_inbox_update'].includes(raw.source) ? raw.gmail_inbox_review_v1 : null,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
       initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
+      meeting_action:raw.meeting_action && typeof raw.meeting_action==='object' ? raw.meeting_action : null,
       product_launch:raw.source===(raw.product_launch?.stage==='promotion_outcomes' ? 'agent_promotion_outcome' : 'agent_product_launch')
         ? raw.product_launch : null,
       playlist_title:String(raw.playlist_title || '')
@@ -2101,12 +2102,93 @@
     (element.querySelector('.message-body')||element).append(review);
   }
 
+  /** The server freezes and authorizes the action; this card only presents it
+   * and sends an exact owner reply through the ordinary Chat turn. */
+  function bindMeetingActionV1(element, action) {
+    if(!element||!initiativeIdentityMatchesV1()||!action||action.version!==1
+      ||action.owner_user_id!==initiativePage.owner||action.agent_id!==initiativePage.agent||action.conversation_id!==conversationId
+      ||!Number.isSafeInteger(action.plan_id)||action.plan_id<1||typeof action.plan_hash!=='string'||!/^[a-f0-9]{64}$/.test(action.plan_hash)
+      ||!['approval_pending','completed','cancelled','stale'].includes(action.status)
+      ||typeof action.label!=='string'||!action.label.trim()||action.label.length>180
+      ||typeof action.summary!=='string'||action.summary.length>4000||!Array.isArray(action.details)||action.details.length>20
+      ||action.details.some(detail=>!detail||typeof detail.label!=='string'||!detail.label.trim()||detail.label.length>120
+        ||typeof detail.value!=='string'||detail.value.length>10000)
+      ||action.status==='approval_pending'&&action.confirmation_text!=='Confirm meeting action '+action.plan_id)return;
+    const messageId=Number(element.dataset.chatMessageId),planId=String(action.plan_id);
+    if(!Number.isSafeInteger(messageId)||messageId<1)return;
+    const existing=element.querySelector('[data-meeting-action-plan]');
+    const states={approval_pending:'Review before confirming',completed:'Completed',cancelled:'Cancelled',stale:'Review changed · ask for current details'};
+    const retire=(card,status,label=states[status])=>{
+      card.dataset.meetingActionStatus=status;
+      card.querySelector('[data-meeting-action-status]').textContent=label;
+      card.querySelector('[data-meeting-action-controls]')?.remove();
+    };
+    if(existing&&(existing.dataset.meetingActionPlan!==planId||existing.dataset.meetingActionHash!==action.plan_hash)){
+      retire(existing,'stale');return;
+    }
+    let status=action.status,replaced=false;
+    for(const prior of thread.querySelectorAll('[data-meeting-action-plan]')){
+      const priorId=Number(prior.closest('[data-chat-message-id]')?.dataset.chatMessageId);
+      if(prior.dataset.meetingActionPlan===planId){
+        if(prior.dataset.meetingActionHash!==action.plan_hash){retire(prior,'stale');return;}
+        if(status==='approval_pending'&&prior.dataset.meetingActionCanonicalStatus!=='approval_pending'){
+          status=prior.dataset.meetingActionCanonicalStatus;
+        }
+        if(action.status!=='approval_pending'){
+          prior.dataset.meetingActionCanonicalStatus=action.status;retire(prior,action.status);
+          prior.querySelector('p').textContent=action.summary;prior.querySelector('dl')?.remove();
+        }
+      }
+      if(priorId<messageId&&prior.dataset.meetingActionStatus==='approval_pending')retire(prior,'cancelled','Replaced by a newer review');
+      if(status==='approval_pending'&&priorId>messageId)replaced=true;
+    }
+    if(existing)return true;
+    const review=document.createElement('section');review.className='chat-initiative-action-review chat-meeting-action-review';
+    review.dataset.meetingActionPlan=planId;review.dataset.meetingActionHash=action.plan_hash;
+    review.dataset.meetingActionCanonicalStatus=status;
+    review.dataset.meetingActionStatus=replaced?'cancelled':status;review.setAttribute('aria-label',action.label);
+    const heading=document.createElement('strong');heading.textContent=action.label;
+    const state=document.createElement('small');state.dataset.meetingActionStatus='';state.textContent=replaced?'Replaced by a newer review':states[status];
+    const summary=document.createElement('p');summary.textContent=action.summary;
+    review.append(heading,state,summary);
+    if(action.details.length&&status==='approval_pending'&&!replaced){
+      const details=document.createElement('dl');
+      for(const detail of action.details){
+        const row=document.createElement('div'),label=document.createElement('dt'),value=document.createElement('dd');
+        label.textContent=detail.label;value.textContent=detail.value;row.append(label,value);details.append(row);
+      }
+      review.append(details);
+    }
+    if(status==='approval_pending'&&!replaced){
+      const controls=document.createElement('div');controls.className='chat-agent-actions';controls.dataset.meetingActionControls='';
+      for(const [label,command] of [['Confirm',action.confirmation_text],['Cancel','Cancel meeting action '+planId]]){
+        const button=document.createElement('button');button.type='button';button.className='chat-agent-action';button.textContent=label;
+        button.addEventListener('click',async()=>{
+          if(!initiativeIdentityMatchesV1()||!review.isConnected||!thread.contains(review)||action.conversation_id!==conversationId
+            ||review.dataset.meetingActionStatus!=='approval_pending'){button.disabled=true;return;}
+          if(busy||!contextReady||initialRestorePending||restoringConversation)return;
+          if(input.value.trim()||initiativeReplyTarget){input.focus();return;}
+          const buttons=controls.querySelectorAll('button');buttons.forEach(control=>{control.disabled=true;});
+          try{await sendMessage(command,'text');}
+          finally{if(review.dataset.meetingActionStatus==='approval_pending')buttons.forEach(control=>{control.disabled=false;});}
+        });
+        controls.append(button);
+      }
+      review.append(controls);
+    }
+    (element.querySelector('.message-body')||element).append(review);
+    return true;
+  }
+
   function pendingAssistantMessageIds() {
     const cutoff=Date.now()-600000;
     for(const [id,seenAt] of pendingAssistantMessages){
       if(seenAt<cutoff)pendingAssistantMessages.delete(id);
     }
-    return [...pendingAssistantMessages.keys()];
+    const reviews=Array.from(thread.querySelectorAll('[data-meeting-action-status="approval_pending"][data-meeting-action-plan]'))
+      .map(card=>Number(card.closest('[data-chat-message-id]')?.dataset.chatMessageId))
+      .filter(id=>Number.isSafeInteger(id)&&id>0);
+    return [...new Set([...reviews,...pendingAssistantMessages.keys()])].slice(0,40);
   }
 
   function unconfirmedAssistantMessage(message,context) {
@@ -3718,6 +3800,7 @@
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
       if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
+      if(message.role==='assistant')bindMeetingActionV1(renderedMessage,context.meeting_action);
       if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
@@ -3743,13 +3826,16 @@
       agent_context:{user_agent_id:Number(cfg.agentId || 0)}}, signal);
     if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
     data.messages.forEach(message=>{
+      let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
+      if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
       const stored=thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]');
       if(stored){
         if(typeof message.created_at==='string'&&message.created_at)stored.dataset.chatCreatedAt=message.created_at;
+        if(message.role==='assistant'&&stored.querySelector('[data-meeting-action-plan]')
+          &&bindMeetingActionV1(stored,context.meeting_action)&&context.meeting_action.status!=='approval_pending'
+          &&typeof message.message==='string')stored.querySelector('.message-text').textContent=message.message;
         lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));return;
       }
-      let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
-      if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
       if(unconfirmedAssistantMessage(message,context)){
         lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
         return;
@@ -3769,6 +3855,7 @@
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
       if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
+      if(message.role==='assistant')bindMeetingActionV1(renderedMessage,context.meeting_action);
       if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
@@ -4041,6 +4128,7 @@
       }
       applyInitiativeFollowthroughV1(data.initiative_followthrough);
       bindInitiativeActionV1(reply,data.initiative_action,data.initiative_followthrough);
+      bindMeetingActionV1(reply,data.meeting_action);
       if (data.canvas_media?.generation_ids?.length) {
         reply.querySelector('.vp3-canvas-media')?.setAttribute('data-specialist-launch', 'true');
       }

@@ -75,6 +75,7 @@ function agent_work_control_priority_value_v173(mixed $value): int
 
 function agent_work_control_allowed_v173(array $row): array
 {
+    if(agent_workflow_owner_chat_action_v1400($row))return ['approve'=>false,'pause'=>false,'resume'=>false,'cancel'=>false,'retry'=>false,'reschedule'=>false,'priority'=>false,'inspect'=>true];
     $status=(string)($row['status']??'');
     $pauseRequested=trim((string)($row['pause_requested_at']??''))!=='';
     $closed=in_array($status,['completed','cancelled'],true);
@@ -120,6 +121,7 @@ function agent_work_control_pause_v173(PDO $pdo,array $user,int $runId): array
         $pdo->beginTransaction();
         $row=agent_workflow_row_v1400($pdo,$uid,$runId,true);
         if(!$row)throw new RuntimeException('Workflow not found.');
+        agent_workflow_assert_generic_v1400($row);
         $status=(string)$row['status'];
         if($status==='executing'){
             if(trim((string)($row['pause_requested_at']??''))!=='')throw new RuntimeException('A pause is already requested for this workflow.');
@@ -149,6 +151,7 @@ function agent_work_control_resume_v173(PDO $pdo,array $user,int $runId): array
         $pdo->beginTransaction();
         $row=agent_workflow_row_v1400($pdo,$uid,$runId,true);
         if(!$row)throw new RuntimeException('Workflow not found.');
+        agent_workflow_assert_generic_v1400($row);
         if((string)$row['status']!=='paused')throw new RuntimeException('Only a paused workflow can be resumed.');
         $future=(strtotime((string)($row['next_attempt_at']??''))?:0)>time();
         $message=$future?'Resumed · waiting for scheduled time':'Resumed and ready';
@@ -223,6 +226,7 @@ function agent_work_control_reschedule_v173(PDO $pdo,array $user,int $runId,stri
         $pdo->beginTransaction();
         $row=agent_workflow_row_v1400($pdo,$uid,$runId,true);
         if(!$row)throw new RuntimeException('Workflow not found.');
+        agent_workflow_assert_generic_v1400($row);
         $status=(string)$row['status'];
         if(!in_array($status,['approved','paused'],true))throw new RuntimeException('Only queued, scheduled, or paused work can be rescheduled.');
         $pdo->prepare("UPDATE agent_workflow_runs SET next_attempt_at=?,progress_message=? WHERE id=? AND owner_user_id=?")->execute([$schedule['utc'],$status==='paused'?'Paused · rescheduled':'Scheduled by user',$runId,$uid]);
@@ -245,6 +249,7 @@ function agent_work_control_priority_v173(PDO $pdo,array $user,int $runId,mixed 
         $pdo->beginTransaction();
         $row=agent_workflow_row_v1400($pdo,$uid,$runId,true);
         if(!$row)throw new RuntimeException('Workflow not found.');
+        agent_workflow_assert_generic_v1400($row);
         if(in_array((string)$row['status'],['completed','cancelled'],true))throw new RuntimeException('Closed workflows cannot be reprioritized.');
         $old=max(1,min(100,(int)($row['work_priority']??VP3_AGENT_WORK_PRIORITY_NORMAL_V173)));
         $pdo->prepare("UPDATE agent_workflow_runs SET work_priority=? WHERE id=? AND owner_user_id=?")->execute([$value,$runId,$uid]);
