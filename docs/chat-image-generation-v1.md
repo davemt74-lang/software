@@ -26,6 +26,8 @@ The Chat bar's **+** menu includes **Upload base image**, using the existing aut
 
 > Create three variations of this image with warmer lighting.
 
+With a base attached, direct visual instructions such as “Add a pirate hat to the character” or “Change the colors to purple and gold” also start an edit. Ordinary conversation, planning and deferred instructions keep the attachment available for the next prompt.
+
 The attachment chip shows the selected source and allows removal. Upload progress reflects acknowledged bytes. Uploading or selecting a source does not itself generate anything. The original remains unchanged; outputs are new private assets.
 
 Source ownership, private path, type, dimensions, size and actual pixels are validated. PNG structure and checksums are checked. The job freezes the exact source hash and revision and rechecks them before provider dispatch and output publication. The current request selects the source; models and old Chat text cannot choose source IDs.
@@ -45,6 +47,8 @@ History belongs to the current owner and Agent, with access rechecked for each o
 Reusing a prompt or selecting an idea stages text in the composer for review. It never sends automatically or overwrites another draft. Reusing an edit revalidates its original base.
 
 Brainstorming runs only on explicit request through the shared governed text-inference and usage service. It saves the exact request, ideas and source references. Source records are untrusted data. Revised or withdrawn evidence is rechecked before saving results, exposing saved ideas and staging an idea. History reads and brainstorming do not invoke the image provider.
+
+Background history refreshes preserve the direction being typed in Brainstorming, including its caret and scroll position.
 
 ## Provider, accounting and storage
 

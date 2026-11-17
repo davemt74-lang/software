@@ -772,3 +772,56 @@ jobs:
 
       - name: Verify complete compute provenance journey
         run: php tests/homeserver-runtime-journey-v030.php
+  image-chat:
+    needs: transfer-scope
+    if: needs.transfer-scope.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: bash
+    env:
+      VP3_IMAGE_UI_SCREENSHOTS: artifacts/image-ui
+      VP3_IMAGE_COMPOSER_SCREENSHOTS: artifacts/image-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: mbstring, pdo_sqlite, dom, curl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare browser and evidence directory
+        run: |
+          mkdir -p artifacts/image-ui
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          bash tools/install-ci-chromium.sh
+      - name: Image jobs, private sources and controlled provider transport
+        run: |
+          php tests/agent-image-generation-v1.php | tee artifacts/image-domain.log
+          php tests/agent-image-transport-v1.php | tee artifacts/image-transport.log
+          php tests/chat-image-composer-v1.php | tee artifacts/image-composer-domain.log
+          node tests/chat-canvas-media-api.mjs | tee artifacts/image-media-api.log
+      - name: Image specialist evidence and API
+        if: ${{ !cancelled() }}
+        run: |
+          php tests/chat-image-studio-v1.php | tee artifacts/image-studio-domain.log
+          node tests/chat-image-studio-api.mjs | tee artifacts/image-studio-api.log
+      - name: Generated gallery and in-canvas viewer
+        if: ${{ !cancelled() }}
+        run: node tests/chat-canvas-media-browser.mjs | tee artifacts/image-canvas-browser.log
+      - name: Base-image composer and mobile upload
+        if: ${{ !cancelled() }}
+        run: node tests/chat-image-composer-browser.mjs | tee artifacts/image-composer-browser.log
+      - name: Image specialist tabs and prompt reuse
+        if: ${{ !cancelled() }}
+        run: node tests/chat-image-studio-browser.mjs | tee artifacts/image-studio-browser.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-chat-studio-evidence
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

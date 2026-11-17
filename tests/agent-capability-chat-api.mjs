@@ -621,6 +621,16 @@ try{
   check(editView.mode==='chat_reference'&&editView.reference_asset?.id===1&&editView.reference_asset.available===true,
    endpoint+' explicit edit binds the actual private PNG as the base image');
   await cancelQueuedImage(edit,agent);
+  for(const prompt of ['Add a pirate hat to the character','Put the ear pieces on the sides of the icon',
+   'Change the colors to purple and gold','Remove the hat','Add headphones on both sides','Remove the background']){
+   const concreteEdit=await queuedImage(endpoint,prompt,{...context,image_reference_asset_id:1},agent,1,1);
+   const concreteView=(await imageControl('get',concreteEdit,agent)).data.generation;
+   check(concreteView.mode==='chat_reference'&&concreteView.prompt===prompt,
+    endpoint+' a concrete attached-image edit preserves its literal instruction: '+prompt);
+   if(prompt==='Remove the background')check(concreteView.background==='transparent',
+    endpoint+' removing a background queues transparent provider output');
+   await cancelQueuedImage(concreteEdit,agent);
+  }
   const variants=await queuedImage(endpoint,'Create three variations of this image with a different sunset palette in each.',
    {...context,image_reference_asset_id:1},agent,3,1);
   await cancelQueuedImage(variants,agent);
@@ -641,10 +651,14 @@ try{
    check(!rejected.data?.canvas_media?.generation_ids?.length&&(await imageState()).generations===before.generations,
     endpoint+' an explicit quantity above four is rejected instead of silently reduced: '+rejected.body);
   }
-  const beforeDiscussion=await imageState();
-  const discussion=await post(endpoint,'What changes would suit this image?',{...context,image_reference_asset_id:1},imageModelHeaders);
-  check(!discussion.data?.canvas_media?.generation_ids?.length&&(await imageState()).generations===beforeDiscussion.generations,
-   endpoint+' attaching a base for discussion does not authorize a model to generate an image');
+  for(const prompt of ['What changes would suit this image?','Do not add a hat to the character',
+   'Add headphones on both sides tomorrow','Add a hat to the character and publish it',
+   'Add milk to my prep list','Move this image into my media folder','Remove the uploaded image']){
+   const beforeDiscussion=await imageState();
+   const discussion=await post(endpoint,prompt,{...context,image_reference_asset_id:1},imageModelHeaders);
+   check(!discussion.data?.canvas_media?.generation_ids?.length&&(await imageState()).generations===beforeDiscussion.generations,
+    endpoint+' an attached base cannot turn discussion or a non-image instruction into paid generation: '+prompt);
+  }
  }
  const replayImageChat=(await post('chat.php','',{action:'new'},imageHeaders)).data.conversation_id;
  const replayImagePrompt='Edit this image into a moonlit watercolor scene with muted blue shadows.';

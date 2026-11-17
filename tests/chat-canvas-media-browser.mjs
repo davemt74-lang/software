@@ -14,7 +14,7 @@ const orbStatuses=new Map();
 const asset={id:1,title:'Desert <img src=x onerror=alert(1)>',media_type:'photo',mime_type:'image/png',source:'openai_image',available:true,url:'/media-library-file-v86.php?id=1',editor_url:'/video-editor.php?asset=1'};
 const assetFor=number=>({...asset,id:number,title:number===1?asset.title:'Desert study '+number,url:'/media-library-file-v86.php?id='+number});
 const generation=(jobId=id,jobStatus=status)=>({id:jobId,title:'Desert artwork',prompt:'Cinematic desert <img src=x>',model:'gpt-image-2.5-flare',size:'1024x1024',quality:'medium',background:'opaque',count:imageCount,completed_count:jobStatus==='completed'?imageCount:0,created_at:requestedAt,provider_started_at:jobStatus==='queued'?null:startedAt,status:jobStatus==='expired'?'generating':jobStatus,message:jobStatus==='failed'?'The provider result was not confirmed. No automatic retry.':'',provider_started:jobStatus!=='queued',asset:jobStatus==='completed'?asset:null,...(imageCount>1?{assets:jobStatus==='completed'?Array.from({length:imageCount},(_,i)=>assetFor(i+1)):[]}:{}),active_lease_expires_at:jobStatus==='generating'?Date.now()+30000:jobStatus==='expired'?Date.now()-1000:null});
-const html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside><main class="chat-main"><header class="chat-topbar"><strong>Agent Chat</strong></header><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section><div class="chat-composer-shell" id="chatComposerShell"><form class="chat-composer" id="chatForm"><textarea id="chatInput" aria-label="Message your Agent" placeholder="Message your Agent…"></textarea><button id="sendChatButton">Send</button></form></div></main></div><aside class="sf-online-rail-v109" id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside></body></html>';
+const html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside><main class="chat-main"><header class="chat-topbar"><strong>Agent Chat</strong></header><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section><div class="chat-composer-shell" id="chatComposerShell"><form class="chat-composer" id="chatForm"><textarea id="chatInput" aria-label="Message your Agent" placeholder="Message your Agent…"></textarea><button id="sendChatButton" type="submit" aria-label="Send message">↑</button></form></div></main></div><aside class="sf-online-rail-v109" id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside></body></html>';
 const fixtureImages=await page.evaluate(()=>[['#eac68c','#657f8a','#a86746'],['#bdd3cf','#657783','#cd895e'],['#e9c29f','#827083','#b97461'],['#eadfb7','#68857d','#a18b61']].map(([sky,back,front],index)=>{
  const canvas=document.createElement('canvas');canvas.width=canvas.height=512;const context=canvas.getContext('2d');
  context.fillStyle=sky;context.fillRect(0,0,512,512);context.fillStyle='#fff1c9';context.beginPath();context.arc(350-index*38,150+index*12,64,0,Math.PI*2);context.fill();
@@ -74,7 +74,7 @@ async function boot(withOrb=true){
  }
 }
 let checks=0;async function check(label,fn){await fn();checks++;console.log('PASS '+label);}
-async function capture(name){const directory=process.env.VP3_IMAGE_UI_SCREENSHOTS;if(!directory)return;await fs.mkdir(directory,{recursive:true});await page.screenshot({path:directory+'/'+name+'.png',fullPage:true});}
+async function capture(name){const directory=process.env.VP3_IMAGE_UI_SCREENSHOTS;if(!directory)return;await fs.mkdir(directory,{recursive:true});await page.screenshot({path:directory+'/'+name+'.png',fullPage:true,animations:'disabled'});}
 const specialist = page.locator('[data-chat-specialist][data-chat-specialist-type="image-generator"]');
 const panel = page.getByRole('dialog',{name:'Image Generator',exact:true});
 const readyMessage = page.getByText('Image Generator finished. Your image is ready.', {exact:true});
@@ -343,7 +343,7 @@ try{
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   assert.equal(await viewer.evaluate(element=>getComputedStyle(element).overflowY),'visible');
   assert.equal(await page.locator('.chat-thread').evaluate(element=>getComputedStyle(element).overflowY),'auto');
-  await capture('image-viewer-mobile');await viewer.getByRole('button',{name:'Back to images',exact:true}).click();
+  await capture('image-viewer-mobile');await viewer.getByRole('button',{name:/Back to images$/}).click();
   assert.equal(await third.evaluate(element=>document.activeElement===element),true);assert.equal(tickCount(id),1);
   await boot();await batch.locator('.vp3-image-tile').first().waitFor();assert.equal(await batch.locator('.vp3-image-tile').count(),4);assert.equal(tickCount(id),1);
  });

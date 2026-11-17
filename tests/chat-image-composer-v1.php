@@ -74,11 +74,38 @@ try{
         'attached variations preserve quantity and transparency');
     $edit=vp3_chat_image_reference_plan_v1('Make this image blue without a transparent background');
     composer_check($edit!==null&&$edit['background']==='opaque','negated transparency is respected');
+    foreach(['Remove the background','Erase its background','Change the background to transparent',
+        'Please make the background transparent.'] as $query){
+        $edit=vp3_chat_image_reference_plan_v1($query);
+        composer_check($edit!==null&&$edit['background']==='transparent',
+            'background removal requests transparent output from the provider: '.$query);
+    }
+    composer_check(vp3_chat_image_reference_plan_v1('Replace the background with a sunset sky')['background']==='opaque',
+        'replacing a background keeps the requested opaque scene');
+    foreach(['Add a pirate hat to the character','Put the ear pieces on the sides of the icon',
+        'Change the colors to purple and gold','Please move the logo to the upper left corner',
+        'Remove the hat from the character','Remove the hat','Add headphones on both sides',
+        'Change the hat to red','Rotate this image 90 degrees clockwise',
+        'Can you replace the background with a sunset sky?'] as $query){
+        $edit=vp3_chat_image_reference_plan_v1($query);
+        composer_check($edit!==null&&$edit['prompt']===$query&&$edit['count']===1
+            &&vp3_chat_image_reference_generation_requested_v1($query),
+            'concrete visual edits preserve the literal owner direction and one output: '.$query);
+    }
     foreach(['What do you think of this image?','Can you edit images?','Maybe we could make a variation later',
         'Make a variation of this image then publish it','Create image generation support for my app',
         'Make a variation of this image, but do not generate it yet','Make this image blue tomorrow',
-        'Remix this image tomorrow with a warmer palette','Modify this image later with a blue background'] as $query){
-        composer_check(vp3_chat_image_reference_plan_v1($query)===null,
+        'Remix this image tomorrow with a warmer palette','Modify this image later with a blue background',
+        'What if we add a pirate hat to the character?','Do not add a pirate hat to the character',
+        'Add a pirate hat to the character tomorrow','Put the ear pieces on the sides of the icon after I approve it',
+        'Change the colors to purple and gold, but not yet','Add a pirate hat to the character and publish it',
+        'Add headphones on both sides. Publish it','Remove this image','Remove the uploaded image',
+        'Add milk to my prep list','Add a new reminder to buy milk','Remove my latest calendar event',
+        'Change my account password','Move the image into my media folder',
+        'Add this image to my shopping list','Put this image on my website','Remove the image from my profile',
+        'Move the image into my collection','Add this image to a task','Change my calendar event to tomorrow'] as $query){
+        composer_check(vp3_chat_image_reference_plan_v1($query)===null
+            &&!vp3_chat_image_reference_generation_requested_v1($query),
             'attachment alone does not turn discussion or external actions into generation: '.$query);
     }
     composer_check(vp3_chat_image_reference_input_v1([])===0,'an absent reference is explicitly detached');

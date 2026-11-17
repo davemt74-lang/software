@@ -2,6 +2,7 @@
 .vp3-image-studio{min-width:0;color:#172033;background:#fff}
 .vp3-image-studio-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:12px 0 8px}
 .vp3-image-studio-toolbar p{margin:0;color:#637083;font-size:13px;line-height:1.5}
+.vp3-image-studio-toolbar>button{flex:0 0 auto;white-space:nowrap}
 .vp3-image-studio button{font:inherit;cursor:pointer}
 .vp3-image-studio button:disabled{cursor:default;opacity:.55}
 .vp3-image-studio :is(button,textarea,summary):focus-visible{outline:2px solid #5467dc;outline-offset:3px}

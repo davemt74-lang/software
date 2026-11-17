@@ -102,7 +102,7 @@
     const panel = node('section','','vp3-image-studio-content');
     panel.id = 'vp3ImageStudioPanel';panel.setAttribute('role','tabpanel');panel.tabIndex = 0;
     shell.append(toolbar,tabs,feedback,panel);container.replaceChildren(shell);
-    let disposed = false,controller = null,timer = 0,tab = 'images',state = null,rows = [],brief = '',busy = false;
+    let disposed = false,controller = null,timer = 0,tab = 'images',renderedTab = null,state = null,rows = [],brief = '',busy = false;
     const current = () => !disposed && shell.isConnected && identity === key(getScope());
     const labels = [['images','Images','Image History'],['prompts','Prompts','Prompt History'],['brainstorm','Brainstorming','Brainstorming']];
     const tabButtons = labels.map(([id,label,accessible]) => {
@@ -262,11 +262,27 @@
     }
     function render() {
       if (!current()) return;
+      const sameTab = renderedTab === tab;
+      const scrollHost = sameTab ? shell.closest('.vp3-chat-specialist-activity') : null;
+      const scrollTop = scrollHost?.scrollTop;
+      const focused = sameTab && tab === 'brainstorm' ? panel.querySelector('#vp3ImageBrainstormBrief') : null;
+      const editing = focused && document.activeElement === focused ? {
+        start:focused.selectionStart,end:focused.selectionEnd,direction:focused.selectionDirection,scrollTop:focused.scrollTop
+      } : null;
       controls();panel.replaceChildren();
+      renderedTab = tab;
       if (!state) return;
       if (tab === 'images') renderImages();
       else if (tab === 'prompts') renderPrompts();
       else renderBrainstorm();
+      if (editing) {
+        const input = panel.querySelector('#vp3ImageBrainstormBrief');
+        if (input && !input.disabled) {
+          input.focus({preventScroll:true});input.setSelectionRange(editing.start,editing.end,editing.direction);
+          input.scrollTop = editing.scrollTop;
+        }
+      }
+      if (scrollHost && scrollTop !== undefined) scrollHost.scrollTop = scrollTop;
     }
     async function request(action,extra = {},append = false) {
       if (!current() || controller) return false;

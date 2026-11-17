@@ -223,10 +223,43 @@ try {
     assert.equal(historyRequests(),before+1);
   });
   await page.setViewportSize({width:375,height:812});
+  await check('background history refresh preserves the active brainstorm direction, caret and scroll position',async () => {
+    await panel.getByRole('tab',{name:'Brainstorming'}).click();
+    const direction = panel.getByLabel('A direction to explore (optional)');
+    const draft = 'Explore a warm coastal album cover with amber sunlight, gentle waves and a textured paper finish. '.repeat(4);
+    await direction.fill(draft);
+    const editing = await direction.evaluate(element => {
+      element.focus();element.setSelectionRange(150,160,'forward');element.scrollTop=45;
+      const host=element.closest('.vp3-chat-specialist-activity');host.scrollTop=70;
+      return {start:element.selectionStart,end:element.selectionEnd,scrollTop:element.scrollTop,hostScrollTop:host.scrollTop};
+    });
+    historyGate = new Promise(resolve => { historyRelease=resolve; });
+    const started = waitForCall('history');
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:image-generation-updated',{detail:{agentId:7,conversationId:42}})));
+    await started;
+    const snapshot = () => direction.evaluate(element => ({
+      focused:document.activeElement===element,start:element.selectionStart,end:element.selectionEnd,
+      scrollTop:element.scrollTop,hostScrollTop:element.closest('.vp3-chat-specialist-activity').scrollTop
+    }));
+    assert.deepEqual(await snapshot(),{focused:true,...editing});
+    historyRelease();historyGate=null;
+    await page.waitForFunction(() => document.querySelector('.vp3-image-studio-feedback')?.textContent==='');
+    assert.deepEqual(await snapshot(),{focused:true,...editing});
+    await page.keyboard.type('sunlit');
+    assert.equal(await direction.inputValue(),draft.slice(0,150)+'sunlit'+draft.slice(160));
+    await panel.getByRole('tab',{name:'Image History'}).click();
+    assert.equal(await panel.getByRole('tab',{name:'Image History'}).evaluate(element => document.activeElement===element),true);
+  });
   await check('the narrow specialist layout fits the viewport with one outer scrolling surface',async () => {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth+1));
     assert.equal(await panel.locator('.vp3-image-studio-content').evaluate(element => getComputedStyle(element).overflowY),'visible');
     assert.equal(await panel.evaluate(element => getComputedStyle(element).backgroundColor),'rgb(255, 255, 255)');
+    const refresh = panel.getByRole('button',{name:'Refresh image history'});
+    assert.equal(await refresh.evaluate(element => {
+      const text = document.createRange();text.selectNodeContents(element);
+      const lines = [...text.getClientRects()];
+      return lines.length === 1 && text.getBoundingClientRect().width <= element.clientWidth;
+    }),true,'The Refresh label remains on one line without clipping on mobile.');
   });
   await capture('image-studio-images-mobile');
   await panel.getByRole('tab',{name:'Brainstorming'}).click();await capture('image-studio-brainstorm-mobile');
