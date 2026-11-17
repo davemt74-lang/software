@@ -3,13 +3,24 @@ declare(strict_types=1);
 
 // Load the real provider configuration before image fixtures can install their
 // transport-only provider stubs. Every credential and path is isolated test data.
-$initiativeAiFixtureRoot = sys_get_temp_dir().'/vp3-initiative-ai-'.bin2hex(random_bytes(8));
-define('STONEFELLOW_ROOT', $initiativeAiFixtureRoot);
-mkdir($initiativeAiFixtureRoot.'/private', 0700, true);
+$initiativeAiOwnRoot = !defined('STONEFELLOW_ROOT');
+$initiativeAiFixtureRoot = $initiativeAiOwnRoot
+    ? sys_get_temp_dir().'/vp3-initiative-ai-'.bin2hex(random_bytes(8)) : (string)STONEFELLOW_ROOT;
+if ($initiativeAiOwnRoot) define('STONEFELLOW_ROOT', $initiativeAiFixtureRoot);
+$initiativeAiOwnPrivate = !is_dir($initiativeAiFixtureRoot.'/private');
+if ($initiativeAiOwnPrivate) mkdir($initiativeAiFixtureRoot.'/private', 0700, true);
+$initiativeAiFixtureKeyPath = $initiativeAiFixtureRoot.'/private/ai-key.php';
+if (file_exists($initiativeAiFixtureKeyPath)) throw new LogicException('The AI fixture must not overwrite an existing provider key.');
 $initiativeAiFixtureKey = random_bytes(32);
-file_put_contents($initiativeAiFixtureRoot.'/private/ai-key.php', '<?php return '.var_export(base64_encode($initiativeAiFixtureKey), true).';');
-register_shutdown_function(static function () use ($initiativeAiFixtureRoot): void {
+file_put_contents($initiativeAiFixtureKeyPath, '<?php return '.var_export(base64_encode($initiativeAiFixtureKey), true).';');
+register_shutdown_function(static function () use ($initiativeAiFixtureRoot, $initiativeAiFixtureKeyPath, $initiativeAiOwnRoot, $initiativeAiOwnPrivate): void {
     if (!is_dir($initiativeAiFixtureRoot)) return;
+    if (!$initiativeAiOwnRoot) {
+        if (is_file($initiativeAiFixtureKeyPath)) unlink($initiativeAiFixtureKeyPath);
+        if ($initiativeAiOwnPrivate && is_dir($initiativeAiFixtureRoot.'/private')
+            && count(scandir($initiativeAiFixtureRoot.'/private')) === 2) rmdir($initiativeAiFixtureRoot.'/private');
+        return;
+    }
     $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($initiativeAiFixtureRoot, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
     foreach ($files as $file) $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
     rmdir($initiativeAiFixtureRoot);

@@ -100,6 +100,18 @@ register_shutdown_function(static fn()=>@unlink($fixtureFile));
 $user=['id'=>1,'is_active'=>1];
 runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['state']==='starting','schema readiness awaits the accepted Chat lifecycle without activating from a read-only request');
 $policy=runtime_enable($user,0,42);
+// This owner already received onboarding. Keep its actual saved messages and
+// canonical delivery history so independent starter offers do not enter these
+// generic assessment/repair scenarios.
+require_once dirname(__DIR__).'/includes/agent-casual-checkin-v1.php';
+$priorStarter=$pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,created_at)
+    VALUES(42,NULL,'assistant',?,'2000-01-01 00:00:00')");
+$pdo->beginTransaction();
+foreach(VP3_SPECIALIST_STARTERS_V1 as $kind=>$starter){
+    $priorStarter->execute([$starter['question']]);
+    vp3_casual_checkin_record_v1($pdo,1,$kind,42,(int)$pdo->lastInsertId(),['agent_id'=>0]);
+}
+$pdo->commit();
 $before=$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();
 $pdo->exec('ALTER TABLE agent_workflow_runs RENAME COLUMN paused_at TO fixture_paused_at');
 $health=vp3_initiative_worker_health_v1($pdo,$user,0,42);
@@ -606,38 +618,45 @@ runtime_check($planWithDraft['ok']&&!$badDraft['ok']&&$badDraft['health']['reaso
 $GLOBALS['runtimeCalendarTitle']='A saved report waiting during a model outage';
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
 $pdo->exec("UPDATE agent_activity_state SET details_json=JSON_SET(details_json,'$.chat_busy',JSON('true')) WHERE user_id=1");
+$countBefore=$reports();
 $savedPlan=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static fn():string=>
     '{"jobs":[{"tool":"work.prepare_private","primary":"calendar:event:42","refs":["calendar:event:42"],"focus":"Prepare the verified outage handoff","report":true}]}');
 $saved=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],static fn():string=>
-    '{"draft":"I prepared the verified calendar handoff for this Chat."}');
-$countBefore=$reports();
-runtime_check($savedPlan['ok']&&$saved['ok']&&count(vp3_initiative_pending_results_v1($pdo,1,null))===1,
-    'busy Chat keeps a real completed preparation pending');
+    '{"draft":"I prepared the verified calendar handoff for this Chat."}',allowDelivery:false);
+runtime_check($savedPlan['ok']&&$saved['ok']&&count(vp3_initiative_pending_results_v1($pdo,1,null))===1
+    &&$reports()===$countBefore,
+    'the real worker saves a pending completed preparation when delivery is explicitly deferred');
 $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message,created_at)
     VALUES(42,1,'user','A direct Chat turn was interrupted',CURRENT_TIMESTAMP)");
 $interruptedId=(int)$pdo->lastInsertId();
-$pdo->exec("UPDATE agent_activity_state SET last_heartbeat_at=CURRENT_TIMESTAMP,
-    details_json=JSON_SET(details_json,'$.chat_busy',JSON('false')) WHERE user_id=1");
+$pdo->exec("UPDATE agent_activity_state SET last_heartbeat_at=CURRENT_TIMESTAMP WHERE user_id=1");
 $GLOBALS['runtimePlan']=['route'=>'blocked','blocked'=>true,'effective_preference'=>'vp3_cloud',
     'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted']];
-$noInference=static fn(): never=>throw new LogicException('Saved handoff must never invoke a model.');
-$blocked=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference);
-runtime_check(!$blocked['ok']&&$blocked['health']['pump_available']&&!$blocked['health']['execution_ready']&&$reports()===$countBefore,
-    'a recent direct turn still has priority over saved delivery even during an outage');
-$pdo->prepare("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE id=?")->execute([$interruptedId]);
-$pdo->exec("UPDATE agent_activity_state SET details_json=JSON_SET(details_json,'$.chat_busy',JSON('true')) WHERE user_id=1");
-runtime_check(!vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference)['ok']&&$reports()===$countBefore,
-    'an old interrupted turn still cannot release delivery while Chat is busy');
-$pdo->exec("UPDATE agent_activity_state SET details_json=JSON_SET(details_json,'$.chat_busy',JSON('false')) WHERE user_id=1");
+$outageCalls=0;
+$noInference=static function()use(&$outageCalls): never{
+    ++$outageCalls;
+    throw new LogicException('Saved handoff must never invoke a model.');
+};
+$deferred=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference,allowDelivery:false);
+runtime_check(!$deferred['ok']&&$deferred['health']['pump_available']&&!$deferred['health']['execution_ready']
+    &&$deferred['health']['reason']==='quota_exhausted'&&$reports()===$countBefore
+    &&count(vp3_initiative_pending_results_v1($pdo,1,null))===1&&$outageCalls===0,
+    'explicitly deferred delivery retains the saved receipt while canonical model readiness reports the outage');
 $timezone=date_default_timezone_get();
 date_default_timezone_set('America/Phoenix');
 try{
     $delivery=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference);
     $again=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference);
+    $pdo->prepare("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE id=?")->execute([$interruptedId]);
+    $pdo->exec("UPDATE agent_activity_state SET details_json=JSON_SET(details_json,'$.chat_busy',JSON('false')) WHERE user_id=1");
+    $quietAgain=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference);
+    $outageHealth=vp3_initiative_worker_health_v1($pdo,$user,0,42);
 }finally{date_default_timezone_set($timezone);unset($GLOBALS['runtimePlan']);}
-runtime_check($delivery['ok']&&$delivery['reason']==='completed'&&$delivery['health']['reason']==='quota_exhausted'
-    &&!$again['ok']&&$reports()===$countBefore+1&&vp3_initiative_pending_results_v1($pdo,1,null)===[],
-    'quiet foreground Chat delivers the saved report exactly once through a model outage and an older interrupted turn');
+runtime_check($delivery['ok']&&$delivery['reason']==='completed'&&$delivery['step']==='saved_delivery'
+    &&$outageHealth['reason']==='quota_exhausted'&&!$outageHealth['execution_ready']
+    &&!$again['ok']&&!$quietAgain['ok']&&$outageCalls===0&&$reports()===$countBefore+1
+    &&vp3_initiative_pending_results_v1($pdo,1,null)===[],
+    'saved timestamped text delivers exactly once during busy Chat and a recent direct turn without invoking the unavailable model');
 $debugPost=$engagement()['last_post'];
 runtime_check($debugPost['proof']==='receipt'&&$debugPost['source']==='initiative'&&$debugPost['result']==='report'
     &&$debugPost['specialist']===null&&!$debugPost['includes_gmail']&&$debugPost['message_id']>0&&$debugPost['run_id']>0,

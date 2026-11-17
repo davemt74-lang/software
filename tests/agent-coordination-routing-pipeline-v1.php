@@ -391,9 +391,13 @@ $contextBinding = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_i
 coordination_fixture_presence('quiet',$contextChat);
 $pdo->exec("UPDATE agent_memory_items SET is_active=0 WHERE user_id=1 AND id IN (601,850)");
 $contextTaskRef = 'office:task:860';
+// The native Tasks fixture runs the shared scheduler. Assemble the new pair of
+// findings before allowing Gmail to queue its own handoff for this scenario.
+coordination_fixture_rule($pdo,$owner,'gmail','needs_attention','watch');
 coordination_fixture_prepare_office($pdo,$owner,'task:860',true);
 $contextSummary = 'The vendor offered delivery before the rehearsal and needs an owner response.';
 coordination_fixture_gmail_observe($pdo,$owner,9,$contextSummary);
+coordination_fixture_rule($pdo,$owner,'gmail','needs_attention','ask');
 coordination_fixture_rule($pdo,$owner,'tasks','waiting_owner','ask');
 $contextRevisions = array_column(vp3_coordination_sources_v1($pdo,$owner,$contextBinding,[$contextTaskRef,$gmailRef])['items'],'revision','ref');
 ksort($contextRevisions);
@@ -421,7 +425,6 @@ $unassigned = $gmailDebug($contextBinding);
 canvas_pipeline_check($unassigned[2]==='gmail_handoff_unassigned' && str_contains($unassigned[1],'No current Chat handoff'),
     'Gmail Debug does not mistake the supporting context in a posted Tasks question for a Gmail handoff');
 
-$pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=17");
 $resetScan();
 $contextResult = vp3_initiative_pump_v1($pdo,$owner,$agentId,$contextChat,$contextBinding['revision'],$warmModel);
 $contextGmail = array_values(array_filter(coordination_fixture_runs('coordination.review',$gmailRef),
@@ -490,14 +493,19 @@ for($group=0;$group<3;$group++){
     $refs=[];
     for($offset=0;$offset<4;$offset++){
         $id=910+$group*4+$offset;
-        $start=time()+108000+$id*60;
+        $start=time()+108000+($id-910)*3600;
         $event->execute([$id,1,'Planning agenda '.$id,gmdate('Y-m-d H:i:s',$start),gmdate('Y-m-d H:i:s',$start+1800)]);
         $refs[]='planning:calendar:event:'.$id;
     }
     $recordReview($refs,$refs[0]);
 }
-$pdo->exec('DELETE FROM user_calendar_events WHERE id=900 OR id BETWEEN 910 AND 921');
-$pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=19");
+$pdo->exec('DELETE FROM user_calendar_events WHERE id BETWEEN 910 AND 921');
+// Keep the original question's evidence valid, but outside bounded discovery.
+// Deleted supporting evidence correctly makes a posted handoff repairable.
+for($id=950;$id<958;$id++){
+    $start=time()+3600+($id-950)*3600;
+    $event->execute([$id,1,'Unrelated agenda '.$id,gmdate('Y-m-d H:i:s',$start),gmdate('Y-m-d H:i:s',$start+1800)]);
+}
 $initialHistoryMessages = canvas_pipeline_count('chat_messages','conversation_id=19');
 $resetScan();
 vp3_initiative_schedule_coordination_v1($pdo,$owner,$historyBinding,true,$scanOutcome);
@@ -515,12 +523,15 @@ canvas_pipeline_check(count($historyChecked)===10 && !isset($historyChecked[$his
     && $gmailDebug($historyBinding)[2]==='gmail_handoff_unassigned',
     'newer reports exhaust the history recheck budget while a changed verified Gmail finding has no assignment');
 $resetScan();
-$historyTick = vp3_initiative_pump_v1($pdo,$owner,$agentId,$historyChat,$historyBinding['revision'],$warmModel);
+// A completed specialist result wakes discovery, invalidating the admission
+// checkpoint. Inspect its safe counters before the ordinary pump executes it.
+vp3_initiative_schedule_coordination_v1($pdo,$owner,$historyBinding,true,$historyOutcome);
 $historyCheckpoint = vp3_coordination_scan_checkpoint_v1($owner,$historyBinding);
 $historyMailbox = $historyCheckpoint['specialists']['gmail']??[];
+$historyTick = vp3_initiative_pump_v1($pdo,$owner,$agentId,$historyChat,$historyBinding['revision'],$warmModel);
 $historyRun = vp3_coordination_runs_v1($pdo,$owner,$historyBinding,null,1,'gmail')[0];
 $historyReceipt = coordination_fixture_receipt((int)$historyRun['id']);
-canvas_pipeline_check(($historyTick['coordination']??null)==='queued_chat_handoff' && $historyReceipt['initiative_delivery']==='delivered'
+canvas_pipeline_check($historyOutcome==='queued_chat_handoff' && $historyTick['ok'] && $historyReceipt['initiative_delivery']==='delivered'
     && (int)$historyRun['id']!==(int)$historyGmail['id']
     && $historyReceipt['initiative_tool_result']['output']['situation_id']===json_decode($historyGmail['goal'],true)['coordination_id']
     && $historyReceipt['initiative_tool_result']['output']['summary']===$newHistorySummary
@@ -529,8 +540,10 @@ canvas_pipeline_check(($historyTick['coordination']??null)==='queued_chat_handof
 canvas_pipeline_check($historyMailbox['found']===1 && $historyMailbox['chat_matches']===1 && $historyMailbox['candidate_count']===1
     && $historyMailbox['queued']===1 && $historyMailbox['already_handled']===0
     && !str_contains(json_encode($historyCheckpoint,JSON_THROW_ON_ERROR),$gmailRef)
-    && vp3_coordination_scan_checkpoint_v1($owner,$otherBinding)===null,
-    'the safe scan checkpoint records what Gmail contributed and is scoped to the exact Chat policy');
+    && vp3_coordination_scan_checkpoint_v1($owner,$otherBinding)===null
+    && vp3_coordination_scan_checkpoint_v1($owner,$historyBinding)===null,
+    'the safe admission checkpoint is scoped to the exact Chat policy and wakes again after verified completion');
+$pdo->exec('DELETE FROM user_calendar_events WHERE id=900 OR id BETWEEN 950 AND 957');
 
 $currentMessageId = (int)$historyReceipt['initiative_message_id'];
 $currentQuestion = $historyReceipt['initiative_tool_result']['output']['question'];
@@ -604,7 +617,6 @@ $officeBeforeChat = canvas_pipeline_count('chat_messages','conversation_id=19');
 for ($scan=0;$scan<7;$scan++) {
     // Simulate the same checkpoint invalidation as a new Gmail finding.
     $resetScan();
-    $pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=19");
     vp3_initiative_pump_v1($pdo,$owner,$agentId,$historyChat,$historyBinding['revision'],$model);
 }
 $olderHandoffs = coordination_fixture_runs('coordination.review',$officeRef);
@@ -695,19 +707,28 @@ canvas_pipeline_check(count($starterRuns())===1 && ($starterResult['initiative_d
     && coordination_fixture_message($starterId)['message']===$definition['question'] && $inferenceCalls===0,
     'an enabled Initiative posts a saved starter question with a receipt through the usual worker during a provider outage');
 $tickStarter();
-canvas_pipeline_check(count($starterRuns())===1,'repeated polls do not enqueue a second starter while the original waits for a reply');
+$secondStarter = $starterRuns()[1]??null;
+$secondStarterResult = $secondStarter!==null?coordination_fixture_receipt($secondStarter['id']):[];
+$secondStarterId = (int)($secondStarterResult['initiative_message_id']??0);
+canvas_pipeline_check(count($starterRuns())===2 && $secondStarter['goal']['primary']!==$runStarter['goal']['primary']
+    && ($secondStarterResult['initiative_delivery']??null)==='delivered'
+    && $openState($starterId)==='open' && $openState($secondStarterId)==='open',
+    'a distinct eligible starter can advance while the original remains open without repeating its specialist');
+$starterState = json_decode(coordination_fixture_message($starterId)['context_json'],true)['initiative_work']['followthrough'];
 $starterReply = vp3_agent_chat_send_v2160($pdo,$owner,vp3_agent_chat_resolve_agent_v380($pdo,$owner,$agentId),$principal,
-    ['message'=>'yes','conversation_id'=>$starterChat],true,null,true);
+    ['message'=>'yes','conversation_id'=>$starterChat,'initiative_reply'=>[
+        'message_id'=>$starterId,'reply_ref'=>$starterState['reply_ref'],'revision'=>$starterState['revision']]],true,null,true);
 $exampleAction=['type'=>'specialist_example','specialist'=>$definition['specialist'],'label'=>$definition['label']];
 $acceptedRow=coordination_fixture_message($starterReply['assistant_message_id']);
 $historyRow=vp3_coordination_chat_history_v1($pdo,$owner,$agentId,$starterChat,[$acceptedRow])[0];
 canvas_pipeline_check(($starterReply['initiative_followthrough']['state']??null)==='owner_resolved'
-    && $openState($starterId)==='owner_resolved' && ($starterReply['actions']??null)===[$exampleAction]
+    && $openState($starterId)==='owner_resolved' && $openState($secondStarterId)==='open'
+    && ($starterReply['actions']??null)===[$exampleAction]
     && (json_decode($historyRow['context_json'],true)['actions']??null)===[$exampleAction]
-    && $inferenceCalls===0,'accepting the starter resolves its original question and preserves the editable example action on reload');
-$pdo->prepare("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=?")->execute([$starterChat]);
-$tickStarter();
-canvas_pipeline_check(count($starterRuns())===1,'answering a starter alone cannot trigger another example');
+    && $inferenceCalls===0,'accepting an explicitly selected starter resolves only its original question and preserves the example action on reload');
+canvas_pipeline_check(!vp3_casual_checkin_allowed_v1($pdo,$owner,$starterChat,$kindStarter)
+    && !vp3_casual_checkin_delivery_ready_v1($pdo,$owner,$starterChat,$kindStarter),
+    'answering a starter cannot reopen that specialist’s one-time offer');
 
 vp3_casual_checkin_save_v1($pdo,1,true);
 putenv('VP3_GMAIL_REDIRECT_URI=https://example.test/connection-oauth.php');
@@ -722,17 +743,16 @@ $starterTurn();
 $tickStarter();
 $normalRuns = coordination_fixture_runs('coordination.review','casual:email');
 $latestNormal = end($normalRuns);
-canvas_pipeline_check(count($starterRuns())===1 && count($normalRuns)===$emailCount+1
+canvas_pipeline_check(count($starterRuns())===2 && count($normalRuns)===$emailCount+1
     && coordination_fixture_receipt($latestNormal['id'])['initiative_delivery']==='delivered',
     'an eligible contextual check-in follows the starter after fresh ordinary activity');
 $normalReply = vp3_agent_chat_send_v2160($pdo,$owner,vp3_agent_chat_resolve_agent_v380($pdo,$owner,$agentId),$principal,
     ['message'=>'No, thanks.','conversation_id'=>$starterChat],true,null,true);
 canvas_pipeline_check(($normalReply['initiative_followthrough']['state']??null)==='declined',
     'the interleaved contextual check-in uses the original exact-response path');
-$pdo->prepare("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=?")->execute([$starterChat]);
 $starterTurn();
 $tickStarter();
-canvas_pipeline_check(count($starterRuns())===2 && count($starterRuns())===count(array_unique(array_column(
+canvas_pipeline_check(count($starterRuns())===3 && count($starterRuns())===count(array_unique(array_column(
     array_column($starterRuns(),'goal'),'primary'))) && count(coordination_fixture_runs('coordination.review','casual:email'))===$emailCount+1,
     'another ordinary owner turn gives a different starter a turn ahead of repetitive contextual check-ins');
 unset($GLOBALS['pipelineRuntimePlan']);

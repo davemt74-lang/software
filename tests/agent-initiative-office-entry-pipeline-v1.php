@@ -729,22 +729,38 @@ canvas_pipeline_check(($productReport['followup_question']??null)==='Do you need
 
 // Admit an existing Ask while a second saved task still needs its own first
 // review. A busy Chat still accepts timestamped text from both independent paths.
+// Earlier cases deliberately leave unrelated queued handoffs. Retire that
+// fixture work so this scenario starts with only the exact product question.
+$pdo->exec("UPDATE agent_workflow_runs SET status='cancelled' WHERE owner_user_id=1 AND agent_id=7
+    AND source_kind='agent_initiative' AND source_key LIKE 'coordination:%'
+    AND status IN ('queued','approved','executing','paused')");
 office_entry_fixture_presence($officeChat,'busy');
 $pdo->exec("DELETE FROM agent_memory_items WHERE user_id=1 AND user_agent_id=7
     AND memory_type='initiative_sweep' AND subject IN ('coordination-scan','office-entry-scan')");
 $scanOutcome=null;
 vp3_initiative_schedule_coordination_v1($pdo,$owner,$binding,false,$scanOutcome);
-canvas_pipeline_check($scanOutcome==='queued_chat_handoff','the fixture has a saved coordination handoff ready to claim');
+$productAsks=array_values(array_filter(vp3_coordination_runs_v1($pdo,$owner,$binding),static function(array $run)use($productRef):bool{
+    $goal=json_decode((string)$run['goal'],true,32,JSON_THROW_ON_ERROR);
+    return $run['status']==='approved'&&($goal['primary']??null)==='office:'.$productRef
+        &&($goal['coordination_saved']??null)===true;
+}));
+canvas_pipeline_check($scanOutcome==='queued_chat_handoff'&&count($productAsks)===1,
+    'the fixture has the exact saved product question ready for a canonical claim');
 $independentRef='task:68001';
 $seed->execute([68001,$officeAgent,'Confirm tomorrow’s site visit','Verify that the site contact has tomorrow’s arrival time.',
     'office-entry-68001',json_encode(['task_status'=>'open','source_kind'=>'explicit_user'],JSON_THROW_ON_ERROR)]);
 $noModel=static fn():never=>throw new LogicException('A saved handoff and a Task scan must not call the provider.');
 $business=office_entry_fixture_business_state();
+$messagesBeforeTick=canvas_pipeline_count('chat_messages');
+$inferenceBeforeTick=count($GLOBALS['pipelineInference']);
 $openChatTick=vp3_initiative_pump_v1($pdo,$owner,$officeAgent,$officeChat,$binding['revision'],$noModel);
 $independent=office_entry_fixture_runs($independentRef);
 $completedAsk=isset($openChatTick['run_id'])?canvas_pipeline_result($openChatTick['run_id']):[];
 canvas_pipeline_check($openChatTick['ok']&&($openChatTick['step']??null)==='preparation'
+    &&($openChatTick['run_id']??null)===(int)$productAsks[0]['id']
     &&($completedAsk['initiative_delivery']??null)==='delivered'
+    &&canvas_pipeline_count('chat_messages')===$messagesBeforeTick+1
+    &&count($GLOBALS['pipelineInference'])===$inferenceBeforeTick
     &&count($independent)===1&&$independent[0]['status']==='approved'
     &&office_entry_fixture_business_state()===$business,
     'one Open Chat tick processes a saved handoff and also queues the independent native Task review without inference');

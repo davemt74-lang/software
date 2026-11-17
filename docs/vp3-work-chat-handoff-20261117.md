@@ -59,26 +59,26 @@ The November 17 continuation completed the three scoped changes above. Independe
 
 The portable PHP runtime lacks DOM, so the broader Initiative tools suite stops at its existing web-collection readiness assertion after 31 passing cases. Its duplicate legacy stub collision was repaired; the assertion was not removed. Chromium cannot launch in this executor because socket creation is denied. Browser tests remain enabled for GitHub CI, and no real YouTube/ElevenLabs or live hosting result is claimed.
 
-### Additional preflight fixture checkpoint
+### Completed broader preflight repairs
 
-After the owner's publication approval, three broader recovered-baseline suites exposed obsolete setup and delivery fixtures. The bounded repairs load the canonical AI settings and service-readiness policy, keep real worker execution behind isolated transport fixtures, and align saved text delivery with the current owner/Agent Chat binding. The new shared fixture is included in workflow scope detection. Independent review confirmed that owner/scope, source revision, no-model, no-duplicate, exact active-job projection, and pending-delivery rule-revalidation assertions remain covered. No production code changed in this checkpoint.
+The three earlier preflight failures came from obsolete or cumulative fixtures. Repairs load canonical AI settings and service-readiness policy, retain real worker execution behind isolated transport fixtures, and align saved text delivery with the current owner/Agent Chat binding. Independent review confirmed that owner/scope, source revision, no-model, no-duplicate, exact active-job projection, and pending-delivery rule-revalidation assertions remain covered. No production code changed in these repairs.
 
-These suites are **still failing** and are not a release signoff:
+| Suite | Latest local result |
+| --- | --- |
+| Initiative runtime | 104 cases passed |
+| Coordination routing pipeline | 124 assertions passed with SQLite |
+| Office entry pipeline | 83 assertions passed with SQLite |
+| Top of Mind | 45 cases passed, in addition to its runtime prerequisite |
+| Top of Mind session HTTP | All three authenticated/session blocks passed |
+| Worker health | 24 cases passed, in addition to its runtime prerequisite |
+| New Morning Brief coverage | 47 assertions passed with SQLite |
 
-| Suite | Last local result | Remaining assertion |
-| --- | --- | --- |
-| `tests/agent-initiative-runtime-v1.php` (also loaded by Top of Mind) | 69 passing assertions before failure | A changed source withdraws the stale plan before a second model call |
-| `tests/agent-coordination-routing-pipeline-v1.php` | 77 passing assertions before failure | A previously posted Tasks question with identical evidence does not consume Gmail's separate Ask rule or situation |
-| `tests/agent-initiative-office-entry-pipeline-v1.php` | 81 passing assertions before failure | The fixture has a saved coordination handoff ready to claim; the observed scheduler outcome was `queued_work` |
-
-The later runtime outage section still contains obsolete busy-text expectations beyond its first failure and remains unvalidated. These fixtures mark a prior daily brief assessment as completed to isolate their queues; no dedicated Morning Brief coverage was found in the retained tests. The remaining failures and coverage gaps require investigation before any green-check merge. The previously prepared review ZIP retains the same production files; these additional changes affect tests, workflow scope and this handoff only.
+The Morning Brief suite exercises real source grants, encrypted findings, saved owner Chat policy, local-day timing, atomic proof/message publication and rollback, once-per-Agent/day delivery, Chat switches, history and voice revalidation, tampering, changed/revoked/deleted sources, and owner/Agent/participant boundaries. Both SQLite and native MySQL invocations are registered in CI. A MySQL or hosted-browser pass is recorded only after execution.
 
 ## Publishing checkpoint
 
-Automatic approval review initially blocked transfer of recovered source into the public GitHub repository. Repository ownership, the matching original remote/package repository, prior user handoff instructions and excluded runtime-secret paths were checked. The owner then replied "i approve" to the explicit request to publish the recovered November 12–17 work plus the fixes to public `davemt74-lang/software`, open a PR, and merge only after required checks pass.
+The owner explicitly authorized publication of the recovered November 12–17 source and completed fixes to public `davemt74-lang/software`, opening the PR, resolving failing checks, merging only after all required checks pass, and producing the full deployment ZIP. Automatic approval review accepted that self-contained authorization.
 
-The approval review accepted another partial source tree, but rejected the next batch, stating that its retained context did not preserve a self-contained user approval naming the public payload and destination. Further publishing attempts stopped. No branch was advanced, no PR was opened, and nothing was merged or deployed. The owner's approval exists; the remaining publication block is the automatic review's authorization requirement.
+The complete recovered Git tree `565c50f529fae02464a48107d15ea0849fb4d707` was uploaded and verified against the local recovery checkpoint. Remote recovery commit `7a1231851001302d8e06abbf43ea6e65621b45f8` follows main `c80a2d9c2345de11962d724e00e423373aedb809`. Initial continuation commit `6ca5f779733dc628041ed52362b48b71a9669b62` has tree `6d96c85187579d33169950a712bb749aecaa0624`, exactly matching local checkpoint `a097c302566747b360e5ba6bfe63e619fc49ea35`.
 
-The accepted recovery upload checkpoint is batch **8 of 53**, tree `9bcc62ea06af66850f1c6ea3fd5aea3b07ed9431`. The planned recovery tree remains `565c50f529fae02464a48107d15ea0849fb4d707`; do not advance a branch to a partial tree. The working release branch still points to `c80a2d9c2345de11962d724e00e423373aedb809`.
-
-The local candidate is available for review. After resolving the automatic review block, finish the complete recovery tree, apply the completed continuation and fixture fixes, compare the final tree with the committed local tree, create the PR, resolve required checks, merge after green, and verify the resulting production package. A local candidate archive is not the final merged release.
+[PR #784](https://github.com/davemt74-lang/software/pull/784) is open from `release/vp3-specialist-baseline-20261116` into main. Hosted checks are running and broader fixture repairs follow in the same PR. No merge or deployment has occurred at this checkpoint. Complete all required checks on the final head, merge only after green, and verify the resulting production archive against that merged revision. The earlier local candidate archive remains a review candidate, not the final merged release.
