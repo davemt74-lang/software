@@ -2,52 +2,54 @@ name: VP3 Recovery Diagnostics
 'on':
   push:
     branches:
-    - diagnostic/vp3-recovery-20261117
+      - diagnostic/vp3-recovery-20261117
 permissions:
   contents: read
 jobs:
   browser_and_runtime:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      max-parallel: 4
-      matrix:
-        shard:
-        - 0
-        - 1
-        - 2
     steps:
-    - uses: actions/checkout@v4
-    - uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.3'
-        coverage: none
-        extensions: mbstring, pdo_sqlite, dom, curl
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '22'
-    - name: Install existing browser test runtime
-      run: 'npm install --no-save --ignore-scripts playwright@1.62.1
-
-        bash tools/install-ci-chromium.sh'
-    - name: Run every assigned test and report each result
-      env:
-        VP3_DIAGNOSTIC_SHARD: ${{ matrix.shard }}
-      run: "python3 - <<'PY_DIAGNOSTIC'\nimport json, os, subprocess, time\nfrom pathlib import Path\ncommands=json.loads('[\"\
-        node tests/chat-message-unread-browser.mjs\", \"node tests/initiative-chat-loop-e2e.mjs --transcript\", \"node tests/initiative-youtube-offer-e2e.mjs\"\
-        ]')\nshard=int(os.environ['VP3_DIAGNOSTIC_SHARD'])\nout=Path('vp3-diagnostic-results');out.mkdir()\nresults=[]\nfor\
-        \ i,command in enumerate(commands):\n    if i%4!=shard: continue\n    print('START '+command,flush=True)\n    started=time.monotonic();log=out/(str(i).zfill(3)+'.log')\n\
-        \    with log.open('w') as output:\n        try:\n            code=subprocess.run(['bash','-e','-c',command],stdout=output,stderr=subprocess.STDOUT,timeout=180).returncode\n\
-        \        except subprocess.TimeoutExpired: code=124\n    result={'index':i,'command':command,'exit_code':code,'seconds':round(time.monotonic()-started,2)}\n\
-        \    results.append(result)\n    print(json.dumps(result),flush=True)\n    if code: print('\\n'.join(log.read_text(errors='replace').splitlines()[-65:]),flush=True)\n\
-        \    (out/'results.json').write_text(json.dumps(results,indent=2))\nprint('DIAGNOSTIC_FAILURES='+json.dumps([r for\
-        \ r in results if r['exit_code']]),flush=True)\nraise SystemExit(1 if any(r['exit_code'] for r in results) else 0)\n\
-        PY_DIAGNOSTIC\n"
-    - name: Retain diagnostic results
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: vp3-diagnostic-${{ matrix.shard }}
-        path: vp3-diagnostic-results/
-        retention-days: 3
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: mbstring, pdo_sqlite, dom, curl
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install existing browser test runtime
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          bash tools/install-ci-chromium.sh
+      - name: Run every assigned test and report each result
+        run: |
+          python3 - <<'PY_DIAGNOSTIC'
+          import json, subprocess, time
+          from pathlib import Path
+          commands=json.loads("[\"node tests/initiative-live-context-browser.mjs\"]")
+          out=Path('vp3-diagnostic-results');out.mkdir()
+          results=[]
+          for i,command in enumerate(commands):
+              print('START '+command,flush=True)
+              started=time.monotonic();log=out/(str(i).zfill(3)+'.log')
+              with log.open('w') as output:
+                  try:
+                      code=subprocess.run(['bash','-e','-c',command],stdout=output,stderr=subprocess.STDOUT,timeout=180).returncode
+                  except subprocess.TimeoutExpired: code=124
+              result={'index':i,'command':command,'exit_code':code,'seconds':round(time.monotonic()-started,2)}
+              results.append(result)
+              print(json.dumps(result),flush=True)
+              if code: print('\n'.join(log.read_text(errors='replace').splitlines()[-100:]),flush=True)
+              (out/'results.json').write_text(json.dumps(results,indent=2))
+          print('DIAGNOSTIC_FAILURES='+json.dumps([r for r in results if r['exit_code']]),flush=True)
+          raise SystemExit(1 if any(r['exit_code'] for r in results) else 0)
+          PY_DIAGNOSTIC
+      - name: Retain diagnostic results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vp3-diagnostic-live-context
+          path: vp3-diagnostic-results/
+          retention-days: 3
