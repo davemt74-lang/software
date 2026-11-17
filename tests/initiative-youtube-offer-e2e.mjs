@@ -858,6 +858,11 @@ try{
   await fixturePost('/fixture-catalog-availability?published=1');
   console.log('PASS Media activity distinguishes playable report-only picks from a verified empty source check');
 
+  // Curiosity questions legitimately outrank pending casual invitations. Keep
+  // this focused Media/email sequence under the owner's saved Watch preference,
+  // retaining every other rule and source; restore Ask after its final assertion.
+  const previousCuriosityRoute=await setCuriosityRoute('watch');
+  assert.equal(previousCuriosityRoute,'ask');
   await post('Create a VP3 music playlist for ambient.');
   await fixturePost('/fixture-casual-enable');
   await page.evaluate(async()=>{
@@ -1045,10 +1050,6 @@ try{
 
   const beforeEmailOffer=await state();
   await fixturePost('/fixture-casual-enable-gmail');
-  // Isolate contextual email rotation from Curiosity's media-first priority.
-  // Use the actual saved preference, retaining all Media sources and consent.
-  const previousCuriosityRoute=await setCuriosityRoute('watch');
-  assert.equal(previousCuriosityRoute,'ask');
   await post('Create a VP3 music playlist for ambient.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
@@ -1070,7 +1071,6 @@ try{
   assert.equal(afterDraft.email_sends,0,'A created email draft awaits the existing review step.');
   console.log('PASS casual email offer → recipient and content prompt → existing private draft review with no send');
 
-  assert.equal(await setCuriosityRoute(previousCuriosityRoute),'watch');
   const beforeRepeatedMedia=await state();
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
@@ -1098,6 +1098,7 @@ try{
     {label:'The single explicitly accepted playback session'});
   assert.equal(nextState.plays.filter(row=>row.user_id===1).length,playsBeforeChoice+1);
   assert.equal(nextState.youtube_attempts,attemptsBeforeYoutube);
+  assert.equal(await setCuriosityRoute(previousCuriosityRoute),'watch');
   console.log('PASS choosing music from the combined invitation opens the verified VP3 pick without a YouTube call');
 }catch(error){
   if(page&&!page.isClosed())try{
