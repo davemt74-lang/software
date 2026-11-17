@@ -10,8 +10,10 @@ const root=process.cwd();
 mkdirSync(path.join(directory,'api'));
 mkdirSync(path.join(directory,'includes'));
 copyFileSync('api/connected-gelato-v1.php',path.join(directory,'api/connected-gelato-v1.php'));
-writeFileSync(path.join(directory,'includes/connected-gelato-v1.php'),
-    '<?php require_once '+JSON.stringify(root+'/includes/connected-gelato-v1.php')+';');
+for (const dependency of ['connected-gelato-v1.php', 'connected-stoneward-v1.php', 'agent-media-stoneward-v1.php']) {
+    writeFileSync(path.join(directory,'includes',dependency),
+        '<?php require_once '+JSON.stringify(root+'/includes/'+dependency)+';');
+}
 const connection='a'.repeat(32);
 writeFileSync(path.join(directory,'includes/bootstrap.php'),`<?php
 define('STONEFELLOW_ROOT',dirname(__DIR__));

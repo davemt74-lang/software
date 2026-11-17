@@ -21,7 +21,7 @@ assert.match(chat, /chat_generate_answer_policy_v236/);
 assert.match(helper, /function homeserver_agent_v018_write_cloud_usage\(array \$user\): void/);
 assert.match(helper, /'usage\.write'/);
 assert.doesNotMatch(chat, /homeserver_agent_v018_write_cloud_usage\(/);
-assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'\)/);
+assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'&&!\$observeOnly\)/);
 assert.match(chat, /homeserver_agent_v018_forget\(\$userId,\$conversationId\)/);
 
 assert.match(helper, /function homeserver_agent_v018_chat\(array \$user,string \$query,int \$conversationId,bool \$cloudAllowed=true\)/);

@@ -53,7 +53,7 @@ assert.match(delegation, /homeserver_agent_v018_chat\(\$user,\$query,\$conversat
 
 // Direct VP3 Cloud is now isolated by the v4.20 planner and finalizer while
 // preserving the v0.19 execution helper used for source/billing visibility.
-assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'\)/);
+assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'&&!\$observeOnly\)/);
 assert.match(chat, /chat_execution_v019_provider_outcome\(\$user,chat_ai_response_outcome\(\),\$homeAttempted,/);
 assert.match(chat, /vp3_agent_runtime_finalize_v420/);
 assert.match(chat, /vp3_agent_runtime_block_message_v420/);

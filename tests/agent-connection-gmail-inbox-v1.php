@@ -368,15 +368,26 @@ try {
     inbox_check(($bySubject['Re: Delivery schedule']['matter_id']??null)===$matterId,'the exact reply advances the existing delivery matter');
     inbox_check(($scanStatus()['total']??null)===25,'the complete scan counts all 25 eligible messages');
     $deliveryState = agent_connection_gmail_inbox_update_deliver_v1($pdo,$owner,0,11);
-    $posts = $pdo->query("SELECT * FROM chat_messages WHERE conversation_id=11 AND role='assistant'")->fetchAll();
-    $projected = agent_connection_gmail_inbox_chat_history_v1($pdo,$owner,0,11,$posts);
+    $allPosts = $pdo->query("SELECT * FROM chat_messages WHERE conversation_id=11 AND role='assistant' ORDER BY id")->fetchAll();
+    $allProjected = agent_connection_gmail_inbox_chat_history_v1($pdo,$owner,0,11,$allPosts);
+    $isRoutine = static fn(array $post): bool => (json_decode((string)$post['context_json'],true)['gmail_inbox_update_v1']['routine_digest']??false)===true;
+    $posts = array_values(array_filter($allPosts,static fn(array $post): bool => !$isRoutine($post)));
+    $projected = array_values(array_filter($allProjected,static fn(array $post): bool => !$isRoutine($post)));
+    $routinePosts = array_values(array_filter($allProjected,$isRoutine));
+    $routineItems = array_map(static fn(array $post): array => json_decode($post['context_json'],true)['gmail_inbox_review_v1']['review']['items'],$routinePosts);
+    $postedCount = count($allPosts);
     $context = json_decode($projected[0]['context_json']??'',true,16);
     $chatItems = $context['gmail_inbox_review_v1']['review']['items']??[];
     inbox_check(count($notices())===1 && count($posts)===1 && count($chatItems)===2
         && in_array($dueDate,array_column(array_column($chatItems,'triage'),'due_date'),true)
         && ($deliveryState['inbox_updates']['pending']??true)===false
-        && !str_contains(json_encode([$projected,$classified],JSON_THROW_ON_ERROR),'BODY_PRIVATE_SENTINEL'),
+        && !str_contains(json_encode([$allProjected,$classified],JSON_THROW_ON_ERROR),'BODY_PRIVATE_SENTINEL'),
         'the private Chat receives one review with only the two meaningful changes, and no message body is retained');
+    $routineRefs=array_column(array_merge(...$routineItems),'item_ref');
+    inbox_check($postedCount===4&&array_map('count',$routineItems)===[10,10,3]
+        &&count(array_unique($routineRefs))===23
+        &&array_filter(array_merge(...$routineItems),static fn(array $item): bool => ($item['triage']['alert']??null)!==false)===[],
+        'the same scan preserves all 23 routine headers in bounded separate import receipts without promoting them to attention alerts');
 
     require_once dirname(__DIR__).'/includes/agent-initiative-specialist-reports-v1.php';
     $planningChat=['conversation_id'=>11,'revision'=>str_repeat('a',32)];
@@ -400,7 +411,7 @@ try {
         agent_connection_gmail_inbox_sweep_v1($pdo,1,$triageHttp);
     }
     agent_connection_gmail_inbox_update_deliver_v1($pdo,$owner,0,11);
-    inbox_check(count($notices())===1 && (int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===1
+    inbox_check(count($notices())===1 && (int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$postedCount
         && agent_email_triage_summary_v1($pdo,$matterScope())===$classified
         && $bodyReads===['delivery_reply','renewal_notice'],
         'replaying the verified provider event repeats neither assessment, classification nor notification');
@@ -447,7 +458,7 @@ try {
         'recovery completes with both earlier and missed-window messages saved once');
     inbox_check(count($historicalItems)===2 && in_array('Earlier offer',array_column($historicalItems,'subject'),true),
         'the earlier message remains in the quiet catch-up group');
-    inbox_check(count($notices())===1 && (int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===1,
+    inbox_check(count($notices())===1 && (int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$postedCount,
         'recovery stays quiet in both notifications and Chat');
     inbox_check($scanStatus()===array_replace($beforeRecovery,['in_progress'=>false]),
         'recovery preserves the last verified live scan while discarding incomplete page counts');
@@ -458,7 +469,7 @@ try {
     $due();
     agent_connection_gmail_inbox_sweep_v1($pdo,1,$triageHttp);
     inbox_check(($scanStatus()['total']??null)===0 && ($scanStatus()['in_progress']??null)===false && $arrivalsView()===$recoveredArrival
-        && count($notices())===1 && (int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===1,
+        && count($notices())===1 && (int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$postedCount,
         'the next verified empty live scan reports zero and posts nothing');
 
     require_once dirname(__DIR__).'/includes/agent-initiative-email-canvas-v1.php';

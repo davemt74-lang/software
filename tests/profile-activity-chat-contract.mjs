@@ -43,7 +43,9 @@ assert.ok(!activity.includes('profile-activity-chat-v242.php'), 'Profile Activit
 assert.ok(notifications.includes('notification_requires_attention'), 'notifications need one deterministic actionable-attention classifier');
 assert.ok(notifications.includes("'What do you want to do?'"), 'actionable notifications should end with the canonical user decision prompt');
 assert.ok(notifications.includes('notification_attention_after'), 'attention polling should be based on canonical notification storage');
-assert.ok(!/openai|anthropic|gemini|chat_remote_answer|chat_local_answer/i.test(notifications), 'attention classification must not use an LLM');
+// A stored provider-balance notification type is data, not provider dispatch.
+const classifierCode=notifications.replaceAll("'agent_anthropic_credit_balance'", "'provider_balance_notice'");
+assert.ok(!/openai|anthropic|gemini|chat_remote_answer|chat_local_answer/i.test(classifierCode), 'attention classification must not use an LLM');
 
 assert.ok(attentionApi.includes("$action === 'attention'"), 'Activity Center API should expose actionable notification polling');
 assert.ok(attentionApi.includes("$action === 'present_attention'"), 'Activity Center API should persist actionable notifications into Agent Chat');

@@ -20,6 +20,10 @@ try {
   copyFileSync(new URL('../includes/agent-chat-boundary-v380.php',import.meta.url),join(temp,'includes','agent-chat-boundary-v380.php'));
   writeFileSync(join(temp,'includes','agent-connection-gmail-github-notice-v1.php'),`<?php
 function agent_connection_gmail_github_actions_voice_offer_v1($pdo,$user){return null;}`);
+  writeFileSync(join(temp,'includes','agent-token-balance-notice-v1.php'),`<?php
+function vp3_token_balance_notice_current_v1($pdo,$user){return null;}`);
+  writeFileSync(join(temp,'includes','agent-anthropic-credit-notice-v1.php'),`<?php
+function vp3_anthropic_credit_notice_current_v1($pdo,$user){return null;}`);
   writeFileSync(runner,`<?php
 $fixture=json_decode($argv[1],true);
 $trace=[];
@@ -74,8 +78,8 @@ function vp3_initiative_chat_v1($pdo,$user,$principal,$context,$command,$authori
         'knowledge_scope'=>$context['knowledge_scope']??($fixture['policy']['knowledge_scope']??['mode'=>'off','folder_id'=>0]),'revision'=>str_repeat('a',32)];
     return ['ok'=>true];
 }
-function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision){
-    global $trace,$fixture;$trace[]=['initiative_tick',$user['id'],$agent,$cid,$revision,session_status()];
+function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision,$model=null,$allowDelivery=true){
+    global $trace,$fixture;$trace[]=['initiative_tick',$user['id'],$agent,$cid,$revision,session_status(),$allowDelivery];
     if(!empty($fixture['pumpCode']))throw new RuntimeException('Private internal detail.',(int)$fixture['pumpCode']);
     return ['ok'=>true,'reason'=>'no_work','health'=>['state'=>'checked']];
 }`);
@@ -113,9 +117,9 @@ function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision){
   assertRejected(request({binding:null,query:live}));
   assertRejected(request({owner:2,session:'owner-b',query:live}));
   assert.deepEqual(request({query:live}).response.state,
-    {owner:1,namespace:'system',working:false,preview:false,live_conversation:42,github_voice:null});
+    {owner:1,namespace:'system',working:false,preview:false,live_conversation:42,github_voice:null,credit_notices:[]});
   assert.deepEqual(request({query:{...live,agent_id:'7',conversation_id:'43'}}).response.state,
-    {owner:1,namespace:'agent:7',working:false,preview:false,live_conversation:43,github_voice:null});
+    {owner:1,namespace:'agent:7',working:false,preview:false,live_conversation:43,github_voice:null,credit_notices:[]});
   for (const query of [{...live,agent_id:'7'},{...live,conversation_id:'43'},
     {...live,agent_id:'8',conversation_id:'45'},{...live,agent_id:'99'},{...live,conversation_id:'999'}]) {
     const denied=request({query});
@@ -169,12 +173,15 @@ function vp3_initiative_pump_v1($pdo,$user,$agent,$cid,$revision){
     const denied=request({...tickRequest,body});assert.equal(denied.status,404);assert.deepEqual(denied.trace,['db']);
   }
   for(const body of [{...tick,conversation_id:0},{...tick,agent_id:['7']},{...tick,agent_id:-1},
-    {...tick,policy_revision:'old'},{...tick,policy_revision:undefined}]) {
+    {...tick,policy_revision:'old'},{...tick,policy_revision:undefined},{...tick,private_only:'true'}]) {
     const malformed=request({...tickRequest,body});assert.equal(malformed.status,422);assert.deepEqual(malformed.trace,['db']);
   }
   const ticked=request({...tickRequest,startSession:true});
   assert.equal(ticked.status,200);
-  assert.deepEqual(ticked.trace,['db',['initiative_tick',1,7,43,'a'.repeat(32),1]]);
+  assert.deepEqual(ticked.trace,['db',['initiative_tick',1,7,43,'a'.repeat(32),1,true]]);
+  const privateTick=request({...tickRequest,body:{...tick,private_only:true},startSession:true});
+  assert.equal(privateTick.status,200);
+  assert.deepEqual(privateTick.trace,['db',['initiative_tick',1,7,43,'a'.repeat(32),1,false]]);
   for(const code of [403,409,503]) {
     const blocked=request({...tickRequest,pumpCode:code});assert.equal(blocked.status,code);
     assert.equal(JSON.stringify(blocked.response).includes('Private internal detail'),false);

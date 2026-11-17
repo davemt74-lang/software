@@ -135,7 +135,8 @@ assert(privateResult.answer==='Private project notes'&&privateResult.actions[0].
   'voice Gmail delivers the private text and its action to Chat');
 assert(premiumPushes.slice(audioBeforeGmail).join('')==='I put the private Gmail result in Chat.',
   'voice fallback reads the confirmation without sending the private result to speech');
-assert(chatStream.includes("'delta'=>vp3_agent_chat_voice_text_v2160($done)")&&chatStream.includes('vp3_agent_chat_voice_text_v2160($replay)'),
+assert(/\$spoken=vp3_agent_chat_voice_text_v2160\(\$done\);\s*if\(\$spoken!==''\)chat_v121_emit\(\['type'=>'delta','delta'=>\$spoken\]\)/.test(chatStream)
+  &&/\$spoken=vp3_agent_chat_voice_text_v2160\(\$replay\);\s*if\(trim\(\$spoken\)!==''\)chat_v121_emit\(\['type'=>'delta','delta'=>\$spoken,'replayed'=>true\]\)/.test(chatStream),
   'the stream and its replay separate private Gmail display from speech');
 
 premiumCallbacks?.onError?.(new Error('simulated late ElevenLabs playback failure'));

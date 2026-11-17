@@ -183,7 +183,7 @@ const checks=[
    &&/Manage Outcome Value/.test(brainJs)],
  ['Agent History remains canonical conversation archive',
    /<strong>Agent History<\/strong>/.test(brainJs)
-   &&/Authorized conversation archive/.test(brainJs)],
+   &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
  ['Outcome Value page is owner-scoped CSRF-protected and exposes all value controls',
    /require_permission\('account\.access'\)/.test(page)
    &&/verify_csrf\(\)/.test(page)

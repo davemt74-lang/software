@@ -35,7 +35,7 @@ assert.match(api, /homeserver_capability_v024_registry\(\(int\)\$user\['id'\], t
 // Section 10 centralizes live capability-aware routing. Direct VP3 Cloud must
 // never enter HomeServer scope/capability discovery, while Automatic and
 // HomeServer-only may resolve the cached/refreshable Agent Brain capability.
-assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'\)[\s\S]*homeserver_capability_v024_registry\(\$userId,false\)/, 'direct VP3 Cloud must not refresh HomeServer capability status');
+assert.match(runtime, /if\(\$requested!==\'vp3_cloud\'&&!\$observeOnly\)[\s\S]*homeserver_capability_v024_registry\(\$userId,false\)/, 'direct VP3 Cloud must not refresh HomeServer capability status');
 assert.match(runtime, /homeserver_capability_v024_resolve\(\$registry,'agent_brain','vp3_cloud'\)/, 'runtime must resolve Agent Brain capability');
 assert.match(runtime, /\$home\['supported'\]=!empty\(\$brainCapability\['supported'\]\)/, 'runtime must distinguish HomeServer capability support');
 assert.match(runtime, /\$home\['ready'\]=!empty\(\$brainCapability\['ready'\]\)/, 'runtime must use current HomeServer capability readiness');

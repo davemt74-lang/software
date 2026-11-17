@@ -132,7 +132,7 @@ const checks=[
     &&/HomeServer free/.test(drawerJs)],
   ['History remains canonical conversation history',
     /<strong>Agent History<\/strong>/.test(drawerJs)
-    &&/Authorized conversation archive/.test(drawerJs)],
+    &&/Saved conversations and proactive updates for the selected Agent/.test(drawerJs)],
   ['Chat cache-busts v24.80 UI',
     /\$cognitivePortfolioBuild = 'cognitive-portfolio-v2480-20260922'/.test(chat)
     &&/'portfolioBuild'=>\$cognitivePortfolioBuild/.test(chat)],

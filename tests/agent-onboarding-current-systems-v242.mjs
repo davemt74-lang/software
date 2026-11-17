@@ -76,7 +76,8 @@ assert.match(chatVoice,/let agentVoiceMaster=identityCfg\.agentVoiceEnabled!==fa
 assert.match(chatVoice,/ensureAgentVoiceMaster/);
 assert.match(chatVoice,/save_agent_voice/);
 assert.match(chatVoice,/stonefellow:agent-voice/);
-assert.match(chatVoice,/if\(!enabled&&voiceOn\)disableVoice/,'master off must stop active Voice Conversation');
+assert.match(chatVoice,/if\(!enabled\)\{cancelProactivePost\(\);if\(voiceOn\)disableVoice\(\{persist:true\}\)/,
+  'master off must cancel pending proactive speech and stop active Voice Conversation');
 assert.match(memberMenu,/data-user-id=/,'header voice sync must be scoped to the signed-in user');
 assert.match(memberVoice,/vp3:agent-voice-sync:/,'header must publish user-scoped cross-tab voice state');
 assert.match(memberVoice,/publishAgentVoice/,'header must broadcast canonical voice changes');

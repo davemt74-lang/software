@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import {Document,Element,FixtureCustomEvent} from './profile-calls-pa3c.mjs';
 import {ownerCard} from './profile-visitor-doorbell-pa3.mjs';
+import {profileChatHelpers,continuityExportHelpers,canonicalContinuityExport} from './chat-profile-continuity.mjs';
 
 export const contract='vp3.profile-speech.v1';
 // Valid silent MP3 generated locally with FFmpeg (24 kHz mono, 32 kbit/s).
@@ -97,9 +98,8 @@ export async function speechFixture({items=[speechItem()],privateDraft='',voice=
     VP3_PROFILE_DOORBELL_PA3:{endpoint:'/api/chat-notifications-brain-v240.php',ownerEndpoint:'/api/profile-agent.php',csrf:'fixture',userId:1},
     VP3_PROFILE_SPEECH_PA4A:{endpoint:'/api/profile-speech-pa4a.php',csrf:'fixture',userId:1},VP3ProfileCallsPa3c:{speechBusy:()=>callBusy,attachOwnerThread(){}}});
   const globals={window,document,location,navigator:{onLine:true,userActivation:{isActive:true}},localStorage:storage(local),sessionStorage:storage(session),crypto:webcrypto,Uint8Array,performance:{now:()=>elapsed},Date:Clock,URL:ObjectURL,URLSearchParams,JSON,Event,CustomEvent:FixtureCustomEvent,AbortController,Response,Headers,fetch:transport,queueMicrotask,...timerApi};
-  const context=vm.createContext(globals),chat=read('chat.js');
-  const helpers=chat.slice(chat.indexOf('  function bindStoredMessagePa3('),chat.indexOf('  function formatPlaybackTime(')),exports=chat.slice(chat.indexOf('  const canonicalChatContinuity = {'),chat.indexOf('  function speakIntroV101('));
-  vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const b=document.createElement("div");b.className="message-body";const t=document.createElement("p");t.className="message-text";t.textContent=text;b.append(t);n.append(b);thread.append(n);return n;}'+helpers+exports+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
+  const context=vm.createContext(globals);
+  vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),input=document.getElementById("chatInput"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const b=document.createElement("div");b.className="message-body";const t=document.createElement("p");t.className="message-text";t.textContent=text;b.append(t);n.append(b);thread.append(n);return n;}'+profileChatHelpers+continuityExportHelpers+canonicalContinuityExport+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
   vm.runInContext(read('voice-lease-v122.js'),context);
   if(voice)vm.runInContext(read('chat-voice.js'),context,{filename:'chat-voice.js'});
   form.addEventListener('submit',event=>{if(event.defaultPrevented)return;event.preventDefault();void window.fetch('/api/chat.php',{method:'POST',body:JSON.stringify({action:'send',conversation_id:42,message:input.value,input_mode:'text'})});});

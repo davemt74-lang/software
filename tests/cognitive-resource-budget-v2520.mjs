@@ -92,7 +92,7 @@ const checks=[
    &&/admission only/.test(brainJs)],
  ['History remains canonical conversation archive',
    /<strong>Agent History<\/strong>/.test(brainJs)
-   &&/Authorized conversation archive/.test(brainJs)],
+   &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
  ['chat cache bust exposes v25.20 resource build',
    /cognitive-resource-budget-v2520-20260922/.test(chat)
    &&/resourceBudgetBuild/.test(chat)],

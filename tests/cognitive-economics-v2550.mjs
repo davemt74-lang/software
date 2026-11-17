@@ -130,7 +130,7 @@ const checks=[
    &&/shared runs proportionally attributed/.test(brainJs)],
  ['Agent History remains canonical conversation archive',
    /<strong>Agent History<\/strong>/.test(brainJs)
-   &&/Authorized conversation archive/.test(brainJs)],
+   &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
  ['chat cache bust exposes v25.50 build',
    /cognitive-economics-v2550-20260923/.test(chat)&&/economicsBuild/.test(chat)],
  ['CI runs v25.50 PHP and Node gates',

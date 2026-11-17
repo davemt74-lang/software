@@ -106,7 +106,8 @@ function agent_connection_gmail_inbox_initial_advance_v1(PDO $pdo, array $user, 
     if (isset($_SERVER['HTTP_X_FIXTURE_PROVIDER_FAILURE'])) throw new RuntimeException('Private provider detail.', 502);
     return true;
 }
-function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref): array {
+function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref, ?callable $http=null, bool $includeLinks=false): array {
+    if (!$includeLinks) throw new LogicException('The endpoint must request the current protected link projection.');
     fixture_record('open_item', $user, $ref);
     if ($ref !== str_repeat('c',64)) throw new DomainException('Private source detail.',404);
     return ['subject'=>'Fixture subject','from'=>'sender@example.test','body'=>'Exact fixture body.','auto_reply'=>false];
@@ -305,7 +306,9 @@ function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, strin
     [419, {body:{csrf_token:'wrong'}}],
     [419, {body:{csrf_token:['fixture-csrf']}}],
     [415, {headers:{'Content-Type':'text/plain'}}],
-    [413, {raw:' '.repeat(2049)}],
+    [413, {body:{padding:'x'.repeat(2049)}}],
+    [413, {raw:' '.repeat(4097)}],
+    [422, {raw:' '.repeat(2049)}],
     [422, {raw:'{'}],
     [422, {raw:'[]'}],
     [422, {body:{owner_key:1}}],

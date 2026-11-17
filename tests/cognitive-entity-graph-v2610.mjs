@@ -15,6 +15,11 @@ const workflow=read('.github/workflows/cognitive-loop-release-v2360.yml');
 const recovery=read('tools/run_recovery_baseline.py');
 const packageWorkflow=read('.github/workflows/production-deploy-package.yml');
 const docs=read('docs/VP3_COGNITIVE_ENTITY_GRAPH_V2610.md');
+const primaryOrder=(sidebar.match(/\$mainSidebarPrimaryOrder\s*=\s*\[([^\]]+)\]/)?.[1].match(/'[^']+'/g)||[])
+  .map(key=>key.slice(1,-1));
+const legacyPrimaryOrder=['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library',
+  'transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
+const retainedPrimaryOrder=primaryOrder.filter(key=>key!=='canvases');
 
 const checks=[
  ['graph is projection-only with no schema authority',!/CREATE TABLE|ALTER TABLE|INSERT INTO cognitive_entity|entity_graph_nodes|entity_graph_edges/i.test(graph)&&/materialization'=>'ephemeral_read_only'/.test(graph)],
@@ -32,7 +37,8 @@ const checks=[
  ['Campaign cross-domain relationships remain deterministic',/campaigns_rewards_domain_v100/.test(campaigns)&&/confirmation_state'=>'deterministic'/.test(campaigns)],
  ['bootstrap loads graph after Campaigns domain provider and before v26.10 release gate',bootstrap.indexOf("campaigns-rewards-domain-v100.php")<bootstrap.indexOf("cognitive-entity-graph-v2610.php")&&bootstrap.indexOf("cognitive-entity-graph-v2610.php")<bootstrap.indexOf("cognitive-release-v2610.php")],
  ['release forbids graph table entity copies fuzzy merges and execution authority',/new_graph_table'=>false/.test(release)&&/domain_business_records_copied'=>false/.test(release)&&/name_or_email_similarity_auto_merges_identity'=>false/.test(release)&&/second_execution_authority'=>false/.test(release)],
- ['Campaigns and Rewards are separate primary sidebar Plan & Sell destinations',sidebar.includes("$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];")&&sidebar.includes("'campaigns'=>'Campaigns'")&&sidebar.includes("'rewards'=>'Rewards'")&&sidebar.includes("'campaigns'=>'Plan & Sell'")&&sidebar.includes("'rewards'=>'Plan & Sell'")],
+ ['primary sidebar preserves every legacy destination in order with Canvas Apps after Media Library',retainedPrimaryOrder.length===legacyPrimaryOrder.length&&retainedPrimaryOrder.every((key,index)=>key===legacyPrimaryOrder[index])&&primaryOrder.filter(key=>key==='canvases').length===1&&primaryOrder.indexOf('canvases')===primaryOrder.indexOf('media_library')+1],
+ ['Campaigns and Rewards are separate primary sidebar Plan & Sell destinations',primaryOrder.filter(key=>key==='campaigns').length===1&&primaryOrder.filter(key=>key==='rewards').length===1&&primaryOrder.indexOf('rewards')===primaryOrder.indexOf('campaigns')+1&&sidebar.includes("'campaigns'=>'Campaigns'")&&sidebar.includes("'rewards'=>'Rewards'")&&sidebar.includes("'campaigns'=>'Plan & Sell'")&&sidebar.includes("'rewards'=>'Plan & Sell'")],
  ['Campaigns and Rewards are intentionally duplicated in bottom sidebar user menu without Reward Wallet',sidebar.includes('Campaigns and Rewards are intentionally available in both Plan & Sell')&&sidebar.includes("array_reverse(['campaigns','rewards'])")&&!sidebar.includes('/rewards-wallet.php')],
  ['navigation catalog gates separate Campaigns and Rewards destinations by actual plugin access',/campaigns_rewards_user_has_access_v100/.test(nav)&&/'campaigns','Campaigns'/.test(nav)&&/'rewards','Rewards'/.test(nav)],
  ['dedicated cognitive workflow is v26.10 aware',workflow.includes('name: Cognitive Runtime Release v26.10')&&workflow.includes('cognitive-entity-graph-v2610.php')&&workflow.includes('cognitive-entity-graph-v2610.mjs')],

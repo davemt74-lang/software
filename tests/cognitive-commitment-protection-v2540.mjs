@@ -111,7 +111,7 @@ const checks=[
    &&/Verified complete/.test(brainJs)],
  ['Agent History remains canonical conversation archive',
    /<strong>Agent History<\/strong>/.test(brainJs)
-   &&/Authorized conversation archive/.test(brainJs)],
+   &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
  ['chat cache bust exposes v25.40 build',
    /cognitive-commitment-protection-v2540-20260922/.test(chat)
    &&/commitmentProtectionBuild/.test(chat)],

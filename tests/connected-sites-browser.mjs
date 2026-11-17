@@ -34,7 +34,7 @@ await page.route(knowledgeUrl + '?folder=22', route => route.fulfill({
 await page.route('https://vp3.test/api/connected-gelato-v1.php', async route => {
   if (route.request().method() === 'GET') {
     const site = {
-      id, origin, label: 'Owner display label', agentName: name,
+      id, origin, provider: 'foodmonster', label: 'Owner display label', agentName: name,
       scopes: ['sales.daily.read', 'tickets.open.read', 'orders.read'],
       locations: [{ id: 7, name: '<Main Kitchen>', timezone: 'America/Phoenix' }],
       knowledgeFolder,
@@ -70,7 +70,7 @@ try {
   await page.getByRole('button', { name: 'Chat tools' }).click();
   await page.getByText('Connected Sites', { exact: true }).click();
   await page.getByText('Connected Sites requires the VP3 Cloud database upgrade.').waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Connect Gelato' }).isDisabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Connect FoodMonster' }).isDisabled(), true);
   available = true;
   const refreshButton = page.getByRole('button', { name: 'Refresh connections' });
   const refresh = async () => {
@@ -79,27 +79,27 @@ try {
   };
   await refresh();
   const connect = async () => {
-    await page.getByLabel('Gelato site HTTPS address').fill(origin);
+    await page.getByLabel('FoodMonster site HTTPS address').fill(origin);
     await page.getByLabel('One-time pairing code').fill('fixture-pairing-code');
-    await page.getByRole('button', { name: 'Connect Gelato' }).click();
+    await page.getByRole('button', { name: 'Connect FoodMonster' }).click();
     await page.getByText('Site connected.', { exact: true }).waitFor();
   };
   await connect();
   assert.deepEqual(calls[0], { action: 'connect', origin, code: 'fixture-pairing-code', csrf_token: 'test-csrf' });
   assert.equal(await page.getByLabel('One-time pairing code').inputValue(), '');
-  assert.equal(await page.getByText('Owner display label', { exact: true }).count(), 0);
+  assert.equal(await page.getByText('Owner display label', { exact: true }).count(), 1);
   assert.match(await page.locator('[data-site-row]').innerText(), /<Main Kitchen>/);
-  assert.equal(await page.getByText('In Agent Chat, say “Ask Gelato” or type “/ask gelato” followed by your question.').count(), 1);
+  assert.equal(await page.getByText('Create a one-time pairing code on your FoodMonster site under VP3 Connections.').count(), 1);
   const primaryFolderLink = page.getByRole('link', { name: 'Open Knowledge folder for ' + name, exact: true });
   assert.equal(await primaryFolderLink.getAttribute('href'), knowledgeUrl + '?folder=21');
   assert.equal(await page.getByRole('button', { name: 'Create Knowledge folder' }).count(), 0);
   const input = page.locator('#chatInput');
   await input.fill('Keep this existing draft');
-  await page.getByRole('button', { name: 'Ask Gelato', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask ' + name, exact: true }).click();
   assert.equal(await input.inputValue(), 'Keep this existing draft');
   await input.clear();
-  await page.getByRole('button', { name: 'Ask Gelato', exact: true }).click();
-  assert.equal(await input.inputValue(), 'Ask Gelato how we did today and what’s still open');
+  await page.getByRole('button', { name: 'Ask ' + name, exact: true }).click();
+  assert.equal(await input.inputValue(), 'Ask ' + name + ' how we did today and what’s still open');
   assert.equal(await page.getByRole('button', { name: 'Chat tools' }).getAttribute('aria-expanded'), 'false');
   await page.getByRole('button', { name: 'Chat tools' }).click();
   page.once('dialog', dialog => dialog.dismiss());
@@ -124,8 +124,8 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Create Knowledge folder' }).count(), 0);
   await input.clear();
   const secondSite = page.locator('[data-site-row]').filter({ hasText: 'https://other.example' });
-  await secondSite.getByRole('button', { name: 'Ask Gelato', exact: true }).click();
-  assert.equal(await input.inputValue(), 'Ask Gelato via other.example how we did today and what’s still open');
+  await secondSite.getByRole('button', { name: 'Ask ' + name, exact: true }).click();
+  assert.equal(await input.inputValue(), 'Ask ' + name + ' via other.example how we did today and what’s still open');
   await page.getByRole('button', { name: 'Chat tools' }).click();
   canCreateKnowledgeFolder = true;
   await refresh();

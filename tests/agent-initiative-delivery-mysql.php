@@ -111,15 +111,12 @@ try{
         vp3_initiative_enqueue_v1($pdo,$user,'initiative.prepare',$goal,hash('sha256',random_bytes(16)));
         // The enqueue helper ends with an event insert, whose id is independent.
         $run=(int)$pdo->query('SELECT MAX(id) FROM agent_workflow_runs WHERE owner_user_id=1')->fetchColumn();
-        $action=(int)$pdo->query('SELECT id FROM agent_workflow_actions WHERE run_id='.$run)->fetchColumn();
+        $claim=agent_job_claim_run_v1900($pdo,$user,$run,'cloud',agent_worker_cloud_worker_id_v1910(1));
+        if(!$claim)throw new RuntimeException('The delivery fixture could not claim its canonical preparation.');
+        $action=(int)$claim['action']['id'];
         $result=['effect_state'=>'private_draft_ready','initiative_draft'=>$draft];
         if(!$legacy)$result['initiative_delivery']='pending';
-        $json=json_encode($result,JSON_THROW_ON_ERROR);
-        $pdo->prepare("UPDATE agent_workflow_runs SET status='completed',completed_at=NOW() WHERE id=?")->execute([$run]);
-        $pdo->prepare("UPDATE agent_workflow_actions SET status='completed',result_json=?,completed_at=NOW() WHERE id=?")
-            ->execute([$json,$action]);
-        $pdo->prepare("INSERT INTO agent_workflow_receipts(run_id,action_id,owner_user_id,receipt_key,status,result_json)
-            VALUES (?,?,1,?,'completed',?)")->execute([$run,$action,hash('sha256','delivery:'.$run),$json]);
+        agent_worker_cloud_result_v1910($pdo,$user,$claim,true,'Private fixture preparation completed.',$result);
         return ['run'=>$run,'action'=>$action];
     };
     $state=static function(array $job)use($pdo): array{
@@ -133,6 +130,11 @@ try{
             UPDATE agent_activity_state SET last_heartbeat_at=NOW() WHERE user_id=1");
     };
     $job=$seed('Prepare the launch review questions.');
+    $pdo->prepare('UPDATE agent_workflow_receipts SET attempt_no=2 WHERE action_id=?')->execute([$job['action']]);
+    delivery_check(!vp3_initiative_deliver_pending_v1($pdo,$user)&&$reports()===0
+        &&$state($job)['initiative_delivery']==='pending',
+        'a receipt for a different attempt cannot authorize delivery of the completed action');
+    $pdo->prepare('UPDATE agent_workflow_receipts SET attempt_no=1 WHERE action_id=?')->execute([$job['action']]);
     $pdo->beginTransaction();
     $pdo->query('SELECT id FROM users WHERE id=1 FOR UPDATE')->fetchColumn();
     for($index=0;$index<2;$index++){
@@ -165,8 +167,8 @@ try{
     delivery_check(!vp3_initiative_deliver_pending_v1($pdo,$user)&&$reports()===1,'retrying delivery leaves the one report and original receipt intact');
 
     $pending=$seed('A second private preparation.');
-    delivery_check(!vp3_initiative_deliver_pending_v1($pdo,$user)&&$state($pending)['initiative_delivery']==='pending'
-        &&$reports()===1,'another result waits for owner engagement instead of adding another unsolicited report');
+    delivery_check($state($pending)['initiative_delivery']==='pending'&&$reports()===1,
+        'a completed preparation remains pending until the saved-delivery service verifies its current source');
     $pdo->exec("UPDATE initiative_fixture_calendar SET title='Changed source' WHERE owner_id=1");
     $engage();
     delivery_check(!vp3_initiative_deliver_pending_v1($pdo,$user)&&$state($pending)['initiative_delivery']==='withheld'
@@ -242,10 +244,16 @@ try{
     delivery_check($delivery['delivered']===true&&$reports()===3&&$state($contended)['initiative_delivery']==='delivered',
         'the report and receipt commit once after the competing user insert times out');
 
-    $pendingTurn=$seed('A result that must wait for the pending user turn.');
+    $pendingTurn=$seed('A saved private result for the authorized Chat.');
     $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES (42,1,'user','Answer this first')");
-    delivery_check(!vp3_initiative_deliver_pending_v1($pdo,$user)&&$reports()===3
-        &&$state($pendingTurn)['initiative_delivery']==='pending','an owner turn committed first keeps the saved result private');
+    $ownerTurn=(int)$pdo->lastInsertId();
+    delivery_check(vp3_initiative_deliver_pending_v1($pdo,$user)&&$reports()===4
+        &&$state($pendingTurn)['initiative_delivery']==='delivered'
+        &&(int)$state($pendingTurn)['initiative_message_id']>$ownerTurn
+        &&$pdo->query('SELECT message FROM chat_messages WHERE id='.$ownerTurn)->fetchColumn()==='Answer this first',
+        'a committed owner turn remains intact while the verified saved text posts once to its authorized Chat');
+    delivery_check(!vp3_initiative_deliver_pending_v1($pdo,$user)&&$reports()===4,
+        'retrying after a busy-Chat text delivery cannot append another report');
     echo 'AGENT_INITIATIVE_DELIVERY_MYSQL=PASS ('.$GLOBALS['deliveryChecks'].' cases)'.PHP_EOL;
 }finally{
     if($pdo->inTransaction())$pdo->rollBack();
