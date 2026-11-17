@@ -142,6 +142,64 @@ function verifiedResult(state,id,tool,cid=11){
   assert.ok(post,'actual completed work must reach its exact canonical main Chat');assert.deepEqual(contextOf(post).initiative_output,proof);
   return {result,proof,post};
 }
+function verifiedVoiceWork(state,id){
+  const run=state.runs.find(row=>Number(row.id)===id);
+  assert.ok(run,'The exact voice check-in run must exist.');assert.equal(run.status,'completed');
+  assert.equal(Number(run.owner_user_id),1);assert.equal(Number(run.agent_id),7);
+  const goal=JSON.parse(run.goal);
+  assert.equal(goal.tool,'chat.check_in');assert.equal(goal.primary,'task-list:600');
+  assert.deepEqual([goal.binding.owner_user_id,goal.binding.agent_id,goal.binding.conversation_id],[1,7,11]);
+  const actions=state.actions.filter(row=>Number(row.run_id)===id&&Number(row.owner_user_id)===1
+    &&Number(row.sequence_no)===1&&row.action_key==='initiative.prepare'&&row.capability_key==='initiative.prepare'
+    &&row.execution_target==='cloud');
+  assert.equal(actions.length,1);const action=actions[0];assert.equal(action.status,'completed');
+  const receipts=state.receipts.filter(row=>Number(row.run_id)===id&&Number(row.action_id)===Number(action.id)
+    &&Number(row.owner_user_id)===1&&Number(row.attempt_no)===Number(action.attempt_count)
+    &&row.executor==='cloud'&&row.status==='completed');
+  assert.equal(receipts.length,1);const receipt=receipts[0];
+  assert.equal(typeof action.result_json,'string');assert.equal(action.result_json,receipt.result_json);
+  const saved=JSON.parse(action.result_json);assert.ok(saved&&typeof saved==='object');
+  assert.equal(saved.initiative_delivery,'delivered');assert.equal(saved.initiative_tool_result.output.delivery_preference,'voice');
+  assert.equal(saved.initiative_tool_result.output.type,'initiative_chat_check_in');
+  const post=state.messages.find(row=>Number(row.id)===Number(saved.initiative_message_id));
+  assert.ok(post);assert.equal(Number(post.conversation_id),11);assert.equal(post.role,'assistant');
+  assert.equal(Number(contextOf(post).initiative_run_id),id);
+  assert.deepEqual(contextOf(post).initiative_output,saved.initiative_tool_result.output);
+  return {run,action,receipt,saved,post};
+}
+async function prepareVoiceCheckIn(tick){
+  const before=await control(),known=new Set(before.runs.map(row=>Number(row.id)));
+  const assessment=await tick();assert.equal(assessment.status,200,JSON.stringify(assessment));
+  assert.equal(assessment.body.ok,true,JSON.stringify(assessment));assert.equal(assessment.body.step,'assessment');
+  const assessed=await control(),assessmentRun=assessed.runs.find(row=>Number(row.id)===Number(assessment.body.run_id));
+  assert.equal(assessmentRun?.status,'completed');assert.equal(assessmentRun.capability_key,'initiative.plan');
+  const candidates=assessed.runs.filter(row=>!known.has(Number(row.id))&&row.capability_key==='initiative.prepare'
+    &&JSON.parse(row.goal).tool==='chat.check_in');
+  assert.equal(candidates.length,1,'The actual assessment must queue exactly one new check-in.');
+  const queued=candidates[0],id=Number(queued.id),models=modelCalls(assessed).length;
+  assert.equal(queued.status,'approved');
+  let prepared=await tick();assert.equal(prepared.status,200,JSON.stringify(prepared));assert.equal(prepared.body.ok,true,JSON.stringify(prepared));
+  if(prepared.body.coordination==='morning_brief_posted'){
+    // A due saved Morning Brief owns this tick. Verify its actual post before
+    // taking the one further preparation step for the already selected run.
+    assert.equal(prepared.body.step,'saved_delivery');
+    const briefState=await control(),newPosts=briefState.messages.filter(row=>!assessed.messages.some(previous=>Number(previous.id)===Number(row.id)));
+    assert.equal(newPosts.length,1);const brief=newPosts[0],briefContext=contextOf(brief);
+    assert.equal(Number(brief.conversation_id),11);assert.equal(brief.role,'assistant');
+    assert.equal(briefContext.source,'agent_initiative_morning_brief');assert.ok(Number(briefContext.morning_brief.assessment_id)>0);
+    assert.match(briefContext.morning_brief.local_day,/^\d{4}-\d{2}-\d{2}$/);
+    const unchanged=briefState.runs.find(row=>Number(row.id)===id);
+    assert.equal(unchanged.status,'approved');assert.equal(unchanged.goal,queued.goal);
+    const pending=briefState.actions.filter(row=>Number(row.run_id)===id);
+    assert.equal(pending.length,1);assert.equal(pending[0].status,'queued');assert.equal(pending[0].result_json,null);
+    assert.equal(modelCalls(briefState).length,models);
+    prepared=await tick();assert.equal(prepared.status,200,JSON.stringify(prepared));assert.equal(prepared.body.ok,true,JSON.stringify(prepared));
+  }
+  assert.equal(prepared.body.step,'preparation',JSON.stringify(prepared));assert.equal(Number(prepared.body.run_id),id);
+  const state=await control(),work=verifiedVoiceWork(state,id);
+  assert.equal(work.run.goal,queued.goal);assert.equal(modelCalls(state).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
+  return {state,...work};
+}
 async function makeContext(mobile=false){
   const context=await browser.newContext({viewport:{width:mobile?390:1280,height:850},extraHTTPHeaders:headers});
   await context.addInitScript(()=>{
@@ -435,12 +493,7 @@ try{
       assert.equal(modelCalls(await control()).length,beforeAuth);
       await emitCue(page,'energy');await delay(800);await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
       const revision=(await control()).policy.revision;
-      const assessment=await api(page,'initiative_tick',{policy_revision:revision});assert.equal(assessment.status,200);assert.equal(assessment.body.ok,true,JSON.stringify(assessment));
-      const prepared=await api(page,'initiative_tick',{policy_revision:revision});assert.equal(prepared.status,200);assert.equal(prepared.body.ok,true,JSON.stringify(prepared));
-      const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'&&JSON.parse(row.goal).tool==='chat.check_in'),action=state.actions.find(row=>Number(row.run_id)===Number(run.id));
-      const saved=JSON.parse(action.result_json),post=state.messages.find(row=>Number(row.id)===Number(saved.initiative_message_id));
-      assert.equal(JSON.parse(run.goal).tool,'chat.check_in');assert.equal(saved.initiative_tool_result.output.delivery_preference,'voice');
-      assert.equal(saved.initiative_delivery,'delivered');assert.ok(post);assert.equal(contextOf(post).initiative_output.type,'initiative_chat_check_in');
+      const {run,post}=await prepareVoiceCheckIn(()=>api(page,'initiative_tick',{policy_revision:revision}));
       await page.locator('[data-chat-message-id="'+post.id+'"]').waitFor();
       assert.equal(await page.evaluate(()=>window.speechCalls),0);
       const unavailable=await api(page,'voice_candidates');
@@ -464,8 +517,8 @@ try{
       await advance(second);assert.equal(await second.evaluate(()=>window.speechCalls),0);
       const duplicate=await api(second,'voice_claim',{run_id:Number(run.id),message_id:Number(post.id),request_id:'11111111-2222-4333-8444-555555555555'});
       assert.equal(duplicate.status,409,'a fresh second tab cannot claim a spoken check-in');
-      const final=await control(),a=final.actions.find(row=>Number(row.run_id)===Number(run.id)),r=final.receipts.find(row=>Number(row.run_id)===Number(run.id));
-      assert.equal(a.result_json,r.result_json);assert.equal(JSON.parse(a.result_json).initiative_voice.status,'spoken');
+      const final=await control(),completed=verifiedVoiceWork(final,Number(run.id));
+      assert.equal(completed.saved.initiative_voice.status,'spoken');
       assert.equal(modelCalls(final).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
       assert.deepEqual(page.errors,[]);assert.deepEqual(second.errors,[]);await second.close();
       pass('actual cognitive POST → model-selected short check-in → saved main Chat text → real mic-aware voice API/client → one canonical spoken claim across concurrent calls and two owner tabs');
@@ -490,9 +543,8 @@ try{
           });
         }else await p.evaluate(()=>window.holdSpeech=true);
         const revision=(await control()).policy.revision;
-        for(let i=0;i<2;i++){const tick=await api(p,'initiative_tick',{policy_revision:revision});assert.equal(tick.status,200);assert.equal(tick.body.ok,true);}
-        const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'&&JSON.parse(row.goal).tool==='chat.check_in'),id=Number(run.id);
-        const voiceState=async()=>{const state=await control(),row=state.actions.find(row=>Number(row.run_id)===id);return JSON.parse(row.result_json).initiative_voice;};
+        const {run}=await prepareVoiceCheckIn(()=>api(p,'initiative_tick',{policy_revision:revision})),id=Number(run.id);
+        const voiceState=async()=>verifiedVoiceWork(await control(),id).saved.initiative_voice;
         if(scenario==='lost_claim_ack'){
           await advance(p);assert.equal(await p.evaluate(()=>window.speechCalls),0);
           assert.equal((await voiceState()).status,'claimed');
@@ -532,8 +584,8 @@ try{
           pass((scenario==='master_off_before_tts'?'the other tab\'s actual saved Voice Master OFF and storage event while Chat stays focused':'actual typing')
             +' during held TTS cancels before onset, suppresses the exact claim, and fences late callbacks, pulses and reload replay');
         }
-        const final=await control(),a=final.actions.find(row=>Number(row.run_id)===id),r=final.receipts.find(row=>Number(row.run_id)===id);
-        assert.equal(a.result_json,r.result_json);assert.equal(modelCalls(final).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
+        const final=await control();verifiedVoiceWork(final,id);
+        assert.equal(modelCalls(final).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
         assert.deepEqual(p.errors,[]);
       }finally{await c.close();}
     }

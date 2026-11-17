@@ -757,4 +757,118 @@ canvas_pipeline_check(count($starterRuns())===3 && count($starterRuns())===count
     'another ordinary owner turn gives a different starter a turn ahead of repetitive contextual check-ins');
 unset($GLOBALS['pipelineRuntimePlan']);
 
+// A duplicate starter is not evidence of a failed attempt. Exercise real PDO
+// no-row results and canonical job transitions in a separate owner's Chats.
+$retryOwner = ['id'=>2,'is_active'=>1];
+$retryAgent = 9;
+$retryPrincipal = vp3_agent_chat_principal_v380($retryOwner,
+    vp3_agent_chat_resolve_agent_v380($pdo,$retryOwner,$retryAgent));
+vp3_casual_checkin_save_v1($pdo,2,false);
+$ownerRunsBeforeRetry = canvas_pipeline_count('agent_workflow_runs','owner_user_id=1');
+$retryBinding = static function(int $cid) use ($pdo,$retryOwner,$retryAgent,$retryPrincipal): array {
+    $pdo->prepare('INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUES(?,2,9,?)')
+        ->execute([$cid,'Starter retry regression']);
+    $policy = vp3_initiative_chat_v1($pdo,$retryOwner,$retryPrincipal,['conversation_id'=>$cid],'on',null)['initiative_policy'];
+    $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json) VALUES
+        (?,2,'user','Show me what my Agent can do.','{}'),(?,NULL,'assistant','Your private Chat is ready.','{}')")
+        ->execute([$cid,$cid]);
+    $pdo->exec('DELETE FROM agent_activity_state WHERE user_id=2');
+    $pdo->prepare("INSERT INTO agent_activity_state VALUES(2,'chat',?,'idle',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,?)")
+        ->execute(['chat:'.$cid,json_encode(['visible'=>true,'conversation_id'=>$cid,'chat_focused'=>true,'chat_busy'=>false],JSON_THROW_ON_ERROR)]);
+    return $policy;
+};
+$admitRetryStarter = static function(array $policy) use ($pdo,$retryOwner,$retryAgent): ?string {
+    return vp3_initiative_in_scope_v1($retryOwner,$retryAgent,static function() use ($pdo,$retryOwner,$policy): ?string {
+        return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$retryOwner,$policy): ?string {
+            $discovery = [];
+            return vp3_coordination_admit_casual_v1($pdo,$retryOwner,$policy,[],[],$discovery);
+        });
+    });
+};
+$retryImageRuns = static function(array $policy) use ($pdo): array {
+    $read = $pdo->query("SELECT * FROM agent_workflow_runs WHERE owner_user_id=2 AND capability_key='initiative.prepare' ORDER BY id");
+    return array_values(array_filter($read->fetchAll(),static function(array $run) use ($policy): bool {
+        $goal = json_decode($run['goal'],true,32,JSON_THROW_ON_ERROR);
+        return ($goal['primary']??null)==='casual:starter-image' && ($goal['binding']??null)===$policy;
+    }));
+};
+$claimRetryStarter = static fn(int $run): array => agent_job_claim_run_v1900($pdo,$retryOwner,$run,'cloud',
+    agent_worker_cloud_worker_id_v1910(2),180) ?: throw new RuntimeException('Could not claim the actual retry-regression starter.');
+$noFailedStarter = static function(array $run) use ($pdo): bool {
+    $read = $pdo->prepare("SELECT updated_at FROM agent_workflow_runs WHERE owner_user_id=? AND dedupe_key=? AND status='failed'");
+    $read->execute([(int)$run['owner_user_id'],$run['dedupe_key']]);
+    return $read->fetchColumn()===false;
+};
+
+$approvedPolicy = $retryBinding(23);
+canvas_pipeline_check($admitRetryStarter($approvedPolicy)==='queued_checkin' && count($retryImageRuns($approvedPolicy))===1,
+    'a real starter is admitted for the second owner’s exact Agent and private Chat');
+$approvedStarter = $retryImageRuns($approvedPolicy)[0];
+canvas_pipeline_check($approvedStarter['status']==='approved' && $noFailedStarter($approvedStarter),
+    'an approved original starter has no matching failed row in actual PDO');
+$admitRetryStarter($approvedPolicy);
+canvas_pipeline_check(count($retryImageRuns($approvedPolicy))===1 && $retryImageRuns($approvedPolicy)[0]===$approvedStarter,
+    'repeated admission does not throw or retry an approved exact starter while another specialist may be eligible');
+$completedStarter = vp3_initiative_execute_v1($pdo,$retryOwner,$claimRetryStarter((int)$approvedStarter['id']),$model,null,false);
+$completedReceipt = coordination_fixture_receipt((int)$approvedStarter['id']);
+$completedOriginal = $retryImageRuns($approvedPolicy)[0];
+canvas_pipeline_check(!empty($completedStarter['ok']) && $completedOriginal['status']==='completed'
+    && $completedReceipt['initiative_delivery']==='pending' && $noFailedStarter($completedOriginal),
+    'the actual starter worker completes with a bound private receipt and still has no failed row');
+$admitRetryStarter($approvedPolicy);
+canvas_pipeline_check(count($retryImageRuns($approvedPolicy))===1
+    && $retryImageRuns($approvedPolicy)[0]===$completedOriginal && canvas_pipeline_count('chat_messages','conversation_id=23')===2,
+    'repeated admission neither retries nor posts a completed exact starter');
+
+$failedPolicy = $retryBinding(24);
+$admitRetryStarter($failedPolicy);
+$failedStarter = $retryImageRuns($failedPolicy)[0];
+$failedClaim = $claimRetryStarter((int)$failedStarter['id']);
+$failure = agent_worker_cloud_result_v1910($pdo,$retryOwner,$failedClaim,false,'Starter transport unavailable.',
+    ['effect_state'=>'not_executed'],'fixture_transport_unavailable',false);
+$failedReceipt = $pdo->prepare('SELECT * FROM agent_workflow_receipts WHERE id=?');
+$failedReceipt->execute([$failure['receipt_id']]);
+$failedReceipt = $failedReceipt->fetch();
+canvas_pipeline_check($retryImageRuns($failedPolicy)[0]['status']==='failed' && $failedReceipt['status']==='failed'
+    && (int)$failedReceipt['run_id']===(int)$failedStarter['id']
+    && (int)$failedReceipt['action_id']===(int)$failedClaim['action']['id']
+    && (int)$failedReceipt['attempt_no']===(int)$failedClaim['action']['attempt_count'],
+    'a real leased worker failure creates the exact failed attempt receipt before recovery is considered');
+// Only elapsed time is controlled: statuses, claims, results and dedupes above
+// and below are produced by the real runtime, not seeded success/failure rows.
+$pdo->prepare('UPDATE agent_workflow_runs SET updated_at=? WHERE id=? AND owner_user_id=2')
+    ->execute([gmdate('Y-m-d H:i:s',time()-30),$failedStarter['id']]);
+$admitRetryStarter($failedPolicy);
+canvas_pipeline_check(count($retryImageRuns($failedPolicy))===1 && $retryImageRuns($failedPolicy)[0]['status']==='failed',
+    'a recent failed starter remains unretried during the recovery cooldown');
+$pdo->prepare('UPDATE agent_workflow_runs SET updated_at=? WHERE id=? AND owner_user_id=2')
+    ->execute([gmdate('Y-m-d H:i:s',time()-180),$failedStarter['id']]);
+canvas_pipeline_check($admitRetryStarter($failedPolicy)==='queued_checkin' && count($retryImageRuns($failedPolicy))===2,
+    'a retry-eligible failed starter receives exactly one canonical recovery run');
+[$failedOriginal,$recoveryStarter] = $retryImageRuns($failedPolicy);
+canvas_pipeline_check($failedOriginal['status']==='failed' && $recoveryStarter['status']==='approved'
+    && $failedOriginal['goal']===$recoveryStarter['goal'] && (int)$recoveryStarter['agent_id']===$retryAgent
+    && $failedOriginal['dedupe_key']!==$recoveryStarter['dedupe_key']
+    && json_decode($recoveryStarter['goal'],true,32,JSON_THROW_ON_ERROR)['binding']===$failedPolicy,
+    'the one recovery has its own dedupe while retaining the exact authorized owner, Agent, Chat and source payload');
+$admitRetryStarter($failedPolicy);
+$admitRetryStarter($failedPolicy);
+canvas_pipeline_check(count($retryImageRuns($failedPolicy))===2
+    && $retryImageRuns($failedPolicy)[0]===$failedOriginal && $retryImageRuns($failedPolicy)[1]===$recoveryStarter
+    && canvas_pipeline_count('chat_messages','conversation_id=24')===2,
+    'repeated admission cannot multiply the recovery or rewrite the original failed work');
+
+$cancelledPolicy = $retryBinding(25);
+$admitRetryStarter($cancelledPolicy);
+$cancelledStarter = $retryImageRuns($cancelledPolicy)[0];
+agent_job_cancel_v1900($pdo,$retryOwner,(int)$cancelledStarter['id']);
+$cancelledOriginal = $retryImageRuns($cancelledPolicy)[0];
+canvas_pipeline_check($cancelledOriginal['status']==='cancelled' && $noFailedStarter($cancelledOriginal),
+    'an owner-cancelled starter is distinct from a failed attempt');
+$admitRetryStarter($cancelledPolicy);
+canvas_pipeline_check(count($retryImageRuns($cancelledPolicy))===1
+    && $retryImageRuns($cancelledPolicy)[0]===$cancelledOriginal
+    && canvas_pipeline_count('agent_workflow_runs','owner_user_id=1')===$ownerRunsBeforeRetry && $inferenceCalls===0,
+    'cancelled work is never recovered and the retry scenarios leave the other owner’s work unchanged without inference');
+
 echo 'COORDINATION_ROUTING_PIPELINE=PASS ('.$checks.' assertions, '.($mysql ? 'mysql' : 'sqlite').")\n";
