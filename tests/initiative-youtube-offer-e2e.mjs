@@ -745,22 +745,86 @@ try{
   };
   const waitForCasualPost=async(ref,before,question,expectedRun=null)=>{
     const known=before.runs.map(row=>row.id);
+    const queuedSnapshot=await state();
+    const revision=await page.evaluate(()=>window.StonefellowAgentActivity.coreContext()?.health.policy_revision);
+    assert.match(revision||'',/^[a-f0-9]{32}$/);
+    const currentScope=row=>{
+      const binding=JSON.parse(row.goal).binding;
+      return row.owner_user_id===1&&row.agent_id===7&&binding?.owner_user_id===1&&binding.agent_id===7
+        &&binding.conversation_id===17&&binding.revision===revision;
+    };
+    const admitted=queuedSnapshot.runs.filter(row=>currentScope(row)&&!known.includes(row.id)
+      &&JSON.parse(row.goal).primary===ref);
+    assert.equal(admitted.length,1,'The real scan must admit one exact current-bound invitation before automatic preparation.');
+    const target=admitted[0];
+    if(expectedRun!==null)assert.equal(target.id,expectedRun);
+    const plans=queuedSnapshot.runs.filter(row=>currentScope(row)&&row.capability_key==='initiative.plan');
+    const pendingPlans=plans.filter(row=>['approved','executing'].includes(row.status));
+    assert.ok(pendingPlans.length<=1,'At most one current-bound assessment can precede this invitation.');
+    const priorPlanIds=new Set(plans.map(row=>row.id));
+    const completedReceipt=(snapshot,run)=>{
+      const action=snapshot.actions.find(row=>row.run_id===run.id&&row.owner_user_id===1&&row.sequence_no===1
+        &&row.execution_target==='cloud'&&row.status==='completed');
+      return action&&snapshot.receipts.find(row=>row.run_id===run.id&&row.owner_user_id===1&&row.action_id===action.id
+        &&row.attempt_no===action.attempt_count&&row.executor==='cloud'&&row.status==='completed'
+        &&row.result_json===action.result_json);
+    };
+    const delivered=snapshot=>{
+      const run=snapshot.runs.find(row=>row.id===target.id&&currentScope(row)&&row.status==='completed');
+      const receipt=run&&completedReceipt(snapshot,run);
+      return Boolean(receipt&&JSON.parse(receipt.result_json).initiative_delivery==='delivered');
+    };
+    const autoStarted=Date.now();
+    const completedPlans=snapshot=>snapshot.runs.filter(row=>currentScope(row)&&row.capability_key==='initiative.plan'
+      &&row.status==='completed'&&(pendingPlans.length?row.id===pendingPlans[0].id:!priorPlanIds.has(row.id))
+      &&completedReceipt(snapshot,row)&&initiativeTrace.some(entry=>entry.at>=autoStarted&&entry.event==='response'
+        &&entry.action==='initiative_tick'&&entry.conversation_id===17&&entry.ok===true
+        &&entry.step==='assessment'&&entry.run_id===row.id));
+    traceInitiative({event:'casual_phase_queue',ref,target_run_id:target.id,
+      pending_assessment_ids:pendingPlans.map(row=>row.id)});
     await page.unroute(presentation,holdAutomaticTick);
-    const snapshot=await pollFixture('/fixture-state',snapshot=>{
-      return snapshot.runs.some(run=>{
-        const goal=JSON.parse(run.goal);
-        if(known.includes(run.id)||run.status!=='completed'||goal.primary!==ref||goal.binding?.conversation_id!==17)return false;
-        if(expectedRun!==null&&run.id!==expectedRun)return false;
-        return snapshot.receipts.some(receipt=>receipt.run_id===run.id&&receipt.status==='completed'
-          &&JSON.parse(receipt.result_json).initiative_delivery==='delivered');
-      });
-    },{timeout:45000,label:'The exact saved '+ref+' invitation'});
+    // A due source assessment can be queued by the next automatic tick itself.
+    // Give that observed phase its own bound, then verify its exact receipt
+    // before starting the invitation's separate preparation deadline.
+    let snapshot=await pollFixture('/fixture-state',snapshot=>delivered(snapshot)||completedPlans(snapshot).length>0,
+      {timeout:45000,label:'The exact '+ref+' preparation or its automatic assessment'});
+    if(!delivered(snapshot)){
+      const assessments=completedPlans(snapshot);
+      assert.equal(assessments.length,1,'Only one verified automatic assessment can precede preparation.');
+      const assessment=assessments[0],assessmentGoal=JSON.parse(assessment.goal);
+      if(pendingPlans.length)assert.equal(assessment.goal,pendingPlans[0].goal,'The queued assessment goal is immutable.');
+      assert.deepEqual(assessmentGoal.binding,JSON.parse(target.goal).binding);
+      const actions=snapshot.actions.filter(row=>row.run_id===assessment.id);
+      assert.equal(actions.length,1);
+      const action=actions[0];
+      assert.deepEqual([action.owner_user_id,action.sequence_no,action.action_key,action.capability_key,
+        action.execution_target,action.status],[1,1,'initiative.plan','initiative.plan','cloud','completed']);
+      const receipts=snapshot.receipts.filter(row=>row.run_id===assessment.id&&row.owner_user_id===1
+        &&row.action_id===action.id&&row.attempt_no===action.attempt_count&&row.executor==='cloud'&&row.status==='completed');
+      assert.equal(receipts.length,1);assert.equal(action.result_json,receipts[0].result_json);
+      const result=JSON.parse(receipts[0].result_json);
+      assert.equal(result.effect_state,'idle');assert.equal(Number(result.jobs),0);
+      assert.equal(result.initiative_tool_result.output.type,'initiative_brainstorm');
+      assert.equal(result.initiative_tool_result.output.status,'assessed');
+      assert.deepEqual(result.initiative_tool_result.output.opportunities,[]);
+      const pending=snapshot.runs.find(row=>row.id===target.id);
+      assert.equal(pending.goal,target.goal,'Assessment cannot replace the invitation or its source evidence.');
+      assert.equal(pending.status,'approved');
+      assert.deepEqual(snapshot.messages.filter(row=>row.conversation_id===17).map(row=>row.id),
+        queuedSnapshot.messages.filter(row=>row.conversation_id===17).map(row=>row.id),
+        'The empty assessment cannot manufacture a Chat post.');
+      traceInitiative({event:'casual_assessment_completed',ref,target_run_id:target.id,assessment_run_id:assessment.id,
+        action_id:action.id,attempt:action.attempt_count,receipt_id:receipts[0].id});
+      snapshot=await pollFixture('/fixture-state',delivered,
+        {timeout:45000,label:'The exact saved '+ref+' invitation after its verified assessment'});
+    }
     await page.route(presentation,holdAutomaticTick);
     const runs=snapshot.runs.filter(row=>!known.includes(row.id)&&row.status==='completed'
       &&JSON.parse(row.goal).primary===ref&&JSON.parse(row.goal).binding?.conversation_id===17);
     assert.equal(runs.length,1,'Fresh activity must deliver exactly one new invitation for this source.');
     const run=runs[0],goal=JSON.parse(run.goal);
-    if(expectedRun!==null)assert.equal(run.id,expectedRun,'The automatic client must finish the exact queued invitation.');
+    assert.equal(run.id,target.id,'The automatic client must finish the exact queued invitation.');
+    assert.equal(run.goal,target.goal);
     assert.deepEqual([run.owner_user_id,run.agent_id,goal.binding.owner_user_id,goal.binding.agent_id,goal.binding.conversation_id],[1,7,1,7,17]);
     assert.equal(goal.tool,'coordination.review');
     const actions=snapshot.actions.filter(row=>row.run_id===run.id&&row.owner_user_id===1&&row.sequence_no===1
