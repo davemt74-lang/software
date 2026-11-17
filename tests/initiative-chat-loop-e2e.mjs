@@ -629,7 +629,8 @@ async function verifyTranscript(page,writes){
   assert.deepEqual(finished.model_calls.map(row=>row.protocol),[
     'vp3.initiative-plan.v1','vp3.transcript-research-plan.v1','vp3.topic-research.v1',
   ]);
-  assert.equal(finished.reports.length,1);
+  assert.equal(finished.reports.length,1,JSON.stringify({reports:finished.reports,runs:finished.runs,
+    receipts:finished.receipts,model_calls:finished.model_calls.map(row=>row.protocol)}));
   const messageId=Number(await report.getAttribute('data-chat-message-id'));
   assert.equal(messageId,Number(finished.reports[0].id));
   const receipt=finished.receipts.find(row=>row.run_id===queued.id&&row.status==='completed');
