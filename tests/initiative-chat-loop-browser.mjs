@@ -14,6 +14,12 @@ function gate(){
   return {arrived:new Promise(resolve=>{arrive=resolve;}),released:new Promise(resolve=>{release=resolve;}),arrive:()=>arrive(),release:()=>release()};
 }
 
+async function expandDebugReport(panel){
+  await panel.waitFor();
+  const technical=panel.locator('[data-initiative-debug-technical]');
+  if(!await technical.evaluate(node=>node.open))await technical.locator('summary').click();
+}
+
 async function debugShortcut(page){
   await page.evaluate(()=>{
     window.debugShortcutTime=0;
@@ -371,7 +377,8 @@ try{
     await status.getByText(/Next attempt is eligible at/).waitFor();
     assert.doesNotMatch(await status.textContent(),/could not be verified|No server worker check-in/);
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
+    await expandDebugReport(panel);
     await panel.getByText(/AI diagnostic: provider_rate_limit/).waitFor();
     assert.match(await panel.locator('[data-initiative-debug-report]').textContent(),/Provider HTTP status: 429/);
     assert.deepEqual(taskRetry.errors,[]);
@@ -389,7 +396,8 @@ try{
     const page=await priorAssessment.open(),status=page.locator('[data-agent-initiative-status]');
     await status.getByText(/Assessment\. The usage record shows that the AI provider rejected/).waitFor();
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
+    await expandDebugReport(panel);
     await panel.getByText(/Recorded AI provider: Anthropic/).waitFor();
     const report=await panel.locator('[data-initiative-debug-report]').textContent();
     assert.match(report,/Provider attempt evidence: rejected/);
@@ -409,7 +417,8 @@ try{
     const page=await sourceAssessment.open(),status=page.locator('[data-agent-initiative-status]');
     await status.getByText(/Source check: Office calendar \(limited\)/).waitFor();
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
+    await expandDebugReport(panel);
     await panel.getByText(/Source family: Office calendar/).waitFor();
     const report=await panel.locator('[data-initiative-debug-report]').textContent();
     assert.match(report,/Source family: Office calendar\nSource coverage: limited/);
@@ -449,7 +458,7 @@ try{
   }});
   try{
     const page=await debug.open();
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
     const shortcut=await debugShortcut(page);
     await page.setViewportSize({width:360,height:640});
     await page.addStyleTag({content:await fs.readFile(new URL('../chat-cognitive-presentation-v510.css',import.meta.url),'utf8')});
@@ -478,6 +487,7 @@ try{
     assert.equal(await panel.count(),1,'the three-key shortcut opens Initiative Debug');
     const bounds=await panel.boundingBox();
     assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=360&&bounds.y+bounds.height<=640);
+    await expandDebugReport(panel);
     await panel.getByText(/Gmail pipeline/).waitFor();
     const report=await panel.locator('[data-initiative-debug-report]').textContent();
     assert.match(report,/Deployed build: abc123456def/);
@@ -517,12 +527,13 @@ try{
     assert.match(await historyReport.textContent(),/Earlier assessment rejection: invalid_json\nPlan rejected at: .+\nPlanner response bytes: 801/);
     assert.doesNotMatch(await historyReport.textContent(),/PRIVATE_/);
     await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{ window.copiedDebug=text; }}}));
-    await panel.getByRole('button',{name:'Copy',exact:true}).click();
+    await panel.getByRole('button',{name:'Copy report',exact:true}).click();
     await panel.getByRole('status').getByText('Copied.').waitFor();
     assert.equal(await page.evaluate(()=>window.copiedDebug),'Initiative Debug\n'+report+'\n\nHistory\n'+await historyReport.textContent());
     await shortcut.press();
     assert.equal(await panel.count(),0);
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
+    await expandDebugReport(panel);
     await panel.getByText(/Gmail pipeline/).waitFor();
     const diagnosticRead=page.waitForResponse(response=>response.url().includes('action=initiative_diagnostics'));
     await panel.getByRole('button',{name:'Refresh',exact:true}).click();
@@ -548,9 +559,10 @@ try{
     debugGmail:verifiedGmail});
   try{
     const page=await unavailableRuntime.open();
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
     const report=panel.locator('[data-initiative-debug-report]');
+    await expandDebugReport(panel);
     await report.getByText(/gmail_handoff_delivered/).waitFor();
     const current=await report.textContent();
     assert.match(current,/Latest assessment: Could not verify/);
@@ -571,9 +583,10 @@ try{
     debugGmail:verifiedGmail});
   try{
     const page=await partial.open();
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
     const report=panel.locator('[data-initiative-debug-report]');
+    await expandDebugReport(panel);
     await report.getByText(/Assessment database code: 42S22 \/ 1054/).waitFor();
     const current=await report.textContent();
     assert.match(current,/Latest assessment: Could not verify\nAssessment status check: storage_schema/);
@@ -601,9 +614,11 @@ try{
   }});
   try {
     const page=await superseded.open();
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
+    await expandDebugReport(panel);
     await panel.getByText(/Latest assessment: Sources changed/).waitFor();
+    await expandDebugReport(panel);
     await panel.getByText('History',{exact:true}).click();
     const history=await panel.locator('[data-initiative-debug-history-report]').textContent();
     assert.match(history,/Recorded assessment: Superseded\nRun: 411/);
@@ -616,11 +631,12 @@ try{
   try{
     const page=await recovering.open();
     await assessment.arrived;
-    const panel=page.getByRole('region',{name:'Initiative Debug'});
+    const panel=page.getByRole('dialog',{name:'Initiative Debug'});
     const current=panel.locator('[data-initiative-debug-report]');
     const history=panel.locator('[data-initiative-debug-history]');
     const earlier=history.locator('[data-initiative-debug-history-report]');
     await page.getByRole('button',{name:'Open diagnostics',exact:true}).click();
+    await expandDebugReport(panel);
     await panel.getByText(/Gmail pipeline/).waitFor();
     assert.match(await current.textContent(),/Latest assessment: Working\nAssessment run: 411/);
     assert.equal(await history.evaluate(node=>node.open),false);
@@ -640,6 +656,7 @@ try{
     const refreshed=page.waitForResponse(response=>response.url().includes('action=initiative_diagnostics'));
     assessment.release();
     assert.equal((await refreshed).ok(),true);
+    await expandDebugReport(panel);
     await panel.getByText(/Latest assessment: Succeeded/).waitFor();
     const report=await current.textContent();
     assert.match(report,/Latest assessment: Succeeded\nAssessment run: 411/);
@@ -653,7 +670,7 @@ try{
     await earlier.waitFor({state:'hidden'});
 
     await page.evaluate(()=>Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.copiedDebug=text;}}}));
-    await panel.getByRole('button',{name:'Copy',exact:true}).click();
+    await panel.getByRole('button',{name:'Copy report',exact:true}).click();
     await panel.getByRole('status').getByText('Copied.').waitFor();
     assert.equal(await page.evaluate(()=>window.copiedDebug),'Initiative Debug\n'+report+'\n\nHistory\n'+await earlier.textContent());
     assert.doesNotMatch(await page.evaluate(()=>window.copiedDebug),/PRIVATE_/);
@@ -937,14 +954,16 @@ try{
   const newAfterSaved=await fixture(17,{enabled:true});
   try{
     const page=await newAfterSaved.open();
-    const debugPanel=page.getByRole('region',{name:'Initiative Debug'});
+    const debugPanel=page.getByRole('dialog',{name:'Initiative Debug'});
     const shortcut=await debugShortcut(page);
     const chatButton=page.locator('#newChatButton');
     await chatButton.focus();
     await shortcut.press();
+    await expandDebugReport(debugPanel);
     await debugPanel.getByText('Server worker:',{exact:false}).waitFor();
     await page.waitForFunction(()=>!document.querySelector('[data-agent-worker-details] .vp3-orb-initiative-actions button')?.disabled);
     const before=newAfterSaved.ticks.length;
+    await debugPanel.getByRole('button',{name:'Close',exact:true}).click();
     await page.getByRole('button',{name:'New Chat',exact:true}).click();
     await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===0);
     assert.equal(await debugPanel.count(),0);

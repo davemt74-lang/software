@@ -21,6 +21,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-clean-chat-'));
 const fixture=path.join(temp,'shell.php');
 fs.writeFileSync(fixture,`<?php
 function current_user(){return ['id'=>1,'display_name'=>'Dave','role'=>'admin'];}
+function user_has_role($role,$user){return ($user['role']??'')===$role;}
 function has_permission($key,$user){return in_array($key,['chat.access','account.access'],true);}
 function personal_knowledge_available($user){return false;}
 function user_role_labels($user){return ['Admin'];}

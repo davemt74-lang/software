@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn,execFileSync} from 'node:child_process';
-import {copyFileSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {copyFileSync,existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -10,13 +10,17 @@ import {chromium} from 'playwright';
 // Real API, read projection, source readers, queue/claim/heartbeat and browser
 // modules. Identity/provider/calendar inputs are the existing SQLite fixture.
 const source=fileURLToPath(new URL('../',import.meta.url)),temp=mkdtempSync(join(tmpdir(),'vp3-top-of-mind-'));
+const modelGuard=join(temp,'model-attempts');
 const probe=net.createServer();await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
 const base='http://127.0.0.1:'+port;
 mkdirSync(join(temp,'api'));mkdirSync(join(temp,'includes'));
 copyFileSync(join(source,'api/agent-top-of-mind-v1.php'),join(temp,'api/agent-top-of-mind-v1.php'));
 writeFileSync(join(temp,'includes/agent-top-of-mind-v1.php'),'<?php require_once '+JSON.stringify(join(source,'includes/agent-top-of-mind-v1.php'))+';');
 writeFileSync(join(temp,'includes/bootstrap.php'),[
-  '<?php session_start(); require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';',
+  '<?php require_once '+JSON.stringify(join(source,'tests/fixtures/initiative-ai-settings-v1.php'))+';',
+  'session_start(); require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';',
+  '$GLOBALS["imageFixtureSettingsObserver"]=static function():void{foreach(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame){',
+  'if(($frame["function"]??null)==="ai_generate_chat_response"){file_put_contents(getenv("VP3_TOP_OF_MIND_MODEL_GUARD"),"attempt\\n",FILE_APPEND|LOCK_EX);throw new LogicException("Top of Mind must not invoke a model.");}}};',
   'if(isset($_SERVER["HTTP_X_FIXTURE_PARTICIPANT"]))$GLOBALS["VP3_PARTICIPANT_RESOURCE_SCOPE_V1"]=["owner"=>1,"agent"=>7,"participant"=>2,"revision"=>1];'
 ].join('\n'));
 const assets=['agent-top-of-mind-v1.js','agent-top-of-mind-v1.css','agent-orb.js','agent-orb-adapter.js','agent-eyes-core.js','chat-notifications-drawer-v240.js','chat-notifications-drawer-v240.css','agent-orb.css','gmail-inbox-initial-v1.js','chat-email-v1.css'];
@@ -72,7 +76,7 @@ writeFileSync(join(temp,'router.php'),[
   'echo \'<script src="/agent-eyes-core.js"></script><script src="/agent-top-of-mind-v1.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script>\';'
 ].join('\n'));
 assert.match(execFileSync(process.env.VP3_PHP_BINARY||'php',['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors detected/);
-let logs='';const server=spawn(process.env.VP3_PHP_BINARY||'php',['-d','session.save_path='+temp,'-S','127.0.0.1:'+port,'-t',temp,join(temp,'router.php')],{env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'state.sqlite')},stdio:['ignore','pipe','pipe']});
+let logs='';const server=spawn(process.env.VP3_PHP_BINARY||'php',['-d','session.save_path='+temp,'-S','127.0.0.1:'+port,'-t',temp,join(temp,'router.php')],{env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'state.sqlite'),VP3_TOP_OF_MIND_MODEL_GUARD:modelGuard},stdio:['ignore','pipe','pipe']});
 server.stdout.on('data',x=>{logs+=x;});server.stderr.on('data',x=>{logs+=x;});
 let browser;
 async function openBrain(page){
@@ -110,6 +114,7 @@ try{
   assert.equal(unsavedStatus.conversation_id,0);
   assert.deepEqual(unsavedStatus.items,[],'an unsaved Chat must not borrow another Chat’s background work');
   assert.deepEqual(await fetch(base+'/counts').then(r=>r.json()),before);
+  assert.equal(existsSync(modelGuard),false,'read-only Top of Mind requests cannot enter actual model generation');
   for(const [url,options,status] of [
     [endpoint,{headers:{...headers,'X-Fixture-Anonymous':'1'}},403],
     [endpoint,{headers:{...headers,'X-Fixture-Denied':'1'}},403],
@@ -475,6 +480,7 @@ try{
   await fetch(base+'/source-change',{method:'POST',headers:{...headers,'X-Fixture-CSRF':'fixture'}});
   const changed=await fetch(endpoint,{headers}).then(r=>r.json());assert.equal(changed.state.items.some(x=>x.run_id===runId),false);assert.ok(!JSON.stringify(changed).includes('Prepare the saved launch details'));
   assert.equal((await fetch(base+'/counts').then(r=>r.json())).models,0);
+  assert.equal(existsSync(modelGuard),false,'browser polling must not attempt generation even if a projection catches the refusal');
   console.log('PASS actual expired lease clears Working, changed source removes its private objective/result, and every status read remains inference-free');
 }catch(error){
   for(const context of browser?.contexts()||[])for(const page of context.pages())await page.unrouteAll({behavior:'ignoreErrors'});

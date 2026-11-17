@@ -60,7 +60,8 @@ bootstrap=bootstrap.replace('class TranscriptFixturePDO extends PDO {',`class Tr
  public function rollBack():bool {parent::exec('ROLLBACK');$this->fixtureTransaction=false;return true;}
 `);
 bootstrap=bootstrap.replace("$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);", "$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->exec('PRAGMA busy_timeout=10000');");
-for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete','personal_capability_has_v242'])
+for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete','personal_capability_has_v242',
+  'track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])
   bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
 bootstrap=bootstrap.replace('declare(strict_types=1);','declare(strict_types=1); session_start();');
 // Existing private-file idempotency implementation; only its storage root is
@@ -69,7 +70,7 @@ const runtime=fs.readFileSync(path.join(source,'includes/agent-runtime-v125.php'
 const start=runtime.indexOf('function agent_runtime_v125_idempotency_path('),end=runtime.indexOf('function agent_background_v125_jobs_dir(',start);
 assert.ok(start>=0&&end>start);
 bootstrap+="\nfunction agent_runtime_v125_root(): string {return dirname(__DIR__).'/runtime-fixture';}\nfunction agent_runtime_v125_dir(string $bucket): string {$dir=agent_runtime_v125_root().'/'.preg_replace('/[^a-z0-9_-]/i','',$bucket);if(!is_dir($dir))mkdir($dir,0700,true);return $dir;}\n"+runtime.slice(start,end);
-bootstrap+="\nrequire_once __DIR__.'/initiative-followthrough-chat-fixture.php';\nrequire_once __DIR__.'/initiative-capabilities-chat-fixture.php';\nrequire_once __DIR__.'/initiative-live-context-chat-fixture.php';\n";
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\nrequire_once __DIR__.'/initiative-followthrough-chat-fixture.php';\nrequire_once __DIR__.'/initiative-capabilities-chat-fixture.php';\nrequire_once __DIR__.'/initiative-live-context-chat-fixture.php';\n";
 bootstrap+=`\nfunction personal_capability_has_v242($key,...$args){return $key==='voice_profile.access'&&isset($_SERVER['HTTP_X_FIXTURE_VOICE_READY'])||capability_fixture_personal_capability_has_v242($key,...$args);}
 function ai_generate_chat_response($prompt,...$args): array {
  $options=is_array($args[4]??null)?$args[4]:[];$protocol=(string)($options['protocol']??'');

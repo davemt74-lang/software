@@ -36,101 +36,12 @@ jobs:
       env:
         VP3_DIAGNOSTIC_SHARD: ${{ matrix.shard }}
       run: "python3 - <<'PY_DIAGNOSTIC'\nimport json, os, subprocess, time\nfrom pathlib import Path\ncommands=json.loads('[\"\
-        node tests/transfer-section7.mjs\", \"php tests/agent-core-install-parity-v1.php\", \"php tests/agent-connection-gmail-v1.php\"\
-        , \"php tests/agent-connection-gmail-popup-v1.php\", \"php tests/agent-connection-notice-v1.php\", \"php tests/agent-connection-gmail-inbox-settings-v1.php\"\
-        , \"php tests/agent-connection-gmail-inbox-activity-v1.php\", \"php tests/agent-connection-email-watchlist-v1.php\"\
-        , \"php tests/agent-connection-gmail-inbox-initial-scan-v1.php\", \"php tests/agent-brain-soul-v1.php\", \"php tests/agent-email-matters-v1.php\"\
-        , \"php tests/agent-email-running-report-summary-v1.php\", \"php tests/agent-email-triage-v1.php\", \"php tests/agent-email-triage-assessment-v1.php\"\
-        , \"php tests/agent-connection-gmail-thread-analysis-v1.php\", \"php tests/agent-connection-gmail-inbox-initial-summary-v1.php\"\
-        , \"node tests/gmail-inbox-initial-api.mjs\", \"php tests/agent-connection-gmail-github-settings-v1.php\", \"php tests/agent-connection-gmail-github-knowledge-v1.php\"\
-        , \"php tests/agent-connection-youtube-v1.php\", \"php tests/agent-connection-youtube-consent-v1.php\", \"php tests/agent-connection-youtube-chat-v1.php\"\
-        , \"php tests/agent-connection-youtube-activity-v1.php\", \"php tests/agent-connection-youtube-quota-v1.php\", \"\
-        php tests/agent-media-similar-artists-v1.php\", \"node tests/chat-youtube-similar-artists-dom.mjs\", \"node tests/chat-youtube-playback-browser.mjs\"\
-        , \"node tests/chat-youtube-similar-artists-browser.mjs\", \"php tests/agent-reminders-v1.php\", \"node tests/agent-reminders-api.mjs\"\
-        , \"node tests/agent-reminders-browser.mjs\", \"php tests/agent-screen-share-v1.php\", \"node tests/agent-screen-share-api.mjs\"\
-        , \"node tests/agent-screen-share-browser.mjs\", \"node tests/agent-ears-picker.mjs\", \"php tests/agent-screen-sessions-v1.php\"\
-        , \"node tests/agent-screen-sessions-api.mjs\", \"node tests/agent-screen-sessions-browser.mjs\", \"node tests/agent-screen-watch-zone-browser.mjs\"\
-        , \"php tests/agent-screen-insights-v1.php\", \"php tests/agent-screen-chat-report-v1.php\", \"node tests/screen-insights-chat-report.mjs\"\
-        , \"node tests/agent-screen-insights-browser.mjs\", \"php tests/agent-photo-media-v1.php\", \"php tests/agent-image-generation-v1.php\"\
-        , \"php tests/agent-image-transport-v1.php\", \"node tests/chat-canvas-media-api.mjs\", \"node tests/chat-canvas-media-browser.mjs\"\
-        , \"node tests/media-library-workspace-api.mjs\", \"node tests/media-library-workspace-browser.mjs\", \"php tests/initiative-work-mission-v1.php\"\
-        , \"php tests/initiative-work-product-v1.php\", \"php tests/initiative-marketing-promotion-v1.php\", \"php tests/initiative-product-launch-v1.php\"\
-        , \"php tests/profile-promotion-attribution-v1.php\", \"php tests/initiative-work-screen-v1.php\", \"node tests/initiative-workbench-api.mjs\"\
-        , \"node tests/chat-initiative-workbench-browser.mjs\", \"node tests/chat-marketing-creative-render-browser.mjs\"\
-        , \"node tests/profile-product-promotion-browser.mjs\", \"node tests/profile-commerce-publication-browser.mjs\", \"\
-        php tests/cloud-missions-v1.php\", \"node tests/cloud-missions-api.mjs\", \"node tests/cloud-missions-browser.mjs\"\
-        , \"php tests/cloud-mission-schedules-v1.php\", \"node tests/cloud-mission-schedules-api.mjs\", \"node tests/cloud-mission-schedules-browser.mjs\"\
-        , \"php tests/cloud-mission-web-v1.php\", \"php tests/cloud-mission-web-transport.php\", \"php tests/cloud-mission-sources-v1.php\"\
-        , \"node tests/cloud-mission-web-api.mjs\", \"node tests/cloud-mission-web-browser.mjs\", \"node tests/agent-eyes-core.mjs\"\
-        , \"node tests/agent-orb-browser.mjs\", \"node tests/agent-orb-cloud-browser.mjs\", \"node tests/agent-activity-hub-browser.mjs\"\
-        , \"node tests/agent-activity-hub-compact-browser.mjs\", \"node tests/planning-specialist-settings-http.mjs\", \"\
-        node tests/gmail-inbox-initial-ui-browser.mjs\", \"node tests/agent-eyes-portraits-browser.mjs\", \"node tests/chat-voice-enrollment-browser.mjs\"\
-        , \"node tests/activity-center-layout-browser.mjs\", \"node tests/agent-voice-guard-browser.mjs\", \"node tests/participant-continuity-browser.mjs\"\
-        , \"node tests/participant-recovery-browser.mjs\", \"node tests/participant-updates-browser.mjs\", \"node tests/chat-participant-setup-v2-browser.mjs\"\
-        , \"node tests/participant-tracking-browser.mjs\", \"node tests/tv-watching-browser.mjs\", \"node tests/trained-voice-core.mjs\"\
-        , \"node tests/trained-voice-real-browser.mjs\", \"node tests/agent-missions-cloud-a3-browser.mjs\", \"node tests/chat-email-specialist-browser.mjs\"\
-        , \"php tests/agent-development-v1.php\", \"python3 -B tests/agent-development-runner-v1.py\", \"node tests/agent-development-runner-api-v1.mjs\"\
-        , \"node tests/agent-development-chat-api-v1.mjs\", \"node tests/chat-agent-development-browser.mjs\", \"node tests/agent-missions-cloud-a5c2-browser.mjs\"\
-        , \"node tests/agent-missions-cloud-a5c3-browser.mjs\", \"node tests/agent-missions-cloud-a5c4-browser.mjs\", \"node\
-        \ tests/agent-missions-cloud-a5c5-browser.mjs\", \"node tests/chat-catch-up-browser.mjs\", \"node tests/chat-initiative-browser.mjs\"\
-        , \"node tests/cognitive-working-attention-browser.mjs\", \"node tests/chat-live-attention-browser.mjs\", \"node tests/chat-runtime-continuity-browser.mjs\"\
-        , \"node tests/initiative-closed-chat-browser.mjs\", \"php tests/agent-activity-situations-v1.php\", \"node tests/activity-situations-browser.mjs\"\
-        , \"php tests/agent-chat-read-v1.php\", \"node tests/agent-chat-read-api.mjs\", \"node tests/chat-message-unread-browser.mjs\"\
-        , \"node tests/chat-listening-continuation-browser.mjs\", \"node tests/music-file-repair-api.mjs\", \"node tests/music-file-repair-browser.mjs\"\
-        , \"php tests/music-project-import.php\", \"node tests/music-project-import-browser.mjs\", \"node tests/chat-speech-recovery.mjs\"\
-        , \"node tests/player-history-api.mjs\", \"node tests/chat-canvas-voice-browser.mjs\", \"node tests/agent-chat-greeting-browser.mjs\"\
-        , \"node tests/transcript-tools-browser.mjs\", \"node tests/task-notes-browser.mjs\", \"node tests/agent-eyes-listening-handoff-browser.mjs\"\
-        , \"php tests/agent-voice-preferences.php\", \"php tests/chat-auto-greet-settings-v1.php\", \"node tests/agent-voice-menu-browser.mjs\"\
-        , \"node tests/agent-presence-browser.mjs\", \"php tests/agent-initiative-brainstorm-v1.php\", \"php tests/agent-initiative-brainstorm-pipeline-v1.php\"\
-        , \"php tests/agent-initiative-opportunity-sources-v1.php\", \"php tests/agent-initiative-opportunity-view-v1.php\"\
-        , \"node tests/agent-working-browser.mjs\", \"node tests/agent-work-status-http.mjs\", \"node tests/chat-sidebar-footer-browser.mjs\"\
-        , \"node tests/chat-clean-layout-browser.mjs\", \"php tests/agent-initiative-bootstrap-v1.php\", \"php tests/agent-worker-health-v1.php\"\
-        , \"php tests/agent-inference-budget-v1.php\", \"php tests/agent-initiative-model-v1.php\", \"php tests/agent-initiative-v1.php\"\
-        , \"php tests/agent-initiative-worker-v1.php\", \"php tests/agent-initiative-scope-v1.php\", \"php tests/agent-initiative-owner-context-v1.php\"\
-        , \"php tests/agent-initiative-reassessment-v1.php\", \"php tests/agent-initiative-readiness-v1.php\", \"php tests/agent-initiative-runtime-v1.php\"\
-        , \"php tests/agent-core-adoption-v1.php\", \"php tests/agent-initiative-context-v1.php\", \"php tests/agent-initiative-checkin-v1.php\"\
-        , \"php tests/agent-artist-research-v1.php\", \"php tests/agent-initiative-native-music-v1.php\", \"php tests/agent-initiative-tools-v1.php\"\
-        , \"php tests/agent-initiative-tools-pipeline-v1.php\", \"php tests/agent-initiative-meeting-prep-pipeline-v1.php\"\
-        , \"php tests/agent-meeting-command-v1.php\", \"php tests/agent-meeting-action-sources-v1.php\", \"php tests/agent-meeting-research-link-v1.php\"\
-        , \"node tests/meeting-chat-actions-api.mjs\", \"node tests/meeting-chat-action-review-browser.mjs\", \"node tests/meeting-agenda-research-browser.mjs\"\
-        , \"php tests/agent-initiative-task-research-pipeline-v1.php\", \"php tests/agent-initiative-transcript-research-pipeline-v1.php\"\
-        , \"php tests/agent-initiative-canvas-v1.php\", \"php tests/agent-initiative-canvas-feedback-v1.php\", \"php tests/agent-initiative-canvas-pipeline-v1.php\"\
-        , \"php tests/agent-initiative-email-canvas-pipeline-v1.php\", \"php tests/agent-initiative-canvas-transport-v1.php\"\
-        , \"php tests/agent-anthropic-credit-notice-v1.php\", \"php tests/agent-token-balance-notice-v1.php\", \"php tests/initiative-canvas-settings-v1.php\"\
-        , \"node tests/initiative-canvas-settings-api.mjs\", \"node tests/coding-sidebar-auto-browser.mjs\", \"php tests/agent-working-context-replay-v1.php\"\
-        , \"node tests/cognitive-presentation-account-binding.mjs\", \"node tests/initiative-chat-loop-browser.mjs\", \"node\
-        \ tests/agent-core-startup-http.mjs\", \"node tests/initiative-chat-loop-e2e.mjs\", \"node tests/initiative-chat-loop-e2e.mjs\
-        \ --transcript\", \"node tests/initiative-chat-loop-e2e.mjs --gmail\", \"node tests/initiative-chat-loop-e2e.mjs --gmail-no-anchor\"\
-        , \"node tests/initiative-chat-loop-e2e.mjs --gmail-fresh\", \"node tests/initiative-chat-loop-e2e.mjs --gmail-backlog\"\
-        , \"node tests/initiative-youtube-offer-e2e.mjs\", \"node tests/initiative-chat-loop-e2e.mjs --office=task\", \"node\
-        \ tests/initiative-chat-loop-e2e.mjs --office=list\", \"node tests/initiative-chat-loop-e2e.mjs --office=reminder\"\
-        , \"node tests/initiative-activity-browser.mjs\", \"node tests/initiative-review-actions-browser.mjs\", \"node tests/chat-research-specialist-browser.mjs\"\
-        , \"node tests/chat-research-canvas-browser.mjs\", \"node tests/chat-coding-canvas-browser.mjs\", \"node tests/chat-coding-canvas-email-browser.mjs\"\
-        , \"php tests/agent-capability-contract-v1.php\", \"php tests/agent-initiative-homeserver-readonly-v1.php\", \"php\
-        \ tests/agent-initiative-transcripts-v1.php\", \"php tests/agent-initiative-mission-evidence-v1.php\", \"php tests/agent-initiative-product-context-v1.php\"\
-        , \"php tests/agent-initiative-office-records-v1.php\", \"php tests/agent-initiative-capabilities-pipeline-v1.php\"\
-        , \"node tests/initiative-capabilities-browser.mjs\", \"php tests/agent-live-context-v1.php\", \"php tests/agent-live-context-worker-v1.php\"\
-        , \"php tests/agent-initiative-live-context-pipeline-v1.php\", \"php tests/agent-initiative-task-lists-v1.php\", \"\
-        php tests/agent-initiative-task-lists-pipeline-v1.php\", \"php tests/agent-initiative-office-entry-pipeline-v1.php\"\
-        , \"php tests/agent-morning-brief-v1.php\", \"php tests/agent-coordination-pipeline-v1.php\", \"php tests/agent-coordination-routing-pipeline-v1.php\"\
-        , \"php tests/agent-coordination-scheduling-v1.php\", \"php tests/agent-coordination-source-triggers-v1.php\", \"\
-        php tests/agent-coordination-rules-v1.php\", \"node tests/agent-coordination-rules-api.mjs\", \"php tests/agent-screen-audio-events-v1.php\"\
-        , \"php tests/homeserver-https-transient-inference-v1.php\", \"php tests/agent-initiative-voice-v1.php\", \"node tests/agent-live-context-browser.mjs\"\
-        , \"node tests/agent-live-sensory-producers-browser.mjs\", \"node tests/initiative-live-context-browser.mjs\", \"\
-        php tests/personal-capabilities-strict-v1.php\", \"php tests/agent-initiative-action-clock-v1.php\", \"php tests/agent-initiative-office-actions-v1.php\"\
-        , \"php tests/agent-initiative-schedule-kernels-v1.php\", \"php tests/agent-initiative-schedule-actions-v1.php\",\
-        \ \"php tests/agent-initiative-action-sources-v1.php\", \"php tests/agent-initiative-action-schedule-sources-v1.php\"\
-        , \"php tests/agent-initiative-action-source-scope-v1.php\", \"php tests/agent-initiative-actions-v1.php\", \"php\
-        \ tests/agent-initiative-actions-long-message-v1.php\", \"node tests/initiative-action-review-browser.mjs\", \"node\
-        \ tests/initiative-actions-e2e.mjs\", \"php tests/agent-initiative-followups-v1.php\", \"node tests/initiative-followups-e2e.mjs\"\
-        , \"php tests/agent-initiative-followthrough-v1.php\", \"php tests/agent-initiative-engagement-memory-v1.php\", \"\
-        node tests/agent-initiative-followthrough-api.mjs\", \"node tests/initiative-followthrough-browser.mjs\", \"node tests/initiative-followthrough-e2e.mjs\"\
-        , \"php tests/agent-top-of-mind-v1.php\", \"node tests/agent-top-of-mind-browser.mjs\", \"node tests/agent-top-of-mind-session-http.mjs\"\
-        , \"php tests/ai-usage-accounting-v032.php\", \"php tests/ai-usage-report-v1.php\", \"php tests/ai-direct-execution-capture-v1.php\"\
-        , \"php tests/ai-legacy-execution-capture-v1.php\", \"node tests/ai-usage-report-browser-v1.mjs\", \"node tests/agent-missions-cloud-a5c6-browser.mjs\"\
-        , \"node tests/agent-missions-cloud-a5c7-browser.mjs\", \"node tests/agent-missions-cloud-a5c8-browser.mjs\", \"node\
-        \ tests/agent-missions-cloud-a5c9-browser.mjs\", \"node tests/agent-missions-cloud-a5c10-browser.mjs\", \"node tests/agent-missions-cloud-a5c11-browser.mjs\"\
-        , \"node tests/chat-browser-research-ui.mjs\", \"node tests/chat-research-continuity-r3-ui.mjs\", \"node tests/agent-missions-cloud-a4-browser.mjs\"\
+        node tests/media-library-workspace-browser.mjs\", \"node tests/agent-activity-hub-browser.mjs\", \"node tests/agent-activity-hub-compact-browser.mjs\"\
+        , \"node tests/gmail-inbox-initial-ui-browser.mjs\", \"node tests/chat-participant-setup-v2-browser.mjs\", \"node\
+        \ tests/chat-message-unread-browser.mjs\", \"node tests/chat-canvas-voice-browser.mjs\", \"node tests/agent-working-browser.mjs\"\
+        , \"node tests/chat-clean-layout-browser.mjs\", \"node tests/initiative-chat-loop-browser.mjs\", \"node tests/chat-coding-canvas-browser.mjs\"\
+        , \"node tests/chat-coding-canvas-email-browser.mjs\", \"node tests/initiative-capabilities-browser.mjs\", \"node\
+        \ tests/agent-live-context-browser.mjs\", \"node tests/initiative-live-context-browser.mjs\", \"node tests/agent-top-of-mind-browser.mjs\"\
         ]')\nshard=int(os.environ['VP3_DIAGNOSTIC_SHARD'])\nout=Path('vp3-diagnostic-results');out.mkdir()\nresults=[]\nfor\
         \ i,command in enumerate(commands):\n    if i%4!=shard: continue\n    print('START '+command,flush=True)\n    started=time.monotonic();log=out/(str(i).zfill(3)+'.log')\n\
         \    with log.open('w') as output:\n        try:\n            code=subprocess.run(['bash','-e','-c',command],stdout=output,stderr=subprocess.STDOUT,timeout=180).returncode\n\

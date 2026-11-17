@@ -304,9 +304,12 @@ try {
   failSend=true;
   await page.locator('#chatInput').fill('Keep this provider failure');
   await page.locator('#sendChatButton').click();
-  await page.waitForFunction(()=>!document.querySelector('#sendChatButton').disabled && document.querySelector('#chatRecoveryStatus')?.hidden===false);
+  await page.waitForFunction(()=>!document.querySelector('#sendChatButton').disabled
+    &&document.querySelector('#chatThread [data-chat-turn-notice] .message-text[role="status"]'));
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this provider failure');
-  assert.match(await page.locator('#chatRecoveryStatus').innerText(),/Provider unavailable/,'Show the actual server failure');
+  assert.match(await page.locator('#chatThread [data-chat-turn-notice]').innerText(),/Provider unavailable/,'Show the actual server failure in Chat');
+  assert.equal(await page.locator('[data-chat-turn-notice].assistant,[data-chat-turn-notice][data-chat-message-id]').count(),0,
+    'Local failure feedback cannot impersonate a saved assistant result');
   assert.equal(await page.getByRole('button',{name:'Check history',exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Dismiss',exact:true}).count(),0);
   await page.getByRole('button',{name:'Start voice conversation'}).click();
@@ -423,7 +426,8 @@ try {
     await page.waitForFunction(()=>!document.querySelector('#sendChatButton').disabled);
     if(kind==='truncated'){
       await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='true' && window.recognizers.some(item=>item.active));
-      assert.match(await page.locator('#chatRecoveryStatus').innerText(),/ended before a completed answer/,'A failed stream remains actionable without a history gate');
+      assert.match(await page.locator('#chatThread [data-chat-turn-notice]').innerText(),/ended before a completed answer/,
+        'A failed stream remains actionable in Chat without a history gate');
     }else await page.waitForFunction(()=>document.querySelector('#chatVoiceButton').getAttribute('aria-pressed')==='false');
     await page.waitForTimeout(400);
     assert.equal(streams().length,before+1,'A failed/stopped voice turn must never replay');
