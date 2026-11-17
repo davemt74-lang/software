@@ -62,6 +62,9 @@ function initiative_http_transcript_model_v1(string $protocol,array $input,strin
 
 function initiative_http_seed_transcript_v1(PDO $pdo): void
 {
+    // The saved transcript question independently anchors this journey; the
+    // generic Brain fixture task would schedule an unrelated Office review.
+    $pdo->exec('DELETE FROM agent_memory_items WHERE id=100 AND user_id=1 AND user_agent_id=7');
     $pdo->exec("CREATE TABLE settings(setting_key TEXT PRIMARY KEY,setting_value TEXT);
         CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,conversation_id INTEGER,
             client_session_key TEXT,knowledge_id INTEGER,agent_memory_id INTEGER,project_note_id INTEGER,

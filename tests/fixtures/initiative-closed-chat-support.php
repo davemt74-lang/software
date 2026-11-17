@@ -81,21 +81,27 @@ function closed_chat_prepare(string $mode='initial'): array
         $pdo->prepare('UPDATE agent_reminders_v1 SET title=? WHERE id=100')->execute([$title]);
         $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
     }
-    vp3_initiative_schedule_v1($pdo,$user);
-    $runId=(int)$pdo->query("SELECT MAX(id) FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND capability_key='initiative.plan'")->fetchColumn();
-    $plan=vp3_initiative_execute_v1($pdo,$user,closed_chat_claim($user,$runId),static function(string $prompt,string $protocol)use($staleDuringGeneration): string{
-        $rows=json_decode($prompt,true,16,JSON_THROW_ON_ERROR)['evidence'];$refs=array_column($rows,'ref');
-        closed_chat_assert($protocol==='vp3.initiative-plan.v1','The canonical planner protocol must be selected.');
-        closed_chat_assert(in_array('reminder:100',$refs,true)&&in_array('task:100',$refs,true),'A reminder and a task must reach the same planner.');
-        closed_chat_assert(!str_contains($prompt,'SECRET'),'The planner must not receive another owner’s evidence.');
-        $jobs=[['tool'=>'work.prepare_private','primary'=>'reminder:100','refs'=>['reminder:100'],
-            'focus'=>'Prepare a launch follow-up for the owner','report'=>true]];
-        if(!$staleDuringGeneration)$jobs[]=['tool'=>'work.prepare_private','primary'=>'task:100','refs'=>['task:100'],
-            'focus'=>'Prepare launch asset review questions','report'=>false];
-        return json_encode(['jobs'=>$jobs],JSON_THROW_ON_ERROR);
-    });
-    closed_chat_assert(!empty($plan['ok']),'The production planner must save its selected assignments.');
-    $pending=$pdo->query("SELECT id FROM agent_workflow_runs WHERE source_kind='agent_initiative' AND capability_key='initiative.prepare' AND status='approved' ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
+    // Isolate the legacy generic executor contract. The current planner marks
+    // native Tasks/Reminder reads as specialist reports; Office routing has its
+    // own browser gate and its declared capability map must remain unchanged.
+    $binding=vp3_initiative_policy_v1($user,0);
+    $pending=[];
+    foreach($staleDuringGeneration?['reminder:100']:['reminder:100','task:100'] as $ref){
+        $coverage=[];
+        $evidence=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),false,[],$coverage,[$ref],0);
+        closed_chat_assert(isset($evidence[$ref]),'The exact saved source must be available to the canonical executor.');
+        closed_chat_assert(!str_contains(json_encode($evidence),'SECRET'),'The executor must not receive another owner’s evidence.');
+        $goal=['binding'=>$binding,'sources'=>[$ref=>$evidence[$ref]['revision']],
+            'canonical_sources'=>[$ref=>$evidence[$ref]['canonical_source_revision']??$evidence[$ref]['revision']],
+            'tool'=>'work.prepare_private','primary'=>$ref,'focus'=>'Prepare this exact saved follow-up.',
+            'report'=>$ref==='reminder:100'];
+        $dedupe=hash('sha256',json_encode($goal,JSON_THROW_ON_ERROR));
+        vp3_initiative_enqueue_v1($pdo,$user,'initiative.prepare',$goal,$dedupe);
+        $stmt=$pdo->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=1 AND dedupe_key=? AND status='approved'");
+        $stmt->execute([hash('sha256','initiative.prepare|'.$dedupe)]);
+        if($id=$stmt->fetchColumn())$pending[]=(int)$id;
+    }
+    closed_chat_assert($pending!==[],'Changed source evidence must produce a current canonical preparation.');
     foreach($pending as $id){
         $result=vp3_initiative_execute_v1($pdo,$user,closed_chat_claim($user,(int)$id),static function(string $prompt,string $protocol)use($pdo,$staleDuringGeneration): string{
             closed_chat_assert($protocol==='vp3.initiative-draft.v1','The canonical preparation protocol must be selected.');
@@ -105,8 +111,8 @@ function closed_chat_prepare(string $mode='initial'): array
             return json_encode(['draft'=>$staleDuringGeneration?'WITHHOLD this obsolete draft.':($reminder
                 ?'I prepared launch follow-up questions from your saved reminder.'
                 :'I prepared a private asset review checklist.')],JSON_THROW_ON_ERROR);
-        });
-        closed_chat_assert(!empty($result['ok'])!==$staleDuringGeneration,'Changed source evidence must prevent a successful preparation receipt.');
+        },allowDelivery:$mode!=='pending');
+        closed_chat_assert(!empty($result['ok'])!==$staleDuringGeneration,'Changed source evidence must prevent a successful preparation receipt: '.json_encode($result));
     }
     return closed_chat_state();
 }

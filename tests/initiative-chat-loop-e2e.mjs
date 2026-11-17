@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {copyFileSync,cpSync,existsSync,mkdirSync,mkdtempSync,readdirSync,readFileSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
+import {copyFileSync,cpSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -52,21 +52,23 @@ if(freshGmail){
   chatAssets.push('agent-orb.css','agent-top-of-mind-v1.js','chat-email-v1.js','chat-email-v1.css');
 }
 for(const name of apiFiles)copyFileSync(join(source,'api',name),join(temp,'api',name));
-const fixtureFiles=['initiative-chat-loop-http.php','image-generation-v1.php','workflow-agent-schema-v1.php','initiative-gmail-chat-http.php'];
+const fixtureFiles=['initiative-chat-loop-http.php','image-generation-v1.php','workflow-agent-schema-v1.php','initiative-gmail-chat-http.php',
+  'initiative-office-chat-http.php','initiative-transcript-chat-http.php'];
 if(gmailBacklog)fixtureFiles.push('initiative-media-chat-http.php');
-if(gmailScenario){
-  // Give the production Gmail includes the same fixture provider and compute adapters as the Chat bootstrap.
-  cpSync(join(source,'includes'),join(temp,'includes'),{recursive:true});
-  mkdirSync(join(temp,'tests','fixtures'),{recursive:true});
-  for(const name of fixtureFiles)copyFileSync(join(source,'tests','fixtures',name),join(temp,'tests','fixtures',name));
-  writeFileSync(join(temp,'includes','ai-settings.php'),`<?php
+// Every production include resolves in the same disposable source tree, with
+// the same provider/compute adapters as the Chat bootstrap on every cold request.
+cpSync(join(source,'includes'),join(temp,'includes'),{recursive:true});
+mkdirSync(join(temp,'tests','fixtures'),{recursive:true});
+for(const name of fixtureFiles)copyFileSync(join(source,'tests','fixtures',name),join(temp,'tests','fixtures',name));
+writeFileSync(join(temp,'includes','ai-settings.php'),`<?php
 function ai_encrypt_secret(string $value):string{return 'fixture:'.base64_encode($value);}
 function ai_decrypt_secret(string $value):string{return str_starts_with($value,'fixture:')?(string)base64_decode(substr($value,8),true):'';}
 function ai_master_key():string{return str_repeat('f',32);}
 `);
-  writeFileSync(join(temp,'includes','agent-runtime-routing-v420.php'),`<?php
+writeFileSync(join(temp,'includes','agent-runtime-routing-v420.php'),`<?php
 function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $owner,int $agent):array{return ['effective_preference'=>'vp3_cloud'];}
 `);
+if(gmailScenario){
   if(freshGmail){
     // The fixture already supplies the presentation projection. The unrelated
     // browser-extension bootstrap loads a second copy via the Chat runtime.
@@ -83,10 +85,6 @@ function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $owner,int $age
   assert.notEqual(blocked,original,'the Gmail wire adapter must be controlled before the test starts');
   writeFileSync(connector,blocked);
 }else{
-  for(const name of ['agent-initiative-runtime-v1.php','agent-initiative-lifecycle-v1.php','agent-initiative-engagement-status-v1.php','agent-chat-read-v1.php','agent-activity-v94.php',
-    'agent-live-context-v1.php','agent-connection-gmail-github-notice-v1.php','agent-token-balance-notice-v1.php','agent-anthropic-credit-notice-v1.php']){
-    writeFileSync(join(temp,'includes',name),'<?php require_once '+JSON.stringify(join(source,'includes',name))+';');
-  }
   writeFileSync(join(temp,'includes','agent-connection-gmail-inbox-status-v1.php'),`<?php
 function agent_connection_gmail_diagnostics_v1(PDO $pdo,array $user,int $agentId,int $conversationId): array {
     return ['state'=>'disabled','next_step'=>'Connect Gmail in Connections.',
@@ -103,16 +101,10 @@ const assertColdTick=gmailBacklog?`if(($_SERVER['REQUEST_METHOD']??'')==='POST'
 }`:'';
 writeFileSync(join(temp,'includes','bootstrap.php'),`<?php session_start();
 ${backlogFixture}
-require ${JSON.stringify(join(gmailScenario?temp:source,'tests/fixtures/initiative-chat-loop-http.php'))};
+require ${JSON.stringify(join(temp,'tests/fixtures/initiative-chat-loop-http.php'))};
 ${assertColdTick}`);
 if(gmailBacklog){
   writeFileSync(join(temp,'native.wav'),Buffer.from('524946462600000057415645666d74201000000001000100401f0000803e00000200100064617461020000000000','hex'));
-}
-if(transcriptScenario||officeScenario){
-  for(const name of readdirSync(join(source,'includes'))){
-    const target=join(temp,'includes',name);
-    if(!existsSync(target))symlinkSync(join(source,'includes',name),target);
-  }
 }
 const phpPaths=paths=>'['+paths.map(path=>JSON.stringify(path)).join(',')+']';
 writeFileSync(join(temp,'VP3_RELEASE.json'),JSON.stringify({commit:'a'.repeat(40)}));
@@ -161,6 +153,7 @@ let logs='';
 const transportOptions=transcriptScenario?['-d','disable_functions=dns_get_record,curl_init,curl_setopt_array,curl_exec,curl_getinfo,curl_close']:[];
 const server=spawn(php,[...transportOptions,'-S','127.0.0.1:'+port,'-t',temp,router],{
   env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'working.sqlite'),
+    VP3_INITIATIVE_HTTP_BROWSER:'1',
     VP3_INITIATIVE_HTTP_TRANSCRIPT:transcriptScenario?'1':'0',VP3_INITIATIVE_HTTP_GMAIL:gmailScenario?'1':'0',
     VP3_INITIATIVE_HTTP_OFFICE:officeScenario,
     ...(gmailScenario?{VP3_GMAIL_CLIENT_ID:'initiative-fixture.apps.googleusercontent.com',VP3_GMAIL_CLIENT_SECRET:'fixture-only',
@@ -380,16 +373,8 @@ async function verifyGmail(page,writes){
   await page.clock.fastForward(350);
   await busyHeartbeat;
   await fixtureJson(await first);
-  assert.equal(activeReports(await state()).length,0);
-  const busyDelivery=(await readInitiativeDebug()).gmail.stages[4];
-  assert.ok(['gmail_handoff_unassigned','gmail_handoff_queued','gmail_handoff_working','gmail_handoff_pending_delivery'].includes(busyDelivery.code),JSON.stringify(busyDelivery));
-  if(busyDelivery.code==='gmail_handoff_unassigned'){
-    assert.match(busyDelivery.detail,/No current Chat handoff is recorded/);
-  }else{
-    assert.match(busyDelivery.detail,/latest browser update says Chat is busy/);
-  }
-  await page.evaluate(()=>{document.body.dataset.stonefellowAgentState='idle';});
-  await page.locator('#chatInput').fill('');
+  // A timestamped saved Chat result can arrive while its owner drafts; only
+  // proactive voice uses the browser's current interruption availability.
   for(let attempt=0;attempt<4 && activeReports(await state()).length===0;attempt++){
     const tick=initiativeTick(page);
     await page.clock.fastForward(16000);
@@ -397,6 +382,10 @@ async function verifyGmail(page,writes){
   }
   const routed=await state();
   assert.equal(activeReports(routed).length,1,JSON.stringify({runs:routed.runs,receipts:routed.receipts,gmail:routed.gmail}));
+  assert.equal(await page.locator('#chatInput').inputValue(),'My unfinished thought');
+  assert.deepEqual(await page.evaluate(()=>({speech:window.speechCalls,announcements:window.announcementCalls})),{speech:0,announcements:0});
+  await page.evaluate(()=>{document.body.dataset.stonefellowAgentState='idle';});
+  await page.locator('#chatInput').fill('');
   const post=page.locator('#chatThread .message').filter({hasText:summary});
   await post.waitFor();
   assert.match(await post.innerText(),/Check whether the jukebox is available in March\./);
@@ -785,18 +774,18 @@ async function verifyBrainLoop(page,writes,responses,errors){
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
   assert.equal(await page.locator('#chatInput').inputValue(),'My unfinished thought');
   assert.equal(brainCalls(state).length,2,'the real private planner and preparation run despite the owner draft');
-  assert.equal(state.reports.length,0,'private preparation must not post into busy Chat');
-  assert.ok(state.actions.some(row=>JSON.parse(row.result_json||'{}').initiative_delivery==='pending'));
-  assert.equal(JSON.parse(state.model_calls[0].prompt).owner_context.text_delivery_available,false);
+  assert.equal(state.reports.length,1,'a verified timestamped result reaches its saved Chat while the owner draft stays intact');
+  assert.ok(state.actions.some(row=>JSON.parse(row.result_json||'{}').initiative_delivery==='delivered'));
+  assert.equal(JSON.parse(state.model_calls[0].prompt).owner_context.text_delivery_available,true);
   await page.evaluate(()=>document.body.dataset.stonefellowAgentState='processing');
   await page.locator('#chatInput').fill('');
   await page.clock.fastForward(16000);
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
-  assert.equal(state.reports.length,0);
+  assert.equal(state.reports.length,1);
   await page.evaluate(()=>document.body.dataset.stonefellowAgentState='speaking');
   await page.clock.fastForward(16000);
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
-  assert.equal(state.reports.length,0);
+  assert.equal(state.reports.length,1);
   assert.deepEqual(await page.evaluate(()=>({speech:window.speechCalls,announcements:window.announcementCalls})),{speech:0,announcements:0});
   await page.evaluate(()=>document.body.dataset.stonefellowAgentState='idle');
   await page.clock.fastForward(17000);
@@ -847,8 +836,16 @@ async function verifyBrainLoop(page,writes,responses,errors){
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
   assert.equal(state.policy.enabled,false);assert.notEqual(state.policy.revision,oldRevision);
   assert.equal(brainCalls(state).length,2);assert.equal(state.reports.length,1);
-  // A second real canonical job prepares a conversational check-in while the
-  // owner writes. A subsequently saved normal turn must invalidate its tail.
+  // Explicitly defer a second canonical job through the real API's private-only
+  // worker mode. A subsequently saved normal turn must invalidate its tail.
+  let deferCheckinDelivery=true;
+  await page.route('**/api/cognitive-presentation-v510.php*',async route=>{
+    const request=route.request();
+    const body=request.method()==='POST'?request.postDataJSON():null;
+    if(deferCheckinDelivery&&body?.action==='initiative_tick')
+      return route.continue({postData:JSON.stringify({...body,private_only:true})});
+    return route.continue();
+  });
   await page.clock.setSystemTime(new Date());
   const selected=await page.evaluate(async()=>fetch('/fixture-checkin',{method:'POST',
     headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:window.STONEFELLOW_CHAT.csrf})}).then(r=>r.json()));
@@ -866,9 +863,10 @@ async function verifyBrainLoop(page,writes,responses,errors){
     .find(result=>result.initiative_tool_result?.output?.type==='initiative_chat_check_in');
   assert.ok(pendingCheckin,'the real check-in tool prepared a revision-bound result');
   assert.equal(pendingCheckin.initiative_delivery,'pending');
-  assert.equal(state.reports.length,1,'the draft check-in remains private during the owner draft');
+  assert.equal(state.reports.length,1,'the explicitly deferred check-in remains private during the owner draft');
   await page.getByRole('button',{name:'Send',exact:true}).click();
   await page.getByText('I have saved your new direction.',{exact:true}).waitFor();
+  deferCheckinDelivery=false;
   await page.clock.fastForward(17000);
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
   const withheldCheckin=state.actions.map(row=>JSON.parse(row.result_json||'{}'))
@@ -881,5 +879,5 @@ async function verifyBrainLoop(page,writes,responses,errors){
   console.log('PASS real Chromium → actual accepted activity API → automatic named-Agent core policy → actual leased worker/planner → real Brain read → verified receipt → one canonical Chat report over 490 characters → main Chat NEW tag, Brief closed and no speech');
   console.log('PASS actual GET health performs no inference; unchanged situations reuse completed canonical work, exact Brain scope excludes System/foreign records, mobile status fits viewport');
   console.log('PASS explicit Pause survives automatic activity heartbeats; the actual settings API rejects a stale tab revision without re-enabling work or spending another model call');
-  console.log('PASS actual private preparation advances while the owner drafts, main Agent processes and speech is active; pending delivery waits for quiet and an intervening saved owner turn withholds a stale check-in');
+  console.log('PASS actual preparation saves one silent text result while the owner drafts, main Agent processes and speech is active; an intervening saved owner turn withholds an explicitly deferred stale check-in');
 }
