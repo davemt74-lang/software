@@ -168,6 +168,32 @@ if($path==='/fixture-casual-enable-gmail'){
     initiative_media_http_mailbox_v1(db());
     header('Content-Type:application/json');echo '{"ok":true}';return;
 }
+if($path==='/fixture-curiosity-route'){
+    require_once __DIR__.'/includes/agent-coordination-rules-v1.php';
+    $action=$_GET['action']??null;
+    if(!in_array($action,['ask','watch'],true))throw new InvalidArgumentException('Expected an explicit Curiosity route.');
+    $before=vp3_coordination_rule_settings_v1(db(),current_user(),7,17);
+    $saved=vp3_coordination_rule_settings_v1(db(),current_user(),7,17,$before['revision'],
+        ['curiosity'=>['open_question'=>$action]]);
+    header('Content-Type:application/json');echo json_encode([
+        'owner_user_id'=>$saved['owner_user_id'],'agent_id'=>$saved['agent_id'],'conversation_id'=>$saved['conversation_id'],
+        'before'=>$before['rules'],'saved'=>$saved['rules'],
+    ],JSON_THROW_ON_ERROR);return;
+}
+if($path==='/fixture-casual-readiness'){
+    require_once __DIR__.'/includes/agent-idle-evidence-v1.php';
+    require_once __DIR__.'/includes/agent-casual-checkin-v1.php';
+    $scope=vp3_agent_activity_scope_v1(db(),current_user(),7,17);
+    $now=time();$hold=null;$watermark=null;
+    $ready=vp3_casual_checkin_media_idle_v1(db(),$scope['user'],17,
+        vp3_casual_checkin_delivery_v1(db(),1),$now,$hold,$watermark);
+    header('Content-Type:application/json');echo json_encode([
+        'owner_user_id'=>(int)$scope['user']['id'],'agent_id'=>$scope['agent_id'],
+        'conversation_id'=>$scope['conversation_id'],'server_time'=>$now,
+        'ready'=>$ready,'hold'=>$hold,'activity_watermark'=>$watermark,
+        'idle'=>vp3_agent_idle_evidence_v1(db(),$scope['user'],7,17,new DateTimeImmutable('@'.$now)),
+    ],JSON_THROW_ON_ERROR);return;
+}
 if($path==='/fixture-coordination-wake'){
     db()->exec("UPDATE agent_memory_items SET is_active=0 WHERE user_id=1 AND subject='coordination-scan'");
     if(($_GET['elapsed']??'')==='1')db()->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=17");
@@ -209,6 +235,11 @@ server.stderr.on('data',data=>{logs+=data;});
 let browser;
 let page;
 const failed=[];
+const initiativeTrace=[];
+const traceInitiative=entry=>{
+  initiativeTrace.push({at:Date.now(),...entry});
+  if(initiativeTrace.length>80)initiativeTrace.shift();
+};
 try{
   for(let attempt=0;;attempt++){
     try{if((await fetch(base+'/health')).ok)break;}catch{}
@@ -218,9 +249,25 @@ try{
   browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});
   page=await browser.newPage();
   page.on('pageerror',error=>failed.push(error.message));
+  page.on('request',request=>{
+    if(!request.url().startsWith(base+'/api/'))return;
+    let data;try{data=request.postDataJSON();}catch{return;}
+    if(data?.action==='initiative_tick')traceInitiative({event:'request',action:data.action,
+      conversation_id:data.conversation_id,policy_revision:data.policy_revision});
+  });
   page.on('response',async response=>{if(response.url().startsWith(base)&&(!response.ok()||response.url().includes('/api/'))){
     const text=await response.text().catch(()=>'');
     if(!response.ok()||text.includes('Fatal error')||!text.startsWith('{'))failed.push(`${response.status()} ${response.url()}: ${text.slice(0,500)}`);
+    let data,body;try{data=response.request().postDataJSON();body=JSON.parse(text);}catch{return;}
+    if(data?.action==='initiative_tick')traceInitiative({event:'response',action:data.action,
+      conversation_id:data.conversation_id,status:response.status(),ok:body.ok,reason:body.reason,
+      step:body.step,run_id:body.run_id,coordination:body.coordination,coordination_failure:body.coordination_failure,
+      health:body.health});
+    if(data?.action==='heartbeat')traceInitiative({event:'heartbeat',conversation_id:data.context?.conversation_id,
+      status:response.status(),ok:body.ok,reason:data.reason,context:{activity_tab:data.context?.activity_tab,
+        chat_focused:data.context?.chat_focused,chat_busy:data.context?.chat_busy,media_playing:data.context?.media_playing,
+        owner_interaction_at_ms:data.context?.owner_interaction_at_ms},
+      core_health:body.agent_core_context?.health,core_error:body.agent_core_context_error?.reason});
   }});
   await page.route('https://www.youtube.com/embed/**',route=>route.fulfill({contentType:'text/html',body:'<title>YouTube fixture</title>'}));
   await page.route('https://www.youtube.com/iframe_api',route=>route.fulfill({contentType:'text/javascript',body:''}));
@@ -661,24 +708,56 @@ try{
     const ref=JSON.parse(row.goal).primary;
     return ref?.startsWith('casual:')&&!ref.startsWith('casual:starter-');
   }));
-  const waitForCasualPost=async(ref,before,question)=>{
+  const setCuriosityRoute=async(action)=>{
+    const response=await page.request.post(base+'/fixture-curiosity-route?action='+action);
+    assert.ok(response.ok(),await response.text());
+    const rules=await response.json();
+    assert.deepEqual([rules.owner_user_id,rules.agent_id,rules.conversation_id],[1,7,17]);
+    const expected=structuredClone(rules.before);expected.curiosity.open_question=action;
+    assert.deepEqual(rules.saved,expected,'Only the selected Curiosity preference changes; Media rules stay intact.');
+    return rules.before.curiosity.open_question;
+  };
+  const waitForCasualIdle=async()=>{
+    // The fixture's elapsed-message setup does not age actual foreground
+    // interactions or quiet_chat_since. Observe the real 30-second gate before
+    // starting the separate assessment/preparation completion deadline.
+    await page.waitForFunction(async()=>{
+      const response=await fetch('/fixture-casual-readiness');
+      if(!response.ok())return false;
+      return (await response.json()).ready===true;
+    },null,{timeout:45000,polling:250});
+    const response=await page.request.get(base+'/fixture-casual-readiness');
+    assert.ok(response.ok(),await response.text());
+    const evidence=await response.json();
+    assert.deepEqual([evidence.owner_user_id,evidence.agent_id,evidence.conversation_id],[1,7,17]);
+    assert.equal(evidence.ready,true);assert.equal(evidence.hold,null);
+    assert.equal(evidence.idle.readiness,'ready');assert.equal(evidence.idle.busy,false);
+    assert.ok(evidence.idle.activity_at>0&&evidence.idle.quiet_since>0);
+    assert.ok(evidence.server_time-Math.max(evidence.idle.activity_at,evidence.idle.quiet_since)>=30,
+      'Automatic Media preparation starts only after actual foreground activity and quiet time have both aged.');
+    traceInitiative({event:'casual_idle_ready',evidence});
+    return evidence;
+  };
+  const waitForCasualPost=async(ref,before,question,expectedRun=null)=>{
     const known=before.runs.map(row=>row.id);
     await page.unroute(presentation,holdAutomaticTick);
-    await page.waitForFunction(async({ref,known})=>{
+    await page.waitForFunction(async({ref,known,expectedRun})=>{
       const snapshot=await (await fetch('/fixture-state')).json();
       return snapshot.runs.some(run=>{
         const goal=JSON.parse(run.goal);
         if(known.includes(run.id)||run.status!=='completed'||goal.primary!==ref||goal.binding?.conversation_id!==17)return false;
+        if(expectedRun!==null&&run.id!==expectedRun)return false;
         return snapshot.receipts.some(receipt=>receipt.run_id===run.id&&receipt.status==='completed'
           &&JSON.parse(receipt.result_json).initiative_delivery==='delivered');
       });
-    },{ref,known},{timeout:45000});
+    },{ref,known,expectedRun},{timeout:45000,polling:250});
     await page.route(presentation,holdAutomaticTick);
     const snapshot=await state();
     const runs=snapshot.runs.filter(row=>!known.includes(row.id)&&row.status==='completed'
       &&JSON.parse(row.goal).primary===ref&&JSON.parse(row.goal).binding?.conversation_id===17);
     assert.equal(runs.length,1,'Fresh activity must deliver exactly one new invitation for this source.');
     const run=runs[0],goal=JSON.parse(run.goal);
+    if(expectedRun!==null)assert.equal(run.id,expectedRun,'The automatic client must finish the exact queued invitation.');
     assert.deepEqual([run.owner_user_id,run.agent_id,goal.binding.owner_user_id,goal.binding.agent_id,goal.binding.conversation_id],[1,7,1,7,17]);
     assert.equal(goal.tool,'coordination.review');
     const actions=snapshot.actions.filter(row=>row.run_id===run.id&&row.owner_user_id===1&&row.sequence_no===1
@@ -798,23 +877,51 @@ try{
   });
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake');
-  await page.unroute(presentation,holdAutomaticTick);
+  const beforeFirstMusic=await state();
+  await waitForCasualIdle();
+  const {result:firstMusicTick,revision:firstMusicRevision}=await initiativeTick(17);
+  const firstMusicQueued=await state();
+  const newMusicRuns=coordinationRuns(firstMusicQueued,'casual:music')
+    .filter(row=>!beforeFirstMusic.runs.some(prior=>prior.id===row.id));
+  assert.equal(newMusicRuns.length,1,'The first eligible scan must admit one exact music invitation.');
+  const queuedMusic=newMusicRuns[0],queuedMusicGoal=JSON.parse(queuedMusic.goal);
+  assert.equal(queuedMusic.status,'approved');
+  assert.deepEqual([queuedMusic.owner_user_id,queuedMusic.agent_id,queuedMusicGoal.binding.owner_user_id,
+    queuedMusicGoal.binding.agent_id,queuedMusicGoal.binding.conversation_id],[1,7,1,7,17]);
+  assert.equal(queuedMusicGoal.binding.revision,firstMusicRevision);
+  const queuedMusicActions=firstMusicQueued.actions.filter(row=>row.run_id===queuedMusic.id);
+  assert.equal(queuedMusicActions.length,1);
+  assert.deepEqual([queuedMusicActions[0].owner_user_id,queuedMusicActions[0].action_key,
+    queuedMusicActions[0].capability_key,queuedMusicActions[0].execution_target,queuedMusicActions[0].status,
+    queuedMusicActions[0].result_json],[1,'initiative.prepare','initiative.prepare','cloud','queued',null]);
+  assert.equal(firstMusicTick.step,'assessment');
+  assert.equal(firstMusicTick.coordination,'queued_media_offer');
+  const musicAssessment=firstMusicQueued.runs.find(row=>row.id===firstMusicTick.run_id);
+  assert.equal(musicAssessment?.status,'completed');
+  assert.deepEqual([musicAssessment.owner_user_id,musicAssessment.agent_id,musicAssessment.capability_key],
+    [1,7,'initiative.plan']);
+  assert.equal(JSON.parse(musicAssessment.goal).binding.conversation_id,17);
+  const musicAssessmentActions=firstMusicQueued.actions.filter(row=>row.run_id===musicAssessment.id);
+  assert.equal(musicAssessmentActions.length,1);
+  const musicAssessmentAction=musicAssessmentActions[0];
+  assert.deepEqual([musicAssessmentAction.owner_user_id,musicAssessmentAction.action_key,
+    musicAssessmentAction.capability_key,musicAssessmentAction.execution_target,musicAssessmentAction.status],
+    [1,'initiative.plan','initiative.plan','cloud','completed']);
+  const musicAssessmentReceipts=firstMusicQueued.receipts.filter(row=>row.run_id===musicAssessment.id
+    &&row.owner_user_id===1&&row.action_id===musicAssessmentAction.id
+    &&row.attempt_no===musicAssessmentAction.attempt_count&&row.executor==='cloud'&&row.status==='completed');
+  assert.equal(musicAssessmentReceipts.length,1);
+  assert.equal(musicAssessmentAction.result_json,musicAssessmentReceipts[0].result_json);
   const musicQuestion='Want to listen to some music?';
-  const casualMusic=page.locator('[data-chat-message-role="assistant"]').filter({hasText:musicQuestion});
-  await casualMusic.waitFor({timeout:45000});
+  const firstMusic=await waitForCasualPost('casual:music',beforeFirstMusic,musicQuestion,queuedMusic.id);
+  const casualMusic=firstMusic.element;
   assert.equal((await state()).plays.filter(row=>row.user_id===1).length,0,'Asking does not create a play session.');
   assert.equal(await page.locator('audio').evaluateAll(elements=>elements.some(audio=>!audio.paused)),false);
-  const musicState=await state();
-  const musicRun=coordinationRuns(musicState,'casual:music')[0];
-  assert.equal(musicRun?.status,'completed');
-  const musicReceipt=JSON.parse(musicState.receipts.find(row=>row.run_id===musicRun.id&&row.status==='completed').result_json);
-  assert.equal(musicReceipt.initiative_delivery,'delivered');
-  assert.deepEqual(Object.keys(musicReceipt.initiative_tool_result.output.evidence_revisions),['casual:music']);
+  const musicState=firstMusic.state,musicReceipt=firstMusic.result;
   const starterRow=musicState.messages.find(row=>row.id===starterMessage);
   assert.equal(JSON.parse(starterRow.context_json).initiative_work.followthrough.state,'open',
     'An unanswered specialist example does not prevent subsequent opt-in Media engagement.');
 
-  await page.route(presentation,holdAutomaticTick);
   await fixturePost('/fixture-coordination-wake');
   await initiativeTick(17);
   assert.equal((await casualRuns()).length,1,'Repeated idle polling does not add an unanswered invitation.');
@@ -860,6 +967,7 @@ try{
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake?elapsed=1');
+  await waitForCasualIdle();
   await initiativeTick(17);
   const secondMusic=await waitForCasualPost('casual:music',beforeSecondMusic,musicQuestion);
   assert.equal((await casualRuns()).length,2,'Fresh activity makes the same kind eligible when no other kind is available.');
@@ -875,6 +983,7 @@ try{
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake?elapsed=1');
   const attemptsBeforeYoutube=(await state()).youtube_attempts;
+  await waitForCasualIdle();
   await initiativeTick(17);
   const mediaQuestion='Would you like to listen to music or watch a video?';
   const combinedMedia=await waitForCasualPost('casual:media',beforeCombinedMedia,mediaQuestion);
@@ -933,10 +1042,15 @@ try{
 
   const beforeEmailOffer=await state();
   await fixturePost('/fixture-casual-enable-gmail');
+  // Isolate contextual email rotation from Curiosity's media-first priority.
+  // Use the actual saved preference, retaining all Media sources and consent.
+  const previousCuriosityRoute=await setCuriosityRoute('watch');
+  assert.equal(previousCuriosityRoute,'ask');
   await post('Create a VP3 music playlist for ambient.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake?elapsed=1');
+  await waitForCasualIdle();
   await initiativeTick(17);
   const emailOffer=await waitForCasualPost('casual:email',beforeEmailOffer,'Want to draft an email?');
   const casualEmail=emailOffer.element;
@@ -953,10 +1067,12 @@ try{
   assert.equal(afterDraft.email_sends,0,'A created email draft awaits the existing review step.');
   console.log('PASS casual email offer → recipient and content prompt → existing private draft review with no send');
 
+  assert.equal(await setCuriosityRoute(previousCuriosityRoute),'watch');
   const beforeRepeatedMedia=await state();
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake?elapsed=1');
+  await waitForCasualIdle();
   await initiativeTick(17);
   const repeatedMedia=await waitForCasualPost('casual:media',beforeRepeatedMedia,mediaQuestion);
   const beforeChoice=repeatedMedia.state;
@@ -982,7 +1098,40 @@ try{
   assert.equal(nextState.plays.filter(row=>row.user_id===1).length,playsBeforeChoice+1);
   assert.equal(nextState.youtube_attempts,attemptsBeforeYoutube);
   console.log('PASS choosing music from the combined invitation opens the verified VP3 pick without a YouTube call');
-}catch(error){console.error(logs.slice(-3000),failed.slice(-8));throw error;}
+}catch(error){
+  if(page&&!page.isClosed())try{
+    const snapshot=await (await page.request.get(base+'/fixture-state')).json();
+    const runs=snapshot.runs.filter(row=>JSON.parse(row.goal).binding?.conversation_id===17);
+    const runIds=new Set(runs.map(row=>row.id));
+    const {binding:currentBinding,...client}=await page.evaluate(()=>{
+      const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
+      const core=window.StonefellowAgentActivity?.coreContext?.();
+      return {binding:window.STONEFELLOW_CHAT?.workingAttentionBinding,visibility:document.visibilityState,
+        focused:document.hasFocus(),conversation_id:chat?.conversationId?.(),agent_id:chat?.agentId?.(),
+        ready:chat?.isReady?.(),restoring:chat?.isRestoring?.(),busy:chat?.isBusy?.(),
+        composer_length:document.getElementById('chatInput')?.value.length,
+        core:core?{owner_user_id:core.owner_user_id,agent_id:core.agent_id,conversation_id:core.conversation_id,
+          health:core.health}:null,
+        media:Array.from(document.querySelectorAll('audio,video')).map(element=>({track:element.dataset.trackId,
+          paused:element.paused,ended:element.ended,current_time:element.currentTime})),
+        assistant_messages:Array.from(document.querySelectorAll('[data-chat-message-role="assistant"]'))
+          .map(element=>({id:element.dataset.chatMessageId,text:element.textContent.slice(0,400)})).slice(-20)};
+    });
+    const readiness=await (await page.request.get(base+'/fixture-casual-readiness')).json();
+    let diagnostics=null;
+    if(currentBinding&&client.conversation_id>0){
+      const response=await page.request.get(base+'/api/cognitive-presentation-v510.php?action=initiative_diagnostics&agent_id=7&conversation_id='+client.conversation_id,
+        {headers:{'X-VP3-Working-Attention':currentBinding}});
+      diagnostics={status:response.status(),body:await response.json()};
+    }
+    console.error('YouTube offer failure evidence',JSON.stringify({trace:initiativeTrace,client,readiness,diagnostics,
+      saved:{server_time:snapshot.server_time,activity:snapshot.activity,coordination_scan:snapshot.coordination_scan,
+        runs,actions:snapshot.actions.filter(row=>runIds.has(row.run_id)),
+        receipts:snapshot.receipts.filter(row=>runIds.has(row.run_id)),
+        messages:snapshot.messages.filter(row=>row.conversation_id===17)}}));
+  }catch(diagnosticError){console.error('YouTube offer failure evidence unavailable:',diagnosticError.message);}
+  console.error(logs.slice(-3000),failed.slice(-8));throw error;
+}
 finally{
   if(browser)await browser.close();
   if(server.exitCode===null){server.kill();await new Promise(resolve=>server.once('exit',resolve));}
