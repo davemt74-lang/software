@@ -305,11 +305,22 @@ try {
   const syncStarted = new Promise(resolve => { syncArrived = resolve; });
   holdSync = {arrived:syncArrived,release:new Promise(resolve => { releaseSync = resolve; })};
   const delayedSyncId = addAssistant('Late completion from the previous Chat');
-  const delayedSync = sync();
+  // Changing Chats deliberately aborts the pending read. Observe that outcome
+  // in the page immediately, before navigation can reject an unhandled promise.
+  const delayedSync = page.evaluate(async () => {
+    try {
+      await window.STONEFELLOW_CHAT_CONTINUITY.syncConversation(42);
+      return {status:'fulfilled'};
+    } catch (error) {
+      return {status:'rejected',name:error.name,message:error.message};
+    }
+  });
   await syncStarted;
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43));
   releaseSync();
-  await delayedSync;
+  const syncOutcome = await delayedSync;
+  assert.equal(syncOutcome.status,'rejected','Leaving the Chat must cancel its pending canonical read');
+  assert.equal(syncOutcome.name,'AbortError',JSON.stringify(syncOutcome));
   assert.equal(await page.locator(`[data-chat-message-id="${delayedSyncId}"]`).count(),0);
   assert.ok(!read.has(delayedSyncId));
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
