@@ -500,7 +500,9 @@ try{
   const catalogIdentity=snapshot=>{
     const runIds=snapshot.runs.filter(row=>{
       const goal=JSON.parse(row.goal);
-      return goal.coordination_route?.specialist==='media'&&goal.binding?.conversation_id===16;
+      const media=goal.coordination_route?.specialist==='media'
+        ||['casual:youtube_history','casual:media','casual:music','casual:youtube','casual:starter-media'].includes(goal.primary);
+      return media&&goal.binding?.conversation_id===16;
     }).map(row=>row.id);
     return {runIds,messageIds:snapshot.messages.filter(row=>row.conversation_id===16&&row.role==='assistant'
       &&runIds.includes(JSON.parse(row.context_json||'{}').initiative_run_id)).map(row=>row.id)};
@@ -518,35 +520,59 @@ try{
   assertCatalogUnchanged(idleState);
   let idleReport=await catalogDiagnostic({allowInvalidated:true});
   if(idleReport===null){
-    // A saved Curiosity report invalidates discovery in the same real tick.
-    // Require that exact completed post before allowing one genuine rescan.
-    assert.equal(idleTick.coordination,'queued_chat_handoff',JSON.stringify({tick:idleTick,
+    // A verified Curiosity question or Image example can complete in this tick.
+    // Require its exact fresh saved post before allowing one genuine rescan.
+    const diagnostic=JSON.stringify({tick:idleTick,
       run:idleState.runs.find(row=>row.id===idleTick.run_id),
       actions:idleState.actions.filter(row=>row.run_id===idleTick.run_id),
       receipts:idleState.receipts.filter(row=>row.run_id===idleTick.run_id),
       newMessages:idleState.messages.filter(row=>row.conversation_id===16
-        &&!beforeIdleCatalog.messages.some(previous=>previous.id===row.id))}));
+        &&!beforeIdleCatalog.messages.some(previous=>previous.id===row.id))});
     const handoff=idleState.runs.find(row=>row.id===idleTick.run_id);
-    assert.equal(handoff?.status,'completed');
+    assert.equal(handoff?.status,'completed',diagnostic);
+    assert.equal(handoff.owner_user_id,1);
+    assert.equal(handoff.agent_id,7);
     const goal=JSON.parse(handoff.goal);
     assert.equal(goal.tool,'coordination.review');
-    assert.equal(goal.coordination_route.specialist,'curiosity');
+    const route=goal.coordination_route;
+    const curiosity=route?.specialist==='curiosity'&&route.trigger==='open_question'&&route.action==='ask'
+      &&goal.primary.startsWith('curiosity:');
+    const imageExample=route?.specialist==='casual'&&route.trigger==='starter-image'&&route.action==='ask'
+      &&goal.primary==='casual:starter-image';
+    assert.ok(curiosity||imageExample,diagnostic);
+    assert.equal(idleTick.coordination,curiosity?'queued_chat_handoff':'queued_checkin',diagnostic);
     assert.equal(goal.binding.owner_user_id,1);
     assert.equal(goal.binding.agent_id,7);
     assert.equal(goal.binding.conversation_id,16);
-    assert.ok(goal.primary.startsWith('curiosity:'));
-    const handoffReceipt=idleState.receipts.find(row=>row.run_id===handoff.id&&row.status==='completed');
-    assert.ok(handoffReceipt);
-    assert.equal(handoffReceipt.owner_user_id,1);
-    assert.equal(handoffReceipt.executor,'cloud');
+    assert.equal(goal.binding.revision,policyRevision);
+    const actions=idleState.actions.filter(row=>row.run_id===handoff.id&&row.owner_user_id===1
+      &&row.sequence_no===1&&row.action_key==='initiative.prepare'&&row.capability_key==='initiative.prepare'
+      &&row.execution_target==='cloud');
+    assert.equal(actions.length,1);
+    const action=actions[0];
+    assert.equal(action.status,'completed');
+    const receipts=idleState.receipts.filter(row=>row.run_id===handoff.id&&row.owner_user_id===1
+      &&row.action_id===action.id&&row.attempt_no===action.attempt_count&&row.executor==='cloud'&&row.status==='completed');
+    assert.equal(receipts.length,1);
+    const handoffReceipt=receipts[0];
+    assert.equal(action.result_json,handoffReceipt.result_json);
     const result=JSON.parse(handoffReceipt.result_json);
     assert.equal(result.initiative_delivery,'delivered');
-    assert.deepEqual(Object.keys(result.initiative_tool_result.output.evidence_revisions),[goal.primary]);
+    assert.equal(result.initiative_tool_result.output.type,'initiative_coordination');
+    assert.equal(result.initiative_tool_result.output.situation_id,goal.coordination_id);
+    assert.deepEqual(result.initiative_tool_result.output.evidence_revisions,goal.sources);
+    assert.deepEqual(Object.keys(goal.sources),[goal.primary]);
     const posted=idleState.messages.find(row=>row.id===Number(result.initiative_message_id));
     assert.equal(posted?.conversation_id,16);
     assert.equal(posted.role,'assistant');
-    assert.equal(JSON.parse(posted.context_json).initiative_run_id,handoff.id);
-    assert.ok(!beforeIdleCatalog.messages.some(row=>row.id===posted.id),'The invalidated checkpoint requires a newly saved report.');
+    assert.equal(posted.message,result.initiative_draft);
+    const postedContext=JSON.parse(posted.context_json);
+    assert.equal(postedContext.source,'agent_initiative');
+    assert.equal(postedContext.initiative_run_id,handoff.id);
+    assert.deepEqual(postedContext.initiative_output,result.initiative_tool_result.output);
+    assert.deepEqual(idleState.messages.filter(row=>row.conversation_id===16
+      &&!beforeIdleCatalog.messages.some(previous=>previous.id===row.id)).map(row=>row.id),[posted.id],
+    'The invalidated checkpoint requires exactly one newly saved independent report.');
     const rescanned=await catalogTick();
     assert.ok(rescanned.ok(),await rescanned.text());
     const rescanTick=await rescanned.json();
