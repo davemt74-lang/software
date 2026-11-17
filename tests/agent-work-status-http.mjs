@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn,execFileSync} from 'node:child_process';
-import {copyFileSync,mkdirSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {copyFileSync,existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 // every production work GET is also exercised with SQLite query_only enabled.
 const source=fileURLToPath(new URL('../',import.meta.url)),temp=mkdtempSync(join(tmpdir(),'vp3-work-status-'));
 const php=process.env.VP3_PHP_BINARY||'php';
+const modelGuard=join(temp,'model-attempts');
 const probe=net.createServer();await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));
 const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
 const base='http://127.0.0.1:'+port;
@@ -18,7 +19,10 @@ mkdirSync(join(temp,'api'));mkdirSync(join(temp,'includes'));
 copyFileSync(join(source,'api/agent-top-of-mind-v1.php'),join(temp,'api/agent-top-of-mind-v1.php'));
 writeFileSync(join(temp,'includes/agent-top-of-mind-v1.php'),'<?php require_once '+JSON.stringify(join(source,'includes/agent-top-of-mind-v1.php'))+';');
 writeFileSync(join(temp,'includes/bootstrap.php'),[
-  '<?php session_start();require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';',
+  '<?php require_once '+JSON.stringify(join(source,'tests/fixtures/initiative-ai-settings-v1.php'))+';',
+  'session_start();require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';',
+  '$GLOBALS["imageFixtureSettingsObserver"]=static function():void{foreach(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame){',
+  'if(($frame["function"]??null)==="ai_generate_chat_response"){file_put_contents(getenv("VP3_WORK_STATUS_MODEL_GUARD"),"attempt\\n",FILE_APPEND|LOCK_EX);throw new LogicException("Work-status projection attempted model generation.");}}};',
   'if(isset($_SERVER["HTTP_X_FIXTURE_PARTICIPANT"]))$GLOBALS["VP3_PARTICIPANT_RESOURCE_SCOPE_V1"]=["owner"=>1,"agent"=>7,"participant"=>2,"revision"=>1];',
   'if(isset($_SERVER["HTTP_X_FIXTURE_READ_ONLY"]))db()->exec("PRAGMA query_only=ON");'
 ].join('\n'));
@@ -31,6 +35,8 @@ writeFileSync(join(temp,'router.php'),[
   'if($path==="/counts"){echo json_encode(["models"=>(int)db()->query("SELECT COUNT(*) FROM fixture_model_calls")->fetchColumn(),"runs"=>(int)db()->query("SELECT COUNT(*) FROM agent_workflow_runs")->fetchColumn()]);return;}',
   'if($_SERVER["REQUEST_METHOD"]!=="POST"||($_SERVER["HTTP_X_FIXTURE_CSRF"]??"")!==csrf_token()){http_response_code(403);echo "{}";return;}',
   '$u=current_user();$a=vp3_agent_chat_resolve_agent_v380(db(),$u,7);$principal=vp3_agent_chat_principal_v380($u,$a);',
+  'if($path==="/model-guard"){try{ai_generate_chat_response("Fixture must block before provider dispatch.",[],[],$u);}',
+  'catch(LogicException $error){if($error->getMessage()!=="Work-status projection attempted model generation.")throw $error;echo "{\\"blocked\\":true}";return;}throw new RuntimeException("The model observer did not intercept the actual generation entry point.");}',
   'if($path==="/seed"){',
   'vp3_initiative_chat_v1(db(),$u,$principal,["conversation_id"=>11],"on",null);$policy=vp3_initiative_policy_v1($u,7);$coverage=[];',
   '$e=vp3_initiative_evidence_v1(db(),$u,new DateTimeImmutable("now",new DateTimeZone("UTC")),false,[],$coverage,["task:100"],7);$row=$e["task:100"];',
@@ -53,7 +59,7 @@ writeFileSync(join(temp,'router.php'),[
 assert.match(execFileSync(php,['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors/);
 let logs='';
 const server=spawn(php,['-d','session.save_path='+temp,'-S','127.0.0.1:'+port,'-t',temp,join(temp,'router.php')],{
-  env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'working.sqlite')},stdio:['ignore','pipe','pipe']
+  env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'working.sqlite'),VP3_WORK_STATUS_MODEL_GUARD:modelGuard},stdio:['ignore','pipe','pipe']
 });
 server.stdout.on('data',value=>{logs+=value;});server.stderr.on('data',value=>{logs+=value;});
 try{
@@ -66,6 +72,10 @@ try{
   const cookie=sessionResponse.headers.get('set-cookie').split(';')[0];
   const headers={Cookie:cookie,'X-VP3-Working-Attention':session.binding,'X-Fixture-Read-Only':'1'};
   const postHeaders={Cookie:cookie,'X-Fixture-Csrf':'fixture'};
+  const guard=await fetch(base+'/model-guard',{method:'POST',headers:postHeaders});
+  assert.equal(guard.status,200,await guard.clone().text());assert.deepEqual(await guard.json(),{blocked:true});
+  assert.equal(readFileSync(modelGuard,'utf8'),'attempt\n','the positive control observes the actual AI entry point before dispatch');
+  rmSync(modelGuard);
   const endpoint=base+'/api/agent-top-of-mind-v1.php?view=work&agent_id=7';
   const read=async(extra='')=>{
     const response=await fetch(endpoint+extra,{headers});
@@ -80,14 +90,23 @@ try{
   const seed=await fetch(base+'/seed',{method:'POST',headers:postHeaders});
   assert.equal(seed.status,200,await seed.clone().text());const {run_id}=await seed.json();
   const state=await read();
-  assert.deepEqual(Object.keys(state).sort(),['agent_id','contract','conversation_id','health','observed_at','owner_user_id','working_attention_binding']);
+  assert.deepEqual(Object.keys(state).sort(),['agent_id','contract','conversation_id','coordination','health','observed_at','owner_user_id','specialists','working_attention_binding']);
   assert.equal(state.owner_user_id,1);assert.equal(state.agent_id,7);assert.equal(state.conversation_id,11);
   assert.equal(state.working_attention_binding,session.binding);assert.equal(state.health.enabled,true);
   assert.equal(state.health.active_jobs.length,1);assert.equal(state.health.active_jobs[0].id,'workflow:'+run_id);
   assert.equal(state.health.active_jobs[0].kind,'preparation');
   assert.ok(state.health.active_jobs[0].expiresAt>Date.now());
+  assert.equal(state.coordination.phase,'acting');
   assert.equal(JSON.stringify(state).includes('fixture-owner-private'),false);
   await read();await read('&conversation_id=11');
+  const exact=await read('&scope=chat&conversation_id=11');
+  assert.equal(exact.conversation_id,11);assert.equal(exact.health.active_jobs.length,1);
+  const unsaved=await read('&scope=chat&conversation_id=0');
+  assert.equal(unsaved.conversation_id,0);assert.deepEqual(unsaved.health.active_jobs,[]);
+  assert.equal(unsaved.coordination.phase,'waiting');
+  assert.equal(unsaved.coordination.detail,'Waiting for a saved Chat.');
+  assert.ok(unsaved.specialists.some(specialist=>specialist.id==='planning'&&specialist.state==='idle'));
+  assert.equal((await fetch(endpoint+'&scope=chat',{headers})).status,422);
   assert.equal((await fetch(endpoint+'&conversation_id=12',{headers})).status,403);
   assert.equal((await fetch(endpoint,{method:'POST',headers})).status,405);
   assert.equal((await fetch(endpoint,{headers:{...headers,'X-VP3-Working-Attention':'wrong'}})).status,403);
@@ -101,6 +120,20 @@ try{
   assert.deepEqual(other.state.health.active_jobs,[]);
   const foreign=await fetch(base+'/session',{headers:{Cookie:cookie,'X-Fixture-User':'2'}}).then(response=>response.json());
   assert.equal((await fetch(endpoint,{headers:{Cookie:cookie,'X-Fixture-User':'2','X-VP3-Working-Attention':foreign.binding}})).status,403);
+  const engagements=base+'/api/agent-top-of-mind-v1.php?view=engagements&scope=chat&agent_id=7&conversation_id=11&specialist=planning';
+  const questions=await fetch(engagements,{headers});
+  assert.equal(questions.status,200,await questions.clone().text());
+  assert.match(questions.headers.get('cache-control'),/no-store/);
+  assert.deepEqual((await questions.json()).state,{contract:'vp3.agent.engagements.v1',owner_user_id:1,agent_id:7,conversation_id:11,
+    specialist:'planning',open_engagements:[],open_engagements_next_before:null,open_engagements_status:'ready',working_attention_binding:session.binding});
+  for(const [address,expected] of [[engagements.replace('agent_id=7','agent_id=8'),403],
+    [engagements.replace('conversation_id=11','conversation_id=12'),403],[engagements.replace('scope=chat&',''),422],
+    [engagements.replace('specialist=planning','specialist=unknown'),422],[engagements+'&before=-1',422]]){
+    assert.equal((await fetch(address,{headers})).status,expected,address);
+  }
+  assert.equal((await fetch(engagements,{headers:{...headers,'X-VP3-Working-Attention':'wrong'}})).status,403);
+  assert.equal((await fetch(engagements,{headers:{...headers,'X-Fixture-Participant':'1'}})).status,403);
+  assert.equal((await fetch(engagements,{headers:{Cookie:cookie,'X-Fixture-User':'2','X-VP3-Working-Attention':foreign.binding}})).status,403);
   for(const mode of ['action_failed','action_restore','expired','terminal','paused']){
     const changed=await fetch(base+'/mutate?mode='+mode,{method:'POST',headers:postHeaders});
     assert.equal(changed.status,200,await changed.clone().text());
@@ -108,8 +141,10 @@ try{
     assert.equal(work.health.active_jobs.length,mode==='action_restore'?1:0,mode);
   }
   assert.deepEqual(await fetch(base+'/counts',{headers}).then(response=>response.json()),{models:0,runs:1});
+  assert.equal(existsSync(modelGuard),false,'no production work or engagement GET may attempt actual model generation, even if a projection catches the observer refusal');
   console.log('PASS real work-only GET resolves saved-policy Chat and reports only a matching live claim; queued/cold, failed action, expired, terminal and paused work remain inactive');
   console.log('PASS work-only GET enforces method, owner, exact Agent/Chat, session, participant and permission boundaries without exposing source/progress text');
+  console.log('PASS engagement GET is read-only and scopes pagination to the exact owner, Agent, Chat, session and specialist');
   console.log('PASS repeated query_only GETs invoke zero models, create zero work and leave the full Top of Mind feed unopened');
 }catch(error){console.error(logs.slice(-7000));throw error;}
 finally{server.kill('SIGTERM');if(server.exitCode===null)await new Promise(resolve=>server.once('exit',resolve));rmSync(temp,{recursive:true,force:true});}

@@ -43,6 +43,7 @@ function db(): PDO { return $GLOBALS['activity_pdo']; }
 function url(string $path = ''): string { return '/vp3'.$path; }
 function csrf_token(): string { return 'fixture-session-csrf'; }
 function setting(string $key, mixed $default = null): mixed { return $default; }
+function get_tracks(): array { return []; }
 function has_permission(string $permission, array $user): bool
 {
     return !in_array($permission, $GLOBALS['activity_denied'][(int)$user['id']] ?? [], true);
@@ -257,6 +258,18 @@ $user = ['id'=>1,'is_active'=>1];
 $binding = vp3_catch_up_page_binding_v1($user);
 $state = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding);
 $sections = activity_sections($state);
+$gmailOnly = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'gmail');
+activity_check(array_column($gmailOnly['sections'],'id')===['gmail_inbox'] && $gmailOnly['current_chat']===$state['current_chat'],
+    'The Gmail report loads without projecting unrelated sources and keeps the exact Chat scope');
+activity_rejects(422,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,['gmail']));
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','12',$binding,'gmail'));
+$mediaOnly = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'media');
+activity_check(array_column($mediaOnly['sections'],'id')===['youtube','songs'] && $mediaOnly['current_chat']===$state['current_chat']
+    && is_array($mediaOnly['media_report']['findings'] ?? null),
+    'Media loads only the scoped report and playback history without writes');
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','12',$binding,'media'));
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','21','20',$binding,'media'));
+activity_rejects(422,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'media','all'));
 activity_check($state['agent_name']==='Longfellow' && $state['current_chat']===['id'=>13,'title'=>'Latest project'], 'Agent and current Chat metadata reflect the exact owned scope');
 activity_check(array_column($sections['history']['items'],'title')===['Latest project','First project'], 'History spans only the selected Agent Chats and is newest first');
 $gmail = $sections['gmail_outcomes']['items'];
@@ -273,6 +286,7 @@ activity_check(array_column($sections['tasks']['items'],'title')===['Named task'
 activity_check($sections['tasks']['items'][0]['actions'][0]['list_id']===2, 'A task can open its actual existing parent list');
 activity_check(array_column($sections['lists']['items'],'title')===['Named list'] && $sections['lists']['items'][0]['detail']==='1 open task', 'List count includes only permitted canonical members');
 activity_check(array_column($sections['reminders']['items'],'title')===['Owner reminder'], 'Account reminders respect other-owner and Initiative Agent boundaries');
+activity_check(!isset($sections['office_reviews']), 'The full activity feed does not load private Office review details');
 activity_check(array_column($sections['calendar']['items'],'title')===['Today event','Future event'], 'Seven-day Calendar includes future events and excludes foreign or cancelled events');
 activity_check(count($sections['missions']['items'])===1 && $sections['missions']['items'][0]['actions'][0]['mission_id']===$missionId, 'An active Mission retains its canonical exact source ID');
 activity_check(array_column($sections['canvases']['items'],'title')===['Coding Agent','Saved draft'], 'Canvas work combines an active Coding Agent and saved draft metadata');
@@ -294,10 +308,12 @@ activity_check(array_column($system['lists']['items'],'title')===['System list']
 activity_check(array_column($system['canvases']['items'],'id')===['coding:208'], 'System Coding jobs keep their separate Agent namespace');
 activity_rejects(405,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'POST','11','13',$binding));
 activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13','stale'));
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13','stale','tasks'));
 activity_rejects(422,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','-1',$binding));
 activity_rejects(422,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET',[],'13',$binding));
 activity_rejects(403,fn()=>vp3_agent_activity_hub_v1($pdo,$user,21,0));
 activity_rejects(403,fn()=>vp3_agent_activity_hub_v1($pdo,$user,11,12));
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','12',$binding,'tasks'));
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1,'agent'=>11];
 activity_rejects(403,fn()=>vp3_agent_activity_hub_v1($pdo,$user,11,13));
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
@@ -313,6 +329,147 @@ activity_check($pdo->writeAttempts===0 && ($mysql || (int)$pdo->query('SELECT to
 $pdo->readOnly=false;
 if ($mysql) $pdo->rollBack();
 else $pdo->exec('PRAGMA query_only=OFF');
+
+// Exercise the workspace past both the preview and the older inventory limits.
+$taskIds = range(1000, 1204);
+$listIds = range(1400, 1415);
+$reminderIds = range(2000, 2102);
+$addMember = $pdo->prepare("INSERT INTO agent_task_list_items_v1 VALUES (2,?,?,'2026-01-01')");
+foreach ($taskIds as $id) {
+    $status = match ($id) { 1000=>'completed', 1001=>'cancelled', default=>'open' };
+    $metadata = ['task_status'=>$status];
+    if (in_array($id, [1002, 1003], true)) $metadata['assigned_user_id'] = 2;
+    $task->execute([$id,1,11,410,'task','Inventory task '.$id,'Private inventory task body',
+        json_encode($metadata,JSON_THROW_ON_ERROR),1,$now->format('Y-m-d H:i:s')]);
+    if ($id !== 1002) $addMember->execute([$id,'inventory-'.$id]);
+}
+foreach ([[1301,1,11,0],[1302,1,11,1],[1303,2,21,1],[1304,1,12,1]] as [$id,$owner,$agent,$active]) {
+    $task->execute([$id,$owner,$agent,410,'task','Hidden inventory task '.$id,'Private inventory task body',
+        '{"task_status":"open"}',$active,$now->format('Y-m-d H:i:s')]);
+    $addMember->execute([$id,'inventory-hidden-'.$id]);
+}
+$pdo->exec("INSERT INTO user_agent_data_rules VALUES (11,'knowledge','brain:1302','deny')");
+$denySecondAgentTask = $pdo->prepare("INSERT INTO user_agent_data_rules VALUES (12,'knowledge',?,'deny')");
+foreach (range(1600, 1650) as $id) {
+    $task->execute([$id,1,12,410,'task','Restricted second Agent task','Private inventory task body',
+        '{"task_status":"open"}',1,$now->format('Y-m-d H:i:s')]);
+    $denySecondAgentTask->execute(['brain:'.$id]);
+}
+$addList = $pdo->prepare("INSERT INTO agent_task_lists_v1 VALUES (?,1,11,?,?,'2026-01-01')");
+foreach ($listIds as $id) $addList->execute([$id,'Inventory list '.$id,'inventory-'.$id]);
+$stamp = reminder_utc_v1($now);
+$addReminder = $pdo->prepare("INSERT INTO agent_reminders_v1
+    (id,owner_user_id,title,timezone,start_local,recurrence,delivery,next_at,status,conversation_id,created_at,updated_at)
+    VALUES (?,1,?,'UTC',?,'none','chat',?,?,11,?,?)");
+foreach ($reminderIds as $id) {
+    $status = match ($id) { 2101=>'finished', 2102=>'cancelled', default=>'active' };
+    $addReminder->execute([$id,'Inventory reminder '.$id,$now->format('Y-m-d\TH:i:s'),
+        $status === 'active' ? reminder_utc_v1($now->modify('+1 hour')) : null,$status,$stamp,$stamp]);
+}
+
+if ($mysql) $pdo->exec('START TRANSACTION READ ONLY');
+else $pdo->exec('PRAGMA query_only=ON');
+$pdo->readOnly=true;
+$inventoryBefore = $mysql ? 0 : (int)$pdo->query('SELECT total_changes()')->fetchColumn();
+$office = static fn(mixed $collection='',mixed $cursor='',mixed $listId=''):array
+    => vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'tasks',$collection,$cursor,$listId);
+$compactOffice = activity_sections($office());
+activity_check(array_keys(activity_sections($office('reviews')))===['office_reviews'],
+    'The compact specialist can read its latest review without loading any inventory sections');
+activity_check(array_keys($compactOffice)===['office_reviews','reminders','tasks','lists']
+    && count($compactOffice['tasks']['items'])===3 && count($compactOffice['lists']['items'])===3
+    && count($compactOffice['reminders']['items'])===3
+    && !str_contains(json_encode($compactOffice,JSON_THROW_ON_ERROR),'Inventory reminder 2102'),
+    'The compact Office view retains its three-item previews and open-reminder behavior');
+$expanded = $office('all');
+$expandedSections = activity_sections($expanded);
+activity_check(array_keys($expandedSections)===array_keys($compactOffice)
+    && $expanded['current_chat']===$state['current_chat']
+    && array_keys($expanded['pages'])===['reminders','tasks','lists'],
+    'The expanded Office view includes only the four scoped sections and inventory pagination');
+
+$inventoryCards = static function (string $collection,array $page,string $listId='') use ($office): array {
+    $cards = [];
+    $seenCursors = [];
+    while (true) {
+        $sections = activity_sections($page);
+        activity_check($page['coverage'][$collection]==='ready' && count($sections[$collection]['items'])<=12,
+            'Each '.$collection.' inventory page is ready and stays within its 12-item bound');
+        $cards = [...$cards,...$sections[$collection]['items']];
+        $cursor = $page['pages'][$collection]['next_cursor'];
+        if ($cursor === null) return $cards;
+        activity_check(is_string($cursor) && $cursor !== '' && !isset($seenCursors[$cursor]),
+            'The '.$collection.' inventory cursor advances without replay');
+        $seenCursors[$cursor] = true;
+        $page = $office($collection,$cursor,$listId);
+        activity_check(array_keys(activity_sections($page))===[$collection] && array_keys($page['pages'])===[$collection]
+            && ($listId === '' || ($page['list_id'] ?? null)===(int)$listId),
+            'A continuation projects only the selected '.$collection.' collection');
+    }
+};
+
+foreach (['tasks'=>$taskIds,'lists'=>$listIds,'reminders'=>$reminderIds] as $collection=>$ids) {
+    $prefix = 'Inventory '.rtrim($collection,'s').' ';
+    $expected = array_map(static fn(int $id):string=>$prefix.$id,array_reverse($ids));
+    array_push($expected,...match ($collection) {
+        'tasks'=>['Closed task','Named task'], 'lists'=>['Named list'], 'reminders'=>['Owner reminder'],
+    });
+    $firstPage = $office($collection);
+    activity_check(array_keys(activity_sections($firstPage))===[$collection]
+        && count($expandedSections[$collection]['items'])===12
+        && $expandedSections[$collection]['items']===activity_sections($firstPage)[$collection]['items']
+        && $expanded['pages'][$collection]===$firstPage['pages'][$collection],
+        'The expanded and targeted '.$collection.' first pages agree');
+    $cards = $inventoryCards($collection,$expanded);
+    activity_check(array_column($cards,'title')===$expected,
+        'The '.$collection.' inventory returns every permitted record in descending order once, including saved closed work');
+    $details = array_column($cards,'detail','title');
+    if ($collection === 'tasks') {
+        activity_check(str_contains(strtolower($details['Inventory task 1000']),'completed')
+            && str_contains(strtolower($details['Inventory task 1001']),'cancelled'),
+            'Closed tasks display their saved status');
+    } elseif ($collection === 'reminders') {
+        activity_check(str_contains(strtolower($details['Inventory reminder 2101']),'finished')
+            && str_contains(strtolower($details['Inventory reminder 2102']),'cancelled'),
+            'Closed reminders display their saved status');
+    }
+}
+
+$members = $office('list_items','','2');
+activity_check(array_keys(activity_sections($members))===['list_items']
+    && activity_sections($members)['list_items']['label']==='Named list' && $members['list_id']===2,
+    'The member view returns the selected list title and no unrelated collection');
+$expectedMembers = array_map(static fn(int $id):string=>'Inventory task '.$id,
+    array_values(array_filter(array_reverse($taskIds),static fn(int $id):bool=>$id!==1002)));
+$expectedMembers[] = 'Named task';
+activity_check(array_column($inventoryCards('list_items',$members,'2'),'title')===$expectedMembers,
+    'Member pagination returns the complete exact list, including closed members, excluding standalone, inactive, denied and out-of-scope tasks');
+activity_check(!str_contains(json_encode([$expanded,$members],JSON_THROW_ON_ERROR),'Private inventory task body'),
+    'The expanded workspace returns task cards without the raw task body');
+
+$restrictedPage = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','12','12',$binding,'tasks','tasks');
+$restrictedCursor = $restrictedPage['pages']['tasks']['next_cursor'];
+activity_check(activity_sections($restrictedPage)['tasks']['items']===[] && is_string($restrictedCursor),
+    'A full scanned page of restricted tasks returns a usable continuation without exposing a card');
+$permittedPage = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','12','12',$binding,'tasks','tasks',$restrictedCursor);
+activity_check(array_column(activity_sections($permittedPage)['tasks']['items'],'id')===['task:1304','task:3']
+    && $permittedPage['pages']['tasks']['next_cursor']===null,
+    'A restricted-page continuation still reaches every older permitted task');
+
+activity_rejects(422,static fn()=> $office('all','12'));
+activity_rejects(422,static fn()=> $office('tasks',[]));
+activity_rejects(422,static fn()=> $office('tasks','-1'));
+activity_rejects(422,static fn()=> $office('reminders','99999999999999999'));
+activity_rejects(422,static fn()=> $office('lists','','2'));
+activity_rejects(422,static fn()=> $office('list_items'));
+activity_rejects(422,static fn()=> $office('unknown'));
+foreach (['3','4','999'] as $listId) activity_rejects(403,static fn()=> $office('list_items','',$listId));
+activity_check($pdo->writeAttempts===0 && ($mysql || (int)$pdo->query('SELECT total_changes()')->fetchColumn()===$inventoryBefore),
+    'All inventory and list-member GET pages make zero attempted or successful database writes');
+$pdo->readOnly=false;
+if ($mysql) $pdo->rollBack();
+else $pdo->exec('PRAGMA query_only=OFF');
+
 $pdo->exec('DROP TABLE user_calendar_events');
 if ($mysql) $pdo->exec('START TRANSACTION READ ONLY');
 else $pdo->exec('PRAGMA query_only=ON');

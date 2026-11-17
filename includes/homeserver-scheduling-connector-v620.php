@@ -240,6 +240,7 @@ function homeserver_scheduling_v620_dispatch(int $userId,string $operation,array
             'guest_email'=>(string)($args['guest_email']??''),
             'guest_phone'=>'','guest_notes'=>'','created_by_user_id'=>$userId,'created_by_agent_id'=>0,'source'=>'homeserver',
         ]);
+        agent_scheduling_wake_planning_v430($pdo,$booking);
         return ['booking'=>homeserver_scheduling_v620_safe_booking($booking,'personal')];
     }
     if($operation==='booking.reschedule'){

@@ -1,0 +1,29 @@
+{
+  "release": "VP3 Cloud Production",
+  "mission_lifecycle_section": "A5C11",
+  "research_section": "R3",
+  "capture_routing_section": "R4",
+  "project_knowledge_section": "R11",
+  "minimum_mission_schema": 79,
+  "build": "vp3-cloud-overlay-b196620830ee",
+  "commit": "29852d7869217002fe8f317f3f291bd00505dcc3",
+  "repository": "davemt74-lang/software",
+  "workflow_run_id": null,
+  "tracky_agent_eyes_section": "1G5",
+  "tracky_agent_eyes_scene_protocol": "tracky.agent-eyes.shared-scene.v1g3d",
+  "tracky_feature_track": "V2.81",
+  "tracky_release_section": 3,
+  "tracky_federated_automation_protocol": "physical_federated_automation.v1",
+  "tracky_federated_automation_execution_enabled": false,
+  "tracky_physical_trigger_runtime": true,
+  "tracky_distributed_action_execution": true,
+  "tracky_golden_operational_scenarios": 24,
+  "tracky_recovery_authority": "section7_authoritative_reconciliation",
+  "preserve_runtime_paths": [
+    "config.php",
+    ".env",
+    "private/",
+    "uploads/"
+  ],
+  "overlay_id": "b196620830ee"
+}

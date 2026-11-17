@@ -7,8 +7,14 @@ require_once $root.'/includes/agent-capability-chat-v1.php';
 require_once $root.'/includes/agent-chat-boundary-v380.php';
 require_once $root.'/includes/knowledge-retrieval-v162.php';
 require_once $root.'/includes/participant-updates-v1.php';
+require_once $root.'/includes/agent-media-entertainment-youtube-v1.php';
 
 function db(): PDO { return $GLOBALS['pdo']; }
+function table_exists(string $table): bool
+{
+    try { return db()->query('SELECT 1 FROM '.$table.' WHERE 1=0')!==false; }
+    catch(PDOException) { return false; }
+}
 function url(string $path): string { return $path; }
 function user_calendar_default_timezone_v1300(PDO $pdo, array $user): string { return $GLOBALS['youtubeFixtureTimezone'] ?? 'UTC'; }
 function has_permission(string $permission, array $user): bool
@@ -441,10 +447,47 @@ $fallback = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$pl
 youtube_chat_check($expired['youtube_results'] === null && $fallback['youtube_source_message_id'] === 402
     && agent_connection_youtube_history_v1($pdo,1,0,11,$references) === $references,
     'An expired reference remains expired, while a new vague follow-up can use an earlier ordinary search');
+
+vp3_youtube_research_save_v1($pdo,1,'topic',true);
+vp3_youtube_picks_save_v1($pdo,1,'Live jazz',true);
+vp3_youtube_history_change_v1($pdo,1,'enable_history');
+$mediaScope=['user'=>$owner,'agent_id'=>0,'conversation_id'=>11];
+$mediaBinding=['owner_user_id'=>1,'agent_id'=>0,'conversation_id'=>11];
+$mediaPayload=['query'=>'Sourdough scoring','expires_at'=>time()+1200,'videos'=>[
+    ['video_id'=>'media000001','title'=>'Not verified to embed'],
+    ['video_id'=>'media000002','title'=>'A children’s video','made_for_kids'=>true],
+    ['video_id'=>'media000003','title'=>'Bread scoring basics','made_for_kids'=>false],
+    ['video_id'=>'media000004','title'=>'Another bread scoring technique','made_for_kids'=>false],
+]];
+foreach([501=>11,502=>11,503=>12,504=>13,505=>21] as $id=>$chatId){
+    $insertFixture->execute([$id,$chatId,'assistant','{"youtube_search_results_v1":true}',gmdate('Y-m-d H:i:s')]);
+    agent_connection_youtube_results_save_v1($pdo,$chatId===21?2:1,$chatId,$id,
+        $mediaPayload+($id===502?['initiative_suggestion'=>true]:[]));
+}
+$ref='media:youtube:501';
+$find=static fn(?array $refs=null):array=>vp3_media_youtube_findings_v1($pdo,$mediaScope,$mediaBinding,$refs,new DateTimeImmutable());
+$report=$find([$ref,'media:youtube:502','media:youtube:503','media:youtube:504','media:youtube:505','media:youtube:403']);
+$pick=$report['items'][$ref];
+youtube_chat_check(array_keys($report['items'])===[$ref]&&$pick['trigger']==='recent_search'
+    &&$pick['playback']['source_message_id']===501&&$pick['playback']['selected_video_id']==='media000003'
+    &&array_column($pick['playback']['videos'],'video_id')===['media000003']&&strlen($pick['revision'])===64
+    &&!isset($pick['playback']['play_selected'])&&$find()['taste']==='Live jazz',
+    'Media uses one fresh genuine search, its exact eligible general video, and saved taste without mixing generated or foreign results');
+$mediaPlay='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+youtube_chat_check(vp3_youtube_history_record_v1($pdo,1,501,'media000003',$mediaPlay,vp3_youtube_capture_key_v1($pdo,1)),
+    'A permitted in-player media start is recorded against its exact search');
+$played=$find([$ref])['items'][$ref];
+youtube_chat_check($played['trigger']===null&&$played['revision']!==$pick['revision']
+    &&$played['playback']['selected_video_id']==='media000004'&&$played['question']==='',
+    'A search already acted on remains readable and cannot issue another proactive offer');
+vp3_youtube_research_save_v1($pdo,1,'topic',false);
+youtube_chat_check($find([$ref])['items'][$ref]['trigger']===null,
+    'Turning off topic activity reuse leaves the saved result in the report without an automatic suggestion');
 agent_connection_youtube_set_consent_v1($pdo,1,false);
 $disabledFollowup = agent_connection_youtube_followup_chat_v1($pdo,$owner,$principal,$searchPlan,11);
 youtube_chat_check($disabledFollowup['tool_receipt']['reason'] === 'setup_required' && $disabledFollowup['youtube_results'] === null,
     'Saved search follow-up honors YouTube opt-out');
+youtube_chat_check($find([$ref])['items']===[],'Media exact lookup respects YouTube consent revocation');
 youtube_chat_check($calls === $priorCalls && agent_connection_youtube_usage_v1($pdo) === $priorUsage,
     'Recalling results does not spend provider quota or create a search');
 echo 'AGENT_CONNECTION_YOUTUBE_CHAT_V1=PASS'.PHP_EOL;

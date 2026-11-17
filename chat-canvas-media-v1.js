@@ -1,7 +1,7 @@
 (function(){
 'use strict';
 const cfg=window.VP3_CANVAS_MEDIA_V1||{};if(!cfg.endpoint||!cfg.csrf)return;
-const states=new WeakMap(),started=new Set(),running=new Set();
+const states=new WeakMap(),started=new Set(),running=new Set(),recovering=new Set();
 const orbJobs=new Map();
 const specialistJobs=new Map();
 const inProgress={queued:'Queued · waiting for Cloud worker',generating:'Generating image…',paused:'Paused'};
@@ -128,15 +128,22 @@ async function poll(s,card,id,manual=false){
  if(!active(s)||document.hidden||s.cancelling)return;
  stop(s);const ticket=++s.ticket;
  try{
-  const d=await api('get',{generation_id:id},s);if(!active(s)||ticket!==s.ticket)return;renderJob(s,card,d.generation);
-  if(manual&&d.generation.status==='queued'&&!d.generation.provider_started&&!running.has(id))started.delete(id);
-  if(d.generation.status==='queued'&&!started.has(id)&&!running.has(id)){
+  let {generation}=await api('get',{generation_id:id},s);if(!active(s)||ticket!==s.ticket)return;
+  if(generation?.id===id&&generation.status==='generating'&&generation.lease_expired===true&&!recovering.has(id)){
+   recovering.add(id);
+   try{({generation}=await api('recover',{generation_id:id},s));}finally{recovering.delete(id);}
+   if(!active(s)||ticket!==s.ticket)return;
+   if(generation?.lease_expired===true)throw new Error('The image worker stopped. Refresh its status to check the saved result.');
+  }
+  renderJob(s,card,generation);
+  if(manual&&generation.status==='queued'&&!generation.provider_started&&!running.has(id))started.delete(id);
+  if(generation.status==='queued'&&!started.has(id)&&!running.has(id)){
    started.add(id);running.add(id);
    // Separate request: the ordinary Chat composer remains available.
    void api('tick',{generation_id:id},s).then(r=>{if(active(s)&&ticket===s.ticket)renderJob(s,card,r.generation);})
     .catch(e=>{if(ticket===s.ticket)failure(s,card,e);}).finally(()=>running.delete(id));
   }
-  if(Object.hasOwn(inProgress,d.generation.status))schedule(s,card,id);
+  if(Object.hasOwn(inProgress,generation.status))schedule(s,card,id);
  }catch(e){if(ticket===s.ticket)failure(s,card,e);}
 }
 function mount(host,ref){

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/participant-updates-v1.php';
 $pdo=db();if(!$pdo||!video_meeting_schema_ready_v1800($pdo)){http_response_code(503);exit('Video Meetings are not ready.');}
 $user=current_user();$publicId=strtolower(trim((string)($_GET['meeting']??'')));$invite=strtolower(trim((string)($_GET['invite']??'')));
 $access=video_meeting_secure_access_v1800($pdo,$user,$publicId,$invite);
@@ -14,7 +15,11 @@ $processingPending=!empty($meeting['transcription_enabled'])&&!$processingResolv
 $participantName=trim((string)($user['display_name']??$participant['display_name']??''))?:'Guest';
 try{$localStart=(new DateTimeImmutable((string)$meeting['start_at_utc'],new DateTimeZone('UTC')))->setTimezone(new DateTimeZone((string)$meeting['timezone']));$when=$localStart->format('D, M j · g:i A T');}catch(Throwable $e){$when=(string)$meeting['start_at_utc'].' UTC';}
 $closed=in_array((string)$meeting['status'],['cancelled','ended','processed'],true);
-$reviewMode=$closed&&$isOrganizer&&$user&&(string)$meeting['status']!=='cancelled';
+$agendaReview=(string)$meeting['status']!=='cancelled'&&$isOrganizer&&$user&&(int)$user['id']===(int)$meeting['owner_user_id']
+    &&($participant['role']??null)==='organizer'&&!in_array($participant['invitation_status']??null,['cancelled','revoked','declined'],true)
+    &&has_permission('account.access',$user)&&has_permission('chat.access',$user)
+    &&vp3_participant_scope_v1()===null&&($_GET['review']??null)==='1'&&($_GET['view']??null)==='agenda';
+$reviewMode=$agendaReview||($closed&&$isOrganizer&&$user&&(string)$meeting['status']!=='cancelled');
 $intelligenceReady=function_exists('video_meeting_intelligence_schema_ready_v1820')&&video_meeting_intelligence_schema_ready_v1820($pdo);
 $csrf=$user?csrf_token():'';
 $boot=[
@@ -24,21 +29,33 @@ $boot=[
     'intelligenceEndpoint'=>url('/api/video-meeting-intelligence.php'),'memoryEndpoint'=>url('/api/video-meeting-memory.php'),'transcriptionIntelligenceEndpoint'=>url('/api/artist-listening-intelligence-v300.php'),
     'intelligenceReady'=>$intelligenceReady,'reviewOnly'=>$reviewMode,'meetingsUrl'=>$user?url('/meetings.php'):url('/'),
 ];
+if($agendaReview){
+    $boot['agendaEndpoint']=url('/api/video-meeting-agenda.php');
+    $boot['agendaOnly']=true;
+}
 header('Referrer-Policy: no-referrer');
 header('X-Robots-Tag: noindex, nofollow, noarchive');
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b0c"><title><?= e((string)$meeting['title']) ?> | VP3 Meeting</title><link rel="stylesheet" href="<?= e(url('/video-meetings-v1800.css?v=1801')) ?>"><link rel="stylesheet" href="<?= e(url('/video-meetings-transcript-v1800.css?v=1800')) ?>"><link rel="stylesheet" href="<?= e(url('/video-meetings-intelligence-v1820.css?v=1820')) ?>"></head>
 <body class="vp3-meeting-room-page">
 <?php if($reviewMode): ?>
-<div class="meeting-review-shell"><div class="meeting-review-card"><a class="meeting-review-back" href="<?= e(url('/meetings.php')) ?>">← Back to Meetings</a><div class="meeting-review-head"><div><span class="meeting-lobby-kicker">Meeting Intelligence</span><h1><?= e((string)$meeting['title']) ?></h1><p><?= e($when) ?> · <?= e(ucfirst((string)$meeting['status'])) ?></p></div><a class="video-meeting-brand" href="<?= e(url('/')) ?>"><span class="video-meeting-brand-mark"><i></i><i></i><i></i><i></i></span><span>VP3</span></a></div>
-<?php if(!$intelligenceReady): ?><div class="meeting-ended-card"><h2>Meeting Intelligence needs the current database upgrade.</h2><p>Run <code>upgrade.php</code> once, then return to this meeting.</p></div><?php else: ?>
+<div class="meeting-review-shell"><div class="meeting-review-card"><a class="meeting-review-back" href="<?= e(url('/meetings.php')) ?>">← Back to Meetings</a><div class="meeting-review-head"><div><span class="meeting-lobby-kicker"><?= $agendaReview?'Meeting Agenda':'Meeting Intelligence' ?></span><h1><?= e((string)$meeting['title']) ?></h1><p><?= e($when) ?> · <?= e(ucfirst((string)$meeting['status'])) ?></p></div><a class="video-meeting-brand" href="<?= e(url('/')) ?>"><span class="video-meeting-brand-mark"><i></i><i></i><i></i><i></i></span><span>VP3</span></a></div>
+<?php if(!$intelligenceReady): ?><div class="meeting-ended-card"><h2>Meeting Intelligence needs the current database upgrade.</h2><p>Run <code>upgrade.php</code> once, then return to this meeting.</p></div>
+<?php elseif($agendaReview): ?>
+<section class="meeting-review-panel">
+<div class="meeting-agent-head"><a class="meeting-summary-open" href="<?= e(url('/meeting.php?meeting='.$meeting['public_id'])) ?>"><?= $closed?'Open meeting intelligence →':'Open meeting room →' ?></a></div>
+<div class="meeting-agent-tabs"></div><div class="meeting-agent-content"></div>
+</section>
+<?php else: ?>
 <div class="meeting-review-grid"><section class="meeting-review-panel"><div class="meeting-agent-head"><div class="meeting-agent-id"><strong><?= e($agentName) ?></strong><span class="meeting-agent-mode">Review</span></div><p>Post-meeting intelligence is projected from the canonical VP3 Transcription system. Review findings before promoting them into CRM, Tasks, Knowledge or external follow-up.</p></div>
 <div class="meeting-intelligence-toolbar" data-meeting-private><button id="meetingIntelligenceRefresh" type="button">Finalize intelligence</button><button id="meetingIntelligenceHandoff" type="button">Send to Agent Chat</button><a id="meetingFullIntelligenceLink" href="<?= e(url('/artist-listening.php')) ?>">Full intelligence →</a><span id="meetingIntelligenceStatus">Loading intelligence…</span></div><div class="meeting-intelligence-policy" id="meetingIntelligencePolicy" data-meeting-private>Resolving processing route…</div>
 <div class="meeting-agent-tabs"><button class="meeting-agent-tab active" data-pane="summary">Summary</button><button class="meeting-agent-tab" data-pane="actions">Actions</button><button class="meeting-agent-tab" data-pane="decisions">Decisions</button><button class="meeting-agent-tab" data-pane="questions">Questions</button><button class="meeting-agent-tab" data-pane="objectives">Objectives</button><button class="meeting-agent-tab" data-pane="notes">Notes</button><button class="meeting-agent-tab" data-pane="crm">CRM</button><button class="meeting-agent-tab" data-pane="activity">Activity</button></div>
 <div class="meeting-agent-content"><section class="meeting-agent-pane active" id="meetingPane-summary"><div class="meeting-intelligence-stack" id="meetingIntelligenceSummary"><div class="meeting-agent-empty">Loading the canonical meeting intelligence…</div></div><h3>Risks &amp; blockers</h3><div class="meeting-intelligence-stack" id="meetingIntelligenceRisks"></div></section><section class="meeting-agent-pane" id="meetingPane-actions"><div class="meeting-intelligence-stack" id="meetingIntelligenceActions"></div></section><section class="meeting-agent-pane" id="meetingPane-decisions"><div class="meeting-intelligence-stack" id="meetingIntelligenceDecisions"></div></section><section class="meeting-agent-pane" id="meetingPane-questions"><div class="meeting-intelligence-stack" id="meetingIntelligenceQuestions"></div></section><section class="meeting-agent-pane" id="meetingPane-objectives"><div class="meeting-objective-compose"><input id="meetingObjectiveInput" maxlength="1000" placeholder="Add a meeting objective"><button id="meetingObjectiveAdd" type="button">Add</button></div><div id="meetingObjectiveList"></div></section><section class="meeting-agent-pane" id="meetingPane-notes"><textarea class="meeting-private-note" id="meetingPrivateNotes" placeholder="Private organizer notes…"></textarea></section><section class="meeting-agent-pane" id="meetingPane-crm"><div class="meeting-intelligence-stack" id="meetingIntelligenceCrm"></div><div class="meeting-agent-empty">CRM intelligence remains advisory until you review and promote it from the full Transcription Intelligence workspace.</div></section><section class="meeting-agent-pane" id="meetingPane-activity"><div id="meetingIntelligenceActivity"></div></section></div></section>
 <aside class="meeting-review-panel"><div class="meeting-agent-head"><div class="meeting-agent-id"><strong>Meeting record</strong><span class="meeting-agent-mode">Canonical</span></div><p id="meetingTranscriptBridgeState">Loading transcript state…</p></div><div class="meeting-agent-content"><section class="meeting-agent-pane active"><div class="meeting-agent-empty">Transcript, decisions, actions, questions, CRM signals and post-meeting handoff all reference the same VP3 transcription session. No duplicate AI-summary store is created.</div><div style="padding-top:14px"><a class="meeting-summary-open" id="meetingFullIntelligenceLinkSecondary" href="<?= e(url('/artist-listening.php')) ?>">Open full Transcription workspace →</a></div></section></div></aside></div>
 <?php endif; ?></div></div>
-<script>window.VP3Meeting=<?= json_encode($boot,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script><?php if($intelligenceReady): ?><script src="<?= e(url('/video-meetings-intelligence-v1820.js?v=interactive-meetings-section6-20261004')) ?>"></script><?php endif; ?>
+<script>window.VP3Meeting=<?= json_encode($boot,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script>
+<?php if($intelligenceReady&&$agendaReview): ?><script src="<?= e(url('/video-meetings-agenda-v18140.js?v=18140-meeting-research-v1')) ?>"></script>
+<?php elseif($intelligenceReady): ?><script src="<?= e(url('/video-meetings-intelligence-v1820.js?v=interactive-meetings-section6-20261004-meeting-research-v1')) ?>"></script><?php endif; ?>
 <?php elseif($closed): ?><div class="video-meeting-shell"><div class="meeting-ended-card"><a class="video-meeting-brand" href="<?= e(url('/')) ?>"><span class="video-meeting-brand-mark"><i></i><i></i><i></i><i></i></span><span>VP3</span></a><span class="meeting-lobby-kicker">Video meeting</span><h1><?= e((string)$meeting['status']==='cancelled'?'Meeting cancelled':'Meeting ended') ?></h1><p><?= e((string)$meeting['title']) ?> · <?= e($when) ?></p><?php if($user): ?><a class="meeting-join-button" href="<?= e(url('/meetings.php')) ?>">Back to Meetings</a><?php endif; ?></div></div>
 <?php else: ?>
 <div class="meeting-lobby" id="meetingLobby"><div class="meeting-lobby-card"><a class="video-meeting-brand" href="<?= e(url('/')) ?>"><span class="video-meeting-brand-mark"><i></i><i></i><i></i><i></i></span><span>VP3</span></a><div class="meeting-lobby-kicker" style="margin-top:24px">Video meeting</div><h1><?= e((string)$meeting['title']) ?></h1><div class="meeting-lobby-meta"><?= e($when) ?><?php if(trim((string)($meeting['description']??''))!==''): ?><br><?= nl2br(e(mb_strimwidth((string)$meeting['description'],0,500,'…'))) ?><?php endif; ?></div>
@@ -53,5 +70,5 @@ header('X-Robots-Tag: noindex, nofollow, noarchive');
 <footer class="video-meeting-controls"><button class="meeting-control" id="meetingMic" type="button">Mic on</button><button class="meeting-control" id="meetingCamera" type="button">Camera on</button><button class="meeting-control" id="meetingShare" type="button">Share</button><button class="meeting-control secondary" id="meetingDevices" type="button">Devices</button><button class="meeting-control secondary" id="meetingAgentToggle" type="button">Agent</button><button class="meeting-control end" id="<?= $isOrganizer?'meetingEnd':'meetingLeave' ?>" type="button"><?= $isOrganizer?'End':'Leave' ?></button></footer></div>
 <script>window.VP3Meeting=<?= json_encode($boot,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE) ?>;</script>
 <script src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-native-receiver-20261023')) ?>"></script>
-<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js" crossorigin="anonymous"></script><script src="<?= e(url('/video-meetings-v1800.js?v=interactive-meetings-section9d-20261004')) ?>"></script><?php if($intelligenceReady): ?><script src="<?= e(url('/video-meetings-intelligence-v1820.js?v=interactive-meetings-section6-20261004')) ?>"></script><?php endif; ?>
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.3/dist/livekit-client.umd.min.js" crossorigin="anonymous"></script><script src="<?= e(url('/video-meetings-v1800.js?v=interactive-meetings-section9d-20261004')) ?>"></script><?php if($intelligenceReady): ?><script src="<?= e(url('/video-meetings-intelligence-v1820.js?v=interactive-meetings-section6-20261004-meeting-research-v1')) ?>"></script><?php endif; ?>
 <?php endif; ?></body></html>

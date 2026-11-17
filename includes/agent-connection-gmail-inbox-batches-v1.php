@@ -56,10 +56,52 @@ function agent_connection_gmail_inbox_batch_report_v1(string $raw): ?array
     return $report;
 }
 
-/** Called inside the Inbox policy transaction that owns the cursor or delivery. */
-function agent_connection_gmail_inbox_batch_save_v1(PDO $pdo,array $policy,string $raw,?int $notificationId=null): void
+function agent_connection_gmail_inbox_report_alert_count_v1(array $report): int
 {
-    if (agent_connection_gmail_inbox_batch_report_v1($raw) === null) return;
+    if (($report['triage_enabled'] ?? false) !== true) return max(0,(int)($report['total'] ?? 0));
+    return count(array_filter((array)($report['items'] ?? []),static fn(mixed $item): bool =>
+        is_array($item) && ($item['triage']['alert'] ?? false) === true));
+}
+
+function agent_connection_gmail_inbox_report_needs_alert_v1(array $report): bool
+{
+    return agent_connection_gmail_inbox_report_alert_count_v1($report) > 0;
+}
+
+/** Only triaged arrivals that did not request an alert enter the silent Chat digest. */
+function agent_connection_gmail_inbox_routine_item_v1(array $item): bool
+{
+    return is_array($item['triage'] ?? null)
+        && ($item['triage']['alert'] ?? null) === false
+        && in_array($item['triage']['attention'] ?? null,['read_later','informational','review','unknown'],true);
+}
+
+/** Keep the digest a separate owner-bound projection of the same arrival slice. */
+function agent_connection_gmail_inbox_routine_digest_v1(array $review): ?array
+{
+    if (($review['triage_enabled'] ?? false) !== true) return null;
+    $items = array_values(array_filter($review['items'],agent_connection_gmail_inbox_routine_item_v1(...)));
+    return $items ? ['at'=>$review['at'],'total'=>count($items),'important'=>0,
+        'replies'=>count(array_filter($items,static fn(array $item): bool => $item['category']==='reply')),
+        'triage_enabled'=>true,'routine_digest'=>true,'items'=>$items] : null;
+}
+
+/** Shared SQL selection for canonical digest rows, including old databases without a new column. */
+function agent_connection_gmail_inbox_digest_sql_v1(): string
+{
+    return "COALESCE(CAST(JSON_EXTRACT(CASE WHEN JSON_VALID(report_json) THEN report_json ELSE '{}' END,
+        '$.routine_digest') AS CHAR),'0') IN ('true','1')";
+}
+
+/** Called inside the Inbox policy transaction that owns the cursor or delivery. */
+function agent_connection_gmail_inbox_batch_save_v1(PDO $pdo,array $policy,string $raw,?int $notificationId=null,bool $retainArrivals=false): void
+{
+    $report = agent_connection_gmail_inbox_batch_report_v1($raw);
+    if ($report === null) return;
+    $digest = ($report['routine_digest'] ?? false) === true;
+    $quiet = !$digest && !agent_connection_gmail_inbox_report_needs_alert_v1($report);
+    if ($quiet && !$retainArrivals) return;
+    if ($digest) $notificationId = null;
     $generation = agent_connection_gmail_inbox_notice_generation_v1($policy);
     if (!$pdo->inTransaction() || $generation === null) throw new LogicException('Inbox batches require a current Inbox Review transaction.');
     $id = agent_connection_gmail_inbox_batch_id_v1($policy,$raw);
@@ -68,9 +110,16 @@ function agent_connection_gmail_inbox_batch_save_v1(PDO $pdo,array $policy,strin
     $scope = [$policy['owner_user_id'],$policy['connection_id'],$generation];
     $query->execute([$id,...$scope]);
     if ($query->fetchColumn() !== false) return;
+    if ($quiet) {
+        // Keep one quiet arrivals slice. Zero excludes it from Chat delivery,
+        // and no Agent or Chat has ever been attached to this display record.
+        $pdo->prepare('DELETE FROM agent_connection_gmail_inbox_batches_v1
+            WHERE owner_user_id=? AND connection_id=? AND generation_id=?
+                AND message_id=0 AND agent_id IS NULL AND conversation_id IS NULL')->execute($scope);
+    }
     $pdo->prepare('INSERT INTO agent_connection_gmail_inbox_batches_v1
-        (batch_id,owner_user_id,connection_id,generation_id,report_json,notification_id) VALUES (?,?,?,?,?,?)')
-        ->execute([$id,...$scope,$raw,$notificationId]);
+        (batch_id,owner_user_id,connection_id,generation_id,report_json,notification_id,message_id) VALUES (?,?,?,?,?,?,?)')
+        ->execute([$id,...$scope,$raw,$notificationId,$quiet?0:null]);
 }
 
 function agent_connection_gmail_inbox_batch_v1(PDO $pdo,array $scope,string $id): ?array

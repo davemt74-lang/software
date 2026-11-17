@@ -6,6 +6,7 @@ const thread=document.getElementById('chatThread');
 const cfg=window.STONEFELLOW_RECORDINGS_V198_CONFIG||{};
 const listeningEndpoint=String(cfg.listeningEndpoint||'/api/artist-listening.php');
 const intelligenceEndpoint=String(cfg.intelligenceEndpoint||'/api/artist-listening-intelligence-v300.php');
+const followupsEndpoint=String(cfg.transcriptFollowupsEndpoint||'');
 const artistListeningUrl=String(cfg.artistListeningUrl||'/artist-listening.php');
 const SEEN_KEY='stonefellow.transcription-canvas.v308.seen';
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
@@ -19,6 +20,7 @@ let canvas=null,backdrop=null,button=null,badge=null,observer=null,canvasOpen=fa
 let recordings=[],sessions=[],currentSession=null,currentRecording=null,currentIntelligence=null,currentView='home';
 let seen=new Set(),seenLoaded=false,loadToken=0;
 const intelligenceCache=new Map();
+let reportFollowups=new Map(),followupsRefreshTimer=0,followupsRequest=null;
 const pageIdentity=chatIdentity();
 const clearStorageKey='stonefellow:chat-transcript-clears:v1';
 let sourceScope=null,activeSource=null,sourceCleared=false,sourceFence=0,chatSourceChip=null;
@@ -209,6 +211,9 @@ function openShell(){
 function closeCanvas(){
   if(!canvas)return;
   canvasOpen=false;loadToken++;
+  const hadFollowups=reportFollowups.size>0;
+  resetFollowups();
+  if(hadFollowups)renderIntelligenceView();
   canvas.classList.remove('open');backdrop?.classList.remove('open');button?.setAttribute('aria-expanded','false');document.body.classList.remove('transcription-canvas-open');
   setTimeout(()=>{if(canvas&&!canvasOpen){canvas.hidden=true;if(backdrop)backdrop.hidden=true;}},180);
 }
@@ -239,6 +244,69 @@ async function fetchIntelligence(sessionId,{force=false}={}){
   const data=await response.json().catch(()=>null);
   if(!response.ok||!data?.ok)throw new Error(clean(data?.error)||'Could not load transcription intelligence.');
   return data;
+}
+function resetFollowups(){
+  clearTimeout(followupsRefreshTimer);followupsRefreshTimer=0;
+  followupsRequest?.abort();followupsRequest=null;
+  reportFollowups.clear();
+}
+function followupKey(pluginId,sectionKey,itemId){
+  return JSON.stringify([pluginId,sectionKey,itemId]);
+}
+function verifiedFollowup(item){
+  return reportFollowups.get(followupKey(item.pluginId,item.sectionKey,item.row?.item_id));
+}
+function followupChatLink(value,agentId,conversationId){
+  if(typeof value!=='string'||!value)return '';
+  try{
+    const url=new URL(value,location.href);
+    return url.origin===location.origin&&!url.username&&!url.password&&url.pathname.endsWith('/chat.php')
+      &&url.searchParams.get('agent')===String(agentId||'system')
+      &&url.searchParams.get('conversation_id')===String(conversationId)
+      &&/^[1-9][0-9]*$/.test(url.searchParams.get('message_id')||'')?url.href:'';
+  }catch(_error){return '';}
+}
+function scheduleFollowupsRefresh(){
+  if(!followupsEndpoint||!canvasOpen||!currentIntelligence||sourceScope<1||!sourceScopeIsCurrent(sourceScope))return;
+  clearTimeout(followupsRefreshTimer);
+  followupsRefreshTimer=window.setTimeout(()=>{followupsRefreshTimer=0;void refreshFollowups();},100);
+}
+async function refreshFollowups(){
+  const sessionId=sessionIdOf(currentSession),scope=sourceScope,token=loadToken;
+  if(!canvasOpen||!currentIntelligence||scope<1||!sourceScopeIsCurrent(scope)||sessionId<1)return;
+  const chat=window.STONEFELLOW_CHAT,agentId=Number(chat.agentId||0),ownerId=Number(chat.userId);
+  const binding=String(chat.workingAttentionBinding);
+  const request=new AbortController();
+  followupsRequest?.abort();followupsRequest=request;
+  try{
+    const url=new URL(followupsEndpoint,location.href);
+    if(url.origin!==location.origin)return;
+    for(const [key,value] of Object.entries({view:'transcript',agent_id:agentId,conversation_id:scope,session_id:sessionId})){
+      url.searchParams.set(key,String(value));
+    }
+    const response=await fetch(url,{credentials:'same-origin',cache:'no-store',signal:request.signal,
+      headers:{Accept:'application/json','X-VP3-Working-Attention':binding}});
+    const data=await response.json().catch(()=>null);
+    if(request.signal.aborted||token!==loadToken||!canvasOpen||!sourceScopeIsCurrent(scope))return;
+    if(response.status===401||response.status===403){
+      reportFollowups.clear();renderIntelligenceView();return;
+    }
+    if(!response.ok||data?.ok!==true||data.owner_user_id!==ownerId||data.agent_id!==agentId
+      ||data.conversation_id!==scope||data.session_id!==sessionId||data.working_attention_binding!==binding||!Array.isArray(data.followups))return;
+    const next=new Map();
+    for(const row of data.followups){
+      if(![row?.plugin_id,row?.section_key,row?.item_id].every(value=>typeof value==='string'&&value))continue;
+      const href=followupChatLink(row.chat_url,agentId,scope);
+      if(typeof row.summary!=='string'||!row.summary.trim()||!href)continue;
+      next.set(followupKey(row.plugin_id,row.section_key,row.item_id),{summary:row.summary.trim(),href});
+    }
+    if(!next.size&&!reportFollowups.size)return;
+    reportFollowups=next;renderIntelligenceView();
+  }catch(_error){
+    // The saved transcription stays available when research status is unavailable.
+  }finally{
+    if(followupsRequest===request)followupsRequest=null;
+  }
 }
 function recordingsForSession(sessionId){return recordings.filter(row=>Math.max(0,Number(row?.session_id||0))===Math.max(0,Number(sessionId||0)));}
 function preferredRecording(sessionId,key=''){
@@ -314,6 +382,16 @@ function mergeItems(groups,limit=5){
   for(const group of groups){for(const item of group){const key=clean(item.text).toLowerCase();if(!key||seenText.has(key))continue;seenText.add(key);out.push(item);if(out.length>=limit)return out;}}
   return out;
 }
+function mergeQuestions(groups,limit=5){
+  const byText=new Map();
+  for(const item of groups.flat()){
+    const key=item.text.toLowerCase();
+    const previous=byText.get(key);
+    if(!previous||(!verifiedFollowup(previous)&&verifiedFollowup(item)))byText.set(key,item);
+  }
+  const questions=[...byText.values()];
+  return [...questions.filter(verifiedFollowup),...questions.filter(item=>!verifiedFollowup(item))].slice(0,limit);
+}
 function activeById(active,id){return active.find(row=>row.id===id)||null;}
 function synopsisText(active){
   const summary=activeById(active,'summary_output');
@@ -342,7 +420,7 @@ function overviewModel(data){
     actions:mergeItems([actionPlan?collectSection(actionPlan,'actions',5):[],actionPlan?collectSection(actionPlan,'follow_ups',5):[],actions?collectSection(actions,'items',5):[],followup?collectSection(followup,'items',5):[]],5),
     decisions:mergeItems([summary?collectSection(summary,'decisions',5):[],decisions?collectSection(decisions,'decisions',5):[],decisions?collectSection(decisions,'commitments',5):[]],5),
     risks:mergeItems([summary?collectSection(summary,'risks',5):[],actionPlan?collectSection(actionPlan,'blockers',5):[],risks?collectSection(risks,'items',5):[]],5),
-    questions:mergeItems([summary?collectSection(summary,'open_questions',5):[],basic?collectSection(basic,'open_questions',5):[],qa?collectSection(qa,'unanswered',5):[],qa?collectSection(qa,'answered',5):[]],5),
+    questions:mergeQuestions([summary?collectSection(summary,'open_questions',Infinity):[],basic?collectSection(basic,'open_questions',Infinity):[],qa?collectSection(qa,'unanswered',Infinity):[],qa?collectSection(qa,'answered',Infinity):[]]),
     opportunities:mergeItems([opps?collectSection(opps,'items',5):[]],5),
     crm:mergeItems([crm?collectSection(crm,'buying_signals',3):[],crm?collectSection(crm,'objections',3):[],crm?collectSection(crm,'relationship_changes',3):[],crm?collectSection(crm,'next_best_actions',3):[]],5),
     knowledge:mergeItems([knowledge?collectSection(knowledge,'items',5,{filter:row=>['conflicting','updates_existing','more_specific','new'].includes(clean(row?.knowledge_state).toLowerCase())}):[]],5),
@@ -350,12 +428,16 @@ function overviewModel(data){
   };
   return {active,total,accepted,rejected,unreviewed,synopsis:synopsisText(active),groups,highlights:allPluginHighlights(active)};
 }
+function followupMarkup(item){
+  const followup=verifiedFollowup(item);
+  return followup?`<div class="intel-followup" data-intel-followup><strong>Agent follow-up</strong><p>${esc(followup.summary)}</p><a href="${esc(followup.href)}">View in Chat</a></div>`:'';
+}
 function itemMarkup(item,sessionId){
   const pages=evidencePages(item.row);const state=reviewState(item.row);
   const source=sourceChip(item.pluginLabel);
   const evidence=pages.length?`<a class="intel-evidence-link" href="${esc(transcriptUrl(sessionId,pages[0]))}">Page ${pages[0]}${pages.length>1?` +${pages.length-1}`:''} ↗</a>`:'';
   const review=state!=='unreviewed'?`<span class="intel-review ${esc(state)}">${esc(state)}</span>`:'';
-  return `<li><div>${esc(item.text)}</div><footer>${source}${review}${evidence}</footer></li>`;
+  return `<li><div>${esc(item.text)}</div><footer>${source}${review}${evidence}</footer>${followupMarkup(item)}</li>`;
 }
 function overviewCard(title,items,sessionId,emptyText='No current items from the selected plugins.'){
   return `<section class="intel-home-card"><header><strong>${esc(title)}</strong><span>${items.length}</span></header>${items.length?`<ul>${items.map(item=>itemMarkup(item,sessionId)).join('')}</ul>`:`<p class="intel-card-empty">${esc(emptyText)}</p>`}</section>`;
@@ -412,7 +494,7 @@ function pluginMarkup(data,session,appId){
       const text=rowText(item,section.key,row);if(!text)return '';
       const pages=evidencePages(row);const state=reviewState(row);const metaKeys=asArray(section.meta);
       const meta=metaKeys.map(key=>metaMarkup(row,key,row?.[key],sid)).join('');
-      return `<article><div class="intel-plugin-row-head"><p>${esc(text)}</p>${state!=='unreviewed'?`<span class="intel-review ${esc(state)}">${esc(state)}</span>`:''}</div>${meta?`<div class="intel-plugin-meta">${meta}</div>`:''}${pages.length?`<footer><a class="intel-evidence-link" href="${esc(transcriptUrl(sid,pages[0]))}">Evidence · Page ${pages[0]} ↗</a></footer>`:''}</article>`;
+      return `<article><div class="intel-plugin-row-head"><p>${esc(text)}</p>${state!=='unreviewed'?`<span class="intel-review ${esc(state)}">${esc(state)}</span>`:''}</div>${meta?`<div class="intel-plugin-meta">${meta}</div>`:''}${pages.length?`<footer><a class="intel-evidence-link" href="${esc(transcriptUrl(sid,pages[0]))}">Evidence · Page ${pages[0]} ↗</a></footer>`:''}${followupMarkup({pluginId:appId,sectionKey:section.key,row})}</article>`;
     }).join('')}</div></section>`;
   }
   if(!sections)sections='<div class="intel-card-empty">This plugin has a saved result but no displayable rows.</div>';
@@ -443,8 +525,14 @@ function renderWorkspace(){
   if(!currentSession){body.innerHTML=`${selectorMarkup()}<div class="transcription-canvas-empty">No saved transcriptions yet.</div>`;return;}
   if(!currentIntelligence){body.innerHTML=`${selectorMarkup()}${sessionMetaMarkup(currentSession)}<div class="intel-loading"><span></span>Loading intelligence…</div>${audioMarkup(currentSession)}`;bindAudioStatus(body.querySelector('[data-transcription-audio]'));return;}
   const active=activeModules(currentIntelligence);if(currentView!=='home'&&!active.some(row=>row.id===currentView))currentView='home';
-  body.innerHTML=`<div class="intel-sticky-controls">${selectorMarkup()}${viewTabs(currentIntelligence)}</div>${sessionMetaMarkup(currentSession)}<main class="intel-view">${currentView==='home'?homeMarkup(currentIntelligence,currentSession):pluginMarkup(currentIntelligence,currentSession,currentView)}</main>${audioMarkup(currentSession)}`;
+  body.innerHTML=`<div class="intel-sticky-controls">${selectorMarkup()}${viewTabs(currentIntelligence)}</div>${sessionMetaMarkup(currentSession)}<main class="intel-view"></main>${audioMarkup(currentSession)}`;
+  renderIntelligenceView();
   bindAudioStatus(body.querySelector('[data-transcription-audio]'));
+}
+function renderIntelligenceView(){
+  const view=canvas?.querySelector('.intel-view');
+  if(!view||!currentIntelligence||!currentSession)return;
+  view.innerHTML=currentView==='home'?homeMarkup(currentIntelligence,currentSession):pluginMarkup(currentIntelligence,currentSession,currentView);
 }
 function renderError(message){const body=canvas?.querySelector('[data-transcription-body]');if(body)body.innerHTML=`${selectorMarkup()}<div class="transcription-canvas-empty"><strong>Could not load intelligence</strong><p>${esc(message)}</p><button type="button" data-intelligence-refresh>Try again</button></div>`;}
 function bindAudioStatus(audio){
@@ -458,13 +546,14 @@ async function selectSession(sessionId,{force=false,key='',isNew=false,scope=sou
   if(sessionId<1||!sourceScopeIsCurrent(scope))return;
   const session=sessions.find(row=>sessionIdOf(row)===sessionId);
   if(!session)return;
+  resetFollowups();
   currentSession=session;
   currentRecording=preferredRecording(sessionId,key);if(currentRecording)markSeen(currentRecording);
   currentIntelligence=null;currentView='home';openShell();renderWorkspace();
   try{
     const data=await fetchIntelligence(sessionId,{force});if(token!==loadToken||!sourceScopeIsCurrent(scope))return;
     intelligenceCache.set(sessionId,data);proof.intelligenceLoads++;
-    currentIntelligence=data;proof.lastError='';renderWorkspace();activateSource(session,scope);
+    currentIntelligence=data;proof.lastError='';renderWorkspace();activateSource(session,scope);scheduleFollowupsRefresh();
     if(isNew)proof.newRecordingOpens++;
     window.dispatchEvent(new CustomEvent('stonefellow:transcription-canvas-opened',{detail:{sessionId,key:String(key||''),isNew,view:'home'}}));
   }catch(error){if(token!==loadToken||!sourceScopeIsCurrent(scope))return;proof.lastError=String(error?.message||error);renderError(proof.lastError);}
@@ -564,6 +653,15 @@ window.addEventListener('vp3:chat-conversation-bound',event=>{
   const next=Number(event.detail?.conversation_id);
   if(sourceScope===0&&event.detail?.previous_conversation_id===0&&next>0&&chatScope()===next){
     sourceScope=next;if(sourceCleared)rememberClear(next,true);renderSourceChip();if(activeSource||sourceCleared)publishSource();
+    scheduleFollowupsRefresh();
+  }
+});
+window.addEventListener('vp3:chat-message-persisted',event=>{
+  const {element,conversationId,agentId}=event.detail||{};
+  const research=element?.querySelector?.('[data-research-transcript-session-id]');
+  if(research&&Number(research.dataset.researchTranscriptSessionId)===sessionIdOf(currentSession)
+    &&Number(conversationId)===sourceScope&&Number(agentId)===Number(window.STONEFELLOW_CHAT?.agentId||0)){
+    scheduleFollowupsRefresh();
   }
 });
 window.addEventListener('pagehide',()=>{observer?.disconnect();invalidateSourceContext();},{once:true});

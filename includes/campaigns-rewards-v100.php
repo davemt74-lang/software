@@ -319,7 +319,7 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $merchantId,int $acto
             $check=$pdo->prepare('SELECT 1 FROM campaigns WHERE slug=? AND id<>? LIMIT 1');$check->execute([$slug,$campaignId]);if($check->fetchColumn())throw new RuntimeException('That public Campaign slug is already in use.');
             $starts=campaigns_rewards_datetime_v100((string)($input['starts_at']??$campaign['starts_at']??''));$ends=campaigns_rewards_datetime_v100((string)($input['ends_at']??$campaign['ends_at']??''));
             if($starts&&$ends&&strtotime($ends)<=strtotime($starts))throw new RuntimeException('Campaign end must be after its start.');
-            $typeKey=campaigns_rewards_slug_v100((string)($input['campaign_type']??$campaign['campaign_type_key']??'signup'),80)?:'signup';
+            $typeKey=campaigns_rewards_type_key_v100((string)($input['campaign_type']??$campaign['campaign_type_key']??'signup'))?:'signup';
             $type=campaigns_rewards_campaign_type_v100($pdo,$merchantId,$typeKey)?:throw new RuntimeException('Campaign Type is unavailable.');
             $pdo->prepare("UPDATE campaigns SET campaign_type_id=?,name=?,slug=?,description=?,objective=?,starts_at=?,ends_at=?,updated_at=UTC_TIMESTAMP() WHERE id=? AND merchant_id=?")
               ->execute([(int)$type['id'],$title,$slug,mb_strimwidth(trim((string)($input['description']??$campaign['description']??'')),0,8000,'…'),campaigns_rewards_text_v100($input['objective']??$campaign['objective']??'',500),$starts,$ends,$campaignId,$merchantId]);

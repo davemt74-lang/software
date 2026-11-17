@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 // Production canonical principals, scoped policy, source readers and SQLite.
 // The existing foundation controls only model/host transport, never live readers.
-require __DIR__.'/agent-initiative-scope-v1.php';
+require defined('VP3_LIVE_CONTEXT_FIXTURE_ONLY')
+    ? __DIR__.'/fixtures/initiative-scope-ready-v1.php' : __DIR__.'/agent-initiative-scope-v1.php';
 require_once dirname(__DIR__).'/includes/agent-live-context-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-live-context-v1.php';
 
@@ -64,6 +65,10 @@ function live_fixture_close_cursors():void
     foreach($GLOBALS as $value)if($value instanceof PDOStatement)$value->closeCursor();
     gc_collect_cycles();
 }
+
+// The full standalone reader suite remains a required gate. Pipeline consumers
+// reuse only current storage and helpers, with an explicit model callback.
+if(defined('VP3_LIVE_CONTEXT_FIXTURE_ONLY'))return;
 
 $now=(int)floor(microtime(true)*1000);$raw=live_raw($now);$binding=live_binding();
 $packet=vp3_live_context_sanitize_v1($raw,$binding,$now);

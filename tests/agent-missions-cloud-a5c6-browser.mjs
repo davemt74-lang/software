@@ -25,6 +25,11 @@ await page.route('**/api/**',async route=>{
   if(failOnce){failOnce=false;return route.fulfill({status:503,json:{ok:false,error:'Lost preparation response'}});}
   return ok({mission});
  }
+ if(body.action==='create'){
+  assert.equal(body.objective,'Compare three podcast microphones under $150.');
+  assert.equal(body.thread_id,77);assert.equal(body.agent_id,7);assert.equal(body.executor,'cloud');
+  return ok({mission:{...mission,execution_target:'cloud'}});
+ }
  if(body.action==='schedule.list')return ok({schedules,scheduler_health:schedulerHealth});
  if(body.action==='schedule.create'){
   assert.equal(body.confirmed,true);assert.equal(body.expected_revision,1);assert.equal(body.mission_id,mid);
@@ -50,8 +55,10 @@ await page.route('**/api/**',async route=>{
 async function boot(){
  await page.goto('http://a5c5.test/');
  await page.evaluate(native=>{
-  window.VP3_AGENT_TEAMS_A3={endpoint:'/api/agent-missions-cloud-v1.php',csrf:'fixture'};window.STONEFELLOW_CHAT={initialConversationId:999};
-  window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>77};
+  window.VP3_AGENT_TEAMS_A3={endpoint:'/api/agent-missions-cloud-v1.php',csrf:'fixture'};
+  window.STONEFELLOW_CHAT={userId:1,agentId:7,csrf:'fixture',workingAttentionBinding:'fixture-owner-session',initialConversationId:999};
+  window.fixtureConversation=77;
+  window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.fixtureConversation,isReady:()=>true};
   window.HomeServerAgentRouting={getActiveConversationId:()=> 'active-conversation',getSelectedAgentId:()=>7};
   window.confirm=()=>false;
   Object.defineProperty(window.crypto,'randomUUID',{value:()=> '44444444-4444-4444-8444-'+String(Math.floor(Math.random()*1e12)).padStart(12,'0')});
@@ -99,7 +106,21 @@ try{
  schedulerHealth=null;await page.clock.fastForward(16000);
  await page.waitForFunction(()=>document.querySelector('.vp3-specialist-schedules [data-scheduler-state="unavailable"]'));
  await boot();
- await page.evaluate(()=>{window.STONEFELLOW_CHAT.userId=1;window.STONEFELLOW_CHAT.agentId=7;});
+ const example='Compare three podcast microphones under $150.';
+ const stage=id=>page.evaluate(({example,id})=>window.VP3AgentMissionsV1.prepareExample(example,id),{example,id});
+ assert.equal(await stage(78),false);
+ assert.equal(await stage(77),true);
+ assert.equal(await page.getByLabel('Mission objective',{exact:true}).inputValue(),example);
+ assert.equal(await page.getByLabel('Mission execution location').inputValue(),'cloud');
+ assert.equal(calls.filter(c=>c.action==='create').length,0,'Opening a sample only stages the private objective');
+ await page.evaluate(()=>{window.fixtureConversation=78;});
+ await page.getByRole('button',{name:'Prepare Mission',exact:true}).click();
+ assert.equal(calls.filter(c=>c.action==='create').length,0,'A staged Mission cannot create in another Chat');
+ await page.evaluate(()=>{window.fixtureConversation=77;});
+ await page.getByRole('button',{name:'Prepare Mission',exact:true}).click();
+ await page.waitForFunction(()=>!document.getElementById('vp3MissionObjective').value);
+ await page.waitForFunction(()=>!document.querySelector('.vp3-teams-create button[type="submit"]').disabled);
+ assert.equal(calls.filter(c=>c.action==='create').length,1);
  const startedBeforeOpen=calls.filter(c=>['tools.start','start','actions.review'].includes(c.action)).length;
  assert.equal(await page.evaluate(mid=>window.VP3AgentMissionsV1.open(mid),mid),true,'Activity opens the currently authorized mission');
  assert.match(await page.locator('.vp3-teams-status').textContent(),/Mission loaded/);

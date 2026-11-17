@@ -36,7 +36,7 @@ function homeserver_knowledge_v242_cloud_items(
     $limit=max(1,min(250,$limit));
     $s=$pdo->prepare("SELECT id,title,description,content_text,file_type,updated_at
       FROM knowledge_items
-      WHERE created_by_user_id=? AND knowledge_scope='personal'
+      WHERE created_by_user_id=? AND knowledge_scope='personal' AND COALESCE(file_type,'')<>'coding_canvas'
       ORDER BY updated_at DESC,id DESC LIMIT 300");
     $s->execute([$userId]);$out=[];
     foreach($s->fetchAll()?:[] as $row){

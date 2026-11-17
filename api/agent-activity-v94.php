@@ -45,6 +45,7 @@ try{
   }
   $state=in_array((string)($input['state']??''),['working','paused','idle'],true)?(string)$input['state']:'idle';
   $activity=agent_activity_v94_record($user,$surface,$state,$context,(string)($input['reason']??'heartbeat'));
+  $GLOBALS['STONEFELLOW_BACKGROUND_DRAIN_V125']=true;
   agent_runtime_v125_trace('activity.heartbeat',['user_id'=>(int)$user['id'],'surface'=>$surface,'state'=>$state]);
   $core=[];
   // Normal saved Chat entry activates the core loop through this existing
@@ -67,6 +68,12 @@ try{
         $core['agent_core_context']=['owner_user_id'=>(int)$user['id'],'agent_id'=>$agentId,
           'conversation_id'=>$conversationId,'working_attention_binding'=>$pageBinding,
           'health'=>vp3_initiative_worker_health_v1($pdo,$user,$agentId,$conversationId)];
+        try{
+          require_once dirname(__DIR__).'/includes/agent-token-balance-notice-v1.php';
+          vp3_token_balance_notice_sync_v1($pdo,$user);
+        }catch(Throwable $error){
+          agent_runtime_v125_trace('account.token_notice_unavailable',['user_id'=>(int)$user['id'],'error_class'=>get_class($error)]);
+        }
       }elseif($eligibleCore&&in_array($adoption['reason']??'', ['storage_unavailable','context_unavailable'],true)){
         $core['agent_core_context_error']=$coreFailure($adoption['reason']);
       }

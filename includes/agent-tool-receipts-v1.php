@@ -41,7 +41,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'music.library.read'=>['status','search'],
         'photos.library.read'=>['status','search'],
         'media.assets.read'=>['search'],
-        'images.generate'=>['queue'],
+        'images.generate'=>['queue','status'],
         'downloads.jobs.read'=>['status','list'],
         'media.processing.read'=>['status','list'],
         'video.projects.read'=>['status','list'],

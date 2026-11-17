@@ -377,7 +377,7 @@ try{
         followthrough_mysql_check($driverCode===1205&&$attempts===1&&!$pdo->inTransaction()&&$afterTimeout===$beforeTimeout,
             'a real InnoDB 1205 lock timeout rolls back its marker and every effect without a deadlock retry; '.$diagnostic);
 
-        $attempts=0;$publicCode=0;$publicClass='';
+        $attempts=0;$publicCode=0;$publicClass='';$publicMessage='';$publicPrevious=null;
         try{
             vp3_initiative_followthrough_transaction_v1($pdo,static function()use($pdo,$user,$principal,$turn,&$attempts): void{
                 ++$attempts;
@@ -385,11 +385,15 @@ try{
                 agent_workflow_event_v1400($pdo,1,$turn['run'],'fixture_timeout_canonical_effect','','','system','This canonical timeout effect must roll back.');
                 vp3_initiative_followthrough_current_v1($pdo,$user,$principal,$turn['cid'],$turn['outcome']);
             });
-        }catch(RuntimeException $error){$publicCode=$error->getCode();$publicClass=get_class($error);}
+        }catch(RuntimeException $error){
+            $publicCode=$error->getCode();$publicClass=get_class($error);
+            $publicMessage=$error->getMessage();$publicPrevious=$error->getPrevious();
+        }
         $afterTimeout=$timeoutState();
         $diagnostic=json_encode(['public_code'=>$publicCode,'public_class'=>$publicClass,'attempts'=>$attempts,
             'before'=>$beforeTimeout,'after'=>$afterTimeout,'in_transaction'=>$pdo->inTransaction()],JSON_THROW_ON_ERROR);
-        followthrough_mysql_check($publicCode===503&&$publicClass===RuntimeException::class&&$attempts===1
+        followthrough_mysql_check($publicCode===503&&$publicClass===Vp3InitiativeSourceProofUnavailableV1::class
+            &&$publicMessage==='Initiative source verification is unavailable.'&&$publicPrevious===null&&$attempts===1
             &&!$pdo->inTransaction()&&$afterTimeout===$beforeTimeout,
             'canonical source verification masks the same held-row timeout as public 503 and rolls back every effect without retry; '.$diagnostic);
     }

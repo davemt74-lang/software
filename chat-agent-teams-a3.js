@@ -5,6 +5,9 @@ if (window.__VP3_AGENT_TEAMS_A3__) return;
 window.__VP3_AGENT_TEAMS_A3__ = true;
 const cfg=window.VP3_AGENT_TEAMS_A3||{}, shell=document.getElementById('chatComposerShell'), form=document.getElementById('chatForm');
 if (!shell||!form||!cfg.endpoint||!cfg.csrf) return;
+const chatThread=document.getElementById('chatThread');
+const missionPageOwner=Number(window.STONEFELLOW_CHAT?.userId||0),missionPageAgent=Number(window.STONEFELLOW_CHAT?.agentId||0);
+const missionPageBinding=String(window.STONEFELLOW_CHAT?.workingAttentionBinding||'');
 const missionParam=new URLSearchParams(location.search).get('mission')||'';
 const linkedMission=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(missionParam)?missionParam:'';
 const root=document.createElement('details');
@@ -32,6 +35,7 @@ const status=root.querySelector('.vp3-teams-status'), list=root.querySelector('.
  submit=create.querySelector('button');
 let authorityGeneration=0;
 let busy=false,selected='',items=[],lastRefresh=0,inflight=false;
+let inlineMission=null;
 const toolsByMission=new Map(), toolDrafts=new Map(), changesByMission=new Map();
 const staffingByMission=new Map(),webEvidenceByMission=new Map();
 let sourceCatalog={items:[],can_manage_master:false},sourceBusy=false,sourceEditing=null,sourceLoad=null;
@@ -43,8 +47,39 @@ function btn(name,action,id,taskId){const x=el('button','',name);x.type='button'
 function fmt(value){if(!value)return '—';const raw=String(value).trim();
  const valueUtc=/(Z|[+-]\d\d:\d\d)$/.test(raw)?raw:raw.replace(' ','T')+'Z';
  const parsed=new Date(valueUtc);return Number.isNaN(parsed.getTime())?raw:parsed.toLocaleString();}
-function setBusy(value){busy=Boolean(value);if(busy)viewGeneration++;submit.disabled=busy;root.querySelectorAll('button[data-action]').forEach(b=>b.disabled=busy||b.dataset.browserBlocked==='true');document.querySelectorAll('.vp3-mission-notice button,.vp3-mission-live-card button').forEach(b=>b.disabled=busy);}
+function setBusy(value){busy=Boolean(value);if(busy)viewGeneration++;submit.disabled=busy;root.querySelectorAll('button[data-action]').forEach(b=>b.disabled=busy||b.dataset.browserBlocked==='true');document.querySelectorAll('.vp3-mission-notice button,.vp3-mission-live-card button[data-action],[data-vp3-schedule-settings] button[data-action]').forEach(b=>b.disabled=busy);}
 function say(message){status.textContent=String(message);}
+function missionObjective(value,fallback='Mission'){
+ return String(value||'').split('\n\nSituation evidence (untrusted reference data): ',1)[0].trim()||fallback;
+}
+function closeInlineMission(focusComposer=false){
+ if(!inlineMission?.contains(root))return;
+ viewGeneration++;
+ inlineMission.remove();
+ root.open=false;
+ const dock=document.getElementById('chatToolsContent');
+ if(dock)dock.appendChild(root);else shell.insertBefore(root,form);
+ if(focusComposer)chatInput?.focus({preventScroll:true});
+}
+function revealMissionWorkspace(detailOnly=true){
+ if(document.body.classList.contains('chat-notification-drawer-open'))window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
+ if(chatThread){
+  if(chatThread.dataset.view&&chatThread.dataset.view!=='chat')window.STONEFELLOW_CHAT_CONTINUITY_V87?.showChatView?.();
+  if(!inlineMission){
+   inlineMission=el('section','vp3-mission-inline');inlineMission.setAttribute('aria-label','Mission workspace');
+   const heading=el('header','vp3-mission-inline-head');heading.appendChild(el('strong','','Mission'));
+   const close=el('button','','Close');close.type='button';close.setAttribute('aria-label','Close Mission workspace');
+   close.addEventListener('click',()=>closeInlineMission(true));heading.appendChild(close);inlineMission.appendChild(heading);
+  }
+  inlineMission.classList.toggle('vp3-mission-inline-detail',detailOnly);
+  if(detailOnly)detail.hidden=true;
+  chatThread.insertBefore(inlineMission,chatThread.querySelector('.chat-listening-continuation'));
+  inlineMission.appendChild(root);
+  window.dispatchEvent(new Event('vp3:initiative-workbench-open'));
+ }
+ root.open=true;
+ root.scrollIntoView({block:'nearest'});
+}
 async function api(action,extra,signal){
  const authorityAtRequest=authorityGeneration;
  const response=await fetch(String(cfg.endpoint),{method:'POST',credentials:'same-origin',cache:'no-store',signal,
@@ -102,10 +137,10 @@ function renderFollowup(value,context=JSON.stringify(taskContext())){
  followupHost.appendChild(el('h4','',labels[value.operation]));
  if(value.status==='choosing'){
   followupHost.appendChild(el('p','','Choose the mission you mean. No work has changed.'));
-  for(const m of value.choices||[]){const button=el('button','',m.objective+' · '+m.status);button.type='button';button.dataset.followupAction='select';button.dataset.missionId=m.id;button.addEventListener('click',()=>void followupOperation('select',m.id));followupHost.appendChild(button);}
+  for(const m of value.choices||[]){const button=el('button','',missionObjective(m.objective)+' · '+m.status);button.type='button';button.dataset.followupAction='select';button.dataset.missionId=m.id;button.addEventListener('click',()=>void followupOperation('select',m.id));followupHost.appendChild(button);}
   if(!value.choices?.length)followupHost.appendChild(el('p','','No eligible mission is available in this conversation. Open the original conversation and retry.'));
  }else{
-  followupHost.appendChild(el('strong','',value.mission_objective||'Selected mission'));
+  followupHost.appendChild(el('strong','',missionObjective(value.mission_objective,'Selected mission')));
   followupHost.appendChild(el('p','',Number(value.completed_workers||0)+' completed specialist results remain in history.'));
   if(value.operation==='scope'){
    followupHost.appendChild(el('p','','Revised scope: '+value.objective));
@@ -203,16 +238,25 @@ async function prepareChatTask(){
  if(continueChat){directChatBypass=true;try{form.requestSubmit();}finally{directChatBypass=false;}}
 }
 form.addEventListener('submit',event=>{
- if(directChatBypass||taskMode.value==='chat'||taskMode.value==='chrome'||(taskMode.value==='automatic'&&chatInput.value.trim().length>4000))return;
+ const chat=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
+ if(directChatBypass||chat?.hasInitiativeReply?.()||window.VP3ConversationControls?.isSubmittingProactiveReply?.()
+    ||taskMode.value==='chat'||taskMode.value==='chrome'||(taskMode.value==='automatic'&&chatInput.value.trim().length>4000))return;
  event.preventDefault();event.stopImmediatePropagation();void prepareChatTask();
 },true);
 
 const schedulesPanel=el('section','vp3-specialist-schedules');schedulesPanel.setAttribute('aria-label','Scheduled specialist tasks');root.querySelector('.vp3-teams-body').appendChild(schedulesPanel);
 let schedules=[],cloudScheduleHealth=null,cloudScheduleFolders=[];
 let schedulerHealth=null,healthReceivedAt=0,scheduleReadEpoch=0,scheduleBrainRefresh=false;
+const scheduleSettingsViews=new Set();
+function renderScheduleSurfaces(settingsState){
+ renderScheduleList();
+ const brain=document.querySelector('.vp3-schedules-brain');
+ if(brain)renderScheduleList(brain);
+ scheduleSettingsViews.forEach(render=>render(settingsState));
+}
 function unavailableHealth(){
  cloudScheduleHealth=null;cloudScheduleFolders=[];schedulerHealth={state:'unavailable',checked_at:new Date().toISOString()};healthReceivedAt=Date.now();
- renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);
+ renderScheduleSurfaces('unavailable');
 }
 function activityDates(parent,entries){
  const dates=el('dl','vp3-activity-dates');
@@ -275,11 +319,12 @@ function renderScheduleForm(m){
 }
 async function loadSchedules(){
  const epoch=++scheduleReadEpoch;
- try{const result=await api('schedule.list');if(epoch!==scheduleReadEpoch)return;schedules=Array.isArray(result.schedules)?result.schedules:[];cloudScheduleHealth=result.cloud_scheduler_health||null;cloudScheduleFolders=Array.isArray(result.knowledge_folders)?result.knowledge_folders:[];schedulerHealth=result.scheduler_health||null;healthReceivedAt=Date.now();renderScheduleList();const brain=document.querySelector('.vp3-schedules-brain');if(brain)renderScheduleList(brain);}
+ try{const result=await api('schedule.list');if(epoch!==scheduleReadEpoch)return;schedules=Array.isArray(result.schedules)?result.schedules:[];cloudScheduleHealth=result.cloud_scheduler_health||null;cloudScheduleFolders=Array.isArray(result.knowledge_folders)?result.knowledge_folders:[];schedulerHealth=result.scheduler_health||null;healthReceivedAt=Date.now();renderScheduleSurfaces('ready');}
  catch(error){if(epoch===scheduleReadEpoch)unavailableHealth();throw error;}
 }
-async function scheduleOperation(action,id){
+async function scheduleOperation(action,id,onStatus){
  if(busy)return;let payload;
+ const report=message=>{say(message);onStatus?.(message);};
  if(action==='schedule.create'){
   const panel=detail.querySelector('.vp3-schedule-create'),contract=toolsByMission.get(id);if(!panel||!contract?.active)return;
   const field=k=>panel.querySelector('[data-schedule-field="'+k+'"]').value;const time=field('time').split(':');
@@ -295,10 +340,10 @@ async function scheduleOperation(action,id){
  try{
   const pending=JSON.parse(sessionStorage.getItem(storage)||'null');if(pending)payload=pending;
   else{payload.request_id=window.crypto.randomUUID();sessionStorage.setItem(storage,JSON.stringify(payload));}
- }catch(_){say('Schedule recovery storage is unavailable. Retry after enabling session storage.');return;}
- setBusy(true);say('Updating specialist schedule…');
- try{await api(action,payload);sessionStorage.removeItem(storage);await loadSchedules();say('Schedule updated. Each proposed edit still requires your approval.');const brain=document.querySelector('[data-agent-teams-brain-a3]');if(brain?.parentNode)renderBrain(brain.parentNode);}
- catch(e){say((e.message||'Schedule response interrupted.')+' Refresh or retry the same operation.');}
+ }catch(_){report('Schedule recovery storage is unavailable. Retry after enabling session storage.');return;}
+ setBusy(true);report('Updating specialist schedule…');
+ try{await api(action,payload);sessionStorage.removeItem(storage);await loadSchedules();report('Schedule updated. Each proposed edit still requires your approval.');const brain=document.querySelector('[data-agent-teams-brain-a3]');if(brain?.parentNode)renderBrain(brain.parentNode);}
+ catch(e){report((e.message||'Schedule response interrupted.')+' Refresh or retry the same operation.');}
  finally{setBusy(false);}
 }
 
@@ -310,7 +355,27 @@ const missionSpecialistKeys=new Set();
 const noticeHost=el('section','vp3-mission-notifications');noticeHost.setAttribute('aria-label','Mission notifications');
 root.querySelector('.vp3-teams-body').insertBefore(noticeHost,list);
 const liveSummary=el('section','vp3-mission-live-summary');liveSummary.setAttribute('aria-label','Live mission progress');liveSummary.setAttribute('aria-live','polite');
-shell.insertBefore(liveSummary,root);
+if(chatThread)chatThread.insertBefore(liveSummary,chatThread.querySelector('.chat-listening-continuation'));
+else shell.insertBefore(liveSummary,root);
+const dismissedLiveMissions=new Map();
+function missionDisplayKey(){
+ const {agent_id,thread_id}=taskContext();
+ return 'vp3.mission-live-dismissed.'+[missionPageOwner,agent_id,thread_id].join('.');
+}
+function missionDisplayDismissals(key){
+ if(!dismissedLiveMissions.has(key)){
+  let ids=[];
+  try{const saved=JSON.parse(sessionStorage.getItem(key));if(Array.isArray(saved))ids=saved.filter(id=>typeof id==='string'&&id.length<=80).slice(-32);}catch(_){}
+  dismissedLiveMissions.set(key,new Set(ids));
+ }
+ return dismissedLiveMissions.get(key);
+}
+function setMissionDisplayDismissed(key,id,dismissed){
+ const ids=missionDisplayDismissals(key);
+ if(dismissed){ids.add(id);if(ids.size>32)ids.delete(ids.values().next().value);}
+ else if(!ids.delete(id))return;
+ try{if(ids.size)sessionStorage.setItem(key,JSON.stringify([...ids]));else sessionStorage.removeItem(key);}catch(_){}
+}
 function progressState(m){
  if(!progressConnected||Date.now()-progressReceived>30000)return 'disconnected';
  return m.progress?.state||m.status||'unknown';
@@ -359,7 +424,7 @@ function publishMissionOrbJobs(response){
     const key='mission:'+workerId;
     specialists.set(key,{
      type:'mission',state:'running',label:worker.title||worker.role||'Mission specialist',
-     title:mission.objective||'Mission',status:worker.activity?.stage==='running'?'Working':worker.activity?.stage||'Working',
+     title:missionObjective(mission.objective),status:worker.activity?.stage==='running'?'Working':worker.activity?.stage||'Working',
      expiresAt,viewLabel:'Open Mission',desktop:false,inline:true,
      onView:()=>{
       if(Date.now()>=expiresAt||JSON.stringify(taskContext())!==contextKey||activityMissionParticipant>0||window.VP3ParticipantContinuity?.selectedContext?.())return;
@@ -375,14 +440,27 @@ function publishMissionOrbJobs(response){
 }
 function renderLiveSummary(){
  liveSummary.replaceChildren();
- const active=items.filter(m=>['running','waiting_review','planned'].includes(m.status)||['awaiting_approval','awaiting_delivery','attention'].includes(m.progress?.state));
+ const viewKey=missionDisplayKey(),dismissed=missionDisplayDismissals(viewKey);
+ const active=items.filter(m=>!dismissed.has(m.id)&&(['running','waiting_review','planned'].includes(m.status)||['awaiting_approval','awaiting_delivery','attention'].includes(m.progress?.state)));
  liveSummary.hidden=!active.length;
  for(const m of active.slice(0,4)){
   const card=el('article','vp3-mission-live-card');card.dataset.missionId=m.id;card.dataset.progressState=progressState(m);
-  card.appendChild(el('strong','',missionProgress(m)+' · '+(m.objective||'Mission')));
+  card.appendChild(el('strong','',missionProgress(m)+' · '+missionObjective(m.objective)));
   card.appendChild(el('small','',String(m.progress?.completed_workers??(m.tasks||[]).filter(t=>t.status==='completed').length)+' / '+(m.tasks||[]).length+' specialists completed · '+fmt(m.progress?.checked_at||m.updated_at)));
   for(const t of m.tasks||[])card.appendChild(el('p','vp3-teams-meta',(t.title||t.role||'Specialist')+' · '+workerProgress(t)));
-  const open=btn('Open mission','open-team-chat',m.id);open.addEventListener('click',e=>{e.stopPropagation();operation('open-team-chat',m.id);});card.appendChild(open);liveSummary.appendChild(card);
+  const actions=el('div','vp3-activity-actions');
+  const open=btn('Open mission','open-team-chat',m.id);open.addEventListener('click',e=>{
+   e.stopPropagation();
+   if(m.execution_target==='cloud')void openActivityMission(m.id);
+   else void operation('open-team-chat',m.id);
+  });
+  const close=el('button','','Close');close.type='button';close.setAttribute('aria-label','Close Mission card');
+  close.addEventListener('click',()=>{
+   setMissionDisplayDismissed(viewKey,m.id,true);
+   renderLiveSummary();
+   chatInput?.focus({preventScroll:true});
+  });
+  actions.append(open,close);card.appendChild(actions);liveSummary.appendChild(card);
  }
 }
 function renderNotices(host){
@@ -394,7 +472,11 @@ function renderNotices(host){
   const row=el('article','vp3-mission-notice');row.dataset.noticeId=String(n.id);row.dataset.read=String(Boolean(n.read_at||n.resolved_at));
   row.appendChild(el('strong','',n.title||'Mission update'));const time=el('time','vp3-teams-meta',fmt(n.created_at)+(n.resolved_at?' · resolved':''));if(n.created_at)time.dateTime=String(n.created_at);row.appendChild(time);
   const actions=el('div','vp3-activity-actions');
-  const open=btn('Open mission','open-team-chat',n.mission_id);open.addEventListener('click',e=>{e.stopPropagation();operation('open-team-chat',n.mission_id);});actions.appendChild(open);
+  const open=btn('Open mission','open-team-chat',n.mission_id);open.addEventListener('click',e=>{
+   e.stopPropagation();
+   if(String(n.id).startsWith('cloud:'))void openActivityMission(n.mission_id);
+   else void operation('open-team-chat',n.mission_id);
+  });actions.appendChild(open);
   if(!n.read_at&&!n.resolved_at){const read=btn('Mark read','notifications.read',n.mission_id);read.addEventListener('click',e=>{e.stopPropagation();void markMissionNotice(n.id);});actions.appendChild(read);}
   row.appendChild(actions);host.appendChild(row);
  }
@@ -410,13 +492,14 @@ function publishProgress(){
 window.VP3_AGENT_MISSION_NOTIFICATIONS=renderNotices;
 function clearPrivateMissionState(){
  authorityGeneration++;viewGeneration++;
+ closeInlineMission();
  clearMissionOrbJobs();
  items=[];missionNotices={items:[],unread:0};selected='';progressConnected=false;
  detail.replaceChildren();detail.hidden=true;const diagnostic=root.querySelector('.vp3-integration-diagnostic');if(diagnostic){diagnostic.replaceChildren();diagnostic.hidden=true;}
  for(const cache of [toolsByMission,toolDrafts,changesByMission,staffingByMission,webEvidenceByMission,liveByWorker,browserByWorker,pendingOperations])cache.clear();
  followupReview=null;followupRetry=null;followupHost.replaceChildren();followupHost.hidden=true;storeFollowup();
  sourceCatalog={items:[],can_manage_master:false};sourceLoad=null;resetSourceForm();renderSourceCatalog();sourceStatus.textContent='Refresh after restoring source access.';
- schedules=[];cloudScheduleHealth=null;cloudScheduleFolders=[];schedulerHealth=null;healthReceivedAt=0;renderScheduleList();
+ schedules=[];cloudScheduleHealth=null;cloudScheduleFolders=[];schedulerHealth=null;healthReceivedAt=0;scheduleReadEpoch++;renderScheduleSurfaces('unavailable');
  // Pending route/schedule intents contain private objectives and must not survive revocation.
  try{for(const key of Object.keys(sessionStorage)){if(key.startsWith('vp3.chat-task.pending.a5c7.'+String(cfg.csrf))||key.startsWith('vp3.schedule.pending.a5c6.'+String(cfg.csrf)))sessionStorage.removeItem(key);}}catch(_){}
  showList();publishProgress();
@@ -466,6 +549,11 @@ window.setInterval(()=>void tickCloudSchedules(),30000);
 window.setInterval(pollProgress,5000);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearMissionOrbJobs();else void pollProgress();});
 for(const event of ['stonefellow:chat-context-changing','vp3:chat-conversation-changed','vp3:participant-task-context','offline'])window.addEventListener(event,clearMissionOrbJobs);
+window.addEventListener('vp3:chat-conversation-changed',renderLiveSummary);
+for(const event of ['stonefellow:chat-context-changing','vp3:chat-conversation-changed','vp3:participant-task-context','vp3:participant-selection-changed']){
+ window.addEventListener(event,()=>closeInlineMission());
+}
+window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(chatThread?.dataset.view!=='chat')closeInlineMission();});
 runtimeSelect.addEventListener('change',clearMissionOrbJobs);
 window.addEventListener('pagehide',()=>{missionOrbPageActive=false;clearMissionOrbJobs();});
 window.addEventListener('pageshow',()=>{missionOrbPageActive=true;});
@@ -477,7 +565,7 @@ function showList(){
  if(!items.length){list.appendChild(el('p','vp3-teams-empty','No missions yet.'));return;}
  for(const item of items){
   const row=el('div','vp3-teams-item'),main=el('div','vp3-teams-item-main');
-  main.appendChild(el('strong','',item.objective||'Mission'));
+  main.appendChild(el('strong','',missionObjective(item.objective)));
   main.appendChild(el('small','',missionProgress(item)+' · '+fmt(item.updated_at||item.created_at)+' · '+(item.tasks||[]).length+' workers'));
   row.appendChild(main);row.appendChild(btn(selected===item.id?'Viewing':'View','get',item.id));list.appendChild(row);
  }
@@ -488,7 +576,7 @@ function showMission(m){
  const openBrowsers=new Set(Array.from(detail.querySelectorAll('.vp3-worker-browser[open]'))
    .map(pane=>pane.dataset.browserWorker));
  selected=String(m.id||'');detail.hidden=false;detail.replaceChildren();
- detail.appendChild(el('h3','',m.objective||'Mission'));
+ detail.appendChild(el('h3','',missionObjective(m.objective)));
  detail.appendChild(el('p','vp3-teams-meta',missionProgress(m)+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.execution_target==='cloud'?'VP3 Cloud analysis; no external changes':'Specialists prepare changes; saving requires your review')));
  const buttons=el('div','vp3-teams-actions');
  if(m.status==='planned'){buttons.appendChild(btn('Review specialist assignments','tools.get',selected));if(!m.chat_task||m.tools_configured){const start=btn('Start',m.tools_configured||toolsByMission.get(selected)?.configured?'tools.start':'start',selected);const needs=toolsByMission.get(selected)?.browser_requirements||[];start.disabled=needs.some(r=>!r.ready||!r.expires_at||Date.parse(r.expires_at.replace(' ','T')+'Z')<=Date.now());start.dataset.browserBlocked=String(start.disabled);buttons.appendChild(start);}}
@@ -738,7 +826,7 @@ function renderBrain(body){
  if(!recent.length)section.appendChild(el('p','chat-activity-empty','No HomeServer mission activity is available.'));
  for(const m of recent){
   const row=el('div','vp3-teams-brain-row');
-  row.appendChild(el('strong','',m.objective||'Mission'));
+  row.appendChild(el('strong','',missionObjective(m.objective)));
   const owned=[...liveByWorker.entries()].some(([k,v])=>k.startsWith(m.id+'|')&&v?.owner_takeover?.mode==='owner');
   if(m.chat_task?.automatic_reason&&!m.private&&m.authority_current!==false)row.appendChild(el('p','vp3-teams-meta','Lead chose specialists: '+m.chat_task.automatic_reason+' · '+fmt(m.chat_task.decided_at)));
   row.appendChild(el('small','',missionProgress(m)+' · '+fmt(m.updated_at||m.created_at)+' · '+(m.tasks||[]).length+' workers'+
@@ -781,28 +869,105 @@ function renderBrain(body){
 }
 let activityMissionParticipant=0;
 window.addEventListener('vp3:participant-task-context',event=>{activityMissionParticipant=Number(event.detail?.participant_id)||0;});
+let exampleConversation=null;
+input.addEventListener('input',()=>{if(!input.value.trim())exampleConversation=null;});
+function missionExampleContextMatches(cid){
+ const current=window.STONEFELLOW_CHAT,chat=window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;
+ return window.VP3_AGENT_TEAMS_A3===cfg&&missionPageOwner>0&&missionPageBinding&&Number(current?.userId)===missionPageOwner
+  &&Number(current?.agentId||0)===missionPageAgent&&String(current.workingAttentionBinding||'')===missionPageBinding
+  &&current.csrf===cfg.csrf&&chat?.isReady?.()===true&&!chat.isRestoring?.()&&!chat.isBusy?.()
+  &&Number.isSafeInteger(cid)&&cid>=0&&chat.conversationId()===cid&&taskContext().thread_id===cid
+  &&activityMissionParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
+}
+function prepareExample(objective,cid){
+ if(busy||!missionExampleContextMatches(cid)||typeof objective!=='string')return false;
+ const value=objective.trim();
+ if(!value||value.length>4000||(input.value.trim()&&input.value!==value))return false;
+ exampleConversation=cid;
+ runtimeSelect.value='cloud';syncRuntime();
+ create.querySelector('[name="prepare_only"]').checked=true;
+ revealMissionWorkspace(false);input.value=value;input.focus();
+ return true;
+}
 async function openActivityMission(id){
  const owner=Number(window.STONEFELLOW_CHAT?.userId),context=JSON.stringify(taskContext()),agentId=taskContext().agent_id;
  let generation=viewGeneration;
  const allowed=()=>Number(window.STONEFELLOW_CHAT?.userId)===owner&&JSON.stringify(taskContext())===context
   &&generation===viewGeneration&&activityMissionParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
  if(busy||!owner||!allowed()||typeof id!=='string'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id))return false;
- setBusy(true);generation=viewGeneration;root.open=true;say('Opening Mission…');
+ setBusy(true);generation=viewGeneration;revealMissionWorkspace();say('Opening Mission…');
  try{
   const {mission,tools}=await api('catch_up.get',{mission_id:id,agent_id:agentId});
   if(!allowed()||mission?.id!==id||mission.execution_target!=='cloud'||mission.authority_current!==true)return false;
   progressReceived=Date.now();progressConnected=true;toolsByMission.set(id,tools);
   const index=items.findIndex(item=>item.id===id);
   if(index>=0)items[index]=mission;else items.unshift(mission);
-  showList();showMission(mission);root.scrollIntoView({block:'nearest'});say('Mission loaded.');
+  setMissionDisplayDismissed(missionDisplayKey(),id,false);renderLiveSummary();
+  showList();showMission(mission);detail.scrollIntoView({block:'nearest'});say('Mission loaded.');
   return true;
  }catch(error){if(allowed())say(error.message||'Mission could not be opened.');return false;}
  finally{setBusy(false);}
 }
-window.VP3AgentMissionsV1=Object.freeze({open:openActivityMission});
+function mountScheduleSettings(container){
+ const owner=Number(window.STONEFELLOW_CHAT?.userId),{agent_id,thread_id}=taskContext();
+ const generation=authorityGeneration;
+ const controller=new AbortController();
+ const options={signal:controller.signal};
+ let contextChanging=false;
+ function current(){
+  const context=taskContext();
+  return !controller.signal.aborted&&!contextChanging&&generation===authorityGeneration
+   &&window.VP3_AGENT_TEAMS_A3===cfg&&owner>0&&Number(window.STONEFELLOW_CHAT?.userId)===owner
+   &&context.agent_id===agent_id&&context.thread_id===thread_id
+   &&activityMissionParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
+ }
+ if(!container||!current())return null;
+ const section=el('section');
+ section.setAttribute('data-vp3-schedule-settings','');
+ const message=el('p');message.setAttribute('role','status');
+ const list=el('div');
+ const retry=el('button','','Retry loading schedules');retry.type='button';retry.hidden=true;
+ section.append(message,list,retry);container.appendChild(section);
+
+ function render(state){
+  if(!current()){
+   list.replaceChildren();retry.hidden=true;message.textContent='Scheduled tasks are unavailable in this Chat.';return;
+  }
+  if(state==='ready'){
+   renderScheduleList(list);retry.hidden=true;message.textContent='';return;
+  }
+  list.replaceChildren();retry.hidden=state!=='unavailable';
+  message.textContent=state==='unavailable'?'Scheduled tasks could not be loaded.':'Loading scheduled tasks…';
+ }
+ function refresh(){
+  if(!current())return;
+  render('loading');
+  void loadSchedules().catch(()=>{});
+ }
+ retry.addEventListener('click',refresh,options);
+ list.addEventListener('click',event=>{
+  const button=event.target.closest('button[data-action]');
+  if(!button||!button.dataset.id||busy||!section.isConnected||!current())return;
+  const {action,id}=button.dataset;
+  if(['schedule.pause','schedule.resume','schedule.cancel'].includes(action)){
+   void scheduleOperation(action,id,text=>{if(current())message.textContent=text;});
+  }else if(action==='get')void operation('open-team-chat',id);
+ },options);
+ function validate(){if(!current())render('unavailable');}
+ for(const event of ['vp3:chat-conversation-changed','vp3:participant-task-context','vp3:participant-selection-changed']){
+  window.addEventListener(event,validate,options);
+ }
+ for(const event of ['stonefellow:chat-context-changing','pagehide']){
+  window.addEventListener(event,()=>{contextChanging=true;validate();},options);
+ }
+ scheduleSettingsViews.add(render);
+ refresh();
+ return ()=>{controller.abort();scheduleSettingsViews.delete(render);section.remove();};
+}
+window.VP3AgentMissionsV1=Object.freeze({open:openActivityMission,mountSettings:mountScheduleSettings,prepareExample});
 window.VP3_AGENT_TEAMS_A3_BRAIN=renderBrain;
 window.VP3_SCREEN_OPEN_MISSION=async id=>{const response=await api('get',{mission_id:id});return window.VP3_SCREEN_PREPARED_MISSION(response);};
-window.VP3_SCREEN_PREPARED_MISSION=async response=>{const m=response?.mission;if(!m?.id||!m.chat_task?.draft)throw Error('Mission preparation was not confirmed.');if(busy)throw Error('Agent Teams is busy; reopen this prepared mission from its history.');const contract=await api('tools.get',{mission_id:m.id});selected=m.id;toolsByMission.set(m.id,contract.tools);if(!contract.tools.configured)toolDrafts.set(m.id,m.chat_task.draft);const index=items.findIndex(x=>x.id===m.id);if(index>=0)items[index]=m;else items.unshift(m);root.open=true;showList();showMission(m);say('Sharing evidence attached. Review assignments before starting specialists.');};
+window.VP3_SCREEN_PREPARED_MISSION=async response=>{const m=response?.mission;if(!m?.id||!m.chat_task?.draft)throw Error('Mission preparation was not confirmed.');if(busy)throw Error('Agent Teams is busy; reopen this prepared mission from its history.');const contract=await api('tools.get',{mission_id:m.id});selected=m.id;toolsByMission.set(m.id,contract.tools);if(!contract.tools.configured)toolDrafts.set(m.id,m.chat_task.draft);const index=items.findIndex(x=>x.id===m.id);if(index>=0)items[index]=m;else items.unshift(m);revealMissionWorkspace();showList();showMission(m);detail.scrollIntoView({block:'nearest'});say('Sharing evidence attached. Review assignments before starting specialists.');};
 window.VP3_AGENT_TEAMS_A5B4_STATUS=pollBrowserStatus;
 async function loadSupervision(mid){
  const result=await api('decisions',{mission_id:mid});
@@ -931,7 +1096,7 @@ const diagnosticHost=el('section','vp3-integration-diagnostic');diagnosticHost.h
 async function operation(action,id,taskId,decision){
  if(action==='diagnostics.get'){if(busy)return;setBusy(true);say('Checking installed integration…');try{const r=await api(action);renderDiagnostic(r.diagnostics);say('Integration diagnostic complete.');}catch(e){diagnosticHost.replaceChildren();diagnosticHost.hidden=true;say(e.message);}finally{setBusy(false);}return;}
  if(action.startsWith('schedule.'))return scheduleOperation(action,id);
- if(action==='open-team-chat'){root.open=true;root.scrollIntoView({block:'nearest'});if(id)operation('get',id,taskId);return;}
+ if(action==='open-team-chat'){if(busy)return;revealMissionWorkspace(Boolean(id));if(id)void operation('get',id,taskId);return;}
  if(busy)return;
  if(action==='actions.review'){
   const change=(changesByMission.get(id)||[]).find(x=>x.id===taskId);
@@ -954,6 +1119,7 @@ async function operation(action,id,taskId,decision){
  if(action==='browser.owner.release'&&!window.confirm('Return browser control to the agent?'))return;
  if(action==='browser.owner.control'&&!window.confirm('Apply this selected safe browser control yourself?'))return;
  if(action==='browser.owner.search.submit'&&!window.confirm('Submit this one approved same-origin GET search? Its query appears in the URL.'))return;
+ const missionView=action==='get'?missionDisplayKey():null;
  setBusy(true);
  try{const payload={mission_id:id};if(action==='resume')payload.allow_reexecution=true;
   if(action==='actions.review'){
@@ -1064,6 +1230,10 @@ async function operation(action,id,taskId,decision){
    staffingByMission.set(id,[response.supervision,...(staffingByMission.get(id)||[]).filter(p=>p.id!==response.supervision.id)]);
    say(action==='evaluate'?'Supervisor recommendation ready for your review.':'Staffing decision recorded.');
   }
+  if(missionView!==null&&response.mission?.id===id&&!response.mission.private&&response.mission.authority_current!==false){
+   setMissionDisplayDismissed(missionView,id,false);
+   if(root.open)detail.scrollIntoView({block:'nearest'});
+  }
   await load();
   if(action==='get'&&response.mission)showMission(response.mission);
   if(action.startsWith('browser.')){
@@ -1081,14 +1251,17 @@ root.addEventListener('click',ev=>{
 });
 create.addEventListener('submit',async ev=>{
  ev.preventDefault();if(busy)return;const objective=input.value.trim();if(!objective||objective.length>4000)return;
+ const stagedExample=exampleConversation;
+ if(stagedExample!==null&&!missionExampleContextMatches(stagedExample)){say('Return to the original Chat before preparing this Mission.');return;}
  const request_id=window.crypto&&window.crypto.randomUUID?window.crypto.randomUUID():'';
  if(!request_id){say('Secure request IDs are unavailable in this browser.');return;}
  const thread_id=taskContext().thread_id;
  setBusy(true);say('Creating worker mission…');
  try{
   const created=await api('create',{objective,request_id,thread_id,agent_id:Number(window.STONEFELLOW_CHAT?.agentId)||0,executor:runtimeSelect.value});
+  if(stagedExample!==null&&!missionExampleContextMatches(stagedExample))return;
   const mid=created.mission&&created.mission.id;if(!mid)throw new Error('Mission ID was not returned.');
-  selected=mid;input.value='';showMission(created.mission);
+  selected=mid;exampleConversation=null;input.value='';showMission(created.mission);
   const preferred=String(create.querySelector('[name="provider_key"]')?.value||'auto');
   if(preferred!=='auto'){
    const workers=Array.isArray(created.mission.tasks)?created.mission.tasks:[];
@@ -1096,7 +1269,7 @@ create.addEventListener('submit',async ev=>{
    say('Configuring '+workers.length+' worker models…');
    for(const task of workers){await api('bind_provider',{mission_id:mid,task_id:task.id,provider_key:preferred});}
   }
-  if(created.mission.execution_target==='cloud'||create.querySelector('[name="prepare_only"]')?.checked){
+  if(stagedExample!==null||created.mission.execution_target==='cloud'||create.querySelector('[name="prepare_only"]')?.checked){
    say('Mission prepared. Review specialist assignments and approve browser pages before starting.');
    await load();
   }else{
@@ -1133,14 +1306,14 @@ async function pollBrowserStatus(){
  }catch(_){/* Preserve drafts on transient relay failures. */}finally{statusInflight=false;}
 }
 window.setInterval(pollBrowserStatus,9000);
-if(cfg.openSourceCatalog){root.open=true;sourcePanel.open=true;}
+if(cfg.openSourceCatalog){revealMissionWorkspace(false);sourcePanel.open=true;}
 if(linkedMission){
  const agentId=taskContext().agent_id;
- lastRefresh=Date.now();setBusy(true);root.open=true;say('Opening Mission…');
+ lastRefresh=Date.now();setBusy(true);revealMissionWorkspace();say('Opening Mission…');
  void api('catch_up.get',{mission_id:linkedMission,agent_id:agentId}).then(({mission,tools})=>{
   if(taskContext().agent_id!==agentId||mission?.id!==linkedMission||mission.execution_target!=='cloud'||mission.authority_current!==true)throw Error('Mission could not be verified.');
   progressReceived=Date.now();progressConnected=true;
-  toolsByMission.set(linkedMission,tools);items=[mission];showList();showMission(mission);say('Mission loaded.');
+  toolsByMission.set(linkedMission,tools);items=[mission];showList();showMission(mission);detail.scrollIntoView({block:'nearest'});say('Mission loaded.');
  }).catch(error=>say(error.message||'Mission could not be opened.')).finally(()=>setBusy(false));
 }
 

@@ -168,7 +168,7 @@ const checks=[
    &&/Decision Calibration Details/.test(brainJs)],
  ['Agent History remains canonical conversation archive',
    /<strong>Agent History<\/strong>/.test(brainJs)
-   &&/Authorized conversation archive/.test(brainJs)],
+   &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
  ['Decision Calibration workspace exposes factors accuracy raw-vs-calibrated evidence and authority boundary',
    /require_permission\('account\.access'\)/.test(page)
    &&/Current calibration/.test(page)

@@ -37,6 +37,7 @@ require_once $root.'/includes/cognitive-runtime-v500.php';
 require_once $root.'/includes/cognitive-feed-v530.php';
 require_once $root.'/includes/agent-chat-boundary-v380.php';
 require_once $root.'/includes/agent-capability-chat-v1.php';
+require_once $root.'/includes/agent-brain-v82.php';
 require_once $root.'/includes/agent-memory-scope-v410.php';
 require_once $root.'/includes/agent-reminders-v1.php';
 require_once $root.'/includes/knowledge-retrieval-v162.php';

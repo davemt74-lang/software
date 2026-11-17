@@ -70,7 +70,7 @@ function loadAgendaController(){
   if(window.VP3MeetingAgenda18140||document.querySelector('script[data-vp3-meeting-agenda="18140"]'))return Promise.resolve();
   const automationEndpoint=String(boot.automationEndpoint||endpoint());
   boot.agendaEndpoint=boot.agendaEndpoint||automationEndpoint.replace(/video-meeting-automation\.php(?:\?.*)?$/,'video-meeting-agenda.php')||'/api/video-meeting-agenda.php';
-  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-agenda-v18140.js?v=18140';script.async=true;script.dataset.vp3MeetingAgenda='18140';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Agenda & Action Orchestration could not load.'));document.head.appendChild(script);});
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-agenda-v18140.js?v=18140-meeting-research-v1';script.async=true;script.dataset.vp3MeetingAgenda='18140';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Agenda & Action Orchestration could not load.'));document.head.appendChild(script);});
 }
 function loadActionsController(){
   if(window.VP3MeetingActions18150||document.querySelector('script[data-vp3-meeting-actions="18150"]'))return Promise.resolve();

@@ -147,6 +147,53 @@
   display:block;
   accent-color:#e5e7eb;
 }
+.chat-audio-card.chat-connected-site-audio-card{
+  grid-template-columns:minmax(0,1fr);
+  gap:4px;
+  margin-top:8px;
+  overflow-wrap:anywhere;
+}
+.chat-connected-site-audio-card>p,
+.chat-connected-site-playback-status>p{
+  margin:0;
+  font-size:.78rem;
+}
+.chat-connected-site-audio-card>p>a{
+  color:inherit;
+}
+.chat-connected-site-audio-card .chat-inline-player{
+  grid-template-columns:30px minmax(0,1fr);
+}
+.chat-connected-site-audio-card .chat-player-step,
+.chat-connected-site-audio-card .chat-player-signal{
+  display:none;
+}
+.chat-connected-site-queue{
+  display:grid;
+  gap:4px;
+  margin-top:8px;
+}
+.chat-connected-site-queue>h3{
+  margin:0;
+  font-size:.85rem;
+}
+.chat-connected-site-queue .chat-connected-site-audio-card{
+  margin-top:0;
+}
+.chat-connected-site-queue .chat-inline-player{
+  grid-template-columns:30px 30px minmax(0,1fr) 30px;
+}
+.chat-connected-site-queue .chat-player-step{
+  display:inline-grid;
+  place-items:center;
+}
+.chat-connected-site-playback-status{
+  display:contents;
+}
+.chat-player-retry{
+  justify-self:start;
+  padding:4px 8px;
+}
 @media(max-width:520px){
   .chat-listening-head{align-items:flex-start}
   .chat-listening-head>span{display:none}
@@ -5847,6 +5894,23 @@ body.chat-create-modal-open{
 .chat-initiative-reply-cue{display:flex;align-items:center;gap:10px;max-width:790px;margin:0 auto 8px;padding:8px 10px;border:1px solid #d7e1ed;border-radius:10px;background:#f5f8fc;color:#344054;font-size:12px}
 .chat-initiative-reply-cue>div{display:grid;gap:3px;min-width:0;flex:1;overflow-wrap:anywhere}.chat-initiative-reply-cue strong{font-size:11px}.chat-initiative-reply-cue span{white-space:normal}
 .chat-initiative-reply-cue>button{flex:none;border:0;background:transparent;color:#475467;font-size:20px;cursor:pointer;padding:4px 8px}.chat-initiative-followthrough-state{align-self:center;color:#667085;font-size:11px}
+.chat-initiative-reply-cue>.chat-initiative-save-reply{font-size:12px}
+.chat-initiative-parked-reply{max-width:790px;margin:10px 0;padding:10px;border:1px solid #d7e1ed;border-radius:10px;background:#f5f8fc;color:#344054;font-size:12px}
+.chat-initiative-parked-reply.is-detached{margin:10px auto}
+.chat-initiative-parked-reply p{margin:5px 0 8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.message-role:has(+ .vp3-chat-foodmonster-result-icon) {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.vp3-chat-foodmonster-result-icon {
+  display: inline-block;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-inline-start: 6px;
+  margin-block-end: 7px;
+}
+
 .message[data-initiative-reply-selected]{box-shadow:inset 3px 0 #8babc9}.chat-agent-actions>[data-initiative-reply]{margin-top:0}
 .chat-initiative-action-review{margin-top:12px;padding:12px 14px;border:1px solid #dce3eb;border-radius:10px;background:#fff;max-width:100%;overflow-wrap:anywhere}
 .chat-initiative-action-review>strong{display:block;font-size:13px}.chat-initiative-action-review>small{display:block;margin-top:3px;color:#667085;font-size:11px}
@@ -5854,3 +5918,33 @@ body.chat-create-modal-open{
 .chat-initiative-action-review dt{color:#667085}.chat-initiative-action-review dd{margin:0;white-space:pre-wrap;min-width:0}.chat-initiative-action-review>p{font-size:11px;color:#667085;margin:8px 0}
 .chat-initiative-action-review[data-initiative-action-status="completed"]{border-color:#cddfd4}.chat-initiative-action-review[data-initiative-action-status="cancelled"]{opacity:.7}
 @media(max-width:520px){.chat-initiative-action-review{padding:10px}.chat-initiative-action-review dl>div{grid-template-columns:1fr;gap:2px}}
+.vp3-chat-app-result {
+  display:grid;
+  gap:.6rem;
+  justify-items:start;
+  max-width:24rem;
+  padding:.65rem;
+  border:1px solid color-mix(in srgb,currentColor 20%,transparent);
+  border-radius:.65rem;
+}
+.vp3-chat-app-result-heading {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:.35rem .6rem;
+}
+.vp3-chat-app-result-heading img {
+  display:block;
+  width:15px;
+  height:15px;
+  object-fit:contain;
+  border-radius:3px;
+}
+.vp3-chat-app-result-heading small { opacity:.75; }
+.vp3-chat-app-result-preview {
+  display:block;
+  width:100%;
+  aspect-ratio:16/9;
+  object-fit:cover;
+  border-radius:.4rem;
+}

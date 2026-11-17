@@ -140,6 +140,29 @@ function transcription_app_restore_saved_actions_v1(array $result,array $stored)
     foreach($result as $section=>&$rows){if(!is_array($rows)||!array_is_list($rows))continue;foreach($rows as $i=>&$item){if(!is_array($item))continue;$raw=$stored[$section][$i]??null;if(!is_array($raw)||($raw['item_id']??'')!==($item['item_id']??''))continue;$actions=[];foreach(array_slice((array)($raw['actions']??[]),0,20,true) as $key=>$receipt){if(!is_string($key)||!preg_match('/^[a-z_]{2,40}(?::[0-9]+)?$/D',$key)||!is_array($receipt)||!is_int($receipt['record_id']??null)||$receipt['record_id']<1||!is_string($receipt['performed_at']??null)||strtotime($receipt['performed_at'])===false)continue;$actions[$key]=transcription_app_sanitize_value_v300($receipt);}if($actions)$item['actions']=$actions;}unset($item);}unset($rows);return $result;
 }
 
+/** Read a saved plugin result, retaining validated page locators beyond the generic text depth. */
+function transcription_app_stored_result_v300(array $stored): array
+{
+    $result=transcription_app_restore_saved_actions_v1(transcription_app_sanitize_value_v300($stored),$stored);
+    foreach($result as $section=>&$rows){
+        if(!is_array($rows)||!array_is_list($rows))continue;
+        foreach($rows as $index=>&$item){
+            $raw=$stored[$section][$index]??null;
+            if(!is_array($item)||!is_array($raw)||($item['item_id']??null)!==($raw['item_id']??null))continue;
+            $pages=[];
+            foreach(array_slice((array)($raw['evidence_refs']??[]),0,30) as $ref){
+                if(!is_array($ref))continue;
+                $page=$ref['page']??null;
+                if(is_int($page)&&$page>0)$pages[$page]=['page'=>$page,'label'=>'Page '.$page];
+            }
+            if($pages)$item['evidence_refs']=array_values($pages);
+        }
+        unset($item);
+    }
+    unset($rows);
+    return $result;
+}
+
 function transcription_app_decode_json_v300(string $answer): array
 {
     $raw = trim($answer);
@@ -208,8 +231,7 @@ function transcription_app_modules_v300(array $analysis, ?array $master = null):
     $modules = [];
     foreach ($stored as $id=>$module) {
         if (!isset($registry[$id]) || !is_array($module)) continue;
-        $result = is_array($module['result'] ?? null) ? transcription_app_sanitize_value_v300($module['result']) : [];
-        $result = transcription_app_restore_saved_actions_v1($result,(array)($module['result']??[]));
+        $result = is_array($module['result'] ?? null) ? transcription_app_stored_result_v300($module['result']) : [];
         $modules[$id] = [
             'app_id'=>$id,
             'source_hash'=>(string)($module['source_hash'] ?? $master['source_hash'] ?? ''),

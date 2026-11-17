@@ -5,17 +5,19 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
-const assets=new Set(['agent-eyes-core.js','agent-orb.js','agent-orb.css','agent-orb-particles.js','agent-orb-particles.css','chat-specialist-rail-v1.js','chat-specialist-rail-v1.css']);
+const assets=new Set(['agent-eyes-core.js','agent-orb.js','agent-orb.css','agent-orb-particles.js','agent-orb-particles.css','chat-specialist-rail-v1.js','chat-specialist-rail-v1.css','chat-mobile-specialists-v1.js']);
 let workMode='active';
 const workRequests=[],pendingWork=[];
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,'http://localhost'),file=path.basename(url.pathname);
   if(url.pathname==='/api/top-of-mind'){
-    workRequests.push({method:req.method,view:url.searchParams.get('view'),agent:url.searchParams.get('agent_id'),binding:req.headers['x-vp3-working-attention']});
+    const scope=url.searchParams.get('scope'),cid=url.searchParams.get('conversation_id');
+    workRequests.push({method:req.method,view:url.searchParams.get('view'),agent:url.searchParams.get('agent_id'),binding:req.headers['x-vp3-working-attention'],scope,cid});
     const mode=workMode;
     const reply=()=>{
       res.setHeader('Content-Type','application/json');
       if(mode==='forbidden'){res.statusCode=403;res.end('{"ok":false}');return;}
+      if(mode==='unavailable'){res.statusCode=503;res.end('{"ok":false}');return;}
       const state={contract:'vp3.agent.work.v1',owner_user_id:1,agent_id:7,conversation_id:42,working_attention_binding:'private-session',
         observed_at:new Date(Date.now()-(mode==='stale'?60000:0)).toISOString(),
         health:{state:mode==='idle'?'waiting':'running',enabled:true,active_jobs:mode==='idle'?[]:[{id:'workflow:21',kind:'assessment',step:'Brainstorming useful opportunities',expiresAt:Date.now()+60000}]}};
@@ -26,6 +28,20 @@ const server=http.createServer((req,res)=>{
       if(mode==='owner')state.owner_user_id=2;
       if(mode==='agent')state.agent_id=8;
       if(mode==='binding')state.working_attention_binding='other';
+      if(scope==='chat'){
+        state.conversation_id=mode==='specialists-mismatch'?Number(cid)+1:Number(cid);
+        const working=mode==='specialists-working'||mode==='hold';
+        if(mode.startsWith('specialists-'))state.health={state:working?'running':'idle',enabled:true,
+          active_jobs:working?[{id:'workflow:21',kind:'preparation',expiresAt:Date.now()+60000}]:[]};
+        state.specialists=[
+          {id:'planning',state:working?'working':'waiting_specialist',detail:working?'Checking meeting availability.':'Waiting for research.',
+            progress:working?40:null,lease_expires_at:new Date(Date.now()+60000).toISOString(),conversation_id:state.conversation_id},
+          {id:'tasks',state:'paused',detail:'Task review is paused.'},
+          {id:'gmail',state:'idle',detail:'Monitoring is scheduled.'},
+          {id:'research',state:'ready',detail:'Research is ready.'}
+        ];
+        if(mode==='specialists-configured')state.specialists=state.specialists.filter(item=>item.id!=='research');
+      }
       res.end(JSON.stringify({ok:true,state}));
     };
     if(mode==='hold')pendingWork.push(reply);else reply();
@@ -40,22 +56,28 @@ const server=http.createServer((req,res)=>{
   res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <link rel="stylesheet" href="/agent-orb.css"><link rel="stylesheet" href="/agent-orb-particles.css"><link rel="stylesheet" href="/chat-specialist-rail-v1.css">
     <style>body{margin:0;background:#f8f8f8}main{padding:24px}#chatComposerShell{position:fixed;bottom:0;left:24px;right:24px;padding:12px;background:white}#chatForm{display:flex}#chatInput{flex:1;min-width:0}#sfOnlineRailV109{position:fixed;right:0;top:0}</style>
-    <main><h1>${chat?'Agent Chat':'Workspace'}</h1>${chat?'<section id="chatThread"></section><div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput" aria-label="Message"></textarea><button id="chatVoiceButton" type="button">Listen</button><button id="sendChatButton">Send</button></form></div><aside id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside>':''}</main>
+    <main><h1>${chat?'Agent Chat':'Workspace'}</h1>${chat?`<section id="chatThread" data-view="chat"></section><div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput" aria-label="Message"></textarea><button id="chatVoiceButton" type="button">Listen</button><button id="sendChatButton">Send</button></form></div><aside id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside>
+      <button id="openChatSidebar" aria-label="Open menu" type="button">Menu</button><aside id="chatSidebar"><div class="vp3-chat-mobile-tabs"><button id="home-tab" data-chat-mobile-tab="home">Home</button><button id="specialists-tab" data-chat-mobile-tab="specialists">Specialists</button></div><div id="chatMobileHomePanel"></div><section data-chat-mobile-specialists><ul data-chat-specialist-mobile-list></ul><p data-chat-specialist-mobile-empty>No specialists</p></section><button id="closeChatSidebar" type="button">Close</button></aside>`:''}</main>
     <script>
-      window.foreground='idle';window.listenCalls=0;window.stopCalls=0;window.sent=0;window.selected=null;window.hubOpened=[];
+      window.foreground='idle';window.listenCalls=0;window.stopCalls=0;window.sent=0;window.selected=null;window.hubOpened=[];window.specialistOpened=[];
       window.VP3ParticipantContinuity={selectedContext:()=>window.selected,snapshot:()=>null,clearSelection:()=>{},setSelection:value=>{window.selected=value;},updatePresence:()=>{}};
-      window.VP3AgentActivityHub={open:options=>{window.hubOpened.push(options);return true;}};
+      window.VP3AgentActivityHub={open:options=>{window.hubOpened.push(options);return true;},
+        openSpecialist:key=>{window.specialistOpened.push(key);return key!=='brainstorm';}};
       window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'private-session',shape:'orbit',topOfMindEndpoint:${url.searchParams.has('work')?"'/api/top-of-mind'":"''"}};
+      ${url.searchParams.has('configured')?`window.VP3_CHAT_SPECIALIST_PRESENCE={owner_user_id:${url.searchParams.get('configured')==='other'?2:1},agent_id:7,states:{media:'idle',research:'idle','image-generator':'idle',coding:'idle',development:'paused',mission:'idle'}};`:''}
       ${chat?`window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'private-session'};
-      window.STONEFELLOW_CHAT_CONTINUITY={isReady:()=>true,isRestoring:()=>false,conversationId:()=>42};
+      window.conversation=42;window.restoring=false;
+      window.STONEFELLOW_CHAT_CONTINUITY={isReady:()=>true,isRestoring:()=>window.restoring,conversationId:()=>window.conversation,agentId:()=>7};
+      document.getElementById('openChatSidebar').addEventListener('click',()=>document.body.classList.add('chat-nav-open'));
+      document.getElementById('closeChatSidebar').addEventListener('click',()=>document.body.classList.remove('chat-nav-open'));
       document.getElementById('chatForm').addEventListener('submit',event=>{event.preventDefault();window.sent++;});
       document.getElementById('chatVoiceButton').addEventListener('click',()=>window.VP3_ORB_ADAPTER.listen());`:''}
       window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat',state:()=>({state:window.foreground}),
-        conversationRef:()=>(${chat?'{id:42,agent:7}':'null'}),conversationUrl:ref=>'/chat?conversation_id='+ref.id,
+        conversationRef:()=>(${chat?'window.restoring?null:{id:window.conversation,agent:7}':'null'}),conversationUrl:ref=>'/chat?conversation_id='+ref.id,
         isMainChat:()=>${chat},focusChat:()=>document.getElementById('chatInput')?.focus(),busy:()=>false,
         listen:()=>{window.listenCalls++;window.foreground='listening';},stop:()=>{window.stopCalls++;window.foreground='idle';}};
     </script>
-    <script src="/agent-eyes-core.js"></script><script src="/chat-specialist-rail-v1.js"></script><script src="/agent-orb.js"></script><script src="/agent-orb-particles.js"></script>`);
+    <script src="/agent-eyes-core.js"></script><script src="/chat-specialist-rail-v1.js"></script><script src="/agent-orb.js"></script><script src="/agent-orb-particles.js"></script><script src="/chat-mobile-specialists-v1.js"></script>`);
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const url=`http://127.0.0.1:${server.address().port}`;
@@ -120,6 +142,10 @@ try{
     });
     await panel.getByText('Reviewing the current plan',{exact:true}).waitFor();
     assert.equal(await panel.getByText('Brainstorming useful opportunities',{exact:true}).count(),0);
+    assert.equal(await panel.getByRole('button',{name:'Open Top of Mind'}).count(),0);
+    assert.deepEqual(await main.evaluate(()=>specialistOpened),['brainstorm']);
+    await panel.getByRole('button',{name:'Close',exact:true}).click();
+    await specialist.click();
     await main.evaluate(()=>{
       VP3AgentOrb.setJobs('mission',[{id:'mission:live',expiresAt:Date.now()+10000}]);
       VP3AgentOrb.setJobs('initiative',[]);
@@ -129,9 +155,11 @@ try{
     assert.equal(await main.evaluate(()=>VP3AgentOrb.isWorking()),true);
     await main.evaluate(()=>VP3AgentOrb.setJobs('mission',[]));
     assert.equal(await main.evaluate(()=>VP3AgentOrb.isWorking()),false);
-    await main.locator('.vp3-orb-ball').hover();
-    await main.locator('[data-orb-activity]').click();
+    const listensBefore=await main.evaluate(()=>listenCalls);
+    await main.locator('.vp3-orb-ball').dblclick();
     assert.deepEqual(await main.evaluate(()=>hubOpened),[undefined]);
+    assert.equal(await main.evaluate(()=>listenCalls),listensBefore);
+    assert.equal(await main.locator('#vp3AgentChatPopup').isVisible(),false);
   });
   await check('Terminal, expired, invalid and paused work cannot leave a Working dot behind',async()=>{
     await main.evaluate(()=>{
@@ -246,8 +274,163 @@ try{
       assert.equal(await page.locator('[data-orb-voice-state]').textContent(),'Listening');
     }finally{await page.close();}
     const before=workRequests.length,chat=await pageAt('/chat?work=1',{clock:true});
-    try{await chat.clock.fastForward(1000);assert.equal(workRequests.length,before);}finally{await chat.close();}
+    try{
+      await chat.locator('[data-chat-specialist="planning"]').waitFor();
+      assert.deepEqual(workRequests.slice(before).map(({scope,cid})=>[scope,cid]),[['chat','42']]);
+    }finally{await chat.close();}
     assert.ok(workRequests.every(row=>row.method==='GET'&&row.view==='work'&&row.agent==='7'&&row.binding==='private-session'));
+  });
+  await check('Desktop specialist presence follows verified phases and opens its own activity',async()=>{
+    workMode='specialists-working';
+    const page=await pageAt('/chat?work=1',{clock:true});
+    try{
+      const specialist=id=>page.locator(`[data-chat-specialist="${id}"]`);
+      await specialist('planning').waitFor();
+      await specialist('tasks').waitFor();
+      assert.equal(await specialist('planning').getAttribute('aria-label'),'Planning & Scheduling · Working');
+      assert.equal(await specialist('tasks').getAttribute('aria-label'),'Tasks & Lists · Paused');
+      assert.equal(await specialist('tasks').evaluate(node=>getComputedStyle(node,'::after').display),'none');
+      assert.equal(await page.evaluate(()=>VP3ChatSpecialists.snapshot({includeResults:true}).find(item=>item.key==='planning').progress),40);
+      assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),false,'specialist preparation stays on its own indicator when no generic assessment is active');
+      await specialist('planning').click();
+      assert.deepEqual(await page.evaluate(()=>[specialistOpened,hubOpened]),[['planning'],[]]);
+      assert.equal(await page.locator('.vp3-chat-specialist-panel').count(),0);
+
+      await page.evaluate(()=>{
+        VP3ChatSpecialists.update('gmail-inbox-review',{label:'Gmail Inbox Review'});
+        VP3ChatSpecialists.update('research:45',{label:'Research Specialist'});
+      });
+      await specialist('gmail').waitFor({state:'hidden'});
+      await specialist('research').waitFor({state:'hidden'});
+      await page.evaluate(()=>{VP3ChatSpecialists.remove('gmail-inbox-review');VP3ChatSpecialists.remove('research:45');});
+      await specialist('gmail').waitFor();
+      await specialist('research').waitFor();
+
+      workMode='specialists-idle';
+      await page.clock.fastForward(2600);
+      await page.locator('[data-chat-specialist="planning"][data-chat-specialist-state="waiting_specialist"]').waitFor();
+      assert.equal(await specialist('planning').evaluate(node=>getComputedStyle(node,'::after').display),'none');
+      assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),false,'waiting specialists without an active lease cannot keep the shared indicator working');
+    }finally{await page.close();}
+  });
+  await check('Mobile specialists stay in the menu, pulse only during work and open their own activity',async()=>{
+    workMode='specialists-working';
+    const page=await pageAt('/chat?work=1',{viewport:{width:390,height:844},clock:true});
+    try{
+      const dot=page.locator('[data-chat-specialist-dot]');
+      await dot.waitFor();
+      assert.equal(await page.locator('[data-chat-specialist-notice]').count(),0);
+      await page.locator('#openChatSidebar').click();
+      assert.equal(await dot.isVisible(),false);
+      await page.locator('#specialists-tab').click();
+      const tasks=page.locator('[data-chat-mobile-specialist="tasks"]');
+      await tasks.getByText('Paused',{exact:true}).waitFor();
+      await tasks.getByRole('button',{name:'Open activity'}).click();
+      assert.deepEqual(await page.evaluate(()=>[specialistOpened,hubOpened]),[['tasks'],[]]);
+      assert.equal(await page.evaluate(()=>document.body.classList.contains('chat-nav-open')),false);
+      workMode='specialists-idle';
+      await page.clock.fastForward(2600);
+      await dot.waitFor({state:'hidden'});
+      await page.locator('#openChatSidebar').click();
+      await page.locator('[data-chat-mobile-specialist="planning"]').getByText('Waiting for another specialist',{exact:true}).waitFor();
+    }finally{await page.close();}
+  });
+  await check('Configured browser specialists show idle or paused and give precedence to verified work',async()=>{
+    workMode='specialists-configured';
+    const page=await pageAt('/chat?work=1&configured=1');
+    try{
+      const specialist=id=>page.locator(`[data-chat-specialist="${id}"]`);
+      for(const id of ['media','research','image-generator','coding','development:idle','mission']){
+        await specialist(id).waitFor();
+        assert.equal(await specialist(id).getAttribute('data-chat-specialist-state'),id==='development:idle'?'paused':'idle');
+        assert.equal(await specialist(id).evaluate(node=>getComputedStyle(node,'::after').display),'none');
+      }
+      assert.equal(await page.evaluate(()=>VP3ChatSpecialists.snapshot().length),0);
+      await specialist('media').click();
+      await specialist('development:idle').click();
+      assert.deepEqual(await page.evaluate(()=>[specialistOpened,hubOpened]),[['media','development:idle'],[]]);
+      await page.evaluate(()=>VP3ChatSpecialists.update('development',{label:'Agent Development',status:'Working'}));
+      await specialist('development:idle').waitFor({state:'hidden'});
+      await specialist('development').waitFor();
+      await page.evaluate(()=>VP3ChatSpecialists.remove('development'));
+      await specialist('development:idle').waitFor();
+    }finally{await page.close();}
+    const other=await pageAt('/chat?work=1&configured=other');
+    try{
+      await other.locator('[data-chat-specialist="planning"]').waitFor();
+      assert.equal(await other.locator('[data-chat-specialist="media"],[data-chat-specialist="coding"],[data-chat-specialist="image-generator"],[data-chat-specialist="mission"]').count(),0);
+    }finally{await other.close();}
+  });
+  await check('Rail launchers survive loading, an unavailable refresh, and an expired work lease',async()=>{
+    workMode='hold';
+    const page=await pageAt('/chat?work=1&configured=1',{clock:true});
+    try{
+      const coding=page.locator('[data-chat-specialist="coding"]');
+      await coding.waitFor();
+      const node=await coding.elementHandle();
+      assert.equal(await coding.getAttribute('aria-label'),'Coding Agent · Status unavailable');
+      await coding.click();
+      assert.deepEqual(await page.evaluate(()=>specialistOpened),['coding']);
+      for(let attempt=0;!pendingWork.length;attempt++){
+        if(attempt>100)throw Error('Chat specialist poll did not reach its controlled response.');
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+      assert.equal(pendingWork.length,1);
+      pendingWork.shift()();
+      await coding.waitFor();
+      await page.locator('[data-chat-specialist="planning"][data-chat-specialist-state="working"]').waitFor();
+      workMode='unavailable';
+      await page.clock.fastForward(2700);
+      await page.locator('[data-chat-specialist="planning"][data-chat-specialist-state="unavailable"]').waitFor();
+      assert.equal(await page.evaluate(el=>el.isConnected,node),true);
+      assert.equal(await page.evaluate(()=>VP3ChatSpecialists.snapshot().some(row=>row.key==='planning')),false);
+      await page.evaluate(()=>{
+        VP3ChatSpecialists.update('coding',{label:'Coding Agent',presence:true,keepLauncher:true,
+          state:'working',status:'Working',detail:'Private work in progress',expiresAt:Date.now()+600});
+      });
+      await page.clock.fastForward(650);
+      assert.equal(await page.evaluate(el=>el.isConnected,node),true);
+      assert.deepEqual(await page.evaluate(()=>VP3ChatSpecialists.snapshot({includeResults:true})
+        .filter(row=>row.key==='coding').map(({state,detail})=>[state,detail])),[['unavailable','']]);
+      await page.evaluate(()=>{
+        window.selected={participant_id:8};dispatchEvent(new Event('vp3:participant-selection-changed'));
+      });
+      await coding.waitFor({state:'detached'});
+      assert.deepEqual(await page.evaluate(()=>VP3ChatSpecialists.snapshot({includeResults:true})),[]);
+    }finally{while(pendingWork.length)pendingWork.shift()();await page.close();}
+  });
+  await check('Chat specialist presence rejects mismatched or late work and scopes a fresh Chat to zero',async()=>{
+    workMode='hold';
+    const page=await pageAt('/chat?work=1');
+    try{
+      await page.waitForFunction(()=>!!window.VP3ChatSpecialists);
+      for(let attempt=0;!pendingWork.length;attempt++){
+        if(attempt>100)throw Error('Chat specialist poll did not reach its controlled response.');
+        await new Promise(resolve=>setTimeout(resolve,10));
+      }
+      await page.evaluate(()=>{
+        window.restoring=true;
+        dispatchEvent(new Event('stonefellow:chat-context-changing'));
+        window.conversation=0;
+      });
+      pendingWork.shift()();
+      assert.equal(await page.locator('[data-chat-specialist="planning"]').count(),0);
+      workMode='specialists-idle';
+      await page.evaluate(()=>{window.restoring=false;dispatchEvent(new Event('vp3:chat-context-ready'));});
+      await page.locator('[data-chat-specialist="planning"]').waitFor();
+      assert.deepEqual([workRequests.at(-1).scope,workRequests.at(-1).cid],['chat','0']);
+      workMode='specialists-mismatch';
+      const mismatched=page.waitForResponse(response=>new URL(response.url()).searchParams.get('conversation_id')==='17');
+      await page.evaluate(()=>{
+        dispatchEvent(new Event('stonefellow:chat-context-changing'));
+        window.conversation=17;
+        dispatchEvent(new Event('vp3:chat-context-ready'));
+      });
+      await mismatched;
+      await page.locator('[data-chat-specialist="planning"][data-chat-specialist-state="unavailable"]').waitFor();
+      assert.ok(await page.evaluate(()=>VP3ChatSpecialists.snapshot({includeResults:true})
+        .every(row=>row.state==='unavailable'&&row.detail===''&&row.progress===null)));
+    }finally{while(pendingWork.length)pendingWork.shift()();await page.close();}
   });
   await check('Hidden global pages stop polling and refresh verified work when visible again',async()=>{
     workMode='active';

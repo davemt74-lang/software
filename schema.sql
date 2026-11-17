@@ -631,7 +631,30 @@ CREATE TABLE IF NOT EXISTS user_media_assets (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_user_media_user_created (user_id,created_at,id),
   INDEX idx_user_media_type (user_id,media_type,created_at),
+  UNIQUE KEY uq_user_media_owner_id (user_id,id),
   CONSTRAINT fk_user_media_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vp3_media_collections_v1 (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  owner_user_id INT UNSIGNED NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  name_key CHAR(64) NOT NULL,
+  CONSTRAINT uq_media_collection_owner_id UNIQUE (owner_user_id,id),
+  CONSTRAINT uq_media_collection_owner_name UNIQUE (owner_user_id,name_key),
+  CONSTRAINT fk_media_collection_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS vp3_media_collection_assets_v1 (
+  owner_user_id INT UNSIGNED NOT NULL,
+  collection_id BIGINT UNSIGNED NOT NULL,
+  asset_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (owner_user_id,collection_id,asset_id),
+  INDEX idx_media_collection_assets_owner_asset (owner_user_id,asset_id),
+  CONSTRAINT fk_media_collection_asset_collection FOREIGN KEY (owner_user_id,collection_id)
+    REFERENCES vp3_media_collections_v1(owner_user_id,id) ON DELETE CASCADE,
+  CONSTRAINT fk_media_collection_asset_owner FOREIGN KEY (owner_user_id,asset_id)
+    REFERENCES user_media_assets(user_id,id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS video_editor_projects (

@@ -95,7 +95,7 @@ const checks=[
     &&/Deadline risk/.test(brainJs)],
   ['History remains canonical conversation history',
     /<strong>Agent History<\/strong>/.test(brainJs)
-    &&/Authorized conversation archive/.test(brainJs)],
+    &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
   ['chat cache-bust exposes v24.90 forecast build',
     /cognitive-forecast-v2490-20260922/.test(chat)
     &&/forecastBuild/.test(chat)],

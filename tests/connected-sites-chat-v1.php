@@ -24,13 +24,20 @@ function vp3_participant_scope_v1(): ?array
     return $GLOBALS['fixtureParticipantScope']??null;
 }
 
-function vp3_gelato_connections_v1(PDO $pdo, int $userId): array
+function vp3_gelato_connections_v1(PDO $pdo, int $userId, bool $requireSchema=false): array
 {
     return $GLOBALS['fixtureConnections'][$userId]??[];
 }
 
-function vp3_gelato_operation_v1(PDO $pdo, int $userId, string $connectionId, string $action, int $locationId, ?string $businessDate=null): array
+function vp3_stoneward_connections_v1(PDO $pdo, int $userId, bool $requireSchema=false): array
 {
+    // This suite exercises the FoodMonster provider with no paired artist site.
+    return [];
+}
+
+function vp3_gelato_operation_v1(PDO $pdo, int $userId, string $connectionId, string $action, int $locationId, ?string $businessDate=null, ?callable $transport=null, ?string $ticketNumber=null): array
+{
+    connected_site_chat_expect($ticketNumber===null,'Summary reads do not silently request ticket details.');
     $GLOBALS['fixtureRequests'][]=[$userId,$connectionId,$action,$locationId,$businessDate];
     if($action===($GLOBALS['fixtureFail']??null))throw new RuntimeException('PRIVATE_PROVIDER_DEBUG',$GLOBALS['fixtureErrorCode']??0);
     return [
@@ -87,7 +94,7 @@ foreach(['Ask Gelato about sales','/ask gelato about sales','Can you ask Gelato 
     $aliasPlan=vp3_connected_sites_chat_plan_v1($alias,[$connection]);
     connected_site_chat_expect($aliasPlan['connection']['id']==='food-21'&&$aliasPlan['context']['actions']===['sales.daily.read'],'Each supported name and command form selects the verified Gelato installation.');
 }
-connected_site_chat_expect(str_contains(vp3_connected_sites_chat_plan_v1('Ask Gelato.',[$connection])['answer'],'What would you like to ask Gelato?'),'Bare spoken command offers examples.');
+connected_site_chat_expect(str_contains(vp3_connected_sites_chat_plan_v1('Ask Gelato.',[$connection])['answer'],'What would you like to ask '.$connection['agentName'].'?'),'Bare spoken command offers examples using the paired Agent name.');
 connected_site_chat_expect(str_contains(vp3_connected_sites_chat_plan_v1('/ask gelato',[])['answer'],'not paired'),'Unpaired Gelato requests give setup guidance.');
 connected_site_chat_expect(vp3_connected_sites_chat_plan_v1('Ask Gelatology about sales',[$connection])===null,'Alias matching preserves a name boundary.');
 connected_site_chat_expect(vp3_connected_sites_chat_plan_v1('Ask Luna’s Kitchenette about sales',[$connection])===null,'A longer unconnected name must not match.');
@@ -154,7 +161,7 @@ $slash=vp3_connected_sites_chat_v1($pdo,$user,$principal,'/ask gelato how we did
 connected_site_chat_expect(count($GLOBALS['fixtureRequests'])===3&&$slash['answer']===$result['answer'],'Slash command executes the same verified reads and returns the same answer as the installed name.');
 $GLOBALS['fixtureRequests']=[];
 $bare=vp3_connected_sites_chat_v1($pdo,$user,$principal,'/ask gelato',80,32);
-connected_site_chat_expect(str_contains($bare['answer'],'What would you like to ask Gelato?')&&!$GLOBALS['fixtureRequests'],'A bare command explains available reads without contacting Gelato.');
+connected_site_chat_expect(str_contains($bare['answer'],'What would you like to ask '.$connection['agentName'].'?')&&!$GLOBALS['fixtureRequests'],'A bare command explains available reads using the paired Agent name without contacting Gelato.');
 $GLOBALS['fixtureParticipantScope']=['participant_id'=>17];
 $restricted=vp3_connected_sites_chat_v1($pdo,$user,$principal,'/ask gelato about sales',80,32);
 connected_site_chat_expect(str_contains($restricted['answer'],'private Agent Chat')&&!$GLOBALS['fixtureRequests'],'A participant cannot use owner Gelato permissions.');

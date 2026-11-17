@@ -10,7 +10,8 @@ const binding = 'fixture-working-attention';
 const requests = [];
 const errors = [];
 const subject = 'Bridge repair <img src=x onerror=alert(1)>';
-const job = {run_id:27,kind:'topic',subject,state:'queued'};
+const commitment = 'Verify shipping date <img src=x>';
+const job = {run_id:27,kind:'topic',subject,state:'queued',meeting_followup:{title:'Supplier call',commitment,url:'/meeting.php?meeting=supplier'}};
 let specialist = job;
 let concurrent = null;
 let wrongBinding = false;
@@ -20,8 +21,11 @@ page.on('pageerror', error => errors.push(error.message));
 
 await page.route('https://research.test/', route => route.fulfill({contentType:'text/html',body:`<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside>
-  <main class="chat-main"><header class="chat-topbar"></header><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section>
+  <div class="chat-app"><aside class="chat-sidebar" id="chatSidebar"><button id="closeChatSidebar">Close menu</button>
+  <div class="vp3-chat-mobile-tabs" role="tablist" hidden><button id="fixtureHome" role="tab" data-chat-mobile-tab="home">Home</button><button id="fixtureSpecialists" role="tab" data-chat-mobile-tab="specialists">Specialists</button></div>
+  <div id="chatMobileHomePanel"><button id="newChatButton">New chat</button><div id="chatHistory"></div></div>
+  <section class="vp3-chat-mobile-specialists" data-chat-mobile-specialists hidden><p data-chat-specialist-mobile-empty>No specialists</p><ul data-chat-specialist-mobile-list></ul></section></aside>
+  <main class="chat-main"><header class="chat-topbar"><button id="openChatSidebar">Open menu</button></header><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section>
   <div class="chat-composer-shell" id="chatComposerShell"><form class="chat-composer" id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form></div>
   </main></div><aside class="sf-online-rail-v109" id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside>`}));
 
@@ -90,9 +94,9 @@ try {
   assert.equal(await panel.getAttribute('role'),'dialog');
   assert.equal(await panel.locator('img').count(),0);
   assert.equal(await panel.locator('.vp3-chat-specialist-title').textContent(),subject);
-  await panel.getByText('Topic research',{exact:true}).waitFor();
+  await panel.getByText(`Meeting follow-up · ${commitment}`,{exact:true}).waitFor();
 
-  concurrent = [running(), {...running(),run_id:28,subject:'Second research assignment'}];
+  concurrent = [running(), {...running(),run_id:28,subject:'Second research assignment',meeting_followup:null}];
   await refresh();
   await page.locator('[data-chat-specialist="research:28"][data-chat-specialist-type="research"]').waitFor();
   assert.equal(await page.locator('[data-chat-specialist-type="research"]:not([hidden])').count(),2);
@@ -117,7 +121,28 @@ try {
   });
   await refresh();
   await page.waitForFunction(() => window.VP3ChatSpecialists.snapshot({includeResults:true}).some(item=>item.key==='research:27'&&item.state==='completed'&&item.canView));
-  assert.equal(await page.evaluate(() => window.VP3ChatSpecialists.view('research:27')),true);
+  await panel.getByRole('button',{name:'Close',exact:true}).click();
+  await page.addScriptTag({content:await source('chat-mobile-specialists-v1.js')});
+  const notice=page.locator('[data-chat-specialist-notice="research:27"]');
+  await notice.getByRole('button',{name:'View result',exact:true}).waitFor();
+  assert.equal(await notice.count(),1,'The same completed run supplies one inline notice');
+  const menu=page.locator('#openChatSidebar');
+  assert.equal(await menu.locator('[data-chat-specialist-dot]').isVisible(),false,'A result is available without indicating that work is running');
+  await menu.click();
+  await page.getByRole('tab',{name:'Specialists',exact:true}).click();
+  const mobileResult=page.locator('[data-chat-mobile-specialist="research:27"]');
+  await mobileResult.getByText(`Meeting follow-up · ${commitment}`,{exact:true}).waitFor();
+  assert.equal(await mobileResult.locator('img').count(),0);
+  await mobileResult.getByRole('button',{name:'Open activity',exact:true}).click();
+  await panel.getByRole('button',{name:'View result',exact:true}).click();
+  assert.equal(await page.locator('[data-chat-message-id="62"]').getAttribute('data-result-opened'),'1');
+  await page.locator('[data-chat-message-id="62"]').evaluate(row => delete row.dataset.resultOpened);
+  await page.setViewportSize({width:1280,height:900});
+  await button.waitFor();
+  assert.equal(await button.count(),1,'Desktop retains the same research indicator for the linked result');
+  assert.equal(await button.evaluate(element => getComputedStyle(element,'::after').display),'none');
+  await button.click();
+  await panel.getByRole('button',{name:'View result',exact:true}).click();
   assert.equal(await page.locator('[data-chat-message-id="62"]').getAttribute('data-result-opened'),'1');
 
   concurrent = null;
@@ -187,7 +212,7 @@ try {
   });
   await button.waitFor({state:'detached'});
   assert.deepEqual(errors,[]);
-  console.log('Research specialist active rail and mobile dialog, lease expiry, completion, failure, and session/Chat isolation verified.');
+  console.log('Research specialist desktop rail and mobile drawer share one linked run and exact result. Lease expiry, failure, and session/Chat isolation verified.');
 } finally {
   await browser.close();
 }

@@ -125,12 +125,12 @@ $pendingPlan=scope_make_plan($user,17,'Calendar situation with a saved task foll
 pipeline_check(vp3_initiative_execute_v1(db(),$user,scope_claim($user,$pendingPlan))['ok'],'a delayed named tool assessment uses the real planner');
 $pendingPrepare=array_slice(scope_runs(1,17,'initiative.prepare'),-1)[0];
 $beforeMessages=count(scope_messages());
-pipeline_check(vp3_initiative_execute_v1(db(),$user,scope_claim($user,(int)$pendingPrepare['id']))['ok'],
+pipeline_check(vp3_initiative_execute_v1(db(),$user,scope_claim($user,(int)$pendingPrepare['id']),allowDelivery:false)['ok'],
     'real private record tool completes while its owner is absent');
 $q=db()->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$pendingPrepare['id']]);
 $pendingResult=json_decode($q->fetchColumn(),true,24,JSON_THROW_ON_ERROR);
 pipeline_check($pendingResult['initiative_delivery']==='pending'&&count(scope_messages())===$beforeMessages,
-    'the actual tool result remains private until its owner returns');
+    'an explicit delivery deferral keeps the actual tool result private for later source verification');
 $beforeInference=count($GLOBALS['scopeInference']);
 $beforeStatus=vp3_initiative_foreground_status_v1(db(),$user,17,170);
 pipeline_check($beforeStatus['state']==='ready','read-only foreground status can verify the still-current saved tool result');
@@ -225,6 +225,26 @@ $leadUrl='https://baking.example/oven-guide';
 $quote='A well insulated oven recovers heat faster after the door closes.';
 $hits=['ok'=>true,'results'=>[['url'=>$publicUrl,'title'=>'Oven heat recovery'],['url'=>$leadUrl,'title'=>'Oven temperature guide']]];
 $beforeReports=count(scope_messages());
+$afterOutageCalls=0;
+$outage=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$researchRunId),
+    static function()use(&$afterOutageCalls):never{++$afterOutageCalls;throw new LogicException('Unexpected synthesis.');},[
+        'search'=>static fn():array=>['ok'=>false,'results'=>[]],
+        'request'=>static function()use(&$afterOutageCalls):never{++$afterOutageCalls;throw new LogicException('Unexpected page request.');},
+    ]);
+$outageRun=agent_workflow_row_v1400($pdo,1,$researchRunId);
+$outageProof=$pdo->prepare('SELECT status,error_class,result_json FROM agent_workflow_receipts WHERE run_id=? AND attempt_no=1');
+$outageProof->execute([$researchRunId]);$outageProof=$outageProof->fetch();
+$outageResult=json_decode((string)($outageProof['result_json']??''),true);
+pipeline_check(!$outage['ok']&&$outage['reason']==='public_search_unavailable'&&$outageRun['status']==='approved'
+    &&agent_job_utc_timestamp_v1900($outageRun['next_attempt_at'])>time()
+    &&$outageProof['status']==='retry_scheduled'&&$outageProof['error_class']==='public_search_unavailable'
+    &&$outageResult['failure_cause']==='public_search_unavailable'&&$outageResult['failure_phase']==='tool'
+    &&$afterOutageCalls===0&&count(scope_messages())===$beforeReports,
+    'public search outage keeps its exact reason, schedules a bounded retry, and posts no false result');
+pipeline_check(agent_job_claim_run_v1900($pdo,$user,$researchRunId,'cloud',agent_worker_cloud_worker_id_v1910(1))===null,
+    'the saved retry cannot be claimed before its durable backoff');
+$pdo->prepare("UPDATE agent_workflow_runs SET next_attempt_at='2000-01-01 00:00:00' WHERE id=?")->execute([$researchRunId]);
+$pdo->prepare("UPDATE agent_workflow_actions SET available_at='2000-01-01 00:00:00' WHERE run_id=?")->execute([$researchRunId]);
 $afterExpiryCalls=0;
 $interrupted=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$researchRunId),
     static function()use(&$afterExpiryCalls):never{++$afterExpiryCalls;throw new LogicException('Unexpected synthesis.');},[
@@ -258,11 +278,11 @@ $completed=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$researchRunId
         'request'=>static fn(string $url):array=>$url===$publicUrl
             ?['status'=>200,'content_type'=>'text/plain','body'=>$quote.' Opening a hot oven door exchanges warm air for cooler air.']
             :['status'=>503,'content_type'=>'text/plain','body'=>'Temporarily unavailable'],
-    ]);
+    ],allowDelivery:false);
 $q=$pdo->prepare("SELECT result_json FROM agent_workflow_actions WHERE run_id=? AND status='completed'");
 $q->execute([$researchRunId]);$savedResearch=json_decode((string)$q->fetchColumn(),true,24,JSON_THROW_ON_ERROR);
 pipeline_check(($completed['ok']??false)&&$savedResearch['initiative_delivery']==='pending'
-    &&count(scope_messages())===$beforeReports,'completed research saves a verified receipt while its owner is away');
+    &&count(scope_messages())===$beforeReports,'explicitly deferred research saves its verified receipt without posting before source revalidation');
 $turn->execute([170,null,'assistant','We can work from your oven heat recovery question.',gmdate('Y-m-d H:i:s')]);
 $pdo->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
 pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$user,17),'the owner returning to the exact Chat receives the saved report');
@@ -289,8 +309,34 @@ pipeline_check(($canvas['kind']??null)==='topic'&&($canvas['title']??null)===$to
 pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$user,17),'the delivery sweep does not post the research twice');
 $ageReview->execute([gmdate('Y-m-d H:i:s',time()-301)]);
 vp3_initiative_schedule_v1($pdo,$user,17);
-pipeline_check(count(scope_runs(1,17,'initiative.plan'))===$beforePlans+1,
-    'a later sweep of the same decision and evidence does not queue the thought again');
+$resultPlans=scope_runs(1,17,'initiative.plan');
+$resultGoal=json_decode((string)end($resultPlans)['goal'],true,24,JSON_THROW_ON_ERROR);
+$resultRef='specialist-result:'.$researchRunId;
+pipeline_check(count($resultPlans)===$beforePlans+2&&isset($resultGoal['sources'][$resultRef])
+    &&array_diff_key($resultGoal['sources'],json_decode((string)end($plans)['goal'],true)['sources'])===[$resultRef=>$resultGoal['sources'][$resultRef]],
+    'a completed specialist result admits exactly one new assessment with its canonical result as the only added source');
+$beforeRepeat=count(scope_runs(1,17,'initiative.prepare'));
+$repeat=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,(int)end($resultPlans)['id']),
+    static fn():string=>json_encode(['jobs'=>[['tool'=>'topic.research','primary'=>$researchRef,'refs'=>[$researchRef],
+        'focus'=>$researchGoal['focus'],'report'=>true]]],JSON_THROW_ON_ERROR));
+vp3_initiative_schedule_v1($pdo,$user,17);
+pipeline_check(!empty($repeat['ok'])&&count(scope_runs(1,17,'initiative.prepare'))===$beforeRepeat
+    &&count(scope_runs(1,17,'initiative.plan'))===count($resultPlans),
+    'reassessing the completed result does not duplicate its exact research assignment or schedule another review');
+
+$invalidGoal=array_replace($researchGoal,['focus'=>'']);
+vp3_initiative_enqueue_v1($pdo,$user,'initiative.prepare',$invalidGoal,hash('sha256','invalid-public-research-fixture'));
+$invalidRun=(int)array_slice(scope_runs(1,17,'initiative.prepare'),-1)[0]['id'];
+$invalidResult=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$invalidRun),null,[
+    'search'=>static function()use(&$afterOutageCalls):never{++$afterOutageCalls;throw new LogicException('Unexpected search.');},
+]);
+$invalidRow=agent_workflow_row_v1400($pdo,1,$invalidRun);
+$invalidProof=$pdo->prepare('SELECT status,result_json FROM agent_workflow_receipts WHERE run_id=? AND attempt_no=1');
+$invalidProof->execute([$invalidRun]);$invalidProof=$invalidProof->fetch();
+$invalidEvidence=json_decode((string)($invalidProof['result_json']??''),true);
+pipeline_check(!$invalidResult['ok']&&$invalidRow['status']==='failed'&&$invalidProof['status']==='failed'
+    &&$invalidEvidence['failure_cause']==='invalid_data'&&$invalidRow['next_attempt_at']===null&&$afterOutageCalls===0,
+    'an invalid research assignment never calls public search and remains a terminal failure');
 
 $association=array_intersect_key($decision['initiative_followthrough'],['message_id'=>true,'reply_ref'=>true,'revision'=>true]);
 $declinedAt=time();
@@ -388,7 +434,7 @@ $artistWork=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$artistRun),
         },
         'request'=>static fn():array=>['status'=>503,'content_type'=>'text/plain','body'=>'Temporarily unavailable'],
         'youtube_http'=>$youtube,
-    ]);
+    ],allowDelivery:false);
 pipeline_check(($artistWork['ok']??false)&&$topics===['latest music release news interview','upcoming concerts tour dates',
     'official merchandise vinyl store','official live performances music videos']&&$youtubeRequests===$beforePlaylistChecks+1,
     'the leased artist job checks releases, tours, merch and videos and verifies the playlist with one provider request');
@@ -398,7 +444,7 @@ pipeline_check($artistResult['initiative_delivery']==='pending'
     &&!str_contains($artistReceipt,'channel_title')
     &&vp3_initiative_youtube_playlist_load_v1($pdo,1,$artistRun)!==null
     &&vp3_initiative_youtube_playlist_load_v1($pdo,2,$artistRun)===null,
-    'while the owner is away, verified provider metadata stays in the expiring owner cache and the receipt retains only its reference');
+    'while delivery is explicitly deferred, verified provider metadata stays in the expiring owner cache and the receipt retains only its reference');
 $pdo->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
 pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$user,17),'the owner can receive the playlist and research together on return');
 $q->execute([$artistRun]);$artistResult=json_decode((string)$q->fetchColumn(),true,24,JSON_THROW_ON_ERROR);

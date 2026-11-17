@@ -114,10 +114,14 @@ try {
     window.setHidden(true);
   });
   await persisted;
-  assert.equal(await page.evaluate(()=>window.ytFixture.state),2,'A hidden tab pauses YouTube');
+  assert.equal(await page.evaluate(()=>window.ytFixture.state),1,'Changing tabs preserves user-started YouTube playback');
   assert.equal(await page.evaluate(()=>window.ytFixture.frame===window.firstFrame && window.firstFrame.isConnected),true,'Tab switch preserves the same iframe');
   await page.evaluate(()=>window.setHidden(false));
-  assert.equal(await page.evaluate(()=>window.ytFixture.state),1,'Returning to the tab resumes prior playback');
+  assert.equal(await page.evaluate(()=>window.ytFixture.state),1,'Returning preserves uninterrupted playback without recreating the player');
+  await page.evaluate(()=>{window.setHidden(true);window.ytFixture.pauseVideo();window.setHidden(false);});
+  assert.equal(await page.evaluate(()=>window.ytFixture.state),2,'A browser-interrupted video waits for an explicit resume');
+  await draft.getByRole('button',{name:'Resume at 0:27',exact:true}).click();
+  assert.equal(await page.evaluate(()=>window.ytFixture.state),1,'The owner can resume an interrupted video from its saved position');
   await page.evaluate(()=>{window.ytFixture.pauseVideo();window.setHidden(true);window.setHidden(false);});
   assert.equal(await page.evaluate(()=>window.ytFixture.state),2,'A user-paused video does not start on tab return');
   assert.equal(positions.get(ids[0]),27452,'Position is saved without the research watch-time opt-in');

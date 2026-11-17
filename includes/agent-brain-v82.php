@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/agent-brain-soul-v1.php';
+
 function agent_brain_default_soul_path(): string
 {
     return STONEFELLOW_ROOT . '/SOUL.md';
@@ -41,6 +43,13 @@ function agent_brain_ensure_user_soul(array $user): string
         return '';
     }
 
+    try {
+        $versions = agent_brain_soul_files_v1(agent_brain_soul_directory_v1($user, 'main'));
+        if ($versions !== []) return reset($versions);
+    } catch (RuntimeException) {
+        return '';
+    }
+
     $dir = agent_brain_user_dir($userId);
     $path = agent_brain_user_soul_path($userId);
 
@@ -63,43 +72,24 @@ function agent_brain_ensure_user_soul(array $user): string
 
 function agent_brain_soul(array $user): string
 {
-    $path = agent_brain_ensure_user_soul($user);
-    if ($path === '' || !is_file($path)) {
+    try {
+        return agent_brain_soul_profile_v1($user, 'main')['content'];
+    } catch (RuntimeException) {
         return agent_brain_default_soul();
     }
-
-    $text = file_get_contents($path);
-    return is_string($text) && trim($text) !== ''
-        ? $text
-        : agent_brain_default_soul();
 }
 
 function agent_brain_save_soul(array $user, string $content): void
 {
-    $content = trim(str_replace("\r\n", "\n", $content));
-    if (mb_strlen($content) < 20) {
-        throw new RuntimeException('SOUL.md needs at least a short identity or personality description.');
-    }
-    if (mb_strlen($content) > 24000) {
-        throw new RuntimeException('SOUL.md is limited to 24,000 characters.');
-    }
-
-    $path = agent_brain_ensure_user_soul($user);
-    if ($path === '') {
-        throw new RuntimeException('Could not create the private agent soul file.');
-    }
-
-    if (file_put_contents($path, $content . "\n", LOCK_EX) === false) {
-        throw new RuntimeException('Could not save SOUL.md.');
-    }
-    @chmod($path, 0600);
+    $current = agent_brain_soul_profile_v1($user, 'main');
+    agent_brain_soul_update_v1($user, 'main', $current['revision'], 'save', $content);
 }
 
 function agent_brain_reset_soul(array $user): string
 {
-    $content = agent_brain_default_soul();
-    agent_brain_save_soul($user, $content);
-    return $content;
+    $current = agent_brain_soul_profile_v1($user, 'main');
+    agent_brain_soul_update_v1($user, 'main', $current['revision'], 'reset');
+    return agent_brain_default_soul();
 }
 
 function agent_brain_schema_ready(): bool

@@ -74,7 +74,7 @@ function loadAutomationController(){
   if(document.querySelector('script[data-vp3-meeting-automation="18130"]'))return Promise.resolve();
   const intelligenceEndpoint=String(boot.intelligenceEndpoint||'');
   boot.automationEndpoint=boot.automationEndpoint||intelligenceEndpoint.replace(/video-meeting-intelligence\.php(?:\?.*)?$/,'video-meeting-automation.php')||'/api/video-meeting-automation.php';
-  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-automation-v18130.js?v=18130';script.async=true;script.dataset.vp3MeetingAutomation='18130';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Intelligence Prep could not load.'));document.head.appendChild(script);});
+  return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='video-meetings-automation-v18130.js?v=18130-meeting-research-v1';script.async=true;script.dataset.vp3MeetingAutomation='18130';script.onload=resolve;script.onerror=()=>reject(new Error('Meeting Intelligence Prep could not load.'));document.head.appendChild(script);});
 }
 
 function renderState(s){

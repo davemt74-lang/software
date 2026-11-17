@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 import {copy,contract,ownerCard,chatChoice} from './fixtures/profile-visitor-doorbell-pa3.mjs';
+import {profileChatHelpers,continuityExportHelpers,canonicalContinuityExport} from './fixtures/chat-profile-continuity.mjs';
 
 // Execute the production IIFE. Only the browser, clock and HTTP boundaries are
 // controlled; the companion Chromium test also loads the actual Chat renderer.
@@ -38,7 +39,7 @@ class Document extends EventTarget{
   createElement(tag){return new Element(this,tag);}querySelector(selector){return this.body.querySelector(selector);}getElementById(id){return this.querySelector('#'+id);}
 }
 const source=fs.readFileSync(new URL('../profile-visitor-doorbell-pa3.js',import.meta.url),'utf8');
-const voiceSource=fs.readFileSync(new URL('../chat-voice.js',import.meta.url),'utf8'),canonicalSource=fs.readFileSync(new URL('../chat.js',import.meta.url),'utf8');
+const voiceSource=fs.readFileSync(new URL('../chat-voice.js',import.meta.url),'utf8');
 const tick=async()=>{for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));};
 let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;console.log('PASS '+label);};
 async function fixture({cards=[ownerCard()],cid=42,storage=new Map(),hidden=false,voiceRuntime=false}={}){
@@ -102,8 +103,8 @@ async function fixture({cards=[ownerCard()],cid=42,storage=new Map(),hidden=fals
   const context=vm.createContext({window,document,sessionStorage,localStorage:sessionStorage,navigator:{onLine:true},crypto:webcrypto,Uint8Array,performance:{now:()=>elapsed},Date,JSON,Number,String,Map,Set,Event,AbortController,CustomEvent:CustomEventFixture,fetch:transport,URL,URLSearchParams,setTimeout:window.setTimeout,clearTimeout:window.clearTimeout,setInterval:window.setInterval,clearInterval:window.clearInterval});
   if(voiceRuntime){
     const form=document.createElement('form');form.id='chatForm';const send=document.createElement('button');send.id='sendChatButton';form.append(privateInput,send);const button=document.createElement('button');button.id='chatVoiceButtonLegacyDormant';button.classList={toggle(){}};const status=document.createElement('div');status.id='chatVoiceStatus';document.body.append(form,button,status);
-    const helpers=canonicalSource.slice(canonicalSource.indexOf('  function bindStoredMessagePa3('),canonicalSource.indexOf('  function formatPlaybackTime(')),exports=canonicalSource.slice(canonicalSource.indexOf('  const canonicalChatContinuity = {'),canonicalSource.indexOf('  function speakIntroV101('));
-    vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const b=document.createElement("div");b.className="message-body";const t=document.createElement("p");t.className="message-text";t.textContent=text;b.append(t);n.append(b);thread.append(n);return n;}'+helpers+exports+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
+    const exports=canonicalContinuityExport;
+    vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),input=document.getElementById("chatInput"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const b=document.createElement("div");b.className="message-body";const t=document.createElement("p");t.className="message-text";t.textContent=text;b.append(t);n.append(b);thread.append(n);return n;}'+profileChatHelpers+continuityExportHelpers+exports+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
     window.location={href:'https://fixture.test/chat.php',origin:'https://fixture.test',pathname:'/chat.php'};context.location=window.location;
     window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture'};window.STONEFELLOW_CHAT_VOICE_BOOT={button,intro:null,legacyDormant:true};window.fetch=transport;
     vm.runInContext(voiceSource,context,{filename:'chat-voice.js'});
@@ -325,16 +326,13 @@ for(const chat of [null,chatChoice({contract:'wrong'}),chatChoice({live_status:'
 }
 // Run the actual Chat continuity helpers with the same mutable context as Chat.
 // These tests cover adoption/cursor races that a stand-in continuity API cannot.
-const chatSource=fs.readFileSync(new URL('../chat.js',import.meta.url),'utf8');
-const start=chatSource.indexOf('  function bindStoredMessagePa3('),end=chatSource.indexOf('  function formatPlaybackTime(',start);
-assert.ok(start>=0&&end>start);
 function chatHooks(){
  const document=new Document(),thread=document.createElement('section');thread.dataset.view='chat';document.body.append(thread);const drafts=new Map(),calls=[],events=[],timers=new Map();let resolve;
  const ctx={document,thread,AbortController,Event,CustomEvent:CustomEventFixture,Number,Promise,conversationId:0,contextReady:true,initialRestorePending:false,restoringConversation:0,busy:false,chatRevision:1,input:{value:'Unsent private draft'},cfg:{agentId:7},
   keepDraft:(text,id)=>drafts.set(id,text),rememberConversation(){},refreshHistory:async()=>{},api:async(input)=>{calls.push(input);return new Promise(r=>resolve=r);},
   window:{dispatchEvent:event=>events.push(event.type),setTimeout(fn){const id=timers.size+1;timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id)},
   addMessage(){const element=document.createElement('article');element.className='message assistant';thread.append(element);thread.scrollTop=999;return element;}};
- vm.createContext(ctx);vm.runInContext(chatSource.slice(start,end)+'\nglobalThis.ensure=ensureConversationPa3;globalThis.mount=mountProfileHandoffPa3;',ctx);
+ vm.createContext(ctx);vm.runInContext(profileChatHelpers+'\nglobalThis.ensure=ensureConversationPa3;globalThis.mount=mountProfileHandoffPa3;',ctx);
  return {ctx,drafts,calls,events,timers,resolve:value=>resolve(value)};
 }
 {

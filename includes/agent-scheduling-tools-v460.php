@@ -363,6 +363,7 @@ function agent_scheduling_tools_execute_pending_v460(PDO $pdo,array $user,int $c
         $result['answer']='Booked. '.(string)$booking['event_title'].' with '.(string)$booking['guest_name'].' is set for '.agent_scheduling_tools_slot_label_v460((string)$booking['start_at_utc'],(string)$booking['organizer_timezone']).'.';
         $result['actions'][]=['type'=>'open_url','label'=>'Open Scheduling','url'=>url('/scheduling.php?open='.(int)$booking['id'].'#bookings')];
         agent_tool_log($user,'scheduling.book',(string)$pending['request_text'],'success',['booking_id'=>(int)$booking['id'],'event_type_id'=>(int)$booking['event_type_id'],'start_at_utc'=>(string)$booking['start_at_utc'],'agent_id'=>$agentId],$conversationId);
+        agent_scheduling_wake_planning_v430($pdo,$booking);
         $result['tool_receipt']=vp3_tool_receipt_v1('scheduling.manage','create','completed','',(int)$booking['id'],1);return $result;
     }
     if($operation==='reschedule'){

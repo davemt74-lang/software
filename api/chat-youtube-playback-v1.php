@@ -69,8 +69,15 @@ try {
             $pick = json_decode((string)$stmt->fetchColumn(),true);
             if (empty($pick['suggestion_reason'])) vp3_youtube_playback_reply_v1(404, ['ok'=>false]);
             if ($field('action') === 'offer') {
+                require_once dirname(__DIR__).'/includes/agent-media-entertainment-v1.php';
+                require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
                 $offer = vp3_youtube_history_video_v1(json_encode($pick, JSON_THROW_ON_ERROR), $field('video_id'))
-                    && vp3_youtube_reserve_offer_v1($pdo,$owner,time());
+                    && agent_commerce_atomic_pa2($pdo,static function()use($pdo,$owner):bool{
+                        $lock=$pdo->prepare('SELECT id FROM users WHERE id=? AND is_active=1'.agent_commerce_lock_pa2($pdo));
+                        $lock->execute([$owner]);
+                        return $lock->fetchColumn()&&vp3_media_cooldown_ready_v1($pdo,$owner)
+                            &&vp3_youtube_reserve_offer_v1($pdo,$owner,time());
+                    });
                 vp3_youtube_playback_reply_v1(200, ['ok'=>true,'offer'=>(bool)$offer]);
             }
             vp3_youtube_picks_save_v1($pdo,$owner,(string)($pick['taste_topic'] ?? ''),null);

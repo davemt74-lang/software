@@ -41,10 +41,30 @@ $_SERVER['REQUEST_URI']='/media.php';verify(!request_performance_media_read(),'C
 
 $root=sys_get_temp_dir().'/cloud-load-media-'.bin2hex(random_bytes(6));mkdir($root);
 define('STONEFELLOW_ROOT',$root);
+$requestFiles=['index.php','login.php','home.php','chat.php','api/cognitive-presentation-v510.php',
+    'api/agent-workflow-runs-v1400.php','public-booking.php','agent-workflows.php'];
+mkdir($root.'/api');
+foreach($requestFiles as $file)touch($root.'/'.$file);
 file_put_contents($root.'/song.wav','valid fixture bytes');
 $outside=tempnam(sys_get_temp_dir(),'cloud-outside-');file_put_contents($outside,'private');
 symlink($outside,$root.'/outside.wav');
 try {
+    foreach(['GET','HEAD','POST'] as $method){
+        $_SERVER['REQUEST_METHOD']=$method;
+        foreach(['index.php','login.php','home.php','chat.php','api/cognitive-presentation-v510.php'] as $file){
+            $_SERVER['SCRIPT_FILENAME']=$root.'/'.$file;
+            $_SERVER['REQUEST_URI']='/public-booking.php';
+            verify(!request_performance_appointment_housekeeping(),$method.' '.$file.' must skip appointment maintenance');
+        }
+    }
+    $_SERVER['REQUEST_METHOD']='GET';
+    $_SERVER['SCRIPT_FILENAME']=$root.'/public-booking.php';
+    $_SERVER['REQUEST_URI']='/login.php';
+    verify(request_performance_appointment_housekeeping(),'The booking route must remain eligible for appointment maintenance');
+    $_SERVER['SCRIPT_FILENAME']=$root.'/api/agent-workflow-runs-v1400.php';
+    verify(!request_performance_appointment_housekeeping(),'Workflow reads must skip appointment maintenance');
+    $_SERVER['REQUEST_METHOD']='POST';
+    verify(request_performance_appointment_housekeeping(),'Workflow approvals must remain eligible for appointment maintenance');
     verify(music_media_local_path('/song.wav')===$root.'/song.wav','Owned local media rejected');
     foreach(['','https://example.com/song.wav','php://filter','../'.basename($outside),'/outside.wav',"/song.wav\0",'/missing.wav'] as $path)
         verify(music_media_local_path($path)===null,'Unsafe or missing media accepted: '.json_encode($path));
@@ -52,5 +72,9 @@ try {
     $id=session_id();request_performance_finish_response();
     verify(session_status()===PHP_SESSION_NONE,'Background work retained session lock');
     session_id($id);verify(session_start(),'Persisted session did not reopen');verify($_SESSION['saved']==='before-background','Session writes were lost');session_destroy();session_write_close();
-} finally { unlink($root.'/song.wav');unlink($root.'/outside.wav');rmdir($root);unlink($outside); }
+} finally {
+    foreach($requestFiles as $file)unlink($root.'/'.$file);
+    rmdir($root.'/api');
+    unlink($root.'/song.wav');unlink($root.'/outside.wav');rmdir($root);unlink($outside);
+}
 echo "CLOUD_LOAD_INTEGRITY=PASS schema_checks=400 metadata_reads=2\n";

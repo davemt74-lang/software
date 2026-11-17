@@ -7,9 +7,10 @@ page.on('request',request=>{if(new URL(request.url()).pathname==='/api/chat.php'
 await page.route('http://transcript.test/',r=>r.fulfill({contentType:'text/html',body:'<!doctype html><html><body><div class="chat-topbar-actions"></div><main id="chatThread"></main><form id="chatForm"><textarea id="chatInput"></textarea></form><p id="outside">Unrelated page text</p></body></html>'}));
 await page.route('**/api/**',r=>{const url=new URL(r.request().url());return r.fulfill({json:url.pathname.includes('intelligence')?{ok:true,master:null,registry:[],app_status:{}}:{ok:true,sessions:[{id:21,title:'Pricing call',status:'draft'},{id:22,title:'Follow-up call',status:'draft'}]}});});
 await page.route('**/*.js?**',r=>r.fulfill({contentType:'text/javascript',body:''}));
-async function mountCanvas(){
- await page.evaluate(()=>{
-  window.STONEFELLOW_RECORDINGS_V198_CONFIG={listeningEndpoint:'/api/artist-listening.php',intelligenceEndpoint:'/api/intelligence'};
+async function mountCanvas(withFollowups=false){
+ await page.evaluate(withFollowups=>{
+  window.STONEFELLOW_RECORDINGS_V198_CONFIG={listeningEndpoint:'/api/artist-listening.php',intelligenceEndpoint:'/api/intelligence',
+   transcriptFollowupsEndpoint:withFollowups?'/api/initiative-research-status-v1.php':''};
   window.STONEFELLOW_ARTIST_RECORDINGS_V198={api:{refresh:async()=>({library:[]}),getState:()=>({library:[]})}};
   window.STONEFELLOW_CHAT={userId:1,agentId:4,endpoint:'/api/chat.php',csrf:'fixture-csrf',workingAttentionBinding:'fixture-page'};
   window.fixtureConversation=70;
@@ -17,7 +18,7 @@ async function mountCanvas(){
   window.STONEFELLOW_AGENT_CONTEXT={userId:1,surface:'chat'};
   window.transcriptEvents=[];
   window.addEventListener('vp3:transcript-source-changed',event=>transcriptEvents.push(event.detail));
- });
+ },withFollowups);
  await page.addStyleTag({content:await fs.readFile('chat-transcription-canvas.css','utf8')});
  for(const name of ['chat-transcription-canvas.js','agent-context-v131.js'])await page.addScriptTag({content:await fs.readFile(name,'utf8')});
 }
@@ -95,5 +96,59 @@ try{
  assert.equal(await page.evaluate(()=>STONEFELLOW_TRANSCRIPTION_CANVAS.selection()),null);
  assert.equal(await page.evaluate(()=>transcriptEvents.every(detail=>Object.keys(detail).sort().join() === 'cleared,conversation_id,session_id')),true);
  console.log('PASS closing during delayed loads and replacing the page session reject stale source context; activity events contain no transcript text');
+
+ const question='Does the vendor publish a delivery schedule?';
+ const summary='The vendor publishes a delivery schedule for weekdays.';
+ const modules={
+  basic:{result:{open_questions:[{item_id:'basic-1',question}]}},
+  qa:{result:{unanswered:[{item_id:'qa-1',question}]}}
+ };
+ const registry=[
+  {id:'basic',label:'Basic',sections:[{key:'open_questions',primary:'question'}]},
+  {id:'qa',label:'Q&A',sections:[{key:'unanswered',primary:'question'}]}
+ ];
+ let followups=[];
+ await page.route('**/api/intelligence?**',r=>r.fulfill({json:{ok:true,master:{analysis:{modules}},registry,app_status:{}}}));
+ await page.route('**/api/initiative-research-status-v1.php?**',r=>{
+  const request=r.request();
+  const params=Object.fromEntries(new URL(request.url()).searchParams);
+  assert.deepEqual(params,{view:'transcript',agent_id:'4',conversation_id:'70',session_id:'21'});
+  assert.equal(request.method(),'GET');
+  assert.equal(request.headers()['x-vp3-working-attention'],'fixture-page');
+  return r.fulfill({json:{ok:true,owner_user_id:1,agent_id:4,conversation_id:70,session_id:21,working_attention_binding:'fixture-page',followups}});
+ });
+ await page.reload();await mountCanvas(true);await page.bringToFront();
+ const status=page.waitForResponse(r=>r.url().includes('view=transcript'));
+ await page.evaluate(()=>STONEFELLOW_TRANSCRIPTION_CANVAS.open({sessionId:21}));
+ await status;
+ assert.equal(await page.evaluate(()=>document.hasFocus()&&document.visibilityState==='visible'),true);
+ const canvas=page.locator('#chatTranscriptionCanvas');
+ const openQuestions=canvas.locator('.intel-home-card').filter({has:page.getByText('Open questions',{exact:true})});
+ await openQuestions.getByText(question,{exact:true}).waitFor();
+ assert.equal(await openQuestions.locator('[data-intel-followup]').count(),0);
+ const chatHref='/chat.php?agent=4&conversation_id=70&message_id=100';
+ followups=[
+  {plugin_id:'qa',section_key:'unanswered',item_id:'qa-1',summary,chat_url:chatHref},
+  {plugin_id:'basic',section_key:'open_questions',item_id:'basic-1',summary:'Wrong Chat.',chat_url:chatHref.replace('70','71')},
+ ];
+ await page.evaluate(()=>{
+  const element=document.createElement('article');
+  element.innerHTML='<section data-research-transcript-session-id="21"></section>';
+  window.dispatchEvent(new CustomEvent('vp3:chat-message-persisted',{detail:{element,conversationId:70,agentId:4}}));
+ });
+ const answer=openQuestions.locator('[data-intel-followup]');
+ await answer.getByText(summary,{exact:true}).waitFor();
+ assert.equal(await answer.getByRole('link',{name:'View in Chat'}).getAttribute('href'),'http://transcript.test'+chatHref);
+ assert.equal(await openQuestions.getByText(question,{exact:true}).count(),1);
+ await canvas.locator('.intel-view-tabs').getByRole('button',{name:'Q&A',exact:true}).click();
+ await canvas.locator('[data-intel-followup]').getByText(summary,{exact:true}).waitFor();
+ await canvas.locator('.intel-view-tabs').getByRole('button',{name:'Basic',exact:true}).click();
+ await canvas.getByText(question,{exact:true}).waitFor();
+ assert.equal(await canvas.locator('[data-intel-followup]').count(),0);
+ await page.reload();await mountCanvas(true);
+ await page.evaluate(()=>STONEFELLOW_TRANSCRIPTION_CANVAS.open({sessionId:21}));
+ await answer.getByText(summary,{exact:true}).waitFor();
+ console.log('PASS the active report refreshes and reopens with the verified answer under its exact saved question');
+
  assert.deepEqual(chatRequests,[]);assert.deepEqual(errors,[]);console.log('TRANSCRIPT_TOOLS_BROWSER=PASS (actual panel and shared context, fixture transcript API)');
 }finally{await browser.close();}

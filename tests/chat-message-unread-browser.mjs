@@ -233,8 +233,12 @@ try {
   await sync();
   await refresh();
   await badge(gmailId).waitFor();
+  // Canonical sync preserves a user's earlier scroll position. Arrange the
+  // bottom-of-Chat scenario without claiming that programmatic movement is read.
+  await page.locator('#chatThread').evaluate(node => { node.scrollTop = node.scrollHeight; });
   await page.waitForTimeout(1400);
   assert.ok(!read.has(gmailId));
+  await badge(gmailId).waitFor();
   await wheelChat(page,36);
   await badge(gmailId).waitFor({state:'detached'});
   assert.ok(read.has(gmailId));
@@ -244,6 +248,8 @@ try {
   await sync();
   await refresh();
   await badge(scrollbarId).waitFor();
+  await page.locator('#chatThread').evaluate(node => { node.scrollTop = node.scrollHeight; });
+  assert.ok(!read.has(scrollbarId),'Programmatic positioning cannot acknowledge the new post.');
   const track = await page.locator('#chatThread').evaluate(node => {
     const bounds = node.getBoundingClientRect();
     const contentRight = bounds.left + node.clientLeft + node.clientWidth;
@@ -299,11 +305,22 @@ try {
   const syncStarted = new Promise(resolve => { syncArrived = resolve; });
   holdSync = {arrived:syncArrived,release:new Promise(resolve => { releaseSync = resolve; })};
   const delayedSyncId = addAssistant('Late completion from the previous Chat');
-  const delayedSync = sync();
+  // Changing Chats deliberately aborts the pending read. Observe that outcome
+  // in the page immediately, before navigation can reject an unhandled promise.
+  const delayedSync = page.evaluate(async () => {
+    try {
+      await window.STONEFELLOW_CHAT_CONTINUITY.syncConversation(42);
+      return {status:'fulfilled'};
+    } catch (error) {
+      return {status:'rejected',name:error.name,message:error.message};
+    }
+  });
   await syncStarted;
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(43));
   releaseSync();
-  await delayedSync;
+  const syncOutcome = await delayedSync;
+  assert.equal(syncOutcome.status,'rejected','Leaving the Chat must cancel its pending canonical read');
+  assert.equal(syncOutcome.name,'AbortError',JSON.stringify(syncOutcome));
   assert.equal(await page.locator(`[data-chat-message-id="${delayedSyncId}"]`).count(),0);
   assert.ok(!read.has(delayedSyncId));
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
@@ -316,6 +333,13 @@ try {
   await sibling.goto(origin);
   await page.setViewportSize({width:390,height:700});
   await sibling.evaluate(() => { document.getElementById('readingOverlay').hidden = false; });
+  // Load the unread post while covered and visible. Canonical Chat sync does
+  // not fetch new messages in a hidden tab; hiding must retain this exact NEW.
+  await overlay(true);
+  const mobileId = addAssistant('A hidden mobile update');
+  await sync();
+  await refresh();
+  await badge(mobileId).waitFor();
   await sibling.bringToFront();
   // Headless Chromium exposes every Page as visible. Supply the browser's
   // visibility signal while retaining real DOM geometry and two live tabs.
@@ -323,7 +347,7 @@ try {
     Object.defineProperty(document,'hidden',{configurable:true,get:() => true});
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  const mobileId = addAssistant('A hidden mobile update');
+  await overlay(false);
   await sync();
   await refresh();
   await badge(mobileId).waitFor();

@@ -39,7 +39,7 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
 function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,
     ?array $target=null,?string $personalKey=null,bool $singleAttempt=false): array
 {
-    $usage=['input_tokens'=>120,'output_tokens'=>60,'total_tokens'=>180];
+    $usage=$GLOBALS['fixtureInitiativeUsage']??['input_tokens'=>120,'output_tokens'=>60,'total_tokens'=>180];
     if($meter!==null&&$target!==null){
         try{$ticket=$meter->begin($target,$payload,$target['provider']==='openai'?'max_output_tokens':'max_tokens');}
         catch(Throwable $error){return ai_v100_service_budget_failure($error);}
@@ -47,14 +47,16 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
     $GLOBALS['canvasTransportCalls'][]=['endpoint'=>$endpoint,'payload'=>$payload,'target'=>$target,
         'personal_key'=>$personalKey,'service'=>ai_v100_service_context()];
     if($meter!==null&&$target!==null){
-        $meter->finish($ticket,$usage,'completed',['provider_request_id'=>'fixture-canvas-proposal']);
+        $meter->finish($ticket,$usage,vp3_ai_service_usage_tokens_v1($usage)===null?'unknown':'completed',
+            ['provider_request_id'=>'fixture-canvas-proposal']);
     }
     $answer=$GLOBALS['fixtureInitiativeAnswer']??'{"title":"Prep board","prompt":"Track launch preparation tasks privately","draft":"Would a prep board help?"}';
     return ['ok'=>true,'data'=>['output_text'=>$answer,'content'=>[['type'=>'text','text'=>$answer]],'usage'=>$usage],
-        'attempts'=>1,'duration_ms'=>1];
+        'status'=>200,'attempts'=>1,'duration_ms'=>1];
 }
 
 $pdo->exec("CREATE TABLE settings(setting_key TEXT PRIMARY KEY,setting_value TEXT);
+    CREATE TABLE ai_token_reservations(id INTEGER PRIMARY KEY,user_id INTEGER);
     CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY,user_id INTEGER,agent_id INTEGER,conversation_id INTEGER,
         trace_id TEXT,source TEXT,provider TEXT,model TEXT,run_id INTEGER,created_at TEXT,
         input_tokens INTEGER DEFAULT 0,output_tokens INTEGER DEFAULT 0,total_tokens INTEGER DEFAULT 0,
@@ -165,5 +167,77 @@ $row=$pdo->query('SELECT * FROM ai_execution_ledger ORDER BY id DESC LIMIT 1')->
 canvas_transport_check($row['service_stage']==='vp3.initiative-plan.v1'&&(int)$row['total_tokens']===180
     &&(int)$row['run_id']===47&&$row['service_status']==='completed',
     'the formatting-compatible planner attempt keeps actual token accounting and canonical run identity');
+unset($GLOBALS['fixtureInitiativeAnswer']);
+
+// Fill the actual VP3 request window without dispatching a provider call.
+// The next assessment must report the local throttle, with its existing
+// worker backoff and no invented provider HTTP status or usage.
+$GLOBALS['imageSettings']['ai_chat_requests_per_minute']='3';
+$now=microtime(true);
+file_put_contents(ai_v100_runtime_dir().'/rate-1-chat.json',json_encode([$now,$now,$now],JSON_THROW_ON_ERROR));
+$before=count($GLOBALS['canvasTransportCalls']);
+$ledgerBefore=(int)$pdo->query('SELECT COUNT(*) FROM ai_execution_ledger')->fetchColumn();
+try{
+    vp3_initiative_infer_v1($pdo,$owner,7,'{"evidence":[]}','vp3.initiative-plan.v1',false,null,
+        ['background'=>true,'run_id'=>48,'conversation_id'=>11]);
+    throw new LogicException('The throttled assessment was dispatched.');
+}catch(Vp3InitiativeModelDiagnosticV1 $error){
+    canvas_transport_check($error instanceof Vp3InitiativeTransientInferenceV1
+        &&$error->diagnostic==='request_rate_limit'&&$error->httpStatus===null
+        &&count($GLOBALS['canvasTransportCalls'])===$before
+        &&(int)$pdo->query('SELECT COUNT(*) FROM ai_execution_ledger')->fetchColumn()===$ledgerBefore,
+        'the real assessment preserves the VP3 rate-limit cause without a provider call or token reservation');
+}
+$GLOBALS['imageSettings']['ai_chat_requests_per_minute']='120';
+$GLOBALS['fixtureInitiativeAnswer']='';
+$pdo->exec('INSERT INTO ai_token_reservations VALUES(23,1)');
+foreach([49=>['usage'=>[],'diagnostic'=>'attempt_unconfirmed','ledger'=>'unknown'],
+    50=>['usage'=>['input_tokens'=>120,'output_tokens'=>0,'total_tokens'=>120],'diagnostic'=>'response_empty','ledger'=>'completed']] as $runId=>$expected){
+    $GLOBALS['fixtureInitiativeUsage']=$expected['usage'];
+    $before=count($GLOBALS['canvasTransportCalls']);
+    try{
+        vp3_initiative_infer_v1($pdo,$owner,7,'{"evidence":[]}','vp3.initiative-plan.v1',false,null,
+            ['background'=>true,'run_id'=>$runId,'conversation_id'=>11]);
+        throw new LogicException('An empty provider response was accepted.');
+    }catch(Vp3InitiativeModelDiagnosticV1 $error){
+        $row=$pdo->query('SELECT run_id,service_status FROM ai_execution_ledger ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+        canvas_transport_check($error->diagnostic===$expected['diagnostic']&&$error->httpStatus===200
+            &&!($error instanceof Vp3InitiativeTransientInferenceV1)&&count($GLOBALS['canvasTransportCalls'])===$before+1
+            &&(int)$row['run_id']===$runId&&$row['service_status']===$expected['ledger']
+            &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
+            'an empty HTTP success preserves the '.$expected['ledger'].' accounting outcome without another dispatch');
+    }
+}
+unset($GLOBALS['fixtureInitiativeAnswer'],$GLOBALS['fixtureInitiativeUsage']);
+
+$officeProtocol=VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1;
+canvas_transport_check(vp3_initiative_office_report_fields_v1('office_review')===['draft','next_step','followup_question']
+    &&vp3_initiative_office_report_fields_v1('office_entry_review')===['office_disposition','draft','next_step','followup_question','action_plan','agent_task_title','owner_attention']
+    &&vp3_initiative_office_report_fields_v1('office_agent_task')===['draft'],
+    'the three Office report modes admit exactly their own fields');
+foreach(['openai','anthropic'] as $provider){
+    $model='office-report-'.$provider.'-fixture';
+    vp3_ai_service_save_model_v1($pdo,$provider,$model,'Office report',['initiative']);
+    vp3_ai_service_save_route_v1($pdo,'initiative',['provider'=>$provider,'model'=>$model],null);
+    $officeRequest=['response_kind'=>'office_entry_review','tool_result'=>['records'=>[['title'=>'Compare the saved product',
+        'url'=>'https://example.invalid/office-fixture']]],'format_repair'=>'Return the required JSON object using the verified records.'];
+    $officePrompt=json_encode($officeRequest,JSON_THROW_ON_ERROR);
+    $GLOBALS['fixtureInitiativeAnswer']='{"office_disposition":"review","draft":"The saved product still needs a comparison.","owner_attention":false}';
+    $before=count($GLOBALS['canvasTransportCalls']);
+    $answer=vp3_initiative_infer_v1($pdo,$owner,7,$officePrompt,$officeProtocol,false,null,
+        ['background'=>true,'run_id'=>51,'conversation_id'=>11]);
+    $call=end($GLOBALS['canvasTransportCalls']);$payload=$call['payload'];
+    $instructions=$payload[$provider==='openai'?'instructions':'system']??'';
+    $messages=$payload[$provider==='openai'?'input':'messages']??[];
+    canvas_transport_check($answer===$GLOBALS['fixtureInitiativeAnswer']&&count($GLOBALS['canvasTransportCalls'])===$before+1
+        &&$call['target']['provider']===$provider&&$payload['model']===$model&&($call['service']['stage']??null)===$officeProtocol,
+        'the real '.$provider.' provider builder dispatches one metered Office report with its configured model');
+    canvas_transport_check(count($messages)===1&&str_ends_with($messages[0]['content']??'',$officePrompt)
+        &&str_contains($instructions,'Select the shape using response_kind')&&str_contains($instructions,'"owner_attention":false')
+        &&str_contains($instructions,'Only draft is required')&&str_contains($instructions,'Leave out URLs, links, HTML')
+        &&str_contains($instructions,'parent_lists')&&str_contains($instructions,'{"office_disposition":"ignore"}')
+        &&str_contains($instructions,'If format_repair is present')&&($GLOBALS['canvasEnrichmentCalls']??0)===1,
+        'the real '.$provider.' request isolates verified Office records and carries the mode, link and repair instructions');
+}
 unset($GLOBALS['fixtureInitiativeAnswer']);
 echo 'AGENT_INITIATIVE_CANVAS_TRANSPORT_V1=PASS ('.$checks.' cases; fixture HTTP, actual broker, policy and meter)'.PHP_EOL;

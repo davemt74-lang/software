@@ -58,6 +58,41 @@ function vp3_initiative_office_text_v1(mixed $value,int $bytes): string
     return trim(mb_strcut($text,0,$bytes,'UTF-8'));
 }
 
+/** Keep relative deadline observations outside the saved record and its revision. */
+function vp3_initiative_task_attention_v1(array $task,DateTimeImmutable $now): ?array
+{
+    $status=$task['task_status']??$task['status']??'open';
+    if(!in_array($status,['open','in_progress','waiting'],true))return null;
+
+    require_once __DIR__.'/agent-catch-up-v1.php';
+    $due=$task['due_at']??$task['due_date']??null;
+    $at=vp3_catch_up_timestamp_v1($due,$now->getTimezone());
+    $deadline=null;
+    if($at!==null){
+        $dueDate=(new DateTimeImmutable('@'.$at))->setTimezone($now->getTimezone())->format('Y-m-d');
+        $today=$now->format('Y-m-d');
+        if($dueDate<$today||(strlen($due)>10&&$at<$now->getTimestamp()))$deadline='overdue';
+        elseif($dueDate===$today)$deadline='due_today';
+        elseif($dueDate<=$now->modify('+2 days')->format('Y-m-d'))$deadline='due_soon';
+    }
+    $waiting=$status==='waiting';
+    if($deadline===null&&!$waiting)return null;
+    return ['waiting'=>$waiting,'deadline'=>$deadline];
+}
+
+function vp3_initiative_task_attention_priority_v1(?array $attention): int
+{
+    return match($attention['deadline']??null){
+        'overdue'=>4,'due_today'=>3,'due_soon'=>2,default=>(int)($attention['waiting']??false),
+    };
+}
+
+function vp3_initiative_task_local_time_v1(PDO $pdo,array $scope,DateTimeImmutable $now): DateTimeImmutable
+{
+    if(!function_exists('user_calendar_default_timezone_v1300'))return $now;
+    return $now->setTimezone(new DateTimeZone(user_calendar_default_timezone_v1300($pdo,$scope['user'])));
+}
+
 function vp3_initiative_office_ref_v1(string $ref): ?array
 {
     if(preg_match('/\A(task|reminder):([1-9][0-9]{0,17})\z/D',$ref,$m))
@@ -74,7 +109,7 @@ function vp3_initiative_office_ref_v1(string $ref): ?array
 }
 
 /** Canonical task authorization and namespace are checked before loading details. */
-function vp3_initiative_office_task_state_v1(PDO $pdo,array $scope,int $id): ?array
+function vp3_initiative_office_task_state_v1(PDO $pdo,array $scope,int $id,bool $forEntryReport=false): ?array
 {
     vp3_initiative_office_load_v1($pdo,'task');
     $user=$scope['user'];$principal=$scope['principal'];$owner=(int)$user['id'];$aid=$scope['agent_id'];
@@ -90,7 +125,8 @@ function vp3_initiative_office_task_state_v1(PDO $pdo,array $scope,int $id): ?ar
     $meta=json_decode((string)$row['metadata_json'],true,16,JSON_THROW_ON_ERROR);
     if(!is_array($meta))throw new JsonException('Task metadata is unavailable.');
     $status=(string)($meta['task_status']??'open');$assigned=(int)($meta['assigned_user_id']??0);
-    if(!in_array($status,['open','in_progress','waiting'],true)||($assigned>0&&$assigned!==$owner))return null;
+    $statuses=$forEntryReport?['open','in_progress','waiting','completed','cancelled']:['open','in_progress','waiting'];
+    if(!in_array($status,$statuses,true)||(!$forEntryReport&&$assigned>0&&$assigned!==$owner))return null;
     $full=(string)$row['memory_text'];
     $semantic=['status'=>$status,'due_at'=>(string)($meta['due_at']??$meta['due_date']??''),
         'assigned_user_id'=>$assigned,'source_kind'=>(string)($meta['source_kind']??''),
@@ -102,16 +138,18 @@ function vp3_initiative_office_task_state_v1(PDO $pdo,array $scope,int $id): ?ar
         'source_label'=>vp3_initiative_office_text_v1($semantic['source_label'],300),
         'review_state'=>vp3_initiative_office_text_v1($semantic['review_state'],50),
         'content_truncated'=>strlen($full)>3000,
-        'source_hash'=>hash('sha256',json_encode([$owner,$aid,$id,$row['subject'],$full,$semantic],JSON_THROW_ON_ERROR))];
+        'source_hash'=>hash('sha256',json_encode([$owner,$aid,$id,$row['subject'],$full,$semantic],JSON_THROW_ON_ERROR))]
+        +($forEntryReport?['assigned_to_someone_else'=>$assigned>0&&$assigned!==$owner]:[]);
 }
 
 /** Pending occurrence details exclude lease/presentation telemetry and no delivery runs. */
-function vp3_initiative_office_reminder_state_v1(PDO $pdo,array $scope,int $id): ?array
+function vp3_initiative_office_reminder_state_v1(PDO $pdo,array $scope,int $id,bool $forEntryReport=false): ?array
 {
     vp3_initiative_office_load_v1($pdo,'reminder');
     if(!reminder_ready_v1($pdo))throw new RuntimeException('Reminder storage is unavailable.',503);
     $owner=(int)$scope['user']['id'];
-    $q=$pdo->prepare("SELECT * FROM agent_reminders_v1 WHERE id=? AND owner_user_id=? AND status='active' LIMIT 1");
+    $statuses=$forEntryReport?"('active','finished','cancelled')":"('active')";
+    $q=$pdo->prepare("SELECT * FROM agent_reminders_v1 WHERE id=? AND owner_user_id=? AND status IN $statuses LIMIT 1");
     $q->execute([$id,$owner]);$row=$q->fetch(PDO::FETCH_ASSOC);
     if(!$row||(function_exists('vp3_participant_resource_v1')&&!vp3_participant_resource_v1($pdo,$scope['user'],$scope['principal'],'reminder',$id)))return null;
     if(!empty($row['followup_action_id'])){if(!function_exists('reminder_initiative_agent_visible_v1'))throw new RuntimeException('Follow-up scope verification is unavailable.',503);if(!reminder_initiative_agent_visible_v1($pdo,$row,$scope['principal']))return null;}
@@ -130,7 +168,8 @@ function vp3_initiative_office_reminder_state_v1(PDO $pdo,array $scope,int $id):
         'delivery'=>vp3_initiative_office_text_v1($row['delivery'],20),'status'=>(string)$row['status'],
         'conversation_id'=>(int)$row['conversation_id'],'next_delivery_at'=>$next,
         'condition'=>$condition,'waiting_for_condition'=>$condition!==null,
-        'pending_occurrences'=>$occurrences,'pending_coverage'=>count($occurrences)>=2?'limited':'ready'];
+        'pending_occurrences'=>$occurrences,'pending_coverage'=>count($occurrences)>=2?'limited':'ready']
+        +($forEntryReport?['revisit_delivered'=>reminder_followup_delivered_v1($pdo,$row)]:[]);
 }
 
 /** Calendar data stays in the Cloud owner ledger; no remote refresh or booking writes. */
@@ -196,7 +235,7 @@ function vp3_initiative_office_state_v1(PDO $pdo,array $scope,array $selector): 
     };
 }
 
-function vp3_initiative_office_entry_v1(string $ref,array $selector,array $state): array
+function vp3_initiative_office_entry_v1(string $ref,array $selector,array $state,?DateTimeImmutable $taskNow=null): array
 {
     $tool=$selector['tool'];$title=mb_substr($state['title'],0,170);
     $detail=match($selector['family']){
@@ -209,6 +248,12 @@ function vp3_initiative_office_entry_v1(string $ref,array $selector,array $state
         'title'=>$title,'detail'=>$detail,'office_tool'=>$tool,'record_id'=>$selector['id'],
         'url'=>$selector['family']==='calendar'?($state['prep']['review_url']??url('/calendar.php')):url('/chat.php'),
         'revision'=>hash('sha256',json_encode(['office-records-v1',$ref,$state],JSON_THROW_ON_ERROR))];
+    if($selector['family']==='task'&&$taskNow!==null){
+        $entry['task_status']=$state['status'];
+        $entry['due_at']=$state['due_at'];
+        $attention=vp3_initiative_task_attention_v1($state,$taskNow);
+        if($attention!==null)$entry['task_attention']=$attention;
+    }
     if((int)($state['prep']['meeting_id']??0)>0){
         $entry['meeting_prep']=['key'=>hash('sha256',$state['prep']['meeting_id'].'|'.$state['start_at_utc']),
             'starts_at'=>$state['start_at_utc'],'open_count'=>count($state['prep']['actionable_items']??[])];
@@ -283,9 +328,18 @@ function vp3_initiative_office_candidates_v1(PDO $pdo,array $scope,string $famil
         if(!vp3_agent_memory_scope_schema_ready_v410($pdo))throw new RuntimeException('Task storage is unavailable.',503);
         vp3_task_list_authorize_v1($pdo,$scope['user'],$scope['principal'],$scope['conversation_id']);
         $aid=$scope['agent_id'];
-        $q=$pdo->prepare("SELECT id FROM agent_memory_items WHERE user_id=? AND ".($aid>0?'user_agent_id=?':'user_agent_id IS NULL')." AND is_active=1 AND memory_type IN ('task','commitment') ORDER BY last_seen_at DESC,id DESC LIMIT 101");
-        $q->execute($aid>0?[(int)$scope['user']['id'],$aid]:[(int)$scope['user']['id']]);$ids=$q->fetchAll(PDO::FETCH_COLUMN);
-        return [$ids,count($ids)>=101];
+        $q=$pdo->prepare("SELECT id,metadata_json FROM agent_memory_items WHERE user_id=? AND ".($aid>0?'user_agent_id=?':'user_agent_id IS NULL')." AND is_active=1 AND memory_type IN ('task','commitment') ORDER BY last_seen_at DESC,id DESC LIMIT 101");
+        $q->execute($aid>0?[(int)$scope['user']['id'],$aid]:[(int)$scope['user']['id']]);
+        $rows=$q->fetchAll(PDO::FETCH_ASSOC);$priorities=[];
+        foreach($rows as $row){
+            // Prioritize candidates only. The exact reader still verifies the
+            // live task, owner assignment, scope, and data policy before admission.
+            $meta=json_decode((string)$row['metadata_json'],true);
+            $priorities[(int)$row['id']]=is_array($meta)
+                ?vp3_initiative_task_attention_priority_v1(vp3_initiative_task_attention_v1($meta,$now)):0;
+        }
+        arsort($priorities,SORT_NUMERIC);
+        return [array_keys($priorities),count($rows)>=101];
     }
     if($family==='reminder'){
         if(!reminder_ready_v1($pdo))throw new RuntimeException('Reminder storage is unavailable.',503);
@@ -315,8 +369,9 @@ function vp3_initiative_office_capabilities_evidence_v1(PDO $pdo,array $scope,ar
         }
         try{
             $limited=false;$familyRows=[];
+            $taskNow=$family==='task'?vp3_initiative_task_local_time_v1($pdo,$scope,$now):null;
             if($selectedRefs===null){
-                [$ids,$limited]=vp3_initiative_office_candidates_v1($pdo,$scope,$family,$now);
+                [$ids,$limited]=vp3_initiative_office_candidates_v1($pdo,$scope,$family,$taskNow??$now);
                 foreach($ids as $id){$ref=$family==='calendar'?(string)$id:$family.':'.$id;$refs[$ref]=vp3_initiative_office_ref_v1($ref);}
             }
             $found=0;
@@ -332,7 +387,7 @@ function vp3_initiative_office_capabilities_evidence_v1(PDO $pdo,array $scope,ar
                     if($record&&!empty($record['followup_action_id'])){if(!function_exists('reminder_followup_delivered_v1'))throw new RuntimeException('Follow-up delivery verification is unavailable.',503);if(reminder_followup_delivered_v1($pdo,$record))continue;}
                 }
                 if($selectedRefs===null&&$found>=4){$limited=true;break;}
-                $familyRows[$ref]=vp3_initiative_office_entry_v1($ref,$selector,$state);$found++;
+                $familyRows[$ref]=vp3_initiative_office_entry_v1($ref,$selector,$state,$taskNow);$found++;
             }
             $out+=$familyRows;
             $coverage[$key]=$limited?'limited':'ready';

@@ -3,7 +3,12 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
+require_once __DIR__ . '/includes/agent-email-triage-v1.php';
+require_once __DIR__ . '/includes/agent-connection-gmail-inbox-activity-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
+require_once __DIR__ . '/includes/coding-canvas-command-grants-v1.php';
+require_once __DIR__ . '/includes/coding-canvas-publishing-v1.php';
+require_once __DIR__ . '/includes/media-collections-v1.php';
 require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
@@ -67,6 +72,9 @@ require_once __DIR__ . '/includes/profile-attention-pa4b.php';
 require_once __DIR__ . '/includes/profile-event-projection-pa4b.php';
 require_once __DIR__ . '/includes/profile-conversation-checkout-pa5.php';
 require_once __DIR__ . '/includes/connected-gelato-v1.php';
+require_once __DIR__ . '/includes/connected-stoneward-v1.php';
+require_once __DIR__ . '/includes/agent-media-stoneward-playback-v1.php';
+require_once __DIR__ . '/includes/connected-sites-reports-v1.php';
 require_once __DIR__ . '/includes/agent-chat-read-v1.php';
 require_once __DIR__ . '/includes/agent-connections-v1.php';
 require_once __DIR__ . '/includes/agent-development-v1.php';
@@ -292,6 +300,11 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && ($schemaConnection ??= db()) instanceof PDO
         && vp3_ai_service_usage_ready_v1($schemaConnection)
         && vp3_coding_canvas_ready_v1($schemaConnection)
+        && vp3_coding_canvas_visibility_ready_v1($schemaConnection)
+        && vp3_coding_canvas_command_grants_ready_v1($schemaConnection)
+        && vp3_coding_canvas_source_grants_ready_v1($schemaConnection)
+        && vp3_coding_canvas_publishing_ready_v1($schemaConnection)
+        && vp3_media_collections_ready_v1($schemaConnection)
         && chat_settings_schema_ready_v237($schemaConnection)
         && chat_settings_agent_orb_shape_schema_ready_v237($schemaConnection)
         && chat_settings_agent_auto_greet_schema_ready_v237($schemaConnection)
@@ -302,6 +315,12 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && agent_connection_email_sender_watch_ready_v1($schemaConnection)
         && agent_connection_gmail_inbox_storage_ready_v1($schemaConnection)
         && agent_connection_gmail_inbox_initial_ready_v1($schemaConnection)
+        && agent_email_running_report_ready_v1($schemaConnection)
+        && agent_email_running_report_failure_ready_v1($schemaConnection)
+        && agent_email_matters_ready_v1($schemaConnection)
+        && agent_email_triage_ready_v1($schemaConnection)
+        && agent_connection_gmail_inbox_sync_ready_v1($schemaConnection)
+        && agent_connection_gmail_inbox_activity_ready_v1($schemaConnection)
         && agent_connection_gmail_github_storage_ready_v1($schemaConnection)
         && agent_connection_health_schema_ready_v1($schemaConnection)
         && agent_connection_youtube_consent_ready_v1($schemaConnection)
@@ -319,7 +338,10 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_profile_projection_schema_ready_pa4b($schemaConnection)
         && vp3_profile_checkout_schema_ready_pa5($schemaConnection)
         && vp3_gelato_schema_ready_v1($schemaConnection)
-        && vp3_gelato_knowledge_ready_v1($schemaConnection);
+        && vp3_stoneward_schema_ready_v1($schemaConnection)
+        && vp3_stoneward_playback_ready_v1($schemaConnection)
+        && vp3_gelato_knowledge_ready_v1($schemaConnection)
+        && vp3_connected_sites_report_ready_v1($schemaConnection);
 }
 
 $error = '';
@@ -391,6 +413,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             midi_v217_ensure_schema();
             artist_listening_v172_ensure_schema();
             vp3_coding_canvas_schema_v1($pdo);
+            vp3_coding_canvas_command_grants_install_v1($pdo);
+            vp3_coding_canvas_publishing_install_v1($pdo);
+            vp3_media_collections_install_v1($pdo);
             artist_listening_v237_ensure_schema();
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();
@@ -485,7 +510,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_profile_projection_ensure_schema_pa4b($pdo);
             vp3_profile_checkout_ensure_schema_pa5($pdo);
             vp3_gelato_schema_v1($pdo);
+            vp3_stoneward_schema_v1($pdo);
+            vp3_stoneward_playback_schema_v1($pdo);
             vp3_gelato_knowledge_schema_v1($pdo);
+            vp3_connected_sites_report_schema_v1($pdo);
             personal_capability_ensure_schema_v242();
             require_once __DIR__.'/includes/tv-watching-v1.php';
             tv_schema_v1($pdo);

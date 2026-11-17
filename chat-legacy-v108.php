@@ -2918,12 +2918,10 @@ window.STONEFELLOW_PLAYER = {
 <script src="<?= e(url('/chat-media-v86.js?v=95')) ?>"></script>
 <script src="<?= e(url('/chat-media-v93.js?v=97')) ?>"></script>
 <script src="<?= e(url('/agent-activity-v94.js?v=101')) ?>"></script>
-<?php if ($teamChatEnabled): ?>
 <?php
   $teamChatPageKey = 'agent_chat';
   $teamChatContextLabel = 'Agent Chat';
   require __DIR__ . '/includes/team-chat-widget-v81.php';
 ?>
-<?php endif; ?>
 </body>
 </html>

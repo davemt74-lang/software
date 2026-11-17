@@ -39,7 +39,7 @@ function checkin_count(): int
     return (int)db()->query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id=170 AND role='assistant'
         AND JSON_EXTRACT(CASE WHEN JSON_VALID(context_json) THEN context_json ELSE '{}' END,'$.initiative_output.type')='initiative_chat_check_in'")->fetchColumn();
 }
-function checkin_execute(?callable $draft=null): array
+function checkin_execute(?callable $draft=null,bool $allowDelivery=true): array
 {
     $user=['id'=>1,'is_active'=>1];
     $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($draft):string{
@@ -60,7 +60,7 @@ function checkin_execute(?callable $draft=null): array
     checkin_check($planned['ok'],'check-in assessment uses the canonical queue and lease');
     $run=(int)array_slice(scope_runs(1,17,'initiative.prepare'),-1)[0]['id'];
     $payload=json_decode(agent_workflow_row_v1400(db(),1,$run)['goal'],true,24,JSON_THROW_ON_ERROR);
-    $completed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$run));
+    $completed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$run),allowDelivery:$allowDelivery);
     return ['run'=>$run,'payload'=>$payload,'completed'=>$completed,'result'=>checkin_result($run)];
 }
 function checkin_change(string $kind): void
@@ -198,9 +198,9 @@ foreach(['source','policy'] as $kind){
         'canonical '.$kind.' revocation during check-in inference still prevents delivery and draft storage');
 }
 foreach(['user','assistant','edit','delete'] as $kind){
-    checkin_reset(false);$pending=checkin_execute();
+    checkin_reset(false);$pending=checkin_execute(allowDelivery:false);
     checkin_check($pending['completed']['ok']&&$pending['result']['initiative_delivery']==='pending'&&checkin_count()===0,
-        'absent-owner check-in remains private for delayed '.$kind.' validation');
+        'the worker explicitly defers check-in delivery for delayed '.$kind.' validation');
     checkin_change($kind);$calls=count($GLOBALS['scopeInference']);
     checkin_reject(fn()=>vp3_initiative_tools_result_current_v1(db(),$user,$pending['payload']['binding'],$pending['payload'],$pending['result']['initiative_tool_result']),409,
         'ordinary '.$kind.' after generation invalidates the saved tail revision');
@@ -210,6 +210,12 @@ foreach(['user','assistant','edit','delete'] as $kind){
         &&count($GLOBALS['scopeInference'])===$calls,
         'delayed '.$kind.' check-in is atomically withheld without replaying inference');
 }
+checkin_reset(false);
+$absent=checkin_execute();$absentCalls=count($GLOBALS['scopeInference']);
+checkin_check($absent['completed']['ok']&&$absent['result']['initiative_delivery']==='delivered'
+    &&checkin_count()===1&&!vp3_initiative_deliver_pending_v1(db(),$user,17)
+    &&checkin_count()===1&&count($GLOBALS['scopeInference'])===$absentCalls,
+    'an absent owner receives one saved silent check-in without a repeated delivery or model request');
 foreach(['{"draft":"<b>Hello</b>"}','{"draft":""}','not json','{"draft":"hello","extra":"bad"}',
     json_encode(['draft'=>str_repeat('x',1201)],JSON_THROW_ON_ERROR)] as $invalid){
     checkin_reset();$bad=checkin_execute(static fn():string=>$invalid);
@@ -235,7 +241,7 @@ db()->prepare('UPDATE user_agents SET display_name=? WHERE id=17')->execute(["<b
 $named=checkin_execute(static function(array $input):string{
     checkin_check($input['agent']['name']==='Owner A','selected Agent identity is sanitized to a bounded plain display name');
     return '{"draft":"Shall we choose a useful next step for the launch?"}';
-});
+},allowDelivery:false);
 db()->exec("UPDATE user_agents SET display_name='Renamed Agent A' WHERE id=17");
 checkin_reject(fn()=>vp3_initiative_tools_result_current_v1(db(),$user,$named['payload']['binding'],$named['payload'],$named['result']['initiative_tool_result']),409,
     'renaming the selected Agent also invalidates an undelivered old-identity check-in');

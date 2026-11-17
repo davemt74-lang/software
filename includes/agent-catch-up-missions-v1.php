@@ -22,15 +22,18 @@ function vp3_catch_up_missions_v1(PDO $pdo,array $user,array $principal,DateTime
         WHERE d.owner_user_id=r.owner_user_id AND d.run_id=r.id AND p.status<>'completed'
     )":'0';
     $runAgentScope=$agentId>0?'r.agent_id=m.agent_id':'r.agent_id IS NULL';
+    $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
+    // UUIDs must match byte-for-byte even when the two tables use different collations.
+    $missionBinding=$sqlite?'r.source_key=m.mission_id':'CAST(r.source_key AS BINARY)=CAST(m.mission_id AS BINARY)';
     // The workflow ledger updates this DATETIME with the database session clock.
-    $updatedEpoch=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
+    $updatedEpoch=$sqlite
         ? "CAST(strftime('%s',r.updated_at) AS INTEGER)" : 'UNIX_TIMESTAMP(r.updated_at)';
     $active=$includeActive?" OR r.status IN ('approved','executing','paused')":'';
     $q=$pdo->prepare("SELECT m.*,r.source_kind,r.source_key,r.execution_target,r.title,r.status,{$updatedEpoch} AS updated_epoch,{$blocked} AS is_blocked
         FROM agent_cloud_missions_v1 m JOIN agent_workflow_runs r
           ON r.id=m.run_id AND r.owner_user_id=m.owner_user_id AND {$runAgentScope}
         WHERE m.owner_user_id=? AND m.agent_id=? AND r.source_kind='cloud_mission'
-          AND r.source_key=m.mission_id AND r.execution_target='cloud'
+          AND {$missionBinding} AND r.execution_target='cloud'
           AND (r.status='approval_pending' OR (r.status='failed' AND {$updatedEpoch}>=?)
             OR (r.status IN ('queued','planning','approved') AND {$blocked}){$active})
         ORDER BY CASE r.status WHEN 'approval_pending' THEN 1 WHEN 'failed' THEN 3 ELSE 2 END,r.updated_at DESC,r.id DESC
@@ -52,8 +55,12 @@ function vp3_catch_up_missions_v1(PDO $pdo,array $user,array $principal,DateTime
                 if(!empty($result['mission_output']))cloud_mission_result_authority_v1($pdo,$user,$row,$result);
             }
         }
+        catch(JsonException|InvalidArgumentException){
+            // An unreadable saved Mission does not invalidate the other Mission records.
+            $limited=true;continue;
+        }
         catch(RuntimeException $e){
-            if(!in_array($e->getCode(),[403,404,409],true))throw $e;
+            if($e instanceof PDOException||!in_array($e->getCode(),[403,404,409],true))throw $e;
             $limited=true;continue;
         }
         $updated=(int)$row['updated_epoch'];

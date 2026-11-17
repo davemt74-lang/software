@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 
@@ -20,7 +22,8 @@ const savedMessageId = 50;
 const firstItem = {subject:privateSubject,from:'private@example.test',category:'reply',important:true,priority_signals:['urgent'],item_ref:firstRef};
 const legacyItem = {subject:'Older header only',from:'older@example.test',category:'new',legacy_ref:legacyRef};
 const latestItem = {subject:'Action required: Latest item',from:'later@example.test',category:'reply',important:true,priority_signals:['action required'],item_ref:latestRef};
-const repeatedSender = {subject:'New message from an existing sender',from:'PRIVATE@example.test',category:'new',item_ref:'1'.repeat(64)};
+const repeatedSender = {subject:'Already handled message from an existing sender',from:'PRIVATE@example.test',category:'new',
+  item_ref:'1'.repeat(64),answered_in_gmail:true};
 const itemLabels = row => row.locator('.gmail-review-item-labels .connections-badge').allTextContents();
 const legacyMatches = [
   {message_id:'gmail_candidate_first',match_token:'2'.repeat(64),from:legacyItem.from,subject:legacyItem.subject,
@@ -40,9 +43,10 @@ const manualDraft = {...composedDraft,id:'6'.repeat(32),body:''};
 const connectionsUrl = '/connections.php?app=gmail#gmail-inbox-review';
 const script = 'gmail-inbox-initial-v1.js';
 const chatScripts = ['chat.js','team-chat-admin-v109.js','chat-specialist-rail-v1.js','agent-eyes-core.js',
-  'agent-activity-hub-v1.js','agent-orb-adapter.js','agent-orb.js','agent-orb-particles.js','chat-email-v1.js'];
+  'agent-activity-hub-v1.js','agent-top-of-mind-v1.js','agent-orb-adapter.js','agent-orb.js','agent-orb-particles.js','chat-email-v1.js'];
 const assets = new Set(['chat.css','connections-v1.css','chat-specialist-rail-v1.css','chat-email-v1.css',
-  'agent-activity-hub-v1.css','agent-orb.css','agent-orb-particles.css','team-chat-v109.css','team-chat-v109.js',script,...chatScripts]);
+  'agent-activity-hub-v1.css','agent-orb.css','agent-orb-particles.css','team-chat-v109.css','team-chat-v109.js',
+  'connections-settings-v1.js',script,...chatScripts]);
 const phpFixture = fileURLToPath(new URL('fixtures/gmail-inbox-initial-page-v1.php', import.meta.url));
 const chatRuntime = execFileSync('php',[phpFixture,'--chat-review-runtime','{}'],{encoding:'utf8'});
 const deferred = () => {
@@ -80,6 +84,7 @@ let checkOverdue = null;
 let workerStartsReview = false;
 let delivered = null;
 let pendingUpdate = null;
+let updateDeliveryConflict = false;
 const batchPosts = [];
 const batchScope = '9'.repeat(64);
 const inboxUpdates = () => ({scope_ref:batchScope,pending:Boolean(pendingUpdate),latest:batchPosts.at(-1) || null});
@@ -130,12 +135,23 @@ ${chatScripts.map(name => `<script src="/${name}" defer></script>`).join('')}${c
 
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],
   executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined});
+const fixtureDir = await fs.mkdtemp(join(tmpdir(),'vp3-connection-settings-'));
 try {
   const context = await browser.newContext({viewport:{width:1280,height:900}});
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on('pageerror', error => { errors.push(error.message); if (process.env.VP3_TEST_DEBUG) console.error(error.message); });
+  const settingsUrl = app => `/connections.php?app=${app}&view=specialist-settings&owner_user_id=1`;
+  const settingsFixture = {youtube_enabled:true,gmail_health:{status:'needs_attention',message:'Check this connection.'}};
+  const renderConnections = (url, postData) => {
+    const embedded = url.searchParams.get('view') === 'specialist-settings';
+    const fixture = {...project(true,initialViewToken,true),...(embedded ? settingsFixture : {})};
+    const args = [phpFixture,url.search.slice(1),JSON.stringify(fixture)];
+    if (postData !== undefined) args.push(postData);
+    return execFileSync('php',args,{encoding:'utf8',env:{...process.env,
+      VP3_CONNECTION_SETTINGS_FIXTURE_DB:join(fixtureDir,'settings.sqlite')}});
+  };
   await context.route(origin+'/**',async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -145,8 +161,26 @@ try {
         body:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
     }
     if (url.pathname === '/connections.php') {
+      let response = url;
+      if (request.method() === 'POST') {
+        response = new URL(renderConnections(url,request.postData() || ''),origin);
+        assert.equal(response.pathname,'/connections.php');
+        assert.equal(response.searchParams.get('view'),url.searchParams.get('view'));
+        assert.equal(response.searchParams.get('app'),url.searchParams.get('app'));
+        assert.equal(response.searchParams.get('owner_user_id'),url.searchParams.get('owner_user_id'));
+      }
+      return route.fulfill({contentType:'text/html; charset=utf-8',body:renderConnections(response)});
+    }
+    if (url.pathname === '/connection-gmail-inbox.php') {
+      const fields = new URLSearchParams(request.postData());
+      assert.equal(fields.get('csrf_token'),'fixture');
+      assert.equal(fields.get('settings_app'),'gmail');
+      assert.equal(fields.get('settings_owner_user_id'),'1');
+      assert.equal(fields.get('connection_id'),'9');
+      assert.equal(fields.get('triage_enabled'),'1');
+      assert.equal(fields.get('content_analysis'),'1');
       return route.fulfill({contentType:'text/html; charset=utf-8',
-        body:execFileSync('php',[phpFixture,url.search.slice(1),JSON.stringify(project(true,initialViewToken,true))],{encoding:'utf8'})});
+        body:renderConnections(new URL(settingsUrl('gmail')+'&result=inbox_saved#gmail-inbox-review',origin))});
     }
     if (url.pathname === '/chat.php') {
       let body = url.searchParams.has('without_review')
@@ -241,12 +275,13 @@ try {
     const surface = new URL(request.frame().url()).pathname;
     if (body.action === 'open_item') {
       assert.deepEqual(body,{action:'open_item',owner_key:'1',csrf_token:'fixture',item_ref:body.item_ref});
-      const item = [firstItem,latestItem,...review.report?.items || [],...batchPosts.flatMap(batch => batch.review.items)]
+      const item = [firstItem,latestItem,repeatedSender,...review.report?.items || [],...batchPosts.flatMap(batch => batch.review.items)]
         .find(candidate => candidate.item_ref === body.item_ref);
       assert.ok(item);
       requests.push({...body,surface});
       return route.fulfill({json:{ok:true,item:{subject:item.subject,from:item.from,body:privateBody,
-        auto_reply:body.item_ref===firstRef,...(body.item_ref===firstRef?{auto_reply_to:'approved@example.test'}:{})}}});
+        auto_reply:body.item_ref===firstRef,...(body.item_ref===firstRef?{auto_reply_to:'approved@example.test'}:{}),
+        ...(item.answered_in_gmail?{answered_in_gmail:true}:{})}}});
     }
     if (body.action === 'find_matches') {
       assert.deepEqual(body,{action:'find_matches',owner_key:'1',csrf_token:'fixture',legacy_ref:legacyRef});
@@ -281,15 +316,18 @@ try {
         agent_id:7,conversation_id:42,working_attention_binding:'review-fixture'});
       requests.push({...body,surface});
       assert.ok(pendingUpdate,'A verified batch can be delivered only once.');
+      if (updateDeliveryConflict) return route.fulfill({status:409,json:{ok:false}});
       batchPosts.push(pendingUpdate);
       pendingUpdate = null;
       return route.fulfill({json:{ok:true,inbox_updates:inboxUpdates()}});
     }
     if (body.action === 'check_overdue') {
       assert.equal(surface,'/chat.php');
-      assert.equal(inboxBackground?.state,'overdue');
+      const expectedRef = inboxBackground?.state === 'overdue' ? inboxBackground.check_ref : inboxBackground?.content_check_ref;
+      assert.ok(expectedRef);
       assert.deepEqual(body,{action:'check_overdue',owner_key:'1',csrf_token:'fixture',
-        check_ref:inboxBackground.check_ref,working_attention_binding:'review-fixture',include_chat_result:true});
+        check_ref:expectedRef,working_attention_binding:'review-fixture',include_chat_result:true,
+        ...(new URL(route.request().headers().referer).searchParams.has('empty_chat') ? {} : {agent_id:7,conversation_id:42})});
       requests.push({...body,surface});
       assert.ok(checkOverdue,'Only a scheduled test check can ask for Gmail work.');
       return route.fulfill(checkOverdue());
@@ -323,14 +361,101 @@ try {
     catch (error) { if (!view) throw error; /* Scope changes can abort a held status. */ }
   });
 
+  review = completed();
+  await page.goto(origin+settingsUrl('gmail'));
+  const settingsBody = page.locator('body');
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'gmail');
+  assert.equal(await settingsBody.getAttribute('data-owner-user-id'),'1');
+  assert.equal(await page.locator('.chat-sidebar, #connections-app-youtube, [data-gmail-initial-review]').count(),0);
+  assert.equal(await page.getByRole('button',{name:'Test connection',exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Reconnect Gmail',exact:true}).getAttribute('formtarget'),'_blank');
+  assert.equal(await page.getByRole('button',{name:'Use Google popup',exact:true}).getAttribute('formtarget'),'_blank');
+  await page.getByRole('checkbox',{name:/Classify and prioritize inbox mail/}).check();
+  await page.getByRole('checkbox',{name:/Analyze email content for the running report/}).check();
+  await page.getByRole('button',{name:'Save Inbox review',exact:true}).click();
+  await page.getByText('Inbox review settings saved.',{exact:true}).waitFor();
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'gmail');
+
+  await page.goto(origin+settingsUrl('youtube'));
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'youtube');
+  assert.equal(await page.getByRole('button',{name:'Pause VP3 playback history',exact:true}).count(),1);
+  assert.equal(await page.locator('#connections-app-gmail, #music-research, #transcript-research').count(),0);
+
+  await page.goto(origin+settingsUrl('research'));
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'research');
+  assert.equal(await page.getByRole('button',{name:'Save topic research preference',exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Disable YouTube',exact:true}).count(),0);
+  assert.equal(await page.locator('#music-research, #transcript-research').count(),2);
+  assert.equal(await page.locator('#media-offers').count(),0,'Playback suggestions are configured through the Media settings');
+
+  await page.goto(origin+settingsUrl('transcripts'));
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'transcripts');
+  assert.equal(await page.locator('#connections-app-youtube, #connections-app-gmail, #music-research').count(),0);
+  await page.getByRole('checkbox',{name:'Use research questions from saved transcript findings'}).check();
+  await page.getByRole('button',{name:'Save preference',exact:true}).click();
+  await page.getByText('Transcript research preference saved.',{exact:true}).waitFor();
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'transcripts');
+
+  await page.goto(origin+settingsUrl('music'));
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'music');
+  assert.equal(await page.locator('#casual-checkins').count(),0,'Casual check-ins are account-wide.');
+  assert.equal(await page.getByRole('button',{name:'Pause VP3 playback history',exact:true}).count(),1);
+  assert.equal(await page.locator('#transcript-research').count(),0);
+  const mediaOffers = page.getByRole('checkbox',{name:'Suggest unfinished VP3 tracks and Music Library picks in Agent Chat'});
+  assert.equal(await mediaOffers.isChecked(),false,'Native suggestions require opt-in');
+  await mediaOffers.check();
+  await page.getByLabel('VP3 music taste').fill('Ambient instrumentals');
+  await page.getByRole('button',{name:'Save playback suggestions',exact:true}).click();
+  await page.getByText('Playback suggestion preference saved.',{exact:true}).waitFor();
+  assert.equal(await mediaOffers.isChecked(),true);
+  assert.equal(await page.getByLabel('VP3 music taste').inputValue(),'Ambient instrumentals');
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'music');
+  assert.equal(await page.getByRole('checkbox',{name:'Use recent VP3 Music listening for artist research'}).isChecked(),false);
+  await page.getByRole('checkbox',{name:'Use recent VP3 Music listening for artist research'}).check();
+  await page.getByRole('button',{name:'Save preference',exact:true}).click();
+  await page.getByText('Artist research preference saved.',{exact:true}).waitFor();
+  assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),'music');
+
+  for (const denied of [settingsUrl('gmail').replace('owner_user_id=1','owner_user_id=2'),settingsUrl('unknown')]) {
+    await page.goto(origin+denied);
+    await page.getByText('Specialist connection settings are unavailable.',{exact:true}).waitFor();
+    assert.equal(await settingsBody.getAttribute('data-vp3-specialist-settings'),null);
+  }
+  review = needsStart();
+  console.log('PASS specialist settings render only the selected native forms, preserve saves and reject an unverified owner');
+
   await page.goto(origin+connectionsUrl);
   const autoSend = page.getByRole('checkbox',{name:/Enable Auto Send/});
   assert.equal(await autoSend.isChecked(),false,'Auto Send is off by default.');
   assert.equal(await page.getByRole('textbox',{name:'Approved email addresses'}).inputValue(),'');
-  const musicResearch = page.locator('#music-research');
-  assert.equal(await musicResearch.getByRole('checkbox',{name:/Use recent VP3 Music listening/}).isChecked(),false,
-    'Native Music research is off by default on the shipped Connections page.');
+  const musicResearch = page.locator('#music-research form').filter({hasText:'Use recent VP3 Music'});
+  assert.equal(await musicResearch.getByRole('checkbox',{name:/Use recent VP3 Music listening/}).isChecked(),true,
+    'The full Connections page shows the preference saved in specialist settings.');
   assert.equal(await musicResearch.locator('input[name="csrf_token"]').inputValue(),'fixture');
+  const checkinPreference = page.getByRole('combobox',{name:'Casual check-ins in Agent Chat'});
+  const saveCheckins = page.getByRole('button',{name:'Save check-in preference'});
+  assert.equal(await checkinPreference.inputValue(),'default','The unset preference permits only music and video offers.');
+  assert.deepEqual(await checkinPreference.locator('option').evaluateAll(options=>options.map(option=>[option.value,option.textContent.trim()])),
+    [['default','Music and video'],['1','All check-ins'],['0','Off']]);
+  await checkinPreference.selectOption('1');
+  await page.locator('[name="casual_checkin_owner"]').evaluate(element=>element.value='2');
+  await saveCheckins.click();
+  await page.getByText('Check-in preference could not be saved.',{exact:true}).waitFor();
+  assert.equal(await checkinPreference.inputValue(),'default');
+  await checkinPreference.selectOption('1');
+  await saveCheckins.click();
+  await page.getByText('Check-in preference saved.',{exact:true}).waitFor();
+  assert.equal(await checkinPreference.inputValue(),'1');
+  await checkinPreference.selectOption('0');
+  await saveCheckins.click();
+  await page.getByText('Check-in preference saved.',{exact:true}).waitFor();
+  assert.equal(await checkinPreference.inputValue(),'0');
+  await checkinPreference.selectOption('default');
+  await saveCheckins.click();
+  await page.getByText('Check-in preference saved.',{exact:true}).waitFor();
+  assert.equal(await checkinPreference.inputValue(),'default');
+  console.log('PASS casual check-ins preserve music/video defaults, explicit all/off choices and exact owner validation');
+  await page.goto(origin+connectionsUrl);
   const startForm = page.locator('[data-gmail-review-start]');
   const windowSelect = startForm.locator('select[name="days"]');
   const report = page.locator('[data-gmail-review-report]');
@@ -473,6 +598,13 @@ try {
   assert.deepEqual(turns,[`Draft reply to Gmail review item ${firstRef}`,`Auto reply to Gmail review item ${firstRef}`,
     matchedCommand('Reply',0),matchedCommand('Draft reply',1),
     `Reply to Gmail review item ${latestRef}`]);
+  const answeredRow = reviewRows.filter({hasText:repeatedSender.subject});
+  await answeredRow.getByText('Already replied in Gmail.',{exact:true}).waitFor();
+  assert.equal(await answeredRow.getByRole('button',{name:/Reply|Auto Compose/}).count(),0);
+  await answeredRow.getByRole('button',{name:'Open',exact:true}).click();
+  await answeredRow.getByText(privateBody,{exact:true}).waitFor();
+  assert.equal(await answeredRow.getByRole('button',{name:/Reply|Auto Compose/}).count(),0,
+    'A historical message answered in Gmail stays readable without a duplicate reply control.');
 
   const watch = legacyRow.getByRole('checkbox');
   await watch.waitFor();
@@ -549,7 +681,7 @@ try {
   await completion.getByText(privateSummary,{exact:true}).waitFor();
   assert.equal(await completion.count(),1);
   await page.locator('.vp3-orb-ball').hover();
-  await page.locator('[data-orb-activity]').click();
+  await page.locator('.vp3-orb-ball').dblclick();
   await page.locator('[data-activity-specialist="gmail-inbox-review"]').getByRole('button',{name:'View in Chat'}).click();
   await savedTurn.getByText(privateSummary,{exact:true}).waitFor();
   assert.equal(await completion.count(),1,'Top of Mind opens the same saved assistant turn.');
@@ -562,6 +694,7 @@ try {
   await initialStatus;
   const tile = page.locator('[data-chat-specialist="gmail-inbox-review"]');
   const workerPanel = page.locator('[data-chat-specialist-panel="gmail-inbox-review"]');
+  const activity = page.getByRole('dialog',{name:'Gmail Inbox Review',exact:true}).and(page.locator('#vp3ChatSpecialistActivity'));
   const hub = page.locator('#vp3AgentActivityHub');
   const job = hub.locator('[data-activity-specialist="gmail-inbox-review"]');
   const orb = page.locator('.vp3-orb-root');
@@ -585,25 +718,28 @@ try {
   assert.equal(await page.locator('[data-gmail-review-state="working"]').isVisible(),false,'The desktop rail owns live progress.');
   assert.equal(await page.locator('#chatInput').inputValue(),'Keep this draft');
   await tile.click();
-  await workerPanel.getByText('Working',{exact:true}).waitFor();
-  await workerPanel.getByText('5 of up to 50 headers checked.',{exact:true}).waitFor();
+  await activity.getByRole('region',{name:'Inbox analysis'}).getByText('Inbox analysis is unavailable. Check Gmail settings.',{exact:true}).waitFor();
+  assert.equal(await activity.getByText('5 of up to 50 headers checked.',{exact:true}).count(),0,'Header scan progress does not substitute for analysis.');
+  assert.equal(await activity.getByRole('link',{name:'Open Gmail settings'}).isVisible(),true);
   assert.equal(await tile.getAttribute('aria-expanded'),'true');
   assert.equal(await hub.isVisible(),false);
-  assert.equal(await workerPanel.getByRole('button').count(),1,'Only Close appears in the live work detail.');
+  assert.equal(await activity.getByRole('button',{name:'Full report',exact:true}).isVisible(),true);
   await screenshot(page,'rail');
   review = {...inProgress('working'),next_attempt_at:new Date(Date.now()+1200).toISOString()};
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await tile.waitFor({state:'detached',timeout:4500});
-  await workerPanel.waitFor({state:'detached'});
+  assert.equal(await activity.isVisible(),true,'An expired Gmail work lease leaves the report window open');
+  await activity.getByRole('button',{name:'Close',exact:true}).click();
   await gmailWork.waitFor({state:'detached'});
   review = inProgress('working');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await tile.click();
-  await workerPanel.waitFor();
+  await activity.waitFor();
   review = {state:'disabled',limit:50};
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await tile.waitFor({state:'detached'});
-  await workerPanel.waitFor({state:'detached'});
+  assert.equal(await activity.isVisible(),true,'Clearing a Gmail job leaves the report window open');
+  await activity.getByRole('button',{name:'Close',exact:true}).click();
   await gmailWork.waitFor({state:'detached'});
   review = inProgress('working');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -620,7 +756,7 @@ try {
   await workerPanel.waitFor({state:'detached'});
   assert.equal(await compactWork.evaluate(button => button === document.activeElement),true);
   await page.locator('.vp3-orb-ball').hover();
-  await page.locator('[data-orb-activity]').click();
+  await page.locator('.vp3-orb-ball').dblclick();
   await job.getByText('Working',{exact:true}).waitFor();
   await page.evaluate(() => {
     window.fixtureParticipant = true;
@@ -636,7 +772,7 @@ try {
   });
   await gmailWork.waitFor({state:'attached'});
   await page.locator('.vp3-orb-ball').hover();
-  await page.locator('[data-orb-activity]').click();
+  await page.locator('.vp3-orb-ball').dblclick();
   const chatAdvance = advanceGate = {started:deferred(),release:deferred()};
   review = inProgress('queued');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -714,7 +850,7 @@ try {
   const beforeFallback = requests.length;
   await page.goto(origin+'/chat.php?without_review=1');
   await page.locator('.vp3-orb-ball').hover();
-  await page.locator('[data-orb-activity]').click();
+  await page.locator('.vp3-orb-ball').dblclick();
   await job.getByText('Ready to read in Chat',{exact:true}).waitFor();
   assert.equal(await job.count(),1);
   assert.equal(await page.getByText(privateSubject,{exact:true}).count(),0);
@@ -853,11 +989,12 @@ try {
     {deliver:beforeUpdates.deliver+1,advance:beforeUpdates.advance});
   showMonitor = true;
   await page.locator('.vp3-orb-ball').hover();
-  await page.locator('[data-orb-activity]').click();
+  await page.locator('.vp3-orb-ball').dblclick();
   const monitor = hub.locator('[data-activity-specialist="gmail-inbox-monitor"]');
+  await hub.getByText('Inbox monitoring details',{exact:true}).click();
   await monitor.getByText('Last check completed.',{exact:true}).waitFor();
-  assert.equal(await monitor.getByText(/^Last check /).count(),2);
-  assert.equal(await monitor.getByText(/^Next check /).count(),1);
+  assert.equal(await monitor.getByText(/^Last check /).count(),1,'Monitoring shows status without repeating a timestamp');
+  assert.equal(await monitor.getByText(/^Next check /).count(),0);
   assert.equal(await monitor.getByText('An inbox update is waiting to post to Chat.').count(),1);
   await monitor.getByRole('button',{name:'View latest update'}).click();
   await hub.waitFor({state:'hidden'});
@@ -943,6 +1080,27 @@ try {
   assert.equal(count('check_overdue'),priorChecks+3);
   console.log('PASS overdue Gmail check is owner-Chat scoped, bounded, and keeps yesterday’s first review');
 
+  inboxBackground = {state:'checked',...backgroundTimes,content_check_ref:'c'.repeat(64)};
+  checkOverdue = () => {
+    delete inboxBackground.content_check_ref;
+    return {json:{ok:true,review:project(false,undefined,true)}};
+  };
+  await page.evaluate(() => { Date.now = () => window.fixtureRealNow() + 424000; });
+  assert.equal((await refreshInbox('check_overdue')).ok(),true);
+  await page.evaluate(() => { Date.now = window.fixtureRealNow; });
+  assert.equal(count('check_overdue'),priorChecks+4,'Due report work can advance while the inbox scan is current.');
+
+  review = {state:'unavailable',limit:50};
+  inboxBackground = {state:'overdue',...backgroundTimes,check_ref:'b'.repeat(64)};
+  checkOverdue = () => {
+    inboxBackground = {state:'checked',...backgroundTimes};
+    return {json:{ok:true,review:project(false,undefined,true)}};
+  };
+  await page.evaluate(() => { Date.now = () => window.fixtureRealNow() + 486000; });
+  assert.equal((await refreshInbox('check_overdue')).ok(),true);
+  await page.evaluate(() => { Date.now = window.fixtureRealNow; });
+  assert.equal(count('check_overdue'),priorChecks+5,'Recurring inbox recovery works when legacy first review is unavailable.');
+
   review = {state:'disabled',limit:50};
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await cards.first().waitFor({state:'detached'});
@@ -960,6 +1118,42 @@ try {
   assert.deepEqual({new:newConversations,start:count('start'),deliver:count('deliver'),updates:count('deliver_updates')},beforeEmptyCheck,
     'Checking Gmail from the empty private Chat creates no conversation or review.');
 
+  review = completed();
+  inboxBackground = {state:'checked',...backgroundTimes};
+  pendingUpdate = batchPost(103,'Unposted legacy inbox update','1'.repeat(64));
+  updateDeliveryConflict = true;
+  const conflict = page.waitForResponse(reply => reply.url().endsWith(endpoint) && reply.request().postDataJSON()?.action === 'deliver_updates');
+  await page.goto(origin+'/chat.php?conversation_id=42');
+  assert.equal((await conflict).status(),409);
+  const afterConflict = page.waitForResponse(reply => reply.url().endsWith(endpoint) && reply.request().postDataJSON()?.action === 'check_overdue');
+  inboxBackground = {state:'overdue',...backgroundTimes,check_ref:'2'.repeat(64)};
+  const verifiedScan = new Date().toISOString();
+  checkOverdue = () => {
+    inboxBackground = {state:'checked',...backgroundTimes,last_checked_at:verifiedScan};
+    pendingUpdate = null;
+    return {json:{ok:true,review:project(false,undefined,true)}};
+  };
+  const recovered = await afterConflict;
+  assert.equal(recovered.ok(),true,'The open Chat timer keeps scanning after a legacy delivery conflict.');
+  assert.equal((await recovered.json()).review.inbox_background.last_checked_at,verifiedScan);
+  updateDeliveryConflict = false;
+
+  review = {...inProgress('queued'),next_attempt_at:new Date(Date.now()+300000).toISOString()};
+  inboxBackground = {state:'overdue',...backgroundTimes,check_ref:'3'.repeat(64)};
+  await page.evaluate(() => {
+    const actualNow = Date.now;
+    Date.now = () => actualNow()+61000;
+  });
+  const advancesBeforeCheck = count('advance');
+  const scanDuringLegacyRetry = await refreshInbox('check_overdue');
+  assert.equal(scanDuringLegacyRetry.ok(),true,'A queued first-review retry does not block the recurring inbox scan.');
+  assert.equal((await scanDuringLegacyRetry.json()).review.state,'queued');
+  assert.equal(count('advance'),advancesBeforeCheck);
+  console.log('PASS open Chat resumes recurring inbox scans after a legacy delivery conflict and while a first review awaits retry');
+
   assert.deepEqual(errors,[]);
   console.log('GMAIL_INBOX_INITIAL_UI_BROWSER=PASS (actual Connections, private report, progress and stale settings)');
-} finally { await browser.close(); }
+} finally {
+  await browser.close();
+  await fs.rm(fixtureDir,{recursive:true,force:true});
+}

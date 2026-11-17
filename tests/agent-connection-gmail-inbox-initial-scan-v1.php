@@ -85,7 +85,8 @@ initial_scan_check($queries===[$expectedQuery] && $first['status']==='checked' &
     && $first['page']===$opaque && $first['scanned']===5 && $first['pages']===1 && count($reads)===5,
     'one bounded Inbox page uses frozen epoch bounds, metadata only, and no unread filter');
 initial_scan_check(array_filter($first['messages'])===[$key('first_bound')=>[
-    'message_id'=>'first_bound','from'=>'sender@example.test','cc'=>'review@example.test','subject'=>'first_bound','important'=>false,'reply'=>false]],
+    'message_id'=>'first_bound','from'=>'sender@example.test','cc'=>'review@example.test','subject'=>'first_bound',
+    'labels'=>['INBOX'],'important'=>false,'reply'=>false]],
     'exact inclusive lower bound includes an already-read arrival; older, start-bound, archived, and invalid sender are excluded');
 $scannedMessage = $first['messages'][$key('first_bound')];
 foreach ([null,'bad/id'] as $invalidId) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 // The existing disposable fixture runs the full canonical Canvas pipeline and
 // supports native MySQL through VP3_TEST_MYSQL_DSN; no production function is replaced.
 require __DIR__.'/agent-initiative-canvas-pipeline-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-engagement-feedback-v1.php';
 $brainstormStart=$checks;
 function brainstorm_pipeline_evidence(): array
 {
@@ -49,9 +50,13 @@ function brainstorm_pipeline_model(?callable $during=null): Closure
                     'objective'=>'Prepare options for the recurring review','rationale'=>'The saved recurring preparation task could benefit from a more focused next step.'],
                 ['tool'=>'canvas.prepare','primary'=>'task:20001','refs'=>['task:20001'],
                     'objective'=>'Consider an interactive review checklist','rationale'=>'A reusable checklist could reduce repeated setup; its value still needs discussion.'],
+                ['tool'=>'email.send','primary'=>'task:20001','refs'=>['task:20001'],
+                    'objective'=>'Unverified advice must never appear','rationale'=>'This tool is outside the authorized catalog.'],
             ]],JSON_THROW_ON_ERROR);
     };
 }
+
+if (defined('VP3_BRAINSTORM_PIPELINE_FIXTURE')) return;
 
 // Model a completed prior five-minute slot using the same real source snapshot
 // that the due scheduler will inspect now. Time itself is not a source change.
@@ -85,6 +90,9 @@ canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_clai
 $first=canvas_pipeline_result($oldRun);$firstOutput=$first['initiative_tool_result']['output'];
 canvas_pipeline_check($firstOutput['type']==='initiative_brainstorm'&&array_column($firstOutput['opportunities'],'status')===['queued','considered'],
     'the private canonical receipt distinguishes actually queued work from an unexecuted idea');
+canvas_pipeline_check((int)($first['opportunities_discarded']??0)===1
+    &&!str_contains(json_encode($first,JSON_THROW_ON_ERROR),'Unverified advice must never appear'),
+    'a discarded unauthorized suggestion is recorded only as a count and does not block valid work');
 canvas_pipeline_check(count(canvas_pipeline_runs('initiative.prepare'))===$beforeJobs+1&&canvas_pipeline_count('chat_messages')===$beforeMessages,
     'brainstorming dispatches one selected job without turning every thought into a Chat message');
 $q=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$oldRun]);
@@ -135,6 +143,11 @@ canvas_pipeline_check(!vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_cla
 $q=$pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');$q->execute([$atomic]);
 canvas_pipeline_check(!str_contains((string)$q->fetchColumn(),'initiative_brainstorm')&&count(canvas_pipeline_runs('initiative.prepare'))===$beforeJobs+1,
     'receipt rollback retains no private thought or extra child assignment');
+$failure=vp3_initiative_worker_health_v1($pdo,$owner,7,11)['failure_detail'];
+canvas_pipeline_check(($failure['run_id']??null)===$atomic&&($failure['stage']??null)==='Assessment'
+    &&($failure['phase']??null)==='Saving verified work'&&($failure['evidence']??null)==='receipt'
+    &&!str_contains(json_encode($failure),'Synthetic final receipt interruption'),
+    'the exact failed assessment shows its save phase without exposing the underlying exception');
 
 $payload=brainstorm_pipeline_payload($single);$payload['attention_revision']=bin2hex(random_bytes(16));
 $revoked=brainstorm_pipeline_enqueue($payload);
@@ -208,10 +221,10 @@ $setChatBusy=static function(bool $busy)use($pdo,$quiet):void{
         ->execute([json_encode(array_replace($quiet,['chat_busy'=>$busy]),JSON_THROW_ON_ERROR)]);
 };
 $setChatBusy(true);
-canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim((int)$quietCheck['id']))['ok']
+canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim((int)$quietCheck['id']),null,null,false)['ok']
     &&canvas_pipeline_result((int)$quietCheck['id'])['initiative_delivery']==='pending'
     &&canvas_pipeline_count('chat_messages','conversation_id=12')===0,
-    'the existing check-in can complete without interrupting the owner');
+    'the real worker can explicitly defer delivery while retaining one verified pending check-in');
 $quietPrincipal=vp3_agent_chat_principal_v380($owner,vp3_agent_chat_resolve_agent_v380($pdo,$owner,8));
 $beforeRead=count($GLOBALS['pipelineInference']);
 $findingsQuery='What did you find in the background?';
@@ -224,9 +237,13 @@ canvas_pipeline_check(!empty($answer['handled'])&&str_contains($answer['answer']
     'ordinary Chat can read the same verified pending background result without starting another inference or delivery');
 $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (12,NULL,'assistant',?,?)")
     ->execute(['Verified background findings were shown for this turn.',$statusReadContext]);
-$setChatBusy(false);
 canvas_pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$owner,8)
     &&canvas_pipeline_result((int)$quietCheck['id'])['initiative_delivery']==='delivered'
     &&canvas_pipeline_count('chat_messages',"conversation_id=12 AND role='assistant' AND JSON_EXTRACT(context_json,'$.initiative_run_id') IS NOT NULL")===1,
-    'the canonical check-in delivers one useful message to the exact saved Chat');
+    'the canonical saved check-in delivers one text message to the exact authorized Chat while it is busy');
+$setChatBusy(false);
+canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$owner,8)
+    &&canvas_pipeline_count('chat_messages',"conversation_id=12 AND role='assistant' AND JSON_EXTRACT(context_json,'$.initiative_run_id') IS NOT NULL")===1
+    &&count($GLOBALS['pipelineInference'])===$beforeRead,
+    'returning to an idle Chat repeats neither the saved report nor its inference');
 echo 'INITIATIVE_BRAINSTORM_PIPELINE=PASS ('.($checks-$brainstormStart).' assertions, '.($mysql?'mysql':'sqlite').')'.PHP_EOL;

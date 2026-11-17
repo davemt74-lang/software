@@ -2,10 +2,13 @@
 declare(strict_types=1);
 
 // Real canonical retrieval, Mission queue, Workbench preview and receipts; only account/policy adapters are fixtures.
+require_once dirname(__DIR__).'/includes/agent-memory-scope-v410.php';
 require __DIR__.'/fixtures/cloud-mission-isolated-mysql-v1.php';
 require __DIR__.'/fixtures/cloud-mission-schedules-v1.php';
 require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
 require_once dirname(__DIR__).'/includes/agent-brain-owner-context-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-brainstorm-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-tools-v1.php';
 
 function tool_check(bool $ok,string $label): void {if(!$ok)throw new RuntimeException($label);echo "PASS $label\n";}
@@ -16,39 +19,14 @@ function tool_reject(callable $work,int $code,string $label): void {
 function user_agent_principal_v236(array $user,?array $agent): array {
     return ['kind'=>$agent?'user_agent':'system','owner_user_id'=>(int)$user['id'],'agent_id'=>(int)($agent['id']??0)];
 }
-function vp3_agent_memory_scope_current_v410(array $user): int {
-    $scope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??[];
-    return ($scope['user_id']??null)===$user['id']?(int)($scope['user_agent_id']??0):0;
-}
-function vp3_agent_memory_scope_sql_v410(?int $agent,string $alias=''): array {
-    return $agent>0?['user_agent_id=?',[$agent]]:['user_agent_id IS NULL',[]];
-}
-function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array {
-    $q=$pdo->prepare('SELECT binding_json FROM initiative_tool_policies WHERE owner=? AND agent=?');
-    $q->execute([$user['id'],$binding['agent_id']??0]);$saved=$q->fetchColumn();
-    if(!$saved||json_decode($saved,true)!==$binding||empty($binding['enabled'])
-        ||vp3_agent_memory_scope_current_v410($user)!==($binding['agent_id']??0))throw new RuntimeException('Initiative permission changed.',403);
-    return $user;
-}
-function vp3_initiative_current_sources_v1(PDO $pdo,array $user,array $sources,bool $screen,array $canonical=[]): array {
-    $current=[];
-    foreach($sources as $ref=>$revision){
-        if(str_starts_with($ref,'workbench-')){
-            $policy=$pdo->prepare('SELECT binding_json FROM initiative_tool_policies WHERE owner=? AND agent=?');
-            $policy->execute([$user['id'],vp3_agent_memory_scope_current_v410($user)]);$binding=json_decode($policy->fetchColumn(),true);
-            $coverage=[];$row=vp3_initiative_tools_evidence_v1($pdo,$user,$binding,[$ref],$coverage)[$ref]??null;
-        }else{
-            $q=$pdo->prepare('SELECT source_json FROM initiative_tool_sources WHERE owner=? AND ref=?');$q->execute([$user['id'],$ref]);
-            $saved=$q->fetchColumn();$row=$saved?json_decode($saved,true):null;
-        }
-        if(!$row||$row['revision']!==$revision)throw new RuntimeException('Source changed.',409);
-        $current[$ref]=$row;
-    }
-    return $current;
-}
-function vp3_initiative_owner_lock_v1(PDO $pdo,array $user): void {
-    $q=$pdo->prepare('SELECT id FROM users WHERE id=? FOR UPDATE');$q->execute([$user['id']]);
-    if(!$q->fetchColumn())throw new RuntimeException('Owner changed.',403);
+function calendar_schedule_awareness_snapshot_v1330(PDO $pdo,array $user,DateTimeImmutable $now,int $days,bool $includeHomeServer=true): array
+{
+    if($includeHomeServer)throw new LogicException('Background tools must not probe a paired Calendar.');
+    $q=$pdo->prepare('SELECT source_json FROM initiative_tool_sources WHERE owner=? AND ref=?');
+    $q->execute([(int)$user['id'],'calendar:event:44']);$saved=$q->fetchColumn();
+    $event=$saved?json_decode($saved,true,16,JSON_THROW_ON_ERROR):null;
+    return ['available'=>true,'timezone'=>'UTC','upcoming'=>$event?[$event]:[],'current'=>null,
+        'conflicts'=>[],'next'=>$event,'starts_soon'=>$event!==null];
 }
 function agent_brain_schema_ready(): bool {return table_exists('agent_memory_items');}
 function agent_brain_normalize(string $text): string {return strtolower(trim($text));}
@@ -60,26 +38,43 @@ function user_data_policy_can_use_v236(PDO $pdo,array $principal,int $owner,stri
 $pdo=db();$user=['id'=>1,'is_active'=>1];
 $pdo->exec("CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER);
     INSERT INTO chat_conversations VALUES(11,1,7),(12,1,NULL),(13,2,7);
-    CREATE TABLE initiative_tool_policies(owner INTEGER,agent INTEGER,binding_json TEXT,PRIMARY KEY(owner,agent));
     CREATE TABLE initiative_tool_sources(owner INTEGER,ref VARCHAR(190),source_json TEXT,PRIMARY KEY(owner,ref));
     CREATE TABLE agent_memory_items(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER,is_active INTEGER,memory_type TEXT,
         subject TEXT,memory_text TEXT,occurrence_count INTEGER,last_seen_at TEXT,confidence REAL);
     INSERT INTO agent_memory_items VALUES(1,1,7,1,'task','Cold fermentation launch','Finish the product image before promoting the new service.',1,'2026-11-01',1),
         (2,1,NULL,1,'note','Cold fermentation SYSTEM SECRET','System-only private note.',1,'2026-11-01',1),
-        (3,2,7,1,'note','Cold fermentation OWNER SECRET','Other owner private note.',1,'2026-11-01',1)");
-$binding=['enabled'=>true,'agent_id'=>7,'conversation_id'=>11,'revision'=>str_repeat('a',32),'knowledge_scope'=>['mode'=>'all','folder_id'=>0]];
+        (3,2,7,1,'note','Cold fermentation OWNER SECRET','Other owner private note.',1,'2026-11-01',1);
+    ALTER TABLE agent_memory_items ADD COLUMN metadata_json TEXT;
+    ALTER TABLE agent_memory_items ADD COLUMN memory_hash TEXT;
+    ALTER TABLE agent_memory_items ADD COLUMN memory_scope_version INTEGER DEFAULT 410;
+    ALTER TABLE agent_memory_items ADD COLUMN source_archive_id INTEGER;
+    ALTER TABLE agent_memory_items ADD COLUMN first_seen_at TEXT;
+    CREATE TABLE agent_chat_archive(user_agent_id INTEGER,created_at TEXT);
+    CREATE INDEX idx_agent_memory_agent_type_v410 ON agent_memory_items(user_agent_id,memory_type);
+    CREATE INDEX idx_agent_memory_agent_occurrence_v410 ON agent_memory_items(user_agent_id,last_seen_at);
+    CREATE INDEX idx_agent_archive_agent_created_v410 ON agent_chat_archive(user_agent_id,created_at)");
+if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
+    $pdo->sqliteCreateFunction('DATABASE',static fn()=>'main');
+    $pdo->exec("ATTACH DATABASE ':memory:' AS information_schema;
+        CREATE TABLE information_schema.statistics AS SELECT 'main' AS table_schema,tbl_name AS table_name,name AS index_name
+        FROM main.sqlite_master WHERE type='index'");
+}
+
+$binding=['enabled'=>true,'owner_user_id'=>1,'agent_id'=>7,'conversation_id'=>11,'revision'=>str_repeat('a',32),'knowledge_scope'=>['mode'=>'all','folder_id'=>0]];
 $savePolicy=static function(array $value)use($pdo):void {
-    $pdo->prepare('DELETE FROM initiative_tool_policies WHERE owner=1 AND agent=7')->execute();
-    $pdo->prepare('INSERT INTO initiative_tool_policies VALUES(1,7,?)')->execute([json_encode($value,JSON_THROW_ON_ERROR)]);
+    $pdo->exec('DELETE FROM agent_memory_items WHERE id=1000');
+    $pdo->prepare("INSERT INTO agent_memory_items(id,user_id,user_agent_id,is_active,memory_type,subject,memory_text,
+        occurrence_count,last_seen_at,confidence,metadata_json,memory_hash) VALUES(1000,1,7,1,'initiative_policy','owner-opt-in','',1,NOW(),1,?,?)")
+        ->execute([json_encode($value,JSON_THROW_ON_ERROR),vp3_agent_memory_scope_hash_v410(7,agent_brain_v122_memory_hash('initiative_policy','owner-opt-in'))]);
 };
 $savePolicy($binding);
-$anchor=['ref'=>'transcript:44','kind'=>'transcript','title'=>'Launch call follow-up','detail'=>'Review cold fermentation product launch actions.',
-    'revision'=>str_repeat('b',64),'url'=>'/artist-listening.php?session=44'];
-$saveAnchor=static function(array $value)use($pdo):void {
-    $pdo->prepare('DELETE FROM initiative_tool_sources WHERE owner=1 AND ref=?')->execute([$value['ref']]);
-    $pdo->prepare('INSERT INTO initiative_tool_sources VALUES(1,?,?)')->execute([$value['ref'],json_encode($value,JSON_THROW_ON_ERROR)]);
-};
-$saveAnchor($anchor);$evidence=[$anchor['ref']=>$anchor];
+$pdo->prepare('INSERT INTO initiative_tool_sources VALUES(1,?,?)')->execute(['calendar:event:44',json_encode([
+    'ref'=>'event:44','id'=>44,'kind'=>'event','title'=>'Launch call follow-up',
+    'start_local'=>gmdate('Y-m-d H:i:s',time()+600)],JSON_THROW_ON_ERROR)]);
+$coverage=[];
+$evidence=vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),false,[],
+    $coverage,['calendar:event:44'],7);
+$anchor=$evidence['calendar:event:44']??throw new RuntimeException('The canonical Calendar anchor is unavailable.');
 $job=['tool'=>'brain.read','primary'=>$anchor['ref'],'refs'=>[$anchor['ref']],'focus'=>'cold fermentation','report'=>true];
 $report=static function(string $prompt,string $protocol): string {
     $input=json_decode($prompt,true,24,JSON_THROW_ON_ERROR);

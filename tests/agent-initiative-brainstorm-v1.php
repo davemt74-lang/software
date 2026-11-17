@@ -38,11 +38,11 @@ foreach([
     ['jobs'=>[array_replace($job,['refs'=>['task:99']])]],
     ['jobs'=>[],'instructions'=>'send email'],
     ['jobs'=>[array_replace($job,['tool'=>'email.send'])]],
-    ['jobs'=>[],'opportunities'=>[array_replace($opportunities[0],['permission'=>true])]],
 ] as $invalid){
     brainstorm_reject(static fn()=>vp3_initiative_assessment_v1("```json\n".$encode($invalid)."\n```",$evidence,$tools),
         'formatting normalization never bypasses source, tool, field or authority validation');
 }
+$withoutOpportunity=static fn(array $plan):bool=>$plan['opportunities']===[]&&($plan['opportunities_discarded']??null)===1;
 foreach(["Here is the plan: {\"jobs\":[]}","```json\n{\"jobs\":[]}\n```\nApproved.","```json\n{\"jobs\":[]}\n{\"jobs\":[]}\n```"] as $invalid){
     brainstorm_reject(static fn()=>vp3_initiative_assessment_v1($invalid,$evidence,$tools),
         'prose or multiple objects cannot be extracted as a verified assessment');
@@ -50,11 +50,12 @@ foreach(["Here is the plan: {\"jobs\":[]}","```json\n{\"jobs\":[]}\n```\nApprove
 brainstorm_check(count($assessment['opportunities'])===8&&count($assessment['jobs'])===1,'eight useful ideas are independent of the smaller execution budget');
 brainstorm_check(vp3_initiative_plan_v1($encode(['jobs'=>[$job],'opportunities'=>$opportunities]),$evidence)===[ $job ],'the jobs compatibility wrapper accepts the extended assessment without changing dispatched work');
 foreach([null,'[]',(object)[],array_fill(0,9,$opportunities[0])] as $bad){
-    brainstorm_reject(static fn()=>$parse(['jobs'=>[],'opportunities'=>$bad]),'opportunity list is typed and bounded: '.get_debug_type($bad));
+    brainstorm_check($withoutOpportunity($parse(['jobs'=>[],'opportunities'=>$bad])),
+        'an untyped or oversized opportunity list is discarded: '.get_debug_type($bad));
 }
 foreach(['tool','primary','refs','objective','rationale'] as $field){
     $bad=$opportunities[0];unset($bad[$field]);
-    brainstorm_reject(static fn()=>$parse(['jobs'=>[],'opportunities'=>[$bad]]),'every opportunity requires '.$field);
+    brainstorm_check($withoutOpportunity($parse(['jobs'=>[],'opportunities'=>[$bad]])),'every opportunity requires '.$field);
 }
 foreach([
     ['tool'=>'email.send'],['primary'=>'task:99'],['refs'=>['task:1','task:99']],['refs'=>['task:1','task:1']],
@@ -64,17 +65,25 @@ foreach([
     ['status'=>'queued'],['id'=>str_repeat('a',64)],['permission'=>true],
 ] as $patch){
     $bad=array_replace($opportunities[0],$patch);
-    brainstorm_reject(static fn()=>$parse(['jobs'=>[],'opportunities'=>[$bad]]),'reject malformed or model-authorized opportunity '.implode(',',array_keys($patch)));
+    brainstorm_check($withoutOpportunity($parse(['jobs'=>[],'opportunities'=>[$bad]])),
+        'discard malformed or model-authorized opportunity '.implode(',',array_keys($patch)));
 }
-brainstorm_reject(static fn()=>$parse(['jobs'=>[],'opportunities'=>[$opportunities[0],$opportunities[0]]]),'duplicate tool and primary cannot inflate the opportunity list');
+$mixed=$parse(['jobs'=>[$job],'opportunities'=>[
+    array_replace($opportunities[0],['permission'=>true]),$opportunities[0],$opportunities[0],$opportunities[1],
+]]);
+brainstorm_check($mixed['jobs']===[$job]&&$mixed['opportunities']===array_slice($opportunities,0,2)
+    &&$mixed['opportunities_discarded']===2,'valid assignments and ideas survive while duplicates and invalid advice are discarded');
 $catalog=['work.prepare_private'=>['ready'=>true,'source_refs'=>['task:2']]];
-brainstorm_reject(static fn()=>vp3_initiative_assessment_v1($encode(['jobs'=>[],'opportunities'=>[$opportunities[0]]]),$evidence,$tools,$catalog),'an opportunity obeys the selected tool source allowlist');
+brainstorm_check($withoutOpportunity(vp3_initiative_assessment_v1($encode(['jobs'=>[],'opportunities'=>[$opportunities[0]]]),
+    $evidence,$tools,$catalog)),'an opportunity obeys the selected tool source allowlist');
 brainstorm_reject(static fn()=>vp3_initiative_assessment_v1($encode(['jobs'=>[$job]]),$evidence,$tools,$catalog),'dispatch and opportunities share the same catalog source restriction');
 $weak='youtube-interest-checkin:topic:'.str_repeat('b',64);
 $weakEvidence=[$weak=>['ref'=>$weak,'kind'=>'youtube_interest_checkin','revision'=>hash('sha256','tentative')]];
 $weakOpportunity=['tool'=>'chat.check_in','primary'=>$weak,'refs'=>[$weak],'objective'=>'Ask whether this topic is useful.','rationale'=>'A single viewing pattern leaves its purpose uncertain.'];
 brainstorm_check(count(vp3_initiative_assessment_v1($encode(['jobs'=>[],'opportunities'=>[$weakOpportunity]]),$weakEvidence,['chat.check_in'])['opportunities'])===1,'tentative viewing can ground its own conversational idea');
-brainstorm_reject(static fn()=>vp3_initiative_assessment_v1($encode(['jobs'=>[],'opportunities'=>[array_replace($weakOpportunity,['tool'=>'work.prepare_private'])]]),$weakEvidence),'tentative viewing cannot become research or build authority');
+brainstorm_check($withoutOpportunity(vp3_initiative_assessment_v1($encode(['jobs'=>[],'opportunities'=>[
+    array_replace($weakOpportunity,['tool'=>'work.prepare_private']),
+]]),$weakEvidence)),'tentative viewing cannot become research or build authority');
 $revisions=['task:1'=>$evidence['task:1']['revision']];
 $id=vp3_initiative_brainstorm_identity_v1('work.prepare_private','task:1',$revisions);
 $result=vp3_initiative_brainstorm_result_v1($assessment['opportunities'],$evidence,[$id=>'queued']);

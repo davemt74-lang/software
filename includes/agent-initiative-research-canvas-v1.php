@@ -62,6 +62,11 @@ function vp3_initiative_research_canvas_history_v1(PDO $pdo, int $ownerId, int $
             || !in_array($result['initiative_message_id'] ?? null, [$messageId, (string)$messageId], true)) continue;
         $card = vp3_initiative_research_canvas_card_v1($goal, $result, $context, $messages[$index]['message'] ?? null);
         if ($card === null) continue;
+        if (vp3_public_research_transcript_ref_v1($goal['primary'])) {
+            require_once __DIR__.'/agent-meeting-research-v1.php';
+            $meeting = vp3_meeting_research_projection_v1($pdo, $ownerId, $agentId, $conversationId, $runId, $goal);
+            if ($meeting !== null) $card['meeting_followup'] = $meeting;
+        }
         $context['research_canvas_v1'] = [
             'owner_user_id'=>$ownerId, 'agent_id'=>$agentId, 'conversation_id'=>$conversationId, 'run_id'=>$runId,
             ...$card,
@@ -102,12 +107,15 @@ function vp3_initiative_research_canvas_card_v1(array $goal, array $result, arra
         $title = $transcript ? ($output['public_topic'] ?? null) : ($source['title'] ?? null);
         if (!is_string($title) || !vp3_topic_research_subject_valid_v1($title)) continue;
         if (!$transcript) {
+            $subjectHash = hash('sha256', mb_strtolower($title));
             $titleMatches = str_starts_with($primary, 'task-research:') ? $title === ($output['public_topic'] ?? null)
-                : $primary === $kind.'-interest:'.hash('sha256', mb_strtolower($title));
+                : ($primary === $kind.'-interest:'.$subjectHash
+                    || ($kind === 'artist' && $primary === 'native-artist-interest:'.$subjectHash));
             if (!$titleMatches) continue;
         }
         return [
             'kind'=>$kind, 'title'=>$title, 'status'=>$output['status'], 'checked_at'=>$output['checked_at'],
+            ...($transcript ? ['transcript_session_id'=>(int)explode(':',$primary,3)[1]] : []),
             'sources'=>array_map(static fn(array $row): array=>array_intersect_key($row, [
                 'source'=>true, 'title'=>true, 'url'=>true, 'coverage'=>true,
             ]), $verified['sources']),

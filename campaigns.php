@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/agent-marketing-offer-draft-v1.php';
 require_login();
 
 $user=current_user();$pdo=db();
@@ -18,15 +19,22 @@ $uid=(int)$user['id'];$merchantId=max(0,(int)($_REQUEST['merchant']??$_REQUEST['
 $redirectMerchant=static function(int $id,string $suffix=''): never{redirect(url('/campaigns.php'.($id>0?'?merchant='.$id:'').$suffix));};
 
 if($_SERVER['REQUEST_METHOD']==='POST'){
-    if(!verify_csrf()){flash('error','Session expired. Try again.');$redirectMerchant($merchantId);}
     $action=(string)($_POST['action']??'');
+    $offerAnchor=$action==='marketing_offer_draft'?'#marketing-offer-draft':'';
+    if(!verify_csrf()){flash('error','Session expired. Try again.');$redirectMerchant($merchantId,$offerAnchor);}
     try{
         if($action==='merchant_create'){
             $merchant=campaigns_rewards_create_merchant_v100($pdo,$user,$_POST);
             flash('notice','Merchant created.');$redirectMerchant((int)$merchant['id']);
         }
         if($merchantId<1)throw new RuntimeException('Choose a Merchant.');
-        if($action==='merchant_update'){
+        if($action==='marketing_offer_draft'){
+            $submittedMerchant=filter_var($_POST['merchant_id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+            if($submittedMerchant!==$merchantId)throw new DomainException('Choose the Merchant shown on the offer draft form.',422);
+            $saved=vp3_marketing_offer_create_draft_v1($pdo,$user,$merchantId,$_POST);
+            flash('notice',$saved['created']?'Weekend offer saved as a private Campaign draft.':'This request already created a Campaign.');
+            $redirectMerchant($merchantId,'&edit_campaign='.$saved['campaign_id'].'#campaign-editor');
+        }elseif($action==='merchant_update'){
             campaigns_rewards_update_merchant_v100($pdo,$merchantId,$uid,$_POST);flash('notice','Merchant updated.');
         }elseif($action==='merchant_status'){
             campaigns_rewards_set_platform_merchant_status_v100($pdo,$merchantId,$uid,(string)($_POST['status']??'active'),(string)($_POST['reason']??''));flash('notice','Merchant lifecycle updated.');
@@ -226,8 +234,8 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
         }else{
             throw new RuntimeException('Unknown Campaigns action.');
         }
-    }catch(Throwable $e){flash('error',$e->getMessage());}
-    $redirectMerchant($merchantId);
+    }catch(Throwable $e){flash('error',$offerAnchor!==''&&$e instanceof PDOException?'The offer draft could not be saved. Try again.':$e->getMessage());}
+    $redirectMerchant($merchantId,$offerAnchor);
 }
 
 $merchants=campaigns_rewards_accessible_merchants_v100($pdo,$user);$merchant=null;
@@ -244,6 +252,8 @@ $canCampaignPublish=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchant
 $canAnalytics=$merchant?campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'analytics.view'):false;
 
 $locations=$merchant?campaigns_rewards_locations_v100($pdo,$merchantId):[];
+$offerLocations=$merchant&&$canOwn?vp3_marketing_offer_locations_v1($pdo,$user,$merchantId):[];
+$offerCanDraftReward=$offerLocations&&campaigns_rewards_platform_can_v100($pdo,$merchantId,$uid,'rewards.manage');
 $managedLocations=$locations;
 if($canLocations){
     $locationQuery=$pdo->prepare('SELECT * FROM merchant_locations WHERE merchant_id=? ORDER BY is_active DESC,is_primary DESC,name,id');
@@ -290,6 +300,7 @@ if($merchant){
 }
 
 $editCampaignId=max(0,(int)($_GET['edit_campaign']??0));$editCampaign=null;foreach($campaigns as $row)if((int)$row['id']===$editCampaignId)$editCampaign=$row;
+$plannedOfferReward=$editCampaign&&$canCampaignEdit&&$canOwn?vp3_marketing_offer_reward_v1($pdo,$merchantId,$editCampaignId):null;
 $productPromotionPerformance=[];
 if($editCampaign&&$canAnalytics){
     require_once __DIR__.'/includes/profile-promotion-attribution-v1.php';
@@ -370,6 +381,34 @@ $memberHeaderActions=implode(' ',$actions);
 
 <section class="cr-toolbar"><div><strong>Merchant workspace</strong><span>Business identity is separate from your VP3 login; Team scope and direct Merchant roles remain independent.</span></div><?php if($merchants):?><form method="get"><select name="merchant" onchange="this.form.submit()"><?php foreach($merchants as $m):?><option value="<?= (int)$m['id'] ?>"<?= (int)$m['id']===$merchantId?' selected':'' ?>><?= e((string)$m['name']) ?> · <?= e(ucwords(str_replace('_',' ',(string)$m['access_role']))) ?></option><?php endforeach;?></select></form><?php endif;?></section>
 
+<section class="cr-card" id="marketing-offer-draft" aria-labelledby="marketing-offer-draft-title">
+<header><h2 id="marketing-offer-draft-title">Weekend offer draft</h2></header>
+<?php if($offerLocations):?>
+<p>Save a private Campaign for <?= e((string)$merchant['name']) ?> at the VP3 Merchant Location you select.</p>
+<form method="post" class="cr-form">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="marketing_offer_draft">
+    <input type="hidden" name="merchant_id" value="<?= $merchantId ?>">
+    <input type="hidden" name="draft_request" value="<?= bin2hex(random_bytes(16)) ?>">
+    <div class="cr-form-grid">
+        <label>Campaign name<input name="campaign_name" maxlength="190" required></label>
+        <label>VP3 Merchant Location<select name="location_id" required><option value="">Choose a Location</option>
+        <?php foreach($offerLocations as $location):?><option value="<?= (int)$location['id'] ?>"><?= e((string)$location['name']) ?> (<?= e((string)$location['timezone']) ?>)</option><?php endforeach;?>
+        </select></label>
+    </div>
+    <label>Objective<input name="objective" maxlength="500" required></label>
+    <?php if($offerCanDraftReward):?><label>Reward Product name (optional)<input name="reward_name" maxlength="190"></label>
+    <p class="cr-help">A named Reward Product is saved inactive for review in Rewards.</p><?php endif;?>
+    <div class="cr-form-grid">
+        <label>Starts (optional)<input type="datetime-local" name="starts_at"></label>
+        <label>Ends (optional)<input type="datetime-local" name="ends_at"></label>
+    </div>
+    <p class="cr-help">Times use the selected Location’s time zone.</p>
+    <button class="cr-btn primary">Save offer draft</button>
+</form>
+<?php else:?><p>Choose an active Merchant you own with an active Merchant Location to prepare an offer.</p><?php endif;?>
+</section>
+
 <?php if(!$merchant):?>
 <section class="cr-empty" id="new-merchant"><h2>Create your first Merchant</h2><p>Merchants own business state; your VP3 login remains your personal identity.</p><?php if($canCreate):?><form method="post" class="cr-form"><?= csrf_field() ?><input type="hidden" name="action" value="merchant_create"><label>Name<input name="name" required maxlength="190"></label><label>Public slug<input name="slug" maxlength="100"></label><label>Description<textarea name="description"></textarea></label><div class="cr-form-grid"><label>Website<input name="website_url"></label><label>Timezone<input name="timezone" value="America/Phoenix"></label><label>Currency<input name="currency" value="USD" maxlength="3"></label></div><label class="cr-check"><input type="checkbox" name="sandbox_mode" value="1"> Sandbox Merchant</label><button class="cr-btn primary">Create Merchant</button></form><?php else:?><a class="cr-btn primary" href="<?= e(url('/plugins.php')) ?>">Enable plugin</a><?php endif;?></section>
 <?php else:?>
@@ -432,6 +471,10 @@ $memberHeaderActions=implode(' ',$actions);
 <fieldset class="cr-fieldset">
 <legend>Campaign Rewards</legend>
 <p class="cr-help">Attach the reusable Reward Products this Campaign is allowed to issue. Campaign types that require a Reward cannot be activated until at least one is selected.</p>
+<?php if($plannedOfferReward&&!in_array((int)$plannedOfferReward['id'],$editCampaignRewardIds,true)):?>
+<p class="cr-help">Planned Reward Product: <a href="<?= e(url('/rewards.php?merchant='.$merchantId.'&edit_reward='.(int)$plannedOfferReward['id'].'#reward-editor')) ?>"><?= e((string)$plannedOfferReward['name']) ?></a>.
+    <?= empty($plannedOfferReward['is_active'])?'Review and activate it in Rewards before attaching it to this Campaign.':'Select it below to attach it to this Campaign.' ?></p>
+<?php endif;?>
 <?php if($rewardProducts):?>
 <div class="cr-check-grid">
 <?php foreach($rewardProducts as $rp): if(empty($rp['is_active']))continue; ?>

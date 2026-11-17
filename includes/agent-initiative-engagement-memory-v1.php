@@ -7,7 +7,7 @@ require_once __DIR__.'/agent-initiative-followthrough-v1.php';
  * Advisory continuity over existing saved Chat and workflow outcomes. This is
  * not an additional task store, a permission grant or a scheduling trigger.
  */
-function vp3_initiative_engagement_memory_v1(PDO $pdo,array $user,array $binding): array
+function vp3_initiative_engagement_memory_v1(PDO $pdo,array $user,array $binding,?array $sourceRefs=null): array
 {
     $empty=['available'=>false,'coverage'=>'unavailable','items'=>[]];
     try{
@@ -25,6 +25,7 @@ function vp3_initiative_engagement_memory_v1(PDO $pdo,array $user,array $binding
             $context=json_decode((string)$row['context_json'],true);
             if(!is_array($context)||($context['source']??null)!=='agent_initiative'
                 ||!is_array($context['initiative_followthrough_state']??null))continue;
+            if($sourceRefs!==null&&empty(vp3_initiative_decision_reply_v1($context['initiative_followthrough_state'])['message_id']))continue;
             if(++$attempts>12){$limited=true;break;}
             // Rehydrate the actual post, receipt and current source authority.
             // A historical private report is not permission to use its sources.
@@ -38,10 +39,9 @@ function vp3_initiative_engagement_memory_v1(PDO $pdo,array $user,array $binding
             $phase=$state['state']??null;
             if(!is_string($phase)||!in_array($phase,
                 ['open','discussed','queued','deferred','declined','owner_resolved','completed','stale'],true))continue;
-            $replyId=$state['last_reply_message_id']??0;
+            $decision=vp3_initiative_decision_reply_v1($state);
+            $replyId=$decision['message_id']??0;
             if(!is_int($replyId)||$replyId<0)continue;
-            $item=['message_id'=>(int)$row['id'],'state'=>$phase,
-                'agent_post'=>vp3_initiative_engagement_text_v1($message['message']??'',min(380,$remaining))];
             $refs=[];
             foreach($post['evidence']??[] as $ref=>$source){
                 $refs[$ref]=true;
@@ -49,15 +49,25 @@ function vp3_initiative_engagement_memory_v1(PDO $pdo,array $user,array $binding
                     $refs[$source['interest_ref']]=true;
                 }
             }
+            if($sourceRefs!==null){
+                $primary=$post['goal']['primary']??array_key_first($refs);
+                if(!isset($sourceRefs[$primary],$refs[$primary]))continue;
+                $refs=array_intersect_key($refs,$sourceRefs);
+            }
+            $item=['message_id'=>(int)$row['id'],'state'=>$phase,
+                'agent_post'=>vp3_initiative_engagement_text_v1($message['message']??'',min(380,$remaining))];
             if($refs)$item['source_refs']=array_keys($refs);
             $remaining-=mb_strlen($item['agent_post']);
             $intent=$state['last_intent']??'';
             if(is_string($intent)&&in_array($intent,['discuss','advance','defer','decline','resolve'],true))$item['owner_decision']=$intent;
             if(isset($state['interest_confirmed']))$item['interest_confirmed']=$state['interest_confirmed'];
             if($replyId>0&&$remaining>0){
-                $reply=$pdo->prepare("SELECT message FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user' LIMIT 1");
-                $reply->execute([$replyId,$cid,(int)$live['id']]);$text=$reply->fetchColumn();
-                if(is_string($text)){
+                $reply=$pdo->prepare("SELECT message,context_json FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user' LIMIT 1");
+                $reply->execute([$replyId,$cid,(int)$live['id']]);$savedReply=$reply->fetch(PDO::FETCH_ASSOC);
+                $replyContext=json_decode((string)($savedReply['context_json']??''),true);
+                $text=$savedReply['message']??null;
+                if(is_string($text)&&is_string($decision['hash']??null)&&hash_equals($decision['hash'],hash('sha256',$text))
+                    &&!isset($replyContext['initiative_reply_tool_v1'])){
                     $item['owner_reply']=vp3_initiative_engagement_text_v1($text,min(220,$remaining));
                     $remaining-=mb_strlen($item['owner_reply']);
                 }
@@ -82,6 +92,30 @@ function vp3_initiative_engagement_memory_v1(PDO $pdo,array $user,array $binding
                 .'Remember answered, deferred and declined suggestions. An open item does not establish that the owner ignored it. '
                 .'Conversation closure is not a verified business outcome. Do not repeat a question simply to fill silence.'];
     }catch(Throwable $error){return $empty;}
+}
+
+/** The current job can recall decisions attached to one of its verified sources. */
+function vp3_initiative_preparation_history_v1(PDO $pdo,array $user,array $binding,array $evidence): array
+{
+    $refs=[];
+    foreach($evidence as $ref=>$source){
+        $refs[$ref]=true;
+        if(($source['kind']??null)==='specialist_finding'&&str_starts_with($ref,'specialist:')){
+            $refs[substr($ref,strlen('specialist:'))]=true;
+        }
+        if(($source['kind']??null)==='specialist_result'&&is_string($source['parent_source']??null)){
+            $refs[$source['parent_source']]=true;
+        }
+    }
+    if(!$refs)return [];
+    $memory=vp3_initiative_engagement_memory_v1($pdo,$user,$binding,$refs);
+    $decisions=array_filter($memory['items'],static fn(array $item):bool=>!empty($item['owner_reply']));
+    return array_slice(array_values($decisions),-2);
+}
+
+function vp3_initiative_preparation_history_revision_v1(array $history): string
+{
+    return hash('sha256',json_encode($history,JSON_THROW_ON_ERROR));
 }
 
 function vp3_initiative_engagement_text_v1(mixed $value,int $limit): string

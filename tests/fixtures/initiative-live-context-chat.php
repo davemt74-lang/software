@@ -154,7 +154,7 @@ function live_browser_exception_v1(Throwable $error): void
 function live_browser_model_v1(string $prompt,string $protocol): ?array
 {
     if(!capabilities_browser_value_v1('live_mode'))return null;
-    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1'],true))return null;
+    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1',VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1],true))return null;
     if(db()->inTransaction())throw new RuntimeException('Live inference held a database transaction.');
     $input=json_decode($prompt,true,40,JSON_THROW_ON_ERROR);
     foreach(['SIBLING CHAT SECRET','FOREIGN CHAT SECRET','OTHER CHAT PRIVATE SECRET'] as $secret){
@@ -195,6 +195,8 @@ function live_browser_model_v1(string $prompt,string $protocol): ?array
     }
     $tool=$input['tool_result']['tool']??null;
     if(!in_array($tool,['live.context.read','tasks.lists.read'],true))throw new RuntimeException('Unexpected actual live preparation tool.');
+    $expectedProtocol=$tool==='tasks.lists.read'?VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1:'vp3.initiative-draft.v1';
+    if($protocol!==$expectedProtocol)throw new RuntimeException('Unexpected actual live preparation protocol.');
     $records=json_encode($input['tool_result']['records']??[],JSON_THROW_ON_ERROR);
     if($tool==='live.context.read'&&!str_contains($records,'LIVE_SCREEN_CONTENT_SENTINEL')
         &&!str_contains($records,'provider_label'))throw new RuntimeException('The actual live reader did not return its current source.');
@@ -331,6 +333,22 @@ function live_browser_control_v1(): never
             $id=(int)capabilities_browser_value_v1('prepare_id');$claim=capabilities_browser_value_v1('claim');
             $claim=is_array($claim)?$claim:followthrough_fixture_claim_v1($id);
             $extra['execution_result']=vp3_initiative_execute_v1($pdo,['id'=>1,'is_active'=>1],$claim);
+            $state=live_browser_state_v1();
+        }elseif($action==='legacy_post'){
+            // Historical list reports remain valid Chat continuations. First
+            // complete the current private specialist path, then reuse the
+            // strict saved-report fixture with its exact action/receipt proof.
+            $id=(int)capabilities_browser_value_v1('prepare_id');
+            $q=$pdo->prepare("SELECT r.goal,a.result_json FROM agent_workflow_runs r
+                JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
+                WHERE r.id=? AND r.owner_user_id=1 AND r.agent_id=7 AND r.status='completed'
+                    AND a.status='completed' AND a.sequence_no=1");
+            $q->execute([$id]);$row=$q->fetch();
+            $goal=json_decode($row['goal']??'null',true,512,JSON_THROW_ON_ERROR);
+            $result=json_decode($row['result_json']??'null',true,512,JSON_THROW_ON_ERROR);
+            if(($goal['tool']??null)!=='tasks.lists.read'||($goal['primary']??null)!=='task-list:600'
+                ||!is_array($result))throw new LogicException('A completed private named-list run is required.');
+            initiative_fixture_legacy_report($pdo,['id'=>1,'is_active'=>1],$id,$goal,$result);
             $state=live_browser_state_v1();
         }elseif($action==='expire'){
             $extra['expired']=vp3_live_context_expire_v1($pdo,['id'=>1,'is_active'=>1],

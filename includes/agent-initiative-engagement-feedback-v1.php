@@ -1,6 +1,32 @@
 <?php
 declare(strict_types=1);
 
+/** A tool request linked to a post can coexist with the prior specialist decision. */
+function vp3_initiative_decision_reply_v1(array $state): array
+{
+    $saved=$state['specialist_decision_v1']??null;
+    if(is_array($saved)&&($saved['linked_reply_message_id']??null)===($state['last_reply_message_id']??null)){
+        return array_intersect_key($saved,['message_id'=>true,'hash'=>true,'revision'=>true]);
+    }
+    $messageId=$state['last_reply_message_id']??0;
+    return ['message_id'=>$messageId,'hash'=>$state['last_reply_hash']??'','revision'=>$messageId>0?($state['revision']??0):0];
+}
+
+/** Verify the saved owner turn before using its response outside the Chat feed. */
+function vp3_initiative_engagement_reply_verified_v1(PDO $pdo,array $user,int $cid,int $messageId,array $state): bool
+{
+    $decision=vp3_initiative_decision_reply_v1($state);
+    $replyId=$decision['message_id']??null;
+    if (!is_int($replyId) || $replyId <= $messageId || !is_string($decision['hash'] ?? null)) return false;
+    $query = $pdo->prepare("SELECT message,context_json FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
+    $query->execute([$replyId,$cid,(int)$user['id']]);
+    $reply = $query->fetch(PDO::FETCH_ASSOC);
+    $context=json_decode((string)($reply['context_json']??''),true);
+    if(isset($context['initiative_reply_tool_v1']))return false;
+    $text = $reply['message']??null;
+    return is_string($text) && hash_equals($decision['hash'],hash('sha256',$text));
+}
+
 /** Read only canonical owner decision events for this exact Agent. */
 function vp3_initiative_engagement_events_v1(PDO $pdo,int $owner,int $agentId,?int $cid,int $limit,?string $since=null,array $checkInPrimaries=[],string $sourceTool='chat.check_in'): array
 {
@@ -88,13 +114,14 @@ function vp3_initiative_youtube_interest_feedback_v1(PDO $pdo,array $user,int $a
         try{
             $post=vp3_initiative_followthrough_origin_load_v1($pdo,$user,$principal,$cid,$messageId);
             $state=$post['state'];
-            if((int)$post['run']['id']!==(int)$event['run_id']||($state['last_reply_message_id']??null)!==$replyId
+            $decision=vp3_initiative_decision_reply_v1($state);
+            if((int)$post['run']['id']!==(int)$event['run_id']||($decision['message_id']??null)!==$replyId
                 ||($state['last_intent']??null)!==$intent
                 ||($post['context']['initiative_output']['type']??null)!=='initiative_chat_check_in'
                 ||($state['interest_confirmed']??false)!==($metadata['interest_confirmed']??false))continue;
             $q=$pdo->prepare("SELECT message,$replyEpoch AS created_at_epoch FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
             $q->execute([$replyId,$cid,$owner]);$reply=$q->fetch(PDO::FETCH_ASSOC);
-            if(!is_string($reply['message']??null)||!hash_equals($state['last_reply_hash'],hash('sha256',$reply['message'])))continue;
+            if(!is_string($reply['message']??null)||!hash_equals($decision['hash'],hash('sha256',$reply['message'])))continue;
         }catch(Throwable $error){continue;}
         $seen[$interestRef]=true;
         if(in_array($intent,['discuss','advance'],true)&&($state['interest_confirmed']??false)===true)$feedback[$interestRef]='positive';
@@ -146,8 +173,9 @@ function vp3_initiative_canvas_feedback_v1(PDO $pdo,array $user,int $agentId,arr
             // displayed proposal without reopening that historical Chat's data.
             $post=vp3_initiative_followthrough_origin_load_v1($pdo,$user,$principal,$cid,$messageId);
             $state=$post['state'];$output=$post['context']['initiative_output']??null;
+            $decision=vp3_initiative_decision_reply_v1($state);
             if((int)$post['run']['id']!==(int)$event['run_id']||($post['goal']['tool']??null)!=='canvas.prepare'
-                ||($post['goal']['primary']??null)!==$source||($state['last_reply_message_id']??null)!==$replyId
+                ||($post['goal']['primary']??null)!==$source||($decision['message_id']??null)!==$replyId
                 ||($state['last_intent']??null)!==$intent||!is_array($output)
                 ||($output['type']??null)!=='initiative_canvas'
                 ||!in_array($output['status']??null,['proposal_ready','draft_queued'],true)
@@ -158,7 +186,7 @@ function vp3_initiative_canvas_feedback_v1(PDO $pdo,array $user,int $agentId,arr
                 WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
             $query->execute([$replyId,$cid,$owner]);$reply=$query->fetch(PDO::FETCH_ASSOC);
             $savedAt=(int)($reply['created_at_epoch']??0);
-            if(!is_string($reply['message']??null)||!hash_equals((string)$state['last_reply_hash'],hash('sha256',$reply['message']))
+            if(!is_string($reply['message']??null)||!hash_equals((string)$decision['hash'],hash('sha256',$reply['message']))
                 ||$savedAt<1||$savedAt>$at)continue;
         }catch(Throwable){continue;}
         $seen[$source]=true;

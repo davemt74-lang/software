@@ -11,6 +11,11 @@ function vp3_live_context_uuid_v1(mixed $value): bool
     return is_string($value)&&preg_match('/\A[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\z/D',$value)===1;
 }
 
+function vp3_live_context_eyes_visit_ref_v1(mixed $value): bool
+{
+    return is_string($value)&&str_starts_with($value,'eyes-visit:')&&vp3_live_context_uuid_v1(substr($value,11));
+}
+
 function vp3_live_context_time_v1(mixed $value): ?int
 {
     if(!is_string($value)||preg_match('/\A(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{3}))?Z\z/D',$value,$match)!==1)return null;
@@ -109,6 +114,9 @@ function vp3_live_context_eyes_v1(array $raw,int $now): ?array
         'participant_count'=>$raw['participant_count'],'known_count'=>$raw['known_count'],'unknown_count'=>$raw['unknown_count'],
         'identity_provisional'=>true,'authentication_authority'=>false,'instructions_authority'=>false,
         'greetings_allowed'=>($raw['greetings_allowed']??null)===true];
+    if($safe['participant_count']===1&&$safe['known_count']===1&&vp3_live_context_eyes_visit_ref_v1($raw['visit_ref']??null)){
+        $safe['visit_ref']=$raw['visit_ref'];
+    }
     if($safe['participant_count']>0&&is_bool($raw['recent_chat_input']??null)){
         $inputAt=vp3_live_context_time_v1($raw['chat_input_observed_at']??null);
         $safe['recent_chat_input']=$raw['recent_chat_input']&&vp3_live_context_fresh_v1($inputAt,$now)
@@ -191,7 +199,7 @@ function vp3_live_context_semantic_v1(array $packet): array
         }
     }unset($screen);
     if(is_array($safe['eyes']))unset($safe['eyes']['observed_at'],$safe['eyes']['last_event_at'],$safe['eyes']['chat_input_observed_at'],
-        $safe['eyes']['active'],$safe['eyes']['context_allowed']);
+        $safe['eyes']['active'],$safe['eyes']['context_allowed'],$safe['eyes']['visit_ref']);
     if(is_array($safe['microphone']))unset($safe['microphone']['observed_at'],$safe['microphone']['quiet_duration_ms'],
         $safe['microphone']['observed_window_ms'],$safe['microphone']['active'],$safe['microphone']['context_allowed']);
     return $safe;
@@ -273,6 +281,7 @@ function vp3_live_context_snapshot_v1(PDO $pdo,array $user,array $principal,int 
     $packet=vp3_live_context_row_v1($row,(int)$scope['user']['id'],$scope['agent_id'],$cid,$tab,$clock);if(!$packet)return null;
     $semantic=vp3_live_context_semantic_v1($packet);
     return ['ref'=>'live-context:'.$packet['session_id'],'revision'=>vp3_live_context_revision_v1($packet),
+        'eyes_visit_ref'=>$packet['eyes']['visit_ref']??null,
         'semantic'=>$semantic,'freshness'=>['received_at_ms'=>$packet['received_at_ms'],'observed_at'=>$packet['observed_at'],
             'checked_at_ms'=>$clock,'ttl_ms'=>VP3_LIVE_CONTEXT_TTL_MS_V1]];
 }

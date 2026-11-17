@@ -21,6 +21,7 @@ const temp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-clean-chat-'));
 const fixture=path.join(temp,'shell.php');
 fs.writeFileSync(fixture,`<?php
 function current_user(){return ['id'=>1,'display_name'=>'Dave','role'=>'admin'];}
+function user_has_role($role,$user){return ($user['role']??'')===$role;}
 function has_permission($key,$user){return in_array($key,['chat.access','account.access'],true);}
 function personal_knowledge_available($user){return false;}
 function user_role_labels($user){return ['Admin'];}
@@ -257,6 +258,18 @@ try{
   assert.equal(await page.locator('#chatHistory').isVisible(),false);
   await first.getByText(jobs[0].title,{exact:true}).waitFor();
   await second.getByText(jobs[1].title,{exact:true}).waitFor();
+  await first.getByRole('button',{name:'Open activity',exact:true}).click();
+  const activity=page.getByRole('dialog',{name:'Research',exact:true});
+  await activity.getByText(jobs[0].title,{exact:true}).waitFor();
+  assert.equal(await activity.getByText(jobs[1].title,{exact:true}).count(),0,'The compact mobile preview selects one assignment');
+  assert.equal(await page.locator('[data-agent-activity-host]:visible').count(),0,'Mobile specialist activity never opens the Orb hub');
+  await activity.getByRole('button',{name:'Open workspace'}).click();
+  await activity.getByText(jobs[0].title,{exact:true}).waitFor();
+  assert.equal(await activity.getAttribute('data-workspace'),'true');
+  await activity.getByRole('button',{name:'Close',exact:true}).click();
+  assert.equal(await menu.evaluate(element=>document.activeElement===element),true);
+  await menu.click();
+  await specialists.click();
   await specialists.press('ArrowLeft');
   await panel.waitFor({state:'hidden'});
   await page.locator('#chatHistory').waitFor();

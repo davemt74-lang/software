@@ -12,9 +12,12 @@ function screen_insights_agent_v1(PDO $pdo,array $user,int $aid): int
 {
     if($aid<0||($aid>0&&!user_agent_get_v236($pdo,(int)$user['id'],$aid)))throw new RuntimeException('This Agent is unavailable.',403);return $aid;
 }
-function screen_insights_pool_v1(PDO $pdo,array $user,int $aid): array
+function screen_insights_pool_v1(PDO $pdo,array $user,int $aid,?string $sessionId=null): array
 {
-    $q=$pdo->prepare("SELECT c.owner_user_id,c.session_id,c.capture_id,c.kind,c.captured_at,c.revision,c.body_json,s.title,s.folder_id,s.agent_id,s.status AS session_status,COALESCE(r.state,'active') AS review_state,COALESCE(r.note,'') AS review_note FROM agent_screen_captures_v1 c INNER JOIN agent_screen_sessions_v1 s ON s.owner_user_id=c.owner_user_id AND s.session_id=c.session_id LEFT JOIN agent_screen_reviews_v1 r ON r.owner_user_id=c.owner_user_id AND r.capture_id=c.capture_id WHERE c.owner_user_id=? AND s.agent_id=? AND s.status<>'deleted' ORDER BY c.captured_at DESC,c.capture_id DESC LIMIT 1000");$q->execute([(int)$user['id'],$aid]);$rows=[];
+    $captureScope=$sessionId===null?'':' AND c.session_id=?';
+    $limit=$sessionId===null?1000:100;
+    $params=$sessionId===null?[(int)$user['id'],$aid]:[(int)$user['id'],$aid,$sessionId];
+    $q=$pdo->prepare("SELECT c.owner_user_id,c.session_id,c.capture_id,c.kind,c.captured_at,c.revision,c.body_json,s.title,s.folder_id,s.agent_id,s.status AS session_status,COALESCE(r.state,'active') AS review_state,COALESCE(r.note,'') AS review_note FROM agent_screen_captures_v1 c INNER JOIN agent_screen_sessions_v1 s ON s.owner_user_id=c.owner_user_id AND s.session_id=c.session_id LEFT JOIN agent_screen_reviews_v1 r ON r.owner_user_id=c.owner_user_id AND r.capture_id=c.capture_id WHERE c.owner_user_id=? AND s.agent_id=? AND s.status<>'deleted'$captureScope ORDER BY c.captured_at DESC,c.capture_id DESC LIMIT $limit");$q->execute($params);$rows=[];
     while($r=$q->fetch(PDO::FETCH_ASSOC)){if($r['review_state']!=='active')continue;$r['body']=json_decode($r['body_json'],true,32,JSON_THROW_ON_ERROR);unset($r['body_json']);$rows[]=$r;}return $rows;
 }
 function screen_insights_hash_v1(mixed $v): string{return hash('sha256',json_encode($v,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE));}
@@ -38,6 +41,13 @@ function screen_insights_pending_v1(array $card,?array $state,int $now): bool
         ||($state['decision']==='dismiss'&&hash_equals($state['fingerprint'],$card['fingerprint'])));
 }
 
+function screen_insights_wrapup_card_v1(string $sessionId,array $rows): array
+{
+    return screen_insights_card_v1('wrapup',$sessionId,'Session wrap-up: '.$rows[0]['title'],
+        count($rows).' accepted captures are available. Review the observations and your notes, then save a summary in this session’s Knowledge folder.',
+        $rows,[$sessionId,array_map(static fn(array $row):array=>[$row['capture_id'],$row['revision']],$rows)]);
+}
+
 function screen_insights_derive_v1(array $rows,int $now): array
 {
     $groups=[];$sessions=[];$cards=[];
@@ -59,18 +69,27 @@ function screen_insights_derive_v1(array $rows,int $now): array
         elseif(count($values)>1&&in_array($latest[1]['kind'],['product','error','project'],true)){$details=array_keys($values);sort($details);$cards['change:'.$key]=screen_insights_card_v1('change',$key,'A displayed detail changed: '.$latest[1]['label'],'Recent captures show different values: '.mb_substr(implode(' → ',array_slice(array_keys($values),0,2)),0,350).'. Check the source before relying on the change.',array_column(array_slice($pairs,0,2),0),[$key,$details]);}
         elseif($now-$at<=86400)$cards['new:'.$key]=screen_insights_card_v1('new',$key,'New observation: '.$latest[1]['label'],'A recent shared screen showed: '.mb_substr($latest[1]['detail'],0,350).'. Would a follow-up help?',[$latest[0]],[$key,array_keys($unique)]);
     }
-    foreach($sessions as $sid=>$items)if($items[0]['session_status']==='ended'&&$now-(strtotime($items[0]['captured_at'])?:0)<=7*86400)$cards['wrap:'.$sid]=screen_insights_card_v1('wrapup',$sid,'Session wrap-up: '.$items[0]['title'],count($items).' accepted captures are available. Review the observations and your notes, then save a summary in this session’s Knowledge folder.',$items,[$sid,array_map(fn($r)=>[$r['capture_id'],$r['revision']],$items)]);
+    foreach($sessions as $sid=>$items)if($items[0]['session_status']==='ended'&&$now-(strtotime($items[0]['captured_at'])?:0)<=7*86400)$cards['wrap:'.$sid]=screen_insights_wrapup_card_v1($sid,$items);
     $cards=array_values($cards);$rank=['intent'=>0,'change'=>1,'recurrence'=>2,'wrapup'=>3,'new'=>4];usort($cards,fn($a,$b)=>($rank[$a['kind']]<=>$rank[$b['kind']])?:strcmp($b['sources'][0]['captured_at'],$a['sources'][0]['captured_at']));return array_slice($cards,0,12);
 }
 function screen_insights_feed_v1(PDO $pdo,array $user,int $aid,bool $hidden=false): array
 {
     $now=time();$cards=screen_insights_derive_v1(screen_insights_pool_v1($pdo,$user,$aid),$now);if($hidden)return $cards;
+    return screen_insights_visible_cards_v1($pdo,$user,$aid,$cards,$now);
+}
+function screen_insights_visible_cards_v1(PDO $pdo,array $user,int $aid,array $cards,int $now): array
+{
     $q=$pdo->prepare('SELECT * FROM agent_screen_insight_state_v1 WHERE owner_user_id=? AND agent_id=?');$q->execute([(int)$user['id'],$aid]);$states=[];foreach($q->fetchAll(PDO::FETCH_ASSOC) as $s)$states[$s['insight_key']]=$s;
     return array_values(array_filter($cards,static fn($card)=>screen_insights_pending_v1($card,$states[$card['key']]??null,$now)));
 }
 function screen_insights_current_v1(PDO $pdo,array $user,int $aid,array $input): array
 {
-    foreach(screen_insights_feed_v1($pdo,$user,$aid) as $card)if(($input['key']??'')===$card['key']&&hash_equals($card['review_hash'],(string)($input['review_hash']??'')))return $card;
+    if(array_key_exists('report_message_id',$input)){
+        require_once __DIR__.'/agent-screen-chat-report-v1.php';
+        $report=screen_chat_report_projection_v1($pdo,$user,$aid,(int)($input['conversation_id']??0),(int)$input['report_message_id']);
+        $cards=$report['report']['cards']??[];
+    }else $cards=screen_insights_feed_v1($pdo,$user,$aid);
+    foreach($cards as $card)if(($input['key']??'')===$card['key']&&hash_equals($card['review_hash'],(string)($input['review_hash']??'')))return $card;
     throw new RuntimeException('This suggestion changed or its source is no longer current. Refresh before continuing.',409);
 }
 function screen_insights_decide_v1(PDO $pdo,array $user,int $aid,array $input): array
@@ -113,5 +132,5 @@ function screen_insights_review_capture_v1(PDO $pdo,array $user,array $input): a
 function screen_insights_wrapup_v1(PDO $pdo,array $user,int $aid,array $input): array
 {
     $card=screen_insights_current_v1($pdo,$user,$aid,$input);if($card['kind']!=='wrapup')throw new InvalidArgumentException('Choose a session wrap-up.');$sid=$card['refs'][0]['session_id'];$pdo->beginTransaction();
-    try{$s=screen_session_v1($pdo,$user,$sid,true);$rows=array_values(array_filter(screen_insights_pool_v1($pdo,$user,$aid),fn($r)=>$r['session_id']===$sid));$lines=['Session wrap-up · '.$s['title'],'Observed source evidence; not verified user preferences.'];foreach(array_slice(array_reverse($rows),0,100) as $r){$o=$r['body']['observation']??[];$lines[]=$r['captured_at'].' · '.mb_substr((string)($o['summary']??$r['body']['transcript']??'Capture awaiting analysis'),0,500);if(!empty($r['body']['note']))$lines[]='User note: '.$r['body']['note'];if(!empty($r['review_note']))$lines[]='User clarification: '.$r['review_note'];}$lines[]='Source: '.url('/knowledge.php?folder='.$s['folder_id'].'&screen_session='.$sid);$text=mb_substr(implode("\n",$lines),0,50000);$kid=personal_knowledge_store($user,'screen-session:'.$sid,$s['title'].' · session wrap-up',$text,'Source: Agent Eyes session wrap-up',(int)$s['folder_id']);$pdo->commit();return ['knowledge_id'=>$kid,'url'=>url('/knowledge.php?folder='.$s['folder_id'].'&screen_session='.$sid)];}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+    try{$s=screen_session_v1($pdo,$user,$sid,true);$rows=screen_insights_pool_v1($pdo,$user,$aid,$sid);$lines=['Session wrap-up · '.$s['title'],'Observed source evidence; not verified user preferences.'];foreach(array_reverse($rows) as $r){$o=$r['body']['observation']??[];$lines[]=$r['captured_at'].' · '.mb_substr((string)($o['summary']??$r['body']['transcript']??'Capture awaiting analysis'),0,500);if(!empty($r['body']['note']))$lines[]='User note: '.$r['body']['note'];if(!empty($r['review_note']))$lines[]='User clarification: '.$r['review_note'];}$lines[]='Source: '.url('/knowledge.php?folder='.$s['folder_id'].'&screen_session='.$sid);$text=mb_substr(implode("\n",$lines),0,50000);$kid=personal_knowledge_store($user,'screen-session:'.$sid,$s['title'].' · session wrap-up',$text,'Source: Agent Eyes session wrap-up',(int)$s['folder_id']);$pdo->commit();return ['knowledge_id'=>$kid,'url'=>url('/knowledge.php?folder='.$s['folder_id'].'&screen_session='.$sid)];}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }

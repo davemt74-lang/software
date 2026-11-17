@@ -9,6 +9,10 @@ const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-capability-chat-'));
 fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
 for(const name of ['chat-v236.php','chat-stream-v121.php','chat.php','task-notes-v1.php','chat-canvas-media-v1.php','agent-catch-up-v1.php','gmail-inbox-initial-v1.php'])fs.copyFileSync('api/'+name,path.join(tmp,'api',name));
 for(const name of ['ai-settings.php','agent-scheduling-v430.php'])fs.writeFileSync(path.join(tmp,'includes',name),'<?php // Controlled infrastructure fixture; implementation supplied by fixture bootstrap.');
+fs.appendFileSync(path.join(tmp,'includes','ai-settings.php'),`
+function ai_encrypt_secret(string $value): string {return 'fixture:'.base64_encode($value);}
+function ai_decrypt_secret(string $value): string {return str_starts_with($value,'fixture:') ? (string)base64_decode(substr($value,8),true) : '';}
+`);
 // This suite pins inference to Cloud. Keep its preference shim local so suites
 // exercising saved policy transitions can supply the real preference reader.
 fs.writeFileSync(path.join(tmp,'includes','agent-runtime-routing-v420.php'),`<?php
@@ -33,7 +37,17 @@ vp3_gelato_connect_v1($pdo,1,'https://kitchen.example.com','fmlink_'.str_repeat(
 `);
 const gmailConnector=path.join(tmp,'includes/agent-connection-gmail-v1.php');
 const gmailSource=fs.readFileSync(gmailConnector,'utf8');
-const fixtureGmail=gmailSource.replace(/function agent_connection_gmail_http_v1\([\s\S]*?(?=\nfunction agent_connection_gmail_request_v1)/,`function agent_connection_gmail_http_v1(): array {
+const fixtureGmail=gmailSource.replace(/function agent_connection_gmail_http_v1\([\s\S]*?(?=\nfunction agent_connection_gmail_request_v1)/,`function agent_connection_gmail_http_v1(string $method,string $url): array {
+    if ($method==='GET' && str_ends_with((string)parse_url($url,PHP_URL_PATH),'/messages/urgent_fixture_provider_id')) {
+        parse_str((string)parse_url($url,PHP_URL_QUERY),$params);
+        file_put_contents(dirname(__DIR__).'/gmail-urgent-provider-calls',$params['format'].PHP_EOL,FILE_APPEND);
+        return ['status'=>200,'json'=>['id'=>'urgent_fixture_provider_id','threadId'=>'urgent_fixture_thread',
+            'internalDate'=>(string)(time()*1000),'labelIds'=>['INBOX'],'payload'=>['mimeType'=>'text/plain',
+                'body'=>['data'=>base64_encode('Private delivery request due at 3 PM.')],
+                'headers'=>[['name'=>'From','value'=>'The General <general@example.test>'],
+                    ['name'=>'Subject','value'=>'Urgent delivery time'],
+                    ['name'=>'Message-ID','value'=>'<urgent@example.test>']]]]];
+    }
     file_put_contents(dirname(__DIR__).'/gmail-provider-called','unexpected request');
     throw new RuntimeException('A saved Gmail review must not call its provider.');
 }
@@ -142,7 +156,8 @@ agent_connection_youtube_results_save_v1($pdo,1,$conversationId,$messageId,['que
 echo json_encode(['message_id'=>$messageId]);`);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{
- stdio:['ignore','ignore','pipe'],env:{...process.env,VP3_GMAIL_CLIENT_ID:'fixture-gmail-id',VP3_GMAIL_CLIENT_SECRET:'fixture-gmail-secret'},
+ stdio:['ignore','ignore','pipe'],env:{...process.env,VP3_GMAIL_CLIENT_ID:'fixture-gmail-id',
+  VP3_GMAIL_CLIENT_SECRET:'fixture-gmail-secret',VP3_GMAIL_REDIRECT_URI:'https://fixture.example.test/connection-oauth.php'},
 });let logs='';child.stderr.on('data',x=>logs+=x);
 const base=`http://127.0.0.1:${port}`;let checks=0;
 async function post(endpoint,message,extra={},headers={}){
@@ -549,7 +564,7 @@ try{
   const generationHeaders={...mediaHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify({operation:'image_generate',ids:['images.generate'],prompt:'A cinematic Arizona desert sunset',title:'Desert artwork'})};
   response=await post(endpoint,promoRequest,context,generationHeaders);
   check(response.data?.tool_receipt?.reason==='invalid_plan'&&!response.data.canvas_media?.generation_ids?.length,endpoint+' a marketing request with a saved photo cannot bypass Canvas review through ordinary image generation');
-  response=await post(endpoint,'Create a desert image',context,generationHeaders);
+  response=await post(endpoint,'Generate a square image of a small desert observatory under a star-filled sky, with warm light in its windows and no text.',context,generationHeaders);
   check(response.data?.tool_receipt?.capability==='images.generate'&&response.data.tool_receipt.status==='completed'&&response.data.canvas_media?.generation_ids?.length===1,endpoint+' concrete image command queues a canonical job and returns its canvas card: '+response.body);
   const cid=response.data.conversation_id,id=response.data.canvas_media.generation_ids[0];
   const history=await fetch(base+'/api/'+(endpoint.includes('v236')?'chat-v236.php?agent=7':'chat.php'),{method:'POST',headers:{'Content-Type':'application/json',...mediaHeaders},body:JSON.stringify({csrf_token:'fixture',action:'load',conversation_id:cid})});
@@ -981,8 +996,11 @@ try{
   'private Gelato data is displayed live and kept out of persisted Chat history');
  const gelatoUnpaired=await post('chat.php','/ask gelato '+gelatoQuestion,{}, {...gelatoHeaders,'X-Fixture-User':'2'});
  const gelatoBare=await post('chat-v236.php?agent=7','/ask gelato',named,gelatoHeaders);
- check(gelatoUnpaired.data?.answer.includes('not paired with this VP3 account')&&gelatoBare.data?.answer.includes('What would you like to ask Gelato?')
-  &&gelatoReads().length===4,'unpaired owners, prompts and retries never trigger a Gelato read');
+ check(gelatoUnpaired.data?.answer.includes('not paired with this VP3 account')
+  &&gelatoBare.data?.answer.includes('What would you like to ask Fixture Kitchen Agent?'),
+  'unpaired owners receive setup guidance and a bare command uses the paired Agent name');
+ assert.deepEqual(gelatoReads(),[...gelatoExpectedReads,...gelatoExpectedReads],
+  'unpaired owners, prompts and retries never trigger a Gelato read');
  const gmailFixture=async (action,params={})=>{
   const response=await fetch(base+'/gmail-durable-chat.php?'+new URLSearchParams({action,...params}));
   const body=await response.text();
@@ -1088,6 +1106,54 @@ try{
  check(revokedGmail.status>=400&&!revokedGmail.body.includes(gmailSummary)
   &&!revokedGmailReload.body.includes(gmailSummary)&&!revokedGmailReload.body.includes(gmailSubject)
   &&!fs.existsSync(path.join(tmp,'gmail-provider-called')),'Gmail revocation removes display data without rereading or recharging the report');
+ const urgentChat=(await post('chat-v236.php?agent=7','',{action:'new'})).data.conversation_id;
+ const urgentFixture=path.join(tmp,'gmail-urgent-provider-calls');
+ const urgentCalls=()=>fs.existsSync(urgentFixture)?fs.readFileSync(urgentFixture,'utf8').trim().split('\n'):[];
+ const urgentOffer=(await gmailFixture('urgent',{conversation:urgentChat,scan:'one'})).message_id;
+ const urgentHistory=await post('chat-v236.php?agent=7','',{action:'load',conversation_id:urgentChat});
+ const urgentRow=urgentHistory.data?.messages?.find(row=>Number(row.id)===urgentOffer);
+ const storedOffer=(await gmailFixture('stored',{conversation:urgentChat})).find(row=>Number(row.id)===urgentOffer);
+ check(JSON.parse(urgentRow?.context_json||'{}').gmail_conversation_offer===true
+  &&urgentRow.message.includes('The General')&&urgentRow.message.includes('Want me to open it?')
+  &&!JSON.stringify(storedOffer).includes('The General')&&urgentCalls().length===0,
+  'the private urgent alert projects one conversational choice without storing the sender or opening Gmail');
+ const wrongOffer=await post('chat-v236.php?agent=7','Yes',{...named,conversation_id:otherGmailChat,gmail_offer_message_id:urgentOffer});
+ check(wrongOffer.data?.tool_receipt?.status==='blocked'&&urgentCalls().length===0,
+  'an owner cannot use an urgent offer from another Chat');
+ const urgentArgs={...named,conversation_id:urgentChat,gmail_offer_message_id:urgentOffer,idempotency_key:'urgent-offer-confirmed'};
+ const urgentRead=await post('chat-stream-v121.php','Yes, please.',urgentArgs);
+ check(urgentRead.data?.private_email_read===true&&urgentRead.data.gmail_conversation_offer===true&&!urgentRead.data.gmail_local_read_aloud
+  &&urgentRead.data.answer.includes('Private delivery request due at 3 PM.')
+  &&urgentRead.data.answer.includes('Want me to draft a reply?')&&urgentCalls().join(',')==='full',
+  'spoken assent opens exactly the displayed email in private Chat: '+urgentRead.body);
+ const urgentReplay=await post('chat-stream-v121.php','Yes, please.',urgentArgs);
+ check(urgentReplay.data?.assistant_message_id===urgentRead.data?.assistant_message_id&&urgentCalls().join(',')==='full,full',
+  'voice replay reloads only the same authorized private read');
+ const urgentDraft=await post('chat-v236.php?agent=7','Tell him 2 PM works.',{...named,conversation_id:urgentChat,
+  gmail_offer_message_id:urgentRead.data.assistant_message_id});
+ check(urgentDraft.data?.tool_receipt?.capability==='email.send'
+  &&urgentDraft.data.actions?.some(action=>action.type==='email_review'&&action.is_reply===true)
+  &&urgentCalls().join(',')==='full,full,metadata',
+  'the next natural request prepares an exact reviewable reply without sending mail: '+urgentDraft.body);
+ const urgentStored=await gmailFixture('stored',{conversation:urgentChat});
+ check(!JSON.stringify(urgentStored).includes('Private delivery request due at 3 PM.'), 'the read body stays out of saved Chat turns');
+ const staleOffer=await post('chat-v236.php?agent=7','Yes',{...named,conversation_id:urgentChat,gmail_offer_message_id:urgentOffer});
+ check(staleOffer.data?.tool_receipt?.status==='blocked'&&urgentCalls().length===3,'an intervening turn invalidates an old urgent offer');
+ const aloudOffer=(await gmailFixture('urgent',{conversation:urgentChat,scan:'read-aloud'})).message_id;
+ const aloudRead=await post('chat-stream-v121.php','Read it aloud.',{...urgentArgs,gmail_offer_message_id:aloudOffer,
+  idempotency_key:'urgent-offer-read-aloud'});
+ const aloudEvents=aloudRead.body.trim().split('\n').map(line=>JSON.parse(line));
+ check(aloudRead.data?.gmail_local_read_aloud===true&&aloudRead.data.answer.includes('Private delivery request due at 3 PM.')
+  &&!aloudEvents.some(event=>event.type==='delta')&&urgentCalls().length===4,
+  'an explicit read-aloud request keeps private email text off the premium voice stream');
+ const multipleOffer=(await gmailFixture('urgent',{conversation:urgentChat,scan:'two',multiple:1})).message_id;
+ const multipleHistory=await post('chat-v236.php?agent=7','',{action:'load',conversation_id:urgentChat});
+ const multipleRow=multipleHistory.data?.messages?.find(row=>Number(row.id)===multipleOffer);
+ const ambiguousOffer=await post('chat-v236.php?agent=7','Yes',{...named,conversation_id:urgentChat,gmail_offer_message_id:multipleOffer});
+ check(!JSON.parse(multipleRow?.context_json||'{}').gmail_conversation_offer
+  &&ambiguousOffer.data?.tool_receipt?.status==='blocked'&&urgentCalls().length===4,
+  'multiple urgent results remain individually selectable and a generic yes opens none');
+ await gmailFixture('disable');
  const meetingEndpoint=base+'/meeting-prep-state.php';
  const meetingSeed=await fetch(meetingEndpoint);
  check(meetingSeed.ok,'seed the exact upcoming meeting, linked agenda and prior transcript: '+await meetingSeed.text());

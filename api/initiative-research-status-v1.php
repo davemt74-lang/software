@@ -22,9 +22,21 @@ try{
         ||filter_var($rawAgent,FILTER_VALIDATE_INT)===false||filter_var($rawChat,FILTER_VALIDATE_INT)===false){
         throw new RuntimeException('Choose an exact Agent and conversation.',422);
     }
+    $view=$_GET['view']??null;
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-    $state=vp3_initiative_research_status_v1(db(),$user,(int)$rawAgent,(int)$rawChat);
-    if(($_GET['view']??null)!=='assignments')unset($state['specialists']);
+    if($view==='transcript'){
+        if(!has_permission('artist_listening.access',$user))throw new RuntimeException('Transcription access is required.',403);
+        $rawSession=$_GET['session_id']??null;
+        if(!is_string($rawSession)||!preg_match('/\A[1-9][0-9]{0,17}\z/D',$rawSession)||filter_var($rawSession,FILTER_VALIDATE_INT)===false){
+            throw new RuntimeException('Choose an exact transcription.',422);
+        }
+        require_once dirname(__DIR__).'/includes/agent-initiative-transcript-report-v1.php';
+        $state=['owner_user_id'=>(int)$user['id'],'agent_id'=>(int)$rawAgent,'conversation_id'=>(int)$rawChat,'session_id'=>(int)$rawSession,
+            'followups'=>vp3_initiative_transcript_report_followups_v1(db(),$user,(int)$rawAgent,(int)$rawChat,(int)$rawSession)];
+    }else{
+        $state=vp3_initiative_research_status_v1(db(),$user,(int)$rawAgent,(int)$rawChat);
+        if($view!=='assignments')unset($state['specialists']);
+    }
     echo json_encode(['ok'=>true,'working_attention_binding'=>$binding]+$state,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $error){
     $status=in_array($error->getCode(),[403,405,409,422,503],true)?(int)$error->getCode():503;

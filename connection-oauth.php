@@ -3,21 +3,25 @@ declare(strict_types=1);
 
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-connections-v1.php';
+require_once __DIR__.'/includes/agent-connection-settings-view-v1.php';
 require_permission('account.access');
 header('Cache-Control: no-store');
 header('Referrer-Policy: no-referrer');
 
 $pdo = db();
 $user = current_user();
+$stayInSettings = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? null) !== 'start';
 if (!$pdo || !$user || !agent_connections_schema_ready_v1($pdo)) {
-    redirect(url('/connections.php?result=unavailable'));
+    redirect($stayInSettings ? vp3_connection_settings_post_return_v1(['gmail'], '/connections.php?result=unavailable',
+        ['result'=>'unavailable'], 'connections-app-gmail') : url('/connections.php?result=unavailable'));
 }
 $ownerId = (int)$user['id'];
 $result = 'invalid';
 
 try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
-        if (!is_string($_POST['csrf_token'] ?? null) || !verify_csrf() || ($_POST['provider'] ?? '') !== 'gmail') {
+        if (!vp3_connection_settings_post_allowed_v1($user) || !is_string($_POST['csrf_token'] ?? null)
+            || !verify_csrf() || ($_POST['provider'] ?? '') !== 'gmail') {
             throw new AgentConnectionExceptionV1('Invalid connection request.', 400);
         }
         $read = ($_POST['allow_read'] ?? '') === '1';
@@ -79,4 +83,5 @@ try {
 } catch (Throwable) {
     $result = 'failed';
 }
-redirect(url('/connections.php?result='.$result));
+redirect($stayInSettings ? vp3_connection_settings_post_return_v1(['gmail'], '/connections.php?result='.$result,
+    ['result'=>$result], 'connections-app-gmail') : url('/connections.php?result='.$result));

@@ -23,7 +23,9 @@ const companion=fs.readFileSync(path.join(source,'tests/fixtures/initiative-foll
   .replace('function ai_generate_chat_response(', 'function followthrough_fixture_ai_generate_chat_response(');
 fs.writeFileSync(path.join(temp,'includes/initiative-followthrough-chat-fixture.php'),companion);
 let bootstrap=fs.readFileSync(path.join(source,'tests/fixtures/capability-chat-bootstrap.php'),'utf8');
-for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete'])bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete',
+ 'track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\n";
 bootstrap=bootstrap.replace("$sql=str_replace(' FOR UPDATE','',$sql);","$sql=str_replace([' FOR UPDATE','INSERT IGNORE'],['','INSERT OR IGNORE'],$sql);");
 bootstrap=bootstrap.replace('declare(strict_types=1);','declare(strict_types=1); session_start();');
 const runtimeSource=fs.readFileSync(path.join(source,'includes/agent-runtime-v125.php'),'utf8');

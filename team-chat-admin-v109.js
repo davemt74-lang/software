@@ -44,6 +44,7 @@
        losing Chat Settings state when this compatibility bootstrap runs later. */
     const existingRail = document.getElementById('sfOnlineRailV109');
     const existingWindows = document.getElementById('sfTeamChatWindowsV109');
+    const chatRail = existingRail?.hasAttribute('data-agent-chat-rail') ? existingRail : null;
     if (window.STONEFELLOW_CHAT && window.STONEFELLOW_TEAM_CHAT && existingRail && existingWindows) {
       proof.configSource = 'existing-chat-widget';
       proof.railCreated = true;
@@ -53,7 +54,7 @@
       return;
     }
 
-    removeExistingRail();
+    if (!chatRail) removeExistingRail();
 
     /* Admin and Artist Admin are management workspaces, not Team Chat surfaces.
        Keep the shared bootstrap file for compatibility, but never create the
@@ -93,18 +94,22 @@
     proof.endpoint = endpoint;
     proof.assetBase = assetBase;
 
-    document.querySelectorAll('link[data-team-chat-runtime-style]').forEach(node => node.remove());
-    const style = document.createElement('link');
-    style.rel = 'stylesheet';
-    style.href = new URL('team-chat-v109.css?v=' + ASSET_BUILD, assetBase).toString();
-    style.dataset.teamChatRuntimeStyle = ASSET_BUILD;
-    document.head.appendChild(style);
-
-    const rail = document.createElement('aside');
-    rail.className = 'sf-online-rail-v109';
-    rail.id = 'sfOnlineRailV109';
-    rail.setAttribute('aria-label', 'Stonefellow team chat');
-    rail.innerHTML = '<div class="sf-online-users-v109" id="sfOnlineUsersV109"></div>';
+    const rail = chatRail || document.createElement('aside');
+    if (!chatRail) {
+      document.querySelectorAll('link[data-team-chat-runtime-style]').forEach(node => node.remove());
+      const style = document.createElement('link');
+      style.rel = 'stylesheet';
+      style.href = new URL('team-chat-v109.css?v=' + ASSET_BUILD, assetBase).toString();
+      style.dataset.teamChatRuntimeStyle = ASSET_BUILD;
+      document.head.appendChild(style);
+      rail.className = 'sf-online-rail-v109';
+      rail.id = 'sfOnlineRailV109';
+      rail.setAttribute('aria-label', 'Stonefellow team chat');
+    }
+    const users = document.createElement('div');
+    users.className = 'sf-online-users-v109';
+    users.id = 'sfOnlineUsersV109';
+    rail.prepend(users);
 
     const windows = document.createElement('div');
     windows.className = 'sf-team-chat-windows-v109';
@@ -112,7 +117,8 @@
     windows.setAttribute('aria-live', 'polite');
     windows.setAttribute('aria-label', 'Direct message chats');
 
-    document.body.append(rail, windows);
+    if (!chatRail) document.body.append(rail);
+    document.body.append(windows);
     document.body.classList.add('sf-team-rail-active');
     proof.railCreated = true;
 
@@ -128,7 +134,7 @@
 
     document.querySelectorAll('script[data-team-chat-runtime-script]').forEach(node => node.remove());
     const script = document.createElement('script');
-    script.src = new URL('team-chat-v109.js?v=' + ASSET_BUILD, assetBase).toString();
+    script.src = new URL('team-chat-v109.js?v=' + ASSET_BUILD + '-rail', assetBase).toString();
     script.async = false;
     script.dataset.teamChatRuntimeScript = ASSET_BUILD;
     script.addEventListener('load', () => {

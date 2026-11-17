@@ -558,7 +558,7 @@
       autoGreetRequested = null;
       applyAutoGreetSettings(data);
       publishAutoGreet();
-      setStatus(autoGreetEnabled ? 'Auto Greet will use Listen the next time Agent Chat opens.' : 'Auto Greet is off.', 'success');
+      setStatus(autoGreetEnabled ? 'Auto Greet is on.' : 'Auto Greet is off.', 'success');
     } catch (error) {
       autoGreetRequested = null;
       renderAutoGreet(autoGreetEnabled);

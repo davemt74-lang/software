@@ -36,6 +36,19 @@ await page.route('https://activity.test/api/hub**',async route => {
       {id:'canvases',label:'Canvas drafts',items:[{id:'canvas:one',kind:'canvas',title:'Workshop checklist',detail:'Draft',actions:[{kind:'canvas',label:'Review canvas',canvas_id:'canvas-one',revision:2}]}]}
     ]
   };
+  const collection = url.searchParams.get('collection');
+  if (collection === 'reviews') state.sections = [{id:'office_reviews',label:'Completed reviews',items:[]}];
+  if (collection === 'all') {
+    state.sections = state.sections.filter(section=>['reminders','lists'].includes(section.id));
+    state.sections[1].items[0].actions[0].kind = 'list_inventory';
+    state.sections.push({id:'tasks',label:'Tasks',items:[]});
+    state.pages = {reminders:{next_cursor:null},tasks:{next_cursor:null},lists:{next_cursor:null}};
+  }
+  if (collection === 'list_items') {
+    state.list_id = Number(url.searchParams.get('list_id'));
+    state.sections = [{id:'list_items',label:'Workshop items',items:[{id:'task:9',title:'Order workshop supplies',actions:[]}]}];
+    state.pages = {list_items:{next_cursor:null}};
+  }
   if (gated) { const gate=gated;gated=null;gate.started();await gate.release; }
   try { await route.fulfill({json:{ok:true,state}}); } catch (_error) {}
 });
@@ -44,7 +57,7 @@ await page.route('https://activity.test/runtime/*.js',async route => {
   const file = new URL(route.request().url()).pathname.split('/').pop();
   await route.fulfill({contentType:'text/javascript',body:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
 });
-const outerScripts = '<script src="/runtime/agent-eyes-core.js"></script><script src="/runtime/chat-specialist-rail-v1.js"></script><script src="/runtime/agent-activity-hub-v1.js"></script><script src="/runtime/agent-orb.js"></script>';
+const outerScripts = '<script src="/runtime/agent-eyes-core.js"></script><script src="/runtime/chat-specialist-rail-v1.js"></script><script src="/runtime/agent-activity-hub-v1.js"></script><script src="/runtime/agent-top-of-mind-v1.js"></script><script src="/runtime/agent-orb.js"></script>';
 const orbCss = await fs.readFile(new URL('../agent-orb.css',import.meta.url),'utf8') + await fs.readFile(new URL('../agent-activity-hub-v1.css',import.meta.url),'utf8');
 await page.route('https://activity.test/standalone**',route => route.fulfill({contentType:'text/html',body:`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${orbCss}</style><h1>Workspace</h1><script>
 window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'fixture-binding',activityEndpoint:'/api/hub'};
@@ -70,21 +83,28 @@ try {
   await page.evaluate(() => {
     window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'fixture-binding'};
     window.VP3_COGNITIVE_PRESENTATION_V510={agentId:7,workingAttentionBinding:'fixture-binding',endpoint:'/api/presentation',csrf:'fixture'};
-    window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'fixture-binding',activityEndpoint:'/api/hub'};
+    window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'fixture-binding',activityEndpoint:'/api/hub',
+      specialistSettings:{developmentAdmin:'/admin/agent-development.php'}};
     window.currentChat=42;
     window.views=0;
     window.calls=[];
     window.STONEFELLOW_CHAT_CONTINUITY={agentId:()=>7,conversationId:()=>window.currentChat,isReady:()=>true,isRestoring:()=>false,
       openConversation:async id=>{window.calls.push(['chat',id]);window.currentChat=id;return true;},
-      playActivityTrack:async id=>{window.calls.push(['song',id]);return true;}};
+      playActivityTrack:async id=>{window.calls.push(['song',id]);return true;},
+      stageSpecialistPrompt:(prompt,cid)=>{
+        const input=document.getElementById('chatInput');
+        if(cid!==window.currentChat||input.value.trim())return false;
+        window.calls.push(['example',prompt,cid]);input.value=prompt;input.focus();return true;
+      }};
     window.VP3CodingCanvasV1={open:async(...args)=>{window.calls.push(['canvas',...args]);return true;}};
-    window.VP3AgentMissionsV1={open:async id=>{window.calls.push(['mission',id]);return true;}};
+    window.VP3AgentMissionsV1={open:async id=>{window.calls.push(['mission',id]);return true;},
+      prepareExample:(objective,cid)=>{window.calls.push(['mission-example',objective,cid]);return cid===window.currentChat;}};
     window.VP3TaskNotes={open:ref=>window.calls.push(['note',ref])};
     window.VP3ParticipantContinuity={selectedContext:()=>window.participantSelected?{participant_id:14}:null,clearSelection:()=>{}};
     window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',state:()=>({state:'idle'}),conversationRef:()=>({id:window.currentChat,agent:7}),conversationUrl:ref=>'/chat.php?agent=7&conversation_id='+ref.id,isMainChat:()=>true,focusChat:()=>{},stop:()=>{}};
   });
   for (const file of ['agent-orb.css','agent-activity-hub-v1.css','chat-specialist-rail-v1.css']) await page.addStyleTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
-  for (const file of ['agent-eyes-core.js','chat-specialist-rail-v1.js','agent-activity-hub-v1.js','agent-orb.js','chat-cognitive-presentation-v510.js']) await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
+  for (const file of ['agent-eyes-core.js','chat-specialist-rail-v1.js','agent-activity-hub-v1.js','agent-top-of-mind-v1.js','agent-orb.js','chat-cognitive-presentation-v510.js']) await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   assert.equal(requests.length,0,'A closed hub does not fetch private activity');
   await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
   const launcher=page.locator('#chatAgentBriefButton');
@@ -106,23 +126,119 @@ try {
   await page.evaluate(() => window.VP3ChatSpecialists.update('coding',{label:'Coding Agent',title:'Checklist',status:'Building draft',viewLabel:'Open code canvas',onView:()=>window.views++}));
   assert.equal(await page.evaluate(()=>document.activeElement.id),'chatInput','Worker updates preserve composer focus');
   assert.equal(await liveWork.count(),0,'Work appears only when selected');
-  await page.getByRole('button',{name:'Coding Agent',exact:true}).click();
-  await liveWork.getByText('Building draft',{exact:true}).waitFor();
-  assert.equal(await hub.isVisible(),false,'The rail opens current work in place');
-  await liveWork.getByRole('button',{name:'Open code canvas',exact:true}).click();
+  const codingRail = page.getByRole('button',{name:'Coding Agent',exact:true});
+  const specialist = page.locator('#vp3ChatSpecialistActivity');
+  await codingRail.click();
+  await specialist.getByText('Building draft',{exact:true}).waitFor();
+  assert.equal(await specialist.getByRole('button',{name:'Try a demo canvas'}).count(),0);
+  assert.equal(await hub.isVisible(),false,'The rail opens a specialist preview without opening the orb');
+  assert.equal(await specialist.getByText('Prepare workshop',{exact:true}).count(),0);
+  const previewBox = await specialist.boundingBox();
+  await specialist.getByRole('button',{name:'Full report',exact:true}).click();
+  await specialist.getByRole('button',{name:'Open code canvas',exact:true}).waitFor();
+  const workspaceBox = await specialist.boundingBox();
+  assert.ok(workspaceBox.width>previewBox.width,'The same specialist panel expands for its workspace');
+  assert.equal(await hub.isVisible(),false);
+  await specialist.getByRole('button',{name:'Back',exact:true}).click();
+  assert.equal(await specialist.getByRole('button',{name:'Full report',exact:true}).isVisible(),true);
+  await page.keyboard.press('Escape');
+  assert.equal(await specialist.isVisible(),false);
+  assert.equal(await codingRail.evaluate(button=>button===document.activeElement),true);
+  await codingRail.click();
+  await specialist.getByRole('button',{name:'Full report',exact:true}).click();
+  await specialist.getByRole('button',{name:'Open code canvas',exact:true}).click();
   assert.equal(await page.evaluate(() => window.views),1);
-  await page.locator('#chatAgentBriefButton').click();
+  await page.evaluate(() => window.VP3ChatSpecialists.update('tasks',{label:'Tasks & Lists',status:'Idle',state:'idle',presence:true}));
+  await page.getByRole('button',{name:'Tasks & Lists · Idle',exact:true}).click();
+  await specialist.getByRole('button',{name:'Open workspace',exact:true}).click();
+  await specialist.getByText('Workshop items',{exact:true}).waitFor();
+  assert.equal(await specialist.getByText('Workshop starts',{exact:true}).count(),0,'The Tasks workspace contains only its own sources');
+  await specialist.getByRole('button',{name:'Open list',exact:true}).click();
+  await specialist.getByText('Order workshop supplies',{exact:true}).waitFor();
+  await specialist.getByRole('button',{name:'Back to inventory',exact:true}).click();
+  await specialist.getByText('No saved tasks.',{exact:true}).waitFor();
+  await specialist.getByRole('button',{name:'Close',exact:true}).click();
+  await specialist.waitFor({state:'detached'});
+  await page.evaluate(() => {
+    const rail=window.VP3ChatSpecialists;
+    for (const [id,label,state,status] of [
+      ['image-generator','Image Generator','idle','Idle'],['media','Media & Entertainment','checked','Checked'],
+      ['development:idle','Agent Development','paused','Paused'],['mission','Missions','idle','Idle']
+    ]) rail.update(id,{label,status,state,presence:true});
+  });
+  const composer=page.locator('#chatInput');
+  await composer.fill('My existing draft');
+  await page.getByRole('button',{name:'Image Generator · Idle',exact:true}).click();
+  const imageExample=specialist.getByRole('button',{name:'Try an image'});
+  await imageExample.waitFor();
+  await imageExample.evaluate(control=>control.click());
+  assert.equal(await composer.inputValue(),'My existing draft','A synthetic click cannot stage a prompt.');
+  await imageExample.click();
+  await specialist.getByText('Finish your current draft or Chat turn, then try again.').waitFor();
+  assert.equal(await composer.inputValue(),'My existing draft');
+  await composer.fill('');
+  await page.evaluate(() => window.VP3ChatSpecialists.update('image-generator',{label:'Image Generator',status:'Idle',state:'idle',presence:true}));
+  await imageExample.click();
+  await specialist.waitFor({state:'detached'});
+  assert.match(await composer.inputValue(),/^Generate a square image of a small desert observatory/);
+  assert.deepEqual((await page.evaluate(()=>window.calls.filter(call=>call[0]==='example'))).map(call=>call[2]),[42]);
+  await composer.fill('');
+  await page.getByRole('button',{name:'Media & Entertainment · Checked',exact:true}).click();
+  await specialist.getByText('Would you like to listen to music or watch a video?',{exact:true}).waitFor();
+  await specialist.getByRole('button',{name:'Find a video',exact:true}).click();
+  assert.equal(await composer.inputValue(),'Search YouTube for a short live acoustic performance');
+  await composer.fill('');
+  await page.getByRole('button',{name:'Agent Development · Paused',exact:true}).click();
+  assert.equal(await specialist.getByRole('link',{name:'Agent Development settings',exact:true}).getAttribute('href'),'/admin/agent-development.php');
+  assert.equal(await specialist.getByRole('button',{name:'Draft an example request'}).count(),0);
+  await specialist.getByRole('button',{name:'Close',exact:true}).click();
+  await page.getByRole('button',{name:'Missions · Idle',exact:true}).click();
+  await specialist.getByRole('button',{name:'Try a Mission plan'}).click();
+  await specialist.waitFor({state:'detached'});
+  assert.deepEqual((await page.evaluate(()=>window.calls.filter(call=>call[0]==='mission-example'))).map(call=>call[2]),[42]);
+  assert.equal(await composer.inputValue(),'');
+  const orb=page.locator('.vp3-orb-ball');
+  assert.equal(await page.locator('.vp3-orb-root').locator('[data-orb-brain],[data-orb-activity],[data-agent-activity-preview],[data-orb-size],[data-orb-motion]').count(),0);
+  await page.evaluate(()=>{
+    window.orbChatWasOpened=false;
+    new MutationObserver(records=>{
+      if(records.some(record=>record.oldValue===null)||!document.getElementById('vp3AgentChatPopup').hidden)window.orbChatWasOpened=true;
+    }).observe(document.getElementById('vp3AgentChatPopup'),{attributes:true,attributeFilter:['hidden'],attributeOldValue:true});
+  });
+  await orb.dblclick();
   const worker=page.locator('[data-agent-initiative-status]');
   await hub.getByText('Prepare workshop',{exact:true}).waitFor();
+  assert.equal(await hub.getByRole('button',{name:'Try an image',exact:true}).isVisible(),true);
+  assert.equal(await orb.getAttribute('aria-expanded'),'true');
+  const desktopBox=await worker.boundingBox();
+  assert.ok(desktopBox.x>=11&&desktopBox.x+desktopBox.width<=1269,'The wider panel keeps its viewport margin beside the Orb.');
   assert.equal(await hub.getByRole('heading',{name:'Top of Mind',exact:true}).isVisible(),true);
   assert.equal(await liveWork.count(),0);
   assert.equal(await hub.locator('img').count(),0);
   assert.equal(await hub.getByText('Longfellow · Workshop research',{exact:true}).isVisible(),true);
   assert.equal(await hub.locator('[data-activity-group="Continue"]').evaluate(element=>element.open),false,'Only the first nonempty group starts expanded');
   if (process.env.VP3_HUB_SCREENSHOTS) await page.screenshot({path:'/workspace/scratch/48e2f20316b2/agent-activity-hub-desktop.png'});
+  await orb.dblclick();
+  await hub.waitFor({state:'hidden'});
+  assert.equal(await orb.getAttribute('aria-expanded'),'false');
+  assert.equal(await orb.evaluate(button=>button===document.activeElement),true,'Double-click closes Top of Mind and restores Orb focus');
+  await orb.dblclick();
+  await hub.getByText('Prepare workshop',{exact:true}).waitFor();
   await hub.getByRole('button',{name:'Open code canvas',exact:true}).click();
   assert.equal(await page.evaluate(() => window.views),2);
   assert.equal(await hub.isVisible(),false);
+  assert.equal(await orb.getAttribute('aria-expanded'),'false');
+  await orb.press('Shift+Enter');
+  await hub.getByRole('heading',{name:'Top of Mind',exact:true}).waitFor();
+  await orb.press('Shift+Enter');
+  assert.equal(await hub.isVisible(),false,'Shift+Enter toggles the same panel');
+  assert.equal(await orb.evaluate(button=>button===document.activeElement),true);
+  await orb.press('Shift+Enter');
+  await hub.getByRole('heading',{name:'Top of Mind',exact:true}).waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await hub.isVisible(),false);
+  assert.equal(await orb.evaluate(button=>button===document.activeElement),true);
+  assert.equal(await page.evaluate(()=>window.orbChatWasOpened),false,'Opening Top of Mind does not briefly open Agent Chat.');
 
   const expand=async()=>{await hub.getByText('Prepare workshop',{exact:true}).waitFor();for(const details of await hub.locator('details[data-activity-group]').all())if(!await details.evaluate(element=>element.open))await details.locator('summary').click();};
   const open=async()=>{await page.evaluate(() => window.VP3AgentActivityHub.open());await hub.getByText('Prepare workshop',{exact:true}).waitFor();await expand();};
@@ -187,6 +303,8 @@ try {
   assert.equal(await page.locator('#chatAgentBriefPopover').isVisible(),false,'Participant rejection cannot fall back to private Brief');
   assert.equal(await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.openDetails()),false);
   const count=requests.length;
+  await orb.dblclick();
+  assert.equal(await hub.isVisible(),false,'The Orb gesture cannot reopen private activity in participant context');
   await page.waitForTimeout(200);
   assert.equal(requests.length,count,'Closed and participant views do not poll');
   await page.evaluate(()=>{window.participantSelected=false;window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
@@ -199,6 +317,13 @@ try {
   await page.locator('.vp3-orb-ball').click();
   const child=await page.locator('iframe').elementHandle().then(element=>element.contentFrame());
   await child.waitForFunction(()=>Boolean(window.VP3AgentOrb?.openActivity));
+  assert.equal(await child.evaluate(()=>window.VP3ChatSpecialists.openActivity('coding',document.getElementById('nativeResume'))),true);
+  const childSpecialist=child.locator('#vp3ChatSpecialistActivity');
+  await childSpecialist.getByRole('button',{name:'Full report',exact:true}).click();
+  await childSpecialist.getByRole('button',{name:'Open code canvas',exact:true}).waitFor();
+  assert.equal(await hub.isVisible(),false,'An embedded specialist stays within its Chat popup');
+  assert.equal(await page.locator('#vp3AgentChatPopup').isVisible(),true);
+  await childSpecialist.getByRole('button',{name:'Close',exact:true}).click();
   await child.evaluate(()=>window.VP3AgentActivityHub.open({specialist:'coding'}));
   await hub.getByText('Prepare workshop',{exact:true}).waitFor();
   assert.equal(await page.locator('#vp3AgentChatPopup').isVisible(),false,'Parent hub replaces the embedded Chat popup');

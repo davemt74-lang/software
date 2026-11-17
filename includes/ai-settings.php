@@ -80,7 +80,7 @@ function ai_saved_encrypted_credentials_exist(): bool
             $settings=$pdo->prepare("SELECT 1 FROM settings WHERE setting_key=? AND setting_value<>'' LIMIT 1");
             $settings->execute(['profile_calls_livekit_config_pa3c']);
             if($settings->fetchColumn())return true;
-            foreach(['user_llm_credentials','profile_calls_pa3c','vp3_gelato_connections_v1','agent_connections_v1','agent_connection_email_drafts_v1'] as $table){
+            foreach(['user_llm_credentials','profile_calls_pa3c','vp3_gelato_connections_v1','vp3_stoneward_connections_v1','agent_connections_v1','agent_connection_email_drafts_v1'] as $table){
                 $stmt=$pdo->prepare($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
                     ?"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
                     :'SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');
@@ -90,6 +90,7 @@ function ai_saved_encrypted_credentials_exist(): bool
                         'user_llm_credentials'=>'SELECT 1 FROM user_llm_credentials LIMIT 1',
                         'profile_calls_pa3c'=>"SELECT 1 FROM profile_calls_pa3c WHERE provider_snapshot<>'' LIMIT 1",
                         'vp3_gelato_connections_v1'=>"SELECT 1 FROM vp3_gelato_connections_v1 WHERE token_ciphertext<>'' LIMIT 1",
+                        'vp3_stoneward_connections_v1'=>"SELECT 1 FROM vp3_stoneward_connections_v1 WHERE token_ciphertext<>'' LIMIT 1",
                         'agent_connections_v1'=>"SELECT 1 FROM agent_connections_v1 WHERE access_token_enc<>'' OR refresh_token_enc<>'' LIMIT 1",
                         'agent_connection_email_drafts_v1'=>"SELECT 1 FROM agent_connection_email_drafts_v1 WHERE message_enc<>'' LIMIT 1",
                     });
@@ -556,7 +557,7 @@ function ai_history_messages(array $history): array
 
 function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeout=45,?AiV100ServiceMeter $meter=null,?array $target=null,?string $personalKey=null,bool $singleAttempt=false,?callable $observe=null,?callable $beforeDispatch=null): array
 {
-    if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.'];
+    if(!function_exists('curl_init'))return ['ok'=>false,'error'=>'AI transport is unavailable.','failure_code'=>'transport_unavailable'];
     $parts=parse_url($endpoint);$host=strtolower((string)($parts['host']??''));
     if(($parts['scheme']??'')!=='https'||!in_array($host,['api.openai.com','api.anthropic.com'],true))return ['ok'=>false,'error'=>'AI provider endpoint is not allowed.'];
     if ($host === 'api.anthropic.com') $payload = ai_haiku55_request($payload);
@@ -600,7 +601,7 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
         $curl=curl_init($endpoint);
         if($curl===false){
             $meter?->finish($ticket,[],'aborted');
-            return ['ok'=>false,'error'=>'AI transport is unavailable.'];
+            return ['ok'=>false,'error'=>'AI transport is unavailable.','failure_code'=>'transport_unavailable'];
         }
         curl_setopt_array($curl,$options);
         if(defined('CURLOPT_PROTOCOLS')&&defined('CURLPROTO_HTTPS'))curl_setopt($curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS);
@@ -650,13 +651,31 @@ function ai_curl_json(string $endpoint,array $headers,array $payload,int $timeou
             }
         }
         if(!is_string($response)){$last=['ok'=>false,'error'=>'The AI provider connection failed.','status'=>$status,'attempts'=>$attempt];error_log('Stonefellow AI transport '.$host.' status='.$status.' error='.mb_strimwidth($error,0,240,'…'));if($attempt<$maxAttempts){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;}
-        if(strlen($response)>2*1024*1024)return ['ok'=>false,'error'=>'The AI provider returned an oversized response.','status'=>$status,'attempts'=>$attempt];
+        if(strlen($response)>2*1024*1024)return ['ok'=>false,'error'=>'The AI provider returned an oversized response.',
+            'failure_code'=>'provider_response_too_large','status'=>$status,'attempts'=>$attempt];
         if($success)return ['ok'=>true,'data'=>$decoded,'status'=>$status,'attempts'=>$attempt,'duration_ms'=>(int)round((microtime(true)-$started)*1000)];
+        if($status>=200&&$status<300)return ['ok'=>false,'error'=>'The AI provider returned an unreadable response.',
+            'failure_code'=>'provider_response_invalid','status'=>$status,'attempts'=>$attempt];
+        if($host==='api.anthropic.com'&&ai_anthropic_credit_rejection_v1($status,$decoded)){
+            return ['ok'=>false,'error'=>'Anthropic reported that the API credit balance for this key is too low.',
+                'failure_code'=>'anthropic_credit_balance_low','status'=>$status,'attempts'=>$attempt];
+        }
         $providerError=is_array($decoded)?($decoded['error']['message']??$decoded['error']['type']??$decoded['message']??''):'';error_log('Stonefellow AI provider '.$host.' status='.$status.($singleAttempt?'':' detail='.mb_strimwidth((string)$providerError,0,300,'…')));
         $public=in_array($status,[401,403],true)?'AI provider authentication failed. Check the saved credentials.':($status===429?'The AI provider is temporarily rate-limited.':($status>=500?'The AI provider is temporarily unavailable.':'The AI provider rejected the request.'));
         $last=['ok'=>false,'error'=>$public,'status'=>$status,'attempts'=>$attempt];if(in_array($status,$transient,true)&&$attempt<$maxAttempts){$pause=200000*(2**($attempt-1))+random_int(0,120000);if(function_exists('vp3_ai_budget_pause_v1')){if(!vp3_ai_budget_pause_v1($pause))return $budgetError($attempt);}else usleep($pause);continue;}return $last;
     }
     return $last;
+}
+
+/** Anthropic uses invalid_request_error for several unrelated HTTP 400 responses. */
+function ai_anthropic_credit_rejection_v1(int $status,mixed $body): bool
+{
+    if($status!==400||!is_array($body)||($body['type']??null)!=='error'||!is_array($body['error']??null)
+        ||($body['error']['type']??null)!=='invalid_request_error')return false;
+    return in_array($body['error']['message']??null,[
+        'Your credit balance is too low to access the Anthropic API.',
+        'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.',
+    ],true);
 }
 
 function ai_openai_response(string $query,array $history,array $context,?array $user=null,?array $turnControl=null,?array $own=null,array $visionImages=[],?AiV100ServiceMeter $meter=null,?array $target=null): array
@@ -683,7 +702,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
     $apiKey=$own!==null?(string)($own['api_key']??''):ai_provider_api_key($provider);
     $openai=$provider==='openai';
     $name=$openai?'OpenAI':'Claude';
-    if($apiKey==='')return ['ok'=>false,'error'=>$name.' is not fully configured.'];
+    if($apiKey==='')return ['ok'=>false,'error'=>$name.' is not fully configured.','failure_code'=>'credential_empty'];
     $complexity=ai_v100_complexity($query,$context);
     $current=ai_v100_current_message($query,$context);
     $content=$current;
@@ -699,10 +718,17 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         &&($turnControl['protocol']??'')==='vp3.gmail-inbox-initial-summary.v1';
     $gmailReply=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-reply-draft.v1';
-    $beforeDispatch=$gmailSummary?($turnControl['before_gmail_summary_dispatch']??null)
-        :($gmailReply?($turnControl['before_gmail_reply_dispatch']??null):null);
+    $gmailAnalysis=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.gmail-thread-analysis.v1';
+    $beforeDispatch=match(true){
+        $gmailSummary=>$turnControl['before_gmail_summary_dispatch']??null,
+        $gmailReply=>$turnControl['before_gmail_reply_dispatch']??null,
+        $gmailAnalysis=>$turnControl['before_gmail_analysis_dispatch']??null,
+        default=>null,
+    };
     if($gmailSummary)$budget=384;
     if($gmailReply)$budget=1600;
+    if($gmailAnalysis)$budget=900;
     if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens'])){
         $budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));
     }
@@ -729,12 +755,12 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             $result=ai_curl_json('https://api.openai.com/v1/responses',
                 ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
                 ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply,$observer,$beforeDispatch);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis,$observer,$beforeDispatch);
         }else{
             $result=ai_curl_json('https://api.anthropic.com/v1/messages',
                 ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
                 ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply,$observer,$beforeDispatch);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis,$observer,$beforeDispatch);
         }
         $usage=[];$answer='';
         if(!empty($result['ok'])){
@@ -758,6 +784,10 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             if($answer==='')$answer=trim(implode("\n",$parts));
             $usage=is_array($decoded['usage']??null)?ai_v100_usage($provider,$decoded):[];
         }
+        if($provider==='anthropic'&&$user!==null&&function_exists('ai_v100_observe_anthropic_credit_v1')){
+            ai_v100_observe_anthropic_credit_v1($user,$own===null?'system':'own_key',$apiKey,$result,$answer!=='',
+                (int)($started*1000000),ai_v100_service_context());
+        }
         ai_v100_telemetry([
             'scope'=>'chat','user_id'=>(int)($user['id']??0),'provider'=>$provider,'model'=>$model,
             'status'=>$answer!==''?'success':(!empty($result['ok'])?'empty':'failed'),
@@ -769,7 +799,15 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             return ['ok'=>true,'answer'=>$answer,'model'=>$model,'complexity'=>$complexity,'usage'=>$usage,
                 'duration_ms'=>(int)($result['duration_ms']??0),'_legacy_usage_key'=>$observedKey];
         }
+        if(!empty($result['ok'])&&$meter?->active
+            &&vp3_ai_service_usage_tokens_v1(is_array($decoded['usage']??null)?$decoded['usage']:[])===null){
+            // HTTP success confirms a response, but its empty content and
+            // unknown usage do not establish that another attempt is safe.
+            return ai_v100_service_failure('The provider attempt could not be confirmed.','provider_attempt_unconfirmed')
+                +['status'=>$result['status']??null];
+        }
         $last=empty($result['ok'])?$result:['ok'=>false,'error'=>$name.' returned an empty response.','usage'=>$usage,
+            'failure_code'=>'provider_response_empty','status'=>$result['status']??null,
             'stop_service_fallback'=>$meter?->active??false];
         $last['_legacy_usage_key']=$observedKey;
         if(!empty($last['stop_service_fallback']))return $last;
@@ -820,16 +858,18 @@ function ai_generate_chat_response(
     if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005){
         return ['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted'];
     }
-    $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1'],true);
+    $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-office-report.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1'],true);
     $developmentOutline=($turnControl['surface']??'')==='tool_json'&&($turnControl['protocol']??'')==='vp3.agent-development-outline.v1';
     $gmailSummary=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-inbox-initial-summary.v1';
     $gmailReply=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-reply-draft.v1';
+    $gmailAnalysis=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.gmail-thread-analysis.v1';
     // Phone callers have no owner-session authority. Never run private Chat
     // context enrichment for this surface, including on a retry.
     if (($turnControl['surface']??'')==='phone_voice') $context=[];
-    elseif($gmailSummary||$gmailReply) $history=$context=$visionImages=[];
+    elseif($gmailSummary||$gmailReply||$gmailAnalysis) $history=$context=$visionImages=[];
     elseif($developmentOutline) $context=[];
     elseif(($turnControl['surface']??'')!=='cloud_mission'&&!$initiative
         && !$visionImages&&function_exists('chat_response_context'))$context=chat_response_context($query,$context);
@@ -852,26 +892,38 @@ function ai_generate_chat_response(
         ||!empty($serviceContext['background'])||!(($turnControl['before_gmail_reply_dispatch']??null) instanceof Closure))){
         return ai_v100_service_failure('Gmail reply usage accounting or access verification is unavailable.','service_usage_unavailable');
     }
+    if($gmailAnalysis&&(!$meter?->active||($serviceContext['service']??null)!=='initiative'
+        ||($serviceContext['background']??null)!==true
+        ||!(($turnControl['before_gmail_analysis']??null) instanceof Closure)
+        ||!(($turnControl['before_gmail_analysis_dispatch']??null) instanceof Closure))){
+        return ai_v100_service_failure('Gmail analysis usage accounting or access verification is unavailable.','service_usage_unavailable');
+    }
     $explicit=!empty($policy['configured']);
     $connection=$user&&function_exists('db')?db():null;
     $pdo=$connection instanceof PDO?$connection:null;
     try{$own=ai_cloud_account_route($pdo,$user,$explicit);}
     catch(Throwable $error){return ai_v100_service_budget_failure($error);}
     if(($own['route']??'system')==='unavailable')
-        return ['ok'=>false,'provider'=>'own_key','error'=>'Your saved provider key is unavailable. Re-enter it or select VP3 system inference.'];
+        return ['ok'=>false,'provider'=>'own_key','error'=>'Your saved provider key is unavailable. Re-enter it or select VP3 system inference.',
+            'failure_code'=>'personal_route_unavailable'];
     $isOwn=($own['route']??'system')==='own_key';
     if($isOwn){
         if(function_exists('subscription_has_entitlement')&&!subscription_has_entitlement($user,'main_ai.access'))
-            return ['ok'=>false,'provider'=>'own_key','error'=>'AI access is not included for this account.'];
+            return ['ok'=>false,'provider'=>'own_key','error'=>'AI access is not included for this account.','failure_code'=>'service_disabled'];
         if(!$explicit)$provider=(string)$own['provider'];
     }
-    try { ai_v100_rate_limit('chat',$user); } catch (Throwable $e) { return ['ok'=>false,'provider'=>$provider,'error'=>ai_v100_safe_exception($e)]; }
+    try{ai_v100_rate_limit('chat',$user);}
+    catch(Throwable $e){
+        return ['ok'=>false,'provider'=>$provider,'error'=>ai_v100_safe_exception($e),
+            'failure_code'=>$e instanceof AiV100RequestRateLimit?'request_rate_limit':'request_admission_unavailable'];
+    }
 
     if ($provider === 'local' && !$explicit) {
         return [
             'ok' => false,
             'provider' => 'local',
             'error' => 'Local retrieval mode is active.',
+            'failure_code' => 'service_route_unavailable',
         ];
     }
 
@@ -918,13 +970,16 @@ function ai_generate_chat_response(
                     return ai_v100_service_failure('Gmail summary access changed.','gmail_summary_access_changed');
                 }
             }
+            if($gmailAnalysis&&($turnControl['before_gmail_analysis'])()!==true){
+                return ai_v100_service_failure('Gmail analysis access changed.','gmail_analysis_access_changed');
+            }
             $result=ai_hosted_chat_response($candidateProvider,$query,$history,$context,$user,$turnControl,$candidateOwn,$visionImages,$meter,$target,$scope);
             $result['provider']=$candidateProvider;
             if($candidateOwn!==null){
                 $result['compute_source']='user_provider';
                 $result['system_tokens_charged']=false;
             }
-            if($gmailSummary||$gmailReply||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
+            if($gmailSummary||$gmailReply||$gmailAnalysis||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
         }
 
         if(!$meter?->active&&!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){

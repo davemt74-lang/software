@@ -6,8 +6,8 @@ const start=source.slice(source.indexOf('  async function audioStartSession(audi
 const delta=source.slice(source.indexOf('  function audioListenedDelta(audio)'),source.indexOf('  async function audioStartSession(audio)'));
 let now=15000;const requests=[];let finish;
 const state={trackId:1,sessionToken:'',startPromise:null,sessionGeneration:0,lastTick:10000,wasPlaying:true};
-const audio={paused:false,currentTime:5,duration:120,closest:()=>true};
-const historyEvents=[];const context={Event,window:{dispatchEvent:event=>historyEvents.push(event.type)},performance:{now:()=>now},audioState:new Map([[audio,state]]),playbackApi:payload=>{requests.push(payload);if(payload.action==='start')return new Promise(resolve=>{finish=resolve});return Promise.resolve({ok:true});}};
+const audio={paused:false,currentTime:5,duration:120,closest:()=>true,hasAttribute:()=>false};
+const historyEvents=[];const context={Event,window:{dispatchEvent:event=>historyEvents.push(event.type)},performance:{now:()=>now},audioState:new Map([[audio,state]]),mediaOfferAudioActions:new WeakMap(),playbackApi:payload=>{requests.push(payload);if(payload.action==='start')return new Promise(resolve=>{finish=resolve});return Promise.resolve({ok:true});}};
 vm.createContext(context);vm.runInContext(delta+start+'\nglobalThis.api={audioStartSession,audioTrackEvent,audioListenedDelta};',context);
 const one=context.api.audioStartSession(audio),two=context.api.audioStartSession(audio);
 assert.equal(requests.filter(x=>x.action==='start').length,1,'Overlapping starts must coalesce');

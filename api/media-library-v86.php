@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/media-collections-v1.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -30,6 +31,27 @@ function media_v86_csrf(): void
     if ($token === '' || !hash_equals(csrf_token(), $token)) {
         media_v86_json(false, ['error'=>'Session expired. Refresh and try again.'], 419);
     }
+}
+
+function media_v86_collection_id(mixed $value, string $message): int
+{
+    $id = is_string($value) && preg_match('/\A[1-9][0-9]*\z/D', $value)
+        ? filter_var($value, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]) : false;
+    if ($id === false) throw new InvalidArgumentException($message, 422);
+    return $id;
+}
+
+/** Look up collection membership only for the current page of owned assets. */
+function media_v86_collection_memberships(PDO $pdo, int $owner, array $ids): array
+{
+    if (!$ids) return [];
+    $marks = implode(',', array_fill(0, count($ids), '?'));
+    $query = $pdo->prepare("SELECT asset_id,collection_id FROM vp3_media_collection_assets_v1
+        WHERE owner_user_id=? AND asset_id IN ($marks) ORDER BY asset_id,collection_id");
+    $query->execute([$owner,...$ids]);
+    $out = [];
+    while ($row = $query->fetch(PDO::FETCH_ASSOC)) $out[(int)$row['asset_id']][] = (int)$row['collection_id'];
+    return $out;
 }
 
 function media_v86_temp_dir(int $userId): string
@@ -87,7 +109,8 @@ try {
     $action = (string)($_POST['action'] ?? $_GET['action'] ?? 'list');
     $userId = (int)$user['id'];
     $workspaceOwner = $_SERVER['HTTP_X_VP3_MEDIA_OWNER'] ?? null;
-    if (($action === 'browse' || $workspaceOwner !== null) && $workspaceOwner !== (string)$userId) {
+    $collectionAction = in_array($action, ['collection_create','collection_rename','collection_delete','collection_set_asset'], true);
+    if (($action === 'browse' || $collectionAction || $workspaceOwner !== null) && $workspaceOwner !== (string)$userId) {
         media_v86_json(false, ['error'=>'Account changed. Reopen Media Library before continuing.'], 403);
     }
 
@@ -96,12 +119,23 @@ try {
     }
 
     if ($action === 'browse') {
+        $pdo = db();
+        $collectionsReady = $pdo instanceof PDO && vp3_media_collections_ready_v1($pdo);
+        $collectionId = isset($_GET['collection_id']) ? media_v86_collection_id($_GET['collection_id'], 'Choose a media collection.') : null;
         $type = (string)($_GET['type'] ?? '');
         $source = (string)($_GET['source'] ?? '');
         $query = mb_strtolower(mb_substr(trim((string)($_GET['q'] ?? '')), 0, 190));
         $before = max(0, (int)($_GET['before'] ?? 0));
         $where = ['user_id=?'];
         $params = [$userId];
+        if ($collectionId !== null) {
+            if (!$collectionsReady) media_v86_json(false, ['error'=>'Run Database Upgrade to enable media collections.'], 503);
+            vp3_media_collection_require_v1($pdo, $userId, $collectionId);
+            $where[] = 'EXISTS (SELECT 1 FROM vp3_media_collection_assets_v1 membership
+                WHERE membership.owner_user_id=user_media_assets.user_id AND membership.asset_id=user_media_assets.id
+                AND membership.collection_id=?)';
+            $params[] = $collectionId;
+        }
         if (in_array($type, ['photo','video','audio'], true)) {
             $where[] = 'media_type=?';
             $params[] = $type;
@@ -121,18 +155,54 @@ try {
             $where[] = 'id<?';
             $params[] = $before;
         }
-        $stmt = db()->prepare('SELECT id,user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,created_at
+        $stmt = $pdo->prepare('SELECT id,user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,created_at
             FROM user_media_assets WHERE ' . implode(' AND ', $where) . ' ORDER BY id DESC LIMIT 25');
         $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $nextBefore = count($rows) > 24 ? (int)$rows[23]['id'] : null;
+        $assets = array_map('media_studio_asset_payload', array_slice($rows, 0, 24));
+        if ($collectionsReady) {
+            $memberships = media_v86_collection_memberships($pdo, $userId, array_column($assets, 'id'));
+            foreach ($assets as &$asset) $asset['collection_ids'] = $memberships[$asset['id']] ?? [];
+            unset($asset);
+        }
         media_v86_json(true, [
-            'assets'=>array_map('media_studio_asset_payload', array_slice($rows, 0, 24)),
+            'assets'=>$assets,
             'next_before'=>$nextBefore,
+            'collections_available'=>$collectionsReady,
+            'collections'=>$collectionsReady ? vp3_media_collections_list_v1($pdo, $userId) : [],
         ]);
     }
 
+    if ($collectionAction && ($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+        header('Allow: POST');
+        media_v86_json(false, ['error'=>'Use POST to change a media collection.'], 405);
+    }
     media_v86_csrf();
+
+    if ($collectionAction) {
+        $pdo = db();
+        if (!$pdo instanceof PDO || !vp3_media_collections_ready_v1($pdo)) {
+            media_v86_json(false, ['error'=>'Run Database Upgrade to enable media collections.'], 503);
+        }
+        $name = is_string($_POST['name'] ?? null) ? $_POST['name'] : '';
+        if ($action === 'collection_create') {
+            media_v86_json(true, ['collection'=>vp3_media_collection_create_v1($pdo, $userId, $name)], 201);
+        }
+        $id = media_v86_collection_id($_POST['collection_id'] ?? null, 'Choose a media collection.');
+        if ($action === 'collection_rename') {
+            media_v86_json(true, ['collection'=>vp3_media_collection_rename_v1($pdo, $userId, $id, $name)]);
+        }
+        if ($action === 'collection_delete') {
+            vp3_media_collection_delete_v1($pdo, $userId, $id);
+            media_v86_json(true);
+        }
+        $assetId = media_v86_collection_id($_POST['asset_id'] ?? null, 'Choose a media item.');
+        $member = $_POST['member'] ?? null;
+        if (!in_array($member, ['0','1'], true)) throw new InvalidArgumentException('Choose whether the media item belongs in this collection.', 422);
+        vp3_media_collection_set_asset_v1($pdo, $userId, $id, $assetId, $member === '1');
+        media_v86_json(true);
+    }
 
     if ($action === 'begin') {
         $type = strtolower(trim((string)($_POST['media_type'] ?? '')));
@@ -356,5 +426,12 @@ try {
 
     throw new RuntimeException('Unknown media-library action.');
 } catch (Throwable $e) {
+    if (($collectionAction ?? false) || ($action ?? '') === 'browse') {
+        if ($e instanceof PDOException || !($e instanceof RuntimeException || $e instanceof DomainException || $e instanceof InvalidArgumentException)) {
+            media_v86_json(false, ['error'=>'The Media Library could not complete this request. Try again.'], 503);
+        }
+        $status = (int)$e->getCode();
+        media_v86_json(false, ['error'=>$e->getMessage()], in_array($status,[400,403,404,409,422,503],true) ? $status : 400);
+    }
     media_v86_json(false, ['error'=>$e->getMessage()], 400);
 }

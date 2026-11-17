@@ -26,18 +26,47 @@ function vp3_youtube_picks_settings_v1(PDO $pdo, int $owner): array
 {
     $stmt = $pdo->prepare('SELECT taste,proactive,next_offer FROM vp3_youtube_picks_v1 WHERE owner_user_id=?');
     $stmt->execute([$owner]);
-    return $stmt->fetch(PDO::FETCH_ASSOC) ?: ['taste'=>'','proactive'=>0,'next_offer'=>0];
+    $settings=$stmt->fetch(PDO::FETCH_ASSOC) ?: ['taste'=>'','proactive'=>-1,'next_offer'=>0];
+    $settings['proactive_mode']=match((int)$settings['proactive']){
+        -1=>'idle',1=>'on',default=>'off',
+    };
+    $settings['proactive']=(int)$settings['proactive']===1?1:0;
+    return $settings;
 }
 
-function vp3_youtube_picks_save_v1(PDO $pdo, int $owner, string $taste, ?bool $proactive): void
+function vp3_youtube_idle_personalized_enabled_v1(PDO $pdo,int $owner): bool
+{
+    if(!vp3_youtube_picks_ready_v1($pdo))return true;
+    $stmt=$pdo->prepare('SELECT proactive FROM vp3_youtube_picks_v1 WHERE owner_user_id=?');
+    $stmt->execute([$owner]);
+    $setting=$stmt->fetchColumn();
+    return $setting===false||in_array((int)$setting,[-1,1],true);
+}
+
+function vp3_youtube_picks_save_v1(PDO $pdo, int $owner, string $taste, ?bool $proactive, bool $resetToIdle=false): void
 {
     $taste = trim($taste);
     if (strlen($taste)>480 || !preg_match('/\A[^\p{C}]{0,120}\z/u', $taste)) throw new DomainException('Invalid music taste.');
+    $updateChoice=$proactive!==null||$resetToIdle;
     $update = agent_commerce_sqlite_pa2($pdo)
-        ? ' ON CONFLICT(owner_user_id) DO UPDATE SET taste=excluded.taste'.($proactive === null ? '' : ',proactive=excluded.proactive')
-        : ' ON DUPLICATE KEY UPDATE taste=VALUES(taste)'.($proactive === null ? '' : ',proactive=VALUES(proactive)');
+        ? ' ON CONFLICT(owner_user_id) DO UPDATE SET taste=excluded.taste'.($updateChoice ? ',proactive=excluded.proactive' : '')
+        : ' ON DUPLICATE KEY UPDATE taste=VALUES(taste)'.($updateChoice ? ',proactive=VALUES(proactive)' : '');
+    // A first taste-only save preserves the default idle behavior. An existing
+    // value of zero may represent a deliberate opt-out and stays in effect.
     $pdo->prepare('INSERT INTO vp3_youtube_picks_v1 (owner_user_id,taste,proactive) VALUES (?,?,?)'.$update)
-        ->execute([$owner,$taste,(int)$proactive]);
+        ->execute([$owner,$taste,$proactive===null?-1:(int)$proactive]);
+}
+
+function vp3_youtube_search_topic_v1(string $message): ?string
+{
+    $message = trim($message);
+    $message = preg_replace('/\A(?:please[,\s]+|(?:can|could|would) you\s+)+/iu', '', $message) ?? $message;
+    if (preg_match('/\A(?:\/youtube\b|youtube\s*[:\-]|youtube\s+search\b|(?:search(?:\s+for)?|find|show|look\s+up)(?:\s+me)?\s+(?:an?\s+)?(?:(?:videos?\s+)?on\s+)?you\s*tube(?:\s+videos?)?\b)(?:\s*:\s*|\s+(?:for|about|of)\s+|\s*)(.*)\z/isu', $message, $match)
+        || preg_match('/\A(?:search(?:\s+for)?|find|show|look\s+up)(?:\s+me)?\s+(.+?)\s+(?:on|from)\s+you\s*tube(?:[,\s]+please)?[.?!]*\z/isu', $message, $match)) {
+        $query = preg_replace('/[.?!]+\z/u', '', trim($match[1])) ?? trim($match[1]);
+        return trim(preg_replace('/\s+/u', ' ', $query) ?? $query);
+    }
+    return null;
 }
 
 function vp3_youtube_suggestion_plan_v1(string $message): ?array
@@ -50,6 +79,12 @@ function vp3_youtube_suggestion_plan_v1(string $message): ?array
     }
     if (preg_match('/\A(?:make|create|build|draft)(?:\s+me)?\s+(?:a\s+)?you\s*tube\s+playlist(?:\s+(?:of|for|with)\s+(.+))?\z/isu', $message, $m)) {
         return ['kind'=>'playlist','topic'=>trim($m[1] ?? '')];
+    }
+    if (preg_match('/\A(.+?)(?:,?\s+)(?:and(?: then)?\s+|then\s+)(?:make|create|build|draft)(?:\s+me)?\s+(?:a\s+)?(?:you\s*tube\s+)?playlist\z/isu', $message, $m)) {
+        $topic = vp3_youtube_search_topic_v1($m[1]);
+        if ($topic !== null) {
+            return ['kind'=>'playlist','topic'=>preg_match('/\A(?:for|about|of)\z/iu', $topic) ? '' : $topic];
+        }
     }
     if (!preg_match('/\A(.+?)\s+(?:on|from)\s+you\s*tube\z/isu', $message, $m)) return null;
     $request = $m[1];

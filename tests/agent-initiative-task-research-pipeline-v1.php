@@ -1,10 +1,11 @@
 <?php
 declare(strict_types=1);
 
-require __DIR__.'/agent-initiative-scope-v1.php';
+require __DIR__.'/fixtures/initiative-scope-ready-v1.php';
 require_once dirname(__DIR__).'/includes/agent-artist-research-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-research-status-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-research-canvas-v1.php';
+require_once dirname(__DIR__).'/includes/agent-activity-hub-v1.php';
 
 $user=['id'=>1,'is_active'=>1];
 $principal=scope_principal($user,17);
@@ -15,6 +16,11 @@ $pdo->exec("UPDATE agent_memory_items SET memory_text='Private supplier terms an
 $pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=170");
 $scope=vp3_initiative_tools_scope_v1($pdo,$user,$policy);
 $ref='task-research:1002';
+$binding=vp3_catch_up_page_binding_v1($user);
+$workspace=static function(int $conversation=170)use($pdo,$user,$binding):array{
+    $activity=vp3_agent_activity_hub_request_v1($pdo,$user,'GET','17',(string)$conversation,$binding,'tasks');
+    return array_column($activity['sections'],null,'id')['office_reviews']['items'];
+};
 $evidence=static function(?array $refs=null)use($pdo,$scope):array{
     $coverage=[];
     return vp3_initiative_task_research_evidence_v1($pdo,$scope,$refs,$coverage);
@@ -97,14 +103,18 @@ $completed=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$runId),
         },
         'request'=>static fn():array=>['status'=>200,'content_type'=>'text/plain',
             'body'=>$quote.' Operators should confirm installation details with the manufacturer and the relevant local authority.'],
-    ]);
+    ], allowDelivery:false);
 $action=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');
 $receipt=$pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');
 $action->execute([$runId]);$receipt->execute([$runId]);
 $json=$action->fetchColumn();$result=json_decode((string)$json,true,24,JSON_THROW_ON_ERROR);
 scope_check($completed['ok']&&$json===$receipt->fetchColumn()&&$result['initiative_delivery']==='pending'
     &&$result['initiative_tool_result']['output']['public_topic']===$topic&&$searches===1,
-    'a completed task search saves identical verified worker evidence while the owner is away');
+    'a preparation-only worker saves identical verified research before the separate Chat publication step');
+$workspaceReview=static function(int $conversation=170)use($workspace,$runId):?array{
+    return array_column($workspace($conversation),null,'id')['office-review:'.$runId]??null;
+};
+scope_check($workspaceReview()===null,'the Tasks workspace withholds saved research until its exact Chat delivery is verified');
 $findings=vp3_initiative_status_v1($pdo,$user,$policy,['handled'=>true],true);
 scope_check(str_contains($findings['answer'],$quote)&&in_array($url,array_column($findings['sources'],'url'),true)&&$searches===1,
     'a direct background findings read returns the saved result and public citation without another search');
@@ -119,11 +129,36 @@ $canvas=json_decode($history[0]['context_json'],true,24,JSON_THROW_ON_ERROR)['re
 scope_check($canvas['title']===$topic&&$canvas['sources'][0]['url']===$url&&!vp3_initiative_deliver_pending_v1($pdo,$user,17),
     'ordinary Chat history renders the exact completed research card once');
 
+$beforeRead=(int)$pdo->query('SELECT total_changes()')->fetchColumn();
+$modelCalls=count($GLOBALS['scopeInference']);
+$pdo->exec('PRAGMA query_only=ON');
+$review=$workspaceReview();
+$foreign=$workspaceReview(171);
+$pdo->exec('PRAGMA query_only=OFF');
+scope_check(($review['title']??null)==='Task research: '.$topic&&str_contains($review['detail'],$quote)
+    &&$review['actions'][0]['conversation_id']===170&&$review['actions'][0]['message_id']===(int)$delivered['initiative_message_id']
+    &&str_contains($review['actions'][0]['href'],'&message_id='.$delivered['initiative_message_id'])&&$foreign===null
+    &&(int)$pdo->query('SELECT total_changes()')->fetchColumn()===$beforeRead&&count($GLOBALS['scopeInference'])===$modelCalls&&$searches===1,
+    'the readonly Tasks report shows verified research and opens the exact Chat post without another search');
+$pdo->beginTransaction();
+$pdo->prepare("UPDATE agent_workflow_receipts SET result_json='{}' WHERE run_id=?")->execute([$runId]);
+scope_check($workspaceReview()===null,'the Tasks report rejects a mismatched research receipt');
+$pdo->rollBack();
+$pdo->beginTransaction();
+$pdo->prepare("UPDATE chat_messages SET message='Different content' WHERE id=?")->execute([$delivered['initiative_message_id']]);
+scope_check($workspaceReview()===null,'the Tasks report rejects changed text in the exact research Chat post');
+$pdo->rollBack();
+$pdo->prepare("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE id=?")->execute([$delivered['initiative_message_id']]);
+scope_command($user,17,170,'off');
+scope_check($workspaceReview()!==null,'the delivered result survives a status expiry and Initiative pause while its grant is current');
+scope_command($user,17,170,'on');
+
 $taskState=$pdo->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE id=1002');
 $taskState->execute(['{"task_status":"completed"}']);
-scope_check($evidence([$ref])===[],'a completed task stops being an eligible research source');
+scope_check($evidence([$ref])===[]&&$workspaceReview()===null,'a completed task stops being an eligible research source for work and workspace projection');
 $taskState->execute(['{}']);
 $next=$grant('/research task #1002: public oven installation requirements');
+scope_check($workspaceReview()===null,'a changed public-topic grant withholds the old delivered research');
 $plans=scope_runs(1,17,'initiative.plan');
 $planned=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,(int)end($plans)['id']),
     static fn():string=>json_encode(['jobs'=>[['tool'=>'topic.research','primary'=>$ref,'refs'=>[$ref],
@@ -135,7 +170,7 @@ $blockedCalls=0;
 $blocked=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$revokedRun),null,
     ['search'=>static function()use(&$blockedCalls):array{++$blockedCalls;return ['ok'=>true,'results'=>[]];}]);
 scope_check($next['tool_receipt']['status']==='completed'&&$planned['ok']&&$revoke['tool_receipt']['status']==='completed'
-    &&$retry['tool_receipt']['status']==='completed'&&$evidence()===[]&&$blockedCalls===0&&!$blocked['ok']
+    &&$retry['tool_receipt']['status']==='completed'&&$evidence()===[]&&$workspaceReview()===null&&$blockedCalls===0&&!$blocked['ok']
     &&vp3_initiative_research_status_v1($pdo,$user,17,170)['specialist']===null,
     'revoking a queued task stops every provider call and an older replay cannot re-enable it');
 echo "AGENT_INITIATIVE_TASK_RESEARCH_PIPELINE_V1=PASS\n";

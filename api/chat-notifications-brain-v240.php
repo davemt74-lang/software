@@ -453,7 +453,7 @@ function chat_notifications_v240_state(array $user, PDO $pdo, int $agentId=0, bo
             'eyes_events'=>$brainAllowed && function_exists('vp3_eyes_recent') ? vp3_eyes_recent($pdo,$user,30) : [],
         ],
         'history'=>$brainAllowed && function_exists('vp3_cognitive_context_history_rows_v2420')
-            ? vp3_cognitive_context_history_rows_v2420($pdo, $user, $namespace, 60)
+            ? vp3_cognitive_context_history_rows_v2420($pdo, $user, $namespace, 60, includeProactive:false)
             : [],
         'youtube_history'=>$youtubeHistory,
     ];
@@ -784,6 +784,13 @@ try {
         if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
         chat_notifications_v240_json(chat_notifications_v240_state($user, $pdo, max(0,(int)($input['agent_id']??0)),
             ($input['youtube_history']??null)==='1'));
+    }
+    if ($method === 'GET' && $action === 'history') {
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+        $namespace=vp3_cognitive_agent_namespace_v500($pdo,$user,max(0,(int)($input['agent_id']??0)));
+        chat_notifications_v240_json(['ok'=>true,'agent_namespace'=>$namespace,
+            'history'=>personal_capability_has_v242('agent_brain.access',$user)
+                ? vp3_cognitive_context_history_rows_v2420($pdo,$user,$namespace) : []]);
     }
     if ($method === 'GET' && $action === 'attention') {
         if (($input['scope'] ?? null) === 'connection_activations') {

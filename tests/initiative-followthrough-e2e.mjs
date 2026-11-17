@@ -23,7 +23,9 @@ const companion=fs.readFileSync(path.join(source,'tests/fixtures/initiative-foll
   .replace('function ai_generate_chat_response(', 'function followthrough_fixture_ai_generate_chat_response(');
 fs.writeFileSync(path.join(temp,'includes/initiative-followthrough-chat-fixture.php'),companion);
 let bootstrap=fs.readFileSync(path.join(source,'tests/fixtures/capability-chat-bootstrap.php'),'utf8');
-for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete'])bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete',
+ 'track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\n";
 bootstrap=bootstrap.replace('declare(strict_types=1);','declare(strict_types=1); session_start();');
 const runtimeSource=fs.readFileSync(path.join(source,'includes/agent-runtime-v125.php'),'utf8');
 const primitiveStart=runtimeSource.indexOf('function agent_runtime_v125_idempotency_path('),primitiveEnd=runtimeSource.indexOf('function agent_background_v125_jobs_dir(',primitiveStart);
@@ -246,8 +248,13 @@ try{
     try{
       await page.goto(base,{waitUntil:'domcontentloaded'});await ready(page);
       assert.equal(await page.locator('#chatInitiativeReplyCue').count(),0);
-      await send(page,'yes');await page.locator('#chatRecoveryStatus').waitFor();
-      assert.equal((await page.locator('#chatRecoveryStatus').textContent()).includes('initiative_reply_'),false);
+      await send(page,'yes');
+      const notice=page.locator('#chatThread [data-chat-turn-notice] .message-text[role="status"]');
+      await notice.waitFor();
+      assert.equal((await notice.textContent()).includes('initiative_reply_'),false);
+      assert.equal(await page.locator('[data-chat-turn-notice].assistant,[data-chat-turn-notice][data-chat-message-id]').count(),0,
+        'A failed send is local status, never a saved Agent result');
+      assert.equal(await page.locator('#chatInput').inputValue(),'yes');
       const failed=await control(),originalTurn=failed.messages.find(row=>row.role==='user'&&row.message==='yes');
       assert.ok(originalTurn);assert.equal(Object.hasOwn(sends[0],'initiative_reply'),false);
       await context.setExtraHTTPHeaders({...headers,'X-Fixture-Followthrough-Intent':'advance'});
@@ -255,6 +262,7 @@ try{
       assert.equal(await page.locator('#chatInitiativeReplyCue').count(),0);
       await page.locator('#sendChatButton').click();await idle(page);
       await page.waitForFunction(()=>document.getElementById('chatInput').value==='');
+      assert.equal(await notice.count(),0,'The successful exact retry clears its local failure notice');
       const recovered=await control(),acks=recovered.messages.filter(row=>contextOf(row).initiative_followthrough?.message_id===proposal.id);
       const children=recovered.runs.filter(row=>JSON.parse(row.goal||'{}').followthrough?.message_id===proposal.id);
       assert.equal(recovered.messages.filter(row=>row.role==='user'&&row.message==='yes').length,1);

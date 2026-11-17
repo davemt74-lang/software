@@ -39,7 +39,7 @@ const edited = png(3, 2, [37, 97, 179, 100]);
 
 fs.mkdirSync(path.join(root, 'api'));
 fs.mkdirSync(path.join(root, 'includes'));
-for (const file of ['api/media-library-v86.php', 'includes/media-studio-v86.php', 'includes/agent-image-provider-v1.php', 'media-library-file-v86.php', 'media-library.php']) {
+for (const file of ['api/media-library-v86.php', 'includes/media-studio-v86.php', 'includes/media-collections-v1.php', 'includes/agent-image-provider-v1.php', 'media-library-file-v86.php', 'media-library.php', 'media-library-v1.css', 'media-library-v1.js']) {
   fs.copyFileSync(file, path.join(root, file));
 }
 for (const file of ['main-sidebar.php', 'member-header.php']) {

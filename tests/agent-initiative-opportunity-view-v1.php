@@ -1,9 +1,24 @@
 <?php
 declare(strict_types=1);
 
+// Reuse the canonical database and Brainstorm helpers. Their complete suites
+// remain separate required gates; this process loads real AI settings before
+// testing read-only Activity projections, with inference supplied explicitly.
+define('VP3_EMAIL_CANVAS_PIPELINE_FIXTURE',true);
+define('VP3_BRAINSTORM_PIPELINE_FIXTURE',true);
+require __DIR__.'/fixtures/initiative-ai-settings-v1.php';
 require __DIR__.'/agent-initiative-brainstorm-pipeline-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-opportunity-view-v1.php';
 $viewStart=$checks;
+function opportunity_view_execute(int $run): array
+{
+    return vp3_initiative_execute_v1(db(),$GLOBALS['owner'],canvas_pipeline_claim($run),
+        static function(string $prompt,string $protocol):string{
+            if(db()->inTransaction())throw new LogicException('Opportunity inference must finish before receipt locks.');
+            $GLOBALS['pipelineInference'][]=['protocol'=>$protocol];
+            return ($GLOBALS['pipelineModel'])($prompt,$protocol);
+        });
+}
 function opportunity_view_check_empty(callable $read,string $label): void
 {
     try{$result=$read();canvas_pipeline_check($result===[],$label);}
@@ -21,6 +36,10 @@ function opportunity_view_snapshot(): string
 vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>11],'on',null);
 $pdo->prepare("INSERT INTO agent_memory_items(id,user_id,user_agent_id,memory_type,subject,memory_text,memory_hash,memory_scope_version,
     confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
+    VALUES(20001,1,7,'task','Recurring review','Prepare the same recurring review each week','brainstorm-recurring-review',410,.95,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,1,?)")
+    ->execute([json_encode(['task_status'=>'open','due_at'=>gmdate('Y-m-d H:i:s',time()-60)],JSON_THROW_ON_ERROR)]);
+$pdo->prepare("INSERT INTO agent_memory_items(id,user_id,user_agent_id,memory_type,subject,memory_text,memory_hash,memory_scope_version,
+    confidence,occurrence_count,first_seen_at,last_seen_at,is_active,metadata_json)
     VALUES(30001,1,7,'task','Separate private context','An independently saved detail available to the assessment','brainstorm-view-context',410,.95,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,1,?)")
     ->execute([json_encode(['task_status'=>'open','due_at'=>gmdate('Y-m-d H:i:s',time()-60)],JSON_THROW_ON_ERROR)]);
 $viewEvidence=brainstorm_pipeline_evidence();
@@ -36,7 +55,8 @@ $GLOBALS['pipelineModel']=static function(string $prompt,string $protocol)use($v
     return json_encode(['jobs'=>[],'opportunities'=>[['tool'=>'canvas.prepare','primary'=>'task:20001','refs'=>['task:20001'],
         'objective'=>$viewObjective,'rationale'=>$viewRationale]]],JSON_THROW_ON_ERROR);
 };
-canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($viewRun))['ok'],'the real model-generated opportunity has a completed canonical assessment receipt');
+canvas_pipeline_check(opportunity_view_execute($viewRun)['ok']&&count($GLOBALS['pipelineInference'])===1,
+    'one inference produces the real opportunity and completed canonical assessment receipt');
 $inferences=count($GLOBALS['pipelineInference']);$beforeRead=opportunity_view_snapshot();
 $view=vp3_initiative_opportunities_v1($pdo,$owner,7);
 canvas_pipeline_check(count($view)===1&&$view[0]['run_id']===$viewRun&&$view[0]['objective']===$viewObjective
@@ -51,6 +71,18 @@ $assessed=array_values(array_filter(vp3_top_of_mind_v1($pdo,$owner,7,11)['items'
     static fn(array $item):bool=>$item['run_id']===$viewRun&&$item['kind']==='assessment'));
 canvas_pipeline_check(count($assessed)===1&&$assessed[0]['state']==='assessed',
     'the typed private Brainstorm receipt remains a verified completed assessment in Top of Mind');
+require_once dirname(__DIR__).'/includes/agent-activity-hub-v1.php';
+$activity=vp3_agent_activity_hub_request_v1($pdo,$owner,'GET','7','11',vp3_catch_up_page_binding_v1($owner));
+$activitySections=array_column($activity['sections'],null,'id');
+$opportunityCards=array_values(array_filter($activitySections['suggestions']['items'],
+    static fn(array $item):bool=>$item['id']==='opportunity:'.$view[0]['id']));
+canvas_pipeline_check(count($opportunityCards)===1&&$opportunityCards[0]['title']===$viewObjective
+    &&str_contains($opportunityCards[0]['detail'],$viewRationale)
+    &&is_array($activity['specialists']??null)&&is_array($activity['coordination']??null)
+    &&json_encode($activity,JSON_THROW_ON_ERROR)!=='',
+    'the shared Activity response includes verified opportunity cards alongside specialist and coordination status');
+canvas_pipeline_check(count($GLOBALS['pipelineInference'])===$inferences&&opportunity_view_snapshot()===$beforeRead,
+    'the shared Activity read does not execute the opportunity or alter saved work');
 
 $pdo->exec("UPDATE agent_memory_items SET memory_text='A materially changed hidden context detail' WHERE id=30001");
 opportunity_view_check_empty(static fn()=>vp3_initiative_opportunities_v1(db(),$GLOBALS['owner'],7),
@@ -94,7 +126,7 @@ canvas_pipeline_check(count(vp3_initiative_opportunities_v1($pdo,$owner,7))===1,
 $newPayload=brainstorm_pipeline_payload($viewEvidence);$newPayload['attention_revision']=bin2hex(random_bytes(16));
 $newViewRun=brainstorm_pipeline_enqueue($newPayload);
 $GLOBALS['pipelineModel']=static fn()=>'{"jobs":[]}';
-canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($newViewRun))['ok'],'a later legacy-compatible quiet assessment still completes normally');
+canvas_pipeline_check(opportunity_view_execute($newViewRun)['ok'],'a later legacy-compatible quiet assessment still completes normally');
 opportunity_view_check_empty(static fn()=>vp3_initiative_opportunities_v1(db(),$GLOBALS['owner'],7),
     'the latest empty assessment supersedes an older still-readable idea');
 $pdo->exec("UPDATE agent_workflow_runs SET status='failed' WHERE id=".$newViewRun);

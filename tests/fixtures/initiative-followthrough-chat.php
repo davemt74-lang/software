@@ -118,7 +118,7 @@ function ai_generate_chat_response($prompt,...$args): array
                 if(isset($_SERVER['HTTP_X_FIXTURE_FOLLOWTHROUGH_COMPLETE'])&&($input['verified_followthrough']['proposal']['state']??'')==='queued'){
                     $run=(int)($input['verified_followthrough']['proposal']['continuation_run_id']??0);
                     $completed=vp3_initiative_execute_v1(db(),['id'=>1,'is_active'=>1],followthrough_fixture_claim_v1($run),
-                        static fn(string $prompt,string $protocol): string=>json_encode(['draft'=>'Verified continuation completed during the main acknowledgement. The launch still needs its image and reviewed promotion plan.'],JSON_THROW_ON_ERROR));
+                        static fn(string $prompt,string $protocol): string=>json_encode(['draft'=>'Verified continuation completed during the main acknowledgement. The launch still needs its image and reviewed promotion plan.'],JSON_THROW_ON_ERROR),allowDelivery:false);
                     if(empty($completed['ok']))throw new RuntimeException('The concurrent canonical continuation did not complete.');
                 }
                 if(isset($_SERVER['HTTP_X_FIXTURE_FOLLOWTHROUGH_CHANGE']))$GLOBALS['followthroughFixtureRace']=true;

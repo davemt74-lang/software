@@ -167,6 +167,143 @@ try {
     agent_connection_gmail_inbox_revoke_v1($pdo,1,7,$grant);
     inbox_settings_check($saved()['revision'] !== $revision && $saved()['rules']['senders'] === ['new@example.com'],
         'revoking the exact Gmail grant invalidates its form and retains private rule preferences');
+    $pdo->beginTransaction();
+    $pdo->exec("INSERT INTO settings VALUES ('fixture_verified_receipt','sent')");
+    agent_connection_gmail_inbox_project_matter_receipt_v1($pdo,static function() use ($pdo): void {
+        $pdo->exec("INSERT INTO settings VALUES ('fixture_matter_projection','partial')");
+        throw new RuntimeException('Fixture projection failure');
+    });
+    $pdo->commit();
+    inbox_settings_check($pdo->query("SELECT setting_value FROM settings WHERE setting_key='fixture_verified_receipt'")->fetchColumn()==='sent'
+        && $pdo->query("SELECT setting_value FROM settings WHERE setting_key='fixture_matter_projection'")->fetchColumn()===false,
+        'a failed matter projection rolls back its own writes while the verified receipt commits');
+
+    require_once dirname(__DIR__).'/includes/agent-email-triage-v1.php';
+    agent_email_matters_install_v1($pdo);
+    agent_email_triage_install_v1($pdo);
+    $base['inbox_revision'] = $saved()['revision'];
+    inbox_settings_reject(422,static fn()=>agent_connection_gmail_inbox_save_v1($pdo,$user,$base+['enabled'=>'1','catch_up_recent'=>'1'],$http),
+        'quiet catch-up requires a separate body-aware triage opt-in');
+    $catchUpSettings = $base+['enabled'=>'1','triage_enabled'=>'1','catch_up_recent'=>'1'];
+    inbox_settings_check(agent_connection_gmail_inbox_save_v1($pdo,$user,$catchUpSettings,$http)==='inbox_saved'
+        && ($sync = agent_connection_gmail_inbox_sync_row_v1($pdo,$saved()))['mode']==='catchup' && $sync['status']==='pending',
+        'explicit catch-up freezes a historical window and a verified live cursor before a worker reads any messages');
+    $activationCursor = $profileCursor;
+    $liveCursor = '18446744073709551618';
+    $recoveryCursor = '18446744073709551620';
+    $nextLiveCursor = '18446744073709551621';
+    $listPages = [
+        ''=>['messages'=>[['id'=>'historical_priority'],['id'=>'outside_window']],'nextPageToken'=>'catchup-2'],
+        'catchup-2'=>['messages'=>[['id'=>'historical_priority'],['id'=>'historical_promotion']]],
+    ];
+    $metadataDates = ['historical_priority'=>(int)$sync['before_ms']-1000,
+        'historical_promotion'=>(int)$sync['since_ms'],'outside_window'=>(int)$sync['before_ms'],
+        'recovery_mail'=>(int)$saved()['enabled_at_ms']+1];
+    $mailReads = [];
+    $listRequests = [];
+    $historyCursor = $liveCursor;
+    $expired = false;
+    $replay = false;
+    $workerHttp = static function(string $method,string $url,array $headers,?array $body,bool $form)
+        use ($pdo,$http,&$listPages,&$listRequests,&$mailReads,$metadataDates,&$historyCursor,&$expired,&$replay): array {
+        if ($method !== 'GET' || $body !== null || $form || $pdo->inTransaction()
+            || !str_starts_with($url,VP3_GMAIL_API_V1.'/')
+            || !in_array('Authorization: Bearer fixture-only-token',$headers,true)) {
+            throw new RuntimeException('Unexpected Gmail synchronization request.');
+        }
+        $path = (string)parse_url($url,PHP_URL_PATH);
+        parse_str((string)parse_url($url,PHP_URL_QUERY),$query);
+        if (str_ends_with($path,'/profile')) return $http($method,$url,$headers,$body,$form);
+        if (str_ends_with($path,'/history')) {
+            if ($expired) return ['status'=>404,'json'=>[]];
+            return ['status'=>200,'json'=>['historyId'=>$historyCursor,'history'=>$replay ? [
+                ['id'=>$historyCursor,'messagesAdded'=>[['message'=>['id'=>'recovery_mail']]]],
+            ] : []]];
+        }
+        if (str_ends_with($path,'/messages')) {
+            $page = (string)($query['pageToken']??'');
+            if (!isset($listPages[$page]) || ($query['labelIds']??null)!=='INBOX' || ($query['includeSpamTrash']??null)!=='false'
+                || (int)($query['maxResults']??0)>VP3_GMAIL_INBOX_SYNC_PAGE_SIZE_V1) throw new RuntimeException('Unexpected Gmail list page.');
+            $listRequests[] = $query;
+            if ($listPages[$page] === ['stale'=>true]) return ['status'=>400,'json'=>[]];
+            return ['status'=>200,'json'=>$listPages[$page]];
+        }
+        $id = basename($path);
+        if (str_contains($path,'/messages/') && isset($metadataDates[$id])) {
+            $format = $query['format']??'';
+            $mailReads[] = $id.':'.$format;
+            $priority = $id==='historical_priority';
+            return ['status'=>200,'json'=>['id'=>$id,'threadId'=>'thread_'.$id,'internalDate'=>(string)$metadataDates[$id],
+                'labelIds'=>['INBOX',$priority ? 'IMPORTANT' : 'CATEGORY_PROMOTIONS'],
+                'payload'=>['mimeType'=>'text/plain','headers'=>[
+                    ['name'=>'From','value'=>'office@example.test'],
+                    ['name'=>'Subject','value'=>$priority ? 'Urgent response requested' : 'Special offer'],
+                    ['name'=>'Date','value'=>gmdate(DATE_RFC2822,intdiv($metadataDates[$id],1000))],
+                ],'body'=>['data'=>base64_encode('Please confirm by tomorrow. HISTORICAL_PRIVATE_FIXTURE')]]]];
+        }
+        throw new RuntimeException('Unexpected Gmail synchronization resource.');
+    };
+    $step = static function () use ($pdo,$saved,$workerHttp): ?bool {
+        return agent_connection_gmail_inbox_run_due_v1($pdo,$saved(),$workerHttp);
+    };
+    $syncView = static fn(): ?array => agent_connection_gmail_inbox_sync_view_v1($pdo,$saved());
+    $noticeCount = (int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn();
+    $pdo->prepare('INSERT INTO agent_connection_gmail_inbox_receipts_v1 VALUES (1,?)')
+        ->execute([agent_connection_gmail_inbox_key_v1($saved(),'message:historical_priority')]);
+    inbox_settings_check($step()===true && $syncView()['status']==='pending' && $syncView()['reviewed']===1
+        && $saved()['history_id']===$activationCursor && $saved()['last_checked_at']===null && $saved()['last_review_json']===null,
+        'a previously header-reviewed email receives quiet classification without moving the live cursor or replacing the live report');
+    inbox_settings_check($step()===true && $syncView()['status']==='complete' && $syncView()['checked']===4
+        && $syncView()['reviewed']===2 && ($listRequests[1]['pageToken']??null)==='catchup-2'
+        && $listRequests[0]['q']===$listRequests[1]['q'] && count(array_filter($mailReads,static fn(string $read): bool=>$read==='historical_priority:metadata'))===1
+        && (int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===$noticeCount,
+        'catch-up resumes its exact frozen page, skips duplicate receipts and emits no alerts even for an urgent subject');
+    $historicalRows = $pdo->query('SELECT is_historical,should_alert FROM agent_email_triage_v1 ORDER BY triage_id')->fetchAll(PDO::FETCH_ASSOC);
+    inbox_settings_check(count($historicalRows)===2 && array_sum(array_column($historicalRows,'is_historical'))===2
+        && array_sum(array_column($historicalRows,'should_alert'))===0
+        && $step()===false && $saved()['history_id']===$liveCursor && $saved()['last_checked_at']!==null,
+        'historical classifications stay quiet and the separate verified live scan resumes afterward');
+
+    $lastLiveCheck = $saved()['last_checked_at'];
+    $profileCursor = $recoveryCursor;
+    $expired = true;
+    $pdo->exec("UPDATE agent_connection_gmail_inbox_v1 SET next_check_at='2000-01-01 00:00:00' WHERE owner_user_id=1");
+    inbox_settings_check($step()===false && $syncView()['mode']==='recovery' && $syncView()['status']==='pending'
+        && $saved()['history_id']===$liveCursor && $saved()['last_checked_at']===$lastLiveCheck,
+        'Gmail 404 stages recovery after verifying the same mailbox profile and holds the prior checked cursor');
+    $pdo->exec('UPDATE agent_connection_gmail_inbox_sync_v1 SET max_checked=1 WHERE owner_user_id=1');
+    $listPages = [''=>['messages'=>[['id'=>'recovery_mail']],'nextPageToken'=>'recovery-2'],
+        'recovery-2'=>['messages'=>[['id'=>'recovery_mail']]]];
+    inbox_settings_check($step()===true && $syncView()['status']==='truncated' && $syncView()['can_continue']
+        && $saved()['last_status']==='restart_required' && $saved()['history_id']===$liveCursor && $saved()['next_check_at']===null,
+        'clipped recovery records explicit incomplete coverage and leaves the old live cursor intact');
+    $resume = array_replace($base,['action'=>'continue_sync','inbox_revision'=>$saved()['revision']]);
+    inbox_settings_reject(409,static fn()=>agent_connection_gmail_inbox_save_v1($pdo,$other,$resume,$http),
+        'another user cannot continue a clipped Gmail page');
+    inbox_settings_check(agent_connection_gmail_inbox_save_v1($pdo,$user,$resume,$http)==='inbox_sync_continued'
+        && $syncView()['status']==='pending' && $step()===false && $syncView()['status']==='complete'
+        && $saved()['history_id']===$recoveryCursor && $saved()['last_checked_at']===$lastLiveCheck,
+        'the owner can resume the saved page and publish the verified recovery cursor only after complete bounded coverage');
+    $expired = false;
+    $replay = true;
+    $historyCursor = $nextLiveCursor;
+    $readsBeforeReplay = $mailReads;
+    inbox_settings_check($step()===false && $saved()['history_id']===$nextLiveCursor && $mailReads===$readsBeforeReplay
+        && (int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===$noticeCount,
+        'the resumed live feed does not reread or alert on a recovered message');
+
+    $profileCursor = '18446744073709551622';
+    $restart = array_replace($base,['action'=>'restart','inbox_revision'=>$saved()['revision']]);
+    inbox_settings_check(agent_connection_gmail_inbox_save_v1($pdo,$user,$restart,$http)==='inbox_restarted'
+        && $syncView()['status']==='pending' && $saved()['history_id']===$nextLiveCursor,
+        'an explicit restart with triage enabled holds the verified live cursor during recovery');
+    $listPages = [''=>['nextPageToken'=>'expired-list-token'],'expired-list-token'=>['stale'=>true]];
+    inbox_settings_check($step()===false && $syncView()['status']==='pending' && $step()===false
+        && $syncView()['status']==='truncated' && !$syncView()['can_continue'] && $saved()['history_id']===$nextLiveCursor,
+        'Gmail rejecting an expired page token leaves recoverable work visibly incomplete and preserves the verified live cursor');
+    $resume = array_replace($resume,['inbox_revision'=>$saved()['revision']]);
+    inbox_settings_reject(409,static fn()=>agent_connection_gmail_inbox_save_v1($pdo,$user,$resume,$http),
+        'an expired provider page cannot be continued with a forged settings action');
     echo 'Gmail Inbox Review settings: '.$checks.' checks passed'.PHP_EOL;
 } finally {
     foreach (glob($root.'/private/*') ?: [] as $file) unlink($file);

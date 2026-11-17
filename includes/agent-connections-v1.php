@@ -52,6 +52,9 @@ function agent_connections_install_v1(PDO $pdo): void
     require_once __DIR__.'/agent-connection-email-followup-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+    require_once __DIR__.'/agent-email-matters-v1.php';
+    require_once __DIR__.'/agent-email-triage-v1.php';
+    require_once __DIR__.'/agent-connection-gmail-inbox-activity-v1.php';
     require_once __DIR__.'/agent-connection-gmail-github-v1.php';
     require_once __DIR__.'/agent-connection-gmail-github-notice-v1.php';
     agent_connection_email_draft_schema_v1($pdo);
@@ -59,6 +62,9 @@ function agent_connections_install_v1(PDO $pdo): void
     agent_connection_gmail_inbox_install_v1($pdo);
     agent_connection_gmail_inbox_receipts_install_v1($pdo);
     agent_connection_gmail_inbox_initial_install_v1($pdo);
+    agent_email_matters_install_v1($pdo);
+    agent_email_triage_install_v1($pdo);
+    agent_connection_gmail_inbox_activity_install_v1($pdo);
     agent_connection_gmail_github_install_v1($pdo);
     agent_connection_gmail_github_receipts_install_v1($pdo);
     agent_connection_gmail_github_actions_voice_install_v1($pdo);
@@ -68,9 +74,11 @@ function agent_connections_install_v1(PDO $pdo): void
 /** Revoke the Gmail features that require read permission. */
 function agent_connections_revoke_mail_intake_v1(PDO $pdo, int $owner, int $connection, string $grant): void
 {
+    require_once __DIR__.'/coding-canvas-command-grants-v1.php';
     agent_connection_gmail_inbox_revoke_v1($pdo,$owner,$connection,$grant);
     agent_connection_gmail_github_revoke_v1($pdo,$owner,$connection,$grant);
     agent_connection_gmail_autosend_revoke_v1($pdo,$owner,$connection,$grant);
+    vp3_coding_canvas_command_gmail_revoke_v1($pdo,$owner,$connection,$grant);
 }
 
 function agent_connections_schema_ready_v1(PDO $pdo): bool
@@ -334,7 +342,7 @@ function agent_connections_access_v1(int $ownerId, int $connectionId, string $ca
     }
 }
 
-function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null, ?array $reply = null, bool $reconcileOnly = false): array
+function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null, ?array $reply = null, bool $reconcileOnly = false, ?callable $onReplyReviewRequired = null): array
 {
     if (!preg_match('/\A[a-f0-9]{64}\z/D', $operationKey)) {
         throw new AgentConnectionExceptionV1('A reviewed send key is required.', 400);
@@ -379,8 +387,13 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
             // The earlier access call refreshed the token before taking this send lock.
             $token = ai_decrypt_secret($row['access_token_enc']);
             if ($token === '') throw new AgentConnectionExceptionV1('Reconnect Gmail to send.', 401);
-            if ($created && $beforeDispatch !== null) $beforeDispatch($pdo,agent_connections_view_v1($row));
-            if ($created && $reply !== null) {
+            $reviewStatus = null;
+            $sourceError = null;
+            if ($created && $beforeDispatch !== null) {
+                $checked = $beforeDispatch($pdo,agent_connections_view_v1($row));
+                if ($reply !== null && $checked === 'answered') $reviewStatus = 'answered';
+            }
+            if ($created && $reply !== null && $reviewStatus === null) {
                 try {
                     $current = agent_connection_gmail_reply_source_v1($token,$reply['message_id'],$row['account_email'],false,$http);
                 } catch (AgentConnectionGmailExceptionV1 $e) {
@@ -389,6 +402,28 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
                 if ($current['reply'] !== $reply || $current['to'] !== $to || $current['subject'] !== $subject) {
                     throw new AgentConnectionExceptionV1('The original Gmail message or reply address changed. Open it again before sending.', 409);
                 }
+                try {
+                    $head = agent_connection_gmail_reply_thread_head_v1($token,$reply,$row['account_email'],$http);
+                    if ($head !== $reply['message_id']) $reviewStatus = 'stale';
+                } catch (AgentConnectionGmailExceptionV1 $e) {
+                    $reviewStatus = 'source_check';
+                    $sourceError = $e;
+                }
+            }
+            if ($reviewStatus !== null) {
+                if ($onReplyReviewRequired !== null) {
+                    // Commit the reply state and release only the claim that never reached Gmail.
+                    $onReplyReviewRequired($pdo,$reviewStatus);
+                    $release = $pdo->prepare("DELETE FROM agent_connection_sends_v1 WHERE id=? AND status='pending'");
+                    $release->execute([(int)$send['id']]);
+                    $pdo->commit();
+                    $created = false;
+                }
+                throw new AgentConnectionExceptionV1(match ($reviewStatus) {
+                    'answered'=>'You already replied to this message in Gmail.',
+                    'stale'=>'A newer Gmail message arrived. Review the latest message before sending.',
+                    default=>'The current Gmail thread could not be verified. Open the review again before sending.',
+                },409,$sourceError);
             }
             try {
                 $dispatched = $created;

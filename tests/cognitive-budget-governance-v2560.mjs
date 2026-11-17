@@ -166,7 +166,7 @@ const checks=[
    &&/Manage Budget Governance/.test(brainJs)],
  ['Agent History remains canonical conversation archive',
    /<strong>Agent History<\/strong>/.test(brainJs)
-   &&/Authorized conversation archive/.test(brainJs)],
+   &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
  ['chat cache bust exposes v25.60 build',
    /cognitive-budget-governance-v2560-20260923/.test(chat)
    &&/budgetGovernanceBuild/.test(chat)],

@@ -4,6 +4,7 @@
   let lastMeaningful=Date.now(),hiddenAt=document.hidden?Date.now():0,lastState='',taskTitle=String(cfg.taskTitle||''),taskKey=String(cfg.taskKey||'');
   let timer=0,sending=false,lastSentContext='',closed=false,activitySequence=0,clockOffset=0,clockAnchored=false;
   let lastCoreContext=null,lastCoreKey='',lastCoreAt=0,heartbeatController=null,lastSentAvailability='',liveTimer=0,lastLiveAt=0;
+  let ownerInteractionAt=0,ownerInteractionChat=0;
   const pageCsrf=String(cfg.csrf),pageEndpoint=String(cfg.endpoint),pageOwner=Number(window.STONEFELLOW_CHAT?.userId||0);
   const pageAgent=Number(window.STONEFELLOW_CHAT?.agentId||0);
   const pageBinding=String(window.STONEFELLOW_CHAT?.workingAttentionBinding||'');
@@ -46,9 +47,18 @@
       const voiceState=String(document.body?.dataset.stonefellowAgentState||'');
       const ready=canonical.isReady()&&!canonical.isRestoring?.()
         &&Number(canonical.agentId?.()??pageAgent)===pageAgent&&currentBinding();
+      let busyReason=null;
+      if(!ready)busyReason='restore';
+      else if(voiceState==='speaking')busyReason='voice_playback';
+      else if(canonical.isBusy?.())busyReason='chat_request';
+      else if(facade?.hasVoicePreview?.())busyReason='voice_preview';
+      else if(String(input.value||'').trim()!=='')busyReason=canonical.composerDraftOrigin?.()||'draft';
+      else if(facade?.isBusy?.()||['thinking','processing'].includes(voiceState))busyReason='voice_turn';
       value.chat_focused=focused&&ready;
-      value.chat_busy=!ready||!!canonical.isBusy?.()||!!facade?.isBusy?.()
-        ||String(input.value||'').trim()!==''||['thinking','processing','speaking'].includes(voiceState);
+      value.chat_busy=busyReason!==null;
+      if(busyReason!==null)value.chat_busy_reason=busyReason;
+      value.media_playing=Array.from(document.querySelectorAll('audio,video')).some(player=>!player.paused&&!player.ended)
+        ||window.VP3_CHAT_YOUTUBE_V1?.isPlaying?.()===true;
     }
     if((cfg.surface||'chat')==='chat'&&activityTab&&pageOwner&&pageBinding&&currentBinding()&&canonical?.isReady?.()&&!canonical.isRestoring?.()
       &&value.conversation_id>0&&Number(canonical.agentId?.()??pageAgent)===pageAgent){
@@ -56,6 +66,10 @@
       const live=window.VP3LiveContext?.snapshot?.()||null;
       value.owner_user_id=pageOwner;value.agent_id=pageAgent;
       value.live_context=value.chat_focused===true&&clockAnchored?live:null;
+      if(value.chat_focused===true&&clockAnchored&&ownerInteractionChat===value.conversation_id
+        &&ownerInteractionAt>0&&Date.now()-ownerInteractionAt<=90000){
+        value.owner_interaction_at_ms=Math.round(ownerInteractionAt+clockOffset);
+      }
       const source=window.STONEFELLOW_TRANSCRIPTION_CANVAS?.sourceContext?.();
       if(value.chat_focused===true&&Number.isSafeInteger(source?.session_id)&&source.session_id>0){
         value.transcript_source_id=source.session_id;
@@ -124,11 +138,29 @@
     }
   }
   function meaningful(reason='interaction'){lastMeaningful=Date.now();if(document.hidden)return;const prior=lastState;lastState='';heartbeat(reason,true);if(prior==='idle'||prior==='paused')document.dispatchEvent(new CustomEvent('stonefellow:proactive-refresh'));}
+  function rememberOwnerInteraction(event,kind){
+    if(!event.isTrusted||!(event.target instanceof Element)||document.hidden||!document.hasFocus()||(cfg.surface||'chat')!=='chat'
+      ||!pageOwner||!pageBinding||!currentBinding()||window.VP3ParticipantContinuity?.selectedContext?.())return false;
+    const chat=canonicalChat(),cid=linkedConversation();
+    if(!chat?.isReady?.()||chat.isRestoring?.()||cid<1||Number(chat.agentId?.()??pageAgent)!==pageAgent)return false;
+    if(kind==='composer'&&!event.target.closest('#chatInput'))return false;
+    if(kind==='player'&&!event.target.closest('button[data-player-toggle],button[data-player-prev],button[data-player-next],'
+      +'input[data-player-seek],button[data-listening-toggle],button[data-resume-track],button[data-drawer-play],'
+      +'button[data-play-album],button[data-play-playlist],button[data-queue-play],button.vp3-youtube-play,button.vp3-youtube-close,'
+      +'a.vp3-youtube-watch'))return false;
+    ownerInteractionAt=Date.now();ownerInteractionChat=cid;
+    return true;
+  }
   ['pointerdown','keydown','input','change','submit','dragstart','drop'].forEach(type=>document.addEventListener(type,e=>{
     if(type==='keydown'&&['Shift','Control','Alt','Meta'].includes(e.key))return;
     if((type==='pointerdown'||type==='keydown')&&(cfg.surface||'chat')==='chat')window.VP3LiveContext?.noteChatInput?.(e);
+    if(type==='input'&&e.target instanceof Element&&e.target.matches('input[data-player-seek]'))rememberOwnerInteraction(e,'player');
+    else if(type==='pointerdown'||type==='keydown'||type==='input')rememberOwnerInteraction(e,'composer');
     meaningful(type);
   },{capture:true,passive:type==='pointerdown'}));
+  document.addEventListener('click',event=>{
+    if(rememberOwnerInteraction(event,'player'))meaningful('player_control');
+  },{capture:true});
   document.addEventListener('stonefellow:task-start',e=>{taskTitle=String(e.detail?.title||taskTitle);taskKey=String(e.detail?.key||taskKey);meaningful('task_start');});
   document.addEventListener('visibilitychange',()=>{hiddenAt=document.hidden?Date.now():0;heartbeat(document.hidden?'hidden':'visible',true);});
   window.addEventListener('focus',()=>heartbeat('focus',true));

@@ -15,7 +15,7 @@ $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSid
 $mainSidebarCodingCanvas = $mainSidebarIsChat && $mainSidebarCanChat && personal_knowledge_available($mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
-$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
+$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','canvases','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryKeys['hosting']=true;
 $mainSidebarPrimaryKeys['apps']=true;
@@ -30,6 +30,7 @@ $mainSidebarPrimaryLabels = [
     'connections'=>'Connections',
     'knowledge'=>'Knowledge',
     'media_library'=>'Media Library',
+    'canvases'=>'Canvases',
     'transcriptions'=>'Transcriptions',
     'calendar'=>'Calendar',
     'scheduling'=>'Scheduling',
@@ -50,6 +51,7 @@ $mainSidebarPrimaryIcons = [
     'connections'=>'⇄',
     'knowledge'=>'◇',
     'media_library'=>'▧',
+    'canvases'=>'▣',
     'transcriptions'=>'▤',
     'calendar'=>'▣',
     'scheduling'=>'◷',
@@ -70,6 +72,7 @@ $mainSidebarPrimarySections = [
     'connections'=>'Workspace',
     'knowledge'=>'Workspace',
     'media_library'=>'Workspace',
+    'canvases'=>'Workspace',
     'transcriptions'=>'Workspace',
     'calendar'=>'Plan & Sell',
     'scheduling'=>'Plan & Sell',
@@ -85,6 +88,12 @@ $mainSidebarLinkIndex = [];
 foreach ($mainSidebarMenuLinks as $link) {
     $key = (string)($link['key'] ?? '');
     if ($key !== '') $mainSidebarLinkIndex[$key] = $link;
+}
+if (($mainSidebarIsChat || $mainSidebarActive === 'canvases') && isset($mainSidebarLinkIndex['canvases'])) {
+    $mainSidebarCanvasAgent = $_GET['agent'] ?? null;
+    if (is_string($mainSidebarCanvasAgent) && preg_match('/\A(?:system|[1-9][0-9]{0,18})\z/iD',$mainSidebarCanvasAgent) === 1) {
+        $mainSidebarLinkIndex['canvases']['url'] = url('/canvases.php?agent='.rawurlencode(strtolower($mainSidebarCanvasAgent)));
+    }
 }
 if(isset($mainSidebarLinkIndex['music_workspace'])){
     $musicLinks=[
@@ -302,10 +311,15 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 <?php if ($mainSidebarCodingCanvas): ?>
 <script>window.VP3_CODING_CANVAS_V1=<?= json_encode([
     'endpoint' => url('/api/coding-canvas-v1.php'), 'csrf' => csrf_token(),
+    'artworkEndpoint' => url('/api/coding-canvas-artwork-v1.php'),
+    'iconEndpoint' => url('/api/coding-canvas-icon-v1.php'),
 ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES) ?>;</script>
+<script src="<?= e(url('/coding-canvas-thumbnail-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-thumbnail-v1.js'), 0, 12))) ?>" defer></script>
+<script src="<?= e(url('/coding-canvas-icon-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-icon-v1.js'), 0, 12))) ?>" defer></script>
+<script src="<?= e(url('/coding-canvas-runtime-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-runtime-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/chat-coding-canvas-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../chat-coding-canvas-v1.js'), 0, 12))) ?>" defer></script>
 <?php endif; ?>
-<?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v=20260911-1-visitor-settings')) ?>" defer></script><?php endif; ?>
+<?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v='.substr(hash_file('sha256', __DIR__.'/../chat-rail-controls-v132.js'), 0, 12))) ?>" defer></script><?php endif; ?>
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><script data-member-agent-voice-menu src="<?= e(url('/member-agent-voice-menu.js?v=' . $mainSidebarAgentVoiceMenuBuild)) ?>" defer></script><?php endif; ?>
 
 <?php require __DIR__.'/agent-orb.php'; ?>

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/section12-data.php';
 require_once __DIR__.'/user-calendar-recurrence-v1340.php';
+require_once __DIR__.'/agent-coordination-source-change-v1.php';
 
 /**
  * VP3 User Calendar v13.00
@@ -207,6 +208,7 @@ function user_calendar_create_event_locked_v1300(PDO $pdo, array $user, array $i
         $event = user_calendar_event_v1300($pdo,$ownerUserId,(int)$event['id']);
     }
     if(function_exists('vp3_cognitive_calendar_event_v2380'))vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_created',$event);
+    vp3_coordination_source_changed_v1($pdo,$ownerUserId);
     return $event;
 }
 
@@ -241,6 +243,10 @@ function user_calendar_update_event_locked_v1300(PDO $pdo, array $user, int $eve
     if (user_calendar_recurrence_schema_ready_v1340($pdo)) $pdo->prepare("UPDATE user_calendar_events SET recurrence=?,agent_notifications=? WHERE id=? AND owner_user_id=? AND status='active'")->execute([$options['recurrence'],$options['agent_notifications'],$eventId,$ownerUserId]);
     $saved=user_calendar_event_v1300($pdo, $ownerUserId, $eventId) ?: $existing;
     if(function_exists('vp3_cognitive_calendar_event_v2380'))vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_updated',$saved);
+    $fields = array_flip(['title','description','location','start_at_utc','end_at_utc','timezone','all_day','recurrence','agent_notifications']);
+    if (array_intersect_key($saved,$fields) !== array_intersect_key($existing,$fields)) {
+        vp3_coordination_source_changed_v1($pdo,$ownerUserId);
+    }
     return $saved;
 }
 
@@ -261,6 +267,7 @@ function user_calendar_cancel_event_locked_v1300(PDO $pdo, array $user, int $eve
         $existing['status']='cancelled';$existing['cancelled_at']=gmdate('Y-m-d H:i:s');
         vp3_cognitive_calendar_event_v2380($pdo,$ownerUserId,'calendar.event_cancelled',$existing);
     }
+    if($changed)vp3_coordination_source_changed_v1($pdo,$ownerUserId);
     return $changed;
 }
 

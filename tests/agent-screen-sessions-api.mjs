@@ -10,7 +10,7 @@ assert.match(sessionEndpoint??'',/^\/api\/[a-z0-9-]+\.php$/);
 const sessionFile=sessionEndpoint.slice(1);
 assert.ok(fs.existsSync(sessionFile),'Agent Eyes session endpoint must exist: '+sessionEndpoint);
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-screen-sessions-'));for(const name of ['includes','api','sessions','budgets'])fs.mkdirSync(path.join(tmp,name));
-for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php',sessionFile,'api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
+for(const file of ['includes/knowledge.php','includes/shared-folders-v161.php','includes/agent-screen-share-v1.php','includes/agent-screen-sessions-v1.php','includes/agent-screen-audio-v1.php',sessionFile,'api/agent-screen-audio-v1.php','includes/agent-screen-insights-v1.php','includes/agent-screen-handoffs-v1.php','includes/agent-screen-chat-report-v1.php','includes/schema-metadata.php','api/agent-screen-insights-v1.php'])fs.copyFileSync(file,path.join(tmp,file));
 for(const name of [
  'agent-initiative-v1','agent-initiative-brainstorm-v1','agent-initiative-scope-v1','agent-initiative-errors-v1','agent-initiative-capabilities-v1','agent-capability-contract-v1',
  'agent-tool-json-v1','agent-chat-boundary-v380',
@@ -19,19 +19,41 @@ for(const name of [
  'profile-calls-pa3c','profile-agent-handoff-pa3','profile-agent-boundary-v390',
  'profile-agent-public-service-v110','profile-call-activity-pa3c','profile-live-text-pa3d'
 ])fs.copyFileSync(`includes/${name}.php`,path.join(tmp,'includes',name+'.php'));
+// Follow production's literal include dependencies as the shared specialist
+// runtime grows. Copying a file does not load it or replace fixture services.
+const dependencyFiles=fs.readdirSync(path.join(tmp,'includes')).map(name=>'includes/'+name);
+for(let i=0;i<dependencyFiles.length;i++){
+ const code=fs.readFileSync(dependencyFiles[i],'utf8');
+ for(const match of code.matchAll(/(?:require|include)(?:_once)?\s+__DIR__\s*\.\s*['"]\/([^'"]+\.php)['"]/g)){
+  const dependency=path.normalize(path.join(path.dirname(dependencyFiles[i]),match[1]));
+  if(!fs.existsSync(dependency)||fs.existsSync(path.join(tmp,dependency)))continue;
+  fs.mkdirSync(path.dirname(path.join(tmp,dependency)),{recursive:true});
+  fs.copyFileSync(dependency,path.join(tmp,dependency));dependencyFiles.push(dependency);
+ }
+}
 const unit=fs.readFileSync('tests/agent-screen-sessions-v1.php','utf8');let setup=unit.slice(unit.indexOf('$pdo->exec("CREATE TABLE artist_'),unit.indexOf('screen_sessions_schema_v1($pdo);'));
 setup=setup.replaceAll('CREATE TABLE ','CREATE TABLE IF NOT EXISTS ');
-// Load the actual new owner/conversation resolver without importing unrelated
-// tool implementations into this deliberately small Screen HTTP fixture.
-const controlPrincipal=fs.readFileSync('includes/agent-capability-chat-v1.php','utf8')
- .match(/function vp3_capability_control_principal_v1\([\s\S]*?\n\}/)?.[0];
-assert.ok(controlPrincipal,'The canonical control-principal resolver must remain available to the Screen fixture');
-const memoryScopeSource=fs.readFileSync('includes/agent-memory-scope-v410.php','utf8');
-const conversationScope=memoryScopeSource.match(/function vp3_agent_memory_scope_conversation_id_v410\([\s\S]*?\n\}/)?.[0];
-const scopeFromConversation=memoryScopeSource.match(/function vp3_agent_memory_scope_from_conversation_v410\([\s\S]*?\n\}/)?.[0];
-assert.ok(conversationScope&&scopeFromConversation,'Screen sessions must use the canonical saved conversation namespace');
+// The existing in-memory Brain service is a fixture boundary. Put its adapter
+// at the actual include path so shared Initiative dependencies use it once.
+fs.writeFileSync(path.join(tmp,'includes/agent-brain-v122.php'),`<?php
+function agent_brain_v122_memory($user,$type,$subject){
+    $query=db()->prepare('SELECT metadata FROM fixture_initiative_memory WHERE owner_id=? AND type=? AND subject=?');
+    $query->execute([$user['id'],$type,$subject]);$value=$query->fetchColumn();
+    return $value===false?null:['metadata'=>json_decode($value,true,16,JSON_THROW_ON_ERROR)];
+}
+function agent_brain_v122_upsert_system_memory($user,$type,$subject,$text,$meta,$confidence=.95){
+    if($type==='initiative_policy'){
+        $query=db()->prepare('INSERT INTO fixture_initiative_memory(owner_id,type,subject,metadata) VALUES(?,?,?,?)
+            ON CONFLICT(owner_id,type,subject) DO UPDATE SET metadata=excluded.metadata');
+        $query->execute([$user['id'],$type,$subject,json_encode($meta,JSON_THROW_ON_ERROR)]);
+        return $query->rowCount();
+    }
+    db()->prepare('INSERT INTO agent_memory_items(user_id,memory_type,subject,memory_text,agent_id) VALUES(?,?,?,?,?)')->execute([$user['id'],$type,$subject,$text,vp3_agent_memory_scope_current_v410($user)]);
+    return (int)db()->lastInsertId();
+}
+`);
 fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),`<?php
-session_start();require_once __DIR__.'/knowledge.php';require_once __DIR__.'/agent-chat-boundary-v380.php';
+session_start();require_once __DIR__.'/knowledge.php';require_once __DIR__.'/agent-chat-boundary-v380.php';require_once __DIR__.'/agent-memory-scope-v410.php';require_once __DIR__.'/agent-capability-chat-v1.php';require_once __DIR__.'/agent-brain-v122.php';
 class ScreenSessionFixturePDO extends PDO {
     public function prepare(string $query,array $options=[]): PDOStatement|false {
         return parent::prepare(str_ends_with($query,' FOR UPDATE')?substr($query,0,-11):$query,$options);
@@ -49,48 +71,21 @@ function personal_capability_has_v242($permission,$user){
 function table_exists($name){$q=db()->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$name]);return (bool)$q->fetchColumn();}
 function column_exists(...$args){return true;}
 function url($path){return $path;}
-${conversationScope}
-${scopeFromConversation}
-function vp3_agent_memory_scope_set_current_v410($uid,$aid){$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=['user_id'=>$uid,'user_agent_id'=>$aid];}
-function vp3_agent_memory_scope_current_v410($user){
-    if(isset($_SERVER['HTTP_X_FIXTURE_NAMED']))return 4;
-    $scope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??[];
-    return ($scope['user_id']??null)===$user['id']?(int)($scope['user_agent_id']??0):0;
+if(isset($_SERVER['HTTP_X_FIXTURE_NAMED'])){
+    vp3_agent_memory_scope_set_current_v410((int)($_SERVER['HTTP_X_FIXTURE_USER']??1),4);
+    $GLOBALS['vp3_capability_turn_v1']=['owner_user_id'=>(int)($_SERVER['HTTP_X_FIXTURE_USER']??1),
+        'owner_conversation'=>true,'conversation_id'=>7,'agent_id'=>4,'checked_at'=>gmdate(DATE_ATOM)];
 }
 if(isset($_SERVER['HTTP_X_FIXTURE_PARTICIPANT']))$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=[
     'owner'=>(int)($_SERVER['HTTP_X_FIXTURE_USER']??1),'agent'=>0,'participant'=>8,'revision'=>1];
 function user_agent_principal_v236($user,$agent){return ['kind'=>$agent?'user_agent':'system','agent_id'=>$agent['id']??0,'viewer_user_id'=>$user['id']];}
-function vp3_capability_current_v1($user){return null;}
-${controlPrincipal}
-function vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority){
-    if($authority)$authority();
-    $query=$pdo->prepare('SELECT * FROM users WHERE id=? AND is_active=1');
-    $query->execute([$user['id']]);$live=$query->fetch();
-    if(!$live||!has_permission('chat.access',$live))throw new RuntimeException('Account access changed.',403);
-    return $live;
-}
 function agent_brain_schema_ready(){return true;}
 // This fixture supplies Initiative readiness on the sessions route. The
 // insights fixture still exercises its existing unavailable HomeServer path.
 if(basename($_SERVER['SCRIPT_FILENAME']??'')===${JSON.stringify(path.basename(sessionFile))}){
     function agent_job_engine_schema_ready_v1900($pdo){return true;}
 }
-function agent_brain_v122_memory($user,$type,$subject){
-    $query=db()->prepare('SELECT metadata FROM fixture_initiative_memory WHERE owner_id=? AND type=? AND subject=?');
-    $query->execute([$user['id'],$type,$subject]);$value=$query->fetchColumn();
-    return $value===false?null:['metadata'=>json_decode($value,true,16,JSON_THROW_ON_ERROR)];
-}
-function agent_brain_v122_upsert_system_memory($user,$type,$subject,$text,$meta,$confidence=.95){
-    if($type==='initiative_policy'){
-        $query=db()->prepare('INSERT INTO fixture_initiative_memory(owner_id,type,subject,metadata) VALUES(?,?,?,?)
-            ON CONFLICT(owner_id,type,subject) DO UPDATE SET metadata=excluded.metadata');
-        $query->execute([$user['id'],$type,$subject,json_encode($meta,JSON_THROW_ON_ERROR)]);
-        return $query->rowCount();
-    }
-    db()->prepare('INSERT INTO agent_memory_items(user_id,memory_type,subject,memory_text,agent_id) VALUES(?,?,?,?,?)')->execute([$user['id'],$type,$subject,$text,vp3_agent_memory_scope_current_v410($user)]);
-    return (int)db()->lastInsertId();
-}
-function user_agent_get_v236($pdo,$uid,$aid){return $uid===1&&$aid===4?['id'=>4]:null;}
+function user_agent_get_v236($pdo,$uid,$aid){return $uid===1&&$aid===4?['id'=>4,'is_active'=>1]:null;}
 function homeserver_https_v1300_status($uid){return ['connected'=>false];}
 function ai_v100_ensure_runtime_dir(){return __DIR__.'/../budgets';}
 function ai_elevenlabs_credential(){return ['','missing'];}
@@ -98,15 +93,17 @@ function ai_generate_chat_response(...$args){return ['ok'=>true,'answer'=>json_e
 ${setup}
 $pdo->exec("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,is_active INTEGER);
     INSERT OR IGNORE INTO users VALUES(1,1),(2,1),(3,0);
-    CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER);
-    INSERT OR IGNORE INTO chat_conversations VALUES(7,1,NULL),(8,1,NULL),(9,1,4),(10,2,NULL),(11,3,NULL);
+    CREATE TABLE IF NOT EXISTS chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
+    INSERT OR IGNORE INTO chat_conversations(id,user_id,user_agent_id) VALUES(7,1,NULL),(8,1,NULL),(9,1,4),(10,2,NULL),(11,3,NULL);
+    CREATE TABLE IF NOT EXISTS chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT);
     CREATE TABLE IF NOT EXISTS fixture_initiative_memory(owner_id INTEGER,type TEXT,subject TEXT,metadata TEXT,PRIMARY KEY(owner_id,type,subject))");
 $pdo->prepare("INSERT OR IGNORE INTO fixture_initiative_memory VALUES(1,'initiative_policy','owner-opt-in',?)")
     ->execute([json_encode(['enabled'=>true,'conversation_id'=>7,'revision'=>'0123456789abcdef0123456789abcdef'],JSON_THROW_ON_ERROR)]);
 `);
 const reserve=net.createServer();await new Promise(r=>reserve.listen(0,'127.0.0.1',r));const port=reserve.address().port;await new Promise(r=>reserve.close(r));const child=spawn(process.env.VP3_PHP_BINARY||'php',['-d',`session.save_path=${tmp}/sessions`,'-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',x=>logs+=x);const url=`http://127.0.0.1:${port}${sessionEndpoint}`;let checks=0;
-const post=async(body,headers={})=>{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({owner_key:'1',csrf_token:'fixture',...body})});return {r,data:await r.json()};};
-const get=async(body,headers={})=>{const r=await fetch(url+'?'+new URLSearchParams(body),{headers});return {r,data:await r.json()};};const check=async(name,fn)=>{await fn();checks++;console.log('PASS '+name);};
+const responseJson=async r=>{const text=await r.text();try{return JSON.parse(text);}catch(error){throw Error('Invalid screen API JSON (HTTP '+r.status+'): '+text.slice(0,2000),{cause:error});}};
+const post=async(body,headers={})=>{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({owner_key:'1',csrf_token:'fixture',...body})});return {r,data:await responseJson(r)};};
+const get=async(body,headers={})=>{const r=await fetch(url+'?'+new URLSearchParams(body),{headers});return {r,data:await responseJson(r)};};const check=async(name,fn)=>{await fn();checks++;console.log('PASS '+name);};
 const sid='00000000-0000-4000-8000-000000000001',cid='00000000-0000-4000-8000-000000000002';
 try{
  for(let i=0;i<50;i++){try{await fetch(url);break;}catch{await new Promise(r=>setTimeout(r,50));}}
@@ -195,6 +192,7 @@ try{
    capture(300,'tab_audio',second+'.550Z',{transcript:'Timed audio',duration_seconds:15,cues:[{start_seconds:2,end_seconds:3,text:'Timed audio'}]}),
    capture(301,'screen',second+'.200Z',{annotation_logging:true,observation:{on_screen_translation:'Visible translation'},image:'private body image'}),
    capture(302,'tab_audio',second+'Z',{transcript:'Legacy audio'}),
+   capture(307,'tab_audio','2026-11-03T12:00:00.800Z',{transcript:'',audio_events:[{label:'Music'}]}),
    capture(303,'screen','2026-11-03T12:00:03Z',{observation:{on_screen_translation:'Logging disabled'}}),
    capture(304,'screen','2026-11-03T12:00:03Z',{annotation_logging:true,observation:{on_screen_translation:' '}}),
    capture(305,'tab_audio','2026-11-03T12:00:03Z',{transcript:'Withdrawn audio'}),
@@ -224,7 +222,8 @@ try{
   assert.ok(first.data.captures.every(c=>c.body.image===undefined&&c.image_data===undefined&&c.owner_user_id===undefined));
   assert.equal(first.data.next_before,id(301));
   const earlier=await timeline({before:first.data.next_before});
-  assert.deepEqual(earlier.data.captures.map(c=>c.body.transcript),['Legacy audio']);
+  assert.deepEqual(earlier.data.captures.map(c=>c.body.transcript),['Legacy audio','']);
+  assert.deepEqual(earlier.data.captures.at(-1).body.audio_events,[{label:'Music'}],'sound-only audio survives a saved timeline read');
   assert.equal(earlier.data.next_before,null);
   assert.equal((await post({action:'delete_session',session_id:timelineSid,remove_brain:false})).r.status,200);
   assert.equal((await timeline()).r.status,404);
@@ -265,5 +264,35 @@ try{
   assert.equal((await get({action:'capture',capture_id})).data.capture.body.image,frame.image);
  });
  await check('audio endpoint rejects unauthenticated and oversized or invalid segments',async()=>{const audioUrl=url.replace('sessions','audio');assert.equal((await fetch(audioUrl)).status,405);const form=new FormData();form.append('csrf_token','fixture');form.append('owner_key','1');form.append('session_id',sid);form.append('capture_id',cid);form.append('captured_at',new Date().toISOString());form.append('duration_seconds','15');form.append('audio',new Blob(['not audio']),'tab.webm');assert.equal((await fetch(audioUrl,{method:'POST',body:form,headers:{'X-Fixture-Anonymous':'1'}})).status,403);assert.equal((await fetch(audioUrl,{method:'POST',body:form})).status,404);});
+ await check('ended session reports publish one saved assistant message and preserve Chat scope',async()=>{
+  const session_id='00000000-0000-4000-8000-000000000004';
+  assert.equal((await post({action:'post_report',session_id,conversation_id:7})).r.status,409);
+  assert.equal((await post({action:'end',session_id})).r.status,200);
+  const published=await post({action:'post_report',session_id,conversation_id:7});
+  assert.equal(published.r.status,200,JSON.stringify(published.data));
+  const report=published.data.report;
+  assert.equal(report.conversation_id,7);assert.ok(report.message_id>0);
+  assert.deepEqual((await post({action:'post_report',session_id,conversation_id:7})).data.report,report);
+  assert.deepEqual((await post({action:'end',session_id})).data.report,report);
+  assert.equal((await post({action:'post_report',session_id,conversation_id:8})).r.status,409);
+  const read=async(extra={},headers={})=>{
+   const r=await fetch(url.replace('sessions','insights')+'?'+new URLSearchParams({action:'chat_report',owner_key:'1',agent_id:0,...report,...extra}),{headers});
+   return {r,data:await responseJson(r)};
+  };
+  const projection=await read();assert.equal(projection.r.status,200);assert.equal(projection.data.report.session_id,session_id);
+  assert.equal((await read({conversation_id:8})).data.report,null);
+  assert.equal((await read({agent_id:4})).data.report,null);
+  assert.equal((await read({owner_key:'2'},{'X-Fixture-User':'2'})).data.report,null);
+  const stored=spawnSync(process.env.VP3_PHP_BINARY||'php',['-r',`
+   $pdo=new PDO('sqlite:'.$argv[1]);
+   echo json_encode($pdo->query('SELECT conversation_id,user_id,role,message,context_json FROM chat_messages')->fetchAll(PDO::FETCH_ASSOC),JSON_THROW_ON_ERROR);
+  `,path.join(tmp,'state.sqlite')],{encoding:'utf8'});
+  assert.equal(stored.status,0,stored.stderr);
+  const messages=JSON.parse(stored.stdout);assert.equal(messages.length,1);
+  assert.equal(messages[0].role,'assistant');assert.equal(messages[0].user_id,null);assert.equal(messages[0].conversation_id,7);
+  assert.equal(JSON.parse(messages[0].context_json).source,'agent_screen_insights');
+  assert.equal((await post({action:'delete_session',session_id,remove_brain:false})).r.status,200);
+  assert.equal((await read()).data.report,null);
+ });
  console.log(`AGENT_SCREEN_SESSIONS_API=PASS (${checks} cases)`);
 }catch(e){console.error(logs.slice(-4000));throw e;}finally{child.kill();await new Promise(r=>child.once('exit',r));fs.rmSync(tmp,{recursive:true,force:true});}

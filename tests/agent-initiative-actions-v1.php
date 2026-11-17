@@ -41,6 +41,7 @@ require_once dirname(__DIR__).'/includes/agent-memory-lifecycle-v123.php';
 require_once dirname(__DIR__).'/includes/agent-task-lifecycle-v123.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-followthrough-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
+require_once __DIR__.'/fixtures/initiative-legacy-chat-report.php';
 require_once __DIR__.'/fixtures/workflow-agent-schema-v1.php';
 workflow_agent_fixture_v1($pdo);
 foreach(['capability_key TEXT','action_key TEXT','action_type TEXT','label TEXT','summary TEXT','attempt_count INTEGER DEFAULT 0','result_summary TEXT','result_json TEXT','error_class TEXT','started_at TEXT','completed_at TEXT','updated_at TEXT'] as $column)$pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN '.$column);
@@ -97,6 +98,9 @@ function initiative_action_seed(string $ref,string $label='Review saved launch w
     });
     if(empty($executed['ok']))throw new RuntimeException('Actual canonical preparation failed: '.json_encode($executed));
     $q=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$run]);$saved=json_decode((string)$q->fetchColumn(),true,32,JSON_THROW_ON_ERROR);
+    initiative_action_check(($saved['initiative_delivery']??null)==='private'&&(int)($saved['initiative_message_id']??0)===0,
+        'automatic Tasks preparation stays private before the historical Chat fixture is projected');
+    $saved=initiative_fixture_legacy_report($pdo,$u,$run,$goal,$saved);
     $message=(int)($saved['initiative_message_id']??0);if(!$message)throw new RuntimeException('Actual preparation report was not delivered.');
     return vp3_initiative_followthrough_load_v1($pdo,$u,$p,$cid,$message);
 }

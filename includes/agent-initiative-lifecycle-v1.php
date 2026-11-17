@@ -69,13 +69,13 @@ function vp3_initiative_adopt_activity_v1(PDO $pdo,array $user,array $context): 
         if(!has_permission('account.access',$live)||!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent)){
             throw new RuntimeException('Initiative context is unavailable.',403);
         }
-        $q=$pdo->prepare('SELECT surface,context_key,activity_state,last_heartbeat_at,details_json FROM agent_activity_state WHERE user_id=? LIMIT 1');
+        $q=$pdo->prepare('SELECT surface,context_key,activity_state,last_heartbeat_at,details_json,
+            CURRENT_TIMESTAMP AS checked_at FROM agent_activity_state WHERE user_id=? LIMIT 1');
         $q->execute([(int)$live['id']]);$activity=$q->fetch(PDO::FETCH_ASSOC);
         $details=json_decode((string)($activity['details_json']??''),true);
-        $heartbeat=strtotime((string)($activity['last_heartbeat_at']??''))?:0;
         if(!$activity||!is_array($details)||($activity['surface']??'')!=='chat'
             ||($activity['context_key']??'')!=='chat:'.$cid||!in_array($activity['activity_state']??'', ['working','paused','idle'],true)
-            ||$heartbeat<time()-90||$heartbeat>time()+5){
+            ||!vp3_initiative_heartbeat_current_v1($activity)){
             throw new RuntimeException('Initiative observation is not current.',409);
         }
         foreach(['conversation_id','visible','focused','chat_focused','chat_busy','activity_tab','activity_observed_at','activity_sequence'] as $field){

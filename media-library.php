@@ -9,6 +9,8 @@ if (!has_permission('chat.access', $user)) {
     exit('Media Library access is not available for this account.');
 }
 $mediaReady = media_studio_schema_ready();
+$mediaLibraryStyle = substr(hash_file('sha256', __DIR__ . '/media-library-v1.css'), 0, 12);
+$mediaLibraryScript = substr(hash_file('sha256', __DIR__ . '/media-library-v1.js'), 0, 12);
 header('Cache-Control: private, no-store');
 ?>
 <!doctype html>
@@ -18,12 +20,12 @@ header('Cache-Control: private, no-store');
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Media Library | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
-<link rel="stylesheet" href="<?= e(url('/media-library-v1.css?v=1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/media-library-v1.css?v=' . $mediaLibraryStyle)) ?>">
 <?php if ($mediaReady): ?>
 <link rel="stylesheet" href="<?= e(url('/media-library-editor-v1.css?v=1')) ?>">
 <script defer src="<?= e(url('/media-library-editor-v1.js?v=1')) ?>"></script>
 <script defer src="<?= e(url('/media-library-image-v1.js?v=1')) ?>"></script>
-<script defer src="<?= e(url('/media-library-v1.js?v=1')) ?>"></script>
+<script defer src="<?= e(url('/media-library-v1.js?v=' . $mediaLibraryScript)) ?>"></script>
 <?php endif; ?>
 </head>
 <body>
@@ -63,6 +65,7 @@ require __DIR__ . '/includes/member-header.php';
         <h2>Saved media</h2>
         <div class="vp3-media-toolbar">
           <form data-media-filters>
+            <label data-media-collection-filter hidden>Collection <select name="collection_id" data-media-collection-select disabled><option value="">All media</option></select></label>
             <label>Search by name <input type="search" name="q" maxlength="190" placeholder="Search your media"></label>
             <label>Type <select name="type"><option value="">All types</option><option value="photo">Images</option><option value="video">Videos</option><option value="audio">Audio</option></select></label>
             <label>Source <select name="source"><option value="">All sources</option><option value="uploaded">Uploads and captures</option><option value="generated">Generated</option><option value="edited">Edited copies</option></select></label>
@@ -70,6 +73,21 @@ require __DIR__ . '/includes/member-header.php';
           </form>
           <label class="vp3-media-upload">Upload image <input type="file" accept="image/jpeg,image/png,image/webp" data-media-upload></label>
         </div>
+        <details class="vp3-media-collection-manager" data-media-collection-manager hidden>
+          <summary>Manage collections</summary>
+          <div class="vp3-media-collection-forms">
+            <form data-media-collection-create>
+              <label>New collection name <input type="text" name="name" maxlength="100" required></label>
+              <button type="submit">Create collection</button>
+            </form>
+            <form data-media-collection-edit hidden>
+              <label>Selected collection name <input type="text" name="name" maxlength="100" required></label>
+              <button type="submit">Rename</button>
+              <button type="button" data-media-collection-delete>Delete collection</button>
+            </form>
+          </div>
+        </details>
+        <p class="vp3-media-status" data-media-collection-status role="status"></p>
         <p class="vp3-media-status" data-media-upload-status role="status"></p>
         <p class="vp3-media-status" data-media-status role="status"></p>
         <div class="vp3-media-grid" data-media-assets></div>

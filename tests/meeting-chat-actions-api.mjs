@@ -24,6 +24,14 @@ const workflowFixture=path.join(tmp,'includes/workflow-agent-schema-v1.php');
 fs.writeFileSync(workflowFixture,fs.readFileSync(workflowFixture,'utf8').replace('INSERT OR IGNORE INTO users VALUES','INSERT OR IGNORE INTO users(id,is_active) VALUES'));
 fs.copyFileSync('tests/fixtures/meeting-prep-calendar-fixture.php',path.join(tmp,'meeting-prep-calendar-fixture.php'));
 fs.copyFileSync('tests/fixtures/meeting-chat-actions-api-state.php',path.join(tmp,'meeting-state.php'));
+fs.writeFileSync(path.join(tmp,'planning.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+require __DIR__.'/includes/agent-top-of-mind-v1.php';
+require __DIR__.'/includes/agent-planning-status-v1.php';
+$pdo=db();$user=current_user();$aid=7;$cid=(int)$_GET['cid'];
+$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$aid);
+$principal=vp3_agent_chat_principal_v380($user,$agent);
+echo json_encode(vp3_planning_status_read_v1($pdo,$user,$principal,$aid,$cid,[]));`);
 // The strict permission reader is production code. Supply its real catalog
 // functions alongside the general HTTP fixture's lightweight permission facade.
 const personal=fs.readFileSync('includes/personal-capabilities-v242.php','utf8');
@@ -99,6 +107,7 @@ async function post(endpoint,message,extra={},overrides={}){
  return {response,data,body};
 }
 const state=async(action='state')=>await(await fetch(base+'/meeting-state.php?action='+action)).json();
+const planning=async(cid)=>await(await fetch(base+'/planning.php?cid='+cid,{headers})).json();
 const modelHistory=label=>fs.existsSync(path.join(tmp,'meeting-model-history.jsonl'))
  ?fs.readFileSync(path.join(tmp,'meeting-model-history.jsonl'),'utf8').trim().split('\n').filter(Boolean).map(JSON.parse).find(row=>row.case===label)?.history:null;
 try{
@@ -107,6 +116,10 @@ try{
  for(const [mode,endpoint] of [['typed','chat-v236.php?agent=7'],['spoken','chat-stream-v121.php'],['legacy','chat.php']]){
   const created=await post('chat-v236.php?agent=7','',{action:'new'});
   const args={conversation_id:created.data.conversation_id};
+  const research=await post(endpoint,'Research the supplier pricing question from our last meeting and bring it back to that follow-up',args);
+  check(research.data?.tool_receipt?.capability==='topic.research'&&research.data.tool_receipt.status==='blocked'
+   &&research.data.tool_receipt.reason==='setup_required'&&research.data.answer.includes('Initiative'),
+   mode+' meeting research uses the existing background setup gate before any inference: '+research.body);
   const prep=await post(endpoint,'Help me prep for my next meeting',args);
   check(prep.data?.private_meeting_prep===true,mode+' begins with the canonical exact meeting preparation: '+prep.body);
   const before=await state();
@@ -117,6 +130,9 @@ try{
   check((await state()).tasks.length===before.tasks.length,mode+' review does not mutate the task store');
   check(card.owner_user_id===1&&card.agent_id===7&&card.conversation_id===args.conversation_id,
    mode+' review is bound to its actual owner, Agent and conversation');
+  const planningReview=await planning(args.conversation_id);
+  check(planningReview.state==='waiting_owner'&&planningReview.run_id===card.plan_id
+   &&planningReview.message_id===review.data.assistant_message_id,mode+' foreground Planner status links to the actual owner review');
   if(mode==='typed'){
    const repeat=await post(endpoint,'Turn that follow-up into a task',reviewArgs);
    check(repeat.data?.replayed===true&&repeat.data.assistant_message_id===review.data.assistant_message_id
@@ -133,6 +149,9 @@ try{
   const approveArgs=mode==='typed'?{...args,idempotency_key:'typed-meeting-task-confirm'}:args;
   const approved=await post(endpoint,approveMessage,approveArgs);
   check(approved.data?.meeting_action?.status==='completed',mode+' confirms the same reviewed task through the real endpoint: '+approved.body);
+  const planningSaved=await planning(args.conversation_id);
+  check(planningSaved.state==='ready'&&planningSaved.run_id===card.plan_id
+   &&planningSaved.message_id===approved.data.assistant_message_id,mode+' foreground Planner status links to the verified saved result');
   const after=await state();
   const task=after.tasks.at(-1);
   check(after.tasks.length===before.tasks.length+1&&task.user_id===1&&task.user_agent_id===7

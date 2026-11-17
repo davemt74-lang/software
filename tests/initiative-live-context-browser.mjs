@@ -45,6 +45,7 @@ for(const name of ['phone-agent-schema-v1.php','workflow-agent-schema-v1.php','r
 fs.writeFileSync(path.join(temp,'includes/initiative-followthrough-chat-fixture.php'),
   fs.readFileSync(path.join(source,'tests/fixtures/initiative-followthrough-chat.php'),'utf8').replace('function ai_generate_chat_response(', 'function followthrough_fixture_ai_generate_chat_response('));
 fs.copyFileSync(path.join(source,'tests/fixtures/initiative-capabilities-chat.php'),path.join(temp,'includes/initiative-capabilities-chat-fixture.php'));
+fs.copyFileSync(path.join(source,'tests/fixtures/initiative-legacy-chat-report.php'),path.join(temp,'includes/initiative-legacy-chat-report.php'));
 fs.copyFileSync(path.join(source,'tests/fixtures/initiative-live-context-chat.php'),path.join(temp,'includes/initiative-live-context-chat-fixture.php'));
 let bootstrap=fs.readFileSync(path.join(source,'tests/fixtures/capability-chat-bootstrap.php'),'utf8');
 // SQLite has no SELECT FOR UPDATE owner locks. Its transport takes an immediate
@@ -59,7 +60,8 @@ bootstrap=bootstrap.replace('class TranscriptFixturePDO extends PDO {',`class Tr
  public function rollBack():bool {parent::exec('ROLLBACK');$this->fixtureTransaction=false;return true;}
 `);
 bootstrap=bootstrap.replace("$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);", "$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->exec('PRAGMA busy_timeout=10000');");
-for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete','personal_capability_has_v242'])
+for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete','personal_capability_has_v242',
+  'track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])
   bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
 bootstrap=bootstrap.replace('declare(strict_types=1);','declare(strict_types=1); session_start();');
 // Existing private-file idempotency implementation; only its storage root is
@@ -68,7 +70,7 @@ const runtime=fs.readFileSync(path.join(source,'includes/agent-runtime-v125.php'
 const start=runtime.indexOf('function agent_runtime_v125_idempotency_path('),end=runtime.indexOf('function agent_background_v125_jobs_dir(',start);
 assert.ok(start>=0&&end>start);
 bootstrap+="\nfunction agent_runtime_v125_root(): string {return dirname(__DIR__).'/runtime-fixture';}\nfunction agent_runtime_v125_dir(string $bucket): string {$dir=agent_runtime_v125_root().'/'.preg_replace('/[^a-z0-9_-]/i','',$bucket);if(!is_dir($dir))mkdir($dir,0700,true);return $dir;}\n"+runtime.slice(start,end);
-bootstrap+="\nrequire_once __DIR__.'/initiative-followthrough-chat-fixture.php';\nrequire_once __DIR__.'/initiative-capabilities-chat-fixture.php';\nrequire_once __DIR__.'/initiative-live-context-chat-fixture.php';\n";
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\nrequire_once __DIR__.'/initiative-followthrough-chat-fixture.php';\nrequire_once __DIR__.'/initiative-capabilities-chat-fixture.php';\nrequire_once __DIR__.'/initiative-live-context-chat-fixture.php';\n";
 bootstrap+=`\nfunction personal_capability_has_v242($key,...$args){return $key==='voice_profile.access'&&isset($_SERVER['HTTP_X_FIXTURE_VOICE_READY'])||capability_fixture_personal_capability_has_v242($key,...$args);}
 function ai_generate_chat_response($prompt,...$args): array {
  $options=is_array($args[4]??null)?$args[4]:[];$protocol=(string)($options['protocol']??'');
@@ -122,16 +124,81 @@ const contextOf=message=>JSON.parse(message.context_json||'{}');
 const currentPacket=state=>{const row=state.activity_rows.find(row=>Number(row.user_id)===1);return row?JSON.parse(row.details_json||'{}').live_context:null;};
 const modelCalls=state=>state.calls.filter(row=>row.kind==='live_model').map(row=>JSON.parse(row.payload));
 const pass=text=>{groups++;console.log('PASS '+text);};
-function verifiedResult(state,id,tool,cid=11){
-  const action=state.actions.find(row=>Number(row.run_id)===id),receipt=state.receipts.find(row=>Number(row.run_id)===id);
+function verifiedWork(state,id,tool,cid=11){
+  const run=state.runs.find(row=>Number(row.id)===id),action=state.actions.find(row=>Number(row.run_id)===id);
+  const receipts=state.receipts.filter(row=>Number(row.run_id)===id&&Number(row.action_id)===Number(action.id)
+    &&Number(row.attempt_no)===Number(action.attempt_count)&&row.executor==='cloud'&&row.status==='completed');
+  assert.equal(run.status,'completed');assert.equal(receipts.length,1);const receipt=receipts[0];
   assert.equal(action.status,'completed');assert.equal(receipt.status,'completed');assert.equal(action.result_json,receipt.result_json);
   const result=JSON.parse(action.result_json),proof=result.initiative_tool_result?.output;
   assert.equal(proof?.type,'initiative_capability_read');assert.equal(proof.tool,tool);
   assert.equal(proof.owner_user_id,1);assert.equal(proof.agent_id,7);assert.equal(proof.conversation_id,cid);
   assert.match(proof.read_fingerprint,/^[a-f0-9]{64}$/);assert.match(proof.coverage_fingerprint,/^[a-f0-9]{64}$/);
+  return {run,action,receipt,result,proof};
+}
+function verifiedResult(state,id,tool,cid=11){
+  const {result,proof}=verifiedWork(state,id,tool,cid);
   const post=state.messages.find(row=>Number(row.id)===Number(result.initiative_message_id));
   assert.ok(post,'actual completed work must reach its exact canonical main Chat');assert.deepEqual(contextOf(post).initiative_output,proof);
   return {result,proof,post};
+}
+function verifiedVoiceWork(state,id){
+  const run=state.runs.find(row=>Number(row.id)===id);
+  assert.ok(run,'The exact voice check-in run must exist.');assert.equal(run.status,'completed');
+  assert.equal(Number(run.owner_user_id),1);assert.equal(Number(run.agent_id),7);
+  const goal=JSON.parse(run.goal);
+  assert.equal(goal.tool,'chat.check_in');assert.equal(goal.primary,'task-list:600');
+  assert.deepEqual([goal.binding.owner_user_id,goal.binding.agent_id,goal.binding.conversation_id],[1,7,11]);
+  const actions=state.actions.filter(row=>Number(row.run_id)===id&&Number(row.owner_user_id)===1
+    &&Number(row.sequence_no)===1&&row.action_key==='initiative.prepare'&&row.capability_key==='initiative.prepare'
+    &&row.execution_target==='cloud');
+  assert.equal(actions.length,1);const action=actions[0];assert.equal(action.status,'completed');
+  const receipts=state.receipts.filter(row=>Number(row.run_id)===id&&Number(row.action_id)===Number(action.id)
+    &&Number(row.owner_user_id)===1&&Number(row.attempt_no)===Number(action.attempt_count)
+    &&row.executor==='cloud'&&row.status==='completed');
+  assert.equal(receipts.length,1);const receipt=receipts[0];
+  assert.equal(typeof action.result_json,'string');assert.equal(action.result_json,receipt.result_json);
+  const saved=JSON.parse(action.result_json);assert.ok(saved&&typeof saved==='object');
+  assert.equal(saved.initiative_delivery,'delivered');assert.equal(saved.initiative_tool_result.output.delivery_preference,'voice');
+  assert.equal(saved.initiative_tool_result.output.type,'initiative_chat_check_in');
+  const post=state.messages.find(row=>Number(row.id)===Number(saved.initiative_message_id));
+  assert.ok(post);assert.equal(Number(post.conversation_id),11);assert.equal(post.role,'assistant');
+  assert.equal(Number(contextOf(post).initiative_run_id),id);
+  assert.deepEqual(contextOf(post).initiative_output,saved.initiative_tool_result.output);
+  return {run,action,receipt,saved,post};
+}
+async function prepareVoiceCheckIn(tick){
+  const before=await control(),known=new Set(before.runs.map(row=>Number(row.id)));
+  const assessment=await tick();assert.equal(assessment.status,200,JSON.stringify(assessment));
+  assert.equal(assessment.body.ok,true,JSON.stringify(assessment));assert.equal(assessment.body.step,'assessment');
+  const assessed=await control(),assessmentRun=assessed.runs.find(row=>Number(row.id)===Number(assessment.body.run_id));
+  assert.equal(assessmentRun?.status,'completed');assert.equal(assessmentRun.capability_key,'initiative.plan');
+  const candidates=assessed.runs.filter(row=>!known.has(Number(row.id))&&row.capability_key==='initiative.prepare'
+    &&JSON.parse(row.goal).tool==='chat.check_in');
+  assert.equal(candidates.length,1,'The actual assessment must queue exactly one new check-in.');
+  const queued=candidates[0],id=Number(queued.id),models=modelCalls(assessed).length;
+  assert.equal(queued.status,'approved');
+  let prepared=await tick();assert.equal(prepared.status,200,JSON.stringify(prepared));assert.equal(prepared.body.ok,true,JSON.stringify(prepared));
+  if(prepared.body.coordination==='morning_brief_posted'){
+    // A due saved Morning Brief owns this tick. Verify its actual post before
+    // taking the one further preparation step for the already selected run.
+    assert.equal(prepared.body.step,'saved_delivery');
+    const briefState=await control(),newPosts=briefState.messages.filter(row=>!assessed.messages.some(previous=>Number(previous.id)===Number(row.id)));
+    assert.equal(newPosts.length,1);const brief=newPosts[0],briefContext=contextOf(brief);
+    assert.equal(Number(brief.conversation_id),11);assert.equal(brief.role,'assistant');
+    assert.equal(briefContext.source,'agent_initiative_morning_brief');assert.ok(Number(briefContext.morning_brief.assessment_id)>0);
+    assert.match(briefContext.morning_brief.local_day,/^\d{4}-\d{2}-\d{2}$/);
+    const unchanged=briefState.runs.find(row=>Number(row.id)===id);
+    assert.equal(unchanged.status,'approved');assert.equal(unchanged.goal,queued.goal);
+    const pending=briefState.actions.filter(row=>Number(row.run_id)===id);
+    assert.equal(pending.length,1);assert.equal(pending[0].status,'queued');assert.equal(pending[0].result_json,null);
+    assert.equal(modelCalls(briefState).length,models);
+    prepared=await tick();assert.equal(prepared.status,200,JSON.stringify(prepared));assert.equal(prepared.body.ok,true,JSON.stringify(prepared));
+  }
+  assert.equal(prepared.body.step,'preparation',JSON.stringify(prepared));assert.equal(Number(prepared.body.run_id),id);
+  const state=await control(),work=verifiedVoiceWork(state,id);
+  assert.equal(work.run.goal,queued.goal);assert.equal(modelCalls(state).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
+  return {state,...work};
 }
 async function makeContext(mobile=false){
   const context=await browser.newContext({viewport:{width:mobile?390:1280,height:850},extraHTTPHeaders:headers});
@@ -240,18 +307,34 @@ try{
         assert.equal(JSON.stringify(live).includes('RAW_FACE_NAME_SENTINEL'),false);assert.equal(JSON.stringify(live).includes('embedding'),false);}
       assert.equal(goal.tool,mobile?'tasks.lists.read':'live.context.read');
       if(mobile){assert.equal(goal.primary,'task-list:600');assert.ok(Object.keys(goal.sources).some(ref=>ref.startsWith('live-context:')));}
-      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+      await page.locator('#chatNotificationButton').click();await page.locator('[data-notification-tab=brain]').click();
       if(!mobile)await until(async()=>currentPacket(await control())?.eyes?.recent_chat_input===true);
       const feed=page.locator('[data-agent-top-of-mind]');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="queued"]').waitFor();
       await control('claim');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="working"]').waitFor();
-      let state=await execute();const {post}=verifiedResult(state,id,goal.tool);
+      let state=await execute();
+      if(mobile){
+        const privateWork=verifiedWork(state,id,goal.tool),models=modelCalls(state).length;
+        assert.equal(privateWork.result.initiative_delivery,'private');
+        assert.equal(Number(privateWork.result.initiative_message_id||0),0);
+        assert.equal(state.messages.some(row=>Number(contextOf(row).initiative_run_id)===id),false);
+        assert.deepEqual(JSON.parse(privateWork.run.goal),goal,'The actual private specialist keeps every original source mapping.');
+        assert.ok(Object.keys(goal.capability_sources||{}).length>0);
+        state=await control('legacy_post');
+        const savedWork=verifiedWork(state,id,goal.tool);
+        assert.equal(savedWork.result.initiative_delivery,'delivered');
+        assert.equal(savedWork.receipt.id,privateWork.receipt.id);assert.deepEqual(savedWork.proof,privateWork.proof);
+        assert.equal(savedWork.run.goal,privateWork.run.goal);assert.equal(modelCalls(state).length,models);
+        assert.equal(state.messages.filter(row=>Number(contextOf(row).initiative_run_id)===id).length,1);
+      }
+      const {post}=verifiedResult(state,id,goal.tool);
       await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="completed"]').waitFor();
       await page.locator('[data-notification-drawer-close]').click();
       await page.locator('[data-chat-message-id="'+post.id+'"]').waitFor();
       assert.equal(await page.locator('[data-chat-message-id="'+post.id+'"]').count(),1);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       assert.equal(await page.evaluate(()=>window.speechCalls),0,'the screen/Eyes producer must not independently speak');
-      const calls=modelCalls(state),draft=JSON.parse(calls.find(row=>row.protocol==='vp3.initiative-draft.v1').prompt);
+      const calls=modelCalls(state),reportProtocol=mobile?'vp3.initiative-office-report.v1':'vp3.initiative-draft.v1';
+      const draft=JSON.parse(calls.find(row=>row.protocol===reportProtocol).prompt);
       assert.equal(draft.tool_result.tool,goal.tool);assert.ok(calls.every(row=>!row.in_transaction));
       if(mobile){const records=JSON.stringify(draft.tool_result.records);assert.ok(records.includes('LIVE_LIST_MEMBER_SENTINEL'));assert.ok(records.includes('completed'));assert.ok(records.includes('waiting'));assert.equal(state.list_actions.length,0);}
       noRawDurable(state);
@@ -292,7 +375,7 @@ try{
         pass('native browser screen capture and event-only shared-tab audio reach the actual coordinator; sustained microphone energy gates actual proactive voice while real text reports still arrive');
       }
       assert.deepEqual(page.errors,[]);
-      pass((mobile?'mobile named-list':'desktop live-context')+' actual source → model-selected canonical tool → queued/working/completed Brain → verified action/receipt → main Chat grounded question → exact owner follow-through');
+      pass((mobile?'mobile named-list private specialist → historical saved report':'desktop live-context')+' actual source → model-selected canonical tool → queued/working/completed Brain → verified action/receipt → main Chat grounded question → exact owner follow-through');
     }finally{await context.close();}
   }
   // Timestamp-only refresh preserves the actual semantic revision and review
@@ -351,7 +434,7 @@ try{
         assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT.userId),2);
         assert.equal((await page.locator('#chatThread').innerText()).includes('supplier comparison'),false);
         assert.equal(await page.locator('[data-chat-message-id]').filter({hasText:'supplier comparison'}).count(),0);
-        await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+        await page.locator('#chatNotificationButton').click();await page.locator('[data-notification-tab=brain]').click();
         await page.locator('[data-agent-top-of-mind]').getByText('Top of Mind',{exact:true}).waitFor();
         assert.equal(await page.locator('[data-top-of-mind-run="'+id+'"]').count(),0);noRawDurable(state);
         pass('an authenticated account switch during held generation fences the new owner Chat and Brain from every prior-owner completion');
@@ -410,15 +493,18 @@ try{
       assert.equal(modelCalls(await control()).length,beforeAuth);
       await emitCue(page,'energy');await delay(800);await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
       const revision=(await control()).policy.revision;
-      const assessment=await api(page,'initiative_tick',{policy_revision:revision});assert.equal(assessment.status,200);assert.equal(assessment.body.ok,true,JSON.stringify(assessment));
-      const prepared=await api(page,'initiative_tick',{policy_revision:revision});assert.equal(prepared.status,200);assert.equal(prepared.body.ok,true,JSON.stringify(prepared));
-      const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'),action=state.actions.find(row=>Number(row.run_id)===Number(run.id));
-      const saved=JSON.parse(action.result_json),post=state.messages.find(row=>Number(row.id)===Number(saved.initiative_message_id));
-      assert.equal(JSON.parse(run.goal).tool,'chat.check_in');assert.equal(saved.initiative_tool_result.output.delivery_preference,'voice');
-      assert.equal(saved.initiative_delivery,'delivered');assert.ok(post);assert.equal(contextOf(post).initiative_output.type,'initiative_chat_check_in');
+      const {run,post}=await prepareVoiceCheckIn(()=>api(page,'initiative_tick',{policy_revision:revision}));
       await page.locator('[data-chat-message-id="'+post.id+'"]').waitFor();
       assert.equal(await page.evaluate(()=>window.speechCalls),0);
-      const unavailable=await api(page,'voice_candidates');assert.equal(unavailable.status,409,'actual server mic gate must reject voice without suppressing the text post: '+JSON.stringify(unavailable));
+      const unavailable=await api(page,'voice_candidates');
+      assert.equal(unavailable.status,200,'active microphone is a normal availability deferral');
+      assert.equal(unavailable.body.ok,true,JSON.stringify(unavailable));
+      assert.deepEqual(unavailable.body.candidates,[],'the actual server mic gate exposes no candidate');
+      assert.deepEqual([unavailable.body.owner_user_id,unavailable.body.agent_id,unavailable.body.conversation_id,
+        unavailable.body.working_attention_binding,unavailable.body.activity_tab],
+      [1,7,11,binding,await page.evaluate(()=>window.StonefellowAgentActivity.activityTab())]);
+      assert.equal(Object.hasOwn(unavailable.body,'claim'),false,'deferral never grants a voice claim');
+      assert.equal(await page.locator('[data-chat-message-id="'+post.id+'"]').isVisible(),true,'deferral keeps the existing text visible');
       await advance(page);assert.equal(await page.evaluate(()=>window.speechCalls),0);
       await emitCue(page,'quiet',2);await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
       await until(async()=>currentPacket(await control())?.microphone?.activity==='quiet');
@@ -431,8 +517,8 @@ try{
       await advance(second);assert.equal(await second.evaluate(()=>window.speechCalls),0);
       const duplicate=await api(second,'voice_claim',{run_id:Number(run.id),message_id:Number(post.id),request_id:'11111111-2222-4333-8444-555555555555'});
       assert.equal(duplicate.status,409,'a fresh second tab cannot claim a spoken check-in');
-      const final=await control(),a=final.actions.find(row=>Number(row.run_id)===Number(run.id)),r=final.receipts.find(row=>Number(row.run_id)===Number(run.id));
-      assert.equal(a.result_json,r.result_json);assert.equal(JSON.parse(a.result_json).initiative_voice.status,'spoken');
+      const final=await control(),completed=verifiedVoiceWork(final,Number(run.id));
+      assert.equal(completed.saved.initiative_voice.status,'spoken');
       assert.equal(modelCalls(final).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
       assert.deepEqual(page.errors,[]);assert.deepEqual(second.errors,[]);await second.close();
       pass('actual cognitive POST → model-selected short check-in → saved main Chat text → real mic-aware voice API/client → one canonical spoken claim across concurrent calls and two owner tabs');
@@ -457,9 +543,8 @@ try{
           });
         }else await p.evaluate(()=>window.holdSpeech=true);
         const revision=(await control()).policy.revision;
-        for(let i=0;i<2;i++){const tick=await api(p,'initiative_tick',{policy_revision:revision});assert.equal(tick.status,200);assert.equal(tick.body.ok,true);}
-        const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'),id=Number(run.id);
-        const voiceState=async()=>{const state=await control(),row=state.actions.find(row=>Number(row.run_id)===id);return JSON.parse(row.result_json).initiative_voice;};
+        const {run}=await prepareVoiceCheckIn(()=>api(p,'initiative_tick',{policy_revision:revision})),id=Number(run.id);
+        const voiceState=async()=>verifiedVoiceWork(await control(),id).saved.initiative_voice;
         if(scenario==='lost_claim_ack'){
           await advance(p);assert.equal(await p.evaluate(()=>window.speechCalls),0);
           assert.equal((await voiceState()).status,'claimed');
@@ -499,8 +584,8 @@ try{
           pass((scenario==='master_off_before_tts'?'the other tab\'s actual saved Voice Master OFF and storage event while Chat stays focused':'actual typing')
             +' during held TTS cancels before onset, suppresses the exact claim, and fences late callbacks, pulses and reload replay');
         }
-        const final=await control(),a=final.actions.find(row=>Number(row.run_id)===id),r=final.receipts.find(row=>Number(row.run_id)===id);
-        assert.equal(a.result_json,r.result_json);assert.equal(modelCalls(final).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
+        const final=await control();verifiedVoiceWork(final,id);
+        assert.equal(modelCalls(final).filter(row=>row.protocol==='vp3.initiative-draft.v1').length,1);
         assert.deepEqual(p.errors,[]);
       }finally{await c.close();}
     }

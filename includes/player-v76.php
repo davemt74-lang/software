@@ -16,7 +16,7 @@ function player_visible_track_map(?array $user = null): array
     return $map;
 }
 
-function player_recent_history(array $user, array $trackMap, int $limit = 12): array
+function player_recent_history(array $user, array $trackMap, int $limit = 12, bool $playedOnly = false): array
 {
     $pdo = db();
 
@@ -55,12 +55,12 @@ function player_recent_history(array $user, array $trackMap, int $limit = 12): a
                 AND total.track_id=latest.track_id
             ) AS session_count
          FROM track_play_sessions latest
-         WHERE latest.user_id=?
+         WHERE latest.user_id=?'.($playedOnly?' AND latest.listened_seconds>0':'').'
            AND latest.id=(
              SELECT latest2.id
              FROM track_play_sessions latest2
              WHERE latest2.user_id=latest.user_id
-               AND latest2.track_id=latest.track_id
+               AND latest2.track_id=latest.track_id'.($playedOnly?' AND latest2.listened_seconds>0':'').'
              ORDER BY latest2.started_at DESC,latest2.id DESC
              LIMIT 1
            )

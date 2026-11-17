@@ -92,13 +92,17 @@
 
   const launch = button('Initiative workbench', () => open());
   launch.className = 'vp3-workbench-launch';
-  tools.prepend(launch);
+  const productLaunch = button('Product draft', () => open('product','description'));
+  productLaunch.className = 'vp3-workbench-launch';
+  productLaunch.title = 'In Agent Chat, use /product to start from a description';
+  tools.prepend(launch, productLaunch);
   let scope = null;
   let pending = null;
   let reviewed = null;
   let returnFocus = null;
   let requestedSourceRevision = '';
   let requestedMarketingPrefill = null;
+  let productCreated = null;
   let listingHandoff = false;
   let movingToCanvas = false;
   let scopeTimer = 0;
@@ -179,6 +183,7 @@
     const hints = tool === 'marketing' ? options?.marketingPrefill : null;
     requestedMarketingPrefill = hints && Number.isInteger(hints.level) && hints.level >= 1 && hints.level <= 10
       ? {level:hints.level, prompt:typeof hints.prompt === 'string' ? hints.prompt.slice(0,600) : ''} : null;
+    productCreated = tool === 'product' && typeof options?.productCreated === 'function' ? options.productCreated : null;
     stopPending();
     clearReview();
     scope = currentScope();
@@ -186,7 +191,8 @@
     source.replaceChildren();
     mode.value = 'cleanup';
     instructions.value = '';
-    productDescription.value = '';
+    productDescription.value = tool === 'product' && sourceId === 'description' && typeof options?.productDescription === 'string'
+      ? options.productDescription : '';
     returnFocus = document.activeElement;
     window.dispatchEvent(new Event('vp3:initiative-workbench-open'));
     if (!dialog.open) dialog.showModal();
@@ -199,11 +205,21 @@
     controls();
   }
 
+  function openProductRequest(description, conversationId, onCreated) {
+    const active = currentScope();
+    if (active?.conversation_id !== conversationId || window.VP3ParticipantContinuity?.selectedContext?.()
+        || typeof description !== 'string' || Array.from(description).length > 600
+        || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(description)) return false;
+    open('product','description',{productDescription:description,productCreated:onCreated});
+    return dialog.open && sameScope();
+  }
+
   function scopeChanged() {
     window.clearInterval(scopeTimer);
     scopeTimer = 0;
     requestedSourceRevision = '';
     requestedMarketingPrefill = null;
+    productCreated = null;
     listingHandoff = false;
     stopPending();
     clearReview();
@@ -295,8 +311,9 @@
       status.textContent = source.options.length > 1 ? '' : lanes[lane.value].empty;
       loaded = true;
     });
-    if (loaded && listingHandoff && dialog.open && scope === openedScope && sameScope()
-        && source.value === preselect && product.value === productId) await previewSource();
+    if (!loaded || !dialog.open || scope !== openedScope || !sameScope() || source.value !== preselect) return;
+    if (lane.value === 'product' && preselect === 'description') productDescription.focus();
+    if (listingHandoff && product.value === productId) await previewSource();
   }
 
   function proposal() {
@@ -532,12 +549,19 @@
         if (openMarketingDraft(output.draft_id, fields.product_id, fields.source_id)) return;
       }
       if (output) showResult(output);
+      if (output?.kind === 'product_listing_draft' && output.source_id === 'description'
+          && fields.source_id === 'description' && Number.isSafeInteger(output.product_id) && output.product_id > 0) {
+        const onCreated = productCreated;
+        productCreated = null;
+        onCreated?.();
+      }
     });
   }
 
   lane.addEventListener('change', () => {
     requestedSourceRevision = '';
     requestedMarketingPrefill = null;
+    productCreated = null;
     listingHandoff = false;
     stopPending();
     mode.value = 'cleanup';
@@ -567,6 +591,7 @@
     scopeTimer = 0;
     scope = null;
     listingHandoff = false;
+    productCreated = null;
     stopPending();
     clearReview();
     source.replaceChildren();
@@ -605,5 +630,5 @@
     window.addEventListener('vp3:chat-context-ready', resume);
     resume();
   }
-  window.VP3InitiativeWorkbench = Object.freeze({open,openProductLaunch});
+  window.VP3InitiativeWorkbench = Object.freeze({open,openProductLaunch,openProductRequest});
 })();

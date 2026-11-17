@@ -37,7 +37,12 @@ function vp3_initiative_action_sources_scope_v1(PDO $pdo,array $loaded): array
  * The original readonly output is checked separately below, not discarded. */
 function vp3_initiative_action_sources_evidence_v1(PDO $pdo,array $loaded,array $sources): array
 {
-    $goal=$loaded['goal'];$goal['sources']=$sources;$goal['tool']='work.prepare_private';
+    $goal=$loaded['goal'];$goal['sources']=$sources;
+    if(($goal['office_entry']??null)===true){
+        require_once __DIR__.'/agent-initiative-office-entry-work-v1.php';
+        return $sources?vp3_initiative_office_entry_evidence_v1($pdo,vp3_initiative_action_sources_scope_v1($pdo,$loaded),$goal['binding'],$goal):[];
+    }
+    $goal['tool']='work.prepare_private';
     $goal['capability_sources']=array_intersect_key(vp3_initiative_capability_saved_source_map_v1($loaded['goal']),$sources);
     return vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$goal,[]);
 }
@@ -71,7 +76,8 @@ function vp3_initiative_action_sources_read_v1(PDO $pdo,array $loaded,array $evi
         // never fed back to a reader that only admits active records.
         if($primary===null)return ['records'=>[],'sources'=>[],'coverage'=>[]];
         return vp3_initiative_capability_snapshot_v1($pdo,$scope,$goal['binding'],$tool,
-            ['tool'=>$tool,'primary'=>$primary,'refs'=>$refs,'focus'=>$goal['focus']??'','report'=>$goal['report']??false],$evidence);
+            ['tool'=>$tool,'primary'=>$primary,'refs'=>$refs,'focus'=>$goal['focus']??'','report'=>$goal['report']??false,
+                'office_entry'=>($goal['office_entry']??null)===true],$evidence);
     }
     if(in_array($tool,['brain.read','knowledge.search'],true)){
         if($tool==='knowledge.search'){
@@ -89,7 +95,7 @@ function vp3_initiative_action_sources_prepare_in_scope_v1(PDO $pdo,array $loade
 {
     if(!$pdo->inTransaction())throw new RuntimeException('Action sources require the owner transaction.',409);
     $identity=vp3_initiative_action_sources_identity_v1($loaded,$plan);
-    $evidence=vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$loaded['goal'],$loaded['result']);
+    $evidence=vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$loaded['goal'],$loaded['result'],isset($loaded['meeting_research']));
     $scope=vp3_initiative_action_sources_scope_v1($pdo,$loaded);$scope['binding']=$loaded['goal']['binding'];$lists=[];
     foreach(array_keys($loaded['goal']['sources']) as $ref)if(preg_match('/\Atask-list:([1-9][0-9]*)\z/D',$ref,$m))
         $lists[$ref]=vp3_initiative_action_sources_list_v1($pdo,$scope,(int)$m[1]);
@@ -143,7 +149,17 @@ function vp3_initiative_action_sources_after_v1(PDO $pdo,array $loaded,array $re
 {
     $scope=vp3_initiative_action_sources_scope_v1($pdo,$loaded);$goal=$loaded['goal'];
     $map=vp3_initiative_capability_saved_source_map_v1($goal);$capRefs=array_values(array_intersect($refs,array_keys($map)));
-    $coverage=[];$after=$capRefs?vp3_initiative_capabilities_evidence_v1($pdo,$scope,$goal['binding'],new DateTimeImmutable('now',new DateTimeZone('UTC')),$capRefs,$coverage):[];
+    $coverage=[];$after=[];
+    if(($goal['office_entry']??null)===true){
+        require_once __DIR__.'/agent-initiative-office-entry-work-v1.php';
+        require_once __DIR__.'/agent-initiative-office-entry-source-v1.php';
+        foreach($capRefs as $ref){
+            $source=vp3_initiative_office_entry_source_v1($pdo,$scope,$goal['binding'],$ref);
+            if($source!==null)$after[$ref]=vp3_initiative_office_entry_source_evidence_v1($source);
+        }
+    }elseif($capRefs){
+        $after=vp3_initiative_capabilities_evidence_v1($pdo,$scope,$goal['binding'],new DateTimeImmutable('now',new DateTimeZone('UTC')),$capRefs,$coverage);
+    }
     $basic=array_values(array_diff($refs,$capRefs));
     if($basic){
         $policy=vp3_initiative_policy_v1($loaded['user'],$loaded['agent_id']);
@@ -210,7 +226,8 @@ function vp3_initiative_action_sources_capture_in_scope_v1(PDO $pdo,array $loade
     // Non-read tool proofs still use their original verifier. Only revisions of
     // exact native targets are replaced; no global freshness bypass exists.
     if($read===null){$goal=$loaded['goal'];$goal['sources']=array_replace($unaffected,array_filter($after['revisions'],static fn($r):bool=>$r!==null));
-        vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$goal,$loaded['result']);}
+        $goal['capability_sources']=array_intersect_key(vp3_initiative_capability_saved_source_map_v1($loaded['goal']),$goal['sources']);
+        vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$goal,$loaded['result'],isset($loaded['meeting_research']));}
     return ['version'=>1,'identity'=>$identity,'domain_hash'=>vp3_initiative_action_sources_hash_v1($domainResult),
         'affected_refs'=>$refs,'parent_refs'=>$parents,'after_revisions'=>$after['revisions'],'removed_refs'=>$after['removed'],
         'read_hash'=>$read===null?null:vp3_initiative_action_sources_hash_v1($read)];
@@ -234,7 +251,8 @@ function vp3_initiative_action_sources_current_in_scope_v1(PDO $pdo,array $loade
     $read=vp3_initiative_action_sources_read_v1($pdo,$loaded,$evidence,$after['removed']);
     if(($proof['read_hash']??null)!==($read===null?null:vp3_initiative_action_sources_hash_v1($read)))throw new RuntimeException('Action saved readonly evidence changed.',409);
     if($read===null){$goal=$loaded['goal'];$goal['sources']=array_replace($unaffected,array_filter($after['revisions'],static fn($r):bool=>$r!==null));
-        vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$goal,$loaded['result']);}
+        $goal['capability_sources']=array_intersect_key(vp3_initiative_capability_saved_source_map_v1($loaded['goal']),$goal['sources']);
+        vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$goal,$loaded['result'],isset($loaded['meeting_research']));}
     return $evidence;
 }
 

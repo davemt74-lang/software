@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
+import {profileChatHelpers,continuityExportHelpers,canonicalContinuityExport} from './chat-profile-continuity.mjs';
 const decode=value=>String(value).replace(/&(amp|lt|gt|quot|#039);/g,(_,key)=>({amp:'&',lt:'<',gt:'>',quot:'"','#039':"'"}[key]));
 export class Element {
   constructor(document,tag='div') {this.ownerDocument=document;this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.dataset={};this.events=[];this.parentElement=null;this.value='';this.checked=false;this.disabled=false;this.hidden=false;this.scrollTop=0;this.scrollHeight=100;this.clientHeight=100;this._html='';this._text=null;this.style={};}
@@ -87,10 +88,8 @@ export async function attentionFixture({items=[attentionItem()],mode='chat',rest
   };
   Object.assign(window,{location:{href:'https://fixture.test/sub/chat.php',origin:'https://fixture.test'},innerWidth:900,innerHeight:900,setTimeout:setTimeoutFixture,clearTimeout:id=>timers.delete(id),PROFILE_ATTENTION_PA4B_CONFIG:{endpoint:'/sub/api/chat-notifications-brain-v240.php',csrfToken:'CSRF'},STONEFELLOW_CHAT_CONTINUITY:{conversationId:()=>999,agentId:()=>99,pendingVoiceSubmit:()=>false,isBusy:()=>false},VP3ProfileCallsPa3c:{speechBusy:()=>false}});
   const sandbox={window,document,crypto:webcrypto,Uint8Array,AbortController,URL,Event,CustomEvent:CustomEventFixture,fetch:transport,requestAnimationFrame:fn=>queueMicrotask(fn),console,Date};
-  const context=vm.createContext(sandbox),chat=read('chat.js');
-  const helpers=chat.slice(chat.indexOf('  function bindStoredMessagePa3('),chat.indexOf('  function formatPlaybackTime('));
-  const exports=chat.slice(chat.indexOf('  const canonicalChatContinuity = {'),chat.indexOf('  function speakIntroV101('));
-  vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const p=document.createElement("p");p.className="message-text";p.textContent=text;n.append(p);thread.append(n);return n;}'+helpers+exports+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
+  const context=vm.createContext(sandbox);
+  vm.runInContext('let conversationId=42,contextReady=true,restoringConversation=0,initialRestorePending=false,busy=false,voiceMode=false;const thread=document.getElementById("chatThread"),input=document.getElementById("chatInput"),cfg={agentId:7};function addMessage(role,text){const n=document.createElement("article");n.className="message assistant";const p=document.createElement("p");p.className="message-text";p.textContent=text;n.append(p);thread.append(n);return n;}'+profileChatHelpers+continuityExportHelpers+canonicalContinuityExport+';window.__binding=(cid,aid)=>{conversationId=cid;cfg.agentId=aid;};',context);
   // The primary voice object intentionally differs from canonical V87.
   window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>999,agentId:()=>99,pendingVoiceSubmit:()=>false,isBusy:()=>false};
   for(const raw of restore){rawRows.set(raw.attention_id,copy(raw));window.STONEFELLOW_CHAT_CONTINUITY_V87.mountProfileAttention({contract,item:project(raw,{conversation_id:42,agent_id:7})});}

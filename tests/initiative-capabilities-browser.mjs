@@ -31,9 +31,12 @@ for(const name of ['phone-agent-schema-v1.php','workflow-agent-schema-v1.php','r
 fs.writeFileSync(path.join(temp,'includes/initiative-followthrough-chat-fixture.php'),
   fs.readFileSync(path.join(source,'tests/fixtures/initiative-followthrough-chat.php'),'utf8').replace('function ai_generate_chat_response(', 'function followthrough_fixture_ai_generate_chat_response('));
 fs.copyFileSync(path.join(source,'tests/fixtures/initiative-capabilities-chat.php'),path.join(temp,'includes/initiative-capabilities-chat-fixture.php'));
+fs.copyFileSync(path.join(source,'tests/fixtures/initiative-legacy-chat-report.php'),path.join(temp,'includes/initiative-legacy-chat-report.php'));
 let bootstrap=fs.readFileSync(path.join(source,'tests/fixtures/capability-chat-bootstrap.php'),'utf8');
-for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete'])
+for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete',
+  'track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])
   bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\n";
 bootstrap=bootstrap.replace('declare(strict_types=1);','declare(strict_types=1); session_start();');
 // Existing private-file idempotency implementation; only its storage root is
 // redirected to this disposable account. No new adapter function is extracted.
@@ -87,7 +90,7 @@ const control=async(action='state',query={})=>{
 const contextOf=message=>JSON.parse(message.context_json||'{}');
 const ready=page=>page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady()&&!window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
 const idle=page=>page.waitForFunction(()=>!window.STONEFELLOW_CHAT_CONTINUITY_V87.isBusy());
-const openBrain=async page=>{await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();return page.locator('[data-agent-top-of-mind]');};
+const openBrain=async page=>{await page.locator('#chatNotificationButton').click();await page.locator('[data-notification-tab=brain]').click();return page.locator('[data-agent-top-of-mind]');};
 const closeBrain=page=>page.locator('[data-notification-drawer-close]').click();
 function resultFor(state,id){
   const action=state.actions.find(row=>Number(row.run_id)===id),receipt=state.receipts.find(row=>Number(row.run_id)===id);
@@ -109,7 +112,7 @@ try{
     const runId=Number(seed.prepare_id);assert.ok(runId>0);
     let state;
     if(mobile){
-      const prepared=await control('execute');assert.equal(prepared.execution_result.ok,true);
+      const prepared=await control('execute',{defer_delivery:'1'});assert.equal(prepared.execution_result.ok,true);
       const {result}=resultFor(prepared,runId);assert.equal(result.initiative_delivery,'pending');
       assert.equal(prepared.messages.some(row=>contextOf(row).initiative_run_id===runId),false);
       const beforeModels=prepared.calls.filter(row=>['capability_model','initiative_model','main_model'].includes(row.kind)).length;
@@ -142,11 +145,19 @@ try{
         await page.clock.fastForward(3000);
       }
       await feed.locator('[data-top-of-mind-run="'+runId+'"][data-work-state="completed"]').waitFor();
+      if(!mobile){
+        assert.equal(resultFor(state,runId).result.initiative_delivery,'private');
+        assert.equal(state.messages.some(row=>contextOf(row).initiative_run_id===runId),false);
+        const beforeModels=state.calls.filter(row=>['capability_model','initiative_model','main_model'].includes(row.kind)).length;
+        state=await control('legacy_post');
+        assert.equal(state.calls.filter(row=>['capability_model','initiative_model','main_model'].includes(row.kind)).length,beforeModels);
+      }
       const {result,proof}=resultFor(state,runId);assert.equal(result.initiative_delivery,'delivered');
       const proposal=state.messages.find(row=>Number(row.id)===Number(result.initiative_message_id));assert.ok(proposal);
       assert.deepEqual(contextOf(proposal).initiative_output,proof);assert.ok(proposal.message.includes(seed.sentinel));
       const rawCalls=state.calls.filter(row=>row.kind==='capability_model').map(row=>JSON.parse(row.payload));
-      const planning=rawCalls.find(row=>row.protocol==='vp3.initiative-plan.v1'),drafting=rawCalls.find(row=>row.protocol==='vp3.initiative-draft.v1');
+      const reportProtocol=mobile?'vp3.initiative-draft.v1':'vp3.initiative-office-report.v1';
+      const planning=rawCalls.find(row=>row.protocol==='vp3.initiative-plan.v1'),drafting=rawCalls.find(row=>row.protocol===reportProtocol);
       assert.equal(planning.prompt.includes(seed.sentinel),false);assert.ok(drafting.prompt.includes(seed.sentinel));
       assert.equal(rawCalls.some(row=>row.in_transaction),false);assert.equal(rawCalls.some(row=>row.prompt.includes('SECRET')),false);
       await closeBrain(page);await page.clock.fastForward(3500);
@@ -190,7 +201,7 @@ try{
         const finished=await control('execute',{id:String(outcome.continuation_run_id)});assert.equal(finished.execution_result.ok,true);
         const child=resultFor(finished,outcome.continuation_run_id);assert.equal(child.proof.tool,seed.tool);
         const lastRead=finished.calls.filter(row=>row.kind==='capability_model').map(row=>JSON.parse(row.payload))
-          .filter(row=>row.protocol==='vp3.initiative-draft.v1').at(-1);
+          .filter(row=>row.protocol===reportProtocol).at(-1);
         const childInput=JSON.parse(lastRead.prompt);
         assert.equal(childInput.owner_continuation.owner_reply,ownerQuery);
         assert.equal(childInput.owner_continuation.proposal_text,proposal.message);
@@ -205,7 +216,7 @@ try{
       await page.locator('[data-chat-message-id="'+proposal.id+'"]').waitFor();
       await page.locator('[data-initiative-followthrough-state="'+proposal.id+'"]').getByText(mobile?'Discussed':'Private work completed',{exact:true}).waitFor();
       assert.equal((await control()).analysis_count,0);assert.deepEqual(errors,[]);
-      console.log('PASS '+(mobile?'mobile transcript':'desktop task')+' source → declared model-selected new tool → leased worker/action/receipt → live Brain and exact Chat post → existing owner composer '+(mobile?'discussion':'same-read-leaf continuation with full owner request and current raw records')+' and reload');
+      console.log('PASS '+(mobile?'mobile transcript':'desktop task')+' source → declared model-selected new tool → leased worker/action/receipt → live Brain and '+(mobile?'exact Chat post':'private current result and historical Chat post')+' → existing owner composer '+(mobile?'discussion':'same-read-leaf continuation with full owner request and current raw records')+' and reload');
       if(mobile){
         await context.setExtraHTTPHeaders({...headers,'X-Fixture-User':'2'});
         await page.reload({waitUntil:'domcontentloaded'});await ready(page);
@@ -234,7 +245,7 @@ try{
   assert.equal(refused.messages.length,before.messages.length);
   assert.equal(refused.messages.some(row=>row.message.includes(negative.sentinel)),false);
   const action=refused.actions.find(row=>Number(row.run_id)===Number(negative.prepare_id));assert.equal(action.status,'failed');
-  assert.equal(refused.calls.filter(row=>row.kind==='capability_model'&&JSON.parse(row.payload).protocol==='vp3.initiative-draft.v1').length,1);
+  assert.equal(refused.calls.filter(row=>row.kind==='capability_model'&&JSON.parse(row.payload).protocol==='vp3.initiative-office-report.v1').length,1);
   console.log('PASS a real source edit while the actual new-tool worker model is held rejects its draft before receipt completion or Chat delivery, without repeating inference');
   console.log('INITIATIVE_CAPABILITIES_BROWSER=PASS (6 groups)');
 }catch(error){console.error(logs.slice(-14000));throw error;}

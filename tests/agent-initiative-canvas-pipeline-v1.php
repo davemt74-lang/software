@@ -36,36 +36,38 @@ require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-canvas-policy-v1.php';
 require_once dirname(__DIR__).'/includes/coding-canvas-jobs-v1.php';
 require_once dirname(__DIR__).'/includes/ai-runtime-v100.php';
+require_once dirname(__DIR__).'/includes/knowledge.php';
 
 function agent_brain_schema_ready(): bool { return true; }
 function agent_brain_normalize(string $value): string { return strtolower(trim($value)); }
 function agent_brain_sentences(string $value): array { return [$value]; }
-function personal_knowledge_available(array $user): bool { return personal_capability_has_v242('personal_knowledge.access', $user); }
 function vp3_agent_runtime_plan_v420(PDO $pdo, array $user, int $agent, string $surface='chat', array $context=[]): array
 {
-    return ['route'=>'vp3_cloud','blocked'=>false,'effective_preference'=>'vp3_cloud','cloud'=>['ready'=>true],
+    return $GLOBALS['pipelineRuntimePlan'] ?? ['route'=>'vp3_cloud','blocked'=>false,'effective_preference'=>'vp3_cloud','cloud'=>['ready'=>true],
         'home'=>['supported'=>false],'try_homeserver'=>false];
 }
-function ai_generate_chat_response(string $prompt, array $history, array $context, ?array $user=null, ?string $scope=null, ?array $control=null): array
-{
-    $GLOBALS['pipelineInference'][] = ['protocol'=>$control['protocol'] ?? '', 'scope'=>$scope,
-        'context'=>ai_v100_service_context(), 'history'=>$history, 'retrieved'=>$context];
-    return ['ok'=>true,'answer'=>($GLOBALS['pipelineModel'])($prompt, (string)$control['protocol'])];
-}
-function ai_curl_json(string $endpoint, array $headers, array $payload, int $timeout=45,
-    ?AiV100ServiceMeter $meter=null, ?array $target=null, ?string $personalKey=null, bool $singleAttempt=false): array
-{
-    if (!$meter || !$target || !$singleAttempt) throw new RuntimeException('Expected the canonical metered single provider request.');
-    $ticket = $meter->begin($target, $payload, $target['provider']==='openai' ? 'max_output_tokens' : 'max_tokens');
-    $GLOBALS['pipelineCodingCalls'][] = ['target'=>$target,'model'=>$payload['model'],'ticket'=>$ticket];
-    $usage = ['input_tokens'=>40,'output_tokens'=>80,'total_tokens'=>120];
-    $meter->finish($ticket, $usage, 'completed', ['provider_request_id'=>'fixture-canvas-'.count($GLOBALS['pipelineCodingCalls'])]);
-    if (is_callable($GLOBALS['pipelineGenerationHook'] ?? null)) ($GLOBALS['pipelineGenerationHook'])();
-    $source = json_encode(['title'=>'Private prep board','html'=>'<button id="ready">Mark ready</button>',
-        'css'=>'button{padding:12px}','js'=>'CanvasUI.on("#ready","click",()=>CanvasData.save({ready:true}));'], JSON_THROW_ON_ERROR);
-    return ['ok'=>true,'data'=>$target['provider']==='openai'
-        ? ['status'=>'completed','output_text'=>$source,'usage'=>$usage]
-        : ['stop_reason'=>'end_turn','content'=>[['type'=>'text','text'=>$source]],'usage'=>$usage]];
+if (!defined('VP3_EMAIL_CANVAS_PIPELINE_FIXTURE')) {
+    function ai_generate_chat_response(string $prompt, array $history, array $context, ?array $user=null, ?string $scope=null, ?array $control=null): array
+    {
+        $GLOBALS['pipelineInference'][] = ['protocol'=>$control['protocol'] ?? '', 'scope'=>$scope,
+            'context'=>ai_v100_service_context(), 'history'=>$history, 'retrieved'=>$context];
+        return ['ok'=>true,'answer'=>($GLOBALS['pipelineModel'])($prompt, (string)$control['protocol'])];
+    }
+    function ai_curl_json(string $endpoint, array $headers, array $payload, int $timeout=45,
+        ?AiV100ServiceMeter $meter=null, ?array $target=null, ?string $personalKey=null, bool $singleAttempt=false): array
+    {
+        if (!$meter || !$target || !$singleAttempt) throw new RuntimeException('Expected the canonical metered single provider request.');
+        $ticket = $meter->begin($target, $payload, $target['provider']==='openai' ? 'max_output_tokens' : 'max_tokens');
+        $GLOBALS['pipelineCodingCalls'][] = ['target'=>$target,'model'=>$payload['model'],'ticket'=>$ticket];
+        $usage = ['input_tokens'=>40,'output_tokens'=>80,'total_tokens'=>120];
+        $meter->finish($ticket, $usage, 'completed', ['provider_request_id'=>'fixture-canvas-'.count($GLOBALS['pipelineCodingCalls'])]);
+        if (is_callable($GLOBALS['pipelineGenerationHook'] ?? null)) ($GLOBALS['pipelineGenerationHook'])();
+        $source = json_encode(['title'=>'Private prep board','html'=>'<button id="ready">Mark ready</button>',
+            'css'=>'button{padding:12px}','js'=>'CanvasUI.on("#ready","click",()=>CanvasData.save({ready:true}));'], JSON_THROW_ON_ERROR);
+        return ['ok'=>true,'data'=>$target['provider']==='openai'
+            ? ['status'=>'completed','output_text'=>$source,'usage'=>$usage]
+            : ['stop_reason'=>'end_turn','content'=>[['type'=>'text','text'=>$source]],'usage'=>$usage]];
+    }
 }
 
 class InitiativeCanvasPipelineStatement extends PDOStatement
@@ -73,6 +75,12 @@ class InitiativeCanvasPipelineStatement extends PDOStatement
     protected function __construct(private InitiativeCanvasPipelinePDO $connection) {}
     public function execute(?array $params=null): bool
     {
+        if ($this->connection->unavailableAppointmentId !== null
+            && str_contains($this->queryString,'FROM agent_scheduling_bookings b WHERE')
+            && str_contains($this->queryString,' AND id IN (')
+            && in_array($this->connection->unavailableAppointmentId,$params??[],true)) {
+            throw new PDOException('Simulated source read outage for one appointment.');
+        }
         if (str_starts_with($this->queryString, 'INSERT INTO agent_workflow_receipts')
             && ($params[7] ?? null)==='completed' && is_callable($this->connection->beforeReceipt)) {
             ($this->connection->beforeReceipt)($params);
@@ -83,8 +91,22 @@ class InitiativeCanvasPipelineStatement extends PDOStatement
 class InitiativeCanvasPipelinePDO extends ImageFixturePDO
 {
     public mixed $beforeReceipt = null;
+    public bool $failGenericSchedule = false;
+    public bool $failMediaSource = false;
+    public bool $failGmailSource = false;
+    public ?int $unavailableAppointmentId = null;
     public function prepare(string $sql, array $options=[]): PDOStatement|false
     {
+        if ($this->failGmailSource && str_contains($sql, 'SELECT thread_key,source_triage_id,received_ms,finding_enc,finding_state')) {
+            throw new PDOException('GMAIL_SOURCE_PRIVATE_FAILURE_FIXTURE');
+        }
+        if ($this->failMediaSource && $sql==='SELECT setting_value FROM settings WHERE setting_key=?'
+            && in_array('vp3_media_offers_enabled_v1',array_column(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS,6),'function'),true)) {
+            throw new TypeError('Simulated media source failure.');
+        }
+        if ($this->failGenericSchedule && str_contains($sql, 'SELECT surface,context_key,last_heartbeat_at,details_json FROM agent_activity_state')) {
+            throw new RuntimeException('Generic Initiative context is temporarily unavailable.');
+        }
         if ($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite') {
             $sql = str_replace(["JSON_UNQUOTE(JSON_EXTRACT(p.metadata_json,'$.enabled'))='true'", 'DATE_SUB(NOW(),INTERVAL 5 MINUTE)'],
                 ["JSON_EXTRACT(p.metadata_json,'$.enabled')=1", "datetime('now','-5 minutes')"], $sql);
@@ -231,6 +253,8 @@ function canvas_pipeline_reply(int $messageId, string $intent): array
     return vp3_initiative_followthrough_reply_v1($pdo,['id'=>1,'is_active'=>1],$GLOBALS['principal'],11,$reply,
         ['message_id'=>$messageId,'reply_ref'=>$state['reply_ref'],'revision'=>$state['revision']],$text);
 }
+
+if (defined('VP3_EMAIL_CANVAS_PIPELINE_FIXTURE')) return;
 
 $enabled=vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>11],'on',null);
 canvas_pipeline_check(!empty($enabled['ok']), 'the owner enables the actual Agent-scoped Initiative policy');

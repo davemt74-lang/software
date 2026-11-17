@@ -198,9 +198,10 @@
 
     const rail = document.getElementById('sfOnlineRailV109');
     const windows = document.getElementById('sfTeamChatWindowsV109');
-    if (rail) rail.hidden = !social;
-    if (windows) windows.hidden = !social;
-    document.body.classList.toggle('sf-team-rail-active', social);
+    const agentChatRail = rail?.hasAttribute('data-agent-chat-rail');
+    if (rail && !agentChatRail) rail.hidden = !social;
+    if (windows && !agentChatRail) windows.hidden = !social;
+    document.body.classList.toggle('sf-team-rail-active', agentChatRail || social);
 
     window.dispatchEvent(new CustomEvent('stonefellow:chat-settings-updated', {
       detail:{

@@ -96,7 +96,7 @@ const checks=[
    &&/replanChanges/.test(brainJs)&&/from_rank/.test(brainJs)&&/to_rank/.test(brainJs)],
  ['History remains canonical conversation archive',
    /<strong>Agent History<\/strong>/.test(brainJs)
-   &&/Authorized conversation archive/.test(brainJs)],
+   &&/Saved conversations and proactive updates for the selected Agent/.test(brainJs)],
  ['chat cache bust exposes v25.30 replanning build',
    /cognitive-replanning-v2530-20260922/.test(chat)&&/replanningBuild/.test(chat)],
  ['CI runs v25.30 node and PHP gates',

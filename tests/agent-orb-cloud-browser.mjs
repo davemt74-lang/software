@@ -70,6 +70,7 @@ try{
   await check('orb opens and toggles the off-page popup using one embedded runtime',async()=>{await page.locator('.vp3-orb-ball').click();await page.locator('#vp3AgentChatPopup').waitFor({state:'visible'});assert.equal(await page.locator('iframe').count(),1);assert.match(await page.locator('iframe').getAttribute('src'),/\/sub\/chat\.php\?orb_embed=1$/);await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await page.locator('.vp3-orb-ball').getAttribute('aria-expanded'),'false');await page.locator('.vp3-orb-ball').click();assert.equal(await page.locator('iframe').count(),1);await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();});
   await check('embedded status uses the existing parent orb and clears when the popup closes',async()=>{
     await page.locator('.vp3-orb-ball').click();
+    await page.locator('#vp3AgentChatPopup').waitFor();
     const frame=await page.locator('iframe').elementHandle().then(node=>node.contentFrame());
     await frame.waitForFunction(()=>typeof window.VP3AgentOrb?.setInitiativeStatus==='function');
     const status=page.locator('.vp3-orb-initiative');
@@ -86,6 +87,7 @@ try{
   });
   await check('embedded Chat can change the host orb appearance for the same account',async()=>{
     await page.locator('.vp3-orb-ball').click();
+    await page.locator('#vp3AgentChatPopup').waitFor();
     const frame=await page.locator('iframe').elementHandle().then(node=>node.contentFrame());
     const orb=page.locator('.vp3-orb-ball .vp3-public-orb');
     await frame.waitForFunction(()=>document.documentElement.dataset.vp3OrbEmbed==='1');
@@ -142,6 +144,8 @@ try{
       await mobile.goto(url);
       const orb=mobile.locator('.vp3-orb-ball');
       await orb.tap();
+      await mobile.clock.runFor(451);
+      await mobile.locator('#vp3AgentChatPopup').waitFor();
       const edit=mobile.getByRole('button',{name:'Edit Agent orb'}),dialog=mobile.getByRole('dialog',{name:'Edit Agent orb'});
       await edit.tap();
       await dialog.waitFor();
@@ -174,7 +178,7 @@ try{
     await page.locator('[data-orb-work-tracks="4"]').waitFor();
     assert.equal(await status.textContent(),'6 jobs running');
     assert.equal(await status.isVisible(),true);
-    assert.equal(await page.locator('.vp3-orb-ball').getAttribute('aria-describedby'),'vp3OrbJobsStatus');
+    assert.equal(await page.locator('.vp3-orb-ball').getAttribute('aria-describedby'),'vp3OrbGesture vp3OrbJobsStatus');
     const image=await work.evaluate(node=>node.toDataURL());
     await page.waitForFunction(previous=>document.querySelector('.vp3-public-orb-work-tracks').toDataURL()!==previous,image);
     await page.evaluate(()=>VP3AgentOrb.setJobs('mission',[]));
@@ -186,6 +190,7 @@ try{
   });
   await check('same-account embedded job updates persist while the popup is closed and expire when stale',async()=>{
     await page.locator('.vp3-orb-ball').click();
+    await page.locator('#vp3AgentChatPopup').waitFor();
     const frame=await page.locator('iframe').elementHandle().then(node=>node.contentFrame());
     await frame.waitForFunction(()=>document.documentElement.dataset.vp3OrbEmbed==='1');
     const work=page.locator('.vp3-public-orb-work-tracks');
@@ -235,7 +240,7 @@ try{
       await main.locator('#chatComposerShell').evaluate(node => { node.style.minHeight = ''; });
       await main.evaluate(() => VP3AgentOrb.setJobs('mission', []));
     });
-    await check(`live reply and Escape preserve current conversation and workspace at ${viewport.width}px`,async()=>{await main.evaluate(()=>document.getElementById('chatForm').requestSubmit());assert.equal(await main.locator('#vp3AgentChatPopup .message').last().innerText(),'New reply 1');await main.keyboard.press('Escape');assert.equal(await main.locator('#vp3AgentChatPopup').isVisible(),false);assert.equal(await main.locator('.chat-main > #chatThread').count(),1);assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'player');assert.equal(await main.locator('[data-chat-view="player"]').isVisible(),true);assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');await main.locator('.vp3-orb-ball').click();assert.equal(await main.locator('#vp3AgentChatPopup .message').count(),2);await main.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await main.evaluate(()=>sent),1);assert.equal(await main.locator('.vp3-orb-ball').getAttribute('aria-expanded'),'false');});
+    await check(`live reply and Escape preserve current conversation and workspace at ${viewport.width}px`,async()=>{await main.evaluate(()=>document.getElementById('chatForm').requestSubmit());assert.equal(await main.locator('#vp3AgentChatPopup .message').last().innerText(),'New reply 1');await main.keyboard.press('Escape');assert.equal(await main.locator('#vp3AgentChatPopup').isVisible(),false);assert.equal(await main.locator('.chat-main > #chatThread').count(),1);assert.equal(await main.locator('#chatThread').getAttribute('data-view'),'player');assert.equal(await main.locator('[data-chat-view="player"]').isVisible(),true);assert.equal(await main.locator('#chatInput').inputValue(),'Keep this draft');await main.locator('.vp3-orb-ball').click();await main.locator('#vp3AgentChatPopup').waitFor();assert.equal(await main.locator('#vp3AgentChatPopup .message').count(),2);await main.getByRole('button',{name:'Close Agent Chat',exact:true}).click();assert.equal(await main.evaluate(()=>sent),1);assert.equal(await main.locator('.vp3-orb-ball').getAttribute('aria-expanded'),'false');});
     await check(`background status stays in the animated orb at ${viewport.width}px and supports hover, focus and Escape`,async()=>{
       const orb=main.locator('.vp3-orb-ball'),status=main.locator('.vp3-orb-initiative');
       await main.mouse.move(2,2);await main.evaluate(()=>document.activeElement.blur());
@@ -258,10 +263,10 @@ try{
       await main.mouse.move(2,2);await main.evaluate(()=>document.activeElement.blur());
       await status.waitFor({state:'hidden'});
       await orb.focus();await status.waitFor({state:'visible'});
-      assert.equal(await orb.getAttribute('aria-describedby'),'vp3OrbInitiativeDetails');
+      assert.equal(await orb.getAttribute('aria-describedby'),'vp3OrbGesture vp3OrbInitiativeDetails');
       await main.keyboard.press('Escape');await status.waitFor({state:'hidden'});
       await main.evaluate(()=>window.VP3AgentOrb.setInitiativeStatus(null));
-      assert.equal(await orb.getAttribute('aria-describedby'),null);
+      assert.equal(await orb.getAttribute('aria-describedby'),'vp3OrbGesture');
     });
     await main.close();
   }
@@ -270,12 +275,33 @@ try{
     try{
       const touch=await mobile.newPage();
       await touch.goto(url+'?main=1');
+      await touch.evaluate(()=>{
+        const root=document.querySelector('.vp3-orb-root');
+        window.activityOpens=0;
+        window.activityCloses=0;
+        window.VP3AgentActivityHub={
+          open:()=>{window.activityOpens++;root.dataset.activityOpen='true';return true;},
+          close:()=>{window.activityCloses++;delete root.dataset.activityOpen;}
+        };
+      });
+      const orb=touch.locator('.vp3-orb-ball');
+      await orb.tap();
+      await orb.tap();
+      assert.equal(await touch.evaluate(()=>window.activityOpens),1,'Double-tap opens Top of Mind once.');
+      await orb.tap();
+      assert.equal(await touch.evaluate(()=>window.activityCloses),0,'The first tap in the next pair leaves Top of Mind open.');
+      await orb.tap();
+      assert.equal(await touch.evaluate(()=>window.activityCloses),1,'Double-tap closes Top of Mind once.');
+      assert.equal(await orb.evaluate(button=>button===document.activeElement),true,'Double-tap close restores Orb focus.');
+      assert.equal(await touch.locator('#vp3AgentChatPopup').isVisible(),false);
+      await touch.locator('h1').tap();
       const status=touch.locator('.vp3-orb-initiative');
       await touch.evaluate(()=>window.VP3AgentOrb.setInitiativeStatus({label:'Touch background status',detail:'Sources last checked: Today.'}));
       await touch.evaluate(() => VP3AgentOrb.setJobs('mission', [{id:'mission:layout', expiresAt:Date.now() + 10000}]));
       assert.equal(await status.isVisible(),false);
-      await touch.locator('.vp3-orb-ball').tap();
+      await orb.tap();
       await status.waitFor({state:'visible'});
+      await touch.locator('#vp3AgentChatPopup').waitFor();
       await checkPopupLayout(touch, {width:320,height:600});
       const bounds=await status.boundingBox();
       assert.ok(bounds.x>=0&&bounds.x+bounds.width<=320&&bounds.y>=0&&bounds.y+bounds.height<=600);

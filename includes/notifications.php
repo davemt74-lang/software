@@ -245,6 +245,8 @@ function notification_requires_attention(array $notification): bool
     if ($type === 'client_release_update') return true;
 
     $informational = [
+        'agent_anthropic_credit_balance',
+        'agent_token_balance',
         'gmail_connected',
         'youtube_enabled',
         'agent_email_followup',

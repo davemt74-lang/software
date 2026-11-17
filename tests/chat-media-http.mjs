@@ -64,7 +64,7 @@ try {
     const page=await browser.newPage();const requested=[];page.on('request',request=>{if(request.url().includes('/media.php'))requested.push(request.url());});
     const source=fs.readFileSync('chat.js','utf8');
     const errorUi=source.slice(source.indexOf('  function showChatMediaError('),source.indexOf('  function systemAppActionCardHtml('));
-    const html=`<div class="chat-stem-copy"><audio class="chat-stem-preview" controls preload="none" src="/media.php?track=1&type=audio&fixture_user=11"></audio></div><div class="chat-stem-copy"><audio id="missing" class="chat-stem-preview" controls preload="none" src="/media.php?track=3&type=audio&fixture_user=11"></audio></div><script>const audioFeedbackHosts=new WeakMap();${errorUi}</script>`;
+    const html=`<div class="chat-stem-copy"><audio class="chat-stem-preview" controls preload="none" src="/media.php?track=1&type=audio&fixture_user=11"></audio></div><div class="chat-stem-copy"><audio id="missing" class="chat-stem-preview" controls preload="none" src="/media.php?track=3&type=audio&fixture_user=11"></audio></div><script>const audioFeedbackHosts=new WeakMap(),connectedSiteAudioStates=new WeakMap();${errorUi}</script>`;
     fs.writeFileSync(path.join(root,'browser.html'),html);
     await page.goto(base+'/browser.html');await page.waitForTimeout(350);assert.equal(requested.length,0,'Hidden players fetched media at page load');
     await page.locator('audio').first().evaluate(audio=>audio.play());await page.waitForFunction(()=>document.querySelector('audio').currentTime>0);
@@ -75,7 +75,8 @@ try {
     // volume preference, rather than just testing native audio.play().
     const volume=source.slice(source.indexOf('  let playerVolume = 1;'),source.indexOf('  let conversationId ='));
     const decorate=source.slice(source.indexOf('  function decorateAudioPlayer('),source.indexOf('  function audioListenedDelta('));
-    const custom=`<audio class="chat-audio-player" src="/media.php?track=1&type=audio&fixture_user=11"></audio><script>const audioState=new WeakMap(),PLAYER_VOLUME_KEY='test-no-saved-volume';function updateInlinePlayer(){}function playQueueOffset(){}${volume}${decorate}const audio=document.querySelector('audio');audioState.set(audio,{});decorateAudioPlayer(audio);</script>`;
+    const requestPlay=source.slice(source.indexOf('  function requestAudioPlay('),source.indexOf('  function clearConnectedSitePlayback('));
+    const custom=`<audio class="chat-audio-player" src="/media.php?track=1&type=audio&fixture_user=11"></audio><script>const audioState=new WeakMap(),audioFeedbackHosts=new WeakMap(),connectedSiteAudioStates=new WeakMap(),PLAYER_VOLUME_KEY='test-no-saved-volume';function updateInlinePlayer(){}function playQueueOffset(){}${volume}${errorUi}${requestPlay}${decorate}const audio=document.querySelector('audio');audioState.set(audio,{});decorateAudioPlayer(audio);</script>`;
     fs.writeFileSync(path.join(root,'custom.html'),custom);
     await page.goto(base+'/custom.html');
     await page.locator('[data-player-toggle]').click();

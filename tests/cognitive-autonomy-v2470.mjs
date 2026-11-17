@@ -111,7 +111,7 @@ const checks=[
     &&/execution_state/.test(drawerJs)],
   ['History remains canonical conversation history',
     /<strong>Agent History<\/strong>/.test(drawerJs)
-    &&/Authorized conversation archive/.test(drawerJs)
+    &&/Saved conversations and proactive updates for the selected Agent/.test(drawerJs)
     &&!/Autonomous Projects[\s\S]*function historyView/.test(drawerJs.slice(drawerJs.indexOf('function historyView')))],
   ['Chat cache-busts v24.70 UI',
     /\$cognitiveAutonomyBuild = 'cognitive-autonomy-v2470-20260922'/.test(chat)

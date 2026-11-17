@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+define('VP3_LIVE_CONTEXT_FIXTURE_ONLY',true);
 require __DIR__.'/agent-live-context-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-followthrough-v1.php';
 require_once dirname(__DIR__).'/includes/agent-top-of-mind-v1.php';
@@ -64,7 +65,7 @@ function live_pipeline_prepare(array $user,int $agent,int $cid,bool $canReport=t
             return json_encode(['jobs'=>[['tool'=>$tool,'primary'=>$ref,'refs'=>[$ref],
                 'focus'=>'Prepare one useful source-grounded next step or question.','report'=>true]]],JSON_THROW_ON_ERROR);
         };
-        $plan=scope_make_plan($user,$agent,'Actual live situation '.$serial);$planned=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan));
+        $plan=scope_make_plan($user,$agent,'Actual live situation '.$serial);$planned=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan),'initiative_scope_model_v1');
         live_pipeline_check(!empty($planned['ok'])&&count(scope_runs(1,$agent,'initiative.prepare'))===$before+1,
             'one live model decision queues one preparation in the existing canonical workflow');
         $run=array_slice(scope_runs(1,$agent,'initiative.prepare'),-1)[0];$id=(int)$run['id'];$goal=json_decode($run['goal'],true,32,JSON_THROW_ON_ERROR);
@@ -87,7 +88,7 @@ function live_pipeline_prepare(array $user,int $agent,int $cid,bool $canReport=t
             return json_encode(['draft'=>$draft],JSON_THROW_ON_ERROR);
         };
         $messages=count(scope_messages());$claim=scope_claim($user,$id);live_pipeline_feed($user,$agent,$cid,$id,'working');
-        $done=vp3_initiative_execute_v1(db(),$user,$claim);$result=live_pipeline_stored($id,$during!==null);
+        $done=vp3_initiative_execute_v1(db(),$user,$claim,'initiative_scope_model_v1',allowDelivery:$canReport);$result=live_pipeline_stored($id,$during!==null);
         if($during){
             live_pipeline_check(empty($done['ok'])&&count(scope_messages())===$messages&&$calls===1,
                 'a live source change during generation prevents both commit and delivery without repeating the model');
@@ -101,7 +102,7 @@ function live_pipeline_prepare(array $user,int $agent,int $cid,bool $canReport=t
                 &&!str_contains(json_encode($result,JSON_THROW_ON_ERROR),'LIVE_TAB_AUDIO_SENTINEL'),
                 'saved workflow results retain derived interpretation and hashes without the raw live packet');
             live_pipeline_check($result['initiative_delivery']===($canReport?'delivered':'pending')
-                &&count(scope_messages())===$messages+($canReport?1:0),'live output respects the actual Chat attention guard while keeping source authority current');
+                &&count(scope_messages())===$messages+($canReport?1:0),'the worker publishes once when enabled and preparation-only execution retains a pending result with current source authority');
             if($canReport){
                 $q=db()->prepare('SELECT message,context_json FROM chat_messages WHERE id=? AND conversation_id=?');
                 $q->execute([$result['initiative_message_id'],$cid]);$message=$q->fetch(PDO::FETCH_ASSOC);
@@ -110,7 +111,7 @@ function live_pipeline_prepare(array $user,int $agent,int $cid,bool $canReport=t
                 live_pipeline_feed($user,$agent,$cid,$id,'completed');
             }
         }
-        $beforeInference=count($GLOBALS['scopeInference']);$beforeMessages=count(scope_messages());vp3_initiative_execute_v1(db(),$user,$claim);
+        $beforeInference=count($GLOBALS['scopeInference']);$beforeMessages=count(scope_messages());vp3_initiative_execute_v1(db(),$user,$claim,'initiative_scope_model_v1');
         live_pipeline_check(count($GLOBALS['scopeInference'])===$beforeInference&&count(scope_messages())===$beforeMessages,
             'replaying the consumed live claim cannot regenerate or repost work');
         if($anonymous)live_pipeline_check(current_user()===null,'the complete sessionless live workflow leaves current_user null');
@@ -142,7 +143,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($owne
         'the actual same-leaf continuation re-reads current scene records and the complete saved owner request');
     return json_encode(['draft'=>'The shared material leaves the launch date unresolved. A useful private next step is to list the remaining constraints before proposing any external action.'],JSON_THROW_ON_ERROR);
 };
-$continued=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$child));$childResult=live_pipeline_stored($child);
+$continued=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$child),'initiative_scope_model_v1');$childResult=live_pipeline_stored($child);
 live_pipeline_check(!empty($continued['ok'])&&$childResult['initiative_delivery']==='delivered'
     &&vp3_initiative_followthrough_load_v1(db(),$user,$root['principal'],170,(int)$root['message']['id'])['state']['state']==='completed',
     'the live continuation finishes through the existing receipt and updates the original Chat proposal');
@@ -167,11 +168,14 @@ db()->exec("UPDATE agent_activity_state SET details_json='{' WHERE user_id=1");
 live_reject(static fn()=>vp3_initiative_current_sources_v1(db(),$user,$pending['goal']['sources'],false,
     $pending['goal']['canonical_sources'],17,$pending['goal']['capability_sources']),503,
     'actual unknown live storage failure is unavailable rather than a known source deletion');
-live_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&live_pipeline_stored($pending['id'])===$before
+live_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)
+    &&live_pipeline_stored($pending['id'])===array_replace($before,['initiative_delivery_reason'=>'result_unavailable'])
     &&count(scope_messages())===$messages&&count($GLOBALS['scopeInference'])===$models,
-    'a503 current-live failure preserves pending body/receipt bytes without Chat output or model replay');
+    'an unavailable live source preserves the exact pending result and records delivery backoff without model replay');
 db()->prepare('UPDATE agent_activity_state SET details_json=? WHERE user_id=1')->execute([$storedDetails]);
 live_pipeline_store($pending['packet'],170,true);
+$deliveryDue=db()->prepare("UPDATE agent_workflow_actions SET updated_at='2000-01-01 00:00:00' WHERE run_id=?");
+$deliveryDue->execute([$pending['id']]);
 live_pipeline_check(vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages+1
     &&count($GLOBALS['scopeInference'])===$models,'the same verified live result delivers after current-source availability recovers without regeneration');
 
@@ -244,7 +248,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol):string{
         'focus'=>'Prepare the ordinary private task follow-up without current sensory context.','report'=>true]]],JSON_THROW_ON_ERROR);
 };
 $ordinaryPlan=scope_make_plan($user,17,'Ordinary work with unsupported live retention');
-$ordinaryPlanned=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$ordinaryPlan));
+$ordinaryPlanned=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$ordinaryPlan),'initiative_scope_model_v1');
 live_pipeline_check(!empty($ordinaryPlanned['ok'])&&count(scope_runs(1,17,'initiative.prepare'))===$before+1,
     'unsupported live retention does not block the canonical planner from queueing ordinary useful work');
 $ordinaryRun=array_slice(scope_runs(1,17,'initiative.prepare'),-1)[0];$ordinaryId=(int)$ordinaryRun['id'];
@@ -256,12 +260,12 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol):string{
         'the unchanged governed model transport receives actual ordinary task records and no unsupported live packet');
     return json_encode(['draft'=>'The saved supplier follow-up remains useful. A private next step is to verify the outstanding response before contacting anyone.'],JSON_THROW_ON_ERROR);
 };
-$ordinaryDone=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$ordinaryId));$ordinaryResult=live_pipeline_stored($ordinaryId);
-live_pipeline_check(!empty($ordinaryDone['ok'])&&$ordinaryResult['initiative_delivery']==='delivered'
+$ordinaryDone=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$ordinaryId),'initiative_scope_model_v1');$ordinaryResult=live_pipeline_stored($ordinaryId);
+live_pipeline_check(!empty($ordinaryDone['ok'])&&$ordinaryResult['initiative_delivery']==='private'
     &&$ordinaryResult['initiative_tool_result']['output']['tool']==='tasks.read'
     &&(string)db()->query('SELECT preference FROM agent_compute_preferences WHERE user_id=1')->fetchColumn()==='auto'
     &&(int)db()->query('SELECT COUNT(*) FROM homeserver_https_requests')->fetchColumn()===0,
-    'ordinary task work completes through its real receipt and Chat without a policy change, forced Cloud reroute or live relay write');
+    'ordinary task work completes as its private specialist report without a policy change, forced Cloud reroute or live relay write');
 db()->prepare('UPDATE agent_memory_items SET memory_text=? WHERE id=1002')->execute([$originalTask]);
 db()->exec('ALTER TABLE homeserver_https_requests ADD COLUMN transient_context INTEGER NOT NULL DEFAULT 0');
 live_pipeline_prepare($user,17,170,true,static fn()=>db()->exec("UPDATE homeserver_https_sessions SET status='revoked' WHERE user_id=1"));
@@ -271,15 +275,54 @@ $pending=live_pipeline_prepare($user,17,170,false);$saved=live_pipeline_stored($
 $messages=count(scope_messages());$models=count($GLOBALS['scopeInference']);live_fixture_close_cursors();
 db()->exec('ALTER TABLE homeserver_https_requests RENAME COLUMN transient_context TO unsupported_transient_context');
 live_pipeline_store($pending['packet'],170,true);
-live_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&live_pipeline_stored($pending['id'])===$saved
+live_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)
+    &&live_pipeline_stored($pending['id'])===array_replace($saved,['initiative_delivery_reason'=>'result_unavailable'])
     &&count(scope_messages())===$messages&&count($GLOBALS['scopeInference'])===$models,
     'a missing transient-retention flag at late delivery preserves the exact pending live result without replay or stale Chat output');
 live_fixture_close_cursors();db()->exec('ALTER TABLE homeserver_https_requests RENAME COLUMN unsupported_transient_context TO transient_context');
+$deliveryDue->execute([$pending['id']]);
 live_pipeline_check(vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages+1
     &&count($GLOBALS['scopeInference'])===$models,'restoring supported transient retention permits the same current saved result to deliver without generation');
 // Processing-policy changes between two healthy admitted routes still revoke
 // the old source proof, before provider dispatch and at delayed delivery.
 db()->exec("UPDATE agent_compute_preferences SET preference='vp3_cloud' WHERE user_id=1");
+$preflightPacket=live_pipeline_packet(17,170);live_pipeline_store($preflightPacket,170,true);
+$preflightPlan=scope_make_plan($user,17,'Current source temporarily unavailable before inference');
+$preflightGoal=json_decode(agent_workflow_row_v1400(db(),1,$preflightPlan)['goal'],true,32,JSON_THROW_ON_ERROR);
+$preflightRef='live-context:'.$preflightPacket['session_id'];
+live_pipeline_check(isset($preflightGoal['sources'][$preflightRef]),'the assessment binds the current live source before routing');
+$preflightClaim=scope_claim($user,$preflightPlan);
+$models=count($GLOBALS['scopeInference']);
+$GLOBALS['scopeBeforeRoute']=static function()use($preflightClaim):void{
+    $q=db()->prepare('SELECT progress_message FROM agent_workflow_runs WHERE id=?');
+    $q->execute([$preflightClaim['run_id']]);
+    if($q->fetchColumn()!=='Brainstorming useful opportunities.')return;
+    unset($GLOBALS['scopeBeforeRoute']);
+    db()->exec("UPDATE agent_activity_state SET details_json='{' WHERE user_id=1");
+};
+try{
+    // Exercise the actual route-time callback here; a transport callback would
+    // bypass that boundary and could not simulate this pre-dispatch outage.
+    $preflight=vp3_initiative_execute_v1(db(),$user,$preflightClaim);
+}finally{unset($GLOBALS['scopeBeforeRoute']);}
+$preflightRun=agent_workflow_row_v1400(db(),1,$preflightPlan);
+$preflightProof=live_pipeline_stored($preflightPlan);
+live_pipeline_check(!$preflight['ok']&&$preflight['reason']==='source_unavailable'
+    &&$preflightRun['status']==='approved'&&$preflightRun['attempt_count']===1
+    &&($preflightProof['failure_phase']??null)==='assessment'
+    &&($preflightProof['source_family']??null)==='live_context'
+    &&($preflightProof['source_coverage']??null)==='unavailable'
+    &&count($GLOBALS['scopeInference'])===$models,
+    'losing the first source preflight queues the same assessment with no provider dispatch');
+live_pipeline_store($preflightPacket,170,true);
+db()->prepare("UPDATE agent_workflow_runs SET next_attempt_at='2000-01-01 00:00:00' WHERE id=?")->execute([$preflightPlan]);
+db()->prepare("UPDATE agent_workflow_actions SET available_at='2000-01-01 00:00:00' WHERE run_id=?")->execute([$preflightPlan]);
+$GLOBALS['scopeModel']=static fn():string=>'{"jobs":[]}';
+$recovered=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$preflightPlan),'initiative_scope_model_v1');
+live_pipeline_check($recovered['ok']&&count($GLOBALS['scopeInference'])===$models+1
+    &&agent_workflow_row_v1400(db(),1,$preflightPlan)['status']==='completed',
+    'the restored live proof completes the same assessment with exactly one provider call');
+
 $policyWork=live_pipeline_prepare($user,17,170);$before=count($GLOBALS['scopeInference']);
 $GLOBALS['scopeModel']=static fn(string $prompt,string $protocol):string=>throw new LogicException('The revoked Cloud prompt must never reach a provider.');
 live_reject(static fn()=>vp3_initiative_infer_v1(db(),$user,17,json_encode(['private'=>'LIVE_SCENE_RECORD_SENTINEL'],JSON_THROW_ON_ERROR),

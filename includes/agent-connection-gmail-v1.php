@@ -537,6 +537,40 @@ function agent_connection_gmail_thread_v1(string $accessToken, string $threadId,
     return $messages;
 }
 
+/** Check the exact reviewed parent against the current received messages in its Gmail thread. */
+function agent_connection_gmail_reply_thread_head_v1(
+    string $accessToken, array $reply, string $mailbox, ?callable $http = null
+): string {
+    $reply = agent_connection_gmail_reply_binding_v1($reply);
+    $mailbox = agent_connection_gmail_sender_v1($mailbox);
+    $anchorFound = false;
+    $head = '';
+    $headAt = 0;
+    $seen = [];
+    foreach (agent_connection_gmail_thread_v1($accessToken,$reply['thread_id'],$http) as $message) {
+        $id = $message['message_id'];
+        if (isset($seen[$id])) throw new AgentConnectionGmailExceptionV1('The Gmail thread contains duplicate message identifiers.',409);
+        $seen[$id] = true;
+        if (array_intersect(['SENT','DRAFT','SPAM','TRASH'],$message['labels'])
+            || agent_connection_gmail_address_v1($message['from']) === $mailbox) continue;
+        $at = $message['received_at_ms'];
+        if ($at < 1) throw new AgentConnectionGmailExceptionV1('Gmail did not verify the message order in this thread.',409);
+        if ($id === $reply['message_id']) {
+            if ($message['rfc_message_id'] !== $reply['in_reply_to']) {
+                throw new AgentConnectionGmailExceptionV1('The reviewed Gmail message changed.',409);
+            }
+            $anchorFound = true;
+        }
+        // Preserve the thread's message order when received timestamps tie.
+        if ($at >= $headAt) {
+            $head = $id;
+            $headAt = $at;
+        }
+    }
+    if (!$anchorFound) throw new AgentConnectionGmailExceptionV1('The reviewed message is no longer available in this Gmail thread.',409);
+    return $head;
+}
+
 function agent_connection_gmail_rfc_message_id_v1(string $operationKey): string
 {
     if ($operationKey === '') throw new InvalidArgumentException('A send operation key is required.');

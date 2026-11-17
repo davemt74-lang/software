@@ -59,7 +59,7 @@ assert.match(agentUiJs, /function dockChatSettingsLauncher\(\)/, 'legacy Agent U
 assert.match(agentUi, /\.chat-composer \.chat-voice-button,[\s\S]*\.chat-composer #sendChatButton\{[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'legacy microphone and send controls must use identical sizing');
 
 assert.match(mainSidebar, /chat-rail-controls-v132\.css\?v=20260911-1/, 'sidebar must load the canonical rail stylesheet');
-assert.match(mainSidebar, /chat-rail-controls-v132\.js\?v=20260911-1/, 'sidebar must load the canonical rail runtime');
+assert.match(mainSidebar, /chat-rail-controls-v132\.js\?v=.*hash_file\('sha256', __DIR__\.'\/\.\.\/chat-rail-controls-v132\.js'\)/, 'sidebar must load the canonical rail runtime with its content hash');
 assert.match(railUi, /#chatForm\.chat-composer\{[\s\S]*grid-template-columns:minmax\(0,1fr\) 32px 32px!important;/, 'composer must reserve only microphone and send control columns');
 assert.match(railUi, /\.sf-online-rail-settings-v132\{[\s\S]*display:grid;[\s\S]*place-items:center;/, 'right-side Team Chat rail must own a dedicated settings slot');
 assert.match(railUi, /\.sf-online-rail-settings-v132>#chatSettingsLauncher[\s\S]*position:static!important;[\s\S]*width:32px!important;[\s\S]*height:32px!important;/, 'Chat Settings must be physically inside the vertical right rail');

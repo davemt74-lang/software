@@ -7,12 +7,13 @@ require_once __DIR__.'/agent-inference-budget-v1.php';
 require_once __DIR__.'/agent-initiative-errors-v1.php';
 
 /** Preserve the Agent's transport preference while applying the Initiative service policy. */
-function vp3_initiative_inference_health_v1(PDO $pdo,array $user,int $agentId,bool $background=true): array
+function vp3_initiative_inference_health_v1(PDO $pdo,array $user,int $agentId,bool $background=true,bool $observeOnly=false): array
 {
     $blocked=['ready'=>false,'route'=>'none','reason'=>'route_unavailable'];
     if($agentId<0||(int)($user['id']??0)<1)return $blocked;
     try{
         $context=['service'=>'initiative','background'=>$background];
+        $policy=null;
         if(function_exists('ai_v100_service_policy')){
             $policy=ai_v100_service_policy($pdo,$user,$context);
             if($policy!==null&&empty($policy['enabled'])){
@@ -22,35 +23,83 @@ function vp3_initiative_inference_health_v1(PDO $pdo,array $user,int $agentId,bo
                 return $blocked;
             }
         }
-        $plan=vp3_agent_runtime_plan_v420($pdo,$user,$agentId,'chat',$context);
+        $plan=vp3_agent_runtime_plan_v420($pdo,$user,$agentId,'chat',$context,$observeOnly);
+        if(($plan['route_reason']??null)==='route_check_required'){
+            return ['ready'=>false,'route'=>'none','reason'=>'route_check_required'];
+        }
+        $preference=$plan['effective_preference']??'auto';
+        $cloudReason=$plan['cloud']['reason']??null;
         if(!empty($plan['blocked'])){
-            if(($plan['effective_preference']??'')==='vp3_cloud'&&($plan['cloud']['reason']??'')==='cloud_balance_exhausted'){
+            if($preference==='vp3_cloud'&&$cloudReason==='cloud_balance_exhausted'){
                 $blocked['reason']='quota_exhausted';
+            }
+            if($preference!=='homeserver_only'){
+                $diagnostic=match($cloudReason){
+                    'user_key_unavailable'=>'provider_configuration',
+                    'cloud_service_route_unavailable'=>'service_configuration',
+                    default=>null,
+                };
+                if($diagnostic!==null)$blocked['model_diagnostic']=$diagnostic;
             }
             return $blocked;
         }
+        $cloudSelected=($plan['route']??'')==='vp3_cloud';
+        $cloudFallback=$preference!=='homeserver_only'
+            &&!empty($plan['allow_vp3_fallback'])&&vp3_initiative_cloud_scope_allowed_v1($plan);
+        $cloudAvailable=($cloudSelected||$cloudFallback)&&!empty($plan['cloud']['ready']);
+        $cloudDiagnostic=$cloudAvailable?vp3_initiative_cloud_model_diagnostic_v1($pdo,$user,$policy):null;
+        $cloudReady=$cloudAvailable&&$cloudDiagnostic===null;
         // agent.chat can read private HomeServer state or execute tools. Only the
         // already-governed, caller-context-only inference operation is suitable.
         if(!empty($plan['try_homeserver'])&&!empty($plan['home']['supported'])
             &&function_exists('homeserver_execution_v230_execute')
             &&homeserver_profile_v235_supported((int)$user['id'])){
             return ['ready'=>true,'route'=>'homeserver','reason'=>'ready',
-                'cloud_fallback_allowed'=>($plan['effective_preference']??'')!=='homeserver_only'
-                    &&!empty($plan['allow_vp3_fallback'])&&vp3_initiative_cloud_scope_allowed_v1($plan)
-                    &&!empty($plan['cloud']['ready'])];
+                'cloud_fallback_allowed'=>$cloudFallback&&$cloudReady];
         }
-        $cloudSelected=($plan['route']??'')==='vp3_cloud';
-        $cloudFallback=($plan['effective_preference']??'')!=='homeserver_only'
-            &&!empty($plan['allow_vp3_fallback'])&&vp3_initiative_cloud_scope_allowed_v1($plan);
-        if(($cloudSelected||$cloudFallback)&&!empty($plan['cloud']['ready'])){
+        if($cloudReady){
             return ['ready'=>true,'route'=>'vp3_cloud','reason'=>'ready'];
         }
-        if(($cloudSelected||$cloudFallback)&&($plan['cloud']['reason']??'')==='cloud_balance_exhausted'){
+        if($cloudAvailable){
+            return ['ready'=>false,'route'=>'vp3_cloud','reason'=>'model_unavailable','model_diagnostic'=>$cloudDiagnostic];
+        }
+        if(($cloudSelected||$cloudFallback)&&$cloudReason==='cloud_balance_exhausted'){
             $blocked['reason']='quota_exhausted';
         }
         return $blocked;
     }catch(Throwable $e){
-        return ['ready'=>false,'route'=>'none','reason'=>'model_unavailable'];
+        return ['ready'=>false,'route'=>'none','reason'=>'model_unavailable','model_diagnostic'=>'model_preflight_unavailable'];
+    }
+}
+
+/** Return a closed readiness diagnostic before any provider call. */
+function vp3_initiative_cloud_model_diagnostic_v1(PDO $pdo,array $user,?array $policy): ?string
+{
+    // Explicit service routes already check the credentials of their actual
+    // primary and fallback targets in the runtime plan.
+    if(!empty($policy['configured']))return function_exists('curl_init')?null:'provider_configuration';
+    if(!function_exists('ai_cloud_account_route'))return null;
+
+    try{
+        $own=ai_cloud_account_route($pdo,$user,false);
+        $funding=$own['route']??'unavailable';
+        if($funding==='own_key'){
+            if(!function_exists('curl_init'))return 'provider_configuration';
+            $provider=(string)$own['provider'];
+            $models=[(string)$own['model']];
+        }elseif($funding==='system'){
+            $provider=ai_active_provider();
+            if($provider==='local')return 'service_configuration';
+            if(ai_provider_configuration_failure($provider)!==null)return 'provider_configuration';
+            $models=array_unique(array_merge(...array_map(static fn(string $complexity):array=>
+                ai_v100_model_candidates($provider,$complexity),['routine','complex','deep'])));
+        }else{
+            return 'provider_configuration';
+        }
+        $targetsReady=$policy===null?$models!==[]:ai_v100_service_targets($policy,$funding,$provider,$models)!==[];
+        return $targetsReady?null:'service_configuration';
+    }catch(Throwable $error){
+        return 'model_preflight_unavailable';
     }
 }
 
@@ -78,13 +127,13 @@ function vp3_initiative_transient_route_current_v1(PDO $pdo,array $user,int $age
 function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol,bool $transientContext=false,?callable $beforeInference=null,array $job=[]): string
 {
     $GLOBALS['vp3_initiative_inference_last_v1']=[];
-    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1'],true)
+    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1',VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1,'vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1'],true)
         ||trim($prompt)===''||strlen($prompt)>200000){
         throw new InvalidArgumentException('Invalid initiative inference request.');
     }
     $background=!empty($job['background']);
     $route=vp3_initiative_inference_health_v1($pdo,$user,$agentId,$background);
-    if(empty($route['ready']))throw new RuntimeException((string)$route['reason'],503);
+    if(empty($route['ready']))throw vp3_initiative_inference_blocked_v1($route);
     if($route['route']==='homeserver'){
         if($beforeInference!==null)$beforeInference();
         if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
@@ -97,7 +146,7 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
             ],null,$transientContext);
             $result=is_array($run['result']??null)?$run['result']:[];
             $answer=is_string($result['reply']??null)?trim($result['reply']):'';
-            if($answer==='')throw new RuntimeException('model_unavailable',503);
+            if($answer==='')throw new Vp3InitiativeModelDiagnosticV1('response_empty');
             $GLOBALS['vp3_initiative_inference_last_v1']=[
                 'route'=>'homeserver','agent_id'=>$agentId,
                 'execution'=>is_array($run['execution']??null)?$run['execution']:[],
@@ -111,12 +160,14 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
             if(empty($route['cloud_fallback_allowed'])||empty($current['ready'])
                 ||($current['route']!=='vp3_cloud'&&empty($current['cloud_fallback_allowed']))){
                 if(empty($current['ready'])){
-                    $reason=in_array($current['reason']??'', ['quota_exhausted','route_unavailable','model_unavailable'],true)?$current['reason']:'model_unavailable';
-                    throw new RuntimeException($reason,503,$e);
+                    throw vp3_initiative_inference_blocked_v1($current,$e);
                 }
                 $failure=function_exists('homeserver_execution_v230_failure_class')?homeserver_execution_v230_failure_class($e):'';
-                if(in_array($failure,['timeout','homeserver_offline','relay_unreachable'],true))throw new Vp3InitiativeTransientInferenceV1($e);
-                throw new RuntimeException('model_unavailable',503,$e);
+                if($e instanceof Vp3InitiativeModelDiagnosticV1)throw $e;
+                if(in_array($failure,['timeout','homeserver_offline','relay_unreachable'],true)){
+                    throw new Vp3InitiativeTransientInferenceV1($e,$failure==='timeout'?'inference_timeout':'homeserver_unavailable');
+                }
+                throw new Vp3InitiativeModelDiagnosticV1('homeserver_unavailable',null,$e);
             }
             $route['route']='vp3_cloud';
         }
@@ -140,6 +191,14 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
             'cloud_tokens_charged'=>max(0,(int)($result['cloud_tokens_charged']??0)),
             'usage'=>is_array($result['usage']??null)?$result['usage']:[]];
     }
-    if($answer===''||strlen($answer)>65536)throw new RuntimeException('model_unavailable',503);
+    if($answer==='')throw new Vp3InitiativeModelDiagnosticV1('response_empty');
+    if(strlen($answer)>65536)throw new Vp3InitiativeModelDiagnosticV1('response_too_large');
     return $answer;
+}
+
+function vp3_initiative_inference_blocked_v1(array $health,?Throwable $previous=null): RuntimeException
+{
+    $reason=$health['reason']??null;
+    if(in_array($reason,['quota_exhausted','route_unavailable'],true))return new RuntimeException($reason,503,$previous);
+    return new Vp3InitiativeModelDiagnosticV1($health['model_diagnostic']??'model_preflight_unavailable',null,$previous);
 }

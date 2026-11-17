@@ -1,6 +1,17 @@
 #chatThread[data-view="coding"] > :not(#chatCodingCanvasV1) {
   display:none !important;
 }
+#chatThread[data-view="coding"] {
+  scroll-padding-bottom:150px;
+}
+#chatThread[data-view="coding"][data-coding-mode="app"] {
+  padding:0;
+  overflow:hidden;
+  scroll-padding:0;
+}
+.chat-main:has(> #chatThread[data-view="coding"][data-coding-mode="app"]) > #chatComposerShell {
+  display:none !important;
+}
 .vp3-coding-canvas-dock {
   display:flex;
   align-items:center;
@@ -10,6 +21,64 @@
   margin:0 auto;
   padding:.3rem .35rem 0;
   font-size:.76rem;
+}
+.vp3-coding-canvas-shortcuts {
+  display:flex;
+  align-items:center;
+  gap:.35rem;
+  min-width:0;
+  max-width:100%;
+}
+.vp3-coding-canvas-shortcuts > button {
+  flex:none;
+}
+.vp3-coding-canvas-app-icons {
+  display:flex;
+  align-items:center;
+  gap:2px;
+  min-width:0;
+  overflow-x:auto;
+  scrollbar-width:thin;
+  padding:2px;
+  pointer-events:auto;
+}
+.vp3-coding-canvas-app-icons[hidden] {
+  display:none;
+}
+.vp3-coding-canvas-dock .vp3-coding-canvas-app-icons > button {
+  flex:none;
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:32px;
+  min-height:0;
+  padding:0;
+}
+.vp3-coding-canvas-app-icon {
+  display:grid;
+  place-items:center;
+  box-sizing:border-box;
+  width:15px;
+  height:15px;
+  object-fit:contain;
+  font-size:10px;
+  line-height:1;
+  flex:none;
+}
+.vp3-coding-canvas-editor-apps {
+  gap:.4rem;
+}
+.vp3-coding-canvas-editor-apps > button {
+  display:flex;
+  align-items:center;
+  gap:.35rem;
+  flex:none;
+  max-width:14rem;
+}
+.vp3-coding-canvas-app-name {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .vp3-coding-canvas,
 .vp3-coding-canvas-dock {
@@ -23,6 +92,130 @@
   gap:.7rem;
   align-content:start;
   box-sizing:border-box;
+}
+.vp3-coding-canvas-editor-controls {
+  display:grid;
+  gap:.7rem;
+}
+.vp3-coding-canvas-commands {
+  border:1px solid var(--line,#e5e7eb);
+  border-radius:.55rem;
+  padding:.55rem .7rem;
+}
+.vp3-coding-canvas-commands > summary {
+  cursor:pointer;
+}
+.vp3-coding-canvas-command {
+  display:flex;
+  align-items:baseline;
+  flex-wrap:wrap;
+  gap:.25rem .65rem;
+  margin-top:.5rem;
+  font-size:.85rem;
+}
+.vp3-coding-canvas-permission-fields {
+  display:grid;
+  gap:.55rem;
+  margin-block:.55rem;
+}
+.vp3-coding-canvas-permission-fields > button {
+  justify-self:start;
+}
+.vp3-coding-canvas-permission-fields .vp3-coding-canvas-checkbox {
+  display:flex;
+  align-items:baseline;
+  gap:.4rem;
+}
+.vp3-coding-canvas-permission-fields input[type="text"] {
+  display:block;
+  width:min(100%,28rem);
+}
+.vp3-coding-canvas-command-group {
+  margin-top:.6rem;
+}
+.vp3-coding-canvas-command-group > h3 {
+  font-size:.85rem;
+}
+.vp3-coding-canvas-publishing-body,
+.vp3-coding-canvas-publishing-fields,
+.vp3-coding-canvas-publishing-confirmation {
+  display:grid;
+  gap:.5rem;
+  margin-top:.5rem;
+  justify-items:start;
+  min-width:0;
+}
+.vp3-coding-canvas-publishing-body > a {
+  overflow-wrap:anywhere;
+}
+.vp3-coding-canvas-publishing-fields input {
+  display:block;
+  width:min(100%,24rem);
+  min-width:0;
+  box-sizing:border-box;
+  margin-top:.25rem;
+  color:inherit;
+  background:transparent;
+  border:1px solid currentColor;
+  border-radius:.48rem;
+  padding:.38rem .6rem;
+  font:inherit;
+}
+.vp3-coding-canvas-publishing-fields > label {
+  width:min(100%,24rem);
+}
+.vp3-coding-canvas-publishing-confirmation {
+  border-inline-start:2px solid var(--line,#d1d5db);
+  padding-inline-start:.7rem;
+}
+.vp3-coding-canvas-delete-public-note {
+  flex-basis:100%;
+}
+.vp3-coding-canvas[data-mode="app"] {
+  width:100%;
+  height:100%;
+  min-height:0;
+  margin:0;
+  padding:0;
+  gap:0;
+  grid-template-rows:auto auto minmax(0,1fr);
+  align-content:stretch;
+  background:var(--surface,#fff);
+}
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-header,
+.vp3-coding-canvas-app-feedback {
+  padding:.55rem clamp(.7rem,2vw,1.25rem);
+}
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-header {
+  border-bottom:1px solid var(--line,#e5e7eb);
+}
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-header h2 {
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+.vp3-coding-canvas-app-feedback {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:.5rem;
+}
+.vp3-coding-canvas[data-mode="editor"] :is(.vp3-coding-canvas-edit-app,.vp3-coding-canvas-app-feedback),
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-editor-controls,
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-workspace > :not(.vp3-coding-canvas-preview) {
+  display:none;
+}
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-workspace {
+  grid-row:3;
+  min-height:0;
+  grid-template-rows:minmax(0,1fr);
+  gap:0;
+}
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-preview {
+  min-height:0;
+  border-radius:0;
+}
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-preview iframe {
+  height:100%;
 }
 .vp3-coding-canvas-dock[hidden],
 .vp3-coding-canvas [hidden],
@@ -89,6 +282,15 @@
     display:none;
   }
 }
+@media (max-width:760px), (pointer:coarse) {
+  .vp3-coding-canvas-dock .vp3-coding-canvas-app-icons > button {
+    width:44px;
+    height:44px;
+  }
+  .vp3-coding-canvas .vp3-coding-canvas-editor-apps > button {
+    min-height:44px;
+  }
+}
 .vp3-coding-canvas button:disabled {
   opacity:.48;
   cursor:default;
@@ -116,6 +318,29 @@
   display:grid;
   gap:.65rem;
 }
+.vp3-coding-canvas-image-fields {
+  display:grid;
+  gap:.5rem;
+  max-width:32rem;
+}
+.vp3-coding-canvas-image-fields[hidden],
+.vp3-coding-canvas-image-fields img[hidden] {
+  display:none;
+}
+.vp3-coding-canvas-image-fields img {
+  display:block;
+  width:min(100%,16rem);
+  max-height:10rem;
+  object-fit:contain;
+  object-position:left;
+  border:1px solid rgba(127,127,127,.28);
+  border-radius:.5rem;
+}
+.vp3-coding-canvas-workspace-title {
+  display:flex;
+  gap:.45rem;
+  align-items:center;
+}
 .vp3-coding-canvas-preview {
   border-radius:.6rem;
   overflow:hidden;
@@ -126,6 +351,15 @@
   height:clamp(18rem,50vh,35rem);
   background:#fff;
   border:0;
+}
+.vp3-coding-canvas-artwork-frame {
+  position:fixed;
+  top:0;
+  left:-10000px;
+  width:640px;
+  height:360px;
+  border:0;
+  pointer-events:none;
 }
 .vp3-coding-canvas-source {
   padding:.35rem 0;

@@ -101,9 +101,26 @@ function vp3_initiative_youtube_playlist_load_v1(PDO $pdo,int $owner,int $runId)
     $row=$stmt->fetch(PDO::FETCH_ASSOC);
     if(!$row)return null;
     $playlist=json_decode((string)$row['payload_json'],true);
-    if(!is_array($playlist)||($playlist['initiative_suggestion']??null)!==true||($playlist['suggestion_kind']??null)!=='playlist'
+    $kind=$playlist['suggestion_kind']??null;
+    if(!is_array($playlist)||($playlist['initiative_suggestion']??null)!==true||!in_array($kind,['playlist','similar'],true)
         ||($playlist['expires_at']??null)!==(int)$row['expires_at']||!is_array($playlist['videos']??null)
-        ||count($playlist['videos'])<2||count($playlist['videos'])>6)return null;
+        ||count($playlist['videos'])<($kind==='similar'?1:2)||count($playlist['videos'])>($kind==='similar'?3:6))return null;
+    if($kind==='similar'||isset($playlist['similar_artists'])){
+        require_once __DIR__.'/agent-media-similar-artists-v1.php';
+        $similar=vp3_media_similar_artist_payload_results_v1($playlist);
+        if(!vp3_youtube_research_enabled_v1($pdo,$owner,'artist')){
+            if($kind==='similar')return null;
+            $ids=array_fill_keys(array_column(array_column($similar,'video'),'video_id'),true);
+            $playlist['videos']=array_values(array_filter($playlist['videos'],
+                static fn(array $video):bool=>!isset($ids[$video['video_id']??''])));
+            unset($playlist['similar_artists']);
+            if(count($playlist['videos'])<2)return null;
+        }else{
+            if($kind==='similar'&&!$similar)return null;
+            $playlist['similar_artists']=array_map(static fn(array $item):array=>
+                ['artist'=>$item['artist'],'video_id'=>$item['video']['video_id']],$similar);
+        }
+    }
     return $playlist;
 }
 

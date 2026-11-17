@@ -6,6 +6,7 @@ const browser = await chromium.launch({headless:true,args:['--no-sandbox'],execu
 const page = await browser.newPage({viewport:{width:390,height:800}});
 const errors = [];
 const writes = [];
+const modelWrites = [];
 page.on('pageerror', error => errors.push(error.message));
 const enabledByAgent = {17:false,18:false};
 let canEnable = true;
@@ -25,9 +26,19 @@ await page.route('https://coding.test/', route => route.fulfill({contentType:'te
 <strong data-coding-funding></strong><span data-coding-balance-label></span><strong data-coding-balance></strong><meter data-coding-token-meter></meter>
 <div><span data-coding-credits></span></div><div><span data-coding-reserved></span></div><div><span data-coding-period-label></span><time data-coding-period></time></div>
 <p id="vp3CodingSidebarStatus" role="status" hidden></p></section></aside>`}));
-await page.route('https://coding.test/api/models', route => route.fulfill({json:{ok:true,state:{funding:'system',selected:null,
-  default:{provider:'openai',model:'fixture',label:'Fixture coder'},options:[{provider:'openai',model:'fixture',label:'Fixture coder'}],unavailable:''},
-  balance:{unlimited:false,package_allowance:10000,package_remaining:7000,credits_remaining:500,reserved:0,period_end:null}}}));
+let modelSelection = null;
+await page.route('https://coding.test/api/models', route => {
+  if (route.request().method() === 'POST') {
+    const body = route.request().postDataJSON();
+    assert.deepEqual(Object.keys(body).sort(),['csrf_token','model']);
+    assert.equal(body.csrf_token,'fixture');
+    modelWrites.push(body);
+    modelSelection = body.model;
+  }
+  return route.fulfill({json:{ok:true,state:{funding:'system',selected:modelSelection,
+    default:{provider:'openai',model:'fixture',label:'Fixture coder'},options:[{provider:'openai',model:'fixture',label:'Fixture coder'}],unavailable:''},
+    balance:{unlimited:false,package_allowance:10000,package_remaining:7000,credits_remaining:500,reserved:0,period_end:null}}});
+});
 await page.route('https://coding.test/api/auto**', async route => {
   const request = route.request();
   const agent = request.method() === 'POST' ? request.postDataJSON().agent_id : Number(new URL(request.url()).searchParams.get('agent_id'));
@@ -132,7 +143,46 @@ try {
   await page.evaluate(() => dispatchEvent(new Event('vp3-coding-usage-change')));
   await autoStatus.getByText('Enable Initiative in a saved Chat first.',{exact:true}).waitFor();
   assert.equal(await toggle.isEnabled(),false);
+
+  available = true;
+  await page.evaluate(() => {
+    const host = document.createElement('section');
+    host.id = 'inline-coding-settings';
+    document.body.append(host);
+    window.releaseInlineCoding = VP3CodingAgentSettings.mount(host);
+  });
+  const inline = page.locator('#inline-coding-settings');
+  const inlineModel = inline.getByRole('combobox',{name:'Coding Agent model'});
+  const inlineAuto = inline.getByRole('checkbox',{name:'Auto Build drafts'});
+  await inlineModel.selectOption('openai:fixture');
+  await inline.getByText('Saved for new runs.',{exact:true}).waitFor();
+  await page.waitForFunction(() => document.querySelector('#chatSidebar select').value === 'openai:fixture');
+  assert.equal(modelWrites.length,1,'The specialist view writes the existing account model preference once.');
+  assert.notEqual(await inlineModel.getAttribute('id'),'model','Both setting surfaces can coexist without duplicate label IDs.');
+  await inlineAuto.uncheck();
+  await inline.getByText('Saved.',{exact:true}).waitFor();
+  await page.waitForFunction(() => !document.querySelector('#chatSidebar [data-coding-auto-drafts]').checked);
+  assert.equal(writes.at(-1).agent_id,18,'The specialist view uses the same exact-Agent Auto Build setting.');
+  assert.equal(enabledByAgent[17],false);
+
+  const inlineWrites = writes.length + modelWrites.length;
+  await page.evaluate(() => {
+    STONEFELLOW_CHAT.agentId=17;
+    const host=document.querySelector('#inline-coding-settings');
+    const toggle=host.querySelector('[data-coding-auto-drafts]');
+    toggle.checked=true;
+    toggle.dispatchEvent(new Event('change'));
+    host.querySelector('select').dispatchEvent(new Event('change'));
+    window.releaseInlineCoding();
+  });
+  assert.equal(writes.length + modelWrites.length,inlineWrites,'A specialist editor bound to a former Agent cannot save.');
+  assert.equal(await inline.locator('select').count(),0);
+  const participantMounted = await page.evaluate(() => {
+    dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:8}}));
+    return VP3CodingAgentSettings.mount(document.querySelector('#inline-coding-settings')) !== null;
+  });
+  assert.equal(participantMounted,false,'A participant context cannot open owner coding settings.');
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true,'The control fits a mobile sidebar.');
   assert.deepEqual(errors,[]);
-  console.log('CODING_SIDEBAR_AUTO_BROWSER=PASS opt-in, exact Agent, rollback, opt-out, participant fence, stale reads and mobile fit');
+  console.log('CODING_SIDEBAR_AUTO_BROWSER=PASS sidebar and specialist controls, exact Agent, rollback, participant fence, stale reads and mobile fit');
 } finally { await browser.close(); }

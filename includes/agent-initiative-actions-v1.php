@@ -35,7 +35,8 @@ function vp3_initiative_action_binding_v1(array $loaded,int $ownerMessageId,stri
         'proposal_revision'=>$loaded['state']['revision'],'proposal_goal_hash'=>$loaded['state']['goal_hash'],
         'source_origin'=>$loaded['goal']['followup']['source_origin']??['owner_user_id'=>(int)$loaded['user']['id'],'agent_id'=>$loaded['agent_id'],'conversation_id'=>$loaded['conversation_id'],'message_id'=>(int)$loaded['message']['id'],'goal_hash'=>$loaded['state']['goal_hash']],
         'proposal_source_refs'=>array_keys($loaded['goal']['sources']),'followup_reminder_id'=>$loaded['state']['followup_reminder_id']??0,'review_slot'=>'action_run_id','owner_message_id'=>$ownerMessageId,'owner_message_hash'=>hash('sha256',$query),
-        'policy_revision'=>vp3_initiative_policy_v1($loaded['user'],$loaded['agent_id'])['revision']??''];
+        'policy_revision'=>vp3_initiative_policy_v1($loaded['user'],$loaded['agent_id'])['revision']??'']
+        +(isset($loaded['meeting_research'])?['meeting_research'=>$loaded['meeting_research']]:[]);
 }
 
 function vp3_initiative_action_family_v1(string $adapter): string
@@ -126,6 +127,7 @@ function vp3_initiative_action_load_v1(PDO $pdo,array $loaded): ?array
     if(!is_array($b)||($b['owner_user_id']??null)!==$uid||($b['agent_id']??null)!==$loaded['agent_id']
         ||($b['conversation_id']??null)!==$loaded['conversation_id']||($b['proposal_message_id']??null)!==(int)$loaded['message']['id']
         ||($b['reply_ref']??null)!==$loaded['state']['reply_ref']||($goal['proposal_goal_hash']??null)!==$loaded['state']['goal_hash']
+        ||($b['meeting_research']??null)!==($loaded['meeting_research']??null)
         ||!is_array($goal['plan']??null)||!hash_equals(hash('sha256',json_encode($goal['plan'],JSON_THROW_ON_ERROR)),(string)($goal['plan_hash']??'')))
         throw new RuntimeException('Reviewed action binding changed.',409);
     $q=$pdo->prepare("SELECT id,message FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");

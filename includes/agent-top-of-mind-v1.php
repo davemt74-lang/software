@@ -2,15 +2,18 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-initiative-runtime-v1.php';
+require_once __DIR__.'/agent-top-of-mind-specialists-v1.php';
 
 /** A small owner/Agent work read for the global orb. Never opens the feed,
  * schedules work, claims a job or invokes a model. */
-function vp3_top_of_mind_work_v1(PDO $pdo,array $user,int $agentId,int $conversationId=0): array
+function vp3_top_of_mind_work_v1(PDO $pdo,array $user,int $agentId,int $conversationId=0,bool $exactChat=false,
+    bool $includeEngagements=false,bool $includeTranscriptReports=false): array
 {
     if($agentId<0||$conversationId<0||(int)($user['id']??0)<1||vp3_participant_scope_v1()!==null){
         throw new RuntimeException('Agent work is unavailable for this context.',403);
     }
-    return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$conversationId):array{
+    return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$conversationId,$exactChat,
+        $includeEngagements,$includeTranscriptReports):array{
         try{$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);}
         catch(PDOException $error){throw $error;}
         catch(RuntimeException $error){throw new RuntimeException('Agent access changed.',403,$error);}
@@ -20,8 +23,9 @@ function vp3_top_of_mind_work_v1(PDO $pdo,array $user,int $agentId,int $conversa
             throw new RuntimeException('Agent access changed.',403);
         }
         $policy=vp3_initiative_policy_v1($live,$agentId);
-        $cid=is_int($policy['conversation_id']??null)?max(0,$policy['conversation_id']):0;
-        if($conversationId>0&&$conversationId!==$cid)throw new RuntimeException('Agent work context changed.',403);
+        $linked=is_int($policy['conversation_id']??null)?max(0,$policy['conversation_id']):0;
+        if(!$exactChat&&$conversationId>0&&$conversationId!==$linked)throw new RuntimeException('Agent work context changed.',403);
+        $cid=$exactChat?$conversationId:$linked;
         if($cid>0&&!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent)){
             throw new RuntimeException('Conversation access changed.',403);
         }
@@ -37,13 +41,44 @@ function vp3_top_of_mind_work_v1(PDO $pdo,array $user,int $agentId,int $conversa
             $jobs[]=$active;
         }
         $gmail=vp3_top_of_mind_gmail_v1($pdo,$live,$agentId,new DateTimeImmutable('@'.intdiv($now,1000)),false);
-        $gmailExpiresAt=($gmail['state']??null)==='working'?strtotime($gmail['lease_until']??'')*1000:0;
+        $gmailScanExpiry=($gmail['state']??null)==='working'?(strtotime($gmail['lease_until']??'')?:0):0;
+        $gmailAnalysisExpiry=($gmail['analysis_work']['state']??null)==='working'
+            ?(strtotime($gmail['analysis_work']['lease_until']??'')?:0):0;
+        $gmailExpiresAt=max($gmailScanExpiry,$gmailAnalysisExpiry)*1000;
         $out=['contract'=>'vp3.agent.work.v1','owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId,
             'conversation_id'=>$cid,'observed_at'=>gmdate(DATE_ATOM),
             'health'=>['state'=>vp3_top_of_mind_text_v1($health['state']??'unavailable',40),
                 'enabled'=>($health['enabled']??false)===true,'active_jobs'=>$jobs]];
         if($gmailExpiresAt>$now)$out['gmail_job']=['id'=>'gmail:inbox-updates','expiresAt'=>$gmailExpiresAt];
+        $out['specialists']=vp3_top_of_mind_specialists_v1($pdo,$live,$principal,$agentId,$cid,$policy,$health,$gmail,intdiv($now,1000),
+            includeEngagements:$includeEngagements,includeTranscriptReports:$includeTranscriptReports);
+        $out['coordination']=vp3_top_of_mind_coordination_v1($cid>0?$health:['state'=>'no_chat'],$out['specialists'],intdiv($now,1000));
         return $out;
+    });
+}
+
+/** Page older unanswered questions only after the same live owner/Agent/Chat checks as the full feed. */
+function vp3_top_of_mind_engagements_v1(PDO $pdo,array $user,int $agentId,int $cid,string $specialist,int $before=0): array
+{
+    if($agentId<0||$cid<1||(int)($user['id']??0)<1||vp3_participant_scope_v1()!==null){
+        throw new RuntimeException('Open engagements are unavailable for this Chat.',403);
+    }
+    if(!in_array($specialist,VP3_TOP_OF_MIND_ENGAGEMENT_SPECIALISTS_V1,true)||$before<0){
+        throw new RuntimeException('Choose a valid specialist and engagement page.',422);
+    }
+    return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$cid,$specialist,$before):array{
+        try{$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);}
+        catch(PDOException $error){throw $error;}
+        catch(RuntimeException $error){throw new RuntimeException('Agent access changed.',403,$error);}
+        $principal=vp3_agent_chat_principal_v380($user,$agent);
+        $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],null);
+        if(!has_permission('account.access',$live)||!has_permission('chat.access',$live)
+            ||!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent)){
+            throw new RuntimeException('Conversation access changed.',403);
+        }
+        $page=vp3_top_of_mind_open_engagements_v1($pdo,$live,$principal,$agentId,$cid,$specialist,$before)[$specialist];
+        return ['contract'=>'vp3.agent.engagements.v1','owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId,
+            'conversation_id'=>$cid,'specialist'=>$specialist]+$page;
     });
 }
 
@@ -108,13 +143,25 @@ function vp3_top_of_mind_gmail_v1(PDO $pdo,array $user,int $agentId,DateTimeImmu
             $latest=$monitor['latest'];
             $monitor['latest']['chat_url']=vp3_top_of_mind_media_href_v1($agentId,$latest['conversation_id'],$latest['message_id']);
         }
+        if(isset($monitor['matters']['items'])){
+            foreach($monitor['matters']['items'] as &$matter){
+                $reply=$matter['reply_result']??null;
+                if($reply===null)continue;
+                if($reply['agent_id']!==$agentId||$reply['conversation_id']<1||$reply['message_id']<1){
+                    unset($matter['reply_result']);
+                    continue;
+                }
+                $matter['reply_result']['chat_url']=vp3_top_of_mind_media_href_v1($agentId,$reply['conversation_id'],$reply['message_id']);
+            }
+            unset($matter);
+        }
         return $monitor;
     }catch(PDOException $error){
         return null;
     }
 }
 
-/** Calendar stays in this Chat. Media context follows the authenticated Agent across Chats. */
+/** Keep Calendar scoped to Chat and show verified YouTube activity for the owner. */
 function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $now,?array $principal=null): array
 {
     require_once __DIR__.'/agent-calendar-prep-v1.php';
@@ -159,6 +206,38 @@ function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $
             break;
         }
     }catch(PDOException $error){}
+    require_once __DIR__.'/agent-activity-media-v1.php';
+    try{
+        $context['youtube_activity']=vp3_agent_activity_youtube_playlist_v1($pdo,$user,$agentId,$conversationId,$now);
+    }catch(RuntimeException $error){
+        $context['youtube_activity']=['status'=>'unavailable','searches'=>[],'played'=>[]];
+    }
+    if($principal!==null){
+        require_once __DIR__.'/agent-media-entertainment-v1.php';
+        $instant=new DateTimeImmutable('@'.$now);
+        $mediaScope=['user'=>$user,'principal'=>$principal,'agent_id'=>$agentId,'conversation_id'=>$conversationId];
+        $nativeListening=[];
+        try{$nativeListening=vp3_agent_activity_native_listening_v1($user);}
+        catch(PDOException){}
+        $context['recent_listening']=vp3_media_recent_listening_v1($pdo,$mediaScope,$instant,$nativeListening);
+        $context['media_findings']=[];
+        try{
+            $media=vp3_media_play_findings_sources_v1($pdo,$mediaScope,null,$instant);
+            $fields=array_fill_keys(['kind','title','summary','next_step','question','actions'],true);
+            $lead=[];$kinds=[];
+            foreach($media as $ref=>$item){
+                if(isset($kinds[$item['kind']]))continue;
+                $lead[$ref]=$item;
+                $kinds[$item['kind']]=true;
+            }
+            $context['media_findings']=array_values(array_map(static fn(array $item):array=>
+                ['id'=>$item['ref']]+array_intersect_key($item,$fields),$lead+$media));
+        }
+        catch(RuntimeException){}
+        $listeningFinding=vp3_media_recent_play_finding_v1(array_values(array_filter($context['recent_listening'],
+            static fn(array $play):bool=>($play['actions'][0]['kind']??null)==='stoneward_history')));
+        if($listeningFinding!==null)$context['media_findings'][]=$listeningFinding;
+    }
     foreach(['artist','topic'] as $kind){
         $key=$kind.'_research';
         try{
@@ -217,50 +296,77 @@ function vp3_top_of_mind_interest_v1(array $source): array
 }
 
 /** Exact requested Agent, current saved policy and authorized sources only. */
-function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationId=0): array
+function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationId=0,bool $exactChat=false): array
 {
     if($agentId<0||$conversationId<0||(int)($user['id']??0)<1||vp3_participant_scope_v1()!==null){
         throw new RuntimeException('Top of Mind is unavailable for this context.',403);
     }
-    return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$conversationId):array{
+    return vp3_initiative_in_scope_v1($user,$agentId,static function()use($pdo,$user,$agentId,$conversationId,$exactChat):array{
         $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);
         $principal=vp3_agent_chat_principal_v380($user,$agent);
         $live=vp3_capability_live_user_v1($pdo,$user,$principal,[],null);
         if(!has_permission('account.access',$live)||!has_permission('chat.access',$live))throw new RuntimeException('Agent access changed.',403);
         $policy=vp3_initiative_policy_v1($live,$agentId);
-        $cid=$conversationId>0?$conversationId:(is_int($policy['conversation_id']??null)?$policy['conversation_id']:0);
+        $cid=$exactChat||$conversationId>0?$conversationId:(is_int($policy['conversation_id']??null)?$policy['conversation_id']:0);
         $now=time();
         $out=['contract'=>'vp3.top-of-mind.v1','owner_user_id'=>(int)$live['id'],'agent_id'=>$agentId,
             'conversation_id'=>$cid,'observed_at'=>gmdate(DATE_ATOM,$now),'state'=>'no_chat','items'=>[],
             'coverage'=>['initiative'=>'ready','foreground'=>'client_runtime_only']];
-        if($cid<1)return $out+vp3_top_of_mind_chat_context_v1($pdo,$live,$agentId,0,$now);
-        if(!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent))throw new RuntimeException('Conversation access changed.',403);
+        if($cid>0&&!vp3_agent_chat_conversation_v380($pdo,$cid,(int)$live['id'],$agent))throw new RuntimeException('Conversation access changed.',403);
         $out['state']=match(true){
+            $cid<1=>'no_chat',
             !agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo)=>'unavailable',
             $policy===[]=>'starting',
             ($policy['conversation_id']??null)!==$cid=>'linked_elsewhere',
             ($policy['enabled']??null)===false=>'paused',
             default=>'ready',
         };
-        if($out['state']!=='ready')return $out+vp3_top_of_mind_chat_context_v1($pdo,$live,$agentId,$cid,$now,$principal);
+        $finish=static function(array $out,array $live)use($pdo,$principal,$agentId,$cid,$policy,$now):array{
+            $out+=vp3_top_of_mind_chat_context_v1($pdo,$live,$agentId,$cid,$now,$principal);
+            $health=$out['state']==='ready'?vp3_initiative_worker_health_v1($pdo,$live,$agentId,$cid)
+                :['state'=>$out['state'],'active_jobs'=>[]];
+            $out['specialists']=vp3_top_of_mind_specialists_v1($pdo,$live,$principal,$agentId,$cid,$policy,$health,$out['gmail_inbox']??null,
+                $now,$out['items'],includeEngagements:true,includeTranscriptReports:true);
+            $out['coordination']=vp3_top_of_mind_coordination_v1($health,$out['specialists'],$now,$out['items']);
+            if(isset($out['coordination_finding'])){
+                if(in_array($out['coordination']['phase'],['idle','checked'],true)&&$out['coordination_finding']['completed_at']>$now-120)
+                    $out['coordination']=['phase'=>'presenting','detail'=>'The latest finding from specialist reports.'];
+                $out['coordination']['finding']=$out['coordination_finding']['text'];
+                unset($out['coordination_finding']);
+            }
+            return $out;
+        };
+        if($out['state']!=='ready')return $finish($out,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$policy);
         $byId=[];
         foreach(array_merge(vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy,false,true),
             vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy,true),
             vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy)) as $run)$byId[(int)$run['id']]=$run;
+        $byId=array_filter($byId,static function(array $run):bool{
+            if(($run['capability_key']??null)!=='initiative.plan')return true;
+            $goal=json_decode((string)($run['goal']??''),true);
+            return ($goal['opportunity_lane']??null)!=='app_suggestions';
+        });
         $runs=array_values($byId);
         $workRank=static fn(array $run):int=>($run['status']??'')==='executing'
             ?(vp3_top_of_mind_lease_time_v1($run['lease_expires_at']??'')>=$now?0:1)
             :(in_array($run['status']??'', ['approved','queued'],true)?2:3);
         usort($runs,static fn(array $a,array $b):int=>($workRank($a)<=>$workRank($b))?:((int)$b['id']<=>(int)$a['id']));
         $visible=[];
-        foreach($runs as $run)$visible[($run['capability_key']??'')==='initiative.plan'?'assessment':(int)$run['id']]??=$run;
+        foreach($runs as $run){
+            if(str_starts_with((string)($run['source_key']??''),'coordination:'))continue;
+            $visible[($run['capability_key']??'')==='initiative.plan'?'assessment':(int)$run['id']]??=$run;
+        }
         $runs=array_slice($visible,0,6);
+        require_once __DIR__.'/agent-initiative-task-reports-v1.php';
+        $classified=vp3_initiative_task_report_classifications_v1($pdo,$live,$policy,
+            array_filter($runs,static fn(array $run):bool=>$run['status']==='completed'),$now,
+            ['user'=>$live,'principal'=>$principal,'agent'=>$agent,'agent_id'=>$agentId,'conversation_id'=>$cid]);
         $selected=[];$sessions=[];
         foreach($runs as $run){
             if(($run['capability_key']??'')==='initiative.plan')continue;
             $goal=json_decode((string)($run['goal']??''),true);
-            if(!is_array($goal['sources']??null)||!$goal['sources']||count($goal['sources'])>5)continue;
+            if(($goal['office_entry']??null)===true||!is_array($goal['sources']??null)||!$goal['sources']||count($goal['sources'])>5)continue;
             foreach($goal['sources'] as $ref=>$revision){
                 if(!is_string($ref)||strlen($ref)>190||!is_string($revision)||!preg_match('/\A[a-f0-9]{64}\z/D',$revision))continue 2;
             }
@@ -276,14 +382,23 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             !empty($policy['screen_enabled'])&&$sessions!==[],array_values(array_unique($sessions)),$coverage,array_keys($selected),$agentId):[];
         $verified=[];
         foreach($runs as $run){
+            if($run['status']==='completed'&&vp3_initiative_task_report_superseded_v1($run,$classified))continue;
             $goal=json_decode((string)($run['goal']??''),true);
             $assessment=($run['capability_key']??'')==='initiative.plan';
-            if(!is_array($goal)||!is_array($goal['sources']??null)||!$goal['sources']||!$assessment&&count($goal['sources'])>5)continue;
+            if(!is_array($goal)||!is_array($goal['sources']??null)
+                ||(!$goal['sources']&&(!$assessment||!is_string($goal['report_only']??null)))
+                ||(!$assessment&&count($goal['sources'])>5))continue;
             try{
-                foreach($assessment?[]:$goal['sources'] as $ref=>$revision){
-                    if(!isset($selected[$ref])||($current[$ref]['revision']??null)!==$revision)throw new RuntimeException('Source changed.',409);
+                $officeEntry=($goal['office_entry']??null)===true;
+                $sources=[];
+                if($officeEntry){
+                    $sources=vp3_initiative_work_sources_v1($pdo,$live,$policy,$goal);
+                }elseif(!$assessment){
+                    foreach($goal['sources'] as $ref=>$revision){
+                        if(!isset($selected[$ref])||($current[$ref]['revision']??null)!==$revision)throw new RuntimeException('Source changed.',409);
+                    }
+                    $sources=array_intersect_key($current,$goal['sources']);
                 }
-                $sources=$assessment?[]:array_intersect_key($current,$goal['sources']);
                 $q=$pdo->prepare('SELECT * FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=? ORDER BY sequence_no,id LIMIT 1');
                 $q->execute([(int)$run['id'],(int)$live['id']]);$action=$q->fetch(PDO::FETCH_ASSOC);
                 if(!$action)continue;
@@ -301,19 +416,33 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
                     $q->execute([(int)$run['id'],(int)$action['id'],(int)$live['id']]);$receipt=$q->fetch(PDO::FETCH_ASSOC)?:null;
                 }
                 $state=vp3_top_of_mind_state_v1($run,$action,$receipt,$result,$now);
+                if(in_array($state,['ready_to_report','completed'],true)
+                    &&in_array($result['initiative_tool_result']['output']['office_disposition']??null,['note','ignore'],true))continue;
                 $primary=$sources[$goal['primary']??'']??[];
                 $objective=($primary['kind']??null)==='transcript_research'?$primary['title']:($goal['focus']??$run['title']??'Private preparation');
+                if($officeEntry&&isset($goal['office_agent_task'])){
+                    $task=vp3_initiative_office_agent_task_parent_v1($pdo,$live,$goal);
+                    $objective='Agent Task · '.$task['title'];
+                }
                 $item=['run_id'=>(int)$run['id'],'state'=>$state,'kind'=>$assessment?'assessment':'preparation',
                     'objective'=>$assessment?'Assess useful next steps':vp3_top_of_mind_text_v1($objective),
                     'step'=>$state==='working'?($assessment?'Assessing the current situation':vp3_top_of_mind_text_v1($run['progress_message']??$action['label']??'',240)):'',
-                    'progress'=>$state==='working'?max(0,min(99,(int)($run['progress_percent']??0))):null,
+                    'progress'=>$state==='working'&&(int)($run['progress_percent']??0)>0?min(99,(int)$run['progress_percent']):null,
                     'observed_at'=>gmdate(DATE_ATOM,$now),'updated_at'=>vp3_top_of_mind_text_v1($run['updated_at']??$run['created_at']??'',40),
                     'lease_expires_at'=>$state==='working'?gmdate(DATE_ATOM,vp3_top_of_mind_lease_time_v1($run['lease_expires_at'])):'',
                     'sources'=>[],'result_url'=>'','owner_state'=>''];
+                $specialist=vp3_top_of_mind_tool_specialist_v1($goal);
+                if($specialist!=='')$item['specialist_id']=$specialist;
+                $canvasSuggestion=($goal['tool']??null)==='canvas.prepare'&&($goal['opportunity_lane']??null)==='app_suggestions';
+                if(!$assessment&&is_string($goal['tool']??null)){
+                    $handoff=vp3_initiative_handoff_view_v1($goal['tool'],$goal['sources'],$sources);
+                    if($handoff!==null)$item['handoff']=$handoff;
+                }
                 foreach(array_slice($sources,0,3) as $source){
                     $item['sources'][]=['title'=>vp3_top_of_mind_text_v1($source['title']??'',140)];
                 }
                 $messageId=filter_var($result['initiative_message_id']??0,FILTER_VALIDATE_INT);
+                $hasReview=false;
                 if(!$assessment&&$messageId>0){
                     $q=$pdo->prepare("SELECT id,context_json FROM chat_messages WHERE id=? AND conversation_id=? AND role='assistant' LIMIT 1");
                     $q->execute([$messageId,$cid]);
@@ -322,16 +451,19 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
                     if(($context['source']??null)==='agent_initiative'&&($context['initiative_run_id']??null)===(int)$run['id']
                         &&($marker['owner_user_id']??null)===(int)$live['id']&&($marker['agent_id']??null)===$agentId
                         &&($marker['conversation_id']??null)===$cid&&($marker['run_id']??null)===(int)$run['id']){
-                        $item['result_url']=url('/chat.php?agent='.$agentId.'&conversation_id='.$cid);
+                        $item['result_url']=$officeEntry||$canvasSuggestion?vp3_top_of_mind_media_href_v1($agentId,$cid,(int)$message['id'])
+                            :url('/chat.php?agent='.$agentId.'&conversation_id='.$cid);
                         $item['message_id']=(int)$message['id'];
                         $ownerState=$context['initiative_followthrough_state']['state']??'';
                         if(($context['initiative_followthrough_state']['version']??null)===1
                             &&in_array($ownerState,['open','discussed','queued','deferred','declined','owner_resolved','completed','stale'],true)
                             &&($marker['followthrough']['state']??null)===$ownerState)$item['owner_state']=$ownerState;
+                        $ownerFollowup=$context['initiative_followthrough_state']??[];
+                        $hasReview=max((int)($ownerFollowup['action_run_id']??0),(int)($ownerFollowup['followup_run_id']??0))>0;
                     }
                 }
                 $out['items'][]=$item;
-                $verified[]=['goal'=>$goal,'tool_result'=>$result['initiative_tool_result']??[]];
+                $verified[]=['goal'=>$goal,'tool_result'=>$result['initiative_tool_result']??[],'has_review'=>$hasReview];
             }catch(Throwable $error){
                 // An inaccessible or changed source must not leave its old
                 // objective, source title or result in this live projection.
@@ -349,20 +481,56 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
         $visibleItems=array_filter($out['items'],static function(array $item,int $index)use($verified,$final,$pdo,$fresh,$policy):bool{
             $goal=$verified[$index]['goal'];
             if($item['kind']==='assessment')return true;
-            foreach($goal['sources'] as $ref=>$revision)if(($final[$ref]['revision']??null)!==$revision)return false;
-            try{if(($goal['tool']??'')!=='chat.check_in')vp3_initiative_result_current_v1($pdo,$fresh['user'],$policy,$goal,$verified[$index]['tool_result']);}
-            catch(Throwable $error){return false;}
+            try{
+                if(($goal['office_entry']??null)===true)vp3_initiative_work_sources_v1($pdo,$fresh['user'],$policy,$goal);
+                else foreach($goal['sources'] as $ref=>$revision)if(($final[$ref]['revision']??null)!==$revision)return false;
+                if(($goal['tool']??'')!=='chat.check_in')vp3_initiative_result_current_v1($pdo,$fresh['user'],$policy,$goal,$verified[$index]['tool_result']);
+            }catch(Throwable $error){return false;}
             return true;
         },ARRAY_FILTER_USE_BOTH);
         $out['items']=[];
         foreach($visibleItems as $index=>$item){
             $goal=$verified[$index]['goal'];
             $primary=$goal['primary']??'';
-            $interest=is_string($primary)?vp3_top_of_mind_interest_v1($final[$primary]??[]):[];
+            $source=is_string($primary)?($final[$primary]??[]):[];
+            $interest=vp3_top_of_mind_interest_v1($source);
             if($interest)$item['youtube_interest']=$interest;
+            if(($goal['tool']??null)==='topic.research'&&($source['kind']??null)==='transcript_research'){
+                require_once __DIR__.'/agent-meeting-research-v1.php';
+                $meeting=vp3_meeting_research_projection_v1($pdo,(int)$fresh['user']['id'],$agentId,$cid,$item['run_id'],$goal);
+                if($meeting!==null){
+                    $item['meeting_followup']=$meeting;
+                    if($item['state']==='completed'&&isset($item['message_id'])){
+                        $item['result_url']=vp3_top_of_mind_media_href_v1($agentId,$cid,$item['message_id']);
+                        if($verified[$index]['has_review']){
+                            $review=vp3_top_of_mind_meeting_review_v1($pdo,$fresh['user'],$principal,$cid,$item['message_id']);
+                            if($review!==null)$item['meeting_followup_action']=$review;
+                        }
+                    }
+                }
+            }
             $out['items'][]=$item;
         }
         if(count($out['items'])!==$before)$out['coverage']['initiative']='limited';
-        return $out+vp3_top_of_mind_chat_context_v1($pdo,$fresh['user'],$agentId,$cid,$now,$principal);
+        $finding=vp3_top_of_mind_latest_finding_v1($pdo,$fresh['user'],$policy,$byId,$now);
+        if($finding!==null)$out['coordination_finding']=$finding;
+        return $finish($out,$fresh['user']);
     });
+}
+
+/** Reuse the Planner's exact review and canonical receipt on the existing Research item. */
+function vp3_top_of_mind_meeting_review_v1(PDO $pdo,array $user,array $principal,int $conversationId,int $messageId): ?array
+{
+    require_once __DIR__.'/agent-initiative-followthrough-v1.php';
+    try{
+        $loaded=vp3_initiative_followthrough_load_v1($pdo,$user,$principal,$conversationId,$messageId);
+        if(!isset($loaded['meeting_research']))return null;
+        $review=($loaded['state']['active_review_slot']??null)==='followup_run_id'?$loaded['followup_action']:$loaded['domain_action'];
+        $status=$review['run']['status']??null;
+        if(!in_array($status,['approval_pending','completed'],true))return null;
+        $skill=match(strtok($review['goal']['plan']['adapter'],'.')){
+            'task','task_list'=>'task','calendar'=>'calendar','reminder','proposal'=>'reminder',default=>null,
+        };
+        return $skill===null?null:['skill'=>$skill,'status'=>$status];
+    }catch(RuntimeException $error){return null;}
 }

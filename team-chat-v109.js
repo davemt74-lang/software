@@ -8,6 +8,7 @@
   const list = document.getElementById('sfOnlineUsersV109');
   const windows = document.getElementById('sfTeamChatWindowsV109');
   if (!rail || !list || !windows) return;
+  const agentChatRail = rail.hasAttribute('data-agent-chat-rail');
 
   const peers = new Map();
   const chats = new Map();
@@ -70,9 +71,10 @@
     if (Object.prototype.hasOwnProperty.call(settings, 'social_chat_enabled')) {
       socialChatEnabled = settings.social_chat_enabled !== false;
       cfg.socialChatEnabled = socialChatEnabled;
-      rail.hidden = !socialChatEnabled;
-      windows.hidden = !socialChatEnabled;
-      document.body.classList.toggle('sf-team-rail-active', socialChatEnabled);
+      if (agentChatRail) list.hidden = !socialChatEnabled || stopped;
+      else rail.hidden = !socialChatEnabled;
+      windows.hidden = !socialChatEnabled || agentChatRail && stopped;
+      document.body.classList.toggle('sf-team-rail-active', agentChatRail || socialChatEnabled);
     }
   }
 
@@ -388,12 +390,15 @@
       renderDirectory(Array.isArray(data.users) ? data.users : []);
       if (Array.isArray(data.messages) && data.messages.length) await handleMessages(data.messages);
       cursor = Math.max(cursor, Number(data.cursor || 0));
-      rail.classList.remove('offline');
+      (agentChatRail ? list : rail).classList.remove('offline');
     } catch (error) {
-      rail.classList.add('offline');
+      (agentChatRail ? list : rail).classList.add('offline');
       if ([401,403].includes(Number(error.status || 0))) {
         stopped = true;
-        rail.hidden = true;
+        if (agentChatRail) {
+          list.hidden = true;
+          windows.hidden = true;
+        } else rail.hidden = true;
       }
     } finally {
       polling = false;

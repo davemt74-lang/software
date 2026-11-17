@@ -17,9 +17,9 @@
   function box(value){if(!Array.isArray(value)||value.length!==4||value.some(v=>!Number.isFinite(v)||v<0||v>1)||value[2]<=0||value[3]<=0||value[0]+value[2]>1.001||value[1]+value[3]>1.001)return null;return value;}
   const separation=(a,b)=>Math.hypot(a[0]+a[2]/2-b[0]-b[2]/2,a[1]+a[3]/2-b[1]-b[3]/2);
   function create({now=()=>Date.now(),id=()=>crypto.randomUUID(),cooldown=600000}={}){
-    const tracks=new Map(),greeted=new Map();let lastGreeting=-Infinity;
+    const tracks=new Map(),greeted=new Map();let lastGreeting=-Infinity,frame=0;
     function update(observations,profiles=[]){
-      const at=now(),events=[],rows=[];
+      const at=now(),events=[],rows=[];frame++;
       for(const [key,t] of tracks)if(at-t.seen>=8000){if(t.arrived)events.push(event(t,'departure'));tracks.delete(key);}
       const inputs=(Array.isArray(observations)?observations:[]).slice(0,8).filter(o=>o&&box(o.box));
       const edges=[];
@@ -41,7 +41,15 @@
       for(const observation of inputs){
         const bounds=observation.box,previous=assignments.get(observation);
         const t=previous||{id:id(),first:at,seen:at,box:bounds,arrived:false,person:null,candidate:'',streak:0,greeted:false,rejected:new Set()};
-        const gap=at-t.seen;if(previous&&!t.arrived&&gap>2000)t.first=at;t.tracking=previous?(gap>2000?'reacquired':'tracked'):'new';
+        const gap=at-t.seen;
+        t.tracking=previous?(gap>2000?'reacquired':'tracked'):'new';
+        if(!t.arrived){
+          // A slow detector can keep returning the same unique track. A
+          // missed observation, rather than elapsed inference time, resets it.
+          if(t.lastFrame!==frame-1){t.first=at;t.stableFrames=0;}
+          t.lastFrame=frame;
+          t.stableFrames++;
+        }
         if(previous&&gap>0){t.velocity=[0,1].map(axis=>{const displacement=bounds[axis]+bounds[axis+2]/2-t.box[axis]-t.box[axis+2]/2;const measured=Math.max(-.00035,Math.min(.00035,displacement/gap));return .5*measured+.5*(t.velocity?.[axis]||0);});}
         const matched=match(observation.embedding,profiles),person=matched&&!t.rejected?.has(matched.id)?matched:null;
         if(t.candidate===(person?.id||''))t.streak++;else{t.candidate=person?.id||'';t.streak=1;}
@@ -49,7 +57,7 @@
         const resolved=person&&t.streak>=3?person:introduced?{id:String(introduced.id),name:String(introduced.name).slice(0,120),introduced:true}:null;
         const changed=t.person?.id!==(resolved?.id);
         t.seen=at;t.box=bounds.slice();t.embedding=vector(observation.embedding)?observation.embedding.slice():null;t.person=resolved;tracks.set(t.id,t);rows.push(t);
-        if(!t.arrived&&at-t.first>=3000){t.arrived=true;events.push(event(t,'arrival'));}
+        if(!t.arrived&&t.stableFrames>=3&&at-t.first>=3000){t.arrived=true;events.push(event(t,'arrival'));}
         else if(t.arrived&&changed)events.push(event(t,'identity_changed'));
       }
       // Two tracks claiming one profile are both unidentified.

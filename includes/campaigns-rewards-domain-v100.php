@@ -474,11 +474,30 @@ function campaigns_rewards_ensure_merchant_relationship_v100(PDO $pdo,int $merch
     return campaigns_rewards_merchant_relationship_v100($pdo,$merchantId,$contactId)?:throw new RuntimeException('Merchant relationship unavailable.');
 }
 
+function campaigns_rewards_type_key_v100(string $value): string
+{
+    $key=strtolower(trim($value));
+    return preg_match('/\A[a-z0-9][a-z0-9_-]{0,79}\z/D',$key)?$key:campaigns_rewards_slug_v100($key,80);
+}
+
+/** Prefer the exact registered key. Legacy writers may submit a slug of an underscore key. */
+function campaigns_rewards_lookup_type_v100(PDO $pdo,int $merchantId,string $typeKey,bool $reward=false): ?array
+{
+    $table=$reward?'reward_types':'campaign_types';
+    $stmt=$pdo->prepare("SELECT * FROM $table WHERE type_key=? AND is_active=1 AND (merchant_id=? OR merchant_id IS NULL)
+      ORDER BY merchant_id IS NULL ASC,id DESC LIMIT 1");
+    $stmt->execute([$typeKey,$merchantId]);
+    $row=$stmt->fetch();
+    if(!$row&&str_contains($typeKey,'-')&&!str_contains($typeKey,'_')){
+        $stmt->execute([str_replace('-','_',$typeKey),$merchantId]);
+        $row=$stmt->fetch();
+    }
+    return $row?:null;
+}
+
 function campaigns_rewards_campaign_type_v100(PDO $pdo,int $merchantId,string $typeKey): ?array
 {
-    $stmt=$pdo->prepare("SELECT * FROM campaign_types WHERE type_key=? AND is_active=1 AND (merchant_id=? OR merchant_id IS NULL)
-      ORDER BY merchant_id IS NULL ASC,id DESC LIMIT 1");
-    $stmt->execute([$typeKey,$merchantId]);$row=$stmt->fetch();return $row?:null;
+    return campaigns_rewards_lookup_type_v100($pdo,$merchantId,$typeKey);
 }
 
 function campaigns_rewards_campaign_platform_v100(PDO $pdo,int $campaignId,bool $forUpdate=false): ?array
@@ -496,10 +515,11 @@ function campaigns_rewards_create_campaign_v100(PDO $pdo,int $merchantId,int $ac
     $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
     if((string)$merchant['status']!=='active')throw new RuntimeException('Merchant must be active to create a Campaign.');
     $name=campaigns_rewards_text_v100($input['name']??'',190);if($name==='')throw new RuntimeException('Campaign name is required.');
-    $typeKey=campaigns_rewards_slug_v100((string)($input['campaign_type']??'signup'),80)?:'signup';
+    $typeKey=campaigns_rewards_type_key_v100((string)($input['campaign_type']??'signup'))?:'signup';
     $type=campaigns_rewards_campaign_type_v100($pdo,$merchantId,$typeKey)?:throw new RuntimeException('Campaign Type is unavailable.');
     $slug=campaigns_rewards_slug_v100((string)($input['slug']??$name),120);if($slug==='')$slug='campaign';
     $environment=!empty($merchant['sandbox_mode'])?'sandbox':((string)($input['environment']??'production')==='sandbox'?'sandbox':'production');
+    $audience=(string)($input['audience_mode']??'static');
 
     $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
     try{
@@ -515,7 +535,7 @@ function campaigns_rewards_create_campaign_v100(PDO $pdo,int $merchantId,int $ac
             $public,$code,$merchantId,(int)$type['id'],$name,$slug,mb_strimwidth(trim((string)($input['description']??'')),0,8000,'…'),
             $environment,campaigns_rewards_text_v100($input['objective']??'',500),$actorUserId,
             campaigns_rewards_datetime_v100((string)($input['starts_at']??'')),campaigns_rewards_datetime_v100((string)($input['ends_at']??'')),
-            in_array((string)($input['audience_mode']??'static'),['static','dynamic'],true)?(string)$input['audience_mode']:'static',
+            in_array($audience,['static','dynamic'],true)?$audience:'static',
             isset($input['budget_minor'])?max(0,(int)$input['budget_minor']):null,
             strtoupper(substr((string)($input['budget_currency']??$merchant['currency']),0,3)),
             isset($input['budget_quantity'])?max(0,(int)$input['budget_quantity']):null,
@@ -625,9 +645,7 @@ function campaigns_rewards_profile_campaigns_platform_v100(PDO $pdo,int $profile
 
 function campaigns_rewards_reward_type_v100(PDO $pdo,int $merchantId,string $typeKey): ?array
 {
-    $stmt=$pdo->prepare("SELECT * FROM reward_types WHERE type_key=? AND is_active=1 AND (merchant_id=? OR merchant_id IS NULL)
-      ORDER BY merchant_id IS NULL ASC,id DESC LIMIT 1");
-    $stmt->execute([$typeKey,$merchantId]);$row=$stmt->fetch();return $row?:null;
+    return campaigns_rewards_lookup_type_v100($pdo,$merchantId,$typeKey,true);
 }
 
 function campaigns_rewards_save_reward_product_v100(PDO $pdo,int $merchantId,int $actorUserId,array $input,int $rewardProductId=0): array
@@ -635,7 +653,7 @@ function campaigns_rewards_save_reward_product_v100(PDO $pdo,int $merchantId,int
     campaigns_rewards_platform_assert_can_v100($pdo,$merchantId,$actorUserId,'rewards.manage');
     $merchant=campaigns_rewards_platform_merchant_v100($pdo,$merchantId)?:throw new RuntimeException('Merchant not found.');
     $name=campaigns_rewards_text_v100($input['name']??'',190);if($name==='')throw new RuntimeException('Reward name is required.');
-    $typeKey=campaigns_rewards_slug_v100((string)($input['reward_type']??'free_product'),80)?:'free_product';
+    $typeKey=campaigns_rewards_type_key_v100((string)($input['reward_type']??'free_product'))?:'free_product';
     $type=campaigns_rewards_reward_type_v100($pdo,$merchantId,$typeKey)?:throw new RuntimeException('Reward Type is unavailable.');
     $values=[
         $name,mb_strimwidth(trim((string)($input['description']??'')),0,8000,'…'),campaigns_rewards_text_v100($input['sku']??'',120),

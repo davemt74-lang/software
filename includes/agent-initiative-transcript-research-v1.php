@@ -3,28 +3,9 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-transcript-research-policy-v1.php';
 
-/** Rotate through saved analyses, including older recordings, without a write cursor. */
-function vp3_initiative_transcript_research_scan_v1(PDO $pdo, array $scope, DateTimeImmutable $now): array
-{
-    [$where, $args] = vp3_transcript_scope_v1($scope['user'], $scope['principal']);
-    $source = "FROM artist_transcript_sessions_v172 s
-        JOIN artist_transcript_master_analysis_v237 m ON m.session_id=s.id
-        WHERE $where AND s.status='draft'";
-    $count = $pdo->prepare('SELECT COUNT(*) '.$source);
-    $count->execute($args);
-    $pages = max(1, (int)ceil((int)$count->fetchColumn() / 4));
-    $slot = max(0, intdiv($now->getTimestamp(), 300));
-    $offset = ($slot % $pages) * 4;
-    $page = $pdo->prepare('SELECT s.id '.$source.' ORDER BY s.id DESC LIMIT 4 OFFSET '.$offset);
-    $page->execute($args);
-    $ids = array_map('intval', $page->fetchAll(PDO::FETCH_COLUMN));
-    $focus = vp3_transcript_focus_id_v1($pdo, (int)$scope['user']['id'], $scope['agent_id'], $scope['conversation_id'], $now);
-    if ($focus > 0) $ids = array_values(array_unique([$focus, ...$ids]));
-    return ['ids' => $ids, 'turn' => intdiv($slot, $pages), 'limited' => $pages > 1];
-}
-
 /** Rebuild the same bound candidate from current records for planning or delivery verification. */
-function vp3_initiative_transcript_research_evidence_v1(PDO $pdo, array $scope, array $binding, DateTimeImmutable $now, ?array $refs, array &$coverage): array
+function vp3_initiative_transcript_research_evidence_v1(PDO $pdo, array $scope, array $binding, DateTimeImmutable $now, ?array $refs, array &$coverage,
+    ?int $sessionId=null, ?callable $candidateFilter=null): array
 {
     $selected = [];
     if ($refs !== null) {
@@ -53,8 +34,11 @@ function vp3_initiative_transcript_research_evidence_v1(PDO $pdo, array $scope, 
             return [];
         }
 
-        $scan = $refs === null ? vp3_initiative_transcript_research_scan_v1($pdo, $scope, $now)
-            : ['ids' => array_keys($selected), 'turn' => 0, 'limited' => false];
+        $scan = match (true) {
+            $refs !== null => ['ids' => array_keys($selected), 'turn' => 0, 'limited' => false],
+            $sessionId !== null => ['ids' => [$sessionId], 'turn' => 0, 'limited' => false],
+            default => vp3_initiative_transcript_saved_scan_v1($pdo, $scope, $now, draftOnly:true),
+        };
         $queues = $sessionRevisions = [];
         $denied = $unavailable = false;
         foreach ($scan['ids'] as $id) {
@@ -65,6 +49,7 @@ function vp3_initiative_transcript_research_evidence_v1(PDO $pdo, array $scope, 
                 $analysis = vp3_transcript_intelligence_v1($pdo, $scope['user'], $scope['principal'], $id, 'research_candidates');
                 $candidates = $analysis['research_candidates'];
                 if ($refs !== null) $candidates = array_intersect_key($candidates, $selected[$id]);
+                if ($candidateFilter !== null) $candidates = array_filter($candidates,$candidateFilter);
                 if ($candidates === []) continue;
                 $map = artist_listening_transcript_page_map(artist_listening_v172_segments($pdo, $id));
                 if (!hash_equals($analysis['source_hash'], $map['source_hash'])) continue;

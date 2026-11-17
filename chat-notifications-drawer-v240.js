@@ -87,6 +87,12 @@
   let profileAttention = null;
   let activityReadError = '';
   let activityScopeError = false;
+  let historyRows = null;
+  let historyReadError = false;
+  let historyRefreshTimer = 0;
+  let historyReading = false;
+  let historyRefreshPending = false;
+  let historyGeneration = 0;
   const activityDetails = new Set();
 
   function validateActivityScope(data = null) {
@@ -97,6 +103,7 @@
       || (data?.agent_namespace && data.agent_namespace !== pageNamespace)
       || (data?.activity_stream?.agent_namespace && data.activity_stream.agent_namespace !== pageNamespace)) {
       state = null;
+      clearHistoryRead();
       activityScopeError = true;
       activityReadError = 'Your Chat session changed. Reload Chat to see current activity.';
       render();
@@ -1015,10 +1022,56 @@
   }
 
   function selectActivityTab(tab) {
+    if (activeTab !== tab) clearHistoryRead();
     activeTab = tab;
     clearYoutubeHistory();
     render();
-    if (youtubeHistoryOpen()) void refresh();
+    if (youtubeHistoryOpen()) {
+      queueHistoryRefresh();
+      void refresh();
+    }
+  }
+
+  function clearHistoryRead() {
+    historyGeneration++;
+    historyRows = null;
+    historyReadError = false;
+    historyRefreshPending = false;
+    if (historyRefreshTimer) window.clearTimeout(historyRefreshTimer);
+    historyRefreshTimer = 0;
+  }
+
+  function queueHistoryRefresh() {
+    if (!youtubeHistoryOpen() || document.hidden || activityScopeError) return;
+    historyRefreshPending = true;
+    if (historyRefreshTimer || historyReading) return;
+    historyRefreshTimer = window.setTimeout(async () => {
+      historyRefreshTimer = 0;
+      if (!youtubeHistoryOpen() || document.hidden || activityScopeError) return;
+      historyRefreshPending = false;
+      historyReading = true;
+      const generation = historyGeneration;
+      try {
+        const data = await request('history');
+        if (!Array.isArray(data.history)) throw new Error('History could not be verified.');
+        if (generation !== historyGeneration || !youtubeHistoryOpen() || activityScopeError) return;
+        historyRows = data.history;
+        historyReadError = false;
+        render();
+      } catch (error) {
+        if (generation !== historyGeneration || !youtubeHistoryOpen()) return;
+        if ([401,403,419].includes(error?.status)) {
+          historyRows = null;
+          state = null;
+          activityScopeError = true;
+          activityReadError = 'Your Chat session changed. Reload Chat to see current activity.';
+        } else historyReadError = true;
+        render();
+      } finally {
+        historyReading = false;
+        if (historyRefreshPending) queueHistoryRefresh();
+      }
+    },250);
   }
 
   function youtubeHistoryView() {
@@ -1063,18 +1116,21 @@
   }
 
   function historyView() {
-    const rows = Array.isArray(state?.history) ? state.history : [];
+    if (window.VP3ParticipantContinuity?.selectedContext?.()) return '<div class="chat-activity-empty">Return to your own Chat to view Agent History.</div>';
+    const rows = historyRows || (Array.isArray(state?.history) ? state.history : []);
     let lastDay = '';
     return youtubeHistoryView() + `
       <section class="chat-activity-section">
-        <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Authorized conversation archive for the selected Agent identity</span></div></div>
+        <div class="chat-activity-section-head"><div><strong>Agent History</strong><span>Saved conversations and proactive updates for the selected Agent</span></div></div>
+        ${historyReadError ? '<div class="chat-activity-inline-error" role="status">Agent History could not refresh. <button type="button" data-history-retry>Retry</button></div>' : ''}
         <div class="chat-brain-history">
           ${rows.length ? rows.map(row => {
             const date = new Date(String(row.created_at || '').replace(' ', 'T'));
             const day = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
             const divider = day && day !== lastDay ? `<div class="chat-brain-history-day">${esc(day)}</div>` : '';
             lastDay = day || lastDay;
-            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>Conversation ${Number(row.conversation_id || 0)}${row.turn_type ? ` · ${esc(String(row.turn_type).replaceAll('_',' '))}` : ''}</footer></article>`;
+            const link = row.turn_type === 'proactive_update' ? activitySourceUrl(row.source_url) : '';
+            return `${divider}<article class="${esc(row.role || 'user')}"><div><strong>${row.role === 'assistant' ? 'Agent' : 'You'}</strong><span>${esc(row.input_mode || 'text')}</span><small>${esc(relative(row.created_at))}</small></div><p>${esc(row.message || '')}</p><footer>${link ? `<a href="${esc(link)}">Open in Chat</a>` : `Conversation ${Number(row.conversation_id || 0)}${row.turn_type ? ` · ${esc(String(row.turn_type).replaceAll('_',' '))}` : ''}`}</footer></article>`;
           }).join('') : '<div class="chat-activity-empty">No conversation history in this Agent scope yet.</div>'}
         </div>
       </section>`;
@@ -1091,18 +1147,28 @@
     }
     const body = drawer.querySelector('[data-notification-drawer-body]');
     if (!body) return;
-    const topOfMind = activeTab === 'brain' ? '<section class="agent-top-of-mind" data-agent-top-of-mind aria-label="Top of Mind"></section>' : '';
+    const showTopOfMind = activeTab === 'brain' && !activityScopeError;
+    const updateBody = markup => {
+      const workView = showTopOfMind ? body.querySelector(':scope > [data-agent-top-of-mind]') : null;
+      if (workView) {
+        for (const child of Array.from(body.childNodes)) if (child !== workView) child.remove();
+        workView.insertAdjacentHTML('afterend', markup);
+      } else {
+        const topOfMind = showTopOfMind ? '<section class="agent-top-of-mind" data-agent-top-of-mind aria-label="Top of Mind"></section>' : '';
+        body.innerHTML = topOfMind + markup;
+      }
+    };
     const publishWorkView = () => window.dispatchEvent(new CustomEvent('vp3:activity-center-view',{detail:{
       tab:activeTab,open:!drawer.hidden && document.body.classList.contains('chat-notification-drawer-open'),
       topOfMindHost:body.querySelector('[data-agent-top-of-mind]')
     }}));
     body.setAttribute('aria-labelledby','chatActivityTab-'+activeTab);
-    if (!state) {
-      body.innerHTML = topOfMind + (activityReadError ? `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>${!activityScopeError && activeTab === 'notifications' ? profileAttention?.view() || '' : ''}` : '<div class="chat-activity-loading">Loading Activity Center…</div>');
+    if (!state && (activeTab !== 'history' || historyRows === null)) {
+      updateBody(activityReadError ? `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>${!activityScopeError && activeTab === 'notifications' ? profileAttention?.view() || '' : ''}` : '<div class="chat-activity-loading">Loading Activity Center…</div>');
       publishWorkView();
       return;
     }
-    body.innerHTML = topOfMind + (activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : activeTab === 'eyes' ? eyesHistoryView() : notificationView());
+    updateBody(activeTab === 'brain' ? brainView() : activeTab === 'history' ? historyView() : activeTab === 'eyes' ? eyesHistoryView() : notificationView());
     if (activityReadError) body.insertAdjacentHTML('afterbegin', `<div class="chat-activity-inline-error" role="status">${esc(activityReadError)} <button type="button" data-notification-retry>Retry</button></div>`);
     if(activeTab==='brain'){window.VP3ChatDiagnostics?.renderBrain(body);window.VP3ProjectKnowledgeR6?.renderBrain(body);window.VP3ProjectKnowledgeR7?.renderBrain(body);window.VP3KnowledgeActionsR8?.renderBrain(body);}
     if (activeTab === 'brain' && typeof window.VP3_AGENT_TEAMS_A3_BRAIN === 'function') {
@@ -1132,6 +1198,7 @@
       if (state) state = {...state,activity_stream:null,youtube_history:null};
       if ([401,403,419].includes(error?.status)) {
         state = null;
+        clearHistoryRead();
         activityScopeError = true;
         activityReadError = 'Your Chat session changed. Reload Chat to see current activity.';
         cancelSpeech();
@@ -1142,6 +1209,9 @@
 
   function openDrawer() {
     ensureDrawer();
+    if (!document.body.classList.contains('chat-notification-drawer-open')) {
+      drawer.querySelector('[data-agent-top-of-mind]')?.remove();
+    }
     drawer.hidden = false;
     backdrop.hidden = false;
     requestAnimationFrame(() => {
@@ -1151,6 +1221,7 @@
     button?.setAttribute('aria-expanded', 'true');
     document.body.classList.add('chat-notification-drawer-open');
     render();
+    queueHistoryRefresh();
     void refresh(true);
     void profileAttention?.refresh({present:false});
   }
@@ -1158,6 +1229,7 @@
   function closeDrawer() {
     if (!drawer) return;
     clearYoutubeHistory();
+    clearHistoryRead();
     drawer.classList.remove('open');
     backdrop.classList.remove('open');
     button?.setAttribute('aria-expanded', 'false');
@@ -1181,6 +1253,7 @@
     } catch (error) {
       if ([401,403,419].includes(error?.status)) {
         state = null;
+        clearHistoryRead();
         activityScopeError = true;
         activityReadError = 'Your Chat session changed. Reload Chat to see current activity.';
         cancelSpeech();
@@ -1197,6 +1270,7 @@
 
   function handleDrawerClick(event) {
     if (profileAttention?.handleClick(event)) return;
+    if (event.target.closest('[data-history-retry]')) { queueHistoryRefresh(); return; }
     if (event.target.closest('[data-notification-retry]')) { void refresh(true); void profileAttention?.refresh({present:false}); return; }
     const tab = event.target.closest('[data-notification-tab]');
     if (tab) {
@@ -1313,12 +1387,10 @@
     const cancel = activeSpeechCancel;
     activeSpeechCancel = null;
     try { cancel?.(); } catch (_error) {}
-    try { window.speechSynthesis?.cancel(); } catch (_error) {}
-    announceSpeechState('end');
     return true;
   }
 
-  function playAnnouncement(message, generation, canSpeak, {start, stop, onStarted, onComplete, signal, autoReply, timeout=0}) {
+  function playAnnouncement(message, generation, canSpeak, {start, stop, onStarted, onComplete, onPlaybackStart, onPlaybackIssue, signal, autoReply, timeout=0}) {
     return new Promise(resolve => {
       let started = false;
       let closed = false;
@@ -1344,10 +1416,14 @@
         started = true;
         announceSpeechState('start',message,false,autoReply);
         onStarted(true);
+        try { onPlaybackStart?.(); } catch (_error) {}
       };
       signal?.addEventListener('abort',cancel,{once:true});
       if (signal?.aborted) { cancel(); return; }
-      if (timeout) watchdog = setTimeout(cancel,timeout);
+      if (timeout) watchdog = setTimeout(() => {
+        try { onPlaybackIssue?.('playback_timeout'); } catch (_error) {}
+        cancel();
+      },timeout);
       try {
         Promise.resolve(start({onStart,onEnd:() => close(true),onError:() => close()})).then(result => {
           if (result === true) onStart();
@@ -1364,9 +1440,18 @@
       stop:() => window.speechSynthesis.cancel(),
       start:({onStart,onEnd,onError}) => {
         const utterance = new window.SpeechSynthesisUtterance(message);
+        if (options.voice) utterance.voice = options.voice;
         utterance.onstart = onStart;
         utterance.onend = onEnd;
-        utterance.onerror = onError;
+        utterance.onerror = event => {
+          const issue = event?.error;
+          const code = issue === 'not-allowed' ? 'playback_autoplay' :
+            ['audio-hardware','audio-busy','audio-unavailable'].includes(issue) ? 'playback_device' :
+            ['voice-unavailable','language-unavailable'].includes(issue) ? 'playback_voice' :
+            ['canceled','interrupted'].includes(issue) ? 'playback_cancelled' : 'playback_failed';
+          try { options.onPlaybackIssue?.(code); } catch (_error) {}
+          onError();
+        };
         window.speechSynthesis.cancel();
         window.speechSynthesis.speak(utterance);
       }
@@ -1386,9 +1471,9 @@
     if (!canSpeak()) return false;
     let spoken = false;
     const PremiumVoice = window.StonefellowPremiumVoiceV122;
-    if (typeof PremiumVoice === 'function') {
+    if (!options.browserOnly && !options.voice && typeof PremiumVoice === 'function') {
       try {
-        const premium = PremiumVoice({
+        const premium = options.premium || PremiumVoice({
           agentEndpoint:(()=>{const u=new URL(String(window.STONEFELLOW_CHAT?.endpoint || cfg.agentEndpoint || '/api/chat-v236.php'),location.href);const id=activeAgentId();if(id>0)u.searchParams.set('agent',String(id));return u.href;})(),
           csrf:String(cfg.csrf || '')
         });
@@ -1559,6 +1644,7 @@
     if (!agentVoicePreference) cancelSpeech();
   });
   document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) queueHistoryRefresh();
     if (!document.hidden && chatCanvasAvailable()) {
       void pollAttention(false,'connection_activations').then(() => pollAttention(false)).then(() => pollAttention(false,'profile'));
     }
@@ -1568,12 +1654,18 @@
   });
   window.addEventListener('vp3:participant-selection-changed', () => {
     clearYoutubeHistory();
+    clearHistoryRead();
     if (activeTab === 'history') render();
-    if (youtubeHistoryOpen()) void refresh();
+    if (youtubeHistoryOpen()) {
+      queueHistoryRefresh();
+      void refresh();
+    }
   });
   window.addEventListener('vp3:youtube-history-changed', () => {
     if (youtubeHistoryOpen()) void refresh();
   });
+  window.addEventListener('vp3:chat-message-persisted', queueHistoryRefresh);
+  window.addEventListener('vp3:chat-history-updated', queueHistoryRefresh);
   window.addEventListener('pagehide', () => {
     if (attentionTimer) window.clearInterval(attentionTimer);
     attentionTimer = 0;
@@ -1581,6 +1673,7 @@
     mainFeedRefreshTimer = 0;
     mainFeedObserver?.disconnect();
     mainFeedObserver = null;
+    clearHistoryRead();
     cancelSpeech();
     profileAttention?.dispose();
   }, {once:true});

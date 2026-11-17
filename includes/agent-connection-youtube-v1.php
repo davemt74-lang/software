@@ -223,8 +223,29 @@ function agent_connection_youtube_video_details_v1(array $ids, ?callable $http):
 {
     return agent_connection_youtube_request_v1(VP3_YOUTUBE_STATUS_ENDPOINT_V1, [
         'part'=>'snippet,status','id'=>implode(',', $ids),
-        'fields'=>'kind,items(id,snippet(title,channelTitle,categoryId,thumbnails(medium(url),default(url))),status(embeddable,madeForKids,privacyStatus))',
+        'fields'=>'kind,items(id,snippet(title,channelTitle,description,categoryId,thumbnails(medium(url),default(url))),status(embeddable,madeForKids,privacyStatus))',
     ], 'youtube#videoListResponse', $http);
+}
+
+/** Keep bounded public description text without links or formatting controls. */
+function agent_connection_youtube_context_text_v1(mixed $value,int $limit): string
+{
+    $text=strip_tags(agent_connection_youtube_text_v1($value,1600));
+    $text=preg_replace('~(?:https?://|\bwww\.)\S+|[<>\p{Cc}\p{Cf}]~iu',' ',$text)??'';
+    return mb_substr(trim(preg_replace('/\s+/u',' ',$text)??''),0,$limit);
+}
+
+/** Accept additional analysis metadata only from the exact checked public video. */
+function agent_connection_youtube_public_context_v1(array $detail): ?array
+{
+    $status=$detail['status']??[];
+    if(($status['privacyStatus']??null)!=='public'||($status['embeddable']??null)!==true||($status['madeForKids']??null)!==false)return null;
+    $snippet=$detail['snippet']??[];
+    $title=agent_connection_youtube_context_text_v1($snippet['title']??null,160);
+    if($title==='')return null;
+    return ['title'=>$title,'channel'=>agent_connection_youtube_context_text_v1($snippet['channelTitle']??null,90),
+        'description'=>agent_connection_youtube_context_text_v1($snippet['description']??null,320),
+        'music'=>($snippet['categoryId']??null)==='10'];
 }
 
 /** Check each public result before it can be embedded or recorded in VP3 history. */
@@ -243,6 +264,8 @@ function agent_connection_youtube_video_status_v1(array $videos, ?callable $http
         if (($status['embeddable'] ?? null) === true && is_bool($status['madeForKids'] ?? null)) {
             $video['made_for_kids'] = $status['madeForKids'];
             if (($detail['snippet']['categoryId'] ?? null) === '10') $video['music_category'] = true;
+            $context=agent_connection_youtube_public_context_v1($detail);
+            if($context!==null)$video['public_context']=$context;
         }
     }
     unset($video);
@@ -263,7 +286,12 @@ function agent_connection_youtube_playable_videos_v1(array $ids, ?callable $http
         if (($status['privacyStatus'] ?? null) !== 'public' || ($status['embeddable'] ?? null) !== true
             || !is_bool($status['madeForKids'] ?? null)) continue;
         $video = agent_connection_youtube_video_display_v1($id, $detail['snippet'] ?? []);
-        if ($video !== null) $videos[] = $video + ['made_for_kids'=>$status['madeForKids']];
+        if ($video !== null) {
+            $video['made_for_kids']=$status['madeForKids'];
+            $context=agent_connection_youtube_public_context_v1($detail);
+            if($context!==null)$video['public_context']=$context;
+            $videos[]=$video;
+        }
     }
     return $videos;
 }

@@ -1,33 +1,44 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+import {Document} from './fixtures/profile-attention-pa4b.mjs';
 
-// Execute the production send owner and inline error presenter. Transport and
-// unrelated media rendering are fixtures; request ownership is unchanged.
+// Execute the production send owner, Chat message renderer and local status
+// presenter. DOM, transport, clocks and draft storage are fixture boundaries.
 const source=fs.readFileSync('chat.js','utf8');
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert(a>=0&&b>a);return source.slice(a,b);}
+function chatFunction(name){
+ const start=source.search(new RegExp('^  (?:async )?function '+name+'\\(','m')),end=source.indexOf('\n  }',start);
+ assert(start>=0&&end>start,'Production Chat helper exists: '+name);return source.slice(start,end+4)+'\n';
+}
 const presenter=section('  function recoveryStatus(', '  function leaveChat(');
-const bindStoredMessage=section('  function bindStoredMessagePa3(', '  function pendingAssistantMessageIds()');
-const sendOwner=section('  function gmailReviewActionLabel(', "  thread.addEventListener('click'");
+const helpers=['bindStoredMessagePa3','initiativeIdentityMatchesV1','validInitiativeReplyV1','initiativeReplyForSendV1',
+ 'showParkedReplyAfterSend','bindFoodMonsterResultIcon','bindGmailResultTime','applyInitiativeFollowthroughV1',
+ 'bindCoordinationReplyV1','bindInitiativeActionV1','bindMeetingActionV1','messageElement','addMessage','addTyping',
+ 'catchUpSourceLinks','publicResearchSourceLinks','attachAudioTracking'].map(chatFunction).join('');
+const sendOwner=['gmailReviewActionLabel','sendMessage'].map(chatFunction).join('');
 const initiativeIdentity=section('  const initiativePage =', '  const thread =');
 const initiativeState=section('  let initiativeReplyTarget =', '  const recoveryKey =');
 function fixture(){
- const elements=new Map(),messages=[],messageElements=[],drafts=new Map(),timers=new Map();let sequence=0,calls=0,reply;
- const node=()=>({hidden:false,textContent:'',children:[],dataset:{},removed:false,remove(){this.removed=true;},querySelector:()=>null,setAttribute(){},appendChild(child){this.children.push(child);if(child.id)elements.set(child.id,child);},focus(){},disabled:false,value:''});
- elements.set('chatComposerShell',node());
+ const document=new Document(),drafts=new Map(),timers=new Map();let sequence=0,calls=0,reply;
+ document.body.innerHTML='<section id="chatThread" data-view="chat"></section><div id="chatWelcome"></div><form id="chatForm"><div id="chatComposerShell"><textarea id="chatInput"></textarea><button id="sendChatButton"></button></div></form>';
+ const thread=document.getElementById('chatThread');
+ const messageElements=()=>thread.querySelectorAll('article.message.user,article.message.assistant').filter(element=>!element.classList.contains('typing'));
  const ctx={console,AbortController,DOMException,Event,CustomEvent:class{constructor(type,init={}){this.type=type;this.detail=init.detail;}},
-  document:{getElementById:id=>elements.get(id)||null,createElement:node,dispatchEvent(){}},
-  window:{dispatchEvent(){},setTimeout(){}},navigator:{onLine:true},input:node(),send:node(),form:{},
-  cfg:{agentId:0},thread:{querySelector(selector){const id=selector.match(/data-chat-message-id="(\d+)"/)?.[1],cid=selector.match(/data-chat-conversation-id="(\d+)"/)?.[1],role=selector.match(/data-chat-message-role="([a-z]+)"/)?.[1];return messageElements.find(element=>!element.removed&&element.dataset.chatMessageId===id&&element.dataset.chatConversationId===cid&&element.dataset.chatMessageRole===role)||null;}},
+  document,window:{dispatchEvent(){},setTimeout(){}},navigator:{onLine:true},input:document.getElementById('chatInput'),
+  send:document.getElementById('sendChatButton'),form:document.getElementById('chatForm'),welcome:document.getElementById('chatWelcome'),
+  cfg:{agentId:0},thread,
   busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,lastLoadedMessageId:0,
   voiceMode:false,voiceSpeaking:false,
   setTimeout(fn,ms){const id=++sequence;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
   keepDraft(text,id=42){if(text)drafts.set(id,text);else drafts.delete(id);},autoSize(){},showStop(){},setChatCanvasView(){},
-  addMessage(role,text){messages.push({role,text});const element=node();messageElements.push(element);return element;},addTyping(){return {remove(){}};},rememberConversation(){},refreshHistory:async()=>{},
+  rememberConversation(){},refreshHistory:async()=>{},
   api:async(payload,signal)=>{calls++;return reply(payload,signal);},
  };
- vm.createContext(ctx);vm.runInContext(initiativeIdentity+initiativeState+presenter+bindStoredMessage+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
- return {ctx,elements,messages,messageElements,drafts,timers,get calls(){return calls;},reply:fn=>{reply=fn;}};
+ vm.createContext(ctx);vm.runInContext(initiativeIdentity+initiativeState+presenter+helpers+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
+ return {ctx,document,drafts,timers,get messageElements(){return messageElements();},
+  get messages(){return messageElements().map(element=>({role:element.classList.contains('user')?'user':'assistant',text:element.querySelector('.message-text').textContent}));},
+  get notice(){return thread.querySelector('[data-chat-turn-notice]');},get calls(){return calls;},reply:fn=>{reply=fn;}};
 }
 let checks=0;
 for(const kind of ['server','network','timeout']){
@@ -48,17 +59,21 @@ for(const kind of ['server','network','timeout']){
  assert.equal(f.ctx.busy,false);assert.equal(f.ctx.pendingSend,null);
  assert.equal(f.ctx.send.disabled,false);assert.equal(f.ctx.input.disabled,false);
  assert.equal(f.ctx.input.value,'Retain this question');assert.equal(f.drafts.get(42),'Retain this question');
- const status=f.elements.get('chatRecoveryStatus');
- assert.equal(status.hidden,false);assert.equal(status.children.length,0,'No history or dismiss buttons are added');
+ const notice=f.notice,status=notice.querySelector('.message-text');
+ assert.equal(notice.isConnected,true);assert.equal(status.getAttribute('role'),'status');
+ assert.equal(notice.classList.contains('chat-turn-notice'),true);assert.equal(notice.classList.contains('assistant'),false);
+ assert.equal(notice.dataset.chatMessageId,undefined,'A local status is not a saved assistant message');
+ assert.equal(notice.querySelectorAll('button,a').length,0,'No history or dismiss controls are added');
+ assert.equal(f.document.getElementById('chatRecoveryStatus'),null,'Transport failure is presented in Chat');
  assert.match(status.textContent,kind==='server'?/Provider temporarily unavailable/:kind==='timeout'?/timed out/:/Could not connect to Chat/);
  assert.doesNotMatch(status.textContent,/Check history|before listening|before sending/);
  assert.equal(f.calls,1,'A failure does not automatically retry the request');
- checks+=11;
+ checks+=16;
  f.reply(async()=>({ok:true,conversation_id:42,user_message_id:21,assistant_message_id:22,answer:'A fresh answer.'}));
  f.ctx.input.value='A new question';await f.ctx.submit(f.ctx.input.value);
  assert.equal(f.calls,2);assert.equal(f.ctx.busy,false);assert.equal(f.ctx.input.value,'');
- assert.equal(status.hidden,true);assert.equal(f.drafts.has(42),false);
- assert.deepEqual(f.messages.at(-1),{role:'assistant',text:'A fresh answer.'});checks+=6;
+ assert.equal(notice.isConnected,false);assert.equal(f.notice,null);assert.equal(f.drafts.has(42),false);
+ assert.deepEqual(f.messages.at(-1),{role:'assistant',text:'A fresh answer.'});checks+=7;
  const [savedUser,savedReply]=f.messageElements.slice(-2);
  assert.equal(savedUser.dataset.chatMessageId,'21');assert.equal(savedUser.dataset.chatMessageRole,'user');
  assert.equal(savedReply.dataset.chatMessageId,'22');assert.equal(savedReply.dataset.chatMessageRole,'assistant');
@@ -85,9 +100,12 @@ for(const kind of ['server','network','timeout']){
  const f=fixture();let release;f.reply(()=>new Promise(resolve=>{release=resolve;}));
  const old=f.ctx.submit('Old request');await Promise.resolve();
  f.ctx.chatRevision++;f.ctx.pendingSend=null;f.ctx.busy=false;f.ctx.conversationId=43;f.ctx.input.value='Current draft';
+ f.ctx.keepDraft('Current draft',43);f.ctx.showChatTurnNotice('Current Chat status.');const currentNotice=f.notice;
  release({conversation_id:42,answer:'Stale answer.'});await old;
  assert.equal(f.ctx.conversationId,43);assert.equal(f.ctx.input.value,'Current draft');
- assert.equal(f.messages.some(message=>message.text==='Stale answer.'),false);checks+=3;
+ assert.equal(f.messages.some(message=>message.text==='Stale answer.'),false);
+ assert.equal(f.drafts.get(43),'Current draft');assert.equal(f.notice,currentNotice);
+ assert.equal(currentNotice.querySelector('.message-text').textContent,'Current Chat status.');checks+=6;
 }
 console.log(`CHAT_SEND_RECOVERY=PASS (${checks} assertions; actual send owner; transport mocked)`);
 

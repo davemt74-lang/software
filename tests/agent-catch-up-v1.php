@@ -59,6 +59,7 @@ require $root.'/includes/agent-commerce-v800-part2.php';
 require_once $root.'/includes/agent-capability-chat-v1.php';
 require_once $root.'/includes/knowledge-retrieval-v162.php';
 require_once $root.'/includes/agent-memory-scope-v410.php';
+require_once $root.'/includes/agent-brain-v82.php';
 require_once $root.'/includes/video-meetings-v1800.php';
 require_once $root.'/includes/cognitive-presentation-firewall-v2590.php';
 require_once $root.'/includes/cognitive-presentation-v510.php';

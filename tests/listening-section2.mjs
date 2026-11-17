@@ -210,16 +210,24 @@ if(cloud){
   Object.assign(b.context,{chatRevision:0,restoringConversation:0,conversationId:1,contextReady:false,lastLoadedMessageId:0,historyAuthority:0,historyParticipant:0,
    leaveChat(){b.context.chatRevision++;},api:(_payload,ownedSignal)=>{signal=ownedSignal;return waiting.promise;},
    rememberConversation(){commits++;},restoreDraft(){},thread:b.element('chatThread'),welcome:null,closeNav(){},setChatCanvasView(){}});
-  const ui=source('chat.js'),from=ui.indexOf('  async function loadConversation('),to=ui.indexOf('  async function syncConversationMessagesV101',from);
+  const ui=source('chat.js');
   const bindingFrom=ui.indexOf('  const cfg = window.STONEFELLOW_CHAT;'),bindingTo=ui.indexOf('  const thread =',bindingFrom);
-  const stateFrom=ui.indexOf('  let initiativeReplyTarget ='),stateTo=ui.indexOf('  const recoveryKey =',stateFrom);
-  const helperFrom=ui.indexOf('  function initiativeIdentityMatchesV1()'),helperTo=ui.indexOf('  function bindInitiativeWorkV1(',helperFrom);
-  assert(from>=0&&to>from&&bindingFrom>=0&&bindingTo>bindingFrom&&stateFrom>=0&&stateTo>stateFrom&&helperFrom>=0&&helperTo>helperFrom);
+  const stateFrom=ui.indexOf('  let initiativeReplyTarget ='),stateTo=ui.indexOf('  function saveParkedReplies()',stateFrom);
+  assert(bindingFrom>=0&&bindingTo>bindingFrom&&stateFrom>=0&&stateTo>stateFrom);
+  const chatFunction=name=>{
+   const from=ui.search(new RegExp('^  (?:async )?function '+name+'\\(','m')),to=ui.indexOf('\n  }',from);
+   assert(from>=0&&to>from,'Production history helper exists: '+name);
+   return ui.slice(from,to+4)+'\n';
+  };
   // The actual restore finally owns reply-context recovery too. Include its
-  // production closure state/helpers; the timeout transport stays isolated.
+  // production closure state/helpers without unrelated voice event bindings;
+  // the timeout transport stays isolated.
+  b.context.sessionStorage=b.context.localStorage;
   b.window.STONEFELLOW_CHAT={userId:1,agentId:0,endpoint:'/api/chat.php',csrf:'fixture',workingAttentionBinding:'fixture-session'};
-  vm.runInNewContext(ui.slice(bindingFrom,bindingTo)+ui.slice(stateFrom,stateTo)+ui.slice(helperFrom,helperTo)
-   +ui.slice(from,to)+'\nwindow.loadHistoryForTest=loadConversation;',b.context);
+  vm.runInNewContext(ui.slice(bindingFrom,bindingTo)+ui.slice(stateFrom,stateTo)
+   +['initiativeIdentityMatchesV1','validInitiativeReplyV1','recoveryDrafts','privateParkedReplies',
+     'restoreInitiativeReplyV1','renderParkedInitiativeRepliesV1','loadConversation'].map(chatFunction).join('')
+   +'\nwindow.loadHistoryForTest=loadConversation;',b.context);
   const turn=b.window.loadHistoryForTest(7).catch(error=>error);await timer.advance(10000);
   assert.match((await turn).message,/timed out/i);assert.equal(signal.aborted,true);assert.equal(b.context.restoringConversation,0);assert.equal(commits,0);
   waiting.resolve({messages:[]});await flush();assert.equal(b.context.conversationId,1);assert.equal(commits,0);

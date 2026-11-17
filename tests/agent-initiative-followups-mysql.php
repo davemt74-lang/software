@@ -24,13 +24,13 @@ function fm_schedule(string $label):array{
  return$root+['reminder_id'=>$a['result']['domain_result']['record_id'],'creating_action'=>$a,'selection'=>$result];
 }
 function fm_wake_run(int $id):array{$q=db()->prepare("SELECT * FROM agent_workflow_runs WHERE capability_key='initiative.prepare' AND goal LIKE ? ORDER BY id DESC LIMIT 1");$q->execute(['%"reminder_id":'.$id.',%']);$r=$q->fetch();if(!$r)throw new RuntimeException('Expected canonical wake.');return$r;}
-function fm_execute(array $run,?callable $during=null,string $expected='open'):array{
+function fm_execute(array $run,?callable $during=null,string $expected='open',bool $allowDelivery=true):array{
  $claim=agent_job_claim_run_v1900(db(),action_mysql_user(),(int)$run['id'],'cloud',agent_worker_cloud_worker_id_v1910(1));if(!$claim)throw new RuntimeException('Expected actual wake claim.');
  return vp3_initiative_execute_v1(db(),action_mysql_user(),$claim,static function(string $prompt)use($during,$expected):string{
   if(db()->inTransaction())throw new LogicException('Wake inference owns a transaction.');$p=json_decode($prompt,true,64,JSON_THROW_ON_ERROR);
   fm_check(($p['owner_followup']['current_context']['records'][0]['status']??null)===$expected,'actual native wake reads the current canonical task state');
   if($during)$during();return json_encode(['draft'=>$expected==='completed'?'The current task is already completed.':'The current task remains open; we can review its next step.'],JSON_THROW_ON_ERROR);
- });
+ },allowDelivery:$allowDelivery);
 }
 try{
  action_mysql_schema();db()->exec("CREATE TABLE notifications(id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,user_id INT UNSIGNED,type VARCHAR(40),title VARCHAR(240),body TEXT,target_url VARCHAR(500),source_type VARCHAR(40),source_id BIGINT UNSIGNED,is_read TINYINT DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");reminder_schema_v1(db());
@@ -44,10 +44,9 @@ try{
  fm_check(fm_count('agent_workflow_runs')===$before+1&&fm_count('agent_reminder_occurrences_v1')===1,'concurrent native tickers create one occurrence and one canonical wake');
  fm_check(fm_count('notifications')===0,'linked wake creates no generic reminder notification');
  db()->prepare('UPDATE agent_activity_state SET details_json=? WHERE user_id=1')->execute([json_encode(['visible'=>false,'conversation_id'=>10,'chat_focused'=>false,'chat_busy'=>false])]);
- $run=fm_wake_run($id);$result=fm_execute($run);fm_check(!empty($result['ok']),'native reassessment executes while the browser is absent');
- $q=db()->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$run['id']]);$private=json_decode((string)$q->fetchColumn(),true);fm_check($private['initiative_delivery']==='pending','absent owner leaves one verified private result awaiting canonical Chat delivery');
- db()->prepare('UPDATE agent_activity_state SET last_heartbeat_at=NOW(),details_json=? WHERE user_id=1')->execute([json_encode(['visible'=>true,'conversation_id'=>10,'chat_focused'=>true,'chat_busy'=>false])]);db()->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE role='assistant'");
- fm_check(vp3_initiative_deliver_pending_v1(db(),action_mysql_user(),7),'returning owner receives the saved native follow-up result');
+ $run=fm_wake_run($id);$result=fm_execute($run,allowDelivery:false);fm_check(!empty($result['ok']),'native reassessment executes while the browser is absent');
+ $q=db()->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$run['id']]);$private=json_decode((string)$q->fetchColumn(),true);fm_check($private['initiative_delivery']==='pending','explicit delivery deferral leaves one verified private result awaiting canonical Chat delivery');
+ fm_check(vp3_initiative_deliver_pending_v1(db(),action_mysql_user(),7),'the saved owner Chat receives the native follow-up independently of browser presence');
  $q=db()->prepare('SELECT * FROM agent_reminder_occurrences_v1 WHERE reminder_id=?');$q->execute([$id]);$o=$q->fetch();fm_check((int)$o['message_id']>0&&$o['notified_at']!==null&&$o['presented_at']!==null,'actual natural Chat delivery atomically owns the native occurrence');
  $before=fm_count('chat_messages');reminder_tick_v1(db(),1,new DateTimeImmutable($at));fm_check(fm_count('chat_messages')===$before&&reminder_present_v1(db(),1,['action'=>'claim'])['item']===null,'replayed native tick/presentation cannot duplicate Chat or generic voice');
  $s=fm_schedule('Native cancellation race');$id=$s['reminder_id'];reminder_tick_v1(db(),1,(new DateTimeImmutable(fm_row($id)['next_at']))->modify('+1 second'));$run=fm_wake_run($id);$before=fm_count('chat_messages');

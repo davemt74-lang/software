@@ -22,6 +22,27 @@ function vp3_initiative_transcript_capabilities_id_v1(string $ref): int
     return (int)$match[1];
 }
 
+/** Rotate through saved analyses without storing a cursor or excluding older current findings. */
+function vp3_initiative_transcript_saved_scan_v1(PDO $pdo,array $scope,DateTimeImmutable $now,bool $draftOnly): array
+{
+    [$where,$args]=vp3_transcript_scope_v1($scope['user'],$scope['principal']);
+    $status=$draftOnly?" AND s.status='draft'":'';
+    $source="FROM artist_transcript_sessions_v172 s
+        JOIN artist_transcript_master_analysis_v237 m ON m.session_id=s.id
+        WHERE $where$status";
+    $count=$pdo->prepare('SELECT COUNT(*) '.$source);
+    $count->execute($args);
+    $pages=max(1,(int)ceil((int)$count->fetchColumn()/4));
+    $slot=max(0,intdiv($now->getTimestamp(),300));
+    $offset=($slot%$pages)*4;
+    $page=$pdo->prepare('SELECT s.id '.$source.' ORDER BY s.id DESC LIMIT 4 OFFSET '.$offset);
+    $page->execute($args);
+    $ids=array_map('intval',$page->fetchAll(PDO::FETCH_COLUMN));
+    $focus=vp3_transcript_focus_id_v1($pdo,(int)$scope['user']['id'],$scope['agent_id'],$scope['conversation_id'],$now);
+    if($focus>0)$ids=array_values(array_unique([$focus,...$ids]));
+    return ['ids'=>$ids,'focus'=>$focus,'turn'=>intdiv($slot,$pages),'limited'=>$pages>1];
+}
+
 /** JSON-byte bounds also cover multibyte text when the common receipt uses escaped JSON. */
 function vp3_initiative_transcript_capabilities_text_v1(string $text,int $characters,int $jsonBytes): string
 {
