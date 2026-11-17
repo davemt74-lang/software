@@ -613,6 +613,12 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
                 require_once __DIR__.'/agent-initiative-youtube-playlist-v1.php';
                 $playlist=vp3_initiative_youtube_playlist_prepare_v1($pdo,(int)$scope['user']['id'],$source['title'],$kind,
                     $focus,$research['sources'],$authorize,$researchTransport['youtube_http']??null);
+                if($kind==='artist'&&$plan['focus']==='overview'&&vp3_initiative_youtube_playlist_ready_v1($pdo)){
+                    require_once __DIR__.'/agent-media-similar-artists-v1.php';
+                    $similar=vp3_media_similar_artist_search_v1($pdo,(int)$scope['user']['id'],$source['title'],
+                        $authorize,$researchTransport['youtube_http']??null);
+                    if($similar!==null)$playlist=vp3_media_similar_artist_attach_v1($playlist,$similar);
+                }
                 if($playlist!==null)$result['youtube_playlist']=$playlist;
             }
             return $result;

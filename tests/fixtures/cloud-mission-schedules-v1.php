@@ -31,8 +31,12 @@ function has_permission($p,$u): bool {return empty($u['denied'])&&empty($GLOBALS
 function personal_capability_has_v242($p,$u): bool {return has_permission($p,$u);}
 function can_view_visibility($visibility,$user): bool {return true;}
 function user_agent_get_v236($pdo,$uid,$aid): ?array {return $uid===1&&$aid===7?['id'=>7,'is_active'=>1]:null;}
-function vp3_agent_memory_scope_from_conversation_v410($u,$cid,$set=true): int {if($u['id']!==1||$cid!==11)throw new RuntimeException('Wrong conversation.',403);return 7;}
-function vp3_agent_memory_scope_set_current_v410($uid,$aid): void {$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=['user_id'=>$uid,'user_agent_id'=>$aid];}
+if(!function_exists('vp3_agent_memory_scope_from_conversation_v410')){
+    function vp3_agent_memory_scope_from_conversation_v410($u,$cid,$set=true): int {if($u['id']!==1||$cid!==11)throw new RuntimeException('Wrong conversation.',403);return 7;}
+}
+if(!function_exists('vp3_agent_memory_scope_set_current_v410')){
+    function vp3_agent_memory_scope_set_current_v410($uid,$aid): void {$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=['user_id'=>$uid,'user_agent_id'=>$aid];}
+}
 function homeserver_https_v1300_status($uid): array {return ['connected'=>false];}
 function ai_active_provider(): string {return 'fixture';}
 function ai_provider_model($p): string {return 'fixture';}

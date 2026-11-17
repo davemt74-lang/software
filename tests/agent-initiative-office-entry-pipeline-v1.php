@@ -2,12 +2,39 @@
 declare(strict_types=1);
 
 // Real account/Agent, database, scheduler, leases, worker, receipts and
-// private Activity/Chat. Only provider transport is supplied by the fixture.
+// private Activity/Chat. Only the physical HomeServer transport is a fixture.
+// Canvas has its own complete gate; reuse its database setup without provider stubs.
+define('VP3_EMAIL_CANVAS_PIPELINE_FIXTURE', true);
+require __DIR__.'/fixtures/initiative-ai-settings-v1.php';
 require __DIR__.'/agent-initiative-canvas-pipeline-v1.php';
 require_once dirname(__DIR__).'/includes/agent-activity-hub-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-office-entry-work-v1.php';
 require_once dirname(__DIR__).'/includes/agent-top-of-mind-v1.php';
 require_once dirname(__DIR__).'/includes/agent-coordination-rules-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-tools-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-office-entry-source-v1.php';
+
+$GLOBALS['pipelineInference']=[];
+$GLOBALS['pipelineRuntimePlan']=['route'=>'homeserver','blocked'=>false,'effective_preference'=>'homeserver_only',
+    'try_homeserver'=>true,'home'=>['supported'=>true],'cloud'=>['ready'=>false]];
+function homeserver_execution_v220_registry(int $owner):array
+{
+    return ['available'=>true,'capabilities'=>['unified_execution'=>[
+        'profile_safe_local_inference'=>['operation'=>'agent.infer.local','stateless'=>true,
+            'local_only'=>true,'caller_supplied_context_only'=>true,'tools_enabled'=>false],
+    ]]];
+}
+function homeserver_execution_v230_execute(int $owner,string $operation,array $payload,?callable $fallback=null,bool $transientContext=false):array
+{
+    $protocol=VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1;
+    if($owner!==1||$operation!=='agent.infer.local'||array_keys($payload)!==['messages']
+        ||($payload['messages'][0]['content']??null)!==vp3_tool_json_contract_v1($protocol)){
+        throw new LogicException('Expected the canonical stateless Office review transport.');
+    }
+    $GLOBALS['pipelineInference'][]=['protocol'=>$protocol,'context'=>ai_v100_service_context()];
+    return ['result'=>['reply'=>($GLOBALS['pipelineModel'])($payload['messages'][1]['content'],$protocol)],
+        'execution'=>['status'=>'completed']];
+}
 
 $officeStart=$checks;
 $officeAgent=7;
@@ -34,6 +61,7 @@ vp3_task_lists_schema_v1($pdo);
 reminder_schema_v1($pdo);
 vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>$officeChat],'off',null);
 vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>$officeChat],'on',null);
+initiative_fixture_morning_brief_reviewed($owner,$officeAgent);
 $officeRuleSettings=vp3_coordination_rule_settings_v1($pdo,$owner,$officeAgent,$officeChat);
 vp3_coordination_rule_settings_v1($pdo,$owner,$officeAgent,$officeChat,$officeRuleSettings['revision'],[
     'tasks'=>['overdue'=>'watch'],
@@ -285,21 +313,36 @@ $coordination=array_values(array_filter(vp3_coordination_runs_v1($pdo,$owner,$po
 }));
 $coordinationRun=(int)($coordination[0]['id']??0);
 $coordinationGoal=json_decode((string)($coordination[0]['goal']??'{}'),true,32,JSON_THROW_ON_ERROR);
+$currentCoordination=vp3_coordination_sources_v1($pdo,$owner,$policy,[$coordinationRef]);
+if(($coordinationGoal['sources'][$coordinationRef]??null)!==($currentCoordination['items'][$coordinationRef]['revision']??null)){
+    $stale=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($coordinationRun),
+        static fn()=>throw new LogicException('A superseded saved finding must not call a model.'));
+    canvas_pipeline_check(empty($stale['ok'])&&canvas_pipeline_count('chat_messages')===$messages,
+        'the worker rejects a queued finding from the previous source revision without posting it');
+    $pdo->exec("DELETE FROM agent_memory_items WHERE user_id=1 AND user_agent_id=7 AND memory_type='initiative_sweep' AND subject='coordination-scan'");
+    vp3_initiative_schedule_coordination_v1($pdo,$owner,$policy,false);
+    $coordination=array_values(array_filter(vp3_coordination_runs_v1($pdo,$owner,$policy),static function(array $run)use($coordinationRef):bool{
+        return (json_decode((string)$run['goal'],true)['primary']??null)===$coordinationRef
+            &&in_array($run['status'],['queued','approved'],true);
+    }));
+    $coordinationRun=(int)($coordination[0]['id']??0);
+    $coordinationGoal=json_decode((string)($coordination[0]['goal']??'{}'),true,32,JSON_THROW_ON_ERROR);
+}
 canvas_pipeline_check(count($coordination)===1&&($coordinationGoal['coordination_saved']??null)===true
     &&($coordinationGoal['coordination_route']??null)===['specialist'=>'tasks','trigger'=>'waiting_owner','action'=>'ask'],
     'Top of Mind matches the specialist finding to one Ask in Chat rule');
 office_entry_fixture_presence($officeChat,'busy');
 canvas_pipeline_check(!empty(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($coordinationRun),
         static fn()=>throw new LogicException('Saved owner attention needs no new model call.'))['ok'])
-    &&office_entry_fixture_result($coordinationRun)['initiative_delivery']==='pending'
+    &&office_entry_fixture_result($coordinationRun)['initiative_delivery']==='delivered'
     &&!vp3_initiative_deliver_pending_v1($pdo,$owner,$officeAgent)
-    &&canvas_pipeline_count('chat_messages')===$messages,
-    'the shared Chat gate holds the verified question while the owner is busy');
+    &&canvas_pipeline_count('chat_messages')===$messages+1,
+    'the saved Chat receives the verified timestamped question while the owner is busy');
 office_entry_fixture_presence($officeChat,'quiet');
 $inference=count($GLOBALS['pipelineInference']);
-canvas_pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$owner,$officeAgent)
+canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$owner,$officeAgent)
     &&canvas_pipeline_count('chat_messages')===$messages+1&&count($GLOBALS['pipelineInference'])===$inference,
-    'a quiet authorized Chat receives one existing owner-attention report without another model call');
+    'returning to quiet Chat does not repeat the owner-attention report or invoke another model');
 $delivered=office_entry_fixture_result($coordinationRun);
 canvas_pipeline_check(($delivered['initiative_delivery']??null)==='delivered'
     &&str_contains((string)($delivered['initiative_draft']??''),$ownerQuestion)
@@ -685,7 +728,7 @@ canvas_pipeline_check(($productReport['followup_question']??null)==='Do you need
     'a meaningful contextual question reaches the same shared handoff used by other specialists');
 
 // Admit an existing Ask while a second saved task still needs its own first
-// review. Keep Chat busy to test claims separately from delivery.
+// review. A busy Chat still accepts timestamped text from both independent paths.
 office_entry_fixture_presence($officeChat,'busy');
 $pdo->exec("DELETE FROM agent_memory_items WHERE user_id=1 AND user_agent_id=7
     AND memory_type='initiative_sweep' AND subject IN ('coordination-scan','office-entry-scan')");
@@ -701,7 +744,7 @@ $openChatTick=vp3_initiative_pump_v1($pdo,$owner,$officeAgent,$officeChat,$bindi
 $independent=office_entry_fixture_runs($independentRef);
 $completedAsk=isset($openChatTick['run_id'])?canvas_pipeline_result($openChatTick['run_id']):[];
 canvas_pipeline_check($openChatTick['ok']&&($openChatTick['step']??null)==='preparation'
-    &&($completedAsk['initiative_delivery']??null)==='pending'
+    &&($completedAsk['initiative_delivery']??null)==='delivered'
     &&count($independent)===1&&$independent[0]['status']==='approved'
     &&office_entry_fixture_business_state()===$business,
     'one Open Chat tick processes a saved handoff and also queues the independent native Task review without inference');

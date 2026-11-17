@@ -125,7 +125,10 @@ function scope_claim(array $user,int $run): array
 }
 function scope_messages(): array
 {
-    return db()->query("SELECT conversation_id,message,context_json FROM chat_messages WHERE role='assistant' AND context_json IS NOT NULL ORDER BY id")->fetchAll();
+    // Count canonical workflow deliveries; the independently scheduled morning
+    // brief is a different Chat source and does not belong to these assertions.
+    return array_values(array_filter(db()->query("SELECT conversation_id,message,context_json FROM chat_messages WHERE role='assistant' AND context_json IS NOT NULL ORDER BY id")->fetchAll(),
+        static fn(array $row):bool=>(json_decode($row['context_json'],true)['source']??null)==='agent_initiative'));
 }
 function scope_make_plan(array $user,int $agent,string $title): int
 {
@@ -252,13 +255,13 @@ $siblingPlan=scope_runs(1,18,'initiative.plan')[0];
 scope_check(vp3_initiative_execute_v1($pdo,$one,scope_claim($one,(int)$siblingPlan['id']))['ok'],
     'a sibling Agent can independently plan its own preparation');
 $siblingDraft=scope_runs(1,18,'initiative.prepare')[0];
-scope_check(vp3_initiative_execute_v1($pdo,$one,scope_claim($one,(int)$siblingDraft['id']))['ok']&&count(scope_messages())===1,
-    'a sibling preparation stays pending while its owner is viewing another Agent Chat');
+scope_check(vp3_initiative_execute_v1($pdo,$one,scope_claim($one,(int)$siblingDraft['id']),allowDelivery:false)['ok']&&count(scope_messages())===1,
+    'an explicitly deferred sibling preparation remains private until its saved Chat delivery is requested');
 scope_check(!vp3_initiative_deliver_pending_v1($pdo,$one,17)&&count(scope_messages())===1,
     'delivery polling one Agent cannot publish another Agent pending preparation');
 $pdo->exec("UPDATE agent_activity_state SET context_key='chat:180',details_json='{\"visible\":true,\"conversation_id\":180}',last_heartbeat_at=NOW() WHERE user_id=1");
 scope_check(vp3_initiative_deliver_pending_v1($pdo,$one,18)&&count(scope_messages())===2
-    &&(int)scope_messages()[1]['conversation_id']===180,'returning to the sibling Chat delivers its pending result into that exact conversation');
+    &&(int)scope_messages()[1]['conversation_id']===180,'the sibling delivery worker posts its pending result into that exact conversation');
 scope_check(!vp3_initiative_deliver_pending_v1($pdo,$one,18)&&count(scope_messages())===2
     &&$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']===$incoming,'pending named delivery is idempotent and restores the incoming owner scope');
 $deliveredCount=count(scope_messages());
@@ -439,17 +442,20 @@ scope_check(!$unknownFailure['ok']&&$unknownFailure['reason']==='initiative_unco
     &&!str_contains($publicFailure,'FAKE_FIXTURE_KEY_DO_NOT_EXPOSE')&&!str_contains($publicFailure,'PRIVATE_FIXTURE_CREDENTIAL'),
     'unknown provider exceptions become a generic failure without raw credential-like content in stored receipts or public projections');
 
-// Clock fixtures isolate the two delivery guards without waiting or inventing a new owner turn.
+// Timestamped text is delivered to its saved Chat independently of presence,
+// pending input or an earlier report. Explicit worker deferral remains durable.
+$canReport=static fn():bool=>vp3_initiative_in_scope_v1($one,17,
+    static fn():bool=>vp3_initiative_can_report_v1($pdo,$one,170));
 putenv('VP3_INITIATIVE_REPORT_COOLDOWN_SECONDS=120');
 $oldReportAt=gmdate('Y-m-d H:i:s',time()-121);
 $ageReports=$pdo->prepare("UPDATE chat_messages SET created_at=? WHERE conversation_id=170
     AND JSON_EXTRACT(CASE WHEN JSON_VALID(context_json) THEN context_json ELSE '{}' END,'$.source')='agent_initiative'");
 $ageReports->execute([$oldReportAt]);
-scope_check(vp3_initiative_can_report_v1($pdo,$one,170),'an old completed Initiative report no longer blocks a later useful update');
+scope_check($canReport(),'an old completed Initiative report no longer blocks a later useful update');
 $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(170,1,'user','A direct owner question is still waiting')");
-scope_check(!vp3_initiative_can_report_v1($pdo,$one,170),'pending owner input blocks an Initiative report even after the previous report cooldown expires');
+scope_check($canReport(),'a pending owner input does not discard a timestamped result for the saved Chat');
 $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(170,NULL,'assistant','The direct owner question is answered')");
-scope_check(vp3_initiative_can_report_v1($pdo,$one,170),'completing the direct reply releases the pending-user guard');
+scope_check($canReport(),'completing the direct reply preserves the saved Chat delivery permission');
 $currentReportPlan=scope_make_plan($one,17,'A current report after the direct reply');
 $currentPlanResult=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$currentReportPlan),$GLOBALS['scopeModel']);
 $currentPrepared=scope_runs(1,17,'initiative.prepare');$currentReportRun=(int)array_slice($currentPrepared,-1)[0]['id'];
@@ -457,26 +463,26 @@ $currentMessagesBefore=count(scope_messages());
 $currentReportResult=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$currentReportRun),$GLOBALS['scopeModel']);
 scope_check($currentPlanResult['ok']&&$currentReportResult['ok']&&count(scope_messages())===$currentMessagesBefore+1,
     'actual canonical preparation delivers a current report after the owner direct reply completes');
-scope_check(!vp3_initiative_can_report_v1($pdo,$one,170),'a recently delivered Initiative report suppresses another immediate report');
-$cooldownPlan=scope_make_plan($one,17,'Useful next update during report cooldown');
+scope_check($canReport(),'a recently delivered text report does not block another verified saved result');
+$cooldownPlan=scope_make_plan($one,17,'Useful next update after a recent report');
 scope_check(vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$cooldownPlan),$GLOBALS['scopeModel'])['ok'],
-    'new useful work can still finish planning while its report is cooling down');
+    'new useful work can still finish planning after a recent report');
 $cooldownPrepared=scope_runs(1,17,'initiative.prepare');$cooldownRun=(int)array_slice($cooldownPrepared,-1)[0]['id'];
 $messagesBefore=count(scope_messages());
-$cooldownResult=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$cooldownRun),$GLOBALS['scopeModel']);
+$cooldownResult=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$cooldownRun),$GLOBALS['scopeModel'],allowDelivery:false);
 $q=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$cooldownRun]);
 $cooldownStored=json_decode((string)$q->fetchColumn(),true,16,JSON_THROW_ON_ERROR);
 scope_check($cooldownResult['ok']&&$cooldownStored['initiative_delivery']==='pending'&&count(scope_messages())===$messagesBefore,
-    'the actual worker retains a verified completed report as pending instead of posting during cooldown');
+    'an explicitly deferred worker retains its verified completed report as pending');
 $q=$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id=170 AND role='user'");$ownerTurnsBefore=(int)$q->fetchColumn();
 $ageReports->execute([$oldReportAt]);
 $providerCallsBefore=count($GLOBALS['scopeInference']);
-scope_check(vp3_initiative_can_report_v1($pdo,$one,170)&&vp3_initiative_deliver_pending_v1($pdo,$one,17)
+scope_check($canReport()&&vp3_initiative_deliver_pending_v1($pdo,$one,17)
     &&count(scope_messages())===$messagesBefore+1,
-    'after the prior report is 121 seconds old the saved pending result delivers without requiring another owner turn');
+    'the saved pending result delivers without requiring another owner turn');
 $q=$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE conversation_id=170 AND role='user'");
 scope_check((int)$q->fetchColumn()===$ownerTurnsBefore&&count($GLOBALS['scopeInference'])===$providerCallsBefore
-    &&!vp3_initiative_can_report_v1($pdo,$one,170)&&$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']===$incoming,
-    'cooldown delivery uses the saved verified result, adds no synthetic owner turn or inference replay, and reinstates the current-report guard');
+    &&$canReport()&&$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']===$incoming,
+    'deferred delivery uses the saved verified result, adds no synthetic owner turn or inference replay, and preserves the exact Chat scope');
 
 echo 'AGENT_INITIATIVE_SCOPE_V1=PASS ('.$checks." cases)\n";

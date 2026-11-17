@@ -7,26 +7,27 @@ const poll=source.slice(source.indexOf('  async function pollAgentActivity('),so
 const api=source.slice(source.indexOf('  async function api(payload'),source.indexOf('  function writeActivityCursor('));
 const pendingIds=source.slice(source.indexOf('  function pendingAssistantMessageIds()'),source.indexOf('  function unconfirmedAssistantMessage('));
 const binding=source.slice(source.indexOf('  const initiativePage ='),source.indexOf('  const thread ='));
-const initiativeState=source.slice(source.indexOf('  let initiativeReplyTarget ='),source.indexOf('  const recoveryKey ='));
-const initiativeHelpers=source.slice(source.indexOf('  function initiativeIdentityMatchesV1()'),source.indexOf('  function bindInitiativeWorkV1('));
+const identity=source.slice(source.indexOf('  function initiativeIdentityMatchesV1()'),source.indexOf('  function validInitiativeReplyV1('));
 assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity status must not be referenced');
 let response,requestCount=0,timer,delay,cleared=0;
 const requestBodies=[],syncedConversations=[],pendingMeetingReviews=[];
-const context={AbortController,document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7,userId:1,workingAttentionBinding:'fixture-page-binding'},
-    window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;}},
+const context={AbortController,DOMException,Event,navigator:{onLine:true},document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7,userId:1,workingAttentionBinding:'fixture-page-binding'},
+    window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;},dispatchEvent:()=>{}},
     fetch:async(_url,options)=>{requestCount++;requestBodies.push(JSON.parse(options.body));return response(options.signal);},
     writeActivityCursor:value=>{context.activityCursor=value;},updateNotificationBadge:value=>{context.unread=value;},
-    syncConversationMessagesV101:async id=>{syncedConversations.push(id);},activityBusy:false,activityCursor:0,
+    syncConversationMessagesV101:async id=>{syncedConversations.push(id);},activityRequest:null,activityWakePending:false,activityCursor:0,
     conversationId:1,chatRevision:0,lastLoadedMessageId:0,pendingConversationSync:0,busy:false,
-    pendingAssistantMessages:new Map(),
-    thread:{querySelectorAll:()=>pendingMeetingReviews},
+    pendingAssistantMessages:new Map(),initiativePosts:new Map(),initiativeReplyTarget:null,initiativeReplyStates:new Set(),
+    canvasActivityStatus:null,canvasFallback:null,historyParticipant:0,
+    thread:{dataset:{view:'chat'},querySelectorAll:()=>pendingMeetingReviews},
     contextReady:false,initialRestorePending:true,restoringConversation:1};
 context.window.STONEFELLOW_CHAT=context.cfg;
 // Polling shares the actual reply-state/page fence even when no proposal is
-// rendered. Keep that production closure intact in this isolated transport VM.
-vm.createContext(context);vm.runInContext(binding+initiativeState+initiativeHelpers+api+pendingIds+poll+'\nglobalThis.poll=pollAgentActivity;',context);
+// rendered. Execute its real page fence, transport and poll without unrelated
+// reply/voice UI initialization in this isolated transport VM.
+vm.createContext(context);vm.runInContext(binding+identity+api+pendingIds+poll+'\nglobalThis.poll=pollAgentActivity;',context);
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:8,unread_count:2,updates:[],conversation_id:1,latest_message_id:5})});
-await context.poll(true);assert.equal(context.activityCursor,8);assert.equal(context.unread,2);assert.equal(context.activityBusy,false);
+await context.poll(true);assert.equal(context.activityCursor,8);assert.equal(context.unread,2);assert.equal(context.activityRequest,null);
 assert.deepEqual(requestBodies[0],{action:'activity',after_id:0,conversation_id:0,agent_context:{user_agent_id:7},csrf_token:'token'});
 assert.deepEqual(syncedConversations,[],'Startup activity must load notifications without syncing unfinished Chat history');
 Object.assign(context,{contextReady:true,initialRestorePending:false,restoringConversation:0});
@@ -34,11 +35,14 @@ assert.equal(delay,15000,'Activity polling must have a finite timeout');
 let finish;
 response=signal=>new Promise((resolve,reject)=>{finish=resolve;signal.addEventListener('abort',()=>reject(new Error('timeout')),{once:true});});
 const pending=context.poll(true);await context.poll(true);assert.equal(requestCount,2,'Concurrent polling was not coalesced');
-timer();await pending;assert.equal(context.activityBusy,false,'Timeout permanently blocked polling');
+timer();await pending;assert.equal(context.activityRequest,null,'Timeout permanently blocked polling');
+assert.deepEqual(syncedConversations,[1],'An activity timeout still checks saved messages in the active scoped Chat');
 response=async()=>({ok:false,json:async()=>({ok:false,error:'Access revoked'})});
-await context.poll(true);assert.equal(context.activityBusy,false,'Failure permanently blocked polling');
+await context.poll(true);assert.equal(context.activityRequest,null,'Failure permanently blocked polling');
+assert.deepEqual(syncedConversations,[1],'The fallback saved-message read is bounded across repeated activity failures');
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[]})});
 await context.poll(true);assert.equal(context.activityCursor,9,'Polling did not recover');
+syncedConversations.length=0;
 context.lastLoadedMessageId=5;
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conversation_id:1,latest_message_id:5})});
 context.pendingAssistantMessages.set(4,Date.now());
@@ -76,6 +80,7 @@ for(const file of ['chat.js','chat-legacy-v108.php'])assert.doesNotMatch(fs.read
 // Exercise the same error presentation used by native stem and custom song controls.
 const errorUi=source.slice(source.indexOf('  function showChatMediaError('),source.indexOf('  // Media errors do not bubble.'));
 context.audioFeedbackHosts=new WeakMap();
+context.connectedSiteAudioStates=new WeakMap();
 let node;const host={querySelector:()=>node,appendChild:value=>{node=value;}};
 context.document.createElement=()=>({dataset:{},style:{},isConnected:true,setAttribute:()=>{}});
 context.URL=URL;context.location={href:'https://app.test/chat.php',origin:'https://app.test'};

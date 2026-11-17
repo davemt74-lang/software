@@ -107,8 +107,35 @@
     return block;
   }
 
+  function bindAudio(audio,open) {
+    const block = el('article');
+    block.dataset.screenReportAudio = '';
+    const details = el('details');
+    details.open = open;
+    const hasSpeech = audio.segments.some(segment => segment.text);
+    details.append(el('summary',hasSpeech ? 'Agent Ears transcript excerpts' : 'Agent Ears detected sounds'));
+    const segments = el('ol');
+    for (const segment of audio.segments) {
+      const item = el('li');
+      const at = new Date(segment.captured_at);
+      if (Number.isFinite(at.getTime())) {
+        const time = el('time',at.toLocaleTimeString());
+        time.dateTime = at.toISOString();
+        item.append(time);
+      }
+      if (segment.text) item.append(el('p',segment.text));
+      if (segment.sounds.length) item.append(el('p','Detected sounds · '+segment.sounds.join(', ')));
+      segments.append(item);
+    }
+    details.append(segments);
+    const source = link('Open sharing session in My Knowledge',audio.knowledge_url,'knowledge.php');
+    if (source) details.append(source);
+    block.append(details);
+    return block;
+  }
+
   function render(record) {
-    const {cards,handoffs,content} = record;
+    const {cards,handoffs,audio,content} = record;
     const expanded = new Set(Array.from(content.querySelectorAll('[data-insight-key]')).filter(node => node.querySelector('details')?.open)
       .map(node => node.dataset.insightKey));
     const blocks = cards.map(card => {
@@ -116,6 +143,7 @@
       block.querySelector('details').open = expanded.has(card.key);
       return block;
     });
+    if (audio) blocks.unshift(bindAudio(audio,content.querySelector('[data-screen-report-audio]')?.querySelector('details')?.open ?? false));
     blocks.push(...handoffs.map(bindHandoff));
     const choices = el('div');
     choices.className = 'vp3-screen-insight-actions vp3-screen-insight-choices';
@@ -131,7 +159,7 @@
     const prior = records.get(element);
     if (!report || report.owner_user_id !== owner || report.agent_id !== agent
       || !identifier(messageId) || report.message_id !== messageId || !identifier(conversationId) || report.conversation_id !== conversationId
-      || !Array.isArray(report.cards) || !Array.isArray(report.handoffs)) {
+      || !uuid.test(report.session_id || '') || !Array.isArray(report.cards) || !Array.isArray(report.handoffs)) {
       prior?.host.remove();
       records.delete(element);
       return false;
@@ -140,10 +168,18 @@
       && typeof card.title === 'string' && typeof card.why === 'string' && Array.isArray(card.sources));
     const handoffs = report.handoffs.slice(0,20).filter(item => uuid.test(item?.handoff_id || '') && ['research','mission'].includes(item.kind));
     const sessionId = uuid.test(report.session_id || '') ? report.session_id : '';
-    const signature = JSON.stringify([cards,handoffs,sessionId]);
+    const segments = (Array.isArray(report.audio?.segments) ? report.audio.segments : []).slice(0,3).flatMap(segment => {
+      if (!uuid.test(segment?.capture_id || '') || typeof segment.text !== 'string' || typeof segment.captured_at !== 'string'
+        || !Number.isFinite(new Date(segment.captured_at).getTime()) || !Array.isArray(segment.sounds)) return [];
+      const text = segment.text.slice(0,1000).trim();
+      const sounds = segment.sounds.slice(0,8).filter(sound => typeof sound === 'string' && sound.trim()).map(sound => sound.trim().slice(0,80));
+      return text || sounds.length ? [{capture_id:segment.capture_id,captured_at:segment.captured_at,text,sounds}] : [];
+    });
+    const audio = segments.length ? {segments,knowledge_url:report.audio.knowledge_url} : null;
+    const signature = JSON.stringify([cards,handoffs,sessionId,audio]);
     if (prior?.signature === signature) return true;
     if (prior) {
-      Object.assign(prior,{cards,handoffs,signature,sessionId});
+      Object.assign(prior,{cards,handoffs,signature,sessionId,audio});
       render(prior);
       return true;
     }
@@ -156,7 +192,7 @@
     status.setAttribute('role','status');
     host.append(content,status);
     body.append(host);
-    const record = {element,host,content,status,conversationId,messageId,sessionId,cards,handoffs,signature,busy:false,refreshVersion:0};
+    const record = {element,host,content,status,conversationId,messageId,sessionId,cards,handoffs,audio,signature,busy:false,refreshVersion:0};
     records.set(element,record);
     render(record);
     host.addEventListener('click',event => void handleAction(record,event));
@@ -286,6 +322,7 @@
     const active = Array.from(thread.querySelectorAll('[data-chat-message-role="assistant"]'))
       .map(element => records.get(element)).filter(Boolean);
     const matched = active.filter(record => (sessionId && record.sessionId === sessionId)
+      || (captureId && record.audio?.segments.some(segment => segment.capture_id === captureId))
       || record.cards.some(card => card.sources.some(source => (sessionId && source.session_id === sessionId) || (captureId && source.capture_id === captureId))));
     const fallback = (sessionId || captureId ? active.filter(record => !record.cards.length && (!sessionId || !record.sessionId)) : active).slice(-4);
     for (const record of new Set([...matched,...fallback])) void refresh(record).catch(error => replyStatus(record,error.message));

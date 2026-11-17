@@ -12,6 +12,12 @@ $agentId = 7;
 $chatId = 11;
 if ($mysql) $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
 $binding = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>$chatId],'on',null)['initiative_policy'];
+// Isolate routing scenarios by starting after the day's earlier brief assessment.
+require_once dirname(__DIR__).'/includes/agent-morning-brief-v1.php';
+$briefDay=vp3_morning_brief_local_v1($pdo,$owner,new DateTimeImmutable('now',new DateTimeZone('UTC')))->format('Y-m-d');
+vp3_initiative_in_scope_v1($owner,$agentId,static fn()=>agent_brain_v122_upsert_system_memory(
+    $owner,'initiative_sweep','morning-brief:'.$briefDay,'Prior daily brief fixture assessment',['local_day'=>$briefDay]));
+coordination_fixture_rule($pdo,$owner,'curiosity','open_question','watch');
 if ($mysql) {
     $pdo->exec('ALTER TABLE agent_workflow_runs RENAME COLUMN paused_at TO fixture_paused_at');
     try {
@@ -44,19 +50,35 @@ $model = static function () use (&$inferenceCalls): never {
 $result = vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($first['id']),$model);
 $firstReceipt = coordination_fixture_receipt($first['id']);
 canvas_pipeline_check(($result['ok'] ?? false) === true && $inferenceCalls === 0
-    && $firstReceipt['initiative_delivery'] === 'pending'
-    && canvas_pipeline_count('chat_messages','conversation_id=11') === $initialChatCount,
-    'an already verified question waits while the owner is busy');
+    && $firstReceipt['initiative_delivery'] === 'delivered'
+    && canvas_pipeline_count('chat_messages','conversation_id=11') === $initialChatCount+1,
+    'a verified timestamped question reaches the saved Chat while the owner is busy');
+vp3_initiative_deliver_pending_v1($pdo,$owner,$agentId);
+canvas_pipeline_check(canvas_pipeline_count('chat_messages','conversation_id=11') === $initialChatCount+1,
+    'rechecking pending delivery cannot replay the busy-Chat handoff');
 
+coordination_fixture_gmail_observe($pdo,$owner,2,'The vendor asks for a revised arrival time.');
+coordination_fixture_schedule($owner);
+$queuedBeforeRuleChange=coordination_fixture_runs('coordination.review');
+$queuedBeforeRuleChange=end($queuedBeforeRuleChange);
+canvas_pipeline_check($queuedBeforeRuleChange['id']!==$first['id']
+    && $queuedBeforeRuleChange['goal']['coordination_route']===$ask,
+    'a changed saved finding queues a distinct ask under the current rule');
+$preparedQuestion=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($queuedBeforeRuleChange['id']),$model,null,false);
+canvas_pipeline_check(!empty($preparedQuestion['ok'])&&$inferenceCalls===0
+    && coordination_fixture_receipt($queuedBeforeRuleChange['id'])['initiative_delivery']==='pending'
+    && canvas_pipeline_count('chat_messages','conversation_id=11')===$initialChatCount+1,
+    'the worker can save a verified question for the separate delivery pass without posting it');
 coordination_fixture_rule($pdo,$owner,'gmail','needs_attention','watch');
 coordination_fixture_presence('quiet');
 canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$owner,$agentId)
-    && coordination_fixture_receipt($first['id'])['initiative_delivery'] === 'withheld'
-    && canvas_pipeline_count('chat_messages','conversation_id=11') === $initialChatCount,
-    'a rule edit to watch withdraws an already prepared question before it reaches Chat');
+    && coordination_fixture_receipt($queuedBeforeRuleChange['id'])['initiative_delivery']==='withheld'
+    && canvas_pipeline_count('chat_messages','conversation_id=11')===$initialChatCount+1,
+    'a rule edit to watch withdraws an already verified pending question before it reaches Chat');
+$initialChatCount++;
 
 $summary = 'The vendor moved delivery to Thursday before the rehearsal.';
-coordination_fixture_gmail_observe($pdo,$owner,2,$summary);
+coordination_fixture_gmail_observe($pdo,$owner,3,$summary);
 coordination_fixture_schedule($owner);
 $watchSnapshot = vp3_coordination_sources_v1($pdo,$owner,$binding,[$gmailRef]);
 $watchSettings = vp3_coordination_rules_v1($pdo,$owner,$agentId);
@@ -101,7 +123,7 @@ canvas_pipeline_check(canvas_pipeline_count('chat_messages','conversation_id=14'
 
 coordination_fixture_rule($pdo,$owner,'gmail','needs_attention','report');
 $reportSummary = 'The vendor moved delivery to Friday before the rehearsal.';
-coordination_fixture_gmail_observe($pdo,$owner,3,$reportSummary);
+coordination_fixture_gmail_observe($pdo,$owner,4,$reportSummary);
 $pdo->exec("DELETE FROM agent_memory_items WHERE user_id=1 AND user_agent_id=7 AND memory_type='initiative_sweep' AND subject='coordination-scan'");
 vp3_initiative_pump_v1($pdo,$owner,$agentId,$nextChatId,$nextBinding['revision'],$model);
 $runs = coordination_fixture_runs('coordination.review');
@@ -146,7 +168,7 @@ canvas_pipeline_check($taskRun['goal']['coordination_route'] === $taskAsk && (in
 $pdo->exec('DELETE FROM agent_connection_gmail_inbox_initial_v1 WHERE owner_user_id=1');
 $mailbox = agent_connection_gmail_inbox_bound_scope_v1($pdo,$owner);
 $noAnchorSummary = 'The rehearsal team can accept delivery an hour earlier.';
-coordination_fixture_gmail_observe($pdo,$owner,4,$noAnchorSummary);
+coordination_fixture_gmail_observe($pdo,$owner,5,$noAnchorSummary);
 coordination_fixture_rule($pdo,$owner,'gmail','needs_attention','ask');
 $specialist = agent_email_running_report_view_v1($pdo,$mailbox);
 canvas_pipeline_check(agent_connection_gmail_inbox_update_destination_v1($pdo,$mailbox) === null
@@ -156,16 +178,20 @@ canvas_pipeline_check(agent_connection_gmail_inbox_update_destination_v1($pdo,$m
 $siblingPrincipal = vp3_initiative_principal_v1($pdo,$owner,8);
 $siblingBinding = vp3_initiative_chat_v1($pdo,$owner,$siblingPrincipal,['conversation_id'=>12],'on',null)['initiative_policy'];
 $sibling = vp3_coordination_sources_v1($pdo,$owner,$siblingBinding);
-canvas_pipeline_check(!isset($sibling['items'][$gmailRef]),
-    'another enabled Agent cannot discover the mailbox from an inactive Chat');
+canvas_pipeline_check(isset($sibling['items'][$gmailRef]),
+    'without a pinned destination another enabled private Agent Chat can review the same owner mailbox');
+$foreignDenied=false;
+try{vp3_coordination_sources_v1($pdo,['id'=>2,'is_active'=>1],$siblingBinding);}
+catch(RuntimeException $error){$foreignDenied=$error->getCode()===403;}
+canvas_pipeline_check($foreignDenied,'another owner cannot borrow the saved mailbox Chat binding');
 
 coordination_fixture_presence('busy',$nextChatId);
 canvas_pipeline_check(isset(vp3_coordination_sources_v1($pdo,$owner,$nextBinding)['items'][$gmailRef])
-    && !isset(vp3_coordination_sources_v1($pdo,$owner,$siblingBinding)['items'][$gmailRef]),
-    'only the exact active Chat can prepare a saved Gmail finding while the owner types or speaks');
+    && isset(vp3_coordination_sources_v1($pdo,$owner,$siblingBinding)['items'][$gmailRef]),
+    'saved authorized Chat bindings can prepare Gmail findings independently of browser typing or voice');
 coordination_fixture_presence('away',$nextChatId);
-canvas_pipeline_check(!isset(vp3_coordination_sources_v1($pdo,$owner,$nextBinding)['items'][$gmailRef]),
-    'no-anchor Gmail discovery still rejects a hidden or unfocused Chat');
+canvas_pipeline_check(isset(vp3_coordination_sources_v1($pdo,$owner,$nextBinding)['items'][$gmailRef]),
+    'a hidden Chat retains its saved owner-authorized background review binding');
 coordination_fixture_presence('quiet',$nextChatId);
 
 $pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=14");
@@ -241,7 +267,7 @@ $pdo->exec("DELETE FROM user_calendar_events WHERE id IN (701,703,704,705,706)")
 $pdo->prepare('INSERT INTO settings(setting_key,setting_value) VALUES(?,?)')->execute([
     'casual_checkin_delivery_owner_1',json_encode(['delivered_at'=>time(),'kind'=>'today'],JSON_THROW_ON_ERROR),
 ]);
-coordination_fixture_gmail_observe($pdo,$owner,5,'The rehearsal team needs the delivery time today.');
+coordination_fixture_gmail_observe($pdo,$owner,6,'The rehearsal team needs the delivery time today.');
 $GLOBALS['pipelineRuntimePlan'] = ['route'=>'vp3_cloud','blocked'=>true,'effective_preference'=>'vp3_cloud',
     'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted'],'home'=>['supported'=>false]];
 $resetScan = static fn() => $pdo->exec("DELETE FROM agent_memory_items WHERE user_id=1 AND user_agent_id=7
@@ -280,7 +306,7 @@ $pdo->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUE
 $warmBinding = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>$warmChat],'on',null)['initiative_policy'];
 coordination_fixture_presence('quiet',$warmChat);
 $warmSummary = 'A follow-up from the vendor needs a decision before the rehearsal.';
-coordination_fixture_gmail_observe($pdo,$owner,6,$warmSummary);
+coordination_fixture_gmail_observe($pdo,$owner,7,$warmSummary);
 $taskRef = 'office:task:601';
 $sources = vp3_coordination_sources_v1($pdo,$owner,$warmBinding,[$taskRef,$gmailRef])['items'];
 $revisions = array_column($sources,'revision','ref');
@@ -346,7 +372,7 @@ vp3_initiative_schedule_coordination_v1($pdo,$owner,$warmBinding,true,$scanOutco
 canvas_pipeline_check($scanOutcome==='handoff_already_handled' && canvas_pipeline_count('chat_messages','conversation_id=16')===1,
     'a repeated shared scan records an already handled exact handoff without reposting it');
 
-coordination_fixture_gmail_observe($pdo,$owner,7,'The vendor needs a fresh decision for the rehearsal.');
+coordination_fixture_gmail_observe($pdo,$owner,8,'The vendor needs a fresh decision for the rehearsal.');
 $pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=16");
 $resetScan();
 $pdo->failMediaSource = true;
@@ -367,7 +393,7 @@ $pdo->exec("UPDATE agent_memory_items SET is_active=0 WHERE user_id=1 AND id IN 
 $contextTaskRef = 'office:task:860';
 coordination_fixture_prepare_office($pdo,$owner,'task:860',true);
 $contextSummary = 'The vendor offered delivery before the rehearsal and needs an owner response.';
-coordination_fixture_gmail_observe($pdo,$owner,8,$contextSummary);
+coordination_fixture_gmail_observe($pdo,$owner,9,$contextSummary);
 coordination_fixture_rule($pdo,$owner,'tasks','waiting_owner','ask');
 $contextRevisions = array_column(vp3_coordination_sources_v1($pdo,$owner,$contextBinding,[$contextTaskRef,$gmailRef])['items'],'revision','ref');
 ksort($contextRevisions);
@@ -432,7 +458,7 @@ $pdo->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUE
 $historyBinding = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>$historyChat],'on',null)['initiative_policy'];
 coordination_fixture_presence('quiet',$historyChat);
 $pdo->exec("UPDATE agent_memory_items SET is_active=0 WHERE user_id=1 AND id=860");
-coordination_fixture_gmail_observe($pdo,$owner,9,'The vendor moved delivery to the morning of the launch rehearsal.');
+coordination_fixture_gmail_observe($pdo,$owner,10,'The vendor moved delivery to the morning of the launch rehearsal.');
 $event->execute([900,1,'Vendor launch rehearsal',gmdate('Y-m-d H:i:s',time()+86400),gmdate('Y-m-d H:i:s',time()+90000)]);
 $historyContextRef = 'planning:calendar:event:900';
 $historyRules = vp3_coordination_rules_v1($pdo,$owner,$agentId);
@@ -480,7 +506,7 @@ canvas_pipeline_check($scanOutcome==='handoff_already_handled' && $initialHistor
     && count(vp3_coordination_runs_v1($pdo,$owner,$historyBinding,null,36,'gmail'))===1,
     'an unchanged previously delivered Gmail finding does not repeat when optional history remains unchecked');
 $newHistorySummary = 'The vendor now needs a response before the launch rehearsal.';
-coordination_fixture_gmail_observe($pdo,$owner,10,$newHistorySummary);
+coordination_fixture_gmail_observe($pdo,$owner,11,$newHistorySummary);
 $baselineRows = vp3_coordination_runs_v1($pdo,$owner,$historyBinding);
 $historyBaselines = array_values(array_filter(array_map(static fn(array $row):?array=>vp3_coordination_scan_baseline_v1($pdo,$owner,$row),$baselineRows)));
 $historyItems = vp3_coordination_scan_items_v1(vp3_coordination_sources_v1($pdo,$owner,$historyBinding));
@@ -597,7 +623,7 @@ $twoOpenPolicy = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id
 coordination_fixture_presence('quiet',$twoOpenChat);
 coordination_fixture_rule($pdo,$owner,'tasks','waiting_owner','watch');
 coordination_fixture_rule($pdo,$owner,'gmail','needs_attention','ask');
-coordination_fixture_gmail_observe($pdo,$owner,11,'The vendor needs the new delivery window confirmed.');
+coordination_fixture_gmail_observe($pdo,$owner,12,'The vendor needs the new delivery window confirmed.');
 $resetScan();
 vp3_initiative_pump_v1($pdo,$owner,$agentId,$twoOpenChat,$twoOpenPolicy['revision'],$model);
 $mailRun = vp3_coordination_runs_v1($pdo,$owner,$twoOpenPolicy,null,1,'gmail')[0];
@@ -615,9 +641,9 @@ $secondTick = vp3_initiative_pump_v1($pdo,$owner,$agentId,$twoOpenChat,$twoOpenP
 $secondRun = vp3_coordination_runs_v1($pdo,$owner,$twoOpenPolicy,null,1,'planning')[0];
 $secondReceipt = coordination_fixture_receipt((int)$secondRun['id']);
 canvas_pipeline_check(($secondTick['coordination']??null)==='queued_chat_handoff'
-    && $secondReceipt['initiative_delivery']==='pending' && $openState($mailPostId)==='open'
-    && canvas_pipeline_count('chat_messages','conversation_id=21')===1,
-    'Planning discovers and verifies a new conflict while Gmail still awaits a reply and Chat briefly holds the second post');
+    && $secondReceipt['initiative_delivery']==='delivered' && $openState($mailPostId)==='open'
+    && canvas_pipeline_count('chat_messages','conversation_id=21')===2,
+    'Planning posts its verified conflict while the independent Gmail question still awaits a reply');
 
 $pdo->prepare("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE id=?")->execute([$mailPostId]);
 vp3_initiative_pump_v1($pdo,$owner,$agentId,$twoOpenChat,$twoOpenPolicy['revision'],$model);
@@ -628,7 +654,7 @@ vp3_initiative_pump_v1($pdo,$owner,$agentId,$twoOpenChat,$twoOpenPolicy['revisio
 canvas_pipeline_check($secondReceipt['initiative_delivery']==='delivered' && $secondPostId!==$mailPostId
     && $openState($mailPostId)==='open' && $openState($secondPostId)==='open' && $inferenceCalls===0
     && canvas_pipeline_count('chat_messages','conversation_id=21')===2,
-    'the pending Planning question can post after the delivery cooldown with both original questions still open and no duplicate');
+    'later polls retain both independent open questions without replaying either handoff');
 
 $starterChat = 22;
 $pdo->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUES(22,1,7,'Try a specialist');");

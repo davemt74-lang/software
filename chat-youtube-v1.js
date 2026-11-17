@@ -514,6 +514,17 @@
     if (savedPlaylist && window.VP3ParticipantContinuity?.selectedContext()) return;
     const section = element('section', 'vp3-youtube-results');
     const draft = !history && result.suggestion_kind === 'playlist';
+    const visibleVideos = result.videos.slice(0, history ? 12 : draft ? 8 : 6);
+    const visibleIds = new Set(visibleVideos.filter(video => typeof video?.video_id === 'string').map(video => video.video_id));
+    const similarArtists = new Map();
+    if (!history && Array.isArray(result.similar_artists)) {
+      for (const artist of result.similar_artists.slice(0,3)) {
+        if (typeof artist?.artist !== 'string' || typeof artist.video_id !== 'string'
+            || !visibleIds.has(artist.video_id) || !videoIdPattern.test(artist.video_id)) continue;
+        const name = artist.artist.slice(0,80).trim();
+        if (name) similarArtists.set(artist.video_id,name);
+      }
+    }
     section.setAttribute('aria-label', history ? 'Played in VP3' : (draft ? (savedPlaylist ? 'Saved YouTube playlist' : 'YouTube playlist draft') : 'YouTube search results'));
     const header = element('header', 'vp3-youtube-heading');
     const logo = element('img', 'vp3-youtube-logo');
@@ -603,10 +614,18 @@
       });
       if (config.endpoint && result.taste_topic && result.taste_topic !== 'music discovery') section.append(save);
     }
+    if (similarArtists.size) {
+      if (!header.parentNode) section.append(header);
+      const suggestions = element('p','vp3-youtube-channel',
+        'Similar-artist suggestions: '+[...new Set(similarArtists.values())].join(', ')
+        +'. These come from YouTube search results; try the tracks to compare.');
+      suggestions.dataset.youtubeSimilarArtists = '1';
+      section.append(suggestions);
+    }
     const list = element('ul', 'vp3-youtube-list');
     const seen = new Set();
     let playSelected;
-    for (const video of result.videos.slice(0, history ? 12 : draft ? 8 : 6)) {
+    for (const video of visibleVideos) {
       const videoId = video?.video_id;
       if (typeof videoId !== 'string' || !videoIdPattern.test(videoId) || (!history && seen.has(videoId))) continue;
       seen.add(videoId);
@@ -652,6 +671,11 @@
       }
       const details = element('span', 'vp3-youtube-details');
       details.append(element('strong', 'vp3-youtube-title', title || 'YouTube video'));
+      if (similarArtists.has(videoId)) {
+        const credit = element('span','vp3-youtube-channel','Artist suggestion · '+similarArtists.get(videoId));
+        credit.dataset.youtubeSimilarArtist = '1';
+        details.append(credit);
+      }
       if (channel) details.append(element('span', 'vp3-youtube-channel', channel));
       if (history) details.append(element('span', 'vp3-youtube-channel', new Date(video.played_at * 1000).toLocaleString()));
       if (canEmbed) {

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+require __DIR__.'/fixtures/initiative-ai-settings-v1.php';
 $fixtureFile=tempnam(sys_get_temp_dir(),'vp3-initiative-runtime-');
 putenv('VP3_IMAGE_TEST_DSN=sqlite:'.$fixtureFile);
 require __DIR__.'/fixtures/image-generation-v1.php';
@@ -11,16 +12,21 @@ require_once dirname(__DIR__).'/includes/agent-initiative-runtime-v1.php';
 function agent_brain_schema_ready():bool{return true;}
 function agent_brain_normalize(string $text):string{return strtolower(trim($text));}
 function agent_brain_sentences(string $text):array{return [$text];}
-function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'):array
+function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat',array $context=[],bool $observeOnly=false):array
 {
     $GLOBALS['runtimeRoutes'][]=[$user['id'],$agentId];
-    return $GLOBALS['runtimePlan']??['route'=>'vp3_cloud','blocked'=>false,'cloud'=>['ready'=>true]];
+    return $GLOBALS['runtimePlan']??['route'=>'vp3_cloud','effective_preference'=>'vp3_cloud','blocked'=>false,'cloud'=>['ready'=>true]];
 }
-function vp3_initiative_inference_health_v1(PDO $pdo,array $user,int $agentId):array
+function homeserver_execution_v220_registry(int $owner):array
 {
-    $plan=vp3_agent_runtime_plan_v420($pdo,$user,$agentId);
-    return $GLOBALS['runtimeInference']??['ready'=>($plan['route']??'')==='vp3_cloud'&&empty($plan['blocked']),
-        'route'=>$plan['route']??'', 'reason'=>($plan['cloud']['reason']??'')==='cloud_balance_exhausted'?'quota_exhausted':'route_unavailable'];
+    return ['available'=>true,'capabilities'=>['unified_execution'=>[
+        'profile_safe_local_inference'=>['operation'=>'agent.infer.local','stateless'=>true,
+            'local_only'=>true,'caller_supplied_context_only'=>true,'tools_enabled'=>false],
+    ]]];
+}
+function homeserver_execution_v230_execute(int $owner,string $operation,array $payload,?callable $fallback=null,bool $transientContext=false):array
+{
+    throw new LogicException('Readiness checks must not execute HomeServer inference.');
 }
 function calendar_schedule_awareness_snapshot_v1330(PDO $pdo,array $user,DateTimeImmutable $now,int $days,bool $includeHomeServer=true):array
 {
@@ -82,6 +88,12 @@ function runtime_enable(array $user,int $agentId,int $cid):array
     $agent=vp3_agent_chat_resolve_agent_v380(db(),$user,$agentId);
     $reply=vp3_initiative_chat_v1(db(),$user,vp3_agent_chat_principal_v380($user,$agent),['conversation_id'=>$cid],'on',null);
     runtime_check(str_contains($reply['answer'],'Initiative is on'),'canonical explicit opt-in succeeds for Agent '.$agentId);
+    // This suite owns the generic assessment queue; specialist routing has its own gate.
+    require_once dirname(__DIR__).'/includes/agent-coordination-rules-v1.php';
+    $rules=vp3_coordination_rule_settings_v1(db(),$user,$agentId,$cid);
+    $watch=array_map(static fn(array $triggers):array=>array_fill_keys(array_keys($triggers),'watch'),$rules['rules']);
+    vp3_coordination_rule_settings_v1(db(),$user,$agentId,$cid,$rules['revision'],$watch);
+    initiative_fixture_morning_brief_reviewed($user,$agentId);
     return vp3_initiative_policy_v1($user,$agentId);
 }
 register_shutdown_function(static fn()=>@unlink($fixtureFile));
@@ -109,6 +121,7 @@ runtime_check(($failedScan['coordination']??null)==='failed'
     &&!str_contains(json_encode($failedScan),'PRIVATE SQL error text'),
     'a failed specialist queue query keeps its bounded error when the same tick completes another step');
 $pdo->exec("DELETE FROM agent_memory_items WHERE memory_type='initiative_sweep'");
+initiative_fixture_morning_brief_reviewed($user,0);
 $pdo->exec('DELETE FROM agent_workflow_runs');
 $pdo->exec('DELETE FROM agent_workflow_receipts');
 $calls=0;$duplicate=null;
@@ -118,12 +131,19 @@ $model=static function(string $prompt,string $protocol)use(&$calls,&$duplicate,$
     $expiresAt=strtotime($lease['lease_expires_at'].' UTC');
     if($expiresAt<time()+235)throw new RuntimeException('Inference requires the canonical refreshed lease.');
     $executing=vp3_initiative_worker_health_v1($pdo,$user,0,42);
-    runtime_check($executing['active_jobs']===
+    $activeJobs=array_map(static fn(array $job):array=>array_intersect_key($job,array_flip(
+        ['id','expiresAt','kind','step','coordination_phase'])),$executing['active_jobs']);
+    runtime_check($activeJobs===
         [['id'=>'workflow:'.$lease['id'],'expiresAt'=>$expiresAt*1000,
             'kind'=>$protocol==='vp3.initiative-plan.v1'?'assessment':'preparation',
             'step'=>$protocol==='vp3.initiative-plan.v1'?'Brainstorming useful opportunities':'Preparing a private next step',
             'coordination_phase'=>$protocol==='vp3.initiative-plan.v1'?'brainstorming':'acting']],
         'read-only status projects the exact active workflow lease and safe actual work kind');
+    runtime_check(($executing['active_jobs'][0]['phase']??null)===($protocol==='vp3.initiative-plan.v1'?'brainstorming':'preparing')
+        &&strtotime($executing['active_jobs'][0]['at']??'')>0
+        &&array_keys($executing['active_jobs'][0])===['id','expiresAt','kind','step','coordination_phase','phase','at','specialist']
+        &&($protocol!=='vp3.initiative-plan.v1'||$executing['active_jobs'][0]['specialist']==='brainstorm'),
+        'the active-work projection includes its current phase and real timestamp');
     if($protocol==='vp3.initiative-plan.v1'){
         runtime_check($executing['latest_assessment_run']['run_id']===(int)$lease['id']
             &&$executing['latest_assessment_run']['status']==='running',
@@ -227,19 +247,20 @@ runtime_check($otherOwner['state']==='unavailable'&&$otherOwner['active_jobs']==
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>8];
 runtime_check(!vp3_initiative_worker_health_v1($pdo,$user,0,42)['configuration_ready'],'participant access cannot become owner background authority');
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
-$GLOBALS['runtimePlan']=['route'=>'blocked','blocked'=>true,'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted']];
+$GLOBALS['runtimePlan']=['route'=>'blocked','effective_preference'=>'vp3_cloud','blocked'=>true,'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted']];
 $quota=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$model);
 runtime_check(!$quota['ok']&&$quota['health']['reason']==='quota_exhausted'&&$calls===2,'exhausted quota blocks foreground preparation before a model call');
 $GLOBALS['runtimePlan']=['route'=>'homeserver_local','blocked'=>false,'effective_preference'=>'homeserver_only'];
 runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['reason']==='route_unavailable','HomeServer-only policy is reported without silently routing work to Cloud');
-$GLOBALS['runtimeInference']=['ready'=>false,'route'=>'none','reason'=>'route_unavailable','policy_reason'=>'service_model_forbidden'];
+vp3_ai_service_save_rule_v1($pdo,'site',0,'initiative',['allowed_models'=>[]]);
 $health=vp3_initiative_worker_health_v1($pdo,$user,0,42);
 runtime_check(!$health['execution_ready']&&$health['policy_reason']==='service_model_forbidden',
     'owner health names the Initiative service policy blocker separately from the worker');
-$GLOBALS['runtimeInference']=['ready'=>true,'route'=>'homeserver_local','reason'=>'ready'];
+vp3_ai_service_save_rule_v1($pdo,'site',0,'initiative',[]);
+$GLOBALS['runtimePlan']=['route'=>'homeserver','blocked'=>false,'effective_preference'=>'homeserver_only',
+    'try_homeserver'=>true,'home'=>['supported'=>true],'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted']];
 runtime_check(vp3_initiative_worker_health_v1($pdo,$user,0,42)['pump_available'],
     'an authorized canonical HomeServer inference adapter is allowed without requiring Cloud quota');
-unset($GLOBALS['runtimeInference']);
 unset($GLOBALS['runtimePlan']);
 
 $GLOBALS['runtimeCalendarTitle']='Preparation interrupted by a disconnect';
@@ -448,6 +469,7 @@ try{
 
 // A real canonical receipt/backoff/claim sequence. Only provider HTTP results
 // and the passage of due timestamps are controlled; no model spend or sleeps.
+$reportBaseline=(int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE role='assistant' AND JSON_EXTRACT(CASE WHEN JSON_VALID(context_json) THEN context_json ELSE '{}' END,'$.source')='agent_initiative'")->fetchColumn();
 $pdo->exec("CREATE TABLE agent_activity_state(user_id INTEGER PRIMARY KEY,surface TEXT,context_key TEXT,activity_state TEXT,
     last_heartbeat_at TEXT,idle_since_at TEXT,details_json TEXT);
     CREATE TABLE agent_activity_events(id INTEGER PRIMARY KEY);
@@ -492,10 +514,10 @@ $row=$pdo->query('SELECT id,status,attempt_count FROM agent_workflow_actions WHE
 $receipt=$pdo->query('SELECT status,attempt_no FROM agent_workflow_receipts WHERE run_id='.$retryRun.' ORDER BY id')->fetchAll();
 $reports=static fn():int=>(int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE role='assistant' AND JSON_EXTRACT(CASE WHEN JSON_VALID(context_json) THEN context_json ELSE '{}' END,'$.source')='agent_initiative'")->fetchColumn();
 runtime_check($recovered['ok']&&$retryCalls===2&&$row===['id'=>$actionId,'status'=>'completed','attempt_count'=>2]
-    &&$receipt===[['status'=>'retry_scheduled','attempt_no'=>1],['status'=>'completed','attempt_no'=>2]]&&$reports()===1,
+    &&$receipt===[['status'=>'retry_scheduled','attempt_no'=>1],['status'=>'completed','attempt_no'=>2]]&&$reports()===$reportBaseline+1,
     'the same action succeeds once after the due time and delivers exactly one verified Chat report');
 vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$retryModel);
-runtime_check($retryCalls===2&&$reports()===1,'a completed recovered action never repeats inference or delivery');
+runtime_check($retryCalls===2&&$reports()===$reportBaseline+1,'a completed recovered action never repeats inference or delivery');
 
 $GLOBALS['runtimeCalendarTitle']='A repeatedly unavailable provider';
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
@@ -512,7 +534,7 @@ for($attempt=1;$attempt<=3;$attempt++){
 $exhausted=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$alwaysUnavailable);
 $statuses=$pdo->query('SELECT status FROM agent_workflow_receipts WHERE run_id='.$lastRun.' ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
 runtime_check($exhaustedCalls===3&&$statuses===['retry_scheduled','retry_scheduled','failed']
-    &&$exhausted['health']['state']==='failed'&&$reports()===1,'transient failures stop after three actual canonical attempts');
+    &&$exhausted['health']['state']==='failed'&&$reports()===$reportBaseline+1,'transient failures stop after three actual canonical attempts');
 
 $GLOBALS['runtimeCalendarTitle']='A provider quota refusal is terminal';
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
@@ -565,7 +587,7 @@ $privatePreparation=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],s
     if($protocol!=='vp3.initiative-draft.v1')throw new LogicException('Expected the queued preparation.');
     return '{"draft":"I reviewed the saved calendar event and prepared the next steps privately."}';
 });
-runtime_check($privatePreparation['ok']&&$privatePreparation['reason']==='completed'&&$reports()===1,
+runtime_check($privatePreparation['ok']&&$privatePreparation['reason']==='completed'&&$reports()===$reportBaseline+1,
     'the corrected assignment runs once and stays private as planned');
 
 $GLOBALS['runtimeCalendarTitle']='Preparation with an invalid private draft';
@@ -578,7 +600,7 @@ runtime_check($planWithDraft['ok']&&!$badDraft['ok']&&$badDraft['health']['reaso
     &&$draftDetail['stage']==='Private preparation'&&$draftDetail['phase']==='Validating the result'
     &&$draftDetail['reason_code']==='invalid_data'&&$draftDetail['evidence']==='receipt'
     &&$badDraft['health']['last_assessment']['outcome']==='assignments_queued'
-    &&!str_contains(json_encode($badDraft['health']),'PRIVATE_BAD_DRAFT')&&$reports()===1,
+    &&!str_contains(json_encode($badDraft['health']),'PRIVATE_BAD_DRAFT')&&$reports()===$reportBaseline+1,
     'a verified assessment can queue work that later fails draft validation without exposing the draft');
 
 $GLOBALS['runtimeCalendarTitle']='A saved report waiting during a model outage';
@@ -596,7 +618,8 @@ $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message,creat
 $interruptedId=(int)$pdo->lastInsertId();
 $pdo->exec("UPDATE agent_activity_state SET last_heartbeat_at=CURRENT_TIMESTAMP,
     details_json=JSON_SET(details_json,'$.chat_busy',JSON('false')) WHERE user_id=1");
-$GLOBALS['runtimeInference']=['ready'=>false,'route'=>'none','reason'=>'quota_exhausted'];
+$GLOBALS['runtimePlan']=['route'=>'blocked','blocked'=>true,'effective_preference'=>'vp3_cloud',
+    'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted']];
 $noInference=static fn(): never=>throw new LogicException('Saved handoff must never invoke a model.');
 $blocked=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference);
 runtime_check(!$blocked['ok']&&$blocked['health']['pump_available']&&!$blocked['health']['execution_ready']&&$reports()===$countBefore,
@@ -611,7 +634,7 @@ date_default_timezone_set('America/Phoenix');
 try{
     $delivery=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference);
     $again=vp3_initiative_pump_v1($pdo,$user,0,42,$policy['revision'],$noInference);
-}finally{date_default_timezone_set($timezone);unset($GLOBALS['runtimeInference']);}
+}finally{date_default_timezone_set($timezone);unset($GLOBALS['runtimePlan']);}
 runtime_check($delivery['ok']&&$delivery['reason']==='completed'&&$delivery['health']['reason']==='quota_exhausted'
     &&!$again['ok']&&$reports()===$countBefore+1&&vp3_initiative_pending_results_v1($pdo,1,null)===[],
     'quiet foreground Chat delivers the saved report exactly once through a model outage and an older interrupted turn');

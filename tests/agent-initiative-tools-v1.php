@@ -2,10 +2,12 @@
 declare(strict_types=1);
 
 // Real canonical retrieval, Mission queue, Workbench preview and receipts; only account/policy adapters are fixtures.
+require_once dirname(__DIR__).'/includes/agent-memory-scope-v410.php';
 require __DIR__.'/fixtures/cloud-mission-isolated-mysql-v1.php';
 require __DIR__.'/fixtures/cloud-mission-schedules-v1.php';
 require_once dirname(__DIR__).'/includes/knowledge-retrieval-v162.php';
 require_once dirname(__DIR__).'/includes/agent-brain-owner-context-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-brainstorm-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-tools-v1.php';
 
 function tool_check(bool $ok,string $label): void {if(!$ok)throw new RuntimeException($label);echo "PASS $label\n";}
@@ -15,13 +17,6 @@ function tool_reject(callable $work,int $code,string $label): void {
 }
 function user_agent_principal_v236(array $user,?array $agent): array {
     return ['kind'=>$agent?'user_agent':'system','owner_user_id'=>(int)$user['id'],'agent_id'=>(int)($agent['id']??0)];
-}
-function vp3_agent_memory_scope_current_v410(array $user): int {
-    $scope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??[];
-    return ($scope['user_id']??null)===$user['id']?(int)($scope['user_agent_id']??0):0;
-}
-function vp3_agent_memory_scope_sql_v410(?int $agent,string $alias=''): array {
-    return $agent>0?['user_agent_id=?',[$agent]]:['user_agent_id IS NULL',[]];
 }
 function vp3_initiative_access_v1(PDO $pdo,array $user,array $binding): array {
     $q=$pdo->prepare('SELECT binding_json FROM initiative_tool_policies WHERE owner=? AND agent=?');

@@ -87,7 +87,7 @@ $age->execute([gmdate('Y-m-d H:i:s',time()-121),$run]);
 scope_check($read()['specialist']===null,'a terminal failure disappears after its short status window');
 $run=$enqueue('research-status-complete',$goal);
 $completed=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$run),null,
-    ['search'=>static fn():array=>['ok'=>true,'results'=>[]]]);
+    ['search'=>static fn():array=>['ok'=>true,'results'=>[]]],allowDelivery:false);
 $pending=$read();
 scope_check($completed['ok']&&$pending['specialist']===null&&count($pending['specialists'])===1
     &&$pending['specialists'][0]['run_id']===$run&&$pending['specialists'][0]['state']==='ready'

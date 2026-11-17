@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-screen-handoffs-v1.php';
+require_once __DIR__.'/agent-screen-audio-v1.php';
 require_once __DIR__.'/agent-chat-boundary-v380.php';
 require_once __DIR__.'/schema-metadata.php';
 
@@ -121,6 +122,32 @@ function screen_chat_report_share_v1(PDO $pdo,array $user,string $sessionId,int 
     }
 }
 
+function screen_chat_report_audio_v1(string $sessionId,array $rows): ?array
+{
+    $segments=[];
+    $folderId=0;
+    foreach($rows as $row){
+        if(!is_array($row)||($row['kind']??null)!=='tab_audio'||($row['session_id']??null)!==$sessionId
+            ||($row['review_state']??'active')!=='active'||!is_array($row['body']??null)
+            ||!is_string($row['captured_at']??null)||strtotime($row['captured_at'])===false
+            ||!is_string($row['capture_id']??null)||!preg_match('/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/Di',$row['capture_id']))continue;
+        $body=$row['body'];
+        $text=is_string($body['transcript']??null)?mb_substr(trim($body['transcript']),0,1000):'';
+        $sounds=[];
+        foreach(is_array($body['audio_events']??null)?$body['audio_events']:[] as $event){
+            if(!is_array($event))continue;
+            $label=screen_audio_event_label_v1($event['label']??null);
+            if($label!=='')$sounds[$label]=$label;
+        }
+        if($text===''&&!$sounds)continue;
+        $folderId=max(0,(int)($row['folder_id']??0));
+        $segments[]=['capture_id'=>$row['capture_id'],'captured_at'=>$row['captured_at'],'text'=>$text,'sounds'=>array_slice(array_values($sounds),0,8)];
+        if(count($segments)>=3)break;
+    }
+    if(!$segments)return null;
+    return ['segments'=>array_reverse($segments),'knowledge_url'=>url('/knowledge.php?folder='.$folderId.'&screen_session='.$sessionId)];
+}
+
 /** Screenshots and capture text stay in their authoritative session. */
 function screen_chat_report_projection_v1(PDO $pdo,array $user,int $agentId,int $conversationId,int $messageId): array
 {
@@ -151,6 +178,7 @@ function screen_chat_report_projection_v1(PDO $pdo,array $user,int $agentId,int 
         if(count($highlights)>=3)break;
     }
     if($highlights)$answer.="\n\n• ".implode("\n• ",array_keys($highlights));
+    $audio=screen_chat_report_audio_v1($sessionId,$rows);
 
     $now=time();
     $wrap=screen_insights_wrapup_card_v1($sessionId,$rows);
@@ -165,5 +193,5 @@ function screen_chat_report_projection_v1(PDO $pdo,array $user,int $agentId,int 
         try{$handoffs[]=screen_handoff_view_v1($pdo,$user,$row);}catch(Throwable $error){}
     }
     return ['answer'=>$answer,'report'=>['owner_user_id'=>$owner,'agent_id'=>$agentId,'conversation_id'=>$conversationId,
-        'message_id'=>$messageId,'session_id'=>$sessionId,'cards'=>$cards,'handoffs'=>$handoffs]];
+        'message_id'=>$messageId,'session_id'=>$sessionId,'cards'=>$cards,'handoffs'=>$handoffs]+($audio!==null?['audio'=>$audio]:[])];
 }

@@ -57,6 +57,7 @@ function screen_session_start_v1(PDO $pdo,array $user,array $input): array
 function screen_session_timeline_v1(PDO $pdo,array $user,string $sid,mixed $before=null): array
 {
     if(!table_exists('agent_screen_sessions_v1')||!table_exists('agent_screen_captures_v1'))throw new RuntimeException('This sharing session is unavailable or was deleted.',404);
+    require_once __DIR__.'/agent-screen-audio-v1.php';
     $session=screen_session_v1($pdo,$user,$sid);
     $params=[(int)$user['id'],$session['session_id']];
     // Older captures may omit fractional seconds. Order them as exactly zero milliseconds.
@@ -83,7 +84,9 @@ function screen_session_timeline_v1(PDO $pdo,array $user,string $sid,mixed $befo
         $body=json_decode($row['body_json'],true,32,JSON_THROW_ON_ERROR);
         $translation=$row['kind']==='screen'&&($body['annotation_logging']??false)===true?($body['observation']['on_screen_translation']??null):null;
         $timelineText=$row['kind']==='tab_audio'?($body['transcript']??null):$translation;
-        if(!is_string($timelineText)||trim($timelineText)==='')continue;
+        $sounds=$row['kind']==='tab_audio'&&is_array($body['audio_events']??null)?$body['audio_events']:[];
+        $hasSounds=(bool)array_filter($sounds,static fn($event):bool=>is_array($event)&&screen_audio_event_label_v1($event['label']??null)!=='');
+        if((!is_string($timelineText)||trim($timelineText)==='')&&!$hasSounds)continue;
         if(count($captures)===$pageSize){$next=$captures[$pageSize-1]['capture_id'];break;}
         $review=['state'=>$row['review_state'],'note'=>$row['review_note']];
         unset($row['body_json'],$row['review_state'],$row['review_note']);

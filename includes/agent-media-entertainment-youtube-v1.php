@@ -74,6 +74,12 @@ function vp3_media_youtube_saved_searches_v1(PDO $pdo,int $owner,int $agent,int 
         // Honor provider order for general searches, with Music-category videos first on a music search.
         if($music)usort($videos,static fn(array $left,array $right):int=>
             (int)(($right['music_category']??false)===true)<=>(int)(($left['music_category']??false)===true));
+        $similar=[];
+        if($suggestion==='similar'&&$subject!==''){
+            require_once __DIR__.'/agent-media-similar-artists-v1.php';
+            $similar=vp3_media_similar_artist_results_v1($subject,$videos);
+            if($similar)$videos=array_column($similar,'video');
+        }
         $unplayed=array_values(array_filter($videos,static fn(array $video):bool=>!isset($seen[$video['video_id']])));
         $selected=$unplayed[0]??$videos[0];
         $title=vp3_agent_activity_text_v1($selected['title'],160);
@@ -85,10 +91,13 @@ function vp3_media_youtube_saved_searches_v1(PDO $pdo,int $owner,int $agent,int 
         $summary=($playlist?'Your saved YouTube playlist for ':'Your recent YouTube search for ').'“'.$query
             .'” has '.count($videos).' playable '.(count($videos)===1?'video':'videos').'.';
         if($unplayed)$summary.=' One pick is “'.$title.'”'.($channel===''?'':' from '.$channel).'.';
+        if($similar)$summary=vp3_media_similar_artist_summary_v1($similar);
         $items[$ref]=['ref'=>$ref,'revision'=>hash('sha256',json_encode([$owner,$agent,$chat,$record['message_id'],$created,
                 $record['expires_at'],$result,$selected['video_id']],JSON_THROW_ON_ERROR)),
-            'kind'=>$playlist?'playlist':'youtube_pick','title'=>$playlist?'YouTube playlist · '.$query:$title,
-            'summary'=>$summary,'next_step'=>$playlist?'Open the saved playlist in Chat.':'Play the saved video in Chat.',
+            'kind'=>$similar?'similar_artists':($playlist?'playlist':'youtube_pick'),
+            'title'=>$similar?'Similar artists for '.$subject:($playlist?'YouTube playlist · '.$query:$title),
+            'summary'=>$summary,'next_step'=>$similar?'Open the saved results in Chat to explore their tracks.'
+                :($playlist?'Open the saved playlist in Chat.':'Play the saved video in Chat.'),
             'question'=>$trigger!==null?'Want me to play “'.$title.'” here?':'',
             'url'=>vp3_agent_activity_chat_href_v1($agent,$chat).'&message_id='.$record['message_id'],
             'created_at'=>gmdate(DATE_ATOM,$created),'trigger'=>$trigger,'priority'=>'low','status'=>'ready','specialist'=>'media',
@@ -173,18 +182,26 @@ function vp3_media_research_findings_v1(PDO $pdo,array $scope,?array $ids,DateTi
         if(($work['output']['playlist_run_id']??null)===$run){
             $playlist=$posted===null?vp3_initiative_youtube_playlist_load_v1($pdo,$owner,$run)
                 :(agent_connection_youtube_result_records_v1($pdo,$owner,$agent,$chat,1,[$posted])[0]['results']??null);
-            if(($playlist['suggestion_kind']??null)!=='playlist'||($playlist['initiative_suggestion']??null)!==true
+            if(!in_array($playlist['suggestion_kind']??null,['playlist','similar'],true)||($playlist['initiative_suggestion']??null)!==true
                 ||($playlist['expires_at']??0)<=$epoch)$playlist=null;
         }
         $videoCount=$playlist===null?0:count(array_filter(agent_connection_youtube_ordered_videos_v1($playlist['videos']),
             static fn(array $video):bool=>($video['made_for_kids']??null)===false));
+        $similar=[];
+        if($playlist!==null&&$kind==='artist'){
+            require_once __DIR__.'/agent-media-similar-artists-v1.php';
+            $similar=vp3_media_similar_artist_payload_results_v1($playlist);
+            if($similar)$summary=vp3_media_similar_artist_summary_v1($similar).' '.$summary;
+        }
         $ref='media:research:'.$run;
         $artistUrl=str_starts_with($candidate['source'],'native-artist-interest:')?$source['url']:null;
         $url=$posted!==null?vp3_agent_activity_chat_href_v1($agent,$chat).'&message_id='.$posted:$artistUrl;
-        $items[$ref]=['ref'=>$ref,'revision'=>hash('sha256',json_encode([$owner,$agent,$chat,$run,$work,$posted,$videoCount],JSON_THROW_ON_ERROR)),
+        $items[$ref]=['ref'=>$ref,'revision'=>hash('sha256',json_encode([$owner,$agent,$chat,$run,$work,$posted,$videoCount,$similar],JSON_THROW_ON_ERROR)),
             'kind'=>$kind==='artist'?'artist_research':'video_research','title'=>$subject,'summary'=>$summary,
-            'next_step'=>$videoCount>=2?($posted===null?'A private playlist with '.$videoCount.' playable videos is ready.'
-                :'Open the '.$videoCount.'-video playlist in Chat.'):($artistUrl!==null?'Explore the artist’s VP3 profile.':''),
+            'next_step'=>$similar?($posted===null?'Similar-artist suggestions with '.count($similar).' playable tracks are ready.'
+                :'Open the report in Chat to try the similar-artist suggestions.')
+                :($videoCount>=2?($posted===null?'A private playlist with '.$videoCount.' playable videos is ready.'
+                    :'Open the '.$videoCount.'-video playlist in Chat.'):($artistUrl!==null?'Explore the artist’s VP3 profile.':'')),
             'question'=>'','url'=>$url??'','created_at'=>gmdate(DATE_ATOM,$candidate['checked']),'trigger'=>null,
             'priority'=>'low','status'=>'ready','specialist'=>'media']
             +($artistUrl!==null?['artist_url'=>$artistUrl]:[]);
