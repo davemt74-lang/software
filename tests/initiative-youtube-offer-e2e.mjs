@@ -723,7 +723,7 @@ try{
     // starting the separate assessment/preparation completion deadline.
     await page.waitForFunction(async()=>{
       const response=await fetch('/fixture-casual-readiness');
-      if(!response.ok())return false;
+      if(!response.ok)return false;
       return (await response.json()).ready===true;
     },null,{timeout:45000,polling:250});
     const response=await page.request.get(base+'/fixture-casual-readiness');
