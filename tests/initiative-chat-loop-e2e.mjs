@@ -629,12 +629,19 @@ async function verifyTranscript(page,writes){
   assert.deepEqual(finished.model_calls.map(row=>row.protocol),[
     'vp3.initiative-plan.v1','vp3.transcript-research-plan.v1','vp3.topic-research.v1',
   ]);
-  assert.equal(finished.reports.length,1);
+  const goal=JSON.parse(queued.goal);
+  // An independent starter invitation may also be saved. Bind this result to
+  // the exact transcript source so even a duplicate from another run fails.
+  const researchReports=finished.reports.filter(row=>
+    JSON.parse(row.context_json).initiative_output?.source_ref===goal.primary);
+  assert.equal(researchReports.length,1,JSON.stringify({reports:finished.reports,runs:finished.runs,
+    receipts:finished.receipts,model_calls:finished.model_calls.map(row=>row.protocol)}));
+  assert.equal(Number(researchReports[0].conversation_id),11);
+  assert.equal(JSON.parse(researchReports[0].context_json).initiative_run_id,Number(queued.id));
   const messageId=Number(await report.getAttribute('data-chat-message-id'));
-  assert.equal(messageId,Number(finished.reports[0].id));
+  assert.equal(messageId,Number(researchReports[0].id));
   const receipt=finished.receipts.find(row=>row.run_id===queued.id&&row.status==='completed');
   const result=JSON.parse(receipt.result_json);
-  const goal=JSON.parse(queued.goal);
   assert.equal(Number(result.initiative_message_id),messageId);
   assert.equal(result.initiative_tool_result.output.source_ref,goal.primary);
   assert.equal(result.initiative_tool_result.output.source_revision,goal.sources[goal.primary]);

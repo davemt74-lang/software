@@ -188,6 +188,7 @@ const php=process.env.VP3_PHP_BINARY||'php';
 let logs='';
 const server=spawn(php,['-S',`127.0.0.1:${port}`,'-t',temp,router],{env:{...process.env,
   VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'youtube.sqlite'),VP3_YOUTUBE_API_KEY:'fixture_youtube_api_key_unused',
+  VP3_INITIATIVE_HTTP_MEDIA:'1',
   VP3_GMAIL_CLIENT_ID:'fixture_gmail_client_id',VP3_GMAIL_CLIENT_SECRET:'fixture_gmail_secret_unused',
   VP3_GMAIL_REDIRECT_URI:'https://example.test/connection-oauth.php'},stdio:['ignore','pipe','pipe']});
 server.stderr.on('data',data=>{logs+=data;});
@@ -408,12 +409,15 @@ try{
     headers:{'X-VP3-Working-Attention':binding},
     data:{action:'initiative_tick',agent_id:7,conversation_id:16,csrf_token:'fixture',policy_revision:policyRevision}
   });
-  const catalogDiagnostic=async()=>{
+  const catalogDiagnostic=async({allowInvalidated=false}={})=>{
     const packet=await page.request.get(base+'/api/cognitive-presentation-v510.php?action=initiative_diagnostics&agent_id=7&conversation_id=16',{
       headers:{'X-VP3-Working-Attention':binding}
     });
     assert.ok(packet.ok(),await packet.text());
-    return (await packet.json()).diagnostics.engagement.specialist_scan.specialists.media;
+    const scan=(await packet.json()).diagnostics.engagement.specialist_scan;
+    if(scan===null&&allowInvalidated)return null;
+    assert.ok(scan?.specialists?.media,'A completed catalog scan must expose its Media checkpoint.');
+    return scan.specialists.media;
   };
   const guarded=await catalogTick();
   assert.ok(guarded.ok(),await guarded.text());
@@ -490,11 +494,64 @@ try{
     return activity.conversation_id===16&&activity.chat_busy===false&&activity.media_playing===false;
   });
   assert.ok((await page.request.post(base+'/fixture-catalog-after-cooldown')).ok());
-  assert.ok((await catalogTick()).ok());
   const laterRef='media:track:41';
-  assert.equal(coordinationRuns(await state(),laterRef).length,0);
-  assert.equal((await catalogDiagnostic()).offer_gate,'new_activity_required',
+  const beforeIdleCatalog=await state();
+  const catalogIdentity=snapshot=>{
+    const runIds=snapshot.runs.filter(row=>{
+      const goal=JSON.parse(row.goal);
+      return goal.coordination_route?.specialist==='media'&&goal.binding?.conversation_id===16;
+    }).map(row=>row.id);
+    return {runIds,messageIds:snapshot.messages.filter(row=>row.conversation_id===16&&row.role==='assistant'
+      &&runIds.includes(JSON.parse(row.context_json||'{}').initiative_run_id)).map(row=>row.id)};
+  };
+  const idleIdentity=catalogIdentity(beforeIdleCatalog);
+  const assertCatalogUnchanged=snapshot=>{
+    assert.equal(coordinationRuns(snapshot,laterRef).length,0);
+    assert.deepEqual(catalogIdentity(snapshot),idleIdentity,'An idle scan cannot queue or post another Media offer.');
+  };
+  const idleResponse=await catalogTick();
+  assert.ok(idleResponse.ok(),await idleResponse.text());
+  const idleTick=await idleResponse.json();
+  assert.equal(idleTick.ok,true,JSON.stringify(idleTick));
+  let idleState=await state();
+  assertCatalogUnchanged(idleState);
+  let idleReport=await catalogDiagnostic({allowInvalidated:true});
+  if(idleReport===null){
+    // A saved Curiosity report invalidates discovery in the same real tick.
+    // Require that exact completed post before allowing one genuine rescan.
+    assert.equal(idleTick.coordination,'queued_chat_handoff');
+    const handoff=idleState.runs.find(row=>row.id===idleTick.run_id);
+    assert.equal(handoff?.status,'completed');
+    const goal=JSON.parse(handoff.goal);
+    assert.equal(goal.tool,'coordination.review');
+    assert.equal(goal.coordination_route.specialist,'curiosity');
+    assert.equal(goal.binding.owner_user_id,1);
+    assert.equal(goal.binding.agent_id,7);
+    assert.equal(goal.binding.conversation_id,16);
+    assert.ok(goal.primary.startsWith('curiosity:'));
+    const handoffReceipt=idleState.receipts.find(row=>row.run_id===handoff.id&&row.status==='completed');
+    assert.ok(handoffReceipt);
+    assert.equal(handoffReceipt.owner_user_id,1);
+    assert.equal(handoffReceipt.executor,'cloud');
+    const result=JSON.parse(handoffReceipt.result_json);
+    assert.equal(result.initiative_delivery,'delivered');
+    assert.deepEqual(Object.keys(result.initiative_tool_result.output.evidence_revisions),[goal.primary]);
+    const posted=idleState.messages.find(row=>row.id===Number(result.initiative_message_id));
+    assert.equal(posted?.conversation_id,16);
+    assert.equal(posted.role,'assistant');
+    assert.equal(JSON.parse(posted.context_json).initiative_run_id,handoff.id);
+    assert.ok(!beforeIdleCatalog.messages.some(row=>row.id===posted.id),'The invalidated checkpoint requires a newly saved report.');
+    const rescanned=await catalogTick();
+    assert.ok(rescanned.ok(),await rescanned.text());
+    const rescanTick=await rescanned.json();
+    assert.equal(rescanTick.ok,true,JSON.stringify(rescanTick));
+    idleState=await state();
+    assertCatalogUnchanged(idleState);
+    idleReport=await catalogDiagnostic();
+  }
+  assert.equal(idleReport.offer_gate,'new_activity_required',
     'An acceptance and a cooldown expiry cannot cause an idle Chat to work through the catalog.');
+  assert.equal(idleReport.queued,0);
   assert.ok((await page.request.post(base+'/fixture-catalog-after-cooldown?activity=owner')).ok());
   const laterResponse=await catalogTick();
   assert.ok(laterResponse.ok(),await laterResponse.text());
