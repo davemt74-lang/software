@@ -287,6 +287,21 @@ try{
     assert.ok(response.ok(),text);
     return JSON.parse(text);
   };
+  const pollFixture=async(path,accept,{timeout=30000,label=path}={})=>{
+    const deadline=Date.now()+timeout;
+    while(Date.now()<deadline){
+      const response=await page.request.get(base+path,{timeout:Math.max(1,deadline-Date.now())});
+      const text=await response.text();
+      assert.ok(response.ok(),text);
+      const snapshot=JSON.parse(text);
+      const accepted=await accept(snapshot);
+      assert.equal(typeof accepted,'boolean','A fixture poll must evaluate the saved response condition.');
+      if(accepted)return snapshot;
+      const remaining=deadline-Date.now();
+      if(remaining>0)await new Promise(resolve=>setTimeout(resolve,Math.min(250,remaining)));
+    }
+    assert.fail(label+' did not become ready within '+timeout+'ms.');
+  };
   const posted=await state();
   const coordinationRuns=(snapshot,primary)=>snapshot.runs.filter(row=>{
     const goal=JSON.parse(row.goal);
@@ -538,8 +553,7 @@ try{
     await audio.play();
     await window.StonefellowAgentActivity.refreshCoreContext();
   });
-  await page.waitForFunction(async()=>{
-    const {activity}=await (await fetch('/fixture-state')).json();
+  await pollFixture('/fixture-state',({activity})=>{
     return activity.conversation_id===16&&activity.chat_busy===false&&activity.media_playing===true;
   });
   await page.waitForFunction(()=>window.StonefellowAgentActivity?.coreContext()?.conversation_id===16);
@@ -606,8 +620,7 @@ try{
     audio.remove();
     await window.StonefellowAgentActivity.refreshCoreContext();
   });
-  await page.waitForFunction(async()=>{
-    const {activity}=await (await fetch('/fixture-state')).json();
+  await pollFixture('/fixture-state',({activity})=>{
     return activity.conversation_id===16&&activity.chat_busy===false&&activity.media_playing===false;
   });
   await page.unroute(presentation,holdAutomaticTick);
@@ -629,8 +642,7 @@ try{
     document.querySelectorAll('audio').forEach(audio=>audio.pause());
     await window.StonefellowAgentActivity.refreshCoreContext();
   });
-  await page.waitForFunction(async()=>{
-    const {activity}=await (await fetch('/fixture-state')).json();
+  await pollFixture('/fixture-state',({activity})=>{
     return activity.conversation_id===16&&activity.chat_busy===false&&activity.media_playing===false;
   });
   assert.ok((await page.request.post(base+'/fixture-catalog-after-cooldown')).ok());
@@ -699,11 +711,10 @@ try{
     assert.equal(result.ok,true,body);
     return {result,revision};
   };
-  const activityMatches=async(conversation,playing)=>page.waitForFunction(async({conversation,playing})=>{
-    const {activity}=await (await fetch('/fixture-state')).json();
+  const activityMatches=async(conversation,playing)=>pollFixture('/fixture-state',({activity})=>{
     return activity.conversation_id===conversation&&activity.chat_focused===true&&activity.chat_busy===false
       &&activity.media_playing===playing;
-  },{conversation,playing});
+  },{label:'The accepted Chat '+conversation+' playback observation'});
   const casualRuns=async()=>((await state()).runs.filter(row=>{
     const ref=JSON.parse(row.goal).primary;
     return ref?.startsWith('casual:')&&!ref.startsWith('casual:starter-');
@@ -721,14 +732,8 @@ try{
     // The fixture's elapsed-message setup does not age actual foreground
     // interactions or quiet_chat_since. Observe the real 30-second gate before
     // starting the separate assessment/preparation completion deadline.
-    await page.waitForFunction(async()=>{
-      const response=await fetch('/fixture-casual-readiness');
-      if(!response.ok)return false;
-      return (await response.json()).ready===true;
-    },null,{timeout:45000,polling:250});
-    const response=await page.request.get(base+'/fixture-casual-readiness');
-    assert.ok(response.ok(),await response.text());
-    const evidence=await response.json();
+    const evidence=await pollFixture('/fixture-casual-readiness',snapshot=>snapshot.ready===true,
+      {timeout:45000,label:'The actual scoped Media idle gate'});
     assert.deepEqual([evidence.owner_user_id,evidence.agent_id,evidence.conversation_id],[1,7,17]);
     assert.equal(evidence.ready,true);assert.equal(evidence.hold,null);
     assert.equal(evidence.idle.readiness,'ready');assert.equal(evidence.idle.busy,false);
@@ -741,8 +746,7 @@ try{
   const waitForCasualPost=async(ref,before,question,expectedRun=null)=>{
     const known=before.runs.map(row=>row.id);
     await page.unroute(presentation,holdAutomaticTick);
-    await page.waitForFunction(async({ref,known,expectedRun})=>{
-      const snapshot=await (await fetch('/fixture-state')).json();
+    const snapshot=await pollFixture('/fixture-state',snapshot=>{
       return snapshot.runs.some(run=>{
         const goal=JSON.parse(run.goal);
         if(known.includes(run.id)||run.status!=='completed'||goal.primary!==ref||goal.binding?.conversation_id!==17)return false;
@@ -750,9 +754,8 @@ try{
         return snapshot.receipts.some(receipt=>receipt.run_id===run.id&&receipt.status==='completed'
           &&JSON.parse(receipt.result_json).initiative_delivery==='delivered');
       });
-    },{ref,known,expectedRun},{timeout:45000,polling:250});
+    },{timeout:45000,label:'The exact saved '+ref+' invitation'});
     await page.route(presentation,holdAutomaticTick);
-    const snapshot=await state();
     const runs=snapshot.runs.filter(row=>!known.includes(row.id)&&row.status==='completed'
       &&JSON.parse(row.goal).primary===ref&&JSON.parse(row.goal).binding?.conversation_id===17);
     assert.equal(runs.length,1,'Fresh activity must deliver exactly one new invitation for this source.');
@@ -1090,11 +1093,9 @@ try{
   assert.equal(musicChoice.initiative_followthrough.message_id,repeatedMedia.message.id);
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('audio')).some(audio=>
     audio.dataset.trackId==='42'&&!audio.paused));
-  await page.waitForFunction(async count=>{
-    const snapshot=await (await fetch('/fixture-state')).json();
-    return snapshot.plays.filter(row=>row.user_id===1).length===count;
-  },playsBeforeChoice+1);
-  const nextState=await state();
+  const nextState=await pollFixture('/fixture-state',snapshot=>
+    snapshot.plays.filter(row=>row.user_id===1).length===playsBeforeChoice+1,
+    {label:'The single explicitly accepted playback session'});
   assert.equal(nextState.plays.filter(row=>row.user_id===1).length,playsBeforeChoice+1);
   assert.equal(nextState.youtube_attempts,attemptsBeforeYoutube);
   console.log('PASS choosing music from the combined invitation opens the verified VP3 pick without a YouTube call');
