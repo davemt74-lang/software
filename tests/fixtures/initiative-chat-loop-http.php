@@ -106,6 +106,11 @@ function ai_generate_chat_response(string $prompt,array $history,array $context,
     if(getenv('VP3_INITIATIVE_HTTP_GMAIL')==='1'&&$protocol==='vp3.initiative-plan.v1'){
         return ['ok'=>true,'answer'=>'{"jobs":[],"opportunities":[]}'];
     }
+    if(getenv('VP3_INITIATIVE_HTTP_MEDIA')==='1'&&$protocol==='vp3.initiative-plan.v1'){
+        // Media offers use the real saved-source coordinator. This scenario
+        // has no additional model-selected Brain task to prepare.
+        return ['ok'=>true,'answer'=>'{"jobs":[],"opportunities":[]}'];
+    }
     $checkIn=db()->query('SELECT scenario FROM fixture_controls WHERE id=1')->fetchColumn()==='check_in';
     if($protocol==='vp3.initiative-plan.v1'){
         $tools=array_column($input['tools'],'ready','id');

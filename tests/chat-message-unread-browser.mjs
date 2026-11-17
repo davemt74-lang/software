@@ -333,6 +333,13 @@ try {
   await sibling.goto(origin);
   await page.setViewportSize({width:390,height:700});
   await sibling.evaluate(() => { document.getElementById('readingOverlay').hidden = false; });
+  // Load the unread post while covered and visible. Canonical Chat sync does
+  // not fetch new messages in a hidden tab; hiding must retain this exact NEW.
+  await overlay(true);
+  const mobileId = addAssistant('A hidden mobile update');
+  await sync();
+  await refresh();
+  await badge(mobileId).waitFor();
   await sibling.bringToFront();
   // Headless Chromium exposes every Page as visible. Supply the browser's
   // visibility signal while retaining real DOM geometry and two live tabs.
@@ -340,7 +347,7 @@ try {
     Object.defineProperty(document,'hidden',{configurable:true,get:() => true});
     document.dispatchEvent(new Event('visibilitychange'));
   });
-  const mobileId = addAssistant('A hidden mobile update');
+  await overlay(false);
   await sync();
   await refresh();
   await badge(mobileId).waitFor();
