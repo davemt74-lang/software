@@ -248,8 +248,13 @@ try{
     try{
       await page.goto(base,{waitUntil:'domcontentloaded'});await ready(page);
       assert.equal(await page.locator('#chatInitiativeReplyCue').count(),0);
-      await send(page,'yes');await page.locator('#chatRecoveryStatus').waitFor();
-      assert.equal((await page.locator('#chatRecoveryStatus').textContent()).includes('initiative_reply_'),false);
+      await send(page,'yes');
+      const notice=page.locator('#chatThread [data-chat-turn-notice] .message-text[role="status"]');
+      await notice.waitFor();
+      assert.equal((await notice.textContent()).includes('initiative_reply_'),false);
+      assert.equal(await page.locator('[data-chat-turn-notice].assistant,[data-chat-turn-notice][data-chat-message-id]').count(),0,
+        'A failed send is local status, never a saved Agent result');
+      assert.equal(await page.locator('#chatInput').inputValue(),'yes');
       const failed=await control(),originalTurn=failed.messages.find(row=>row.role==='user'&&row.message==='yes');
       assert.ok(originalTurn);assert.equal(Object.hasOwn(sends[0],'initiative_reply'),false);
       await context.setExtraHTTPHeaders({...headers,'X-Fixture-Followthrough-Intent':'advance'});
@@ -257,6 +262,7 @@ try{
       assert.equal(await page.locator('#chatInitiativeReplyCue').count(),0);
       await page.locator('#sendChatButton').click();await idle(page);
       await page.waitForFunction(()=>document.getElementById('chatInput').value==='');
+      assert.equal(await notice.count(),0,'The successful exact retry clears its local failure notice');
       const recovered=await control(),acks=recovered.messages.filter(row=>contextOf(row).initiative_followthrough?.message_id===proposal.id);
       const children=recovered.runs.filter(row=>JSON.parse(row.goal||'{}').followthrough?.message_id===proposal.id);
       assert.equal(recovered.messages.filter(row=>row.role==='user'&&row.message==='yes').length,1);

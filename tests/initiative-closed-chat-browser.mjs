@@ -18,7 +18,10 @@ for(const file of ['agent-runtime-routing-v420.php','ai-settings.php'])fs.writeF
 for(const name of ['phone-agent-schema-v1.php','workflow-agent-schema-v1.php','record-agent-schema-v1.php','media-agent-schema-v1.php',
   'app-agent-remote-v1.php','system-app-agent-schema-v1.php','app-operation-schema-v1.php','private-share-agent-v1.php','vrss-agent-v1.php',
   'analytics-agent-v1.php','radar-agent-v1.php','tracky-agent-v1.php'])fs.copyFileSync(path.join(root,'tests','fixtures',name),path.join(temp,'includes',name));
-const bootstrap=fs.readFileSync(path.join(root,'tests','fixtures','capability-chat-bootstrap.php'),'utf8');
+let bootstrap=fs.readFileSync(path.join(root,'tests','fixtures','capability-chat-bootstrap.php'),'utf8');
+for(const name of ['track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])
+  bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\n";
 fs.writeFileSync(path.join(temp,'includes','bootstrap.php'),bootstrap.replace('declare(strict_types=1);',`declare(strict_types=1);
 $_SERVER['HTTP_X_FIXTURE_BRAIN_READY']='1';
 $_SERVER['HTTP_X_FIXTURE_IMAGES_READY']='1';`)+"\nrequire __DIR__.'/initiative-closed-chat-support.php';\n");
@@ -52,12 +55,15 @@ let serverLogs='';
 try{
   driver('seed');
   const prepared=driver('prepare');
-  assert.equal(prepared.reports.length,0);
+  const report='I prepared launch follow-up questions from your saved reminder.';
+  assert.equal(prepared.reports.length,1);
+  assert.equal(prepared.reports[0].message,report);
+  assert.equal(prepared.reports[0].conversation_id,42);
   assert.equal(prepared.receipts.filter(row=>row.capability_key==='initiative.prepare'&&row.status==='completed').length,2);
   assert.match(JSON.stringify(prepared.receipts),/launch follow-up questions/);
   assert.match(JSON.stringify(prepared.receipts),/private asset review checklist/);
   assert.equal(driver('deliver').delivered,false);
-  console.log('PASS with every Chat closed, the production executor prepares two independent private jobs and sends no report');
+  console.log('PASS with every Chat closed, the production executor saves one authorized text report and keeps the separately private job out of Chat');
 
   const reserve=net.createServer();
   await new Promise(resolve=>reserve.listen(0,'127.0.0.1',resolve));
@@ -93,25 +99,24 @@ try{
   await page.locator('#chatInput').fill('Keep this preparation private while I finish my draft.');
   await drafting;
   assert.equal(driver('deliver').delivered,false);
-  assert.equal(driver('state').reports.length,0);
-  console.log('PASS reopening normal Chat records real activity and keeps prepared work private while the owner has an active draft');
+  assert.deepEqual(driver('state').reports,prepared.reports);
+  console.log('PASS reopening normal Chat records real activity and preserves the exact saved report while the owner has an active draft');
 
   const quiet=heartbeat('working',context=>context.chat_busy===false&&context.chat_focused===true);
   await page.locator('#chatInput').fill('');
   const quietState=await (await quiet).json();
   assert.equal(quietState.activity.state,'working');
   assert.equal(quietState.activity.interruptible,false);
-  assert.equal(driver('deliver').delivered,true);
+  assert.equal(driver('deliver').delivered,false);
   assert.equal(driver('deliver').delivered,false);
   await page.clock.fastForward(3000);
-  const report='I prepared launch follow-up questions from your saved reminder.';
   await page.getByText(report,{exact:true}).waitFor();
   assert.equal(await page.getByText(report,{exact:true}).count(),1);
   assert.equal(driver('state').reports.length,1);
   assert.equal(driver('state').reports[0].conversation_id,42);
   assert.equal(await page.getByText('I prepared a private asset review checklist.',{exact:true}).count(),0);
   assert.deepEqual(errors,[]);
-  console.log('PASS clearing the draft permits one silent text result through real activity, messages_after and Chat while general activity remains working');
+  console.log('PASS real Chat renders the one saved text result without another delivery or exposing the private asset preparation');
 
   await page.reload();
   await page.getByText(report,{exact:true}).waitFor();

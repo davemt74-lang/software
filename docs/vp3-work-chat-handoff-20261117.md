@@ -75,6 +75,16 @@ The three earlier preflight failures came from obsolete or cumulative fixtures. 
 
 The Morning Brief suite exercises real source grants, encrypted findings, saved owner Chat policy, local-day timing, atomic proof/message publication and rollback, once-per-Agent/day delivery, Chat switches, history and voice revalidation, tampering, changed/revoked/deleted sources, and owner/Agent/participant boundaries. Both SQLite and native MySQL invocations are registered in CI. A MySQL or hosted-browser pass is recorded only after execution.
 
+## Repairs verified during hosted CI
+
+The recovered source exposed two production defects while the retained acceptance suites were brought forward. Source-transition validation now keeps capability declarations aligned with the exact surviving sources after an authorized cancellation; the original saved declaration remains immutable, and unrelated source changes still invalidate replay. Legacy Initiative voice check-ins now read and update the exact completed cloud receipt for the current execution attempt. Wrong-attempt, mismatched-content and missing-receipt records fail closed.
+
+The remaining repairs restore current test prerequisites and contracts: real AI settings and service readiness, exact action/receipt pairing, current client dependencies, isolated worker scenarios, and current modal/editor controls. Generic saved Chat text follows the enabled owner/Agent Chat binding. Browser presence and speech interruption retain separate assertions. Tests that deliberately need a pending result request preparation-only execution explicitly, while ordinary execution continues to exercise automatic delivery. No required acceptance invocation was disabled.
+
+On PR revision `5272c14173b4c6fa14fa60b1d6c5f6868e818619`, all HomeServer native MySQL checks passed, including the new cancellation regressions, coordinated scheduling, Morning Brief, capabilities, exact receipts, Canvas persistence, and concurrent operations. Both PHP 8.1 and PHP 8.3 runtime jobs and the connection MySQL job also passed in [HomeServer run 44161506430](https://github.com/davemt74-lang/software/actions/runs/44161506430). The separate [complete diagnostic run 44161572593](https://github.com/davemt74-lang/software/actions/runs/44161572593) executed all 257 later HomeServer commands and passed every PHP command, including the DOM-dependent tools suite. It still reported browser fixture failures; subsequent browser repairs require their own hosted results.
+
+Diagnostic workflows run on a separate temporary branch. They collect individual failures without removing or bypassing the original PR gates. Final merge authorization still depends on successful checks for the final PR head.
+
 ## Publishing checkpoint
 
 The owner explicitly authorized publication of the recovered November 12–17 source and completed fixes to public `davemt74-lang/software`, opening the PR, resolving failing checks, merging only after all required checks pass, and producing the full deployment ZIP. Automatic approval review accepted that self-contained authorization.

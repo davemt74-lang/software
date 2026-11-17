@@ -187,6 +187,20 @@ if(!table_exists('fixture_model_calls')){
     if($transcriptScenario)initiative_http_seed_transcript_v1($pdo);
     if($gmailScenario)initiative_http_seed_gmail_v1($pdo);
     if($officeScenario!=='')initiative_http_seed_office_v1($pdo,$officeScenario);
+    if(getenv('VP3_INITIATIVE_HTTP_BROWSER')==='1'){
+        // These journeys begin after the daily brief and keep unrelated
+        // conversations in Top of Mind so each exact worker result is observable.
+        require_once $source.'/includes/agent-morning-brief-v1.php';
+        require_once $source.'/includes/agent-coordination-rules-v1.php';
+        $user=current_user();
+        $day=vp3_morning_brief_local_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')))->format('Y-m-d');
+        vp3_initiative_in_scope_v1($user,7,static fn()=>agent_brain_v122_upsert_system_memory(
+            $user,'initiative_sweep','morning-brief:'.$day,'Prior daily brief fixture assessment',['local_day'=>$day]));
+        $rules=vp3_coordination_rule_settings_v1($pdo,$user,7,11);
+        $patch=['curiosity'=>['open_question'=>'watch']];
+        if($transcriptScenario)$patch+=['tasks'=>['overdue'=>'watch'],'transcripts'=>['open_question'=>'watch']];
+        vp3_coordination_rule_settings_v1($pdo,$user,7,11,$rules['revision'],$patch);
+    }
 }
 
 function initiative_http_chat_v1():never

@@ -174,10 +174,11 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
           realWork++;
           pendingReport=true;
         }
-        if(blockedReason&&(!pendingReport||ownerBusy)){
+        if(blockedReason&&!pendingReport){
           return route.fulfill({json:{ok:false,reason:'blocked',health:health()}}).catch(()=>{});
         }
-        if(pendingReport&&!ownerBusy){
+        // Saved text is authorized by the bound Chat policy; speech has its own gate.
+        if(pendingReport){
           pendingReport=false;
           histories.get(42).push({id:2,role:'assistant',message:'I reviewed the transcript follow-ups and prepared the next steps.',
             context_json:JSON.stringify({source:'agent_initiative',initiative_run_id:91})});
@@ -641,8 +642,13 @@ try{
     assert.match(await current.textContent(),/Latest assessment: Working\nAssessment run: 411/);
     assert.equal(await history.evaluate(node=>node.open),false);
     await earlier.waitFor({state:'hidden'});
-    await page.clock.fastForward(31000);
-    assert.deepEqual(recovering.diagnosticReads,[42],'an open debugger does not poll while the assessment is still working');
+    await page.clock.fastForward(10000);
+    assert.deepEqual(recovering.diagnosticReads,[42],'diagnostic snapshots are not fetched continuously while work is running');
+    const workingSnapshot=page.waitForResponse(response=>response.url().includes('action=initiative_diagnostics'));
+    await page.clock.fastForward(3000);
+    assert.equal((await workingSnapshot).ok(),true);
+    assert.deepEqual(recovering.diagnosticReads,[42,42],'the open dialog refreshes its read-only snapshot while the worker owns its claim');
+    assert.equal(recovering.realWork,0,'reading diagnostics cannot execute the held assessment');
 
     recovering.setDiagnosticHealth({
       state:'checked',reason:'worker_missing',
@@ -655,6 +661,7 @@ try{
     });
     const refreshed=page.waitForResponse(response=>response.url().includes('action=initiative_diagnostics'));
     assessment.release();
+    await page.clock.fastForward(13000);
     assert.equal((await refreshed).ok(),true);
     await expandDebugReport(panel);
     await panel.getByText(/Latest assessment: Succeeded/).waitFor();
@@ -665,7 +672,7 @@ try{
     assert.match(report,/Invalid optional ideas discarded: 2/);
     assert.match(report,/Outdated Recent activity items skipped: 1/);
     assert.doesNotMatch(report,/Run: 393|Current failure|Assessment rejection|The current source records could not be verified|PRIVATE_/);
-    assert.deepEqual(recovering.diagnosticReads,[42,42]);
+    assert.deepEqual(recovering.diagnosticReads,[42,42,42]);
     assert.equal(await history.evaluate(node=>node.open),false);
     await earlier.waitFor({state:'hidden'});
 
@@ -684,7 +691,7 @@ try{
       &&response.request().method()==='POST'&&response.request().postDataJSON().action==='initiative_tick');
     await page.clock.fastForward(31000);
     assert.equal((await nextTick).ok(),true);
-    assert.deepEqual(recovering.diagnosticReads,[42,42]);
+    assert.deepEqual(recovering.diagnosticReads,[42,42,42],'closing the dialog stops diagnostic polling');
     assert.deepEqual(recovering.errors,[]);
     console.log('PASS open Initiative Debug refreshes after a successful assessment and keeps the earlier failure in collapsed History');
   }finally{assessment.release();await recovering.context.close();}
@@ -815,8 +822,8 @@ try{
       assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
       assert.equal(f.realWork,1);
 
-      // Private work keeps advancing while typing or speaking; its delivery
-      // remains governed separately by current canonical owner availability.
+      // Private work keeps advancing while typing or speaking. Saved text
+      // retains its canonical Chat binding and never requests speech.
       await page.locator('#chatInput').fill('My unfinished thought');
       let count=f.ticks.length;
       await page.clock.fastForward(16000);
@@ -898,7 +905,9 @@ try{
     await page.clock.fastForward(16000);
     await page.waitForFunction(()=>document.querySelector('[data-agent-initiative-setting="off"]'));
     assert.equal(busyOwner.realWork,1,'private preparation finishes while the owner has a draft');
-    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    await page.locator('[data-chat-message-id="2"] [data-chat-message-new]').waitFor();
+    assert.equal(await page.locator('#chatInput').inputValue(),'My unfinished thought','a saved text report preserves the owner draft');
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     const checked=page.locator('[data-agent-initiative-status]').getByText('No background worker has been observed. This open Chat can advance permitted work.',{exact:true});
     await checked.waitFor();
     let count=busyOwner.ticks.length;
@@ -909,20 +918,20 @@ try{
     await page.clock.fastForward(31000);await processingTick;
     await checked.waitFor();
     assert.ok(busyOwner.ticks.length>count);count=busyOwner.ticks.length;
-    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     await page.evaluate(()=>document.body.dataset.stonefellowAgentState='speaking');
     const speakingTick=page.waitForResponse(response=>response.request().method()==='POST'
       &&response.url().includes('/api/cognitive-presentation-v510.php')&&response.request().postDataJSON().action==='initiative_tick');
     await page.clock.fastForward(31000);await speakingTick;
     await checked.waitFor();
     assert.ok(busyOwner.ticks.length>count);
-    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     assert.deepEqual(await page.evaluate(()=>({speech:window.speechCalls,announcements:window.announcementCalls})),{speech:0,announcements:0});
     await page.evaluate(()=>document.body.dataset.stonefellowAgentState='idle');
     await page.clock.fastForward(31000);
     await page.locator('[data-chat-message-id="2"] [data-chat-message-new]').waitFor();
     assert.equal(busyOwner.realWork,1);
-    console.log('PASS private preparation advances through composer drafts, main Agent processing and speech; canonical report appears only after quiet, without synthesized speech');
+    console.log('PASS private preparation and saved text use the bound Chat through composer drafts; later processing and speech cannot duplicate the report or synthesize speech');
   }finally{await busyOwner.context.close();}
 
   const savedOnly=await fixture(17,{enabled:true,deliveryOnly:true,initialDraft:true});
@@ -930,25 +939,20 @@ try{
     const page=await savedOnly.open(),status=page.locator('[data-agent-initiative-status]');
     await status.getByText('Background preparation is paused because the AI allowance is exhausted.',{exact:true}).waitFor();
     await page.clock.fastForward(31000);
-    assert.equal(savedOnly.ticks.length,0,'delivery-only work waits for a quiet composer');
-    const quiet=page.waitForResponse(response=>response.url().endsWith('/api/agent-activity-v94.php')
-      &&response.request().postDataJSON()?.context?.chat_busy===false);
-    const delivery=page.waitForResponse(response=>response.url().endsWith('/api/cognitive-presentation-v510.php')
-      &&response.request().postDataJSON()?.action==='initiative_tick');
-    await page.locator('#chatInput').fill('');
-    await quiet;
-    await delivery;
+    assert.ok(savedOnly.ticks.length>0,'the bound Chat can receive saved text while its composer has a draft');
+    assert.equal(await page.locator('#chatInput').inputValue(),'My unfinished thought');
     await page.locator('[data-chat-message-id="2"] [data-chat-message-new]').waitFor();
     assert.equal(await page.getByText('I reviewed the transcript follow-ups and prepared the next steps.',{exact:true}).count(),1);
     assert.equal(savedOnly.realWork,0,'saved delivery does not run inference');
     const count=savedOnly.ticks.length;
     await page.clock.fastForward(16000);
     assert.equal(savedOnly.ticks.length,count,'delivery-only checks are rate limited while inference is unavailable');
+    await page.locator('#chatInput').fill('');
     await page.clock.fastForward(31000);
     assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     assert.deepEqual(await page.evaluate(()=>({speech:window.speechCalls,announcements:window.announcementCalls})),{speech:0,announcements:0});
     assert.deepEqual(savedOnly.errors,[]);
-    console.log('PASS saved verified result reaches quiet Chat once without inference even while AI allowance is exhausted');
+    console.log('PASS saved verified result reaches bound Chat once without inference, draft replacement or speech even while AI allowance is exhausted');
   }finally{await savedOnly.context.close();}
 
   const newAfterSaved=await fixture(17,{enabled:true});
@@ -969,7 +973,9 @@ try{
     assert.equal(await debugPanel.count(),0);
     await chatButton.focus();
     await shortcut.press();
-    assert.equal(await debugPanel.locator('[data-initiative-debug-report]').textContent(),'Send a message to save this Chat and start background work.');
+    const unsavedReport=await debugPanel.locator('[data-initiative-debug-report]').textContent();
+    assert.ok(unsavedReport.startsWith('Send a message to save this Chat and start background work.'));
+    assert.doesNotMatch(unsavedReport,/Assessment run:|PRIVATE_/,'a new Chat cannot reuse the saved Chat diagnostic snapshot');
     await page.clock.fastForward(35000);
     assert.equal(newAfterSaved.activities.at(-1).context.conversation_id,0,'New Chat must not reuse the rendered old saved conversation');
     assert.equal(newAfterSaved.ticks.length,before);

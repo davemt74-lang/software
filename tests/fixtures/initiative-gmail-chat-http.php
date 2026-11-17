@@ -68,7 +68,7 @@ function initiative_http_gmail_backlog_batch_v1(): never
             $analyzed?ai_encrypt_secret(json_encode($finding,JSON_THROW_ON_ERROR)):null,$analyzed?($ask?2:0):null,
             $analyzed?'open':null,$analyzed?$analysisAt:null]);
     }
-    vp3_coordination_wake_after_gmail_v1($pdo,1);
+    vp3_coordination_source_changed_v1($pdo,1);
     $pdo->commit();
     header('Content-Type: application/json');echo '{"ok":true}';exit;
 }
@@ -176,7 +176,7 @@ function initiative_http_gmail_wire_v1(string $method,string $url,array $headers
         if($format==='metadata')unset($venue['payload']['body']);
         return ['status'=>200,'json'=>$venue];
     }
-    if(str_ends_with($path,'/messages/fixture_promotion_message') && $format==='metadata'){
+    if(str_ends_with($path,'/messages/fixture_promotion_message') && in_array($format,['metadata','full'],true)){
         return ['status'=>200,'json'=>['id'=>'fixture_promotion_message','threadId'=>'fixture_promotion_thread',
             'labelIds'=>['INBOX','CATEGORY_PROMOTIONS'],'internalDate'=>(string)($received+1),'payload'=>['headers'=>[
                 ['name'=>'From','value'=>'offers@example.test'],['name'=>'Subject','value'=>'Weekly sale'],
