@@ -334,6 +334,22 @@ function live_browser_control_v1(): never
             $claim=is_array($claim)?$claim:followthrough_fixture_claim_v1($id);
             $extra['execution_result']=vp3_initiative_execute_v1($pdo,['id'=>1,'is_active'=>1],$claim);
             $state=live_browser_state_v1();
+        }elseif($action==='legacy_post'){
+            // Historical list reports remain valid Chat continuations. First
+            // complete the current private specialist path, then reuse the
+            // strict saved-report fixture with its exact action/receipt proof.
+            $id=(int)capabilities_browser_value_v1('prepare_id');
+            $q=$pdo->prepare("SELECT r.goal,a.result_json FROM agent_workflow_runs r
+                JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
+                WHERE r.id=? AND r.owner_user_id=1 AND r.agent_id=7 AND r.status='completed'
+                    AND a.status='completed' AND a.sequence_no=1");
+            $q->execute([$id]);$row=$q->fetch();
+            $goal=json_decode($row['goal']??'null',true,512,JSON_THROW_ON_ERROR);
+            $result=json_decode($row['result_json']??'null',true,512,JSON_THROW_ON_ERROR);
+            if(($goal['tool']??null)!=='tasks.lists.read'||($goal['primary']??null)!=='task-list:600'
+                ||!is_array($result))throw new LogicException('A completed private named-list run is required.');
+            initiative_fixture_legacy_report($pdo,['id'=>1,'is_active'=>1],$id,$goal,$result);
+            $state=live_browser_state_v1();
         }elseif($action==='expire'){
             $extra['expired']=vp3_live_context_expire_v1($pdo,['id'=>1,'is_active'=>1],
                 new DateTimeImmutable('+91 seconds',new DateTimeZone('UTC')));$state=live_browser_state_v1();

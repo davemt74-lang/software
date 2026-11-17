@@ -124,13 +124,20 @@ const contextOf=message=>JSON.parse(message.context_json||'{}');
 const currentPacket=state=>{const row=state.activity_rows.find(row=>Number(row.user_id)===1);return row?JSON.parse(row.details_json||'{}').live_context:null;};
 const modelCalls=state=>state.calls.filter(row=>row.kind==='live_model').map(row=>JSON.parse(row.payload));
 const pass=text=>{groups++;console.log('PASS '+text);};
-function verifiedResult(state,id,tool,cid=11){
-  const action=state.actions.find(row=>Number(row.run_id)===id),receipt=state.receipts.find(row=>Number(row.run_id)===id);
+function verifiedWork(state,id,tool,cid=11){
+  const run=state.runs.find(row=>Number(row.id)===id),action=state.actions.find(row=>Number(row.run_id)===id);
+  const receipts=state.receipts.filter(row=>Number(row.run_id)===id&&Number(row.action_id)===Number(action.id)
+    &&Number(row.attempt_no)===Number(action.attempt_count)&&row.executor==='cloud'&&row.status==='completed');
+  assert.equal(run.status,'completed');assert.equal(receipts.length,1);const receipt=receipts[0];
   assert.equal(action.status,'completed');assert.equal(receipt.status,'completed');assert.equal(action.result_json,receipt.result_json);
   const result=JSON.parse(action.result_json),proof=result.initiative_tool_result?.output;
   assert.equal(proof?.type,'initiative_capability_read');assert.equal(proof.tool,tool);
   assert.equal(proof.owner_user_id,1);assert.equal(proof.agent_id,7);assert.equal(proof.conversation_id,cid);
   assert.match(proof.read_fingerprint,/^[a-f0-9]{64}$/);assert.match(proof.coverage_fingerprint,/^[a-f0-9]{64}$/);
+  return {run,action,receipt,result,proof};
+}
+function verifiedResult(state,id,tool,cid=11){
+  const {result,proof}=verifiedWork(state,id,tool,cid);
   const post=state.messages.find(row=>Number(row.id)===Number(result.initiative_message_id));
   assert.ok(post,'actual completed work must reach its exact canonical main Chat');assert.deepEqual(contextOf(post).initiative_output,proof);
   return {result,proof,post};
@@ -246,7 +253,22 @@ try{
       if(!mobile)await until(async()=>currentPacket(await control())?.eyes?.recent_chat_input===true);
       const feed=page.locator('[data-agent-top-of-mind]');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="queued"]').waitFor();
       await control('claim');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="working"]').waitFor();
-      let state=await execute();const {post}=verifiedResult(state,id,goal.tool);
+      let state=await execute();
+      if(mobile){
+        const privateWork=verifiedWork(state,id,goal.tool),models=modelCalls(state).length;
+        assert.equal(privateWork.result.initiative_delivery,'private');
+        assert.equal(Number(privateWork.result.initiative_message_id||0),0);
+        assert.equal(state.messages.some(row=>Number(contextOf(row).initiative_run_id)===id),false);
+        assert.deepEqual(JSON.parse(privateWork.run.goal),goal,'The actual private specialist keeps every original source mapping.');
+        assert.ok(Object.keys(goal.capability_sources||{}).length>0);
+        state=await control('legacy_post');
+        const savedWork=verifiedWork(state,id,goal.tool);
+        assert.equal(savedWork.result.initiative_delivery,'delivered');
+        assert.equal(savedWork.receipt.id,privateWork.receipt.id);assert.deepEqual(savedWork.proof,privateWork.proof);
+        assert.equal(savedWork.run.goal,privateWork.run.goal);assert.equal(modelCalls(state).length,models);
+        assert.equal(state.messages.filter(row=>Number(contextOf(row).initiative_run_id)===id).length,1);
+      }
+      const {post}=verifiedResult(state,id,goal.tool);
       await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="completed"]').waitFor();
       await page.locator('[data-notification-drawer-close]').click();
       await page.locator('[data-chat-message-id="'+post.id+'"]').waitFor();
@@ -295,7 +317,7 @@ try{
         pass('native browser screen capture and event-only shared-tab audio reach the actual coordinator; sustained microphone energy gates actual proactive voice while real text reports still arrive');
       }
       assert.deepEqual(page.errors,[]);
-      pass((mobile?'mobile named-list':'desktop live-context')+' actual source → model-selected canonical tool → queued/working/completed Brain → verified action/receipt → main Chat grounded question → exact owner follow-through');
+      pass((mobile?'mobile named-list private specialist → historical saved report':'desktop live-context')+' actual source → model-selected canonical tool → queued/working/completed Brain → verified action/receipt → main Chat grounded question → exact owner follow-through');
     }finally{await context.close();}
   }
   // Timestamp-only refresh preserves the actual semantic revision and review
