@@ -641,8 +641,13 @@ try{
     assert.match(await current.textContent(),/Latest assessment: Working\nAssessment run: 411/);
     assert.equal(await history.evaluate(node=>node.open),false);
     await earlier.waitFor({state:'hidden'});
-    await page.clock.fastForward(31000);
-    assert.deepEqual(recovering.diagnosticReads,[42],'an open debugger does not poll while the assessment is still working');
+    await page.clock.fastForward(10000);
+    assert.deepEqual(recovering.diagnosticReads,[42],'diagnostic snapshots are not fetched continuously while work is running');
+    const workingSnapshot=page.waitForResponse(response=>response.url().includes('action=initiative_diagnostics'));
+    await page.clock.fastForward(3000);
+    assert.equal((await workingSnapshot).ok(),true);
+    assert.deepEqual(recovering.diagnosticReads,[42,42],'the open dialog refreshes its read-only snapshot while the worker owns its claim');
+    assert.equal(recovering.realWork,0,'reading diagnostics cannot execute the held assessment');
 
     recovering.setDiagnosticHealth({
       state:'checked',reason:'worker_missing',
@@ -655,6 +660,7 @@ try{
     });
     const refreshed=page.waitForResponse(response=>response.url().includes('action=initiative_diagnostics'));
     assessment.release();
+    await page.clock.fastForward(13000);
     assert.equal((await refreshed).ok(),true);
     await expandDebugReport(panel);
     await panel.getByText(/Latest assessment: Succeeded/).waitFor();
@@ -665,7 +671,7 @@ try{
     assert.match(report,/Invalid optional ideas discarded: 2/);
     assert.match(report,/Outdated Recent activity items skipped: 1/);
     assert.doesNotMatch(report,/Run: 393|Current failure|Assessment rejection|The current source records could not be verified|PRIVATE_/);
-    assert.deepEqual(recovering.diagnosticReads,[42,42]);
+    assert.deepEqual(recovering.diagnosticReads,[42,42,42]);
     assert.equal(await history.evaluate(node=>node.open),false);
     await earlier.waitFor({state:'hidden'});
 
@@ -684,7 +690,7 @@ try{
       &&response.request().method()==='POST'&&response.request().postDataJSON().action==='initiative_tick');
     await page.clock.fastForward(31000);
     assert.equal((await nextTick).ok(),true);
-    assert.deepEqual(recovering.diagnosticReads,[42,42]);
+    assert.deepEqual(recovering.diagnosticReads,[42,42,42],'closing the dialog stops diagnostic polling');
     assert.deepEqual(recovering.errors,[]);
     console.log('PASS open Initiative Debug refreshes after a successful assessment and keeps the earlier failure in collapsed History');
   }finally{assessment.release();await recovering.context.close();}
@@ -969,7 +975,9 @@ try{
     assert.equal(await debugPanel.count(),0);
     await chatButton.focus();
     await shortcut.press();
-    assert.equal(await debugPanel.locator('[data-initiative-debug-report]').textContent(),'Send a message to save this Chat and start background work.');
+    const unsavedReport=await debugPanel.locator('[data-initiative-debug-report]').textContent();
+    assert.ok(unsavedReport.startsWith('Send a message to save this Chat and start background work.'));
+    assert.doesNotMatch(unsavedReport,/Assessment run:|PRIVATE_/,'a new Chat cannot reuse the saved Chat diagnostic snapshot');
     await page.clock.fastForward(35000);
     assert.equal(newAfterSaved.activities.at(-1).context.conversation_id,0,'New Chat must not reuse the rendered old saved conversation');
     assert.equal(newAfterSaved.ticks.length,before);

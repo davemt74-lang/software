@@ -344,7 +344,7 @@ try {
   let began, release;
   const started = new Promise(resolve => { began = resolve; });
   listGate = {started:began,released:new Promise(resolve => { release = resolve; })};
-  await launch.click();
+  await panel.getByRole('button',{name:'Edit app',exact:true}).click();
   await started;
   await page.evaluate(() => {
     window.VP3ParticipantContinuity = {selectedContext:() => ({participant_id:14})};
