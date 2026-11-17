@@ -7,7 +7,11 @@ import net from 'node:net';
 const root=process.cwd(),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-recurring-')),php=process.env.VP3_PHP_BINARY||'php';
 for(const p of ['api','includes','sessions'])fs.mkdirSync(path.join(tmp,p));
 fs.copyFileSync('api/agent-missions-cloud-v1.php',path.join(tmp,'api/agent-missions-cloud-v1.php'));
-fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),'<?php require '+JSON.stringify(root+'/tests/fixtures/cloud-mission-schedules-v1.php')+'; session_start();');
+// Both HTTP and unattended worker entry points use the production Chat scope
+// reader; the isolated database supplies its authoritative owner/Agent row.
+const scopeFixture='require_once '+JSON.stringify(root+'/includes/agent-memory-scope-v410.php')+'; require '+JSON.stringify(root+'/tests/fixtures/cloud-mission-schedules-v1.php')+'; '
+  +'if(!table_exists("chat_conversations"))db()->exec("CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY,user_id INTEGER,user_agent_id INTEGER); INSERT INTO chat_conversations VALUES(11,1,7),(12,2,7)"); ';
+fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),'<?php '+scopeFixture+'session_start();');
 for(const p of ['cloud-missions-v1.php'])fs.writeFileSync(path.join(tmp,'includes',p),'<?php require_once '+JSON.stringify(root+'/includes/'+p)+';');
 fs.writeFileSync(path.join(tmp,'includes/homeserver-https-relay-v1300.php'),'<?php');
 const env={...process.env,VP3_CLOUD_SCHEDULE_DSN:'sqlite:'+tmp+'/state.sqlite'};
@@ -35,10 +39,10 @@ try{
   const setup=spawnSync(php,['-r','require '+JSON.stringify(root+'/tests/fixtures/cloud-mission-schedules-v1.php')+'; db()->exec("DELETE FROM agent_workflow_runs WHERE source_kind<>\'cloud_mission\'; UPDATE agent_cloud_mission_schedules_v1 SET next_run_at=\'2000-01-01 00:00:00\' WHERE status=\'active\'");'],{env,encoding:'utf8'});assert.equal(setup.status,0,setup.stderr);
   const worker=path.join(tmp,'worker');fs.mkdirSync(worker);fs.mkdirSync(path.join(worker,'includes'));
   fs.copyFileSync('agent-worker-v1910.php',path.join(worker,'agent-worker-v1910.php'));
-  fs.writeFileSync(path.join(worker,'includes/bootstrap.php'),'<?php define("STONEFELLOW_ROOT",'+JSON.stringify(worker)+'); require '+JSON.stringify(root+'/tests/fixtures/cloud-mission-schedules-v1.php')+'; require '+JSON.stringify(root+'/includes/agent-runtime-v125.php')+';');
+  fs.writeFileSync(path.join(worker,'includes/bootstrap.php'),'<?php define("STONEFELLOW_ROOT",'+JSON.stringify(worker)+'); '+scopeFixture+'require '+JSON.stringify(root+'/includes/agent-runtime-v125.php')+';');
   // This Cloud-only journey excludes unrelated HomeServer transport setup.
   fs.writeFileSync(path.join(worker,'includes/agent-job-worker-v1900.php'),'<?php');
-  for(const name of ['agent-worker-cloud-v1910.php','agent-worker-health-v1.php','cloud-mission-schedules-v1.php','agent-initiative-v1.php','agent-initiative-followups-v1.php','profile-calls-pa3c.php','profile-visitor-speech-pa4a.php','profile-speech-elevenlabs-pa4a.php','profile-attention-pa4b.php','profile-event-projection-pa4b.php'])fs.writeFileSync(path.join(worker,'includes',name),'<?php require_once '+JSON.stringify(root+'/includes/'+name)+';');
+  for(const name of ['agent-worker-cloud-v1910.php','agent-worker-health-v1.php','cloud-mission-schedules-v1.php','agent-initiative-v1.php','agent-initiative-followups-v1.php','agent-connection-youtube-playback-v1.php','profile-calls-pa3c.php','profile-visitor-speech-pa4a.php','profile-speech-elevenlabs-pa4a.php','profile-attention-pa4b.php','profile-event-projection-pa4b.php'])fs.writeFileSync(path.join(worker,'includes',name),'<?php require_once '+JSON.stringify(root+'/includes/'+name)+';');
   for(let i=0;i<2;i++){const r=spawnSync(php,[path.join(worker,'agent-worker-v1910.php'),'--executor=cloud'],{env,encoding:'utf8'});assert.equal(r.status,0,r.stderr+r.stdout);const result=JSON.parse(r.stdout.trim());assert.equal(result.cycle.cloud_completed,1,r.stdout);}
   const list=(await post('schedule.list')).data;assert.equal(list.cloud_scheduler_health.background_ready,true);assert.ok(list.schedules.some(s=>s.status==='active'&&s.runs[0]?.report_state==='saved'));
  });

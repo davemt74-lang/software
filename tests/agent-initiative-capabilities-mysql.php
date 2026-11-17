@@ -257,14 +257,41 @@ function capability_native_whole_list(PDO &$pdo,string $fixtureDsn,string $datab
     $claim=agent_job_claim_run_v1900($pdo,$user,$plan,'cloud',agent_worker_cloud_worker_id_v1910(1));
     if(!$claim||empty(vp3_initiative_execute_v1($pdo,$user,$claim,'capability_native_list_model')['ok']))throw new RuntimeException('Native list plan failed.');
     $run=(int)$pdo->query("SELECT MAX(id) FROM agent_workflow_runs WHERE capability_key='initiative.prepare'")->fetchColumn();
+    $beforeReports=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages WHERE conversation_id=11')->fetchColumn();
     $claim=agent_job_claim_run_v1900($pdo,$user,$run,'cloud',agent_worker_cloud_worker_id_v1910(1));
     if(!$claim||empty(vp3_initiative_execute_v1($pdo,$user,$claim,'capability_native_list_model')['ok']))throw new RuntimeException('Native list preparation failed.');
-    $q=$pdo->prepare("SELECT a.result_json,rc.result_json AS receipt FROM agent_workflow_actions a JOIN agent_workflow_receipts rc ON rc.run_id=a.run_id AND rc.action_id=a.id WHERE a.run_id=? AND rc.status='completed'");
+    $q=$pdo->prepare("SELECT a.result_json,a.attempt_count,rc.id AS receipt_id,rc.result_json AS receipt
+        FROM agent_workflow_actions a JOIN agent_workflow_receipts rc ON rc.run_id=a.run_id AND rc.action_id=a.id
+        WHERE a.run_id=? AND rc.status='completed'");
     $q->execute([$run]);$row=$q->fetch();$result=json_decode($row['result_json'],true,32,JSON_THROW_ON_ERROR);
-    $mid=vp3_initiative_followthrough_id_v1($result['initiative_message_id']??null);
-    capability_native_check($row['result_json']===$row['receipt']&&($result['initiative_delivery']??null)==='delivered'&&$mid>0
+    capability_native_check($row['result_json']===$row['receipt']&&($result['initiative_delivery']??null)==='private'
+        &&(int)($result['initiative_message_id']??0)===0
+        &&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages WHERE conversation_id=11')->fetchColumn()===$beforeReports
         &&($result['initiative_tool_result']['output']['tool']??null)==='tasks.lists.read'&&$business()===$before,
-        'actual whole-list plan and leased worker store matching receipts and one verified Chat report without list mutation');
+        'actual whole-list plan and leased worker store matching private specialist receipts without Chat posts or list mutation');
+    // Previously saved specialist Chat posts retain their native owner-reply
+    // contract after automatic reports moved into the private Tasks workspace.
+    require_once __DIR__.'/fixtures/initiative-legacy-chat-report.php';
+    $savedGoal=json_decode(agent_workflow_row_v1400($pdo,1,$run)['goal'],true,32,JSON_THROW_ON_ERROR);
+    $proofReceipt=(int)$row['receipt_id'];$proofAttempt=(int)$row['attempt_count'];$originalReceipt=$row['receipt'];
+    foreach(['attempt','content'] as $mismatch){
+        if($mismatch==='attempt')$pdo->prepare('UPDATE agent_workflow_receipts SET attempt_no=? WHERE id=?')->execute([$proofAttempt+1,$proofReceipt]);
+        else $pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE id=?')->execute(['{}',$proofReceipt]);
+        $rejected=false;
+        try{initiative_fixture_legacy_report($pdo,$user,$run,$savedGoal,$result);}
+        catch(LogicException $error){$rejected=$error->getMessage()==='The legacy fixture requires a matching completed action receipt.';}
+        finally{$pdo->prepare('UPDATE agent_workflow_receipts SET attempt_no=?,result_json=? WHERE id=?')->execute([$proofAttempt,$originalReceipt,$proofReceipt]);}
+        $q->execute([$run]);$unchanged=$q->fetch();
+        capability_native_check($rejected&&!$pdo->inTransaction()&&$unchanged['result_json']===$row['result_json']
+            &&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages WHERE conversation_id=11')->fetchColumn()===$beforeReports,
+            'a historical report with the wrong receipt '.$mismatch.' cannot change the action or post to Chat');
+    }
+    $result=initiative_fixture_legacy_report($pdo,$user,$run,$savedGoal,$result);
+    $mid=vp3_initiative_followthrough_id_v1($result['initiative_message_id']??null);
+    $q->execute([$run]);$row=$q->fetch();
+    capability_native_check($mid>0&&$row['result_json']===$row['receipt']
+        &&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages WHERE conversation_id=11')->fetchColumn()===$beforeReports+1,
+        'the historical whole-list Chat fixture retains one matching source-verified action and receipt');
     $proposal=vp3_initiative_followthrough_load_v1($pdo,$user,$principal,11,$mid);
     $query='Develop this private whole-list plan. '.str_repeat('Keep the complete member evidence bound to this owner reply. ',8).'NATIVE_LIST_OWNER_REPLY';
     $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(11,1,'user',?)")->execute([$query]);$ownerMessage=(int)$pdo->lastInsertId();
@@ -451,7 +478,19 @@ try{
     $pipes=[];$process=proc_open([PHP_BINARY,__FILE__,'--whole-list'],[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes);
     if(!is_resource($process))throw new RuntimeException('The native whole-list proof could not start.');fclose($pipes[0]);
     $output=stream_get_contents($pipes[1]);$errors=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);$exit=proc_close($process);
-    if($exit!==0||trim($errors)!=='')throw new RuntimeException('The native whole-list proof failed.');
+    if($exit!==0||trim($errors)!==''){
+        // Forward only the child's already-sanitized failure metadata. Raw
+        // database errors, connection arguments and source text stay private.
+        foreach(explode(PHP_EOL,$output.PHP_EOL.$errors) as $line){
+            if(preg_match('/\AFAIL [a-zA-Z0-9 ,.()_-]+\z/D',$line)===1)fwrite(STDERR,$line.PHP_EOL);
+            $failure=json_decode($line,true);
+            if(is_array($failure)&&($failure['fixture_failure']??false)===true){
+                fwrite(STDERR,json_encode(['whole_list_failure'=>array_intersect_key($failure,
+                    array_flip(['error_class','public_code','sql_state','driver_code','file','line']))],JSON_THROW_ON_ERROR).PHP_EOL);
+            }
+        }
+        throw new RuntimeException('The native whole-list proof failed.');
+    }
     foreach(explode(PHP_EOL,trim($output)) as $line){
         if(!preg_match('/\A(?:PASS [a-zA-Z0-9 ,.()_-]+|AGENT_INITIATIVE_WHOLE_LIST_MYSQL=PASS \([0-9]+ cases\))\z/D',$line))throw new RuntimeException('Invalid native whole-list proof output.');
         echo $line.PHP_EOL;

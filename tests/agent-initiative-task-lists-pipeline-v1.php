@@ -73,7 +73,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($owne
         'the actual list continuation model receives current raw members and the entire bound owner request outside a transaction');
     return json_encode(['draft'=>'The supplier decision remains open and the image review is waiting. A useful private next step is to compare those dependencies before changing the launch plan.'],JSON_THROW_ON_ERROR);
 };
-$continued=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$child));$childResult=capability_pipeline_stored($child);
+$continued=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$child),'initiative_scope_model_v1');$childResult=capability_pipeline_stored($child);
 $finished=vp3_initiative_followthrough_load_v1(db(),$user,$proposal['principal'],170,(int)$proposal['message']['id']);
 capability_pipeline_check(!empty($continued['ok'])&&$finished['state']['state']==='completed'&&$childResult['initiative_delivery']==='delivered'
     &&list_pipeline_business_state()===$business,'the list continuation verifies, reports to the same Chat and completes without mutating the list');
@@ -149,7 +149,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use(&$dup
     ]],JSON_THROW_ON_ERROR);
 };
 $plan=scope_make_plan($user,17,'Reject duplicate canonical task assignments');
-$duplicate=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan));
+$duplicate=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan),'initiative_scope_model_v1');
 capability_pipeline_check(empty($duplicate['ok'])&&$duplicate['reason']==='assessment_unverified'
     &&$duplicateCalls===2&&count(scope_runs(1,17,'initiative.prepare'))===$beforeJobs
     &&count(scope_messages())===$messages,'duplicate canonical task assignments stay rejected after the single source repair');
@@ -180,7 +180,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($ref,
         'verified report preparation pairs saved list content with the task attention guidance');
     return json_encode(['draft'=>$attentionDraft],JSON_THROW_ON_ERROR);
 };
-$attentionOutcome=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$attentionPlan['id']));
+$attentionOutcome=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$attentionPlan['id']),'initiative_scope_model_v1');
 $attentionResult=capability_pipeline_stored($attentionPlan['id']);
 capability_pipeline_check(!empty($attentionOutcome['ok'])&&$attentionResult['initiative_delivery']==='private'
     &&$attentionResult['initiative_tool_result']['draft']===$attentionDraft&&count(scope_messages())===$messages
@@ -197,7 +197,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($ref,
         'focus'=>'Reconsider the same waiting item.','report'=>true]]],JSON_THROW_ON_ERROR);
 };
 $samePlan=scope_make_plan($user,17,'Reassess the same task-list deadline');
-$sameOutcome=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$samePlan));
+$sameOutcome=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$samePlan),'initiative_scope_model_v1');
 capability_pipeline_check(!empty($sameOutcome['ok'])&&count(scope_runs(1,17,'initiative.prepare'))===$beforeJobs
     &&count(scope_messages())===$messages,'an unchanged canonical task-list report is deduplicated across assessment passes');
 $reportAuthority=[];$binding=$attentionPlan['goal']['binding'];
@@ -275,7 +275,7 @@ $reminderDraft='The launch domain reminder is set for today.';
 $nextStep='Check the existing renewal confirmation.';
 $question='Is the renewal already taken care of?';
 $GLOBALS['scopeModel']=static fn():string=>json_encode(['draft'=>$reminderDraft,'next_step'=>$nextStep,'followup_question'=>$question],JSON_THROW_ON_ERROR);
-$reminderOutcome=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$reminderPlan['id']));
+$reminderOutcome=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$reminderPlan['id']),'initiative_scope_model_v1');
 $reminderResult=capability_pipeline_stored($reminderPlan['id']);
 capability_pipeline_check(!empty($reminderOutcome['ok'])&&$reminderResult['initiative_delivery']==='private'
     &&$reminderResult['initiative_tool_result']['output']['followup_question']===$question,
@@ -326,7 +326,7 @@ $prepareOfficeQuestion=static function(string $tool,string $source,string $title
     $run=capability_pipeline_plan($user,17,$tool,$source,$title);
     $GLOBALS['scopeModel']=static fn():string=>json_encode(['draft'=>str_repeat('The saved source is ready to discuss. ',80)]
         +($question===null?[]:['followup_question'=>$question]),JSON_THROW_ON_ERROR);
-    $completed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$run['id']));
+    $completed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$run['id']),'initiative_scope_model_v1');
     $result=capability_pipeline_stored($run['id']);
     capability_pipeline_check(!empty($completed['ok'])&&$result['initiative_delivery']==='private',
         'the canonical specialist worker saves the exact Office reply fixture privately');

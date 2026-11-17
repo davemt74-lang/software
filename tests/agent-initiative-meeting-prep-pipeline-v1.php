@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require __DIR__.'/agent-initiative-scope-v1.php';
+require __DIR__.'/fixtures/initiative-scope-ready-v1.php';
 require __DIR__.'/fixtures/meeting-prep-calendar-fixture.php';
 require __DIR__.'/fixtures/initiative-legacy-chat-report.php';
 require_once dirname(__DIR__).'/includes/agent-top-of-mind-v1.php';
@@ -81,7 +81,7 @@ function meeting_pipeline_prepare(array $user,string $ref,string $label): array
     $plan=scope_make_plan($user,17,$label);
     $assessment=scope_claim($user,$plan);
     scope_check(meeting_pipeline_planning($user)['state']==='idle','generic Initiative assessment does not impersonate Planning');
-    $planned=vp3_initiative_execute_v1(db(),$user,$assessment);
+    $planned=vp3_initiative_execute_v1(db(),$user,$assessment,'initiative_scope_model_v1');
     $runs=meeting_pipeline_runs();
     scope_check(!empty($planned['ok'])&&count($runs)===$before+1,'planner choice queues one canonical meeting preparation ('.($planned['reason']??'unknown').')');
     $id=(int)$runs[count($runs)-1]['id'];
@@ -98,7 +98,7 @@ function meeting_pipeline_prepare(array $user,string $ref,string $label): array
         &&$writes===(int)db()->query('SELECT total_changes()')->fetchColumn(),
         'only a verified current meeting-prep lease shows working, with indeterminate progress and no polling writes');
     db()->exec('PRAGMA query_only=OFF');
-    $done=vp3_initiative_execute_v1(db(),$user,$claim);
+    $done=vp3_initiative_execute_v1(db(),$user,$claim,'initiative_scope_model_v1');
     $result=meeting_pipeline_result($id);
     scope_check(!empty($done['ok'])&&($result['initiative_delivery']??null)==='private'
         &&($result['initiative_tool_result']['tool_receipt']['changes_applied']??null)===false

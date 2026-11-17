@@ -132,8 +132,10 @@ function vp3_initiative_voice_latest_v1(PDO $pdo,array $context): ?array
             .$value('$.initiative_tool_result.output.delivery_preference').' AS preference,'
             .$value('$.initiative_voice.status').' AS voice_status FROM agent_workflow_actions a
             JOIN agent_workflow_receipts rc ON rc.run_id=a.run_id AND rc.action_id=a.id AND rc.owner_user_id=a.owner_user_id
+                AND rc.attempt_no=a.attempt_count AND rc.executor=\'cloud\'
                 AND rc.status=\'completed\' AND rc.result_json=a.result_json
             WHERE a.run_id=? AND a.owner_user_id=? AND a.status=\'completed\' AND a.capability_key=\'initiative.prepare\'
+                AND a.sequence_no=1 AND a.action_key=\'initiative.prepare\' AND a.execution_target=\'cloud\'
             ORDER BY a.id LIMIT 1');
         $q->execute([(int)$run['id'],$owner]);$row=$q->fetch(PDO::FETCH_ASSOC);
         if(!$row||$row['delivery']!=='delivered'||$row['output_type']!=='initiative_chat_check_in')return null;
@@ -153,12 +155,14 @@ function vp3_initiative_voice_record_v1(PDO $pdo,array $context,int $run,int $me
 {
     $scope=$context['scope'];$owner=(int)$scope['user']['id'];
     $q=$pdo->prepare("SELECT r.goal,r.agent_id,r.status AS run_status,a.id AS action_id,a.result_json,a.status AS action_status,
-        rc.result_json AS receipt_json,c.message,c.context_json FROM agent_workflow_runs r
+        rc.id AS receipt_id,rc.result_json AS receipt_json,c.message,c.context_json FROM agent_workflow_runs r
         JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
-        JOIN agent_workflow_receipts rc ON rc.run_id=r.id AND rc.action_id=a.id AND rc.owner_user_id=r.owner_user_id AND rc.status='completed'
+        JOIN agent_workflow_receipts rc ON rc.run_id=r.id AND rc.action_id=a.id AND rc.owner_user_id=r.owner_user_id
+            AND rc.attempt_no=a.attempt_count AND rc.executor='cloud' AND rc.status='completed'
         JOIN chat_messages c ON c.id=? AND c.conversation_id=? AND c.role='assistant'
         WHERE r.id=? AND r.owner_user_id=? AND r.source_kind='agent_initiative' AND r.capability_key='initiative.prepare'
-            AND a.capability_key='initiative.prepare' ORDER BY a.id LIMIT 1");
+            AND r.execution_target='cloud' AND a.capability_key='initiative.prepare'
+            AND a.sequence_no=1 AND a.action_key='initiative.prepare' AND a.execution_target='cloud' ORDER BY a.id LIMIT 1");
     $q->execute([$message,$scope['conversation_id'],$run,$owner]);$row=$q->fetch(PDO::FETCH_ASSOC);
     if(!$row||$row['run_status']!=='completed'||$row['action_status']!=='completed'||(int)$row['agent_id']!==$scope['agent_id']
         ||!hash_equals((string)$row['result_json'],(string)$row['receipt_json']))throw new RuntimeException('Voice result changed.',409);
@@ -173,7 +177,8 @@ function vp3_initiative_voice_record_v1(PDO $pdo,array $context,int $run,int $me
         ||!is_string($result['initiative_draft']??null)||!hash_equals($result['initiative_draft'],(string)$row['message'])
         ||trim($row['message'])===''||mb_strlen($row['message'])>320)
         throw new RuntimeException('Only the exact short voice-selected check-in may speak.',409);
-    return ['run_id'=>$run,'action_id'=>(int)$row['action_id'],'goal'=>$goal,'result'=>$result,'text'=>$row['message']];
+    return ['run_id'=>$run,'action_id'=>(int)$row['action_id'],'receipt_id'=>(int)$row['receipt_id'],
+        'goal'=>$goal,'result'=>$result,'text'=>$row['message']];
 }
 
 function vp3_initiative_voice_sources_v1(PDO $pdo,array $context,array $record): void
@@ -324,7 +329,7 @@ function vp3_initiative_voice_live_record_v1(PDO $pdo,array $context,int $run,in
         'result'=>$result,'text'=>$text,'reply'=>$reply];
 }
 
-/** Legacy check-ins keep their existing storage path. Live turns update only the verified attempt. */
+/** Check-ins and live turns update only their verified execution attempt. */
 function vp3_initiative_voice_save_v1(PDO $pdo,int $owner,array $record,array $result): void
 {
     if(isset($record['notice_conversation_id'])){
@@ -333,8 +338,7 @@ function vp3_initiative_voice_save_v1(PDO $pdo,int $owner,array $record,array $r
         return;
     }
     if(!isset($record['receipt_id'])){
-        vp3_initiative_delivery_result_v1($pdo,$owner,$record,$result);
-        return;
+        throw new RuntimeException('Voice result changed.',409);
     }
     $json=agent_workflow_json_v1400($result);
     $pdo->prepare("UPDATE agent_workflow_actions SET result_json=?,updated_at=UTC_TIMESTAMP()

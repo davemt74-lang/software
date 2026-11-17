@@ -25,7 +25,11 @@ function personal_capability_has_v242(...$args): bool{return match($args[0]??'')
 function current_user(): ?array{return isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS'])?null:['id'=>(int)($_SERVER['HTTP_X_FIXTURE_USER']??1),'is_active'=>1];}
 function csrf_token(): string{return 'fixture';}
 function user_account_types_for_user_id(...$args): array{return ['member'];}
-function setting($key,$default=''){return $GLOBALS['imageSettings'][$key]??$default;}
+function setting($key,$default=''){
+    // Optional infrastructure observation; never substitutes a saved setting.
+    if(($observer=$GLOBALS['imageFixtureSettingsObserver']??null) instanceof Closure)$observer($key);
+    return $GLOBALS['imageSettings'][$key]??$default;
+}
 if (!function_exists('ai_provider_api_key')) {
     function ai_provider_api_key($p): string{return empty($GLOBALS['noImageKey'])?'fixture-image-secret':'';}
 }

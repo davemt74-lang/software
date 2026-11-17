@@ -278,6 +278,11 @@ reminder_schema_v1($pdo);
 $enabled = vp3_initiative_chat_v1($pdo, $owner, $principal, ['conversation_id'=>$chatId], 'on', null);
 canvas_pipeline_check(!empty($enabled['ok']), 'the owner enables the real scoped Initiative policy');
 $binding = $enabled['initiative_policy'];
+require_once dirname(__DIR__).'/includes/agent-morning-brief-v1.php';
+$briefDay=vp3_morning_brief_local_v1($pdo,$owner,new DateTimeImmutable('now',new DateTimeZone('UTC')))->format('Y-m-d');
+vp3_initiative_in_scope_v1($owner,$agentId,static fn()=>agent_brain_v122_upsert_system_memory(
+    $owner,'initiative_sweep','morning-brief:'.$briefDay,'Prior daily brief fixture assessment',['local_day'=>$briefDay]));
+coordination_fixture_rule($pdo,$owner,'curiosity','open_question','watch');
 coordination_fixture_presence('away');
 coordination_fixture_rule($pdo,$owner,'tasks','overdue','watch');
 coordination_fixture_rule($pdo,$owner,'tasks','waiting_owner','watch');
@@ -394,7 +399,7 @@ coordination_fixture_schedule($owner);
 canvas_pipeline_check(count(coordination_fixture_runs('coordination.review')) === 1,
     'a scheduler pass does not create a replacement run during native lease recovery');
 $GLOBALS['coordinationModel'] = coordination_fixture_model($refs, $originalQuestion, $originalNext, $originalSummary);
-canvas_pipeline_check(!empty(vp3_initiative_execute_v1($pdo, $owner, canvas_pipeline_claim($firstRun), 'coordination_fixture_infer')['ok']),
+canvas_pipeline_check(!empty(vp3_initiative_execute_v1($pdo, $owner, canvas_pipeline_claim($firstRun), 'coordination_fixture_infer',allowDelivery:false)['ok']),
     'reclaiming the original run saves a verified coordination result');
 $first = coordination_fixture_receipt($firstRun);
 $firstOutput = $first['initiative_tool_result']['output'];
@@ -408,13 +413,13 @@ canvas_pipeline_check($first['effect_state'] === 'private_draft_ready' && $first
     'one verified result retains the analysis, next step, question and source revisions without modifying owner records');
 
 coordination_fixture_presence('busy');
-canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo, $owner, $agentId)
-    && canvas_pipeline_count('chat_messages', 'conversation_id=11') === $chatBefore,
-    'the saved question waits while its owner is busy');
-coordination_fixture_presence('quiet');
 canvas_pipeline_check(vp3_initiative_deliver_pending_v1($pdo, $owner, $agentId)
-    && !vp3_initiative_deliver_pending_v1($pdo, $owner, $agentId),
-    'the owner’s quiet Chat receives the pending question exactly once');
+    && canvas_pipeline_count('chat_messages', 'conversation_id=11') === $chatBefore+1,
+    'the separate delivery pass posts the verified timestamped question while its owner is busy');
+coordination_fixture_presence('quiet');
+canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo, $owner, $agentId)
+    && canvas_pipeline_count('chat_messages', 'conversation_id=11') === $chatBefore+1,
+    'returning to quiet Chat cannot replay the already delivered question');
 $firstPosted = coordination_fixture_receipt($firstRun);
 $firstMessage = (int)$firstPosted['initiative_message_id'];
 $firstChat = coordination_fixture_message($firstMessage);

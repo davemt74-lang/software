@@ -17,7 +17,7 @@ const result = {suggestion_kind:'playlist',initiative_suggestion:true,query:'Pap
 const requests = [];
 const errors = [];
 page.on('pageerror',error=>errors.push(error.message));
-await page.route('http://similar.test/**',async route => {
+await page.route('https://similar.test/**',async route => {
   if (new URL(route.request().url()).pathname !== '/playback') {
     return route.fulfill({contentType:'text/html',body:'<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:12px}article{max-width:760px;margin:auto}</style><article data-chat-message-id="302"><div class="message-text">Artist report</div></article>'});
   }
@@ -27,6 +27,7 @@ await page.route('http://similar.test/**',async route => {
   if (request.action === 'record') {
     assert.equal(request.message_id,'101','Related tracks use the exact original result message');
     assert.ok(ids.includes(request.video_id));
+    assert.match(request.play_id,/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/);
   }
   return route.fulfill({json:{ok:true,recorded:true,resume_ms:null,playlists:[]}});
 });
@@ -55,13 +56,15 @@ await page.addInitScript(() => {
   }};
 });
 const load = async value => {
-  await page.goto('http://similar.test/');
+  await page.goto('https://similar.test/');
   await page.addStyleTag({content:css});
   await page.addScriptTag({content:source});
   await page.evaluate(payload=>window.VP3_CHAT_YOUTUBE_V1.attach(document.querySelector('article'),payload),value);
 };
 try {
   await load(result);
+  assert.equal(await page.evaluate(()=>window.isSecureContext&&typeof window.crypto.randomUUID==='function'),true,
+    'Playback history uses the secure-context UUID API available in the app');
   assert.equal(await page.locator('.vp3-youtube-result').count(),6,'Base and related tracks are in the same playable result list');
   assert.deepEqual(await page.locator('[data-youtube-similar-artist]').allTextContents(),artists.map(name=>'Artist suggestion · '+name));
   assert.match(await page.locator('[data-youtube-similar-artists]').textContent(),/Moon Harbor, Soft Current, Sable/);

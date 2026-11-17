@@ -87,14 +87,11 @@ function canvas_pipeline_email_model(string $ref): Closure
         $input = json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
         canvas_pipeline_check(!str_contains($prompt,'EMAIL_CANVAS_PRIVATE_') && !str_contains($prompt,'canvas-fixture@example.test')
             && !str_contains($prompt,'email_canvas_fixture_thread_'), 'email discovery and preparation use minimal facts instead of private email content');
-        if ($protocol==='vp3.initiative-plan.v1') {
-            canvas_pipeline_check(!empty($input['tools']['canvas.prepare']['ready'])
-                && in_array($ref,$input['tools']['canvas.prepare']['source_refs'],true),
-                'Initiative offers the verified workflow opportunity to the model without an owner build request');
-            return json_encode(['jobs'=>[['tool'=>'canvas.prepare','primary'=>$ref,'refs'=>[$ref],
-                'focus'=>'Compare open email requests with deadlines in a single view','report'=>true]]],JSON_THROW_ON_ERROR);
-        }
         if ($protocol==='vp3.initiative-canvas.v1') {
+            canvas_pipeline_check(($input['email_canvas']['workflow']??null)==='deadline_board'
+                && array_column($input['evidence']??[],'ref')===[$ref]
+                && ($input['mode']??null)==='propose_private_canvas' && !db()->inTransaction(),
+                'the canonical Canvas preparation receives the verified email workflow outside receipt locks');
             return json_encode(['title'=>'Email deadline board','prompt'=>'Show the open email deadlines in date order.',
                 'draft'=>'I found several open email requests with deadlines that could use a single view.'],JSON_THROW_ON_ERROR);
         }
@@ -115,25 +112,34 @@ function canvas_pipeline_email_prepare(array $owner, string $ref): int
 {
     $pdo = db();
     $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep';
+        DELETE FROM agent_memory_items WHERE user_id=1 AND user_agent_id=7 AND memory_type='initiative_sweep' AND subject='opportunity-scheduling';
         UPDATE agent_activity_state SET last_heartbeat_at=CURRENT_TIMESTAMP;
         UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=11");
     $model = canvas_pipeline_email_model($ref);
     $beforePlans = count(canvas_pipeline_runs('initiative.plan'));
     $beforePreparations = count(canvas_pipeline_runs('initiative.prepare'));
     vp3_initiative_schedule_v1($pdo,$owner,7);
-    $plans = canvas_pipeline_runs('initiative.plan');
-    canvas_pipeline_check(count($plans)===$beforePlans+1
-        && vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim((int)end($plans)['id']),$model)['ok'],
-        'the actual scheduler and Initiative planner advance the email opportunity');
     $preparations = canvas_pipeline_runs('initiative.prepare');
     $prepared = (int)end($preparations)['id'];
+    $goal=json_decode((string)end($preparations)['goal'],true,32,JSON_THROW_ON_ERROR);
+    $binding=vp3_initiative_policy_v1($owner,7);
+    $evidence=vp3_initiative_email_canvas_evidence_v1($pdo,$owner,$binding,[$ref]);
     canvas_pipeline_check(count($preparations)===$beforePreparations+1
-        && vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($prepared),$model)['ok'],
+        && count(canvas_pipeline_runs('initiative.plan'))===$beforePlans
+        && ($goal['tool']??null)==='canvas.prepare' && ($goal['primary']??null)===$ref
+        && ($goal['binding']??null)===$binding && ($goal['sources']??null)===[$ref=>$evidence[$ref]['revision']]
+        && ($goal['canonical_sources']??null)===$goal['sources'] && ($goal['opportunity_lane']??null)==='app_suggestions'
+        && ($goal['email_canvas_work_key']??null)===vp3_initiative_email_canvas_work_key_v1($ref),
+        'the actual scheduler directly admits one exact email workflow through the app suggestions lane without a duplicate planner');
+    canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($prepared),$model)['ok'],
         'the actual Canvas adapter prepares the email opportunity through its canonical receipt');
     return $prepared;
 }
 
 $enabled = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>11],'on',null);
+// This fixture exercises the email app lane; unrelated Curiosity questions stay in its report.
+$emailRules=vp3_coordination_rule_settings_v1($pdo,$owner,7,11);
+vp3_coordination_rule_settings_v1($pdo,$owner,7,11,$emailRules['revision'],['curiosity'=>['open_question'=>'watch']]);
 canvas_pipeline_check(!empty($enabled['ok']) && !vp3_initiative_canvas_setting_v1($pdo,$owner,7)['enabled'],
     'the actual Initiative policy is enabled and Auto Build drafts defaults to off');
 canvas_pipeline_email_seed($pdo,$owner,$mysql);

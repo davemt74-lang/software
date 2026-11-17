@@ -18,9 +18,11 @@ const infrastructureFixtures=['phone-agent-schema-v1.php','workflow-agent-schema
 for(const name of infrastructureFixtures)fs.copyFileSync('tests/fixtures/'+name,path.join(tmp,'includes',name));
 fs.copyFileSync('tests/fixtures/initiative-followthrough-chat.php',path.join(tmp,'includes/initiative-followthrough-chat-fixture.php'));
 let bootstrap=fs.readFileSync('tests/fixtures/capability-chat-bootstrap.php','utf8');
-// Provider function names alone change so the extra fixture can intercept the
-// normal main model and Initiative's governed intent model independently.
-for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete'])bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+// Rename fixture provider hooks so the extra fixture can intercept the main
+// model and governed intent model independently; use real media recommendations.
+for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete',
+ 'track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\n";
 // Instrument the infrastructure transaction boundary only. The production
 // preflight, owner/Chat locks and candidate recheck execute unchanged.
 assert.ok(bootstrap.includes('class TranscriptFixturePDO extends PDO {'));
