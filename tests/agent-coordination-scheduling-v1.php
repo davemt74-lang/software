@@ -2,10 +2,24 @@
 declare(strict_types=1);
 
 define('VP3_EMAIL_CANVAS_PIPELINE_FIXTURE', true);
+require __DIR__.'/fixtures/initiative-ai-settings-v1.php';
 require __DIR__.'/agent-initiative-canvas-pipeline-v1.php';
 require_once dirname(__DIR__).'/includes/agent-coordination-sources-v1.php';
 require_once dirname(__DIR__).'/includes/agent-activity-hub-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-model-v1.php';
+
+// Empty, installed transcript storage keeps the real cross-specialist scan
+// healthy without inventing an unrelated recording or overriding its reader.
+$pdo->exec('CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,conversation_id INTEGER,
+    title TEXT,status VARCHAR(24),started_at DATETIME,last_activity_at DATETIME,metadata_json TEXT);
+    CREATE TABLE artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,client_segment_key VARCHAR(64),
+      segment_index INTEGER,segment_type VARCHAR(24),speaker_label VARCHAR(80),transcript_text TEXT,started_ms INTEGER,ended_ms INTEGER,
+      confidence REAL,created_at DATETIME,updated_at DATETIME);
+    CREATE TABLE artist_transcript_page_analysis_v237(session_id INTEGER,page_number INTEGER,source_hash VARCHAR(64),
+      source_word_count INTEGER,start_segment_index INTEGER,end_segment_index INTEGER,analysis_json TEXT,provider VARCHAR(32),
+      model VARCHAR(160),generated_at DATETIME,PRIMARY KEY(session_id,page_number));
+    CREATE TABLE artist_transcript_master_analysis_v237(session_id INTEGER PRIMARY KEY,source_hash VARCHAR(64),source_word_count INTEGER,
+      page_count INTEGER,analyzed_page_count INTEGER,analysis_json TEXT,research_json TEXT,provider VARCHAR(32),model VARCHAR(160),generated_at DATETIME)');
 
 $pdo->exec('CREATE TABLE agent_scheduling_schedules (id INTEGER PRIMARY KEY,owner_user_id INTEGER,
     agent_id INTEGER,name VARCHAR(100),is_active INTEGER,is_default INTEGER)');
@@ -63,6 +77,9 @@ $exact = vp3_coordination_sources_v1($pdo,$owner,$binding,[$pending,'planning:sc
 canvas_pipeline_check($exact['items'] === [$pending=>$row], 'exact reread preserves the revision and refuses an unscoped booking');
 
 $policy = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>11],'on',null)['initiative_policy'];
+initiative_fixture_morning_brief_reviewed($owner,7);
+$rules=vp3_coordination_rule_settings_v1($pdo,$owner,7,11);
+vp3_coordination_rule_settings_v1($pdo,$owner,7,11,$rules['revision'],['curiosity'=>['open_question'=>'watch']]);
 $pdo->exec("UPDATE agent_scheduling_bookings SET status='confirmed' WHERE id=811");
 vp3_initiative_schedule_v1($pdo,$owner,7);
 $coordinationRuns = "source_kind='agent_initiative' AND source_key LIKE 'coordination:%'";
@@ -95,13 +112,13 @@ $presence = $pdo->prepare('UPDATE agent_activity_state SET last_heartbeat_at=CUR
 $presence->execute(['{"visible":true,"conversation_id":11,"chat_focused":true,"chat_busy":true}']);
 $pdo->failGenericSchedule = true;
 try {
-    $result = vp3_initiative_pump_v1($pdo,$owner,7,11,$policy['revision'],$model);
+    $result = vp3_initiative_pump_v1($pdo,$owner,7,11,$policy['revision'],$model,allowDelivery:false);
 } finally {
     $pdo->failGenericSchedule = false;
 }
 canvas_pipeline_check(!empty($result['ok']) && canvas_pipeline_result($run)['initiative_delivery'] === 'pending'
     && canvas_pipeline_count('chat_messages','conversation_id=11') === $before,
-    'the normal foreground pump verifies the pending decision despite a failure in generic assessment scheduling');
+    'the foreground pump can prepare without delivery despite a failure in generic assessment scheduling');
 canvas_pipeline_check($readPlanning()['state']==='ready_to_report'&&$readPlanning()['run_id']===$run,
     'a newly finished Planning coordination reports that a verified finding is waiting to post');
 $ageAction=$pdo->prepare('UPDATE agent_workflow_actions SET completed_at=? WHERE run_id=?');
@@ -112,7 +129,7 @@ canvas_pipeline_check($readPlanning()['state']==='ready_to_report'
 canvas_pipeline_check($inferenceCalls === 0, 'the standalone question uses the saved appointment and rule without calling a model');
 $presence->execute(['{"visible":true,"conversation_id":11,"chat_focused":true,"chat_busy":false}']);
 canvas_pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$owner,7) && !vp3_initiative_deliver_pending_v1($pdo,$owner,7),
-    'the standalone decision reaches the linked Chat once when the owner is ready');
+    'the separate delivery pass sends the verified decision to its linked Chat exactly once');
 $receipt = canvas_pipeline_result($run);
 $chat = $pdo->prepare("SELECT message,context_json FROM chat_messages WHERE id=? AND conversation_id=11 AND role='assistant'");
 $chat->execute([$receipt['initiative_message_id']]);
@@ -152,7 +169,7 @@ $lease=$pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id
 $lease->execute(['2000-01-01 00:00:00',$oldRun]);
 canvas_pipeline_check($readPlanning()['state']!=='working','an expired Planning claim no longer animates the rail');
 $lease->execute([gmdate('Y-m-d H:i:s',strtotime($working['lease_expires_at'])),$oldRun]);
-$verified = vp3_initiative_execute_v1($pdo,$owner,$claim,$model);
+$verified = vp3_initiative_execute_v1($pdo,$owner,$claim,$model,allowDelivery:false);
 $oldGoal = json_decode($runs[0]['goal'],true,32,JSON_THROW_ON_ERROR);
 canvas_pipeline_check(!empty($verified['ok']) && $oldGoal['primary'] === $resumedRef
     && canvas_pipeline_result($oldRun)['initiative_delivery'] === 'pending', 'the next real decision is verified before Pause');
@@ -250,13 +267,16 @@ $mediaRun=(int)$pdo->lastInsertId();
 $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at)
     VALUES(11,NULL,'assistant','Want to listen to a track?',?,NOW())")
     ->execute([json_encode(['source'=>'agent_initiative','initiative_run_id'=>$mediaRun],JSON_THROW_ON_ERROR)]);
-canvas_pipeline_check(vp3_initiative_report_gate_v1($pdo,$owner,11)==='recent_proactive_post'
-    &&vp3_initiative_report_gate_v1($pdo,$owner,11,true)==='ready',
-    'a recent Media suggestion does not block a verified specialist handoff');
+canvas_pipeline_check(vp3_initiative_report_gate_v1($pdo,$owner,11,7)==='ready'
+    &&vp3_initiative_report_gate_v1($pdo,$owner,12,7)==='linked_elsewhere',
+    'a recent Media suggestion leaves the exact saved owner Chat available while another Chat stays blocked');
+$beforeFresh=canvas_pipeline_count('chat_messages','conversation_id=11');
 $fresh=vp3_initiative_pump_v1($pdo,$owner,7,11,$resumed['revision'],$model);
 canvas_pipeline_check(!empty($fresh['ok'])&&canvas_pipeline_result((int)$eligible[0]['id'])['initiative_delivery']==='delivered'
-    &&vp3_initiative_report_gate_v1($pdo,$owner,11,true)==='recent_proactive_post',
-    'the foreground pump delivers a fresh Planning question despite a Media suggestion, then paces further work updates');
+    &&vp3_initiative_report_gate_v1($pdo,$owner,11,7)==='ready'
+    &&!vp3_initiative_deliver_pending_v1($pdo,$owner,7)
+    &&canvas_pipeline_count('chat_messages','conversation_id=11')===$beforeFresh+1,
+    'the foreground pump posts the new Planning question once without replaying either saved update');
 
 $outageId=819;
 $nextId=820;
@@ -270,13 +290,15 @@ foreach([$outageId=>'Unavailable appointment source',$nextId=>'Available appoint
     $situation=vp3_coordination_scan_id_v1($owner,$resumed,$ref);
     vp3_initiative_enqueue_v1($pdo,$owner,'initiative.prepare',array_replace($newGoal,[
         'primary'=>$ref,'coordination_id'=>$situation,'sources'=>[$ref=>$evidence['revision']],'coordination_routes'=>[$ref=>$route],
+        'coordination_material'=>vp3_coordination_material_v1($evidence,[$ref=>$evidence],false),
     ]),$situation);
     $parked[$id]=(int)$pdo->query('SELECT MAX(id) FROM agent_workflow_runs')->fetchColumn();
-    vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($parked[$id]),$model);
+    canvas_pipeline_check(!empty(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($parked[$id]),$model,allowDelivery:false)['ok']),
+        'the pending source-outage fixture executes its own current appointment proof');
 }
 canvas_pipeline_check(canvas_pipeline_result($parked[$outageId])['initiative_delivery']==='pending'
     && canvas_pipeline_result($parked[$nextId])['initiative_delivery']==='pending',
-    'two current saved follow-ups wait for the linked Chat to become quiet');
+    'two current saved follow-ups remain pending until their separate delivery pass');
 $pdo->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=11");
 $presence->execute(['{"visible":true,"conversation_id":11,"chat_focused":true,"chat_busy":false}']);
 $pdo->unavailableAppointmentId=$outageId;

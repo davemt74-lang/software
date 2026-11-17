@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Canonical owner/Agent policy, sources, claimed workflow, action/receipt and
 // saved Chat are production code. Only model transport and host availability
 // are deterministic fixtures supplied by this existing disposable foundation.
-require __DIR__.'/agent-initiative-scope-v1.php';
+require __DIR__.'/fixtures/initiative-scope-ready-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-followthrough-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-capabilities-v1.php';
 require_once dirname(__DIR__).'/includes/agent-top-of-mind-v1.php';
@@ -94,7 +94,7 @@ function capability_pipeline_plan(array $user,int $agent,string $tool,string $re
             'focus'=>'Prepare a useful private next step from the selected saved evidence.','report'=>true]]],JSON_THROW_ON_ERROR);
     };
     $plan=scope_make_plan($user,$agent,$title);
-    $done=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan));
+    $done=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan),'initiative_scope_model_v1');
     capability_pipeline_check(!empty($done['ok'])&&count(scope_runs((int)$user['id'],$agent,'initiative.prepare'))===$before+1,
         'model-selected '.$tool.' queues exactly one canonical preparation');
     $run=array_slice(scope_runs((int)$user['id'],$agent,'initiative.prepare'),-1)[0];
@@ -134,7 +134,9 @@ function capability_pipeline_prepare(array $user,int $agent,int $cid,string $too
     };
     $messages=count(scope_messages());$claim=scope_claim($user,$run['id']);
     capability_pipeline_feed($user,$agent,$cid,$run['id'],'working');
-    $done=vp3_initiative_execute_v1(db(),$user,$claim);
+    // Hidden-owner scenarios explicitly stage delayed validation. Presence on
+    // its own no longer prevents a timestamped result reaching its saved Chat.
+    $done=vp3_initiative_execute_v1(db(),$user,$claim,'initiative_scope_model_v1',allowDelivery:$visible);
     $result=capability_pipeline_stored($run['id'],$during!==null);
     if($during){
         capability_pipeline_check(empty($done['ok'])&&count(scope_messages())===$messages&&$draftCalls===1,
@@ -169,10 +171,10 @@ function capability_pipeline_prepare(array $user,int $agent,int $cid,string $too
         capability_pipeline_feed($user,$agent,$cid,$run['id'],'completed');
     }else{
         capability_pipeline_check($result['initiative_delivery']==='pending'&&count(scope_messages())===$messages,
-            'owner absence retains the actual completed result privately until delivery is appropriate');
+            'explicitly deferred delivery retains the actual completed result privately until publication is requested');
     }
     $before=count($GLOBALS['scopeInference']);$all=count(scope_messages());
-    vp3_initiative_execute_v1(db(),$user,$claim);
+    vp3_initiative_execute_v1(db(),$user,$claim,'initiative_scope_model_v1');
     capability_pipeline_check(count($GLOBALS['scopeInference'])===$before&&count(scope_messages())===$all,
         'reusing an already-consumed claim cannot generate or post the completed result twice');
     return $run+['result'=>$result,'completed'=>$done,'draft'=>$draft,'draft_calls'=>$draftCalls,'coverage'=>$readCoverage];
@@ -189,9 +191,14 @@ function capability_pipeline_legacy_post(array $user,array $run,?array $meetingP
 function capability_pipeline_legacy_pending(array $run): void
 {
     $pdo=db();$result=capability_pipeline_stored($run['id']);
-    $q=$pdo->prepare("SELECT id FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=1 AND status='completed'");
-    $q->execute([$run['id']]);
-    vp3_initiative_delivery_result_v1($pdo,1,['run_id'=>$run['id'],'action_id'=>(int)$q->fetchColumn()],
+    $q=$pdo->prepare("SELECT a.id AS action_id,p.id AS receipt_id FROM agent_workflow_actions a
+        JOIN agent_workflow_receipts p ON p.action_id=a.id AND p.run_id=a.run_id AND p.owner_user_id=a.owner_user_id
+            AND p.attempt_no=a.attempt_count AND p.executor='cloud' AND p.status='completed' AND p.result_json=a.result_json
+        WHERE a.run_id=? AND a.owner_user_id=1 AND a.status='completed' AND a.sequence_no=1
+            AND a.action_key='initiative.prepare' AND a.capability_key='initiative.prepare' AND a.execution_target='cloud'");
+    $q->execute([$run['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);
+    if(count($rows)!==1)throw new LogicException('The pending fixture requires the exact completed action and receipt.');
+    vp3_initiative_delivery_result_v1($pdo,1,['run_id'=>$run['id'],'action_id'=>(int)$rows[0]['action_id'],'receipt_id'=>(int)$rows[0]['receipt_id']],
         array_replace($result,['initiative_delivery'=>'pending']));
 }
 
@@ -302,7 +309,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($adva
         'the report model receives the complete saved owner request beyond the planning-focus limit and its verified original proposal context');
     return json_encode(['draft'=>'The saved task calls for checking the supplier response. A useful next private step is to list the unresolved delivery questions before contacting anyone.'],JSON_THROW_ON_ERROR);
 };
-$done=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$child));$childResult=capability_pipeline_stored($child);
+$done=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$child),'initiative_scope_model_v1');$childResult=capability_pipeline_stored($child);
 $fresh=vp3_initiative_followthrough_load_v1(db(),$user,$root['principal'],170,(int)$root['message']['id']);
 capability_pipeline_check(!empty($done['ok'])&&$fresh['state']['state']==='completed'
     &&$childResult['initiative_delivery']==='delivered'&&(int)$childResult['initiative_message_id']>0,
@@ -530,18 +537,26 @@ try{
     capability_pipeline_reject(static fn()=>vp3_initiative_transcript_capabilities_cloud_v1(db(),$meetingScope,$session),503,
         'an unavailable paired HomeServer policy is unknown verification rather than permission to process');
     db()->exec("UPDATE agent_activity_state SET context_key='chat:170',details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
-    capability_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages
-        &&count($GLOBALS['scopeInference'])===$models&&capability_pipeline_stored($meeting['id'])===$beforeOutage,
-        'actual pending meeting work survives a paired-policy503 with its action and receipt result unchanged and no model replay');
+    $delivered=vp3_initiative_deliver_pending_v1(db(),$user,17);$held=capability_pipeline_stored($meeting['id']);
+    capability_pipeline_check(!$delivered&&count(scope_messages())===$messages&&count($GLOBALS['scopeInference'])===$models
+        &&$held===array_replace($beforeOutage,['initiative_delivery_reason'=>'result_unavailable']),
+        'actual pending meeting work survives a paired-policy503 with only the bounded retry reason added to its matching action and receipt');
+    $reads=$GLOBALS['capabilityPipelinePolicyReads'];
+    capability_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)
+        &&$GLOBALS['capabilityPipelinePolicyReads']===$reads&&count(scope_messages())===$messages
+        &&count($GLOBALS['scopeInference'])===$models&&capability_pipeline_stored($meeting['id'])===$held,
+        'an immediate retry of unavailable meeting work does not reprobe, infer, post or alter the pending result');
 }finally{$GLOBALS['capabilityPipelinePolicyUnavailable']=false;}
 $GLOBALS['capabilityPipelineCloudBlocked']=true;
 capability_pipeline_reject(static fn()=>vp3_initiative_transcript_capabilities_cloud_v1(db(),$meetingScope,$session),403,
     'a real remote meeting-policy rejection clears the old same-request processing proof');
 $GLOBALS['capabilityPipelineCloudBlocked']=false;$reads=$GLOBALS['capabilityPipelinePolicyReads'];$calls=count($GLOBALS['scopeInference']);
 db()->exec("UPDATE agent_activity_state SET context_key='chat:170',details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
+db()->prepare("UPDATE agent_workflow_actions SET updated_at=? WHERE run_id=? AND status='completed'")
+    ->execute([gmdate('Y-m-d H:i:s',time()-31),$meeting['id']]);
 capability_pipeline_check(vp3_initiative_deliver_pending_v1(db(),$user,17)
-    &&$GLOBALS['capabilityPipelinePolicyReads']>$reads&&count($GLOBALS['scopeInference'])===$calls,
-    'actual delayed delivery refreshes a cleared meeting proof outside its final transaction without another model call');
+    &&$GLOBALS['capabilityPipelinePolicyReads']>$reads&&count($GLOBALS['scopeInference'])===$calls&&count(scope_messages())===$messages+1,
+    'a due delayed delivery refreshes a cleared meeting proof outside its final transaction and posts exactly once without another model call');
 $meetingSaved=capability_pipeline_stored($meeting['id']);
 $root=vp3_initiative_followthrough_load_v1(db(),$user,$meetingScope['principal'],170,(int)$meetingSaved['initiative_message_id']);
 db()->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(170,1,'user','Explain the recorded meeting follow-up')");$reply=(int)db()->lastInsertId();
@@ -654,7 +669,7 @@ $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use(&$dra
     return json_encode(['jobs'=>[['tool'=>'tasks.read','primary'=>'transcript:301','refs'=>['transcript:301'],'focus'=>'Wrong leaf primary','report'=>true]]],JSON_THROW_ON_ERROR);
 };
 $plan=scope_make_plan($user,17,'Reject a task tool bound to a transcript');
-$failed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan));
+$failed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$plan),'initiative_scope_model_v1');
 capability_pipeline_check(empty($failed['ok'])&&!$draftReached&&count(scope_runs(1,17,'initiative.prepare'))===$before,
     'a model-selected leaf with the wrong source is rejected before any preparation queues');
 

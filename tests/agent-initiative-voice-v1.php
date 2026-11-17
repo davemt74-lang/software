@@ -137,4 +137,27 @@ voice_check(voice_saved($input['run_id'])['initiative_voice']['status']==='claim
 $input=voice_seed();db()->prepare("UPDATE agent_workflow_receipts SET status='failed' WHERE run_id=?")->execute([$input['run_id']]);
 voice_check(voice_call('voice_candidates',$input)['candidates']===[],'a Chat post without its successful canonical execution receipt is not a voice candidate');
 voice_reject(fn()=>voice_call('voice_claim',$input),409,'a missing successful receipt cannot be substituted by Chat text alone');
+foreach(['attempt_no','result_json'] as $changed){
+    $input=voice_seed();
+    $q=db()->prepare("SELECT id,attempt_no,result_json FROM agent_workflow_receipts WHERE run_id=? AND status='completed'");
+    $q->execute([$input['run_id']]);$receipt=$q->fetch(PDO::FETCH_ASSOC);
+    if(!is_array($receipt))throw new RuntimeException('The actual voice worker must have a completed receipt.');
+    $value=$changed==='attempt_no'?(int)$receipt['attempt_no']+1:'{}';
+    db()->prepare('UPDATE agent_workflow_receipts SET '.$changed.'=? WHERE id=?')->execute([$value,$receipt['id']]);
+    $before=(int)db()->query('SELECT total_changes()')->fetchColumn();$models=count($GLOBALS['scopeInference']);
+    try{
+        voice_check(voice_call('voice_candidates',$input)['candidates']===[],
+            'a mismatched receipt '.$changed.' is not a legacy voice candidate');
+        voice_reject(fn()=>voice_call('voice_claim',$input),409,
+            'a mismatched receipt '.$changed.' cannot authorize a legacy voice claim');
+        voice_check((int)db()->query('SELECT total_changes()')->fetchColumn()===$before
+            &&count($GLOBALS['scopeInference'])===$models&&!db()->inTransaction(),
+            'rejecting receipt '.$changed.' leaves canonical state unchanged with no model call or open transaction');
+    }finally{
+        db()->prepare('UPDATE agent_workflow_receipts SET '.$changed.'=? WHERE id=?')->execute([$receipt[$changed],$receipt['id']]);
+    }
+    $claimed=voice_call('voice_claim',$input);$saved=voice_saved($input['run_id']);
+    voice_check($saved['initiative_voice']['status']==='claimed'&&$claimed['claim']['text']===$saved['initiative_draft'],
+        'restoring the exact current receipt permits one bound claim after rejected '.$changed.' tampering');
+}
 echo 'AGENT_INITIATIVE_VOICE_V1=PASS ('.$voiceChecks.' focused cases; actual check-in foundation also passed)'.PHP_EOL;

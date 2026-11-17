@@ -19,6 +19,13 @@ function reassessment_schedule(array $user,int $ageSeconds=310): int
     $rows=scope_runs(1,17,'initiative.plan');
     return count($rows)>$before?(int)$rows[array_key_last($rows)]['id']:0;
 }
+function reassessment_preparations(): array
+{
+    // Coordination has its own independently scheduled work on the same ledger.
+    // This scenario verifies that the selected Brain read itself stays unique.
+    return array_values(array_filter(scope_runs(1,17,'initiative.prepare'),static fn(array $run):bool=>
+        (json_decode((string)$run['goal'],true)['tool']??null)==='brain.read'));
+}
 function reassessment_activity(bool $busy,string $state='working',bool $focused=true): void
 {
     db()->prepare("INSERT INTO agent_activity_state(user_id,surface,context_key,activity_state,last_heartbeat_at,idle_since_at,details_json)
@@ -64,10 +71,10 @@ $quietGoal=json_decode(agent_workflow_row_v1400(db(),1,$quiet)['goal'],true,24,J
 reassessment_check($quietGoal['sources']===$unknownGoal['sources']&&$quietGoal['owner_availability']==='quiet_chat'
     &&$quietGoal['attention_revision']!==$unknownGoal['attention_revision'],
     'availability changes assessment identity while preserving the exact authorized source snapshot');
-$preparations=scope_runs(1,17,'initiative.prepare');$prepare=(int)$preparations[array_key_last($preparations)]['id'];
+$preparations=reassessment_preparations();$prepare=(int)$preparations[array_key_last($preparations)]['id'];
 reassessment_check(vp3_initiative_execute_v1(db(),$user,scope_claim($user,$prepare))['ok']&&$reads===1,
     'the newly useful assessment completes one actual Brain-read preparation through canonical execution');
-$prepareCount=count(scope_runs(1,17,'initiative.prepare'));
+$prepareCount=count(reassessment_preparations());
 
 db()->prepare('UPDATE agent_activity_state SET last_heartbeat_at=? WHERE user_id=1')->execute([gmdate('Y-m-d H:i:s',time()-2)]);
 reassessment_check(reassessment_schedule($user)===0&&$plans===2&&$reads===1,
@@ -82,7 +89,7 @@ reassessment_check(reassessment_schedule($user,35)===0&&$plans===2,
 $busy=reassessment_schedule($user);
 reassessment_check($busy>0&&vp3_initiative_execute_v1(db(),$user,scope_claim($user,$busy))['ok']&&$plans===3,
     'a real busy availability transition can reassess the unchanged working situation');
-reassessment_check(count(scope_runs(1,17,'initiative.prepare'))===$prepareCount&&$reads===1,
+reassessment_check(count(reassessment_preparations())===$prepareCount&&$reads===1,
     'the unchanged preparation dedupe prevents a second Brain tool execution after reassessment');
 
 reassessment_activity(false);
@@ -93,7 +100,7 @@ reassessment_check($returned>0&&$returned!==$quiet&&vp3_initiative_execute_v1(db
     'a busy-to-quiet owner return wakes a new assessment before five minutes with unchanged sources');
 $returnedGoal=json_decode(agent_workflow_row_v1400(db(),1,$returned)['goal'],true,24,JSON_THROW_ON_ERROR);
 reassessment_check($returnedGoal['sources']===$quietGoal['sources']&&$returnedGoal['owner_availability']===$quietGoal['owner_availability']
-    &&$returnedGoal['attention_revision']!==$quietGoal['attention_revision']&&count(scope_runs(1,17,'initiative.prepare'))===$prepareCount&&$reads===1,
+    &&$returnedGoal['attention_revision']!==$quietGoal['attention_revision']&&count(reassessment_preparations())===$prepareCount&&$reads===1,
     'semantic attention revisions permit recurring returns while the same completed real tool work remains deduplicated');
 reassessment_check(reassessment_schedule($user,35)===0&&$plans===4&&$reads===1,
     'another unchanged quiet heartbeat creates neither additional inference nor another preparation');
@@ -107,6 +114,6 @@ reassessment_check($away>0&&$awayGoal['owner_availability']==='away'
 reassessment_activity(false);
 $refocused=reassessment_schedule($user,35);
 reassessment_check($refocused>0&&vp3_initiative_execute_v1(db(),$user,scope_claim($user,$refocused))['ok']&&$plans===6
-    &&count(scope_runs(1,17,'initiative.prepare'))===$prepareCount&&$reads===1,
+    &&count(reassessment_preparations())===$prepareCount&&$reads===1,
     'returning to the exact focused Chat from away wakes a review without repeating completed work');
 echo 'AGENT_INITIATIVE_REASSESSMENT_V1=PASS'.PHP_EOL;

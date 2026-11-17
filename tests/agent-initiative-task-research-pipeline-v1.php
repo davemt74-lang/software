@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require __DIR__.'/agent-initiative-scope-v1.php';
+require __DIR__.'/fixtures/initiative-scope-ready-v1.php';
 require_once dirname(__DIR__).'/includes/agent-artist-research-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-research-status-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-research-canvas-v1.php';
@@ -103,14 +103,14 @@ $completed=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$runId),
         },
         'request'=>static fn():array=>['status'=>200,'content_type'=>'text/plain',
             'body'=>$quote.' Operators should confirm installation details with the manufacturer and the relevant local authority.'],
-    ]);
+    ], allowDelivery:false);
 $action=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');
 $receipt=$pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');
 $action->execute([$runId]);$receipt->execute([$runId]);
 $json=$action->fetchColumn();$result=json_decode((string)$json,true,24,JSON_THROW_ON_ERROR);
 scope_check($completed['ok']&&$json===$receipt->fetchColumn()&&$result['initiative_delivery']==='pending'
     &&$result['initiative_tool_result']['output']['public_topic']===$topic&&$searches===1,
-    'a completed task search saves identical verified worker evidence while the owner is away');
+    'a preparation-only worker saves identical verified research before the separate Chat publication step');
 $workspaceReview=static function(int $conversation=170)use($workspace,$runId):?array{
     return array_column($workspace($conversation),null,'id')['office-review:'.$runId]??null;
 };

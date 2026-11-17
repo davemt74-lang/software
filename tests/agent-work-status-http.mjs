@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn,execFileSync} from 'node:child_process';
-import {copyFileSync,mkdirSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+import {copyFileSync,existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
 import net from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 // every production work GET is also exercised with SQLite query_only enabled.
 const source=fileURLToPath(new URL('../',import.meta.url)),temp=mkdtempSync(join(tmpdir(),'vp3-work-status-'));
 const php=process.env.VP3_PHP_BINARY||'php';
+const modelGuard=join(temp,'model-attempts');
 const probe=net.createServer();await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));
 const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
 const base='http://127.0.0.1:'+port;
@@ -18,7 +19,10 @@ mkdirSync(join(temp,'api'));mkdirSync(join(temp,'includes'));
 copyFileSync(join(source,'api/agent-top-of-mind-v1.php'),join(temp,'api/agent-top-of-mind-v1.php'));
 writeFileSync(join(temp,'includes/agent-top-of-mind-v1.php'),'<?php require_once '+JSON.stringify(join(source,'includes/agent-top-of-mind-v1.php'))+';');
 writeFileSync(join(temp,'includes/bootstrap.php'),[
-  '<?php session_start();require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';',
+  '<?php require_once '+JSON.stringify(join(source,'tests/fixtures/initiative-ai-settings-v1.php'))+';',
+  'session_start();require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';',
+  '$GLOBALS["imageFixtureSettingsObserver"]=static function():void{foreach(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame){',
+  'if(($frame["function"]??null)==="ai_generate_chat_response"){file_put_contents(getenv("VP3_WORK_STATUS_MODEL_GUARD"),"attempt\\n",FILE_APPEND|LOCK_EX);throw new LogicException("Work-status projection attempted model generation.");}}};',
   'if(isset($_SERVER["HTTP_X_FIXTURE_PARTICIPANT"]))$GLOBALS["VP3_PARTICIPANT_RESOURCE_SCOPE_V1"]=["owner"=>1,"agent"=>7,"participant"=>2,"revision"=>1];',
   'if(isset($_SERVER["HTTP_X_FIXTURE_READ_ONLY"]))db()->exec("PRAGMA query_only=ON");'
 ].join('\n'));
@@ -31,6 +35,8 @@ writeFileSync(join(temp,'router.php'),[
   'if($path==="/counts"){echo json_encode(["models"=>(int)db()->query("SELECT COUNT(*) FROM fixture_model_calls")->fetchColumn(),"runs"=>(int)db()->query("SELECT COUNT(*) FROM agent_workflow_runs")->fetchColumn()]);return;}',
   'if($_SERVER["REQUEST_METHOD"]!=="POST"||($_SERVER["HTTP_X_FIXTURE_CSRF"]??"")!==csrf_token()){http_response_code(403);echo "{}";return;}',
   '$u=current_user();$a=vp3_agent_chat_resolve_agent_v380(db(),$u,7);$principal=vp3_agent_chat_principal_v380($u,$a);',
+  'if($path==="/model-guard"){try{ai_generate_chat_response("Fixture must block before provider dispatch.",[],[],$u);}',
+  'catch(LogicException $error){if($error->getMessage()!=="Work-status projection attempted model generation.")throw $error;echo "{\\"blocked\\":true}";return;}throw new RuntimeException("The model observer did not intercept the actual generation entry point.");}',
   'if($path==="/seed"){',
   'vp3_initiative_chat_v1(db(),$u,$principal,["conversation_id"=>11],"on",null);$policy=vp3_initiative_policy_v1($u,7);$coverage=[];',
   '$e=vp3_initiative_evidence_v1(db(),$u,new DateTimeImmutable("now",new DateTimeZone("UTC")),false,[],$coverage,["task:100"],7);$row=$e["task:100"];',
@@ -53,7 +59,7 @@ writeFileSync(join(temp,'router.php'),[
 assert.match(execFileSync(php,['-l',join(temp,'router.php')],{encoding:'utf8'}),/No syntax errors/);
 let logs='';
 const server=spawn(php,['-d','session.save_path='+temp,'-S','127.0.0.1:'+port,'-t',temp,join(temp,'router.php')],{
-  env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'working.sqlite')},stdio:['ignore','pipe','pipe']
+  env:{...process.env,VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'working.sqlite'),VP3_WORK_STATUS_MODEL_GUARD:modelGuard},stdio:['ignore','pipe','pipe']
 });
 server.stdout.on('data',value=>{logs+=value;});server.stderr.on('data',value=>{logs+=value;});
 try{
@@ -66,6 +72,10 @@ try{
   const cookie=sessionResponse.headers.get('set-cookie').split(';')[0];
   const headers={Cookie:cookie,'X-VP3-Working-Attention':session.binding,'X-Fixture-Read-Only':'1'};
   const postHeaders={Cookie:cookie,'X-Fixture-Csrf':'fixture'};
+  const guard=await fetch(base+'/model-guard',{method:'POST',headers:postHeaders});
+  assert.equal(guard.status,200,await guard.clone().text());assert.deepEqual(await guard.json(),{blocked:true});
+  assert.equal(readFileSync(modelGuard,'utf8'),'attempt\n','the positive control observes the actual AI entry point before dispatch');
+  rmSync(modelGuard);
   const endpoint=base+'/api/agent-top-of-mind-v1.php?view=work&agent_id=7';
   const read=async(extra='')=>{
     const response=await fetch(endpoint+extra,{headers});
@@ -93,7 +103,8 @@ try{
   assert.equal(exact.conversation_id,11);assert.equal(exact.health.active_jobs.length,1);
   const unsaved=await read('&scope=chat&conversation_id=0');
   assert.equal(unsaved.conversation_id,0);assert.deepEqual(unsaved.health.active_jobs,[]);
-  assert.equal(unsaved.coordination.phase,'idle');
+  assert.equal(unsaved.coordination.phase,'waiting');
+  assert.equal(unsaved.coordination.detail,'Waiting for a saved Chat.');
   assert.ok(unsaved.specialists.some(specialist=>specialist.id==='planning'&&specialist.state==='idle'));
   assert.equal((await fetch(endpoint+'&scope=chat',{headers})).status,422);
   assert.equal((await fetch(endpoint+'&conversation_id=12',{headers})).status,403);
@@ -130,6 +141,7 @@ try{
     assert.equal(work.health.active_jobs.length,mode==='action_restore'?1:0,mode);
   }
   assert.deepEqual(await fetch(base+'/counts',{headers}).then(response=>response.json()),{models:0,runs:1});
+  assert.equal(existsSync(modelGuard),false,'no production work or engagement GET may attempt actual model generation, even if a projection catches the observer refusal');
   console.log('PASS real work-only GET resolves saved-policy Chat and reports only a matching live claim; queued/cold, failed action, expired, terminal and paused work remain inactive');
   console.log('PASS work-only GET enforces method, owner, exact Agent/Chat, session, participant and permission boundaries without exposing source/progress text');
   console.log('PASS engagement GET is read-only and scopes pagination to the exact owner, Agent, Chat, session and specialist');

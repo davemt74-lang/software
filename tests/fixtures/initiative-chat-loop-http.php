@@ -79,6 +79,9 @@ function calendar_schedule_awareness_snapshot_v1330(PDO $pdo,array $user,DateTim
     if($includeHomeServer)throw new LogicException('Background preparation cannot discover another calendar.');
     return ['available'=>true,'timezone'=>'UTC','upcoming'=>[],'current'=>null,'conflicts'=>[],'next'=>null,'starts_soon'=>false];
 }
+// Read-only HTTP consumers can load the actual provider configuration first;
+// Chat execution journeys retain the deterministic transport below.
+if(!function_exists('ai_generate_chat_response')){
 function ai_generate_chat_response(string $prompt,array $history,array $context,array $user,string $model,array $options):array
 {
     $protocol=$options['protocol']??'';
@@ -121,6 +124,7 @@ function ai_generate_chat_response(string $prompt,array $history,array $context,
         }
     }else throw new RuntimeException('Unexpected model protocol.');
     return ['ok'=>true,'answer'=>json_encode($answer,JSON_THROW_ON_ERROR)];
+}
 }
 
 // The large presentation projection is irrelevant to execution. Keep the real

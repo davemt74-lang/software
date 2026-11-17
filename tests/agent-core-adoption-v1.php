@@ -309,11 +309,11 @@ adoption_check(vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$pendingPlan
     'a second source change creates independent useful work in the same canonical queue');
 $pendingRun=(int)array_slice(scope_runs(1,17,'initiative.prepare'),-1)[0]['id'];
 adoption_record($one,170,['visible'=>false,'focused'=>false,'chat_focused'=>false]);
-$pendingResult=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$pendingRun),$provider);
+$pendingResult=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$pendingRun),$provider,allowDelivery:false);
 $pendingQuery=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$pendingQuery->execute([$pendingRun]);
 $pendingStored=json_decode((string)$pendingQuery->fetchColumn(),true,24,JSON_THROW_ON_ERROR);$pendingQuery->closeCursor();
 adoption_check($pendingResult['ok']&&$pendingStored['initiative_delivery']==='pending'&&count(scope_messages())===$messages,
-    'a verified result waits in its canonical receipt while the bound Chat owner is absent');
+    'a worker with delivery deferred retains its verified result in the canonical receipt before rebinding');
 vp3_initiative_adopt_activity_v1($pdo,$one,adoption_record($one,171));
 $pendingDelivery=vp3_initiative_deliver_pending_v1($pdo,$one,17);
 $pendingQuery->execute([$pendingRun]);$withdrawn=json_decode((string)$pendingQuery->fetchColumn(),true,24,JSON_THROW_ON_ERROR);$pendingQuery->closeCursor();

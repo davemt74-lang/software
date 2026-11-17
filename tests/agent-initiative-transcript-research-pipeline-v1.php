@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require __DIR__.'/agent-initiative-scope-v1.php';
+require __DIR__.'/fixtures/initiative-scope-ready-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-transcripts-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-transcript-research-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-research-canvas-v1.php';
@@ -15,6 +15,9 @@ scope_command($user, 17, 170, 'off');
 scope_command($user, 17, 170, 'on');
 $binding = vp3_initiative_policy_v1($user, 17);
 $scope = vp3_initiative_tools_scope_v1($pdo, $user, $binding);
+$oldReportAt=gmdate('Y-m-d H:i:s',time()-121);
+$ageReports=$pdo->prepare("UPDATE chat_messages SET created_at=? WHERE conversation_id=170
+    AND role='assistant' AND context_json IS NOT NULL");
 $planningStatus=static fn():array=>vp3_initiative_in_scope_v1($user,17,static fn():array=>
     vp3_planning_status_read_v1($pdo,$user,$scope['principal'],17,170,$binding));
 $pdo->exec("CREATE TABLE IF NOT EXISTS settings(setting_key TEXT PRIMARY KEY,setting_value TEXT);
@@ -166,7 +169,7 @@ $completed = vp3_initiative_execute_v1($pdo, $user, $claim,
             return ['status'=>200, 'content_type'=>'text/plain',
                 'body'=>$quote.' Confirm the applicable requirements with the manufacturer and local authority.'];
         },
-    ]);
+    ], allowDelivery:false);
 $action = $pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');
 $receipt = $pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');
 $action->execute([$runId]);
@@ -178,7 +181,7 @@ scope_check($completed['ok'] && $json===$receipt->fetchColumn() && $result['init
     && $tool['output']['source_ref']===$ref && $tool['output']['source_revision']===$sources[$ref]['revision']
     && $tool['output']['public_topic']===$topic && $searches===[$topic] && $requests===[$publicUrl]
     && array_column($tool['sources'], 'url')===[$publicUrl],
-    'the completed worker receipt saves exact finding provenance and verified public citations while Chat is away');
+    'the preparation-only worker saves exact finding provenance and verified public citations before Chat publication');
 $transcriptFollowups = static fn():array=>vp3_initiative_transcript_report_followups_v1($pdo,$user,17,170,940201);
 scope_check($transcriptFollowups()===[], 'the saved recording does not display an undelivered Research result');
 $reassessment=scope_make_plan($user,17,'Assess a verified transcript research report');
@@ -186,11 +189,15 @@ $reassessed=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$reassessment
     static function(string $prompt,string $protocol)use($quote,$ref):string{
         $input=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
         $reports=array_values(array_filter($input['specialist_reports']??[],static fn(array $report):bool=>($report['state']??null)==='ready'));
+        $researchEvidence=array_values(array_filter($input['evidence'],static fn(array $source):bool=>($source['kind']??null)==='specialist_result'));
+        $dispatchableRefs=array_merge(...array_values(array_map(static fn(array $tool):array=>$tool['source_refs']??[],$input['tools'])));
         scope_check($protocol==='vp3.initiative-plan.v1'&&count($reports)===1
             &&($reports[0]['outcome']??null)==='read_complete'&&($reports[0]['page_excerpts']??null)===1
-            &&str_contains($reports[0]['summary']??'',$quote)&&!str_contains($prompt,$ref)
+            &&str_contains($reports[0]['summary']??'',$quote)&&!in_array($ref,array_column($input['evidence'],'ref'),true)
+            &&!in_array($ref,$dispatchableRefs,true)&&count($researchEvidence)===1&&$researchEvidence[0]['parent_source']===$ref
+            &&($researchEvidence[0]['artifact']['facts'][0]['quote']??null)===$quote
             &&!str_contains($prompt,'RAW PRIVATE RECORDING DETAILS'),
-            'the normal reassessment receives the verified public finding without the assigned transcript ref or recording text');
+            'reassessment receives the exact public finding and parent provenance without dispatching its assigned transcript source or copying recording text');
         return '{"jobs":[],"opportunities":[]}';
     });
 scope_check($reassessed['ok'],'reasoning over a saved specialist result can finish without requeueing it');
@@ -201,6 +208,16 @@ $setContext=$pdo->prepare('UPDATE chat_messages SET context_json=? WHERE id=?');
 foreach($chatContexts as $chatContext)$setContext->execute(['{"skip_brain_archive":true}',$chatContext['id']]);
 $pdo->exec('DELETE FROM initiative_scope_calendar WHERE owner_id=1');
 $pdo->exec('UPDATE agent_memory_items SET is_active=0 WHERE id=1002');
+// An old pending result can still be a current report after its reusable
+// artifact ages out of discovery. Isolate that fallback using real saved rules
+// and timestamps, without removing any source reader or receipt verification.
+$priorRules=vp3_coordination_rules_v1($pdo,$user,17);
+vp3_coordination_rule_settings_v1($pdo,$user,17,170,$priorRules['revision'],
+    ['transcripts'=>['open_question'=>'watch','open_followup'=>'watch']]);
+$researchTiming=$pdo->prepare('SELECT completed_at,updated_at FROM agent_workflow_actions WHERE run_id=?');
+$researchTiming->execute([$runId]);$currentResearchTiming=$researchTiming->fetch();
+$pdo->prepare('UPDATE agent_workflow_actions SET completed_at=?,updated_at=NOW() WHERE run_id=?')
+    ->execute([gmdate('Y-m-d H:i:s',time()-1860),$runId]);
 $due=static function()use($pdo,$user):void{
     $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE user_id=1 AND memory_type='initiative_sweep'");
     vp3_initiative_schedule_v1($pdo,$user,17);
@@ -272,6 +289,10 @@ $setResearchReceipt->execute(['{}',$runId]);
 scope_check(!isset(vp3_top_of_mind_v1($pdo,$user,17,170)['coordination']['finding']),
     'a mismatched specialist receipt withdraws the coordination finding');
 $setResearchReceipt->execute([$json,$runId]);
+$pdo->prepare('UPDATE agent_workflow_actions SET completed_at=?,updated_at=? WHERE run_id=?')
+    ->execute([$currentResearchTiming['completed_at'],$currentResearchTiming['updated_at'],$runId]);
+$currentRules=vp3_coordination_rules_v1($pdo,$user,17);
+vp3_coordination_rule_settings_v1($pdo,$user,17,170,$currentRules['revision'],$priorRules['rules']);
 $pdo->prepare('INSERT INTO initiative_scope_calendar VALUES(?,?,?)')->execute([$calendar['owner_id'],$calendar['title'],$calendar['starts_at']]);
 $pdo->exec('UPDATE agent_memory_items SET is_active=1 WHERE id=1002');
 foreach($chatContexts as $chatContext)$setContext->execute([$chatContext['context_json'],$chatContext['id']]);
@@ -525,7 +546,7 @@ $meetingComplete = vp3_initiative_execute_v1($pdo,$user,$meetingClaim,
         'request'=>static fn(string $url): array=>[
             'status'=>200,'content_type'=>'text/plain','body'=>$meetingQuote.' Follow the carrier guidance and verify local requirements.',
         ],
-    ]);
+    ], allowDelivery:false);
 $action->execute([$meetingRun]);
 $receipt->execute([$meetingRun]);
 $meetingResultJson = $action->fetchColumn();
