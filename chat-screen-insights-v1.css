@@ -1,1 +1,48 @@
-.vp3-screen-insights{width:100%;min-width:0;margin:14px 0;padding:14px;border:1px solid var(--chat-border,#64748b);border-radius:12px;background:var(--chat-panel,rgba(60,85,110,.08));box-sizing:border-box}.vp3-screen-insights[hidden]{display:none}.vp3-screen-insights header,.vp3-screen-insight-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.vp3-screen-insights article{border-top:1px solid var(--chat-border,#64748b);padding:12px 0;min-width:0}.vp3-screen-insights h3{font-size:15px;margin:0 0 8px}.vp3-screen-insights p,.vp3-screen-insights a{overflow-wrap:anywhere}.vp3-screen-insights details a{display:block;margin:7px 0}.vp3-screen-insights button{font:inherit;font-size:12px;padding:7px 9px;border:1px solid #64748b;border-radius:7px;background:transparent;color:inherit;white-space:normal;cursor:pointer}.vp3-screen-review{display:flex;flex-wrap:wrap;gap:6px;padding:10px 0}.vp3-screen-review input,.vp3-screen-review select{max-width:100%;min-width:0;box-sizing:border-box}.vp3-screen-review p{flex-basis:100%}
+.vp3-screen-insight-report {
+  min-width: 0;
+  margin-top: .75rem;
+  font-size: .875rem;
+  overflow-wrap: anywhere;
+}
+.vp3-screen-insight-report article {
+  min-width: 0;
+  padding: .75rem 0;
+  border-top: 1px solid var(--chat-border,#d5dde7);
+}
+.vp3-screen-insight-report h3,
+.vp3-screen-insight-report article p { margin: 0 0 .45rem; }
+.vp3-screen-insight-report h3 { font-size: .95rem; }
+.vp3-screen-insight-report summary { width: fit-content; margin-bottom: .4rem; cursor: pointer; }
+.vp3-screen-insight-report details a { display: block; margin: .3rem 0; }
+.vp3-screen-insight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem .55rem;
+  margin-top: .55rem;
+}
+.vp3-screen-insight-actions button {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 2.2rem;
+  padding: .35rem .6rem;
+  border: 1px solid var(--chat-border,#8998ad);
+  border-radius: .45rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: .8rem;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+.vp3-screen-insight-actions button:disabled { opacity: .65; cursor: wait; }
+.vp3-screen-insight-choices { margin-top: .2rem; }
+.vp3-screen-insight-status { margin: .5rem 0 0; }
+.vp3-screen-insight-status:empty { margin: 0; }
+@media (max-width: 38rem) {
+  .vp3-screen-insight-actions button { min-height: 2.45rem; }
+}
+.vp3-screen-review { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0; }
+.vp3-screen-review input,.vp3-screen-review select { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.vp3-screen-review p { flex-basis: 100%; }

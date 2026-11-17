@@ -121,7 +121,9 @@ function capability_pipeline_prepare(array $user,int $agent,int $cid,string $too
             'anonymous worker preparation does not create a browser login context');
         ++$draftCalls;$input=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
         $readCoverage=$input['tool_result']['coverage'];
-        capability_pipeline_check($protocol==='vp3.initiative-draft.v1'&&!db()->inTransaction()
+        $office=in_array($tool,['tasks.read','tasks.lists.read','reminders.read'],true);
+        $expectedProtocol=$office?VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1:'vp3.initiative-draft.v1';
+        capability_pipeline_check($protocol===$expectedProtocol&&(!$office||$input['response_kind']==='office_review')&&!db()->inTransaction()
             &&$input['tool_result']['tool']===$tool&&str_contains(json_encode($input['tool_result']['records'],JSON_THROW_ON_ERROR),$sentinel),
             'actual '.$tool.' records, not a preview or fabricated result, reach model preparation outside a transaction');
         capability_pipeline_check($input['tool_result']['status']==='read_complete'
@@ -150,7 +152,11 @@ function capability_pipeline_prepare(array $user,int $agent,int $cid,string $too
     capability_pipeline_check($proof['coverage_fingerprint']===vp3_initiative_capability_fingerprint_v1($readCoverage)
         &&!isset($proof['coverage']),
         'the durable receipt binds actual coverage by fingerprint without duplicating the private read packet');
-    if($visible){
+    if(vp3_initiative_proactive_specialist_v1($run['goal'])){
+        capability_pipeline_check($result['initiative_delivery']==='private'&&(int)$result['initiative_message_id']===0
+            &&count(scope_messages())===$messages,
+            'the specialist saves its verified result for Top of Mind while Chat stays quiet');
+    }elseif($visible){
         $q=db()->prepare('SELECT * FROM chat_messages WHERE id=? AND conversation_id=? AND role=\'assistant\'');
         $q->execute([$result['initiative_message_id']??0,$cid]);$message=$q->fetch(PDO::FETCH_ASSOC);
         capability_pipeline_check($result['initiative_delivery']==='delivered'&&$message&&$message['message']===$draft
@@ -170,6 +176,23 @@ function capability_pipeline_prepare(array $user,int $agent,int $cid,string $too
     capability_pipeline_check(count($GLOBALS['scopeInference'])===$before&&count(scope_messages())===$all,
         'reusing an already-consumed claim cannot generate or post the completed result twice');
     return $run+['result'=>$result,'completed'=>$done,'draft'=>$draft,'draft_calls'=>$draftCalls,'coverage'=>$readCoverage];
+}
+
+/** Reconstruct a verified historical Chat post with the pre-routing format. */
+function capability_pipeline_legacy_post(array $user,array $run,?array $meetingPrep=null): array
+{
+    require_once __DIR__.'/fixtures/initiative-legacy-chat-report.php';
+    return initiative_fixture_legacy_report(db(),$user,$run['id'],$run['goal'],capability_pipeline_stored($run['id']),$meetingPrep);
+}
+
+/** Seed one old pending receipt so the upgrade's suppression can be checked. */
+function capability_pipeline_legacy_pending(array $run): void
+{
+    $pdo=db();$result=capability_pipeline_stored($run['id']);
+    $q=$pdo->prepare("SELECT id FROM agent_workflow_actions WHERE run_id=? AND owner_user_id=1 AND status='completed'");
+    $q->execute([$run['id']]);
+    vp3_initiative_delivery_result_v1($pdo,1,['run_id'=>$run['id'],'action_id'=>(int)$q->fetchColumn()],
+        array_replace($result,['initiative_delivery'=>'pending']));
 }
 
 // Real saved-record schemas. Empty supporting Commerce ledgers establish schema
@@ -246,6 +269,7 @@ db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,co
     ->execute([json_encode(['initiative_followthrough'=>$discuss['initiative_followthrough']],JSON_THROW_ON_ERROR)]);
 
 $task=capability_pipeline_prepare($user,17,170,'tasks.read','task:1002','TASK_RAW_RECORD_SENTINEL');
+$task['result']=capability_pipeline_legacy_post($user,$task);
 $root=vp3_initiative_followthrough_load_v1(db(),$user,scope_principal($user,17),170,(int)$task['result']['initiative_message_id']);
 $before=count(scope_runs(1,17,'initiative.prepare'));
 $advanceQuery='Yes, develop that private next step. '.str_repeat('Use the saved source details before proposing an action. ',10)
@@ -265,7 +289,7 @@ db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,co
     ->execute([json_encode(['initiative_followthrough'=>$outcome],JSON_THROW_ON_ERROR)]);
 db()->exec("UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=170");
 $GLOBALS['scopeModel']=static function(string $prompt,string $protocol)use($advanceQuery):string{
-    capability_pipeline_check($protocol==='vp3.initiative-draft.v1'&&!db()->inTransaction(),
+    capability_pipeline_check($protocol===VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1&&!db()->inTransaction(),
         'the actual continuation uses the existing governed leaf inference outside a transaction');
     $request=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
     capability_pipeline_check(($request['tool_result']['tool']??null)==='tasks.read'
@@ -310,17 +334,16 @@ try{
         'a later actual retry with all valid metadata verifies every selected task across both batches');
 }finally{db()->exec('DELETE FROM agent_memory_items WHERE id BETWEEN 1100 AND 1107');}
 
-// Delay a real completed task result, then verify it can be delivered once on
-// owner return without another model call or manufactured owner message.
+// Old pending specialist receipts cannot race the new shared delivery owner.
 $pending=capability_pipeline_prepare($user,17,170,'tasks.read','task:1002','TASK_RAW_RECORD_SENTINEL',false);
 $messages=count(scope_messages());$modelCount=count($GLOBALS['scopeInference']);
 capability_pipeline_check(vp3_initiative_foreground_status_v1(db(),$user,17,170)['state']==='ready',
-    'readonly status verifies the actual current pending task result');
+    'readonly status verifies the current private task result');
+capability_pipeline_legacy_pending($pending);
 db()->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"conversation_id\":170}',context_key='chat:170',last_heartbeat_at=NOW() WHERE user_id=1");
-capability_pipeline_check(vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages+1
-    &&count($GLOBALS['scopeInference'])===$modelCount,'owner return delivers the exact saved current task result once without another model call');
-capability_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages+1,
-    'a second delivery sweep cannot repeat that saved capability result');
+capability_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages
+    &&capability_pipeline_stored($pending['id'])['initiative_delivery']==='withheld'
+    &&count($GLOBALS['scopeInference'])===$modelCount,'owner return withdraws the legacy pending result without Chat or model replay');
 
 // Audio-library organization is not a semantic edit to a saved recording.
 // A real pending result must survive those touches without another inference.
@@ -358,8 +381,8 @@ db()->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"co
 capability_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages
     &&count($GLOBALS['scopeInference'])===$modelCount,'delayed delivery cannot expose the stale private task result or regenerate it');
 $withheld=capability_pipeline_stored($stale['id']);
-capability_pipeline_check($withheld['initiative_delivery']==='withheld',
-    'the actual action and receipt both record the changed-source result as withheld');
+capability_pipeline_check($withheld['initiative_delivery']==='private',
+    'the changed-source specialist receipt stays private after the current projection is withdrawn');
 db()->prepare('UPDATE agent_memory_items SET memory_text=? WHERE id=1002')->execute([$taskText]);
 
 // Unknown verification failures stay pending, while known deleted exact sources
@@ -374,10 +397,11 @@ capability_pipeline_reject(static fn()=>vp3_initiative_current_sources_v1(db(),$
 db()->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
 capability_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages
     &&count($GLOBALS['scopeInference'])===$models&&capability_pipeline_stored($unavailable['id'])===$unchanged,
-    'a real503 source-verification failure leaves the exact pending action and receipt result unchanged');
+    'a real 503 source-verification failure leaves the exact private action and receipt result unchanged');
 db()->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE id=1002')->execute([$savedTask['metadata_json']]);
-capability_pipeline_check(vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages+1
-    &&count($GLOBALS['scopeInference'])===$models,'the same pending result recovers from unavailable source verification without model replay');
+$recovered=vp3_initiative_work_sources_v1(db(),$user,$unavailable['goal']['binding'],$unavailable['goal']);
+capability_pipeline_check(isset($recovered['task:1002'])&&!vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages
+    &&count($GLOBALS['scopeInference'])===$models,'restored storage verifies the current private result without direct Chat or model replay');
 foreach([
     ['tasks.read','task:1002','TASK_RAW_RECORD_SENTINEL'],
     ['transcripts.read','transcript:301','TRANSCRIPT_RAW_RECORD_SENTINEL'],
@@ -399,8 +423,8 @@ foreach([
         db()->exec("UPDATE agent_activity_state SET details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1");
         capability_pipeline_check(!vp3_initiative_deliver_pending_v1(db(),$user,17)&&count(scope_messages())===$messages
             &&count($GLOBALS['scopeInference'])===$models,'a deleted '.$tool.' source cannot post or regenerate its saved result');
-        capability_pipeline_check(capability_pipeline_stored($deleted['id'])['initiative_delivery']==='withheld',
-            'known '.$tool.' deletion records withheld instead of endlessly retrying unavailable');
+        capability_pipeline_check(capability_pipeline_stored($deleted['id'])['initiative_delivery']===($tool==='tasks.read'?'private':'withheld'),
+            'known '.$tool.' deletion keeps its verified delivery boundary');
     }finally{
         if($tool==='tasks.read')capability_pipeline_restore_row('agent_memory_items',$saved);
         else{capability_pipeline_restore_row('artist_transcript_sessions_v172',$session);capability_pipeline_restore_row('artist_transcript_segments_v172',$segment);}

@@ -46,7 +46,7 @@ function agent_appointment_lifecycle_transition_v700(
     if(!in_array($to,$allowed[$current]??[],true))throw new RuntimeException('That appointment lifecycle transition is not allowed.');
 
     if($to==='cancelled'){
-        if(!agent_scheduling_cancel_booking_v430($pdo,(int)$booking['id'],(int)$booking['owner_user_id']))throw new RuntimeException('Appointment could not be cancelled.');
+        if(!agent_scheduling_cancel_booking_v430($pdo,(int)$booking['id'],(int)$booking['owner_user_id'],signalPlanning:false))throw new RuntimeException('Appointment could not be cancelled.');
         $update=$pdo->prepare("UPDATE agent_scheduling_bookings SET lifecycle_status='cancelled' WHERE id=? AND owner_user_id=? AND status='cancelled'");
         $update->execute([(int)$booking['id'],(int)$booking['owner_user_id']]);
     }elseif($to==='completed'){
@@ -67,6 +67,7 @@ function agent_appointment_lifecycle_transition_v700(
     if(!$fresh)throw new RuntimeException('Appointment could not be reloaded.');
     agent_appointment_lifecycle_event_v700($pdo,$fresh,'status_changed',$current,$to,$actorType,$actorUserId,$actorAgentId,$details);
     agent_appointment_lifecycle_queue_notice_v700($pdo,$fresh,$to);
+    agent_scheduling_wake_planning_v430($pdo,$fresh);
     return $fresh;
 }
 

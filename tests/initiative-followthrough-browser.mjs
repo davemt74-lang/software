@@ -5,7 +5,7 @@ import {chromium} from 'playwright';
 // The shipped Chat/voice clients and reply CSS are real. HTTP persistence,
 // intent/provider output, CAS and source changes are controlled transport
 // fixtures; actual authority/execution tests live at the PHP boundary.
-const files=['chat.js','chat-voice.js'];
+const files=['chat.js','chat-voice.js','agent-activity-hub-v1.js'];
 const sources=Object.fromEntries(await Promise.all(files.map(async name=>[name,await fs.readFile(new URL('../'+name,import.meta.url),'utf8')])));
 const css=await fs.readFile(new URL('../chat.css',import.meta.url),'utf8');
 const preVoice=(await fs.readFile(new URL('../chat.php',import.meta.url),'utf8')).match(/\$voiceBootstrap = '([^']+)';/)[1];
@@ -14,7 +14,7 @@ const origin='https://initiative-followthrough.test';
 const reference=id=>(id===10?'a':id===11?'b':'c').repeat(64);
 function gate(){let arrive,release;return {arrived:new Promise(r=>{arrive=r;}),released:new Promise(r=>{release=r;}),arrive:()=>arrive(),release:()=>release()};}
 
-async function fixture(agent=7,{mobile=false,voice=false}={}){
+async function fixture(agent=7,{mobile=false,voice=false,coordination=false,example=false}={}){
   const context=await browser.newContext({viewport:{width:mobile?390:1280,height:850}}),sends=[],errors=[];
   const posts=new Map([10,11,20].map(id=>[id,{message_id:id,owner_user_id:1,agent_id:agent,
     conversation_id:id===20?43:42,run_id:90+id,reply_ref:reference(id),revision:1,state:'open'}]));
@@ -35,13 +35,16 @@ async function fixture(agent=7,{mobile=false,voice=false}={}){
   },{voice});
   const messages=cid=>[
     ...histories.get(cid).map(id=>{const p=posts.get(id);return {id,role:'assistant',message:id===10?'I can investigate the launch research.':id===11?'I can prepare the product follow-up.':'Another Chat has its own proposal.',
-      context_json:JSON.stringify({source:'agent_initiative',initiative_work:{owner_user_id:p.owner_user_id,agent_id:p.agent_id,
+      context_json:JSON.stringify({source:'agent_initiative',...(coordination&&(id===10||id===11)
+        ?{initiative_output:{type:'initiative_coordination',state:id===10?'needs_owner':'watching'}}:{}),initiative_work:{owner_user_id:p.owner_user_id,agent_id:p.agent_id,
         conversation_id:p.conversation_id,run_id:p.run_id,review_actions:[],followthrough:{reply_ref:p.reply_ref,revision:p.revision,state:p.state}}})};}),
     ...(cid===42?[{id:12,role:'assistant',message:'Foreign owner metadata must not have a Reply action.',context_json:JSON.stringify({initiative_work:{owner_user_id:2,agent_id:agent,conversation_id:42,run_id:102,
       review_actions:[],followthrough:{reply_ref:'d'.repeat(64),revision:1,state:'open'}}})},{id:13,role:'assistant',message:'An ordinary response.'},
       {id:14,role:'assistant',message:'An ordinary response cannot manufacture an Initiative reply.',context_json:JSON.stringify({source:'ordinary',initiative_work:{owner_user_id:1,agent_id:agent,conversation_id:42,run_id:104,review_actions:[],followthrough:{reply_ref:'e'.repeat(64),revision:1,state:'open'}}})}]:[]),
     ...saved.get(cid)
   ];
+  if (example) saved.get(42).push({id:15,role:'assistant',message:'Try an editable example.',
+    context_json:JSON.stringify({actions:[{type:'specialist_example',specialist:'coding',label:'Try a demo canvas'}]})});
   await context.route(origin+'/**',async route=>{
     const request=route.request(),url=new URL(request.url());
     if(url.pathname==='/')return route.fulfill({contentType:'text/html',body:`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -49,7 +52,8 @@ async function fixture(agent=7,{mobile=false,voice=false}={}){
       <button id="newChatButton">New Chat</button><div id="chatHistory"></div><section id="chatThread" data-view="chat"><div id="chatWelcome" hidden></div></section>
       <div id="chatComposerShell"><form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button><button type="button" id="chatVoiceButton">Voice</button></form><div id="chatVoiceStatus"></div></div>
       <script>window.STONEFELLOW_CHAT={userId:1,agentId:${agent},initialConversationId:42,initialView:'chat',endpoint:'/api/chat-v236.php',csrf:'fixture',workingAttentionBinding:'owner-a-session'};</script>
-      ${preVoice}<script src="/chat.js"></script><script src="/chat-voice.js"></script>`});
+      ${preVoice}<script src="/chat.js"></script><script src="/chat-voice.js"></script>
+      ${example?'<script>window.VP3_ORB_CONFIG={ownerKey:"1",agentId:7,activityEndpoint:"/api/hub",workingAttentionBinding:"owner-a-session"};</script><script src="/agent-activity-hub-v1.js"></script>':''}`});
     if(sources[url.pathname.slice(1)])return route.fulfill({contentType:'text/javascript',body:sources[url.pathname.slice(1)]});
     if(!url.pathname.startsWith('/api/chat'))return route.fulfill({status:404});
     const body=request.postDataJSON(),cid=Number(body.conversation_id||42);
@@ -69,18 +73,20 @@ async function fixture(agent=7,{mobile=false,voice=false}={}){
       if(p){p.revision++;p.state=nextState;if(nextState==='queued')queued++;
         p.reply_message_id=userId;p.continuation_run_id=nextState==='queued'?800+queued:0;outcome={...p};}
       const answer=p?'The selected Agent update is now '+nextState+'.':'Which Agent update do you mean?';
+      const coordinationReply=coordination&&p?.message_id===10;
       saved.get(cid).push({id:userId,role:'user',message:body.message},{id:assistantId,role:'assistant',message:answer,
-        context_json:JSON.stringify({initiative_followthrough:outcome})});
-      const data={ok:true,conversation_id:cid,user_message_id:userId,assistant_message_id:assistantId,answer,initiative_followthrough:outcome&&responseScope?{...outcome,...responseScope}:outcome,...responseFields};
+        context_json:JSON.stringify({initiative_followthrough:outcome,initiative_coordination_reply_v1:coordinationReply})});
+      const data={ok:true,conversation_id:cid,user_message_id:userId,assistant_message_id:assistantId,answer,coordination_reply:coordinationReply,
+        initiative_followthrough:outcome&&responseScope?{...outcome,...responseScope}:outcome,...responseFields};
       if(loseResponse){loseResponse=false;return route.abort('internetdisconnected');}
       if(url.pathname.includes('stream'))return route.fulfill({contentType:'application/x-ndjson',body:JSON.stringify({type:'start',conversation_id:cid})+'\n'+JSON.stringify({type:'done',data})+'\n'});
       return route.fulfill({json:data});
     }
     const list=messages(cid);
-    if(body.action==='messages_after')return route.fulfill({json:{ok:true,messages:list.filter(item=>item.id>body.after_id)}});
+    if(body.action==='messages_after')return route.fulfill({json:{ok:true,messages:list.filter(item=>item.id>body.after_id||body.pending_message_ids?.includes(item.id))}});
     if(body.action==='activity'){
       const json={ok:true,conversation_id:cid,latest_message_id:list.at(-1)?.id||0,latest_id:0,updates:[],unread_count:0,
-      initiative_updates:(body.initiative_message_ids||[]).map(id=>{const p=posts.get(id);return !p||p.conversation_id!==cid||unavailable.has(id)?{message_id:id,available:false}
+      initiative_updates:(body.initiative_message_ids||[]).map(id=>{const p=posts.get(id);return !p||p.conversation_id!==cid||unavailable.has(id)?{message_id:id,available:false,coordination_source_unavailable:coordination&&id===10}
         :{message_id:id,available:true,recoverable:p.recoverable===true||p.state==='stale',child_execution_state:p.child_execution_state||'',initiative_followthrough:{reply_message_id:0,continuation_run_id:0,...p}};})};
       const wait=activityHold;activityHold=null;if(wait){wait.arrive();await wait.released;}
       return route.fulfill({json});
@@ -98,6 +104,22 @@ const send=async(page,text)=>{await page.locator('#chatInput').fill(text);await 
 const settled=page=>page.waitForFunction(()=>!window.STONEFELLOW_CHAT_CONTINUITY_V87.isBusy());
 
 try{
+  const example=await fixture(7,{example:true});
+  try {
+    const page=await example.open();
+    const button=page.getByRole('button',{name:'Try a demo canvas',exact:true});
+    const composer=page.locator('#chatInput');
+    await composer.fill('My current draft');
+    await button.click();
+    assert.equal(await composer.inputValue(),'My current draft');
+    await composer.fill('');
+    await button.click();
+    assert.match(await composer.inputValue(),/^\/build Build a private launch checklist/);
+    assert.equal(example.sends.length,0);
+    assert.deepEqual(example.errors,[]);
+    console.log('PASS a saved specialist Chat example opens an editable draft without replacing existing text or sending a turn');
+  } finally { await example.context.close(); }
+
   for(const [agent,mobile] of [[0,false],[7,true]]){
     const f=await fixture(agent,{mobile});
     try{
@@ -244,6 +266,34 @@ try{
     assert.equal(live.sends.at(-1).initiative_reply.revision,3);assert.equal(live.queued,2);
     console.log('PASS existing activity reads reconcile an old post without a new message; unverifiable status preserves the draft and recovers without inventing a stale decision');
   }finally{await live.context.close();}
+
+  const coordination=await fixture(7,{coordination:true});
+  try{
+    const page=await coordination.open();
+    await page.locator('[data-initiative-followthrough-state="10"]').getByText('Awaiting your reply',{exact:true}).waitFor();
+    assert.equal(await page.getByText('Awaiting your reply',{exact:true}).count(),1);
+    await page.evaluate(()=>{
+      window.firstQuestionReply=document.querySelector('[data-initiative-reply="10"]');
+      window.firstQuestionReply.focus();
+    });
+    const activity=page.waitForResponse(response=>response.request().postDataJSON()?.action==='activity');
+    await page.clock.fastForward(3500);await activity;
+    assert.equal(await page.evaluate(()=>document.activeElement===window.firstQuestionReply
+      &&document.querySelector('[data-initiative-reply="10"]')===window.firstQuestionReply),true);
+    await choose(page,10);await send(page,'Discuss the launch research.');await settled(page);
+    await page.locator('[data-initiative-followthrough-state="10"]').getByText('Private work queued',{exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>document.querySelector('[data-initiative-reply="10"]')===window.firstQuestionReply),true);
+    await page.getByText('The selected Agent update is now queued.',{exact:true}).waitFor();
+    coordination.projection(10,false);await page.clock.fastForward(3500);
+    await page.waitForFunction(()=>document.querySelectorAll('.message-text').length>0&&[...document.querySelectorAll('.message-text')]
+      .filter(el=>el.textContent==='The information behind this Top of Mind finding is no longer available.').length===2);
+    assert.equal(await page.locator('[data-initiative-reply="10"]').count(),0);
+    await page.getByText('I can prepare the product follow-up.',{exact:true}).waitFor();
+    coordination.projection(10,true);await page.clock.fastForward(3500);
+    await page.getByText('I can investigate the launch research.',{exact:true}).waitFor();
+    await page.getByText('The selected Agent update is now queued.',{exact:true}).waitFor();
+    console.log('PASS open Chat keeps the original question and focused Reply through status polls, updates status after a reply, and rechecks changed evidence');
+  }finally{await coordination.context.close();}
 
   const activitySwitch=await fixture();
   try{

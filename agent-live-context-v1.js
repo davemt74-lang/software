@@ -4,6 +4,7 @@
   'use strict';
   if(window.VP3LiveContext)return;
   const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const visitRef=value=>typeof value==='string'&&value.startsWith('eyes-visit:')&&UUID.test(value.slice(11));
   const TAB=/^[a-f0-9]{32}$/;
   const ttl=90000,skew=5000,chatInputTtl=30000;
   const pageChat=window.STONEFELLOW_CHAT,pagePath=location.pathname;
@@ -141,6 +142,9 @@
     eyes={active:true,context_allowed:true,observed_at:value.observed_at,participant_count:rows.length,known_count:known,unknown_count:rows.length-known,
       identity_provisional:true,authentication_authority:false,greetings_allowed:value.greetings_allowed===true,
       last_event:['arrival','departure','steady','unknown'].includes(value.last_event)?value.last_event:'unknown'};
+    if(rows.length===1&&known===1&&rows[0].identity_source==='local_visual_similarity'&&visitRef(rows[0].visit_ref)){
+      eyes.visit_ref=rows[0].visit_ref;
+    }
     if(fresh(value.last_event_at))eyes.last_event_at=value.last_event_at;
     if(value.object_detection_active===true&&Array.isArray(value.object_labels)){eyes.object_detection_active=true;eyes.object_labels=[...new Set(value.object_labels.filter(item=>typeof item==='string'&&/^[a-zA-Z][a-zA-Z0-9 _-]{0,59}$/.test(item)).slice(0,8))];}
     snapshot();
@@ -162,7 +166,7 @@
   window.addEventListener('pagehide',()=>{clear('pagehide');closed=true;});
   window.addEventListener('pageshow',()=>{closed=false;snapshot();});
   window.addEventListener('popstate',()=>clear('route_changed'));
-  window.VP3LiveContext=Object.freeze({snapshot,semantic,clear,noteChatInput,
+  window.VP3LiveContext=Object.freeze({snapshot,semantic,clear,noteChatInput,serverObservationTime:wireTime,
     voiceDeferral:()=>{const active=snapshot()?.microphone;const defer=active?.activity==='energy'&&energySince>0&&Date.now()-energySince>=750;return {defer,reason:defer?'microphone_activity':''};},
     bindActivity:(tab,offset=0)=>{if(TAB.test(tab||''))activityTab=tab;if(Number.isFinite(offset)&&Math.abs(offset)<=86400000)clockOffset=offset;},
     pendingEvents:()=>pending.map(event=>({...event})),

@@ -21,6 +21,7 @@
   const reloadMessage = 'Gmail or Inbox review settings changed. Reload to continue.';
   const owner = cfg.ownerKey;
   const composeKey = `vp3:gmail-review-compose:${owner}`;
+  const triageOpenKey = `vp3:gmail-triage-open:${owner}`;
   const agent = cfg.agentId;
   const binding = window.STONEFELLOW_CHAT?.workingAttentionBinding;
   const key = 'gmail-inbox-review';
@@ -36,6 +37,12 @@
   const valid = value => value && states.has(value.state)
     && (!(active(value) || value.state === 'ready') || typeof value.run_id === 'string' && /^[a-f0-9]{32}$/.test(value.run_id));
   let review = host && valid(cfg.initialReview) ? cfg.initialReview : null;
+  // Undefined means no status response yet. Null means the response could not authorize updates.
+  let updateAccess;
+  let freshRoutineRows = new WeakSet();
+  let checkedRoutineRows = new WeakSet();
+  let routineRead = null;
+  let routineStatusNeedsProof = false;
   let pending = null;
   let timer = 0;
   let progressTimer = 0;
@@ -94,6 +101,114 @@
   const messageId = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{1,190}$/.test(value);
   const reviewReply = /^(?:Reply|Draft reply|Auto reply) to Gmail review item [a-f0-9]{64}$/;
   const selectedReply = /^(?:Reply|Draft reply) to Gmail matched item [a-f0-9]{64} [a-zA-Z0-9_-]{1,190} [a-f0-9]{64}$/;
+  function httpLink(value) {
+    if (typeof value !== 'string' || value.length > 2048 || !/^https?:\/\/[^/?#:]/i.test(value)
+        || /[\s\p{C}\\<>"'`]/u.test(value)) return null;
+    try {
+      const url = new URL(value);
+      return ['http:','https:'].includes(url.protocol) && url.hostname && !url.username && !url.password ? url : null;
+    } catch (_) { return null; }
+  }
+
+  function trimmedLink(value) {
+    if (value.endsWith('...') || value.endsWith('…')) return '';
+    let target = value.replace(/[.!,;]+$/u,'');
+    for (const [open,close] of [['(',')'],['[',']'],['{','}']]) {
+      let balance = 0;
+      for (const char of target) balance += (char === open) - (char === close);
+      while (balance < 0 && target.endsWith(close)) {
+        target = target.slice(0,-1).replace(/[.!,;]+$/u,'');
+        balance++;
+      }
+    }
+    return target;
+  }
+
+  function linkScope(marker,ref) {
+    return itemRef(binding) && Number.isSafeInteger(marker?.conversation_id) && marker.conversation_id > 0
+      && Number.isSafeInteger(marker.message_id) && marker.message_id > 0
+      ? {agent_id:agent,conversation_id:marker.conversation_id,chat_message_id:marker.message_id,
+          working_attention_binding:binding,...(itemRef(ref) ? {item_ref:ref} : {})} : null;
+  }
+
+  function gmailLink(value,label,proof = null,receipt = null) {
+    const anchor = node('a',label,'vp3-gmail-text-link');
+    anchor.href = value;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    if (proof) {
+      const record = event => {
+        if (!event.isTrusted || event.defaultPrevented || event.button !== (event.type === 'auxclick' ? 1 : 0)
+            || !thread?.contains(anchor) || chatTarget() !== proof.conversation_id
+            || anchor.getAttribute('href') !== value) return;
+        const linkProof = receipt?.token ? {link_token:receipt.token,link_label:receipt.label} : {};
+        void send({action:'record_link_open',...proof,url:value,...linkProof},undefined,true)
+          .catch(() => { /* Opening the anchor is independent of recording the click. */ });
+      };
+      anchor.addEventListener('click',record);
+      anchor.addEventListener('auxclick',record);
+    }
+    return anchor;
+  }
+
+  function appendTextLinks(element,text,proof = null,approved = new Map(),onlyReceipts = false) {
+    const visible = new Set();
+    let cursor = 0, linked = 0;
+    for (const match of text.matchAll(/https?:\/\/[^\s\p{C}<>"'`“”‘’]+/giu)) {
+      if (linked >= 30) break;
+      if (/[\p{L}\p{N}_./:%@=?&#-]$/u.test(text.slice(Math.max(0,match.index-2),match.index))) continue;
+      const exact = httpLink(match[0]);
+      const value = exact && approved.has(exact.href) ? match[0] : trimmedLink(match[0]);
+      const url = httpLink(value);
+      if (!url) continue;
+      const receipt = approved.get(url.href);
+      element.append(text.slice(cursor,match.index),
+        gmailLink(receipt?.url ?? value,value,onlyReceipts && !receipt?.token ? null : proof,receipt));
+      visible.add(url.href);
+      linked++;
+      cursor = match.index+value.length;
+    }
+    element.append(text.slice(cursor));
+    return visible;
+  }
+
+  function renderOpenedEmail(panel,text,links,proof,bodyClass = '') {
+    const approved = new Map();
+    for (const entry of Array.isArray(links) ? links.slice(0,30) : []) {
+      const url = httpLink(entry?.url);
+      if (!url || approved.has(url.href)) continue;
+      const label = typeof entry.label === 'string' && [...entry.label].length <= 160 ? entry.label : '';
+      approved.set(url.href,{url:entry.url,label,token:label && itemRef(entry.token) ? entry.token : null});
+    }
+    const body = node('p','',bodyClass);
+    const visible = appendTextLinks(body,text,proof,approved,true);
+    panel.append(body);
+    const extras = [...approved].filter(([url]) => !visible.has(url));
+    if (extras.length) {
+      const list = node('ul','','gmail-review-source-links');
+      list.setAttribute('aria-label','Links in this email');
+      for (const [,entry] of extras) {
+        const row = node('li');
+        row.append(gmailLink(entry.url,entry.label || entry.url,entry.token ? proof : null,entry));
+        list.append(row);
+      }
+      panel.append(list);
+    }
+  }
+
+  function renderGmailPostLinks(row) {
+    const target = chatTarget();
+    const id = Number(row?.dataset.chatMessageId);
+    if (!row || !target || row.dataset.gmailContentPost !== 'true'
+        || String(target) !== row.dataset.chatConversationId || !Number.isSafeInteger(id) || id < 1) return;
+    const body = row.querySelector('.message-text');
+    if (!body || body.querySelector('.vp3-gmail-text-link')) return;
+    const text = body.textContent;
+    if (!text || !/https?:\/\//i.test(text)) return;
+    body.replaceChildren();
+    appendTextLinks(body,text,linkScope({conversation_id:target,message_id:id}));
+  }
+
   function senderAddress(value) {
     const address = (value.match(/^[^<>]*<([^<>]+)>$/)?.[1] || value).trim().toLowerCase();
     return address.length <= 254 && /^[^\s"\\<>@]+@[^\s"\\<>@]+$/.test(address) ? address : '';
@@ -206,10 +321,13 @@
 
   function closeMessage() {
     if (!openedMessage) return;
-    openedMessage.controller.abort();
-    openedMessage.button.setAttribute('aria-expanded','false');
-    openedMessage.panel.remove();
+    const {controller,button,panel,dialog} = openedMessage;
     openedMessage = null;
+    controller.abort();
+    button?.setAttribute('aria-expanded','false');
+    panel.remove();
+    if (dialog?.open) dialog.close();
+    dialog?.remove();
   }
 
   function openPanel(row,button) {
@@ -244,20 +362,27 @@
     }
   }
 
-  function readMessage(selection,payload,request = null) {
+  function readMessage(selection,payload,request = null,recordPriority = null) {
     return panelRead(selection,payload,'Opening this Gmail message…','This Gmail message could not be opened. Check Inbox Review and try again.',(data,panel,status) => {
       const message = data.item;
       if (!['subject','from','body'].every(field => typeof message?.[field] === 'string')) throw Error('Gmail item unavailable');
+      recordPriority?.(data.priority);
       delete panel.dataset.gmailReviewMatches;
-      panel.replaceChildren(node('strong',message.subject || '(No subject)'),node('small',message.from),
-        node('p',message.body || 'No readable text in this message.'));
+      panel.replaceChildren(node('strong',message.subject || '(No subject)'),node('small',message.from));
+      const ref = itemRef(payload.item_ref) ? payload.item_ref : itemRef(message.item_ref) ? message.item_ref : null;
+      const proof = ref ? linkScope({conversation_id:payload.conversation_id,message_id:payload.chat_message_id},ref) : null;
+      renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof);
+      if (message.answered_in_gmail === true) {
+        panel.append(node('small','Already replied in Gmail.'));
+        return;
+      }
       if (request) {
         const actions = node('div','','gmail-review-item-actions');
-        actions.append(...replyButtons(matchTarget(payload),request));
+        actions.append(...replyButtons(ref ? `review item ${ref}` : matchTarget(payload),request));
         panel.append(actions);
       }
-      const ref = payload.item_ref;
-      if (ref && thread && message.auto_reply === true && typeof message.auto_reply_to === 'string' && message.auto_reply_to) {
+      if (payload.action === 'open_item' && !selection.dialog && ref && thread && message.auto_reply === true
+          && typeof message.auto_reply_to === 'string' && message.auto_reply_to) {
         panel.append(node('small','Auto reply sends to ' + message.auto_reply_to + '.'));
         panel.append(itemButton('Auto reply and send (uses tokens)','auto-reply',auto => {
           if (compose(`Auto reply to Gmail review item ${ref}`)) {
@@ -271,9 +396,75 @@
     });
   }
 
-  function replyButtons(target,request) {
+  function openTriageItem(item) {
+    if (!thread || !inScope() || !itemRef(item?.id) || item.agent !== agent || item.binding !== binding
+        || !Number.isSafeInteger(item.generation) || item.generation < 1
+        || !Number.isSafeInteger(item.conversation) || item.conversation < 0) return false;
+    return openChatMessage(item.conversation,{action:'triage_open',item_ref:item.id,generation:item.generation,
+      working_attention_binding:binding,agent_id:agent,conversation_id:item.conversation});
+  }
+
+  function openArrivedItem(ref, conversationId) {
+    if (!thread || !inScope() || !itemRef(ref) || !Number.isSafeInteger(conversationId) || conversationId < 0) return false;
+    return openChatMessage(conversationId,{action:'open_item',item_ref:ref});
+  }
+
+  function openReportedItem(id,conversationId) {
+    if (!thread || chatTarget() !== conversationId) return false;
+    const proof = linkScope({conversation_id:conversationId,message_id:id});
+    if (!proof || !thread.querySelector(`[data-chat-message-role="assistant"][data-chat-conversation-id="${conversationId}"][data-chat-message-id="${id}"][data-gmail-content-post="true"]`)) return false;
+    return openChatMessage(conversationId,{action:'open_item',...proof});
+  }
+
+  function openChatMessage(conversationId,payload) {
+    const live = continuity();
+    if (conversationId !== live.conversationId?.()) return false;
+    live.showChatView?.();
+    if (chatTarget() !== conversationId) return false;
+    closeMessage();
+
+    const dialog = node('dialog','','gmail-review-triage-dialog');
+    const header = node('header');
+    const close = node('button','Close');
+    close.type = 'button';
+    close.autofocus = true;
+    header.append(node('strong','Gmail message'),close);
+    const panel = node('div','','gmail-review-open-message');
+    dialog.setAttribute('aria-label','Gmail message');
+    dialog.append(header,panel);
+    thread.append(dialog);
+    const selection = openedMessage = {controller:new AbortController(),panel,dialog};
+    const dismiss = () => { if (openedMessage === selection) closeMessage(); };
+    close.addEventListener('click',dismiss);
+    dialog.addEventListener('close',dismiss);
+    try { dialog.showModal(); }
+    catch (_) { dismiss(); return false; }
+    const feedback = node('small');
+    feedback.setAttribute('role','status');
+    void readMessage(selection,payload,command => {
+      if (compose(command)) dismiss();
+      else {
+        feedback.textContent = 'Finish your current Chat draft before replying.';
+        panel.append(feedback);
+      }
+    });
+    return true;
+  }
+
+  function restoreTriageItem() {
+    if (!thread || !inScope()) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(triageOpenKey) || 'null');
+      if (!saved) return;
+      sessionStorage.removeItem(triageOpenKey);
+      if (Number.isSafeInteger(saved.at) && saved.at <= Date.now() && Date.now()-saved.at < 120000
+          && saved.conversation === 0) openTriageItem({...saved,conversation:continuity()?.conversationId?.()});
+    } catch (_) { /* The originating page can be used to try the exact message again. */ }
+  }
+
+  function replyButtons(target,request,autoLabel = 'Auto Compose (uses tokens)') {
     return [itemButton('Reply','reply',() => request(`Reply to Gmail ${target}`)),
-      itemButton('Auto Compose (uses tokens)','draft-reply',() => request(`Draft reply to Gmail ${target}`))];
+      itemButton(autoLabel,'draft-reply',() => request(`Draft reply to Gmail ${target}`))];
   }
 
   function matchTarget({legacy_ref,message_id,match_token}) {
@@ -289,7 +480,7 @@
       if (data.unique_match === true && data.matches.length === 1 && matches.length === 1) {
         const match = matches[0];
         const payload = {action:'open_match',legacy_ref:ref,message_id:match.message_id,match_token:match.match_token};
-        if (action === 'open') {
+        if (action === 'open' || match.answered_in_gmail === true) {
           void readMessage(selection,payload,request);
           return;
         }
@@ -310,8 +501,9 @@
         const at = timestamp(match.received_at);
         const actions = node('div','','gmail-review-item-actions');
         const payload = {action:'open_match',legacy_ref:ref,message_id:match.message_id,match_token:match.match_token};
-        actions.append(itemButton('Open','open-match',() => void readMessage(selection,payload,request)),
-          ...replyButtons(matchTarget(payload),request));
+        actions.append(itemButton('Open','open-match',() => void readMessage(selection,payload,request)));
+        if (match.answered_in_gmail === true) actions.append(node('small','Already replied in Gmail.'));
+        else actions.append(...replyButtons(matchTarget(payload),request));
         candidate.append(node('strong',match.subject || '(No subject)'),node('small',match.from),
           node('small',Number.isFinite(at) ? new Date(at).toLocaleString() : ''),node('p',match.snippet),actions);
         list.append(candidate);
@@ -320,20 +512,71 @@
     });
   }
 
-  function attachItemActions(row,item,seenSenders = null) {
+  function attachItemActions(row,item,seenSenders = null,marker = null) {
     const actions = node('div','','gmail-review-item-actions');
     const feedback = node('small');
     feedback.dataset.gmailReviewFeedback = '';
     feedback.setAttribute('role','status');
+    const ref = item.item_ref;
+    const sourceTarget = itemRef(ref) ? linkScope(marker,ref) : null;
+    const digestTarget = marker?.routine_digest === true ? sourceTarget : null;
+    const priority = digestTarget ? itemButton('Prioritize','prioritize',() => void prioritize()) : null;
+
+    function recordPriority(state) {
+      if (!priority || !['high','already_high'].includes(state)) return;
+      item.engagement_priority = 'high';
+      priority.textContent = 'High priority';
+      priority.disabled = true;
+    }
+
+    async function prioritize() {
+      if (!priority || priority.disabled || !inScope() || chatTarget() !== digestTarget.conversation_id) return;
+      const started = epoch;
+      const current = () => started === epoch && row.isConnected && inScope() && chatTarget() === digestTarget.conversation_id;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(),10000);
+      priority.disabled = true;
+      try {
+        const response = await send({action:'prioritize_item',...digestTarget},controller.signal);
+        const data = await response.json();
+        if (!current()) return;
+        if (!response.ok || data?.ok !== true || !['high','already_high'].includes(data.priority)) throw Error('Priority unavailable');
+        recordPriority(data.priority);
+        feedback.textContent = 'Added to priority review.';
+      } catch (_) {
+        if (current() && item.engagement_priority !== 'high') feedback.textContent = 'Could not add this email to priority review.';
+      } finally {
+        clearTimeout(timeout);
+        if (current()) priority.disabled = item.engagement_priority === 'high';
+      }
+    }
+
     const request = command => {
       const submitted = compose(command);
       feedback.textContent = submitted ? '' : 'Finish your current Chat draft or open Agent Chat first.';
+      if (submitted) void prioritize();
     };
-    const ref = item.item_ref;
     if (itemRef(ref)) {
-      const open = itemButton('Open','open',button => void readMessage(openPanel(row,button),{action:'open_item',item_ref:ref}));
+      const open = itemButton('Open','open',button => {
+        if (digestTarget) {
+          void readMessage(openPanel(row,button),{action:'routine_open',...digestTarget},null,recordPriority);
+        } else {
+          void readMessage(openPanel(row,button),{action:'open_item',item_ref:ref,...sourceTarget});
+        }
+      });
       open.setAttribute('aria-expanded','false');
-      actions.append(open,...replyButtons(`review item ${ref}`,request));
+      actions.append(open);
+      const answered = item.answered_in_gmail === true;
+      if (answered) actions.append(node('small','Already replied in Gmail.'));
+      if (!answered || digestTarget) {
+        const controls = replyButtons(`review item ${ref}`,request,digestTarget ? 'Auto response (costs tokens)' : undefined);
+        if (answered) for (const control of controls) control.disabled = true;
+        actions.append(...controls);
+      }
+      if (priority) {
+        recordPriority(item.engagement_priority);
+        actions.append(priority);
+      }
     } else if (itemRef(item.legacy_ref)) {
       for (const [label,action] of [['Open','open'],['Reply','reply'],['Auto Compose (uses tokens)','draft-reply']]) {
         const control = itemButton(label,action,button => void findMatches(row,item.legacy_ref,button,action,request));
@@ -355,28 +598,46 @@
     return count ? `${count} ${count === 1 ? 'message' : 'messages'} with priority keywords in the subject.` : '';
   }
 
-  function itemList(items,seenSenders = null) {
+  function itemList(items,seenSenders = null,marker = null,includePreview = false) {
     if (!Array.isArray(items)) return null;
     const entries = items.slice(0,50).filter(item => item && typeof item.subject === 'string' && typeof item.from === 'string');
     if (!entries.length) return null;
     const list = node('ul','','connections-inbox-messages gmail-review-items');
     list.setAttribute('role','list');
+    const routine = marker?.routine_digest === true;
     const pageSize = 8;
     const addPage = () => {
       const offset = list.children.length;
       for (const item of entries.slice(offset,offset+pageSize)) {
         const row = node('li');
-        const labels = node('div','','gmail-review-item-labels');
-        labels.append(node('span',categories[item.category] || 'New','connections-badge'));
-        if (item.category === 'reply' && item.important === true) {
-          labels.append(node('span',categories.important,'connections-badge'));
+        row.append(node('strong',item.subject.slice(0,500) || '(No subject)'));
+        if (routine && includePreview) {
+          const preview = typeof item.preview === 'string' ? item.preview.trim().slice(0,320) : '';
+          if (preview) {
+            const text = node('p','','gmail-review-item-preview');
+            appendTextLinks(text,preview,itemRef(item.item_ref) ? linkScope(marker,item.item_ref) : null);
+            row.append(text);
+          }
         }
-        row.append(node('strong',item.subject.slice(0,500) || '(No subject)'),
-          node('span',item.from.slice(0,500),'connections-muted'),labels);
-        if (Array.isArray(item.priority_signals) && item.priority_signals.length) {
-          row.append(node('small','Priority keywords in subject · ' + item.priority_signals.join(', '),'gmail-review-item-priority'));
+        if (!routine) {
+          const labels = node('div','','gmail-review-item-labels');
+          labels.append(node('span',categories[item.category] || 'New','connections-badge'));
+          if (item.category === 'reply' && item.important === true) {
+            labels.append(node('span',categories.important,'connections-badge'));
+          }
+          row.append(node('span',item.from.slice(0,500),'connections-muted'),labels);
+          if (Array.isArray(item.priority_signals) && item.priority_signals.length) {
+            row.append(node('small','Priority keywords in subject · ' + item.priority_signals.join(', '),'gmail-review-item-priority'));
+          }
+          if (typeof item.triage?.reason === 'string' && item.triage.reason) {
+            const time = typeof item.triage.due_at === 'string' ? new Date(item.triage.due_at) : null;
+            const due = time && !Number.isNaN(time.getTime())
+              ? new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(time)
+              : item.triage.due_date;
+            row.append(node('small',item.triage.reason + (due ? ' Deadline ' + due + '.' : ''),'gmail-review-item-priority'));
+          }
         }
-        attachItemActions(row,item,seenSenders);
+        attachItemActions(row,item,seenSenders,marker);
         list.append(row);
       }
     };
@@ -406,8 +667,8 @@
     return {list,more,total:entries.length};
   }
 
-  function appendItems(parent,label,items,seenSenders) {
-    const page = itemList(items,seenSenders);
+  function appendItems(parent,label,items,seenSenders,marker = null) {
+    const page = itemList(items,seenSenders,marker);
     if (!page) return;
     const details = node('details','','gmail-review-item-group');
     details.append(node('summary',`${label} (${page.total})`),page.list);
@@ -427,12 +688,21 @@
   function workLease() {
     if (!inScope() || pageError || !valid(review)) return null;
     const initial = review.state === 'working';
-    const expiresAt = timestamp(initial ? review.next_attempt_at : review.inbox_working_until);
-    return expiresAt > Date.now() ? {id:initial ? 'gmail:'+review.run_id : 'gmail:inbox-updates',expiresAt} : null;
+    if (initial) {
+      const expiresAt = timestamp(review.next_attempt_at);
+      return expiresAt > Date.now() ? {id:'gmail:'+review.run_id,expiresAt} : null;
+    }
+    const analysis = review.inbox_background?.analysis_work;
+    const scanExpiry = timestamp(review.inbox_working_until);
+    const analysisExpiry = analysis?.state === 'working' ? timestamp(analysis.lease_until) : NaN;
+    if (scanExpiry > Date.now()) return {id:'gmail:inbox-updates',expiresAt:scanExpiry};
+    if (analysisExpiry > Date.now()) return {id:'gmail:content-analysis',expiresAt:analysisExpiry};
+    return null;
   }
   function renderRail() {
     const lease = workLease();
-    const description = lease && (review.state === 'working' ? detail(review) : 'Checking new Gmail messages.');
+    const description = lease && (review.state === 'working' ? detail(review)
+      : lease.id === 'gmail:content-analysis' ? 'Analyzing Gmail message content.' : 'Checking new Gmail messages.');
     const next = lease ? JSON.stringify([lease.id,lease.expiresAt,description]) : '';
     if (next === railSignature) return;
     railSignature = next;
@@ -491,24 +761,61 @@
 
   function overdueCheckRef(conversationId) {
     const monitor = review?.inbox_background;
-    if (conversationId === null || typeof binding !== 'string' || binding === '' || pending || active(review)
-        || !['needs_start','ready','failed'].includes(review?.state) || continuity()?.isBusy?.()
-        || monitor?.state !== 'overdue' || !itemRef(monitor.check_ref)) return null;
+    if (conversationId === null || typeof binding !== 'string' || binding === '' || pending || review?.state === 'working'
+        || !monitor || continuity()?.isBusy?.()) return null;
+    const ref = monitor?.state === 'overdue' && itemRef(monitor.check_ref) ? monitor.check_ref
+      : conversationId > 0 && itemRef(monitor?.content_check_ref) ? monitor.content_check_ref : null;
+    if (ref === null) return null;
     // The worker owns the lease. Slow repeated attempts on the same reference
     // so a temporarily stalled check can recover without repeated requests.
-    const delay = lastCheckAttempt?.ref === monitor.check_ref && lastCheckAttempt.count >= 2 ? 300000 : 60000;
+    const delay = lastCheckAttempt?.ref === ref && lastCheckAttempt.count >= 2 ? 300000 : 60000;
     if (lastCheckAttempt && Date.now() - lastCheckAttempt.at < delay) return null;
-    return monitor.check_ref;
+    return ref;
   }
 
   async function syncUpdates() {
     const latest = review?.inbox_updates?.latest;
     const target = chatTarget();
-    if (!target || latest?.kind !== 'batch' || latest.agent_id !== agent || latest.conversation_id !== target
-        || !Number.isSafeInteger(latest.message_id) || latest.message_id < 1 || !itemRef(latest.report_ref)
-        || continuity()?.isBusy?.()) return;
-    if (!thread.querySelector(`[data-chat-conversation-id="${target}"][data-chat-message-id="${latest.message_id}"]`)) {
-      try { await continuity()?.syncConversation?.(target); } catch (_) { /* Retry on the next status check. */ }
+    if (!target || updateAccess === null || continuity()?.isBusy?.()) return;
+    if (latest?.kind === 'batch' && latest.agent_id === agent && latest.conversation_id === target
+        && Number.isSafeInteger(latest.message_id) && latest.message_id > 0 && itemRef(latest.report_ref)) {
+      const row = thread.querySelector(`[data-chat-conversation-id="${target}"][data-chat-message-id="${latest.message_id}"]`);
+      try {
+        if (!row) await continuity()?.syncConversation?.(target);
+        else if (row.dataset.gmailRoutinePost !== 'true' && !row._vp3GmailInboxReviewV1) {
+          await continuity()?.refreshGmailUpdate?.(target,latest.message_id);
+        }
+      } catch (_) { /* Retry on the next status check. */ }
+    }
+    await recoverRoutineRows();
+  }
+
+  async function recoverRoutineRows() {
+    const target = chatTarget();
+    const live = continuity();
+    if (!target || updateAccess === null || routineRead || live?.isBusy?.() || !live?.refreshGmailUpdates) return;
+    const scopeRef = updateAccess?.scope_ref;
+    const checked = checkedRoutineRows;
+    const rows = [...thread.querySelectorAll(`[data-chat-conversation-id="${target}"][data-chat-message-role="assistant"][data-gmail-routine-post="true"]`)]
+      .reverse().filter(row => {
+        const marker = row._vp3GmailInboxReviewV1;
+        return !checked.has(row) && (!marker || !freshRoutineRows.has(row) || (scopeRef && marker.scope_ref !== scopeRef));
+      }).slice(0,24);
+    if (!rows.length) return;
+    for (const row of rows) checked.add(row);
+    const controller = routineRead = new AbortController();
+    const timer = setTimeout(() => controller.abort(),15000);
+    try {
+      if (!await live.refreshGmailUpdates(target,rows.map(row => Number(row.dataset.chatMessageId)),controller.signal)) {
+        for (const row of rows) checked.delete(row);
+      }
+    } catch (_) { /* The next valid lifecycle or mailbox-scope change allows another exact read. */ }
+    finally {
+      clearTimeout(timer);
+      if (routineRead === controller) {
+        routineRead = null;
+        renderUpdates();
+      }
     }
   }
 
@@ -516,44 +823,73 @@
     if (!thread) return;
     const target = chatTarget();
     const wanted = new Set();
-    const scopeRef = review?.inbox_updates?.scope_ref;
-    if (target > 0 && !pageError && itemRef(scopeRef) && !['unavailable','disabled'].includes(review.state)) {
+    let routineChanged = false;
+    const scopeRef = updateAccess?.scope_ref;
+    if (target > 0 && updateAccess !== null) {
       for (const row of thread.querySelectorAll(`[data-chat-conversation-id="${target}"][data-chat-message-role="assistant"]`)) {
         const marker = row._vp3GmailInboxReviewV1;
         const value = marker?.review;
         const at = timestamp(value?.at);
-        if (marker?.kind !== 'batch' || marker.scope_ref !== scopeRef || marker.agent_id !== agent || marker.conversation_id !== target
+        const routine = marker?.routine_digest === true;
+        if (marker?.kind !== 'batch' || !itemRef(marker.scope_ref) || (scopeRef && marker.scope_ref !== scopeRef)
+            || marker.agent_id !== agent || marker.conversation_id !== target
+            || (routine && !freshRoutineRows.has(row))
+            || (!routine && (!scopeRef || pageError || review?.state === 'unavailable'))
             || String(marker.message_id) !== row.dataset.chatMessageId || !itemRef(marker.report_ref)
             || !valid(value) || value.state !== 'ready' || value.run_id !== marker.run_id
             || !Number.isSafeInteger(value.total) || value.total < 1 || value.total > 50 || !Number.isFinite(at)) continue;
+        // Chat projected the approved preview with this exact message. A newer status can withdraw preview access.
+        const includePreview = updateAccess === undefined || updateAccess.preview_enabled === true;
         const parent = row.querySelector('.message-body');
         if (!parent) continue;
         wanted.add(row);
-        if (updateCards.get(row)?.isConnected) continue;
+        const previous = updateCards.get(row);
+        if (previous?.isConnected) {
+          if (previous._vp3GmailProjection === marker
+              && (!routine || previous.dataset.gmailRoutinePreview === String(includePreview))) continue;
+          if (openedMessage && previous.contains(openedMessage.panel)) closeMessage();
+          if (previous.dataset.gmailRoutineDigest === 'true') routineChanged = true;
+          previous.remove();
+        }
         const panel = node('div','','vp3-chat-gmail-review');
         panel.dataset.gmailInboxUpdate = marker.run_id;
         const headline = `${value.total} new Gmail ${value.total === 1 ? 'message' : 'messages'}`;
         panel.append(node('strong',headline));
         const time = resultTime(row.dataset.chatCreatedAt,value.at);
         if (time) panel.append(time);
-        if ([value.important,value.replies].every(count => Number.isSafeInteger(count) && count >= 0 && count <= value.total)) {
+        if (!routine
+            && [value.important,value.replies].every(count => Number.isSafeInteger(count) && count >= 0 && count <= value.total)) {
           panel.append(node('small',`${value.important} important · ${value.replies} ${value.replies === 1 ? 'reply' : 'replies'}`));
         }
-        const priority = priorityKeywordSummary(value.items);
-        if (priority) panel.append(node('small',priority));
-        appendItems(panel,'Messages in inbox update',value.items,new Set());
+        if (routine) {
+          routineChanged = true;
+          panel.dataset.gmailRoutineDigest = 'true';
+          panel.dataset.gmailRoutinePreview = String(includePreview);
+          const page = itemList(value.items,null,marker,includePreview);
+          if (page) {
+            panel.append(page.list);
+            if (page.more) panel.append(page.more);
+          }
+        } else {
+          const priority = priorityKeywordSummary(value.items);
+          if (priority) panel.append(node('small',priority));
+          appendItems(panel,'Messages in inbox update',value.items,new Set(),marker);
+        }
         parent.append(panel);
+        panel._vp3GmailProjection = marker;
         updateCards.set(row,panel);
       }
     }
     for (const [row,panel] of updateCards) {
       if (wanted.has(row)) continue;
       if (openedMessage && panel.contains(openedMessage.panel)) closeMessage();
+      if (panel.dataset.gmailRoutineDigest === 'true') routineChanged = true;
       panel.remove();
       updateCards.delete(row);
     }
     syncWatchControls();
     if (wanted.size) void readWatchlist();
+    if (routineChanged) window.dispatchEvent(new Event('vp3:gmail-digest-render-changed'));
   }
 
   function renderCompletion() {
@@ -565,7 +901,7 @@
       const loaded = savedReviewRow(target);
       if (loaded && !projectedRows.has(loaded)) {
         const marker = loaded._vp3GmailInboxReviewV1;
-        accept(marker.review,marker.run_id);
+        accept(marker.review,marker.run_id,false);
       }
     }
     const visible = target !== null && !pageError;
@@ -723,21 +1059,25 @@
     timer = setTimeout(() => void request(action), delay);
   }
   function nextCheck() {
+    const target = chatTarget();
+    // Keep recurring checks moving even if a first review or an older Chat delivery is waiting to retry.
+    if (overdueCheckRef(target)) {
+      schedule('check_overdue',0);
+      return;
+    }
     if (!active(review)) {
-      if (needsDelivery(chatTarget())) {
+      if (needsDelivery(target)) {
         schedule('deliver',0);
         return;
       }
-      if (needsUpdateDelivery(chatTarget())) {
+      if (needsUpdateDelivery(target)) {
         schedule('deliver_updates',0);
         return;
       }
-      if (overdueCheckRef(chatTarget())) {
-        schedule('check_overdue',0);
-        return;
-      }
       // A review can start in Connections and finish in a separate worker.
-      if (thread && ['needs_start','ready','failed'].includes(review?.state)) {
+      // A status snapshot may also be unavailable during a mailbox change.
+      const retryCurrentChat = target > 0 && review?.state === 'unavailable';
+      if (thread && (retryCurrentChat || review?.inbox_background || ['needs_start','ready','failed'].includes(review?.state))) {
         schedule('status',inboxWorking(review) ? 2000 : 15000);
       }
       return;
@@ -748,12 +1088,18 @@
       : Number.isFinite(nextAt) && nextAt > Date.now() ? Math.min(15000,Math.max(1500,nextAt-Date.now())) : 2500);
   }
 
-  function send(payload,signal) {
-    return fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,
+  function send(payload,signal,keepalive = false) {
+    return fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal,keepalive,
       headers:{'Content-Type':'application/json'},body:JSON.stringify({owner_key:owner,csrf_token:cfg.csrf,
         ...(['status','start','advance'].includes(payload.action) ? host ? {include_report:true} : {include_chat_result:true} : {}),...payload})});
   }
-  function accept(value, expectedRunId = null) {
+  function acceptUpdateAccess(value) {
+    if (itemRef(value?.scope_ref) && value.scope_ref !== updateAccess?.scope_ref) checkedRoutineRows = new WeakSet();
+    routineStatusNeedsProof = false;
+    updateAccess = itemRef(value?.scope_ref) ? value : null;
+    renderUpdates();
+  }
+  function accept(value, expectedRunId = null, fromStatus = true) {
     if (host && (value.start_token ?? null) !== startToken) {
       closeMessage();
       denied = true;
@@ -763,6 +1109,18 @@
     }
     if (expectedRunId !== null && value.run_id !== expectedRunId) return;
     const {state,run_id,stage,scanned,updated_at,next_attempt_at,has_report,total,chat_result,inbox_working_until,inbox_updates,inbox_background} = value;
+    if (thread && fromStatus) {
+      if (state === 'unavailable' && !itemRef(inbox_updates?.scope_ref) && updateAccess !== null) {
+        // This status is also used for transient errors. Require exact Chat proof before using cached rows.
+        if (!routineStatusNeedsProof) {
+          updateAccess = undefined;
+          freshRoutineRows = new WeakSet();
+          checkedRoutineRows = new WeakSet();
+          routineStatusNeedsProof = true;
+          renderUpdates();
+        }
+      } else acceptUpdateAccess(state === 'disabled' ? null : inbox_updates);
+    }
     review = host ? value : {state,run_id,stage,scanned,updated_at,next_attempt_at,has_report,total,chat_result,inbox_working_until,inbox_updates,inbox_background};
     pageError = '';
   }
@@ -799,13 +1157,17 @@
     if (pending || !inScope()) return;
     const payload = {action};
     const target = ['deliver','deliver_updates','check_overdue'].includes(action) ? chatTarget() : null;
-    if (action === 'deliver' && !needsDelivery(target)) return;
-    if (action === 'deliver_updates' && !needsUpdateDelivery(target)) return;
+    if ((action === 'deliver' && !needsDelivery(target)) ||
+        (action === 'deliver_updates' && !needsUpdateDelivery(target))) {
+      nextCheck();
+      return;
+    }
     if (action === 'check_overdue') {
       const ref = overdueCheckRef(target);
       if (!ref) { nextCheck(); return; }
       lastCheckAttempt = {ref,at:Date.now(),count:lastCheckAttempt?.ref === ref ? lastCheckAttempt.count+1 : 1};
       Object.assign(payload,{check_ref:ref,working_attention_binding:binding,include_chat_result:true});
+      if (target > 0) Object.assign(payload,{agent_id:agent,conversation_id:target});
     }
     if (action === 'start') {
       if (!host || !startToken || !canStart(review) || !daysAllowed.includes(days)) return;
@@ -833,6 +1195,7 @@
         Object.assign(payload,{run_id:runId,agent_id:agent,conversation_id:conversation,working_attention_binding:binding});
       }
       if (action === 'advance') watchProgress(controller,current,payload.run_id,350);
+      if (action === 'check_overdue') watchProgress(controller,current,null,350);
       if (action === 'deliver_updates') {
         Object.assign(payload,{agent_id:agent,conversation_id:target,working_attention_binding:binding});
       }
@@ -840,7 +1203,7 @@
       const data = await response.json();
       if (current !== epoch || !inScope()) return;
       if (action === 'check_overdue' && target !== chatTarget()) return;
-      if (['deliver','check_overdue'].includes(action) && response.status === 409) {
+      if (['deliver','deliver_updates','check_overdue'].includes(action) && response.status === 409) {
         failed = true;
         return;
       }
@@ -872,17 +1235,20 @@
       if (action === 'deliver_updates' && response.ok && data?.ok === true) {
         if (target !== chatTarget()) return;
         review.inbox_updates = data.inbox_updates;
+        acceptUpdateAccess(data.inbox_updates);
         await syncUpdates();
         return;
       }
       if (!response.ok || data?.ok !== true || !valid(data.review)) throw Error('Review status unavailable');
       accept(data.review);
+      if (action === 'check_overdue' && target > 0) await continuity()?.syncConversation?.(target);
       if (!host) await syncUpdates();
       if (!denied && action !== 'status') reviewSignal?.postMessage('review-changed');
     } catch (_) {
       if (current !== epoch || !inScope()) return;
       failed = true;
       if (action === 'check_overdue') return;
+      if (action === 'status' && thread) void recoverRoutineRows();
       if (action !== 'status' || review?.state !== 'ready' || !savedReviewRow(chatTarget(),review.run_id)) {
         pageError = 'Inbox review could not be checked. Try again shortly.';
       }
@@ -894,7 +1260,9 @@
       if (current === epoch && (inScope() || denied)) render();
       if (!inScope()) return;
       if (refreshPending) { refreshPending = false; schedule('status',0); }
-      else if (failed && (action !== 'status' || active(review))) schedule('status',5000);
+      else if (failed && (thread || action !== 'status' || active(review))) {
+        schedule('status',action === 'status' && !active(review) ? 15000 : 5000);
+      }
       else nextCheck();
     }
   }
@@ -905,6 +1273,7 @@
     renderCompletion();
     renderUpdates();
     restoreCompose();
+    restoreTriageItem();
     if (pending) refreshPending = true;
     else schedule('status',0);
   }
@@ -919,6 +1288,12 @@
     stopProgress();
     if (['status','deliver','deliver_updates','check_overdue'].includes(pending?.action)) pending.controller.abort();
     review = null;
+    updateAccess = undefined;
+    freshRoutineRows = new WeakSet();
+    checkedRoutineRows = new WeakSet();
+    routineRead?.abort();
+    routineRead = null;
+    routineStatusNeedsProof = false;
     delivery = null;
     if (!denied) pageError = '';
     refreshPending = false;
@@ -943,12 +1318,28 @@
   app?.addEventListener('toggle',refresh);
   window.addEventListener('focus',refresh);
   document.addEventListener('visibilitychange',() => { if (document.hidden) invalidate(); else refresh(); });
-  window.addEventListener('vp3:chat-context-ready',refresh);
-  window.addEventListener('vp3:chat-canvas-view-changed',() => { renderCompletion(); if (thread?.dataset.view === 'chat') refresh(); });
+  window.addEventListener('vp3:chat-context-ready',() => {
+    for (const row of thread?.querySelectorAll('[data-gmail-content-post="true"]') || []) renderGmailPostLinks(row);
+    refresh();
+  });
+  window.addEventListener('vp3:chat-canvas-view-changed',() => {
+    renderCompletion();
+    if (thread?.dataset.view === 'chat') refresh();
+    else if (openedMessage?.dialog) closeMessage();
+  });
   window.addEventListener('vp3:chat-message-persisted',event => {
     const row = event.detail?.element;
-    if (row?._vp3GmailInboxReviewV1?.kind === 'batch') renderUpdates();
+    renderGmailPostLinks(row);
+    if (row?._vp3GmailInboxReviewV1?.kind === 'batch') {
+      if (row._vp3GmailInboxReviewV1.routine_digest === true) freshRoutineRows.add(row);
+      renderUpdates();
+    }
     else if (row?._vp3GmailInboxReviewV1 || delivery?.message_id === Number(row?.dataset.chatMessageId)) renderCompletion();
+  });
+  window.addEventListener('vp3:chat-gmail-projection-updated',event => {
+    const row = event.detail?.element;
+    if (row?._vp3GmailInboxReviewV1?.routine_digest === true) freshRoutineRows.add(row);
+    renderUpdates();
   });
   window.addEventListener('vp3:agent-orb-ready',publishWork);
   window.addEventListener('vp3:chat-email-watch-changed',() => {
@@ -963,6 +1354,15 @@
   window.addEventListener('pageshow',() => { stopped = false; listenForReviewChanges(); refresh(); });
   for (const row of app?.querySelectorAll('[data-gmail-review-latest-item]') || []) {
     attachItemActions(row,{item_ref:row.dataset.itemRef,legacy_ref:row.dataset.legacyRef});
+  }
+  if (thread) {
+    // The canonical Chat restore can finish before this deferred script attaches its listeners.
+    for (const row of thread.querySelectorAll('[data-chat-message-role="assistant"][data-gmail-routine-post="true"]')) {
+      if (row._vp3GmailInboxReviewV1?.routine_digest === true) freshRoutineRows.add(row);
+    }
+    for (const row of thread.querySelectorAll('[data-gmail-content-post="true"]')) renderGmailPostLinks(row);
+    window.VP3GmailInboxInitialV1 = Object.freeze({openTriageItem,openArrivedItem,openReportedItem,
+      renderMessageBody:(panel,text,links,bodyClass) => renderOpenedEmail(panel,text,links,null,bodyClass)});
   }
   listenForReviewChanges();
   render();

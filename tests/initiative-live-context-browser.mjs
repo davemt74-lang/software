@@ -45,6 +45,7 @@ for(const name of ['phone-agent-schema-v1.php','workflow-agent-schema-v1.php','r
 fs.writeFileSync(path.join(temp,'includes/initiative-followthrough-chat-fixture.php'),
   fs.readFileSync(path.join(source,'tests/fixtures/initiative-followthrough-chat.php'),'utf8').replace('function ai_generate_chat_response(', 'function followthrough_fixture_ai_generate_chat_response('));
 fs.copyFileSync(path.join(source,'tests/fixtures/initiative-capabilities-chat.php'),path.join(temp,'includes/initiative-capabilities-chat-fixture.php'));
+fs.copyFileSync(path.join(source,'tests/fixtures/initiative-legacy-chat-report.php'),path.join(temp,'includes/initiative-legacy-chat-report.php'));
 fs.copyFileSync(path.join(source,'tests/fixtures/initiative-live-context-chat.php'),path.join(temp,'includes/initiative-live-context-chat-fixture.php'));
 let bootstrap=fs.readFileSync(path.join(source,'tests/fixtures/capability-chat-bootstrap.php'),'utf8');
 // SQLite has no SELECT FOR UPDATE owner locks. Its transport takes an immediate
@@ -240,7 +241,7 @@ try{
         assert.equal(JSON.stringify(live).includes('RAW_FACE_NAME_SENTINEL'),false);assert.equal(JSON.stringify(live).includes('embedding'),false);}
       assert.equal(goal.tool,mobile?'tasks.lists.read':'live.context.read');
       if(mobile){assert.equal(goal.primary,'task-list:600');assert.ok(Object.keys(goal.sources).some(ref=>ref.startsWith('live-context:')));}
-      await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+      await page.locator('#chatNotificationButton').click();await page.locator('[data-notification-tab=brain]').click();
       if(!mobile)await until(async()=>currentPacket(await control())?.eyes?.recent_chat_input===true);
       const feed=page.locator('[data-agent-top-of-mind]');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="queued"]').waitFor();
       await control('claim');await feed.locator('[data-top-of-mind-run="'+id+'"][data-work-state="working"]').waitFor();
@@ -251,7 +252,8 @@ try{
       assert.equal(await page.locator('[data-chat-message-id="'+post.id+'"]').count(),1);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       assert.equal(await page.evaluate(()=>window.speechCalls),0,'the screen/Eyes producer must not independently speak');
-      const calls=modelCalls(state),draft=JSON.parse(calls.find(row=>row.protocol==='vp3.initiative-draft.v1').prompt);
+      const calls=modelCalls(state),reportProtocol=mobile?'vp3.initiative-office-report.v1':'vp3.initiative-draft.v1';
+      const draft=JSON.parse(calls.find(row=>row.protocol===reportProtocol).prompt);
       assert.equal(draft.tool_result.tool,goal.tool);assert.ok(calls.every(row=>!row.in_transaction));
       if(mobile){const records=JSON.stringify(draft.tool_result.records);assert.ok(records.includes('LIVE_LIST_MEMBER_SENTINEL'));assert.ok(records.includes('completed'));assert.ok(records.includes('waiting'));assert.equal(state.list_actions.length,0);}
       noRawDurable(state);
@@ -351,7 +353,7 @@ try{
         assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT.userId),2);
         assert.equal((await page.locator('#chatThread').innerText()).includes('supplier comparison'),false);
         assert.equal(await page.locator('[data-chat-message-id]').filter({hasText:'supplier comparison'}).count(),0);
-        await page.locator('.vp3-orb-root').hover();await page.locator('[data-orb-brain]').click();
+        await page.locator('#chatNotificationButton').click();await page.locator('[data-notification-tab=brain]').click();
         await page.locator('[data-agent-top-of-mind]').getByText('Top of Mind',{exact:true}).waitFor();
         assert.equal(await page.locator('[data-top-of-mind-run="'+id+'"]').count(),0);noRawDurable(state);
         pass('an authenticated account switch during held generation fences the new owner Chat and Brain from every prior-owner completion');
@@ -412,13 +414,21 @@ try{
       const revision=(await control()).policy.revision;
       const assessment=await api(page,'initiative_tick',{policy_revision:revision});assert.equal(assessment.status,200);assert.equal(assessment.body.ok,true,JSON.stringify(assessment));
       const prepared=await api(page,'initiative_tick',{policy_revision:revision});assert.equal(prepared.status,200);assert.equal(prepared.body.ok,true,JSON.stringify(prepared));
-      const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'),action=state.actions.find(row=>Number(row.run_id)===Number(run.id));
+      const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'&&JSON.parse(row.goal).tool==='chat.check_in'),action=state.actions.find(row=>Number(row.run_id)===Number(run.id));
       const saved=JSON.parse(action.result_json),post=state.messages.find(row=>Number(row.id)===Number(saved.initiative_message_id));
       assert.equal(JSON.parse(run.goal).tool,'chat.check_in');assert.equal(saved.initiative_tool_result.output.delivery_preference,'voice');
       assert.equal(saved.initiative_delivery,'delivered');assert.ok(post);assert.equal(contextOf(post).initiative_output.type,'initiative_chat_check_in');
       await page.locator('[data-chat-message-id="'+post.id+'"]').waitFor();
       assert.equal(await page.evaluate(()=>window.speechCalls),0);
-      const unavailable=await api(page,'voice_candidates');assert.equal(unavailable.status,409,'actual server mic gate must reject voice without suppressing the text post: '+JSON.stringify(unavailable));
+      const unavailable=await api(page,'voice_candidates');
+      assert.equal(unavailable.status,200,'active microphone is a normal availability deferral');
+      assert.equal(unavailable.body.ok,true,JSON.stringify(unavailable));
+      assert.deepEqual(unavailable.body.candidates,[],'the actual server mic gate exposes no candidate');
+      assert.deepEqual([unavailable.body.owner_user_id,unavailable.body.agent_id,unavailable.body.conversation_id,
+        unavailable.body.working_attention_binding,unavailable.body.activity_tab],
+      [1,7,11,binding,await page.evaluate(()=>window.StonefellowAgentActivity.activityTab())]);
+      assert.equal(Object.hasOwn(unavailable.body,'claim'),false,'deferral never grants a voice claim');
+      assert.equal(await page.locator('[data-chat-message-id="'+post.id+'"]').isVisible(),true,'deferral keeps the existing text visible');
       await advance(page);assert.equal(await page.evaluate(()=>window.speechCalls),0);
       await emitCue(page,'quiet',2);await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
       await until(async()=>currentPacket(await control())?.microphone?.activity==='quiet');
@@ -458,7 +468,7 @@ try{
         }else await p.evaluate(()=>window.holdSpeech=true);
         const revision=(await control()).policy.revision;
         for(let i=0;i<2;i++){const tick=await api(p,'initiative_tick',{policy_revision:revision});assert.equal(tick.status,200);assert.equal(tick.body.ok,true);}
-        const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'),id=Number(run.id);
+        const state=await control(),run=state.runs.find(row=>row.capability_key==='initiative.prepare'&&JSON.parse(row.goal).tool==='chat.check_in'),id=Number(run.id);
         const voiceState=async()=>{const state=await control(),row=state.actions.find(row=>Number(row.run_id)===id);return JSON.parse(row.result_json).initiative_voice;};
         if(scenario==='lost_claim_ack'){
           await advance(p);assert.equal(await p.evaluate(()=>window.speechCalls),0);

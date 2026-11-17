@@ -475,6 +475,13 @@ function chat_local_answer(string $query, array $context, ?array $failure = null
         return 'I could not generate an AI reply because the account’s AI allowance or access check failed. Check AI access and usage, then retry your question.';
     }
     $code=(string)($failure['failure_code']??'');
+    if($code==='anthropic_credit_balance_low'&&($failure['provider']??null)==='anthropic'
+        &&function_exists('current_user')&&current_user()
+        &&(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null)){
+        return ($failure['compute_source']??null)==='user_provider'
+            ?'Anthropic reported that your API key’s credit balance is too low. Check Billing in the Anthropic Console for the organization that owns this key.'
+            :'Anthropic reported that VP3’s Claude service has insufficient API credits. The site administrator can check the service’s balance.';
+    }
     if($code==='provider_disabled')return 'The selected cloud AI provider is disabled on the server. The site administrator needs to enable it in AI / API Settings.';
     if($code==='credential_empty')return 'The selected cloud AI provider has no saved API credential on the server. The site administrator needs to check AI / API Settings.';
     if(in_array($code,['credential_missing_key','credential_unreadable_key','credential_invalid_key','credential_crypto_unavailable','credential_unsupported_format','credential_key_mismatch'],true))return 'The server cannot read its saved AI credential. The site administrator needs to restore credential access in AI / API Settings.';

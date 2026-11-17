@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {chromium} from 'playwright';
-const browser=await chromium.launch({headless:true,args:['--no-sandbox']}),page=await browser.newPage({viewport:{width:390,height:844}}),calls=[],errors=[];
+const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined}),page=await browser.newPage({viewport:{width:390,height:844}}),calls=[],errors=[];
 page.on('pageerror',e=>errors.push(e.message));const mid='11111111-1111-4111-8111-111111111111',tid='22222222-2222-4222-8222-222222222222',sid='33333333-3333-4333-8333-333333333333';
 const draft={max_parallel:1,assignments:[{task_id:tid,tools:['knowledge.search'],max_calls:1,actions:[],max_actions:0,output:'analysis',browser_url:''}]};
 const mission={id:mid,objective:'Monitor dough research',status:'planned',execution_target:'cloud',authority_current:true,tools_enabled:true,tools_configured:true,tasks:[{id:tid,title:'Evidence analyst',status:'queued'}],chat_task:{draft,prepared_at:'2026-11-03 00:00:00'}};
@@ -30,7 +30,25 @@ try{
  await check('declining recurrence creates no jobs or writes',async()=>{assert.equal(calls.some(c=>c.action==='schedule.create'||c.action==='cloud.tick'),false);});
  await page.evaluate(()=>window.confirm=()=>true);await page.getByRole('button',{name:'Create schedule',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.vp3-teams-status')?.textContent.includes('Lost schedule response'));await page.getByRole('button',{name:'Create schedule',exact:true}).click();await page.getByRole('button',{name:'Pause schedule',exact:true}).waitFor();
  await check('lost response retry keeps the same operation and shows saved reports',async()=>{const c=calls.filter(c=>c.action==='schedule.create');assert.equal(c.length,2);assert.equal(c[0].request_id,c[1].request_id);assert.match(await page.locator('.vp3-specialist-schedules').innerText(),/Report saved in My Knowledge/);assert.match(await page.locator('.vp3-specialist-schedules a').getAttribute('href'),/folder=32/);assert.equal(calls.some(c=>c.action==='tools.start'||c.action==='start'),false);});
- await page.getByRole('button',{name:'Pause schedule',exact:true}).click();await page.getByRole('button',{name:'Resume schedule',exact:true}).click();
+ await check('Embedded schedule settings use the account schedule controls and clear when leaving owner Chat',async()=>{
+  await page.evaluate(()=>{
+   window.STONEFELLOW_CHAT={userId:1,agentId:17,initialConversationId:42};
+   const host=document.createElement('div');document.body.appendChild(host);
+   window.cleanupScheduleSettings=window.VP3AgentMissionsV1.mountSettings(host);
+  });
+  const settings=page.locator('[data-vp3-schedule-settings]');
+  await settings.getByRole('heading',{name:'Scheduled specialist tasks'}).waitFor();
+  await settings.getByRole('button',{name:'Pause schedule',exact:true}).click();
+  await page.locator('.vp3-specialist-schedules').getByRole('button',{name:'Resume schedule',exact:true}).waitFor();
+  await settings.getByRole('button',{name:'Resume schedule',exact:true}).click();
+  await settings.getByRole('button',{name:'Pause schedule',exact:true}).waitFor();
+  assert.deepEqual(calls.filter(({action})=>['schedule.pause','schedule.resume'].includes(action)).map(({schedule_id,expected_revision})=>[schedule_id,expected_revision]),[[sid,1],[sid,2]]);
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:9}})));
+  await settings.getByText('Scheduled tasks are unavailable in this Chat.',{exact:true}).waitFor();
+  assert.equal(await settings.getByRole('button',{name:'Pause schedule',exact:true}).count(),0);
+  await page.evaluate(()=>{window.cleanupScheduleSettings();window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:0}}));});
+  assert.equal(await settings.count(),0);
+ });
  await page.waitForFunction(()=>{const b=document.querySelector('[data-action="schedule.pause"]');return b&&!b.disabled;});
  const tickResponse=page.waitForResponse(r=>r.request().postDataJSON()?.action==='cloud.schedule.tick');
  await page.clock.runFor(31000);await tickResponse;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-connection-youtube-v1.php';
 require_once __DIR__.'/includes/agent-connection-youtube-playback-v1.php';
+require_once __DIR__.'/includes/agent-connection-settings-view-v1.php';
 require_permission('account.access');
 header('Cache-Control: private, no-store');
 header('Referrer-Policy: no-referrer');
@@ -17,21 +18,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 $user = current_user();
 $pdo = db();
 $action = $_POST['action'] ?? '';
+$authorized = $user && vp3_connection_settings_post_allowed_v1($user)
+    && is_string($_POST['csrf_token'] ?? null) && verify_csrf();
 $result = 'youtube_invalid';
-if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action === 'save_picks') {
+if ($authorized && $action === 'save_picks') {
     try {
         $owner = (int)$user['id'];
         if (!$pdo || !has_permission('chat.access', $user) || !vp3_youtube_picks_ready_v1($pdo)
             || !agent_connection_youtube_consent_v1($pdo,$owner) || !is_string($_POST['taste'] ?? null)) {
             throw new DomainException('Music preferences unavailable.');
         }
-        vp3_youtube_picks_save_v1($pdo,$owner,$_POST['taste'],($_POST['proactive'] ?? '') === '1');
+        $mode=$_POST['proactive_mode']??(($_POST['proactive']??'')==='1'?'on':'off');
+        if(!in_array($mode,['idle','on','off'],true))throw new DomainException('Choose a YouTube offer preference.');
+        vp3_youtube_picks_save_v1($pdo,$owner,$_POST['taste'],$mode==='idle'?null:$mode==='on',resetToIdle:$mode==='idle');
         $result = 'youtube_picks_saved';
     } catch (Throwable) {
         $result = 'youtube_unavailable';
     }
-} elseif ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()
-    && in_array($action, ['save_artist_research','save_topic_research','save_watch_research'], true)) {
+} elseif ($authorized && in_array($action, ['save_artist_research','save_topic_research','save_watch_research'], true)) {
     try {
         if (!$pdo || !has_permission('chat.access', $user)) throw new DomainException('Research preference unavailable.');
         $kind = match ($action) {
@@ -44,8 +48,7 @@ if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action
     } catch (Throwable) {
         $result = 'youtube_unavailable';
     }
-} elseif ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()
-    && in_array($action, ['enable_history','pause_history','clear_history'], true)) {
+} elseif ($authorized && in_array($action, ['enable_history','pause_history','clear_history'], true)) {
     try {
         if (!$pdo || !vp3_youtube_playback_ready_v1($pdo) || !has_permission('chat.access', $user)
             || ($action === 'enable_history' && !agent_connection_youtube_ready_v1())) {
@@ -56,7 +59,7 @@ if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action
     } catch (Throwable) {
         $result = 'youtube_unavailable';
     }
-} elseif ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && in_array($action, ['enable', 'disable'], true)) {
+} elseif ($authorized && in_array($action, ['enable', 'disable'], true)) {
     if ($action === 'enable' && ($_POST['accept_youtube_terms'] ?? null) !== '1') {
         $result = 'youtube_accept_required';
     } elseif (!$pdo || !agent_connection_youtube_consent_ready_v1($pdo)
@@ -72,4 +75,7 @@ if ($user && is_string($_POST['csrf_token'] ?? null) && verify_csrf() && $action
         }
     }
 }
-redirect(url('/connections.php?result='.$result.'#connections-app-youtube'));
+$settingsViews = in_array($action, ['save_artist_research','save_topic_research','save_watch_research'], true)
+    ? ['youtube','research','music'] : ['youtube','music'];
+redirect(vp3_connection_settings_post_return_v1($settingsViews,
+    '/connections.php?result='.$result.'#connections-app-youtube', ['result'=>$result], 'connections-app-youtube'));

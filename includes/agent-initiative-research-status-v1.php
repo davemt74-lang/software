@@ -8,8 +8,8 @@ require_once __DIR__.'/agent-initiative-task-research-v1.php';
 require_once __DIR__.'/agent-initiative-transcript-research-v1.php';
 require_once __DIR__.'/agent-initiative-research-canvas-v1.php';
 
-/** Read only the reportable research lane of the exact saved policy. */
-function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $agentId,array $policy,int $now): array
+/** Read the exact saved policy's research lane or the delivered results for a report. */
+function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $agentId,array $policy,int $now,int $recentSeconds=120,bool $completedOnly=false,?int $transcriptSessionId=null,bool $taskReport=false): array
 {
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $json=static function(string $column,string $path)use($sqlite):string{
@@ -21,6 +21,24 @@ function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $a
     $tool=$json('r.goal','$.tool');
     $report=$json('r.goal','$.report');
     $true=$sqlite?'1':"'true'";
+    $args=[$owner,(string)$agentId,(string)$policy['conversation_id']];
+    if($transcriptSessionId===null&&!$taskReport){
+        $completion=$completedOnly?"AND r.status='completed'":'';
+        $visibility="AND $revision=? AND ((r.status='executing' AND a.status='executing' AND r.current_action_id=a.id AND r.lease_expires_at>?)
+            OR (r.status IN ('queued','approved') AND a.status='queued')
+            OR (r.status='failed' AND a.status='failed' AND a.completed_at>=?)
+            OR (r.status='completed' AND a.status='completed' AND (a.completed_at>=? OR a.updated_at>=?)))";
+        $recent=gmdate('Y-m-d H:i:s',$now-$recentSeconds);
+        array_push($args,$policy['revision'],gmdate('Y-m-d H:i:s',$now),$recent,$recent,$recent);
+        $limit=8;
+    }else{
+        $primary=$json('r.goal','$.primary');
+        $delivery=$json('a.result_json','$.initiative_delivery');
+        $completion="AND r.status='completed' AND a.status='completed'";
+        $visibility="AND $tool='topic.research' AND $primary LIKE ? AND $delivery='delivered'";
+        $args[]=$taskReport?'task-research:%':'transcript-research:'.$transcriptSessionId.':%';
+        $limit=$taskReport?8:12;
+    }
     $stmt=$pdo->prepare("SELECT r.id AS run_id,r.goal,r.status AS run_status,r.lease_expires_at,
         a.id AS action_id,a.attempt_count,a.result_json,a.completed_at AS action_completed_at
         FROM agent_workflow_runs r JOIN agent_workflow_actions a
@@ -29,16 +47,11 @@ function vp3_initiative_research_status_candidates_v1(PDO $pdo,int $owner,int $a
         WHERE r.owner_user_id=? AND CAST(COALESCE(r.agent_id,0) AS CHAR)=?
             AND r.workflow_type='initiative' AND r.source_kind='agent_initiative'
             AND r.capability_key='initiative.prepare' AND r.execution_target='cloud'
-            AND CAST($conversation AS CHAR)=? AND $revision=?
+            AND CAST($conversation AS CHAR)=?
             AND $tool IN ('topic.research','artist.research') AND $report=$true
-            AND ((r.status='executing' AND a.status='executing' AND r.current_action_id=a.id AND r.lease_expires_at>?)
-                OR (r.status IN ('queued','approved') AND a.status='queued')
-                OR (r.status='failed' AND a.status='failed' AND a.completed_at>=?)
-                OR (r.status='completed' AND a.status='completed' AND (a.completed_at>=? OR a.updated_at>=?)))
-        ORDER BY CASE r.status WHEN 'executing' THEN 0 WHEN 'failed' THEN 2 WHEN 'completed' THEN 3 ELSE 1 END,r.id DESC LIMIT 8");
-    $recent=gmdate('Y-m-d H:i:s',$now-120);
-    $stmt->execute([$owner,(string)$agentId,(string)$policy['conversation_id'],$policy['revision'],
-        gmdate('Y-m-d H:i:s',$now),$recent,$recent,$recent]);
+            $completion $visibility
+        ORDER BY CASE r.status WHEN 'executing' THEN 0 WHEN 'failed' THEN 2 WHEN 'completed' THEN 3 ELSE 1 END,r.id DESC LIMIT $limit");
+    $stmt->execute($args);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -54,9 +67,10 @@ function vp3_initiative_research_status_receipt_v1(PDO $pdo,int $owner,array $ro
 }
 
 /** Only the exact worker receipt and linked saved Chat result can establish completion. */
-function vp3_initiative_research_status_completion_v1(PDO $pdo,int $owner,int $agentId,int $cid,array $row,array $goal,int $now): ?array
+function vp3_initiative_research_status_completion_v1(PDO $pdo,int $owner,int $agentId,int $cid,array $row,array $goal,int $now,bool $persistent=false): ?array
 {
     if(!is_string($row['result_json'])||!vp3_initiative_research_status_receipt_v1($pdo,$owner,$row))return null;
+    require_once __DIR__.'/agent-artist-research-v1.php';
     $result=json_decode($row['result_json'],true);
     $toolResult=$result['initiative_tool_result']??null;
     $research=is_array($toolResult)?vp3_initiative_research_tool_result_v1($toolResult):null;
@@ -71,17 +85,19 @@ function vp3_initiative_research_status_completion_v1(PDO $pdo,int $owner,int $a
     $delivery=$result['initiative_delivery']??null;
     if($delivery==='pending'){
         $ended=vp3_top_of_mind_lease_time_v1($row['action_completed_at']);
-        return $ended>$now-120&&$ended<=$now?['state'=>'ready','expires_at'=>gmdate(DATE_ATOM,$ended+120)]:null;
+        return $ended>0&&$ended<=$now&&($persistent||$ended>$now-120)
+            ?['state'=>'ready','expires_at'=>gmdate(DATE_ATOM,$ended+120)]:null;
     }
     $messageId=filter_var($result['initiative_message_id']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
     if($delivery!=='delivered'||$messageId===false)return null;
-    $stmt=$pdo->prepare("SELECT message,context_json,created_at FROM chat_messages
+    $postedEpoch=vp3_initiative_db_wall_epoch_sql_v1($pdo,'created_at');
+    $stmt=$pdo->prepare("SELECT message,context_json,$postedEpoch AS posted_epoch FROM chat_messages
         WHERE id=? AND conversation_id=? AND role='assistant' LIMIT 1");
     $stmt->execute([$messageId,$cid]);
     $message=$stmt->fetch(PDO::FETCH_ASSOC);
     if(!$message)return null;
-    $posted=vp3_top_of_mind_lease_time_v1($message['created_at']);
-    if($posted<=$now-120||$posted>$now)return null;
+    $posted=(int)$message['posted_epoch'];
+    if($posted<1||$posted>$now||(!$persistent&&$posted<=$now-120))return null;
     $context=json_decode((string)$message['context_json'],true);
     $runId=(int)$row['run_id'];
     if(($context['source']??null)!=='agent_initiative'||($context['initiative_run_id']??null)!==$runId
@@ -127,7 +143,7 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
                 $item=array_replace($item,$completion);
                 $expires=strtotime($item['expires_at']);
             }
-            $candidates[]=['primary'=>$primary,'revision'=>$sources[$primary],'expires'=>$expires,'item'=>$item];
+            $candidates[]=['primary'=>$primary,'revision'=>$sources[$primary],'expires'=>$expires,'item'=>$item,'goal'=>$goal];
             $refs[$primary]=true;
         }
         if(!$candidates)return $status;
@@ -147,6 +163,9 @@ function vp3_initiative_research_status_v1(PDO $pdo,array $user,int $agentId,int
                 if(($source['kind']??null)!=='task_research')continue;
             }elseif(vp3_public_research_transcript_ref_v1($candidate['primary'])){
                 if($item['kind']!=='topic'||($source['kind']??null)!=='transcript_research')continue;
+                require_once __DIR__.'/agent-meeting-research-v1.php';
+                $meeting=vp3_meeting_research_projection_v1($pdo,$owner,$agentId,$cid,$item['run_id'],$candidate['goal']);
+                if($meeting!==null)$item['meeting_followup']=$meeting;
             }elseif(str_starts_with($candidate['primary'],'native-artist-interest:')){
                 if($item['kind']!=='artist'||($source['interest']['basis']??null)!=='native_music_listening')continue;
             }elseif(($source['kind']??null)!==$item['kind'].'_interest'||!agent_connection_youtube_enabled_v1()

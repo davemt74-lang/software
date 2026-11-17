@@ -292,10 +292,7 @@ function vp3_youtube_playlist_provider_v1(array $ids, ?callable $http): array
     $ids = array_values(array_unique(array_filter($ids,static fn($id): bool => is_string($id)
         && preg_match('/\A[A-Za-z0-9_-]{11}\z/',$id))));
     if (!$ids) return [];
-    $items = agent_connection_youtube_request_v1(VP3_YOUTUBE_STATUS_ENDPOINT_V1,[
-        'part'=>'snippet,status','id'=>implode(',',$ids),
-        'fields'=>'kind,items(id,snippet(title,channelTitle,thumbnails(medium(url),default(url)),status(embeddable,madeForKids,privacyStatus))',
-    ],'youtube#videoListResponse',$http);
+    $items = agent_connection_youtube_video_details_v1($ids,$http);
     $videos = [];
     foreach ($items as $item) {
         $id = $item['id'] ?? '';
@@ -314,6 +311,8 @@ function vp3_youtube_playlist_provider_v1(array $ids, ?callable $http): array
         }
         if (($item['status']['embeddable'] ?? null) === true && is_bool($item['status']['madeForKids'] ?? null)) {
             $video['made_for_kids'] = $item['status']['madeForKids'];
+            $context=agent_connection_youtube_public_context_v1($item);
+            if($context!==null)$video['public_context']=$context;
         }
         $videos[$id] = $video;
     }

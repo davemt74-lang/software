@@ -14,9 +14,22 @@ try{
     $cid=filter_var($_GET['conversation_id']??'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
     if($agent===false||$cid===false)throw new RuntimeException('Choose an exact Agent and conversation.',422);
     $view=$_GET['view']??'';
-    if(!is_string($view)||!in_array($view,['','work'],true))throw new RuntimeException('Choose an exact status view.',422);
+    if(!is_string($view)||!in_array($view,['','work','engagements'],true))throw new RuntimeException('Choose an exact status view.',422);
+    $scope=$_GET['scope']??'';
+    if(!in_array($scope,['','chat'],true)||($scope==='chat'&&!array_key_exists('conversation_id',$_GET)))
+        throw new RuntimeException('Choose an exact Chat scope.',422);
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-    $state=$view==='work'?vp3_top_of_mind_work_v1(db(),$user,$agent,$cid):vp3_top_of_mind_v1(db(),$user,$agent,$cid);
+    if($view==='engagements'){
+        $specialist=$_GET['specialist']??'';
+        $before=filter_var($_GET['before']??'0',FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
+        if($cid<1||$scope!=='chat'||!is_string($specialist)||$before===false){
+            throw new RuntimeException('Choose an exact Chat and engagement page.',422);
+        }
+        $state=vp3_top_of_mind_engagements_v1(db(),$user,$agent,$cid,$specialist,$before);
+    }else{
+        $state=$view==='work'?vp3_top_of_mind_work_v1(db(),$user,$agent,$cid,$scope==='chat')
+            :vp3_top_of_mind_v1(db(),$user,$agent,$cid,$scope==='chat');
+    }
     $state['working_attention_binding']=$binding;
     echo json_encode(['ok'=>true,'state'=>$state],JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
 }catch(Throwable $error){

@@ -52,6 +52,9 @@ function vp3_initiative_brainstorm_tool_scope_v1(array $job,array $tools): void
     if(is_array($tool)&&isset($tool['source_refs'])&&!in_array($job['primary'],$tool['source_refs'],true)){
         throw new Vp3InitiativePlanValidationV1('invalid_job_sources','The selected tool does not accept this situation source.');
     }
+    if(isset($tool['context_refs'])&&array_diff($job['refs'],$tool['context_refs'])){
+        throw new Vp3InitiativePlanValidationV1('invalid_job_sources','The selected tool does not accept all the supporting sources.');
+    }
 }
 
 /** These are concise owner-facing explanations, never a model reasoning transcript. */
@@ -63,32 +66,112 @@ function vp3_initiative_brainstorm_text_v1(mixed $value,int $limit): ?string
     return $value;
 }
 
-/** Ideas use the same tool/source rules as real assignments but their own bounded count. */
-function vp3_initiative_brainstorm_opportunities_v1(mixed $value,array $evidence,array $allowedTools,array $tools=[]): array
+function vp3_initiative_brainstorm_report_keys_v1(array $reports): array
 {
-    if(!is_array($value)||!array_is_list($value)||count($value)>8)throw new InvalidArgumentException('Invalid initiative opportunities.');
+    $keys=[];
+    foreach($reports as $report){
+        unset($report['source_ref']);
+        if(($report['specialist']??null)==='research'&&in_array($report['state']??null,['ready','completed'],true))$report['state']='result';
+        if(isset($report['latest_completed_scan']))unset($report['state'],$report['last_checked_at']);
+        $keys[]=vp3_initiative_brainstorm_semantic_v1($report);
+    }
+    return array_values(array_unique($keys));
+}
+
+/** Count only the verified inputs passed to ob1, without retaining their identifiers or text. */
+function vp3_initiative_brainstorm_inputs_v1(array $evidence,array $reports): array
+{
+    require_once __DIR__.'/agent-initiative-specialist-evidence-v1.php';
+    $inputs=[];
+    foreach($evidence as $ref=>$source){
+        if(($source['ref']??null)!==$ref||!is_string($source['revision']??null)
+            ||!preg_match('/\A[a-f0-9]{64}\z/D',$source['revision']))continue;
+        $specialist=vp3_initiative_source_specialist_v1($source);
+        if(!in_array($specialist,['gmail','planning','tasks','media'],true))continue;
+        $inputs[$specialist]??=['sources'=>0,'reports'=>0];
+        $inputs[$specialist]['sources']++;
+    }
+    foreach($reports as $report){
+        $specialist=($report['specialist']??null)==='email'?'gmail':($report['specialist']??null);
+        if(!in_array($specialist,['gmail','planning','tasks','media'],true))continue;
+        $inputs[$specialist]??=['sources'=>0,'reports'=>0];
+        $inputs[$specialist]['reports']++;
+    }
+    ksort($inputs);
+    return $inputs;
+}
+
+/** Wake only the superseded ob1 assessment's existing review checkpoint. */
+function vp3_initiative_brainstorm_wake_changed_v1(PDO $pdo,int $owner,array $binding): void
+{
+    if(!table_exists('agent_memory_items'))return;
+    [$scope,$params]=vp3_agent_memory_scope_sql_v410(vp3_initiative_binding_agent_v1($binding));
+    $metadata="CASE WHEN JSON_VALID(metadata_json) THEN metadata_json ELSE '{}' END";
+    $extract=static function(string $path)use($pdo,$metadata):string{
+        $sql="JSON_EXTRACT($metadata,'$path')";
+        return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?$sql:"JSON_UNQUOTE($sql)";
+    };
+    $query=$pdo->prepare("UPDATE agent_memory_items SET metadata_json=JSON_SET($metadata,'$.specialist_source_changed',1)
+        WHERE user_id=? AND $scope AND memory_type='initiative_sweep' AND subject='last-review' AND is_active=1
+        AND CAST(".$extract('$.conversation_id')." AS CHAR)=? AND ".$extract('$.revision')."=?
+        AND JSON_EXTRACT($metadata,'$.specialist_source_changed') IS NULL");
+    $query->execute([$owner,...$params,(string)$binding['conversation_id'],$binding['revision']]);
+}
+
+/** Reject invalid optional ideas independently of the assignments and any verified ideas. */
+function vp3_initiative_brainstorm_opportunities_v1(mixed $value,array $evidence,array $allowedTools,array $tools=[],int &$discarded=0): array
+{
+    $discarded=0;
+    if(!is_array($value)||!array_is_list($value)||count($value)>8){
+        $discarded=1;
+        return [];
+    }
     $out=[];$seen=[];
     foreach($value as $row){
-        $fields=['tool','primary','refs','objective','rationale'];
-        if(!$row instanceof stdClass||count((array)$row)!==count($fields)||array_diff(array_keys((array)$row),$fields)){
-            throw new InvalidArgumentException('Invalid initiative opportunity.');
+        $opportunity=vp3_initiative_brainstorm_opportunity_v1($row,$evidence,$allowedTools,$tools);
+        $key=$opportunity===null?'':$opportunity['tool'].'|'.$opportunity['primary'];
+        if($opportunity===null||isset($seen[$key])){
+            $discarded++;
+            continue;
         }
-        $row=(array)$row;
-        $objective=vp3_initiative_brainstorm_text_v1($row['objective']??null,300);
-        $rationale=vp3_initiative_brainstorm_text_v1($row['rationale']??null,500);
-        if($objective===null||$rationale===null)throw new InvalidArgumentException('Invalid initiative opportunity explanation.');
-        // One-item use of the canonical assignment parser preserves tentative
-        // interests, research scope, typed refs and current ready tool rules.
-        $job=vp3_initiative_jobs_v1(json_encode(['jobs'=>[['tool'=>$row['tool']??null,'primary'=>$row['primary']??null,
-            'refs'=>$row['refs']??null,'focus'=>$objective,'report'=>true]]],JSON_THROW_ON_ERROR),$evidence,$allowedTools)[0];
-        vp3_initiative_brainstorm_tool_scope_v1($job,$tools);
-        $key=$job['tool'].'|'.$job['primary'];
-        if(isset($seen[$key]))throw new InvalidArgumentException('Duplicate initiative opportunity.');
         $seen[$key]=true;
-        $out[]=['tool'=>$job['tool'],'primary'=>$job['primary'],'refs'=>$job['refs'],
-            'objective'=>$objective,'rationale'=>$rationale];
+        $out[]=$opportunity;
     }
     return $out;
+}
+
+function vp3_initiative_brainstorm_opportunity_v1(mixed $row,array $evidence,array $allowedTools,array $tools): ?array
+{
+    $fields=['tool','primary','refs','objective','rationale'];
+    if(!$row instanceof stdClass||count((array)$row)!==count($fields)||array_diff(array_keys((array)$row),$fields))return null;
+    $row=(array)$row;
+    $objective=vp3_initiative_brainstorm_text_v1($row['objective'],300);
+    $rationale=vp3_initiative_brainstorm_text_v1($row['rationale'],500);
+    if($objective===null||$rationale===null)return null;
+    // The canonical parser preserves tentative interests, research scope, typed refs and ready tool rules.
+    try{
+        $job=vp3_initiative_jobs_v1(json_encode(['jobs'=>[['tool'=>$row['tool'],'primary'=>$row['primary'],
+            'refs'=>$row['refs'],'focus'=>$objective,'report'=>true]]],JSON_THROW_ON_ERROR),$evidence,$allowedTools)[0];
+        vp3_initiative_brainstorm_tool_scope_v1($job,$tools);
+    }catch(InvalidArgumentException|JsonException){return null;}
+    return ['tool'=>$job['tool'],'primary'=>$job['primary'],'refs'=>$job['refs'],'objective'=>$objective,'rationale'=>$rationale];
+}
+
+/** Advance one candidate that actually appears in the verified Canvas report. */
+function vp3_initiative_canvas_assessment_v1(array $plan): array
+{
+    $ideas=array_slice($plan['opportunities'],0,3);
+    $work=[];
+    foreach($ideas as $idea){
+        foreach($plan['jobs'] as $job){
+            if($job['report']!==true||$job['primary']!==$idea['primary']||$job['tool']!==$idea['tool']
+                ||count($job['refs'])!==count($idea['refs'])||array_diff($job['refs'],$idea['refs']))continue;
+            $job['focus']=$idea['objective'];
+            $work[]=$job;
+            break 2;
+        }
+    }
+    return array_replace($plan,['opportunities'=>$ideas,'jobs'=>$work]);
 }
 
 /** Deterministic source identity is server-owned, never an LLM-provided novelty key. */
@@ -99,7 +182,7 @@ function vp3_initiative_brainstorm_identity_v1(string $tool,string $primary,arra
 }
 
 /** Build a private typed assessment receipt from verified sources and actual admissions. */
-function vp3_initiative_brainstorm_result_v1(array $opportunities,array $evidence,array $admissions=[]): array
+function vp3_initiative_brainstorm_result_v1(array $opportunities,array $evidence,array $admissions=[],?array $finding=null,array $ob1Inputs=[]): array
 {
     $rows=[];
     foreach($opportunities as $opportunity){
@@ -114,6 +197,8 @@ function vp3_initiative_brainstorm_result_v1(array $opportunities,array $evidenc
         $rows[]=['id'=>$id]+$opportunity+['source_revisions'=>$revisions,'status'=>$admissions[$id]??'considered'];
     }
     $result=['draft'=>'','output'=>['type'=>'initiative_brainstorm','status'=>'assessed','opportunities'=>$rows]];
+    if($finding!==null)$result['output']['finding']=$finding;
+    if($ob1Inputs)$result['output']['ob1_inputs']=$ob1Inputs;
     return vp3_initiative_brainstorm_tool_result_v1($result)??throw new InvalidArgumentException('Invalid brainstorm result.');
 }
 
@@ -122,7 +207,7 @@ function vp3_initiative_brainstorm_tool_result_v1(array $value): ?array
 {
     if(array_diff(array_keys($value),['draft','output'])||($value['draft']??null)!=='')return null;
     $output=$value['output']??null;
-    if(!is_array($output)||count($output)!==3||array_diff(array_keys($output),['type','status','opportunities'])
+    if(!is_array($output)||array_diff(array_keys($output),['type','status','opportunities','finding','ob1_inputs'])
         ||($output['type']??null)!=='initiative_brainstorm'||($output['status']??null)!=='assessed'
         ||!is_array($output['opportunities']??null)||!array_is_list($output['opportunities'])||count($output['opportunities'])>8)return null;
     $rows=[];$seen=[];
@@ -149,5 +234,27 @@ function vp3_initiative_brainstorm_tool_result_v1(array $value): ?array
             ||vp3_initiative_brainstorm_identity_v1($row['tool'],$row['primary'],$row['source_revisions'])!==$row['id'])return null;
         $seen[$row['id']]=true;$rows[]=$row;
     }
-    return ['draft'=>'','output'=>['type'=>'initiative_brainstorm','status'=>'assessed','opportunities'=>$rows]];
+    $result=['draft'=>'','output'=>['type'=>'initiative_brainstorm','status'=>'assessed','opportunities'=>$rows]];
+    if(array_key_exists('finding',$output)){
+        $finding=$output['finding'];
+        if(!is_array($finding)||array_keys($finding)!==['text','report_keys']||!is_string($finding['text'])
+            ||vp3_initiative_brainstorm_text_v1($finding['text'],500)!==$finding['text']
+            ||!is_array($finding['report_keys'])||!array_is_list($finding['report_keys'])
+            ||count($finding['report_keys'])<1||count($finding['report_keys'])>12)return null;
+        foreach($finding['report_keys'] as $key)if(!is_string($key)||!preg_match('/\A[a-f0-9]{64}\z/D',$key))return null;
+        $result['output']['finding']=$finding;
+    }
+    if(array_key_exists('ob1_inputs',$output)){
+        $inputs=$output['ob1_inputs'];
+        if(!is_array($inputs)||!$inputs||array_diff(array_keys($inputs),['gmail','planning','tasks','media']))return null;
+        foreach($inputs as $counts){
+            if(!is_array($counts)||array_keys($counts)!==['sources','reports']
+                ||!is_int($counts['sources'])||$counts['sources']<0||$counts['sources']>512
+                ||!is_int($counts['reports'])||$counts['reports']<0||$counts['reports']>16
+                ||$counts['sources']+$counts['reports']===0)return null;
+        }
+        ksort($inputs);
+        $result['output']['ob1_inputs']=$inputs;
+    }
+    return $result;
 }

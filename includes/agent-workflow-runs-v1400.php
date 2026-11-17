@@ -129,6 +129,11 @@ function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraf
             if($storeInitiativeDraft&&is_array($value))$safe[$key]=agent_workflow_initiative_result_v1400($value);
             continue;
         }
+        if($key==='eyes_visit_ref'){
+            require_once __DIR__.'/agent-live-context-v1.php';
+            if($storeInitiativeDraft&&vp3_live_context_eyes_visit_ref_v1($value))$safe[$key]=$value;
+            continue;
+        }
         if(is_scalar($value)||$value===null)$safe[$key]=agent_workflow_text_v1400($value??'',$key==='mission_output'?16000:500);
     }
     return $safe;
@@ -138,6 +143,14 @@ function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraf
 function agent_workflow_initiative_result_v1400(array $value): array
 {
     $output=$value['output']??null;
+    if(($output['type']??null)==='initiative_youtube_offer'){
+        require_once __DIR__.'/agent-initiative-youtube-offer-v1.php';
+        return vp3_initiative_youtube_offer_normalize_v1($value)??[];
+    }
+    if(($output['type']??null)==='initiative_coordination'){
+        require_once __DIR__.'/agent-coordination-work-v1.php';
+        return vp3_coordination_result_normalize_v1($value)??[];
+    }
     if(($output['type']??null)==='initiative_brainstorm'){
         require_once __DIR__.'/agent-initiative-brainstorm-v1.php';
         return vp3_initiative_brainstorm_tool_result_v1($value)??[];
@@ -146,12 +159,19 @@ function agent_workflow_initiative_result_v1400(array $value): array
         require_once __DIR__.'/agent-initiative-canvas-v1.php';
         return vp3_initiative_canvas_tool_result_v1($value)??[];
     }
+    if(($output['type']??null)==='initiative_image_concept'){
+        require_once __DIR__.'/agent-initiative-image-v1.php';
+        return vp3_initiative_image_tool_result_v1($value)??[];
+    }
     if(in_array($output['type']??null,['initiative_artist_research','initiative_topic_research'],true)){
         require_once __DIR__.'/agent-artist-research-v1.php';
         return vp3_initiative_research_tool_result_v1($value)??[];
     }
     $safe=[];
     if(is_string($value['draft']??null)&&mb_strlen($value['draft'])<=8000)$safe['draft']=$value['draft'];
+    if(is_string($value['preparation_history_revision']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$value['preparation_history_revision'])){
+        $safe['preparation_history_revision']=$value['preparation_history_revision'];
+    }
     $sources=[];
     foreach(is_array($value['sources']??null)?array_slice($value['sources'],0,16):[] as $row){
         if(!is_array($row)||!is_string($row['source']??null)||!is_string($row['title']??null))continue;
@@ -173,6 +193,10 @@ function agent_workflow_initiative_result_v1400(array $value): array
         &&(!array_key_exists('delivery_preference',$output)||in_array($output['delivery_preference'],['text','voice'],true))
         &&!array_filter($output['message_ids'],static fn(mixed $id):bool=>!is_int($id)||$id<1)){
         $safe['output']=array_intersect_key($output,array_flip(['type','status','conversation_id','agent_id','conversation_revision','message_ids','delivery_preference']));
+        if(isset($output['eyes_visit_ref'])){
+            require_once __DIR__.'/agent-live-context-v1.php';
+            if(vp3_live_context_eyes_visit_ref_v1($output['eyes_visit_ref']))$safe['output']['eyes_visit_ref']=$output['eyes_visit_ref'];
+        }
     }elseif(($output['type']??'')==='initiative_record_read'&&in_array($output['tool']??'', ['brain.read','knowledge.search'],true)
         &&in_array($output['status']??'', ['read_complete','no_matches'],true)){
         $revisions=[];
@@ -208,6 +232,10 @@ function agent_workflow_initiative_result_v1400(array $value): array
         if($valid){
             $safe['output']=array_intersect_key($output,array_flip(['type','version','tool','status','owner_user_id','agent_id',
                 'conversation_id','primary','source_revisions','read_fingerprint','record_count','coverage_fingerprint','coverage_state']));
+            if(in_array($output['tool'],['tasks.read','tasks.lists.read','reminders.read'],true)){
+                require_once __DIR__.'/agent-tool-json-v1.php';
+                $safe['output']+=vp3_initiative_office_report_details_v1($output,true);
+            }
         }
     }elseif(($output['type']??'')==='initiative_workbench_review'&&($output['status']??'')==='review_required'){
         $action=$output['review_action']??null;

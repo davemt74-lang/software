@@ -6,15 +6,25 @@
   const compact = window.matchMedia('(max-width: 760px)');
   const drawer = window.matchMedia('(max-width: 820px)');
   const activeStates = new Set(['queued','running','paused']);
+  const workingStates = new Set(['running','thinking','working']);
   const assignmentStates = new Set([...activeStates,'ready','completed','failed','stopped']);
+  const presenceStates = new Set([...assignmentStates,'thinking','working','waiting_specialist','waiting_owner','waiting_reply',
+    'ready_to_report','checked','idle','blocked','unavailable']);
   const icons = {
     'image-generator':'M4 4h16v16H4z M4 16l5-5 4 4 2-2 5 5 M15 8h.01',
     'email':'M3 6h18v12H3z M3 7l9 6 9-6',
+    'gmail':'M3 6h18v12H3z M3 7l9 6 9-6',
     'gmail-inbox-review':'M3 6h18v12H3z M3 7l9 6 9-6',
     'development':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
     'coding':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
     'research':'M10 3a7 7 0 1 0 0 14 7 7 0 1 0 0-14 M15 15l5 5',
+    'planning':'M4 6h16v14H4z M4 10h16 M8 4v4 M16 4v4 M8 14h3 M8 17h6',
+    'tasks':'M4 6l2 2 3-4 M12 6h8 M4 13l2 2 3-4 M12 13h8 M4 20h4 M12 20h8',
+    'media':'M3 14v-2a9 9 0 0 1 18 0v2 M3 14a2 2 0 0 1 2-2h2v8H5a2 2 0 0 1-2-2z M21 14a2 2 0 0 0-2-2h-2v8h2a2 2 0 0 0 2-2z',
+    'transcripts':'M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6',
     'brainstorm':'M9 18h6 M10 21h4 M8 14a6 6 0 1 1 8 0l-1 2H9z',
+    'curiosity':'M12 2.8a9.2 9.2 0 1 0 0 18.4 9.2 9.2 0 0 0 0-18.4z M15.8 8.2l-2.1 5.5-5.5 2.1 2.1-5.5z',
+    'connected-sites':'M10 13.5l4-4 M8 15.5l-1 1a3.5 3.5 0 0 1-5-5l4.5-4.5a3.5 3.5 0 0 1 5 0 M16 8.5l1-1a3.5 3.5 0 0 1 5 5l-4.5 4.5a3.5 3.5 0 0 1-5 0',
     'mission':'M4 6h16v14H4z M8 6V3h8v3M4 12h16M10 12v3h4v-3',
     generic:'M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2.1 2.1 M16.3 16.3l2.1 2.1 M5.6 18.4l2.1-2.1 M16.3 7.7l2.1-2.1'
   };
@@ -39,7 +49,7 @@
   const host = node('div');
   host.className = 'vp3-chat-specialist-rail';
   host.setAttribute('role','group');
-  host.setAttribute('aria-label','Active specialists');
+  host.setAttribute('aria-label','Specialists');
 
   function makeIcon(key) {
     const ns = 'http://www.w3.org/2000/svg';
@@ -55,7 +65,12 @@
 
   function dock() {
     const mobileDrawer = drawer.matches && document.querySelector('[data-chat-mobile-specialists]');
-    const hasDesktopWork = [...entries.values()].some(entry => entry.desktop);
+    let hasDesktopWork = false;
+    for (const entry of entries.values()) {
+      const shown = entry.desktop && visible(entry,other => other.desktop);
+      if (entry.button.hidden === shown) entry.button.hidden = !shown;
+      hasDesktopWork ||= shown;
+    }
     const rail = compact.matches || mobileDrawer || !hasDesktopWork ? null : document.getElementById('sfOnlineRailV109');
     if (!rail || rail.hidden) {
       const keepPanel = opened && (compact.matches || !host.contains(opened.trigger));
@@ -74,17 +89,45 @@
     return true;
   }
 
+  function fresh(entry) {
+    return !entry.expiresAt || entry.expiresAt > Date.now();
+  }
+
+  function expire(entry) {
+    if (!entry.keepLauncher) { remove(entry.key); return; }
+    update(entry.key, {
+      label:entry.label,fallbackFor:entry.fallbackFor,state:'unavailable',status:'Status unavailable',
+      presence:true,inline:false,keepLauncher:true,viewLabel:entry.viewLabel,onView:entry.onView
+    });
+  }
+
+  function visible(entry, eligible) {
+    return fresh(entry) && !entry.fallbackFor.some(type => [...entries.values()].some(other => other !== entry &&
+      other.key.split(':',1)[0] === type && fresh(other) && eligible(other)));
+  }
+
   const observer = new MutationObserver(dock);
+
+  function setButtonPanel(entry, expanded = false) {
+    const button = entry.button;
+    if (!expanded && button.getAttribute('aria-controls') === 'vp3ChatSpecialistActivity'
+        && button.getAttribute('aria-expanded') === 'true') return;
+    button.setAttribute('aria-controls',!expanded && window.VP3AgentActivityHub?.openSpecialist
+      ? 'vp3ChatSpecialistActivity' : entry.panelId);
+    button.setAttribute('aria-expanded',String(expanded));
+    button.setAttribute('aria-haspopup','dialog');
+  }
 
   function closePanel(restoreFocus) {
     if (!opened) return;
-    const {entry,panel,trigger} = opened;
+    const {entry,panel,trigger,focusReturn} = opened;
     opened = null;
-    entry.button.setAttribute('aria-expanded','false');
-    trigger?.setAttribute('aria-expanded','false');
+    setButtonPanel(entry);
+    if (trigger !== entry.button) trigger?.setAttribute('aria-expanded','false');
     panel.replaceChildren();
     panel.remove();
-    if (restoreFocus) (trigger?.isConnected ? trigger : document.getElementById('chatInput'))?.focus();
+    const focus = focusReturn || trigger;
+    if (restoreFocus) (focus?.isConnected ? focus : document.getElementById('chatInput'))?.focus();
   }
 
   function renderPanel() {
@@ -99,7 +142,7 @@
     view.hidden = !entry.onView;
   }
 
-  function openPanel(entry, trigger) {
+  function openPanel(entry, trigger, focusReturn) {
     closePanel(false);
     const panel = node('section');
     panel.className = 'vp3-chat-specialist-panel';
@@ -128,29 +171,44 @@
       if (onView) onView();
     });
     panel.append(header,title,status,detail,view);
-    opened = {entry,panel,heading,title,status,detail,view,trigger};
+    opened = {entry,panel,heading,title,status,detail,view,trigger,focusReturn};
     renderPanel();
     document.body.append(panel);
-    entry.button.setAttribute('aria-expanded','true');
-    trigger?.setAttribute('aria-expanded','true');
+    setButtonPanel(entry,true);
+    if (trigger !== entry.button) {
+      trigger?.setAttribute('aria-expanded','true');
+      trigger?.setAttribute('aria-controls',panel.id);
+    }
     heading.focus();
   }
 
-  function open(key, trigger) {
+  function open(key, trigger, focusReturn) {
     if (suspended || privateContext()) return false;
     const entry = entries.get(key);
     if (!entry) return false;
-    if (entry.expiresAt && entry.expiresAt <= Date.now()) {
-      remove(key);
-      return false;
-    }
+    if (!fresh(entry)) expire(entry);
+    if (!entries.has(key)) return false;
     if (opened?.entry === entry) closePanel(true);
-    else openPanel(entry,trigger || entry.button);
+    else openPanel(entry,trigger || entry.button,focusReturn);
     return true;
   }
 
-  // Producers publish only verified active work and remove it on completion or scope changes.
-  // A supplied lease or freshness deadline also retires the indicator and panel automatically.
+  function openActivity(key, trigger, focusReturn) {
+    if (suspended || privateContext()) return false;
+    const entry = entries.get(key);
+    if (!entry) return false;
+    if (!fresh(entry)) expire(entry);
+    if (!entries.has(key)) return false;
+    const launcher = trigger || entry.button;
+    const hub = window.VP3AgentActivityHub;
+    if (hub?.openSpecialist) {
+      closePanel(false);
+      if (hub.openSpecialist(key,launcher,{label:entry.label,focusReturn})) return true;
+    }
+    return open(key,launcher,focusReturn);
+  }
+
+  // Producers publish verified work. Persistent specialists also show their observed idle or waiting status.
   function update(key, options = {}) {
     if (suspended || privateContext() || typeof key !== 'string' || !/^[a-z][a-z0-9-]{0,47}(?::[a-z0-9][a-z0-9-]{0,63})?$/.test(key) || !document.body) return;
     const expiresAt = Number.isSafeInteger(options.expiresAt) ? options.expiresAt : 0;
@@ -163,33 +221,38 @@
       button.dataset.chatSpecialist = key;
       button.dataset.chatSpecialistType = type;
       button.className = 'vp3-chat-worker-indicator';
-      button.setAttribute('aria-controls',panelId);
-      button.setAttribute('aria-expanded','false');
-      button.setAttribute('aria-haspopup','dialog');
       button.append(makeIcon(type));
       entry = {key,button,panelId};
-      button.addEventListener('click', () => open(key,button));
+      button.addEventListener('click', () => openActivity(key,button));
       if (!entries.size) observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['hidden']});
       entries.set(key,entry);
       host.append(button);
     }
-    entry.state = assignmentStates.has(options.state) ? options.state : 'running';
-    entry.desktop = options.desktop !== false && activeStates.has(entry.state);
+    entry.presence = options.presence === true;
+    entry.keepLauncher = entry.presence && options.keepLauncher === true;
+    entry.fallbackFor = entry.presence && Array.isArray(options.fallbackFor) ? options.fallbackFor : [];
+    entry.state = (entry.presence ? presenceStates : assignmentStates).has(options.state) ? options.state : 'running';
+    entry.progress = Number.isFinite(options.progress) && options.progress >= 0 && options.progress <= 100 ? options.progress : null;
+    const desktopResult = entry.state === 'completed' && options.desktopResult === true && expiresAt > Date.now()
+      && typeof options.onView === 'function';
+    entry.desktop = options.desktop !== false && (entry.presence || activeStates.has(entry.state) || desktopResult);
     entry.inline = options.inline !== false;
-    entry.button.hidden = !entry.desktop;
-    if (opened?.entry === entry && !activeStates.has(entry.state)) closePanel(true);
+    entry.button.dataset.chatSpecialistState = entry.state;
+    entry.button.toggleAttribute('data-chat-specialist-presence',entry.presence);
+    if (opened?.entry === entry && !entry.presence && !activeStates.has(entry.state) && !desktopResult) closePanel(true);
     entry.label = String(options.label || 'Specialist');
     entry.status = String(options.status || 'Working');
     entry.title = String(options.title || '');
     entry.detail = String(options.detail || '');
     entry.viewLabel = String(options.viewLabel || 'View in Chat');
     entry.onView = typeof options.onView === 'function' ? options.onView : null;
-    entry.button.setAttribute('aria-label',entry.label);
     entry.button.title = entry.label + ' · ' + entry.status;
+    entry.button.setAttribute('aria-label',entry.presence ? entry.button.title : entry.label);
+    setButtonPanel(entry,opened?.entry === entry);
     if (entry.expiresAt !== expiresAt) {
       clearTimeout(entry.expiryTimer);
       entry.expiresAt = expiresAt;
-      if (expiresAt) entry.expiryTimer = setTimeout(() => remove(key), Math.max(0,expiresAt-Date.now()));
+      if (expiresAt) entry.expiryTimer = setTimeout(() => expire(entry), Math.max(0,expiresAt-Date.now()));
     }
     changed();
     dock();
@@ -232,20 +295,22 @@
 
   function snapshot({includeResults = false} = {}) {
     if (suspended || privateContext()) return [];
-    return [...entries.values()].filter(entry => includeResults || activeStates.has(entry.state)).map(entry => ({
+    const included = entry => includeResults || (entry.presence ? workingStates.has(entry.state) : activeStates.has(entry.state));
+    return [...entries.values()].filter(entry => included(entry) && visible(entry,included)).map(entry => ({
       key:entry.key,label:entry.label,status:entry.status,title:entry.title,
       detail:entry.detail,viewLabel:entry.viewLabel,canView:Boolean(entry.onView),
-      state:entry.state,inline:entry.inline
+      state:entry.state,inline:entry.inline,
+      ...(entry.presence ? {presence:true,progress:entry.progress,expiresAt:entry.expiresAt} : {})
     }));
   }
 
   function view(key) {
     if (suspended || privateContext()) return false;
     const entry = entries.get(key);
-    if (!entry?.onView) return false;
+    if (!entry?.onView || entry.expiresAt && entry.expiresAt <= Date.now()) return false;
     closePanel(false);
-    entry.onView();
-    return true;
+    const accepted = entry.onView();
+    return !entry.presence || accepted !== false;
   }
 
   function participantChanged() {
@@ -257,5 +322,5 @@
     participantActor = Number(event.detail?.participant_id) || 0;
     participantChanged();
   });
-  window.VP3ChatSpecialists = Object.freeze({update,remove,snapshot,view,open});
+  window.VP3ChatSpecialists = Object.freeze({update,remove,snapshot,view,open,openActivity});
 })();

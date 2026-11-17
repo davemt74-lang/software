@@ -41,7 +41,13 @@ try{
         elseif($action==='capture'){$r=screen_capture_v1($pdo,$user,screen_session_id_v1($input['capture_id']??null),true);screen_session_v1($pdo,$user,$r['session_id']);$response=['capture'=>screen_capture_public_v1($r,true)];}
         else throw new InvalidArgumentException('Unknown sharing history action.');
     }elseif($action==='start')$response=['session'=>screen_session_start_v1($pdo,$user,$input)];
-    elseif($action==='end'){$s=screen_session_v1($pdo,$user,screen_session_id_v1($input['session_id']??null));$pdo->prepare("UPDATE agent_screen_sessions_v1 SET status='ended',updated_at=? WHERE owner_user_id=? AND session_id=? AND status='active'")->execute([gmdate('Y-m-d\TH:i:s\Z'),$uid,$s['session_id']]);$response=['ended'=>true];}
+    elseif($action==='end'||$action==='post_report'){
+        require_once dirname(__DIR__).'/includes/agent-screen-chat-report-v1.php';
+        $sid=screen_session_id_v1($input['session_id']??null);
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+        if($action==='post_report')$response=screen_chat_report_share_v1($pdo,$user,$sid,(int)($input['conversation_id']??0));
+        else $response=screen_session_end_v1($pdo,$user,$sid,($input['publish_report']??true)===true);
+    }
     elseif($action==='capture'){
         $sid=screen_session_id_v1($input['session_id']??null);$frame=screen_frame_v1(array_intersect_key($input,array_flip(['image','captured_at','surface'])));
         if(array_key_exists('annotation_logging',$input)&&!is_bool($input['annotation_logging']))throw new InvalidArgumentException('Choose whether to log screen annotations.');

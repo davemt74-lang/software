@@ -177,3 +177,116 @@ followup_check(!$actions($history()) && !str_contains($history()[0]['message'],$
     'revoked grant clears actions and redacts old sender text on reload');
 $pdo->prepare('UPDATE agent_connections_v1 SET followups_enabled=1,authorization_key=?')->execute([bin2hex(random_bytes(32))]);
 followup_reject(404,$resolve,'reconnecting Gmail cannot redirect a stale notice to a new grant');
+
+require_once dirname(__DIR__).'/includes/agent-connection-gmail-inbox-initial-v1.php';
+require_once dirname(__DIR__).'/includes/agent-email-triage-v1.php';
+agent_connection_gmail_inbox_install_v1($pdo);
+agent_connection_gmail_inbox_receipts_install_v1($pdo);
+agent_connection_gmail_inbox_initial_install_v1($pdo);
+agent_email_matters_install_v1($pdo);
+agent_email_triage_install_v1($pdo);
+$grant = $pdo->query('SELECT authorization_key FROM agent_connections_v1 WHERE id=17')->fetchColumn();
+$pdo->prepare("INSERT INTO agent_connection_gmail_inbox_v1
+    (owner_user_id,connection_id,authorization_key,enabled,rules_json,revision,enabled_at_ms)
+    VALUES (1,17,?,1,?,?,?)")->execute([$grant,'{"triage_enabled":true}',str_repeat('b',32),$nowMs-60000]);
+$scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
+$policy = $scope['policy'];
+$matterScope = agent_email_matters_bound_scope_v1($scope);
+$at = agent_commerce_time_pa2();
+$email = static fn(string $id): array => [
+    'message_id'=>$id,'thread_id'=>'thread_'.$id,'received_at_ms'=>$nowMs-1000,'from'=>$sender,'to'=>$mailbox,
+    'subject'=>'Urgent permit renewal '.$id,'labels'=>['INBOX'],'reply'=>true,'important'=>false,
+    'in_reply_to'=>'<sent_'.$id.'@example.test>','references'=>'','rfc_message_id'=>'<'.$id.'@example.test>',
+    'assessment'=>['status'=>'assessed','reason'=>'deadline','deadline_date'=>'2031-02-03'],
+];
+$batch = static function(array ...$emails) use ($pdo,$policy,$scope,$at): array {
+    return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$policy,$scope,$at,$emails): array {
+        $messages = [];
+        foreach ($emails as $email) $messages[hash('sha256',$email['message_id'])] = $email;
+        $review = agent_connection_gmail_inbox_review_v1($pdo,$policy,$messages,$at);
+        $raw = json_encode($review,JSON_THROW_ON_ERROR);
+        $notice = agent_connection_gmail_inbox_notify_v1($pdo,1,$review,$policy);
+        agent_connection_gmail_inbox_batch_save_v1($pdo,$policy,$raw,$notice);
+        return agent_connection_gmail_inbox_batch_v1($pdo,$scope,agent_connection_gmail_inbox_batch_id_v1($policy,$raw));
+    });
+};
+$post = static fn(): int => agent_commerce_atomic_pa2($pdo,static fn(): int =>
+    agent_connection_gmail_inbox_update_post_v1($pdo,$scope,7,11));
+$watchFor = static function(array $email,int $chat=11) use ($pdo,$grant,$sender,$mailbox,$policy,$matterScope,$at,$nowMs): array {
+    $operation = bin2hex(random_bytes(32));
+    $anchor = ['message_id'=>'sent_'.$email['message_id'],'thread_id'=>$email['thread_id'],'received_at_ms'=>$nowMs-300000,
+        'from'=>$mailbox,'to'=>$sender,'rfc_message_id'=>$email['in_reply_to'],'labels'=>['SENT']];
+    $sent = $anchor + ['operation_key'=>$operation,'authorization_key'=>$grant,'connection_id'=>17,'sent_at'=>intdiv($nowMs,1000)-300];
+    if (!agent_connection_email_followup_register_v1($pdo,1,7,$chat,$sent)) throw new RuntimeException('Watch fixture registration failed.');
+    $matter = agent_email_matters_source_key_v1($policy,'thread',$email['thread_id']);
+    agent_email_matters_add_v1($pdo,$matterScope,$matter,$email['thread_id'],$email['subject'],$sender,$at);
+    $pdo->prepare("UPDATE agent_email_matters_v1 SET stage='awaiting_reply',last_operation_key=?,last_sent_at=? WHERE matter_id=?")
+        ->execute([$operation,$sent['sent_at'],$matter]);
+    $claim = bin2hex(random_bytes(16));
+    $pdo->prepare('UPDATE agent_connection_email_followups_v1 SET claim_key=?,next_check_at=? WHERE operation_key=?')
+        ->execute([$claim,gmdate('Y-m-d H:i:s',time()+300),$operation]);
+    $lookup = $pdo->prepare('SELECT * FROM agent_connection_email_followups_v1 WHERE operation_key=?');
+    $lookup->execute([$operation]);
+    $watch = $lookup->fetch();
+    $reply = agent_connection_email_followup_match_v1($watch,[$anchor,$email]);
+    if ($reply === null) throw new RuntimeException('Watch fixture could not verify the Gmail reply.');
+    return [$watch,$claim,$reply];
+};
+$follow = static fn(array $fixture): bool => agent_connection_email_followup_deliver_v1($pdo,...$fixture);
+$lookupBatch = static fn(array $row): array => agent_connection_gmail_inbox_batch_v1($pdo,$scope,$row['batch_id']);
+$browserEmail = $email('browser_first');
+$browserWatch = $watchFor($browserEmail);
+$browserBatch = $batch($browserEmail);
+followup_check($post()===1 && !$follow($browserWatch),'a verified watch reuses the browser-first Inbox Chat notice');
+$browserPost = (int)$lookupBatch($browserBatch)['message_id'];
+$watched = $pdo->prepare("SELECT status,reply_message_id,reply_chat_message_id FROM agent_connection_email_followups_v1 WHERE operation_key=?");
+$watched->execute([$browserWatch[0]['operation_key']]);
+$receipt = $watched->fetch();
+followup_check($receipt['status']==='delivered' && $receipt['reply_message_id']==='browser_first' && (int)$receipt['reply_chat_message_id']===$browserPost
+    && (int)$pdo->query("SELECT COUNT(*) FROM agent_email_matter_events_v1 WHERE event_kind='watched_reply' AND chat_message_id=$browserPost")->fetchColumn()===1
+    && (int)$pdo->query("SELECT COUNT(*) FROM notifications WHERE source_type='agent_connection_email_followup' AND source_id=$browserPost")->fetchColumn()===0,
+    'the shared notice keeps the exact watch receipt and matter event with no duplicate bell');
+
+$delayedEmail = $email('watch_first_pending');
+$delayedWatch = $watchFor($delayedEmail);
+$delayedBatch = $batch($delayedEmail);
+followup_check($follow($delayedWatch) && $post()===0 && (int)$lookupBatch($delayedBatch)['message_id']===0
+    && !agent_connection_gmail_inbox_update_has_pending_v1($pdo,$scope)
+    && (int)$pdo->query('SELECT COUNT(*) FROM notifications WHERE id='.(int)$delayedBatch['notification_id'])->fetchColumn()===0,
+    'a delayed batch covered by a native notice retires without a second Chat post or bell');
+
+$mixedEmail = $email('watch_first_mixed');
+$mixedWatch = $watchFor($mixedEmail);
+$unwatched = ['subject'=>$mixedEmail['subject']]+$email('unwatched_urgent');
+$mixedBatch = $batch($mixedEmail,$unwatched);
+followup_check($follow($mixedWatch) && $post()===1,'a partly covered Inbox batch still posts its uncovered alert');
+$mixedPost = (int)$lookupBatch($mixedBatch)['message_id'];
+$context = json_decode((string)$pdo->query("SELECT context_json FROM chat_messages WHERE id=$mixedPost")->fetchColumn(),true,12);
+$mixedView = agent_connection_gmail_inbox_update_history_v1($pdo,$scope,7,11,$context,$mixedPost);
+$mixedReport = agent_connection_gmail_inbox_batch_report_v1($mixedBatch['report_json']);
+$unwatchedRef = agent_connection_gmail_inbox_item_reference_v1($scope,'batch:'.$mixedBatch['batch_id'],1,$mixedReport['items'][1]);
+followup_check($mixedView['review']['total']===1 && $mixedView['review']['items'][0]['item_ref']===$unwatchedRef
+    && !str_contains(json_encode($context),'watch_first_mixed')
+    && $pdo->query('SELECT body FROM notifications WHERE id='.(int)$mixedBatch['notification_id'])->fetchColumn()==='One Gmail message needs your attention.',
+    'history and bell retain the exact uncovered alert even when its sender and subject match the covered item');
+
+$otherEmail = $email('other_chat');
+$otherWatch = $watchFor($otherEmail,12);
+$otherBatch = $batch($otherEmail);
+followup_check($follow($otherWatch) && $post()===1 && (int)$lookupBatch($otherBatch)['conversation_id']===11,
+    'a watch notice in a different private Chat cannot cover the current Chat alert');
+
+$groupedEmails = [$email('shared_one'),$email('shared_two')];
+$groupedWatches = array_map($watchFor,$groupedEmails);
+$grouped = $batch(...$groupedEmails);
+followup_check($post()===1 && !$follow($groupedWatches[0]) && !$follow($groupedWatches[1]),
+    'two distinct verified watches can reuse their exact items in one grouped Chat update');
+$groupedPost = (int)$lookupBatch($grouped)['message_id'];
+followup_reject(404,static fn()=>agent_connection_email_followup_message_v1($pdo,1,7,11,$groupedPost),
+    'a grouped Chat post cannot choose between two distinct watch receipts');
+agent_commerce_atomic_pa2($pdo,static fn()=>agent_connection_gmail_inbox_revoke_v1($pdo,1,17,$grant));
+$browserRows = $pdo->query("SELECT * FROM chat_messages WHERE id=$browserPost")->fetchAll();
+$fallback = agent_connection_email_followup_history_v1($pdo,$user,7,11,$browserRows);
+followup_check(($actions($fallback)[0]['message_id'] ?? null)===$browserPost
+    && agent_connection_email_followup_message_v1($pdo,1,7,11,$browserPost)['message_id']==='browser_first',
+    'a single verified shared watch remains actionable under its independent grant after Inbox Review is disabled');

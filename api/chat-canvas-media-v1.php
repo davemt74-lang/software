@@ -18,7 +18,7 @@ try{
         $ids=$input['asset_ids']??null;if(!is_array($ids)||!array_is_list($ids)||count($ids)>12)throw new InvalidArgumentException('Choose up to twelve assets.');
         foreach($ids as $id)if(!is_int($id)||$id<1)throw new InvalidArgumentException('Invalid asset reference.');
         $assets=media_studio_assets_by_ids($ids,$user);$order=array_flip($ids);usort($assets,static fn($a,$b)=>$order[$a['id']]<=>$order[$b['id']]);vp3_image_scope_v1($pdo,$user,$principal,$context);$result=['assets'=>$assets];
-    }elseif(in_array($action,['get','tick','cancel'],true)){
+    }elseif(in_array($action,['get','tick','recover','cancel'],true)){
         $id=$input['generation_id']??null;if(!is_string($id))throw new InvalidArgumentException('Choose an image request.');
         if(!table_exists('agent_image_generations_v1'))throw new RuntimeException('Image request not found.',404);
         $row=vp3_image_row_v1($pdo,$user,$id);if((int)$row['conversation_id']!==$cid||(int)$row['agent_id']!==(int)$principal['agent_id'])throw new RuntimeException('Image request not found in this conversation.',404);
@@ -28,7 +28,12 @@ try{
             $row=vp3_image_row_v1($pdo,$user,$id);
         }
         if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
-        $view=$action==='tick'?vp3_image_tick_v1($pdo,$user,$row):vp3_image_view_v1($pdo,$user,$row);$result=['generation'=>$view];
+        $view=match($action){
+            'tick'=>vp3_image_tick_v1($pdo,$user,$row),
+            'recover'=>vp3_image_recover_expired_v1($pdo,$user,$row),
+            default=>vp3_image_view_v1($pdo,$user,$row),
+        };
+        $result=['generation'=>$view];
     }else throw new InvalidArgumentException('Unknown media operation.');
     echo json_encode(['ok'=>true]+$result,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 }catch(Throwable $e){

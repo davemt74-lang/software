@@ -117,12 +117,20 @@
 
   const validPosition = value => Number.isSafeInteger(value) && value >= 0 && value <= maxPositionMs;
 
+  function currentPosition(active, ended = false) {
+    if (!active.hasPlayed || !expectedVideo(active)) return null;
+    if (ended) return 0;
+    try {
+      const position = Math.round(active.player.getCurrentTime()*1000);
+      return validPosition(position) ? position : null;
+    } catch { return null; }
+  }
+
   function reportPosition(active, ended = false) {
     const play = active.play;
-    if (!config.resumeCapture || play.positionRejected || !active.hasPlayed || !canCapture(active,play) || !expectedVideo(active)) return;
-    let position;
-    try { position = ended ? 0 : Math.round(active.player.getCurrentTime()*1000); } catch { return; }
-    if (!validPosition(position) || play.lastPosition === position) return;
+    if (!config.resumeCapture || play.positionRejected || !canCapture(active,play)) return;
+    const position = currentPosition(active,ended);
+    if (position === null || play.lastPosition === position) return;
     play.lastPosition = position;
     positions.set(active.video.video_id,position);
     if (positions.size > 120) positions.delete(positions.keys().next().value);
@@ -164,6 +172,7 @@
 
   function startWatching(active) {
     active.hasPlayed = true;
+    if (document.hidden) return;
     capturePlayback(active);
     if ((!config.watchCapture && !config.resumeCapture) || active.watchTimer || !canCapture(active, active.play)) return;
     if (config.watchCapture) sampleWatch(active);
@@ -233,6 +242,28 @@
     return link;
   }
 
+  function setInterruption(active, reason) {
+    active.interruption = reason;
+    const {status, resume, watch} = active.interruptionControls;
+    const position = currentPosition(active) ?? active.leavingPosition ?? active.play.lastPosition ?? 0;
+    const seconds = Math.floor(position / 1000);
+    const labels = {
+      away:'Playback paused while you were away.',
+      autoplay:'This browser requires a click to start YouTube playback.',
+      next:'The next video is ready.',
+      unavailable:'YouTube could not play this video in Chat.',
+    };
+    status.textContent = reason ? labels[reason] : '';
+    status.hidden = !reason;
+    resume.textContent = reason === 'next' ? 'Play next video'
+      : seconds > 0 ? 'Resume at '+Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0') : 'Resume playback';
+    resume.hidden = !reason || reason === 'unavailable';
+    const url = new URL('https://www.youtube.com/watch?v=' + active.video.video_id);
+    if (seconds > 0) url.searchParams.set('t',String(seconds)+'s');
+    watch.href = url.href;
+    watch.hidden = !reason || reason === 'next';
+  }
+
   function playVideo(row, button, video, title, messageId, suggestion, {playlistId='',queue=[],index=-1}={}) {
     const videoId = video.video_id;
     if (document.hidden || window.VP3ParticipantContinuity?.selectedContext() || activePlayer?.button === button) return;
@@ -258,15 +289,34 @@
       next.addEventListener('click',() => queue[index+1]?.());
       controls.append(previous,next);
     }
-    controls.append(close);
-    panel.append(frame,controls);
+    const status = element('p','vp3-youtube-channel');
+    status.setAttribute('role','status');
+    status.hidden = true;
+    const resumePlayback = element('button','vp3-youtube-close');
+    resumePlayback.type = 'button';
+    resumePlayback.hidden = true;
+    const watch = openLink('vp3-youtube-watch','Open on YouTube','https://www.youtube.com/watch?v=' + videoId);
+    watch.hidden = true;
+    controls.append(resumePlayback,watch,close);
+    panel.append(frame,status,controls);
     row.append(panel);
     button.setAttribute('aria-expanded', 'true');
-    const active = {panel, button, video, messageId, suggestion, playlistId, queue, index};
+    const active = {panel, button, video, messageId, suggestion, playlistId, queue, index,
+      interruptionControls:{status,resume:resumePlayback,watch}};
     active.play = newPlay(active);
     activePlayer = active;
+    resumePlayback.addEventListener('click',() => {
+      if (activePlayer !== active || document.hidden || window.VP3ParticipantContinuity?.selectedContext()) return;
+      if (active.interruption === 'next') { queue[index+1]?.(); return; }
+      try { active.player.playVideo(); } catch {} // The native Play control is still available.
+    });
     const mount = resume => {
-      if (activePlayer !== active || document.hidden || !panel.isConnected) return;
+      if (activePlayer !== active || !panel.isConnected) return;
+      if (document.hidden) {
+        active.pendingMount = () => mount(resume);
+        return;
+      }
+      active.pendingMount = null;
       const params = new URLSearchParams({autoplay:'1',playsinline:'1',enablejsapi:'1',origin:location.origin});
       if (validPosition(resume) && resume > 0) params.set('start',String(Math.floor(resume/1000)));
       frame.src = 'https://www.youtube.com/embed/' + videoId + '?' + params;
@@ -277,16 +327,24 @@
             if (activePlayer !== active) return;
             active.player = event.target;
             active.ready = true;
-            if (document.hidden) { event.target.pauseVideo(); return; }
             try {
               if (validPosition(resume) && resume % 1000 !== 0) event.target.seekTo?.(resume/1000,true);
+              active.lastState = event.target.getPlayerState();
+              if (active.lastState === api.PlayerState.PLAYING) startWatching(active);
             } catch {} // The iframe has already received the whole-second start.
-            if (event.target.getPlayerState() === api.PlayerState.PLAYING) startWatching(active);
+          },
+          onAutoplayBlocked() {
+            if (activePlayer === active) setInterruption(active,'autoplay');
+          },
+          onError() {
+            if (activePlayer === active) setInterruption(active,'unavailable');
           },
           onStateChange(event) {
             if (activePlayer !== active) return;
+            const previous = active.lastState;
+            active.lastState = event.data;
             if (event.data === api.PlayerState.PLAYING) {
-              if (document.hidden) { event.target.pauseVideo(); return; }
+              if (active.interruption) setInterruption(active,null);
               active.offer?.remove();
               if (active.ended) {
                 if (!expectedVideo(active)) return;
@@ -299,8 +357,14 @@
               stopWatching(active,ended);
               if (ended) {
                 active.ended = true;
-                if (!document.hidden && queue[index+1]) queue[index+1]();
-                else void offerMorePicks(active);
+                if (queue[index+1]) {
+                  if (document.hidden) setInterruption(active,'next');
+                  else queue[index+1]();
+                } else void offerMorePicks(active);
+              } else if (event.data === api.PlayerState.PAUSED && !active.interruption
+                  && (active.wasPlayingWhileLeaving || document.hidden
+                    && [api.PlayerState.PLAYING,api.PlayerState.BUFFERING].includes(previous))) {
+                setInterruption(active,'away');
               }
             }
           }
@@ -645,17 +709,22 @@
     const active = activePlayer;
     if (!active) return;
     if (document.hidden) {
-      if (!active.ready) { stopPlayer(); return; }
+      active.wasPlayingWhileLeaving = isPlaying();
+      active.leavingPosition = currentPosition(active);
+      stopWatching(active);
+      return;
+    }
+    if (active.pendingMount) active.pendingMount();
+    if (active.ready) {
       try {
         const state = active.player.getPlayerState();
-        active.resumeOnVisible = state === window.YT.PlayerState.PLAYING || state === window.YT.PlayerState.BUFFERING;
-        stopWatching(active);
-        active.player.pauseVideo();
-      } catch { stopPlayer(); }
-    } else if (active.resumeOnVisible) {
-      active.resumeOnVisible = false;
-      try { active.player.playVideo(); } catch {} // The native Play control is still available.
+        if (state === window.YT.PlayerState.PLAYING) startWatching(active);
+        if (state === window.YT.PlayerState.PAUSED && active.wasPlayingWhileLeaving && !active.interruption) {
+          setInterruption(active,'away');
+        }
+      } catch {} // Playback stays available without a readable player state.
     }
+    active.wasPlayingWhileLeaving = false;
   });
 
   function isHistoryRequest(text) {
@@ -715,7 +784,8 @@
     }
     if (!active.ready) return {answer:'YouTube pause is unavailable right now. Use the player’s Pause button or say “Stop YouTube” to close it.'};
     try {
-      active.resumeOnVisible = false;
+      active.wasPlayingWhileLeaving = false;
+      if (['away','autoplay'].includes(active.interruption)) setInterruption(active,null);
       active.player.pauseVideo();
       return {answer:'I asked the YouTube player to pause.'};
     } catch {
@@ -723,5 +793,13 @@
     }
   }
 
-  window.VP3_CHAT_YOUTUBE_V1 = Object.freeze({attach, command, runCommand, settingsUrl:config.connections});
+  function isPlaying() {
+    if (!activePlayer?.panel.isConnected) return false;
+    try {
+      const state = activePlayer.player?.getPlayerState();
+      return state === 1 || state === 3;
+    } catch { return false; }
+  }
+
+  window.VP3_CHAT_YOUTUBE_V1 = Object.freeze({attach, command, runCommand, isPlaying, settingsUrl:config.connections});
 })();

@@ -154,7 +154,7 @@ function live_browser_exception_v1(Throwable $error): void
 function live_browser_model_v1(string $prompt,string $protocol): ?array
 {
     if(!capabilities_browser_value_v1('live_mode'))return null;
-    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1'],true))return null;
+    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-reply.v1',VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1],true))return null;
     if(db()->inTransaction())throw new RuntimeException('Live inference held a database transaction.');
     $input=json_decode($prompt,true,40,JSON_THROW_ON_ERROR);
     foreach(['SIBLING CHAT SECRET','FOREIGN CHAT SECRET','OTHER CHAT PRIVATE SECRET'] as $secret){
@@ -195,6 +195,8 @@ function live_browser_model_v1(string $prompt,string $protocol): ?array
     }
     $tool=$input['tool_result']['tool']??null;
     if(!in_array($tool,['live.context.read','tasks.lists.read'],true))throw new RuntimeException('Unexpected actual live preparation tool.');
+    $expectedProtocol=$tool==='tasks.lists.read'?VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1:'vp3.initiative-draft.v1';
+    if($protocol!==$expectedProtocol)throw new RuntimeException('Unexpected actual live preparation protocol.');
     $records=json_encode($input['tool_result']['records']??[],JSON_THROW_ON_ERROR);
     if($tool==='live.context.read'&&!str_contains($records,'LIVE_SCREEN_CONTENT_SENTINEL')
         &&!str_contains($records,'provider_label'))throw new RuntimeException('The actual live reader did not return its current source.');

@@ -170,6 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     profile_conversion_booking_confirmed_v179($pdo, $profile, $booking, $postEvent);
                 }
             }
+            agent_scheduling_wake_planning_v430($pdo,$booking);
             public_booking_redirect_v450(agent_scheduling_public_manage_url_v450($username, (string)$booking['cancel_token']) . '?confirmed=1');
         }
 

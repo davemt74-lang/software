@@ -124,6 +124,19 @@ function player_library_visible_track_ids(
 }
 
 try {
+    if($action==='playback_action'){
+        require_once dirname(__DIR__).'/includes/agent-media-playback-v1.php';
+        $selection=$input['media_playback']??null;
+        try{
+            $playback=is_array($selection)?vp3_media_playback_resolve_v1($pdo,$user,$selection):null;
+        }catch(RuntimeException $error){
+            if($error->getCode()!==403)throw $error;
+            player_library_json(false,['error'=>'Playback is unavailable in this Chat.'],403);
+        }
+        if($playback===null)player_library_json(false,['error'=>'This playback choice changed. Ask the Agent to check again.'],409);
+        player_library_json(true,$playback);
+    }
+
     if($action==='recent_history'){
         $tracks=player_recent_history($user,[],12);
         player_library_json(true,['user_id'=>$userId,'tracks'=>array_map(static fn(array $track):array=>[

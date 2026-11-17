@@ -7,8 +7,15 @@ $status=200;
 try{
     $user=current_user();if(!$user)throw new RuntimeException('Sign in to use sharing follow-ups.',403);$method=$_SERVER['REQUEST_METHOD']??'';if(!in_array($method,['GET','POST'],true))throw new RuntimeException('GET or POST required.',405);screen_sessions_permission_v1($user,$method==='POST');$pdo=db();if(!$pdo)throw new RuntimeException('Sharing storage unavailable.',503);
     if($method==='POST'){$raw=file_get_contents('php://input',false,null,0,16385);if(strlen($raw)>16384)throw new RuntimeException('Follow-up request exceeds its limit.',413);$input=json_decode($raw,true,16,JSON_THROW_ON_ERROR);if(!is_array($input)||array_is_list($input))throw new InvalidArgumentException('Use a follow-up request object.');if(!hash_equals(csrf_token(),(string)($input['csrf_token']??'')))throw new RuntimeException('Refresh before updating follow-ups.',419);}else $input=$_GET;
-    if((string)($input['owner_key']??'')!==(string)$user['id'])throw new RuntimeException('Sharing account changed. Refresh.',409);$aid=screen_insights_agent_v1($pdo,$user,(int)($input['agent_id']??0));screen_sessions_schema_v1($pdo);screen_insights_schema_v1($pdo);$action=$input['action']??'feed';
-    if($method==='GET'&&$action==='feed'){$q=$pdo->prepare('SELECT * FROM agent_screen_handoffs_v1 WHERE owner_user_id=? AND agent_id=? ORDER BY updated_at DESC LIMIT 20');$q->execute([(int)$user['id'],$aid]);$links=[];foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){try{$links[]=screen_handoff_view_v1($pdo,$user,$r);}catch(Throwable $ignored){}}$result=['cards'=>screen_insights_feed_v1($pdo,$user,$aid),'handoffs'=>$links];}
+    if((string)($input['owner_key']??'')!==(string)$user['id'])throw new RuntimeException('Sharing account changed. Refresh.',409);$aid=screen_insights_agent_v1($pdo,$user,(int)($input['agent_id']??0));$action=$input['action']??'feed';
+    $readingReport=$method==='GET'&&$action==='chat_report';
+    if(!$readingReport){screen_sessions_schema_v1($pdo);screen_insights_schema_v1($pdo);}
+    if($readingReport){
+        require_once dirname(__DIR__).'/includes/agent-screen-chat-report-v1.php';
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+        $result=screen_chat_report_projection_v1($pdo,$user,$aid,(int)($input['conversation_id']??0),(int)($input['message_id']??0));
+    }
+    elseif($method==='GET'&&$action==='feed'){$q=$pdo->prepare('SELECT * FROM agent_screen_handoffs_v1 WHERE owner_user_id=? AND agent_id=? ORDER BY updated_at DESC LIMIT 20');$q->execute([(int)$user['id'],$aid]);$links=[];foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){try{$links[]=screen_handoff_view_v1($pdo,$user,$r);}catch(Throwable $ignored){}}$result=['cards'=>screen_insights_feed_v1($pdo,$user,$aid),'handoffs'=>$links];}
     elseif($method==='POST'&&$action==='reset_suggestions'){$pdo->prepare('DELETE FROM agent_screen_insight_state_v1 WHERE owner_user_id=? AND agent_id=?')->execute([(int)$user['id'],$aid]);$result=['reset'=>true];}
     elseif($method==='POST'&&$action==='decide')$result=screen_insights_decide_v1($pdo,$user,$aid,$input);
     elseif($method==='POST'&&$action==='review_capture')$result=screen_insights_review_capture_v1($pdo,$user,$input);

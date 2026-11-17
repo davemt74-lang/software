@@ -38,7 +38,8 @@ try {
     })
   });
   const messages = [
-    report(10, 100, summary, {}, {legacySources:topicSources}),
+    report(10, 100, summary, {meeting_followup:{title:'Supplier call',commitment:'Check delivery <img src=x>',
+      url:'/meeting.php?meeting=supplier-call#meetingAgenda'}}, {legacySources:topicSources}),
     report(11, 101, 'A mismatched owner.', {owner_user_id:2}),
     report(12, 102, 'A mismatched Agent.', {agent_id:8}),
     report(13, 103, 'A mismatched Chat.', {conversation_id:99}),
@@ -82,7 +83,9 @@ try {
   assert.equal(await excerpt.getAttribute('rel'),'noopener noreferrer');
   assert.equal(await excerpt.getAttribute('target'),'_blank');
   assert.equal(await canvas(100).getByRole('link',{name:'A lead from a university · Search lead'}).count(),1);
-  assert.equal(await canvas(100).getByRole('link').count(),2);
+  const meeting = canvas(100).getByRole('link',{name:'Meeting follow-up · Check delivery <img src=x>',exact:true});
+  assert.equal(await meeting.getAttribute('href'),'https://research.test/meeting.php?meeting=supplier-call#meetingAgenda');
+  assert.equal(await canvas(100).getByRole('link').count(),3);
   assert.equal(await canvas(100).locator('img').count(),0);
   assert.equal(await thread.locator('[data-public-research-sources]').count(),1);
 
@@ -94,7 +97,8 @@ try {
       ]
     }),
     report(17, 111, 'The public search returned no eligible sources.', {
-      title:'A different topic',status:'no_matches',sources:[]
+      title:'A different topic',status:'no_matches',sources:[],
+      meeting_followup:{title:'Untrusted meeting',url:'https://other.example/meeting.php'}
     }),
     report(18, 112, 'An unconfirmed result.', {sources:topicSources.slice(2)})
   );
@@ -108,6 +112,7 @@ try {
   assert.equal(await thread.locator('[data-research-canvas-run-id]').count(),3);
   await boot();
   await canvas(110).getByRole('link').waitFor();
+  assert.equal(await meeting.count(),1);
   assert.equal(await thread.locator('[data-research-canvas-run-id]').count(),3);
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.openConversation(99));
   await thread.getByText('The other Chat.',{exact:true}).waitFor();

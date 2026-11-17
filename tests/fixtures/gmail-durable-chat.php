@@ -13,7 +13,8 @@ switch ($_GET['action'] ?? '') {
         $pdo->exec('CREATE TABLE IF NOT EXISTS settings (setting_key TEXT PRIMARY KEY, setting_value TEXT)');
         $pdo->exec('CREATE TABLE agent_connections_v1 (
             id INTEGER PRIMARY KEY, owner_user_id INTEGER, provider TEXT, status TEXT, read_enabled INTEGER,
-            authorization_key TEXT, client_fingerprint TEXT, access_token_enc TEXT, refresh_token_enc TEXT)');
+            authorization_key TEXT, client_fingerprint TEXT, access_token_enc TEXT, refresh_token_enc TEXT,
+            account_email TEXT, external_account_id TEXT, send_enabled INTEGER, access_expires_at INTEGER)');
         $pdo->exec('CREATE TABLE notifications (id INTEGER PRIMARY KEY, user_id INTEGER, type TEXT, title TEXT,
             body TEXT, target_url TEXT, source_type TEXT, source_id INTEGER, created_at TEXT)');
         agent_connection_gmail_inbox_install_v1($pdo);
@@ -23,8 +24,9 @@ switch ($_GET['action'] ?? '') {
         $when = gmdate('Y-m-d H:i:s', time() - 7200);
         $started = (time() - 7200) * 1000;
         $rules = '{}';
-        $pdo->prepare("INSERT INTO agent_connections_v1 VALUES (71,1,'gmail','connected',1,?,?,?,?)")
-            ->execute([$key,agent_connections_client_fingerprint_v1(),'fixture-access-token','fixture-refresh-token']);
+        $pdo->prepare("INSERT INTO agent_connections_v1 VALUES (71,1,'gmail','connected',1,?,?,?,?,
+            'owner@example.test','fixture-mailbox',1,?)")
+            ->execute([$key,agent_connections_client_fingerprint_v1(),ai_encrypt_secret('fixture-access-token'),'fixture-refresh-token',time()+3600]);
         $pdo->prepare("INSERT INTO agent_connection_gmail_inbox_v1
             (owner_user_id,connection_id,authorization_key,enabled,rules_json,revision,history_id,enabled_at_ms)
             VALUES (1,71,?,1,?,?,'1234',?)")->execute([$key,$rules,str_repeat('b',32),$started]);
@@ -80,6 +82,32 @@ switch ($_GET['action'] ?? '') {
         // Leave the old report in storage so the test exercises grant rechecks.
         $pdo->exec('UPDATE agent_connection_gmail_inbox_v1 SET enabled=0 WHERE owner_user_id=1');
         echo '{}';
+        break;
+
+    case 'urgent':
+        $pdo->exec('CREATE TABLE IF NOT EXISTS agent_connection_sends_v1 (operation_key TEXT)');
+        require_once __DIR__.'/includes/agent-connection-email-chat-v1.php';
+        agent_connection_email_draft_schema_v1($pdo);
+        agent_connection_email_followup_install_v1($pdo);
+        agent_connection_gmail_inbox_batches_install_v1($pdo);
+        $pdo->exec('UPDATE agent_connection_gmail_inbox_v1 SET enabled=1 WHERE owner_user_id=1');
+        $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,current_user());
+        $conversation = (int)$_GET['conversation'];
+        $items = [['from'=>'The General <general@example.test>','subject'=>'Urgent delivery time',
+            'category'=>'important','important'=>true,'priority_signals'=>['urgent'],
+            'message_id_enc'=>ai_encrypt_secret('urgent_fixture_provider_id')]];
+        if (isset($_GET['multiple'])) $items[] = ['from'=>'Another sender','subject'=>'Action required now',
+            'category'=>'important','priority_signals'=>['action required'],'message_id_enc'=>ai_encrypt_secret('urgent_second')];
+        $report = ['at'=>gmdate('Y-m-d H:i:s'),'total'=>count($items),'important'=>count($items),'replies'=>0,'items'=>$items];
+        // Distinguish simulated successive scans without changing the real batch dedupe contract.
+        $report['fixture_scan'] = (string)$_GET['scan'];
+        $raw = json_encode($report,JSON_THROW_ON_ERROR);
+        $pdo->beginTransaction();
+        agent_connection_gmail_inbox_batch_save_v1($pdo,$scope['policy'],$raw);
+        agent_connection_gmail_inbox_update_post_v1($pdo,$scope,7,$conversation);
+        $pdo->commit();
+        $row = agent_connection_gmail_inbox_batch_v1($pdo,$scope,agent_connection_gmail_inbox_batch_id_v1($scope['policy'],$raw));
+        echo json_encode(['message_id'=>(int)$row['message_id']]);
         break;
 
     default:

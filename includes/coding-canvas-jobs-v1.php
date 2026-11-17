@@ -9,6 +9,7 @@ require_once __DIR__.'/knowledge-retrieval-v162.php';
 require_once __DIR__.'/participant-updates-v1.php';
 require_once __DIR__.'/coding-canvas-store-v1.php';
 require_once __DIR__.'/coding-canvas-provider-v1.php';
+require_once __DIR__.'/coding-canvas-chat-v1.php';
 
 function vp3_coding_canvas_scope_v1(PDO $pdo, array $user, int $agentId, int $conversationId): array
 {
@@ -109,7 +110,8 @@ function vp3_coding_canvas_clear_abandoned_v1(PDO $pdo, array $user): void
 
 function vp3_coding_canvas_queue_v1(
     PDO $pdo, array $user, int $agentId, int $conversationId, string $requestId, string $prompt,
-    ?string $canvasId = null, ?int $revision = null, ?string $diagnostic = null, ?array $initiativeOrigin = null
+    ?string $canvasId = null, ?int $revision = null, ?string $diagnostic = null, ?array $initiativeOrigin = null,
+    ?array $commands = null
 ): array {
     if (!agent_job_engine_schema_ready_v1900($pdo) || !agent_job_control_ready_v1900($pdo)
         || !vp3_ai_service_usage_ready_v1($pdo)) {
@@ -122,6 +124,10 @@ function vp3_coding_canvas_queue_v1(
     $dedupe = hash('sha256', 'coding_canvas:'.$requestId);
     $requestFields = [$capability, $agentId, $conversationId, $prompt, $canvasId, $revision, $diagnostic];
     if ($initiativeOrigin !== null) $requestFields[] = ['initiative_origin'=>$initiativeOrigin];
+    if ($commands !== null) {
+        $commands = vp3_coding_canvas_command_list_v1($commands);
+        $requestFields[] = ['commands'=>$commands];
+    }
     $requestHash = hash('sha256', json_encode($requestFields, JSON_THROW_ON_ERROR));
     $ownsTransaction = !$pdo->inTransaction();
     if ($ownsTransaction) {
@@ -134,7 +140,12 @@ function vp3_coding_canvas_queue_v1(
         vp3_coding_canvas_authority_v1($pdo, $user, $agentId, true);
         if ($initiativeOrigin !== null) {
             require_once __DIR__.'/agent-initiative-canvas-v1.php';
-            if ($repair || ($initiativeOrigin['request_id'] ?? null) !== $requestId) throw new RuntimeException('Automatic Canvas admission changed.', 409);
+            $target = isset($initiativeOrigin['target']) ? vp3_initiative_canvas_target_v1($initiativeOrigin['target']) : null;
+            if (($initiativeOrigin['request_id'] ?? null) !== $requestId || $repair !== ($target !== null)
+                || ($target !== null && ($target['canvas_id'] !== $canvasId || $target['conversation_id'] !== $conversationId
+                    || $target['revision'] !== $revision || $target['commands'] !== $commands))) {
+                throw new RuntimeException('Automatic Canvas admission changed.', 409);
+            }
             $user = vp3_initiative_canvas_origin_current_v1($pdo, $user, $initiativeOrigin);
         }
         $stmt = $pdo->prepare('SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND dedupe_key=?');
@@ -163,6 +174,12 @@ function vp3_coding_canvas_queue_v1(
         $model = vp3_coding_canvas_model_resolve_v1($pdo, $user);
         vp3_coding_canvas_model_authorized_v1($pdo, $user, $model, $repair ? 'code_repair' : 'code_build', $initiativeOrigin !== null);
         $source = $repair ? vp3_coding_canvas_read_v1($pdo, $user, $agentId, $canvasId, $revision) : null;
+        if ($repair && $source['canvas']['conversation_id'] !== $conversationId) {
+            require_once __DIR__.'/coding-canvas-email-v1.php';
+            if (vp3_coding_canvas_email_binding_v1($pdo,$user,$agentId,$canvasId,$source['revision']['id']) !== null) {
+                throw new RuntimeException('Open the original Chat to repair this email-connected Canvas.',409);
+            }
+        }
         $canvasId ??= agent_event_uuid_v1920();
         $goal = [
             'canvas_id' => $canvasId,
@@ -176,6 +193,7 @@ function vp3_coding_canvas_queue_v1(
             'model' => $model,
         ];
         if ($initiativeOrigin !== null) $goal['initiative_origin'] = $initiativeOrigin;
+        $goal['commands'] = $commands ?? $source['revision']['commands'] ?? [];
         $title = $repair ? 'Repair a private Canvas' : 'Build a private Canvas';
         $pdo->prepare("INSERT INTO agent_workflow_runs
             (owner_user_id,agent_id,workflow_type,origin,source_kind,source_key,dedupe_key,title,goal,
@@ -232,10 +250,14 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
             $claim['lease_token'], 25, 'Generating a private Canvas draft', 180)) {
             return ['ok' => false, 'reason' => 'coding_lease_unavailable'];
         }
+        $commands = vp3_coding_canvas_command_list_v1($goal['commands'] ?? $source['revision']['commands'] ?? []);
+        $attribution = ['agent_id'=>$agentId,'conversation_id'=>$cid];
+        if (isset($goal['initiative_origin'])) $attribution['background']=true;
+        if ($commands) $attribution['commands']=$commands;
         $generate ??= 'vp3_coding_canvas_generate_v1';
         $draft = $generate($pdo, $user, $goal['model'], (string)$runId, $run['source_key'],
             $goal['prompt'], $source['revision']['artifact'] ?? null, $goal['diagnostic'],
-            ['agent_id' => $agentId, 'conversation_id' => $cid] + (isset($goal['initiative_origin']) ? ['background'=>true] : []));
+            $attribution);
 
         if (isset($goal['initiative_origin'])) {
             // Refresh any remote privacy proof before opening the save lock;
@@ -255,11 +277,16 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
         $saved = vp3_coding_canvas_save_draft_v1(
             $pdo, $user, $agentId, $source['canvas']['conversation_id'] ?? $cid, $canvasId,
             $source['canvas']['title'] ?? $draft['title'], $draft['artifact'], [], $runId,
-            $goal['expected_draft'], $goal['expected_active']
+            $goal['expected_draft'], $goal['expected_active'], $commands
         );
-        $receipt = agent_worker_cloud_result_v1910($pdo, $user, $claim, true, 'Private Canvas draft saved.', [
+        $result = [
             'canvas_id' => $canvasId, 'canvas_revision' => $saved['revision']['id'],
-        ]);
+        ];
+        if ($run['capability_key'] === 'coding.build' || isset($goal['initiative_origin']['target'])) {
+            $messageId = vp3_coding_canvas_chat_save_v1($pdo,$user,$agentId,$cid,$runId);
+            if ($messageId !== null) $result['canvas_message_id'] = $messageId;
+        }
+        $receipt = agent_worker_cloud_result_v1910($pdo, $user, $claim, true, 'Private Canvas draft saved.', $result);
         $pdo->commit();
         return ['ok' => true, 'reason' => 'completed', 'receipt' => $receipt];
     } catch (Throwable $error) {

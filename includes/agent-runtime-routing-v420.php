@@ -121,14 +121,25 @@ function vp3_agent_runtime_tool_plan_v420(int $userId,int $agentId,string $surfa
     ];
 }
 
-function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat',array $serviceContext=[]): array
+function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat',array $serviceContext=[],
+    bool $observeOnly=false): array
 {
     $userId=(int)($user['id']??0);$agentId=max(0,$agentId);
     if($userId<1)throw new RuntimeException('A signed-in VP3 user is required for Agent runtime routing.');
     if(function_exists('agent_compute_v023_assert_owned_agent'))agent_compute_v023_assert_owned_agent($pdo,$userId,$agentId);
 
-    $rawPolicy=vp3_agent_runtime_preference_v420($pdo,$userId,$agentId);
+    $rawPolicy=$observeOnly?vp3_agent_runtime_preference_readonly_v420($pdo,$userId,$agentId)
+        :vp3_agent_runtime_preference_v420($pdo,$userId,$agentId);
     $requested=(string)($rawPolicy['effective_preference']??'auto');
+    if($observeOnly&&$requested!=='vp3_cloud'&&function_exists('homeserver_vp3_connection')){
+        $routeCheckRequired=['blocked'=>true,'route'=>'none','route_reason'=>'route_check_required'];
+        try{
+            if(homeserver_vp3_connection($userId,true,$pdo)!==null)return $routeCheckRequired;
+        }catch(RuntimeException $error){
+            // An inconclusive local read cannot grant a Cloud route.
+            return $routeCheckRequired;
+        }
+    }
     $cloud=vp3_agent_runtime_cloud_state_v420($user,$pdo,$serviceContext);
     $policy=$rawPolicy;
     $home=['paired'=>false,'supported'=>false,'ready'=>false,'cloud_allowed'=>true,'scope_checked'=>false];
@@ -136,7 +147,7 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
 
     // Explicit VP3 Cloud is a strict transport boundary: do not call
     // HomeServer scope/capability/relay discovery merely to plan this request.
-    if($requested!=='vp3_cloud'){
+    if($requested!=='vp3_cloud'&&!$observeOnly){
         if(function_exists('homeserver_scope_v026_fetch')&&function_exists('homeserver_scope_v026_apply_compute_policy')){
             $scopeState=homeserver_scope_v026_fetch($userId,false);
             $policy=homeserver_scope_v026_apply_compute_policy($policy,$scopeState);

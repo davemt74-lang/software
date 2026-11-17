@@ -14,7 +14,7 @@ const html = `<!doctype html><html><head><meta name="viewport" content="width=de
   <section data-chat-view="player" hidden><article id="playerSong"><audio class="chat-audio-player" preload="none" data-track-id="9" data-player-title="Last song" data-player-album="Studio" src="/song.wav"></audio></article></section>
   <div id="chatWelcome" hidden></div></section>
   <div class="chat-composer-shell" id="chatComposerShell">${nowPlayingMarkup}<form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form>
-  </div></main></div></body></html>`;
+  </div></main></div><div id="chatQueueDrawer" hidden><div id="chatQueueList"></div></div></body></html>`;
 
 const pcm = Buffer.alloc(8000 * 2 * 60);
 const wav = Buffer.alloc(44 + pcm.length);
@@ -37,6 +37,8 @@ const browser = await chromium.launch({headless:true,...(executablePath ? {execu
 const errors = [], calls = [];
 let recent = [], historyStatus = 200, historyOwner = 11;
 const media = {id:9,title:'Last song <img>',album:'Studio',audio:'/song.wav',cover:'/cover.svg',detail:'/track.php?id=9'};
+const secondMedia = {...media,id:19,title:'Second native track',detail:'/track.php?id=19'};
+let mediaTurn = null, nextAssistantMessageId = 2;
 const savedTrack = () => ({...media,last_played_at:new Date().toISOString(),last_position_seconds:24});
 const startCount = () => calls.filter(x => x.path === '/api/playback.php' && x.action === 'start').length;
 const refresh = page => page.evaluate(() => window.dispatchEvent(new Event('vp3:playback-history-changed')));
@@ -63,6 +65,12 @@ async function fixture(options) {
     if (body.action === 'recent_history') return route.fulfill(historyStatus === 200
       ? {json:{ok:true,user_id:historyOwner,tracks:recent}}
       : {status:historyStatus,json:{ok:false,error:'Unavailable'}});
+    if (body.action === 'playback_action') {
+      const action=body.media_playback;
+      const tracks=action.operation==='dj_stop'?[]:action.queue?[media,secondMedia]:[secondMedia];
+      return route.fulfill({json:{ok:true,operation:action.operation,owner_user_id:11,agent_id:0,conversation_id:42,
+        position_seconds:action.position_seconds,tracks}});
+    }
     if (path === '/api/playback.php') {
       const track = recent.find(row => row.id === body.track_id);
       if (track) track.last_position_seconds = Number(body.position) || 0;
@@ -72,7 +80,8 @@ async function fixture(options) {
     if (body.action === 'load') return route.fulfill({json:{ok:true,messages:body.source_message_id
       ? [{id:body.source_message_id,role:'assistant',message:'Selected saved source'},{id:1000,role:'assistant',message:'Latest conversation'}]
       : [{id:1,role:'assistant',message:'Earlier conversation'}]}});
-    if (body.action === 'send') return route.fulfill({json:{ok:true,conversation_id:42,answer:'Conversation continues.',assistant_message_id:2}});
+    if (body.action === 'send') return route.fulfill({json:{ok:true,conversation_id:42,answer:mediaTurn?'Native media action accepted.':'Conversation continues.',
+      assistant_message_id:nextAssistantMessageId++,...(mediaTurn?{media_playback:mediaTurn}:{})}});
     return route.fulfill({json:{ok:true,conversations:[],updates:[],items:[]}});
   });
   return page;
@@ -283,8 +292,72 @@ try {
   assert.equal(await desktop.evaluate(() => STONEFELLOW_CHAT_CONTINUITY.playActivityTrack(9)), false, 'An owner-mismatched bridge could resume a song');
   await refresh(desktop);
   await desktopControls.row.waitFor({state:'hidden'});
+  await desktop.close();
+
+  const native = await fixture({viewport:{width:1280,height:900}});
+  recent = [savedTrack()];
+  await boot(native);
+  const action=(operation,extra={})=>({type:'media_playback',operation,owner_user_id:11,agent_id:0,conversation_id:42,
+    proof:'a'.repeat(64),expires_at:Math.floor(Date.now()/1000)+300,...extra});
+  const nativeInput=native.locator('#chatInput');
+  const send=async (text,playback)=>{
+    mediaTurn=playback;
+    const result=native.waitForResponse(response=>response.request().postDataJSON()?.action==='playback_action');
+    await nativeInput.fill(text);
+    await nativeInput.press('Enter');
+    await result;
+  };
+  await controls(native).resume.waitFor();
+  await send('Yes, play it.',action('resume',{track_id:19,position_seconds:21,revision:'b'.repeat(64)}));
+  await native.waitForFunction(()=> {
+    const audio=document.querySelector('#chatListeningContinuation audio[data-track-id="19"]');
+    return audio&&!audio.paused&&audio.currentTime>=21;
+  });
+  assert.equal(await native.locator('#chatNowPlayingTitle').textContent(),secondMedia.title);
+
+  const selection=[{track_id:9,revision:'b'.repeat(64)},{track_id:19,revision:'c'.repeat(64)}];
+  await send('Start DJ with mellow songs.',action('dj_start',{queue:selection}));
+  await native.waitForFunction(()=>!document.querySelector('[data-media-queue-audio][data-track-id="9"]')?.paused);
+  assert.equal(await native.locator('#chatNowPlayingNext').isDisabled(),false);
+  await native.locator('#chatNowPlayingNext').click();
+  await native.waitForFunction(()=>!document.querySelector('[data-media-queue-audio][data-track-id="19"]')?.paused);
+  await send('Stop DJ.',action('dj_stop'));
+  await native.locator('[data-media-queue-audio]').first().waitFor({state:'detached'});
+  assert.equal(await native.locator('#chatNowPlaying').isVisible(),false);
+
+  const beforeDraft = startCount();
+  await send('Make a VP3 playlist for mellow songs.',action('playlist',{queue:selection}));
+  await native.locator('#chatQueueDrawer').waitFor();
+  assert.equal(await native.locator('#chatQueueList [data-queue-index]').count(),2);
+  assert.equal(startCount(),beforeDraft,'A playlist draft started audio before the owner chose a track');
+  assert.equal(await native.locator('[data-media-queue-audio]').evaluateAll(rows=>rows.every(audio=>audio.paused)),true);
+  await native.evaluate(() => {
+    const play=HTMLMediaElement.prototype.play;
+    let blockOnce=true;
+    HTMLMediaElement.prototype.play=function(){
+      if(blockOnce&&this.hasAttribute('data-media-single-play')){
+        blockOnce=false;
+        return Promise.reject(new DOMException('Playback needs a gesture.','NotAllowedError'));
+      }
+      return play.call(this);
+    };
+  });
+  await send('Yes, resume it.',action('resume',{track_id:19,position_seconds:23,revision:'d'.repeat(64)}));
+  await native.getByText('Use the Play control to start this track.').waitFor();
+  recent=[savedTrack()];
+  const fallbackRefresh=native.waitForResponse(response=>response.request().postDataJSON()?.action==='recent_history');
+  await refresh(native);
+  await fallbackRefresh;
+  const fallback=controls(native);
+  assert.equal(await fallback.audio.getAttribute('data-track-id'),'19','History refresh replaced the exact accepted playback');
+  await fallback.resume.click();
+  await native.waitForFunction(()=> {
+    const audio=document.querySelector('#chatListeningContinuation audio[data-track-id="19"]');
+    return audio&&!audio.paused&&audio.currentTime>=23;
+  });
+  mediaTurn=null;
   assert.deepEqual(errors, []);
-  console.log('CHAT_LISTENING_CONTINUATION_BROWSER=PASS compact resume row, preserved orb audio, canonical bridge, saved position, shared transport, draft preservation, quiet recovery, and owner/participant isolation');
+  console.log('CHAT_LISTENING_CONTINUATION_BROWSER=PASS native exact resume, DJ queue controls, quiet playlist draft, preserved orb audio and owner/participant isolation');
 } finally {
   await browser.close();
 }

@@ -22,48 +22,67 @@ function vp3_initiative_task_list_id_v1(string $ref): ?int
     return preg_match('/\Atask-list:([1-9][0-9]{0,17})\z/D',$ref,$m)?(int)$m[1]:null;
 }
 
+function vp3_initiative_task_list_row_v1(PDO $pdo,array $scope,int $id): ?array
+{
+    $q=$pdo->prepare('SELECT id,name FROM agent_task_lists_v1 WHERE id=? AND owner_user_id=? AND agent_scope_id=? LIMIT 1');
+    $q->execute([$id,(int)$scope['user']['id'],$scope['agent_id']]);
+    return $q->fetch(PDO::FETCH_ASSOC)?:null;
+}
+
+function vp3_initiative_task_list_member_rows_v1(PDO $pdo,array $scope,int $id,bool $bounded): PDOStatement
+{
+    $owner=(int)$scope['user']['id'];$aid=$scope['agent_id'];
+    $q=$pdo->prepare("SELECT t.id,t.subject,t.memory_text,t.memory_type,t.metadata_json,i.created_at AS member_order_at
+        FROM agent_task_list_items_v1 i JOIN agent_memory_items t ON t.id=i.task_id
+        WHERE i.list_id=? AND t.user_id=? AND ".($aid>0?'t.user_agent_id=?':'t.user_agent_id IS NULL')."
+        AND t.is_active=1 AND t.memory_type IN ('task','commitment') ORDER BY i.created_at,t.id".($bounded?' LIMIT 201':''));
+    $q->execute($aid>0?[$id,$owner,$aid]:[$id,$owner]);
+    return $q;
+}
+
+function vp3_initiative_task_list_member_v1(array $row,int $position): array
+{
+    $task=(int)$row['id'];
+    $meta=json_decode((string)$row['metadata_json'],true,32,JSON_THROW_ON_ERROR);
+    if(!is_array($meta)||($meta!==[]&&array_is_list($meta)))throw new JsonException('Task list member metadata is unavailable.');
+    $status=$meta['task_status']??'open';
+    if(!in_array($status,['open','in_progress','waiting','completed','cancelled'],true))
+        throw new RuntimeException('Task list member status is unavailable.',503);
+    foreach(['due_at','due_date','source_kind','source_label','review_state'] as $field)
+        if(isset($meta[$field])&&!is_string($meta[$field]))throw new RuntimeException('Task list member context is unavailable.',503);
+    $assigned=$meta['assigned_user_id']??0;
+    if(!((is_int($assigned)&&$assigned>=0)||(is_string($assigned)&&preg_match('/\A[0-9]{1,18}\z/D',$assigned))))
+        throw new RuntimeException('Task list assignment metadata is unavailable.',503);
+    $item=['position'=>$position,'task_ref'=>'task:'.$task,'id'=>$task,
+        'title'=>vp3_initiative_office_text_v1($row['subject'],500),'status'=>$status,
+        'due_at'=>vp3_initiative_office_text_v1($meta['due_at']??$meta['due_date']??'',100),
+        'assigned_user_id'=>(int)$assigned,'text'=>vp3_initiative_office_text_v1($row['memory_text'],600)];
+    $semantic=['id'=>$task,'position'=>$position,'member_order_at'=>(string)$row['member_order_at'],
+        'title'=>(string)$row['subject'],'text'=>(string)$row['memory_text'],'kind'=>(string)$row['memory_type'],
+        'status'=>$status,'due_at'=>$meta['due_at']??$meta['due_date']??'','assigned_user_id'=>(int)$assigned,
+        'source_kind'=>$meta['source_kind']??'','source_label'=>$meta['source_label']??'','review_state'=>$meta['review_state']??''];
+    return [$item,$semantic];
+}
+
 /** A revision covers every authorized member, including content outside the model sample. */
 function vp3_initiative_task_list_state_v1(PDO $pdo,array $scope,int $id): ?array
 {
     $owner=(int)$scope['user']['id'];$aid=$scope['agent_id'];
-    $q=$pdo->prepare('SELECT id,name FROM agent_task_lists_v1 WHERE id=? AND owner_user_id=? AND agent_scope_id=? LIMIT 1');
-    $q->execute([$id,$owner,$aid]);$list=$q->fetch(PDO::FETCH_ASSOC);if(!$list)return null;
+    $list=vp3_initiative_task_list_row_v1($pdo,$scope,$id);if(!$list)return null;
     // This is the same scoped reader used by the list note and grouped overview.
     // A larger list cannot masquerade as complete by hiding members after a page.
     $note=vp3_task_list_note_v1($pdo,$scope['user'],$scope['principal'],$id,200);
     if(!empty($note['truncated']))throw new RuntimeException('This list exceeds the bounded complete member read.',503);
-    $q=$pdo->prepare("SELECT t.id,t.subject,t.memory_text,t.memory_type,t.metadata_json,i.created_at AS member_order_at
-        FROM agent_task_list_items_v1 i JOIN agent_memory_items t ON t.id=i.task_id
-        WHERE i.list_id=? AND t.user_id=? AND ".($aid>0?'t.user_agent_id=?':'t.user_agent_id IS NULL')."
-        AND t.is_active=1 AND t.memory_type IN ('task','commitment') ORDER BY i.created_at,t.id LIMIT 201");
-    $q->execute($aid>0?[$id,$owner,$aid]:[$id,$owner]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);
+    $rows=vp3_initiative_task_list_member_rows_v1($pdo,$scope,$id,true)->fetchAll(PDO::FETCH_ASSOC);
     if(count($rows)>200)throw new RuntimeException('Task list membership exceeds its read bound.',503);
     $members=[];$semantic=[];$counts=array_fill_keys(['open','in_progress','waiting','completed','cancelled'],0);
     foreach($rows as $row){
         $task=(int)$row['id'];
         if(!vp3_task_list_task_allowed_v1($pdo,$scope['user'],$scope['principal'],$task))continue;
-        $meta=json_decode((string)$row['metadata_json'],true,32,JSON_THROW_ON_ERROR);
-        if(!is_array($meta)||($meta!==[]&&array_is_list($meta)))throw new JsonException('Task list member metadata is unavailable.');
-        $status=$meta['task_status']??'open';
-        if(!is_string($status)||!array_key_exists($status,$counts))throw new RuntimeException('Task list member status is unavailable.',503);
-        foreach(['due_at','due_date','source_kind','source_label','review_state'] as $field)
-            if(isset($meta[$field])&&!is_string($meta[$field]))throw new RuntimeException('Task list member context is unavailable.',503);
-        $assigned=$meta['assigned_user_id']??0;
-        if(!((is_int($assigned)&&$assigned>=0)||(is_string($assigned)&&preg_match('/\A[0-9]{1,18}\z/D',$assigned))))
-            throw new RuntimeException('Task list assignment metadata is unavailable.',503);
-        $position=count($members)+1;$counts[$status]++;
-        $item=['position'=>$position,'task_ref'=>'task:'.$task,'id'=>$task,
-            'title'=>vp3_initiative_office_text_v1($row['subject'],500),'status'=>$status,
-            'due_at'=>vp3_initiative_office_text_v1($meta['due_at']??$meta['due_date']??'',100),
-            'assigned_user_id'=>(int)$assigned,
-            'text'=>vp3_initiative_office_text_v1($row['memory_text'],600)];
+        [$item,$member]=vp3_initiative_task_list_member_v1($row,count($members)+1);
+        $counts[$item['status']]++;
         $members[]=$item;
-        $semantic[]=['id'=>$task,'position'=>$position,'member_order_at'=>(string)$row['member_order_at'],
-            'title'=>(string)$row['subject'],'text'=>(string)$row['memory_text'],'kind'=>(string)$row['memory_type'],
-            'status'=>$status,'due_at'=>$meta['due_at']??$meta['due_date']??'',
-            'assigned_user_id'=>(int)$assigned,
-            'source_kind'=>$meta['source_kind']??'','source_label'=>$meta['source_label']??'',
-            'review_state'=>$meta['review_state']??''];
+        $semantic[]=$member;
     }
     // A concurrent membership/status edit between the two canonical reads is
     // unavailable, never a mixed list that could become a verified model input.
@@ -89,20 +108,43 @@ function vp3_initiative_task_list_sample_members_v1(array $members): array
     return [...$open,...$closed];
 }
 
-function vp3_initiative_task_list_entry_v1(string $ref,array $state): array
+function vp3_initiative_task_list_item_excerpt_v1(array $item): array
 {
-    $preview=[];
-    foreach(array_slice(vp3_initiative_task_list_sample_members_v1($state['members']),0,3) as $item)$preview[]=['task_ref'=>$item['task_ref'],'position'=>$item['position'],
+    return ['task_ref'=>$item['task_ref'],'position'=>$item['position'],
         'title'=>vp3_initiative_office_text_v1($item['title'],180),'status'=>$item['status'],'due_at'=>$item['due_at'],
         'text'=>vp3_initiative_office_text_v1($item['text'],180)];
-    return ['ref'=>$ref,'kind'=>'task_list','title'=>mb_substr($state['title'],0,170),
+}
+
+function vp3_initiative_task_list_entry_v1(string $ref,array $state,?DateTimeImmutable $now=null): array
+{
+    $preview=array_map('vp3_initiative_task_list_item_excerpt_v1',
+        array_slice(vp3_initiative_task_list_sample_members_v1($state['members']),0,3));
+    $entry=['ref'=>$ref,'kind'=>'task_list','title'=>mb_substr($state['title'],0,170),
         'detail'=>'Saved named list with '.$state['progress']['total'].' authorized items; '
             .$state['progress']['unresolved'].' unresolved, '.$state['progress']['completed'].' completed and '
-            .$state['progress']['cancelled'].' cancelled. Consider the purpose and dependencies of its ordered items; do not infer urgency from the count or claim a task change.',
+            .$state['progress']['cancelled'].' cancelled. Consider the purpose and any explicitly saved dependencies. List position and item counts do not establish urgency or dependency.',
         'capability_tool'=>'tasks.lists.read','url'=>url('/chat.php'),
         'list_id'=>$state['id'],'task_refs'=>array_column($state['members'],'task_ref'),
         'progress'=>$state['progress'],'items_preview'=>$preview,'preview_coverage'=>count($preview)<count($state['members'])?'limited':'complete',
         'revision'=>hash('sha256',json_encode(['initiative-task-lists-v1',$ref,$state],JSON_THROW_ON_ERROR))];
+    if($now===null)return $entry;
+
+    $attention=[];$priorities=[];
+    foreach($state['members'] as $item){
+        if($item['assigned_user_id']!==0&&$item['assigned_user_id']!==$state['owner_user_id'])continue;
+        $signal=vp3_initiative_task_attention_v1($item,$now);
+        if($signal===null)continue;
+        $attention[$item['position']]=vp3_initiative_task_list_item_excerpt_v1($item)+$signal;
+        $priorities[$item['position']]=vp3_initiative_task_attention_priority_v1($signal);
+    }
+    arsort($priorities,SORT_NUMERIC);
+    if($attention){
+        $entry['attention_items']=[];
+        foreach(array_slice(array_keys($priorities),0,3) as $position)
+            $entry['attention_items'][]=$attention[$position];
+        $entry['attention_count']=count($attention);
+    }
+    return $entry;
 }
 
 function vp3_initiative_task_list_capabilities_evidence_v1(PDO $pdo,array $scope,array $binding,DateTimeImmutable $now,?array $selectedRefs,array &$coverage): array
@@ -123,8 +165,9 @@ function vp3_initiative_task_list_capabilities_evidence_v1(PDO $pdo,array $scope
         foreach($ids as $id)$refs['task-list:'.(int)$id]=(int)$id;
     }
     $out=[];$attempts=0;
+    $now=vp3_initiative_task_local_time_v1($pdo,$scope,$now);
     foreach($refs as $ref=>$id){
-        if($selectedRefs===null&&(count($out)>=4||$attempts>=8)){$limited=true;break;}$attempts++;
+        if($selectedRefs===null&&$attempts>=8){$limited=true;break;}$attempts++;
         try{$state=vp3_initiative_task_list_state_v1($pdo,$scope,$id);}
         catch(JsonException|RuntimeException $error){
             if($selectedRefs!==null){
@@ -134,13 +177,20 @@ function vp3_initiative_task_list_capabilities_evidence_v1(PDO $pdo,array $scope
             if($error instanceof RuntimeException&&in_array($error->getCode(),[403,404],true))continue;
             $limited=true;continue;
         }
-        if($state!==null)$out[$ref]=vp3_initiative_task_list_entry_v1($ref,$state);
+        if($state!==null)$out[$ref]=vp3_initiative_task_list_entry_v1($ref,$state,$now);
+    }
+    if($selectedRefs===null&&count($out)>4){
+        uasort($out,static fn(array $a,array $b):int=>
+            vp3_initiative_task_attention_priority_v1($b['attention_items'][0]??null)
+            <=>vp3_initiative_task_attention_priority_v1($a['attention_items'][0]??null));
+        $out=array_slice($out,0,4,true);
+        $limited=true;
     }
     $coverage['task_lists']=$limited?'limited':'ready';ksort($out);return $out;
 }
 
 /** Keep model input honest and byte bounded while hashing the complete authorized list. */
-function vp3_initiative_task_list_record_v1(array $state): array
+function vp3_initiative_task_list_record_v1(array $state,bool $completeInventory=false): array
 {
     $record=array_diff_key($state,['members'=>true]);$record['items']=[];
     foreach(vp3_initiative_task_list_sample_members_v1($state['members']) as $item){
@@ -148,9 +198,10 @@ function vp3_initiative_task_list_record_v1(array $state): array
         if(count($candidate['items'])>20||strlen(json_encode($candidate,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))>6500)break;
         $record=$candidate;
     }
-    $record['coverage']=['membership_and_progress'=>'complete_within_200_member_bound',
-        'shown_items'=>count($record['items']),'total_authorized_items'=>count($state['members']),
-        'item_sample'=>count($record['items'])<count($state['members'])?'limited':'complete',
+    $total=$state['progress']['total'];
+    $record['coverage']=['membership_and_progress'=>$completeInventory?'all_authorized_members':'complete_within_200_member_bound',
+        'shown_items'=>count($record['items']),'total_authorized_items'=>$total,
+        'item_sample'=>count($record['items'])<$total?'limited':'complete',
         'sample_order'=>'unresolved members first, then closed members; each retains its canonical saved position',
         'task_text'=>'bounded excerpts; full saved text is included in source revision verification'];
     return $record;

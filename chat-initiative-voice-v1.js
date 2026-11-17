@@ -1,13 +1,24 @@
-/* Optional speech for one existing, verified short Chat check-in. No timer,
- * notification, model call, second conversation, or browser-persisted replay. */
+/* Claim verified proactive Chat posts before handing them to the voice runtime. */
 (() => {
   'use strict';
   if (window.VP3InitiativeVoice) return;
   const page = window.STONEFELLOW_CHAT;
   const TAB = /^[a-f0-9]{32}$/, TOKEN = /^[a-f0-9]{64}$/;
-  let active = null, inFlight = null, epoch = 0, voiceEnabled = page?.agentVoiceEnabled !== false;
+  const REQUEST_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+  const REQUEST_TIMEOUT_MS = 8000;
+  let active = null, inFlight = null, live = null, epoch = 0, voiceEnabled = page?.agentVoiceEnabled !== false;
   const chat = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const packet = () => window.VP3LiveContext?.snapshot?.() || null;
+  const controls = () => window.VP3ConversationControls;
+  const acceptsLive = () => voiceEnabled && controls()?.acceptsProactivePosts?.() === true;
+  const foreground = () => !document.hidden && document.hasFocus()
+    && document.getElementById('chatThread')?.dataset.view === 'chat';
+  const trace = (state,code,messageId) => window.VP3VoiceDiagnostics?.record('announcement',state,code,messageId);
+  const refusals = new Set(['agent_voice_off','auto_greet_off','attention_unavailable','tab_changed','chat_not_focused',
+    'chat_busy','microphone_active','live_context_changed','voice_settings_unavailable','post_expired','post_changed',
+    'post_unverified','voice_already_claimed','voice_completion_unverified']);
+  const attentionDeferrals = new Set(['attention_unavailable','tab_changed','chat_busy','chat_not_focused','microphone_active']);
+  const browserDeferrals = new Set([...attentionDeferrals,'another_announcement','draft_in_composer','live_context_changed']);
   function visualKey(value) {
     const safe = window.VP3LiveContext?.semantic?.(value) ?? value;
     if (!safe) return 'null';
@@ -36,13 +47,15 @@
   }
   function safe(record) {
     const ctx = record.ctx, current = chat(), cfg = window.STONEFELLOW_CHAT;
-    if (!voiceEnabled || cfg !== page || document.hidden || !document.hasFocus() || !current?.isReady?.() || current.isRestoring?.()
+    if (!voiceEnabled || cfg !== page || !current?.isReady?.() || current.isRestoring?.()
       || Number(cfg?.userId) !== ctx.userId || Number(current.agentId?.() ?? cfg?.agentId ?? 0) !== ctx.agentId
       || Number(current.conversationId?.()) !== ctx.conversationId || String(cfg?.workingAttentionBinding || '') !== ctx.workingAttentionBinding
-      || String(document.getElementById('chatInput')?.value || '').trim() || current.isBusy?.()
+      || window.VP3ParticipantContinuity?.selectedContext?.()) return false;
+    if (record.started) return true;
+    if (!foreground() || String(document.getElementById('chatInput')?.value || '').trim() || current.isBusy?.()
       || window.VP3LiveContext?.voiceDeferral?.()?.defer) return false;
     const state = String(document.body?.dataset.stonefellowAgentState || '');
-    if (['thinking','processing'].includes(state) || state === 'speaking' && !record.started) return false;
+    if (['thinking','processing','speaking'].includes(state)) return false;
     const source = packet();
     return (source?.session_id || null) === (record.liveSession ?? ctx.liveSession) && visualKey(source) === ctx.visual;
   }
@@ -53,22 +66,55 @@
   }
   async function request(record, action, extra = {}, finish = false) {
     const c = record.ctx;
-    const response = await fetch(c.endpoint, {method:'POST',credentials:'same-origin',cache:'no-store',
-      headers:{'Content-Type':'application/json','X-VP3-Working-Attention':c.workingAttentionBinding},
-      body:JSON.stringify({action,csrf_token:c.csrf,agent_id:c.agentId,conversation_id:c.conversationId,
-        activity_tab:c.activityTab,working_attention_binding:c.workingAttentionBinding,...extra}),
-      ...(finish ? {keepalive:true} : {signal:record.controller.signal})});
-    const data = await response.json();
-    if (!response.ok || data?.ok !== true) { const error = new Error('Voice delivery unavailable'); error.status = response.status; throw error; }
-    return data;
+    const controller = new AbortController();
+    const from = record.controller.signal;
+    const abort = () => controller.abort();
+    let timedOut = false;
+    if (!finish) {
+      from.addEventListener('abort',abort,{once:true});
+      if (from.aborted) abort();
+    }
+    const timer = setTimeout(() => { timedOut = true; abort(); },REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(c.endpoint, {method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Content-Type':'application/json','X-VP3-Working-Attention':c.workingAttentionBinding},
+        body:JSON.stringify({action,csrf_token:c.csrf,agent_id:c.agentId,conversation_id:c.conversationId,
+          activity_tab:c.activityTab,working_attention_binding:c.workingAttentionBinding,
+          ...(record.livePost ? {live_post:true} : {}),...(record.notice ? {live_notice:true} : {}),...extra}),
+        signal:controller.signal,...(finish ? {keepalive:true} : {})});
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true) {
+        const error = new Error('Voice delivery unavailable');
+        error.status = response.status;
+        error.voiceReason = refusals.has(data?.voice_reason) ? data.voice_reason : 'claim_unavailable';
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      if (!timedOut) throw error;
+      throw Object.assign(new Error('Voice receipt timed out'),{voiceReason:'voice_claim_timeout'});
+    } finally {
+      clearTimeout(timer);
+      from.removeEventListener('abort',abort);
+    }
   }
   async function finish(record, outcome) {
     if (record.finished || !record.token) return;
     record.finished = true;
+    const reason = record.suppressionReason;
     try { await request(record, 'voice_finish', {run_id:record.run,message_id:record.message,request_id:record.request,
-      token:record.token,outcome}, true); } catch (_error) { /* The claim stays consumed; never replay uncertain speech. */ }
+      token:record.token,outcome,
+      ...(record.livePost && outcome === 'suppressed' && reason ? {suppression_reason:reason} : {})}, true); }
+    catch (_error) {
+      if (record.traceCurrent?.()) trace(outcome === 'spoken' ? 'completed' : 'failed','voice_completion_unverified',record.message);
+    }
   }
-  function cancel() {
+  function cancel(reason) {
+    if (live && !live.controller.signal.aborted) {
+      live.cancelReason = reason;
+      if (!live.token && typeof reason === 'string') trace(reason === 'chat_not_focused' ? 'waiting' : 'cancelled',reason,live.message);
+    }
+    live?.controller.abort();
     const old = active; active = null; epoch++;
     if (inFlight === old) inFlight = null;
     if (!old) return;
@@ -76,8 +122,97 @@
     if (old.attempted) window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech?.();
     void finish(old, old.completed === true ? 'spoken' : 'suppressed');
   }
+  function cancelBeforePlayback() {
+    if ((live || active) && !live?.started && !active?.started) cancel('chat_not_focused');
+  }
+  function readyForLive() {
+    return liveBlockReason() === null;
+  }
+  function liveBlockReason() {
+    if (!voiceEnabled) return 'agent_voice_off';
+    const voice = controls();
+    if (!voice?.proactiveBlockReason) return 'voice_unavailable';
+    const reason = voice.proactiveBlockReason();
+    return reason || (live || active || inFlight ? 'another_announcement' : null);
+  }
+  async function announceLive({runId,messageId,current,ready=foreground,selectReply,clearReply,notice=false,requestId} = {}) {
+    if (!Number.isSafeInteger(runId) || runId < 1 || !Number.isSafeInteger(messageId) || messageId < 1
+      || typeof current !== 'function' || !current()) return false;
+    const blocked = liveBlockReason();
+    const defer = reason => {
+      trace('waiting',reason,messageId);
+      return {retry:true,reason};
+    };
+    if (blocked) {
+      if (browserDeferrals.has(blocked)) return defer(blocked);
+      trace('blocked',blocked,messageId); return false;
+    }
+    const ctx = context();
+    if (!ctx) { trace('blocked','live_context_changed',messageId); return false; }
+    if (typeof requestId !== 'string' || !REQUEST_ID.test(requestId)) return false;
+    const record = {ctx,controller:new AbortController(),livePost:true,notice,run:runId,message:messageId,request:requestId};
+    const stillCurrent = () => !record.controller.signal.aborted && acceptsLive() && current();
+    const stillReady = () => stillCurrent() && ready() && (packet()?.session_id || null) === ctx.liveSession;
+    record.traceCurrent = stillCurrent;
+    live = record;
+    let spoken = false;
+    try {
+      if (!stillReady() || !controls().proactiveReady()) {
+        const reason = controls().proactiveBlockReason() || 'live_context_changed';
+        if (stillCurrent() && browserDeferrals.has(reason)) return defer(reason);
+        if (current()) trace('blocked',reason,messageId);
+        return false;
+      }
+      trace('waiting','claim_pending',messageId);
+      const identity = {run_id:runId,message_id:messageId,request_id:record.request};
+      const data = await request(record, 'voice_claim', identity);
+      const claim = data.claim;
+      if (!matches(data, ctx) || claim?.run_id !== runId || claim.message_id !== messageId
+        || claim.request_id !== record.request || !TOKEN.test(claim.token || '')) {
+        if (current()) trace('blocked','post_unverified',messageId);
+        return false;
+      }
+      record.token = claim.token;
+      if (!stillReady()) {
+        record.suppressionReason = record.cancelReason || controls()?.proactiveBlockReason?.() || 'live_context_changed';
+        if (current()) trace('blocked',record.suppressionReason,messageId);
+        return false;
+      }
+      const reply = claim.reply;
+      if (typeof claim.text !== 'string' || !claim.text.trim() || (reply !== null
+        && (reply?.message_id !== messageId || !TOKEN.test(reply.reply_ref || '')
+        || !Number.isSafeInteger(reply.revision) || reply.revision < 1))) {
+        record.suppressionReason = 'post_unverified';
+        if (current()) trace('blocked','post_unverified',messageId);
+        return false;
+      }
+      spoken = await controls().proactivePost({
+        messageId,text:claim.text,current:stillCurrent,ready:stillReady,onPlaybackStart:()=>{record.started=true;},
+        onSuppressed:reason=>{record.suppressionReason = record.cancelReason || reason;},
+        selectReply:reply === null || typeof selectReply !== 'function' ? null : () => selectReply(reply),clearReply,signal:record.controller.signal
+      });
+      return spoken;
+    } catch (error) {
+      if (!record.token && current() && acceptsLive()) {
+        if (record.cancelReason === 'chat_not_focused') return defer('chat_not_focused');
+        if (!record.controller.signal.aborted && error.status === 409 && attentionDeferrals.has(error.voiceReason)) {
+          if (stillReady()) await window.StonefellowAgentActivity?.refreshCoreContext?.();
+          return defer(error.voiceReason);
+        }
+        // Recover a lost acknowledgement with the same claim ID once the
+        // document is ready again. An accepted claim must never be replayed.
+        if (!record.controller.signal.aborted && !error.status) return defer(error.voiceReason || 'claim_unavailable');
+      }
+      if (record.token) record.suppressionReason ||= record.cancelReason || 'playback_failed';
+      if (!record.controller.signal.aborted && current()) trace('failed',record.suppressionReason || error.voiceReason || 'claim_unavailable',messageId);
+      return false;
+    } finally {
+      if (live === record) live = null;
+      void finish(record, spoken ? 'spoken' : 'suppressed');
+    }
+  }
   async function advance(given = {}) {
-    if (inFlight) return false;
+    if (live || inFlight || acceptsLive() || (!controls() && page?.autoGreetEnabled === true)) return false;
     const ctx = context(given);
     if (!ctx) { cancel(); return false; }
     if (active && (active.ctx.conversationId !== ctx.conversationId || active.ctx.agentId !== ctx.agentId
@@ -109,8 +244,10 @@
       // From here there is exactly one playback attempt, even if the transport
       // outcome or its completion acknowledgement is lost.
       record.attempted = true;
+      trace('starting','legacy_playback_starting',record.message);
       const spoken = (await Promise.resolve(center.announceWhen(record.text, () => active === record && generation === epoch && safe(record)))) === true;
       if (active !== record) return false;
+      if (!spoken) trace('failed','playback_failed',record.message);
       if (!spoken || record.ended || !record.started) {
         await finish(record, spoken && record.completed !== false ? 'spoken' : 'suppressed');
         if (active === record) active = null;
@@ -126,26 +263,35 @@
   window.addEventListener('stonefellow:agent-proactive-speech', event => {
     const record = active;
     if (!record?.attempted || event.detail?.text !== record.text) return;
-    if (event.detail.state === 'start') record.started = true;
+    if (event.detail.state === 'start') {
+      record.started = true;
+      trace('speaking','legacy_playback_started',record.message);
+    }
     if (event.detail.state === 'end') {
       record.ended = true; record.completed = event.detail.completed === true;
+      trace(record.completed ? 'completed' : 'cancelled',record.completed ? 'playback_completed' : 'playback_cancelled',record.message);
       void finish(record, record.completed ? 'spoken' : 'suppressed');
       if (active === record) active = null;
     }
   });
-  window.addEventListener('stonefellow:agent-voice', event => { voiceEnabled = event.detail?.enabled !== false; if (!voiceEnabled) cancel(); });
+  window.addEventListener('stonefellow:agent-voice', event => { voiceEnabled = event.detail?.enabled !== false; if (!voiceEnabled) cancel('agent_voice_off'); });
+  window.addEventListener('vp3:agent-auto-greet', event => { if (event.detail?.enabled === false && live) cancel('auto_greet_off'); });
   window.addEventListener('storage', event => {
     if (event.key !== `vp3:agent-voice-sync:${Number(page?.userId || 0)}` || !event.newValue) return;
     try {
       const update = JSON.parse(event.newValue);
-      if (typeof update?.enabled === 'boolean') { voiceEnabled = update.enabled; if (!voiceEnabled) cancel(); }
+      if (typeof update?.enabled === 'boolean') { voiceEnabled = update.enabled; if (!voiceEnabled) cancel('agent_voice_off'); }
     } catch (_error) { /* Unrelated or malformed storage is not a voice setting. */ }
   });
-  window.addEventListener('stonefellow:chat-context-changing', cancel);
-  window.addEventListener('pagehide', cancel);
-  window.addEventListener('blur', cancel);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) cancel(); });
-  document.addEventListener('input', event => { if (event.target?.id === 'chatInput' && String(event.target.value || '').trim()) cancel(); });
+  window.addEventListener('stonefellow:chat-context-changing', () => cancel('live_context_changed'));
+  window.addEventListener('vp3:participant-selection-changed', () => cancel('live_context_changed'));
+  window.addEventListener('vp3:participant-task-context', () => cancel('live_context_changed'));
+  window.addEventListener('pagehide', () => cancel('page_closed'));
+  window.addEventListener('blur', cancelBeforePlayback);
+  window.addEventListener('stonefellow:agent-stop', () => cancel('playback_cancelled'));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) cancelBeforePlayback(); });
+  window.addEventListener('vp3:chat-canvas-view-changed', () => { if (!foreground()) cancelBeforePlayback(); });
+  document.addEventListener('input', event => { if (event.target?.id === 'chatInput' && String(event.target.value || '').trim()) cancel('draft_in_composer'); });
   window.addEventListener('vp3:live-context-changed', () => queueMicrotask(() => { if (active && !safe(active)) cancel(); }));
-  window.VP3InitiativeVoice = Object.freeze({advance,cancel});
+  window.VP3InitiativeVoice = Object.freeze({advance,cancel,acceptsLive,readyForLive,liveBlockReason,announceLive});
 })();

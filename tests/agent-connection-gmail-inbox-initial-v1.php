@@ -184,7 +184,9 @@ try {
     $scheduled = ['state'=>'scheduled','last_checked_at'=>null,'next_check_at'=>'2026-11-11T12:01:00Z',
         'lease_until'=>null,'pending'=>false,'latest'=>null];
     $beforeStatusRead = agent_connection_gmail_inbox_policy_v1($pdo,1);
-    first_review_check($background(now:$statusClock) === $scheduled && $view(1)['state'] === 'needs_start'
+    $scheduledView = $background(now:$statusClock);
+    first_review_check(array_intersect_key($scheduledView,$scheduled) === $scheduled
+        && !isset($scheduledView['triage'],$scheduledView['sync']) && $view(1)['state'] === 'needs_start'
         && agent_connection_gmail_inbox_policy_v1($pdo,1) === $beforeStatusRead,
         'a saved schedule is visible before first review and reading it leaves the policy untouched');
     $writeStatus->execute(['checked','2026-11-11 11:54:30','2026-11-11 11:59:30',null]);
@@ -541,6 +543,21 @@ try {
         && agent_connection_gmail_inbox_policy_v1($pdo,1) === $beforeOverdue,
         'only the private Chat gets an overdue reference and reads never take a lease or change the policy');
 
+    $legacyScope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$users[1]);
+    $legacyRow = agent_connection_gmail_inbox_initial_row_v1($pdo,$legacyScope);
+    $legacyWrite = $pdo->prepare('UPDATE agent_connection_gmail_inbox_initial_v1 SET report_json=? WHERE run_id=?');
+    $legacyWrite->execute(['{',$legacyRow['run_id']]);
+    try {
+        $brokenLegacy = $chatView();
+        first_review_check($brokenLegacy['state']==='unavailable' && !isset($brokenLegacy['chat_result'])
+            && $brokenLegacy['inbox_background']['state']==='overdue'
+            && $brokenLegacy['inbox_background']['check_ref']===$oldRef
+            && agent_connection_gmail_inbox_policy_v1($pdo,1)===$beforeOverdue,
+            'a damaged first-review result leaves the exact due recurring inbox check available without taking a lease');
+    } finally {
+        $legacyWrite->execute([$legacyRow['report_json'],$legacyRow['run_id']]);
+    }
+
     $unexpectedCalls = 0;
     $unexpectedCheck = static function() use (&$unexpectedCalls): never {
         $unexpectedCalls++;
@@ -592,6 +609,18 @@ try {
         && $afterOverdue['inbox_updates']['latest']['conversation_id'] === 170
         && (int)$pdo->query('SELECT COUNT(*) FROM agent_connection_gmail_inbox_batches_v1 WHERE conversation_id=170')->fetchColumn() === 4,
         'one overdue slice uses the original cursor, shares its lease with the worker and posts the new batch once');
+    $pdo->exec('RENAME TABLE agent_connection_gmail_inbox_initial_v1 TO fixture_legacy_first_review');
+    try {
+        $writeStatus->execute(['checked',$lastChecked,$dueAt,null]);
+        $recurringOnly = $chatView();
+        first_review_check($recurringOnly['state'] === 'unavailable'
+            && $recurringOnly['inbox_background']['state'] === 'overdue'
+            && preg_match('/\A[a-f0-9]{64}\z/D',$recurringOnly['inbox_background']['check_ref'])
+            && !isset($view(1,true)['inbox_background']) && !isset($recurringOnly['chat_result']),
+            'a missing first-review table does not suppress the authorized recurring inbox check');
+    } finally {
+        $pdo->exec('RENAME TABLE fixture_legacy_first_review TO agent_connection_gmail_inbox_initial_v1');
+    }
     $disable = $form(1,$changedRules);
     unset($disable['enabled']);
     $writeStatus->execute(['checked',$lastChecked,$dueAt,null]);

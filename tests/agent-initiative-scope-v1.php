@@ -71,6 +71,7 @@ require_once dirname(__DIR__).'/includes/agent-scheduling-v430.php';
 require_once dirname(__DIR__).'/includes/user-calendar-v1300.php';
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface='chat'): array
 {
+    if(isset($GLOBALS['scopeBeforeRoute']))($GLOBALS['scopeBeforeRoute'])();
     $GLOBALS['scopeRoutes'][]=[(int)$user['id'],$agentId,$surface];
     return ['route'=>empty($GLOBALS['scopeRouteBlocked'])?'vp3_cloud':'homeserver','blocked'=>!empty($GLOBALS['scopeRouteBlocked']),
         'effective_preference'=>'vp3_cloud','cloud'=>['ready'=>empty($GLOBALS['scopeRouteBlocked'])],
@@ -112,7 +113,9 @@ function scope_control(array $user,int $agent,int $cid,string $command,string $r
 }
 function scope_runs(int $owner,int $agent,string $capability): array
 {
-    $q=db()->prepare('SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND '.($agent?'agent_id=?':'agent_id IS NULL')." AND source_kind='agent_initiative' AND capability_key=? ORDER BY id");
+    // This fixture selects generic planner jobs. The Office suite selects its own entry runs.
+    $q=db()->prepare('SELECT * FROM agent_workflow_runs WHERE owner_user_id=? AND '.($agent?'agent_id=?':'agent_id IS NULL')." AND source_kind='agent_initiative' AND capability_key=?
+        AND source_key NOT LIKE 'office-entry:%' AND source_key NOT LIKE 'office-agent-task:%' ORDER BY id");
     $q->execute($agent?[$owner,$agent,$capability]:[$owner,$capability]);return $q->fetchAll();
 }
 function scope_claim(array $user,int $run): array

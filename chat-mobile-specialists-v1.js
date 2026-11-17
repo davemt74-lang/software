@@ -49,10 +49,12 @@
     if (isNotice) status.setAttribute('role', 'status');
     const action = document.createElement('button');
     action.type = 'button';
+    if (!isNotice) action.setAttribute('aria-haspopup','dialog');
     action.addEventListener('click', () => {
       const wasOpen = drawerIsOpen();
       if (wasOpen) document.getElementById('closeChatSidebar')?.click();
-      if (!registry.view(entry.key) && wasOpen) menu.focus();
+      const opened = isNotice ? registry.view(entry.key) : registry.openActivity(entry.key,action,menu);
+      if (!opened && wasOpen) menu.focus();
     });
     row.append(label, title, status);
     if (detail) row.append(detail);
@@ -87,19 +89,19 @@
       write(item.label, entry.label);
       write(item.title, entry.title);
       write(item.status, entry.status);
-      write(item.action, entry.viewLabel);
+      write(item.action, isNotice ? entry.viewLabel : 'Open activity');
       if (item.detail) {
         write(item.detail, entry.detail);
         item.detail.hidden = !entry.detail;
       }
       item.title.hidden = !entry.title;
-      item.action.hidden = !entry.canView;
+      item.action.hidden = isNotice && !entry.canView;
     }
   }
 
   function render() {
     const entries = mobile.matches ? registry.snapshot({includeResults:true}) : [];
-    const working = entries.some(entry => entry.state === 'running');
+    const working = entries.some(entry => ['running','thinking','working'].includes(entry.state));
     dot.hidden = !working || drawerIsOpen();
     menu.setAttribute('aria-expanded', String(mobile.matches && drawerIsOpen()));
     menu.setAttribute('aria-label', working ? menuLabel + ', specialists working' : menuLabel);

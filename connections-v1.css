@@ -6,6 +6,20 @@
   color: #17212e;
   background: #f5f7fa;
 }
+.connections-embedded-document,
+.connections-embedded {
+  height: auto;
+  color: #17212e;
+  background: #fff;
+}
+.connections-embedded .connections-content {
+  max-width: none;
+  padding: 0 .15rem .25rem;
+}
+.connections-embedded .connections-section:first-of-type { margin-top: 0; }
+.connections-embedded .connections-app-body { padding: .8rem; }
+.connections-embedded .connections-app-summary { padding: .7rem .8rem; }
+.connections-embedded .connections-skill-tag { display: none; }
 .connections-scroll {
   min-height: 0;
   overflow: auto;

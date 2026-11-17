@@ -88,12 +88,16 @@ function vp3_transcript_research_candidates_v1(array $master, array $modules, ar
 
                 $origin = vp3_transcript_suggestion_origin_v1($master, $item, $plugin, $key, $index, $map, $sessionId);
                 $itemKey = hash('sha256', json_encode([$plugin, $key, $id], JSON_THROW_ON_ERROR));
+                // Saved page locators are already bound by the source URL. Keep prior item receipts compatible.
+                $revisionItem = $item;
+                $revisionItem['evidence_refs'] = transcription_intelligence_evidence_refs_v302($item,false);
                 $candidate = [
                     'session_id' => $sessionId, 'plugin' => $plugin, 'section' => $key, 'item_id' => $id,
                     'question' => transcription_app_clean_v300($question, 300), 'next_step' => $nextStep, 'review_state' => $item['review_state'],
                     'kind' => $suggestion['kind'], 'source_url' => $origin['source_url'],
+                    'analysis_generated_at' => $normalized[$plugin]['generated_at'] ?? null,
                     'source_hash' => $map['source_hash'], 'topic_key' => hash('sha256', $keyText),
-                    'item_revision' => hash('sha256', json_encode($item, JSON_THROW_ON_ERROR)),
+                    'item_revision' => hash('sha256', json_encode($revisionItem, JSON_THROW_ON_ERROR)),
                 ];
                 $knowledge = $item['actions']['personal_knowledge'] ?? [];
                 if (is_int($knowledge['record_id'] ?? null) && $knowledge['record_id'] > 0) {

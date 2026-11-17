@@ -140,7 +140,7 @@ function capability_native_list_model(string $prompt,string $protocol): string
             'focus'=>'Review the complete saved launch list and its dependencies','report'=>true]]],JSON_THROW_ON_ERROR);
     }
     if($protocol==='vp3.initiative-reply.v1')return '{"intent":"advance","focus":"Develop the same private whole-list plan."}';
-    if($protocol!=='vp3.initiative-draft.v1'||($input['tool_result']['tool']??null)!=='tasks.lists.read'
+    if($protocol!==VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1||($input['tool_result']['tool']??null)!=='tasks.lists.read'
         ||!str_contains(json_encode($input['tool_result']['records']??[],JSON_THROW_ON_ERROR),'WHOLE_LIST_NATIVE_MEMBER_DETAIL'))
         throw new LogicException('The actual list records did not reach native preparation.');
     if(isset($GLOBALS['capabilityNativeListOwnerReply'])

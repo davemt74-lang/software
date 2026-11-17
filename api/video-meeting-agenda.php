@@ -18,6 +18,13 @@ if(!$meeting||(int)($meeting['owner_user_id']??0)!==$userId){http_response_code(
 $action=strtolower(trim((string)($input['action']??'state')));
 try{
     if($action==='state'){echo json_encode(['ok'=>true,'agenda'=>video_meeting_agenda_state_v18140($pdo,$meeting,$userId)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
+    if($action==='research_status'){
+        require_once dirname(__DIR__).'/includes/agent-meeting-research-agenda-v1.php';
+        $items=video_meeting_agenda_items_v18140($pdo,$meeting,$userId);
+        if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+        echo json_encode(['ok'=>true,'research'=>vp3_meeting_research_agenda_view_v1($pdo,$user,$meeting,$items)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+        exit;
+    }
     if($action==='add'){$items=video_meeting_agenda_insert_v18140($pdo,$meeting,$userId,(string)($input['item_text']??''),(string)($input['item_type']??'discussion'),(string)($input['priority']??'normal'));echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='promote_prep'){$items=video_meeting_agenda_promote_prep_v18140($pdo,$meeting,$userId,(string)($input['source_bucket']??''),(int)($input['source_index']??-1));echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
     if($action==='promote_suggestion'){$items=video_meeting_agenda_promote_suggestion_v18140($pdo,$meeting,$userId,(int)($input['suggestion_index']??-1));echo json_encode(['ok'=>true,'items'=>$items],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}

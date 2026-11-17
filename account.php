@@ -16,6 +16,13 @@ if (!column_exists('users', 'avatar_path')) {
 }
 
 $accountUserMenuLinks = member_navigation_menu_links($user);
+$accountSoulRoles = agent_brain_soul_roles_v1();
+if (!has_permission('chat.access', $user)) {
+    unset($accountSoulRoles['email']);
+}
+$accountSoulUrl = static function (string $role, array $query = []): string {
+    return url('/account.php?' . http_build_query(['soul_role' => $role] + $query) . '#agent-brain');
+};
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf()) {
@@ -70,16 +77,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('account_notice', 'Profile updated.');
         }
 
-        if ($action === 'soul_save') {
-            agent_brain_save_soul($user, (string)($_POST['soul_content'] ?? ''));
-            flash('account_notice', 'Agent SOUL.md updated.');
-            redirect(url('/account.php#agent-brain'));
-        }
-
-        if ($action === 'soul_reset') {
-            agent_brain_reset_soul($user);
-            flash('account_notice', 'Agent SOUL.md reset to the ' . system_agent_name() . ' default.');
-            redirect(url('/account.php#agent-brain'));
+        if (in_array($action, ['soul_save', 'soul_reset', 'soul_restore'], true)) {
+            $role = $_POST['soul_role'] ?? null;
+            $revision = $_POST['soul_revision'] ?? null;
+            if (!is_string($role) || !isset($accountSoulRoles[$role]) || !is_string($revision)) {
+                throw new InvalidArgumentException('Open the Agent Soul editor before saving.');
+            }
+            $value = match ($action) {
+                'soul_save' => is_string($_POST['soul_content'] ?? null) ? $_POST['soul_content'] : null,
+                'soul_restore' => filter_var($_POST['soul_version'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]),
+                default => null,
+            };
+            $version = agent_brain_soul_update_v1($user, $role, $revision, substr($action, 5), $value === false ? null : $value);
+            flash('account_notice', $accountSoulRoles[$role] . ' Soul is active at version ' . $version . '.');
+            redirect($accountSoulUrl($role));
         }
 
         if ($action === 'password') {
@@ -100,6 +111,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } catch (Throwable $e) {
         flash('account_error', $e->getMessage());
+        if (isset($role) && is_string($role) && isset($accountSoulRoles[$role])) {
+            redirect($accountSoulUrl($role));
+        }
     }
 
     redirect(url('/account.php'));
@@ -113,7 +127,25 @@ $error = flash('account_error');
 
 $accountNotificationCount = notification_unread_count($user);
 $accountNotifications = notification_recent($user, 6);
-$accountSoul = agent_brain_soul($user);
+$accountSoulRole = is_string($_GET['soul_role'] ?? null) && isset($accountSoulRoles[$_GET['soul_role']])
+    ? $_GET['soul_role'] : 'main';
+$accountSoul = null;
+$accountSoulError = '';
+$accountSoulPreview = null;
+try {
+    $accountSoul = agent_brain_soul_profile_v1($user, $accountSoulRole);
+    $accountSoulHistory = agent_brain_soul_history_v1($user, $accountSoulRole);
+    $accountSoulPageCount = max(1, (int)ceil(count($accountSoulHistory) / 10));
+    $accountSoulPage = max(1, min($accountSoulPageCount, (int)filter_var($_GET['soul_page'] ?? 1, FILTER_VALIDATE_INT)));
+    $accountSoulVersions = array_slice($accountSoulHistory, ($accountSoulPage - 1) * 10, 10);
+    $accountSoulVersion = filter_var($_GET['soul_version'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+    if ($accountSoulVersion !== false && in_array($accountSoulVersion, $accountSoulHistory, true)) {
+        $accountSoulPreview = agent_brain_soul_saved_version_v1($user, $accountSoulRole, $accountSoulVersion);
+    }
+} catch (RuntimeException $e) {
+    $accountSoul = null;
+    $accountSoulError = $e->getMessage();
+}
 $accountBrain = agent_brain_summary($user);
 if (agent_brain_schema_ready() && (int)$accountBrain['archive_count'] === 0) {
     agent_brain_backfill_user($user, 500);
@@ -445,8 +477,8 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
             <section class="account-panel agent-brain-panel" id="agent-brain">
               <div class="account-panel-head">
                 <span>Agent Brain</span>
-                <h2>Your SOUL.md & Memory</h2>
-                <p>Every <?= e(system_agent_name()) ?> account starts with the default soul. This private copy controls your agent's character, communication style and working preferences; server permissions always remain authoritative.</p>
+                <h2>Your Agent Souls & Memory</h2>
+                <p>Set the communication style and working preferences for each agent in your account.</p>
               </div>
 
               <div class="agent-brain-stats">
@@ -455,24 +487,78 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
                 <article><strong><?= number_format(count($accountBrainTools)) ?></strong><span>Available tools</span></article>
               </div>
 
-              <form method="post" class="account-form agent-soul-form">
-                <?= csrf_field() ?>
-                <input type="hidden" name="action" value="soul_save">
-                <div class="account-field full">
-                  <label for="soul_content">Private SOUL.md</label>
-                  <textarea id="soul_content" name="soul_content" rows="24" maxlength="24000" spellcheck="true"><?= e($accountSoul) ?></textarea>
-                  <small>Character and working style only. Security, permissions and data-access rules cannot be changed here.</small>
-                </div>
-                <div class="agent-soul-actions">
-                  <button class="account-submit" type="submit">Save SOUL.md</button>
-                </div>
-              </form>
+              <nav class="agent-soul-actions" aria-label="Agent Souls">
+                <?php foreach ($accountSoulRoles as $role => $label): ?>
+                  <a class="account-shell-button<?= $role === $accountSoulRole ? ' primary' : '' ?>" href="<?= e($accountSoulUrl($role)) ?>"<?= $role === $accountSoulRole ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
+                <?php endforeach; ?>
+              </nav>
 
-              <form method="post" class="agent-soul-reset" onsubmit="return confirm(<?= e(json_encode('Reset your private SOUL.md to the ' . system_agent_name() . ' default?', JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?>);">
-                <?= csrf_field() ?>
-                <input type="hidden" name="action" value="soul_reset">
-                <button type="submit">Reset to <?= e(system_agent_name()) ?> Default</button>
-              </form>
+              <?php if ($accountSoul === null): ?>
+                <p class="account-alert" role="alert"><?= e($accountSoulError) ?></p>
+              <?php else: ?>
+                <form method="post" class="account-form agent-soul-form">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="soul_save">
+                  <input type="hidden" name="soul_role" value="<?= e($accountSoulRole) ?>">
+                  <input type="hidden" name="soul_revision" value="<?= e($accountSoul['revision']) ?>">
+                  <div class="account-field full">
+                    <label for="soul_content"><?= e($accountSoulRoles[$accountSoulRole]) ?> SOUL.md</label>
+                    <textarea id="soul_content" name="soul_content" rows="24" maxlength="24000" spellcheck="true" required><?= e($accountSoul['content']) ?></textarea>
+                    <small>Active version <?= $accountSoul['version'] ?>. VP3 enforces access and approvals.</small>
+                  </div>
+                  <div class="agent-soul-actions">
+                    <button class="account-submit" type="submit">Save SOUL.md</button>
+                  </div>
+                </form>
+
+                <form method="post" class="agent-soul-reset" onsubmit="return confirm('Reset this Agent Soul to its default?');">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="soul_reset">
+                  <input type="hidden" name="soul_role" value="<?= e($accountSoulRole) ?>">
+                  <input type="hidden" name="soul_revision" value="<?= e($accountSoul['revision']) ?>">
+                  <button type="submit">Reset to default</button>
+                </form>
+
+                <?php if ($accountSoulVersions): ?>
+                  <details<?= $accountSoulPreview !== null || isset($_GET['soul_page']) ? ' open' : '' ?>>
+                    <summary>Soul version history</summary>
+                    <ul>
+                      <?php foreach ($accountSoulVersions as $version): ?>
+                        <li>
+                          <a href="<?= e($accountSoulUrl($accountSoulRole, ['soul_page'=>$accountSoulPage,'soul_version'=>$version])) ?>">Version <?= $version ?></a>
+                          <?= $version === $accountSoul['version'] ? ' (active)' : '' ?>
+                        </li>
+                      <?php endforeach; ?>
+                    </ul>
+                    <?php if ($accountSoulPageCount > 1): ?>
+                      <nav class="agent-soul-actions" aria-label="Soul history pages">
+                        <?php if ($accountSoulPage > 1): ?>
+                          <a class="account-shell-button" href="<?= e($accountSoulUrl($accountSoulRole, ['soul_page'=>$accountSoulPage - 1])) ?>">Newer versions</a>
+                        <?php endif; ?>
+                        <?php if ($accountSoulPage < $accountSoulPageCount): ?>
+                          <a class="account-shell-button" href="<?= e($accountSoulUrl($accountSoulRole, ['soul_page'=>$accountSoulPage + 1])) ?>">Older versions</a>
+                        <?php endif; ?>
+                      </nav>
+                    <?php endif; ?>
+                    <?php if ($accountSoulPreview !== null): ?>
+                      <form method="post" class="account-form">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="action" value="soul_restore">
+                        <input type="hidden" name="soul_role" value="<?= e($accountSoulRole) ?>">
+                        <input type="hidden" name="soul_revision" value="<?= e($accountSoul['revision']) ?>">
+                        <input type="hidden" name="soul_version" value="<?= $accountSoulVersion ?>">
+                        <div class="account-field full">
+                          <label for="soul_preview">Version <?= $accountSoulVersion ?></label>
+                          <textarea id="soul_preview" rows="10" readonly><?= e($accountSoulPreview) ?></textarea>
+                        </div>
+                        <?php if ($accountSoulVersion !== $accountSoul['version']): ?>
+                          <button class="account-submit" type="submit">Restore as a new version</button>
+                        <?php endif; ?>
+                      </form>
+                    <?php endif; ?>
+                  </details>
+                <?php endif; ?>
+              <?php endif; ?>
 
               <div class="agent-brain-memory-grid">
                 <section>

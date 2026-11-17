@@ -28,6 +28,9 @@ try{
   await fs.writeFile(path.join(temp,'bootstrap.php'),`<?php
 declare(strict_types=1);
 define('PROOF_ROOT',${quote(root)});
+// Database sessions and PHP need not load the same host time zone. SQLite
+// writes the activity row in UTC while this PHP process uses local time.
+date_default_timezone_set('America/Denver');
 class ActivityProofPDO extends PDO {
  public function exec(string $sql):int|false {
   // Dialect adaptation only: the canonical durable-job installers define
@@ -186,7 +189,12 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
     if(body.action==='activity')return route.fulfill({json:{ok:true,conversation_id:42,latest_message_id:messages.at(-1).id,updates:[],latest_id:0,unread_count:0}});
     return route.fulfill({json:{ok:true,messages:body.action==='load'?messages:[],conversations:[{id:42,title:'Current private Chat'}]}});
   });
-  const probe=async page=>{const response=await page.request.get(origin+'/probe');assert.equal(response.status(),200,await response.text());return response.json();};
+  const probe=async page=>{
+    const response=await page.request.get(origin+'/probe'), body=await response.text();
+    assert.equal(response.status(),200,body);
+    assert.ok(body.startsWith('{'),body);
+    return JSON.parse(body);
+  };
   const packets=async page=>(await (await page.request.get(origin+'/requests')).json()).filter(item=>item.action==='heartbeat');
   let sharedClock=Date.now();
   const advance=async(page,milliseconds)=>{
@@ -236,27 +244,76 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
   let state=await expectSignal(first,false);
   const idlePacket=(await packets(first)).filter(item=>item.context?.chat_busy===false&&item.context?.chat_focused===true).at(-1);
   assert.equal(state.snapshot.state,'working');assert.equal(state.snapshot.interruptible,false);
+  assert.ok(state.snapshot.seconds_since_activity<10,'a canonical heartbeat has a small age when Database and PHP use different time zones');
   assert.equal(state.owner_present,true);assert.equal(state.text_allowed,true);
   console.log('PASS real Chat + Voice + activity HTTP: focused empty Chat permits silent text while broader activity remains working');
   await first.getByRole('button',{name:'Inspect a Chat item'}).click();
   state=await expectSignal(first,false);
   assert.equal(state.snapshot.state,'working');assert.equal(state.snapshot.interruptible,false);assert.equal(state.text_allowed,true);
   console.log('PASS an ordinary empty-composer click no longer starts a blanket 120-second text silence; voice interruption state is unchanged');
-  await first.locator('#chatInput').fill('An unfinished thought');
+  await first.locator('#chatInput').pressSequentially('An unfinished thought');
   state=await expectSignal(first,true);assert.equal(state.owner_present,false);assert.equal(state.text_allowed,false);
+  assert.equal(state.details.chat_busy_reason,'typed_draft');
+  const delayedDraft=(await packets(first)).filter(item=>item.context?.chat_busy_reason==='typed_draft').at(-1);
+  assert.ok(delayedDraft,'the real browser sent a diagnostic code without copying its draft');
   await first.locator('#chatInput').fill('');
   state=await expectSignal(first,false);assert.equal(state.text_allowed,true);
+  assert.equal(state.details.chat_busy_reason,undefined);
+  await first.request.post(origin+'/activity',{data:delayedDraft});
+  state=await probe(first);assert.equal(state.details.chat_busy,false);assert.equal(state.text_allowed,true);
   console.log('PASS real typed input blocks text delivery and clearing it restores availability through production activity storage');
 
+  await first.locator('#chatInput').fill('An old text draft');
   await first.getByRole('button',{name:'Start voice conversation'}).click();
   await first.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  // Some in-app draft surfaces clear the composer through an input event.
+  // The draft was never an accepted voice turn and must not hold Chat busy.
+  await first.evaluate(()=>{
+    const input=document.getElementById('chatInput');
+    input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));
+  });
+  state=await expectSignal(first,false);assert.equal(state.text_allowed,true);
+  assert.equal(await first.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.isBusy()),false);
+  console.log('PASS an in-app composer clear drops an unused Voice draft and permits text delivery while Voice is listening');
+  await first.evaluate(()=>{
+    const recognizer=window.recognizers.find(item=>item.active);
+    const result=[{transcript:'A phrase the browser never finalized'}];result.isFinal=false;
+    recognizer.onresult({resultIndex:0,results:[result]});
+  });
+  assert.equal(await first.locator('#chatInput').inputValue(),'A phrase the browser never finalized');
+  state=await expectSignal(first,true);
+  assert.equal(state.details.chat_busy_reason,'voice_preview');
+  assert.equal(await first.evaluate(()=>JSON.parse(sessionStorage.getItem('vp3:chat:drafts:1:0')||'{}')[42]?.text),undefined);
+  await first.evaluate(()=>window.recognizers.find(item=>item.active).stop());
+  assert.equal(await first.locator('#chatInput').inputValue(),'','an abandoned preview cannot remain an unsent Chat draft');
+  state=await expectSignal(first,false);
+  assert.equal(state.text_allowed,true);
+  await first.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  await first.locator('#chatInput').pressSequentially('A typed draft to preserve');
+  await first.evaluate(()=>{
+    const recognizer=window.recognizers.find(item=>item.active);
+    const result=[{transcript:'unconfirmed addition'}];result.isFinal=false;
+    recognizer.onresult({resultIndex:0,results:[result]});
+    recognizer.onerror({error:'no-speech'});
+    recognizer.stop();
+  });
+  assert.equal(await first.locator('#chatInput').inputValue(),'A typed draft to preserve');
+  state=await expectSignal(first,true);
+  assert.equal(state.details.chat_busy_reason,'typed_draft');
+  await first.locator('#chatInput').fill('');
+  await first.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  console.log('PASS abandoned Voice text stays out of draft recovery and clears without changing the owner’s typed draft');
   let arrive,release;const arrived=new Promise(resolve=>{arrive=resolve;});const wait=new Promise(resolve=>{release=resolve;});
   heldSend={arrive,wait};
   await first.evaluate(()=>{
     const recognizer=window.recognizers.find(item=>item.active);
     const result=[{transcript:'Review my current notes please'}];result.isFinal=true;
     recognizer.onresult({resultIndex:0,results:[result]});
+    const interim=[{transcript:'Unconfirmed trailing words'}];interim.isFinal=false;
+    recognizer.onresult({resultIndex:1,results:[result,interim]});
+    recognizer.stop();
   });
+  assert.equal(await first.locator('#chatInput').inputValue(),'Review my current notes please');
   await advance(first,2000);await arrived;
   state=await expectSignal(first,true);assert.equal(state.text_allowed,false);
   assert.equal(await first.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY.isBusy()),true);
@@ -264,6 +321,7 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
   release();
   await first.waitForFunction(()=>document.body.dataset.stonefellowAgentState==='speaking');
   state=await expectSignal(first,true);assert.equal(state.text_allowed,false);
+  assert.equal(state.details.chat_busy_reason,'voice_playback');
   await first.evaluate(()=>window.utterance.onend());
   state=await expectSignal(first,false);assert.equal(state.text_allowed,true);
   await first.getByRole('button',{name:'Stop voice conversation'}).click();
@@ -305,6 +363,9 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
   assert.ok(secondPackets.some(item=>item.context?.activity_tab!==firstTab&&item.context?.chat_busy===false&&item.context?.chat_focused===false));
   console.log('PASS controlled exclusive tab focus + real timer/HTTP: an unfocused document cannot clear focused Chat busy state');
   await setFocus(first,false);await waitServerSignal(first,true,false);
+  // Observations from separate documents use a strict millisecond ordering.
+  // Make this simulated hardware edge strictly later than the committed blur.
+  await new Promise(resolve=>setTimeout(resolve,10));
   await setFocus(second,true);state=await waitServerSignal(second,false);const secondTab=state.details.activity_tab;
   assert.notEqual(secondTab,firstTab);assert.equal(state.text_allowed,true);
   await second.request.post(origin+'/activity',{data:oldFocusedPacket});state=await probe(second);
@@ -366,7 +427,24 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
   assert.ok(skewPackets.some(item=>Math.abs(item.context.activity_observed_at-Date.now())<90000));
   assert.equal(state.owner_present,true);
   console.log('PASS a client clock five minutes ahead recovers through the same-account/session server clock anchor without weakening timestamp rejection');
-  console.log('INITIATIVE_ACTIVITY_BROWSER=PASS (15 real browser/HTTP scenarios)');
+  await skewed.close();await context.request.post(origin+'/reset-state',{data:{csrf_token:'activity-fixture'}});
+  const reloading=await open();
+  await reloading.locator('#chatInput').pressSequentially('Keep only this typed draft');
+  await reloading.getByRole('button',{name:'Start voice conversation'}).click();
+  await reloading.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  await reloading.evaluate(()=>{
+    const recognizer=window.recognizers.find(item=>item.active);
+    const interim=[{transcript:'Unconfirmed at pagehide'}];interim.isFinal=false;
+    recognizer.onresult({resultIndex:0,results:[interim]});
+  });
+  assert.match(await reloading.locator('#chatInput').inputValue(),/Unconfirmed at pagehide/);
+  await reloading.reload();
+  await reloading.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY?.isReady?.());
+  assert.equal(await reloading.locator('#chatInput').inputValue(),'Keep only this typed draft');
+  state=await expectSignal(reloading,true);
+  assert.equal(state.details.chat_busy_reason,'restored_draft');
+  console.log('PASS native pagehide and reload preserve the typed draft without saving its unconfirmed Voice preview');
+  console.log('INITIATIVE_ACTIVITY_BROWSER=PASS (18 real browser/HTTP scenarios)');
 }catch(error){
   if(serverLog.includes('Fatal error'))console.error(serverLog.slice(-6000));
   for(const page of browser?.contexts().flatMap(item=>item.pages())||[]){

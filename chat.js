@@ -11,6 +11,7 @@
   const voiceButton = document.getElementById('chatVoiceButton');
   const voiceStatus = document.getElementById('chatVoiceStatus');
   const audioFeedbackHosts = new WeakMap();
+  const connectedSiteAudioStates = new WeakMap();
   const history = document.getElementById('chatHistory');
   const newButton = document.getElementById('newChatButton');
   const playerSearch = document.getElementById('chatPlayerSearch');
@@ -89,13 +90,37 @@
   let chatRevision = 0, pendingSend = null, restoringConversation = 0, lastParticipantQuestion = null;
   let youtubeLocalTurn = null;
   let initialRestorePending = true, contextReady = false;
+  let composerDraftOrigin = null;
   let initiativeReplyTarget = null, initiativeReplyCandidate = null, initiativeReplyFenceTimer = 0;
   let initiativeVisualRetry = null;
   const initiativePosts = new Map(), initiativeOutcomes = new Map();
+  const proactiveVoicePosts = [];
+  const PROACTIVE_VOICE_MAX_AGE_MS = 120000;
+  const PROACTIVE_VOICE_QUEUE_LIMIT = 8;
+  let proactiveVoiceTimer = 0, proactiveVoiceActive = null;
   const initiativeReplyStates = new Set(['open','discussed','deferred','queued','stale']);
   const initiativeStates = new Set(['open','discussed','queued','deferred','declined','owner_resolved','completed','stale']);
   const recoveryKey = `vp3:chat:drafts:${Number(cfg.userId || 0)}:${Number(cfg.agentId || 0)}`;
+  const parkedReplyKey = recoveryKey+':parked-replies';
+  const parkedReplies = new Map();
   const selectionKey = `vp3:chat:active:${Number(cfg.userId || 0)}:${Number(cfg.agentId || 0)}`;
+  const parkedReplyId = (cid,id) => cid+':'+id;
+  try {
+    const saved=JSON.parse(sessionStorage.getItem(parkedReplyKey)||'[]');
+    if(Array.isArray(saved))for(const record of saved){
+      if(record?.binding===initiativePage.binding&&Number.isSafeInteger(record.conversation_id)&&record.conversation_id>0
+        &&validInitiativeReplyV1(record.reply)&&typeof record.text==='string'&&record.text.trim()&&record.text.length<=32000){
+        parkedReplies.set(parkedReplyId(record.conversation_id,record.reply.message_id),record);
+      }
+    }
+  } catch (_) {}
+  function saveParkedReplies() {
+    try { sessionStorage.setItem(parkedReplyKey,JSON.stringify([...parkedReplies.values()])); } catch (_) {}
+  }
+  function privateParkedReplies(cid) {
+    if(!initiativeIdentityMatchesV1()||historyParticipant||window.VP3ParticipantContinuity?.selectedContext?.())return [];
+    return [...parkedReplies.values()].filter(record=>record.conversation_id===cid);
+  }
   function recoveryDrafts() {
     try {
       const value = JSON.parse(sessionStorage.getItem(recoveryKey) || '{}');
@@ -104,11 +129,10 @@
         Number.isFinite(draft.at) && draft.at <= Date.now() && Date.now() - draft.at < 86400000));
     } catch (_) { return {}; }
   }
-  function keepDraft(text, id = conversationId) {
+  function keepDraft(text = composerDraftValue(), id = conversationId, replyTarget = initiativeReplyTarget) {
     if (gmailReviewActionLabel(text)) return;
     const value = recoveryDrafts();
-    const target=initiativeReplyTarget && initiativeReplyTarget.conversation_id===Number(id) && initiativeIdentityMatchesV1()
-      ? initiativeReplyTarget : null;
+    const target=replyTarget && replyTarget.conversation_id===Number(id) && initiativeIdentityMatchesV1() ? replyTarget : null;
     if (String(text || '').trim() || target) value[id] = {text:String(text || '').slice(0,32000), at:Date.now(),
       ...(target ? {initiative_reply:{message_id:target.message_id,reply_ref:target.reply_ref,revision:target.revision},
         initiative_binding:initiativePage.binding,initiative_stale:target.stale===true,
@@ -117,9 +141,13 @@
     try { sessionStorage.setItem(recoveryKey, JSON.stringify(Object.fromEntries(
       Object.entries(value).sort((a,b) => b[1].at-a[1].at).slice(0,8)))); } catch (_) {}
   }
+  function composerDraftValue() {
+    return window.STONEFELLOW_CHAT_CONTINUITY?.composerDraftValue?.() ?? input.value;
+  }
   function restoreDraft() {
     const saved=recoveryDrafts()[conversationId];
     input.value = saved?.text || ''; autoSize();
+    composerDraftOrigin = saved?.text ? {kind:'restored_draft',text:input.value} : null;
     initiativeReplyCandidate=saved?.initiative_reply ? {reply:saved.initiative_reply,binding:saved.initiative_binding,stale:saved.initiative_stale===true,retry:saved.initiative_retry===true} : null;
   }
   function rememberConversation() {
@@ -128,20 +156,26 @@
   }
   function initialConversation() {
     const requested=Number(new URLSearchParams(location.search).get('conversation_id')||0);
-    if(requested>0 && requested===Number(cfg.initialConversationId))return requested;
+    if(requested>0 && requested===Number(cfg.initialConversationId))return {id:requested,remembered:false};
     try {
       const saved = JSON.parse(localStorage.getItem(selectionKey));
       if (Number.isSafeInteger(saved?.id) && saved.id >= 0 && Number.isFinite(saved.at) &&
-          saved.at <= Date.now() && Date.now()-saved.at < 2592000000) return saved.id;
+          saved.at <= Date.now() && Date.now()-saved.at < 2592000000) return {id:saved.id,remembered:true};
     } catch (_) {}
-    return Number(cfg.initialConversationId || 0);
+    return {id:Number(cfg.initialConversationId || 0),remembered:false};
   }
   function showStop() {
     let button=document.getElementById('chatStopButton');
     if(!button){button=document.createElement('button');button.id='chatStopButton';button.type='button';button.textContent='■';button.setAttribute('aria-label','Stop response');form.appendChild(button);button.addEventListener('click',()=>{
       const request=pendingSend;if(!request)return;
-      leaveChat({preserveInitiativeReply:true}); if(!input.value&&!gmailReviewActionLabel(request.message))input.value=request.message;autoSize();keepDraft(input.value,request.conversationId);
-      recoveryStatus('Response stopped.');
+      leaveChat({preserveInitiativeReply:true});
+      if(request.parkedReply&&showParkedReplyAfterSend(request)){
+        showChatTurnNotice('Response stopped. Your reply is saved with the original Agent update.');
+      }else{
+        if(!input.value&&!gmailReviewActionLabel(request.message))input.value=request.message;
+        autoSize();keepDraft(input.value,request.conversationId);
+        showChatTurnNotice('Response stopped.');
+      }
     });}
     button.hidden=!pendingSend;
   }
@@ -154,40 +188,79 @@
     }
     host.hidden = !message; host.textContent = message;
   }
+  function showChatTurnNotice(message = '') {
+    thread.querySelector('[data-chat-turn-notice]')?.remove();
+    if (!message) return;
+    recoveryStatus();
+    if (welcome) welcome.hidden = true;
+    // Give local feedback the Chat layout without exposing it as an Agent result.
+    const element = messageElement('chat-turn-notice', '');
+    element.dataset.chatTurnNotice = '';
+    const name = String(window.STONEFELLOW_AGENT_IDENTITY_V236?.displayName || 'Stonefellow').trim() || 'Stonefellow';
+    element.querySelector('.message-role').textContent = name;
+    const avatar = element.querySelector('.message-avatar');
+    avatar.textContent = name.charAt(0).toUpperCase();
+    avatar.setAttribute('aria-hidden', 'true');
+    const body = element.querySelector('.message-text');
+    body.setAttribute('role', 'status');
+    thread.insertBefore(element, thread.querySelector('.chat-listening-continuation'));
+    body.textContent = message;
+    thread.scrollTop = thread.scrollHeight;
+  }
   function leaveChat(options={}) {
     lastParticipantQuestion=null;
     initiativeVisualRetry=null;
     pendingAssistantMessages.clear();
-    if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId);
-    if(!options.preserveInitiativeReply){clearInitiativeReplyV1();initiativeReplyCandidate=null;initiativePosts.clear();initiativeOutcomes.clear();}
+    if (!initialRestorePending&&!pendingSend?.parkedReply) keepDraft(pendingSend?.message ?? composerDraftValue(), pendingSend?.conversationId ?? conversationId);
+    if(!options.preserveInitiativeReply){
+      clearInitiativeReplyV1();initiativeReplyCandidate=null;initiativePosts.clear();initiativeOutcomes.clear();
+      thread.querySelectorAll('[data-parked-initiative-reply]').forEach(node=>node.remove());
+      clearConnectedSitePlayback();
+    }
     chatRevision++;
+    conversationMessageSync?.controller.abort();
     cancelYoutubeLocalTurn();
     if (pendingSend) { clearTimeout(pendingSend.timer); pendingSend.controller.abort(); pendingSend.typing?.remove(); pendingSend = null; busy = false; send.disabled = false; input.disabled=false; showStop(); }
-    window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:options.preserveInitiativeReply===true}}));
+    window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:options.preserveInitiativeReply===true,initialRestore:options.initialRestore===true}}));
     recoveryStatus();
+    showChatTurnNotice();
   }
   function clearPrivateYoutubeHistory() {
     cancelYoutubeLocalTurn();
     thread.querySelectorAll('[data-vp3-youtube-private]').forEach(row => row.remove());
   }
-  window.addEventListener('vp3:participant-selection-changed',clearPrivateYoutubeHistory);
-  window.addEventListener('vp3:participant-task-context',()=>{
+  window.addEventListener('vp3:participant-selection-changed',()=>{
+    showChatTurnNotice();
     clearPrivateYoutubeHistory();
-    if(initiativeReplyTarget){clearInitiativeReplyV1();keepDraft(input.value);recoveryStatus('The participant changed. Choose the Agent update again before replying.');}
+    clearConnectedSitePlayback(thread,false);
+    renderParkedInitiativeRepliesV1();
+  });
+  window.addEventListener('vp3:participant-task-context',()=>{
+    showChatTurnNotice();
+    clearPrivateYoutubeHistory();
+    clearConnectedSitePlayback(thread,false);
+    renderParkedInitiativeRepliesV1();
+    if(initiativeReplyTarget){clearInitiativeReplyV1();keepDraft();recoveryStatus('The participant changed. Choose the Agent update again before replying.');}
     if(!pendingSend)return;
-    const request=pendingSend;keepDraft(request.message,request.conversationId);chatRevision++;
+    const request=pendingSend;if(!request.parkedReply)keepDraft(request.message,request.conversationId);chatRevision++;
     clearTimeout(request.timer);request.controller.abort();request.typing?.remove();pendingSend=null;busy=false;send.disabled=false;input.disabled=false;showStop();
-    recoveryStatus('Participant changed. Previous response stopped.');
+    showChatTurnNotice('Participant changed. Previous response stopped.');
   });
   function clearPrivateRecovery() {
     leaveChat();
-    try { sessionStorage.removeItem(recoveryKey); localStorage.removeItem(selectionKey); } catch (_) {}
+    historyListRequest?.abort();
+    parkedReplies.clear();
+    try { sessionStorage.removeItem(recoveryKey);sessionStorage.removeItem(parkedReplyKey);localStorage.removeItem(selectionKey); } catch (_) {}
     conversationId = 0; contextReady=false; input.value = ''; thread.querySelectorAll('.message').forEach(node => node.remove());
     history.replaceChildren(); recoveryStatus('Sign in again to continue.');
   }
   // The displayed conversation owns edits until a history load commits its new
   // selection. Persist them even while loading; Send remains gated separately.
-  input.addEventListener('input', () => { if (!busy && !initialRestorePending) {
+  input.addEventListener('input', event => { if (!busy && !initialRestorePending) {
+    const draft=event.isTrusted ? input.value : composerDraftValue();
+    if(event.isTrusted)composerDraftOrigin=draft.trim()?{kind:'typed_draft',text:draft}:null;
+    else if(composerDraftOrigin?.text!==draft)composerDraftOrigin=null;
+    if(draft!==input.value)return; // A listening preview has not changed the draft.
     if(initiativeVisualRetry&&initiativeVisualRetry.message!==input.value.trim())initiativeVisualRetry=null;
     if(initiativeReplyTarget?.retry_message&&initiativeReplyTarget.retry_message!==input.value.trim()){
       delete initiativeReplyTarget.retry_message;
@@ -196,12 +269,20 @@
     }
     keepDraft(input.value); recoveryStatus();
   } });
-  window.addEventListener('pagehide', () => { if (!initialRestorePending) keepDraft(pendingSend?.message || input.value, pendingSend?.conversationId ?? conversationId); pendingSend?.controller.abort(); });
+  window.addEventListener('pagehide', () => {
+    if (!initialRestorePending&&!pendingSend?.parkedReply) keepDraft(pendingSend?.message ?? composerDraftValue(), pendingSend?.conversationId ?? conversationId);
+    pendingSend?.controller.abort();
+  });
   // Run before planner interception so offline/restoring turns cannot dispatch tools.
   document.addEventListener('submit', event => {
     if (event.target !== form || (contextReady && !initialRestorePending && !restoringConversation && navigator.onLine !== false)) return;
     event.preventDefault(); event.stopImmediatePropagation();
-    if (!initialRestorePending && !restoringConversation) keepDraft(input.value);
+    if(navigator.onLine===false&&parkCurrentProactiveReplyV1()){
+      window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:true}}));
+      showChatTurnNotice('You are offline. Your reply is saved with the original Agent update.');
+      return;
+    }
+    if (!initialRestorePending && !restoringConversation) keepDraft();
     window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:true}}));
     recoveryStatus(!contextReady ? 'Open a conversation or start a new chat before sending.' : navigator.onLine === false ? 'You are offline. Your message is kept.' : 'Restoring your conversation. Your message is kept.');
   }, true);
@@ -217,11 +298,18 @@
   let voiceBargeTimer = null;
   let voiceBargeHits = 0;
   const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-  let activityBusy = false;
+  let activityRequest = null;
+  let activityWakePending = false;
   let activityTimer = null;
   let activityCursor = 0;
   let pendingConversationSync = 0;
+  let conversationMessageSync = null;
+  let historyListRequest = null;
+  let canvasMessageStatus = null;
+  let canvasActivityStatus = null;
+  let canvasFallback = null;
   const audioState = new WeakMap();
+  const mediaOfferAudioActions = new WeakMap();
   let activeAudio = null;
 
   function closeNav() {
@@ -820,20 +908,39 @@
       signal,
       body: JSON.stringify({...payload, csrf_token: cfg.csrf})
     });
+    signal?.throwIfAborted();
 
     const data = await response.json().catch(() => ({
       ok:false,
       error:'Invalid server response.'
     }));
+    signal?.throwIfAborted();
 
     if (!response.ok || !data.ok) {
       const error = new Error(data.error || 'Request failed.');
       error.status = response.status;
+      error.followthroughReason = data.followthrough_reason;
       if (response.status === 401) clearPrivateRecovery();
       throw error;
     }
 
     return data;
+  }
+
+  async function readChat(payload, signal) {
+    signal.throwIfAborted();
+    let abort;
+    const cancelled = new Promise((_, reject) => {
+      abort = () => reject(signal.reason);
+      signal.addEventListener('abort', abort, {once:true});
+    });
+    try {
+      const result = await Promise.race([api(payload, signal), cancelled]);
+      signal.throwIfAborted();
+      return result;
+    } finally {
+      signal.removeEventListener('abort', abort);
+    }
   }
 
   function writeActivityCursor(value) {
@@ -898,53 +1005,74 @@
     return 'Update';
   }
 
-  async function pollAgentActivity(
-    force = false
-  ) {
-    if (
-      activityBusy ||
-      (
-        document.hidden &&
-        !force
-      )
-    ) {
+  async function pollAgentActivity(force = false) {
+    if (navigator.onLine === false || (document.hidden && !force)) return;
+    if (activityRequest) {
+      if (force && activityRequest.signal.aborted) activityWakePending = true;
       return;
     }
 
-    activityBusy = true;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    activityRequest = controller;
+    const timeout = window.setTimeout(() => controller.abort(new DOMException('Chat activity timed out.', 'TimeoutError')), 15000);
+    const activeConversationId = contextReady && !initialRestorePending && !restoringConversation
+      && thread.dataset.view === 'chat' ? conversationId : 0;
+    const activityChatRevision=chatRevision;
+    let activityRead=false;
 
     try {
-      const activeConversationId = contextReady && !initialRestorePending && !restoringConversation ? conversationId : 0;
-      const activityChatRevision=chatRevision;
+      const coordinationRefresh=[];
       const selectedInitiativePost=initiativePosts.get(initiativeReplyTarget?.message_id);
       const initiativeMessageIds=activeConversationId>0&&initiativeIdentityMatchesV1()
         ? [...new Set([selectedInitiativePost?.element.isConnected&&selectedInitiativePost.conversation_id===activeConversationId?selectedInitiativePost.message_id:0,...Array.from(initiativePosts.values()).reverse()
           .filter(post=>post.conversation_id===activeConversationId&&post.element.isConnected
-            &&(initiativeReplyStates.has(post.state)||post.unavailable)).map(post=>post.message_id)])]
+            &&(post.coordination||initiativeReplyStates.has(post.state)||post.unavailable)).map(post=>post.message_id)])]
           .filter(id=>Number.isSafeInteger(id)&&id>0).slice(0,12) : [];
-      const data = await api({
+      const data = await readChat({
         action:'activity',
         after_id:activityCursor,
         conversation_id:activeConversationId,
         ...(initiativeMessageIds.length?{initiative_message_ids:initiativeMessageIds}:{}),
         agent_context:{user_agent_id:Number(cfg.agentId || 0)}
       }, controller.signal);
+      activityRead=true;
+      if(activityChatRevision===chatRevision&&activeConversationId>0&&activeConversationId===conversationId
+        &&Number(data.conversation_id||0)===conversationId&&Number.isSafeInteger(data.latest_message_id)&&data.latest_message_id>=0){
+        const changed=canvasActivityStatus?.revision!==chatRevision||canvasActivityStatus.knownLatestMessageId!==data.latest_message_id;
+        canvasActivityStatus={revision:chatRevision,conversationId,knownLatestMessageId:data.latest_message_id};
+        if(changed)window.dispatchEvent(new Event('vp3:chat-canvas-status-changed'));
+      }
       if(activityChatRevision===chatRevision&&activeConversationId===conversationId&&Number(data.conversation_id||0)===conversationId&&initiativeIdentityMatchesV1()
         &&Array.isArray(data.initiative_updates)&&data.initiative_updates.length<=12){
+        let engagementChanged = false;
         for(const update of data.initiative_updates){
           if(!update||!initiativeMessageIds.includes(update.message_id))continue;
           const post=initiativePosts.get(update.message_id);if(!post)continue;
+          const priorState = post.state, priorRevision = post.revision, priorAvailability = post.unavailable;
           if(update.available===false){
+            if(post.coordination&&update.coordination_source_unavailable===true)hideCoordinationPostV1(post);
             post.unavailable=true;renderInitiativePostV1(post);
-            if(initiativeReplyTarget?.message_id===post.message_id){initiativeReplyTarget.unavailable=true;renderInitiativeReplyV1();}
+            if(initiativeReplyTarget?.message_id===post.message_id&&!initiativeReplyTarget.unavailable){
+              initiativeReplyTarget.unavailable=true;renderInitiativeReplyV1();
+            }
           }else if(update.available===true&&applyInitiativeFollowthroughV1(update.initiative_followthrough,true)){
             post.unavailable=false;post.recoverable=update.recoverable===true;
             post.child_execution_state=['failed','cancelled'].includes(update.child_execution_state)?update.child_execution_state:'';renderInitiativePostV1(post);
-            if(initiativeReplyTarget?.message_id===post.message_id){initiativeReplyTarget.unavailable=false;renderInitiativeReplyV1();}
+            if(update.stoneward_played===true&&markStonewardOfferPlayed(update.message_id))engagementChanged=true;
+            if(post.coordinationRedacted){
+              coordinationRefresh.push(post.message_id);
+              for(const reply of thread.querySelectorAll('[data-coordination-reply-origin="'+post.message_id+'"]')){
+                const id=Number(reply.dataset.chatMessageId);
+                if(Number.isSafeInteger(id)&&id>0)coordinationRefresh.push(id);
+              }
+            }
+            if(initiativeReplyTarget?.message_id===post.message_id&&initiativeReplyTarget.unavailable){
+              initiativeReplyTarget.unavailable=false;renderInitiativeReplyV1();
+            }
           }
+          engagementChanged ||= post.state !== priorState || post.revision !== priorRevision || post.unavailable !== priorAvailability;
         }
+        if (engagementChanged) window.dispatchEvent(new Event('vp3:initiative-reply-updated'));
       }
 
       const hasPendingAssistant=pendingAssistantMessageIds().length>0;
@@ -952,11 +1080,13 @@
         &&(Number(data.latest_message_id||0)>lastLoadedMessageId||hasPendingAssistant)){
         pendingConversationSync=conversationId;
       }
-      if(pendingConversationSync>0&&!busy&&!restoringConversation&&pendingConversationSync===activeConversationId
+      if(activityChatRevision===chatRevision&&pendingConversationSync>0&&!busy&&!restoringConversation&&pendingConversationSync===activeConversationId
         &&pendingConversationSync===conversationId&&Number(data.conversation_id||0)===conversationId
         &&(Number(data.latest_message_id||0)>lastLoadedMessageId||hasPendingAssistant)){
-        await syncConversationMessagesV101(pendingConversationSync, controller.signal);
+        void syncConversationMessagesV101(pendingConversationSync,undefined,coordinationRefresh)?.catch(()=>{});
         pendingConversationSync=0;
+      }else if(coordinationRefresh.length){
+        void syncConversationMessagesV101(activeConversationId,undefined,coordinationRefresh)?.catch(()=>{});
       }
 
       const updateIds =
@@ -979,10 +1109,23 @@
       );
 
     } catch (error) {
-      // A later poll retries after transient failures; notifications remain in their drawer.
+      // A failure in the optional activity projection must not suppress the
+      // independent, scoped read of already saved Chat messages.
+      if(!activityRead&&(!controller.signal.aborted||error?.name==='TimeoutError')&&navigator.onLine!==false
+        &&activeConversationId>0&&activeConversationId===conversationId&&activityChatRevision===chatRevision
+        &&initiativeIdentityMatchesV1()&&!historyParticipant&&!window.VP3ParticipantContinuity?.selectedContext?.()
+        &&!busy&&!document.hidden&&thread.dataset.view==='chat'
+        &&(!canvasFallback||canvasFallback.revision!==chatRevision||Date.now()-canvasFallback.at>=6000)){
+        canvasFallback={revision:chatRevision,at:Date.now()};
+        void syncConversationMessagesV101(activeConversationId)?.catch(()=>{});
+      }
     } finally {
       window.clearTimeout(timeout);
-      activityBusy = false;
+      activityRequest = null;
+      if (activityWakePending) {
+        activityWakePending = false;
+        void pollAgentActivity(true);
+      }
     }
   }
 
@@ -1453,6 +1596,11 @@
 
     return {
       source:typeof raw.source==='string' ? raw.source : '',
+      connected_site_provider_v1:raw.connected_site_provider_v1==='foodmonster'
+        || (raw.source==='agent_initiative' && raw.initiative_output?.type==='initiative_coordination'
+          && Object.entries(raw.initiative_output.evidence_revisions || {}).some(([ref, revision]) =>
+            /^connected-sites:[a-f0-9]{64}$/.test(ref) && typeof revision==='string' && /^[a-f0-9]{64}$/.test(revision)))
+        ? 'foodmonster' : null,
       tool_receipt:raw.tool_receipt,
       sources:Array.isArray(raw.sources) ? raw.sources : [],
       media:Array.isArray(raw.media) ? raw.media : [],
@@ -1468,8 +1616,26 @@
       profile_speech:raw.profile_speech && typeof raw.profile_speech==='object' ? raw.profile_speech : null,
       profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
+      coordination_primary:raw.source==='agent_initiative' && raw.initiative_output?.type==='initiative_coordination'
+        ? Object.keys(raw.initiative_output.evidence_revisions || {})[0] : null,
+      stoneward_played:raw.stoneward_played===true,
+      coordination_report:raw.source==='agent_initiative' && raw.initiative_output?.type==='initiative_coordination',
+      coordination_question:raw.source==='agent_initiative' && raw.initiative_output?.type==='initiative_coordination'
+        && raw.initiative_output.state==='needs_owner',
+      coordination_reply:raw.initiative_coordination_reply_v1===true && raw.initiative_coordination_source_changed_v1!==true,
       research_canvas_v1:raw.source==='agent_initiative' ? raw.research_canvas_v1 : null,
+      coding_canvas_card_v1:raw.source==='agent_coding_canvas' ? raw.coding_canvas_card_v1 : null,
+      screen_insights_v1:raw.source==='agent_screen_insights' ? raw.screen_insights_v1 : null,
       gmail_inbox_review_v1:['agent_connection_gmail_first_review','agent_connection_gmail_inbox_update'].includes(raw.source) ? raw.gmail_inbox_review_v1 : null,
+      gmail_content_post_v1:raw.source==='agent_connection_gmail_content'
+        || (raw.source==='agent_initiative' && raw.initiative_output?.type==='initiative_coordination'
+          && /^gmail:[a-f0-9]{64}$/.test(Object.keys(raw.initiative_output.evidence_revisions || {})[0] || '')),
+      gmail_routine_digest_v1:raw.source==='agent_connection_gmail_inbox_update'
+        && raw.gmail_inbox_update_v1?.routine_digest===true
+        && typeof raw.gmail_inbox_update_v1.run_id==='string' && typeof raw.gmail_inbox_update_v1.report_ref==='string'
+        && /^[a-f0-9]{32}$/.test(raw.gmail_inbox_update_v1.run_id)
+        && /^[a-f0-9]{64}$/.test(raw.gmail_inbox_update_v1.report_ref),
+      gmail_conversation_offer:raw.gmail_conversation_offer === true,
       initiative_followthrough:raw.initiative_followthrough && typeof raw.initiative_followthrough==='object' ? raw.initiative_followthrough : null,
       initiative_action:raw.initiative_action && typeof raw.initiative_action==='object' ? raw.initiative_action : null,
       meeting_action:raw.meeting_action && typeof raw.meeting_action==='object' ? raw.meeting_action : null,
@@ -1505,6 +1671,13 @@
   }
 
   function showChatMediaError(audio, failed) {
+    const connected = connectedSiteAudioStates.get(audio);
+    if (connected) {
+      connected.retry.hidden = !failed;
+      connected.error.hidden = !failed;
+      connected.error.textContent = failed ? 'The artist site couldn’t play this track. Try again or open the artist site.' : '';
+      return;
+    }
     const host = audioFeedbackHosts.get(audio) || audio.closest('.chat-stem-copy') || audio.parentElement;
     if (!host) return;
     let status = host.querySelector('[data-chat-media-status]');
@@ -1595,6 +1768,10 @@
 
   function agentActionHtml(action) {
     if (!action) return '';
+    if (action.type === 'specialist_example' && /^[a-z-]{1,30}$/.test(action.specialist || '')
+      && typeof action.label === 'string' && action.label.trim() && action.label.length <= 80) {
+      return `<button class="chat-agent-action-button" type="button" data-chat-specialist-example="${escapeHtml(action.specialist)}">${escapeHtml(action.label)}</button>`;
+    }
     if (action.type === 'email_review' && /^[a-f0-9]{32}$/.test(String(action.id || '')) && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {
       const label = action.sent === true ? 'View sent reply' : (action.is_reply === true ? 'Review reply' : 'Review email');
       const queued = action.writing === true ? ' data-chat-email-writing="1"' : '';
@@ -1621,6 +1798,92 @@
     if (!action.url) return '';
     return `<a class="chat-agent-action" href="${escapeHtml(withStudioReturn(action.url))}">${escapeHtml(action.label||'Open')}</a>`;
   }
+
+  function codingCanvasLocalUrl(value) {
+    if (typeof value !== 'string' || !value) return null;
+    try {
+      const url = new URL(value,location.href);
+      return /^https?:$/.test(url.protocol) && url.origin === location.origin && !url.username && !url.password ? url : null;
+    } catch (_) { return null; }
+  }
+
+  function updateCodingCanvasArtwork(section, artwork) {
+    const heading = section.querySelector('.vp3-chat-app-result-heading');
+    for (const [url,slot,container] of [
+      [artwork.thumbnail_url,'preview',section],[artwork.icon_url,'icon',heading]
+    ]) {
+      const image = codingCanvasLocalUrl(url);
+      if (!image || !container) continue;
+      let node = container.querySelector('.vp3-chat-app-result-' + slot);
+      if (!node) {
+        node = document.createElement('img');
+        node.className = 'vp3-chat-app-result-' + slot;
+        node.alt = '';
+        if (slot === 'icon') node.width = node.height = 15;
+        else node.loading = 'lazy';
+        container.prepend(node);
+      }
+      node.src = image.href;
+    }
+  }
+
+  function bindCodingCanvasCardV1(element, card) {
+    const agent = Number(cfg.agentId || 0);
+    const cid = conversationId;
+    const body = element?.querySelector('.message-body');
+    if (!body || card?.version !== 1 || typeof card.title !== 'string' || !card.title.trim()
+      || !['draft','active','saved'].includes(card.status) || card.conversation_id !== cid || card.agent_id !== agent
+      || typeof card.canvas_id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(card.canvas_id)
+      || !Number.isSafeInteger(card.revision) || card.revision < 1 || typeof card.href !== 'string') return;
+    const href = codingCanvasLocalUrl(card.href);
+    if (!href?.pathname.endsWith('/chat.php') || href.searchParams.get('agent') !== String(agent || 'system')
+      || href.searchParams.get('conversation_id') !== String(cid) || href.searchParams.get('canvas_id') !== card.canvas_id
+      || href.searchParams.get('canvas_revision') !== String(card.revision)) return;
+
+    const section = document.createElement('section');
+    section.className = 'vp3-chat-app-result';
+    section.dataset.canvasId = card.canvas_id;
+    section.dataset.canvasRevision = String(card.revision);
+    const heading = document.createElement('div');
+    heading.className = 'vp3-chat-app-result-heading';
+    const title = document.createElement('strong');
+    title.textContent = card.title;
+    heading.append(title);
+    const status = document.createElement('small');
+    status.textContent = {draft:'Draft ready',active:'Active',saved:'Saved version'}[card.status];
+    heading.append(status);
+    const link = document.createElement('a');
+    link.className = 'chat-agent-action-button';
+    link.href = href.href;
+    link.textContent = {draft:'Review draft',active:'Open app',saved:'Open version'}[card.status];
+    link.addEventListener('click', event => {
+      const current = () => initiativeIdentityMatchesV1() && conversationId === cid
+        && element.isConnected && Number(element.dataset.chatConversationId) === cid
+        && !window.VP3ParticipantContinuity?.selectedContext?.();
+      if (!current()) { event.preventDefault(); return; }
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !window.VP3CodingCanvasV1?.open) return;
+      event.preventDefault();
+      void window.VP3CodingCanvasV1.open(card.canvas_id,card.revision);
+    });
+    section.append(heading,link);
+    updateCodingCanvasArtwork(section,card);
+    body.append(section);
+    const text = body.querySelector('.message-text');
+    if (text) text.hidden = true;
+    window.dispatchEvent(new Event('vp3:canvas-list-updated'));
+  }
+
+  window.addEventListener('vp3:canvas-artwork-updated',event => {
+    const {artwork,canvasId,revision,conversationId:cid,agentId,ownerId,binding} = event.detail || {};
+    if (!artwork || artwork.id !== canvasId || !initiativeIdentityMatchesV1() || binding !== initiativePage.binding
+      || cid !== conversationId || agentId !== initiativePage.agent || ownerId !== initiativePage.owner
+      || window.VP3ParticipantContinuity?.selectedContext?.()) return;
+    for (const section of thread.querySelectorAll('.vp3-chat-app-result[data-canvas-id]')) {
+      if (section.dataset.canvasId !== canvasId) continue;
+      const exactThumbnail = Number(section.dataset.canvasRevision) === revision && artwork.thumbnail_revision === revision;
+      updateCodingCanvasArtwork(section,{icon_url:artwork.icon_url,thumbnail_url:exactThumbnail ? artwork.thumbnail_url : null});
+    }
+  });
 
   function catchUpSourceLinks(sources) {
     if (!Array.isArray(sources)) return '';
@@ -1678,6 +1941,9 @@
     const canvas = document.createElement('section');
     canvas.className = 'vp3-research-canvas';
     canvas.dataset.researchCanvasRunId = String(report.run_id);
+    if (Number.isSafeInteger(report.transcript_session_id) && report.transcript_session_id > 0) {
+      canvas.dataset.researchTranscriptSessionId = String(report.transcript_session_id);
+    }
     canvas.tabIndex = -1;
     canvas.setAttribute('aria-label', 'Research Canvas');
     canvas.innerHTML = '<header><div><small>Research Canvas</small><h3></h3></div><p></p></header>';
@@ -1692,6 +1958,17 @@
     canvas.append(summary);
     body.querySelector(':scope > [data-public-research-sources]')?.remove();
     if (hasSources) canvas.insertAdjacentHTML('beforeend', sources);
+
+    const meeting = report.meeting_followup;
+    if (typeof meeting?.title !== 'string' || !meeting.title.trim() || typeof meeting.url !== 'string') return;
+    let meetingUrl;
+    try { meetingUrl = new URL(meeting.url, location.href); } catch (_) { return; }
+    if (meetingUrl.origin !== location.origin || !meetingUrl.pathname.endsWith('/meeting.php') || meetingUrl.username || meetingUrl.password) return;
+    const link = document.createElement('a');
+    link.className = 'message-source';
+    link.href = meetingUrl.href;
+    link.textContent = 'Meeting follow-up · ' + (typeof meeting.commitment === 'string' && meeting.commitment ? meeting.commitment : meeting.title);
+    canvas.append(link);
   }
 
   function messageElement(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, canvasMedia = null, youtubeResults = null) {
@@ -1742,7 +2019,7 @@
     return wrapper;
   }
 
-  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, knowledgeDraft = null, canvasMedia = null, youtubeResults = null) {
+  function addMessage(role, text, sources = [], media = [], playlistTitle = '', stemMedia = [], actions = [], cards = [], systemAppActionCard = null, knowledgeDraft = null, canvasMedia = null, youtubeResults = null, scrollToEnd = true) {
     if (welcome) welcome.hidden = true;
     const el = messageElement(role, text, sources, media, playlistTitle, stemMedia, actions, cards, systemAppActionCard, canvasMedia, youtubeResults);
     const listening=thread.querySelector('.chat-listening-continuation');
@@ -1761,7 +2038,7 @@
         });
       }
     }
-    thread.scrollTop = thread.scrollHeight;
+    if (scrollToEnd) thread.scrollTop = thread.scrollHeight;
     return el;
   }
 
@@ -1796,7 +2073,17 @@
     window.dispatchEvent(new CustomEvent('vp3:profile-handoff-message',{detail:{element}}));
   }
 
+  function bindScreenInsightsV1(element, report) {
+    if (!report && !element._vp3ScreenInsightsV1) return;
+    element._vp3ScreenInsightsV1 = report || null;
+    window.VP3_CHAT_SCREEN_INSIGHTS_V1?.mount(element,element._vp3ScreenInsightsV1);
+  }
+
   function bindGmailResultTime(element, context, createdAt = '') {
+    if (element?.dataset.chatMessageRole === 'assistant') {
+      if (context.gmail_conversation_offer === true) element.dataset.gmailConversationOffer = 'true';
+      else delete element.dataset.gmailConversationOffer;
+    }
     if (!element?.dataset.chatMessageId || element.dataset.chatMessageRole !== 'assistant'
       || ['agent_connection_gmail_first_review','agent_connection_gmail_inbox_update'].includes(context.source)) return;
     const receipt = context.tool_receipt;
@@ -1824,6 +2111,317 @@
     time.textContent = (Number.isFinite(posted) ? 'Posted ' : 'Result ')+date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
   }
 
+  function bindGmailReviewProjectionV1(element,context) {
+    if(context.gmail_content_post_v1)element.dataset.gmailContentPost='true';
+    if(context.gmail_routine_digest_v1)element.dataset.gmailRoutinePost='true';
+    else delete element.dataset.gmailRoutinePost;
+    if(context.gmail_inbox_review_v1)element._vp3GmailInboxReviewV1=context.gmail_inbox_review_v1;
+    else delete element._vp3GmailInboxReviewV1;
+  }
+
+  function bindFoodMonsterResultIcon(element, provider) {
+    if (!element?.dataset.chatMessageId || element.dataset.chatMessageRole !== 'assistant') return;
+    const existing = element.querySelector('.vp3-chat-foodmonster-result-icon');
+    if (provider !== 'foodmonster') {
+      existing?.remove();
+      return;
+    }
+    const heading = element.querySelector('.message-role');
+    const asset = window.VP3_CONNECTED_GELATO_V1?.foodMonsterIcon;
+    if (existing || !heading || typeof asset !== 'string' || !asset) return;
+    let url;
+    try { url = new URL(asset, location.href); } catch { return; }
+    if (url.origin !== location.origin || url.protocol !== location.protocol || url.username || url.password) return;
+    const icon = document.createElement('img');
+    icon.className = 'vp3-chat-foodmonster-result-icon';
+    icon.alt = 'FoodMonster data';
+    icon.title = icon.alt;
+    icon.width = icon.height = 18;
+    icon.src = url.href;
+    heading.after(icon);
+  }
+
+  function connectedSitePlaybackTrack(playback) {
+    if (!playback || !['title', 'artist', 'origin', 'url', 'mime'].every(key => typeof playback[key] === 'string')
+      || !playback.title.trim() || playback.title.length > 200 || playback.artist.length > 160
+      || playback.origin.length > 261 || playback.url.length > 512
+      || !/^audio\/[a-z0-9.+-]{1,32}$/.test(playback.mime)) return null;
+    let url;
+    try { url = new URL(playback.url); } catch { return null; }
+    const track = url.searchParams.get('track_id');
+    if (url.protocol !== 'https:' || url.origin !== playback.origin || url.port || url.username || url.password
+      || !/^(?:[a-z0-9-]+\.)+[a-z]{2,63}$/.test(url.hostname) || url.hash
+      || url.pathname !== '/api/stoneward-vp3-audio.php' || url.search !== '?track_id='+track
+      || !/^[a-z0-9][a-z0-9_-]{0,119}$/i.test(track || '')) return null;
+    return {
+      title:playback.title, artist:playback.artist, url, track,
+      position:Number.isFinite(playback.position_seconds) && playback.position_seconds > 0 && playback.position_seconds < 86400
+        ? playback.position_seconds : 0,
+      ticket:typeof playback.ticket === 'string' && /^[a-zA-Z0-9._-]{16,4161}$/.test(playback.ticket) ? playback.ticket : ''
+    };
+  }
+
+  function connectedSitePlaybackEndpoint() {
+    try {
+      const base = new URL(cfg.playbackEndpoint || cfg.endpoint,location.href);
+      const url = new URL(cfg.stonewardPlaybackEndpoint || './stoneward-playback-v1.php',base);
+      if (url.origin === location.origin && !url.username && !url.password && !url.search && !url.hash
+        && /\/api\/stoneward-playback-v1\.php$/.test(url.pathname)) return url.href;
+    } catch {}
+    return '';
+  }
+
+  function connectedSiteEventSnapshot(audio, event) {
+    const duration = audio.duration, position = audio.currentTime;
+    return Number.isFinite(duration) && duration > 0 && duration <= 86400 && Number.isFinite(position)
+      ? {event,position_seconds:Math.min(duration,Math.max(0,position)),duration_seconds:duration} : null;
+  }
+
+  function markStonewardOfferPlayed(messageId) {
+    if (!initiativeIdentityMatchesV1() || !Number.isSafeInteger(messageId) || messageId < 1) return false;
+    const post = initiativePosts.get(messageId);
+    if (!post?.stonewardOffer || post.stonewardPlayed || post.conversation_id !== conversationId
+      || !post.element.isConnected || !['owner_resolved','completed'].includes(post.state)) return false;
+    post.stonewardPlayed = true;
+    renderInitiativePostV1(post);
+    return true;
+  }
+
+  async function postConnectedSitePlayback(state, event) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(state.endpoint, {
+        method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+        signal:controller.signal, keepalive:true,
+        body:JSON.stringify({csrf_token:state.csrf,ticket:state.ticket,sequence:event.sequence,
+          event:event.event,position_seconds:event.position_seconds,duration_seconds:event.duration_seconds})
+      });
+      if (!response.ok) return {retry:response.status >= 500 || response.status === 429};
+      const ack = await response.json();
+      return ack?.ok === true && Number.isSafeInteger(ack.sequence) && ack.sequence >= event.sequence && ack.sequence <= 1000000
+        ? {ack} : {retry:true};
+    } catch {
+      return {retry:true};
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  async function flushConnectedSitePlayback(state) {
+    if (state.sending || state.retryTimer || !state.current() || state.historyBlocked || !state.endpoint) return;
+    const event = state.inFlight || state.pending;
+    if (!event) return;
+    if (!state.inFlight) {
+      state.pending = null;
+      state.inFlight = {...event,sequence:++state.sequence,retries:0};
+    }
+    const outgoing = state.inFlight;
+    state.sending = true;
+    const {ack,retry} = await postConnectedSitePlayback(state,outgoing);
+    state.sending = false;
+    if (!state.current()) return;
+    if (ack) {
+      state.sequence = Math.max(state.sequence,ack.sequence);
+      state.inFlight = null;
+      state.historyError.hidden = true;
+      if (outgoing.event === 'playing') state.historyStarted = true;
+      if (ack.played === true && markStonewardOfferPlayed(ack.offer_message_id)) {
+        window.dispatchEvent(new Event('vp3:initiative-reply-updated'));
+      }
+      void flushConnectedSitePlayback(state);
+    } else if (retry && outgoing.retries < 1) {
+      outgoing.retries++;
+      state.retryTimer = window.setTimeout(() => {
+        state.retryTimer = 0;
+        void flushConnectedSitePlayback(state);
+      },1000);
+    } else {
+      state.historyBlocked = true;
+      state.historyError.textContent = 'VP3 couldn’t confirm that your playback position was saved.';
+      state.historyError.hidden = false;
+    }
+  }
+
+  function queueConnectedSitePlayback(audio, state, event) {
+    if (!state.current() || !state.ticket || !state.endpoint || state.historyBlocked || !state.observedPlaying) return;
+    const snapshot = connectedSiteEventSnapshot(audio,event);
+    if (!snapshot) return;
+    if (!state.historyStarted && !state.inFlight && state.pending?.event === 'playing' && event !== 'playing') {
+      // The first credible start must be submitted before position updates.
+      void flushConnectedSitePlayback(state);
+    }
+    state.pending = snapshot;
+    void flushConnectedSitePlayback(state);
+  }
+
+  function connectSiteAudioTracking(audio, state) {
+    const rememberPosition = () => {
+      if (audio.readyState < HTMLMediaElement.HAVE_METADATA) return;
+      if (state.resumePosition > 0 && Number.isFinite(audio.duration)) {
+        if (state.resumePosition < audio.duration) audio.currentTime = state.resumePosition;
+        state.resumePosition = 0;
+      }
+      if (state.observedPlaying && !state.historyStarted && !state.inFlight && !state.pending) {
+        queueConnectedSitePlayback(audio,state,'playing');
+      }
+    };
+    audio.addEventListener('loadedmetadata',rememberPosition);
+    audio.addEventListener('durationchange',rememberPosition);
+    audio.addEventListener('playing',event => {
+      if (!state.current()) { audio.pause(); return; }
+      if (!event.isTrusted || audio.paused || !state.requested) return;
+      state.observedPlaying = true;
+      state.nextProgressAt = performance.now()+10000;
+      queueConnectedSitePlayback(audio,state,'playing');
+    });
+    audio.addEventListener('timeupdate',event => {
+      if (!audio.paused && !state.current()) {audio.pause();return;}
+      if (!event.isTrusted || audio.paused || audio.seeking || activeAudio !== audio || performance.now() < state.nextProgressAt) return;
+      state.nextProgressAt = performance.now()+10000;
+      queueConnectedSitePlayback(audio,state,'progress');
+    });
+    audio.addEventListener('pause',event => {
+      if (event.isTrusted && !audio.ended) queueConnectedSitePlayback(audio,state,'pause');
+    });
+    audio.addEventListener('ended',event => {
+      if (!event.isTrusted || !state.current() || !state.observedPlaying || !audio.ended) return;
+      queueConnectedSitePlayback(audio,state,'ended');
+      if (state.queue && activeAudio === audio) playQueueOffset(audio,1);
+    });
+  }
+
+  function bindConnectedSitePlayback(element, playback, queue) {
+    if (!element?.isConnected || element.dataset.chatMessageRole !== 'assistant'
+      || Number(element.dataset.chatConversationId) !== conversationId || !Number(cfg.userId)
+      || historyParticipant || window.VP3ParticipantContinuity?.selectedContext?.()) return;
+    const text = element.querySelector('.message-text');
+    const input = Array.isArray(queue) ? queue : [playback];
+    if (!text || element.querySelector('[data-connected-site-audio-card]') || input.length < 1 || input.length > 3) return;
+    const tracks = input.map(connectedSitePlaybackTrack);
+    if (tracks.some(track => !track) || new Set(tracks.map(track => track.track)).size !== tracks.length
+      || tracks.some(track => track.url.origin !== tracks[0].url.origin)) return;
+
+    const card = document.createElement('section');
+    card.dataset.connectedSiteAudioCard = '';
+    card.dataset.playerQueue = '';
+    const isQueue = tracks.length > 1;
+    card.className = isQueue ? 'chat-connected-site-queue' : 'chat-audio-card chat-connected-site-audio-card';
+    card.setAttribute('aria-label',isQueue ? 'Stonefellow queue' : 'Stonefellow playback');
+    if (isQueue) {
+      card.dataset.connectedSiteQueue = '';
+      const heading = document.createElement('h3');
+      heading.textContent = 'Stonefellow queue';
+      card.append(heading);
+    }
+    const owner = Number(cfg.userId), agent = Number(cfg.agentId || 0), cid = conversationId;
+    const csrf = String(cfg.csrf || ''), binding = String(cfg.workingAttentionBinding || '');
+    const endpoint = csrf ? connectedSitePlaybackEndpoint() : '';
+    const current = () => {
+      const live = window.STONEFELLOW_CHAT;
+      return card.isConnected && thread.contains(card) && conversationId === cid
+        && Number(live?.userId) === owner && Number(live?.agentId || 0) === agent
+        && String(live?.csrf || '') === csrf && String(live?.workingAttentionBinding || '') === binding
+        && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.();
+    };
+    for (const track of tracks) {
+      const row = isQueue ? document.createElement('div') : card;
+      row.className = 'chat-audio-card chat-connected-site-audio-card';
+      if (isQueue) {
+        row.setAttribute('role','group');
+        row.setAttribute('aria-label',track.title);
+      }
+      addConnectedSiteAudio(row,track,{current,endpoint,csrf,queue:isQueue});
+      if (isQueue) card.append(row);
+    }
+    text.after(card);
+    attachAudioTracking(card);
+  }
+
+  function addConnectedSiteAudio(card, playback, context) {
+    const {url,position,ticket} = playback;
+    const title = document.createElement('strong');
+    title.textContent = playback.title;
+    const source = document.createElement('a');
+    source.href = url.origin + '/';
+    source.target = '_blank';
+    source.rel = 'noopener noreferrer';
+    source.textContent = url.hostname;
+    const caption = document.createElement('p');
+    caption.textContent = playback.artist ? playback.artist + ' · ' : 'Stonefellow · ';
+    caption.append(source);
+    const audio = document.createElement('audio');
+    audio.className = 'chat-audio-player';
+    audio.preload = 'none';
+    audio.crossOrigin = 'anonymous';
+    audio.dataset.playerTitle = playback.title;
+    audio.dataset.playerAlbum = [playback.artist, url.hostname].filter(Boolean).join(' · ');
+    audio.dataset.connectedSitePlayback = '';
+    audio.dataset.queueIgnore = '';
+    audio.dataset.mediaSinglePlay = '';
+    audio.src = url.href;
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'chat-player-retry';
+    retry.textContent = 'Retry playback';
+    retry.hidden = true;
+    retry.addEventListener('click',() => requestAudioPlay(audio));
+    const error = document.createElement('p');
+    error.dataset.chatMediaStatus = '';
+    error.setAttribute('role','status');
+    error.hidden = true;
+    const historyError = document.createElement('p');
+    historyError.setAttribute('role','status');
+    historyError.hidden = true;
+    const controls = document.createElement('div');
+    controls.className = 'chat-connected-site-playback-status';
+    controls.append(error,retry,historyError);
+    card.append(title,caption,audio,controls);
+    const state = {
+      ...context,ticket,sequence:0,nextProgressAt:0,resumePosition:position,requested:false,observedPlaying:false,
+      historyStarted:false,historyBlocked:false,pending:null,inFlight:null,sending:false,retryTimer:0,retry,error,historyError
+    };
+    connectedSiteAudioStates.set(audio,state);
+    connectSiteAudioTracking(audio,state);
+  }
+
+  function requestAudioPlay(audio) {
+    const state = connectedSiteAudioStates.get(audio);
+    if (state) {
+      if (!state.current()) return;
+      state.requested = true;
+      if (audio.error || !state.retry.hidden) {
+        if (Number.isFinite(audio.currentTime) && audio.currentTime > 0) state.resumePosition = audio.currentTime;
+        showChatMediaError(audio,false);
+        audio.load();
+      }
+    }
+    void audio.play().catch(error => {
+      if (state?.current() && error.name !== 'AbortError') showChatMediaError(audio,true);
+    });
+  }
+
+  function clearConnectedSitePlayback(scope = thread, save = true) {
+    scope.querySelectorAll('[data-connected-site-audio-card]').forEach(card => {
+      card.querySelectorAll('audio[data-connected-site-playback]').forEach(audio => {
+        const state = connectedSiteAudioStates.get(audio);
+        if (state) {
+          window.clearTimeout(state.retryTimer);
+          // A final keepalive can advance a recorded session while the browser leaves Chat.
+          if (save && state.current() && state.historyStarted && !state.historyBlocked && !audio.ended
+            && (!audio.paused || state.pending?.event === 'pause')) {
+            const pause = connectedSiteEventSnapshot(audio,'pause');
+            if (pause) void postConnectedSitePlayback(state,{...pause,sequence:++state.sequence});
+          }
+        }
+        window.dispatchEvent(new CustomEvent('vp3:audio-player-removed',{detail:audio}));
+        audio.removeAttribute('src');
+        audio.load();
+      });
+      card.remove();
+    });
+  }
+
   function initiativeIdentityMatchesV1() {
     const current=window.STONEFELLOW_CHAT;
     return Boolean(initiativePage.binding) && current && Number(current.userId)===initiativePage.owner
@@ -1837,12 +2435,124 @@
       && Number.isSafeInteger(value.revision) && value.revision>0;
   }
 
+  function rememberParkedInitiativeReplyV1(cid,reply,text,automaticVoice=false) {
+    if(cid!==conversationId||cid<1||!validInitiativeReplyV1(reply)||!text||text.length>32000
+      ||!initiativeIdentityMatchesV1()||historyParticipant||window.VP3ParticipantContinuity?.selectedContext?.())return null;
+    const record={binding:initiativePage.binding,conversation_id:cid,reply,text};
+    const key=parkedReplyId(cid,reply.message_id);
+    if(automaticVoice){
+      const previous=parkedReplies.get(key);
+      const priorKey=previous?.text===text&&previous.reply.reply_ref===reply.reply_ref&&previous.reply.revision===reply.revision
+        ? previous.automatic_voice_request_id : null;
+      record.automatic_voice_request_id=priorKey||globalThis.crypto?.randomUUID?.()
+        ||('voice:'+Date.now().toString(36)+Math.random().toString(36).slice(2));
+    }
+    parkedReplies.set(key,record);
+    saveParkedReplies();
+    return record;
+  }
+
+  function showParkedReplyAfterSend(request, stale=false) {
+    const record=request.parkedReply;
+    if(!record||!privateParkedReplies(conversationId).includes(record))return false;
+    if(stale){record.stale=true;saveParkedReplies();}
+    request.parkedReplyInFlight=false;
+    if(initiativeReplyTarget?.message_id===record.reply.message_id)clearInitiativeReplyV1();
+    if(lastParticipantQuestion?.message===request.message)lastParticipantQuestion=null;
+    request.visualTurn?.elements.forEach(element=>{if(!element.dataset.chatMessageId)element.remove();});
+    keepDraft();
+    renderParkedInitiativeRepliesV1();
+    return true;
+  }
+
+  function parkComposerReplyV1(target,automaticVoice=false) {
+    if(!target||target!==initiativeReplyTarget||busy||target.conversation_id!==conversationId)return false;
+    const text=input.value.trim();
+    const reply={message_id:target.message_id,reply_ref:target.reply_ref,revision:target.revision};
+    const record=rememberParkedInitiativeReplyV1(conversationId,reply,text,automaticVoice);
+    if(!record)return false;
+    input.value='';composerDraftOrigin=null;autoSize();
+    return showParkedReplyAfterSend({message:text,parkedReply:record},target.stale===true);
+  }
+
+  function parkCurrentProactiveReplyV1() {
+    const target=initiativeReplyTarget,controls=window.VP3ConversationControls;
+    return Boolean(target&&controls?.isSubmittingProactiveReply?.()&&controls.ownsProactiveReply?.(target.message_id)
+      &&parkComposerReplyV1(target,true));
+  }
+
+  function removeParkedInitiativeReplyV1(record) {
+    const key=parkedReplyId(record.conversation_id,record.reply.message_id);
+    if(parkedReplies.get(key)!==record)return;
+    if(initiativeReplyTarget?.message_id===record.reply.message_id&&initiativeReplyTarget.retry_message===record.text
+      &&input.value.trim()===record.text){
+      input.value='';composerDraftOrigin=null;autoSize();clearInitiativeReplyV1(true);
+    }
+    parkedReplies.delete(key);
+    saveParkedReplies();
+    renderParkedInitiativeRepliesV1();
+  }
+
+  function renderParkedInitiativeRepliesV1() {
+    const records=privateParkedReplies(conversationId);
+    const live=new Set();
+    for(const record of records){
+      if(pendingSend?.parkedReply===record&&pendingSend.parkedReplyInFlight)continue;
+      const id=record.reply.message_id;
+      const post=initiativePosts.get(id);
+      const samePost=Boolean(post?.element.isConnected&&post.conversation_id===conversationId&&post.reply_ref===record.reply.reply_ref);
+      const canRetry=samePost&&!post.unavailable&&!post.coordinationRedacted&&!record.stale;
+      const host=samePost?(post.element.querySelector('.message-body')||post.element):thread;
+      const previous=thread.querySelector('[data-parked-initiative-reply="'+id+'"]');
+      const view=previous?._parkedReply===record&&previous.parentNode===host&&previous._canRetry===canRetry
+        ?previous:document.createElement('section');
+      if(view!==previous){
+        previous?.remove();
+        view.className='chat-initiative-parked-reply'+(samePost?'':' is-detached');
+        view.dataset.parkedInitiativeReply=String(id);
+        view.setAttribute('aria-label','Saved Agent reply');
+        view._parkedReply=record;view._canRetry=canRetry;
+        const heading=document.createElement('strong'),text=document.createElement('p'),actions=document.createElement('div');
+        heading.textContent=canRetry?'Reply saved for retry':'Reply saved. Retry is unavailable.';
+        text.textContent=record.text;
+        actions.className='chat-agent-actions';
+        const current=()=>view.isConnected&&privateParkedReplies(conversationId).includes(record);
+        const action=(label,handler)=>{
+          const button=document.createElement('button');
+          button.type='button';button.className='chat-agent-action';button.textContent=label;
+          button.addEventListener('click',event=>{if(event.isTrusted&&current())handler(button);});
+          actions.append(button);
+        };
+        if(canRetry)action('Retry reply',()=>{
+          if(busy||initialRestorePending||restoringConversation||!contextReady
+            ||initiativePosts.get(id)!==post||post.unavailable||record.stale)return;
+          if(composerDraftValue().trim()||input.value.trim()||initiativeReplyTarget){
+            recoveryStatus('Finish the current draft before retrying this reply.');return;
+          }
+          input.value=record.text;composerDraftOrigin={kind:'typed_draft',text:record.text};autoSize();
+          selectInitiativeRetryV1(post,record.reply);
+          input.focus();
+        });
+        action('Copy reply',button=>{
+          if(!navigator.clipboard?.writeText){recoveryStatus('Select the saved reply text to copy it.');return;}
+          navigator.clipboard.writeText(record.text).then(()=>{if(current())button.textContent='Copied';})
+            .catch(()=>recoveryStatus('Select the saved reply text to copy it.'));
+        });
+        action('Discard reply',()=>removeParkedInitiativeReplyV1(record));
+        view.append(heading,text,actions);
+        host.append(view);
+      }
+      live.add(view);
+    }
+    thread.querySelectorAll('[data-parked-initiative-reply]').forEach(view=>{if(!live.has(view))view.remove();});
+  }
+
   function clearInitiativeReplyV1(persist=false) {
     initiativeReplyTarget=null;
     window.clearInterval(initiativeReplyFenceTimer);initiativeReplyFenceTimer=0;
     document.getElementById('chatInitiativeReplyCue')?.remove();
     thread.querySelectorAll('[data-initiative-reply-selected]').forEach(node=>node.removeAttribute('data-initiative-reply-selected'));
-    if(persist)keepDraft(input.value);
+    if(persist)keepDraft();
   }
 
   function renderInitiativeReplyV1() {
@@ -1855,8 +2565,25 @@
     detail.textContent=target.unavailable?'Its current status is unavailable. Your reply is kept.':target.stale?'Choose Reply on the current update, or remove this reply context.':target.excerpt;
     copy.append(title,detail);
     const cancel=document.createElement('button');cancel.type='button';cancel.textContent='×';cancel.setAttribute('aria-label','Remove Agent reply context');
-    cancel.addEventListener('click',()=>{clearInitiativeReplyV1(true);input.focus();});
-    cue.append(copy,cancel);form.before(cue);
+    cancel.addEventListener('click',()=>{
+      const parked=parkedReplies.get(parkedReplyId(conversationId,target.message_id));
+      if(parked&&parked.text===target.retry_message&&input.value.trim()===parked.text){
+        input.value='';composerDraftOrigin=null;autoSize();
+      }
+      clearInitiativeReplyV1(true);input.focus();
+    });
+    cue.append(copy);
+    if(input.value.trim()&&(target.retry_message===input.value.trim()||target.stale)){
+      const save=document.createElement('button');
+      save.type='button';save.className='chat-initiative-save-reply';save.textContent='Save reply for later';
+      save.addEventListener('click',event=>{
+        if(event.isTrusted&&parkComposerReplyV1(target)){
+          showChatTurnNotice('Your reply is saved with the original Agent update.');
+        }
+      });
+      cue.append(save);
+    }
+    cue.append(cancel);form.before(cue);
     if(post?.element?.isConnected)post.element.dataset.initiativeReplySelected='true';
     if(!initiativeReplyFenceTimer)initiativeReplyFenceTimer=window.setInterval(()=>{
       if(initiativeReplyTarget&&!initiativeIdentityMatchesV1()){
@@ -1872,8 +2599,195 @@
     clearInitiativeReplyV1();
     initiativeReplyTarget={message_id:post.message_id,reply_ref:post.reply_ref,revision:post.revision,
       conversation_id:conversationId,excerpt:String(post.element.querySelector('.message-text')?.textContent || 'Saved Agent update').trim().slice(0,150),stale};
-    renderInitiativeReplyV1();keepDraft(input.value);if(focus)input.focus();
+    renderInitiativeReplyV1();keepDraft();if(focus)input.focus();
   }
+
+  function selectInitiativeRetryV1(post,reply) {
+    clearInitiativeReplyV1();
+    initiativeReplyTarget={...reply,conversation_id:conversationId,
+      excerpt:String(post.element.querySelector('.message-text')?.textContent || '').trim().slice(0,150),
+      retry_message:input.value.trim()};
+    renderInitiativeReplyV1();keepDraft();
+  }
+
+  function announcementTrace(state,code,messageId) {
+    window.VP3VoiceDiagnostics?.record('announcement',state,code,messageId);
+  }
+
+  function notifyProactiveVoiceQueue() {
+    window.dispatchEvent(new Event('vp3:proactive-voice-queue-changed'));
+  }
+
+  function proactiveVoiceWaitReason() {
+    if(document.hidden || !document.hasFocus() || thread.dataset.view!=='chat')return 'chat_not_focused';
+    if (busy) return 'chat_busy';
+    if (initiativeReplyTarget) return 'reply_selected';
+    if (input.value.trim()) return 'draft_in_composer';
+    return window.VP3InitiativeVoice?.liveBlockReason?.() || null;
+  }
+
+  function proactiveVoiceStatus() {
+    const now=Date.now(), active=proactiveVoiceActive;
+    const wait=proactiveVoiceWaitReason();
+    return {
+      activeMessageId:active && !active.discarded && active.current() ? active.messageId : null,
+      browser:{
+        focused:!document.hidden&&document.hasFocus()&&thread.dataset.view==='chat',
+        draft:input.value.trim() ? (composerDraftOrigin?.kind==='restored_draft'&&composerDraftOrigin.text===input.value?'restored':'present') : 'empty',
+        manualListening:Boolean(proactiveVoiceManuallyListening()),
+        waitReason:wait,
+      },
+      pending:proactiveVoicePosts.filter(post=>now-post.receivedAt<=PROACTIVE_VOICE_MAX_AGE_MS&&post.current()).map((post,index)=>{
+        const reason=wait || (active || index>0 ? 'another_announcement' : post.retryReason || null);
+        return {messageId:post.messageId,state:reason?'waiting':'queued',reason,attempts:post.attempts,
+          expiresAt:post.receivedAt+PROACTIVE_VOICE_MAX_AGE_MS};
+      }),
+    };
+  }
+
+  function clearProactiveVoiceQueue(code) {
+    if (code && proactiveVoicePosts.length) announcementTrace('cancelled',code,proactiveVoicePosts.at(-1).messageId);
+    proactiveVoicePosts.length = 0;
+    if (proactiveVoiceActive) proactiveVoiceActive.discarded = true;
+    clearTimeout(proactiveVoiceTimer);
+    proactiveVoiceTimer = 0;
+    notifyProactiveVoiceQueue();
+  }
+
+  function scheduleProactiveVoice(delay = 0) {
+    if (!proactiveVoiceTimer && !proactiveVoiceActive && proactiveVoicePosts.length) {
+      proactiveVoiceTimer = setTimeout(drainProactiveVoice,delay);
+    }
+  }
+
+  function proactiveVoiceManuallyListening() {
+    const controls = window.VP3ConversationControls;
+    return controls?.isEnabled?.() && !controls.isProactivePostActive?.() && !controls.isReplyCapturePending?.();
+  }
+
+  async function drainProactiveVoice() {
+    proactiveVoiceTimer = 0;
+    if (proactiveVoiceActive) return;
+    const voice = window.VP3InitiativeVoice;
+    if (!voice?.acceptsLive?.()) { clearProactiveVoiceQueue(voice?.liveBlockReason?.() || 'voice_unavailable'); return; }
+    while (proactiveVoicePosts.length) {
+      const post = proactiveVoicePosts[0];
+      const expired = Date.now() - post.receivedAt > PROACTIVE_VOICE_MAX_AGE_MS;
+      if (!expired && post.current()) break;
+      announcementTrace('cancelled',expired ? 'post_expired' : 'post_changed',post.messageId);
+      proactiveVoicePosts.shift();
+      notifyProactiveVoiceQueue();
+    }
+    const next = proactiveVoicePosts[0];
+    if (!next) return;
+    if (document.hidden || !document.hasFocus() || thread.dataset.view !== 'chat') {
+      announcementTrace('waiting','chat_not_focused',next.messageId);
+      return;
+    }
+    if (proactiveVoiceManuallyListening()) {
+      clearProactiveVoiceQueue('manual_listening');
+      return;
+    }
+    const reason = proactiveVoiceWaitReason();
+    if (reason) {
+      const state = ['no_speech_output','voice_unavailable'].includes(reason) ? 'blocked' : 'waiting';
+      announcementTrace(state,reason,next.messageId);
+      scheduleProactiveVoice(500);
+      return;
+    }
+    proactiveVoicePosts.shift();
+    proactiveVoiceActive = next;
+    notifyProactiveVoiceQueue();
+    let retryDelay = 0;
+    try {
+      const outcome = await voice.announceLive(next);
+      if (outcome?.retry && !next.discarded && next.current() && Date.now() - next.receivedAt <= PROACTIVE_VOICE_MAX_AGE_MS) {
+        next.attempts += 1;
+        next.retryReason = outcome.reason;
+        retryDelay = Math.min(6000,1000 * 2 ** Math.min(next.attempts - 1,3));
+        proactiveVoicePosts.unshift(next);
+        if (proactiveVoicePosts.length > PROACTIVE_VOICE_QUEUE_LIMIT) announcementTrace('cancelled','queue_full',proactiveVoicePosts.pop().messageId);
+      }
+    } catch (_) {
+      // A canonical message remains available if the browser cannot play it.
+    } finally {
+      if (proactiveVoiceActive === next) proactiveVoiceActive = null;
+      notifyProactiveVoiceQueue();
+      scheduleProactiveVoice(retryDelay);
+    }
+  }
+
+  function queueProactiveVoice(messageId,context,element,revision) {
+    const notice = ['agent_initiative_morning_brief','agent_initiative_reminder'].includes(context.source);
+    if ((!notice && !['agent_initiative','agent_coding_canvas'].includes(context.source)) || !initiativeIdentityMatchesV1()) return;
+    const voice = window.VP3InitiativeVoice;
+    const post = context.source === 'agent_initiative' ? initiativePosts.get(messageId) : null;
+    const marker = context.source === 'agent_initiative' ? context.initiative_work : null;
+    const card = context.source === 'agent_coding_canvas' ? context.coding_canvas_card_v1 : null;
+    const initiativePost = marker?.owner_user_id === initiativePage.owner && marker?.agent_id === initiativePage.agent
+      && marker?.conversation_id === conversationId;
+    const canvasPost = card?.conversation_id === conversationId && card?.agent_id === initiativePage.agent
+      && element.querySelector('.vp3-chat-app-result');
+    const runId = notice ? messageId : initiativePost ? marker.run_id : canvasPost ? card.run_id : null;
+    if (!Number.isSafeInteger(runId) || runId<1) {
+      announcementTrace('blocked','post_unverified',messageId);return;
+    }
+    if (!voice?.acceptsLive?.()) {
+      announcementTrace('blocked',voice?.liveBlockReason?.() || 'voice_unavailable',messageId);return;
+    }
+    if (proactiveVoiceManuallyListening()) {
+      announcementTrace('blocked','manual_listening',messageId);return;
+    }
+    const cid = conversationId, postRevision = post?.revision;
+    const current = () => initiativeIdentityMatchesV1() && contextReady && !initialRestorePending && !restoringConversation
+      && revision === chatRevision && cid === conversationId && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()
+      && thread.contains(element) && (!post || (initiativePosts.get(messageId) === post && !post.unavailable
+        && !post.coordinationRedacted && post.revision === postRevision));
+    const ready = () => current() && !document.hidden && document.hasFocus() && thread.dataset.view === 'chat';
+    let automaticTarget = null;
+    const selectReply = reply => {
+      if (!post || !ready() || initiativeReplyTarget || !validInitiativeReplyV1(reply) || reply.message_id !== messageId
+        || reply.reply_ref !== post.reply_ref || reply.revision !== postRevision || !initiativeReplyStates.has(post.state)) return false;
+      chooseInitiativeReplyV1(post,false,false);
+      automaticTarget = initiativeReplyTarget;
+      return automaticTarget?.message_id === messageId;
+    };
+    const clearReply = () => {
+      if (automaticTarget && initiativeReplyTarget === automaticTarget && !pendingSend && !input.value.trim()) clearInitiativeReplyV1(true);
+    };
+    if (!current()) {
+      announcementTrace('blocked',historyParticipant || window.VP3ParticipantContinuity?.selectedContext?.()
+        ? 'participant_chat' : 'post_changed',messageId);
+      return;
+    }
+    const requestId=globalThis.crypto?.randomUUID?.();
+    if (!requestId) { announcementTrace('blocked','voice_unavailable',messageId); return; }
+    if (proactiveVoicePosts.length === PROACTIVE_VOICE_QUEUE_LIMIT) announcementTrace('cancelled','queue_full',proactiveVoicePosts.shift().messageId);
+    proactiveVoicePosts.push({runId,messageId,current,ready,selectReply:post ? selectReply : null,clearReply,notice,
+      requestId,attempts:0,receivedAt:Date.now()});
+    notifyProactiveVoiceQueue();
+    announcementTrace('queued','post_queued',messageId);
+    scheduleProactiveVoice();
+  }
+
+  window.addEventListener('stonefellow:chat-context-changing',() => clearProactiveVoiceQueue());
+  window.addEventListener('vp3:participant-selection-changed',() => clearProactiveVoiceQueue());
+  window.addEventListener('vp3:participant-task-context',() => clearProactiveVoiceQueue());
+  window.addEventListener('focus',() => { notifyProactiveVoiceQueue(); scheduleProactiveVoice(); });
+  window.addEventListener('blur',notifyProactiveVoiceQueue);
+  input.addEventListener('input',notifyProactiveVoiceQueue);
+  window.addEventListener('pagehide',() => clearProactiveVoiceQueue());
+  window.addEventListener('stonefellow:agent-stop',() => clearProactiveVoiceQueue('playback_cancelled'));
+  window.addEventListener('vp3:agent-auto-greet',event => {
+    if (event.detail?.enabled === false) clearProactiveVoiceQueue('auto_greet_off');
+  });
+  window.addEventListener('stonefellow:agent-voice',event => {
+    if (event.detail?.enabled === false) clearProactiveVoiceQueue('agent_voice_off');
+  });
+  document.addEventListener('visibilitychange',() => { notifyProactiveVoiceQueue(); if (!document.hidden) scheduleProactiveVoice(); });
+  window.addEventListener('vp3:chat-canvas-view-changed',() => {
+    if (thread.dataset.view === 'chat') scheduleProactiveVoice();
+  });
 
   function restoreInitiativeReplyV1() {
     const saved=initiativeReplyCandidate;initiativeReplyCandidate=null;
@@ -1884,13 +2798,10 @@
       if(validInitiativeReplyV1(saved.reply)&&initiativeIdentityMatchesV1()){
         initiativeReplyTarget={...saved.reply,conversation_id:conversationId,excerpt:'',stale:true};renderInitiativeReplyV1();
       }
-      keepDraft(input.value);
+      keepDraft();
       recoveryStatus('Your draft is kept. Its earlier Agent reply context is no longer available. Choose an update before replying.');return;
     }
-    if(saved.retry&&!saved.stale&&input.value.trim()){
-      initiativeReplyTarget={...saved.reply,conversation_id:conversationId,excerpt:String(post.element.querySelector('.message-text')?.textContent || '').trim().slice(0,150),retry_message:input.value.trim()};
-      renderInitiativeReplyV1();keepDraft(input.value);return;
-    }
+    if(saved.retry&&!saved.stale&&input.value.trim()){selectInitiativeRetryV1(post,saved.reply);return;}
     chooseInitiativeReplyV1(post,saved.stale||post.revision!==saved.reply.revision||!initiativeReplyStates.has(post.state),false);
   }
 
@@ -1903,29 +2814,58 @@
     const post=initiativePosts.get(target.message_id);
     const exactRetry=target.retry_message&&target.retry_message===String(message || '').trim();
     if(target.unavailable||post?.unavailable){
-      renderInitiativeReplyV1();keepDraft(input.value);
+      renderInitiativeReplyV1();keepDraft();
       recoveryStatus('This Agent update could not be verified. Your reply is kept. Try again when its status is available.');return false;
     }
     if(target.stale||!post||post.conversation_id!==conversationId||post.reply_ref!==target.reply_ref
       ||(!exactRetry&&(post.revision!==target.revision||!initiativeReplyStates.has(post.state)))){
-      target.stale=true;renderInitiativeReplyV1();keepDraft(input.value);
+      target.stale=true;renderInitiativeReplyV1();keepDraft();
       recoveryStatus('That Agent update changed. Choose its current Reply action or remove the reply context before sending.');return false;
     }
     return {message_id:target.message_id,reply_ref:target.reply_ref,revision:target.revision};
   }
 
   function renderInitiativePostV1(post) {
-    post.replyButton?.remove();post.replyButton=null;
     const labels={discussed:'Discussed',queued:'Private work queued',deferred:'Deferred',declined:'Declined',
       owner_resolved:'Marked resolved by you',completed:'Private work completed',stale:'Follow-through needs review'};
-    post.status.textContent=post.unavailable?'Status could not be verified.':post.recoverable&&['queued','stale'].includes(post.state)
-      ?post.child_execution_state?'Private work interrupted. Reply to review or retry.':'Follow-through needs review':labels[post.state] || '';
-    if(!post.unavailable&&initiativeReplyStates.has(post.state)){
+    if(post.mediaOffer)Object.assign(labels,{declined:'Skipped',owner_resolved:post.namedMediaOffer?'Play requested':'Response recorded',
+      completed:'Play requested'});
+    if(post.stonewardOffer)Object.assign(labels,{owner_resolved:'Ready to play',completed:'Ready to play'});
+    if(post.stonewardPlayed)Object.assign(labels,{owner_resolved:'Played',completed:'Played'});
+    const status=post.unavailable?'Status could not be verified.':post.recoverable&&['queued','stale'].includes(post.state)
+      ?post.child_execution_state?'Private work interrupted. Reply to review or retry.':'Follow-through needs review'
+      :post.state==='open'&&post.coordinationQuestion?'Awaiting your reply':labels[post.state] || '';
+    if(post.status.textContent!==status)post.status.textContent=status;
+    if(post.unavailable||!initiativeReplyStates.has(post.state)){
+      post.replyButton?.remove();post.replyButton=null;
+    }else if(!post.replyButton){
       const button=document.createElement('button');button.type='button';button.className='chat-agent-action';
       button.dataset.initiativeReply=String(post.message_id);button.textContent='Reply';
       button.addEventListener('click',()=>chooseInitiativeReplyV1(post));
       post.actions.prepend(button);post.replyButton=button;
     }
+    if(parkedReplies.size&&!restoringConversation)renderParkedInitiativeRepliesV1();
+  }
+
+  function hideCoordinationPostV1(post) {
+    const redact = element => {
+      const body=element.querySelector('.message-body');
+      const text=body?.querySelector('.message-text');
+      if(!text)return;
+      text.textContent='The information behind this Top of Mind finding is no longer available.';
+      clearConnectedSitePlayback(body,false);
+      for(const child of [...body.children]){
+        if(!child.matches('.message-role, .message-text'))child.remove();
+      }
+    };
+    redact(post.element);
+    for(const reply of thread.querySelectorAll('[data-coordination-reply-origin="'+post.message_id+'"]'))redact(reply);
+    post.coordinationRedacted=true;
+  }
+
+  function bindCoordinationReplyV1(element, context) {
+    const root=context.initiative_followthrough?.message_id;
+    if(context.coordination_reply && Number.isSafeInteger(root) && root>0)element.dataset.coordinationReplyOrigin=String(root);
   }
 
   function applyInitiativeFollowthroughV1(value,verifiedProjection=false) {
@@ -1953,14 +2893,15 @@
     const ownPending=initiativeReplyTarget&&pendingSend?.initiativeReply?.message_id===post.message_id
       &&pendingSend.initiativeReply.reply_ref===initiativeReplyTarget.reply_ref;
     const exactRetry=initiativeReplyTarget?.retry_message&&initiativeReplyTarget.retry_message===input.value.trim();
-    if(initiativeReplyTarget?.message_id===post.message_id&&!ownPending&&!exactRetry
+    if(initiativeReplyTarget?.message_id===post.message_id&&!initiativeReplyTarget.stale&&!ownPending&&!exactRetry
       &&(initiativeReplyTarget.revision!==post.revision||!initiativeReplyStates.has(post.state))){
-      initiativeReplyTarget.stale=true;renderInitiativeReplyV1();keepDraft(input.value);
+      initiativeReplyTarget.stale=true;renderInitiativeReplyV1();keepDraft();
     }
     return true;
   }
 
-  function bindInitiativeWorkV1(element, marker, source='') {
+  function bindInitiativeWorkV1(element, context) {
+    const {initiative_work:marker,source,coordination_report:coordination,coordination_question:coordinationQuestion}=context;
     if (!element || !marker
         || !Number.isSafeInteger(marker.run_id) || marker.run_id < 1
         || marker.owner_user_id !== Number(cfg.userId) || marker.agent_id !== Number(cfg.agentId || 0)
@@ -1999,11 +2940,28 @@
       actions.appendChild(button);
     }
     const followthrough=marker.followthrough,messageId=Number(element.dataset.chatMessageId);
+    if (coordination && context.gmail_content_post_v1 && Number.isSafeInteger(messageId) && messageId > 0) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'chat-agent-action';
+      button.textContent = 'Open source email';
+      button.addEventListener('click',event => {
+        if (!event.isTrusted || !current()) return;
+        const opened = window.VP3GmailInboxInitialV1?.openReportedItem(messageId,cid);
+        button.textContent = opened ? 'Open source email' : 'Email unavailable · retry';
+      });
+      actions.append(button);
+    }
     if(source==='agent_initiative'&&initiativeIdentityMatchesV1()&&Number.isSafeInteger(messageId)&&messageId>0
       &&validInitiativeReplyV1({...followthrough,message_id:messageId})&&initiativeStates.has(followthrough.state)){
       const status=document.createElement('small');status.className='chat-initiative-followthrough-state';status.dataset.initiativeFollowthroughState=String(messageId);actions.append(status);
+      const primary=context.coordination_primary;
+      const stonewardOffer=coordinationQuestion&&/^media:stoneward(?:[_-]resume)?:/.test(primary||'');
+      const namedMediaOffer=stonewardOffer||(coordinationQuestion&&/^media:(resume|track|youtube):/.test(primary||''));
+      const mediaOffer=namedMediaOffer||(coordinationQuestion&&['casual:media','casual:music','casual:youtube','casual:youtube_history'].includes(primary));
       const post={message_id:messageId,owner_user_id:owner,agent_id:agent,conversation_id:cid,run_id:marker.run_id,
-        reply_ref:followthrough.reply_ref,revision:followthrough.revision,state:followthrough.state,element,actions,status};
+        reply_ref:followthrough.reply_ref,revision:followthrough.revision,state:followthrough.state,element,actions,status,coordination,coordinationQuestion,
+        mediaOffer,namedMediaOffer,stonewardOffer,stonewardPlayed:stonewardOffer&&context.stoneward_played===true};
       initiativePosts.set(messageId,post);renderInitiativePostV1(post);
       const outcome=initiativeOutcomes.get(messageId);if(outcome)applyInitiativeFollowthroughV1(outcome);
     }
@@ -2269,7 +3227,7 @@
       const id=Number(data.conversation_id);
       if(revision!==chatRevision || conversationId!==0 || busy || thread.dataset.view!=='chat')return 0;
       if(!Number.isSafeInteger(id)||id<1)throw new Error('Chat could not be initialized.');
-      const draft=input.value;
+      const draft=composerDraftValue();
       conversationId=id;keepDraft(draft,id);keepDraft('',0);rememberConversation();
       window.dispatchEvent(new Event('vp3:chat-context-ready'));
       void refreshHistory().catch(()=>{});
@@ -2362,6 +3320,7 @@
         '.chat-canvas-track-grid'
       );
 
+    const connectedQueue = group?.hasAttribute('data-connected-site-queue');
     return [
       ...(
         group || thread
@@ -2371,7 +3330,8 @@
     ].filter(
       candidate =>
         !candidate.closest('[hidden]') &&
-        (candidate === audio || !candidate.hasAttribute('data-listening-resume-audio'))
+        (candidate === audio || (!candidate.hasAttribute('data-listening-resume-audio')
+          && (connectedQueue || !candidate.hasAttribute('data-connected-site-playback'))))
     );
   }
 
@@ -2463,8 +3423,8 @@
           ''
         );
 
-      nowPlayingCover.src =
-        cover;
+      if (cover) nowPlayingCover.src = cover;
+      else nowPlayingCover.removeAttribute('src');
       nowPlayingCover.hidden =
         cover === '';
     }
@@ -2705,9 +3665,7 @@
       return;
     }
 
-    target.play().catch(
-      () => {}
-    );
+    requestAudioPlay(target);
   }
 
   function decorateAudioPlayer(audio) {
@@ -2818,9 +3776,7 @@
         'click',
         () => {
           if (audio.paused) {
-            audio.play().catch(
-              () => {}
-            );
+            requestAudioPlay(audio);
           } else {
             audio.pause();
           }
@@ -2927,12 +3883,19 @@
 
   async function audioStartSession(audio) {
     const state=audioState.get(audio);
-    if(!state||state.sessionToken)return;
+    if(!state||state.sessionToken||audio.hasAttribute('data-connected-site-playback'))return;
     if(state.startPromise){await state.startPromise;if(state.sessionToken||audio.paused)return;return audioStartSession(audio);}
     const generation=state.sessionGeneration;
     const request=(async()=>{
-      const data=await playbackApi({action:'start',track_id:state.trackId,position:Number(audio.currentTime||0),duration:Number(audio.duration||0),source:audio.closest('[data-chat-view="player"]')?'agent_player':'agent_chat'});
+      const action=mediaOfferAudioActions.get(audio);
+      const isOffer=action && action.track_id===state.trackId && action.expires_at*1000>Date.now()
+        && action.conversation_id===conversationId && action.owner_user_id===initiativePage.owner && action.agent_id===initiativePage.agent
+        && initiativeIdentityMatchesV1() && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.();
+      const data=await playbackApi({action:'start',track_id:state.trackId,position:Number(audio.currentTime||0),
+        duration:Number(audio.duration||0),source:audio.closest('[data-chat-view="player"]')?'agent_player':'agent_chat',
+        ...(isOffer?{media_offer_playback:action}:{})});
       if(!data?.ok||!data.session_token)return;
+      mediaOfferAudioActions.delete(audio);
       if(generation!==state.sessionGeneration){
         await playbackApi({action:'stop',track_id:state.trackId,session_token:data.session_token,position:Number(audio.currentTime||0),duration:Number(audio.duration||0),delta:0},true);
         return;
@@ -3042,7 +4005,7 @@
 
       audio.volume = playerVolume;
       audio.muted = playerVolume <= .001;
-      if (!audio.hasAttribute('data-listening-resume-audio')) decorateAudioPlayer(audio);
+      if (!audio.hasAttribute('data-listening-resume-audio') && !audio.hasAttribute('data-media-queue-audio')) decorateAudioPlayer(audio);
 
       audio.addEventListener(
         'loadedmetadata',
@@ -3082,6 +4045,8 @@
 
       audio.addEventListener('playing',()=>{
         if (!audio.isConnected || audio.paused) return;
+        const connected = connectedSiteAudioStates.get(audio);
+        if (connected && !connected.current()) { audio.pause(); return; }
         state.lastTick=performance.now();state.wasPlaying=true;void audioStartSession(audio);
       });
       ['waiting','stalled'].forEach(event=>audio.addEventListener(event,()=>{
@@ -3093,6 +4058,8 @@
         'play',
         async () => {
           if (!audio.isConnected || audio.paused) return;
+          const connected = connectedSiteAudioStates.get(audio);
+          if (connected && !connected.current()) { audio.pause(); return; }
           const playGeneration=state.sessionGeneration;
           pauseOtherAudio(
             audio
@@ -3109,6 +4076,8 @@
           updateNowPlaying(
             audio
           );
+
+          if (audio.hasAttribute('data-connected-site-playback')) return;
 
           if (state.sessionToken) {
             await audioTrackEvent(
@@ -3236,6 +4205,7 @@
             audio
           );
 
+          if(audio.hasAttribute('data-media-single-play')||audio.hasAttribute('data-media-queue-audio'))return;
           const {
             queue,
             index
@@ -3248,9 +4218,7 @@
             ];
 
           if (next) {
-            next.play().catch(
-              () => {}
-            );
+            requestAudioPlay(next);
           }
         }
       );
@@ -3292,9 +4260,7 @@
       }
 
       if (activeAudio.paused) {
-        activeAudio.play().catch(
-          () => {}
-        );
+        requestAudioPlay(activeAudio);
       } else {
         activeAudio.pause();
       }
@@ -3711,9 +4677,15 @@
   }
   input.addEventListener('input', autoSize);
 
-  async function refreshHistory(signal) {
+  async function refreshHistory() {
+    if (navigator.onLine === false) return;
+    historyListRequest?.abort();
+    const controller = new AbortController();
+    historyListRequest = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const data = await api({action:'list'}, signal);
+      const data = await readChat({action:'list'}, controller.signal);
+      if (controller.signal.aborted || historyListRequest !== controller) return;
       history.innerHTML = '';
 
       data.conversations.forEach(c => {
@@ -3741,10 +4713,15 @@
         row.append(button, deleteButton);
         history.appendChild(row);
       });
-    } catch (error) {}
+    } catch (_) {
+      // The next successful Chat operation can refresh the sidebar again.
+    } finally {
+      window.clearTimeout(timeout);
+      if (historyListRequest === controller) historyListRequest = null;
+    }
   }
 
-  async function loadConversation(id, sourceMessageId = 0) {
+  async function loadConversation(id, sourceMessageId = 0, {initialRestore = false} = {}) {
     const historyAtRequest = historyAuthority, ownerAtRequest = Number(cfg.userId), agentAtRequest = Number(cfg.agentId || 0);
     const historyIsCurrent = () => historyAtRequest === historyAuthority && historyParticipant <= 0
       && Number(window.STONEFELLOW_CHAT?.userId) === ownerAtRequest
@@ -3759,7 +4736,14 @@
         if (Number.isSafeInteger(sourceCandidate)) sourceMessageId = sourceCandidate;
       }
     }
-    leaveChat(); const revision = chatRevision;
+    let draftSourceMessageId = 0;
+    if (!sourceMessageId && historyIsCurrent() && initiativeIdentityMatchesV1()) {
+      const draft = recoveryDrafts()[Number(id)];
+      if (draft?.initiative_binding === initiativePage.binding && validInitiativeReplyV1(draft.initiative_reply)) {
+        draftSourceMessageId = draft.initiative_reply.message_id;
+      }
+    }
+    leaveChat({initialRestore}); const revision = chatRevision;
     restoringConversation++;
     const controller = new AbortController();
     let restoreTimer = 0;
@@ -3770,11 +4754,32 @@
         controller.abort();
       }, 10000);
     });
-    const data = await Promise.race([api({
+    const load = messageId => api({
       action:'load',
       conversation_id:Number(id),
-      ...(sourceMessageId ? {source_message_id:sourceMessageId} : {})
-    }, controller.signal), deadline]);
+      ...(messageId ? {source_message_id:messageId} : {})
+    }, controller.signal);
+    const loading = load(sourceMessageId || draftSourceMessageId).catch(error => {
+      if (draftSourceMessageId && error.message === 'This saved source is unavailable.'
+          && revision === chatRevision && historyIsCurrent() && !controller.signal.aborted) {
+        return load(0);
+      }
+      throw error;
+    });
+    const withParkedSources=loading.then(async data=>{
+      if(revision!==chatRevision||!historyIsCurrent())return data;
+      const loadedIds=new Set(data.messages.map(message=>Number(message.id)));
+      const missing=privateParkedReplies(Number(id)).map(record=>record.reply.message_id)
+        .filter(messageId=>!loadedIds.has(messageId)).slice(0,40);
+      if(!missing.length)return data;
+      try {
+        const saved=await api({action:'messages_after',conversation_id:Number(id),after_id:Number.MAX_SAFE_INTEGER,
+          pending_message_ids:missing,agent_context:{user_agent_id:agentAtRequest||0}},controller.signal);
+        const sources=Array.isArray(saved.messages)?saved.messages.filter(row=>row.role==='assistant'&&missing.includes(Number(row.id))):[];
+        return {...data,messages:[...sources,...data.messages]};
+      } catch (_) { return data; }
+    });
+    const data = await Promise.race([withParkedSources, deadline]);
 
     if(revision!==chatRevision || !historyIsCurrent())return false;
     conversationId = Number(id); contextReady=true; rememberConversation(); restoreDraft();
@@ -3820,15 +4825,19 @@
       );
       if(message.role==='assistant'){
         bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
-        if(context.gmail_inbox_review_v1)renderedMessage._vp3GmailInboxReviewV1=context.gmail_inbox_review_v1;
+        bindCodingCanvasCardV1(renderedMessage,context.coding_canvas_card_v1);
+        bindGmailReviewProjectionV1(renderedMessage,context);
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
+      bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
       if(message.role==='assistant')bindGmailResultTime(renderedMessage,context,message.created_at);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
-      if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
+      if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
+      if(message.role==='assistant')bindCoordinationReplyV1(renderedMessage,context);
       if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
       if(message.role==='assistant')bindMeetingActionV1(renderedMessage,context.meeting_action);
       if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
@@ -3845,23 +4854,126 @@
     closeNav();
     if (sourceMessageId) thread.querySelector('[data-chat-message-id="'+sourceMessageId+'"]')?.scrollIntoView({block:'center'});
     return true;
-    } finally { window.clearTimeout(restoreTimer); restoringConversation--; if(revision===chatRevision&&!restoringConversation)restoreInitiativeReplyV1(); window.dispatchEvent(new Event('vp3:chat-context-ready')); }
+    } finally {
+      window.clearTimeout(restoreTimer);restoringConversation--;
+      if(revision===chatRevision&&!restoringConversation){restoreInitiativeReplyV1();renderParkedInitiativeRepliesV1();}
+      window.dispatchEvent(new Event('vp3:chat-context-ready'));
+    }
   }
 
-  async function syncConversationMessagesV101(id, signal) {
+  function markChatCanvasSync(targetId,revision,state,reason) {
+    if(targetId!==conversationId||revision!==chatRevision||!initiativeIdentityMatchesV1())return;
+    canvasMessageStatus={revision,conversationId:targetId,state,at:new Date().toISOString(),...(reason?{reason}:{})};
+    window.dispatchEvent(new Event('vp3:chat-canvas-status-changed'));
+  }
+
+  function chatCanvasStatus(messageIds=[]) {
+    const linked=initiativeIdentityMatchesV1()&&contextReady&&!initialRestorePending&&!restoringConversation
+      &&conversationId>0&&!historyParticipant&&!window.VP3ParticipantContinuity?.selectedContext?.();
+    const ready=Boolean(linked), view=thread.dataset.view==='chat'?'chat':'other';
+    const ids=ready&&view==='chat'&&Array.isArray(messageIds)?messageIds.slice(0,8):[];
+    const lastSync=ready&&canvasMessageStatus?.revision===chatRevision&&canvasMessageStatus.conversationId===conversationId
+      ?{state:canvasMessageStatus.state,at:canvasMessageStatus.at,reason:canvasMessageStatus.reason}:null;
+    const known=ready&&canvasActivityStatus?.revision===chatRevision&&canvasActivityStatus.conversationId===conversationId
+      ?canvasActivityStatus.knownLatestMessageId:null;
+    return {view,ready,busy:Boolean(busy),observedThrough:ready?lastLoadedMessageId:0,
+      ...(known===null?{}:{knownLatestMessageId:known}),lastSync,
+      renderedMessageIds:ids.filter(id=>Number.isSafeInteger(id)&&id>0&&thread.querySelector(
+        '[data-chat-conversation-id="'+conversationId+'"][data-chat-message-id="'+id+'"][data-chat-message-role="assistant"]')),
+    };
+  }
+
+  function syncConversationMessagesV101(id, signal, coordinationRefresh=[], gmailRefresh=[]) {
     const revision=chatRevision;
-    const targetId=Number(id||0);if(targetId<1||targetId!==conversationId||busy)return;
-    const data=await api({action:'messages_after',conversation_id:targetId,after_id:lastLoadedMessageId,
-      pending_message_ids:pendingAssistantMessageIds(),
+    const targetId=Number(id||0);
+    const historyAtRequest=historyAuthority;
+    const ownerAtRequest=Number(cfg.userId),agentAtRequest=Number(cfg.agentId || 0);
+    const bindingAtRequest=cfg.workingAttentionBinding;
+    const gmailScopeCurrent=()=>historyAtRequest===historyAuthority&&historyParticipant<=0
+      &&!window.VP3ParticipantContinuity?.selectedContext?.()
+      &&Number(window.STONEFELLOW_CHAT?.userId)===ownerAtRequest&&Number(window.STONEFELLOW_CHAT?.agentId || 0)===agentAtRequest
+      &&window.STONEFELLOW_CHAT?.workingAttentionBinding===bindingAtRequest;
+    const current=()=>targetId>0&&targetId===conversationId&&revision===chatRevision&&contextReady
+      &&!busy&&!initialRestorePending&&!restoringConversation&&thread.dataset.view==='chat'&&!document.hidden&&!signal?.aborted
+      &&navigator.onLine!==false&&(!gmailRefresh.length||gmailScopeCurrent());
+    if(!current())return;
+    const existing=conversationMessageSync;
+    if(existing?.conversationId===targetId&&existing.revision===revision&&!existing.controller.signal.aborted){
+      const needsProjection=coordinationRefresh.some(id=>!existing.coordinationRefresh.includes(id))
+        ||gmailRefresh.some(id=>!existing.gmailRefresh.includes(id));
+      return needsProjection ? existing.promise.then(()=>{
+        if(current())return syncConversationMessagesV101(targetId,signal,coordinationRefresh,gmailRefresh);
+      }) : existing.promise;
+    }
+    existing?.controller.abort();
+    const controller=new AbortController();
+    const cancel=()=>controller.abort(signal.reason);
+    signal?.addEventListener('abort',cancel,{once:true});
+    const timeout=window.setTimeout(()=>controller.abort(),15000);
+    const readSignal=controller.signal;
+    markChatCanvasSync(targetId,revision,'reading');
+    const promise=appendSavedConversationMessagesV101(targetId,revision,readSignal,coordinationRefresh,gmailRefresh,
+      ()=>current()&&!readSignal.aborted,gmailScopeCurrent);
+    const entry={conversationId:targetId,revision,promise,controller,coordinationRefresh,gmailRefresh};
+    conversationMessageSync=entry;
+    const finish=error=>{
+      window.clearTimeout(timeout);
+      signal?.removeEventListener('abort',cancel);
+      if(conversationMessageSync!==entry)return;
+      conversationMessageSync=null;
+      if(targetId===conversationId&&revision===chatRevision&&canvasMessageStatus?.state==='reading'){
+        if(error)markChatCanvasSync(targetId,revision,'failed',
+          error.name==='AbortError'||readSignal.aborted?'timeout':error.status?'server':'network');
+        else {
+          canvasMessageStatus=null;
+          window.dispatchEvent(new Event('vp3:chat-canvas-status-changed'));
+        }
+      }
+    };
+    void promise.then(()=>finish(),finish);
+    return promise;
+  }
+
+  async function appendSavedConversationMessagesV101(targetId,revision,signal,coordinationRefresh,gmailRefresh,current,gmailScopeCurrent) {
+    const refreshing=new Set(coordinationRefresh.slice(0,20));
+    const afterId=lastLoadedMessageId;
+    const data=await readChat({action:'messages_after',conversation_id:targetId,after_id:afterId,
+      pending_message_ids:[...new Set([...gmailRefresh,...refreshing,...pendingAssistantMessageIds()])].slice(0,40),
       agent_context:{user_agent_id:Number(cfg.agentId || 0)}}, signal);
-    if(revision!==chatRevision||targetId!==conversationId||busy||!Array.isArray(data.messages))return;
+    if(!current())return;
+    if(!Array.isArray(data.messages)||(gmailRefresh.length&&Number(data.conversation_id)!==targetId)){
+      markChatCanvasSync(targetId,revision,'failed','response');
+      return;
+    }
+    const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 32;
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
       const stored=thread.querySelector('[data-chat-message-id="'+Number(message.id||0)+'"]');
-      if(stored){
+      const refresh=stored&&refreshing.has(Number(message.id))&&(context.coordination_report||context.coordination_reply);
+      if(refresh){clearConnectedSitePlayback(stored,false);stored.remove();}
+      else if(stored){
         if(typeof message.created_at==='string'&&message.created_at)stored.dataset.chatCreatedAt=message.created_at;
-        if(message.role==='assistant')bindGmailResultTime(stored,context,message.created_at);
+        bindFoodMonsterResultIcon(stored,context.connected_site_provider_v1);
+        if(message.role==='assistant'){
+          if((context.source==='agent_screen_insights'||stored._vp3ScreenInsightsV1)&&typeof message.message==='string'){
+            const body=stored.querySelector('.message-text');
+            if(body&&body.textContent!==message.message)body.textContent=message.message;
+          }
+          bindScreenInsightsV1(stored,context.screen_insights_v1);
+          bindGmailResultTime(stored,context,message.created_at);
+          if((context.gmail_inbox_review_v1||stored._vp3GmailInboxReviewV1||context.gmail_routine_digest_v1
+            ||stored.dataset.gmailRoutinePost==='true')&&gmailScopeCurrent()){
+            bindGmailReviewProjectionV1(stored,context);
+            if(context.gmail_routine_digest_v1&&typeof message.message==='string'){
+              const body=stored.querySelector('.message-text');
+              if(body)body.textContent=message.message;
+            }
+            window.dispatchEvent(new CustomEvent('vp3:chat-gmail-projection-updated',{
+              detail:{element:stored,conversationId:targetId,agentId:Number(cfg.agentId || 0)}
+            }));
+          }
+        }
         if(message.role==='assistant'&&stored.querySelector('[data-meeting-action-plan]')
           &&bindMeetingActionV1(stored,context.meeting_action)&&context.meeting_action.status!=='approval_pending'
           &&typeof message.message==='string')stored.querySelector('.message-text').textContent=message.message;
@@ -3871,12 +4983,15 @@
         lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
         return;
       }
-      const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null,context.youtube_results||null);
+      const renderedMessage=addMessage(message.role==='user'?'user':'assistant',message.message,context.sources,context.media,context.playlist_title,context.stem_media||[],context.actions||[],context.cards||[],context.system_app_action_card||null,context.knowledge_actions_r9||null,context.canvas_media||null,context.youtube_results||null,false);
       if(message.role==='assistant'){
         bindResearchCanvasV1(renderedMessage,context.research_canvas_v1);
-        if(context.gmail_inbox_review_v1)renderedMessage._vp3GmailInboxReviewV1=context.gmail_inbox_review_v1;
+        bindCodingCanvasCardV1(renderedMessage,context.coding_canvas_card_v1);
+        bindGmailReviewProjectionV1(renderedMessage,context);
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
+      bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
       if(message.role==='assistant')bindGmailResultTime(renderedMessage,context,message.created_at);
       const next=Array.from(thread.querySelectorAll('[data-chat-message-id]')).find(element=>element!==renderedMessage
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
@@ -3884,16 +4999,23 @@
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
-      if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context.initiative_work,context.source);
+      if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context);
       if(message.role==='assistant')applyInitiativeFollowthroughV1(context.initiative_followthrough);
+      if(message.role==='assistant')bindCoordinationReplyV1(renderedMessage,context);
       if(message.role==='assistant')bindInitiativeActionV1(renderedMessage,context.initiative_action,context.initiative_followthrough);
       if(message.role==='assistant')bindMeetingActionV1(renderedMessage,context.meeting_action);
       if(message.role==='assistant')bindProductLaunchV1(renderedMessage,context.product_launch);
+      const messageId=Number(message.id);
+      if(!stored&&message.role==='assistant'&&Number.isSafeInteger(messageId)&&messageId>afterId){
+        queueProactiveVoice(messageId,context,renderedMessage,revision);
+      }
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
+    markChatCanvasSync(targetId,revision,'complete');
     if(data.messages.length){
+      if (atEnd) thread.scrollTop = thread.scrollHeight;
       window.dispatchEvent(new Event('vp3:chat-history-updated'));
-      await refreshHistory(signal);
+      void refreshHistory();
     }
   }
 
@@ -3920,6 +5042,11 @@
           }
 
           keepDraft('',id);
+          const parked=privateParkedReplies(id);
+          if(parked.length){
+            for(const record of parked)parkedReplies.delete(parkedReplyId(id,record.reply.message_id));
+            saveParkedReplies();
+          }
           row?.remove();
           await refreshHistory();
         })
@@ -4010,13 +5137,28 @@
     }
     const initiativeReply=initiativeReplyForSendV1(message);
     if(initiativeReply===false)return;
+    const voiceReplyId=initiativeReply && window.VP3ConversationControls?.ownsProactiveReply?.(initiativeReply.message_id)
+      ? initiativeReply.message_id : null;
+    const savedReply=initiativeReply&&parkedReplies.get(parkedReplyId(conversationId,initiativeReply.message_id));
+    const retryingParked=Boolean(savedReply&&!savedReply.stale&&savedReply.reply.reply_ref===initiativeReply.reply_ref
+      &&savedReply.reply.revision===initiativeReply.revision&&savedReply.text===message.trim());
     const gmailAction = gmailReviewActionLabel(message);
+    const newestStored = Array.from(thread.querySelectorAll('[data-chat-message-id]')).at(-1);
+    const gmailOfferId = !initiativeReply && newestStored?.dataset.gmailConversationOffer === 'true'
+      && Number(newestStored.dataset.chatConversationId) === conversationId ? Number(newestStored.dataset.chatMessageId) : 0;
     if (navigator.onLine === false) {
+      if(voiceReplyId) window.VP3VoiceDiagnostics?.record('reply','failed','reply_send_failed',voiceReplyId);
+      if(voiceReplyId&&parkCurrentProactiveReplyV1()){
+        window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:true}}));
+        showChatTurnNotice('You are offline. Your reply is saved with the original Agent update.');
+        return;
+      }
       keepDraft(message);
       recoveryStatus(gmailAction ? 'You are offline. Reopen the Gmail message to try again.' : 'You are offline. Your message is kept.');
       return;
     }
     recoveryStatus();
+    showChatTurnNotice();
 
     const workingContextRef=window.VP3_COGNITIVE_PRESENTATION?.followUpReference?.(conversationId);
     document.dispatchEvent(new CustomEvent('stonefellow:chat-turn',{detail:{state:'pending',conversationId:Number(conversationId||0)}}));
@@ -4036,10 +5178,20 @@
       {conversationId,message:message.trim(),association:visualAssociation,elements:[]};
     initiativeVisualRetry=null;
     const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim(),initiativeReply,visualTurn};
+    // A voice failure or reload must never restore a submitted utterance to
+    // the active composer. Persist it at the exact post until delivery is confirmed.
+    request.parkedReply=voiceReplyId?rememberParkedInitiativeReplyV1(conversationId,initiativeReply,request.message,true)
+      :retryingParked?savedReply:null;
+    request.parkedReplyInFlight=Boolean(request.parkedReply);
+    const automaticVoiceRequestId=request.parkedReply?.automatic_voice_request_id;
+    const automaticVoiceReply=typeof automaticVoiceRequestId==='string'&&automaticVoiceRequestId.length>0&&automaticVoiceRequestId.length<=160;
     pendingSend=request;
     lastParticipantQuestion=gmailAction?null:{message:request.message,conversation_id:request.conversationId,at:Date.now(),submitted:true};
     request.timer=setTimeout(() => request.controller.abort(),120000);showStop();
-    keepDraft(request.message,request.conversationId);
+    if(request.parkedReply){
+      keepDraft('',request.conversationId,null);
+      renderParkedInitiativeRepliesV1();
+    }else keepDraft(request.message,request.conversationId);
     send.disabled = true; input.disabled=true;
     if (inputMode === 'voice') {
       stopVoiceRecognition();
@@ -4069,6 +5221,11 @@
       };
       if(workingContextRef)payload.working_context_ref=workingContextRef;
       if(initiativeReply)payload.initiative_reply=initiativeReply;
+      if(automaticVoiceReply){
+        payload.initiative_reply_auto_voice=true;
+        payload.idempotency_key=automaticVoiceRequestId;
+      }
+      if(Number.isSafeInteger(gmailOfferId)&&gmailOfferId>0)payload.gmail_offer_message_id=gmailOfferId;
       const knowledgeScopeRuntime=window.StonefellowKnowledgeScopeV162;
       if(knowledgeScopeRuntime&&typeof knowledgeScopeRuntime.value==='function'){
         payload.knowledge_scope=knowledgeScopeRuntime.value();
@@ -4107,6 +5264,19 @@
         clearInitiativeReplyV1();recoveryStatus('The account or session changed. Refresh Chat before continuing.');return;
       }
       const returnedFollowthrough=data.initiative_followthrough;
+      const receipt=data.tool_receipt;
+      const imageJobs=data.canvas_media?.generation_ids;
+      const detachedImageReply=automaticVoiceReply&&!returnedFollowthrough&&data.initiative_reply_detached==='image_request'
+        &&Number(data.conversation_id)===request.conversationId&&Number(data.agent_id)===initiativePage.agent
+        &&[data.user_message_id,data.assistant_message_id].every(id=>Number.isSafeInteger(id)&&id>0)
+        &&receipt?.contract==='vp3.tool-receipt.v1'&&receipt.capability==='images.generate'&&receipt.operation==='queue'
+        &&(receipt.status==='completed'
+          ? Number.isSafeInteger(receipt.record_id)&&receipt.record_id>0&&Array.isArray(imageJobs)
+            && imageJobs.length===1&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(imageJobs[0])
+          : ['blocked','failed'].includes(receipt.status)&&!imageJobs?.length);
+      if(request.parkedReply&&!returnedFollowthrough&&!detachedImageReply){
+        throw new Error('Chat could not confirm the reply to this Agent update.');
+      }
       if(returnedFollowthrough&&(!validInitiativeReplyV1(returnedFollowthrough)
         ||returnedFollowthrough.owner_user_id!==initiativePage.owner||returnedFollowthrough.agent_id!==initiativePage.agent
         ||returnedFollowthrough.conversation_id!==request.conversationId||Number(data.conversation_id)!==request.conversationId
@@ -4119,8 +5289,11 @@
         const invalidReply=new Error('The Agent reply could not be matched to this Chat. Your message is kept.');invalidReply.status=422;throw invalidReply;
       }
       if (!Number(data.conversation_id) || typeof data.answer !== 'string') throw new Error('Invalid chat response.');
+      if(voiceReplyId)window.VP3VoiceDiagnostics?.record('reply',detachedImageReply?'closed':returnedFollowthrough?'received':'failed',
+        detachedImageReply?'reply_cancelled':returnedFollowthrough?'reply_received':'reply_send_failed',voiceReplyId);
       if(initiativeReply)clearInitiativeReplyV1();
       keepDraft('',request.conversationId);
+      if(request.parkedReply)removeParkedInitiativeReplyV1(request.parkedReply);
       window.VP3ProjectKnowledgeR6?.consume(data.project_knowledge_r6);window.VP3KnowledgeRevisionsR11?.consume();
 
       if(browserAgentContext&&browserContextRuntime&&typeof browserContextRuntime.consume==='function'){
@@ -4132,14 +5305,13 @@
       conversationId = Number(data.conversation_id); rememberConversation();
       if(request.conversationId===0)window.dispatchEvent(new CustomEvent('vp3:chat-conversation-bound',{detail:{previous_conversation_id:0,conversation_id:conversationId}}));
       const storedUserId=Number(data.user_message_id),storedAssistantId=Number(data.assistant_message_id);
-      const receipt=data.tool_receipt;
       if(transcriptSource?.session_id>0&&Number.isSafeInteger(storedAssistantId)&&storedAssistantId>0
         &&(request.conversationId===0||request.conversationId===conversationId)
         &&receipt?.contract==='vp3.tool-receipt.v1'&&receipt.capability==='transcripts.read'
         &&receipt.operation==='detach'&&receipt.status==='read_complete')transcriptCanvas?.clearSourceForTurn?.(transcriptSource);
       const storedRow=(id,role)=>Number.isSafeInteger(id)&&id>0?thread.querySelector('[data-chat-message-id="'+id+'"][data-chat-conversation-id="'+conversationId+'"][data-chat-message-role="'+role+'"]'):null;
       const existingUser=storedRow(storedUserId,'user');
-      if(returnedFollowthrough){
+      if(returnedFollowthrough||detachedImageReply){
         // Retire only optimistic rows belonging to this local failed/retry
         // chain. Identical text in unrelated turns is never a dedupe key.
         for(const element of visualTurn.elements){
@@ -4166,6 +5338,10 @@
         data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
+      if(!existingReply || data.connected_site_provider_v1==='foodmonster')bindFoodMonsterResultIcon(reply,data.connected_site_provider_v1);
+      if(!existingReply&&data.replayed!==true&&data.connected_site_provider_v1==='stoneward'){
+        bindConnectedSitePlayback(reply,data.connected_site_playback_v1,data.connected_site_queue_v1);
+      }
       if(!existingReply)bindGmailResultTime(reply,data);
       if (openGmailDraft && gmailAction && !gmailAction.startsWith('Auto reply ')) {
         gmailDraft = reply.querySelector('[data-chat-email-review]');
@@ -4178,6 +5354,8 @@
         window.dispatchEvent(new Event('vp3:chat-email-watch-changed'));
       }
       applyInitiativeFollowthroughV1(data.initiative_followthrough);
+      if (data.initiative_followthrough) window.dispatchEvent(new Event('vp3:initiative-reply-updated'));
+      bindCoordinationReplyV1(reply,data);
       bindInitiativeActionV1(reply,data.initiative_action,data.initiative_followthrough);
       bindMeetingActionV1(reply,data.meeting_action);
       if (/^\/initiative (?:on|off|screen on|screen off)$/i.test(request.message.trim())) {
@@ -4187,6 +5365,9 @@
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
       const autoMediaAction=(data.actions||[]).find(action=>action && action.auto && action.type==='media_capture');
       if(autoMediaAction){window.setTimeout(()=>{window.StonefellowMediaStudio?.open(autoMediaAction.mode||'camera',Number(autoMediaAction.camera_index||0));},260);}
+      if (!existingReply && data.media_playback) {
+        void window.STONEFELLOW_CHAT_CONTINUITY?.applyMediaPlayback?.(data.media_playback,reply);
+      }
 
       void refreshHistory().catch(() => {});
       if (inputMode === 'voice' && voiceMode && !existingReply && !data.private_email_read && !data.private_meeting_prep) {
@@ -4194,18 +5375,36 @@
       }
     } catch (error) {
       if(pendingSend!==request||request.revision!==chatRevision)return;
-      if(!input.value&&!gmailAction){input.value=message;autoSize();}
-      if(initiativeIdentityMatchesV1()&&(request.initiativeReply||/^initiative_reply_(?:stale|forbidden|unavailable)$/.test(String(error.message || ''))||!error.status)){
-        initiativeVisualRetry=visualTurn;
+      if(voiceReplyId) {
+        const code = Number(error.status)===409 ? 'reply_post_changed' :
+          Number(error.status)===403 ? 'reply_owner_unverified' : 'reply_send_failed';
+        window.VP3VoiceDiagnostics?.record('reply','failed',code,voiceReplyId);
       }
-      if(request.initiativeReply&&[403,409].includes(Number(error.status))&&initiativeReplyTarget){
-        initiativeReplyTarget.stale=true;delete initiativeReplyTarget.retry_message;renderInitiativeReplyV1();
-      }else if(request.initiativeReply&&initiativeReplyTarget&&initiativeReplyTarget.message_id===request.initiativeReply.message_id){
-        initiativeReplyTarget.retry_message=request.message;renderInitiativeReplyV1();
+      const parked=showParkedReplyAfterSend(request,[403,409].includes(Number(error.status)));
+      if(!parked){
+        if(!input.value&&!gmailAction){input.value=message;autoSize();}
+        if(initiativeIdentityMatchesV1()&&(request.initiativeReply||/^initiative_reply_(?:stale|forbidden|unavailable)$/.test(String(error.message || ''))||!error.status)){
+          initiativeVisualRetry=visualTurn;
+        }
+        if(request.initiativeReply&&[403,409].includes(Number(error.status))&&initiativeReplyTarget){
+          initiativeReplyTarget.stale=true;delete initiativeReplyTarget.retry_message;renderInitiativeReplyV1();
+        }else if(request.initiativeReply&&initiativeReplyTarget&&initiativeReplyTarget.message_id===request.initiativeReply.message_id){
+          initiativeReplyTarget.retry_message=request.message;renderInitiativeReplyV1();
+        }
+        keepDraft(input.value, request.conversationId);
       }
-      keepDraft(input.value, request.conversationId);
       typing.remove();
       const initiativeError=request.initiativeReply||/^initiative_reply_(?:stale|forbidden|unavailable)$/.test(String(error.message || ''));
+      const followthroughReasons={
+        model_unavailable:'The configured AI model could not process this follow-up.',
+        model_response_invalid:'The AI response could not be verified for this follow-up.',
+        model_quota_exhausted:'The configured AI account has reached its usage limit.',
+        anthropic_credit_balance_low:'The Anthropic API account has insufficient credits.',
+        source_unavailable:'The linked report could not be checked right now.'
+      };
+      const followthroughReason=initiativeError&&Number(error.status)===503&&typeof error.followthroughReason==='string'
+        &&Object.hasOwn(followthroughReasons,error.followthroughReason)
+        ? followthroughReasons[error.followthroughReason] : '';
       const initiativeFailure=initiativeError&&Number(error.status)===409
         ? request.initiativeReply?'That Agent update changed. Your reply is kept; choose its current Reply action or remove the reply context.'
           :'That Agent update changed. Your message is kept; review its current status before trying again.'
@@ -4214,11 +5413,17 @@
         : initiativeError&&(Number(error.status)===503||error.message==='initiative_reply_unavailable')
         ? request.initiativeReply?'Follow-through is temporarily unavailable. Your reply and its context are kept.'
           :'Follow-through is temporarily unavailable. Your message is kept. Retry the same message when ready.' : '';
-      recoveryStatus(initiativeFailure || (error.name === 'AbortError'
+      const reasonMessage=followthroughReason
+        ? followthroughReason+(request.initiativeReply?' Your reply and its context are kept. Retry when ready.'
+          :' Your message is kept. Retry when ready.') : '';
+      const parkedMessage=parked?(followthroughReason?followthroughReason+' ':'')
+        +'Your reply is saved with the original Agent update.':'';
+      showChatTurnNotice(parkedMessage || reasonMessage || initiativeFailure || (error.name === 'AbortError'
         ? 'The response timed out. You can try again.'
         : error.status ? String(error.message || 'Chat could not complete this request.').slice(0,500)
         : 'Could not connect to Chat. Please try again.'));
-      window.dispatchEvent(new CustomEvent('stonefellow:chat-diagnostic',{detail:{state:'failed',code:String(error.status || error.name || 'transport')}}));
+      window.dispatchEvent(new CustomEvent('stonefellow:chat-diagnostic',{detail:{state:'failed',
+        code:followthroughReason?error.followthroughReason:String(error.status || error.name || 'transport')}}));
     } finally {
       clearTimeout(request.timer);
       if(pendingSend!==request)return;
@@ -4234,6 +5439,15 @@
   }
 
   thread.addEventListener('click', event => {
+    const example = event.target.closest('[data-chat-specialist-example]');
+    if (example) {
+      if (!event.isTrusted || !initiativeIdentityMatchesV1()
+        || Number(example.closest('[data-chat-message-role="assistant"]')?.dataset.chatConversationId) !== conversationId) return;
+      if (window.VP3AgentActivityHub?.stageExample?.(example.dataset.chatSpecialistExample,conversationId) !== true) {
+        recoveryStatus('Finish the current draft or Chat turn, then try the example again.');
+      }
+      return;
+    }
     const promptAction = event.target.closest('[data-chat-prompt-action]');
     if (!promptAction) return;
     event.preventDefault();
@@ -4259,8 +5473,49 @@
     });
   });
 
+  let openingProductWorkbench = false;
+  async function openProductFromComposer(description) {
+    if (openingProductWorkbench) return;
+    const workbench = window.VP3InitiativeWorkbench;
+    const priorRevision = chatRevision, priorAuthority = historyAuthority, original = input.value;
+    const current = () => initiativeIdentityMatchesV1() && chatRevision === priorRevision && historyAuthority === priorAuthority
+      && contextReady && !busy && !initialRestorePending && !restoringConversation && thread.dataset.view === 'chat'
+      && !initiativeReplyTarget && historyParticipant <= 0 && !window.VP3ParticipantContinuity?.selectedContext?.();
+    if (!current() || typeof workbench?.openProductRequest !== 'function') {
+      showChatTurnNotice('Open a private Agent Chat to prepare a product draft.');
+      return;
+    }
+    if (Array.from(description).length > 600 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(description)) {
+      showChatTurnNotice('Use up to 600 characters of plain text for the product description.');
+      return;
+    }
+    openingProductWorkbench = true;
+    try {
+      const conversation = conversationId || await ensureConversationPa3();
+      if (!current() || input.value !== original) return;
+      if (conversation < 1 || conversation !== conversationId || !workbench.openProductRequest(description,conversation,() => {
+        if (!current() || conversation !== conversationId || input.value !== original) return;
+        input.value = '';
+        input.dispatchEvent(new Event('input'));
+      })) {
+        showChatTurnNotice('Could not open the product draft. Your description is still in Chat.');
+        return;
+      }
+      showChatTurnNotice();
+    } catch (_) {
+      if (current()) showChatTurnNotice('Could not open the product draft. Your description is still in Chat.');
+    } finally {
+      openingProductWorkbench = false;
+    }
+  }
+
   form.addEventListener('submit', event => {
     event.preventDefault();
+    const product = /^\s*\/product(?:\s+([\s\S]*))?$/i.exec(input.value);
+    if (product) {
+      void openProductFromComposer(product[1]?.trim() || '');
+      return;
+    }
     sendMessage(input.value);
   });
 
@@ -4284,6 +5539,8 @@
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       document.querySelectorAll('.chat-audio-player').forEach(audio => {
+        const connected = connectedSiteAudioStates.get(audio);
+        if (connected && !audio.paused && !audio.seeking) queueConnectedSitePlayback(audio,connected,'progress');
         const state = audioState.get(audio);
         if (!state || !state.sessionToken || audio.paused) return;
         const delta = audioListenedDelta(audio);
@@ -4299,8 +5556,24 @@
     }
   });
 
+  window.addEventListener('vp3:chat-canvas-view-changed', () => {
+    if (thread.dataset.view === 'chat') void pollAgentActivity();
+  });
+
+  function cancelChatReads() {
+    activityRequest?.abort();
+    conversationMessageSync?.controller.abort();
+    historyListRequest?.abort();
+  }
+
+  window.addEventListener('offline', cancelChatReads);
+  window.addEventListener('online', () => { if (!document.hidden) void pollAgentActivity(true); });
+
   window.addEventListener('pagehide', () => {
+    clearConnectedSitePlayback();
     stopAllTrackedAudio(true);
+    activityWakePending = false;
+    cancelChatReads();
 
     if (activityTimer) {
       clearInterval(activityTimer);
@@ -4335,6 +5608,12 @@
 
   thread.dataset.view = 'chat';
   attachAudioTracking(thread);
+  window.addEventListener('vp3:media-offer-audio-ready',event=>{
+    const {audio,action}=event.detail||{};
+    if(audioState.get(audio)?.trackId===action?.track_id&&audio?.isConnected&&action?.offer_message_id>0){
+      mediaOfferAudioActions.set(audio,action);
+    }
+  });
   window.addEventListener('vp3:audio-player-removed',event=>{
     const audio=event.detail,state=audioState.get(audio);if(!state)return;
     audio.pause();state.sessionGeneration++;state.wasPlaying=false;
@@ -4404,6 +5683,37 @@
     return true;
   }
 
+  function stageSpecialistPrompt(prompt, expectedConversationId) {
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 8000
+        || !Number.isSafeInteger(expectedConversationId) || expectedConversationId !== conversationId
+        || !initiativeIdentityMatchesV1() || !contextReady || initialRestorePending || restoringConversation
+        || busy || input.disabled || initiativeReplyTarget || historyParticipant || window.VP3ParticipantContinuity?.selectedContext?.()) return false;
+    const voice = window.STONEFELLOW_CHAT_CONTINUITY;
+    const voiceState = window.VP3ConversationControls?.state?.()?.state;
+    if (voice?.isBusy?.() || voice?.hasVoicePreview?.() || (voiceState
+        ? ['listening','connecting','reconnecting'].includes(voiceState) : voiceListening || voiceSpeaking)) return false;
+    const text = prompt.trim();
+    if (input.value.trim() && input.value !== text) return false;
+    setChatCanvasView('chat');
+    input.value = text;
+    composerDraftOrigin = {kind:'typed_draft',text};
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    input.focus();
+    return true;
+  }
+
+  async function refreshGmailUpdatesV1(id,messageIds,signal) {
+    if(!Number.isSafeInteger(id)||id<1||id!==conversationId||!Array.isArray(messageIds)
+      ||messageIds.length<1||messageIds.length>24)return false;
+    const ids=[...new Set(messageIds)].filter(messageId=>Number.isSafeInteger(messageId)&&messageId>0
+      &&thread.querySelector(`[data-chat-conversation-id="${id}"][data-chat-message-id="${messageId}"][data-chat-message-role="assistant"]`));
+    if(!ids.length)return false;
+    const request=syncConversationMessagesV101(id,signal,[],ids);
+    if(!request)return false;
+    await request;
+    return true;
+  }
+
   const canonicalChatContinuity = {
     runYoutubeLocalTurn: (message, action) => runYoutubeLocalTurn(message, action),
     requestYoutubePicks:() => requestTopOfMindTurn('/youtube picks'),
@@ -4417,7 +5727,10 @@
       const command = delegate ? 'Have a specialist research topic ' : 'Research topic ';
       return requestTopOfMindTurn(command + topic.trim());
     },
+    stageSpecialistPrompt,
     showChatView:() => setChatCanvasView('chat'),
+    showCodingCanvasView:() => setChatCanvasView('coding'),
+    showPlayerView:() => setChatCanvasView('player'),
     mountAgentGreeting:text => {
       if (thread.dataset.view !== 'chat' || !contextReady || initialRestorePending || restoringConversation) return null;
       const previous = thread.querySelector('[data-agent-voice-greeting]');
@@ -4439,6 +5752,9 @@
         &&lastParticipantQuestion.conversation_id===Number(conversationId||0)?{...lastParticipantQuestion}:null;
     },
     isVoice:() => Boolean(voiceMode),
+    hasInitiativeReply:() => Boolean(initiativeReplyTarget),
+    parkFailedProactiveReply:parkCurrentProactiveReplyV1,
+    showTurnNotice:showChatTurnNotice,
     conversationId:() => Number(conversationId || 0),
     agentId:() => Number(cfg.agentId || 0),
     ensureConversation:ensureConversationPa3,
@@ -4447,8 +5763,12 @@
     mountProfileSpeech:mountProfileSpeechPa4a,
     mountProfileAttention:mountProfileAttentionPa4b,
     isRestoring:() => initialRestorePending || restoringConversation > 0,
+    isInitialRestorePending:() => initialRestorePending,
     isReady:() => contextReady,
     isBusy:() => busy || initialRestorePending || restoringConversation > 0,
+    chatCanvasStatus,
+    proactiveVoiceStatus,
+    composerDraftOrigin:() => composerDraftOrigin?.text===input.value ? composerDraftOrigin.kind : null,
     requestGmailReviewAction: command => {
       if (!gmailReviewActionLabel(command) || !contextReady || busy || initialRestorePending
           || restoringConversation > 0 || initiativeReplyTarget || input.value.trim()) return false;
@@ -4469,7 +5789,9 @@
       if (target !== Number(conversationId || 0)) await loadConversation(target);
       else await syncConversationMessagesV101(target);
       return true;
-    }
+    },
+    refreshGmailUpdate:(id,messageId)=>refreshGmailUpdatesV1(id,[messageId]),
+    refreshGmailUpdates:refreshGmailUpdatesV1
   };
   window.STONEFELLOW_CHAT_CONTINUITY_V87 = canonicalChatContinuity;
   window.STONEFELLOW_CHAT_CONTINUITY = canonicalChatContinuity;
@@ -4500,13 +5822,28 @@
 
   // Stored IDs are hints only: the server still authorizes every history load.
   async function restoreInitialConversationV101() {
-    const id = initialConversation();
+    const {id,remembered}=initialConversation();
+    const missing=error=>error.status===404||(error.status===400&&['Conversation not found.','Conversation not found for this agent.'].includes(error.message));
     try {
-      if (String(cfg.initialView || 'chat') === 'chat' && id > 0) await loadConversation(id);
+      if (String(cfg.initialView || 'chat') === 'chat' && id > 0) {
+        const expectedFallbackRevision=chatRevision+1;
+        try { await loadConversation(id, 0, {initialRestore:true}); }
+        catch (error) {
+          if(chatRevision!==expectedFallbackRevision)return;
+          if(!missing(error))throw error;
+          const fallback=Number(cfg.initialConversationId || 0);
+          if(!remembered||fallback<1||fallback===id)throw error;
+          try { await loadConversation(fallback, 0, {initialRestore:true}); }
+          catch (fallbackError) {
+            if(chatRevision!==expectedFallbackRevision+1)return;
+            throw fallbackError;
+          }
+        }
+      }
       else { contextReady=true; restoreDraft(); }
     } catch (error) {
       if (error.status === 401) return;
-      if (error.status === 404) { contextReady=true; conversationId=0; rememberConversation(); restoreDraft(); }
+      if (missing(error)) { contextReady=true; conversationId=0; rememberConversation(); restoreDraft(); }
       recoveryStatus('Conversation history is unavailable. Your drafts are kept.');
     } finally { initialRestorePending = false; window.dispatchEvent(new Event('vp3:chat-context-ready')); }
     presentIntroV101();
@@ -4635,6 +5972,9 @@
   let actionTrackId = 0;
   let queueActive = false;
   let queueIndex = -1;
+  let mediaQueue = null;
+  let mediaActionRevision = 0;
+  let mediaResumeFallback = null;
 
   const queueKey =
     `stonefellow:player:queue:v76:${Number(library.userId || 0)}`;
@@ -4700,6 +6040,7 @@
     queue.length > 0;
 
   function saveQueue() {
+    if(mediaQueue)return;
     localStorage.setItem(
       queueKey,
       JSON.stringify(queue)
@@ -4791,7 +6132,7 @@
     host.querySelector('[data-listening-position]').textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
   }
 
-  function renderListeningContinuation(host,track){
+  function renderListeningContinuation(host,track,restartSession=false){
     if (!host) return;
     const thread = host.parentElement?.id==='chatThread'?host.parentElement:null;
     let audio = host.querySelector('audio');
@@ -4799,7 +6140,7 @@
     const source = String(track?.audio || '');
     const playable = Number.isSafeInteger(id) && id > 0 && source;
     const atEnd = thread&&thread.scrollHeight - thread.scrollTop - thread.clientHeight < 96;
-    if (audio && (!playable || Number(audio.dataset.trackId) !== id)) {
+    if (audio && (restartSession || !playable || Number(audio.dataset.trackId) !== id)) {
       window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio}));
       audio = null;
     }
@@ -4877,7 +6218,11 @@
       const currentTrack = playing && !playing.paused && !playing.ended
         ? rows.find(track => Number(track.id) === Number(playing.dataset.trackId))
         : null;
-      renderListeningContinuation(host, currentTrack || rows[0]);
+      if(!sameOwner){mediaResumeFallback=null;stopMediaQueue();}
+      const offeredTrack=mediaResumeFallback?.audio===playing&&activityPlayerAllowed()
+        &&mediaResumeFallback.conversationId===window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()
+        ?mediaResumeFallback.track:null;
+      renderListeningContinuation(host, currentTrack || offeredTrack || rows[0]);
       if(!grid?.isConnected||(sameOwner&&recentHistoryPlaying(grid)))return;
       if (!sameOwner) grid.querySelectorAll('audio').forEach(audio => window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio})));
       grid.innerHTML=rows.map(track=>{
@@ -4894,7 +6239,7 @@
       window.dispatchEvent(new CustomEvent('vp3:audio-players-added',{detail:grid}));
     }catch(error){
       const accessLost = [401, 403, 419].includes(error.status);
-      if(accessLost)activityPlayerHistory=[];
+      if(accessLost){activityPlayerHistory=[];mediaResumeFallback=null;stopMediaQueue();}
       if(revision===recentHistoryRevision&&grid?.isConnected&&(accessLost||!recentHistoryPlaying(grid))){
         if (accessLost) grid.querySelectorAll('audio').forEach(audio => window.dispatchEvent(new CustomEvent('vp3:audio-player-removed', {detail:audio})));
         grid.textContent='Playback history could not be loaded. It will retry automatically.';
@@ -4907,9 +6252,18 @@
   window.addEventListener('vp3:playback-history-changed',scheduleRecentPlayerHistory);
   function resetActivityPlayer(){
     recentHistoryRevision++;
+    mediaActionRevision++;
+    if(mediaResumeFallback&&(!activityPlayerAllowed()||mediaResumeFallback.conversationId!==window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.())){
+      const host=document.getElementById('chatListeningContinuation');
+      if(host?.contains(mediaResumeFallback.audio))renderListeningContinuation(host,null);
+      mediaResumeFallback=null;
+    }
     activityPlayerHistory=[];
     recentHistoryQueued=false;
     recentHistoryController?.abort();
+    if(mediaQueue&&(!activityPlayerAllowed()||mediaQueue.conversationId!==window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.())){
+      stopMediaQueue();
+    }
     const host=document.getElementById('chatListeningContinuation');
     if(host&&!activityPlayerAllowed())renderListeningContinuation(host,null);
     if(activityPlayerAllowed())scheduleRecentPlayerHistory();
@@ -4927,6 +6281,9 @@
   let recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);
   window.addEventListener('pageshow',()=>{if(!recentHistoryPoll)recentHistoryPoll=setInterval(()=>void refreshRecentPlayerHistory(),30000);scheduleRecentPlayerHistory();});
   window.addEventListener('pagehide',()=>{
+    mediaActionRevision++;
+    mediaResumeFallback=null;
+    stopMediaQueue();
     recentHistoryRevision++;
     activityPlayerHistory=[];
     recentHistoryQueued=false;
@@ -5056,6 +6413,8 @@
   function audioForTrack(
     trackId
   ) {
+    const managed = mediaQueue?.audios.get(Number(trackId));
+    if (managed?.isConnected) return managed;
     const candidates = [
       ...document.querySelectorAll(
         `.chat-audio-player[data-track-id="${Number(trackId)}"]`
@@ -5129,6 +6488,7 @@
   }
 
   Object.assign(window.STONEFELLOW_CHAT_CONTINUITY||{}, {
+    applyMediaPlayback,
     playActivityTrack(trackId){
       const id=Number(trackId);
       if(!activityPlayerAllowed()||!Number.isSafeInteger(id)||id<1)return false;
@@ -5149,6 +6509,132 @@
       return true;
     }
   });
+
+  function stopMediaQueue(){
+    if(!mediaQueue)return;
+    const previous=mediaQueue;
+    mediaQueue=null;
+    for(const audio of previous.audios.values()){
+      window.dispatchEvent(new CustomEvent('vp3:audio-player-removed',{detail:audio}));
+    }
+    previous.host.remove();
+    queue=previous.queue;
+    queueIndex=previous.index;
+    queueActive=previous.active;
+    renderQueue();
+  }
+
+  function mountMediaQueue(rows,cid){
+    stopMediaQueue();
+    const host=document.createElement('div');
+    host.setAttribute('data-player-queue','');
+    const audios=new Map();
+    for(const track of rows){
+      tracks[track.id]={...tracks[track.id],...track};
+      const audio=document.createElement('audio');
+      audio.className='chat-audio-player';
+      audio.preload='none';
+      audio.src=track.audio;
+      audio.dataset.mediaQueueAudio='';
+      audio.dataset.trackId=String(track.id);
+      audio.dataset.playerTitle=track.title;
+      audio.dataset.playerAlbum=track.album;
+      audio.dataset.playerCover=track.cover;
+      audio.dataset.playerDetail=track.detail;
+      audios.set(track.id,audio);
+      host.append(audio);
+    }
+    document.body.append(host);
+    mediaQueue={host,audios,conversationId:cid,queue:[...queue],index:queueIndex,active:queueActive};
+    window.dispatchEvent(new CustomEvent('vp3:audio-players-added',{detail:host}));
+    setQueue(rows.map(row=>row.id));
+  }
+
+  function mediaTrackFromPlayer(row){
+    if(!Number.isSafeInteger(row?.id)||row.id<1||typeof row.title!=='string'||!row.title.trim())return null;
+    const safe=value=>{
+      if(typeof value!=='string'||!value)return '';
+      try{
+        const url=new URL(value,location.href);
+        return /^https?:$/.test(url.protocol)&&url.origin===location.origin&&!url.username&&!url.password?url.href:'';
+      }catch{return '';}
+    };
+    const audio=safe(row.audio);
+    return audio?{id:row.id,title:row.title,album:typeof row.album==='string'?row.album:'',
+      audio,cover:safe(row.cover),detail:safe(row.detail)}:null;
+  }
+
+  async function applyMediaPlayback(action,reply){
+    const validScope=()=>activityPlayerAllowed()&&document.visibilityState==='visible'
+      &&Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.())===action.conversation_id
+      &&activityPlayerOwner===action.owner_user_id&&activityPlayerAgent===action.agent_id;
+    if(action?.type!=='media_playback'||!validScope()||!Number.isSafeInteger(action.expires_at)
+      ||action.expires_at*1000<Date.now()||!/^[a-f0-9]{64}$/.test(action.proof||'')||!cfg.libraryEndpoint)return false;
+    const generation=++mediaActionRevision;
+    const replyId=Number(reply?.dataset?.chatMessageId);
+    const currentReply=()=>reply?.isConnected?reply:Number.isSafeInteger(replyId)&&replyId>0
+      ?document.getElementById('chatThread')?.querySelector('[data-chat-message-role="assistant"][data-chat-message-id="'+replyId
+        +'"][data-chat-conversation-id="'+action.conversation_id+'"]'):null;
+    const current=()=>generation===mediaActionRevision&&validScope()&&currentReply();
+    const fallback=message=>{
+      if(!current())return;
+      const line=document.createElement('p');
+      line.setAttribute('role','status');
+      line.textContent=message;
+      const row=currentReply();
+      (row.querySelector('.message-body')||row).append(line);
+    };
+    try{
+      const result=await libraryApi('playback_action',{media_playback:action});
+      if(!current()||result.operation!==action.operation||result.owner_user_id!==action.owner_user_id
+        ||result.conversation_id!==action.conversation_id||result.agent_id!==action.agent_id)return false;
+      if(result.operation==='dj_stop'){
+        stopMediaQueue();
+        return true;
+      }
+      const rows=Array.isArray(result.tracks)&&result.tracks.length<=8?result.tracks.map(mediaTrackFromPlayer):[];
+      if(!rows.length||rows.some(row=>row===null))return false;
+      if(result.operation==='resume'||result.operation==='play'){
+        const track=rows[0],position=result.operation==='resume'?result.position_seconds:0;
+        if(rows.length!==1||track.id!==action.track_id||typeof position!=='number'||!Number.isFinite(position)
+          ||position<0||(result.operation==='resume'&&position!==action.position_seconds))return false;
+        stopMediaQueue();
+        const host=listeningHost();
+        const fromOffer=Number.isSafeInteger(action.offer_message_id)&&action.offer_message_id>0;
+        renderListeningContinuation(host,{...track,last_position_seconds:position},fromOffer);
+        const audio=host?.querySelector('audio');
+        if(!audio)return false;
+        if(fromOffer)window.dispatchEvent(new CustomEvent('vp3:media-offer-audio-ready',{detail:{audio,action}}));
+        audio.dataset.mediaSinglePlay='';
+        const selected={audio,track:{...track,last_position_seconds:position},conversationId:action.conversation_id};
+        mediaResumeFallback=selected;
+        audio.addEventListener('ended',()=>{
+          if(mediaResumeFallback===selected)mediaResumeFallback=null;
+        },{once:true});
+        if(position===0&&audio.readyState>=1){
+          try{audio.currentTime=0;}catch{}
+        }
+        if(!await playTrack(track.id,position,false,audio))fallback('Use the Play control to start this track.');
+        return true;
+      }
+      if(!['dj_start','playlist'].includes(result.operation)||!Array.isArray(action.queue)
+        ||rows.length!==action.queue.length||rows.some((row,index)=>row.id!==action.queue[index].track_id))return false;
+      mediaResumeFallback=null;
+      mountMediaQueue(rows,action.conversation_id);
+      if(result.operation==='playlist'){
+        openQueue();
+        return true;
+      }
+      if(!await playTrack(rows[0].id,null,true)){
+        openQueue();
+        fallback('Use Play on the first track to start the DJ queue.');
+      }
+      return true;
+    }catch{
+      fallback('The Player couldn’t open that selection. Ask the Agent to check again.');
+      return false;
+    }
+  }
 
   function setQueue(
     ids,
@@ -5261,6 +6747,7 @@
       document.querySelector(
         '.chat-audio-player[data-v76-current="1"]'
       );
+    if(mediaQueue&&currentAudio&&!mediaQueue.host.contains(currentAudio))return false;
 
     if (currentAudio) {
       const currentId =
@@ -6321,8 +7808,8 @@
       '.chat-audio-player'
     ).forEach(audio => {
       if (
-        audio.dataset.v76Actions ===
-        '1'
+        audio.dataset.v76Actions === '1'
+        || audio.hasAttribute('data-connected-site-playback')
       ) {
         return;
       }
@@ -7547,7 +9034,7 @@
       const index =
         queue.indexOf(id);
 
-      if (index >= 0) {
+      if (index >= 0 && (!mediaQueue || mediaQueue.host.contains(audio))) {
         queueIndex =
           index;
         renderQueue();
@@ -7567,7 +9054,9 @@
         !audio.matches?.(
           '.chat-audio-player'
         ) ||
-        !queue.length
+        !queue.length ||
+        audio.hasAttribute('data-media-single-play') ||
+        (mediaQueue && !mediaQueue.host.contains(audio))
       ) {
         return;
       }
@@ -7598,10 +9087,13 @@
       queueIndex =
         nextIndex;
 
+      const nextTrack=queue[nextIndex];
+      const runningMediaQueue=mediaQueue;
       setTimeout(
         () => {
+          if(!queueActive||mediaQueue!==runningMediaQueue||queue[nextIndex]!==nextTrack)return;
           playTrack(
-            queue[nextIndex],
+            nextTrack,
             null,
             true
           );

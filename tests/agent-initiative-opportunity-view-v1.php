@@ -51,6 +51,18 @@ $assessed=array_values(array_filter(vp3_top_of_mind_v1($pdo,$owner,7,11)['items'
     static fn(array $item):bool=>$item['run_id']===$viewRun&&$item['kind']==='assessment'));
 canvas_pipeline_check(count($assessed)===1&&$assessed[0]['state']==='assessed',
     'the typed private Brainstorm receipt remains a verified completed assessment in Top of Mind');
+require_once dirname(__DIR__).'/includes/agent-activity-hub-v1.php';
+$activity=vp3_agent_activity_hub_request_v1($pdo,$owner,'GET','7','11',vp3_catch_up_page_binding_v1($owner));
+$activitySections=array_column($activity['sections'],null,'id');
+$opportunityCards=array_values(array_filter($activitySections['suggestions']['items'],
+    static fn(array $item):bool=>$item['id']==='opportunity:'.$view[0]['id']));
+canvas_pipeline_check(count($opportunityCards)===1&&$opportunityCards[0]['title']===$viewObjective
+    &&str_contains($opportunityCards[0]['detail'],$viewRationale)
+    &&is_array($activity['specialists']??null)&&is_array($activity['coordination']??null)
+    &&json_encode($activity,JSON_THROW_ON_ERROR)!=='',
+    'the shared Activity response includes verified opportunity cards alongside specialist and coordination status');
+canvas_pipeline_check(count($GLOBALS['pipelineInference'])===$inferences&&opportunity_view_snapshot()===$beforeRead,
+    'the shared Activity read does not execute the opportunity or alter saved work');
 
 $pdo->exec("UPDATE agent_memory_items SET memory_text='A materially changed hidden context detail' WHERE id=30001");
 opportunity_view_check_empty(static fn()=>vp3_initiative_opportunities_v1(db(),$GLOBALS['owner'],7),

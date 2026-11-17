@@ -54,6 +54,8 @@ function vp3_initiative_failure_reason_v1(Throwable $error,bool $assessment=fals
 {
     if($assessment&&$error instanceof Vp3InitiativeSourcesChangedV1)return 'assessment_sources_changed';
     if($assessment&&$error instanceof Vp3InitiativeInvalidAssessmentV1)return 'assessment_unverified';
+    if($error instanceof Vp3InitiativeSourceProofUnavailableV1)return 'source_unavailable';
+    if($error instanceof Vp3InitiativePublicSearchUnavailableV1)return 'public_search_unavailable';
     return in_array($error->getMessage(),['model_unavailable','quota_exhausted','route_unavailable'],true)
         ?$error->getMessage():'initiative_unconfirmed';
 }
@@ -67,12 +69,16 @@ function vp3_initiative_owner_context_v1(PDO $pdo,array $user,array $binding,boo
         $zone=new DateTimeZone($timezone);
     }catch(Throwable $e){$timezone='UTC';$zone=new DateTimeZone('UTC');}
     $context=['source'=>'saved_owner_activity','current_time'=>$now->format(DATE_ATOM),'timezone'=>$timezone,
-        'local_time'=>$now->setTimezone($zone)->format(DATE_ATOM),'available'=>false,'state'=>'unknown','interruptible'=>null];
+        'local_time'=>$now->setTimezone($zone)->format(DATE_ATOM),'available'=>false,'state'=>'unknown','interruptible'=>null,
+        'text_delivery_available'=>false];
     if($includeEngagement){
         require_once __DIR__.'/agent-initiative-engagement-memory-v1.php';
         $context['engagement']=vp3_initiative_engagement_memory_v1($pdo,$user,$binding);
     }
     try{
+        $agentId=vp3_initiative_binding_agent_v1($binding);$conversationId=(int)($binding['conversation_id']??0);
+        $bound=$conversationId>0&&vp3_agent_chat_conversation_v380($pdo,$conversationId,(int)$user['id'],$agentId>0?['id'=>$agentId]:null);
+        $context['text_delivery_available']=$bound&&($binding['enabled']??false)===true;
         require_once __DIR__.'/agent-activity-v94.php';
         $snapshot=agent_activity_v94_snapshot($user,'chat');
         $age=$snapshot['seconds_since_activity']??PHP_INT_MAX;
@@ -82,9 +88,7 @@ function vp3_initiative_owner_context_v1(PDO $pdo,array $user,array $binding,boo
         $context['interruptible']=is_bool($snapshot['interruptible']??null)?$snapshot['interruptible']:null;
         $context['surface']=substr(preg_replace('/[^a-z0-9_-]/','',strtolower((string)($snapshot['surface']??'')))??'',0,32);
         $context['observed_at']=$now->modify('-'.(int)$age.' seconds')->format(DATE_ATOM);
-        $agentId=vp3_initiative_binding_agent_v1($binding);$conversationId=(int)($binding['conversation_id']??0);
-        $bound=$conversationId>0&&vp3_agent_chat_conversation_v380($pdo,$conversationId,(int)$user['id'],$agentId>0?['id'=>$agentId]:null);
-        if(function_exists('vp3_initiative_owner_present_v1'))$context['text_delivery_available']=$bound&&vp3_initiative_owner_present_v1($pdo,$user,$conversationId);
+        if(function_exists('vp3_initiative_owner_present_v1'))$context['quiet_chat']=$bound&&vp3_initiative_owner_present_v1($pdo,$user,$conversationId);
         // Availability may be shared by the owner, but another Agent's task title
         // is not implicitly granted as this Agent's working context.
         if($bound&&($snapshot['context_key']??'')==='chat:'.$conversationId){
@@ -99,6 +103,6 @@ function vp3_initiative_owner_context_v1(PDO $pdo,array $user,array $binding,boo
 function vp3_initiative_availability_v1(array $context): string
 {
     if(($context['available']??false)!==true)return 'unknown';
-    if(($context['text_delivery_available']??false)===true)return 'quiet_chat';
+    if(($context['quiet_chat']??false)===true)return 'quiet_chat';
     return ($context['interruptible']??null)===false?'busy':'away';
 }

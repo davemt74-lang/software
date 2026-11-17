@@ -78,6 +78,7 @@ $lease=$pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id
 $lease->execute([gmdate('Y-m-d H:i:s',time()-1),$run]);
 scope_check($read()['specialist']===null,'expired execution disappears without inventing progress or failure');
 $lease->execute([gmdate('Y-m-d H:i:s',time()+150),$run]);
+$pdo->prepare('UPDATE agent_workflow_actions SET max_attempts=1 WHERE run_id=?')->execute([$run]);
 $failed=vp3_initiative_execute_v1($pdo,$user,$claim,null,['search'=>static fn():array=>['ok'=>false]]);
 scope_check(!$failed['ok']&&$read()['specialist']===['run_id'=>$run,'kind'=>'topic','state'=>'failed','subject'=>$topic],
     'a real terminal research receipt is briefly visible with no transport details');

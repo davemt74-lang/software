@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-connection-gmail-autosend-v1.php';
+require_once __DIR__.'/includes/agent-connection-settings-view-v1.php';
 
 header('Cache-Control: no-store');
 header('Referrer-Policy: no-referrer');
@@ -16,7 +17,8 @@ require_permission('account.access');
 $pdo = db();
 $user = current_user();
 $result = 'autosend_invalid';
-if ($pdo && $user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()) {
+if ($pdo && $user && vp3_connection_settings_post_allowed_v1($user)
+    && is_string($_POST['csrf_token'] ?? null) && verify_csrf()) {
     try {
         agent_connection_gmail_autosend_save_v1($pdo, $user, $_POST);
         $result = 'autosend_saved';
@@ -30,4 +32,5 @@ if ($pdo && $user && is_string($_POST['csrf_token'] ?? null) && verify_csrf()) {
         $result = 'autosend_unavailable';
     }
 }
-redirect(url('/connections.php?app=gmail&result='.$result.'#gmail-autosend'));
+redirect(vp3_connection_settings_post_return_v1(['gmail'],
+    '/connections.php?app=gmail&result='.$result.'#gmail-autosend', ['result'=>$result], 'gmail-autosend'));

@@ -6,12 +6,15 @@ declare(strict_types=1);
 function db(): PDO { return $GLOBALS['fixtureDb']; }
 function current_user(): array { return ['id'=>1,'display_name'=>'Fixture owner']; }
 function require_permission(string $permission): void {}
-function has_permission(string $permission, array $user): bool { return $user['id'] === 1; }
+function has_permission(string $permission, array $user): bool { return $user['id'] === 1 && ($permission !== 'chat.access' || empty($GLOBALS['fixtureReview']['chat_denied'])); }
+function vp3_participant_scope_v1(): ?array { return empty($GLOBALS['fixtureReview']['participant_scope']) ? null : ['participant_id'=>2]; }
 function system_agent_name(): string { return 'Longfellow'; }
 function e(string $text): string { return htmlspecialchars($text, ENT_QUOTES, 'UTF-8'); }
 function url(string $path): string { return $path; }
 function csrf_token(): string { return 'fixture'; }
 function csrf_field(): string { return '<input type="hidden" name="csrf_token" value="fixture">'; }
+function verify_csrf(): bool { return ($_POST['csrf_token'] ?? '') === csrf_token(); }
+function redirect(string $path): never { echo $path; exit; }
 
 function agent_connections_summary_v1(int $owner, string $provider): array
 {
@@ -23,6 +26,7 @@ function agent_connections_summary_v1(int $owner, string $provider): array
 }
 
 function agent_connection_gmail_inbox_storage_ready_v1(PDO $pdo): bool { return true; }
+function agent_email_running_report_ready_v1(PDO $pdo): bool { return true; }
 function agent_connection_gmail_inbox_authority_v1(array $user, array $connection): bool { return true; }
 function agent_connection_gmail_autosend_settings_v1(PDO $pdo, array $user, int $connection): array
 {
@@ -39,6 +43,11 @@ function agent_connection_gmail_inbox_background_status_v1(PDO $pdo, array $user
 {
     if ($includeResults) throw new RuntimeException('Connections only needs check status here.');
     return $GLOBALS['fixtureReview']['inbox_background'] ?? null;
+}
+
+function agent_connection_gmail_inbox_sync_view_v1(PDO $pdo, array $policy): ?array
+{
+    return $GLOBALS['fixtureReview']['inbox_sync'] ?? null;
 }
 
 function agent_connection_gmail_inbox_latest_view_v1(PDO $pdo, array $user, string $revision): ?array
@@ -60,17 +69,34 @@ function agent_connection_gmail_inbox_initial_view_v1(PDO $pdo, array $user, boo
     return $review;
 }
 
-function agent_connection_youtube_ready_v1(): bool { return false; }
-function agent_connection_youtube_consent_ready_v1(PDO $pdo): bool { return false; }
-function vp3_youtube_playback_ready_v1(PDO $pdo): bool { return false; }
-function vp3_youtube_picks_ready_v1(PDO $pdo): bool { return false; }
-function agent_connection_health_member_v1(PDO $pdo, int $owner, int $connection): ?array { return null; }
+function agent_connection_youtube_ready_v1(): bool { return !empty($GLOBALS['fixtureReview']['youtube_enabled']); }
+function agent_connection_youtube_consent_ready_v1(PDO $pdo): bool { return agent_connection_youtube_ready_v1(); }
+function agent_connection_youtube_consent_v1(PDO $pdo, int $owner): bool { return agent_connection_youtube_ready_v1(); }
+function vp3_youtube_playback_ready_v1(PDO $pdo): bool { return agent_connection_youtube_ready_v1(); }
+function vp3_youtube_capture_key_v1(PDO $pdo, int $owner): string { return 'fixture'; }
+function vp3_youtube_watch_ready_v1(PDO $pdo): bool { return true; }
+function vp3_youtube_picks_ready_v1(PDO $pdo): bool { return agent_connection_youtube_ready_v1(); }
+function vp3_youtube_picks_settings_v1(PDO $pdo, int $owner): array { return ['taste'=>'', 'proactive'=>false]; }
+function vp3_youtube_artist_research_enabled_v1(PDO $pdo, int $owner): bool { return false; }
+function vp3_youtube_research_enabled_v1(PDO $pdo, int $owner, string $kind): bool { return false; }
+function vp3_youtube_watch_research_enabled_v1(PDO $pdo, int $owner): bool { return false; }
+function agent_connection_health_member_v1(PDO $pdo, int $owner, int $connection): ?array
+{
+    return $GLOBALS['fixtureReview']['gmail_health'] ?? null;
+}
 function agent_connection_health_platform_v1(PDO $pdo, string $provider): ?array { return null; }
 
-$GLOBALS['fixtureDb'] = new PDO('sqlite::memory:');
-$GLOBALS['fixtureDb']->exec('CREATE TABLE settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL)');
+$settingsDb = getenv('VP3_CONNECTION_SETTINGS_FIXTURE_DB') ?: ':memory:';
+$GLOBALS['fixtureDb'] = new PDO('sqlite:'.$settingsDb);
+$GLOBALS['fixtureDb']->exec('CREATE TABLE IF NOT EXISTS settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, is_active INTEGER NOT NULL);
+    INSERT OR IGNORE INTO users VALUES (1, 1)');
 $GLOBALS['fixtureReview'] = json_decode($argv[2], true, 16, JSON_THROW_ON_ERROR);
 parse_str($argv[1] ?? '', $_GET);
+if (isset($argv[3])) {
+    $_SERVER['REQUEST_METHOD'] = 'POST';
+    parse_str($argv[3], $_POST);
+}
 $root = dirname(__DIR__,2);
 if (($argv[1]??'') === '--chat-review-runtime') {
     // Keep the PHP-rendered Chat configuration in the browser test too.
@@ -86,7 +112,10 @@ if (($argv[1]??'') === '--chat-review-runtime') {
     return;
 }
 require_once $root.'/includes/agent-initiative-native-music-v1.php';
+require_once $root.'/includes/agent-media-entertainment-v1.php';
+require_once $root.'/includes/agent-casual-checkin-settings-v1.php';
 require_once $root.'/includes/agent-transcript-research-policy-v1.php';
+require_once $root.'/includes/agent-connection-settings-view-v1.php';
 $source = file_get_contents($root.'/connections.php');
 $source = preg_replace('/^declare\(strict_types=1\);\R|^require(?:_once)? __DIR__ \. \'\/includes\/[^\']+\';\R/m', '', $source);
 $source = str_replace(

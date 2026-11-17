@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 /** Account-scoped, source-authoritative workspace replicas. Never executes copied schedules. */
 const VP3_WORKSPACE_SYNC_V1='vp3.workspace-sync.v1';
+// Bind cached Cloud downloads to the current projection without decoding the full snapshot for each chunk.
+const VP3_WORKSPACE_SYNC_CLOUD_PROJECTION_V1=1;
+const VP3_WORKSPACE_SYNC_CLOUD_PREFIX_V1='{"contract":"'.VP3_WORKSPACE_SYNC_V1.'","source":"cloud","projection_version":'.VP3_WORKSPACE_SYNC_CLOUD_PROJECTION_V1.',';
 const VP3_WORKSPACE_SYNC_CHUNK=65536;
 const VP3_WORKSPACE_SYNC_MAX=67108864;
 const VP3_WORKSPACE_ASSET_CHUNK=1048576;
@@ -88,7 +91,7 @@ function workspace_sync_extend_registry_v1(array $registry): array
         $registered[$descriptor[0]]=true;
         if(workspace_sync_descriptor_ready_v1($descriptor)){$known[$descriptor[0]]=$descriptor;$group[$descriptor[0]]=$dataset;}
     }
-    $blocked=static fn(string $table):bool => (bool)preg_match('/^(?:sqlite_|homeserver_|settings$|permissions$|role_permissions$|user_account_types$)|(?:auth|oauth|session_tokens|session_keys|credentials|secrets|api_keys|password|login|provider_connections|calendar_connections|device_connections|webhook|outbox|leases|locks|approvals|audit|usage|billing|entitlement|subscription|user_roles|permission_grants|capability_grants|claim_codes)/i',$table);
+    $blocked=static fn(string $table):bool => (bool)preg_match('/^(?:sqlite_|homeserver_|vp3_coding_canvas|settings$|permissions$|role_permissions$|user_account_types$)|(?:auth|oauth|session_tokens|session_keys|credentials|secrets|api_keys|password|login|provider_connections|calendar_connections|device_connections|webhook|outbox|leases|locks|approvals|audit|usage|billing|entitlement|subscription|user_roles|permission_grants|capability_grants|claim_codes)/i',$table);
     $classify=static function(string $table):string{
         foreach(['crm'=>'crm','contacts'=>'contacts','calendar'=>'calendar','scheduling'=>'schedules','meeting'=>'meetings','transcript'=>'transcriptions','knowledge'=>'knowledge','commerce_product'=>'products','commerce_order'=>'orders','commerce_payment'=>'orders','commerce_refund'=>'orders','chat'=>'chats','notification'=>'notifications','artist_'=>'artist_workspace','memory'=>'agents','user_agents'=>'agents'] as $pattern=>$dataset)
             if(str_contains($table,$pattern))return $dataset;
@@ -185,7 +188,11 @@ function workspace_sync_descriptor_ready_v1(array $descriptor): bool
 function workspace_sync_predicate_v1(array $descriptor,string $alias='r'): string
 {
     $table=array_shift($descriptor);$column=array_shift($descriptor);
-    if(!$descriptor)return "$alias.`$column`=?";
+    if(!$descriptor){
+        $excludeCanvas=$table==='knowledge_items'&&column_exists($table,'file_type')
+            ?" AND COALESCE($alias.`file_type`,'')<>'coding_canvas'":'';
+        return "$alias.`$column`=?".$excludeCanvas;
+    }
     $parent=array_shift($descriptor);$parentKey=array_shift($descriptor);
     return "$alias.`$column` IN (SELECT p.`$parentKey` FROM `$parent` p WHERE ".
         workspace_sync_predicate_v1(array_merge([$parent],$descriptor),'p').')';
@@ -220,8 +227,9 @@ function workspace_sync_assets_v1(array $records,array $prior=[]): array
 
 function workspace_sync_asset_chunk_v1(PDO $pdo,int $uid,string $dataset,array $body): array
 {
-    $q=$pdo->prepare("SELECT a.* FROM homeserver_workspace_assets_v1 a JOIN homeserver_workspace_snapshots_v1 s ON s.user_id=a.user_id AND s.dataset=a.dataset AND s.source='cloud' AND s.revision=a.revision WHERE a.user_id=? AND a.dataset=? AND a.asset_id=? AND a.revision=?");
-    $q->execute([$uid,$dataset,$body['asset_id']??'',$body['revision']??'']);$asset=$q->fetch(PDO::FETCH_ASSOC);
+    $prefix=VP3_WORKSPACE_SYNC_CLOUD_PREFIX_V1;
+    $q=$pdo->prepare("SELECT a.* FROM homeserver_workspace_assets_v1 a JOIN homeserver_workspace_snapshots_v1 s ON s.user_id=a.user_id AND s.dataset=a.dataset AND s.source='cloud' AND s.revision=a.revision WHERE a.user_id=? AND a.dataset=? AND a.asset_id=? AND a.revision=? AND SUBSTR(s.body_json,1,?)=?");
+    $q->execute([$uid,$dataset,$body['asset_id']??'',$body['revision']??'',strlen($prefix),$prefix]);$asset=$q->fetch(PDO::FETCH_ASSOC);
     if(!$asset)throw new RuntimeException('Workspace attachment changed; retry.',409);
     $path=workspace_sync_asset_path_v1($asset['path']);
     $offset=$body['offset']??null;$size=(int)$asset['size_bytes'];
@@ -257,7 +265,7 @@ function workspace_sync_export_v1(PDO $pdo,int $userId,string $dataset): array
     }
     usort($records,static fn($a,$b)=>[$a['table'],$a['source_id']]<=>[$b['table'],$b['source_id']]);
     $q=$pdo->prepare('SELECT path,size_bytes,modified_at,sha256 FROM homeserver_workspace_assets_v1 WHERE user_id=? AND dataset=?');$q->execute([$userId,$dataset]);$prior=$q->fetchAll(PDO::FETCH_ASSOC);
-    $payload=['contract'=>VP3_WORKSPACE_SYNC_V1,'source'=>'cloud','dataset'=>$dataset,'records'=>$records,
+    $payload=['contract'=>VP3_WORKSPACE_SYNC_V1,'source'=>'cloud','projection_version'=>VP3_WORKSPACE_SYNC_CLOUD_PROJECTION_V1,'dataset'=>$dataset,'records'=>$records,
       'available_tables'=>$available,'unavailable_tables'=>$unavailable,'files'=>workspace_sync_assets_v1($records,$prior)];
     $body=json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
     if(strlen($body)>VP3_WORKSPACE_SYNC_MAX)throw new RuntimeException('Workspace dataset exceeds transfer capacity; existing replica preserved.');
@@ -418,7 +426,10 @@ function workspace_sync_exchange_v1(array $session,array $body): array
                 unset($snapshot['body']);$out+=$snapshot;
             }elseif($action==='pull'){
                 $snapshot=workspace_sync_read_v1($pdo,$uid,'cloud',$dataset);
-                if(!$snapshot||!is_string($body['revision']??null)||!hash_equals($snapshot['revision'],$body['revision']))throw new RuntimeException('Workspace export changed; retry this dataset.',409);
+                if(!$snapshot||!str_starts_with($snapshot['body_json'],VP3_WORKSPACE_SYNC_CLOUD_PREFIX_V1)
+                    ||!is_string($body['revision']??null)||!hash_equals($snapshot['revision'],$body['revision'])){
+                    throw new RuntimeException('Workspace export changed; retry this dataset.',409);
+                }
                 $offset=$body['offset']??null;$total=(int)$snapshot['byte_count'];
                 if(!is_int($offset)||$offset<0||$offset%VP3_WORKSPACE_SYNC_CHUNK!==0||$offset>=$total)throw new InvalidArgumentException('Invalid workspace offset.');
                 $out+=['revision'=>$snapshot['revision'],'offset'=>$offset,'total_bytes'=>$total,'chunk'=>base64_encode(substr($snapshot['body_json'],$offset,VP3_WORKSPACE_SYNC_CHUNK))];

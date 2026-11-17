@@ -166,6 +166,7 @@ function agent_scheduling_public_reschedule_v450(PDO $pdo, array $booking, strin
         ]);
         $pdo->prepare('UPDATE agent_scheduling_bookings SET rescheduled_from_id=? WHERE id=?')->execute([$bookingId, (int)$newBooking['id']]);
 
+        agent_scheduling_wake_planning_v430($pdo,$newBooking);
         if ($started) $pdo->commit();
         return $newBooking;
     } catch (Throwable $e) {

@@ -19,6 +19,8 @@ const messages = new Map([[42,[]],[43,[{id:101,role:'assistant',message:'The oth
 const youtubeIds = ['dQw4w9WgXcQ', 'M7lc1UVf-VE'];
 const youtubeCommands = ['Search YouTube for typed video results', 'Search YouTube for spoken video results'];
 const artistResearchCommand = 'Research artist Neko Case near Phoenix for shows';
+const gmailReadAloud = 'Read it aloud.';
+const gmailVoiceBody = 'Private delivery request due at 3 PM.';
 const youtubeRecallCommand = 'It was a song in the YouTube playlist you returned in search results';
 const youtubeRecallSource = 201;
 let playedInVp3 = [];
@@ -100,6 +102,7 @@ await page.route('**/api/**', async route => {
   if(new URL(route.request().url()).pathname==='/api/chat-stream-v121.php'){
     if(sendGate)await sendGate;
     const event=streamState==='success'?{type:'done',data:{ok:true,conversation_id:42,answer:'Completed streamed reply',user_message_id:nextMessageId++,assistant_message_id:nextMessageId++,
+      ...(payload.message===gmailReadAloud ? {answer:gmailVoiceBody,private_email_read:true,gmail_local_read_aloud:true} : {}),
       ...(payload.message===youtubeCommands[1] ? {youtube_results:youtubeResult('Spoken video results')} : {})}}:streamState==='auth'?{type:'error',error:'Sign in required'}:{type:'delta',delta:'Unconfirmed partial reply'};
     return route.fulfill({status:streamState==='auth'?401:200,contentType:'application/x-ndjson',body:JSON.stringify(event)+'\n'});
   }
@@ -160,10 +163,10 @@ try {
   });
   assert.deepEqual(nativeConstruction,{continuous:false,interimResults:true,lang:'en-US'});
   console.log('PASS lease facade accepts actual Chromium recognition handlers and options');
-  async function boot(fast=false, {savedVoice='1',agentVoiceEnabled=true,reload=false}={}) {
+  async function boot(fast=false, {savedVoice='1',agentVoiceEnabled=true,reload=false,localEmailVoice=false}={}) {
   if(reload)await page.reload();
   else await page.goto('http://chat.test/');
-  await page.evaluate(({fast,savedVoice,agentVoiceEnabled}) => {
+  await page.evaluate(({fast,savedVoice,agentVoiceEnabled,localEmailVoice}) => {
     window.VP3_YOUTUBE_PLAYBACK_V1 = {endpoint:'/api/youtube-playback',csrf:'fixture',captureKey:'fixture-key',proactive:true};
     window.STONEFELLOW_CHAT = {userId:1,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',workingAttentionBinding:'fixture-working-attention'};
     localStorage.setItem('stonefellow:voice-mode:1',savedVoice);
@@ -183,14 +186,19 @@ try {
       stop() { this.active=false; queueMicrotask(() => this.onend?.()); }
       abort() { this.stop(); }
     };
-    Object.defineProperty(window, 'speechSynthesis', {value:{cancel(){},speak(utterance){window.spoken.push(utterance.text);queueMicrotask(() => {utterance.onstart?.();utterance.onend?.();});}}});
+    Object.defineProperty(window, 'speechSynthesis', {value:{
+      cancel(){},getVoices:()=>localEmailVoice?[{localService:false,name:'Remote voice'},{localService:true,name:'Device voice'}]:[],
+      speak(utterance){window.spoken.push(utterance.text);window.lastSpeechVoice=utterance.voice?.name;queueMicrotask(() => {utterance.onstart?.();utterance.onend?.();});}
+    }});
     window.SpeechSynthesisUtterance = class { constructor(text){this.text=text;} };
     const button = document.getElementById('chatVoiceButton');
     // An old cached page may still provide an intro to the current voice asset.
     window.STONEFELLOW_CHAT_VOICE_BOOT = {button,intro:{greeting:'Old return greeting',updates:[{title:'Old Studio update'}]}};
     button.id = 'chatVoiceButtonLegacyDormant';
-    if(fast)window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){},stop(){}});
-  },{fast,savedVoice,agentVoiceEnabled});
+    if(fast)window.StonefellowPremiumVoiceV122=()=>({warm:async()=>localEmailVoice,
+      createStream(){return {started:Promise.resolve(),push(text){window.premiumSpeech.push(text);},end(){},stop(){}};},stop(){}});
+    window.premiumSpeech=[];
+  },{fast,savedVoice,agentVoiceEnabled,localEmailVoice});
   for (const name of ['chat.css','chat-cognitive-presentation-v510.css','chat-agent-teams-a3.css','chat-tools.css','chat-youtube-v1.css']) await page.addStyleTag({content:await source(name)});
   // Real scripts, in production order; the recognition service alone is mocked.
   for (const name of ['chat-youtube-v1.js','chat.js','chat-tools.js','voice-lease-v122.js','agent-context-v131.js','chat-voice.js','chat-agent-teams-a3.js','chat-browser-research-v1.js','project-knowledge-r5.js','project-knowledge-r6.js','project-knowledge-r7.js','knowledge-actions-r8.js']) await page.addScriptTag({content:await source(name)});
@@ -425,6 +433,24 @@ try {
     else assert.match(await page.locator('#chatInput').inputValue(),new RegExp(kind));
   }
   console.log('PASS fast voice canonical Stop, truncated provider streams and expired sessions preserve owner boundaries without replay');
+
+  streamState='success';
+  messages.set(42,[{id:249,role:'assistant',message:'An email may need your attention. Want me to open it?',
+    context_json:JSON.stringify({source:'agent_connection_gmail_inbox_update',gmail_conversation_offer:true})}]);
+  await boot(true,{localEmailVoice:true});
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(42));
+  await page.getByRole('button',{name:'Chat tools',exact:true}).click();
+  await page.getByLabel('Work mode').selectOption('chat');
+  await page.getByRole('button',{name:'Close chat tools'}).click();
+  await page.getByRole('button',{name:'Start voice conversation'}).click();
+  await page.waitForFunction(()=>window.recognizers.some(item=>item.active));
+  await speak(gmailReadAloud);
+  await page.waitForFunction(text=>window.spoken.includes(text),gmailVoiceBody);
+  assert.equal(streams().at(-1).gmail_offer_message_id,249);
+  assert.deepEqual(await page.evaluate(()=>({voice:window.lastSpeechVoice,premium:window.premiumSpeech})),
+    {voice:'Device voice',premium:[]});
+  messages.set(42,[]);
+  console.log('PASS spoken Gmail follow-up carries the displayed offer and reads private content only with the local voice');
 
   streamState='success';
   await boot(true);

@@ -38,6 +38,9 @@ function agent_appointment_lifecycle_reschedule_v700(
         agent_appointment_lifecycle_reset_timed_deliveries_v700($pdo,$bookingId);
         agent_appointment_lifecycle_queue_booking_v700($pdo,$fresh,false);
         agent_appointment_lifecycle_queue_notice_v700($pdo,$fresh,'rescheduled');
+        if ($oldStart !== $fresh['start_at_utc'] || $oldEnd !== $fresh['end_at_utc'] || $currentBooking['status'] !== $fresh['status']) {
+            agent_scheduling_wake_planning_v430($pdo,$fresh);
+        }
         if($started)$pdo->commit();
     }catch(Throwable $e){
         if($started&&$pdo->inTransaction())$pdo->rollBack();

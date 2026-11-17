@@ -43,7 +43,8 @@ function popup_session(int $owner, string $cookie = '', bool $expire = false): a
 $process = null;
 $checks = 0;
 try {
-    foreach (['connection-gmail-popup.php','includes/agent-connection-gmail-popup-v1.php','includes/agent-connection-gmail-popup-view-v1.php'] as $file) {
+    foreach (['connection-gmail-popup.php','includes/agent-connection-gmail-popup-v1.php','includes/agent-connection-gmail-popup-view-v1.php',
+        'includes/agent-connection-settings-view-v1.php'] as $file) {
         if (!copy($repo.'/'.$file, $root.'/'.$file)) throw new RuntimeException('Missing popup source file.');
     }
     $bootstrap = <<<'PHP'
@@ -63,7 +64,7 @@ function current_user(): ?array
 }
 function has_permission(string $permission, ?array $user = null): bool
 {
-    return $permission === 'account.access' && !empty(($user ?? current_user())['id']);
+    return in_array($permission, ['account.access','chat.access'], true) && !empty(($user ?? current_user())['id']);
 }
 function require_permission(string $permission): void
 {
@@ -168,8 +169,10 @@ PHP);
     popup_check($status !== 200 && popup_session(1,$cookie)[1]['attempt'] === null, 'Prepare requires the current session CSRF token.');
     [$status] = popup_request($path, array_replace($prepare,['revision'=>str_repeat('0',64)]), $cookie);
     popup_check($status !== 200 && popup_session(1,$cookie)[1]['attempt'] === null, 'Prepare rejects a stale connection revision.');
+    [$status] = popup_request($path, $prepare + ['settings_app'=>'gmail','settings_owner_user_id'=>'2'], $cookie);
+    popup_check($status !== 200 && popup_session(1,$cookie)[1]['attempt'] === null, 'A stale specialist settings owner cannot start OAuth.');
 
-    [$status,$html,$headers] = popup_request($path, $prepare, $cookie);
+    [$status,$html,$headers] = popup_request($path, $prepare + ['settings_app'=>'gmail','settings_owner_user_id'=>'1'], $cookie);
     $attempt = popup_session(1,$cookie)[1]['attempt'];
     popup_check($status === 200 && is_string($attempt) && preg_match('/\A[a-f0-9]{64}\z/D',$attempt) === 1,
         'Prepare renders the popup with a one-use session attempt.');

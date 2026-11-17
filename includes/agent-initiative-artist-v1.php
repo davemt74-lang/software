@@ -31,6 +31,12 @@ function vp3_initiative_youtube_artist_subject_v1(string $subject,array $videos)
     $titles=[];
     foreach(array_slice($videos,0,6) as $video){
         if(($video['music_category']??false)!==true||!is_bool($video['made_for_kids']??null))continue;
+        $context=$video['public_context']??null;
+        // A creator credit only corroborates the exact owner-entered artist.
+        // Provider description text never becomes a new public search phrase.
+        if(($context['music']??null)===true&&is_string($context['description']??null)
+            &&preg_match('~\b(?:artist\s*:\s*|(?:music|performed) by\s+)'.preg_quote($artist,'~')
+                .'(?=\s*\z|\s*[.,;!?·|])~iu',$context['description']))return $artist;
         $channel=$video['channel_title']??null;
         if(is_string($channel)){
             $channel=preg_replace('/\s+(?:-\s+Topic|Official|VEVO)\z/iu','',trim($channel))??$channel;

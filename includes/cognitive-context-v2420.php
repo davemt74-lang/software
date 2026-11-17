@@ -615,38 +615,110 @@ function vp3_cognitive_context_activity_projection_v2420(
 }
 
 function vp3_cognitive_context_history_rows_v2420(
-    PDO $pdo,array $user,string $namespace,int $limit=60
+    PDO $pdo,array $user,string $namespace,int $limit=60,bool $includeProactive=true
 ): array {
-    $uid=(int)($user['id']??0);if($uid<1||!table_exists('agent_chat_archive')||!table_exists('chat_conversations'))return [];
+    $uid=(int)($user['id']??0);if($uid<1||vp3_participant_scope_v1()!==null||!table_exists('chat_conversations'))return [];
     $namespace=vp3_cognitive_context_namespace_v2420($pdo,$user,$namespace);
     $agentId=vp3_cognitive_agent_id_v500($namespace);
     $limit=max(1,min(100,$limit));
     $scope=$agentId>0?'c.user_agent_id=?':'c.user_agent_id IS NULL';
     $params=$agentId>0?[$uid,$agentId]:[$uid];
+    $rows=[];
     try{
-        $stmt=$pdo->prepare(
-            "SELECT a.id,a.conversation_id,a.source_message_id,a.role,a.input_mode,a.message_text,a.created_at,a.archived_at,
-                    m.context_json
-             FROM agent_chat_archive a
-             INNER JOIN chat_conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id
-             LEFT JOIN chat_messages m ON m.id=a.source_message_id AND m.conversation_id=a.conversation_id
-             WHERE a.user_id=? AND {$scope}
-             ORDER BY a.id DESC LIMIT {$limit}"
-        );
-        $stmt->execute($params);
-        return array_map(static function(array $row): array {
-            $turnType='';
-            $ctx=json_decode((string)($row['context_json']??''),true);
-            if(is_array($ctx)&&is_array($ctx['cognitive_turn']??null)){
-                $turnType=vp3_cognitive_text_v500($ctx['cognitive_turn']['turn_type']??'',80);
-            }
-            return [
-                'id'=>(int)$row['id'],'conversation_id'=>(int)$row['conversation_id'],
-                'source_message_id'=>(int)$row['source_message_id'],'role'=>(string)$row['role'],
-                'input_mode'=>(string)$row['input_mode'],'message'=>(string)$row['message_text'],
-                'turn_type'=>$turnType,
-                'created_at'=>(string)$row['created_at'],'archived_at'=>(string)$row['archived_at'],
-            ];
-        },$stmt->fetchAll()?:[]);
-    }catch(Throwable $e){return [];}
+        if(table_exists('agent_chat_archive')){
+            $stmt=$pdo->prepare(
+                "SELECT a.id,a.conversation_id,a.source_message_id,a.role,a.input_mode,a.message_text,a.created_at,a.archived_at,
+                        m.context_json
+                 FROM agent_chat_archive a
+                 INNER JOIN chat_conversations c ON c.id=a.conversation_id AND c.user_id=a.user_id
+                 LEFT JOIN chat_messages m ON m.id=a.source_message_id AND m.conversation_id=a.conversation_id
+                 WHERE a.user_id=? AND {$scope}
+                 ORDER BY a.id DESC LIMIT {$limit}"
+            );
+            $stmt->execute($params);
+            $rows=array_map(static function(array $row): array {
+                $turnType='';
+                $ctx=json_decode((string)($row['context_json']??''),true);
+                if(is_array($ctx)&&is_array($ctx['cognitive_turn']??null)){
+                    $turnType=vp3_cognitive_text_v500($ctx['cognitive_turn']['turn_type']??'',80);
+                }
+                return [
+                    'id'=>(int)$row['id'],'conversation_id'=>(int)$row['conversation_id'],
+                    'source_message_id'=>(int)$row['source_message_id'],'role'=>(string)$row['role'],
+                    'input_mode'=>(string)$row['input_mode'],'message'=>(string)$row['message_text'],
+                    'turn_type'=>$turnType,
+                    'created_at'=>(string)$row['created_at'],'archived_at'=>(string)$row['archived_at'],
+                ];
+            },$stmt->fetchAll()?:[]);
+        }
+    }catch(PDOException $error){
+        if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('activity.history_archive_unavailable');
+    }
+    if(!$includeProactive)return $rows;
+    $seen=array_fill_keys(array_column($rows,'source_message_id'),true);
+    try{
+        foreach(vp3_cognitive_context_proactive_history_v2420($pdo,$uid,$agentId,$limit) as $row){
+            if(!isset($seen[$row['source_message_id']]))$rows[]=$row;
+        }
+    }catch(PDOException $error){
+        if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('activity.history_proactive_unavailable');
+    }
+    usort($rows,static fn(array $a,array $b):int=>
+        [$b['created_at'],$b['source_message_id']]<=>[$a['created_at'],$a['source_message_id']]);
+    return array_slice($rows,0,$limit);
+}
+
+/** Show delivered turns even when their conversation text was excluded from Brain. */
+function vp3_cognitive_context_proactive_history_v2420(PDO $pdo,int $owner,int $agentId,int $limit): array
+{
+    if(!table_exists('agent_workflow_runs')||!table_exists('agent_workflow_actions')||!table_exists('agent_workflow_receipts'))return [];
+    $runScope=$agentId>0?'agent_id=?':'agent_id IS NULL';
+    $params=$agentId>0?[$owner,$agentId]:[$owner];
+    // Walk only the owner's recent completed work. The receipt and message reads use exact IDs.
+    $limit=max(1,min(100,$limit));
+    $query=$pdo->prepare("SELECT r.id,r.goal,a.result_json,p.result_json AS receipt_json
+        FROM (SELECT id,owner_user_id,goal,updated_at FROM agent_workflow_runs
+            WHERE owner_user_id=? AND $runScope AND status='completed' AND source_kind='agent_initiative'
+                AND capability_key='initiative.prepare' AND execution_target='cloud'
+            ORDER BY updated_at DESC,id DESC LIMIT $limit) r
+        INNER JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
+            AND a.sequence_no=1 AND a.status='completed' AND a.capability_key='initiative.prepare' AND a.execution_target='cloud'
+        INNER JOIN agent_workflow_receipts p ON p.id=(SELECT q.id FROM agent_workflow_receipts q
+            WHERE q.run_id=r.id AND q.owner_user_id=r.owner_user_id AND q.action_id=a.id
+                AND q.attempt_no=a.attempt_count AND q.status='completed' AND q.executor='cloud' ORDER BY q.id DESC LIMIT 1)");
+    $query->execute($params);
+    $verified=[];
+    foreach($query->fetchAll(PDO::FETCH_ASSOC) as $run){
+        if(!is_string($run['result_json'])||$run['result_json']!==$run['receipt_json'])continue;
+        $result=json_decode($run['result_json'],true,32);
+        if(($result['effect_state']??null)!=='private_draft_ready'||($result['initiative_delivery']??null)!=='delivered'
+            ||!is_int($result['initiative_message_id']??null)||$result['initiative_message_id']<1
+            ||!is_string($result['initiative_draft']??null))continue;
+        $binding=json_decode((string)$run['goal'],true,32)['binding']??null;
+        if(!is_array($binding)||($binding['agent_id']??0)!==$agentId
+            ||($binding['owner_user_id']??$owner)!==$owner||!is_int($binding['conversation_id']??null)||$binding['conversation_id']<1)continue;
+        $verified[$result['initiative_message_id']]=['run'=>(int)$run['id'],'chat'=>$binding['conversation_id'],
+            'draft'=>$result['initiative_draft']];
+    }
+    if(!$verified)return [];
+    $chatScope=$agentId>0?'c.user_agent_id=?':'c.user_agent_id IS NULL';
+    $ids=implode(',',array_fill(0,count($verified),'?'));
+    $query=$pdo->prepare("SELECT m.id,m.conversation_id,m.message,m.context_json,m.created_at FROM chat_messages m
+        INNER JOIN chat_conversations c ON c.id=m.conversation_id
+        WHERE m.id IN ($ids) AND c.user_id=? AND $chatScope AND m.role='assistant' AND m.user_id IS NULL");
+    $query->execute([...array_keys($verified),...$params]);
+    $rows=[];
+    foreach($query->fetchAll(PDO::FETCH_ASSOC) as $message){
+        $id=(int)$message['id'];$cid=(int)$message['conversation_id'];$proof=$verified[$id];
+        $context=json_decode((string)$message['context_json'],true,32);
+        $work=$context['initiative_work']??[];
+        if($proof['chat']!==$cid||$proof['draft']!==$message['message']||($context['source']??null)!=='agent_initiative'
+            ||($context['skip_brain_archive']??null)!==true||($context['initiative_run_id']??null)!==$proof['run']
+            ||($work['run_id']??null)!==$proof['run']||($work['owner_user_id']??null)!==$owner
+            ||($work['agent_id']??null)!==$agentId||($work['conversation_id']??null)!==$cid)continue;
+        $rows[]=['id'=>$id,'conversation_id'=>$cid,'source_message_id'=>$id,'role'=>'assistant','input_mode'=>'text',
+            'message'=>'The Agent posted a proactive update.','turn_type'=>'proactive_update','created_at'=>(string)$message['created_at'],
+            'source_url'=>url('/chat.php?agent='.($agentId?:'system').'&conversation_id='.$cid.'&message_id='.$id)];
+    }
+    return $rows;
 }

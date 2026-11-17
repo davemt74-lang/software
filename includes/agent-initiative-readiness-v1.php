@@ -142,10 +142,22 @@ function vp3_initiative_readiness_calendar_v1(PDO $pdo,array $user,DateTimeImmut
     return ['ready',[$ref=>$row]];
 }
 
-/** Preserve the existing System-only Commerce source boundary; a named Agent opt-in does not expand it. */
-function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $principal,?array $selected): array
+/** Named Agents use the same exact owner and Chat binding as product preparation. */
+function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $principal,?array $selected,?array $binding=null): array
 {
-    if(($principal['kind']??'')!=='system')return ['forbidden',[]];
+    $kind=$principal['kind']??null;
+    $chatScope=null;$scopeProof=[];
+    if($kind==='user_agent'){
+        if($binding===null)return ['forbidden',[]];
+        require_once __DIR__.'/agent-initiative-product-context-v1.php';
+        $chatScope=vp3_initiative_product_capabilities_scope_v1($pdo,[
+            'user'=>$user,'principal'=>$principal,'agent_id'=>$principal['agent_id']??null,'conversation_id'=>$binding['conversation_id']??null,
+        ],$binding);
+        $user=$chatScope['user'];
+        $scopeProof=['agent_id'=>$chatScope['agent_id'],'conversation_id'=>$chatScope['conversation_id']];
+    }elseif($kind!=='system'){
+        return ['forbidden',[]];
+    }
     if(!function_exists('agent_commerce_schema_ready_v800')||!agent_commerce_schema_ready_v800($pdo)
         ||!function_exists('agent_commerce_products_for_owner_v800')||!function_exists('profile_commerce_owner_product_v900'))return ['unavailable',[]];
     $owner=(int)$user['id'];$rows=[];$emptyRef='product-readiness:owner:'.$owner;
@@ -167,7 +179,7 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
     if($empty){
         $evidence[$emptyRef]=vp3_initiative_readiness_row_v1($emptyRef,'product_readiness','Product catalog',
             'No product records are owned by this account in VP3. If selling is relevant, a first listing could be discussed. Nothing is required or authorized for publication.',
-            '/profile-commerce-products.php',['owner_user_id'=>$owner,'owned_products'=>0,'requires_owner_review'=>true]);
+            '/profile-commerce-products.php',['owner_user_id'=>$owner,'owned_products'=>0,'requires_owner_review'=>true]+$scopeProof);
     }
     foreach($rows as $id=>$row){
         $meta=profile_commerce_metadata_v900($row);$draft=profile_commerce_private_listing_draft_v900($row);
@@ -192,7 +204,7 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
             'source_photo_revision'=>$photo?hash('sha256',json_encode($photo,JSON_THROW_ON_ERROR)):null,
             'product_media_link'=>$photo?'owned_photo_record':($photoId>0?'record_missing':'not_assessed'),
             'promotion_state'=>'not_assessed','requires_owner_review'=>true,
-            'canonical_revision'=>hash('sha256',json_encode($row,JSON_THROW_ON_ERROR))];
+            'canonical_revision'=>hash('sha256',json_encode($row,JSON_THROW_ON_ERROR))]+$scopeProof;
         $detail=$draft?'A private listing awaits owner review and its commercial terms.':
             ($missing?'This existing listing has unfinished recorded fields.':
                 ($visibility==='hidden'?'This active listing is hidden; publication is an owner decision.':'This public listing can be considered for a private promotion or content proposal.'));
@@ -202,6 +214,7 @@ function vp3_initiative_readiness_products_v1(PDO $pdo,array $user,array $princi
             '/profile-commerce-products.php?workspace_product='.$id,$state);
         if($selected===null&&count($evidence)>=12){$limited=true;break;}
     }
+    if($chatScope!==null)vp3_initiative_product_capabilities_scope_v1($pdo,$chatScope,$binding);
     return [$limited?'limited':'ready',$evidence];
 }
 
@@ -293,7 +306,8 @@ function vp3_initiative_readiness_business_v1(PDO $pdo,array $user,array $princi
 }
 
 /** Same bound principal and selected refs are reused when execution revalidates the source snapshot. */
-function vp3_initiative_readiness_evidence_v1(PDO $pdo,array $user,array $principal,DateTimeImmutable $now,array &$coverage,?array $selectedRefs=null): array
+function vp3_initiative_readiness_evidence_v1(PDO $pdo,array $user,array $principal,DateTimeImmutable $now,array &$coverage,?array $selectedRefs=null,
+    ?array $productBinding=null): array
 {
     $owner=(int)($user['id']??0);$kind=$principal['kind']??'';
     if($owner<1||!in_array($kind,['system','user_agent'],true)||!has_permission('account.access',$user)
@@ -308,7 +322,7 @@ function vp3_initiative_readiness_evidence_v1(PDO $pdo,array $user,array $princi
         'account_readiness'=>['account-readiness',fn($refs)=>vp3_initiative_readiness_account_v1($pdo,$live,$principal,$refs)],
         'scheduling_readiness'=>['scheduling-readiness',fn($refs)=>vp3_initiative_readiness_scheduling_v1($pdo,$live,$principal,$now,$refs)],
         'calendar_readiness'=>['calendar-readiness',fn($refs)=>vp3_initiative_readiness_calendar_v1($pdo,$live,$now,$refs)],
-        'product_readiness'=>['product-readiness',fn($refs)=>vp3_initiative_readiness_products_v1($pdo,$live,$principal,$refs)],
+        'product_readiness'=>['product-readiness',fn($refs)=>vp3_initiative_readiness_products_v1($pdo,$live,$principal,$refs,$productBinding)],
         'business_readiness'=>['business-readiness',fn($refs)=>vp3_initiative_readiness_business_v1($pdo,$live,$principal,$now,$refs)],
     ];
     $evidence=[];

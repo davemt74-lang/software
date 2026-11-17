@@ -1,9 +1,14 @@
 .vp3-chat-specialist-rail{
   display:grid;
-  flex:0 0 auto;
+  flex:0 1 auto;
+  min-height:0;
+  margin-top:auto;
   justify-items:center;
   gap:6px;
   padding:8px 4px;
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:none;
 }
 .vp3-chat-specialist-rail button,
 .vp3-chat-specialist-panel button{
@@ -56,6 +61,8 @@
   background:#16834c;
   box-shadow:0 0 0 2px #fff;
 }
+.vp3-chat-worker-indicator[data-chat-specialist-state="completed"]::after,
+.vp3-chat-worker-indicator[data-chat-specialist-presence]:not([data-chat-specialist-state="thinking"]):not([data-chat-specialist-state="working"])::after{display:none}
 .vp3-chat-specialist-panel{
   position:fixed;
   z-index:18010;
@@ -98,10 +105,17 @@
 }
 .vp3-chat-specialist-panel [hidden]{display:none}
 .vp3-chat-specialist-rail [hidden],
+.sf-online-rail-v109[data-agent-chat-rail] > .sf-online-users-v109[hidden],
+.sf-online-rail-v109[data-agent-chat-rail] ~ .sf-team-chat-windows-v109[hidden],
 .vp3-chat-mobile-tabs[hidden],
 .vp3-chat-mobile-specialists[hidden],
 #chatMobileHomePanel[hidden],
 [data-chat-specialist-dot][hidden]{display:none!important}
+
+@media(min-width:821px){
+  #sfOnlineRailV109[data-agent-chat-rail]{z-index:18001!important}
+  body:has(> #sfOnlineRailV109[data-agent-chat-rail]:not([hidden])) > .vp3-orb-root:not([data-popup-open=true]){right:70px}
+}
 
 @media(max-width:820px){
   .vp3-chat-mobile-tabs{

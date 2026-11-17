@@ -403,6 +403,7 @@ function vp3_profile_webmcp_scheduling_create_commit_v150(PDO $pdo,array $profil
     if(function_exists('profile_conversion_booking_confirmed_v179')&&!$paid){
         try{profile_conversion_booking_confirmed_v179($pdo,$profile,$booking,$event);}catch(Throwable $ignored){}
     }
+    if(!$paid)agent_scheduling_wake_planning_v430($pdo,$booking);
     return vp3_profile_webmcp_booking_response_v150($pdo,$profile,$booking,true);
 }
 

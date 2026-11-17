@@ -45,6 +45,7 @@ let activeTick;
 let listGate;
 let resumeGate;
 let nextResume;
+let emailStartConversation;
 const releaseTick = () => {
   activeTick?.();
   activeTick = undefined;
@@ -96,8 +97,12 @@ await page.route('https://canvas.test/api/**',async route => {
         started();
         await released;
       }
-      return result({canvases:job ? [canvas] : []});
+      return result({canvases:job ? [canvas] : [],email_start_available:body.conversation_id === emailStartConversation});
     }
+    case 'start_email':
+      assert.equal(body.conversation_id,emailStartConversation);
+      assert.match(body.request_id,/^[a-f0-9-]{36}$/);
+      return result({preparation_run_id:9,status:'approved'});
     case 'build':
     case 'repair': {
       calls.push(body.action);
@@ -176,7 +181,8 @@ async function loadChat(conversationId) {
   await page.goto('https://canvas.test/');
   await page.evaluate(({id,agent}) => {
     if (!id) localStorage.clear();
-    window.STONEFELLOW_CHAT = {userId:1,agentId:agent,endpoint:'/api/chat',csrf:'fixture',initialView:'chat',initialConversationId:id};
+    window.STONEFELLOW_CHAT = {userId:1,agentId:agent,endpoint:'/api/chat',csrf:'fixture',initialView:'chat',
+      initialConversationId:id,workingAttentionBinding:'fixture-owner-session'};
     window.VP3_CODING_CANVAS_V1 = {endpoint:'/api/coding',csrf:'fixture',agentId:agent};
     window.usageEvents = 0;
     window.addEventListener('vp3-coding-usage-change',() => window.usageEvents++);
@@ -259,9 +265,19 @@ try {
   assert.equal(await input.inputValue(),'Keep my conversational draft');
   job = null;
   await page.evaluate(() => { window.STONEFELLOW_CHAT = {...window.STONEFELLOW_CHAT,agentId:7}; });
-  await page.locator('#chatInput').fill('/build Build a checklist');
+  const sample = '/build Build a private launch checklist with three sample tasks, a progress counter, and checkbox state that persists in Canvas. Use sample data only.';
+  const stage = (id = 42) => page.evaluate(({text,id}) => window.STONEFELLOW_CHAT_CONTINUITY.stageSpecialistPrompt(text,id),{text:sample,id});
+  assert.equal(await stage(),false,'Opening a specialist example does not replace a personal draft');
+  assert.equal(await input.inputValue(),'Keep my conversational draft');
+  await input.fill('');
+  assert.equal(await stage(43),false,'A stale specialist action cannot write to a different Chat');
+  assert.equal(await stage(),true);
+  assert.equal(await input.inputValue(),sample);
+  assert.equal(await input.evaluate(element => element === document.activeElement),true);
+  assert.equal(records('build').length,0,'Preparing the editable example does not start a build');
   await page.locator('#sendChatButton').click();
   await nextDraft();
+  assert.equal(records('build').at(-1).prompt,sample.slice('/build '.length),'Sending the staged example uses the canonical coding job');
   assert.equal(records('tick').length,2,'A successful response which leaves the job queued is retried');
   await preview.getByText('Isolated',{exact:true}).waitFor();
   assert.equal(await panel.locator('iframe').getAttribute('sandbox'),'allow-scripts');
@@ -404,6 +420,18 @@ try {
   await codingWorker.waitFor({state:'detached'});
   assert.equal(records('stop').at(-1).conversation_id,bound);
   releaseTick();
+
+  emailStartConversation = bound;
+  await loadChat(bound);
+  await launch.click();
+  const startEmail = panel.getByRole('button',{name:'Build from email deadlines'});
+  await startEmail.waitFor();
+  assert.equal(records('start_email').length,0);
+  await startEmail.click();
+  await status.getByText('The Coding Agent will prepare a private email deadline board.',{exact:false}).waitFor();
+  assert.equal(records('start_email').length,1);
+  assert.equal(await startEmail.isVisible(),false);
+
   assert.deepEqual(external,[]);
   assert.deepEqual(pageErrors,[]);
   console.log('Coding Canvas browser fixture passed');

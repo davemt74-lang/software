@@ -13,23 +13,38 @@
     const key=`vp3:chat-voice-greeting:${adapter.ownerKey}`;
     let autoGreet=cfg.autoGreetEnabled===true, enabled=identity.agentVoiceEnabled===true;
     let pending=autoGreet&&enabled, explicit=false, claiming=false, active=null;
-    const inChat=()=>!document.hidden&&document.hasFocus()&&!thread.hidden&&thread.dataset.view==='chat';
-    const available=()=>autoGreet&&enabled&&inChat()&&chat.isReady()&&!chat.isRestoring()&&!chat.isBusy()
-      &&!window.VP3ParticipantContinuity?.selectedContext?.()
-      &&!window.VP3ConversationControls?.isEnabled?.()&&!window.VP3ConversationControls?.isReplyCapturePending?.()
-      &&!window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()
-      &&!String(document.getElementById('chatInput')?.value||'').trim()&&!adapter.state?.()?.recording;
+    const note=(state,detail)=>window.VP3VoiceDiagnostics?.record('greeting',state,detail);
+    function waitingReason() {
+      if(document.hidden||!document.hasFocus())return 'Waiting for this Chat tab to be visible and focused.';
+      if(thread.hidden||thread.dataset.view!=='chat')return 'Waiting for the Agent Chat view.';
+      if(window.VP3ParticipantContinuity?.selectedContext?.())return 'The owner greeting is unavailable in participant Chat.';
+      if(!chat.isReady()||chat.isRestoring())return 'Waiting for Chat to finish opening.';
+      if(chat.isBusy()||window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.())return 'Waiting for Chat to be idle.';
+      if(window.VP3ConversationControls?.isEnabled?.()||window.VP3ConversationControls?.isReplyCapturePending?.())
+        return 'Waiting for the current voice session to finish.';
+      if(String(document.getElementById('chatInput')?.value||'').trim())return 'Waiting for the Chat draft to be cleared or sent.';
+      if(adapter.state?.()?.recording)return 'Waiting for the current recording to finish.';
+      return '';
+    }
+    const available=()=>autoGreet&&enabled&&!waitingReason();
     const recentlyGreeted=()=>{try{const at=Number(localStorage.getItem(key)||0);return at>0&&Date.now()-at<cooldown;}catch(_){return false;}};
-    function cancel() {
+    function cancel(detail) {
+      const wasPending=pending;
       pending=false;
       const record=active;active=null;
       record?.controller?.abort();
       record?.retry?.remove();
+      if(detail&&(wasPending||record&&!record.greetingFinished))note('cancelled',detail);
     }
     const isCurrent=record=>active===record&&available()&&chat.conversationId()===record.conversationId;
     async function listen(record,greetingText='') {
       try {
-        await window.VP3AgentResponseWindow?.listen({quiet:true,automatic:true,greetingText,
+        const responseWindow=window.VP3AgentResponseWindow;
+        if(!responseWindow?.listen){
+          window.VP3VoiceDiagnostics?.record('reply','blocked','Greeting reply controls are unavailable on this page.');
+          return;
+        }
+        await responseWindow.listen({quiet:true,automatic:true,greetingText,
           canListen:()=>isCurrent(record)&&adapter.state?.()?.state!=='speaking'});
       } finally {
         if(active===record)active=null;
@@ -38,14 +53,31 @@
     async function play(record) {
       if(!isCurrent(record))return;
       record.retry?.remove();
+      note('queued','Greeting text is in Chat. Waiting for audio playback.');
       const controller=record.controller=new AbortController();
       const current=()=>!controller.signal.aborted&&isCurrent(record);
+      let playbackIssue='';
+      const playbackFailed=detail=>note(playbackIssue==='playback_cancelled'?'cancelled':'failed',playbackIssue||detail);
       const complete=completed=>{
+        record.greetingFinished=true;
+        if(active===record&&!controller.signal.aborted){
+          if(completed)note('completed','Greeting playback completed.');
+          else playbackFailed('Greeting playback started and ended before completion.');
+        }
         if(completed&&current())return listen(record,record.text);
+        if(completed&&active===record)window.VP3VoiceDiagnostics?.record('reply','blocked','Chat was no longer ready for the greeting reply.');
         if(active===record)active=null;
       };
-      const started=await window.STONEFELLOW_NOTIFICATION_CENTER.announceWhen(record.text,current,{signal:controller.signal,onComplete:complete,autoReply:false});
+      const started=await window.STONEFELLOW_NOTIFICATION_CENTER.announceWhen(record.text,current,{
+        signal:controller.signal,onComplete:complete,autoReply:false,
+        onPlaybackStart:()=>{if(active===record)note('speaking','Greeting playback started.');},
+        onPlaybackIssue:reason=>{playbackIssue=reason;}
+      });
+      if(!started&&active===record&&(!current()||!record.element.isConnected)){
+        note('cancelled',waitingReason()||'The Chat context changed before greeting playback.');
+      }
       if(started||!current()||!record.element.isConnected)return;
+      playbackFailed('Greeting audio did not start. Hear greeting is available in Chat.');
       const retry=document.createElement('button');
       retry.type='button';retry.className='chat-action-link';retry.textContent='Hear greeting';
       record.retry=retry;
@@ -53,44 +85,63 @@
       (record.element.querySelector('.message-body')||record.element).append(retry);
     }
     function refresh() {
-      if(!pending||claiming||!available()||typeof window.STONEFELLOW_NOTIFICATION_CENTER?.announceWhen!=='function')return;
+      if(!pending||claiming)return;
+      const reason=waitingReason();
+      if(reason){note('waiting',reason);return;}
+      if(typeof window.STONEFELLOW_NOTIFICATION_CENTER?.announceWhen!=='function'){
+        note('waiting','Waiting for the Chat speech engine.');
+        return;
+      }
       const greet=()=>{
-        if(!pending||!available())return;
+        if(!pending)return;
+        if(!available()){note('waiting',waitingReason()||'Waiting for greeting preferences.');return;}
         pending=false;
         const skipGreeting=!explicit&&recentlyGreeted();
         explicit=false;
         const conversationId=chat.conversationId();
-        if(skipGreeting){void listen(active={conversationId});return;}
+        if(skipGreeting){
+          note('skipped','Greeting cooldown is active. Auto Greet can still open a quiet reply window.');
+          void listen(active={conversationId,greetingFinished:true});
+          return;
+        }
         const name=String(window.STONEFELLOW_AGENT_IDENTITY_V236?.displayName||'your agent').trim().slice(0,120);
         const message=String(window.STONEFELLOW_CHAT?.intro?.greeting||'').trim()||`Hi, I’m ${name||'your agent'}. I’m here if you’d like to talk.`;
         const element=chat.mountAgentGreeting(message);
-        if(!element)return;
+        if(!element){note('failed','The greeting could not be added to Chat.');return;}
         try{localStorage.setItem(key,String(Date.now()));}catch(_){}
         const record=active={text:message,element,conversationId};
         void play(record);
       };
       if(!navigator.locks?.request){greet();return;}
+      note('queued','Waiting to check the greeting cooldown across tabs.');
       claiming=true;
       void navigator.locks.request(key,greet).catch(greet).finally(()=>{claiming=false;});
     }
     window.addEventListener('stonefellow:agent-voice',event=>{
       enabled=event.detail?.enabled===true;
-      if(!enabled){cancel();return;}
+      if(!enabled){cancel();note('skipped','Agent Voice is off.');return;}
       if(autoGreet&&event.detail?.source==='account-menu'){cancel();pending=true;explicit=true;}
       refresh();
     });
-    window.addEventListener('vp3:agent-auto-greet',event=>{if(event.detail?.enabled===false){autoGreet=false;cancel();}});
-    window.addEventListener('vp3:participant-selection-changed',cancel);
+    window.addEventListener('vp3:agent-auto-greet',event=>{
+      if(event.detail?.enabled===false){autoGreet=false;cancel();note('skipped','Auto Greet is off.');return;}
+      if(event.detail?.enabled!==true||event.detail.source!=='account-menu'||event.detail.fromStorage===true)return;
+      autoGreet=true;pending=true;explicit=true;
+      queueMicrotask(refresh);
+    });
+    window.addEventListener('vp3:participant-selection-changed',()=>cancel('Participant selection changed before the greeting finished.'));
     window.addEventListener('vp3:chat-context-ready',()=>queueMicrotask(refresh));
-    window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(thread.dataset.view!=='chat')cancel();});
-    window.addEventListener('stonefellow:chat-context-changing',()=>{if(active||chat.isReady())cancel();});
+    window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(thread.dataset.view!=='chat')cancel('The view changed before the greeting finished.');});
+    window.addEventListener('stonefellow:chat-context-changing',()=>{if(active||chat.isReady())cancel('The Chat context changed before the greeting finished.');});
     window.addEventListener('focus',refresh);
-    window.addEventListener('blur',()=>{if(active)cancel();});
-    window.addEventListener('pagehide',cancel,{once:true});
-    document.addEventListener('visibilitychange',()=>{if(document.hidden){if(active)cancel();}else refresh();});
-    document.addEventListener('click',event=>{if(event.target.closest?.('[data-orb-stop],#chatVoiceButton'))cancel();},true);
-    document.addEventListener('input',event=>{if(event.isTrusted&&event.target.id==='chatInput')cancel();});
-    document.getElementById('chatForm')?.addEventListener('submit',cancel,true);
+    window.addEventListener('blur',()=>{if(active)cancel('The Chat tab lost focus before the greeting finished.');});
+    window.addEventListener('pagehide',()=>cancel(),{once:true});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden){if(active)cancel('The Chat tab was hidden before the greeting finished.');}else refresh();});
+    document.addEventListener('click',event=>{if(event.target.closest?.('[data-orb-stop],#chatVoiceButton'))cancel('The user stopped the greeting or selected Listen.');},true);
+    document.addEventListener('input',event=>{if(event.isTrusted&&event.target.id==='chatInput')cancel('The user started typing before the greeting finished.');});
+    document.getElementById('chatForm')?.addEventListener('submit',()=>cancel('The user sent a Chat message before the greeting finished.'),true);
+    if(!autoGreet)note('skipped','Auto Greet is off.');
+    else if(!enabled)note('skipped','Agent Voice is off.');
     window.VP3AgentWelcome={refresh};refresh();
   }
 

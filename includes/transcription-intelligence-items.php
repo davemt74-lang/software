@@ -21,7 +21,7 @@ function transcription_intelligence_primary_v302(string $appId, string $sectionK
     return 'text';
 }
 
-function transcription_intelligence_evidence_refs_v302(array $item): array
+function transcription_intelligence_evidence_refs_v302(array $item,bool $retainSaved=true): array
 {
     $pages = [];
     $addPage = static function (mixed $value) use (&$pages): void {
@@ -32,6 +32,13 @@ function transcription_intelligence_evidence_refs_v302(array $item): array
 
     $addPage($item['page'] ?? null);
     foreach ((array)($item['pages'] ?? []) as $page) $addPage($page);
+    if($retainSaved){
+        foreach((array)($item['evidence_refs']??[]) as $ref){
+            if(!is_array($ref))continue;
+            $page=$ref['page']??null;
+            if(is_int($page)&&$page>0)$addPage($page);
+        }
+    }
 
     $evidence = $item['evidence'] ?? '';
     $texts = is_array($evidence) ? $evidence : [$evidence];

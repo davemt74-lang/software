@@ -30,6 +30,7 @@ $agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001';
 $profileActivityBuild = 'profile-activity-safety-pa1-20261103';
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
+$teamChatAdminBuild .= '-' . substr(hash_file('sha256', __DIR__ . '/team-chat-admin-v109.js'), 0, 12);
 $chatSettingsBuild = 'chat-settings-v239-canonical-20260905' . '-voice-v1352-chat-settings-v237-pa3c-assisted-phone-visitor-availability';
 $chatSettingsBuild .= '-' . substr(hash_file('sha256', __DIR__ . '/chat-settings-v237.js'), 0, 12);
 $notificationDrawerBuild = 'chat-notifications-recovery-20261016' . '-voice-v1351';
@@ -269,6 +270,7 @@ $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict
     . '};})();</script>';
 
 $voiceBootstrap = '<script data-chat-voice-pre>(function(){"use strict";var b=document.getElementById("chatVoiceButton");window.STONEFELLOW_CHAT_VOICE_BOOT={button:b,legacyDormant:true};if(b){b.id="chatVoiceButtonLegacyDormant";b.disabled=false;}})();</script>';
+$voiceDiagnostics = '<script src="' . e(url('/chat-voice-diagnostics-v1.js?v=' . substr(hash_file('sha256', __DIR__.'/chat-voice-diagnostics-v1.js'),0,12))) . '"></script>';
 require_once __DIR__.'/includes/agent-connection-youtube-playback-v1.php';
 $youtubePdo = db();
 $youtubeConfig = [
@@ -290,7 +292,7 @@ $youtubeChatRuntime = '<script>window.VP3_YOUTUBE_PLAYBACK_V1='
     . '<script src="'.e(url('/chat-youtube-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-youtube-v1.js'),0,12))).'"></script>';
 $html = preg_replace(
     '~(<script[^>]+src="[^"]*chat\.js\?v=[^"]+"[^>]*></script>)~i',
-    $agentChatBootstrap . $voiceBootstrap . $youtubeChatRuntime . '$1',
+    $agentChatBootstrap . $voiceBootstrap . $voiceDiagnostics . $youtubeChatRuntime . '$1',
     $html,
     1
 ) ?? $html;
@@ -359,7 +361,7 @@ $railLayout = '<style data-team-rail-layout-v111>'
     . 'body.sf-team-rail-active .chat-main{padding-right:0!important;}'
     . 'body.sf-team-rail-active .chat-thread{padding-right:68px!important;}'
     . 'body.sf-team-rail-active .chat-composer-shell{padding-right:68px!important;}'
-    . '@media(max-width:760px){.sf-online-rail-v109{display:none!important;}body.sf-team-rail-active .chat-main{padding-right:0!important;}body.sf-team-rail-active .chat-thread{padding-right:0!important;}body.sf-team-rail-active .chat-composer-shell{padding-right:0!important;}}'
+    . '@media(max-width:820px){.sf-online-rail-v109{display:none!important;}body.sf-team-rail-active .chat-main{padding-right:0!important;}body.sf-team-rail-active .chat-thread{padding-right:0!important;}body.sf-team-rail-active .chat-composer-shell{padding-right:0!important;}}'
     . '</style>'
     . '<script data-team-rail-anchor-v111>(function(){var setTop=function(){var h=document.querySelector(".chat-topbar");if(!h)return;document.documentElement.style.setProperty("--sf-chat-header-bottom",Math.ceil(h.getBoundingClientRect().bottom)+"px");};setTop();window.addEventListener("resize",setTop,{passive:true});})();</script>';
 
@@ -378,6 +380,7 @@ $recordingLibraryRuntime = has_permission('artist_listening.access', $user)
         . ',artistListeningUrl:' . json_encode(url('/artist-listening.php'), JSON_UNESCAPED_SLASHES)
         . ',listeningEndpoint:' . json_encode(url('/api/artist-listening.php'), JSON_UNESCAPED_SLASHES)
         . ',intelligenceEndpoint:' . json_encode(url('/api/artist-listening-intelligence-v300.php'), JSON_UNESCAPED_SLASHES)
+        . ',transcriptFollowupsEndpoint:' . json_encode(url('/api/initiative-research-status-v1.php'), JSON_UNESCAPED_SLASHES)
         . ',persistEndpoint:' . json_encode(url('/api/chat-recordings-v242.php'), JSON_UNESCAPED_SLASHES)
         . '};</script>'
         . '<link rel="stylesheet" data-chat-transcription-canvas href="' . e(url('/chat-transcription-canvas.css?v=' . $transcriptionCanvasBuild)) . '">'
@@ -457,6 +460,57 @@ $cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href=
     . ';</script>'
     . '<script data-cognitive-cards-v520 src="' . e(url('/chat-cognitive-cards-v520.js?v=' . $cognitiveCardsAssetBuild . '-' . $onboardingActivationAssetBuild)) . '"></script>';
 
+$specialistPresence = [];
+if ($pdoForAgent && has_permission('account.access',$user) && has_permission('chat.access',$user)) {
+    $specialistPresence['planning'] = 'unavailable';
+    $specialistPresence['gmail'] = 'unavailable';
+    $specialistPresence['media'] = 'idle';
+    $specialistPresence['curiosity'] = 'idle';
+    $specialistPresence['connected-sites'] = 'idle';
+    if (has_permission('artist_listening.access',$user)) {
+        $specialistPresence['transcripts'] = 'idle';
+    }
+    if (agent_brain_schema_ready() && personal_capability_has_v242('agent_brain.access',$user)) {
+        $specialistPresence['tasks'] = 'unavailable';
+    }
+    try {
+        require_once __DIR__.'/includes/agent-image-generation-v1.php';
+        vp3_image_queue_ready_v1($pdoForAgent,$user);
+        $specialistPresence['image-generator'] = 'idle';
+    } catch (RuntimeException $error) {
+        // An unavailable image route must not advertise idle image generation.
+    }
+    try {
+        require_once __DIR__.'/includes/cloud-missions-v1.php';
+        if (cloud_mission_ready_v1($pdoForAgent)) $specialistPresence['mission'] = 'idle';
+    } catch (RuntimeException $error) {
+        // Keep Chat available while the Mission runtime is unavailable.
+    }
+    if (personal_knowledge_available($user)) {
+        try {
+            require_once __DIR__.'/includes/coding-canvas-store-v1.php';
+            require_once __DIR__.'/includes/coding-canvas-model-v1.php';
+            if (vp3_coding_canvas_ready_v1($pdoForAgent) && shared_folders_v161_ready()
+                && column_exists('knowledge_items','folder_id') && vp3_coding_canvas_model_state_v1($pdoForAgent,$user)['effective'] !== null) {
+                $specialistPresence['coding'] = 'idle';
+            }
+        } catch (RuntimeException $error) {
+            // The model and private storage checks are optional for Chat startup.
+        }
+    }
+    if (user_has_role('admin',$user)) {
+        try {
+            require_once __DIR__.'/includes/agent-development-v1.php';
+            if (vp3_dev_schema_ready_v1($pdoForAgent)) {
+                $control = vp3_dev_control_v1($pdoForAgent,(int)$user['id']);
+                $specialistPresence['development'] = $control['mode'] === 'off' ? 'paused' : 'idle';
+            }
+        } catch (RuntimeException $error) {
+            // Development controls are unavailable to this page.
+        }
+    }
+}
+
 $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialist-rail-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.css'),0,12))).'">'
     . '<script src="'.e(url('/chat-specialist-rail-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-specialist-rail-v1.js'),0,12))).'"></script>'
     . '<script src="'.e(url('/chat-mobile-specialists-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-mobile-specialists-v1.js'),0,12))).'" defer></script>'
@@ -465,6 +519,7 @@ $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialis
     . '<script src="'.e(url('/chat-canvas-media-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.js'),0,12))).'"></script>';
 if ($pdoForAgent && agent_brain_schema_ready() && has_permission('account.access',$user)
     && personal_capability_has_v242('agent_brain.access',$user) && personal_knowledge_available($user)) {
+    $specialistPresence['research'] = 'idle';
     $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-research-specialist-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-research-specialist-v1.css'),0,12))).'">'
         . '<script>window.VP3_CHAT_RESEARCH_SPECIALIST_V1='.json_encode([
             'endpoint'=>url('/api/initiative-research-status-v1.php'),
@@ -473,6 +528,9 @@ if ($pdoForAgent && agent_brain_schema_ready() && has_permission('account.access
         ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
         . '<script src="'.e(url('/chat-research-specialist-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-research-specialist-v1.js'),0,12))).'" defer></script>';
 }
+$cognitiveCardsRuntime .= '<script>window.VP3_CHAT_SPECIALIST_PRESENCE='.json_encode([
+    'owner_user_id'=>(int)$user['id'], 'agent_id'=>(int)($activeUserAgent['id']??0), 'states'=>$specialistPresence,
+],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT).';</script>';
 $initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/chat-initiative-workbench-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.css'),0,12))).'">'
     . '<script>window.VP3_INITIATIVE_WORKBENCH='.json_encode([
         'endpoint'=>url('/api/initiative-workbench-v1.php'),'csrf'=>csrf_token(),
@@ -516,9 +574,9 @@ $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-task-note
     . '<script>window.VP3_TASK_NOTES_V1='.json_encode(['endpoint'=>url('/api/task-notes-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-task-notes-v1.js?v=voice-managed-lists-v2')).'"></script>';
 
-$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-screen-insights-v1.css?v=1')).'">'
+$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-screen-insights-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-screen-insights-v1.css'),0,12))).'">'
     . '<script>window.VP3_SCREEN_INSIGHTS='.json_encode(['endpoint'=>url('/api/agent-screen-insights-v1.php'),'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),'csrf'=>csrf_token()],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
-    . '<script src="'.e(url('/chat-screen-insights-v1.js?v=1')).'"></script>';
+    . '<script src="'.e(url('/chat-screen-insights-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-screen-insights-v1.js'),0,12))).'"></script>';
 
 $cognitiveOrchestrationRuntime = '<script data-cognitive-orchestration-config>window.VP3_COGNITIVE_ORCHESTRATION_V560='
     . json_encode([
@@ -631,14 +689,16 @@ $runtime = $headerUiRuntime
          . $mediaOverlayRuntime
          . $hardening
          . $composerControls
-         . '<link rel="stylesheet" href="' . e(url('/chat-tools.css?v=' . $controlBuild . '-connected-knowledge')) . '">'
+         . '<link rel="stylesheet" href="' . e(url('/chat-tools.css?v=' . substr(hash_file('sha256', __DIR__ . '/chat-tools.css'), 0, 12))) . '">'
          . '<script src="' . e(url('/chat-tools.js?v=' . $controlBuild)) . '"></script>'
          . '<script>window.VP3_CONNECTED_GELATO_V1=' . json_encode([
              'endpoint'=>url('/api/connected-gelato-v1.php'),
              'csrf'=>csrf_token(),
+             'ownerUserId'=>(int)$user['id'],
              'knowledgeUrl'=>url('/knowledge.php'),
+             'foodMonsterIcon'=>url('/assets/foodmonster-app-icon-v1.webp'),
          ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) . ';</script>'
-         . '<script src="' . e(url('/chat-connected-sites-v1.js?v=3')) . '"></script>'
+         . '<script src="' . e(url('/chat-connected-sites-v1.js?v=' . substr(hash_file('sha256', __DIR__ . '/chat-connected-sites-v1.js'), 0, 12))) . '"></script>'
          . $recordingLibraryRuntime
          . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'

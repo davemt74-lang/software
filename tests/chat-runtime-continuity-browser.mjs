@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import fs from 'node:fs/promises';
 import {chromium} from 'playwright';
 
-const files = ['chat.js','chat-voice.js','chat-cognitive-presentation-v510.js'];
+const files = ['chat.js','chat-voice.js','chat-cognitive-presentation-v510.js','agent-activity-v94.js'];
 const sources = Object.fromEntries(await Promise.all(files.map(async name =>
   [name,await fs.readFile(new URL('../' + name,import.meta.url),'utf8')])));
 const browser = await chromium.launch({headless:true,
@@ -17,6 +17,59 @@ function gate() {
 }
 
 try {
+  for (const {remembered,status,deepLink,expectedLoads} of [
+    {remembered:99,status:400,deepLink:false,expectedLoads:[99,42]},
+    {remembered:99,status:404,deepLink:false,expectedLoads:[99,42]},
+    {remembered:99,status:404,deepLink:true,expectedLoads:[42]},
+    {remembered:0,status:404,deepLink:false,expectedLoads:[]},
+  ]) {
+    const context=await browser.newContext();
+    const loads=[];
+    const heartbeats=[];
+    try {
+      await context.addInitScript(id=>localStorage.setItem('vp3:chat:active:1:17',JSON.stringify({id,at:Date.now()})),remembered);
+      await context.route(`${origin}/**`,async route=>{
+        const request=route.request(),path=new URL(request.url()).pathname;
+        if(path==='/')return route.fulfill({contentType:'text/html',body:`<!doctype html>
+          <button id="newChatButton">New Chat</button><div id="chatHistory"></div>
+          <section id="chatThread" data-view="chat"><div id="chatWelcome"></div></section>
+          <form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form>
+          <script>
+            window.STONEFELLOW_CHAT={userId:1,agentId:17,initialConversationId:42,initialView:'chat',
+              endpoint:'/api/chat-v236.php?agent=17',csrf:'fixture',workingAttentionBinding:'owner-a-session'};
+            window.STONEFELLOW_ACTIVITY={endpoint:'/api/agent-activity-v94.php',csrf:'fixture',surface:'chat'};
+          </script><script src="/chat.js"></script><script src="/agent-activity-v94.js"></script>`});
+        if(sources[path.slice(1)])return route.fulfill({contentType:'text/javascript',body:sources[path.slice(1)]});
+        const body=request.postDataJSON();
+        if(path==='/api/agent-activity-v94.php'){
+          heartbeats.push(body.context);
+          return route.fulfill({json:{ok:true,owner_user_id:1,server_time_ms:Date.now()}}).catch(()=>{});
+        }
+        if(body?.action==='load'){
+          loads.push(body.conversation_id);
+          if(body.conversation_id===99)return route.fulfill({status,json:{ok:false,error:'Conversation not found for this agent.'}});
+          return route.fulfill({json:{ok:true,messages:[{id:1,role:'assistant',message:'Available saved Chat'}]}});
+        }
+        return route.fulfill({json:{ok:true,updates:[],conversations:[]}});
+      });
+      const page=await context.newPage();
+      await page.goto(origin+(deepLink?'/?conversation_id=42':''),{waitUntil:'domcontentloaded'});
+      await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady()
+        &&!window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
+      assert.deepEqual(loads,expectedLoads);
+      const expectedId=expectedLoads.length?42:0;
+      assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()),expectedId);
+      if(expectedId){
+        await page.waitForFunction(()=>Boolean(document.querySelector('[data-chat-message-id="1"]')));
+        await page.waitForFunction(()=>Boolean(window.StonefellowAgentActivity?.activityTab?.()));
+        await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
+        assert.ok(heartbeats.some(row=>row.conversation_id===42&&row.agent_id===17&&row.owner_user_id===1));
+      }
+      assert.equal(await page.locator('#chatRecoveryStatus:not([hidden])').count(),0);
+    } finally { await context.close(); }
+  }
+  console.log('PASS a missing remembered named Chat falls back once after either history status, while deep links and New Chat keep their selection');
+
   for (const agentId of [0,17]) for (const voice of ['unsupported','off','on']) {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -127,6 +180,7 @@ try {
       assert.equal(restoreContract.busy,true);
       assert.equal(restoreContract.ready,false);
       assert.equal(restoreContract.agent,agentId);
+      assert.equal(await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.stageSpecialistPrompt('Generate an image of a mountain lake.',42)),false);
       assert.ok(reads.every(read => read.id === null && read.live === null));
       restored.release();
       const card = page.locator('#chatLiveContext');
@@ -141,6 +195,7 @@ try {
         await page.getByRole('button',{name:'Start voice conversation'}).click();
         await page.waitForFunction(() => window.recognizers.some(item => item.active));
         assert.equal(await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.isVoice()),true);
+        assert.equal(await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.stageSpecialistPrompt('Generate an image of a mountain lake.',42)),false);
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('stonefellow:agent-proactive-speech',
           {detail:{state:'start',text:'Externally controlled speech'}})));
         assert.deepEqual(await page.evaluate(() => ({voice:window.STONEFELLOW_CHAT_CONTINUITY.isBusy(),
@@ -154,6 +209,18 @@ try {
         await page.evaluate(() => window.VP3_COGNITIVE_PRESENTATION.refresh());
         await card.getByText(attention(42).title,{exact:true}).waitFor();
       }
+
+      const imageExample = 'Generate a square image of a small desert observatory under a star-filled sky, with warm light in its windows and no text.';
+      const stage = () => page.evaluate(text => window.STONEFELLOW_CHAT_CONTINUITY.stageSpecialistPrompt(text,42),imageExample);
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:14}})));
+      assert.equal(await stage(),false,'An owner example cannot enter a participant turn');
+      await page.evaluate(() => window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:0}})));
+      await page.waitForFunction(() => !window.STONEFELLOW_CHAT_CONTINUITY.isBusy()
+        && !window.STONEFELLOW_CHAT_CONTINUITY.hasVoicePreview() && window.VP3ConversationControls.state().state === 'idle');
+      assert.equal(await stage(),true);
+      assert.equal(await page.locator('#chatInput').inputValue(),imageExample);
+      assert.equal(sends.length,0,'Staging an image prompt does not send it');
+      await page.locator('#chatInput').fill('');
 
       // A cached deployment with the older voice facade must also remain compatible.
       await page.evaluate(() => {

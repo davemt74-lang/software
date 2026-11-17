@@ -699,7 +699,30 @@ function agent_scheduling_create_booking_v430(PDO $pdo, array $input): array
     return $booking;
 }
 
-function agent_scheduling_cancel_booking_v430(PDO $pdo, int $bookingId, ?int $ownerUserId = null, string $cancelToken = ''): bool
+/** A finalized personal booking can change the next Planning scan. */
+function agent_scheduling_wake_planning_v430(PDO $pdo,array $booking): void
+{
+    $ownerId = (int)($booking['owner_user_id'] ?? 0);
+    $bookingId = (int)($booking['id'] ?? 0);
+    if ($ownerId < 1 || $bookingId < 1 || str_starts_with((string)($booking['source'] ?? ''),'team_')) return;
+    $transactional = $pdo->inTransaction();
+    if (table_exists('agent_team_scheduling_booking_members')) {
+        try {
+            $team = $pdo->prepare('SELECT 1 FROM agent_team_scheduling_booking_members WHERE canonical_booking_id=? LIMIT 1');
+            $team->execute([$bookingId]);
+            if ($team->fetchColumn()) return;
+        } catch (PDOException $error) {
+            if ($transactional && !$pdo->inTransaction()) throw $error;
+            // The routine scan can reconcile an unavailable Team membership check.
+            return;
+        }
+    }
+    require_once __DIR__.'/agent-coordination-source-change-v1.php';
+    vp3_coordination_source_changed_v1($pdo,$ownerId,((int)($booking['agent_id'] ?? 0)) ?: null,sourceAlreadyCommitted:!$transactional);
+}
+
+function agent_scheduling_cancel_booking_v430(PDO $pdo, int $bookingId, ?int $ownerUserId = null, string $cancelToken = '',
+    bool $signalPlanning = true): bool
 {
     if ($bookingId < 1) return false;
     if ($ownerUserId !== null && $ownerUserId > 0) {
@@ -710,6 +733,7 @@ function agent_scheduling_cancel_booking_v430(PDO $pdo, int $bookingId, ?int $ow
         $changed=$stmt->rowCount()>0;
         if($changed&&function_exists('agent_calendar_sync_cancel_booking_v500'))agent_calendar_sync_cancel_booking_v500($pdo,$booking);
         if($changed&&function_exists('vp3_cognitive_booking_event_v2380'))vp3_cognitive_booking_event_v2380($pdo,$booking,'booking.cancelled',['cancelled_by'=>'owner'],'booking-cancelled:'.$bookingId);
+        if($changed&&$signalPlanning)agent_scheduling_wake_planning_v430($pdo,$booking);
         return $changed;
     }
     $cancelToken = trim($cancelToken);
@@ -721,5 +745,6 @@ function agent_scheduling_cancel_booking_v430(PDO $pdo, int $bookingId, ?int $ow
     $changed=$stmt->rowCount()>0;
     if($changed&&function_exists('agent_calendar_sync_cancel_booking_v500'))agent_calendar_sync_cancel_booking_v500($pdo,$booking);
     if($changed&&function_exists('vp3_cognitive_booking_event_v2380'))vp3_cognitive_booking_event_v2380($pdo,$booking,'booking.cancelled',['cancelled_by'=>'guest'],'booking-cancelled:'.$bookingId);
+    if($changed&&$signalPlanning)agent_scheduling_wake_planning_v430($pdo,$booking);
     return $changed;
 }

@@ -45,9 +45,18 @@ $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($
 $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
 if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A saved owner Chat is required for this reply.',422);
 $input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
+if(vp3_agent_chat_auto_voice_image_v2160($input)){
+    $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,null,true);
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+    chat_v121_emit(['type'=>'start','conversation_id'=>$done['conversation_id'],'user_message_id'=>$done['user_message_id'],
+        'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
+    chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);
+    chat_v121_emit(['type'=>'done','data'=>$done]);exit;
+}
+$newImageTurn=vp3_agent_chat_reply_image_plan_v1($query)!==null||vp3_agent_chat_image_needs_scene_v1($query);
 $initiativeRequest=null;
 $connectedSitePlan=$initiativeReply===null&&$participantActor===null&&empty($input['ephemeral_protocol'])
-    ?vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$query):null;
+    ?vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$query,$conversationId):null;
 $initiativeStatusRead=$initiativeReply===null&&empty($input['ephemeral_protocol'])
     &&in_array(vp3_initiative_command_v1($query),['status','findings'],true);
 $meetingPrepRequest=$initiativeReply===null&&$connectedSitePlan===null&&$participantActor===null
@@ -59,7 +68,11 @@ $meetingActionRequest=$initiativeReply===null&&$connectedSitePlan===null&&$parti
 $emailPlan=$connectedSitePlan===null&&$initiativeReply===null&&$participantActor===null&&vp3_participant_scope_v1()===null
     &&empty($input['ephemeral_protocol'])&&knowledge_retrieval_v162_owner_session($user,$principal)
     ?agent_connection_email_chat_plan_v1($query,true):null;
-$emailRequest=$emailPlan!==null;
+$emailOffer=$connectedSitePlan===null&&$initiativeReply===null&&$participantActor===null&&vp3_participant_scope_v1()===null
+    &&empty($input['ephemeral_protocol'])&&knowledge_retrieval_v162_owner_session($user,$principal)
+    ?agent_connection_email_offer_request_v1($query,$input['gmail_offer_message_id']??null):null;
+$emailRequest=$emailPlan!==null||$emailOffer!==null;
+$emailQueryHash=hash('sha256',$emailOffer===null?$query:json_encode([$query,$emailOffer['message_id']],JSON_THROW_ON_ERROR));
 $youtubeHistoryRequest=$initiativeReply===null&&empty($input['ephemeral_protocol'])&&agent_connection_youtube_history_request_v1($query);
 if($youtubeHistoryRequest&&$participantActor!==null)throw new RuntimeException('Use your private Agent Chat to review your YouTube playback in VP3.',403);
 $youtubeAllowed=$connectedSitePlan===null&&$initiativeReply===null&&!$emailRequest&&$participantActor===null
@@ -67,11 +80,27 @@ $youtubeAllowed=$connectedSitePlan===null&&$initiativeReply===null&&!$emailReque
 $youtubeFollowup=$youtubeAllowed&&!$youtubeHistoryRequest
     ?agent_connection_youtube_scoped_followup_plan_v1($pdo,$userId,$agentScopeId,$conversationId,$query):null;
 $youtubeRequest=$youtubeAllowed&&($youtubeHistoryRequest||$youtubeFollowup!==null||agent_connection_youtube_chat_plan_v1($query)!==null);
+$mediaRequest=false;
+$casualRequest=false;
+if($participantActor===null&&vp3_participant_scope_v1()===null&&empty($input['ephemeral_protocol'])){
+    require_once dirname(__DIR__).'/includes/agent-media-entertainment-v1.php';
+    require_once dirname(__DIR__).'/includes/agent-casual-checkin-reply-v1.php';
+    $linkedTool=$initiativeReply!==null&&vp3_chat_reply_tool_plan_v1($query)!==null;
+    $casualTarget=$linkedTool?null:vp3_casual_checkin_reply_target_v1($pdo,$user,$agentScopeId,$conversationId,$query,$initiativeReply);
+    $casualRequest=$casualTarget!==null;
+    $mediaCommand=vp3_media_chat_command_v2160($query);
+    $mediaTarget=$mediaCommand||$linkedTool?null:vp3_media_reply_target_v1($pdo,$user,$agentScopeId,$conversationId,$query,$initiativeReply);
+    $mediaRequest=$mediaCommand||$mediaTarget!==null;
+    if($mediaCommand||vp3_agent_chat_reply_native_playback_v2160($casualTarget,$mediaTarget)){
+        require_once dirname(__DIR__).'/includes/agent-media-playback-v1.php';
+        vp3_media_playback_secret_v1();
+    }
+}
 $publicResearchRequest=$connectedSitePlan===null&&$initiativeReply===null&&!$emailRequest&&$participantActor===null
-    &&empty($input['ephemeral_protocol'])&&vp3_public_research_plan_v1($query)!==null;
-if($connectedSitePlan===null&&!$emailRequest&&!$youtubeRequest&&!$publicResearchRequest&&!$initiativeStatusRead&&!$meetingPrepRequest&&!$meetingActionRequest&&$participantActor===null&&vp3_participant_scope_v1()===null
+    &&empty($input['ephemeral_protocol'])&&(vp3_public_research_plan_v1($query)!==null||vp3_meeting_research_plan_v1($query)!==null);
+if($connectedSitePlan===null&&!$emailRequest&&!$youtubeRequest&&!$mediaRequest&&!$casualRequest&&!$publicResearchRequest&&!$initiativeStatusRead&&!$meetingPrepRequest&&!$meetingActionRequest&&$participantActor===null&&vp3_participant_scope_v1()===null
     &&empty($input['ephemeral_protocol'])&&$conversationId>0
-    &&($initiativeReply!==null||vp3_initiative_followthrough_possible_v1($pdo,$userId,$agentScopeId,$conversationId,$query))){
+    &&($initiativeReply!==null||(!$newImageTurn&&vp3_initiative_followthrough_possible_v1($pdo,$userId,$agentScopeId,$conversationId,$query)))){
     try{$initiativeRequest=vp3_initiative_followthrough_request_v1($pdo,$user,$principal,$conversationId,$query,
         static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input),$initiativeReply);}catch(Throwable $preflightError){throw vp3_agent_chat_followthrough_error_v2160($preflightError);}
 }
@@ -121,7 +150,16 @@ if($idempotencyKey!==''){
             // The shared private owner-request store reclaims this failed reply
             // exclusively, preserving its saved owner turn and any accepted work.
         }else{
-            if($initiativeReply!==null||array_key_exists('initiative_followthrough',$replay)){
+            if(!empty($replay['casual_checkin_reply_v1'])){
+                require_once dirname(__DIR__).'/includes/agent-casual-checkin-reply-v1.php';
+                $followthroughReplay=true;
+                $replay=vp3_casual_checkin_reply_replay_v1($pdo,$user,$principal,$input,$replay,
+                    static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input));
+            }elseif(!empty($replay['media_offer_reply_v1'])){
+                $followthroughReplay=true;
+                $replay=vp3_media_offer_reply_replay_v1($pdo,$user,$principal,$input,$replay,
+                    static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input));
+            }elseif($initiativeReply!==null||array_key_exists('initiative_followthrough',$replay)){
                 $followthroughReplay=true;
                 $replay=vp3_agent_chat_followthrough_cached_v2160($pdo,$user,$principal,$input,$replay,
                     static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input));
@@ -132,19 +170,20 @@ if($idempotencyKey!==''){
             if($emailRequest||isset($replay['gmail_query_hash'])){
                 $replayConversationId=(int)($replay['conversation_id']??0);
                 if(!$emailRequest||($conversationId>0&&$conversationId!==$replayConversationId)
-                    ||!hash_equals((string)($replay['gmail_query_hash']??''),hash('sha256',$query))){
+                    ||!hash_equals((string)($replay['gmail_query_hash']??''),$emailQueryHash)){
                     throw new RuntimeException('That Gmail request changed.',409);
                 }
                 $emailAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
                 agent_connection_email_chat_authority_v1($pdo,$user,$principal,$replayConversationId,$emailAuthority);
-                if(!empty($replay['private_email_read'])&&in_array($emailPlan['operation'],['search','read','review_status'],true)){
+                if(!empty($replay['private_email_read'])&&($emailOffer!==null||in_array($emailPlan['operation']??null,['search','read','review_status'],true))){
                     $read=agent_connection_email_chat_v1($pdo,$user,$principal,$query,$replayConversationId,
                         (int)$replay['user_message_id'],$emailAuthority,true,privateVoiceSurface:true,
-                        timezone:is_string($input['reminder_timezone']??null)?$input['reminder_timezone']:null);
+                        timezone:is_string($input['reminder_timezone']??null)?$input['reminder_timezone']:null,offer:$emailOffer);
                     if(is_array($read)){
                         $read=vp3_agent_tool_authorize_result_v400($read,$user,$query,['conversation_id'=>$replayConversationId],$principal);
                         foreach(['answer','actions','sources','tool_receipt'] as $field)$replay[$field]=$read[$field]??null;
                         $replay['private_email_read']=!empty($read['email_private_read_v1']);
+                        $replay['gmail_conversation_offer']=!empty($read['gmail_reply_offer_v1']);
                     }
                 }
                 unset($replay['gmail_query_hash']);
@@ -156,7 +195,7 @@ if($idempotencyKey!==''){
                     throw new RuntimeException('That connected-site request changed.',409);
                 }
                 if(!empty($input['ephemeral_protocol'])||!vp3_connected_sites_chat_allowed_v1($user,$principal))
-                    throw new RuntimeException('Use your private Agent Chat to ask Gelato.',403);
+                    throw new RuntimeException('Use your private Agent Chat for connected sites.',403);
                 vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
                 if(!empty($replay['ok'])&&!chat_v121_owned($pdo,$replayConversationId,$userId,$activeAgent))
                     throw new RuntimeException('Conversation access changed.',403);
@@ -199,7 +238,8 @@ if($idempotencyKey!==''){
                 if(!has_permission('account.access',$live))throw new RuntimeException('Research access changed.',403);
                 unset($replay['public_research_query_hash'],$replay['artist_research_query_hash']);
             }
-            if($youtubeRequest||isset($replay['youtube_query_hash'])){
+            if(empty($replay['media_offer_reply_v1'])&&empty($replay['casual_checkin_reply_v1'])
+                &&($youtubeRequest||isset($replay['youtube_query_hash']))){
                 $replayConversationId=(int)($replay['conversation_id']??0);
                 $savedFollowup=($replay['tool_receipt']['capability']??null)==='youtube.results';
                 if(!$youtubeAllowed||(!$youtubeRequest&&!$savedFollowup)||($conversationId>0&&$conversationId!==$replayConversationId)
@@ -211,7 +251,9 @@ if($idempotencyKey!==''){
                     $history=agent_connection_youtube_history_chat_v1($pdo,$user,$principal,$replayConversationId,$youtubeAuthority);
                     foreach(['answer','actions','tool_receipt','youtube_results'] as $field)$replay[$field]=$history[$field];
                 }elseif($savedFollowup||$youtubeFollowup!==null){
-                    $replayPlan=$youtubeFollowup??agent_connection_youtube_followup_plan_v1($query,true);
+                    $offerMessageId=(int)($replay['youtube_offer_message_id']??0);
+                    $replayPlan=$offerMessageId>0&&agent_connection_youtube_offer_reply_v1($query)?['offer_message_id'=>$offerMessageId]
+                        :($youtubeFollowup??agent_connection_youtube_followup_plan_v1($query,true));
                     if($replayPlan===null)throw new RuntimeException('That YouTube request changed.',409);
                     $sourceMessageId=(int)($replay['youtube_source_message_id']??0);
                     $sourceVideoId=$replay['youtube_source_video_id']??null;
@@ -257,15 +299,23 @@ if($participantActor!==null){
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$publicResearchRequest||$initiativeStatusRead||$emailRequest||$meetingPrepRequest||$meetingActionRequest){
+if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$mediaRequest||$casualRequest||$publicResearchRequest||$initiativeStatusRead||$emailRequest||$meetingPrepRequest||$meetingActionRequest){
     // Use the same owner-scoped executor for these voice and typed turns.
     $input['conversation_id']=$conversationId;
     $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
     $assistantMessageId=(int)$done['assistant_message_id'];$done['input_mode']='voice';
     if($idempotencyClaimed&&$idempotencyKey!==''){
         $replay=$done;
+        unset($replay['connected_site_playback_v1'],$replay['connected_site_queue_v1']);
+        if(($done['connected_site_provider_v1']??null)==='stoneward'&&empty($done['media_offer_reply_v1'])){
+            $replay['connected_site_query_hash']=hash('sha256',$query);
+            $replay['answer']=VP3_CONNECTED_SITES_CHAT_RECEIPT_V1;
+            $replay['sources']=[];
+        }
+        if($mediaRequest||$casualRequest)unset($replay['media_playback'],$replay['youtube_results']);
+        if(($replay['linked_reply_tool_v1']??null)==='youtube')unset($replay['youtube_results']);
         if($publicResearchRequest)$replay['public_research_query_hash']=hash('sha256',$query);
-        if($emailRequest)$replay['gmail_query_hash']=hash('sha256',$query);
+        if($emailRequest)$replay['gmail_query_hash']=$emailQueryHash;
         if($meetingActionRequest){
             $replay['meeting_action_query_hash']=hash('sha256',$query);
             $replay['answer']='A meeting action was reviewed in Chat.';
@@ -278,7 +328,7 @@ if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$yout
                 $replay['sources']=$replay['actions']=[];
             }
         }
-        if($youtubeRequest){
+        if($youtubeRequest&&empty($done['media_offer_reply_v1'])&&empty($done['casual_checkin_reply_v1'])){
             unset($replay['youtube_results']);
             $replay['youtube_query_hash']=hash('sha256',$query);
         }
@@ -289,15 +339,21 @@ if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$yout
         if(!empty($done['private_email_read'])){
             [$replay['answer'],$privateContext]=agent_connection_email_chat_view_v1(['email_private_read_v1'=>true],$done['answer'],[]);
             $replay['sources']=$privateContext['sources'];
+            unset($replay['gmail_local_read_aloud']);
         }
         agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$replay);
     }
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],
         'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId]);
-    chat_v121_emit(['type'=>'delta','delta'=>vp3_agent_chat_voice_text_v2160($done)]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
+    $spoken=vp3_agent_chat_voice_text_v2160($done);
+    if($spoken!=='')chat_v121_emit(['type'=>'delta','delta'=>$spoken]);
+    chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-$rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;$historyStmt=$pdo->prepare('SELECT role,message,context_json FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());
+$rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;
+$historyStmt=$pdo->prepare('SELECT id,role,message,context_json FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
+$historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$historyStmt->closeCursor();
+$history=vp3_coordination_chat_history_v1($pdo,$user,$agentScopeId,$conversationId,$history);
 $history=vp3_agent_chat_transcript_model_history_v2160($pdo,$user,$principal,$conversationId,$history,$rawAgentContext);
 $history=vp3_meeting_chat_model_history_v1($pdo,$user,$principal,$conversationId,$history);
 $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,?,?,?,?)');
@@ -306,7 +362,8 @@ $userMessageId=(int)$pdo->lastInsertId();
 $reminderTool=null;$workingSelection=null;
 unset($rawAgentContext['working_context_ref'],$rawAgentContext['initiative_reply'],$rawAgentContext['initiative_followthrough'],$rawAgentContext['followthrough'],$rawAgentContext['advisory_context'],$rawAgentContext['verified_followthrough'],$rawAgentContext['initiative_reply_anchor_v1'],$rawAgentContext['initiative_reply_recovery'],$rawAgentContext['initiative_request'],$rawAgentContext['initiative_claim'],$rawAgentContext['initiative_voice_request'],$rawAgentContext['initiative_reply_unassociated_v1']);
 $followthroughAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
-$followthroughSelection=$connectedSitePlan!==null?null:vp3_initiative_followthrough_reply_v1($pdo,$user,$principal,$conversationId,$userMessageId,$initiativeReply,$query,$followthroughAuthority);
+$imageTurn=vp3_agent_chat_image_turn_v2160($pdo,$user,$principal,$input,$query,$conversationId,$userMessageId,$imageContext);
+$followthroughSelection=$connectedSitePlan!==null||$imageTurn!==null?null:vp3_initiative_followthrough_reply_v1($pdo,$user,$principal,$conversationId,$userMessageId,$initiativeReply,$query,$followthroughAuthority);
 if(!empty($followthroughSelection['handled'])){
     $ownerAuthority=static fn()=>vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
     $done=vp3_agent_chat_followthrough_finish_v2160($pdo,$user,$activeAgent,$principal,$conversationId,$userMessageId,$query,'voice',$followthroughSelection,$ownerAuthority);
@@ -317,6 +374,9 @@ if(!empty($followthroughSelection['handled'])){
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
 if(array_key_exists('initiative_reply',$input))throw new RuntimeException('That follow-through reply is no longer current.',409);
+if($imageTurn!==null){
+    $reminderTool=vp3_agent_chat_image_turn_result_v2160($pdo,$user,$principal,$imageTurn,$conversationId,$userMessageId,$followthroughAuthority);
+}
 if($connectedSitePlan===null&&array_key_exists('working_context_ref',$input)){
     require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';
     $workingContextRef=vp3_working_context_request_v1($query,$input['working_context_ref']);
@@ -357,6 +417,13 @@ $serviceContext=['service'=>'conversation','agent_id'=>$agentScopeId,'conversati
 $runtimePlan=!empty($toolResult['handled'])?vp3_agent_runtime_tool_plan_v420($userId,$agentScopeId,'chat'):vp3_agent_runtime_plan_v420($pdo,$user,$agentScopeId,'chat',$serviceContext);
 $stmt=$pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,NULL,'assistant','','{}')");$stmt->execute([$conversationId]);$assistantMessageId=(int)$pdo->lastInsertId();if(session_status()===PHP_SESSION_ACTIVE)session_write_close();while(ob_get_level()>0)@ob_end_flush();chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentScopeId,'agent_name'=>(string)$principal['display_name'],'runtime'=>vp3_agent_runtime_public_plan_v420($runtimePlan)]);
 $streamPartial=false;$homeAttempted=false;$homeResult=null;$context=[];$knowledgeContext=['scope'=>knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null),'citations'=>[],'provenance'=>[],'homeserver_local_knowledge'=>'not_queried'];
+$imageContext=$imageContext||vp3_agent_chat_image_answer_scope_v1($query);
+$chatProse=empty($toolResult['handled'])?new Vp3ChatImageAnswerGuardV1($imageContext):null;
+$emitText=static function(string $delta,bool $final=false)use($chatProse):void{
+    if(connection_aborted())return;
+    $text=$chatProse===null?$delta:$chatProse->push($delta,$final);
+    if($text!=='')chat_v121_emit(['type'=>'delta','delta'=>$text]);
+};
 if(!empty($toolResult['handled'])){
     $answer=(string)$toolResult['answer'];if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);
     $homeReceipt=is_array($toolResult['execution']??null)?$toolResult['execution']:[];
@@ -371,7 +438,7 @@ if(!empty($toolResult['handled'])){
     if(!empty($runtimePlan['try_homeserver'])&&!empty($runtimePlan['home']['supported'])){$homeAttempted=true;$homeResult=homeserver_agent_v025_chat($user,$query,$conversationId,$history,$principal,$activeAgent,$agentContext,!empty($runtimePlan['homeserver_cloud_allowed']),knowledge_retrieval_v162_normalize_scope($input['knowledge_scope']??null)['mode']==='all');}
     if($homeAttempted&&!$homeResult)homeserver_agent_v018_require_safe_fallback(homeserver_agent_v018_last_attempt());
     if($homeResult){
-        $answer=(string)$homeResult['answer'];if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);$execution=vp3_agent_runtime_homeserver_execution_v420($homeResult);$execution['brain_delegation']=homeserver_agent_v025_public_state($homeResult);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,'homeserver');
+        $answer=(string)$homeResult['answer'];$emitText($answer,true);$execution=vp3_agent_runtime_homeserver_execution_v420($homeResult);$execution['brain_delegation']=homeserver_agent_v025_public_state($homeResult);$execution=vp3_agent_runtime_finalize_v420($runtimePlan,$execution,'homeserver');
     }elseif((string)$runtimePlan['effective_preference']==='homeserver_only'){
         if(function_exists('homeserver_compute_v232_failure'))homeserver_compute_v232_failure($userId);
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
@@ -380,16 +447,14 @@ if(!empty($toolResult['handled'])){
         throw new RuntimeException(vp3_agent_runtime_block_message_v420($runtimePlan));
     }else{
         $baseContext=agent_runtime_v125_span('chat.context',static fn():array=>chat_v121_context($query,$user,$principal,$agentContext,$conversationId),['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);$knowledgeBundle=knowledge_retrieval_v162_for_chat($pdo,$user,$principal,$query,$input['knowledge_scope']??null,$baseContext,$conversationId);$context=$knowledgeBundle['context'];$knowledgeContext=['scope'=>$knowledgeBundle['scope'],'citations'=>$knowledgeBundle['citations'],'provenance'=>$knowledgeBundle['provenance'],'homeserver_local_knowledge'=>$knowledgeBundle['homeserver_local_knowledge']];
-        $streamResult=agent_runtime_v125_span('chat.ai_stream',static function()use($query,$history,$context,$user,$serviceContext):array{
-            return ai_v121_stream_chat_response($query,$history,$context,$user,static function(string $delta):void{
-                if(!connection_aborted())chat_v121_emit(['type'=>'delta','delta'=>$delta]);
-            },$serviceContext);
+        $streamResult=agent_runtime_v125_span('chat.ai_stream',static function()use($query,$history,$context,$user,$serviceContext,$emitText):array{
+            return ai_v121_stream_chat_response($query,$history,$context,$user,$emitText,$serviceContext);
         },['conversation_id'=>$conversationId,'user_id'=>$userId,'agent_id'=>$agentScopeId]);
         $answer=trim((string)($streamResult['answer']??''));
         $streamPartial=!empty($streamResult['partial'])||connection_aborted();
         if($answer===''&&!connection_aborted()){
             $answer=chat_local_answer($query,$context,$streamResult);
-            if($answer!=='')chat_v121_emit(['type'=>'delta','delta'=>$answer]);
+            $emitText($answer);
         }
         if($answer===''&&connection_aborted())$answer='Interrupted.';
         $execution=chat_execution_v019_provider_outcome($user,$streamResult,$homeAttempted,!empty($runtimePlan['home']['paired']));
@@ -398,6 +463,10 @@ if(!empty($toolResult['handled'])){
     $capabilityRoute=vp3_agent_runtime_capability_route_v420($runtimePlan,$execution,$homeAttempted);
 }
 $execution['capability_route']=$capabilityRoute;
+if($chatProse!==null){
+    $emitText('',true);
+    $answer=vp3_agent_chat_verified_image_answer_v1($answer,$imageContext);
+}
 if($workingSelection!==null){
     $recheck=vp3_working_context_chat_v1($pdo,$user,$principal,$conversationId,
         (string)$workingSelection['working_context']['reference']);
@@ -417,9 +486,15 @@ $messageContext=['canvas_media'=>$toolResult['canvas_media']??null,'navigation_c
 $messageContext['chat_user_message_id']=$userMessageId;
 $contextJson=json_encode($messageContext,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);$stmt=$pdo->prepare('UPDATE chat_messages SET message=?,context_json=? WHERE id=? AND conversation_id=?');$stmt->execute([$storedAnswer,is_string($contextJson)?$contextJson:'{}',$assistantMessageId,$conversationId]);if($brainAllowed&&empty($toolResult['transcript_context'])&&!isset($toolResult['connected_site_context_v1']))agent_brain_archive_and_parse($user,$conversationId,$assistantMessageId,'assistant',$answer,'voice');$pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);
 $done=['ok'=>true,'canvas_media'=>$messageContext['canvas_media'],'sticky_notes'=>$messageContext['sticky_notes'],'system_app_plan'=>$systemAppPlan,'system_app_action_card'=>$systemAppCard,'tool_receipt'=>$messageContext['tool_receipt'],'conversation_id'=>$conversationId,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'sources'=>$publicSources,'knowledge'=>$knowledgeContext,'media'=>$media,'stem_media'=>$messageContext['stem_media'],'actions'=>$messageContext['actions'],'profile_webmcp_plan'=>$messageContext['profile_webmcp_plan'],'profile_webmcp_return'=>$messageContext['profile_webmcp_return'],'playlist_title'=>$playlistTitle,'input_mode'=>'voice','stream_partial'=>$streamPartial,'trace_id'=>agent_runtime_v125_trace_id(),'agent_name'=>(string)$principal['display_name'],'agent_id'=>$agentScopeId,'execution'=>$execution];if($workingSelection!==null)$done['working_context_ref']=$workingSelection['working_context']['reference'];
+$done+=array_intersect_key($messageContext,['connected_site_provider_v1'=>true]);
+if(($toolResult['connected_site_context_v1']['provider']??null)==='stoneward'){
+    $done+=vp3_stoneward_chat_live_playback_v1($pdo,$user,$principal,$conversationId,$assistantMessageId,
+        $toolResult['connected_site_context_v1']['connectionId'],$toolResult);
+}
 if($idempotencyClaimed&&$idempotencyKey!==''){
     $replay=$connectedSiteRead?array_replace($done,['answer'=>$storedAnswer,'sources'=>[]]):$done;
-    if($connectedSitePlan!==null)$replay['connected_site_query_hash']=hash('sha256',$query);
+    unset($replay['connected_site_playback_v1'],$replay['connected_site_queue_v1']);
+    if($connectedSiteRead||$connectedSitePlan!==null)$replay['connected_site_query_hash']=hash('sha256',$query);
     agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$replay);
 }
 if($brainAllowed){agent_background_v125_enqueue('conversation-summary',['user_id'=>$userId,'conversation_id'=>$conversationId],'conversation-'.$userId.'-'.$conversationId);agent_background_v125_enqueue('memory-reconcile',['user_id'=>$userId],'memory-'.$userId,1);}agent_runtime_v125_trace('chat.turn.completed',['user_id'=>$userId,'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId,'assistant_message_id'=>$assistantMessageId,'partial'=>$streamPartial,'actual_route'=>(string)($execution['actual_route']??'')]);if(isset($GLOBALS['vp3_working_context_stream_buffer_v1'])){
@@ -447,4 +522,18 @@ chat_v121_emit(['type'=>'done','data'=>$done]);
             if(($row['status']??null)==='processing'&&($row['initiative_voice_request']??null)===$voiceFollowthroughRequest)$row['initiative_reply_failure']=$failedVoice['initiative_reply_failure']??null;
         });}catch(Throwable $voiceStorageError){}
     }else agent_runtime_v125_idempotency_complete($idempotencyScope,$idempotencyKey,$failedVoice);
-}agent_runtime_v125_trace('chat.turn.error',['conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'error_class'=>get_class($e)]);$followthroughError=$e instanceof VP3InitiativeReplyExceptionV2160||array_key_exists('initiative_reply',$input??[])||is_array($initiativeRequest??null)||!empty($followthroughSelection['handled'])||!empty($followthroughReplay);$status=(int)$e->getCode();if($followthroughError){$status=in_array($status,[403,404,409,422,503],true)?$status:503;$publicError=$status===409?'initiative_reply_stale':($status===403?'initiative_reply_forbidden':'initiative_reply_unavailable');}chat_v121_emit(['type'=>'error','error'=>$publicError]+($followthroughError?['status'=>$status,'code'=>$publicError]:[]));}
+}
+    agent_runtime_v125_trace('chat.turn.error',['conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'error_class'=>get_class($e)]);
+    $followthroughError=$e instanceof VP3InitiativeReplyExceptionV2160||array_key_exists('initiative_reply',$input??[])
+        ||is_array($initiativeRequest??null)||!empty($followthroughSelection['handled'])||!empty($followthroughReplay);
+    $payload=[];
+    if($followthroughError){
+        $status=(int)$e->getCode();
+        $status=in_array($status,[403,404,409,422,503],true)?$status:503;
+        $publicError=$status===409?'initiative_reply_stale':($status===403?'initiative_reply_forbidden':'initiative_reply_unavailable');
+        $payload=['status'=>$status,'code'=>$publicError];
+        $reason=$status===503?vp3_agent_chat_followthrough_failure_reason_v2160($e):null;
+        if($reason!==null)$payload['followthrough_reason']=$reason;
+    }
+    chat_v121_emit(['type'=>'error','error'=>$publicError]+$payload);
+}

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-connection-gmail-popup-v1.php';
+require_once __DIR__.'/includes/agent-connection-settings-view-v1.php';
 
 header('Cache-Control: no-store');
 header('Referrer-Policy: strict-origin-when-cross-origin');
@@ -20,7 +21,7 @@ $status = 400;
 try {
     if ($_GET !== []) throw new AgentConnectionExceptionV1('The Gmail request could not be verified.',400);
     $user = current_user();
-    if (!$user || !has_permission('account.access',$user)) {
+    if (!$user || !has_permission('account.access',$user) || (!$finishing && !vp3_connection_settings_post_allowed_v1($user))) {
         throw new AgentConnectionExceptionV1('Sign in to connect Gmail.',403);
     }
     $pdo = db();

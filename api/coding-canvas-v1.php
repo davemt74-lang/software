@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/coding-canvas-jobs-v1.php';
+require_once dirname(__DIR__).'/includes/coding-canvas-command-grants-v1.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -37,12 +38,18 @@ try {
 
     $canvasId = $input->canvas_id ?? null;
     $revision = $input->revision ?? null;
-    if (in_array($action, ['open', 'repair', 'test', 'apply', 'save_state', 'delete'], true)
+    if (in_array($action, ['open', 'repair', 'test', 'apply', 'save_state', 'delete', 'email_data',
+        'command_grants','save_command_grants','command_data','publication_status','publish','unpublish','set_hidden','save_library_image'], true)
         && !is_string($canvasId)) throw new InvalidArgumentException('Choose a saved Canvas.');
-    if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state'], true))
+    if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state', 'email_data','command_data','publish','save_library_image'], true))
         && (!is_int($revision) || $revision < 1)) throw new InvalidArgumentException('Choose an exact Canvas revision.');
 
-    if ($action === 'build' || $action === 'repair') {
+    if ($action === 'start_email') {
+        $request = $input->request_id ?? null;
+        if (!is_string($request)) throw new InvalidArgumentException('Choose an exact email Canvas request.');
+        require_once dirname(__DIR__).'/includes/agent-initiative-email-canvas-start-v1.php';
+        $result = vp3_initiative_email_canvas_start_v1($pdo, $user, $aid, $cid, $request);
+    } elseif ($action === 'build' || $action === 'repair') {
         $request = $input->request_id ?? null;
         $prompt = $input->prompt ?? null;
         $diagnostic = $action === 'repair' ? ($input->diagnostic ?? null) : null;
@@ -51,10 +58,42 @@ try {
             && (!is_string($diagnostic) || strlen($diagnostic) > 1600 || str_contains($diagnostic, "\0")))) {
             throw new InvalidArgumentException('Enter a valid Canvas instruction within the size limit.');
         }
+        $commands = property_exists($input,'commands') ? vp3_coding_canvas_command_list_v1($input->commands) : null;
         $job = vp3_coding_canvas_queue_v1($pdo, $user, $aid, $cid, vp3_coding_canvas_id_v1($request), trim($prompt),
             $action === 'repair' ? vp3_coding_canvas_id_v1($canvasId) : null,
-            $action === 'repair' ? $revision : null, $diagnostic);
+            $action === 'repair' ? $revision : null, $diagnostic, commands:$commands);
         $result = ['job' => $job];
+    } elseif ($action === 'command_grants') {
+        $result=['commands'=>vp3_coding_canvas_commands_v1($pdo,$user,$aid,$cid,$canvasId)];
+    } elseif ($action === 'save_command_grants') {
+        $expected=$input->expected_revision??null;
+        $settings=$input->settings??null;
+        if(!is_string($expected)||!$settings instanceof stdClass)throw new InvalidArgumentException('Choose valid Canvas data permissions.');
+        $result=['commands'=>vp3_coding_canvas_commands_save_v1($pdo,$user,$aid,$cid,$canvasId,$settings,$expected)];
+    } elseif ($action === 'command_data') {
+        $command=$input->command??null;
+        if(!is_string($command))throw new InvalidArgumentException('Choose a Canvas data command.');
+        if($command==='gmail'){
+            require_once dirname(__DIR__).'/includes/coding-canvas-gmail-command-v1.php';
+            $result=['source'=>vp3_coding_canvas_gmail_command_data_v1($pdo,$user,$aid,$cid,$canvasId,$revision)];
+        }else{
+            $result=['source'=>vp3_coding_canvas_command_source_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$command)];
+        }
+    } elseif (in_array($action,['publication_status','publish','unpublish'],true)) {
+        require_once dirname(__DIR__).'/includes/coding-canvas-publishing-v1.php';
+        $expected=$input->expected_revision??null;
+        $slug=$input->slug??null;
+        if(($action!=='publication_status'&&!is_string($expected))||($action==='publish'&&!is_string($slug))){
+            throw new InvalidArgumentException('Open the current Canvas publication settings again.');
+        }
+        $result=match($action){
+            'publication_status'=>vp3_coding_canvas_publication_status_v1($pdo,$user,$aid,$canvasId,$revision),
+            'publish'=>vp3_coding_canvas_publish_v1($pdo,$user,$aid,$canvasId,$revision,$slug,$expected),
+            'unpublish'=>vp3_coding_canvas_unpublish_v1($pdo,$user,$aid,$canvasId,$expected),
+        };
+    } elseif ($action === 'set_hidden') {
+        if(!is_bool($input->hidden??null))throw new InvalidArgumentException('Choose whether to hide this app from Chat.');
+        $result=['canvas'=>vp3_coding_canvas_set_hidden_v1($pdo,$user,$aid,$canvasId,$input->hidden)];
     } elseif ($action === 'resume') {
         if ($cid < 1) throw new InvalidArgumentException('Choose a current Chat.');
         $result = ['job' => vp3_coding_canvas_resume_v1($pdo, $user, $aid, $cid)];
@@ -85,15 +124,50 @@ try {
         if ($action === 'delete' && !is_bool($deleteFolder)) {
             throw new InvalidArgumentException('Choose whether to keep the Knowledge Base folder.');
         }
+        $imageId = $input->asset_id ?? null;
+        $expectedImage = $input->expected_image ?? null;
+        if ($action === 'save_library_image' && (!property_exists($input,'asset_id') || ($imageId !== null && !is_int($imageId))
+            || !is_string($expectedImage))) {
+            throw new InvalidArgumentException('Choose the current Canvas version and its image.');
+        }
+        if (in_array($action,['test','apply'],true) && $expectedImage !== null && !is_string($expectedImage)) {
+            throw new InvalidArgumentException('Reopen the current Canvas version and its image.');
+        }
+        if (in_array($action,['open','test','apply','save_state','email_data','save_library_image'],true)) {
+            require_once dirname(__DIR__).'/includes/coding-canvas-email-v1.php';
+        }
+        if ($action === 'save_state' && vp3_coding_canvas_email_binding_v1($pdo,$user,$aid,$canvasId,$revision) !== null) {
+            throw new RuntimeException('This email-connected Canvas uses read-only app data.',403);
+        }
         $result = match ($action) {
-            'list' => ['canvases' => vp3_coding_canvas_list_v1($pdo, $user, $aid)],
+            'list' => ['canvases'=>vp3_coding_canvas_list_v1($pdo,$user,$aid),'command_catalog'=>array_values(vp3_coding_canvas_command_library_v1())],
             'open' => vp3_coding_canvas_read_v1($pdo, $user, $aid, $canvasId, $revision),
-            'test' => vp3_coding_canvas_mark_tested_v1($pdo, $user, $aid, $canvasId, $revision, $stateRevision),
-            'apply' => vp3_coding_canvas_activate_v1($pdo, $user, $aid, $canvasId, $revision, $active),
+            'save_library_image' => vp3_coding_canvas_library_image_save_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$expectedImage,$imageId),
+            'test' => vp3_coding_canvas_email_test_v1($pdo,$user,$aid,$cid,vp3_coding_canvas_id_v1($canvasId),$revision,$stateRevision,
+                ($input->email_fixture_checked ?? false) === true,$expectedImage),
+            'apply' => vp3_coding_canvas_activate_v1($pdo, $user, $aid, $canvasId, $revision, $active, $expectedImage),
             'save_state' => vp3_coding_canvas_save_state_v1($pdo, $user, $aid, $canvasId, $revision, $stateRevision, $state),
+            'email_data' => ['email' => vp3_coding_canvas_email_data_v1($pdo,$user,$aid,$cid,vp3_coding_canvas_id_v1($canvasId),$revision)],
             'delete' => vp3_coding_canvas_delete_v1($pdo, $user, $aid, $canvasId, $deleteFolder),
             default => throw new InvalidArgumentException('Choose a Canvas operation.'),
         };
+        if ($action === 'list' && $cid > 0) {
+            require_once dirname(__DIR__).'/includes/agent-initiative-email-canvas-start-v1.php';
+            try {
+                $result['email_start_available'] = vp3_initiative_email_canvas_start_available_v1($pdo, $user, $aid, $cid);
+            } catch (RuntimeException $error) {
+                $result['email_start_available'] = false;
+            }
+        }
+        if (in_array($action,['open','test','apply','save_library_image'],true)) {
+            $result['email_source'] = vp3_coding_canvas_email_binding_v1($pdo,$user,$aid,$canvasId,$result['revision']['id']) !== null;
+            $canvas=vp3_coding_canvas_require_row_v1($pdo,(int)$user['id'],$aid,vp3_coding_canvas_id_v1($canvasId));
+            $result['library_image']=vp3_coding_canvas_library_image_view_v1($pdo,$user,$canvas,$cid,$result['revision']['id']);
+            $result['command_grants']=vp3_coding_canvas_command_settings_v1($pdo,$canvas);
+            if(empty($result['command_grants']['app_data']['app_access'])){
+                $result['state']['value']=(object)[];
+            }
+        }
     }
     echo json_encode(['ok' => true] + $result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {

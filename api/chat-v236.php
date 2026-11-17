@@ -56,7 +56,7 @@ if($action==='new'){$workspaceId=artist_workspace_v181_scope_id($user);$conversa
 if($action==='load'){
     $conversationId=(int)($input['conversation_id']??0);
     $conversation=chat_v236_conversation($pdo,$conversationId,$userId,$activeAgent);
-    if(!$conversation)throw new RuntimeException('Conversation not found for this agent.');
+    if(!$conversation){http_response_code(404);echo json_encode(['ok'=>false,'code'=>'conversation_not_found','error'=>'Conversation not found for this agent.']);exit;}
     initiative_product_launch_chat_v1($pdo,$userId,(int)$principal['agent_id'],$conversationId);
     $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? ORDER BY created_at DESC,id DESC LIMIT 300');
     $stmt->execute([$conversationId]);
@@ -99,5 +99,6 @@ throw new RuntimeException('Unknown chat action.');
     $status=$followthroughError&&in_array((int)$e->getCode(),[403,404,409,422,503],true)?(int)$e->getCode():($followthroughError?503:400);
     http_response_code($status);
     $error=$followthroughError?($status===409?'initiative_reply_stale':($status===403?'initiative_reply_forbidden':'initiative_reply_unavailable')):$e->getMessage();
-    echo json_encode(['ok'=>false,'error'=>$error]);
+    $reason=$action==='send'&&$followthroughError&&$status===503?vp3_agent_chat_followthrough_failure_reason_v2160($e):null;
+    echo json_encode(['ok'=>false,'error'=>$error]+($reason===null?[]:['followthrough_reason'=>$reason]));
 }

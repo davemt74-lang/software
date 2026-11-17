@@ -80,14 +80,22 @@ try{
   const seed=await fetch(base+'/seed',{method:'POST',headers:postHeaders});
   assert.equal(seed.status,200,await seed.clone().text());const {run_id}=await seed.json();
   const state=await read();
-  assert.deepEqual(Object.keys(state).sort(),['agent_id','contract','conversation_id','health','observed_at','owner_user_id','working_attention_binding']);
+  assert.deepEqual(Object.keys(state).sort(),['agent_id','contract','conversation_id','coordination','health','observed_at','owner_user_id','specialists','working_attention_binding']);
   assert.equal(state.owner_user_id,1);assert.equal(state.agent_id,7);assert.equal(state.conversation_id,11);
   assert.equal(state.working_attention_binding,session.binding);assert.equal(state.health.enabled,true);
   assert.equal(state.health.active_jobs.length,1);assert.equal(state.health.active_jobs[0].id,'workflow:'+run_id);
   assert.equal(state.health.active_jobs[0].kind,'preparation');
   assert.ok(state.health.active_jobs[0].expiresAt>Date.now());
+  assert.equal(state.coordination.phase,'acting');
   assert.equal(JSON.stringify(state).includes('fixture-owner-private'),false);
   await read();await read('&conversation_id=11');
+  const exact=await read('&scope=chat&conversation_id=11');
+  assert.equal(exact.conversation_id,11);assert.equal(exact.health.active_jobs.length,1);
+  const unsaved=await read('&scope=chat&conversation_id=0');
+  assert.equal(unsaved.conversation_id,0);assert.deepEqual(unsaved.health.active_jobs,[]);
+  assert.equal(unsaved.coordination.phase,'idle');
+  assert.ok(unsaved.specialists.some(specialist=>specialist.id==='planning'&&specialist.state==='idle'));
+  assert.equal((await fetch(endpoint+'&scope=chat',{headers})).status,422);
   assert.equal((await fetch(endpoint+'&conversation_id=12',{headers})).status,403);
   assert.equal((await fetch(endpoint,{method:'POST',headers})).status,405);
   assert.equal((await fetch(endpoint,{headers:{...headers,'X-VP3-Working-Attention':'wrong'}})).status,403);
@@ -101,6 +109,20 @@ try{
   assert.deepEqual(other.state.health.active_jobs,[]);
   const foreign=await fetch(base+'/session',{headers:{Cookie:cookie,'X-Fixture-User':'2'}}).then(response=>response.json());
   assert.equal((await fetch(endpoint,{headers:{Cookie:cookie,'X-Fixture-User':'2','X-VP3-Working-Attention':foreign.binding}})).status,403);
+  const engagements=base+'/api/agent-top-of-mind-v1.php?view=engagements&scope=chat&agent_id=7&conversation_id=11&specialist=planning';
+  const questions=await fetch(engagements,{headers});
+  assert.equal(questions.status,200,await questions.clone().text());
+  assert.match(questions.headers.get('cache-control'),/no-store/);
+  assert.deepEqual((await questions.json()).state,{contract:'vp3.agent.engagements.v1',owner_user_id:1,agent_id:7,conversation_id:11,
+    specialist:'planning',open_engagements:[],open_engagements_next_before:null,open_engagements_status:'ready',working_attention_binding:session.binding});
+  for(const [address,expected] of [[engagements.replace('agent_id=7','agent_id=8'),403],
+    [engagements.replace('conversation_id=11','conversation_id=12'),403],[engagements.replace('scope=chat&',''),422],
+    [engagements.replace('specialist=planning','specialist=unknown'),422],[engagements+'&before=-1',422]]){
+    assert.equal((await fetch(address,{headers})).status,expected,address);
+  }
+  assert.equal((await fetch(engagements,{headers:{...headers,'X-VP3-Working-Attention':'wrong'}})).status,403);
+  assert.equal((await fetch(engagements,{headers:{...headers,'X-Fixture-Participant':'1'}})).status,403);
+  assert.equal((await fetch(engagements,{headers:{Cookie:cookie,'X-Fixture-User':'2','X-VP3-Working-Attention':foreign.binding}})).status,403);
   for(const mode of ['action_failed','action_restore','expired','terminal','paused']){
     const changed=await fetch(base+'/mutate?mode='+mode,{method:'POST',headers:postHeaders});
     assert.equal(changed.status,200,await changed.clone().text());
@@ -110,6 +132,7 @@ try{
   assert.deepEqual(await fetch(base+'/counts',{headers}).then(response=>response.json()),{models:0,runs:1});
   console.log('PASS real work-only GET resolves saved-policy Chat and reports only a matching live claim; queued/cold, failed action, expired, terminal and paused work remain inactive');
   console.log('PASS work-only GET enforces method, owner, exact Agent/Chat, session, participant and permission boundaries without exposing source/progress text');
+  console.log('PASS engagement GET is read-only and scopes pagination to the exact owner, Agent, Chat, session and specialist');
   console.log('PASS repeated query_only GETs invoke zero models, create zero work and leave the full Top of Mind feed unopened');
 }catch(error){console.error(logs.slice(-7000));throw error;}
 finally{server.kill('SIGTERM');if(server.exitCode===null)await new Promise(resolve=>server.once('exit',resolve));rmSync(temp,{recursive:true,force:true});}

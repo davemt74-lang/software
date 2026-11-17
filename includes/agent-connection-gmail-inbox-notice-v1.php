@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-connection-gmail-inbox-batches-v1.php';
+
 function agent_connection_gmail_inbox_notice_generation_v1(array $policy): ?int
 {
     $connection = (int)($policy['connection_id'] ?? 0);
@@ -40,7 +42,8 @@ function agent_connection_gmail_inbox_notify_v1(PDO $pdo, int $owner, array $rev
 {
     $total = (int)($review['total'] ?? 0);
     $first = ($review['kind']??'')==='initial';
-    if ($owner < 1 || (!$first && $total < 1) || !table_exists('notifications')) return null;
+    $alerts = agent_connection_gmail_inbox_report_alert_count_v1($review);
+    if ($owner < 1 || (!$first && $alerts < 1) || !table_exists('notifications')) return null;
     if (!$pdo->inTransaction()) throw new LogicException('Inbox review notices require the cursor transaction.');
     if ($policy === null) {
         require_once __DIR__.'/agent-connection-gmail-inbox-settings-v1.php';
@@ -54,7 +57,9 @@ function agent_connection_gmail_inbox_notify_v1(PDO $pdo, int $owner, array $rev
     $body = $first ? 'Your first Gmail review is ready. Reviewed '.$total.' inbox message'.($total===1?'':'s').'.'
         : 'Reviewed '.$total.' new Gmail message'.($total === 1 ? '' : 's').'. '
             .$important.' marked important, '.$replies.' '.($replies === 1 ? 'reply' : 'replies').'.';
-    if (!$first) {
+    if (!$first && ($review['triage_enabled'] ?? false) === true) {
+        $body = $alerts===1 ? 'One Gmail message needs your attention.' : $alerts.' Gmail messages need your attention.';
+    } elseif (!$first) {
         $priority = count(array_filter((array)($review['items'] ?? []),static fn($item): bool => !empty($item['priority_signals'])));
         if ($priority > 0) $body .= ' '.$priority.' '.($priority === 1 ? 'message' : 'messages').' with priority keywords in the subject.';
     }

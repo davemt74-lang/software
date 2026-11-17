@@ -23,13 +23,24 @@ if ($teamChatUser) {
     }
 }
 
-if (!$teamChatUser || !$teamChatEligible) {
-    return;
-}
-
 $teamChatPageKey = isset($teamChatPageKey)
     ? preg_replace('/[^a-z0-9_-]/i', '', (string)$teamChatPageKey)
     : 'workspace';
+$teamChatIsAgentChat = $teamChatPageKey === 'agent_chat';
+if (!$teamChatUser || (!$teamChatIsAgentChat && !$teamChatEligible)) {
+    return;
+}
+$teamChatAssetBuild = 'team-chat-light-v117-20260905';
+$teamChatAllowed = $teamChatEligible && (!$teamChatIsAgentChat || ($teamChatEnabled ?? false));
+if (!$teamChatAllowed) {
+    ?>
+    <link rel="stylesheet" href="<?= e(url('/team-chat-v109.css?v=' . $teamChatAssetBuild)) ?>">
+    <aside class="sf-online-rail-v109" id="sfOnlineRailV109" data-agent-chat-rail aria-label="Agent Chat controls"></aside>
+    <script>document.body.classList.add('sf-team-rail-active');</script>
+    <?php
+    return;
+}
+
 $teamChatContextLabel = isset($teamChatContextLabel)
     ? trim((string)$teamChatContextLabel)
     : '';
@@ -44,15 +55,14 @@ if ($teamChatMemberships) {
         $teamChatUiRole = $contextualRole;
     }
 }
-$teamChatAssetBuild = 'team-chat-light-v117-20260905';
 $teamChatSettings = $teamChatPdo
     ? chat_settings_get_v237($teamChatPdo, (int)$teamChatUser['id'])
     : chat_settings_defaults_v237();
 $teamChatSocialEnabled = !empty($teamChatSettings['social_chat_enabled']);
 ?>
 <link rel="stylesheet" href="<?= e(url('/team-chat-v109.css?v=' . $teamChatAssetBuild)) ?>">
-<aside class="sf-online-rail-v109" id="sfOnlineRailV109" aria-label="Stonefellow team chat"<?= $teamChatSocialEnabled ? '' : ' hidden' ?>>
-  <div class="sf-online-users-v109" id="sfOnlineUsersV109"></div>
+<aside class="sf-online-rail-v109" id="sfOnlineRailV109"<?= $teamChatIsAgentChat ? ' data-agent-chat-rail aria-label="Agent Chat controls"' : ' aria-label="Stonefellow team chat"' ?><?= !$teamChatIsAgentChat && !$teamChatSocialEnabled ? ' hidden' : '' ?>>
+  <div class="sf-online-users-v109" id="sfOnlineUsersV109"<?= !$teamChatSocialEnabled ? ' hidden' : '' ?>></div>
 </aside>
 
 <div
@@ -76,7 +86,7 @@ window.STONEFELLOW_TEAM_CHAT = <?= json_encode([
     'socialChatEnabled'=>$teamChatSocialEnabled,
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
 </script>
-<script src="<?= e(url('/team-chat-v109.js?v=' . $teamChatAssetBuild)) ?>"></script>
-<?php if ($teamChatSocialEnabled): ?>
+<script src="<?= e(url('/team-chat-v109.js?v=' . $teamChatAssetBuild . '-' . substr(hash_file('sha256', __DIR__.'/../team-chat-v109.js'),0,12))) ?>"></script>
+<?php if ($teamChatSocialEnabled || $teamChatIsAgentChat): ?>
 <script>document.body.classList.add('sf-team-rail-active');</script>
 <?php endif; ?>

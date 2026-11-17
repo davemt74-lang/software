@@ -32,7 +32,7 @@ function ai_v121_stream_provider(
     if(!is_string($encoded))return ['ok'=>false,'answer'=>'','error'=>'Could not encode the AI request.'];
 
     $answer='';$lineBuffer='';$eventData=[];$usage=[];
-    $providerError='';$sawTerminal=false;$incomplete=false;
+    $providerError='';$sawTerminal=false;$incomplete=false;$anthropicRejection='';
 
     $processEvent=static function() use ($provider,$onDelta,&$answer,&$eventData,&$usage,&$providerError,&$sawTerminal,&$incomplete): void {
         if(!$eventData)return;
@@ -77,8 +77,14 @@ function ai_v121_stream_provider(
         CURLOPT_TIMEOUT=>max(10,min(120,$timeout)),CURLOPT_HTTPHEADER=>$headers,
         CURLOPT_POSTFIELDS=>$encoded,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
         CURLOPT_BUFFERSIZE=>4096,
-        CURLOPT_WRITEFUNCTION=>static function($curl,string $chunk) use (&$lineBuffer,&$eventData,$processEvent): int {
+        CURLOPT_WRITEFUNCTION=>static function($curl,string $chunk) use ($provider,&$anthropicRejection,&$lineBuffer,&$eventData,$processEvent): int {
             if(connection_aborted())return 0;
+            if($provider==='anthropic'&&(int)curl_getinfo($curl,CURLINFO_HTTP_CODE)===400){
+                if($anthropicRejection!==null){
+                    $anthropicRejection=strlen($anthropicRejection)+strlen($chunk)<=4096?$anthropicRejection.$chunk:null;
+                }
+                return strlen($chunk);
+            }
             $lineBuffer.=$chunk;
             while(($pos=strpos($lineBuffer,"\n"))!==false){
                 $line=rtrim(substr($lineBuffer,0,$pos),"\r");$lineBuffer=substr($lineBuffer,$pos+1);
@@ -104,6 +110,11 @@ function ai_v121_stream_provider(
     }
     $duration=(int)round((microtime(true)-$started)*1000);
 
+    if($provider==='anthropic'&&$result!==false&&$status===400&&is_string($anthropicRejection)
+        &&ai_anthropic_credit_rejection_v1($status,json_decode($anthropicRejection,true,16))){
+        return ['ok'=>false,'answer'=>'','error'=>'Anthropic reported that the API credit balance for this key is too low.',
+            'failure_code'=>'anthropic_credit_balance_low','status'=>$status,'duration_ms'=>$duration,'usage'=>[],'terminal'=>false];
+    }
     if($result===false||$status<200||$status>=300||$providerError!==''){
         error_log('Stonefellow v121 stream '.$provider.' status='.$status.' error='.mb_strimwidth($providerError!==''?$providerError:$error,0,300,'…'));
         return ['ok'=>false,'answer'=>trim($answer),'partial'=>trim($answer)!=='','error'=>$providerError!==''?$providerError:'The AI streaming connection failed.','status'=>$status,'duration_ms'=>$duration,'usage'=>$usage,'terminal'=>$sawTerminal];
@@ -202,7 +213,7 @@ function ai_v121_stream_chat_response(
         }
 
         $service='ai-stream-'.$provider.'-'.$model;
-        $call=static function(int $attempt)use($provider,$model,$payload,$onDelta,$complexity,$candidateOwn,$meter,$target):array{
+        $call=static function(int $attempt)use($provider,$model,$payload,$onDelta,$complexity,$candidateOwn,$meter,$target,$user,$serviceContext):array{
             $ticket=[];
             $credential=$candidateOwn!==null?(string)$candidateOwn['api_key']:null;
             $outputField=$provider==='openai'?'max_output_tokens':'max_tokens';
@@ -216,6 +227,9 @@ function ai_v121_stream_chat_response(
                 }catch(Throwable $error){return ai_v100_service_budget_failure($error);}
                 $payload[$outputField]=min($payload[$outputField],(int)($ticket['max_output_tokens']??$payload[$outputField]));
             }
+            // Keep the observed fingerprint tied to the exact key dispatched.
+            if($provider==='anthropic'&&$credential===null)$credential=ai_provider_api_key($provider);
+            $startedAtMicros=(int)(microtime(true)*1000000);
             try{
                 $row=ai_v121_stream_provider($provider,$model,$payload,$onDelta,$complexity==='deep'?95:70,$credential);
             }catch(Throwable $error){
@@ -235,6 +249,10 @@ function ai_v121_stream_chat_response(
                 try{$meter->finish($ticket,$known?$usage:[],$state,$details);}
                 catch(Throwable $failure){return array_replace($row,ai_v100_service_budget_failure($failure));}
                 if(!$rejected)$row['stop_service_fallback']=true;
+            }
+            if($provider==='anthropic'){
+                ai_v100_observe_anthropic_credit_v1($user,$candidateOwn===null?'system':'own_key',$credential,$row,
+                    !empty($row['ok']),$startedAtMicros,$serviceContext);
             }
             return $row;
         };

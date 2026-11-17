@@ -1,0 +1,50 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+  color: #162331;
+  background: #fff;
+}
+
+.public-canvas {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+}
+
+.public-canvas-header {
+  display: flex;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0 clamp(1rem, 4vw, 2.5rem);
+  border-bottom: 1px solid #e4e9ee;
+}
+
+.public-canvas-header h1 {
+  margin: .6rem 0;
+  font-size: 1rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.public-canvas-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+}
+
+.public-canvas-status {
+  margin: 1rem clamp(1rem, 4vw, 2.5rem);
+  color: #485869;
+}
+
+.public-canvas-frame {
+  grid-row: 2;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 13rem;
+  border: 0;
+  background: #fff;
+}

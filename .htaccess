@@ -2,6 +2,9 @@
 RewriteEngine On
 RewriteRule ^private(?:/|$) - [F,L,NC]
 
+# Public Canvas routes expose only the published revision for the named app.
+RewriteRule ^apps/([a-z0-9-]{3,64})/?$ canvas-app.php?app=$1 [L]
+
 # Public machine-readable VP3 Agent Manifest for a native /username profile.
 RewriteRule ^\.well-known/vp3-agent/([A-Za-z0-9][A-Za-z0-9._-]{1,58}[A-Za-z0-9])/?$ api/agent-manifest.php?username=$1 [L,QSA,NC]
 

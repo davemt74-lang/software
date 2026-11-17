@@ -117,6 +117,20 @@
 .vp3-mission-followup{margin:.5rem 0;padding:.8rem;border:1px solid var(--border-color,#65718b);border-radius:12px;max-width:100%;min-width:0;overflow-wrap:anywhere}.vp3-mission-followup[hidden]{display:none}.vp3-mission-followup h4{margin:0 0 .5rem}.vp3-mission-followup p{margin:.5rem 0}.vp3-mission-followup button{margin:.25rem;max-width:100%;white-space:normal}.vp3-mission-followup label{display:block;margin:.5rem 0}.vp3-mission-followup small{display:block}
 
 .vp3-teams-list,.vp3-teams-detail,.vp3-teams-body{min-width:0;max-width:100%;overflow-wrap:anywhere}.vp3-browser-source small{overflow-wrap:anywhere}.vp3-integration-diagnostic{max-width:100%;overflow-wrap:anywhere}
+#chatThread>.vp3-mission-inline,#chatThread>.vp3-mission-live-summary{box-sizing:border-box;width:min(100%,790px);min-width:0;margin:12px auto}
+#chatThread[data-view]:not([data-view="chat"])>:is(.vp3-mission-inline,.vp3-mission-live-summary){display:none}
+#chatThread>.vp3-mission-live-summary{max-height:none;overflow:visible}
+.vp3-mission-inline,.vp3-mission-live-card{border:1px solid #d1d5db;background:#fff;color:#111827}
+.vp3-mission-inline{padding:14px 16px;border-radius:14px}
+.vp3-mission-inline-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.vp3-mission-inline-head button,.vp3-mission-live-card .vp3-activity-actions button{min-height:32px;padding:4px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;color:#111827;font:inherit;font-size:.8rem;cursor:pointer}
+.vp3-mission-inline-head button:hover,.vp3-mission-live-card .vp3-activity-actions button:hover{background:#f3f4f6}
+.vp3-mission-inline-head button:focus-visible,.vp3-mission-live-card .vp3-activity-actions button:focus-visible{outline:2px solid #6586bd;outline-offset:2px}
+.vp3-mission-inline .vp3-agent-teams-a3{--surface:#fff;--surface-secondary:#f5f6f8;--border:#d1d5db}
+.vp3-mission-inline .vp3-agent-teams-a3 .vp3-teams-body{max-height:none;overflow:visible}
+.vp3-mission-inline-detail .vp3-agent-teams-a3,.vp3-mission-inline-detail .vp3-teams-detail{margin:0;border:0}
+.vp3-mission-inline-detail .vp3-agent-teams-a3>summary,.vp3-mission-inline-detail .vp3-teams-body>:not(.vp3-teams-status,.vp3-teams-detail){display:none}
+.vp3-mission-inline-detail .vp3-agent-teams-a3 .vp3-teams-body,.vp3-mission-inline-detail .vp3-teams-detail{padding:0}
 
 /* Reusable mission/schedule cards also render outside the Agent Teams disclosure. */
 .vp3-activity-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0;margin-bottom:10px}

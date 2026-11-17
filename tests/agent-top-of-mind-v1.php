@@ -35,9 +35,12 @@ $pdo->exec('PRAGMA query_only=OFF');
 $claim=agent_job_claim_run_v1900($pdo,$user,$runId,'cloud',agent_worker_cloud_worker_id_v1910(1),180);
 feed_check(is_array($claim),'the existing canonical claimant starts the exact queued job');
 agent_job_heartbeat_v1900($pdo,$user,$runId,(int)$claim['action']['id'],(string)$claim['lease_token'],35,'Preparing the launch analysis',240);
-$working=feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$runId);
+$workFeed=vp3_top_of_mind_v1($pdo,$user,0,42);
+$working=feed_item($workFeed,$runId);
 feed_check($working['state']==='working'&&$working['progress']===35&&$working['step']==='Preparing the launch analysis',
     'a valid real worker lease exposes its reported objective, step and progress');
+feed_check($workFeed['coordination']['phase']==='acting'&&!empty($workFeed['coordination']['lease_expires_at']),
+    'the main coordinator acts while a delegated action holds the verified work lease');
 $pdo->prepare("UPDATE agent_workflow_runs SET lease_expires_at='2000-01-01 00:00:00' WHERE id=?")->execute([$runId]);
 $interrupted=feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$runId);
 feed_check($interrupted['state']==='interrupted'&&$interrupted['progress']===null&&$interrupted['step']==='',
@@ -77,10 +80,18 @@ $planGoal=['binding'=>$policy,'sources'=>array_column($many,'revision','ref'),'c
 vp3_initiative_enqueue_v1($pdo,$user,'initiative.plan',$planGoal,hash('sha256','feed-many-source-plan'));
 $q->execute([hash('sha256','initiative.plan|'.hash('sha256','feed-many-source-plan'))]);$planRun=(int)$q->fetchColumn();
 $planClaim=agent_job_claim_run_v1900($pdo,$user,$planRun,'cloud',agent_worker_cloud_worker_id_v1910(1),180);
-$assessment=feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$planRun);
+$assessmentFeed=vp3_top_of_mind_v1($pdo,$user,0,42);
+$assessment=feed_item($assessmentFeed,$planRun);
 feed_check($assessment['state']==='working'&&$assessment['kind']==='assessment'&&$assessment['sources']===[]
     &&$assessment['objective']==='Assess useful next steps','a real assessment with more than five sources remains visible using generic work status without disclosing unchecked source titles');
-$assessed=vp3_initiative_execute_v1($pdo,$user,$planClaim,static fn():string=>'{"jobs":[]}');
+feed_check($assessmentFeed['coordination']['phase']==='analyzing'&&$assessment['progress']===null,
+    'a claimed assessment begins with analysis and no fabricated completion percentage');
+$assessed=vp3_initiative_execute_v1($pdo,$user,$planClaim,static function()use($pdo,$user):string{
+    $work=vp3_top_of_mind_work_v1($pdo,$user,0,42,true);
+    feed_check($work['coordination']['phase']==='brainstorming'&&!empty($work['coordination']['lease_expires_at']),
+        'the LLM assessment runs during the verified brainstorming phase');
+    return '{"jobs":[]}';
+});
 $assessmentDone=feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$planRun);
 feed_check($assessed['ok']&&$assessmentDone['state']==='assessed'&&$assessmentDone['result_url']==='',
     'a verified completed assessment never masquerades as completed private preparation or an artifact');

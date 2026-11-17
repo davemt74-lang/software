@@ -49,6 +49,8 @@ function brainstorm_pipeline_model(?callable $during=null): Closure
                     'objective'=>'Prepare options for the recurring review','rationale'=>'The saved recurring preparation task could benefit from a more focused next step.'],
                 ['tool'=>'canvas.prepare','primary'=>'task:20001','refs'=>['task:20001'],
                     'objective'=>'Consider an interactive review checklist','rationale'=>'A reusable checklist could reduce repeated setup; its value still needs discussion.'],
+                ['tool'=>'email.send','primary'=>'task:20001','refs'=>['task:20001'],
+                    'objective'=>'Unverified advice must never appear','rationale'=>'This tool is outside the authorized catalog.'],
             ]],JSON_THROW_ON_ERROR);
     };
 }
@@ -85,6 +87,9 @@ canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_clai
 $first=canvas_pipeline_result($oldRun);$firstOutput=$first['initiative_tool_result']['output'];
 canvas_pipeline_check($firstOutput['type']==='initiative_brainstorm'&&array_column($firstOutput['opportunities'],'status')===['queued','considered'],
     'the private canonical receipt distinguishes actually queued work from an unexecuted idea');
+canvas_pipeline_check((int)($first['opportunities_discarded']??0)===1
+    &&!str_contains(json_encode($first,JSON_THROW_ON_ERROR),'Unverified advice must never appear'),
+    'a discarded unauthorized suggestion is recorded only as a count and does not block valid work');
 canvas_pipeline_check(count(canvas_pipeline_runs('initiative.prepare'))===$beforeJobs+1&&canvas_pipeline_count('chat_messages')===$beforeMessages,
     'brainstorming dispatches one selected job without turning every thought into a Chat message');
 $q=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$oldRun]);
@@ -135,6 +140,11 @@ canvas_pipeline_check(!vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_cla
 $q=$pdo->prepare('SELECT result_json FROM agent_workflow_receipts WHERE run_id=?');$q->execute([$atomic]);
 canvas_pipeline_check(!str_contains((string)$q->fetchColumn(),'initiative_brainstorm')&&count(canvas_pipeline_runs('initiative.prepare'))===$beforeJobs+1,
     'receipt rollback retains no private thought or extra child assignment');
+$failure=vp3_initiative_worker_health_v1($pdo,$owner,7,11)['failure_detail'];
+canvas_pipeline_check(($failure['run_id']??null)===$atomic&&($failure['stage']??null)==='Assessment'
+    &&($failure['phase']??null)==='Saving verified work'&&($failure['evidence']??null)==='receipt'
+    &&!str_contains(json_encode($failure),'Synthetic final receipt interruption'),
+    'the exact failed assessment shows its save phase without exposing the underlying exception');
 
 $payload=brainstorm_pipeline_payload($single);$payload['attention_revision']=bin2hex(random_bytes(16));
 $revoked=brainstorm_pipeline_enqueue($payload);

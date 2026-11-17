@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/homeserver-scope-v026.php';
 require_once __DIR__.'/homeserver-vp3.php';
 require_once __DIR__.'/homeserver-agent-v018.php';
+require_once __DIR__.'/initiative-legacy-chat-report.php';
 if(!defined('STONEFELLOW_ROOT'))define('STONEFELLOW_ROOT',dirname(__DIR__));
 
 // Disposable account/SQL/provider infrastructure only. Domain admission,
@@ -67,7 +68,7 @@ function capabilities_browser_model_v1(string $prompt,string $protocol): ?array
         followthrough_fixture_log_v1('main_model',['protocol'=>$protocol,'prompt'=>$prompt]);
         return ['ok'=>true,'answer'=>json_encode(['draft'=>'We can work through the decision in that verified private note. I have kept the original record and proposed next step separate from any business change.'],JSON_THROW_ON_ERROR)];
     }
-    if($protocol!=='vp3.initiative-plan.v1'&&($protocol!=='vp3.initiative-draft.v1'||($input['response_kind']??'')==='followthrough_reply'))return null;
+    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1',VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1],true))return null;
     if(db()->inTransaction())throw new RuntimeException('Capability inference held a transaction.');
     followthrough_fixture_log_v1('capability_model',['request_id'=>(string)($_SERVER['HTTP_X_FIXTURE_REQUEST_ID']??''),
         'protocol'=>$protocol,'prompt'=>$prompt,'in_transaction'=>false]);
@@ -83,7 +84,8 @@ function capabilities_browser_model_v1(string $prompt,string $protocol): ?array
             'focus'=>'Prepare one useful private next step from the actual selected saved record.','report'=>true]]],JSON_THROW_ON_ERROR)];
     }
     if(isset($input['tool_result'])){
-        if(($input['tool_result']['tool']??'')!==$tool
+        $expectedProtocol=$tool==='tasks.read'?VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1:'vp3.initiative-draft.v1';
+        if($protocol!==$expectedProtocol||($input['tool_result']['tool']??'')!==$tool
             ||!str_contains(json_encode($input['tool_result']['records']??[],JSON_THROW_ON_ERROR),$sentinel))
             throw new RuntimeException('The raw source sentinel did not reach the real selected capability read.');
         if(isset($input['owner_continuation'])){
@@ -195,6 +197,17 @@ function capabilities_browser_control_v1(): never
             $claim=is_array($claim)?$claim:followthrough_fixture_claim_v1($id);
             $done=vp3_initiative_execute_v1($pdo,['id'=>1,'is_active'=>1],$claim);
             $state=capabilities_browser_state_v1()+['execution_result'=>$done];
+        }elseif($action==='legacy_post'){
+            $id=(int)capabilities_browser_value_v1('prepare_id');
+            $stmt=$pdo->prepare("SELECT r.goal,a.result_json FROM agent_workflow_runs r
+                JOIN agent_workflow_actions a ON a.run_id=r.id AND a.owner_user_id=r.owner_user_id
+                WHERE r.id=? AND r.owner_user_id=1 AND a.status='completed'");
+            $stmt->execute([$id]);$row=$stmt->fetch();
+            $goal=json_decode($row['goal']??'null',true,512,JSON_THROW_ON_ERROR);
+            $result=json_decode($row['result_json']??'null',true,512,JSON_THROW_ON_ERROR);
+            if(($goal['tool']??null)!=='tasks.read'||!is_array($result))throw new LogicException('A completed desktop Tasks run is required.');
+            initiative_fixture_legacy_report($pdo,['id'=>1,'is_active'=>1],$id,$goal,$result);
+            $state=capabilities_browser_state_v1();
         }elseif($action==='present'){
             capabilities_browser_presence_v1(($_GET['visible']??'1')==='1');$state=capabilities_browser_state_v1();
         }elseif($action==='deliver'){

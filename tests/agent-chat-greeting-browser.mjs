@@ -118,6 +118,45 @@ try {
   }
   console.log('PASS Auto Greet is opt-in on page load and manual Listen is available while it is off');
   {
+    let finishSave;
+    const saving = new Promise(resolve=>{finishSave=resolve;});
+    const {context,page} = await fixture({autoGreet:false,saveAutoGreet:()=>saving});
+    try {
+      await page.locator('#chatProfileButton').click();
+      const toggle = page.getByRole('checkbox',{name:'Auto Greet'});
+      await toggle.check();
+      assert.equal(await toggle.isDisabled(),true);
+      assert.equal(await page.locator(greeting).count(),0);
+      assert.deepEqual(await page.evaluate(() => [utterances.length,nativeAttempts,micAcquisitions]),[0,0,0]);
+      finishSave();
+      await page.waitForFunction(() => utterances.length===1);
+      assert.equal(await toggle.isChecked(),true);
+      assert.equal(await page.locator(greeting).count(),1);
+      assert.equal(await page.evaluate(() => nativeAttempts),0);
+      await page.evaluate(() => finishSpeech());
+      await page.waitForFunction(() => nativeLive===1 && replyDuration===15000);
+      assert.equal(await page.evaluate(() => autoListenClicks),1);
+    } finally { finishSave(); await context.close(); }
+    console.log('PASS saving Auto Greet in the real account menu starts the greeting and then Listen in this Chat');
+  }
+  {
+    const {context,page} = await fixture({autoGreet:false});
+    await page.locator('#chatProfileButton').click();
+    const toggle = page.getByRole('checkbox',{name:'Auto Greet'});
+    await toggle.waitFor();
+    await page.clock.install();
+    await page.evaluate(() => window.dispatchEvent(new StorageEvent('storage',{
+      key:'vp3:auto-greet-sync:1',
+      newValue:JSON.stringify({enabled:true,at:Date.now()}),
+    })));
+    await page.clock.runFor(300);
+    assert.equal(await toggle.isChecked(),true);
+    assert.equal(await page.locator(greeting).count(),0);
+    assert.equal(await page.evaluate(() => permissionReads+nativeAttempts+micAcquisitions+utterances.length),0);
+    await context.close();
+    console.log('PASS another tab can update the saved Auto Greet switch without starting playback or capture here');
+  }
+  {
     const {context,page} = await fixture({selectedParticipant:true});
     await page.clock.install();
     await page.clock.runFor(300);

@@ -128,33 +128,45 @@ function reminder_list_rows_v1(PDO $pdo,int $uid,string $view,string $timezone,D
         if(in_array($view,['open','overdue'],true)&&$r['status']!=='active')continue;
         $delivered=reminder_followup_delivered_v1($pdo,$r);
         if($delivered&&in_array($view,['open','overdue'],true))continue;
-        if(!empty($r['followup_condition_json'])&&!$delivered){
-            if(in_array($view,['today','overdue'],true))continue;
-            if($r['status']==='active')$r['list_state']='waiting_condition';
-            $r['list_timezone']=$timezone;$out[]=$r;continue;
-        }
+        if(!empty($r['followup_condition_json'])&&!$delivered&&in_array($view,['today','overdue'],true))continue;
         $o=$occurrences[(int)$r['id']]??null;$next=$r['next_at']??null;
         if($view==='today'&&!$o&&!($next!==null&&$next>=$from&&$next<$to))continue;
         if($view==='overdue'&&!$o)continue;
-        if($o){$r['list_at']=$o['wake_at'];$r['list_state']=$o['status']==='pending'?($o['wake_at']<$stamp?'overdue':'pending'):$o['status'];}
-        elseif($next!==null){$r['list_at']=$next;$r['list_state']=$r['status'];}
-        if($delivered)$r['list_state']='revisited';
-        $r['list_timezone']=$timezone;$out[]=$r;
+        $out[]=reminder_list_entry_v1($r,$o,$delivered,$timezone,$stamp);
     }
     return $out;
 }
-function reminder_list_label_v1(array $r): string
+function reminder_list_entry_v1(array $r,?array $occurrence,bool $delivered,string $timezone,string $stamp): array
 {
-    if(($r['list_state']??null)==='waiting_condition')return '#'.$r['id'].' “'.$r['title'].'” — waiting for its reviewed condition';
-    if(isset($r['list_at']))$r=array_replace($r,['next_at'=>$r['list_at'],'status'=>$r['list_state'],'timezone'=>$r['list_timezone']]);
-    return reminder_label_v1($r);
+    $r['list_timezone']=$timezone;
+    if(!empty($r['followup_condition_json'])&&!$delivered){
+        if($r['status']==='active')$r['list_state']='waiting_condition';
+        return $r;
+    }
+    if($occurrence){
+        $r['list_at']=$occurrence['wake_at'];
+        $r['list_state']=$occurrence['status']==='pending'?($occurrence['wake_at']<$stamp?'overdue':'pending'):$occurrence['status'];
+    }elseif($r['next_at']!==null){
+        $r['list_at']=$r['next_at'];$r['list_state']=$r['status'];
+    }
+    if($delivered)$r['list_state']='revisited';
+    return $r;
 }
-function reminder_label_v1(array $r): string
+function reminder_list_label_v1(array $r,bool $includeTitle=true): string
 {
-    if(!empty($r['followup_condition_json']))return '#'.$r['id'].' “'.$r['title'].'” — conditional revisit · '.$r['status'];
+    $prefix=$includeTitle?'#'.$r['id'].' “'.$r['title'].'” — ':'';
+    if(($r['list_state']??null)==='waiting_condition')return $prefix.'waiting for its reviewed condition';
+    if(isset($r['list_at']))$r=array_replace($r,['next_at'=>$r['list_at'],'status'=>$r['list_state'],'timezone'=>$r['list_timezone']]);
+    elseif(!$includeTitle&&isset($r['list_state']))$r['status']=$r['list_state'];
+    return reminder_label_v1($r,$includeTitle);
+}
+function reminder_label_v1(array $r,bool $includeTitle=true): string
+{
+    $prefix=$includeTitle?'#'.$r['id'].' “'.$r['title'].'” — ':'';
+    if(!empty($r['followup_condition_json']))return $prefix.'conditional revisit · '.$r['status'];
     $at=$r['next_at']??null;
     $when=$at?(new DateTimeImmutable($at))->setTimezone(new DateTimeZone($r['timezone']))->format('D, M j, g:i A'):'no upcoming delivery';
-    return '#'.$r['id'].' “'.$r['title'].'” — '.$when.' · '.$r['timezone'].' · '.(['none'=>'once','daily'=>'daily','weekdays'=>'weekdays','weekly'=>'weekly'][$r['recurrence']]).' · '.$r['delivery'].' · '.$r['status'];
+    return $prefix.$when.' · '.$r['timezone'].' · '.(['none'=>'once','daily'=>'daily','weekdays'=>'weekdays','weekly'=>'weekly'][$r['recurrence']]).' · '.$r['delivery'].' · '.$r['status'];
 }
 function reminder_notice_text_v1(array $row): string{return 'Reminder #'.$row['id'].': '.$row['title'].'. Done, or would you like to snooze it?';}
 /** Tick is transactional with the existing notification and Chat records. No external transport in this transaction. */

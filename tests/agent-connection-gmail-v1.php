@@ -232,6 +232,27 @@ check($source['to'] === 'replies@example.test' && $source['subject'] === 'Café 
     && !isset($source['body']), 'The exact reply address, subject, parent and full reference chain are verified.');
 $sourceBody = agent_connection_gmail_reply_from_message_v1($reply,'owner@example.test',true);
 check($sourceBody['body'] === 'One & two.', 'The isolated reply draft can use only the cleaned source body.');
+$threadRead = static fn(array $messages): callable => static function ($method,$url,$headers,$body) use ($messages): array {
+    check($method === 'GET' && str_starts_with($url,VP3_GMAIL_API_V1.'/threads/thread-1?format=metadata')
+        && $body === null && in_array('Authorization: Bearer fixture-access',$headers,true),
+        'Freshness must read only metadata for the exact thread under the current grant.');
+    return ['status'=>200,'json'=>['id'=>'thread-1','messages'=>$messages]];
+};
+$head = static fn(array $messages): string => agent_connection_gmail_reply_thread_head_v1(
+    'fixture-access',$source['reply'],'owner@example.test',$threadRead($messages));
+$newer = array_replace($reply,['id'=>'newer-message','labelIds'=>[],'internalDate'=>'1777777801000']);
+$newer['payload']['headers'][3]['value'] = '<newer@example.test>';
+$draftMail = array_replace($newer,['id'=>'draft-mail','labelIds'=>['DRAFT'],'internalDate'=>'1777777802000']);
+$spamMail = array_replace($newer,['id'=>'spam-mail','labelIds'=>['SPAM'],'internalDate'=>'1777777803000']);
+$sentLater = array_replace($sent,['internalDate'=>'1777777804000']);
+check($head([$reply,$draftMail,$spamMail,$sentLater]) === 'msg-2', 'Drafts, spam and sent copies are excluded from received reply freshness.');
+check($head([$newer,$reply,$draftMail,$spamMail,$sentLater]) === 'newer-message',
+    'An archived received message with a later provider timestamp still requires fresh review.');
+check($head([$reply,array_replace($newer,['internalDate'=>$reply['internalDate']])]) === 'newer-message',
+    'Equal provider timestamps use the current thread ordering.');
+provider_error(static fn()=>$head([$newer]),409);
+provider_error(static fn()=>$head([$reply,$reply]),409);
+provider_error(static fn()=>$head([$reply,array_replace($newer,['internalDate'=>'0'])]),409);
 $sendReply = static fn(callable $http, ?array $binding=null) => agent_connection_gmail_send_v1('fixture-access','owner@example.test',
     $source['to'],$source['subject'],'This is the reviewed reply.',$operation,$http,$binding ?? $source['reply']);
 $sentReply = $sendReply(static function ($method,$url,$headers,$body): array {

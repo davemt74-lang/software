@@ -26,8 +26,12 @@ function current_user(): ?array{return isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS'
 function csrf_token(): string{return 'fixture';}
 function user_account_types_for_user_id(...$args): array{return ['member'];}
 function setting($key,$default=''){return $GLOBALS['imageSettings'][$key]??$default;}
-function ai_provider_api_key($p): string{return empty($GLOBALS['noImageKey'])?'fixture-image-secret':'';}
-function ai_provider_enabled($p): bool{return empty($GLOBALS['noImageProvider']);}
+if (!function_exists('ai_provider_api_key')) {
+    function ai_provider_api_key($p): string{return empty($GLOBALS['noImageKey'])?'fixture-image-secret':'';}
+}
+if (!function_exists('ai_provider_enabled')) {
+    function ai_provider_enabled($p): bool{return empty($GLOBALS['noImageProvider']);}
+}
 function subscription_has_entitlement(...$args): bool{return empty($GLOBALS['noImageEntitlement']);}
 function subscription_ai_preflight(...$args): array{$GLOBALS['imagePreflight'][]=$args;return ['reservation_id'=>23,'max_output_tokens'=>empty($GLOBALS['lowImageQuota'])?16000:64];}
 function subscription_ai_commit_usage(...$args): void{$GLOBALS['imageUsage'][]=$args;}

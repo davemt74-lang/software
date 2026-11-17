@@ -4,7 +4,9 @@ declare(strict_types=1);
 /** Stonefellow v100/v120/v148 — shared AI safety, routing and observability. */
 function ai_v100_runtime_dir(): string{return STONEFELLOW_ROOT.'/private/ai-runtime-v100';}
 function ai_v100_ensure_runtime_dir(): string{$dir=ai_v100_runtime_dir();if(!is_dir($dir)&&!mkdir($dir,0700,true)&&!is_dir($dir))throw new RuntimeException('AI runtime storage is unavailable.');@chmod($dir,0700);return $dir;}
-function ai_v100_rate_limit(string $scope,?array $user=null): void{$scope=in_array($scope,['chat','planner','test'],true)?$scope:'chat';$user??=function_exists('current_user')?current_user():null;$uid=(int)($user['id']??0);if($uid<1)return;$defaults=['chat'=>30,'planner'=>16,'test'=>5];$limit=max(3,min(120,(int)setting('ai_'.$scope.'_requests_per_minute',(string)$defaults[$scope])));$now=microtime(true);$path=ai_v100_ensure_runtime_dir().'/rate-'.$uid.'-'.$scope.'.json';$fh=fopen($path,'c+');if(!$fh)return;@chmod($path,0600);$reject=false;if(flock($fh,LOCK_EX)){rewind($fh);$raw=json_decode((string)stream_get_contents($fh),true);$times=is_array($raw)?array_values(array_filter($raw,static fn($t):bool=>is_numeric($t)&&(float)$t>$now-60.0)):[];if(count($times)>=$limit)$reject=true;else{$times[]=$now;ftruncate($fh,0);rewind($fh);fwrite($fh,json_encode($times,JSON_UNESCAPED_SLASHES));fflush($fh);}flock($fh,LOCK_UN);}fclose($fh);if($reject){ai_v100_telemetry(['scope'=>$scope,'user_id'=>$uid,'status'=>'rate_limited']);throw new RuntimeException('The AI is receiving requests too quickly. Wait a moment and try again.');}}
+final class AiV100RequestRateLimit extends RuntimeException {}
+
+function ai_v100_rate_limit(string $scope,?array $user=null): void{$scope=in_array($scope,['chat','planner','test'],true)?$scope:'chat';$user??=function_exists('current_user')?current_user():null;$uid=(int)($user['id']??0);if($uid<1)return;$defaults=['chat'=>30,'planner'=>16,'test'=>5];$limit=max(3,min(120,(int)setting('ai_'.$scope.'_requests_per_minute',(string)$defaults[$scope])));$now=microtime(true);$path=ai_v100_ensure_runtime_dir().'/rate-'.$uid.'-'.$scope.'.json';$fh=fopen($path,'c+');if(!$fh)return;@chmod($path,0600);$reject=false;if(flock($fh,LOCK_EX)){rewind($fh);$raw=json_decode((string)stream_get_contents($fh),true);$times=is_array($raw)?array_values(array_filter($raw,static fn($t):bool=>is_numeric($t)&&(float)$t>$now-60.0)):[];if(count($times)>=$limit)$reject=true;else{$times[]=$now;ftruncate($fh,0);rewind($fh);fwrite($fh,json_encode($times,JSON_UNESCAPED_SLASHES));fflush($fh);}flock($fh,LOCK_UN);}fclose($fh);if($reject){ai_v100_telemetry(['scope'=>$scope,'user_id'=>$uid,'status'=>'rate_limited']);throw new AiV100RequestRateLimit('The AI is receiving requests too quickly. Wait a moment and try again.');}}
 function ai_v100_telemetry(array $event): void{try{$allowed=['trace_id','scope','user_id','provider','model','status','http_status','duration_ms','input_chars','output_chars','input_tokens','output_tokens','total_tokens','complexity','attempts','error_class','service'];$row=['time'=>gmdate('c'),'trace_id'=>function_exists('agent_runtime_v125_trace_id')?agent_runtime_v125_trace_id():null];foreach($allowed as $k)if(array_key_exists($k,$event)&&(is_scalar($event[$k])||$event[$k]===null))$row[$k]=$event[$k];$dir=ai_v100_ensure_runtime_dir().'/telemetry';if(!is_dir($dir)&&!mkdir($dir,0700,true)&&!is_dir($dir))return;@chmod($dir,0700);$path=$dir.'/'.gmdate('Y-m-d').'.jsonl';file_put_contents($path,json_encode($row,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)."\n",FILE_APPEND|LOCK_EX);@chmod($path,0600);if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('ai.telemetry',['scope'=>(string)($row['scope']??''),'provider'=>(string)($row['provider']??''),'model'=>(string)($row['model']??''),'status'=>(string)($row['status']??''),'duration_ms'=>(int)($row['duration_ms']??0)]);}catch(Throwable $e){}}
 function ai_v100_usage(string $provider,array $decoded): array{$u=is_array($decoded['usage']??null)?$decoded['usage']:[];$in=(int)($u['input_tokens']??0);$out=(int)($u['output_tokens']??0);return ['input_tokens'=>$in,'output_tokens'=>$out,'total_tokens'=>(int)($u['total_tokens']??($in+$out))];}
 function ai_v100_complexity(string $query,array $context=[]): string{$q=mb_strtolower(trim($query));$words=preg_split('/\s+/u',$q)?:[];foreach(['deep dive','full review','review everything','analyze everything','analyse everything','full history','all recent','compare versions','root cause','architecture','security review','complete plan'] as $n)if(str_contains($q,$n))return 'deep';if(count($words)>=42)return 'deep';$hits=0;foreach(['analyze','analyse','review','compare','recommend','strategy','plan','multiple','several','history','patterns','optimize','optimise','debug'] as $n)if(str_contains($q,$n))$hits++;if($hits>=2||count($words)>=18||count($context)>=18)return 'complex';return 'routine';}
@@ -50,6 +52,34 @@ function ai_v100_service_setup(?array $user, string $scope, string $stage, array
 function ai_v100_service_failure(string $message, string $code = 'service_route_unavailable'): array
 {
     return ['ok'=>false, 'error'=>$message, 'failure_code'=>$code, 'stop_service_fallback'=>true];
+}
+
+/** Observe only private account inference and keep raw provider details and keys out of the notice. */
+function ai_v100_observe_anthropic_credit_v1(array $user,string $funding,string $key,array $result,bool $answered,
+    int $startedAtMicros,array $context): void
+{
+    $exhausted=($result['failure_code']??null)==='anthropic_credit_balance_low'&&($result['status']??null)===400;
+    $service=$context['service']??null;
+    if((!$exhausted&&!$answered)||$key===''||(int)($user['id']??0)<1
+        ||!in_array($service,['conversation','initiative'],true))return;
+    if(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)return;
+    try{
+        if($service!=='initiative'||($context['background']??null)!==true){
+            $owner=function_exists('current_user')?current_user():null;
+            if((int)($owner['id']??0)!==(int)$user['id'])return;
+        }
+        $pdo=function_exists('db')?db():null;
+        if(!$pdo instanceof PDO||$pdo->inTransaction())return;
+        if(!function_exists('vp3_anthropic_credit_observe_v1')){
+            $module=__DIR__.'/agent-anthropic-credit-notice-v1.php';
+            if(!is_file($module))return;
+            require_once $module;
+        }
+        vp3_anthropic_credit_observe_v1($pdo,$user,$funding,hash('sha256',$key),$exhausted,$startedAtMicros);
+    }catch(Throwable $error){
+        if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('ai.credit_observation_failed',
+            ['error_class'=>get_class($error)]);
+    }
 }
 
 /** A configured service chooses the model. The Cloud account chooses who pays. */

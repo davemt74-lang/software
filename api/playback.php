@@ -92,12 +92,22 @@ try {
     }
 
     $user=current_user();$listenerHash=sf_listener_hash();
+    $requestedTrackId=$trackId;
     $trackId=music_catalog_playback_track_id($pdo,$track);
     $track['id']=$trackId;
     $pdo->beginTransaction();
     if ($action === 'start') {
         $token = bin2hex(random_bytes(32));
         $user = current_user();
+        $offer=null;
+        if($user&&in_array($sourceContext,['agent_chat','agent_player'],true)&&is_array($input['media_offer_playback']??null)){
+            require_once dirname(__DIR__).'/includes/agent-media-offer-native-receipt-v1.php';
+            try{
+                $offer=vp3_media_offer_native_start_v1($pdo,$user,$input['media_offer_playback'],$requestedTrackId);
+            }catch(Throwable $error){
+                if(!$pdo->inTransaction())$pdo->beginTransaction();
+            }
+        }
         $stmt = $pdo->prepare(
             'INSERT INTO track_play_sessions
              (session_token,track_id,user_id,listener_hash,device_type,referrer_host,source_context,duration_seconds,last_position_seconds,max_position_seconds,listener_city,listener_region,listener_country,listener_latitude,listener_longitude)
@@ -127,6 +137,13 @@ try {
              VALUES (?,?,?,0)'
         );
         $event->execute([$sessionId,'start',$position]);
+        if($offer!==null){
+            try{
+                vp3_media_offer_native_record_v1($pdo,$offer,$sessionId,$trackId);
+            }catch(PDOException $error){
+                if(!$pdo->inTransaction())throw $error;
+            }
+        }
 
         if (
             $user &&

@@ -169,4 +169,26 @@ task_lists_check($evidence[$ref]['revision']!==$empty[$ref]['revision'],'canonic
 $pdo->exec('ALTER TABLE agent_task_list_items_v1 RENAME TO hidden_list_items');
 task_lists_throws(fn()=>task_lists_evidence($scope),503,'missing list membership storage is unavailable rather than a successful empty account');
 $pdo->exec('ALTER TABLE hidden_list_items RENAME TO agent_task_list_items_v1');
+$pdo->beginTransaction();
+task_lists_list(96000,1,0,'Release dependencies');
+for($id=96100;$id<96106;$id++){
+    task_lists_task($id,1,null,'Release step '.$id);task_lists_member(96000,$id);
+    $pdo->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE id=?')->execute([json_encode(match($id){
+        96104=>['task_status'=>'waiting','assigned_user_id'=>2,'due_at'=>'2026-11-01'],
+        96105=>['task_status'=>'waiting','due_at'=>'2026-11-05'],
+        default=>['task_status'=>'open'],
+    },JSON_THROW_ON_ERROR),$id]);
+}
+for($id=96200;$id<96205;$id++)task_lists_list($id);
+[$ranked]=task_lists_evidence($scope);
+$attention=$ranked['task-list:96000'];
+task_lists_check($attention['attention_count']===1
+    &&array_column($attention['attention_items'],'task_ref')===['task:96105']
+    &&$attention['attention_items'][0]['position']===6&&$attention['attention_items'][0]['deadline']==='overdue'
+    &&!in_array('task:96105',array_column($attention['items_preview'],'task_ref'),true),
+    'a bounded list scan admits older actionable lists and verifies a waiting deadline beyond the preview without assigning other people’s work to the owner');
+$attentionRead=task_lists_record(task_lists_read($scope,'task-list:96000',$ranked));
+task_lists_check(array_column($attentionRead['items'],'id')===range(96100,96105),
+    'relative list attention preserves exact saved order in verified reports');
+$pdo->rollBack();
 echo 'AGENT_INITIATIVE_TASK_LISTS_V1=PASS ('.$taskListsChecks.' focused cases; actual Office foundation also passed)'.PHP_EOL;

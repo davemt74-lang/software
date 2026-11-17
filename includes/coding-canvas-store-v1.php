@@ -2,8 +2,11 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-chat-boundary-v380.php';
+require_once __DIR__.'/coding-canvas-artwork-v1.php';
+require_once __DIR__.'/coding-canvas-library-image-v1.php';
 require_once __DIR__.'/coding-canvas-provider-v1.php';
 require_once __DIR__.'/shared-folders-v161.php';
+require_once __DIR__.'/schema-metadata.php';
 
 function vp3_coding_canvas_schema_v1(PDO $pdo): void
 {
@@ -21,6 +24,7 @@ function vp3_coding_canvas_schema_v1(PDO $pdo): void
         state_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
         active_revision INT UNSIGNED NULL,
         draft_revision INT UNSIGNED NULL,
+        chat_hidden TINYINT NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -39,6 +43,18 @@ function vp3_coding_canvas_schema_v1(PDO $pdo): void
         UNIQUE (canvas_id,run_id),
         FOREIGN KEY (canvas_id) REFERENCES vp3_coding_canvases_v1(id) ON DELETE CASCADE
     )".$options);
+    if (!vp3_coding_canvas_visibility_ready_v1($pdo)) {
+        try {
+            $pdo->exec('ALTER TABLE vp3_coding_canvases_v1 ADD COLUMN chat_hidden TINYINT NOT NULL DEFAULT 0');
+        } catch (PDOException $error) {
+            if (!vp3_coding_canvas_visibility_ready_v1($pdo)) throw $error;
+        }
+    }
+}
+
+function vp3_coding_canvas_visibility_ready_v1(PDO $pdo): bool
+{
+    return schema_metadata_column_exists($pdo,'vp3_coding_canvases_v1','chat_hidden');
 }
 
 function vp3_coding_canvas_ready_v1(PDO $pdo): bool
@@ -123,6 +139,7 @@ function vp3_coding_canvas_public_v1(array $row): array
         'folder_id' => (int)$row['folder_id'],
         'active_revision' => $row['active_revision'] === null ? null : (int)$row['active_revision'],
         'draft_revision' => $row['draft_revision'] === null ? null : (int)$row['draft_revision'],
+        'hidden' => !empty($row['chat_hidden']),
         'updated_at' => (string)$row['updated_at'],
     ];
 }
@@ -199,6 +216,28 @@ function vp3_coding_canvas_revision_public_v1(array $row, array $canvas, string 
     ];
 }
 
+function vp3_coding_canvas_artifact_projection_v1(PDO $pdo, array $canvas, array $version): array
+{
+    $json = vp3_coding_canvas_item_content_v1($pdo, $canvas, (int)$version['code_item_id']);
+    if (!hash_equals((string)$version['artifact_hash'], hash('sha256', $json))) {
+        throw new RuntimeException('The saved Coding Canvas code has changed outside Agent Chat.', 409);
+    }
+    $artifact = json_decode($json, true, 8, JSON_THROW_ON_ERROR);
+    $commands = vp3_coding_canvas_command_list_v1($artifact['commands'] ?? []);
+    unset($artifact['commands']);
+    return ['artifact' => vp3_coding_canvas_artifact_v1($artifact), 'commands' => $commands];
+}
+
+/** Load only the exact artifact for an already authorized Canvas row. */
+function vp3_coding_canvas_revision_artifact_v1(PDO $pdo, array $canvas, int $revision): array
+{
+    $query = $pdo->prepare('SELECT code_item_id, artifact_hash FROM vp3_coding_canvas_versions_v1 WHERE canvas_id=? AND revision=?');
+    $query->execute([$canvas['id'], $revision]);
+    $version = $query->fetch(PDO::FETCH_ASSOC);
+    if (!$version) throw new RuntimeException('Coding Canvas revision not found.', 404);
+    return vp3_coding_canvas_artifact_projection_v1($pdo, $canvas, $version);
+}
+
 function vp3_coding_canvas_details_v1(PDO $pdo, array $row, ?int $version = null): array
 {
     $canvas = vp3_coding_canvas_public_v1($row);
@@ -210,13 +249,10 @@ function vp3_coding_canvas_details_v1(PDO $pdo, array $row, ?int $version = null
         $info = vp3_coding_canvas_revision_public_v1($candidate, $canvas, $state['revision']);
         $versions[] = $info;
         if ($info['id'] !== $version) continue;
-        $json = vp3_coding_canvas_item_content_v1($pdo, $row, (int)$candidate['code_item_id']);
-        if (!hash_equals((string)$candidate['artifact_hash'], hash('sha256', $json))) {
-            throw new RuntimeException('The saved Coding Canvas code has changed outside Agent Chat.', 409);
-        }
-        $selected = $info + ['artifact' => json_decode($json, true, 8, JSON_THROW_ON_ERROR)];
+        $selected = $info + vp3_coding_canvas_artifact_projection_v1($pdo, $row, $candidate);
     }
     if ($selected === null) throw new RuntimeException('Coding Canvas revision not found.', 404);
+    $canvas += vp3_coding_canvas_artwork_urls_v1($pdo, (int)$row['owner_user_id'], $canvas['agent_id'], $canvas['id'], $version);
     return ['canvas' => $canvas, 'revision' => $selected, 'state' => $state, 'revisions' => $versions];
 }
 
@@ -234,7 +270,10 @@ function vp3_coding_canvas_list_v1(PDO $pdo, array $user, int $agentId): array
         JOIN artist_transcript_folders_v177 f ON f.id=c.folder_id AND f.created_by_user_id=c.owner_user_id
         WHERE c.owner_user_id=? AND c.agent_id=? ORDER BY c.updated_at DESC,c.id ASC');
     $query->execute([(int)$user['id'], $agentId]);
-    return array_map('vp3_coding_canvas_public_v1', $query->fetchAll(PDO::FETCH_ASSOC));
+    $canvases = $query->fetchAll(PDO::FETCH_ASSOC);
+    if (!$canvases) return [];
+    $artwork = vp3_coding_canvas_artwork_projection_v1($pdo, (int)$user['id'], $agentId);
+    return array_map(static fn(array $row): array => vp3_coding_canvas_public_v1($row) + ($artwork[$row['id']] ?? []), $canvases);
 }
 
 function vp3_coding_canvas_create_folder_v1(PDO $pdo, array $user, string $id, string $title): int
@@ -253,14 +292,17 @@ function vp3_coding_canvas_create_folder_v1(PDO $pdo, array $user, string $id, s
 
 function vp3_coding_canvas_save_draft_v1(
     PDO $pdo, array $user, int $agentId, int $cid, string $canvasId, string $title, array $code, array $initialState,
-    int $runId = 0, ?int $expectedDraft = null, ?int $expectedActive = null
+    int $runId = 0, ?int $expectedDraft = null, ?int $expectedActive = null, array $commands = []
 ): array {
     $agent = vp3_coding_canvas_authority_v1($pdo, $user, $agentId, true);
     $id = vp3_coding_canvas_id_v1($canvasId);
     $owner = (int)$user['id'];
     $title = trim(preg_replace('/\s+/u', ' ', $title) ?? '');
     $title = mb_substr($title !== '' ? $title : 'Coding Canvas', 0, 190, 'UTF-8');
-    $json = json_encode(vp3_coding_canvas_artifact_v1($code), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    $source=vp3_coding_canvas_artifact_v1($code);
+    $commands=vp3_coding_canvas_command_list_v1($commands);
+    if($commands)$source['commands']=$commands;
+    $json=json_encode($source,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 
     return vp3_coding_canvas_atomic_v1($pdo, $owner, static function () use (
         $pdo, $user, $agent, $owner, $agentId, $cid, $id, $title, $json, $initialState, $runId, $expectedDraft, $expectedActive
@@ -316,17 +358,18 @@ function vp3_coding_canvas_save_draft_v1(
 }
 
 function vp3_coding_canvas_mark_tested_v1(
-    PDO $pdo, array $user, int $agentId, string $canvasId, int $revision, string $stateRevision
+    PDO $pdo, array $user, int $agentId, string $canvasId, int $revision, string $stateRevision, ?string $expectedImage=null
 ): array {
     vp3_coding_canvas_authority_v1($pdo, $user, $agentId, true);
     $id = vp3_coding_canvas_id_v1($canvasId);
     $owner = (int)$user['id'];
-    return vp3_coding_canvas_atomic_v1($pdo, $owner, static function () use ($pdo, $owner, $agentId, $id, $revision, $stateRevision): array {
+    return vp3_coding_canvas_atomic_v1($pdo, $owner, static function () use ($pdo, $owner, $agentId, $id, $revision, $stateRevision, $expectedImage): array {
         $row = vp3_coding_canvas_require_row_v1($pdo, $owner, $agentId, $id, true);
         $details = vp3_coding_canvas_details_v1($pdo, $row, $revision);
         if ($details['canvas']['draft_revision'] !== $revision || !hash_equals($details['state']['revision'], $stateRevision)) {
             throw new RuntimeException('The draft or saved app data changed. Reload it before testing again.', 409);
         }
+        vp3_coding_canvas_library_image_assert_version_v1($pdo,$row,$revision,$expectedImage);
         $pdo->prepare('UPDATE vp3_coding_canvas_versions_v1 SET tested_state_revision=? WHERE canvas_id=? AND revision=?')
             ->execute([$stateRevision, $id, $revision]);
         return vp3_coding_canvas_details_v1($pdo, $row, $revision);
@@ -334,18 +377,19 @@ function vp3_coding_canvas_mark_tested_v1(
 }
 
 function vp3_coding_canvas_activate_v1(
-    PDO $pdo, array $user, int $agentId, string $canvasId, int $version, ?int $expectedActive
+    PDO $pdo, array $user, int $agentId, string $canvasId, int $version, ?int $expectedActive, ?string $expectedImage=null
 ): array {
     vp3_coding_canvas_authority_v1($pdo, $user, $agentId, true);
     $id = vp3_coding_canvas_id_v1($canvasId);
     $owner = (int)$user['id'];
-    return vp3_coding_canvas_atomic_v1($pdo, $owner, static function () use ($pdo, $owner, $agentId, $id, $version, $expectedActive): array {
+    return vp3_coding_canvas_atomic_v1($pdo, $owner, static function () use ($pdo, $owner, $agentId, $id, $version, $expectedActive, $expectedImage): array {
         $row = vp3_coding_canvas_require_row_v1($pdo, $owner, $agentId, $id, true);
         $details = vp3_coding_canvas_details_v1($pdo, $row, $version);
         $canvas = $details['canvas'];
         if ($canvas['active_revision'] !== $expectedActive) {
             throw new RuntimeException('The active Coding Canvas revision changed. Reload it first.', 409);
         }
+        vp3_coding_canvas_library_image_assert_version_v1($pdo,$row,$version,$expectedImage);
         if ($canvas['active_revision'] === $version) return $details;
         $isDraft = $canvas['draft_revision'] === $version;
         $revision = $details['revision'];
@@ -376,11 +420,27 @@ function vp3_coding_canvas_save_state_v1(
             || !hash_equals(vp3_coding_canvas_state_v1($pdo, $row)['revision'], $expectedStateRevision)) {
             throw new RuntimeException('The saved Coding Canvas app or data changed. Reload it first.', 409);
         }
+        require_once __DIR__.'/coding-canvas-command-grants-v1.php';
+        $grants=vp3_coding_canvas_command_settings_v1($pdo,$row);
+        if(empty($grants['app_data']['app_access'])){
+            throw new RuntimeException('App data access is turned off for this Canvas.',403);
+        }
+        if(!empty($grants['gmail']['app_access'])
+            &&in_array('gmail',vp3_coding_canvas_revision_artifact_v1($pdo,$row,$activeVersion)['commands'],true)){
+            throw new RuntimeException('This Canvas uses read-only data while Gmail access is on.',403);
+        }
+        if($row['state_content']===$json){
+            return vp3_coding_canvas_details_v1($pdo,$row);
+        }
         $pdo->prepare("UPDATE knowledge_items SET content_text=?,file_size=?,updated_at=CURRENT_TIMESTAMP
             WHERE id=? AND created_by_user_id=? AND folder_id=? AND knowledge_scope='personal' AND visibility='private' AND is_published=0")
             ->execute([$json, strlen($json), (int)$row['state_item_id'], $owner, (int)$row['folder_id']]);
         $pdo->prepare('UPDATE vp3_coding_canvases_v1 SET state_version=state_version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?')
             ->execute([$id]);
+        if(!empty($grants['app_data']['specialist_review'])){
+            require_once __DIR__.'/agent-coordination-source-change-v1.php';
+            vp3_coordination_source_changed_v1($pdo,$owner,$agentId);
+        }
         return vp3_coding_canvas_details_v1($pdo, vp3_coding_canvas_require_row_v1($pdo, $owner, $agentId, $id));
     });
 }
@@ -400,10 +460,29 @@ function vp3_coding_canvas_delete_v1(PDO $pdo, array $user, int $agentId, string
                 $delete->execute([(int)$version['code_item_id'], $owner, $folderId]);
             }
             $delete->execute([(int)$row['state_item_id'], $owner, $folderId]);
+            $pdo->prepare("DELETE FROM knowledge_items WHERE created_by_user_id=? AND folder_id=? AND file_type='coding_canvas'
+                AND knowledge_scope='personal' AND visibility='private' AND is_published=0 AND (file_name=? OR file_name LIKE ? OR file_name LIKE ?)")
+                ->execute([$owner, $folderId, VP3_CODING_CANVAS_ICON_FILE_V1, VP3_CODING_CANVAS_THUMBNAIL_PREFIX_V1.'%',
+                    VP3_CODING_CANVAS_LIBRARY_IMAGE_PREFIX_V1.'%']);
         }
         $pdo->prepare('DELETE FROM vp3_coding_canvases_v1 WHERE id=?')->execute([$id]);
         if ($deleteFolder) shared_folders_v161_delete($pdo, $user, $folderId);
         return ['id' => $id, 'folder_id' => $folderId, 'deleted' => true, 'folder_deleted' => $deleteFolder];
+    });
+}
+
+function vp3_coding_canvas_set_hidden_v1(PDO $pdo,array $user,int $agentId,string $canvasId,bool $hidden): array
+{
+    vp3_coding_canvas_authority_v1($pdo,$user,$agentId,true);
+    if(!vp3_coding_canvas_visibility_ready_v1($pdo))throw new RuntimeException('Run Database Upgrade to hide Canvas apps.',503);
+    $owner=(int)$user['id'];$id=vp3_coding_canvas_id_v1($canvasId);
+    return vp3_coding_canvas_atomic_v1($pdo,$owner,static function()use($pdo,$owner,$agentId,$id,$hidden):array{
+        $canvas=vp3_coding_canvas_require_row_v1($pdo,$owner,$agentId,$id,true);
+        if(!empty($canvas['chat_hidden'])!==$hidden){
+            $pdo->prepare('UPDATE vp3_coding_canvases_v1 SET chat_hidden=? WHERE id=? AND owner_user_id=? AND agent_id=?')
+                ->execute([(int)$hidden,$id,$owner,$agentId]);
+        }
+        return ['id'=>$id,'hidden'=>$hidden];
     });
 }
 
@@ -415,7 +494,12 @@ function vp3_coding_canvas_assert_knowledge_editable_v1(PDO $pdo, int $owner, ar
     $query = $pdo->prepare("SELECT 1 FROM vp3_coding_canvases_v1 c
         WHERE c.owner_user_id=? AND (c.state_item_id IN ($placeholders) OR EXISTS (
             SELECT 1 FROM vp3_coding_canvas_versions_v1 v WHERE v.canvas_id=c.id AND v.code_item_id IN ($placeholders)
+        ) OR EXISTS (
+            SELECT 1 FROM knowledge_items k WHERE k.folder_id=c.folder_id AND k.created_by_user_id=c.owner_user_id
+              AND k.id IN ($placeholders) AND k.file_type='coding_canvas'
+              AND (k.file_name=? OR k.file_name LIKE ? OR k.file_name LIKE ?)
         )) LIMIT 1");
-    $query->execute([$owner, ...$itemIds, ...$itemIds]);
-    if ($query->fetchColumn()) throw new RuntimeException('Manage saved Canvas code and app data from Agent Chat.', 409);
+    $query->execute([$owner, ...$itemIds, ...$itemIds, ...$itemIds, VP3_CODING_CANVAS_ICON_FILE_V1, VP3_CODING_CANVAS_THUMBNAIL_PREFIX_V1.'%',
+        VP3_CODING_CANVAS_LIBRARY_IMAGE_PREFIX_V1.'%']);
+    if ($query->fetchColumn()) throw new RuntimeException('Manage saved Canvas code, artwork, and app data from Agent Chat.', 409);
 }

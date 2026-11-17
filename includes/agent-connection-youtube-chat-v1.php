@@ -22,14 +22,7 @@ function agent_connection_youtube_chat_plan_v1(string $message): ?string
     if (agent_connection_youtube_history_request_v1($message) || agent_connection_youtube_followup_plan_v1($message) !== null) return null;
     $topic = vp3_youtube_suggestion_plan_v1($message)['topic'] ?? null;
     if ($topic !== null) return $topic;
-    $message = trim($message);
-    $message = preg_replace('/\A(?:please[,\s]+|(?:can|could|would) you\s+)+/iu', '', $message) ?? $message;
-    if (preg_match('/\A(?:\/youtube\b|youtube\s*[:\-]|youtube\s+search\b|(?:search(?:\s+for)?|find|show|look\s+up)(?:\s+me)?\s+(?:an?\s+)?(?:(?:videos?\s+)?on\s+)?you\s*tube(?:\s+videos?)?\b)(?:\s*:\s*|\s+(?:for|about|of)\s+|\s*)(.*)\z/isu', $message, $match)
-        || preg_match('/\A(?:search(?:\s+for)?|find|show|look\s+up)(?:\s+me)?\s+(.+?)\s+(?:on|from)\s+you\s*tube(?:[,\s]+please)?[.?!]*\z/isu', $message, $match)) {
-        $query = preg_replace('/[.?!]+\z/u', '', trim($match[1])) ?? trim($match[1]);
-        return trim(preg_replace('/\s+/u', ' ', $query) ?? $query);
-    }
-    return null;
+    return vp3_youtube_search_topic_v1($message);
 }
 
 /** Recognize a reference to results already returned, independently of fresh search and playback history. */
@@ -83,27 +76,62 @@ function agent_connection_youtube_followup_plan_v1(string $message, bool $hasCon
 }
 
 /** Resolve bare pronouns from the previous assistant card in the authorized Chat. */
-function agent_connection_youtube_scoped_followup_plan_v1(PDO $pdo,int $ownerId,int $agentId,int $conversationId,string $query): ?array
+function agent_connection_youtube_scoped_followup_plan_v1(PDO $pdo,int $ownerId,int $agentId,int $conversationId,string $query,int $userMessageId=0): ?array
 {
     $direct = agent_connection_youtube_followup_plan_v1($query);
     if ($direct !== null && (!$direct['bind_current'] || $direct['title'] !== '' || $direct['day'] !== '' || $direct['chat_title'] !== '')) return $direct;
     $plan = $direct ?? agent_connection_youtube_followup_plan_v1($query,true);
-    if ($plan === null || $ownerId < 1 || $agentId < 0 || $conversationId < 1
+    $offerReply=agent_connection_youtube_offer_reply_v1($query);
+    if (($plan === null && !$offerReply) || $ownerId < 1 || $agentId < 0 || $conversationId < 1
         || (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null)) return $direct;
-    if ($direct === null && !$plan['bind_current'] && !in_array($plan['selection'],['ordinal','title'],true)) return null;
+    if ($direct === null && !$offerReply && !$plan['bind_current'] && !in_array($plan['selection'],['ordinal','title'],true)) return null;
+    if($offerReply){
+        $offerId=agent_connection_youtube_latest_offer_message_v1($pdo,$ownerId,$agentId,$conversationId,$userMessageId);
+        if($offerId!==null)return ['offer_message_id'=>$offerId];
+    }
+    if($plan===null)return $direct;
     $scope = $agentId > 0 ? 'c.user_agent_id=?' : 'c.user_agent_id IS NULL';
     $params = [$conversationId,$ownerId];
     if ($agentId > 0) $params[] = $agentId;
     $stmt = $pdo->prepare("SELECT m.id,m.context_json FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
         WHERE c.id=? AND c.user_id=? AND {$scope} AND m.role='assistant' ORDER BY m.id DESC LIMIT 1");
     $stmt->execute($params);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    $context = json_decode((string)($row['context_json'] ?? ''),true);
+    $row=$stmt->fetch(PDO::FETCH_ASSOC);
+    $context=json_decode((string)($row['context_json']??''),true);
     $source = $context['youtube_results_ref_v1'] ?? null;
     if (($context['youtube_search_results_v1'] ?? false) === true) $source = (int)$row['id'];
     elseif (!is_int($source) || $source < 1 || $source >= (int)($row['id'] ?? 0)) return $direct;
     $videoId = $context['youtube_result_video_v1'] ?? null;
     return $plan+['source_message_id'=>$source,'previous_video_id'=>is_string($videoId) ? $videoId : null];
+}
+
+function agent_connection_youtube_latest_offer_message_v1(PDO $pdo,int $ownerId,int $agentId,int $conversationId,int $beforeMessageId=0): ?int
+{
+    if($ownerId<1||$agentId<0||$conversationId<1
+        ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null))return null;
+    $scope=$agentId>0?'c.user_agent_id=?':'c.user_agent_id IS NULL';
+    $params=[$conversationId,$ownerId];
+    if($agentId>0)$params[]=$agentId;
+    $before=$beforeMessageId>0?' AND m.id<?':'';
+    if($beforeMessageId>0)$params[]=$beforeMessageId;
+    $stmt=$pdo->prepare("SELECT m.id,m.role,m.context_json FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
+        WHERE c.id=? AND c.user_id=? AND {$scope}{$before} ORDER BY m.id DESC LIMIT 1");
+    $stmt->execute($params);
+    $latest=$stmt->fetch(PDO::FETCH_ASSOC);
+    $context=json_decode((string)($latest['context_json']??''),true);
+    return ($latest['role']??null)==='assistant'&&($context['source']??null)==='agent_initiative'
+        &&($context['initiative_output']['type']??null)==='initiative_youtube_offer'?(int)$latest['id']:null;
+}
+
+function agent_connection_youtube_offer_reply_v1(string $query): bool
+{
+    $phrase=preg_replace('/\s+/u',' ',trim($query))??'';
+    $phrase=rtrim($phrase,' .!?');
+    $affirmed=preg_match('/\A(?:yes|yeah|yep|sure|ok(?:ay)?|go ahead)(?:[, ]+|\z)/iu',$phrase,$match)===1;
+    if($affirmed)$phrase=substr($phrase,strlen($match[0]));
+    $phrase=preg_replace('/\Aplease\s+|[ ,]+please\z/iu','',$phrase)??'';
+    return ($affirmed&&($phrase===''||mb_strtolower($phrase)==='please'))||preg_match(
+        "~\A(?:play(?: it| that(?: one)?| the (?:video|music|pick))?|start (?:it|that(?: one)?)|let['’]s hear it)\z~iu",$phrase)===1;
 }
 
 function agent_connection_youtube_chat_authority_v1(PDO $pdo, array $user, array $principal, int $conversationId, ?callable $authority): array
@@ -282,12 +310,31 @@ function agent_connection_youtube_history_v1(PDO $pdo, int $ownerId, int $agentI
 {
     if (function_exists('vp3_participant_scope_v1') && vp3_participant_scope_v1() !== null) return $messages;
     $positions = [];
+    $offers = [];
     foreach ($messages as $index=>$message) {
         $raw = $message['context_json'] ?? '';
         if (($message['role'] ?? '') !== 'assistant' || !is_string($raw)
-            || (!str_contains($raw, '"youtube_search_results_v1"') && !str_contains($raw, '"youtube_results_ref_v1"'))) continue;
+            || (!str_contains($raw, '"youtube_search_results_v1"') && !str_contains($raw, '"youtube_results_ref_v1"')
+                && !str_contains($raw, '"initiative_youtube_offer"') && !str_contains($raw, '"youtube_offer_message_id"'))) continue;
         $context = json_decode($raw, true);
         $id = (int)$message['id'];
+        $offerId=($context['initiative_output']['type']??null)==='initiative_youtube_offer'?$id:($context['youtube_offer_message_id']??null);
+        if(is_int($offerId)&&$offerId>0){
+            require_once __DIR__.'/agent-initiative-youtube-offer-v1.php';
+            $offer=$offers[$offerId]??=vp3_initiative_youtube_offer_post_v1($pdo,['id'=>$ownerId],$agentId,$conversationId,$offerId)??false;
+            if($offer===false){
+                $messages[$index]['message']='That YouTube pick is no longer available.';
+                $messages[$index]['context_json']='{"skip_brain_archive":true}';
+                continue;
+            }
+            if($id===$offerId){
+                $messages[$index]['message']=vp3_initiative_youtube_offer_message_v1($offer);
+                unset($context['initiative_work']);
+            }
+            $context['youtube_results']=vp3_initiative_youtube_offer_playback_v1($offer,false);
+            $messages[$index]['context_json']=json_encode($context,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_INVALID_UTF8_SUBSTITUTE);
+            continue;
+        }
         $ref = $context['youtube_results_ref_v1'] ?? null;
         if (($context['youtube_search_results_v1'] ?? false) === true) {
             $positions[$index] = [$id, $context, false];
@@ -327,6 +374,14 @@ function agent_connection_youtube_followup_chat_v1(PDO $pdo, array $user, array 
     try {
         $live = agent_connection_youtube_chat_authority_v1($pdo,$user,$principal,$conversationId,$authority);
         $owner = (int)$live['id'];
+        if(isset($plan['offer_message_id'])){
+            require_once __DIR__.'/agent-initiative-youtube-offer-v1.php';
+            $offer=vp3_initiative_youtube_offer_post_v1($pdo,$live,(int)$principal['agent_id'],$conversationId,$plan['offer_message_id']);
+            if($offer===null)return $reply('That YouTube pick is no longer available. You can search YouTube again in Chat.','no_matches');
+            return $reply('I’ll play that YouTube pick in Chat.','read_complete','',
+                vp3_initiative_youtube_offer_playback_v1($offer,$sourceMessageId===null))
+                +['youtube_offer_message_id'=>$plan['offer_message_id']];
+        }
         if (!agent_connection_youtube_consent_ready_v1($pdo) || !agent_connection_youtube_results_ready_v1($pdo)) {
             return $reply('Earlier YouTube results need a VP3 database upgrade.', 'blocked', 'upgrade_required');
         }

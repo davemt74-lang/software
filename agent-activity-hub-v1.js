@@ -10,25 +10,81 @@
     {title:'Continue',ids:['recording','history','youtube','songs']},
     {title:'Agent work',ids:['missions','canvases','suggestions','gmail_outcomes']}
   ];
-  const kinds = new Set(['url','chat','task_notes','mission','canvas','youtube','song']);
+  const workspaceSources = {planning:['calendar','appointments'],coding:['canvas_suggestions','canvases'],mission:['missions'],brainstorm:['suggestions'],marketing:['marketing']};
+  const canvasSuggestionStates = {considered:'Idea',queued:'Proposal queued',working:'Preparing a proposal',pending:'Ready to post in Chat',
+    proposal_ready:'Awaiting your review',discussed:'Discussed in Chat',draft_queued:'Private draft requested',
+    draft_ready:'Private draft ready',draft_failed:'Draft generation failed'};
+  const officeCollections = {
+    reminders:{label:'Reminders',empty:'No saved reminders.'},
+    tasks:{label:'Tasks',empty:'No saved tasks.'},
+    lists:{label:'Task lists',empty:'No saved task lists.'},
+    list_items:{label:'List contents',empty:'This list is empty.'},
+  };
+  const officeReportStates = {queued:'Analysis queued.',running:'Analyzing this item.',ready:'Analysis ready.',
+    failed:'The analysis could not be verified.',stale:'The analysis is no longer current.'};
+  const officeAgentTaskStates = {queued:'Queued',running:'In progress',completed:'Completed',failed:'Failed',stale:'No longer current'};
+  const findingEngagementStates = {
+    open:'Awaiting your reply in Chat',discussed:'Reply recorded',queued:'Follow-up queued',
+    deferred:'Follow-up deferred',declined:'Declined',owner_resolved:'Marked resolved by you',
+    completed:'Follow-up completed',stale:'Follow-up needs review',
+  };
+  const mediaEngagementStates = {
+    open:'Awaiting your reply in Chat',accepted:'Accepted suggestion',play_requested:'Play requested',played:'Played',
+    declined:'Skipped',deferred:'Deferred',stale:'No longer available',
+  };
+  const kinds = new Set(['url','chat','task_notes','list_inventory','mission','canvas','youtube','song']);
   const gmailMonitorLabels = {
     scheduled:'Background check scheduled.',
     checked:'Last check completed.',
     working:'Checking Gmail for new messages.',
-    overdue:'A scheduled Gmail check is overdue.',
+    overdue:'A scheduled Gmail check is due. It can run in open Chat.',
     retrying:'The last check failed. A retry is scheduled.',
     restart_required:'Restart inbox monitoring in Gmail settings.',
     unavailable:'Gmail monitoring status is unavailable.'
   };
+  const specialistPriority = ['working','thinking','waiting_specialist','waiting_agent','waiting_owner','waiting_reply',
+    'queued','ready_to_report','ready','interrupted','blocked','failed','waiting_retry','paused','completed','assessed','scheduled','checked','idle'];
+  const specialistRank = state => {
+    const rank = specialistPriority.indexOf(state);
+    return rank === -1 ? specialistPriority.length : rank;
+  };
+  const specialistKey = /^[a-z][a-z0-9-]{0,47}(?::[a-z0-9][a-z0-9-]{0,63})?$/;
+  const activeSpecialist = state => state === 'thinking' || state === 'working';
+  const family = key => ['email','gmail-inbox-review','gmail-inbox-monitor'].includes(key) ? 'gmail' : key.split(':',1)[0];
   const continuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
+  const ruleActionLabels = {watch:'Keep in Top of Mind',prepare:'Prepare privately',ask:'Ask in Chat',report:'Report in Chat'};
+  const ruleKey = /^[a-z][a-z0-9_-]{0,47}$/;
+  const ruleSpecialists = new Set(['gmail','tasks','planning','media','curiosity','connected-sites','transcripts','marketing']);
+  const connectionSpecialists = {gmail:'gmail',research:'research',youtube:'youtube',music:'music',media:'music',
+    transcripts:'transcripts',transcription:'transcripts'};
+  const specialistExamples = {
+    gmail:{actions:[['Check urgent email','Any urgent emails today?']]},
+    tasks:{actions:[['Review saved tasks','List saved Brain tasks']]},
+    planning:{actions:[['Review my calendar','Do I have any events on my calendar?']]},
+    media:{question:'Would you like to listen to music or watch a video?',actions:[
+      ['Listen to music','Play some music'],['Find a video','Search YouTube for a short live acoustic performance']]},
+    research:{actions:[['Try a research question','Research topic speech-to-text accuracy benchmarks']]},
+    'image-generator':{actions:[['Try an image','Generate a square image of a small desert observatory under a star-filled sky, with warm light in its windows and no text.']]},
+    coding:{actions:[['Try a demo canvas','/build Build a private launch checklist with three sample tasks, a progress counter, and checkbox state that persists in Canvas. Use sample data only.']]},
+    mission:{actions:[['Try a Mission plan','Compare three podcast microphones under $150 using public specifications. Summarize cost, connection type, and the trade-offs for recording interviews.']]},
+    development:{question:'Outline a proposed app change for review.',settings:'Agent Development settings',
+      actions:[['Draft an example request','/develop Outline a clearer empty state for the Missions panel.']]},
+    brainstorm:{actions:[['Explore an idea','Brainstorm three ways to make my weekly planning easier.']]}
+  };
+  const starterWorkspaces = new Set(['media','canvas','connected-sites']);
   let host = null;
   let root = null;
   let panel = null;
   let status = null;
   let verified = null;
   let contextLabel = null;
+  let summaryBody = null;
+  let renderedSummary = '';
+  let coordinationHost = null;
   const groupOpen = new Map();
   const detailOpen = new Map();
+  const engagementPages = new Map();
+  const marketingCanvasSelections = new Map();
   let sections = null;
   let specialistsHost = null;
   let listening = null;
@@ -40,7 +96,28 @@
   let participantActor = 0;
   let returnFocus = null;
   let selectedSpecialist = '';
+  let revealSpecialist = false;
   let disposed = false;
+  let orbSurface = null;
+  let specialistTrigger = null;
+  let selectedLabel = '';
+  let workspaceButton = null;
+  let backButton = null;
+  let settingsButton = null;
+  let specialistContent = null;
+  let specialistSettings = null;
+  let connectedSitesView = null;
+  let specialistMode = false;
+  let workspace = false;
+  let officeAllLoaded = false;
+  let officeList = null;
+  const officePages = new Map();
+  const officeRequests = new Map();
+  const officeRefreshes = new WeakSet();
+  const officeErrors = new Map();
+  let analysisRequest = null;
+  let analysisFeedback = '';
+  let accessRejected = false;
 
   const participant = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());
   const localUrl = value => {
@@ -49,7 +126,15 @@
     catch { return ''; }
   };
   const positive = value => Number.isSafeInteger(value) && value > 0;
-  function scope() {
+  function reminderZone(value) {
+    if (typeof value !== 'string' || value.length > 80) return '';
+    try { new Intl.DateTimeFormat('en',{timeZone:value}); return value; }
+    catch { return ''; }
+  }
+  const leaseCurrent = value => Date.parse(value) > Date.now();
+  const coordinationInReview = () => ['brainstorming','planning','analyzing'].includes(snapshot?.coordination?.phase)
+    && (!snapshot.coordination.lease_expires_at || leaseCurrent(snapshot.coordination.lease_expires_at));
+  function scope(allowPending = false) {
     const chat = window.STONEFELLOW_CHAT;
     const context = window.VP3AgentOrb?.activityContext?.();
     const owner = Number(chat?.userId || cfg.ownerKey);
@@ -58,11 +143,12 @@
     const binding = String(chat?.workingAttentionBinding || cfg.workingAttentionBinding || '');
     if (disposed || participant() || owner !== initialOwner || binding !== initialBinding || !owner || !binding ||
       !Number.isSafeInteger(agent) || agent < 0 || !Number.isSafeInteger(cid) || cid < 0 ||
-      chat && (continuity()?.agentId?.() !== agent || continuity()?.isReady?.() !== true || continuity()?.isRestoring?.())) return null;
-    return {owner,agent,cid,binding};
+      !allowPending && chat && (continuity()?.agentId?.() !== agent || continuity()?.isReady?.() !== true || continuity()?.isRestoring?.())) return null;
+    return {owner,agent,cid,binding,hasChat:Boolean(chat)};
   }
   const signature = value => value ? JSON.stringify([value.owner,value.agent,value.cid,value.binding]) : '';
   const visible = () => opened && !document.hidden && host?.isConnected && !panel?.hidden;
+  const officeWorkspace = () => specialistMode && workspace && family(selectedSpecialist) === 'tasks';
   const node = (tag,text = '',className = '') => {
     const element = document.createElement(tag);
     element.textContent = text;
@@ -86,23 +172,23 @@
     more.append(summary,node('p',detail));
     return more;
   }
-  function itemCopy(title,detail,key) {
+  function itemCopy(title,detail,key,expanded = false) {
     const copy = node('div','','vp3-agent-activity-copy');
-    const label = node('strong',title);
-    label.title = title;
-    copy.append(label);
-    if (detail) copy.append(itemDetail(detail,key,title));
+    if (title) {
+      const label = node('strong',title);
+      label.title = title;
+      copy.append(label);
+    }
+    if (detail) copy.append(expanded ? node('p',detail,'vp3-agent-activity-detail') : itemDetail(detail,key,title));
     return copy;
   }
   function gmailMonitorCopy(item) {
     const monitor = item.monitor;
-    const state = monitor.state === 'working' && !(Date.parse(monitor.lease_until) > Date.now()) ? 'overdue' : monitor.state;
-    const copy = itemCopy(item.title,gmailMonitorLabels[state],item.id);
+    const expired = (monitor.state === 'working' && !leaseCurrent(monitor.lease_until)) || monitor.overdue_reason === 'claim_expired';
+    const detail = expired ? 'The inbox check was interrupted. It can resume in open Chat.'
+      : monitor.overdue_reason === 'retry_due' ? 'The last inbox check failed. Its retry is due.' : gmailMonitorLabels[monitor.state];
+    const copy = itemCopy('',detail,item.id);
     if (monitor.pending === true) copy.append(node('small','An inbox update is waiting to post to Chat.'));
-    for (const [label,value] of [['Last check',monitor.last_checked_at],['Next check',monitor.next_check_at]]) {
-      const time = Date.parse(value);
-      if (Number.isFinite(time)) copy.append(node('small',label+' '+new Date(time).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})));
-    }
     return copy;
   }
   function stop() {
@@ -112,34 +198,128 @@
     controller?.abort();
     controller = null;
   }
+  function abortOfficeRequests() {
+    for (const request of officeRequests.values()) request.abort();
+    officeRequests.clear();
+  }
+  function clearEngagementPages() {
+    for (const page of engagementPages.values()) page.controller?.abort();
+    engagementPages.clear();
+  }
   function clear() {
     stop();
+    connectedSitesView?.dispose();
+    connectedSitesView = null;
+    abortOfficeRequests();
+    orbSurface?.rules?.reset();
+    officeAllLoaded = false;
+    officeList = null;
+    officePages.clear();
+    officeErrors.clear();
+    analysisRequest?.abort();
+    analysisRequest = null;
+    analysisFeedback = '';
     snapshot = null;
+    revealSpecialist = false;
     detailOpen.clear();
+    marketingCanvasSelections.clear();
+    clearEngagementPages();
     sections?.replaceChildren();
     specialistsHost?.replaceChildren();
+    coordinationHost?.replaceChildren();
+    if (!specialistMode) orbSurface?.opportunities.replaceChildren();
+    renderSummary();
+    if (specialistMode && family(selectedSpecialist) === 'tasks') workspaceButton.textContent = 'Open workspace';
     if (status) status.textContent = '';
     if (verified) verified.textContent = '';
     if (contextLabel) contextLabel.textContent = '';
   }
   function close(restore = true) {
+    if (!opened) return;
     opened = false;
+    accessRejected = false;
     clear();
+    const focus = returnFocus;
+    returnFocus = null;
+    if (specialistMode) {
+      disposeSpecialistSettings();
+      specialistTrigger?.setAttribute('aria-expanded','false');
+      host.remove();
+      specialistTrigger = workspaceButton = backButton = settingsButton = specialistContent = null;
+      specialistMode = workspace = false;
+      if (restore) (focus?.isConnected ? focus : document.getElementById('chatInput'))?.focus();
+      return;
+    }
     if (root) {
       delete root.dataset.activityOpen;
       root.dataset.initiativeDismissed = 'true';
-      root.querySelector('[data-orb-activity]')?.setAttribute('aria-expanded','false');
     }
     if (host) host.hidden = true;
+    panel?.removeAttribute('role');
+    panel?.removeAttribute('aria-labelledby');
+    panel?.setAttribute('aria-label','Agent background work');
+    orbSurface?.presenceObserver?.disconnect();
     const brief = document.getElementById('chatAgentBriefButton');
     brief?.setAttribute('aria-expanded','false');
     brief?.setAttribute('aria-controls','chatAgentBriefPopover');
-    if (restore) returnFocus?.focus?.();
+    if (restore) focus?.focus?.();
     window.dispatchEvent(new CustomEvent('vp3:agent-activity-view',{detail:{open:false}}));
+  }
+  function renderPresence() {
+    if (!visible() || specialistMode || !orbSurface?.presence) return;
+    const voice = window.VP3AgentOrb?.state?.()?.state || root?.dataset.state;
+    const eyes = window.VP3AgentEyes?.isActive?.() === true || root?.dataset.eyesActive === 'true';
+    const chat = continuity();
+    const availability = !window.STONEFELLOW_CHAT ? 'Agent Chat closed'
+      : !chat?.isReady?.() || chat?.isRestoring?.() ? 'Chat connecting'
+      : document.getElementById('chatInput')?.value.trim() ? 'Drafting in Chat'
+      : chat?.isBusy?.() || ['thinking','processing','speaking'].includes(voice) ? 'Chat in progress'
+      : document.hasFocus() ? 'Chat available' : 'Chat out of focus';
+    const labels = [voice === 'listening' ? 'Listening' : 'Listening off',eyes ? 'Agent Eyes on' : 'Agent Eyes off',availability];
+    orbSurface.presence.forEach((chip,index) => {
+      if (chip.textContent !== labels[index]) chip.textContent = labels[index];
+    });
+  }
+  function createActivityTabs(overview,opportunities) {
+    const list = node('div','','vp3-agent-activity-tabs');
+    list.setAttribute('role','tablist');
+    list.setAttribute('aria-label','Top of Mind views');
+    const panels = [overview,opportunities];
+    const tabs = ['Overview','Opportunities'].map((label,index) => {
+      const tab = button(label,() => select(index));
+      tab.id = 'vp3AgentActivityTab' + index;
+      tab.setAttribute('role','tab');
+      tab.setAttribute('aria-controls',panels[index].id);
+      panels[index].setAttribute('role','tabpanel');
+      panels[index].setAttribute('aria-labelledby',tab.id);
+      panels[index].tabIndex = 0;
+      return tab;
+    });
+    function select(index,focus = false) {
+      tabs.forEach((tab,i) => {
+        tab.tabIndex = i === index ? 0 : -1;
+        tab.setAttribute('aria-selected',String(i === index));
+        panels[i].hidden = i !== index;
+      });
+      if (focus) tabs[index].focus();
+    }
+    list.addEventListener('keydown',event => {
+      const active = tabs.indexOf(event.target);
+      if (active < 0 || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+      event.preventDefault();
+      select(event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (active + 1) % tabs.length,true);
+    });
+    list.append(...tabs);
+    select(0);
+    return {list,select};
   }
   function mount() {
     const next = window.VP3AgentOrb?.activityHost?.();
-    if (!next || next === host) return Boolean(host);
+    if (!next || opened && specialistMode) return false;
+    if (orbSurface?.host === next) {
+      ({host,root,panel,status,verified,contextLabel,summaryBody,coordinationHost,sections,specialistsHost,listening} = orbSurface);
+      return true;
+    }
     host = next;
     panel = host.closest('[data-agent-initiative-status]');
     root = host.closest('.vp3-orb-root');
@@ -158,66 +338,1135 @@
     const refresh = button('Refresh',() => { stop(); void read(); });
     refresh.className = 'vp3-agent-activity-refresh';
     header.append(heading,refresh,details,button('Close',() => close()));
+    const summary = node('section','','vp3-agent-activity-summary');
+    const summaryHeading = node('h3','Summary');
+    summaryHeading.id = 'vp3AgentActivitySummaryTitle';
+    summary.setAttribute('aria-labelledby',summaryHeading.id);
+    summary.hidden = true;
+    summaryBody = node('div');
+    renderedSummary = '';
+    summaryBody.setAttribute('aria-live','polite');
+    summary.append(summaryHeading,summaryBody);
+    const endpoint = localUrl(cfg.coordinationRulesEndpoint);
+    const rules = endpoint && typeof cfg.csrf === 'string' && cfg.csrf ? createRulesEditor(endpoint) : null;
+    const connections = localUrl(cfg.specialistSettings?.connections);
+    const checkins = connections ? settingsLink('Casual check-in settings',connections+'#casual-checkins') : null;
+    if (checkins) checkins.className = 'vp3-agent-activity-checkin-settings';
+    coordinationHost = node('section','','vp3-agent-activity-coordination');
+    coordinationHost.setAttribute('aria-label','Agent coordination');
     specialistsHost = node('section','','vp3-agent-activity-specialists');
     sections = node('div','','vp3-agent-activity-sections');
     listening = node('section','','vp3-agent-activity-listening');
     listening.dataset.agentActivityListening = '';
     listening.setAttribute('aria-label','Resume playing');
+    const presenceBar = node('div','','vp3-agent-activity-presence');
+    presenceBar.setAttribute('role','group');
+    presenceBar.setAttribute('aria-label','Current presence');
+    const presence = Array.from({length:3},() => node('span'));
+    presenceBar.append(...presence);
+    const overview = node('div','','vp3-agent-activity-tabpanel');
+    overview.id = 'vp3AgentActivityOverview';
+    const opportunities = node('div','','vp3-agent-activity-tabpanel');
+    opportunities.id = 'vp3AgentActivityOpportunities';
+    const tabs = createActivityTabs(overview,opportunities);
+    overview.append(summary,coordinationHost,sections,specialistsHost,listening,...(rules ? [rules.host] : []),
+      ...(checkins ? [checkins] : []));
     verified = node('small');
     verified.dataset.agentActivityVerified = '';
     panel.querySelector('[data-agent-worker-details]')?.append(verified);
     host.setAttribute('aria-labelledby',heading.id);
-    host.replaceChildren(header,contextLabel,status,listening,specialistsHost,sections);
+    host.replaceChildren(header,contextLabel,presenceBar,tabs.list,status,overview,opportunities);
     host.hidden = true;
+    const presenceObserver = new MutationObserver(renderPresence);
+    orbSurface = {host,root,panel,status,verified,contextLabel,summaryBody,coordinationHost,sections,specialistsHost,listening,rules,
+      opportunities,tabs,presence,presenceObserver};
     window.dispatchEvent(new CustomEvent('vp3:agent-activity-listening-slot',{detail:{host:listening}}));
     window.dispatchEvent(new Event('vp3:agent-activity-ready'));
     return true;
   }
+  function rulesState(data,current) {
+    const state = data?.state;
+    if (data?.ok !== true || state?.owner_user_id !== current.owner || state?.agent_id !== current.agent ||
+      state?.conversation_id !== current.cid || typeof state.revision !== 'string' || !/^[a-f0-9]{64}$/.test(state.revision)) return null;
+    const validLabel = label => typeof label === 'string' && label.trim() !== '' && label.length <= 120;
+    const actions = Object.entries(state.catalog?.actions || {});
+    const specialists = Object.entries(state.catalog?.specialists || {});
+    if (actions.length !== Object.keys(ruleActionLabels).length || actions.some(([id,label]) => !Object.hasOwn(ruleActionLabels,id) || !validLabel(label)) ||
+      !specialists.length || specialists.length > 64) return null;
+    const catalog = new Map();
+    const rules = {};
+    for (const [id,definition] of specialists) {
+      const triggers = Object.entries(definition?.triggers || {});
+      if (!ruleKey.test(id) || !validLabel(definition?.label) || !triggers.length || triggers.length > 32 ||
+        triggers.some(([trigger,label]) => !ruleKey.test(trigger) || !validLabel(label) || !Object.hasOwn(ruleActionLabels,state.rules?.[id]?.[trigger]))) return null;
+      const triggerMap = new Map(triggers);
+      const limits = definition.allowed_actions;
+      if (limits !== undefined && (!limits || Array.isArray(limits) || typeof limits !== 'object')) return null;
+      const allowed = new Map();
+      for (const [trigger,keys] of Object.entries(limits || {})) {
+        if (!triggerMap.has(trigger) || !Array.isArray(keys) || !keys.length || keys.length > actions.length ||
+          keys.some(key => !Object.hasOwn(ruleActionLabels,key)) || new Set(keys).size !== keys.length ||
+          !keys.includes(state.rules[id][trigger])) return null;
+        allowed.set(trigger,new Set(keys));
+      }
+      catalog.set(id,{label:definition.label,triggers:triggerMap,allowed});
+      rules[id] = Object.fromEntries(triggers.map(([trigger]) => [trigger,state.rules[id][trigger]]));
+    }
+    return {revision:state.revision,rules,catalog,actions};
+  }
+  function createRulesEditor(endpoint, fixedSpecialist = '') {
+    const details = node('details','','vp3-agent-activity-rules');
+    const feedback = node('p','','vp3-agent-activity-status');
+    feedback.setAttribute('role','status');
+    const form = node('form');
+    const fields = node('fieldset');
+    const rows = node('div');
+    const picker = node('select');
+    const specialistLabel = node('label');
+    specialistLabel.append(node('span','Specialist'),picker);
+    specialistLabel.hidden = Boolean(fixedSpecialist);
+    fields.append(node('p','These rules apply to this Agent across saved Chats.','vp3-agent-activity-status'),specialistLabel,rows);
+    const controls = node('div','','vp3-agent-activity-rule-controls');
+    const save = node('button','Save rules');
+    save.type = 'submit';
+    const reload = button('Reload rules',() => void requestRules());
+    controls.append(save,reload);
+    form.append(fields,controls,feedback);
+    details.append(node('summary','Chat rules'),form);
+    let saved = null;
+    let draft = null;
+    let request = null;
+    let stale = false;
+    let retry = false;
+    const editorActive = () => visible() && details.isConnected && (fixedSpecialist
+      ? specialistSettings?.body.contains(details) === true
+      : !specialistMode);
+    function updateControls() {
+      fields.hidden = !saved;
+      fields.disabled = Boolean(request) || stale;
+      save.hidden = !saved;
+      save.disabled = Boolean(request) || stale || JSON.stringify(saved?.rules) === JSON.stringify(draft);
+      reload.hidden = !retry;
+      reload.disabled = Boolean(request);
+    }
+    function ruleRows() {
+      const specialist = picker.value;
+      const definition = saved?.catalog.get(specialist);
+      const content = [];
+      for (const [trigger,name] of definition?.triggers || []) {
+        const select = node('select');
+        const allowed = definition.allowed.get(trigger);
+        for (const [id,label] of saved.actions) if (!allowed || allowed.has(id)) select.append(new Option(label,id));
+        select.value = draft[specialist][trigger];
+        select.addEventListener('change',() => {
+          if (!Object.hasOwn(ruleActionLabels,select.value) || (allowed && !allowed.has(select.value))) return;
+          draft[specialist][trigger] = select.value;
+          feedback.textContent = '';
+          updateControls();
+        });
+        const label = node('label');
+        label.append(node('span',name),select);
+        content.push(label);
+      }
+      rows.replaceChildren(...content);
+    }
+    async function requestRules(changes = null) {
+      const current = scope();
+      if (request || !editorActive() || !positive(current?.cid) || !details.open) return;
+      const active = new AbortController();
+      request = active;
+      retry = false;
+      feedback.textContent = changes ? 'Saving Chat rules…' : 'Loading Chat rules…';
+      updateControls();
+      const timeout = setTimeout(() => active.abort(),10000);
+      const isCurrent = () => request === active && editorActive() && signature(current) === signature(scope());
+      try {
+        const url = new URL(endpoint,location.origin);
+        const ids = {agent_id:current.agent,conversation_id:current.cid};
+        const headers = {'X-VP3-Working-Attention':current.binding};
+        let body;
+        if (changes) {
+          headers['Content-Type'] = 'application/json';
+          body = JSON.stringify({...ids,csrf_token:cfg.csrf,revision:saved.revision,rules:changes});
+        } else {
+          for (const [id,value] of Object.entries(ids)) url.searchParams.set(id,String(value));
+        }
+        const response = await fetch(url,{method:changes ? 'POST' : 'GET',credentials:'same-origin',cache:'no-store',headers,body,signal:active.signal});
+        if (!isCurrent()) return;
+        if (response.status === 409) {
+          stale = retry = true;
+          feedback.textContent = 'Rules changed in another session. Reload rules to continue.';
+          return;
+        }
+        if ([401,403,419].includes(response.status)) {
+          saved = draft = null;
+          rows.replaceChildren();
+          picker.replaceChildren();
+          retry = true;
+          feedback.textContent = 'This Chat’s access could not be verified.';
+          return;
+        }
+        const next = rulesState(await response.json(),current);
+        if (!isCurrent()) return;
+        if (!response.ok || !next) throw new Error('Invalid rule settings');
+        if (fixedSpecialist && !next.catalog.has(fixedSpecialist)) throw new Error('This specialist has no Chat rules.');
+        const previous = picker.value;
+        saved = next;
+        draft = Object.fromEntries(Object.entries(next.rules).map(([id,values]) => [id,{...values}]));
+        picker.replaceChildren(...[...next.catalog].filter(([id]) => !fixedSpecialist || id === fixedSpecialist)
+          .map(([id,{label}]) => new Option(label,id)));
+        if (fixedSpecialist || next.catalog.has(previous)) picker.value = fixedSpecialist || previous;
+        ruleRows();
+        stale = false;
+        feedback.textContent = changes ? 'Chat rules saved.' : '';
+        if (changes) { stop(); void read(); }
+      } catch {
+        if (!isCurrent()) return;
+        retry = !saved || stale;
+        feedback.textContent = changes ? 'Chat rules could not be saved. Try again.' : 'Chat rules could not be loaded.';
+      } finally {
+        clearTimeout(timeout);
+        if (request === active) {
+          request = null;
+          updateControls();
+          window.VP3AgentOrb?.positionActivity?.();
+        }
+      }
+    }
+    picker.addEventListener('change',ruleRows);
+    details.addEventListener('toggle',() => {
+      if (details.open && !saved && !request && !retry) void requestRules();
+      window.VP3AgentOrb?.positionActivity?.();
+    });
+    form.addEventListener('submit',event => {
+      event.preventDefault();
+      if (event.isTrusted && !save.disabled && draft) void requestRules(fixedSpecialist ? {[fixedSpecialist]:draft[fixedSpecialist]} : draft);
+    });
+    updateControls();
+    return {host:details,open() { details.open = true; void requestRules(); },label:(specialist,trigger) => saved?.catalog.get(specialist)?.triggers.get(trigger),reset() {
+      request?.abort();
+      request = saved = draft = null;
+      stale = retry = false;
+      details.open = false;
+      feedback.textContent = '';
+      picker.replaceChildren();
+      rows.replaceChildren();
+      updateControls();
+    }};
+  }
+  function positionSpecialist() {
+    if (!opened || !specialistMode || workspace || specialistSettings || innerWidth <= 820) return;
+    const anchor = specialistTrigger?.getBoundingClientRect();
+    if (!anchor?.width || !anchor.height) return;
+    const right = anchor.left > 385 ? innerWidth - anchor.left + 10 : 12;
+    const top = Math.max(12,Math.min(anchor.top - 10,innerHeight - host.offsetHeight - 12));
+    host.style.setProperty('--specialist-right',`${right}px`);
+    host.style.setProperty('--specialist-top',`${top}px`);
+  }
+  function showWorkspace(expanded) {
+    workspace = expanded;
+    if (expanded) host.dataset.workspace = 'true';
+    else delete host.dataset.workspace;
+    workspaceButton.hidden = expanded;
+    settingsButton.hidden = expanded || family(selectedSpecialist) === 'curiosity' && !localUrl(cfg.coordinationRulesEndpoint);
+    backButton.hidden = !expanded;
+    if (family(selectedSpecialist) === 'tasks') {
+      if (!expanded) {
+        abortOfficeRequests();
+        officeList = null;
+        officePages.delete('list_items');
+        officeErrors.delete('list_items');
+      }
+      stop();
+      void read();
+    } else if (family(selectedSpecialist) === 'planning') {
+      stop();
+      void read();
+    }
+    if (snapshot) render();
+    else renderSpecialists();
+    positionSpecialist();
+    host.scrollTop = 0;
+    (expanded ? backButton : workspaceButton).focus();
+  }
+
+  function settingsLink(label,href) {
+    const target = localUrl(href);
+    if (!target) return null;
+    const link = node('a',label);
+    link.href = target;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    return link;
+  }
+
+  function mountSettingsFrame(view,current,endpoint,params,label,fallbackHref) {
+    const address = localUrl(endpoint);
+    if (!address) return false;
+    const src = new URL(address,location.origin);
+    for (const [key,value] of Object.entries({view:'specialist-settings',owner_user_id:current.owner,...params})) {
+      src.searchParams.set(key,String(value));
+    }
+    const expected = params.app || 'planning';
+    const section = node('section','','vp3-agent-activity-native-settings');
+    const feedback = node('p','Loading '+label.toLowerCase()+'…','vp3-agent-activity-status');
+    feedback.setAttribute('role','status');
+    const frame = node('iframe');
+    frame.title = label;
+    frame.hidden = true;
+    const fallback = settingsLink('Open '+label.toLowerCase(),fallbackHref);
+    if (fallback) fallback.hidden = true;
+    section.append(feedback,frame,...(fallback ? [fallback] : []));
+    view.body.append(section);
+    let observer = null;
+    let frameDocument = null;
+    const keydown = event => {
+      if (event.key === 'Escape' && !event.defaultPrevented && specialistSettings === view) {
+        event.preventDefault();
+        closeSpecialistSettings();
+      }
+    };
+    const releaseDocument = () => {
+      observer?.disconnect();
+      observer = null;
+      frameDocument?.removeEventListener('keydown',keydown);
+      frameDocument = null;
+    };
+    const unavailable = () => {
+      frame.hidden = true;
+      feedback.textContent = label+' could not be verified here.';
+      if (fallback) fallback.hidden = false;
+    };
+    const timeout = setTimeout(unavailable,10000);
+    frame.addEventListener('load',() => {
+      releaseDocument();
+      if (specialistSettings !== view || signature(scope()) !== signature(current)) return;
+      clearTimeout(timeout);
+      const document = frame.contentDocument;
+      const identity = document?.body?.dataset;
+      if (!identity || identity.vp3SpecialistSettings !== expected || Number(identity.ownerUserId) !== current.owner
+        || expected === 'planning' && (Number(identity.agentId) !== current.agent || Number(identity.conversationId) !== current.cid)) {
+        unavailable();
+        return;
+      }
+      frameDocument = document;
+      feedback.textContent = '';
+      if (fallback) fallback.hidden = true;
+      frame.hidden = false;
+      const content = document.querySelector('main') || document.body;
+      const resize = () => {
+        if (specialistSettings !== view || frameDocument !== document) return;
+        const height = Math.ceil(content.getBoundingClientRect().bottom - document.body.getBoundingClientRect().top);
+        frame.style.height = `${Math.max(48,height + 2)}px`;
+      };
+      resize();
+      observer = new ResizeObserver(resize);
+      observer.observe(content);
+      document.addEventListener('keydown',keydown);
+    });
+    view.cleanups.push(() => { clearTimeout(timeout); releaseDocument(); });
+    frame.src = src.href;
+    return true;
+  }
+
+  function populateSpecialistSettings(view,current,key) {
+    const settings = cfg.specialistSettings || {};
+    const rulesEndpoint = localUrl(cfg.coordinationRulesEndpoint);
+    if (ruleSpecialists.has(key) && rulesEndpoint) {
+      if (positive(current.cid)) {
+        const rules = createRulesEditor(rulesEndpoint,key);
+        view.body.append(rules.host);
+        view.cleanups.push(rules.reset);
+        rules.open();
+      } else view.body.append(node('p','Open a saved Chat to edit this specialist’s Chat rules.'));
+    }
+    const app = Object.hasOwn(connectionSpecialists,key) ? connectionSpecialists[key] : '';
+    if (app) {
+      const label = {gmail:'Gmail connection settings',youtube:'YouTube settings',music:'Music and YouTube preferences',
+        research:'Research preferences',transcripts:'Transcript preferences'}[app];
+      const url = localUrl(settings.connections);
+      const fallback = {gmail:'?app=gmail',youtube:'?app=youtube',music:'#music-research',
+        research:'#transcript-research',transcripts:'#transcript-research'}[app];
+      if (url) mountSettingsFrame(view,current,url,{app},label,url+fallback);
+      if (key === 'media' && url) view.body.append(settingsLink('Casual check-ins',url+'#casual-checkins'));
+    }
+    if (key === 'planning') {
+      const url = localUrl(settings.planning);
+      if (url && positive(current.cid)) mountSettingsFrame(view,current,url,
+        {tab:'settings',agent:current.agent,conversation_id:current.cid},'Scheduling settings',`${url}?tab=settings`);
+    }
+    if (key === 'coding' || key === 'brainstorm' || key === 'mission') {
+      const content = node('section','','vp3-agent-activity-native-controls');
+      view.body.append(content);
+      const cleanup = key === 'coding' ? window.VP3CodingAgentSettings?.mount?.(content)
+        : key === 'brainstorm' ? window.VP3_COGNITIVE_PRESENTATION?.mountInitiativeSettings?.(content)
+          : window.VP3AgentMissionsV1?.mountSettings?.(content);
+      if (typeof cleanup === 'function') view.cleanups.push(cleanup);
+      else content.remove();
+    }
+    if (key === 'development' || key === 'image-generator') {
+      const link = key === 'development' ? settingsLink('Agent Development settings',settings.developmentAdmin)
+        : settingsLink('Image model settings',settings.imagesAdmin);
+      if (link) view.body.append(link);
+      if (key === 'image-generator') view.body.append(node('p','Choose image size, quality, and background for each generation request.'));
+    }
+    if (!view.body.childElementCount) view.body.append(node('p','This specialist has no saved settings for this Chat.'));
+  }
+
+  function disposeSpecialistSettings() {
+    if (!specialistSettings) return;
+    const view = specialistSettings;
+    specialistSettings = null;
+    for (const cleanup of view.cleanups) cleanup();
+    view.body.remove();
+  }
+
+  function closeSpecialistSettings() {
+    if (!specialistSettings) return;
+    disposeSpecialistSettings();
+    delete host.dataset.settings;
+    specialistContent.hidden = false;
+    host.querySelector('h2').textContent = selectedLabel;
+    workspaceButton.hidden = Boolean(connectedSitesView);
+    backButton.hidden = true;
+    settingsButton.setAttribute('aria-expanded','false');
+    host.scrollTop = 0;
+    positionSpecialist();
+    settingsButton.focus({preventScroll:true});
+    void read();
+  }
+
+  function openSpecialistSettings() {
+    if (specialistSettings) { closeSpecialistSettings(); return; }
+    const current = scope();
+    if (!current || accessRejected) return;
+    stop();
+    abortOfficeRequests();
+    const body = node('div','','vp3-agent-activity-settings');
+    body.id = 'vp3ChatSpecialistSettings';
+    specialistSettings = {body,scopeKey:signature(current),cleanups:[]};
+    host.dataset.settings = 'true';
+    specialistContent.hidden = true;
+    host.append(body);
+    const heading = host.querySelector('h2');
+    heading.textContent = selectedLabel+' settings';
+    workspaceButton.hidden = true;
+    backButton.hidden = false;
+    settingsButton.setAttribute('aria-expanded','true');
+    populateSpecialistSettings(specialistSettings,current,family(selectedSpecialist));
+    host.scrollTop = 0;
+    heading.focus({preventScroll:true});
+  }
+
+  function specialistSettingsIcon() {
+    const ns = 'http://www.w3.org/2000/svg';
+    const icon = document.createElementNS(ns,'svg');
+    icon.setAttribute('viewBox','0 0 24 24');
+    icon.setAttribute('aria-hidden','true');
+    icon.setAttribute('focusable','false');
+    const path = document.createElementNS(ns,'path');
+    path.setAttribute('d','M10.3 3h3.4l.6 2.3 1.5.8 2.3-.6 2.4 2.4-.6 2.3.8 1.5 2.3.6v3.4l-2.3.6-.8 1.5.6 2.3-2.4 2.4-2.3-.6-1.5.8-.6 2.3h-3.4l-.6-2.3-1.5-.8-2.3.6-2.4-2.4.6-2.3-.8-1.5-2.3-.6v-3.4l2.3-.6.8-1.5-.6-2.3 2.4-2.4 2.3.6 1.5-.8z');
+    path.setAttribute('transform','translate(1.8 1.8) scale(.85)');
+    const center = document.createElementNS(ns,'circle');
+    center.setAttribute('cx','12');center.setAttribute('cy','12');center.setAttribute('r','3');
+    icon.append(path,center);
+    return icon;
+  }
+
+  function openSavedTranscription(current,event,sessionId=0) {
+    const canvas = window.STONEFELLOW_TRANSCRIPTION_CANVAS;
+    if (!canvas?.open || !event.isTrusted || !current?.hasChat || accessRejected
+      || signature(current) !== signature(scope())) return;
+    close(false);
+    void canvas.open(sessionId ? {sessionId} : {});
+  }
+
+  function openSpecialist(key,trigger,{label,focusReturn,fullReport = false} = {}) {
+    if (!scope(true)?.hasChat || typeof key !== 'string' || !specialistKey.test(key)) return false;
+    if (opened && specialistMode && selectedSpecialist === key) { close(); return true; }
+    if (opened) close(false);
+    specialistMode = true;
+    selectedSpecialist = key;
+    specialistTrigger = trigger;
+    returnFocus = focusReturn || trigger;
+    selectedLabel = String(label || window.VP3TopOfMindFeedV1?.specialistNames?.[family(key)] || 'Specialist').slice(0,120);
+    host = node('section','','vp3-chat-specialist-activity');
+    host.id = 'vp3ChatSpecialistActivity';
+    host.setAttribute('role','dialog');
+    host.setAttribute('aria-labelledby','vp3ChatSpecialistActivityTitle');
+    panel = host;
+    root = contextLabel = summaryBody = listening = null;
+    const heading = node('h2',selectedLabel);
+    heading.id = 'vp3ChatSpecialistActivityTitle';
+    heading.tabIndex = -1;
+    const header = node('header','','vp3-agent-activity-header');
+    const id = family(key);
+    const connectedSites = id === 'connected-sites' && window.VP3ConnectedSites?.mountWorkspace;
+    const transcriptCanvas = id === 'transcripts' && typeof window.STONEFELLOW_TRANSCRIPTION_CANVAS?.open === 'function';
+    workspaceButton = button(transcriptCanvas ? 'Open Transcription Intelligence'
+      : ['gmail','media','curiosity','coding','marketing'].includes(id) ? 'Full report' : 'Open workspace',event => {
+      if (!transcriptCanvas) { showWorkspace(true); return; }
+      openSavedTranscription(scope(),event);
+    });
+    settingsButton = button('',openSpecialistSettings);
+    settingsButton.className = 'vp3-specialist-settings-button';
+    settingsButton.setAttribute('aria-label',selectedLabel+' settings');
+    settingsButton.setAttribute('title',selectedLabel+' settings');
+    settingsButton.setAttribute('aria-controls','vp3ChatSpecialistSettings');
+    settingsButton.setAttribute('aria-expanded','false');
+    settingsButton.append(specialistSettingsIcon());
+    settingsButton.hidden = ['curiosity','connected-sites'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
+    backButton = button('Back',() => specialistSettings ? closeSpecialistSettings() : showWorkspace(false));
+    backButton.hidden = true;
+    header.append(heading,workspaceButton,backButton,settingsButton,button('Close',() => close()));
+    status = node('p','Loading activity…','vp3-agent-activity-status');
+    status.setAttribute('role','status');
+    verified = node('small');
+    coordinationHost = node('section','','vp3-agent-activity-coordination');
+    coordinationHost.setAttribute('aria-label','Current assessment');
+    specialistsHost = node('div','','vp3-agent-activity-specialists');
+    sections = node('div','','vp3-agent-activity-sections');
+    specialistContent = node('div');
+    specialistContent.append(status,coordinationHost,specialistsHost,sections);
+    host.append(header,specialistContent);
+    document.body.append(host);
+    specialistTrigger?.setAttribute('aria-controls',host.id);
+    specialistTrigger?.setAttribute('aria-haspopup','dialog');
+    specialistTrigger?.setAttribute('aria-expanded','true');
+    opened = true;
+    if (connectedSites) {
+      workspace = true;
+      host.dataset.workspace = 'true';
+      workspaceButton.hidden = true;
+      status.hidden = true;
+      connectedSitesView = connectedSites(sections, scope, () => close(false));
+      heading.focus({preventScroll:true});
+    } else {
+      renderSpecialists();
+      positionSpecialist();
+      if (fullReport) showWorkspace(true);
+      else heading.focus({preventScroll:true});
+    }
+    void read();
+    return true;
+  }
   function specialistSnapshot() {
-    const entries = window.VP3AgentOrb?.activitySpecialists?.() || window.VP3ChatSpecialists?.snapshot?.() || [];
+    const entries = window.VP3AgentOrb?.activitySpecialists?.({includeResults:true}) || window.VP3ChatSpecialists?.snapshot?.({includeResults:true}) || [];
     return Array.isArray(entries) ? entries.slice(0,12).filter(item => typeof item?.key === 'string' &&
-      /^[a-z][a-z0-9-]{0,47}(?::[a-z0-9][a-z0-9-]{0,63})?$/.test(item.key) && ['label','status','title','detail','viewLabel'].every(key =>
+      specialistKey.test(item.key) && (!item.expiresAt || item.expiresAt > Date.now()) &&
+      ['label','status','title','detail','viewLabel'].every(key =>
         item[key] === undefined || typeof item[key] === 'string' && item[key].length <= 1200)) : [];
+  }
+  function appendSpecialistItem(host,copy,actions,key) {
+    const article = node('article','','vp3-agent-activity-item');
+    if (key) article.dataset.activitySpecialist = key;
+    article.append(copy,actions);
+    host.append(article);
+    return article;
+  }
+  function stageSpecialistExample(id,index,current) {
+    if (!current?.hasChat || !Object.hasOwn(specialistExamples,id)) return false;
+    const prompt = specialistExamples[id].actions[index]?.[1];
+    if (!prompt) return false;
+    return id === 'mission' ? window.VP3AgentMissionsV1?.prepareExample?.(prompt,current.cid) === true
+      : continuity()?.stageSpecialistPrompt?.(prompt,current.cid) === true;
+  }
+
+  async function moreOpenEngagements(id,current,before) {
+    const endpoint = localUrl(cfg.topOfMindEndpoint);
+    if (!endpoint || !positive(before) || !positive(current.cid) || signature(current) !== signature(scope())) return;
+    const prior = engagementPages.get(id);
+    if (prior?.controller) return;
+    const controller = new AbortController();
+    const page = {items:prior?.items || [],next:before,controller};
+    engagementPages.set(id,page);
+    renderSpecialists();
+    const timeout = setTimeout(() => controller.abort(),8000);
+    try {
+      const url = new URL(endpoint,location.origin);
+      for (const [key,value] of Object.entries({view:'engagements',scope:'chat',agent_id:current.agent,conversation_id:current.cid,specialist:id,before})) {
+        url.searchParams.set(key,String(value));
+      }
+      const response = await fetch(url,{credentials:'same-origin',cache:'no-store',signal:controller.signal,
+        headers:{'X-VP3-Working-Attention':current.binding}});
+      const result = (await response.json()).state;
+      if (!response.ok || result?.contract !== 'vp3.agent.engagements.v1' || result.owner_user_id !== current.owner
+        || result.agent_id !== current.agent || result.conversation_id !== current.cid || result.specialist !== id
+        || result.working_attention_binding !== current.binding || !Array.isArray(result.open_engagements)
+        || result.open_engagements.length > 30
+        || result.open_engagements.some(item => !positive(item?.message_id) || item.message_id >= before)
+        || !['ready','unavailable'].includes(result.open_engagements_status)) throw Error('Engagement page unavailable');
+      if (engagementPages.get(id) !== page || signature(current) !== signature(scope())) return;
+      page.items = page.items.concat(result.open_engagements);
+      if (result.open_engagements_status === 'unavailable') {
+        page.error = 'Some open questions could not be verified. Try again.';
+        return;
+      }
+      page.next = positive(result.open_engagements_next_before) && result.open_engagements_next_before < before
+        ? result.open_engagements_next_before : null;
+    } catch (_) {
+      if (engagementPages.get(id) === page) page.error = 'More open questions could not be loaded.';
+    } finally {
+      clearTimeout(timeout);
+      if (engagementPages.get(id) === page && signature(current) === signature(scope()) && visible()) {
+        page.controller = null;
+        renderSpecialists();
+      }
+    }
+  }
+
+  function appendOpenEngagements(section,id,row,current) {
+    const first = Array.isArray(row?.open_engagements) ? row.open_engagements : [];
+    const page = engagementPages.get(id);
+    const next = page ? page.next : row?.open_engagements_next_before;
+    const items = new Map();
+    for (const item of [...first,...(page?.items || [])]) {
+      if (!positive(item?.message_id) || item.conversation_id !== current.cid || typeof item.question !== 'string' || !item.question.trim()) continue;
+      const action = specialistResult(item,current);
+      if (action) items.set(item.message_id,{...item,action});
+    }
+    if (row?.open_engagements_status === 'unavailable' && !items.size && !positive(next)) {
+      section.append(node('p','Open questions could not be verified.','vp3-agent-activity-detail'));
+      return;
+    }
+    if (!items.size && !positive(next)) return;
+    const key = 'open-engagements:' + id;
+    const details = node('details','','vp3-agent-open-engagements');
+    details.open = detailOpen.get(key) === true;
+    const summary = node('summary',items.size ? `Awaiting your reply (${items.size}${positive(next) ? '+' : ''})` : 'Check older questions');
+    summary.dataset.specialistFocus = key;
+    details.append(summary);
+    details.addEventListener('toggle',() => { if (details.isConnected) detailOpen.set(key,details.open); });
+    const list = node('ul');
+    for (const item of items.values()) {
+      const li = node('li');
+      if (typeof item.title === 'string' && item.title.trim() && item.title.trim() !== item.question.trim()) {
+        li.append(node('strong',item.title.slice(0,190)));
+      }
+      li.append(node('p',item.question.slice(0,1000)));
+      const view = button('View in Chat',event => void act(item.action,current,event));
+      view.dataset.specialistFocus = key + ':' + item.message_id;
+      li.append(view);
+      list.append(li);
+    }
+    details.append(list);
+    if (row?.open_engagements_status === 'unavailable') details.append(node('small','Some open questions could not be verified.'));
+    if (page?.error) details.append(node('small',page.error));
+    if (positive(next) && localUrl(cfg.topOfMindEndpoint)) {
+      const more = button(page?.controller ? 'Loading…' : 'Show more',event => {
+        if (event.isTrusted && visible()) void moreOpenEngagements(id,current,next);
+      });
+      more.disabled = Boolean(page?.controller);
+      more.dataset.specialistFocus = key + ':more';
+      details.append(more);
+    }
+    section.append(details);
+  }
+  function appendSpecialistExample(section,id,row,current) {
+    if (!snapshot || !current.hasChat || specialistSettings || !row || !Object.hasOwn(specialistExamples,id)) return;
+    if (id === 'coding' && snapshot.sections.some(source => source.id === 'canvas_suggestions' && source.items.length)) return;
+    const pausedDevelopment = id === 'development' && row.state === 'paused';
+    if (!pausedDevelopment && !['idle','checked','scheduled'].includes(row.state)) return;
+    const example = specialistExamples[id];
+    const article = node('div','','vp3-agent-activity-example');
+    if (example.question) article.append(node('p',example.question));
+    const actions = node('div','','vp3-agent-activity-actions');
+    article.append(actions);
+    if (pausedDevelopment) {
+      const href = localUrl(cfg.specialistSettings?.developmentAdmin);
+      if (!href) return;
+      const link = node('a',example.settings);
+      link.href = href;
+      link.dataset.specialistExample = 'development-settings';
+      actions.append(link);
+    } else {
+      const stagePrompt = id === 'mission' ? window.VP3AgentMissionsV1?.prepareExample : continuity()?.stageSpecialistPrompt;
+      if (typeof stagePrompt !== 'function') return;
+      const feedback = node('small');
+      feedback.setAttribute('role','status');
+      example.actions.forEach(([label],index) => {
+        const control = button(label,event => {
+          if (!event.isTrusted || !visible() || signature(current) !== signature(scope())) return;
+          if (stageSpecialistExample(id,index,current)) close(false);
+          else feedback.textContent = id === 'mission' ? 'Finish the current Mission draft or Chat turn, then try again.'
+            : 'Finish your current draft or Chat turn, then try again.';
+        });
+        control.dataset.specialistExample = id + '-' + index;
+        actions.append(control);
+      });
+      article.append(feedback);
+    }
+    section.append(article);
+  }
+  function specialistResult(row,current) {
+    const href = localUrl(row.result_url);
+    if (!href || !positive(row.conversation_id)) return null;
+    const url = new URL(href,location.origin);
+    const cid = url.searchParams.get('conversation_id');
+    const agent = url.searchParams.get('agent');
+    const message = url.searchParams.get('message_id');
+    if (!url.pathname.endsWith('/chat.php') || cid !== String(row.conversation_id) ||
+        agent !== String(current.agent) && !(current.agent === 0 && agent === 'system') ||
+        message !== null && message !== String(row.message_id)) return null;
+    if (message === null && positive(row.message_id)) url.searchParams.set('message_id',String(row.message_id));
+    return {kind:'chat',label:'View in Chat',href:url.pathname+url.search+url.hash,
+      conversation_id:row.conversation_id,message_id:row.message_id};
+  }
+  function openGmailSource(event,current,monitor) {
+    const source = event.target.closest('[data-gmail-report-item]');
+    if (!source || !event.isTrusted || !visible() || signature(current) !== signature(scope())) return;
+    if (Date.now() - Date.parse(snapshot?.observed_at) > 60000) {
+      status.textContent = 'Refreshing this view before continuing…';
+      stop(); void read(); return;
+    }
+    if (window.VP3TopOfMindFeedV1.openEmailReportItem(current,monitor,source.dataset.gmailReportItem)) close(false);
+    else status.textContent = 'Open Agent Chat and try again to read this email.';
+  }
+  async function analyzeRecentInbox(event,current,endpoint,csrf) {
+    if (!event.isTrusted || !visible() || analysisRequest || !snapshot || signature(current) !== signature(scope())) return;
+    const request = new AbortController();
+    analysisRequest = request;
+    analysisFeedback = '';
+    renderSpecialists();
+    const timeout = setTimeout(() => request.abort(),120000);
+    const stillCurrent = () => analysisRequest === request && visible() && signature(current) === signature(scope());
+    try {
+      const response = await fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal:request.signal,
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'analyze_recent',owner_key:String(current.owner),
+          csrf_token:csrf,working_attention_binding:current.binding,agent_id:current.agent,conversation_id:current.cid})});
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true) throw new Error('Inbox analysis was not accepted.');
+      if (!stillCurrent()) return;
+      stop();
+      void read();
+      if (typeof continuity()?.syncConversation === 'function') {
+        Promise.resolve(continuity().syncConversation(current.cid)).catch(() => {});
+      }
+    } catch {
+      if (stillCurrent()) analysisFeedback = 'Inbox analysis could not be started. Try again or check Gmail settings.';
+    } finally {
+      clearTimeout(timeout);
+      if (stillCurrent()) {
+        analysisRequest = null;
+        renderSpecialists();
+      } else if (analysisRequest === request) analysisRequest = null;
+    }
+  }
+  function gmailMonitoringDetails(item,firstReview,current) {
+    const key = 'gmail-inbox-monitor';
+    const details = node('details','','vp3-email-monitor-details');
+    details.open = detailOpen.get(key) === true;
+    details.addEventListener('toggle',() => detailOpen.set(key,details.open));
+    details.append(node('summary','Inbox monitoring details'));
+    const actions = node('div','','vp3-agent-activity-actions');
+    for (const action of item.actions) actions.append(button(action.label,event => void act(action,current,event)));
+    for (const action of firstReview?.actions || []) actions.append(button('View first inbox review',event => void act(action,current,event)));
+    appendSpecialistItem(details,gmailMonitorCopy(item),actions,key);
+    return details;
+  }
+  function gmailArrivals(current,monitor) {
+    const arrived = monitor?.latest_arrivals;
+    const observed = Date.parse(arrived?.at);
+    const count = value => Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    const total = count(arrived?.total);
+    const filtered = count(arrived?.filtered);
+    if (!Number.isFinite(observed) || total + filtered === 0) return null;
+
+    const section = node('section','','vp3-email-report vp3-email-arrivals');
+    section.setAttribute('aria-label','Latest inbox arrivals');
+    section.append(node('h4','Latest inbox arrivals'));
+    const details = [
+      total ? total + (total === 1 ? ' new message' : ' new messages') : '',
+      count(arrived.important) ? arrived.important + ' marked important' : '',
+      count(arrived.replies) ? arrived.replies + (arrived.replies === 1 ? ' reply' : ' replies') : '',
+      filtered ? filtered + ' filtered by your rules' : '',
+    ].filter(Boolean);
+    section.append(node('p',details.join(' · ')));
+    const age = node('time',new Date(observed).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}));
+    age.dateTime = new Date(observed).toISOString();
+    age.title = 'When this group of messages was reviewed';
+    section.append(age);
+
+    const messages = node('ul');
+    for (const item of (Array.isArray(arrived.items) ? arrived.items : []).slice(0,workspace ? 12 : 3)) {
+      if (typeof item?.subject !== 'string') continue;
+      const subject = item.subject.trim().slice(0,190) || '(No subject)';
+      const row = node('li');
+      row.append(node('strong',subject));
+      if (typeof item.from === 'string' && item.from.trim()) row.append(node('small',item.from.trim().slice(0,190)));
+      const open = window.VP3GmailInboxInitialV1?.openArrivedItem;
+      if (Number.isSafeInteger(current.cid) && current.cid >= 0 && typeof open === 'function'
+        && /^[a-f0-9]{64}$/.test(item.item_ref || '')) {
+        const action = button('Open email',event => {
+          if (event.isTrusted && visible() && signature(current) === signature(scope()) && open(item.item_ref,current.cid)){
+            close(false);
+          }
+        });
+        action.setAttribute('aria-label','Open email '+subject);
+        row.append(action);
+      }
+      messages.append(row);
+    }
+    if (messages.childElementCount) section.append(messages);
+    return section;
+  }
+  function renderGmailSpecialist(current,inbox,presentation,work) {
+    if (!snapshot) return;
+    const item = inbox.find(entry => entry.monitor);
+    const monitor = item?.monitor;
+    const section = node('section','','vp3-agent-activity-specialist');
+    section.dataset.activitySpecialist = 'gmail';
+    if (work && ['working','queued','checked','ready_to_report','waiting_reply','waiting_retry','interrupted','completed'].includes(work.state)) {
+      section.insertAdjacentHTML('beforeend',presentation.specialistHeading('Gmail',work.state,work.progress));
+      if (work.detail) section.append(node('p',work.detail,'vp3-agent-activity-detail'));
+      const result = specialistResult(work,current);
+      if (result) section.append(button(result.label,event => void act(result,current,event)));
+    }
+    const arrivals = gmailArrivals(current,monitor);
+    if (arrivals) section.append(arrivals);
+    const reportMarkup = presentation.emailReport?.(current,monitor,workspace);
+    if (reportMarkup) {
+      section.insertAdjacentHTML('beforeend',reportMarkup);
+      if (monitor) section.lastElementChild.addEventListener('click',event => openGmailSource(event,current,monitor));
+    }
+    const gmailCfg = window.VP3_GMAIL_INBOX_INITIAL_V1;
+    const endpoint = localUrl(gmailCfg?.endpoint);
+    const authorized = endpoint && gmailCfg.ownerKey === String(current.owner) && gmailCfg.agentId === current.agent && gmailCfg.csrf;
+    const settings = item?.actions.find(action => action.kind === 'url' && localUrl(action.href))?.href
+      || localUrl(gmailCfg?.connectionsUrl);
+    const controls = node('div','','vp3-email-report-controls');
+    const mayAnalyze = monitor && !['disabled','setup_required'].includes(monitor.analysis_state)
+      && !['unavailable','restart_required'].includes(monitor.state)
+      && (monitor.analysis_state || monitor.report?.running_report);
+    if (mayAnalyze && authorized && current.cid > 0) {
+      const analyze = button(analysisRequest ? 'Analyzing inbox…' : 'Analyze recent inbox',
+        event => void analyzeRecentInbox(event,current,endpoint,gmailCfg.csrf));
+      analyze.disabled = Boolean(analysisRequest);
+      controls.append(analyze);
+    } else if (mayAnalyze && authorized && current.cid === 0) {
+      controls.append(node('p','Open a saved Agent Chat to analyze recent inbox email.'));
+    } else if (settings) {
+      const link = node('a','Open Gmail settings');
+      link.href = settings;
+      controls.append(link);
+    }
+    if (typeof window.VP3_COGNITIVE_PRESENTATION?.openDiagnostics === 'function') {
+      controls.append(button('Diagnostics',event => {
+        if (!event.isTrusted || signature(current) !== signature(scope()) || !visible()) return;
+        if (window.VP3_COGNITIVE_PRESENTATION.openDiagnostics()) close(false);
+      }));
+    } else if (settings && !controls.querySelector('a')) {
+      const link = node('a','Gmail settings');
+      link.href = settings;
+      controls.append(link);
+    }
+    if (analysisFeedback) {
+      const feedback = node('p',analysisFeedback);
+      feedback.setAttribute('role','status');
+      controls.append(feedback);
+    }
+    if (controls.childElementCount) section.append(controls);
+    appendOpenEngagements(section,'gmail',work,current);
+    if (monitor && ['checked','scheduled'].includes(monitor.state)) {
+      appendSpecialistExample(section,'gmail',work,current);
+    }
+    specialistsHost.append(section);
+  }
+  function specialistRows(inbox,{specialistNames,specialistLabels}) {
+    const rows = new Map();
+    for (const row of Array.isArray(snapshot?.specialists) ? snapshot.specialists.slice(0,16) : []) {
+      if (!Object.hasOwn(specialistNames,row?.id) || !Object.hasOwn(specialistLabels,row?.state)) continue;
+      const expired = activeSpecialist(row.state) && row.lease_expires_at && !leaseCurrent(row.lease_expires_at);
+      rows.set(row.id,{...row,state:expired ? 'interrupted' : row.state,progress:expired ? null : row.progress,entries:[]});
+    }
+    const monitor = inbox.find(item => item.id === 'gmail:inbox-monitor')?.monitor;
+    const review = inbox.find(item => item.id === 'gmail:first-review');
+    const recurring = monitor?.state === 'working' && leaseCurrent(monitor.lease_until);
+    const reviewing = review?.review_state === 'working' && (!review.review_lease_until || leaseCurrent(review.review_lease_until));
+    const analysis = monitor?.analysis_work;
+    const analyzing = analysis?.state === 'working' && leaseCurrent(analysis.lease_until);
+    if (inbox.length) {
+      const overdue = monitor?.overdue_reason === 'claim_expired' ? 'interrupted'
+        : monitor?.overdue_reason === 'retry_due' ? 'waiting_retry' : 'queued';
+      const states = {scheduled:'scheduled',checked:'idle',working:recurring ? 'working' : 'interrupted',overdue,
+        retrying:'waiting_retry',restart_required:'blocked',unavailable:'unavailable'};
+      const state = reviewing || recurring || analyzing ? 'working' : analysis?.state === 'queued' ? 'queued'
+        : analysis?.state === 'ready' ? 'ready' : states[monitor?.state] ||
+        ({needs_start:'waiting_owner',queued:'queued',ready:'ready',failed:'failed'})[review?.review_state] || 'idle';
+      const row = rows.get('gmail');
+      if (!row || specialistRank(state) < specialistRank(row.state)) {
+        rows.set('gmail',{...row,id:'gmail',state,progress:null,entries:[]});
+      }
+    }
+    for (const entry of specialistSnapshot()) {
+      const id = family(entry.key);
+      if (entry.key === 'gmail-inbox-review' && recurring && !reviewing) continue;
+      const state = entry.state === 'running' || !entry.state ? 'working' : entry.state;
+      if (!Object.hasOwn(specialistLabels,state)) continue;
+      const row = rows.get(id);
+      if (!row) rows.set(id,{id,state,progress:entry.progress,entries:entry.presence ? [] : [entry],label:entry.label,
+        detail:entry.presence ? entry.detail : ''});
+      else {
+        if (!entry.presence) row.entries.push(entry);
+        if (specialistRank(state) < specialistRank(row.state)) {
+          row.state = state;
+          row.progress = entry.progress;
+          if (entry.presence) row.detail = entry.detail;
+        }
+      }
+    }
+    if (!specialistMode && !rows.has('media') && (['ready','unavailable'].includes(snapshot?.youtube_activity?.status)
+      || recentListeningItems(1).length)) {
+      rows.set('media',{id:'media',state:'checked',progress:null,entries:[]});
+    }
+    if (coordinationInReview()) rows.delete('brainstorm');
+    return rows;
   }
   function renderSpecialists() {
     const current = scope();
-    if (!specialistsHost || !opened || !current) return;
+    const presentation = window.VP3TopOfMindFeedV1;
+    if (!specialistsHost || !opened || connectedSitesView || accessRejected || !current || !presentation?.specialistHeading) return;
     const inbox = snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items || [];
-    const monitor = inbox.find(item => item.id === 'gmail:inbox-monitor')?.monitor;
-    const firstReviewWorking = inbox.some(item => item.id === 'gmail:first-review' && item.review_state === 'working');
-    const recurringCheck = monitor?.state === 'working' && !firstReviewWorking;
-    const entries = specialistSnapshot().filter(item => !recurringCheck || item.key !== 'gmail-inbox-review');
-    const selected = recurringCheck && selectedSpecialist === 'gmail-inbox-review' ? 'gmail-inbox-monitor' : selectedSpecialist;
+    const rows = specialistRows(inbox,presentation);
+    const {specialistNames,specialistHeading} = presentation;
+    const selected = family(selectedSpecialist);
+    const selectedControl = specialistsHost.contains(document.activeElement) ? document.activeElement.dataset : null;
+    const reveal = () => {
+      if (selectedControl && document.activeElement === document.body) {
+        const [attribute,value] = selectedControl.specialistFocus ? ['specialist-focus',selectedControl.specialistFocus]
+          : ['specialist-example',selectedControl.specialistExample];
+        if (value) specialistsHost.querySelector(`[data-${attribute}="${CSS.escape(value)}"]`)?.focus({preventScroll:true});
+      }
+      if (!revealSpecialist) return;
+      const target = selected === 'brainstorm' && coordinationInReview() ? coordinationHost : specialistsHost.querySelector('.selected');
+      if (target) {
+        revealSpecialist = false;
+        target.scrollIntoView({block:'nearest'});
+      }
+    };
     specialistsHost.replaceChildren();
-    if (!entries.length && !inbox.length) return;
-    specialistsHost.append(node('h3','Specialists'));
-    for (const item of entries) {
-      const article = node('article','','vp3-agent-activity-item');
-      article.dataset.activitySpecialist = item.key;
-      article.classList.toggle('selected',item.key === selected);
-      const copy = itemCopy([item.label || 'Specialist',item.title].filter(Boolean).join(' · '),item.status || '', 'specialist:' + item.key + ':status');
-      if (item.detail) copy.append(itemDetail(item.detail,'specialist:' + item.key + ':detail',item.label || 'Specialist'));
-      article.append(copy);
-      const actions = node('div','','vp3-agent-activity-actions');
-      if (item.canView === true) actions.append(button(item.viewLabel || 'View in Chat',event => {
-        if (!event.isTrusted || !scope()) return;
-        const viewed = window.VP3AgentOrb?.viewActivitySpecialist?.(item.key) ?? window.VP3ChatSpecialists?.view?.(item.key);
-        if (viewed !== false) close(false);
-      }));
-      article.append(actions);
-      specialistsHost.append(article);
+    if (specialistMode && selected === 'gmail') {
+      renderGmailSpecialist(current,inbox,presentation,rows.get('gmail'));
+      reveal();
+      return;
     }
-    for (const item of inbox) {
-      if (item.id === 'gmail:first-review' && entries.some(entry => entry.key === 'gmail-inbox-review')) continue;
-      const article = node('article','','vp3-agent-activity-item');
-      article.dataset.activitySpecialist = item.id === 'gmail:inbox-monitor' ? 'gmail-inbox-monitor' : 'gmail-inbox-review';
-      article.classList.toggle('selected',article.dataset.activitySpecialist === selected);
-      article.append(item.monitor ? gmailMonitorCopy(item) : itemCopy(item.title,item.detail,item.id));
-      const actions = node('div','','vp3-agent-activity-actions');
-      for (const action of item.actions) actions.append(button(action.label,event => void act(action,current,event)));
-      article.append(actions);
-      specialistsHost.append(article);
+    if (!rows.size) { reveal(); return; }
+    if (!specialistMode) specialistsHost.append(node('h3','Specialists'));
+    const ids = specialistMode ? [selected] : new Set([...Object.keys(specialistNames),...rows.keys()]);
+    for (const id of ids) {
+      const row = rows.get(id);
+      if (!row) continue;
+      const name = Object.hasOwn(specialistNames,id) ? specialistNames[id] : row.label || 'Specialist';
+      const section = node('section','','vp3-agent-activity-specialist');
+      section.dataset.activitySpecialist = id;
+      section.classList.toggle('selected',!specialistMode && id === selected);
+      section.setAttribute('aria-label',name);
+      section.insertAdjacentHTML('afterbegin',specialistHeading(name,row.state,row.progress));
+      const reportLabels = {curiosity:'Open Curiosity report',media:'Open Media report',
+        'connected-sites':'Open Connected Sites report',marketing:'Open Marketing report'};
+      if (Object.hasOwn(reportLabels,id) && !specialistMode && current.hasChat) {
+        const actions = node('div','','vp3-agent-activity-actions');
+        const launch = button(reportLabels[id],event => {
+          if (!event.isTrusted || signature(current) !== signature(scope())) return;
+          openSpecialist(id,launch,{label:name,focusReturn:document.getElementById('chatInput'),fullReport:true});
+        });
+        launch.dataset.specialistFocus = id + ':report';
+        actions.append(launch);
+        section.append(actions);
+      }
+      if (id === 'media' && !specialistMode) {
+        const queue = searchHistoryPlaylist(current,4);
+        if (queue) section.append(queue);
+      }
+      const result = specialistResult(row,current);
+      const resultKey = officeChatKey(result);
+      const reportItems = specialistMode && id === 'tasks' && !officeList ? officeReviewItems() : [];
+      const resultInReport = resultKey && (reportItems.some(item => item.actions.some(action => officeChatKey(action) === resultKey))
+        || id === 'tasks' && attachedOfficeChatKeys(current).has(resultKey));
+      if (id !== 'gmail' || !inbox.length) {
+        const detail = typeof row.detail === 'string' ? row.detail.slice(0,1200) : '';
+        const handoff = presentation.handoffLabel?.(row.handoff);
+        if (detail || handoff || (result && !resultInReport)) {
+          const copy = node('div','','vp3-agent-activity-copy');
+          if (detail) copy.append(itemDetail(detail,'specialist:'+id+':status',name));
+          if (handoff) copy.append(node('small',handoff,'vp3-agent-activity-detail'));
+          const actions = node('div','','vp3-agent-activity-actions');
+          if (result && !resultInReport) actions.append(button(result.label,event => void act(result,current,event)));
+          appendSpecialistItem(section,copy,actions);
+        }
+      }
+      if (id === 'transcripts') {
+        for (const report of presentation.transcriptReportRows(row)) {
+          const copy = itemCopy(report.title,report.summary,'transcript:'+report.id,true);
+          for (const [label,value] of [['Next step ',report.nextStep],['Question for you ',report.question]]) {
+            if (!value) continue;
+            const line = node('p');
+            line.append(node('b',label),value);
+            copy.append(line);
+          }
+          const source = node('a','Open source finding');
+          source.href = report.href;
+          source.dataset.specialistFocus = 'transcript:'+report.id;
+          const actions = node('div','','vp3-agent-activity-actions');
+          if (current.hasChat && typeof window.STONEFELLOW_TRANSCRIPTION_CANVAS?.open === 'function') {
+            actions.append(button('Open saved report',event => openSavedTranscription(current,event,report.id)));
+          }
+          actions.append(source);
+          appendSpecialistItem(section,copy,actions);
+        }
+      }
+      const monitor = id === 'gmail' ? inbox.find(item => item.monitor) : null;
+      const firstReview = monitor ? inbox.find(item => item.id === 'gmail:first-review' && item.review_state === 'ready') : null;
+      for (const item of id === 'gmail' ? inbox : []) {
+        const key = item.monitor ? 'gmail-inbox-monitor' : 'gmail-inbox-review';
+        if (item === firstReview || (!item.monitor && row.entries.some(entry => entry.key === key))) continue;
+        if (item.monitor) {
+          section.append(gmailMonitoringDetails(item,firstReview,current));
+          continue;
+        }
+        const actions = node('div','','vp3-agent-activity-actions');
+        for (const action of item.actions) actions.append(button(action.label,event => void act(action,current,event)));
+        const expired = item.review_state === 'working' && item.review_lease_until && !leaseCurrent(item.review_lease_until);
+        const detail = expired ? 'Waiting for the next verified update.' : item.detail;
+        appendSpecialistItem(section,itemCopy(item.title,detail,item.id),actions,key);
+      }
+      const entries = specialistMode && !workspace
+        ? [row.entries.find(entry => entry.key === selectedSpecialist) || row.entries[0]].filter(Boolean) : row.entries;
+      for (const entry of entries) {
+        const title = [entry.label === name || specialistMode && entry.label === selectedLabel ? '' : entry.label,entry.title].filter(Boolean).join(' · ');
+        const entryStatus = specialistMode && entry.status === presentation.specialistLabels[row.state] ? '' : entry.status || '';
+        const copy = itemCopy(title,entryStatus,'specialist:'+entry.key+':status');
+        if (entry.detail) copy.append(itemDetail(entry.detail,'specialist:'+entry.key+':detail',entry.label || name));
+        const actions = node('div','','vp3-agent-activity-actions');
+        if (entry.canView === true && entry.key !== 'brainstorm' && (specialistMode || entry.key !== 'connected-sites')) actions.append(button(entry.viewLabel || 'View in Chat',event => {
+          if (!event.isTrusted || signature(current) !== signature(scope())) return;
+          const viewed = specialistMode ? window.VP3ChatSpecialists?.view?.(entry.key)
+            : window.VP3AgentOrb?.viewActivitySpecialist?.(entry.key) ?? window.VP3ChatSpecialists?.view?.(entry.key);
+          if (viewed !== false) close(false);
+        }));
+        appendSpecialistItem(section,copy,actions,entry.key === id ? '' : entry.key);
+      }
+      if (id !== 'curiosity' || !specialistMode) appendOpenEngagements(section,id,row,current);
+      if (id === 'media' && !specialistMode) {
+        const media = mediaHistory(current,3);
+        if (media.length) {
+          const details = node('details','','vp3-agent-activity-media-history');
+          const detailKey = 'media:youtube-history';
+          details.open = detailOpen.get(detailKey) ?? true;
+          details.addEventListener('toggle',() => detailOpen.set(detailKey,details.open));
+          details.append(node('summary','Recent media activity'),...media);
+          section.append(details);
+        }
+      }
+      appendSpecialistExample(section,id,row,current);
+      specialistsHost.append(section);
     }
+    reveal();
+  }
+  function renderCoordination() {
+    coordinationHost.replaceChildren();
+    if (specialistMode && family(selectedSpecialist) !== 'brainstorm') return;
+    coordinationHost.classList.toggle('selected',family(selectedSpecialist) === 'brainstorm' && coordinationInReview());
+    const coordination = snapshot?.coordination;
+    const coordinationLabels = window.VP3TopOfMindFeedV1?.coordinationLabels;
+    if (!coordinationLabels || !Object.hasOwn(coordinationLabels,coordination?.phase)) return;
+    const expired = coordination.lease_expires_at && !leaseCurrent(coordination.lease_expires_at);
+    const phase = expired ? 'waiting' : coordination.phase;
+    const detail = expired ? 'Waiting for the next verified update.' : coordination.detail;
+    coordinationHost.dataset.phase = phase;
+    coordinationHost.append(node('strong',specialistMode ? 'Current assessment' : 'ob1 coordination'),node('span',coordinationLabels[phase]));
+    if (typeof detail === 'string' && detail) coordinationHost.append(node('small',detail.slice(0,400)));
+    if (!expired && (specialistMode || !snapshot.summary?.overview) && typeof coordination.finding === 'string' && coordination.finding) {
+      coordinationHost.append(node('small',coordination.finding.slice(0,500)));
+    }
+  }
+  function routingDescription(route,withSpecialist = false) {
+    const names = window.VP3TopOfMindFeedV1?.specialistNames || {};
+    if (!Object.hasOwn(names,route?.specialist) || !Object.hasOwn(ruleActionLabels,route.action) ||
+      typeof route.trigger !== 'string' || !ruleKey.test(route.trigger)) return '';
+    const fallback = route.trigger[0].toUpperCase() + route.trigger.slice(1).replace(/[_-]/g,' ');
+    const trigger = typeof route.trigger_label === 'string' && route.trigger_label.trim() && route.trigger_label.length <= 120
+      ? route.trigger_label : orbSurface?.rules?.label(route.specialist,route.trigger) || fallback;
+    return (withSpecialist ? names[route.specialist] + ' · ' : '') + trigger + ' → ' + ruleActionLabels[route.action];
+  }
+  function renderSummary() {
+    if (!summaryBody) return;
+    summaryBody.parentElement.hidden = !snapshot;
+    const summary = snapshot?.summary;
+    const overview = typeof summary?.overview === 'string' ? summary.overview.trim().slice(0,600) : '';
+    const findings = Array.isArray(snapshot?.coordination_findings) ? snapshot.coordination_findings : [];
+    const primary = findings.filter(item => item?.routing?.specialist !== 'casual');
+    const finding = ['needs_owner','agent_work','resolved','watching'].map(state =>
+      (primary.length ? primary : findings).find(item => item?.kind === 'coordination_finding' && item.state === state)).find(Boolean);
+    const focus = typeof finding?.title === 'string' ? finding.title.trim().slice(0,190) : '';
+    const next = typeof finding?.next_step === 'string' ? finding.next_step.trim().slice(0,320) : '';
+    const names = window.VP3TopOfMindFeedV1?.specialistNames || {};
+    const updates = new Map();
+    for (const row of Array.isArray(summary?.updates) ? summary.updates.slice(0,10) : []) {
+      const id = row?.specialist_id;
+      if (typeof id !== 'string' || !Object.hasOwn(names,id) || updates.has(id) || typeof row.title !== 'string' || !row.title.trim()) continue;
+      const title = row.title.trim().slice(0,250);
+      const detail = typeof row.detail === 'string' ? row.detail.trim().slice(0,400) : '';
+      const nextStep = typeof row.next_step === 'string' ? row.next_step.trim().slice(0,240) : '';
+      const routing = row.routing?.specialist === id ? routingDescription(row.routing) : '';
+      updates.set(id,{title,detail:detail !== title && detail !== overview ? detail : '',
+        nextStep:nextStep !== next && nextStep !== detail && nextStep !== title ? nextStep : '',routing});
+    }
+    const checks = new Map();
+    const labels = window.VP3TopOfMindFeedV1?.specialistLabels || {};
+    for (const row of Array.isArray(summary?.checks) ? summary.checks.slice(0,13) : []) {
+      const id = row?.specialist_id;
+      if (!Object.hasOwn(names,id) || updates.has(id) || checks.has(id) || !Object.hasOwn(labels,row?.state)) continue;
+      checks.set(id,{state:labels[row.state],detail:typeof row.detail === 'string' ? row.detail.slice(0,240) : ''});
+    }
+    const version = JSON.stringify([focus,overview,next,[...updates],[...checks],Boolean(snapshot)]);
+    if (version === renderedSummary) return;
+    renderedSummary = version;
+    const content = [];
+    if (focus) content.push(node('h4',focus,'vp3-agent-activity-focus'));
+    if (overview) content.push(node('p',overview,'vp3-agent-activity-overview'));
+    if (next) {
+      const line = node('p','','vp3-agent-activity-summary-next');
+      line.append(node('b','Next step '),next);
+      content.push(line);
+    }
+    if (updates.size) {
+      const list = node('ul','','vp3-agent-activity-summary-updates');
+      list.setAttribute('role','list');
+      list.setAttribute('aria-label','Specialist updates');
+      for (const [id,{title,detail,nextStep,routing}] of updates) {
+        const item = node('li');
+        item.append(node('span',names[id],'vp3-agent-activity-summary-source'),node('strong',title));
+        if (detail) item.append(node('p',detail));
+        if (nextStep) {
+          const line = node('p');
+          line.append(node('b','Next step '),nextStep);
+          item.append(line);
+        }
+        if (routing) item.append(node('small',routing,'vp3-agent-activity-rule-match'));
+        list.append(item);
+      }
+      content.push(list);
+    }
+    if (!content.length && snapshot) content.push(node('p','No new specialist findings to summarize.','vp3-agent-activity-summary-empty'));
+    if (checks.size) {
+      const details = node('details','','vp3-agent-activity-detail');
+      const key = 'ob1-specialist-checks';
+      details.open = detailOpen.get(key) === true;
+      details.addEventListener('toggle',() => detailOpen.set(key,details.open));
+      const heading = node('summary','Other specialist checks');
+      const list = node('ul','','vp3-agent-activity-summary-updates');
+      list.setAttribute('role','list');
+      for (const [id,{state,detail}] of checks) {
+        const item = node('li');
+        item.append(node('span',names[id],'vp3-agent-activity-summary-source'),node('strong',state));
+        if (detail) item.append(node('p',detail));
+        list.append(item);
+      }
+      details.append(heading,list);
+      content.push(details);
+    }
+    summaryBody.replaceChildren(...content);
   }
   function validState(data,current) {
     return data?.contract === 'vp3.agent.activity.v1' && data.owner_user_id === current.owner && data.agent_id === current.agent &&
@@ -226,21 +1475,42 @@
       data.sections.length <= 13 && data.sections.every(section => typeof section.id === 'string' && typeof section.label === 'string' &&
         Array.isArray(section.items) && section.items.length <= 12 && section.items.every(item => typeof item.id === 'string' &&
           typeof item.title === 'string' && item.title.length <= 500 && (item.detail === undefined || typeof item.detail === 'string' && item.detail.length <= 1600) &&
+          (!['office_reviews','marketing'].includes(section.id) || ['next_step','followup_question'].every(field => item[field] === undefined ||
+            typeof item[field] === 'string' && item[field].length <= 1000)) &&
           (item.monitor === undefined || section.id === 'gmail_inbox' && item.id === 'gmail:inbox-monitor' && Object.hasOwn(gmailMonitorLabels,item.monitor?.state)) &&
           Array.isArray(item.actions) && item.actions.length <= 4 && item.actions.every(action => kinds.has(action?.kind) &&
-            typeof action.label === 'string' && action.label.length <= 120)));
+            typeof action.label === 'string' && action.label.length <= 120 && (action.kind !== 'list_inventory' || positive(action.list_id)))));
   }
   async function act(action,current,event) {
     if (!event.isTrusted || !visible() || signature(current) !== signature(scope()) || !snapshot) return;
-    const observed = Date.parse(snapshot.observed_at);
+    const observed = Date.parse(officeList?.data?.observed_at || snapshot.observed_at);
     if (Date.now() - observed > 60000) { status.textContent = 'Refreshing this view before continuing…'; stop(); void read(); return; }
     const intent = generation;
     const fallback = localUrl(action.href);
     const chat = continuity();
     try {
+      if (action.kind === 'stoneward_history') {
+        const source = stonewardHistoryUrl(action.href);
+        if (source) window.open(source,'_blank','noopener,noreferrer');
+        return;
+      }
+      if (['chat','youtube'].includes(action.kind) && Number.isSafeInteger(action.agent_id)
+        && action.agent_id >= 0 && action.agent_id !== current.agent) {
+        if (fallback) location.assign(fallback);
+        return;
+      }
+      if (action.kind === 'list_inventory' && officeWorkspace()) {
+        selectOfficeList(action.list_id);
+        return;
+      }
       if (action.kind === 'task_notes' && window.VP3TaskNotes?.open) {
+        if (specialistMode) close(false);
         if (positive(action.list_id)) window.VP3TaskNotes.open({kind:'task_list',id:action.list_id});
-        else window.VP3TaskNotes.open({kind:'reminders',view:['open','today','overdue','all'].includes(action.view) ? action.view : 'open'});
+        else {
+          const timezone = reminderZone(action.timezone);
+          window.VP3TaskNotes.open({kind:'reminders',view:['open','today','overdue','all'].includes(action.view) ? action.view : 'open',
+            ...(timezone ? {timezone} : {})});
+        }
         return;
       }
       if (action.kind === 'canvas' && typeof action.canvas_id === 'string' && window.VP3CodingCanvasV1?.open) {
@@ -280,38 +1550,1021 @@
       if (signature(current) === signature(scope()) && opened) status.textContent = error.message || 'This item could not be opened.';
     }
   }
+  function officeChatKey(action) {
+    return action?.kind === 'chat' && positive(action.conversation_id) && positive(action.message_id)
+      ? `${action.conversation_id}:${action.message_id}` : '';
+  }
+  function officeEntryChatAction(report,current,engagement = officeEntryEngagement(report,current)) {
+    if (engagement?.action) return engagement.action;
+    const action = report?.chat_action;
+    if (!officeChatKey(action) || typeof action.href !== 'string') return null;
+    return specialistResult({...action,result_url:action.href},current);
+  }
+  function officeEntryEngagement(report,current) {
+    return report?.state === 'ready' ? findingEngagement(report.engagement,current) : null;
+  }
+  function findingEngagement(entry,current,states = findingEngagementStates) {
+    if (!Object.hasOwn(states,entry?.state)
+      || !positive(entry.message_id)) return null;
+    if (entry.href === null && entry.state !== 'open') return {state:entry.state,action:null};
+    if (typeof entry.href !== 'string') return null;
+    const action = specialistResult({conversation_id:current.cid,message_id:entry.message_id,result_url:entry.href},current);
+    return action ? {state:entry.state,action} : null;
+  }
+  function appendOfficeEntryReport(copy,item,current) {
+    const report = item.office_report;
+    if (!Object.hasOwn(officeReportStates,report?.state)) return;
+    const engagement = officeEntryEngagement(report,current);
+    const body = node('section','','vp3-office-entry-report');
+    body.setAttribute('aria-label','Report for ' + item.title);
+    body.append(node('h5','Analysis'));
+    const summary = typeof report.summary === 'string' && report.state === 'ready' ? report.summary.slice(0,1600) : '';
+    body.append(node('p',summary || officeReportStates[report.state]));
+    if (report.state === 'ready') {
+      if (report.limited === true) body.append(node('small','Analysis uses selected saved details.'));
+      const questionLabel = engagement && engagement.state !== 'open' ? 'Original question' : 'Question for you';
+      for (const [field,label] of [['next_step','Next step'],['followup_question',questionLabel]]) {
+        if (typeof report[field] !== 'string' || !report[field]) continue;
+        const line = node('p');
+        line.append(node('strong',label + ': '),report[field].slice(0,1000));
+        body.append(line);
+      }
+      if (engagement) body.append(node('p',findingEngagementStates[engagement.state]));
+      const plan = Array.isArray(report.action_plan) ? report.action_plan.filter(step => typeof step === 'string' && step).slice(0,12) : [];
+      if (plan.length) {
+        const steps = node('ol');
+        for (const step of plan) steps.append(node('li',step.slice(0,1000)));
+        body.append(node('h5','Action plan'),steps);
+      }
+    }
+    const task = report.agent_task;
+    if (typeof task?.title === 'string' && task.title && Object.hasOwn(officeAgentTaskStates,task.state)) {
+      body.append(node('h5','Agent Task'));
+      const taskLine = node('p');
+      taskLine.append(node('strong',task.title.slice(0,500)),' · ' + officeAgentTaskStates[task.state]);
+      body.append(taskLine);
+      if (typeof task.result === 'string' && task.result) body.append(node('p',task.result.slice(0,1600)));
+    }
+    const action = officeEntryChatAction(report,current,engagement);
+    if (action) body.append(button(engagement?.action ? 'View question in Chat' : action.label,event => void act(action,current,event)));
+    copy.append(body);
+  }
+  function renderSource(current,source,expanded = false) {
+    const subsection = node('section','','vp3-agent-activity-source');
+    if (source.label) subsection.append(node('h4',source.label));
+    const inventory = officeWorkspace() && Object.hasOwn(officeCollections,source.id);
+    const planning = family(selectedSpecialist) === 'planning' && workspaceSources.planning.includes(source.id);
+    const media = source.id === 'media_report' || source.id === 'media_offers';
+    const canvasSuggestions = source.id === 'canvas_suggestions';
+    const states = media ? mediaEngagementStates : findingEngagementStates;
+    for (const item of source.items) {
+      const copy = itemCopy(item.title,item.detail,source.id + ':' + item.id,expanded);
+      const handoff = window.VP3TopOfMindFeedV1?.handoffLabel?.(item.handoff);
+      if (handoff) copy.append(node('small',handoff,'vp3-agent-activity-detail'));
+      if (canvasSuggestions) {
+        const names = window.VP3TopOfMindFeedV1?.specialistNames || {};
+        const titles = (Array.isArray(item.sources) ? item.sources : []).slice(0,3).flatMap(source => {
+          if (typeof source?.title !== 'string' || !source.title.trim()) return [];
+          const familyName = typeof source.specialist === 'string' && Object.hasOwn(names,source.specialist) ? names[source.specialist] : '';
+          return [(familyName ? familyName + ' · ' : '') + source.title.slice(0,190)];
+        });
+        if (Object.hasOwn(canvasSuggestionStates,item.state)) copy.append(node('small',canvasSuggestionStates[item.state],'vp3-agent-activity-detail'));
+        if (titles.length) copy.append(node('small',titles.join('  |  '),'vp3-agent-activity-detail'));
+      }
+      const engagement = planning || media ? findingEngagement(item.engagement,current,states) : null;
+      const replied = engagement && engagement.state !== 'open';
+      if (planning || media || ['office_reviews','appointments','marketing'].includes(source.id)) {
+        const questionLabel = replied ? 'Original question' : source.id === 'office_reviews' ? 'Suggested question' : 'Question for you';
+        for (const [field,label] of [['next_step',replied ? 'Suggested next step' : 'Next step'],['followup_question',questionLabel]]) {
+          if (!item[field]) continue;
+          const line = node('p','','vp3-agent-activity-detail');
+          line.append(node('strong',label + ': '),item[field]);
+          copy.append(line);
+        }
+        if (engagement) copy.append(node('p',states[engagement.state],'vp3-agent-activity-detail'));
+      } else if (inventory) {
+        appendOfficeEntryReport(copy,item,current);
+      }
+      const actions = node('div','','vp3-agent-activity-actions');
+      for (const action of item.actions) actions.append(button(action.label,event => void act(action,current,event)));
+      if (engagement?.action) actions.append(button(media ? 'View offer in Chat' : 'View question in Chat',event => void act(engagement.action,current,event)));
+      const row = appendSpecialistItem(subsection,copy,actions);
+      if (inventory) row.dataset.officeItemId = item.id;
+    }
+    if (expanded && ['calendar','appointments'].includes(source.id) && source.items.length === 0) {
+      const label = source.id === 'calendar' ? 'Upcoming events' : 'Appointments';
+      const message = ['unavailable','forbidden'].includes(snapshot?.coverage?.[source.id])
+        ? label + ' could not be loaded.' : 'No ' + label.toLowerCase() + ' to show.';
+      subsection.append(node('p',message));
+    }
+    if (source.id === 'marketing' && source.items.length === 0) {
+      const coverage = snapshot?.coverage?.marketing;
+      subsection.append(node('p',coverage === 'unconfigured' ? 'No authorized campaign sources are configured.'
+        : ['unavailable','forbidden'].includes(coverage) ? 'Campaign recommendations could not be verified.'
+        : 'No current campaign recommendations.'));
+    }
+    if (canvasSuggestions && source.items.length === 0) {
+      const coverage = snapshot?.coverage?.[source.id];
+      subsection.append(node('p',coverage === 'disabled' ? 'App Suggestions are available in the Chat where Initiative is on.'
+        : ['unavailable','forbidden','limited'].includes(coverage) ? 'Current suggestions could not be verified.' : 'No current app suggestions.'));
+    }
+    return subsection;
+  }
+  function stonewardHistoryUrl(value) {
+    if (typeof value !== 'string' || !/^https:\/\/[a-z0-9.-]{1,253}\/\?view=history$/i.test(value)) return null;
+    try { return new URL(value).href; } catch { return null; }
+  }
+  function mediaReportItems() {
+    const findings = snapshot?.media_report?.findings;
+    if (!Array.isArray(findings)) return [];
+    const shortText = (value,limit) => typeof value === 'string' ? value.trim().slice(0,limit) : '';
+    return findings.slice(0,12).flatMap(item => {
+      const title = shortText(item?.title,190);
+      const summary = shortText(item?.summary,600);
+      if (typeof item?.id !== 'string' || !item.id || !title || !summary) return [];
+      const actions = Array.isArray(item.actions) ? item.actions.slice(0,4).filter(action => {
+        if (['stoneward_track','stoneward_resume','stoneward_played'].includes(item.kind) && action?.kind === 'stoneward_history') {
+          return Boolean(shortText(action.label,120) && action.label.length <= 120 && stonewardHistoryUrl(action.href));
+        }
+        if (!['url','chat','youtube','song'].includes(action?.kind) ||
+          !shortText(action.label,120) || action.label.length > 120 || !localUrl(action.href)) return false;
+        if (action.kind === 'song') return positive(action.track_id);
+        return action.kind === 'url' || positive(action.conversation_id) && positive(action.message_id);
+      }) : [];
+      return [{id:item.id.slice(0,190),title,detail:summary,next_step:shortText(item.next_step,320),
+        followup_question:shortText(item.question,320),engagement:item.engagement,actions}];
+    });
+  }
+  function recentMediaOfferItems(current,limit) {
+    const offers = snapshot?.media_report?.recent_offers;
+    if (!Array.isArray(offers)) return [];
+    return offers.slice(0,limit).flatMap(offer => {
+      const title = typeof offer?.title === 'string' ? offer.title.trim().slice(0,190) : '';
+      if (!title || !findingEngagement(offer,current,mediaEngagementStates)) return [];
+      return [{id:'media-offer:'+offer.message_id,title,detail:'',engagement:offer,actions:[]}];
+    });
+  }
+  function recentListeningItems(limit) {
+    const listening = snapshot?.media_report?.recent_listening ?? snapshot?.recent_listening;
+    if (!Array.isArray(listening)) return [];
+    return listening.slice(0,limit).flatMap(item => {
+      if (typeof item?.id !== 'string' || typeof item.title !== 'string' || !item.title || item.title.length > 200
+        || typeof item.detail !== 'string' || item.detail.length > 420 || !Array.isArray(item.actions)) return [];
+      const actions = item.actions.slice(0,2).filter(action => {
+        if (typeof action?.label !== 'string' || !action.label || action.label.length > 120) return false;
+        if (action.kind === 'stoneward_history') return Boolean(stonewardHistoryUrl(action.href));
+        return ['url','song'].includes(action.kind) && localUrl(action.href) && (action.kind !== 'song' || positive(action.track_id));
+      });
+      return [{id:item.id.slice(0,190),title:item.title,detail:item.detail,actions}];
+    });
+  }
+  function youtubeSourceAction(action) {
+    return action?.kind === 'chat' && typeof action.label === 'string' && action.label.length <= 120
+      && Number.isSafeInteger(action.agent_id) && action.agent_id >= 0
+      && positive(action.conversation_id) && positive(action.message_id) && localUrl(action.href);
+  }
+  function youtubeActivitySources(limit,searchLimit = limit) {
+    const history = snapshot?.youtube_activity;
+    if (history?.status !== 'ready') return [];
+    return [['searches','Recent YouTube searches'],['played','Played videos']].map(([id,label]) => ({
+      id:'youtube-'+id,label,
+      items:(Array.isArray(history[id]) ? history[id] : []).filter(item =>
+        typeof item?.id === 'string' && typeof item.title === 'string' && item.title.length <= 200
+        && typeof item.detail === 'string' && item.detail.length <= 200 && Array.isArray(item.actions)
+        && item.actions.length === 1 && youtubeSourceAction(item.actions[0])).slice(0,id === 'searches' ? searchLimit : limit)
+    }));
+  }
+  function searchHistoryPlaylist(current,limit) {
+    const activity = snapshot?.youtube_activity;
+    if (!['ready','unavailable'].includes(activity?.status)) return null;
+    const title = 'YouTube search history playlist';
+    const section = node('section','','vp3-agent-activity-source vp3-youtube-history-playlist');
+    section.setAttribute('aria-label',title);
+    section.append(node('h4',title));
+    const entries = window.VP3TopOfMindFeedV1?.youtubePlaylistEntries?.(activity) || [];
+    if (!entries.length) {
+      const explanation=window.VP3TopOfMindFeedV1?.youtubePlaylistEmptyText?.(activity);
+      if(explanation) section.append(node('p',explanation));
+      return section;
+    }
+    const list = node('ol');
+    for (const entry of entries.slice(0,limit)) {
+      const row = node('li');
+      const play = node('a','Play on YouTube');
+      play.href = entry.watch_url;
+      play.target = '_blank';
+      play.rel = 'noopener noreferrer';
+      play.dataset.specialistFocus = 'media:watch:'+entry.video_id;
+      const canOpen = event => {
+        if (!event.isTrusted || !visible() || signature(current) !== signature(scope())
+          || entry.expires_at <= Date.now()/1000) {
+          event.preventDefault();
+          return false;
+        }
+        return true;
+      };
+      play.addEventListener('click',canOpen);
+      const open = button('Open in Chat',event => {
+        if (canOpen(event)) void act(entry.action,current,event);
+      });
+      open.dataset.specialistFocus = 'media:source:'+entry.video_id;
+      const actions = node('div','','vp3-agent-activity-actions');
+      actions.append(open,play);
+      row.append(node('strong',entry.title));
+      if (entry.channel) row.append(node('small',entry.channel));
+      row.append(actions);
+      list.append(row);
+    }
+    section.append(list);
+    return section;
+  }
+  function mediaHistory(current,limit,searchLimit = limit) {
+    const output = [];
+    for (const source of youtubeActivitySources(limit,searchLimit)) {
+      if (source.items.length) output.push(renderSource(current,source,true));
+    }
+    const listening = recentListeningItems(limit);
+    if (listening.length) output.push(renderSource(current,{id:'recent_listening',label:'Recent listening',items:listening},true));
+    return output;
+  }
+  function appendMediaDelivery(report,current,shownItems) {
+    const delivery=snapshot?.media_delivery;
+    if (!delivery) return;
+    const handoff=delivery.handoff;
+    const reasons={
+      no_chat:'An open saved Chat is needed for proactive posts.', starting:'Connecting this Chat to the Agent loop.',
+      linked_elsewhere:'The Agent is following another Chat.', initiative_paused:'Initiative is paused.',
+      checking:'Waiting for the first Media check in this Chat.', disabled:'Media check-ins are off in settings.',
+      quiet_chat_required:'Waiting for quiet Chat.', playing:'Waiting for playback to finish.',
+      idle_spacing:'Waiting for the current quiet period.', new_activity_required:'Waiting for new activity after the previous offer.',
+      owner_turn_pending:'Waiting for the current Chat turn to finish.', recent_proactive_post:'Waiting after a recent Agent post.',
+      no_playable_sources:'No playable pick is available right now.', handoff_pending:'A Media offer is in the Chat queue.',
+      handoff_stopped:'The last offer stopped. The next eligible check can try again.',
+      ready:'A Media offer is eligible for Chat.', cooldown:'Waiting after a recent Media offer.',
+      already_offered:'The current pick has already been offered.', report_only:'These findings are available in the Media report.',
+      result_unavailable:'The saved offer could not be verified.', verification_unavailable:'Media delivery could not be verified.',
+      assignment_failed:'The last Media offer failed before delivery.', assignment_cancelled:'The last Media offer was canceled.',
+    };
+    const posted=handoff?.state==='posted';
+    if (posted && shownItems.some(item => item.engagement?.message_id === handoff.message_id &&
+      findingEngagement(item.engagement,current,mediaEngagementStates))) return;
+    const queued=['queued','working'].includes(handoff?.state);
+    const gate=handoff?.state==='waiting' ? handoff.reason : delivery.gate;
+    const message=posted?'The latest offer was posted in this Chat.':queued?'A Media offer is in the Chat queue.':
+      Object.hasOwn(reasons,gate)?reasons[gate]:'';
+    if (message) report.append(node('p',message));
+    if (posted) {
+      const action=handoff.action;
+      if (action?.kind==='chat'&&action.agent_id===current.agent&&action.conversation_id===current.cid&&
+        positive(action.message_id)&&localUrl(action.href)) {
+        report.append(button('View latest offer in Chat',event=>void act(action,current,event)));
+      }
+    }
+  }
+  function renderMediaWorkspace(current) {
+    if (!snapshot) { sections.replaceChildren(); return; }
+    const items = mediaReportItems().slice(0,workspace ? 12 : 1);
+    const offers = recentMediaOfferItems(current,workspace ? 6 : 1);
+    const report = renderSource(current,{id:'media_report',label:'Listening & viewing report',items},true);
+    const coverage = snapshot.coverage?.media_report || snapshot.media_report?.coverage;
+    if (!items.length && ['unavailable','forbidden'].includes(coverage)) {
+      report.append(node('p','The media report could not be loaded.'));
+    } else if (!items.length && !offers.length && !snapshot.media_delivery) {
+      report.append(node('p','No media suggestions yet. Recent plays and YouTube searches can inform this report.'));
+    }
+    appendMediaDelivery(report,current,[...items,...offers]);
+    const queue = searchHistoryPlaylist(current,workspace ? 18 : 4);
+    const nodes = queue ? [queue,report] : [report];
+    if (offers.length) nodes.push(renderSource(current,{id:'media_offers',label:'Recent offers',items:offers},true));
+    nodes.push(...(workspace ? mediaHistory(current,8,12) : mediaHistory(current,1)));
+    if (workspace) {
+      const controls = node('div','','vp3-agent-activity-actions vp3-agent-media-controls');
+      controls.append(button('Open Player',event => {
+        if (!event.isTrusted || !visible() || signature(current) !== signature(scope())) return;
+        const chat = continuity();
+        if (typeof chat?.showPlayerView !== 'function') return;
+        close(false);
+        chat.showPlayerView();
+      }));
+      if (typeof continuity()?.showPlayerView === 'function') nodes.push(controls);
+      for (const [id,label] of [['songs','Recent listening'],['youtube','YouTube searches & playback']]) {
+        if (id === 'youtube' && snapshot.youtube_activity) continue;
+        if (id === 'songs' && Array.isArray(snapshot.media_report?.recent_listening)) continue;
+        const source = snapshot.sections.find(section => section.id === id);
+        if (source?.items.length) nodes.push(renderSource(current,{...source,label},true));
+      }
+    }
+    sections.replaceChildren(...nodes);
+  }
+  const curiosityText = (value,limit) => typeof value === 'string' ? value.trim().slice(0,limit) : '';
+  const curiosityStates = {open:'Open',answered:'Answered',skipped:'Skipped',deferred:'Deferred'};
+  function curiositySources(rows,current,focusKey) {
+    const actions = node('div','','vp3-agent-activity-actions');
+    const seen = new Set();
+    for (const row of Array.isArray(rows) ? rows.slice(0,4) : []) {
+      if (!positive(row?.conversation_id) || !positive(row?.message_id)) continue;
+      const action = specialistResult({...row,result_url:row.href},current);
+      const key = officeChatKey(action);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const link = button(curiosityText(row.label,120) || 'View in Chat',event => void act(action,current,event));
+      link.dataset.curiosityFocus = focusKey + ':' + key;
+      actions.append(link);
+    }
+    return actions;
+  }
+  function curiositySection(title) {
+    const section = node('section','','vp3-agent-activity-source vp3-curiosity-section');
+    section.setAttribute('aria-label',title);
+    section.append(node('h4',title));
+    return section;
+  }
+  function curiosityQuestionLinks(question,current,focusKey) {
+    const {conversation_id,message_id,href} = question;
+    return curiositySources([
+      {conversation_id,message_id,href,label:'View question in Chat'},
+      {conversation_id,message_id:question.reply_message_id,href:question.reply_href,
+        label:question.state === 'answered' ? 'View answer in Chat' : 'View response in Chat'}
+    ],current,focusKey);
+  }
+  function curiosityDiagnostics(report) {
+    const view = node('details','','vp3-curiosity-diagnostics');
+    const key = 'curiosity:diagnostics';
+    view.open = detailOpen.get(key) === true;
+    view.addEventListener('toggle',() => detailOpen.set(key,view.open));
+    const summary = node('summary','Review diagnostics');
+    summary.dataset.curiosityFocus = key;
+    view.append(summary,node('p',report?.source_coverage === 'ready' ? 'Source review complete.' : 'Sources could not be verified.'));
+    const checked = new Date(report?.review?.at || '');
+    if (Number.isFinite(checked.getTime())) {
+      view.append(node('p','Top of Mind last checked ' + checked.toLocaleString()));
+      const reasons = {
+        ready:'A question was eligible for Chat.', quiet_chat_required:'Waiting for quiet Chat.',
+        playing:'Waiting for playback to end.', owner_turn_pending:'Waiting for the current turn.',
+        recent_proactive_post:'Waiting after a recent proactive update.', awaiting_reply:'An earlier question is open. Curiosity continues to review new activity.',
+        no_question:'No question was ready.', higher_priority:'Another specialist had work ready.',
+        report_only:'Questions are kept in this report.', already_offered:'The question already appeared in Chat.'
+      };
+      const reason = report.review.queued ? 'A question entered the shared Chat queue.' :
+        (Object.hasOwn(reasons,report.review.gate) ? reasons[report.review.gate] : '');
+      if (reason) view.append(node('p',reason));
+    }
+    return view;
+  }
+  function renderCuriosityWorkspace(current) {
+    if (!snapshot) { sections.replaceChildren(); return; }
+    const active = sections.contains(document.activeElement) ? document.activeElement.dataset.curiosityFocus : '';
+    const report = snapshot.curiosity_report;
+    const ready = report?.source_coverage === 'ready';
+    const findings = curiositySection('Key findings');
+    const body = [findings];
+    if (!ready) {
+      findings.append(node('p','The Curiosity report could not be verified.'));
+    } else {
+      const limit = workspace ? 12 : 1;
+      const themes = Array.isArray(report.themes) ? report.themes.slice(0,limit) : [];
+      for (const theme of themes) {
+        const title = curiosityText(theme?.title,190);
+        if (!title) continue;
+        const article = node('article','','vp3-curiosity-item');
+        article.append(node('h5',title));
+        const summary = curiosityText(theme.summary,600);
+        if (summary) article.append(node('p',summary));
+        if (workspace && theme.state === 'confirmed') article.append(node('small','Confirmed theme'));
+        if (workspace) {
+          const links = curiositySources(theme.sources,current,'theme:' + curiosityText(theme.id,120));
+          if (links.childElementCount) article.append(links);
+        }
+        findings.append(article);
+      }
+      if (findings.childElementCount === 1) findings.append(node('p','No Curiosity findings yet.'));
+
+      const threads = Array.isArray(report.threads) ? report.threads.slice(0,12) : [];
+      const next = report.next_question;
+      const nextText = next?.conversation_id === current.cid && next.state === 'open' ? curiosityText(next.question,600) : '';
+      const pending = report.pending_question;
+      const pendingText = report.attention === 'awaiting_reply' && pending?.state === 'open'
+        && positive(pending.conversation_id) && positive(pending.message_id) ? curiosityText(pending.question,600) : '';
+      if (nextText) {
+        const section = curiositySection('Next step');
+        section.append(node('p',nextText));
+        const links = curiositySources(next.sources,current,'next:' + curiosityText(next.id,120));
+        if (links.childElementCount) section.append(links);
+        body.push(section);
+      }
+      if (pendingText) {
+        const awaiting = curiositySection('Earlier question in Chat');
+        awaiting.append(node('p',pendingText));
+        const links = curiosityQuestionLinks(pending,current,'awaiting:' + curiosityText(pending.id,120));
+        if (links.childElementCount) awaiting.append(links);
+        body.push(awaiting);
+      }
+      if (workspace) {
+        const followups = curiositySection('Actions & follow-ups');
+        const openQuestions = curiositySection('Open questions');
+        const openList = node('ul','','vp3-curiosity-questions');
+        for (const thread of threads) {
+          const title = curiosityText(thread?.title,190);
+          if (!title || !Object.hasOwn(curiosityStates,thread.state)) continue;
+          const threadKey = 'thread:' + curiosityText(thread.id,120);
+          const card = node('article','','vp3-curiosity-item');
+          const heading = node('h5',title);
+          card.append(heading,node('small',curiosityStates[thread.state]));
+          const {answered,total} = thread.progress || {};
+          if (Number.isSafeInteger(answered) && positive(total) && answered >= 0 && answered <= total) {
+            const label = `${answered} of ${total} answered`;
+            const progress = node('progress');
+            progress.max = total;
+            progress.value = answered;
+            progress.setAttribute('aria-label',title + ', ' + label);
+            const row = node('div','','vp3-curiosity-progress');
+            row.append(progress,node('small',label));
+            card.append(row);
+          }
+          const responses = node('ul','','vp3-curiosity-questions');
+          const questions = Array.isArray(thread.questions) ? thread.questions.slice(0,10) : [];
+          for (const question of questions) {
+            const questionText = curiosityText(question?.question,600);
+            if (!questionText || !Object.hasOwn(curiosityStates,question.state)) continue;
+            if (question.state === 'open' && (
+              nextText && question.id === next.id && thread.id === next.thread_id
+              || pendingText && question.id === pending.id && thread.id === pending.thread_id
+            )) continue;
+            const item = node('li');
+            item.append(node('p',questionText));
+            if (question.state !== 'open') {
+              item.append(node('small',curiosityStates[question.state]));
+              const answer = curiosityText(question.answer,700);
+              if (question.state === 'answered' && answer) item.append(node('p',answer));
+            }
+            const links = curiosityQuestionLinks(question,current,threadKey + ':' + curiosityText(question.id,120));
+            if (links.childElementCount) item.append(links);
+            (question.state === 'open' ? openList : responses).append(item);
+          }
+          if (responses.childElementCount) card.append(responses);
+          followups.append(card);
+        }
+        if (followups.childElementCount === 1) followups.append(node('p','No saved follow-ups.'));
+        openQuestions.append(openList.childElementCount ? openList
+          : node('p',nextText || pendingText ? 'No other open questions.' : 'No open questions.'));
+        body.push(followups,openQuestions);
+      }
+    }
+    if (workspace) body.push(curiosityDiagnostics(report));
+    sections.replaceChildren(...body);
+    if (active && document.activeElement === document.body) {
+      sections.querySelector(`[data-curiosity-focus="${CSS.escape(active)}"]`)?.focus({preventScroll:true});
+    }
+  }
+  function coordinationCards(current,group) {
+    if (!['Needs attention','Agent work'].includes(group) || !Array.isArray(snapshot?.coordination_findings)) return [];
+    const items = [];
+    const seen = new Set();
+    const open = new Set((Array.isArray(snapshot.specialists) ? snapshot.specialists : []).flatMap(row =>
+      (Array.isArray(row?.open_engagements) ? row.open_engagements : []).map(item => item?.message_id)));
+    for (const item of snapshot.coordination_findings.slice(0,4)) {
+      if (item?.kind !== 'coordination_finding' || typeof item.id !== 'string' || !/^[a-f0-9]{64}$/.test(item.id)
+        || seen.has(item.id) || typeof item.title !== 'string' || typeof item.detail !== 'string') continue;
+      const belongs = group === 'Needs attention' ? item.state === 'needs_owner' :
+        group === 'Agent work' && ['agent_work','resolved','watching'].includes(item.state);
+      if (!belongs) continue;
+      if (item.state === 'needs_owner' && item.delivery === 'delivered' && Array.isArray(item.actions)
+        && item.actions.some(action => open.has(action?.message_id))) continue;
+      seen.add(item.id);
+      const article = node('article','','vp3-agent-activity-item vp3-agent-activity-finding');
+      article.dataset.coordinationFinding = item.id;
+      const copy = itemCopy(item.title.slice(0,190),item.detail.slice(0,600),'coordination:' + item.id,true);
+      const route = routingDescription(item.routing,true);
+      if (route) copy.append(node('small',route,'vp3-agent-activity-rule-match'));
+      const deliveryLabels = {pending:'Waiting to post to Chat',delivered:'Posted to Chat',withheld:'Chat delivery withheld'};
+      const states = {needs_owner:'Waiting on you',agent_work:'Agent work',resolved:'Resolved',watching:'Watching'};
+      copy.append(node('span',states[item.state],'vp3-agent-activity-finding-state'));
+      const delivery = Object.hasOwn(deliveryLabels,item.delivery) ? deliveryLabels[item.delivery] : '';
+      if (delivery) copy.append(node('small',delivery,'vp3-agent-activity-detail'));
+      const workLabels = {queued:'Queued',running:'In progress',failed:'Work could not be verified',completed:'Completed'};
+      if (Object.hasOwn(workLabels,item.work_status)) copy.append(node('small',workLabels[item.work_status],'vp3-agent-activity-detail'));
+      for (const [field,label,limit] of [['next_step','Next step',320],['question','Question for you',320],['result','Result',600]]) {
+        if (typeof item[field] !== 'string' || !item[field]) continue;
+        const line = node('p','','vp3-agent-activity-detail');
+        line.append(node('strong',label + ': '),item[field].slice(0,limit));
+        copy.append(line);
+      }
+      const sources = node('ul','','vp3-agent-activity-finding-sources');
+      sources.setAttribute('aria-label','Sources');
+      const labels = window.VP3TopOfMindFeedV1?.specialistNames || {};
+      for (const source of Array.isArray(item.sources) ? item.sources.slice(0,5) : []) {
+        if (!Object.hasOwn(labels,source?.specialist) || typeof source.title !== 'string' || !source.title) continue;
+        const label = labels[source.specialist] + ' · ' + source.title.slice(0,120);
+        const entry = node('li');
+        const gmail = source.specialist === 'gmail' ? source.source_action : null;
+        if (gmail?.type === 'gmail_triage' && /^[a-f0-9]{64}$/.test(gmail.item_ref) && positive(gmail.generation)) {
+          entry.append(button(label,event => {
+            if (!event.isTrusted || !visible() || signature(current) !== signature(scope()) || !snapshot) return;
+            if (Date.now() - Date.parse(snapshot.observed_at) > 60000) {
+              status.textContent = 'Refreshing this view before continuing…';
+              stop(); void read(); return;
+            }
+            if (window.VP3TopOfMindFeedV1?.openExactGmailMessage(current,gmail.item_ref,gmail.generation)) close(false);
+            else status.textContent = 'Open Agent Chat and try again to read this email.';
+          }));
+        } else {
+          const href = localUrl(source.url);
+          const link = href ? node('a',label) : node('span',label);
+          if (href) link.href = href;
+          entry.append(link);
+        }
+        sources.append(entry);
+      }
+      if (sources.childElementCount) copy.append(sources);
+      const actions = node('div','','vp3-agent-activity-actions');
+      const chat = Array.isArray(item.actions) ? item.actions.find(action => action?.kind === 'chat' &&
+        action.conversation_id === current.cid && positive(action.message_id)) : null;
+      const action = chat && specialistResult({...chat,result_url:chat.href},current);
+      if (action) actions.append(button(action.label,event => void act(action,current,event)));
+      article.append(copy,actions);
+      items.push(article);
+    }
+    return items;
+  }
+  function officeReviewItems() {
+    const items = snapshot?.sections.find(section => section.id === 'office_reviews')?.items || [];
+    return workspace ? items : items.slice(0,1);
+  }
+  function activityUrl(current,view = '',collection = '',cursor = '',listId = 0) {
+    const url = new URL(cfg.activityEndpoint,location.href);
+    url.searchParams.set('agent_id',String(current.agent));
+    url.searchParams.set('conversation_id',String(current.cid));
+    if (view) url.searchParams.set('view',view);
+    if (collection) url.searchParams.set('collection',collection);
+    if (cursor) url.searchParams.set('cursor',cursor);
+    if (listId) url.searchParams.set('list_id',String(listId));
+    return url;
+  }
+  function requestActivity(url,current,request) {
+    return fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'X-VP3-Working-Attention':current.binding},signal:request.signal});
+  }
+  function officeCursor(data,id) {
+    const value = data?.pages?.[id]?.next_cursor;
+    return typeof value === 'string' && value.length > 0 && value.length <= 1024 ? value : null;
+  }
+  function hasOfficePage(data,id) {
+    return data?.pages?.[id]?.next_cursor === null || officeCursor(data,id) !== null;
+  }
+  function resetOfficePage(id) {
+    officePages.delete(id);
+    officeErrors.delete(id);
+    officeRequests.get(id)?.abort();
+    officeRequests.delete(id);
+  }
+  function checkOfficePage(data,id) {
+    const page = officePages.get(id);
+    if (page && (page.firstCursor !== officeCursor(data,id) || ['forbidden','unavailable'].includes(data.coverage?.[id]))) {
+      resetOfficePage(id);
+    }
+  }
+  function selectOfficeList(id) {
+    abortOfficeRequests();
+    resetOfficePage('list_items');
+    officeList = id ? {id,data:null} : null;
+    stop();
+    if (snapshot) render();
+    host.scrollTop = 0;
+    if (officeList) sections.querySelector('[data-office-inventory-back]')?.focus();
+    else sections.querySelector('[data-office-collection="lists"] h4')?.focus();
+    void read();
+  }
+  function officeCollectionSource(data,id) {
+    return data?.sections?.find(section => section.id === id);
+  }
+  function officeCollectionItems(source) {
+    const items = new Map(source.items.map(item => [item.id,item]));
+    const pages = officePages.get(source.id)?.batches;
+    if (pages) for (const batch of pages.values()) {
+      for (const item of batch.items) if (!items.has(item.id)) items.set(item.id,item);
+    }
+    return [...items.values()];
+  }
+  function attachedOfficeChatKeys(current) {
+    const keys = new Set();
+    if (!officeWorkspace()) return keys;
+    const data = officeList ? officeList.data : snapshot;
+    const ids = officeList ? ['list_items'] : ['reminders','tasks','lists'];
+    for (const id of ids) {
+      const source = officeCollectionSource(data,id);
+      if (!source) continue;
+      for (const item of officeCollectionItems(source)) {
+        if (!Object.hasOwn(officeReportStates,item.office_report?.state)) continue;
+        const key = officeChatKey(officeEntryChatAction(item.office_report,current));
+        if (key) keys.add(key);
+      }
+    }
+    return keys;
+  }
+  function renderOfficeCollection(current,data,source) {
+    const id = source.id;
+    const extra = officePages.get(id);
+    const items = officeCollectionItems(source);
+    const section = renderSource(current,{...source,items});
+    section.dataset.officeCollection = id;
+    section.firstElementChild.tabIndex = -1;
+    const coverage = data.coverage?.[id];
+    const nextCursor = extra ? extra.nextCursor : officeCursor(data,id);
+    if (!items.length) section.append(node('p',coverage === 'forbidden' ? 'This collection is no longer available.' :
+      coverage === 'unavailable' ? 'This collection could not be loaded.' :
+        nextCursor ? 'No visible items on this page.' : officeCollections[id].empty));
+    const controls = node('div','','vp3-agent-activity-actions');
+    if (nextCursor) {
+      const load = button('Load more',event => void loadOfficePage(id,current,event));
+      const name = id === 'list_items' ? 'list items' : officeCollections[id].label.toLowerCase();
+      load.setAttribute('aria-label','Load more ' + name);
+      load.dataset.officeLoad = id;
+      const pending = officeRequests.get(id);
+      load.disabled = Boolean(pending && !officeRefreshes.has(pending));
+      controls.append(load);
+    }
+    const error = officeErrors.get(id);
+    if (error) {
+      const feedback = node('small',error);
+      feedback.setAttribute('role','status');
+      controls.append(feedback);
+    }
+    if (controls.childElementCount) section.append(controls);
+    return section;
+  }
+  function refreshVisibleOfficePage(current) {
+    if (!officeWorkspace() || officeRequests.size || !officePages.size) return;
+    const viewport = host.getBoundingClientRect();
+    const now = Date.now();
+    let next = null;
+    for (const section of sections.querySelectorAll('[data-office-collection]')) {
+      const id = section.dataset.officeCollection;
+      const batches = officePages.get(id)?.batches;
+      if (!batches?.size) continue;
+      const visibleIds = new Set();
+      for (const row of section.querySelectorAll('[data-office-item-id]')) {
+        const bounds = row.getBoundingClientRect();
+        if (bounds.top < viewport.bottom && bounds.bottom > viewport.top) visibleIds.add(row.dataset.officeItemId);
+      }
+      for (const [cursor,batch] of batches) {
+        if (now - batch.checkedAt < 10000 || (next && next.checkedAt <= batch.checkedAt)) continue;
+        if (batch.items.some(item => visibleIds.has(item.id))) next = {id,cursor,checkedAt:batch.checkedAt};
+      }
+    }
+    if (next) void loadOfficePage(next.id,current,null,next.cursor);
+  }
+  async function loadOfficePage(id,current,event,refreshCursor = '') {
+    if ((!refreshCursor && !event?.isTrusted) || !officeWorkspace() || !visible()
+      || signature(current) !== signature(scope())) return;
+    const pending = officeRequests.get(id);
+    if (pending && (refreshCursor || !officeRefreshes.has(pending))) return;
+    const list = officeList;
+    const from = id === 'list_items' ? list?.data : snapshot;
+    const firstCursor = officeCursor(from,id);
+    const previous = officePages.get(id);
+    const cursor = refreshCursor || (previous ? previous.nextCursor : firstCursor);
+    if (!cursor || (id === 'list_items') !== Boolean(list)) return;
+    pending?.abort();
+    const request = new AbortController();
+    if (refreshCursor) officeRefreshes.add(request);
+    officeRequests.set(id,request);
+    const trigger = event?.currentTarget;
+    const restoreFocus = trigger && document.activeElement === trigger;
+    if (trigger) {
+      officeErrors.delete(id);
+      trigger.disabled = true;
+    }
+    let changed = false;
+    const timeout = setTimeout(() => request.abort(),10000);
+    const isCurrent = () => visible() && officeWorkspace() && officeList === list && officeRequests.get(id) === request
+      && signature(current) === signature(scope()) && officeCursor(list?.data || snapshot,id) === firstCursor;
+    try {
+      const response = await requestActivity(activityUrl(current,'tasks',id,cursor,list?.id),current,request);
+      if (!isCurrent()) return;
+      if (list && response.status === 403) {
+        list.data = null;
+        list.error = 'This list is no longer available.';
+        resetOfficePage(id);
+        render();
+        return;
+      }
+      if ([401,403,419].includes(response.status) && !list) {
+        resetOfficePage(id);
+        stop();
+        void read();
+        return;
+      }
+      const data = await response.json();
+      if (!isCurrent() || request.signal.aborted) return;
+      const state = data?.state;
+      const source = officeCollectionSource(state,id);
+      const nextCursor = officeCursor(state,id);
+      if (!response.ok || data?.ok !== true || !validState(state,current) || state.sections.length !== 1 || !source
+        || !hasOfficePage(state,id) || (list && state.list_id !== list.id)
+        || nextCursor === cursor || (!refreshCursor && nextCursor && previous?.batches.has(nextCursor))
+        || (Number.isSafeInteger(Number(nextCursor)) && nextCursor && Number.isSafeInteger(Number(cursor))
+          && Number(nextCursor) >= Number(cursor))) throw new Error('Invalid collection page');
+      if (['forbidden','unavailable'].includes(state.coverage?.[id])) throw new Error('Collection unavailable');
+      const batches = new Map(previous?.batches);
+      const old = batches.get(cursor);
+      batches.set(cursor,{items:source.items,checkedAt:Date.now()});
+      const continuation = [...batches.keys()].at(-1) === cursor ? nextCursor : previous.nextCursor;
+      changed = !refreshCursor || JSON.stringify(old?.items) !== JSON.stringify(source.items) || continuation !== previous.nextCursor;
+      officePages.set(id,{firstCursor,nextCursor:continuation,batches});
+    } catch {
+      if (isCurrent() && !refreshCursor) officeErrors.set(id,'Could not load more items. Try again.');
+    } finally {
+      clearTimeout(timeout);
+      if (officeRequests.get(id) !== request) return;
+      officeRequests.delete(id);
+      if (!visible() || !officeWorkspace() || officeList !== list || signature(current) !== signature(scope())) return;
+      if (refreshCursor && !changed) return;
+      const scrollTop = host.scrollTop;
+      renderSpecialists();
+      renderWorkspaceSources(current);
+      if (refreshCursor) host.scrollTop = scrollTop;
+      if (restoreFocus && (document.activeElement === trigger || document.activeElement === document.body)) {
+        (sections.querySelector(`[data-office-load="${id}"]`) || sections.querySelector(`[data-office-collection="${id}"] h4`))?.focus();
+      }
+    }
+  }
+  function renderMarketingCanvasLink(current,campaign,review) {
+    const endpoint = localUrl(review.link_endpoint);
+    if (!endpoint || campaign.can_link_canvas !== true || !Number.isSafeInteger(campaign.version) || campaign.version < 0) return null;
+    const choices = (Array.isArray(review.canvas_choices) ? review.canvas_choices : []).slice(0,24).filter(choice =>
+      typeof choice?.id === 'string' && /^[a-f0-9-]{36}$/.test(choice.id) && positive(choice.version) &&
+      typeof choice.title === 'string' && /^[a-f0-9]{64}$/.test(choice.proof));
+    if (!choices.length) return null;
+    const form = node('form','','vp3-agent-activity-actions');
+    const label = node('label','Tested private Canvas ');
+    const select = node('select');
+    const placeholder = node('option','Choose a Canvas version');
+    placeholder.value = '';
+    select.append(placeholder);
+    const byValue = new Map();
+    for (const choice of choices) {
+      const option = node('option',`${choice.title.slice(0,130)} · V${choice.version}${choice.attached === true ? ' · Image attached' : ''}`);
+      option.value = `${choice.id}:${choice.version}`;
+      byValue.set(option.value,choice);
+      select.append(option);
+    }
+    select.value = byValue.has(marketingCanvasSelections.get(campaign.id)) ? marketingCanvasSelections.get(campaign.id) : '';
+    label.append(select);
+    const submit = node('button','Link private Canvas');
+    submit.type = 'submit';
+    submit.disabled = !select.value;
+    select.addEventListener('change',() => {
+      marketingCanvasSelections.set(campaign.id,select.value);
+      submit.disabled = !select.value;
+    });
+    const feedback = node('p','','vp3-agent-activity-status');
+    feedback.setAttribute('role','status');
+    form.append(label,submit,feedback);
+    form.addEventListener('submit',async event => {
+      event.preventDefault();
+      const choice = byValue.get(select.value);
+      if (!event.isTrusted || submit.disabled || !choice || !visible() || signature(scope()) !== signature(current)) return;
+      select.disabled = submit.disabled = true;
+      feedback.textContent = 'Saving the private Canvas link…';
+      try {
+        const response = await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{
+          'Content-Type':'application/json','X-VP3-Working-Attention':current.binding},body:JSON.stringify({
+            csrf_token:cfg.csrf,agent_id:current.agent,conversation_id:current.cid,campaign_id:campaign.id,
+            campaign_version:campaign.version,canvas_id:choice.id,canvas_version:choice.version,canvas_proof:choice.proof,
+          })});
+        const data = await response.json();
+        if (!response.ok || data?.ok !== true || data.state !== 'linked') throw new Error(data?.error || 'The private Canvas link could not be saved.');
+        if (!visible() || signature(scope()) !== signature(current)) return;
+        marketingCanvasSelections.delete(campaign.id);
+        stop();
+        void read();
+      } catch (error) {
+        feedback.textContent = error.message;
+        select.disabled = submit.disabled = false;
+      }
+    });
+    return form;
+  }
+
+  function renderMarketingReview(current) {
+    const review = snapshot?.marketing;
+    const section = node('section','','vp3-agent-activity-source');
+    section.append(node('h4','Campaign follow-through'));
+    const rows = Array.isArray(review?.campaigns) ? review.campaigns.slice(0,5) : [];
+    const draftLinks = new Set([review?.draft_href,...rows.map(campaign => campaign?.draft_href)].map(localUrl).filter(Boolean));
+    for (const href of draftLinks) {
+      const business = rows.find(campaign => localUrl(campaign?.draft_href) === href)?.business;
+      const link = node('a',draftLinks.size > 1 && typeof business === 'string' ? `Prepare an offer for ${business.slice(0,100)}` : 'Prepare an offer draft');
+      link.href = href;
+      section.append(link);
+    }
+    const readinessLabels = {ready:'Ready',missing:'Needs attention',limited:'Could not verify',not_applicable:'Not applicable'};
+    const campaignLabels = {draft:'Draft',scheduled:'Scheduled',active:'Active',paused:'Paused',completed:'Completed',archived:'Archived'};
+    const checkLabels = {location:'Location',claim_code:'Merchant claim code',reward:'Reward',audience:'Audience'};
+    const observationLabels = {claims:'Recorded reward claims',redemptions:'Campaign optimization sample',promotion:'Tracked promotion activity'};
+    const metrics = {reward_redemptions:'Reward redemptions',decisions_sampled:'Decisions observed',clicks:'Clicks',
+      checkout_starts:'Checkouts started',paid_orders:'Paid orders',refunded_orders:'Refunded orders'};
+    for (const campaign of rows) {
+      if (!positive(campaign?.id) || typeof campaign.name !== 'string' || typeof campaign.business !== 'string') continue;
+      const key = 'marketing:campaign:' + campaign.id;
+      const card = node('details','','vp3-agent-activity-group');
+      card.open = detailOpen.get(key) ?? false;
+      card.addEventListener('toggle',() => detailOpen.set(key,card.open));
+      card.append(node('summary',`${campaign.business.slice(0,140)} · ${campaign.name.slice(0,160)}`));
+      const status = Object.hasOwn(campaignLabels,campaign.status) ? campaignLabels[campaign.status] : '';
+      const location = typeof campaign.location === 'string' ? campaign.location.slice(0,120) : '';
+      const version = positive(campaign.version) ? `Version ${campaign.version}` : '';
+      if (status || location || version) card.append(node('p',[status,location,version].filter(Boolean).join(' · ')));
+      const readiness = campaign.readiness;
+      if (readiness?.checks && typeof readiness.checks === 'object') {
+        card.append(node('h5','Offer readiness'));
+        for (const [id,check] of Object.entries(readiness.checks)) {
+          if (!Object.hasOwn(checkLabels,id) || !Object.hasOwn(readinessLabels,check?.state) || typeof check.detail !== 'string') continue;
+          const line = node('p');
+          line.append(node('strong',`${checkLabels[id]} · ${readinessLabels[check.state]} `),check.detail.slice(0,320));
+          card.append(line);
+          if (typeof check.next_step === 'string' && check.next_step) card.append(node('p',check.next_step.slice(0,320)));
+        }
+      }
+      const decisions = (Array.isArray(campaign.outcomes?.decisions) ? campaign.outcomes.decisions : [])
+        .slice(0,6).filter(decision => ['accepted','dismissed','proposed'].includes(decision?.status) &&
+          typeof decision.type === 'string' && /^[a-z-]{1,40}$/.test(decision.type));
+      if (decisions.length) {
+        card.append(node('h5','Recommendation decisions'));
+        for (const decision of decisions) card.append(node('p',`${decision.type.replaceAll('-',' ')} · ${decision.status}`));
+      }
+      for (const [id,label] of Object.entries(observationLabels)) {
+        const observation = campaign.outcomes?.observations?.[id];
+        if (!observation) continue;
+        card.append(node('h5',label));
+        if (observation.state !== 'observed') {
+          card.append(node('p',observation.state === 'unavailable' ? 'Observation could not be verified.' : 'No verified observation yet.'));
+          continue;
+        }
+        const dates = [observation.window_start,observation.window_end].map(value => typeof value === 'string' ? value.match(/^\d{4}-\d{2}-\d{2}/)?.[0] : '').filter(Boolean);
+        if (dates.length) card.append(node('small',dates.length === 2 ? dates.join(' through ') : `From ${dates[0]}`));
+        for (const [metric,value] of Object.entries(observation.metrics || {})) {
+          if (Object.hasOwn(metrics,metric) && Number.isSafeInteger(value) && value >= 0) card.append(node('p',`${metrics[metric]} · ${value}`));
+        }
+      }
+      for (const artifact of (Array.isArray(campaign.artifacts) ? campaign.artifacts : []).slice(0,4)) {
+        if (typeof artifact?.label !== 'string' || !['saved','linked','unavailable'].includes(artifact.state)) continue;
+        const destination = localUrl(artifact.href);
+        const label = artifact.label.slice(0,180) + (artifact.state === 'unavailable' ? ' · Review link no longer current' : '');
+        const entry = node(destination ? 'a' : 'span',label);
+        if (destination) entry.href = destination;
+        const line = node('p');
+        line.append(entry);
+        card.append(line);
+      }
+      const href = localUrl(campaign.href);
+      if (href) {
+        const link = node('a','Review campaign');
+        link.href = href;
+        card.append(link);
+      }
+      const linking = renderMarketingCanvasLink(current,campaign,review);
+      if (linking) card.append(linking);
+      section.append(card);
+    }
+    if (!rows.length) section.append(node('p',review?.coverage === 'unavailable' ? 'Campaign follow-through could not be verified.'
+      : review?.coverage === 'unconfigured' ? 'No authorized campaign workspace is available.' : 'No campaigns to review yet.'));
+    return section;
+  }
+
+  function renderWorkspaceSources(current) {
+    const specialist = family(selectedSpecialist);
+    if (specialist === 'media') {
+      renderMediaWorkspace(current);
+      return;
+    }
+    if (specialist === 'curiosity') {
+      renderCuriosityWorkspace(current);
+      return;
+    }
+    if (officeWorkspace()) {
+      if (officeList) {
+        const restoreBack = sections.querySelector('[data-office-inventory-back]') === document.activeElement;
+        const back = button('Back to inventory',() => selectOfficeList(0));
+        back.dataset.officeInventoryBack = '';
+        const source = officeCollectionSource(officeList.data,'list_items');
+        if (source) sections.replaceChildren(back,renderOfficeCollection(current,officeList.data,source));
+        else {
+          const message = node('p',officeList.error || 'Loading list contents…');
+          message.setAttribute('role','status');
+          sections.replaceChildren(back,message);
+          if (officeList.error) sections.append(button('Retry list',() => { stop(); void read(); }));
+        }
+        if (restoreBack) back.focus({preventScroll:true});
+        return;
+      }
+      if (!officeAllLoaded || !snapshot) { sections.replaceChildren(); return; }
+      const nodes = [];
+      const reviews = officeCollectionSource(snapshot,'office_reviews');
+      const sources = ['reminders','tasks','lists'].map(id => officeCollectionSource(snapshot,id)
+        || {id,label:officeCollections[id].label,items:[]});
+      const navigation = node('nav','','vp3-agent-activity-actions');
+      navigation.setAttribute('aria-label','Office collections');
+      for (const id of ['tasks','lists','reminders']) {
+        navigation.append(button(officeCollections[id].label,() => {
+          const heading = sections.querySelector(`[data-office-collection="${id}"] h4`);
+          heading?.focus({preventScroll:true});
+          heading?.scrollIntoView({block:'start'});
+        }));
+      }
+      nodes.push(navigation);
+      if (reviews?.items.length) {
+        const attached = attachedOfficeChatKeys(current);
+        const items = reviews.items.filter(item => !item.actions.some(action => attached.has(officeChatKey(action))));
+        if (items.length) nodes.push(renderSource(current,{...reviews,items},true));
+      }
+      for (const source of sources) nodes.push(renderOfficeCollection(current,snapshot,source));
+      sections.replaceChildren(...nodes);
+      return;
+    }
+    const ids = workspace && Object.hasOwn(workspaceSources,specialist) ? workspaceSources[specialist]
+      : specialist === 'tasks' ? ['office_reviews'] : specialist === 'coding' ? ['canvas_suggestions'] : [];
+    const sources = ids.map(id => snapshot?.sections.find(source => source.id === id &&
+      (source.items.length || specialist === 'planning' || ['canvas_suggestions','marketing'].includes(id)))).filter(Boolean);
+    if (specialist === 'tasks') workspaceButton.textContent = officeReviewItems().length ? 'Full report' : 'Open workspace';
+    const reviews = specialist === 'marketing' && workspace ? [renderMarketingReview(current)] : [];
+    sections.replaceChildren(...reviews,...sources.map(source => source.id === 'office_reviews'
+      ? renderSource(current,{...source,items:officeReviewItems()},workspace)
+      : renderSource(current,source,specialist === 'planning' || workspace && ['coding','marketing'].includes(specialist))));
+  }
   function render() {
     if (!snapshot || !scope() || !sections) return;
     const current = scope();
+    if (specialistMode) {
+      renderCoordination();
+      renderSpecialists();
+      renderWorkspaceSources(current);
+      const hasActivity = specialistsHost.childElementCount || coordinationHost.childElementCount || sections.childElementCount;
+      status.textContent = hasActivity ? '' : 'No current activity to show.';
+      if (officeWorkspace() && !officeAllLoaded && !officeList) status.textContent = 'Loading saved tasks, lists and reminders…';
+      positionSpecialist();
+      return;
+    }
     const nodes = [];
     for (const previous of sections.querySelectorAll('[data-activity-group]')) groupOpen.set(previous.dataset.activityGroup,previous.open);
     for (const group of groups) {
-      const found = snapshot.sections.filter(section => group.ids.includes(section.id) && section.items.length);
+      const found = snapshot.sections.filter(section => group.ids.includes(section.id) &&
+        (section.id !== 'youtube' || !snapshot.youtube_activity) && (section.id !== 'songs' || !recentListeningItems(1).length))
+        .map(section => section.id === 'suggestions' ? {...section,items:section.items.filter(item => !item.id.startsWith('opportunity:'))} : section)
+        .filter(section => section.items.length);
       const section = node('details','','vp3-agent-activity-group');
       const count = found.reduce((total,item) => total + item.items.length,0);
       section.dataset.activityGroup = group.title;
       section.append(node('summary',group.title + ' (' + count + ')'));
       section.open = groupOpen.has(group.title) ? groupOpen.get(group.title) : nodes.length === 0;
-      if (found.length) groupOpen.set(group.title,section.open);
+      if (count) groupOpen.set(group.title,section.open);
       section.addEventListener('toggle',() => groupOpen.set(group.title,section.open));
-      for (const source of found) {
-        const subsection = node('section','','vp3-agent-activity-source');
-        subsection.append(node('h4',source.label));
-        for (const item of source.items) {
-          const article = node('article','','vp3-agent-activity-item');
-          article.append(itemCopy(item.title,item.detail,source.id + ':' + item.id));
-          const actions = node('div','','vp3-agent-activity-actions');
-          for (const action of item.actions) actions.append(button(action.label,event => void act(action,current,event)));
-          article.append(actions);
-          subsection.append(article);
-        }
-        section.append(subsection);
-      }
-      if (found.length) nodes.push(section);
+      section.append(...found.map(source => renderSource(current,source)));
+      if (count) nodes.push(section);
     }
-    if (!nodes.length && !specialistSnapshot().length && !listening?.childElementCount &&
-      !snapshot.sections.some(section => section.id === 'gmail_inbox' && section.items.length)) nodes.push(node('p','No current items to show.'));
     sections.replaceChildren(...nodes);
+    const findings = ['Needs attention','Agent work'].flatMap(group => {
+      const cards = coordinationCards(current,group);
+      if (!cards.length) return [];
+      const section = node('section','','vp3-agent-activity-opportunities-group');
+      section.setAttribute('aria-label',group);
+      section.dataset.opportunityGroup = group;
+      section.append(node('h3',group),...cards);
+      return [section];
+    });
+    const suggestions = snapshot.sections.find(section => section.id === 'suggestions');
+    const ideas = suggestions?.items.filter(item => item.id.startsWith('opportunity:')).map(item => {
+      const elsewhere = item.actions.some(action => action?.kind === 'chat' && action.conversation_id !== current.cid);
+      return elsewhere ? {...item,detail:'From another saved Chat. ' + (item.detail || '')} : item;
+    }) || [];
+    if (ideas.length) {
+      const ideasSection = node('section','','vp3-agent-activity-opportunities-group');
+      ideasSection.setAttribute('aria-label','Ideas from Initiative');
+      ideasSection.append(node('h3','Ideas from Initiative'),renderSource(current,{...suggestions,label:'',items:ideas}));
+      findings.push(ideasSection);
+    }
+    const canvasSuggestions = snapshot.sections.find(section => section.id === 'canvas_suggestions');
+    if (canvasSuggestions?.items.length) {
+      const appSection = node('section','','vp3-agent-activity-opportunities-group');
+      appSection.setAttribute('aria-label','App Suggestions');
+      appSection.append(node('h3','App Suggestions'),renderSource(current,{...canvasSuggestions,label:''},true));
+      findings.push(appSection);
+    }
+    const offer = snapshot.media_offer;
+    if (offer?.kind === 'youtube_offer' && typeof offer.id === 'string' &&
+      typeof offer.title === 'string' && typeof offer.detail === 'string' &&
+      Array.isArray(offer.actions) && offer.actions.length === 1 &&
+      offer.actions[0]?.kind === 'chat' && offer.actions[0].conversation_id === current.cid &&
+      positive(offer.actions[0].message_id) && localUrl(offer.actions[0].href)) {
+      const card = {id:offer.id,title:offer.title.slice(0,190),detail:offer.detail.slice(0,600),
+        actions:[{...offer.actions[0],label:'View in Chat'}]};
+      const source = renderSource(current,{id:'youtube-offer',label:'',items:[card]},true);
+      const media = node('section','','vp3-agent-activity-opportunities-group');
+      media.setAttribute('aria-label','YouTube pick');
+      media.append(node('h3','YouTube pick'),source);
+      findings.push(media);
+    }
+    orbSurface.opportunities.replaceChildren(...(findings.length ? findings :
+      [node('p','No current opportunities or decisions to review.','vp3-agent-activity-status')]));
     contextLabel.textContent = [snapshot.agent_name,snapshot.current_chat?.title].filter(value => typeof value === 'string' && value.trim()).join(' · ');
     const checked = new Date(snapshot.observed_at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
     status.textContent = '';
@@ -320,42 +2573,113 @@
     if (snapshot.coverage && Object.values(snapshot.coverage).some(value => value === 'limited' || value === 'unavailable')) {
       status.textContent = 'Some sources are unavailable.';
     }
+    renderSummary();
+    renderCoordination();
     renderSpecialists();
     window.VP3AgentOrb?.positionActivity?.();
   }
   async function read() {
-    if (!visible() || controller) return;
+    if (!visible() || controller || specialistSettings) return;
+    if (connectedSitesView) { void connectedSitesView.refresh(); return; }
     const current = scope();
-    if (!current) { close(false); return; }
+    if (!current) {
+      if (!specialistMode || !scope(true)?.hasChat) close(false);
+      else {
+        clear();
+        status.textContent = 'Waiting for Agent Chat to finish connecting…';
+      }
+      return;
+    }
     const mine = generation;
     const request = new AbortController();
     controller = request;
     const timeout = setTimeout(() => request.abort(),10000);
+    const selected = family(selectedSpecialist);
+    const view = specialistMode && (['gmail','tasks','media','curiosity','transcripts','coding','marketing'].includes(selected) || selected === 'planning' && workspace) ? selected : '';
+    const list = officeWorkspace() ? officeList : null;
+    const fullInventory = officeWorkspace() && !list;
     try {
-      const url = new URL(cfg.activityEndpoint,location.href);
-      url.searchParams.set('agent_id',String(current.agent));
-      url.searchParams.set('conversation_id',String(current.cid));
-      const response = await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{'X-VP3-Working-Attention':current.binding},signal:request.signal});
+      const collection = list ? 'list_items' : fullInventory ? 'all' : view === 'tasks' ? 'reviews' : '';
+      const url = activityUrl(current,view,collection,'',list?.id);
+      const response = await requestActivity(url,current,request);
+      const isCurrent = () => visible() && mine === generation && signature(current) === signature(scope()) && !request.signal.aborted;
+      if (!isCurrent()) return;
+      if (list && response.status === 403) {
+        list.data = null;
+        list.error = 'This list is no longer available.';
+        resetOfficePage('list_items');
+        render();
+        return;
+      }
+      if ([401,403,419].includes(response.status)) {
+        if (!specialistMode) { close(false); return; }
+        accessRejected = true;
+        clear();
+        status.textContent = 'This Chat’s access could not be verified. ';
+        status.append(button('Reload Chat',() => location.reload()));
+        return;
+      }
       const data = await response.json();
-      if (!visible() || mine !== generation || signature(current) !== signature(scope()) || request.signal.aborted) return;
-      if ([401,403,419].includes(response.status)) { close(false); return; }
+      if (!isCurrent()) return;
       if (!response.ok || data?.ok !== true || !validState(data.state,current)) throw new Error('Top of Mind could not be refreshed.');
+      accessRejected = false;
+      if (list) {
+        if (data.state.list_id !== list.id || data.state.sections.length !== 1 || !officeCollectionSource(data.state,'list_items')
+          || !hasOfficePage(data.state,'list_items')) {
+          throw new Error('List contents could not be verified.');
+        }
+        checkOfficePage(data.state,'list_items');
+        list.data = data.state;
+        list.error = '';
+        render();
+        refreshVisibleOfficePage(current);
+        return;
+      }
+      if (fullInventory && ['reminders','tasks','lists'].some(id => !hasOfficePage(data.state,id) || !officeCollectionSource(data.state,id))) {
+        throw new Error('The full Office inventory could not be verified.');
+      }
+      officeAllLoaded = fullInventory;
+      if (fullInventory) for (const id of ['reminders','tasks','lists']) checkOfficePage(data.state,id);
       snapshot = data.state;
       render();
+      if (fullInventory) refreshVisibleOfficePage(current);
     } catch (error) {
       if (visible() && mine === generation && signature(current) === signature(scope())) {
+        if (list) {
+          list.data = null;
+          list.error = 'List contents could not be loaded.';
+          resetOfficePage('list_items');
+          render();
+          return;
+        }
+        officeAllLoaded = false;
         snapshot = null;
-        sections.replaceChildren();
+        if (specialistMode) renderWorkspaceSources(current);
+        else sections.replaceChildren();
+        renderSummary();
+        renderCoordination();
         renderSpecialists();
         verified.textContent = '';
-        status.textContent = 'The latest items are unavailable. Use Refresh to try again.';
+        status.textContent = specialistMode && family(selectedSpecialist) === 'gmail'
+          ? 'Inbox analysis could not be loaded. Retrying shortly.'
+          : view === 'media' ? 'Media analysis could not be loaded. Retrying shortly.'
+          : view === 'curiosity' ? 'The Curiosity report could not be loaded. Retrying shortly.'
+          : fullInventory ? 'Saved tasks, lists and reminders could not be loaded. Retrying shortly.'
+          : specialistMode ? 'Activity could not be refreshed. Retrying shortly.'
+            : 'The latest items are unavailable. Use Refresh to try again.';
+        if (specialistMode) status.append(' ',button('Retry now',() => { stop(); void read(); }));
       }
     } finally {
       clearTimeout(timeout);
       if (controller === request) controller = null;
       if (visible() && mine === generation) {
-        const monitor = snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items.find(item => item.id === 'gmail:inbox-monitor')?.monitor;
-        timer = setTimeout(() => void read(),monitor?.state === 'working' ? 2500 : 12000);
+        const inbox = snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items || [];
+        const monitor = inbox.find(item => item.id === 'gmail:inbox-monitor')?.monitor;
+        const review = inbox.find(item => item.id === 'gmail:first-review');
+        const checking = monitor?.state === 'working' && leaseCurrent(monitor.lease_until)
+          || monitor?.analysis_work?.state === 'working' && leaseCurrent(monitor.analysis_work.lease_until)
+          || review?.review_state === 'working' && leaseCurrent(review.review_lease_until);
+        timer = setTimeout(() => void read(),checking ? 2500 : 12000);
       }
     }
   }
@@ -364,33 +2688,63 @@
       if (!scope()) return false;
       return window.VP3AgentOrb?.openActivity?.(options) ?? false;
     }
-    if (!scope() || !mount()) return false;
+    if (!scope()) return false;
+    if (opened && specialistMode) close(false);
+    if (!mount()) return false;
+    if (orbSurface.rules) orbSurface.rules.host.hidden = !positive(scope()?.cid);
     if (!opened) {
       window.VP3AgentOrb?.prepareActivity?.();
       returnFocus = document.activeElement;
       opened = true;
       host.hidden = false;
       panel.hidden = false;
+      panel.setAttribute('role','dialog');
+      panel.setAttribute('aria-labelledby','vp3AgentActivityTitle');
+      panel.removeAttribute('aria-label');
       root.dataset.activityOpen = 'true';
       delete root.dataset.initiativeDismissed;
-      root.querySelector('[data-orb-activity]')?.setAttribute('aria-expanded','true');
       const brief = document.getElementById('chatAgentBriefButton');
       brief?.setAttribute('aria-expanded','true');
       brief?.setAttribute('aria-controls',host.id);
       status.textContent = 'Loading current items…';
+      orbSurface.tabs.select(0);
+      orbSurface.presenceObserver.observe(root,{attributes:true,attributeFilter:['data-state','data-eyes-active']});
+      renderPresence();
       if (options.focus !== false) host.querySelector('h2').focus();
       window.dispatchEvent(new CustomEvent('vp3:agent-activity-view',{detail:{open:true}}));
     }
-    selectedSpecialist = typeof options.specialist === 'string' ? options.specialist : '';
+    selectedSpecialist = typeof options.specialist === 'string' && specialistKey.test(options.specialist) ? options.specialist : '';
+    revealSpecialist = options.focus !== false && !!selectedSpecialist;
+    renderCoordination();
     renderSpecialists();
     window.VP3AgentOrb?.positionActivity?.();
-    if (options.focus !== false && selectedSpecialist) specialistsHost.querySelector('.selected')?.scrollIntoView({block:'nearest'});
     void read();
     return true;
   }
-  window.VP3AgentActivityHub = Object.freeze({open,close,refresh:() => { stop(); void read(); }});
+  window.VP3AgentActivityHub = Object.freeze({open,openSpecialist,close,
+    stageExample:(id,cid) => {
+      const current = scope();
+      if (!current?.hasChat || current.cid !== cid) return false;
+      if (!starterWorkspaces.has(id)) return stageSpecialistExample(id,0,current);
+      if (opened && specialistMode && selectedSpecialist === id) {
+        if (!workspace) showWorkspace(true);
+        return true;
+      }
+      const trigger = document.querySelector(`[data-chat-specialist="${id}"]`);
+      return openSpecialist(id,trigger,{focusReturn:document.getElementById('chatInput'),fullReport:true});
+    },
+    refresh:() => { stop(); void read(); }});
   window.dispatchEvent(new Event('vp3:agent-activity-ready'));
-  window.addEventListener('vp3:chat-context-ready',() => window.dispatchEvent(new Event('vp3:agent-activity-ready')));
+  window.addEventListener('vp3:chat-context-ready',() => {
+    window.dispatchEvent(new Event('vp3:agent-activity-ready'));
+    if (specialistSettings && specialistSettings.scopeKey !== signature(scope())) { close(false); return; }
+    if (specialistMode && visible() && !accessRejected) void read();
+    renderPresence();
+  });
+  for (const name of ['focus','blur','stonefellow:chat-voice','vp3:agent-eyes-started','vp3:agent-eyes-stopped','vp3:chat-history-updated']) {
+    window.addEventListener(name,renderPresence);
+  }
+  document.addEventListener('input',event => { if (event.target?.id === 'chatInput') renderPresence(); });
   window.addEventListener('vp3:agent-orb-ready',mount);
   window.addEventListener('vp3:agent-activity-open',event => open(event.detail || {}));
   window.addEventListener('vp3:chat-specialists-changed',renderSpecialists);
@@ -399,10 +2753,32 @@
   window.addEventListener('vp3:participant-selection-changed',() => close(false));
   window.addEventListener('vp3:participant-task-context',event => { participantActor = Number(event.detail?.participant_id) || 0; close(false); });
   for (const name of ['vp3:playback-history-changed','vp3:youtube-history-changed','vp3:chat-history-updated','vp3-coding-usage-change']) {
-    window.addEventListener(name,() => { if (visible()) { stop(); void read(); } });
+    window.addEventListener(name,() => {
+      if (name === 'vp3:chat-history-updated') clearEngagementPages();
+      if (visible()) { stop(); void read(); }
+    });
   }
-  document.addEventListener('visibilitychange',() => { stop(); if (visible()) void read(); });
-  document.addEventListener('keydown',event => { if (event.key === 'Escape' && opened) { event.preventDefault(); close(); } });
+  window.addEventListener('vp3:initiative-reply-updated',() => {
+    clearEngagementPages();
+    if (visible()) { stop(); void read(); }
+  });
+  document.addEventListener('visibilitychange',() => {
+    stop();
+    if (visible() && specialistSettings && specialistSettings.scopeKey !== signature(scope())) close(false);
+    else if (visible()) void read();
+    else abortOfficeRequests();
+  });
+  window.addEventListener('resize',positionSpecialist);
+  document.addEventListener('pointerdown',event => {
+    if (opened && specialistMode && !workspace && !specialistSettings && !host.contains(event.target) && !specialistTrigger?.contains(event.target)) close(false);
+  });
+  document.addEventListener('keydown',event => {
+    if (event.key !== 'Escape' || event.defaultPrevented || !opened) return;
+    event.preventDefault();
+    if (specialistSettings) closeSpecialistSettings();
+    else if (specialistMode && workspace && !connectedSitesView) showWorkspace(false);
+    else close();
+  });
   window.addEventListener('pagehide',() => { close(false); disposed = true; });
   window.addEventListener('pageshow',() => { disposed = false; });
   mount();

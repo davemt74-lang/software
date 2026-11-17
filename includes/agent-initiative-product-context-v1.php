@@ -16,26 +16,31 @@ function vp3_initiative_product_capabilities_scope_v1(PDO $pdo,array $scope,arra
     $scope=vp3_initiative_capability_scope_v1($pdo,$scope,$binding);
     $user=$scope['user']??null;$principal=$scope['principal']??null;
     $owner=is_array($user)?(int)($user['id']??0):0;
-    $cid=$scope['conversation_id']??null;
-    // The canonical legacy System policy omits agent_id. Only that absence
-    // defaults to System; an explicit malformed or named-Agent ID is rejected.
+    $aid=$scope['agent_id']??null;$cid=$scope['conversation_id']??null;
+    // Only the absence of agent_id in a legacy System policy defaults to System.
     $boundAgent=array_key_exists('agent_id',$binding)?$binding['agent_id']:0;
-    // Commerce context has an existing System-only boundary. Owner opt-in for a
-    // named Agent does not make that Agent a Commerce principal.
-    if($owner<1||!is_array($principal)||($principal['kind']??null)!=='system'
-        ||($scope['agent_id']??null)!==0||!is_int($cid)||$cid<1
-        ||$boundAgent!==0||($binding['conversation_id']??null)!==$cid
+    if($owner<1||!is_array($principal)||!is_int($aid)||$aid<0||!is_int($cid)||$cid<1
+        ||$boundAgent!==$aid||($binding['conversation_id']??null)!==$cid
         ||(($binding['enabled']??null)!==true&&($scope['verification_only']??null)!==true)
+        ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)){
+        throw new RuntimeException('Private product context is unavailable for this principal.',403);
+    }
+    if($aid>0){
+        if(($principal['kind']??null)!=='user_agent'||($principal['agent_id']??null)!==$aid
+            ||($principal['owner_user_id']??null)!==$owner||($principal['viewer_user_id']??null)!==$owner
+            ||($binding['owner_user_id']??null)!==$owner){
+            throw new RuntimeException('Private product context is unavailable for this principal.',403);
+        }
+    }elseif(($principal['kind']??null)!=='system'
         ||(isset($principal['agent_id'])&&(int)$principal['agent_id']!==0)
         ||(isset($principal['viewer_user_id'])&&(int)$principal['viewer_user_id']!==$owner)
-        ||(isset($principal['owner_user_id'])&&!in_array((int)$principal['owner_user_id'],[0,$owner],true))
-        ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)){
+        ||(isset($principal['owner_user_id'])&&!in_array((int)$principal['owner_user_id'],[0,$owner],true))){
         throw new RuntimeException('Private product context is unavailable for this principal.',403);
     }
     if(!function_exists('vp3_capability_live_user_v1'))throw new RuntimeException('Product context authority is unavailable.',503);
     $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],null);
     if((int)($live['id']??0)!==$owner||!has_permission('account.access',$live)||!has_permission('chat.access',$live)
-        ||!vp3_agent_chat_conversation_v380($pdo,$cid,$owner,null)){
+        ||!vp3_agent_chat_conversation_v380($pdo,$cid,$owner,$aid>0?['id'=>$aid]:null)){
         throw new RuntimeException('Private product context access changed.',403);
     }
     return [...$scope,'user'=>$live];
@@ -138,6 +143,7 @@ function vp3_initiative_product_capabilities_snapshot_v1(PDO $pdo,array $scope,i
     // authoritative. All remaining canonical product semantics fence reuse.
     unset($row['binding_type'],$row['binding_id']);
     $revisionData=[VP3_INITIATIVE_PRODUCT_CONTEXT_V1,$owner,$product,$row,$asset,$coverage];
+    if($scope['agent_id']>0)$revisionData[]=['agent_id'=>$scope['agent_id'],'conversation_id'=>$scope['conversation_id']];
     if($launch!==null)$revisionData[]=$launch['revision'];
     $revision=hash('sha256',json_encode($revisionData,JSON_THROW_ON_ERROR));
     return ['product'=>$product,'media'=>$asset,'coverage'=>$coverage,'revision'=>$revision];

@@ -10,6 +10,17 @@ $root=sys_get_temp_dir().'/vp3-provider-'.bin2hex(random_bytes(6));
 \define('STONEFELLOW_ROOT',$root);
 $settings=[];$requests=[];$replyStatus=200;$checks=0;$wrongTestReply=false;$streamReplyStatus=null;$providerStatuses=[];$preflightCalls=0;$onProviderRequest=null;
 $codingReply=null;$packageDebits=[];
+$errorEnvelope=null;$creditObservations=[];$participantScope=null;
+$signedIn=true;
+function current_user(): ?array {return $GLOBALS['signedIn']?['id'=>7]:null;}
+function vp3_participant_scope_v1(): ?array {return $GLOBALS['participantScope'];}
+function vp3_anthropic_credit_observe_v1(\PDO $pdo,array $user,string $funding,string $fingerprint,bool $exhausted,int $startedAtMicros): void
+{
+    if($pdo->inTransaction()||(int)$pdo->query("SELECT COUNT(*) FROM ai_execution_ledger WHERE service_status='pending'")->fetchColumn()>0){
+        throw new \LogicException('Credit observation requires the settled physical attempt.');
+    }
+    $GLOBALS['creditObservations'][]=[$user['id'],$funding,$fingerprint,$exhausted,$startedAtMicros];
+}
 function db(): \PDO {
     static $pdo;
     if($pdo instanceof \PDO)return $pdo;
@@ -68,7 +79,15 @@ function curl_exec(object $handle): string|bool {
     if(is_callable($GLOBALS['onProviderRequest']))($GLOBALS['onProviderRequest'])();
     $provider=str_contains($handle->endpoint,'openai.com')?'openai':'anthropic';
     $handle->status=$GLOBALS['providerStatuses'][$provider]??(!empty($payload['stream'])&&$GLOBALS['streamReplyStatus']!==null?$GLOBALS['streamReplyStatus']:$GLOBALS['replyStatus']);
-    if($handle->status!==200)return json_encode(['error'=>['message'=>'authentication failed']]);
+    if($handle->status!==200){
+        $error=json_encode($GLOBALS['errorEnvelope']??['error'=>['message'=>'authentication failed']],JSON_THROW_ON_ERROR);
+        if(!empty($payload['stream'])){
+            ($handle->options[CURLOPT_WRITEFUNCTION])($handle,substr($error,0,32));
+            ($handle->options[CURLOPT_WRITEFUNCTION])($handle,substr($error,32));
+            return true;
+        }
+        return $error;
+    }
     if($GLOBALS['codingReply']!==null)return json_encode(($GLOBALS['codingReply'])($provider));
     $reply='Hello from the configured provider.';
     if(!$GLOBALS['wrongTestReply']&&preg_match('/VP3 connection test [a-f0-9]{16}/',json_encode($payload),$match))$reply=$match[0];
@@ -391,6 +410,67 @@ try {
     check(!empty($initiative()['ok'])&&count($requests)===1
         &&in_array('Authorization: Bearer fixture-routed-openai',$requests[0]['headers'],true),
         'Changing the account to VP3 funding gives Initiative the configured site provider');
+
+    vp3_ai_service_save_route_v1($pdo,'conversation',$fallback,null);
+    $balanceText='Your credit balance is too low to access the Anthropic API.';
+    $balanceError=['type'=>'error','error'=>['type'=>'invalid_request_error',
+        'message'=>$balanceText.' Please go to Plans & Billing to upgrade or purchase credits.'],'request_id'=>'PRIVATE_PROVIDER_REQUEST'];
+    $providerStatuses=['anthropic'=>400];$errorEnvelope=$balanceError;$creditObservations=[];
+    foreach([$typed,$voice] as $respond){
+        $result=$respond();
+        $row=$pdo->query('SELECT service_status,cost_rate_source FROM ai_execution_ledger ORDER BY id DESC LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
+        check(($result['failure_code']??null)==='anthropic_credit_balance_low'&&($result['status']??null)===400
+            &&empty($result['quota_exhausted'])&&!str_contains(json_encode($result,JSON_THROW_ON_ERROR),'PRIVATE_PROVIDER_REQUEST')
+            &&$row===['service_status'=>'rejected','cost_rate_source'=>'provider_rejected'],
+            'The exact Anthropic rejection is classified after settling the request without charge or exposing the raw response');
+        check(str_contains(chat_local_answer('Hello',[],$result),'site administrator'),'System-funded Chat routes billing to its administrator');
+    }
+    check(count($creditObservations)===2&&array_slice($creditObservations[0],0,4)===[7,'system',hash('sha256','fixture-routed-claude'),true]
+        &&array_slice($creditObservations[1],0,4)===array_slice($creditObservations[0],0,4)
+        &&$creditObservations[0][4]>0&&$creditObservations[1][4]>=$creditObservations[0][4],
+        'Text and streaming observe the exact system key with the physical request sequence');
+    $errorEnvelope['error']['message']='The workspace spending limit was reached. '.$balanceText;
+    check(($typed()['failure_code']??null)!=='anthropic_credit_balance_low'&&($voice()['failure_code']??null)!=='anthropic_credit_balance_low'
+        &&count($creditObservations)===2,'Generic spend-limit errors or embedded matching text never trigger a balance notice');
+    $errorEnvelope=$balanceError;$providerStatuses['anthropic']=402;
+    check(($typed()['failure_code']??null)!=='anthropic_credit_balance_low'&&($voice()['failure_code']??null)!=='anthropic_credit_balance_low'
+        &&count($creditObservations)===2,'Generic payment errors do not assert an exhausted Anthropic credit balance');
+    $providerStatuses=['anthropic'=>400];
+    fixture_funding('own_key','anthropic');
+    fixture_key('anthropic','claude-haiku-4-5','fixture-current-claude-personal');
+    $result=$typed();
+    check(str_contains(chat_local_answer('Hello',[],$result),'your API key')&&str_contains(chat_local_answer('Hello',[],$result),'Anthropic Console')
+        &&array_slice(end($creditObservations),0,4)===[7,'own_key',hash('sha256','fixture-current-claude-personal'),true],
+        'An exhausted personal key identifies the owner’s Anthropic billing without mixing it with system tokens');
+    $participantScope=['participant_id'=>2];
+    $seen=count($creditObservations);$result=$voice();
+    check(count($creditObservations)===$seen&&!str_contains(chat_local_answer('Hello',[],$result),'Anthropic Console'),
+        'Participant sessions cannot enqueue or receive private billing details');
+    $participantScope=null;
+    $providerStatuses=[];
+    check(!empty($voice()['ok'])&&array_slice(end($creditObservations),0,4)===[7,'own_key',hash('sha256','fixture-current-claude-personal'),false],
+        'A successful dispatch can clear only the same current Anthropic credential’s balance notice');
+    fixture_funding();
+    vp3_ai_service_save_route_v1($pdo,'conversation',$fallback,$primary);
+    $providerStatuses=['anthropic'=>400];
+    $before=count($requests);$result=$typed();
+    check(!empty($result['ok'])&&$result['provider']==='openai'&&count($requests)===$before+2
+        &&array_slice(end($creditObservations),0,4)===[7,'system',hash('sha256','fixture-routed-claude'),true],
+        'A confirmed no-charge Anthropic rejection records its own balance while preserving configured provider fallback');
+    $providerStatuses=[];$errorEnvelope=null;
+
+    $signedIn=false;
+    $providerStatuses=['anthropic'=>400];$errorEnvelope=$balanceError;
+    vp3_ai_service_save_route_v1($pdo,'initiative',$fallback,null);
+    $seen=count($creditObservations);$result=$initiative();
+    check(($result['failure_code']??null)==='anthropic_credit_balance_low'&&count($creditObservations)===$seen+1
+        &&array_slice(end($creditObservations),0,4)===[7,'system',hash('sha256','fixture-routed-claude'),true],
+        'The bound background Initiative worker can record the confirmed Anthropic credit rejection while the owner is away');
+    vp3_ai_service_save_route_v1($pdo,'conversation',$fallback,null);
+    $seen=count($creditObservations);
+    check(($typed()['failure_code']??null)==='anthropic_credit_balance_low'&&count($creditObservations)===$seen,
+        'An inference callback without the owner session cannot publish a private Chat notice');
+    $signedIn=true;$providerStatuses=[];$errorEnvelope=null;
 
     $buildModel=['provider'=>'openai','model'=>$customModel];
     $nextModel=['provider'=>'anthropic','model'=>'claude-haiku-5-5'];

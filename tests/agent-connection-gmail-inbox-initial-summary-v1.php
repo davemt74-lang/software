@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/../includes/agent-connection-gmail-inbox-initial-summary-v1.php';
+require_once __DIR__.'/../includes/agent-connection-gmail-thread-analysis-v1.php';
 require_once __DIR__.'/../includes/ai-runtime-v100.php';
 require_once __DIR__.'/../includes/ai-service-policy-v1.php';
 require_once __DIR__.'/../includes/user-llm-v1.php';
@@ -40,6 +41,7 @@ function curl_exec(object $handle): string
     $answer = match ($scenario) {
         'invalid'=>'{"topics":[{"theme":"billing","refs":[99]}]}',
         'reply'=>'{"body":"Thanks for the update."}',
+        'thread'=>'{"category":"opportunity","priority":"normal","state":"open","summary":"The venue proposed a session.","importance_reason":"The venue has a date available.","next_step":"Review the date.","followup_question":"Would that date work?","evidence_ref":1}',
         default=>'{"topics":[{"theme":"scheduling","refs":[1]},{"theme":"billing","refs":[2]}]}',
     };
     return json_encode(['output_text'=>$answer,'content'=>[['type'=>'text','text'=>$answer]],
@@ -254,4 +256,28 @@ $GLOBALS['gmailSummaryScenario'] = 'rejected';
 $rejectedReply = $reply(static fn(): bool=>true);
 check_gmail_summary(empty($rejectedReply['ok']) && count($GLOBALS['gmailSummaryDispatch']) === $callCount+2,
     'a rejected Gmail reply draft makes no retry or fallback request');
+
+$GLOBALS['gmailSummaryScenario'] = 'thread';
+$callCount = count($GLOBALS['gmailSummaryDispatch']);
+$threadPrompt = '{"messages":[{"body_excerpt":"exact private excerpt"}]}';
+$threadResult = agent_connection_gmail_thread_result_v1(
+    agent_connection_gmail_thread_infer_v1($pdo,$owner,$threadPrompt,static fn()=>null),[1=>'exact-message']);
+$threadCall = end($GLOBALS['gmailSummaryDispatch']);
+$threadWire = json_encode($threadCall['payload'],JSON_THROW_ON_ERROR);
+$threadLedger = $pdo->query("SELECT * FROM ai_execution_ledger WHERE service_stage='vp3.gmail-thread-analysis.v1' ORDER BY id DESC LIMIT 1")->fetch();
+check_gmail_summary($threadResult['category']==='opportunity' && $threadResult['evidence_message_id']==='exact-message'
+    && $threadLedger['service_key']==='initiative' && (int)$threadLedger['is_background']===1
+    && $threadCall['payload']['max_output_tokens']===900 && (int)$threadLedger['cloud_tokens_charged']===140
+    && count($GLOBALS['gmailSummaryDispatch'])===$callCount+1 && str_contains($threadWire,'exact private excerpt')
+    && !str_contains($threadWire,'private-chat-persona'), 'Gmail thread analysis performs one isolated metered background dispatch');
+try {
+    agent_connection_gmail_thread_infer_v1($pdo,$owner,$threadPrompt,static function () use ($pdo): void {
+        if ((int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()) throw new RuntimeException('revoked',403);
+    });
+    throw new LogicException('A revoked Gmail thread claim should fail.');
+} catch (RuntimeException $error) {
+    check_gmail_summary(count($GLOBALS['gmailSummaryDispatch'])===$callCount+1
+        && (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
+        'Gmail thread analysis revocation after reservation aborts before provider dispatch');
+}
 echo 'GMAIL_INBOX_INITIAL_SUMMARY_V1=PASS'.PHP_EOL;

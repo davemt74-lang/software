@@ -68,6 +68,10 @@ $original = vp3_agent_activity_suggestions_v1($writer, $scope);
 $expected = array_reverse(array_map('suggestions_run_id', array_slice($roots, -3)));
 suggestions_check(suggestions_ids($original) === $expected,
     'the newest three actual verified preparations form the bounded suggestions');
+suggestions_check(($original['status']['coordination']['phase'] ?? null) === 'idle'
+    && str_contains($original['status']['coordination']['detail'] ?? '', 'another Chat')
+    && !in_array(170,array_column($original['status']['specialists'] ?? [],'conversation_id'),true),
+    'specialist coordination stays in the foreground Chat even when prior suggestions link to the policy Chat');
 foreach ($original['items'] as $card) {
     $runId = (int)substr($card['id'], strlen('initiative:'));
     $matched = array_values(array_filter($roots, static fn(array $root): bool => (int)$root['run']['id'] === $runId))[0];

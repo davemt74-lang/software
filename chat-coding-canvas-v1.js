@@ -7,12 +7,34 @@
   const input = document.getElementById('chatInput');
   const owner = Number(window.STONEFELLOW_CHAT?.userId);
   const agent = Number(cfg?.agentId ?? window.STONEFELLOW_CHAT?.agentId ?? 0);
+  const pageBinding = String(window.STONEFELLOW_CHAT?.workingAttentionBinding || '');
   if (!cfg?.endpoint || !cfg?.csrf || !owner || !Number.isSafeInteger(agent) || agent < 0 || !thread || !shell) return;
 
-  const channel = 'vp3.coding.canvas.v1';
-  const stateLimit = 65536;
-  const maxText = 32768;
+  const runtime = window.VP3CanvasRuntimeV1;
+  if (!runtime) return;
+  const {channel,stateLimit,maxText,token,createDocument:previewDocument,sourceKeys,publicSourceKeys,normalizeSource,unavailableSource} = runtime;
+  const apiPath = new URL(cfg.endpoint,location.origin).pathname;
+  const sourceBasePath = apiPath.includes('/api/') ? apiPath.slice(0,apiPath.lastIndexOf('/api/')) : '';
+  const canvasIdPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
+  const privateSources = {
+    music:'Allow this app to read your VP3 music catalog and listening history',
+    calendar:'Allow this app to read your upcoming VP3 calendar events',
+    products:'Allow this app to read your VP3 products, including drafts'
+  };
+  const publicSources = new Set(['public-products','public-events','public-booking']);
+  const commandBridges = new Set(['app-data','gmail',...Object.keys(privateSources),...publicSources]);
+  const mailboxIdPattern = /^[A-Za-z0-9_-]{1,128}$/;
+  const publicSlugPattern = /^(?=.{3,64}$)[a-z\d]+(?:-[a-z\d]+)*$/;
   const jobLabels = {queued:'Waiting to build',running:'Working on the canvas',ready:'Draft ready to test',failed:'Coding Agent could not complete this run',stopped:'Build stopped'};
+  const previewErrors = {
+    source_syntax:'The app code has a JavaScript syntax error.',
+    source_startup:'The app code threw an error during startup.',
+    source_runtime:'The app code stopped while running.',
+    worker_start:'The browser could not start the app runtime.',
+    unresponsive:'The app stopped responding.',
+    timeout:'The app did not finish starting.',
+    render:'The app could not render its content.'
+  };
   const activeJob = job => ['queued','running'].includes(job?.state);
   const specialistKey = job => Number.isSafeInteger(job?.run_id) && job.run_id > 0 ? 'coding:' + job.run_id : '';
   const specialistJobs = new Set();
@@ -21,280 +43,10 @@
   let participantActor = 0;
   const participantContext = () => participantActor > 0 || Boolean(window.VP3ParticipantContinuity?.selectedContext?.());
   const matches = () => Number(chat()?.agentId()) === agent && Number(window.STONEFELLOW_CHAT?.agentId || 0) === agent
-    && Number(window.STONEFELLOW_CHAT?.userId) === owner && !participantContext();
+    && Number(window.STONEFELLOW_CHAT?.userId) === owner
+    && String(window.STONEFELLOW_CHAT?.workingAttentionBinding || '') === pageBinding && !participantContext();
   const shown = () => thread.dataset.view === 'coding';
-  const token = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => byte.toString(16).padStart(2,'0')).join('');
-  const scriptData = value => JSON.stringify(value).replaceAll('<','\\u003c');
-
-  // This function runs in the trusted opaque iframe, with no app JavaScript on its DOM thread.
-  function hostRuntime(payload, workerBootstrap) {
-    'use strict';
-    const {channel,nonce,parentOrigin,artifact,state,workerKey,maxText,stateLimit} = payload;
-    const root = document.getElementById('app');
-    root.inert = true;
-    const tags = new Set('h1 h2 h3 h4 h5 h6 div span p section article header footer main nav aside button input select optgroup option textarea label fieldset legend ul ol li dl dt dd table thead tbody tfoot tr td th caption details summary strong b em i small code pre kbd blockquote hr br output progress meter'.split(' '));
-    const attributes = new Set('id class name value type checked disabled placeholder for min max step selected multiple hidden tabindex title role colspan rowspan open maxlength minlength rows cols readonly required autocomplete'.split(' '));
-    const inputTypes = new Set('text search number date datetime-local time range color checkbox radio email url tel password month week'.split(' '));
-    const events = ['click','input','change'];
-    const listeners = new Map();
-    const issued = new Map();
-    const pending = new Set();
-    let healthy = true;
-    let started = false;
-    let worker;
-    let appUrl;
-    let monitor = 0;
-    let heartbeat = Date.now();
-    let windowStarted = heartbeat;
-    let operations = 0;
-
-    const send = (kind,data = {}) => parent.postMessage({channel,nonce,kind,...data},parentOrigin);
-    const reply = (kind,data = {}) => worker?.postMessage({key:workerKey,kind,...data});
-    const fault = () => {
-      if (!healthy) return;
-      healthy = false;
-      clearInterval(monitor);
-      worker?.terminate();
-      if (appUrl) URL.revokeObjectURL(appUrl);
-      root.inert = true;
-      send('error');
-    };
-
-    function markup(source) {
-      const template = document.createElement('template');
-      template.innerHTML = source;
-      let count = 0;
-      for (const el of template.content.querySelectorAll('*')) {
-        if (++count > 1500) throw new Error('Canvas markup is too large.');
-        if (!tags.has(el.localName) || el.namespaceURI !== 'http://www.w3.org/1999/xhtml') {
-          el.remove();
-          continue;
-        }
-        for (const attr of [...el.attributes]) {
-          if (!attributes.has(attr.name) && !/^(?:aria|data)-[a-z][a-z0-9_-]*$/.test(attr.name)) el.removeAttribute(attr.name);
-        }
-        if (el.localName === 'button') el.type = 'button';
-        if (el.localName === 'input' && !inputTypes.has(el.type)) el.type = 'text';
-      }
-      return template.content;
-    }
-
-    function select(selector) {
-      if (typeof selector !== 'string' || !selector || selector.length > 200) throw new Error('Invalid canvas selector.');
-      return [...root.querySelectorAll(selector)];
-    }
-
-    function handleWorker(event) {
-      const data = event.data;
-      if (!healthy || data?.key !== workerKey) return;
-      if (Date.now() - windowStarted > 1000) { windowStarted = Date.now(); operations = 0; }
-      if (++operations > 200) { fault(); return; }
-      if (data.kind === 'heartbeat') heartbeat = Date.now();
-      if (data.kind === 'error') fault();
-      if (data.kind === 'ready' && !started) {
-        started = true;
-        URL.revokeObjectURL(appUrl);
-        setTimeout(() => {
-          if (!healthy) return;
-          send('ready');
-          root.inert = false;
-        },200);
-      }
-      if (data.kind === 'on' && events.includes(data.event) && Number.isSafeInteger(data.id) && data.id > 0 && listeners.size < 120) {
-        select(data.selector);
-        listeners.set(data.id,{selector:data.selector,event:data.event});
-      }
-      if (data.kind === 'render') {
-        const nodes = select(data.selector);
-        if (typeof data.value === 'string' && data.value.length * nodes.length > maxText) throw new Error('Canvas render is too large.');
-        if (data.op === 'text' && typeof data.value === 'string' && data.value.length <= maxText) {
-          nodes.forEach(el => { el.textContent = data.value; });
-        } else if (data.op === 'html' && typeof data.value === 'string' && data.value.length <= maxText) {
-          const fragment = markup(data.value);
-          if (nodes.length > 1) throw new Error('Canvas HTML requires one target.');
-          nodes[0]?.replaceChildren(fragment);
-        } else if (data.op === 'value' && typeof data.value === 'string' && data.value.length <= maxText) {
-          nodes.forEach(el => { if (['input','select','textarea','output'].includes(el.localName)) el.value = data.value; });
-        } else if (data.op === 'checked' && typeof data.value === 'boolean') {
-          nodes.forEach(el => { if (el.localName === 'input') el.checked = data.value; });
-        } else if (data.op === 'show' && typeof data.value === 'boolean') {
-          nodes.forEach(el => { el.hidden = !data.value; });
-        }
-        let contentLength = root.textContent.length;
-        for (const control of root.querySelectorAll('input,select,textarea,output')) contentLength += control.value.length;
-        if (contentLength > 3 * maxText || root.querySelectorAll('*').length > 1500) throw new Error('Canvas markup is too large.');
-      }
-      if (data.kind === 'save' && Number.isSafeInteger(data.id) && data.id > 0 && typeof data.gesture === 'string') {
-        const expires = issued.get(data.gesture);
-        if (expires) issued.delete(data.gesture);
-        if (!expires || expires < Date.now() || pending.size || typeof data.json !== 'string' || data.json.length > stateLimit) {
-          reply('saved',{id:data.id,error:'Save must follow an app interaction and fit in the canvas data limit.'});
-          return;
-        }
-        pending.add(data.id);
-        send('save',{id:data.id,json:data.json});
-      }
-    }
-
-    try {
-      const style = document.createElement('style');
-      style.nonce = nonce;
-      style.textContent = artifact.css;
-      document.head.append(style);
-      root.append(markup(artifact.html));
-
-      // Load the generated source separately so it cannot change the syntax of the trusted runtime.
-      appUrl = URL.createObjectURL(new Blob(['"use strict";\n',artifact.js],{type:'text/javascript'}));
-      const workerSource = '(' + workerBootstrap.toString() + ')(' + JSON.stringify(workerKey) + ',' +
-        JSON.stringify(JSON.stringify(state)) + ',' + JSON.stringify(appUrl) + ',' + maxText + ',' + stateLimit + ');';
-      const url = URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
-      try { worker = new Worker(url); } finally { URL.revokeObjectURL(url); }
-      worker.addEventListener('message',event => {
-        try { handleWorker(event); } catch (_error) { fault(); }
-      });
-      worker.addEventListener('error',event => { event.preventDefault(); fault(); });
-      worker.addEventListener('messageerror',fault);
-      monitor = setInterval(() => { if (Date.now() - heartbeat > 3500) fault(); },1000);
-      root.addEventListener('submit',event => event.preventDefault());
-      for (const type of events) {
-        root.addEventListener(type,event => {
-          if (!healthy || !started || !event.isTrusted || !(event.target instanceof Element)) return;
-          for (const [id,expires] of issued) if (expires < Date.now()) issued.delete(id);
-          const gesture = crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
-          issued.set(gesture,Date.now() + 1500);
-          if (issued.size > 50) issued.delete(issued.keys().next().value);
-          for (const [id,entry] of listeners) {
-            if (entry.event !== type) continue;
-            const el = event.target.closest(entry.selector);
-            if (!el || !root.contains(el)) continue;
-            reply('event',{id,gesture,event:{value:String(el.value ?? '').slice(0,maxText),checked:Boolean(el.checked),id:el.id,dataset:{...el.dataset}}});
-          }
-        });
-      }
-      addEventListener('message',event => {
-        if (event.source !== parent || event.origin !== parentOrigin || event.data?.channel !== channel || event.data?.nonce !== nonce) return;
-        const {id,kind,value,error} = event.data;
-        if (kind === 'saved' && pending.delete(id)) reply('saved',{id,value,error});
-      });
-    } catch (_error) {
-      fault();
-    }
-  }
-
-  // This function is the only code prepended to generated worker source.
-  function workerRuntime(key,initialState,appUrl,maxText,stateLimit) {
-    'use strict';
-    let state = JSON.parse(initialState);
-    const post = postMessage.bind(self);
-    const loadApp = importScripts.bind(self);
-    const clone = structuredClone;
-    const encode = JSON.stringify;
-    const encoder = new TextEncoder();
-    const utf8 = encoder.encode.bind(encoder);
-    const events = new Set(['click','input','change']);
-    const callbacks = new Map();
-    const saves = new Map();
-    let nextId = 0;
-    let gesture = '';
-    const clock = performance.now.bind(performance);
-    const stopWorker = close.bind(self);
-    let windowStart = clock();
-    let messages = 0;
-    let stopped = false;
-    const send = (kind,data = {}) => {
-      if (stopped) return;
-      const now = clock();
-      if (now - windowStart > 1000) {
-        messages = 0;
-        windowStart = now;
-      }
-      if (++messages > 180) {
-        stopped = true;
-        post({key,kind:'error'});
-        stopWorker();
-        return;
-      }
-      post({key,kind,...data});
-    };
-
-    // Restrict ambient capabilities in addition to the inherited worker CSP.
-    for (const name of ['fetch','XMLHttpRequest','WebSocket','EventSource','WebTransport','Worker','SharedWorker','BroadcastChannel','importScripts','postMessage','indexedDB','caches']) {
-      const disabled = {value:undefined,writable:false,configurable:false};
-      for (let target = self; target; target = Object.getPrototypeOf(target)) {
-        if (target !== self && !Object.hasOwn(target,name)) continue;
-        try { Object.defineProperty(target,name,disabled); } catch (_error) {}
-      }
-    }
-    addEventListener('error',() => send('error'));
-    addEventListener('unhandledrejection',() => send('error'));
-    addEventListener('message',event => {
-      const data = event.data;
-      if (data?.key !== key) return;
-      if (data.kind === 'event') {
-        gesture = data.gesture;
-        try {
-          const result = callbacks.get(data.id)?.(data.event);
-          if (result?.catch) result.catch(() => send('error'));
-        } catch (_error) {
-          send('error');
-        } finally {
-          gesture = '';
-        }
-      }
-      if (data.kind === 'saved') {
-        const pending = saves.get(data.id);
-        if (!pending) return;
-        saves.delete(data.id);
-        if (data.error) pending.reject(new Error(data.error));
-        else {
-          state = data.value;
-          pending.resolve(clone(state));
-        }
-      }
-    });
-
-    const validSelector = selector => typeof selector === 'string' && selector.length > 0 && selector.length <= 200;
-    const render = (op,type) => (selector,value) => {
-      if (!validSelector(selector) || typeof value !== type || (type === 'string' && value.length > maxText)) {
-        throw new TypeError('Invalid canvas render.');
-      }
-      send('render',{op,selector,value});
-    };
-    const ui = Object.freeze({
-      on(selector,event,callback) {
-        if (!validSelector(selector) || typeof event !== 'string' || event.length > 6 || !events.has(event) ||
-          typeof callback !== 'function' || callbacks.size >= 120) throw new TypeError('Invalid canvas event handler.');
-        const id = ++nextId;
-        callbacks.set(id,callback);
-        send('on',{selector,event,id});
-      },
-      text:render('text','string'), html:render('html','string'), value:render('value','string'),
-      checked:render('checked','boolean'), show:render('show','boolean')
-    });
-    const data = Object.freeze({
-      get:() => clone(state),
-      save(next) {
-        if (!gesture || !next || typeof next !== 'object' || Array.isArray(next)) return Promise.reject(new Error('Use a canvas interaction to save a data object.'));
-        return new Promise((resolve,reject) => {
-          const id = ++nextId;
-          const json = encode(next);
-          if (typeof json !== 'string' || json.length > stateLimit || utf8(json).byteLength > stateLimit) {
-            reject(new Error('App data is limited to 64 KiB.'));
-            return;
-          }
-          send('save',{id,json,gesture});
-          saves.set(id,{resolve,reject});
-          gesture = '';
-        });
-      }
-    });
-    setInterval(() => send('heartbeat'),700);
-    Object.defineProperties(self,{CanvasUI:{value:ui},CanvasData:{value:data}});
-    Object.defineProperty(URL,'createObjectURL',{value:undefined});
-    loadApp(appUrl);
-    send('ready');
-  }
-
+  const editing = () => shown() && panel.dataset.mode === 'editor';
   function node(tag,text = '',className = '') {
     const el = document.createElement(tag);
     el.textContent = text;
@@ -311,27 +63,47 @@
   const panel = node('section','','chat-canvas-view vp3-coding-canvas');
   panel.id = 'chatCodingCanvasV1';
   panel.dataset.chatView = 'coding';
+  panel.dataset.mode = 'editor';
   panel.hidden = true;
   const heading = node('h2','Code / App Canvas');
   heading.tabIndex = -1;
   panel.setAttribute('aria-labelledby','chatCodingCanvasTitleV1');
   heading.id = 'chatCodingCanvasTitleV1';
   const header = node('header','','vp3-coding-canvas-header');
-  const close = button('Back to Chat',() => { chat()?.showChatView(); launch.focus(); });
-  header.append(heading,close);
+  const editor = button('Edit app',() => void openPanel());
+  editor.className = 'vp3-coding-canvas-edit-app';
+  const close = button('Back to Chat',() => closePanel());
+  const headerActions = node('div','','vp3-coding-canvas-controls');
+  headerActions.append(editor,close);
+  header.append(heading,headerActions);
   const promptLabel = node('label','Describe an app to build or a change to make');
   const prompt = node('textarea');
   prompt.maxLength = 8000;
   prompt.rows = 2;
   prompt.placeholder = 'Build a workshop checklist with reusable tasks…';
   promptLabel.append(prompt);
+  const commandLibrary = node('details','','vp3-coding-canvas-commands');
+  const commandEntries = node('div');
+  const commandLibraryStatus = node('p','Loading Canvas commands…','vp3-coding-canvas-status');
+  commandLibraryStatus.setAttribute('role','status');
+  commandLibrary.append(node('summary','/commands'),commandEntries,commandLibraryStatus);
   const controls = node('div','','vp3-coding-canvas-controls');
   const build = button('Build new',() => void run('build',prompt.value));
+  const emailStart = button('Build from email deadlines',() => void startEmail());
+  emailStart.hidden = true;
   const repair = button('Repair',() => void run('repair',prompt.value));
   const stop = button('Stop',() => void stopJob());
-  controls.append(build,repair,stop);
+  controls.append(build,emailStart,repair,stop);
   const notice = node('p','','vp3-coding-canvas-status');
   notice.setAttribute('role','status');
+  const appFeedback = node('div','','vp3-coding-canvas-app-feedback');
+  const appNotice = node('p');
+  appNotice.setAttribute('role','status');
+  const appRetry = button('Retry opening app',() => {
+    if (appTarget) void openApp(appTarget.id,appTarget.revision);
+  });
+  appFeedback.hidden = true;
+  appFeedback.append(appNotice,appRetry);
   const picker = node('select');
   const pickerLabel = node('label','Saved canvases');
   pickerLabel.append(picker);
@@ -340,35 +112,165 @@
   versionsLabel.append(versions);
   const savedControls = node('div','','vp3-coding-canvas-controls vp3-coding-canvas-pickers');
   savedControls.append(pickerLabel,versionsLabel);
+  const editorAppIcons = node('div','','vp3-coding-canvas-app-icons vp3-coding-canvas-editor-apps');
+  editorAppIcons.hidden = true;
+  editorAppIcons.setAttribute('role','group');
+  editorAppIcons.setAttribute('aria-label','Canvas shortcuts');
   const workspace = node('section','','vp3-coding-canvas-workspace');
-  const workspaceTitle = node('h3');
+  const workspaceTitle = node('h3','','vp3-coding-canvas-workspace-title');
   const previewDescription = node('p','','vp3-coding-canvas-description');
   const frameHost = node('div','','vp3-coding-canvas-preview');
   const source = node('details','','vp3-coding-canvas-source');
   const code = node('pre');
   source.append(node('summary','View source'),code);
+  const libraryImagePanel = node('details','','vp3-coding-canvas-commands vp3-coding-canvas-image');
+  const libraryInfo = node('p','','vp3-coding-canvas-description');
+  const libraryImageStatus = node('p','','vp3-coding-canvas-status');
+  libraryImageStatus.setAttribute('role','status');
+  const librarySearch = node('input');
+  librarySearch.type = 'search';
+  librarySearch.maxLength = 190;
+  const librarySearchLabel = node('label','Find a Media Library photo');
+  librarySearchLabel.append(librarySearch);
+  const librarySearchButton = button('Search photos',() => void browseLibraryImages());
+  const librarySelect = node('select');
+  const libraryLabel = node('label','Saved photo');
+  libraryLabel.append(librarySelect);
+  const libraryMore = button('More photos',() => void browseLibraryImages(true));
+  const libraryPreview = node('img');
+  libraryPreview.hidden = true;
+  const attachedAction = button('Attach photo',() => void saveLibraryImage(Number(librarySelect.value)));
+  const detachAction = button('Remove photo',() => void saveLibraryImage(null));
+  const libraryFields = node('div','','vp3-coding-canvas-image-fields');
+  const libraryActions = node('div','','vp3-coding-canvas-controls');
+  libraryActions.append(attachedAction,detachAction,libraryMore);
+  libraryFields.append(librarySearchLabel,librarySearchButton,libraryLabel,libraryPreview,libraryActions);
+  libraryImagePanel.append(node('summary','App image'),libraryInfo,libraryFields,libraryImageStatus);
+  librarySelect.addEventListener('change',updateLibraryImageControls);
+  librarySearch.addEventListener('keydown',event => {
+    if (event.key === 'Enter') { event.preventDefault(); void browseLibraryImages(); }
+  });
+  libraryImagePanel.addEventListener('toggle',() => {
+    if (libraryImagePanel.open && !libraryRows.size && !libraryRead) void browseLibraryImages();
+  });
+  const permissions = node('details','','vp3-coding-canvas-commands');
+  permissions.append(node('summary','Data permissions'));
+  permissions.addEventListener('toggle',() => { if (permissions.open && !commandSettings) void loadCommandSettings(); });
+  const permissionFields = node('div','','vp3-coding-canvas-permission-fields');
+  const appAccess = node('input');
+  appAccess.type = 'checkbox';
+  const specialistReview = node('input');
+  specialistReview.type = 'checkbox';
+  const gmailAccess = node('input');
+  gmailAccess.type = 'checkbox';
+  const gmailMode = node('select');
+  gmailMode.append(option('Saved Gmail search','search'),option('Selected Gmail threads','threads'));
+  const gmailQuery = node('input');
+  gmailQuery.type = 'text';
+  gmailQuery.maxLength = 256;
+  gmailQuery.placeholder = 'in:inbox label:projects';
+  const gmailThreadIds = node('textarea');
+  gmailThreadIds.rows = 3;
+  gmailThreadIds.maxLength = 2048;
+  const permissionLabel = (label,control,check = false) => {
+    const element = node('label',label,check ? 'vp3-coding-canvas-checkbox' : '');
+    if (check) element.prepend(control);
+    else element.append(control);
+    return element;
+  };
+  const gmailScope = node('div','','vp3-coding-canvas-permission-fields');
+  const gmailQueryLabel = permissionLabel('Gmail search',gmailQuery);
+  const gmailThreadsLabel = permissionLabel('Gmail thread IDs or links, one per line',gmailThreadIds);
+  gmailScope.append(permissionLabel('Approved Gmail scope',gmailMode),gmailQueryLabel,gmailThreadsLabel);
+  const savePermissions = button('Save data permissions',() => void saveCommandSettings());
+  const permissionStatus = node('p','','vp3-coding-canvas-description');
+  permissionStatus.setAttribute('aria-live','polite');
+  const privateSourceControls = Object.entries(privateSources).map(([name,description]) => {
+    const control = node('input');
+    control.type = 'checkbox';
+    const label = permissionLabel(description,control,true);
+    return {name,control,label};
+  });
+  permissionFields.append(permissionLabel('Allow this app to read and save its own records',appAccess,true),
+    permissionLabel('Let the Canvas Apps specialist review this app’s records and suggest follow-ups',specialistReview,true),
+    permissionLabel('Allow this app to read approved Gmail results',gmailAccess,true),gmailScope,
+    ...privateSourceControls.map(({label}) => label),savePermissions);
+  permissionFields.hidden = true;
+  gmailAccess.addEventListener('change',updateGmailScope);
+  gmailMode.addEventListener('change',updateGmailScope);
+  permissions.append(permissionFields,permissionStatus);
+  const publishing = node('details','','vp3-coding-canvas-commands vp3-coding-canvas-publishing');
+  const publishingSummary = node('summary','Public publishing');
+  const publishingBody = node('div','','vp3-coding-canvas-publishing-body');
+  const publishingState = node('p');
+  const publishingLink = node('a');
+  publishingLink.target = '_blank';
+  publishingLink.rel = 'noopener noreferrer';
+  const publishingNote = node('p','','vp3-coding-canvas-description');
+  const publishingFields = node('div','','vp3-coding-canvas-publishing-fields');
+  const publishingSlug = node('input');
+  publishingSlug.type = 'text';
+  publishingSlug.maxLength = 64;
+  publishingSlug.autocapitalize = 'none';
+  publishingSlug.autocomplete = 'off';
+  publishingSlug.spellcheck = false;
+  const publishingSlugLabel = permissionLabel('Public link slug',publishingSlug);
+  const publish = button('Publish version…',() => confirmPublication('publish'));
+  const unpublish = button('Unpublish…',() => confirmPublication('unpublish'));
+  const publicationActions = node('div','','vp3-coding-canvas-controls');
+  publicationActions.append(publish,unpublish);
+  const publishingConfirmation = node('div','','vp3-coding-canvas-publishing-confirmation');
+  const publishingConsent = node('p');
+  const confirmPublishing = button('Confirm',() => void commitPublication());
+  const cancelPublishing = button('Cancel',() => cancelPublication(true));
+  const confirmationActions = node('div','','vp3-coding-canvas-controls');
+  confirmationActions.append(confirmPublishing,cancelPublishing);
+  publishingConfirmation.append(publishingConsent,confirmationActions);
+  publishingFields.append(publishingSlugLabel,publicationActions,publishingConfirmation);
+  const publicationStatus = node('p','','vp3-coding-canvas-status');
+  publicationStatus.setAttribute('role','status');
+  const retryPublication = button('Reload publishing status',() => void loadPublication());
+  publishingBody.append(publishingState,publishingLink,publishingNote,publishingFields,publicationStatus,retryPublication);
+  publishing.append(publishingSummary,publishingBody);
+  publishing.addEventListener('toggle',() => {
+    if (publishing.open && !publication && !publicationRequest) void loadPublication();
+    else if (!publishing.open) cancelPublication(false);
+  });
   const actions = node('div','','vp3-coding-canvas-controls');
+  const openInApp = button('Open app',() => {
+    if (current?.revision) void openApp(current.canvas.id,current.revision.id);
+  });
   const test = button('Test preview',() => void testPreview());
   const apply = button('Use this version',() => void applyVersion());
+  const hideApp = button('Hide app from shortcuts',() => void setAppHidden());
   const remove = button('Delete canvas…',() => showDelete(true));
-  actions.append(test,apply,remove);
+  actions.append(openInApp,test,apply,hideApp,remove);
   const deletion = node('div','','vp3-coding-canvas-controls');
   const deleteFolder = node('input');
   deleteFolder.type = 'checkbox';
   const deleteLabel = node('label',' Also delete its Knowledge Base folder and data');
   deleteLabel.prepend(deleteFolder);
   const deleteConfirm = button('Delete canvas',() => void deleteCanvas());
-  deletion.append(deleteLabel,deleteConfirm,button('Cancel',() => showDelete(false)));
+  deletion.append(node('p','Deleting this Canvas takes any public link offline.','vp3-coding-canvas-delete-public-note'),
+    deleteLabel,deleteConfirm,button('Cancel',() => showDelete(false)));
   deletion.hidden = true;
-  workspace.append(workspaceTitle,previewDescription,actions,deletion,frameHost,source);
+  workspace.append(workspaceTitle,previewDescription,actions,deletion,libraryImagePanel,permissions,publishing,frameHost,source);
   workspace.hidden = true;
-  panel.append(header,promptLabel,controls,notice,savedControls,workspace);
+  const editorControls = node('div','','vp3-coding-canvas-editor-controls');
+  editorControls.append(promptLabel,commandLibrary,controls,notice,savedControls,editorAppIcons);
+  panel.append(header,editorControls,appFeedback,workspace);
   thread.append(panel);
 
   const dock = node('div','','vp3-coding-canvas-dock');
+  const shortcuts = node('div','','vp3-coding-canvas-shortcuts');
   const launch = button('Code / App Canvas',() => void openPanel());
   launch.setAttribute('aria-controls',panel.id);
   launch.setAttribute('aria-expanded','false');
+  const appIcons = node('div','','vp3-coding-canvas-app-icons');
+  appIcons.hidden = true;
+  appIcons.setAttribute('role','group');
+  appIcons.setAttribute('aria-label','Saved Canvas apps');
+  shortcuts.append(launch,appIcons);
   const worker = button('Coding Agent · Working on the canvas',() => window.VP3ChatSpecialists?.open(specialistKey(job),worker));
   worker.className = 'vp3-coding-canvas-worker';
   worker.setAttribute('aria-expanded','false');
@@ -376,7 +278,7 @@
   worker.hidden = true;
   const dockStatus = node('span','','vp3-coding-canvas-dock-status');
   dockStatus.setAttribute('aria-live','polite');
-  dock.append(launch,worker,dockStatus);
+  dock.append(shortcuts,worker,dockStatus);
   shell.append(dock);
   window.addEventListener('vp3:chat-specialists-changed',() => {
     const key = specialistKey(job);
@@ -387,8 +289,19 @@
 
   let epoch = 0;
   let load = 0;
+  let openController = null;
+  let appTarget = null;
+  let chatPosition = null;
+  let listRequest = 0;
+  let editorListRequest = 0;
+  let renderedAppIcons = null;
+  let commandCatalog;
+  let commandCatalogRequest = 0;
+  let footerTimer = 0;
   let current = null;
   let frame = null;
+  let artworkFrame = null;
+  const artworkAttempts = new Set();
   let job = null;
   let observedJob = null;
   let poll = 0;
@@ -401,10 +314,541 @@
   let pollingError = false;
   let browserTest = null;
   let lastIntent = null;
+  let lastEmailStart = null;
   let failedPreview = null;
   let ticked = null;
+  const sourceRefreshes = new Map();
+  let sourceUpdateTimer = 0;
+  let commandSettings = null;
+  let commandSettingsRequest = null;
+  let publication = null;
+  let publicationRequest = null;
+  let publicationIntent = null;
+  let libraryRead = null;
+  let libraryWrite = null;
+  let libraryCursor = null;
+  let libraryQuery = '';
+  const libraryRows = new Map();
+  const emailUnavailable = {generation:0,rows:[]};
+  const emailStages = new Set(['needs_review','awaiting_reply','reply_received','followup_due','actioned']);
+  const emailFixtureSubjects = ['Sample Elm deadline','Sample Birch deadline','Sample old Pine deadline'];
+  const gmailUnavailable = {status:'unavailable',rows:[]};
+  const commandChangesKey = 'vp3-canvas-data-permissions';
+
+  function emailFixture() {
+    const date = days => new Date(Date.now() + days * 86400000).toISOString().slice(0,10);
+    const rows = [1,2,0].map(index => ({id:`sample-${index}`,subject:emailFixtureSubjects[index],
+      stage:'needs_review',due_date:date([1,2,-2][index]),due_at:null,deadline_current:index !== 2}));
+    return {status:'ready',rows};
+  }
+  function gmailFixture() {
+    const date = new Date().toISOString();
+    return {status:'ready',rows:[
+      {id:'sample-gmail-1',subject:'Sample planning update',sender:'Alex <alex@example.test>',date,snippet:'Here is the latest outline for the project.'},
+      {id:'sample-gmail-2',subject:'Sample workshop schedule',sender:'Jo <jo@example.test>',date,snippet:'Please review the sample agenda before Friday.'}
+    ]};
+  }
+  const declaredCommands = () => current?.revision?.commands;
+  const declaresGmail = () => declaredCommands()?.includes('gmail') === true;
+
+  function normalizeEmail(value) {
+    if (value?.workflow !== 'deadline_board' || !Number.isSafeInteger(value.generation) || value.generation < 1 ||
+      !Array.isArray(value.rows) || value.rows.length > 50) return emailUnavailable;
+    const ids = new Set();
+    const rows = [];
+    for (const row of value.rows) {
+      if (!/^[a-f0-9]{64}$/.test(row?.id ?? '') || ids.has(row.id) || !/^[a-f0-9]{64}$/.test(row.source_ref ?? '') ||
+        typeof row.subject !== 'string' || row.subject.length > 240 || !emailStages.has(row.stage) ||
+        !/^\d{4}-\d\d-\d\d$/.test(row.due_date ?? '') ||
+        (row.due_at !== null && (typeof row.due_at !== 'string' || !Number.isFinite(Date.parse(row.due_at)))) ||
+        typeof row.deadline_current !== 'boolean') return emailUnavailable;
+      ids.add(row.id);
+      rows.push({id:row.id,subject:row.subject,stage:row.stage,due_date:row.due_date,due_at:row.due_at,
+        deadline_current:row.deadline_current,source_ref:row.source_ref});
+    }
+    return {generation:value.generation,rows};
+  }
+
+  function normalizeGmail(value) {
+    if (value?.status !== 'ready' || !Array.isArray(value.rows) || value.rows.length > 12) return gmailUnavailable;
+    const rows = [];
+    const bounded = (text,limit) => typeof text === 'string' && text.length <= limit * 2 && Array.from(text).length <= limit;
+    for (const row of value.rows) {
+      if (typeof row?.id !== 'string' || !mailboxIdPattern.test(row.id) || !bounded(row.subject,250) ||
+        !bounded(row.sender,250) || !bounded(row.date,96) || !bounded(row.snippet,400)) return gmailUnavailable;
+      rows.push({id:row.id,subject:row.subject,sender:row.sender,date:row.date,snippet:row.snippet});
+    }
+    return {status:'ready',rows};
+  }
+
+  function stopSourceRefreshes() {
+    clearTimeout(sourceUpdateTimer);
+    sourceUpdateTimer = 0;
+    for (const refresh of sourceRefreshes.values()) {
+      clearTimeout(refresh.timer);
+      refresh.controller?.abort();
+    }
+    sourceRefreshes.clear();
+  }
+
+  const unavailableSnapshot = kind => kind === 'email' ? emailUnavailable : kind === 'gmail' ? gmailUnavailable :
+    {payload:unavailableSource,links:[]};
+
+  async function readSourceRefresh(refresh) {
+    if (sourceRefreshes.get(refresh.kind) !== refresh || document.hidden || !shown() || !matches()) return;
+    const controller = new AbortController();
+    refresh.controller = controller;
+    const isGmail = refresh.kind === 'gmail';
+    const isEmail = refresh.kind === 'email';
+    const deadline = setTimeout(() => controller.abort(),isGmail ? 20000 : 7000);
+    let snapshot = unavailableSnapshot(refresh.kind);
+    try {
+      const fields = {canvas_id:refresh.canvasId,revision:refresh.revision};
+      if (!isEmail) fields.command = refresh.kind;
+      const data = await api(isEmail ? 'email_data' : 'command_data',fields,refresh.conversation,controller.signal);
+      snapshot = isEmail ? normalizeEmail(data.email) : isGmail ? normalizeGmail(data.source) :
+        normalizeSource(refresh.kind,data.source,sourceBasePath);
+    } catch (_error) {
+      // Clear stale results if authorization or the data read fails.
+    } finally {
+      clearTimeout(deadline);
+    }
+    if (sourceRefreshes.get(refresh.kind) !== refresh || refresh.epoch !== epoch || refresh.conversation !== scope() ||
+      document.hidden || !shown() || !matches()) return;
+    refresh.controller = null;
+    const changed = JSON.stringify(refresh.snapshot) !== JSON.stringify(snapshot);
+    refresh.snapshot = snapshot;
+    if (changed) {
+      clearTimeout(sourceUpdateTimer);
+      sourceUpdateTimer = setTimeout(() => {
+        if (!frame?.testing && !document.hidden && shown() && matches() && (frame || !previewFailed())) startPreview();
+      },80);
+    }
+    refresh.timer = setTimeout(() => void readSourceRefresh(refresh),isEmail ? 15000 : 60000);
+  }
+
+  function ensureSourceRefresh(kind) {
+    let refresh = sourceRefreshes.get(kind);
+    if (!refresh) {
+      refresh = {kind,canvasId:current.canvas.id,revision:current.revision.id,epoch,conversation:scope(),
+        snapshot:unavailableSnapshot(kind)};
+      sourceRefreshes.set(kind,refresh);
+      void readSourceRefresh(refresh);
+    }
+    return refresh.snapshot;
+  }
+
+  function previewSources(commands,isActive) {
+    const sources = {};
+    const links = {};
+    for (const command of Array.isArray(commands) ? commands : []) {
+      if (!Object.hasOwn(sourceKeys,command)) continue;
+      const key = sourceKeys[command];
+      const isPublic = publicSourceKeys.includes(key);
+      const allowed = isActive && (isPublic || commandSettings?.sources?.[command] === true);
+      const snapshot = allowed ? ensureSourceRefresh(command) : unavailableSnapshot(command);
+      sources[key] = snapshot.payload;
+      if (isPublic) links[key] = snapshot.links;
+    }
+    return {sources,links};
+  }
+
+  function renderCommandCatalog(value) {
+    const entries = Array.isArray(value) ? new Map() : null;
+    for (const item of entries ? value : []) {
+      const name = typeof item?.command === 'string' && item.command.startsWith('/') && item.command.slice(1);
+      if (!commandBridges.has(name) || entries.has(name) || typeof item.description !== 'string' ||
+        !item.description.trim() || item.description.length > 300) continue;
+      const visibility = publicSources.has(name) ? 'public' : 'private';
+      if (item.visibility !== visibility && !(item.visibility === undefined && ['app-data','gmail'].includes(name))) continue;
+      entries.set(name,{description:item.description,visibility});
+    }
+    const catalog = entries ? [...entries] : null;
+    if (JSON.stringify(commandCatalog) === JSON.stringify(catalog)) return;
+    commandCatalog = catalog;
+    commandEntries.replaceChildren();
+    for (const [visibility,heading] of [['private','Private data'],['public','Public data']]) {
+      const commands = (catalog ?? []).filter(([,entry]) => entry.visibility === visibility);
+      if (!commands.length) continue;
+      const group = node('section','','vp3-coding-canvas-command-group');
+      group.append(node('h3',heading));
+      for (const [name,{description}] of commands) {
+        const row = node('div','','vp3-coding-canvas-command');
+        row.append(button('/'+name,() => insertCommand(name)),node('p',description));
+        group.append(row);
+      }
+      commandEntries.append(group);
+    }
+    commandLibraryStatus.hidden = Boolean(catalog?.length);
+    commandLibraryStatus.textContent = catalog ? 'No Canvas commands are available.' : 'Canvas commands could not be loaded.';
+  }
+  function promptCommands(text) {
+    const tokens = Array.from(text.matchAll(/(?:^|\s)\/([a-z][a-z\d-]*)(?=$|[\s.,!?;:])/gi),match => match[1].toLowerCase());
+    return new Set(tokens.filter(command => commandBridges.has(command)));
+  }
+  function insertCommand(command) {
+    if (!promptCommands(prompt.value).has(command)) {
+      const text = prompt.value.trimEnd();
+      prompt.value = (text ? text + '\n' : '') + '/' + command + ' ';
+    }
+    prompt.focus();
+    prompt.setSelectionRange(prompt.value.length,prompt.value.length);
+  }
+  function openCommandLibrary() {
+    if (!matches() || !chat()?.isReady() || chat()?.isRestoring()) return;
+    openPanel();
+    commandLibrary.open = true;
+    commandLibrary.querySelector('summary')?.focus();
+  }
+  function updateGmailScope() {
+    gmailScope.hidden = !gmailAccess.checked;
+    gmailQueryLabel.hidden = gmailMode.value !== 'search';
+    gmailThreadsLabel.hidden = gmailMode.value !== 'threads';
+  }
+  function parseGmailThreadId(value) {
+    if (mailboxIdPattern.test(value)) return value;
+    try {
+      const url = new URL(value);
+      if (url.origin === 'https://mail.google.com' && !url.username && !url.password && url.pathname.startsWith('/mail/')) {
+        const id = url.hash.split('/').at(-1);
+        if (mailboxIdPattern.test(id)) return id;
+      }
+    } catch (_error) { /* Leave invalid entries for form validation. */ }
+    return '';
+  }
+  function normalizeCommandSettings(value) {
+    if (!/^[a-f0-9]{64}$/.test(value?.revision ?? '') ||
+      ![value.app_data?.app_access,value.app_data?.specialist_review,value.gmail?.app_access,value.gmail?.specialist_review]
+        .every(setting => typeof setting === 'boolean')) return null;
+    const scope = value.gmail.scope;
+    const validScope = scope?.mode === 'search' && typeof scope.query === 'string' && scope.query.length <= 256 ||
+      scope?.mode === 'threads' && Array.isArray(scope.thread_ids) && scope.thread_ids.length <= 12 &&
+      scope.thread_ids.every(id => typeof id === 'string' && mailboxIdPattern.test(id));
+    if (value.gmail.app_access && !validScope) return null;
+    const sourceNames = Object.keys(privateSources);
+    const inputSources = value.sources;
+    if (inputSources !== undefined && (!inputSources || typeof inputSources !== 'object' || Array.isArray(inputSources) ||
+      Object.keys(inputSources).length !== sourceNames.length || !sourceNames.every(name => typeof inputSources[name] === 'boolean'))) return null;
+    const sources = Object.fromEntries(sourceNames.map(name => [name,inputSources?.[name] === true]));
+    return {revision:value.revision,app_data:{app_access:value.app_data.app_access,specialist_review:value.app_data.specialist_review},
+      gmail:{app_access:value.gmail.app_access,specialist_review:value.gmail.specialist_review,scope:validScope ? scope : null},sources};
+  }
+  function setCommandSettings(value) {
+    commandSettings = value;
+    if (value && current) current.hasVerifiedGrants = true;
+    appAccess.checked = value?.app_data.app_access === true;
+    specialistReview.checked = value?.app_data.specialist_review === true;
+    gmailAccess.checked = value?.gmail.app_access === true;
+    gmailMode.value = value?.gmail.scope?.mode ?? 'search';
+    gmailQuery.value = value?.gmail.scope?.query ?? '';
+    gmailThreadIds.value = value?.gmail.scope?.thread_ids?.join('\n') ?? '';
+    for (const {name,control,label} of privateSourceControls) {
+      label.hidden = !declaredCommands()?.includes(name);
+      control.checked = value?.sources[name] === true;
+    }
+    updateGmailScope();
+    permissionFields.hidden = !value;
+  }
+  function clearPrivateAppState(selected) {
+    if (!selected?.state) return;
+    selected.state = {...selected.state,value:{}};
+    selected.commandStateWithheld = true;
+  }
+  async function restoreAppState(selected,settings,conversation,signal) {
+    if (!settings.app_data.app_access) {
+      clearPrivateAppState(selected);
+      return;
+    }
+    if (!selected.commandStateWithheld) return;
+    const data = await api('open',{canvas_id:selected.canvas.id,revision:selected.revision.id},conversation,signal);
+    if (signal?.aborted || selected !== current || conversation !== scope() || !matches()) return;
+    if (data.canvas?.id !== selected.canvas.id || data.revision?.id !== selected.revision.id || !data.state ||
+      normalizeCommandSettings(data.command_grants)?.revision !== settings.revision) {
+      throw new Error('App data permissions changed. Reopen the Canvas to verify access.');
+    }
+    selected.state = data.state;
+    selected.commandStateWithheld = false;
+  }
+  async function loadCommandSettings() {
+    const selected = current;
+    const conversation = scope();
+    if (!selected?.revision || !shown() || !matches() || document.hidden) return;
+    commandSettingsRequest?.abort();
+    const controller = new AbortController();
+    commandSettingsRequest = controller;
+    const stillSelected = () => !controller.signal.aborted && selected === current && conversation === scope() && shown() && matches();
+    if (!commandSettings) permissionStatus.textContent = 'Loading data permissions…';
+    try {
+      const data = await api('command_grants',{canvas_id:selected.canvas.id,revision:selected.revision.id},conversation,controller.signal);
+      if (!stillSelected()) return;
+      const settings = normalizeCommandSettings(data.commands);
+      if (!settings) throw new Error('Data permissions could not be verified.');
+      permissionStatus.textContent = '';
+      if (settings.revision !== commandSettings?.revision || !frame) {
+        await restoreAppState(selected,settings,conversation,controller.signal);
+        if (!stillSelected()) return;
+        setCommandSettings(settings);
+        stopSourceRefreshes();
+        startPreview();
+      }
+    } catch (error) {
+      if (!stillSelected()) return;
+      permissionStatus.textContent = error.message;
+      if (commandSettings) {
+        clearPrivateAppState(selected);
+        setCommandSettings(null);
+      }
+      stopSourceRefreshes();
+      startPreview();
+    } finally {
+      if (commandSettingsRequest === controller) commandSettingsRequest = null;
+    }
+  }
+  async function saveCommandSettings() {
+    const selected = current;
+    const conversation = scope();
+    const baseline = commandSettings;
+    if (!baseline || !selected?.revision || savePermissions.disabled || !matches() || !editing()) return;
+    let gmail = null;
+    if (gmailAccess.checked) {
+      const query = gmailQuery.value.trim();
+      const ids = [...new Set(gmailThreadIds.value.split(/[\s,]+/).filter(Boolean).map(parseGmailThreadId))];
+      if (gmailMode.value === 'search' && !query) { permissionStatus.textContent = 'Enter the Gmail search this app may use.'; return; }
+      if (gmailMode.value === 'threads' && (!ids.length || ids.length > 12 || ids.some(id => !mailboxIdPattern.test(id)))) {
+        permissionStatus.textContent = 'Enter up to 12 valid Gmail thread IDs or links.';
+        return;
+      }
+      gmail = gmailMode.value === 'search' ? {mode:'search',query} : {mode:'threads',thread_ids:ids};
+    }
+    const sources = Object.fromEntries(privateSourceControls.map(({name,control,label}) =>
+      [name,label.hidden ? baseline.sources[name] : control.checked]));
+    const settings = {app_data:{app_access:appAccess.checked,specialist_review:specialistReview.checked},
+      gmail:{app_access:gmailAccess.checked,specialist_review:baseline.gmail.specialist_review,scope:gmail},sources};
+    const stillSelected = () => selected === current && conversation === scope() && shown() && matches();
+    savePermissions.disabled = true;
+    permissionStatus.textContent = 'Saving data permissions…';
+    try {
+      const result = await api('save_command_grants',{canvas_id:selected.canvas.id,revision:selected.revision.id,
+        expected_revision:baseline.revision,settings},conversation);
+      if (!stillSelected()) return;
+      const verified = normalizeCommandSettings(result.commands);
+      if (!verified) throw new Error('Saved data permissions could not be verified.');
+      await restoreAppState(selected,verified,conversation);
+      if (!stillSelected()) return;
+      setCommandSettings(verified);
+      stopSourceRefreshes();
+      startPreview();
+      permissionStatus.textContent = 'Data permissions saved.';
+      try { localStorage.setItem(commandChangesKey,JSON.stringify({owner,agent,canvasId:selected.canvas.id,key:crypto.randomUUID()})); }
+      catch (_error) { /* Other tabs can refresh when focused. */ }
+    } catch (error) {
+      if (stillSelected()) permissionStatus.textContent = error.message;
+    } finally {
+      savePermissions.disabled = false;
+    }
+  }
+
+  function parsePublication(data) {
+    const record = data?.publication;
+    const eligibility = data?.eligibility;
+    if (!['unpublished','published'].includes(record?.state) || typeof record.version !== 'string' ||
+      !record.version || record.version.length > 128 || typeof eligibility?.can_publish !== 'boolean' ||
+      (record.slug !== null && (typeof record.slug !== 'string' || !publicSlugPattern.test(record.slug)))) return null;
+    let url = null;
+    if (record.state === 'published') {
+      if (!record.slug || !Number.isSafeInteger(record.revision) || record.revision < 1 || typeof record.url !== 'string') return null;
+      try {
+        const parsed = new URL(record.url,location.origin);
+        if (parsed.origin !== location.origin || parsed.username || parsed.password || parsed.search || parsed.hash ||
+          parsed.pathname !== sourceBasePath + '/apps/' + record.slug) return null;
+        url = parsed.href;
+      } catch (_error) { return null; }
+    }
+    return {state:record.state,slug:record.slug,revision:record.revision,version:record.version,url,
+      canPublish:eligibility.can_publish,reason:typeof eligibility.reason === 'string' ? eligibility.reason : ''};
+  }
+
+  function updatePublicationControls() {
+    const published = publication?.state === 'published';
+    const revision = current?.revision?.id;
+    const active = revision === current?.canvas?.active_revision;
+    const isPublicVersion = published && revision === publication.revision;
+    const canPublish = publication?.canPublish && active && !isPublicVersion;
+    publishingSummary.textContent = !publication ? 'Public publishing' : published ?
+      `Public publishing · Version ${publication.revision} is live` : 'Public publishing · Private';
+    publishingState.textContent = !publication ? '' : published ?
+      (isPublicVersion ? `Version ${publication.revision} is public.` : `Version ${publication.revision} is public. You’re viewing version ${revision}.`) :
+      'This Canvas is private.';
+    publishingLink.hidden = !published;
+    if (published) {
+      publishingLink.href = publication.url;
+      publishingLink.textContent = publication.url;
+    } else {
+      publishingLink.removeAttribute('href');
+      publishingLink.textContent = '';
+    }
+    publishingNote.textContent = !publication || isPublicVersion ? '' : !active ? 'Make this version active before publishing it.' :
+      !publication.canPublish ? publication.reason || 'This version is ineligible for public publishing.' : 'Anyone with the public link can open the published version.';
+    publishingNote.hidden = !publishingNote.textContent;
+    publishingFields.hidden = !canPublish && !published;
+    publishingSlugLabel.hidden = !canPublish;
+    publishingSlug.readOnly = Boolean(publication?.slug);
+    publishingSlug.disabled = locked || Boolean(publicationRequest) || Boolean(publicationIntent);
+    publish.hidden = !canPublish;
+    publish.disabled = locked || Boolean(publicationRequest);
+    publish.textContent = published ? 'Publish update…' : publication?.slug ? 'Republish version…' : 'Publish version…';
+    unpublish.hidden = !published;
+    unpublish.disabled = locked || Boolean(publicationRequest);
+    const confirming = Boolean(publicationIntent);
+    publicationActions.hidden = confirming;
+    publishingConfirmation.hidden = !confirming;
+    confirmPublishing.disabled = locked || Boolean(publicationRequest);
+  }
+
+  async function loadPublication(keepMessage = false) {
+    const selected = current;
+    const conversation = scope();
+    if (!selected?.revision || !editing() || !matches()) return;
+    publicationRequest?.abort();
+    const controller = new AbortController();
+    publicationRequest = controller;
+    const stillSelected = () => publicationRequest === controller && selected === current && conversation === scope() && editing() && matches();
+    if (!keepMessage) publicationStatus.textContent = publication ? '' : 'Checking public publishing status…';
+    retryPublication.hidden = true;
+    updatePublicationControls();
+    const timeout = setTimeout(() => controller.abort(),8000);
+    try {
+      const result = await api('publication_status',{canvas_id:selected.canvas.id,revision:selected.revision.id},conversation,controller.signal);
+      if (!stillSelected()) return;
+      const verified = parsePublication(result);
+      if (!verified) throw new Error('Public publishing status could not be verified.');
+      if (publicationIntent && publication?.version !== verified.version) cancelPublication(false);
+      publication = verified;
+      if (verified.slug) publishingSlug.value = verified.slug;
+      if (!keepMessage) publicationStatus.textContent = '';
+    } catch (error) {
+      if (!stillSelected()) return;
+      publication = null;
+      publicationIntent = null;
+      publicationStatus.textContent = controller.signal.aborted ? 'Public publishing status timed out.' : error.message;
+      retryPublication.hidden = false;
+    } finally {
+      clearTimeout(timeout);
+      if (publicationRequest === controller) {
+        publicationRequest = null;
+        updatePublicationControls();
+      }
+    }
+  }
+
+  function cancelPublication(focus) {
+    const action = publicationIntent?.action;
+    publicationIntent = null;
+    updatePublicationControls();
+    if (focus && action) (action === 'publish' ? publish : unpublish).focus();
+  }
+
+  function confirmPublication(action) {
+    if (!publication || !current?.revision || !editing() || !matches() || locked || publicationRequest || publicationIntent) return;
+    const revision = current.revision.id;
+    if (action === 'publish' && (!publication.canPublish || revision !== current.canvas.active_revision || revision === publication.revision)) return;
+    if (action === 'unpublish' && publication.state !== 'published') return;
+    const slug = publication.slug ?? publishingSlug.value.trim();
+    if (!publicSlugPattern.test(slug)) {
+      publicationStatus.textContent = 'Use 3–64 lowercase letters and digits in the slug. Single hyphens can separate words.';
+      publishingSlug.focus();
+      return;
+    }
+    publicationStatus.textContent = '';
+    publicationIntent = {action,slug,version:publication.version,selected:current};
+    if (action === 'publish') {
+      publishingConsent.textContent = `Anyone with the link can access version ${revision} at ${sourceBasePath}/apps/${slug}. Your saved records and connected accounts stay private. Review the app itself for any personal information before publishing.`;
+      confirmPublishing.textContent = 'Publish publicly';
+    } else {
+      publishingConsent.textContent = `Take version ${publication.revision} offline at /apps/${slug}? You can use this link again when you republish.`;
+      confirmPublishing.textContent = 'Confirm unpublish';
+    }
+    updatePublicationControls();
+    confirmPublishing.focus();
+  }
+
+  async function commitPublication() {
+    const intent = publicationIntent;
+    const conversation = scope();
+    const version = epoch;
+    if (!intent || !publication || locked || publicationRequest || !editing() || !matches() || intent.selected !== current ||
+      intent.version !== publication.version) return;
+    const stillSelected = () => intent.selected === current && version === epoch && conversation === scope() && editing() && matches();
+    const isPublish = intent.action === 'publish';
+    locked = true;
+    updateControls();
+    publicationStatus.textContent = isPublish ? 'Publishing this version…' : 'Taking the public link offline…';
+    try {
+      const result = await api(intent.action,{canvas_id:current.canvas.id,revision:current.revision.id,expected_revision:intent.version,
+        ...(isPublish ? {slug:intent.slug} : {})},conversation);
+      if (!stillSelected()) return;
+      const verified = parsePublication(result);
+      if (!verified || verified.state !== (isPublish ? 'published' : 'unpublished') || verified.slug !== intent.slug ||
+        (isPublish && verified.revision !== current.revision.id)) throw new Error('Could not verify the public publishing change.');
+      publication = verified;
+      publishingSlug.value = verified.slug;
+      publicationStatus.textContent = isPublish ? 'Public link ready.' : 'Public link taken offline.';
+    } catch (error) {
+      if (!stillSelected()) return;
+      publicationStatus.textContent = error.message;
+      await loadPublication(true);
+    } finally {
+      if (version === epoch) {
+        publicationIntent = null;
+        locked = false;
+        updateControls();
+      }
+    }
+  }
 
   function report(text) { notice.textContent = text; }
+  function reportApp(text,retry = false) {
+    appNotice.textContent = text;
+    appRetry.hidden = !retry;
+    appFeedback.hidden = !text;
+  }
+  function setMode(mode) {
+    panel.dataset.mode = mode;
+    thread.dataset.codingMode = mode;
+    heading.textContent = mode === 'app' ? current?.canvas?.title || 'Canvas app' : 'Code / App Canvas';
+  }
+  function enterPanel(mode) {
+    const runtime = chat();
+    if (!matches() || !runtime?.isReady() || runtime.isRestoring()) return false;
+    const wasShown = shown();
+    const modeChanged = panel.dataset.mode !== mode;
+    if (!wasShown) chatPosition = {conversation:scope(),top:thread.scrollTop,focus:document.activeElement};
+    setMode(mode);
+    if (!wasShown) {
+      if (runtime.showCodingCanvasView) runtime.showCodingCanvasView();
+      else {
+        thread.dataset.view = 'coding';
+        window.dispatchEvent(new Event('vp3:chat-canvas-view-changed'));
+      }
+      thread.scrollTo({top:0,behavior:'instant'});
+    }
+    if (!wasShown || modeChanged) heading.focus({preventScroll:true});
+    return true;
+  }
+  function closePanel() {
+    const position = chatPosition;
+    chatPosition = null;
+    chat()?.showChatView();
+    if (!position || position.conversation !== scope() || !matches()) return;
+    thread.scrollTo({top:position.top,behavior:'instant'});
+    const target = position.focus?.isConnected && position.focus !== document.body ? position.focus : launch;
+    target.focus({preventScroll:true});
+  }
+  function cancelOpen() {
+    load++;
+    openController?.abort();
+    openController = null;
+  }
   function showDelete(show) {
     deleteFolder.checked = false;
     deletion.hidden = !show;
@@ -427,7 +871,8 @@
     const revision = current?.revision;
     const snapshot = current?.state?.revision;
     return Boolean(revision && snapshot && !previewFailed() && (revision.test_passed === true ||
-      (browserTest?.canvas === current.canvas.id && browserTest?.revision === revision.id && browserTest?.snapshot === snapshot)));
+      (browserTest?.canvas === current.canvas.id && browserTest?.revision === revision.id && browserTest?.snapshot === snapshot
+        && browserTest.imageToken === libraryImageSettings()?.token)));
   }
   function previewFailed() {
     return failedPreview && failedPreview.canvas === current?.canvas.id && failedPreview.revision === current?.revision?.id;
@@ -435,22 +880,161 @@
   function updateControls() {
     const working = activeJob(job);
     build.disabled = locked || working;
+    emailStart.disabled = locked || working;
     repair.disabled = locked || working || !current?.revision;
+    openInApp.disabled = locked || !current?.revision;
     stop.hidden = !working;
     stop.disabled = false;
     picker.disabled = locked;
     versions.disabled = locked;
     remove.disabled = locked || working;
+    hideApp.disabled = locked || !current?.revision;
+    hideApp.textContent = current?.canvas.hidden === true ? 'Show app in shortcuts' : 'Hide app from shortcuts';
     test.disabled = locked || working || current?.revision?.status !== 'draft';
     apply.disabled = locked || working || !current?.revision || !frame?.ready || !validFrame(frame) ||
       (!current.revision.can_rollback && (current.revision.status !== 'draft' || !tested())) || current.revision.id === current.canvas.active_revision;
     apply.textContent = current?.revision?.can_rollback ? 'Restore this version' : 'Use this version';
+    updateLibraryImageControls();
+    updatePublicationControls();
   }
 
-  async function api(action,payload = {},conversationId = scope()) {
+  function libraryImageSettings() {
+    const settings = current?.library_image;
+    return settings?.state === 'ready' && /^[a-f0-9]{64}$/.test(settings.token) ? settings : null;
+  }
+  function libraryImageEditable() {
+    return editing() && matches() && ['edit','draft_copy'].includes(libraryImageSettings()?.mode);
+  }
+  function updateLibraryImageControls() {
+    const settings = libraryImageSettings(),image = settings?.image;
+    libraryImagePanel.hidden = !current?.revision || !current?.library_image;
+    libraryFields.hidden = !libraryImageEditable();
+    libraryInfo.textContent = !settings ? 'The image settings could not be verified.'
+      : settings.mode === 'select_draft' ? 'Select the current private draft to attach an image. The existing public version stays online.'
+      : settings.mode === 'draft_copy' ? 'Attaching a photo creates a private draft and keeps the public version online.'
+      : image ? (image.available ? 'Attached photo · ' : 'The attached original is unavailable · ') + image.title
+      : current?.canvas?.conversation_id !== scope() ? 'Open this Canvas in its original Chat to add an image.'
+      : 'No photo attached to this version.';
+    const choice = libraryRows.get(Number(librarySelect.value));
+    const editable = libraryImageEditable();
+    const disabled = !editable || locked || activeJob(job) || Boolean(libraryWrite || libraryRead);
+    librarySearchButton.disabled = librarySelect.disabled = librarySearch.disabled = disabled;
+    libraryMore.hidden = libraryCursor === null;
+    libraryMore.disabled = disabled;
+    libraryPreview.hidden = !editable || !choice;
+    if (editable && choice) {
+      if (libraryPreview.getAttribute('src') !== choice.url) libraryPreview.src = choice.url;
+      libraryPreview.alt = choice.title;
+    } else libraryPreview.removeAttribute('src');
+    attachedAction.disabled = disabled || !choice || choice.id === image?.id && image.available === true;
+    attachedAction.textContent = settings?.mode === 'draft_copy' ? 'Create private draft with photo' : image ? 'Replace photo' : 'Attach photo';
+    detachAction.hidden = !image || settings?.mode !== 'edit';
+    detachAction.disabled = disabled;
+  }
+
+  function resetLibraryImagePicker() {
+    libraryRead?.abort();
+    libraryRead = null;
+    libraryWrite?.abort();
+    libraryWrite = null;
+    libraryRows.clear();
+    libraryCursor = null;
+    libraryQuery = '';
+    librarySearch.value = '';
+    librarySelect.replaceChildren();
+    libraryImageStatus.textContent = '';
+    libraryImagePanel.open = false;
+  }
+
+  async function browseLibraryImages(more = false) {
+    if (!libraryImageEditable() || locked || activeJob(job) || libraryWrite || libraryRead || more && libraryCursor === null) return;
+    const bound = current, conversation = scope(), view = epoch;
+    const controller = libraryRead = new AbortController();
+    const selected = () => libraryRead === controller && current === bound && conversation === scope()
+      && view === epoch && libraryImagePanel.open && libraryImageEditable();
+    const url = new URL('media-library-v86.php',new URL(cfg.endpoint,location.href));
+    url.searchParams.set('action','browse');
+    url.searchParams.set('type','photo');
+    if (!more) {
+      libraryQuery = librarySearch.value.trim();
+      libraryRows.clear();
+      libraryCursor = null;
+      librarySelect.replaceChildren();
+    }
+    if (libraryQuery) url.searchParams.set('q',libraryQuery);
+    if (more) url.searchParams.set('before',String(libraryCursor));
+    libraryImageStatus.textContent = 'Loading your saved photos…';
+    updateLibraryImageControls();
+    try {
+      if (url.origin !== location.origin) throw new Error('Private Media Library is unavailable.');
+      const response = await fetch(url,{credentials:'same-origin',cache:'no-store',signal:controller.signal,
+        headers:{'X-VP3-Media-Owner':String(owner)}});
+      const data = await response.json();
+      if (!selected()) return;
+      if (!response.ok || data?.ok !== true || !Array.isArray(data.assets)) throw new Error('Private Media Library is unavailable.');
+      if (!more) librarySelect.append(option('Choose a photo',''));
+      for (const asset of data.assets.slice(0,24)) {
+        if (!Number.isSafeInteger(asset?.id) || asset.id < 1 || libraryRows.has(asset.id) || asset.available !== true
+            || asset.media_type !== 'photo' || !['image/png','image/jpeg','image/webp'].includes(asset.mime_type)
+            || asset.file_size > 4194304 || typeof asset.title !== 'string' || typeof asset.url !== 'string') continue;
+        let link;
+        try { link = new URL(asset.url,location.href); } catch (_) { continue; }
+        if (link.origin !== location.origin || link.username || link.password || link.hash
+            || link.pathname !== sourceBasePath + '/media-library-file-v86.php' || link.search !== '?id=' + asset.id) continue;
+        const title = asset.title.trim().slice(0,190) || 'Media Library photo';
+        libraryRows.set(asset.id,{id:asset.id,title,url:link.href});
+        librarySelect.append(option(title,asset.id));
+      }
+      libraryCursor = Number.isSafeInteger(data.next_before) && data.next_before > 0 ? data.next_before : null;
+      libraryImageStatus.textContent = libraryRows.size ? '' : 'No compatible photos found.';
+    } catch (error) {
+      if (selected()) libraryImageStatus.textContent = error.message || 'Private Media Library is unavailable.';
+    } finally {
+      if (libraryRead === controller) libraryRead = null;
+      updateLibraryImageControls();
+    }
+  }
+
+  async function saveLibraryImage(id) {
+    const settings = libraryImageSettings();
+    if (!settings || !libraryImageEditable() || locked || activeJob(job) || libraryRead || libraryWrite
+        || (id === null ? !settings.image : !libraryRows.has(id))) return;
+    const bound = current, conversation = scope(), view = epoch;
+    const controller = libraryWrite = new AbortController();
+    const selected = () => libraryWrite === controller && current === bound && conversation === scope()
+      && view === epoch && libraryImageEditable();
+    libraryImageStatus.textContent = id === null ? 'Removing the image…' : 'Attaching the saved photo…';
+    updateLibraryImageControls();
+    try {
+      const data = await api('save_library_image',{canvas_id:bound.canvas.id,revision:bound.revision.id,
+        expected_image:settings.token,asset_id:id},conversation,controller.signal);
+      if (!selected()) return;
+      const cloned = settings.mode === 'draft_copy';
+      if (data.canvas?.id !== bound.canvas.id || data.library_image?.state !== 'ready'
+          || !Array.isArray(data.revisions) || !data.state
+          || (data.library_image.image?.id ?? null) !== id
+          || (cloned ? data.revision?.status !== 'draft' || data.revision?.id !== data.canvas.draft_revision
+            || data.revision.id <= bound.revision.id : data.revision?.id !== bound.revision.id)) {
+        throw new Error('The saved Canvas image could not be verified.');
+      }
+      libraryWrite = null;
+      browserTest = null;
+      renderCanvas(data);
+      libraryImagePanel.open = true;
+      report(cloned ? 'Private draft created with the photo. The public version stays online.'
+        : id === null ? 'Photo removed from this version.' : 'Photo attached to this version.');
+    } catch (error) {
+      if (selected()) libraryImageStatus.textContent = error.message || 'The Canvas image could not be saved.';
+    } finally {
+      if (libraryWrite === controller) libraryWrite = null;
+      updateLibraryImageControls();
+    }
+  }
+
+  async function api(action,payload = {},conversationId = scope(),signal) {
     if (!matches()) throw new Error('Private Canvas is available in your own Chat.');
     const response = await fetch(cfg.endpoint,{
-      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},signal,
       body:JSON.stringify({action,csrf_token:cfg.csrf,agent_id:agent,conversation_id:conversationId,...payload})
     });
     const data = await response.json().catch(() => null);
@@ -458,40 +1042,118 @@
     return data;
   }
 
+  function closeArtworkFrame() {
+    if (!artworkFrame) return;
+    clearTimeout(artworkFrame.timer);
+    artworkFrame.element.remove();
+    artworkFrame = null;
+  }
+
+  function requestArtwork() {
+    if (!cfg.artworkEndpoint || document.hidden || suspended || !shown() || !matches() || !current?.canvas || !current?.revision) return;
+    const {canvas,revision} = current;
+    const binding = String(window.STONEFELLOW_CHAT?.workingAttentionBinding || '');
+    const context = {canvasId:canvas.id,revision:revision.id,conversationId:scope(),agentId:agent,ownerId:owner,binding};
+    if (!context.conversationId) return;
+    if (!canvas.icon_url) window.dispatchEvent(new CustomEvent('vp3:canvas-preview-tested',{detail:context}));
+    const capture = window.VP3CanvasThumbnailV1?.capture;
+    const attempt = canvas.id + ':' + revision.id;
+    if (typeof capture !== 'function' || canvas.thumbnail_revision === revision.id || artworkAttempts.has(attempt)
+        || canvas.active_revision && canvas.active_revision !== revision.id) return;
+    if (artworkAttempts.size >= 64) artworkAttempts.delete(artworkAttempts.values().next().value);
+    artworkAttempts.add(attempt);
+    closeArtworkFrame();
+    const element = node('iframe','','vp3-coding-canvas-artwork-frame');
+    const nonce = token();
+    element.setAttribute('sandbox','allow-scripts');
+    element.setAttribute('aria-hidden','true');
+    element.tabIndex = -1;
+    element.referrerPolicy = 'no-referrer';
+    element.title = 'Sample app thumbnail';
+    // A second isolated preview supplies only empty app storage or the existing fixed Gmail fixture.
+    element.srcdoc = previewDocument({channel,nonce,parentOrigin:location.origin,artifact:revision.artifact,
+      state:{},workerKey:token(),maxText,stateLimit,email:current.email_source ? emailFixture() : null,emailCheck:null,
+      gmail:declaresGmail() ? gmailFixture() : null,canSaveState:false,
+      sources:previewSources(declaredCommands(),false).sources},capture);
+    const timer = setTimeout(closeArtworkFrame,6500);
+    artworkFrame = {...context,nonce,element,timer};
+    panel.append(element);
+  }
+
+  async function acceptArtwork(event) {
+    const candidate = artworkFrame;
+    if (!candidate || event.origin !== 'null' || event.source !== candidate.element.contentWindow ||
+      event.data?.channel !== channel || event.data?.nonce !== candidate.nonce) return;
+    if (event.data.kind === 'error') { closeArtworkFrame(); return; }
+    if (event.data.kind !== 'thumbnail') return;
+    closeArtworkFrame();
+    const currentContext = () => matches() && candidate.binding === String(window.STONEFELLOW_CHAT?.workingAttentionBinding || '')
+      && candidate.conversationId === scope();
+    const image = event.data.imageBase64;
+    if (!currentContext() || typeof image !== 'string' || image.length > 90000 || !/^[a-zA-Z0-9+/]+=*$/.test(image)) return;
+    try {
+      const response = await fetch(cfg.artworkEndpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'save_artwork',csrf_token:cfg.csrf,agent_id:agent,conversation_id:candidate.conversationId,
+          canvas_id:candidate.canvasId,revision:candidate.revision,kind:'thumbnail',image_base64:image})});
+      const saved = await response.json().catch(() => null);
+      if (!response.ok || !currentContext() || saved?.canvas?.id !== candidate.canvasId
+        || saved.canvas.thumbnail_revision !== candidate.revision || typeof saved.canvas.thumbnail_url !== 'string') return;
+      if (current?.canvas?.id === candidate.canvasId) current.canvas.thumbnail_revision = candidate.revision;
+      const {canvasId,revision,conversationId,binding} = candidate;
+      window.dispatchEvent(new CustomEvent('vp3:canvas-artwork-updated',{detail:{
+        canvasId,revision,conversationId,binding,agentId:agent,ownerId:owner,artwork:saved.canvas
+      }}));
+    } catch (_) { /* The saved draft and test result are independent of artwork. */ }
+  }
+
   function startPreview(testing = false) {
     closePreview();
     if (!shown() || !current?.revision || !current?.state || !matches()) return;
+    const connected = current.email_source === true;
+    const commands = declaredCommands();
+    if ((connected || declaresGmail()) && document.hidden) return;
+    if (!editing()) reportApp('Starting app…');
+    const snapshot = connected && !testing ? ensureSourceRefresh('email') : null;
+    const email = snapshot ? {status:snapshot.generation > 0 ? 'ready' : 'unavailable',rows:snapshot.rows.map(({source_ref,...row}) => row)} :
+      (connected ? emailFixture() : null);
     const element = node('iframe');
     const nonce = token();
     const artifact = current.revision.artifact;
-    const state = current.state.value;
     const isActive = !testing && current.revision.id === current.canvas.active_revision;
+    const gmailConnected = isActive && declaresGmail() && commandSettings?.gmail.app_access === true;
+    const gmail = declaresGmail() ? (isActive ? gmailConnected ? ensureSourceRefresh('gmail') : gmailUnavailable : gmailFixture()) : null;
+    const {sources,links} = previewSources(commands,isActive);
+    const appDataAccess = commandSettings?.app_data.app_access ?? (!current.hasVerifiedGrants && !commands?.length);
+    const state = appDataAccess ? current.state.value : {};
+    const canSaveState = appDataAccess && !connected && !gmailConnected;
     const candidate = {
       nonce,element,epoch,scope:scope(),canvasId:current.canvas.id,revision:current.revision.id,
-      stateRevision:current.state.revision,isActive,testing,state,ready:false,saving:false,timer:0
+      stateRevision:current.state.revision,imageToken:libraryImageSettings()?.token,isActive,testing,state,snapshot,links,canSaveState,
+      ready:false,saving:false,timer:0
     };
-    const payload = {channel,nonce,parentOrigin:location.origin,artifact,state,workerKey:token(),maxText,stateLimit};
+    const payload = {channel,nonce,parentOrigin:location.origin,artifact,state,workerKey:token(),maxText,stateLimit,email,
+      emailCheck:connected && testing ? emailFixtureSubjects : null,gmail,canSaveState,sources,
+      libraryImage:current.library_image?.image,
+      openableSources:Object.fromEntries(Object.entries(links).map(([key,records]) => [key,records.map(row => row.id)]))};
     element.title = current.canvas.title + (isActive ? ' app' : ' preview');
     element.setAttribute('sandbox','allow-scripts');
     element.referrerPolicy = 'no-referrer';
-    const csp = "default-src 'none'; script-src 'nonce-" + nonce + "' blob:; style-src 'nonce-" + nonce +
-      "'; worker-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'";
-    element.srcdoc = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
-      '<meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
-      '<style nonce="' + nonce + '">:root{color-scheme:light;font:16px system-ui,sans-serif}body{margin:1rem}[hidden]{display:none!important}</style>' +
-      '</head><body><main id="app"></main><script nonce="' + nonce + '">(' + hostRuntime.toString() + ')(' +
-      scriptData(payload) + ',' + workerRuntime.toString() + ');<\/script></body></html>';
+    element.srcdoc = previewDocument(payload);
     frame = candidate;
     frameHost.replaceChildren(element);
-    candidate.timer = setTimeout(() => failPreview(candidate),6000);
+    candidate.timer = setTimeout(() => failPreview(candidate,'timeout'),10000);
   }
 
-  function failPreview(candidate) {
+  function failPreview(candidate,reason) {
     if (!validFrame(candidate)) return;
     closePreview();
-    failedPreview = {canvas:candidate.canvasId,revision:candidate.revision};
-    frameHost.replaceChildren(node('p','This app stopped or could not load.'));
-    report('Preview failed. Open the source or ask the Coding Agent to repair this version.');
+    const diagnostic = Object.hasOwn(previewErrors,reason) ? previewErrors[reason] : previewErrors.render;
+    failedPreview = {canvas:candidate.canvasId,revision:candidate.revision,diagnostic};
+    const detail = reason === 'email_workflow' ?
+      'The email deadline test failed. Show current deadlines in date order and leave out outdated deadlines.' :
+      'Preview failed. ' + diagnostic + ' Open the source or choose Repair.';
+    report(detail);
+    if (!editing()) reportApp(diagnostic + ' Retry opening it or choose Edit app to repair this version.',true);
     if (candidate.testing) locked = false;
     updateControls();
   }
@@ -500,7 +1162,8 @@
     const respond = (value,error) => {
       if (validFrame(candidate)) candidate.element.contentWindow.postMessage({channel,nonce:candidate.nonce,kind:'saved',id:data.id,value,error},'*');
     };
-    if (!candidate.ready || candidate.saving || typeof data.json !== 'string' || data.json.length > stateLimit || !Number.isSafeInteger(data.id)) {
+    if (!candidate.ready || !candidate.canSaveState || candidate.saving || typeof data.json !== 'string' ||
+      data.json.length > stateLimit || !Number.isSafeInteger(data.id)) {
       respond(null,'Canvas data cannot be saved right now.');
       return;
     }
@@ -536,16 +1199,35 @@
   }
 
   window.addEventListener('message',event => {
+    if (artworkFrame && event.source === artworkFrame.element.contentWindow) {
+      void acceptArtwork(event);
+      return;
+    }
     const candidate = frame;
     if (!candidate || !validFrame(candidate) || event.origin !== 'null' || event.source !== candidate.element.contentWindow ||
       event.data?.channel !== channel || event.data?.nonce !== candidate.nonce) return;
-    if (event.data.kind === 'error') failPreview(candidate);
+    if (event.data.kind === 'error') failPreview(candidate,event.data.reason);
+    if (event.data.kind === 'email_test_failed' && candidate.testing) failPreview(candidate,'email_workflow');
     if (event.data.kind === 'save') void saveFromPreview(candidate,event.data);
+    if (event.data.kind === 'open_email' && candidate.snapshot && !candidate.testing) {
+      const row = candidate.snapshot.rows.find(item => item.id === event.data.id);
+      const binding = window.STONEFELLOW_CHAT?.workingAttentionBinding;
+      if (row && !window.VP3GmailInboxInitialV1?.openTriageItem({id:row.source_ref,generation:candidate.snapshot.generation,
+        binding,agent,conversation:candidate.scope})) report('The source email is unavailable in this Chat.');
+    }
+    if (event.data.kind === 'open_source' && candidate.ready && !candidate.testing && publicSourceKeys.includes(event.data.command)) {
+      const link = candidate.links[event.data.command]?.find(record => record.id === event.data.id);
+      if (link) location.assign(link.url);
+    }
     if (event.data.kind === 'ready' && !candidate.ready) {
       candidate.ready = true;
       clearTimeout(candidate.timer);
-      if (candidate.testing) void recordTest(candidate);
-      else updateControls();
+      if (!editing()) reportApp('');
+      if (candidate.testing) void recordTest(candidate,event.data.emailWorkflowChecked === true);
+      else {
+        if (current?.revision?.test_passed === true) requestArtwork();
+        updateControls();
+      }
     }
   });
 
@@ -556,8 +1238,25 @@
   }
 
   function renderCanvas(data) {
+    const keepPublishingOpen = publishing.open && Boolean(data) && current?.canvas.id === data?.canvas?.id;
+    publicationRequest?.abort();
+    publicationRequest = null;
+    publication = null;
+    publicationIntent = null;
+    publicationStatus.textContent = '';
+    publishingSlug.value = '';
+    retryPublication.hidden = true;
+    commandSettingsRequest?.abort();
+    stopSourceRefreshes();
     closePreview();
+    resetLibraryImagePicker();
     current = data;
+    publishing.open = keepPublishingOpen;
+    permissions.open = false;
+    permissionStatus.textContent = '';
+    setCommandSettings(normalizeCommandSettings(data?.command_grants));
+    if (data && commandSettings?.app_data.app_access === false) clearPrivateAppState(data);
+    if (shown() && !editing()) setMode('app');
     workspace.hidden = !data?.revision;
     deletion.hidden = true;
     picker.value = data ? String(data.canvas.id) : '';
@@ -570,10 +1269,10 @@
       updateControls();
       return;
     }
-    workspaceTitle.textContent = data.canvas.title;
+    workspaceTitle.replaceChildren(canvasArt(data.canvas),document.createTextNode(data.canvas.title));
     const revision = data.revision;
     const isActive = revision.id === data.canvas.active_revision;
-    previewDescription.textContent = isActive ?
+    previewDescription.textContent = data.email_source ? 'Uses current Gmail deadline data through the Email Agent.' : isActive ?
       'Active app. Changes are saved in your Knowledge Base folder.' :
       'Preview. App changes here are temporary. The saved app data is kept when you switch versions.';
     versions.replaceChildren(...data.revisions.map(item => option(
@@ -585,58 +1284,158 @@
       label + '\n' + revision.artifact[['html','css','js'][index]]
     ).join('\n\n');
     startPreview();
+    if (declaredCommands()?.length && !commandSettings) void loadCommandSettings();
+    if (keepPublishingOpen) void loadPublication();
     updateControls();
   }
 
-  async function refreshList(version = epoch) {
-    const data = await api('list');
-    if (version !== epoch || !matches() || !shown()) return;
-    picker.replaceChildren(option('Choose a saved canvas',''),...data.canvases.map(item => option(item.title,item.id)));
+  function canvasArt(item) {
+    const fallback = node('span',Array.from(item.title.trim())[0]?.toUpperCase() || 'C','vp3-coding-canvas-app-icon');
+    fallback.setAttribute('aria-hidden','true');
+    let artwork = fallback;
+    if (typeof item.icon_url === 'string' && item.icon_url) {
+      try {
+        const url = new URL(item.icon_url,location.href);
+        if (url.origin === location.origin && !url.username && !url.password) {
+          artwork = node('img','','vp3-coding-canvas-app-icon');
+          artwork.width = 15;
+          artwork.height = 15;
+          artwork.alt = '';
+          artwork.loading = 'lazy';
+          artwork.addEventListener('error',() => artwork.replaceWith(fallback),{once:true});
+          artwork.src = url.href;
+        }
+      } catch (_error) { /* A missing icon leaves the app accessible by name. */ }
+    }
+    return artwork;
+  }
+
+  function canvasShortcut(item, showName) {
+    const revision = item.active_revision || item.draft_revision;
+    const shortcut = button('',() => void window.VP3CodingCanvasV1?.open(item.id,revision));
+    shortcut.dataset.canvasId = item.id;
+    shortcut.setAttribute('aria-label',item.title);
+    shortcut.setAttribute('aria-controls',panel.id);
+    shortcut.title = item.title;
+    shortcut.append(canvasArt(item));
+    if (showName) shortcut.append(node('span',item.title,'vp3-coding-canvas-app-name'));
+    return shortcut;
+  }
+
+  function renderAppIcons(canvases) {
+    const iconList = JSON.stringify(canvases.map(item => [item.id,item.title,item.icon_url,item.active_revision || item.draft_revision]));
+    if (iconList === renderedAppIcons) return;
+    renderedAppIcons = iconList;
+    for (const group of [appIcons,editorAppIcons]) {
+      const focused = group.contains(document.activeElement) && document.activeElement.dataset.canvasId;
+      const scroll = group.scrollLeft;
+      const icons = canvases.map(item => canvasShortcut(item,group === editorAppIcons));
+      group.replaceChildren(...icons);
+      group.hidden = icons.length === 0;
+      group.scrollLeft = scroll;
+      if (focused) icons.find(icon => icon.dataset.canvasId === focused)?.focus({preventScroll:true});
+    }
+  }
+
+  async function refreshList(version = epoch,footerOnly = !editing()) {
+    if (!matches() || !chat()?.isReady() || chat()?.isRestoring() || suspended || document.hidden) return;
+    const request = ++listRequest;
+    const editorRequest = footerOnly ? 0 : ++editorListRequest;
+    const conversation = scope();
+    const stillCurrent = () => version === epoch && conversation === scope() && matches() && !suspended && !document.hidden;
+    let data;
+    try {
+      data = await api('list',{},footerOnly ? 0 : conversation);
+    } catch (error) {
+      if (stillCurrent() && request > commandCatalogRequest && !commandCatalog) renderCommandCatalog(null);
+      throw error;
+    }
+    if (!stillCurrent()) return;
+    if (request > commandCatalogRequest) {
+      commandCatalogRequest = request;
+      renderCommandCatalog(data.command_catalog);
+    }
+    if (!Array.isArray(data.canvases)) throw new Error('Saved canvases could not be loaded.');
+    const canvases = data.canvases.filter(item => typeof item?.id === 'string' && canvasIdPattern.test(item.id)
+      && item.agent_id === agent && typeof item.title === 'string' && item.title.trim());
+    if (request === listRequest) renderAppIcons(canvases.filter(item => {
+      const revision = item.active_revision || item.draft_revision;
+      return item.hidden !== true && Number.isSafeInteger(revision) && revision > 0;
+    }));
+    if (!editing() || footerOnly || editorRequest !== editorListRequest) return;
+    emailStart.hidden = data.email_start_available !== true;
+    picker.replaceChildren(option('Choose a saved canvas',''),...canvases.map(item => option(item.title + (item.hidden === true ? ' (hidden)' : ''),item.id)));
     if (current) picker.value = String(current.canvas.id);
+  }
+
+  function scheduleFooterRefresh() {
+    clearTimeout(footerTimer);
+    footerTimer = setTimeout(() => void refreshList(epoch,true).catch(() => {}),150);
   }
 
   async function openSaved(id,revision,announce = true) {
     const version = epoch;
-    const selection = ++load;
+    const conversation = scope();
+    cancelOpen();
+    const selection = load;
     if (!id) {
       renderCanvas(null);
       return false;
     }
+    const controller = new AbortController();
+    openController = controller;
+    const stillSelected = () => version === epoch && selection === load && conversation === scope() && shown() && matches();
     const fields = {canvas_id:id};
     if (revision) fields.revision = revision;
     try {
-      const data = await api('open',fields);
-      if (version !== epoch || selection !== load || !shown() || !matches()) return false;
-      if (data.canvas?.id !== id || revision !== undefined && data.revision?.id !== revision) {
+      const data = await api('open',fields,conversation,controller.signal);
+      if (!stillSelected()) return false;
+      if (data.canvas?.id !== id || typeof data.canvas.title !== 'string' || !data.canvas.title.trim() ||
+        !Number.isSafeInteger(data.revision?.id) || revision !== undefined && data.revision.id !== revision ||
+        !Array.isArray(data.revisions) || !data.state || !['html','css','js'].every(key => typeof data.revision.artifact?.[key] === 'string')) {
         throw new Error('This saved Canvas version could not be verified.');
       }
       renderCanvas(data);
       if (announce) report('');
       return true;
     } catch (error) {
-      if (version === epoch && selection === load && shown()) report(error.message);
+      if (stillSelected()) {
+        report(error.message);
+        if (!editing()) reportApp(error.message,true);
+      }
       return false;
+    } finally {
+      if (openController === controller) openController = null;
     }
   }
 
-  async function openPanel() {
-    if (!matches() || !chat()?.isReady() || chat()?.isRestoring()) return;
+  function openPanel(restoreSelection = true) {
     const wasShown = shown();
-    if (!wasShown) {
-      chat().showChatView();
-      thread.dataset.view = 'coding';
-      window.dispatchEvent(new Event('vp3:chat-canvas-view-changed'));
-    }
+    const wasEditing = editing();
+    if (!enterPanel('editor')) return;
     const version = epoch;
-    if (!wasShown) {
-      heading.focus();
-      if (current?.revision) await openSaved(current.canvas.id,current.revision.id,false);
+    if (!wasShown && restoreSelection) {
+      if (current?.revision) void openSaved(current.canvas.id,current.revision.id,false);
+      else if (job?.state === 'ready') void openSaved(job.canvas_id,job.revision,false);
     }
-    try {
-      await refreshList(version);
-      if (version === epoch && !wasShown && !current && job?.state === 'ready') await openSaved(job.canvas_id,job.revision,false);
+    if (wasShown && !wasEditing && publishing.open && !publicationRequest) void loadPublication();
+    void refreshList(version).catch(error => {
+      if (version === epoch && editing()) report(error.message);
+    });
+  }
+
+  async function openApp(id,revision) {
+    if (typeof id !== 'string' || !canvasIdPattern.test(id) ||
+      (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1))) return false;
+    if (!enterPanel('app')) return false;
+    appTarget = {id,revision};
+    if (current?.canvas.id === id && current.revision?.id === revision && frame?.ready && !frame.testing && !openController) {
+      reportApp('');
+      return true;
     }
-    catch (error) { if (version === epoch && shown()) report(error.message); }
+    renderCanvas(null);
+    reportApp('Opening app…');
+    return openSaved(id,revision);
   }
 
   function publishSpecialist(next, status, model) {
@@ -702,10 +1501,13 @@
       poll = setTimeout(() => void pollJob(next.run_id,version,conversation),900);
     } else if (newlyTerminal) {
       window.dispatchEvent(new Event('vp3-coding-usage-change'));
-      if (next.state === 'ready' && shown() && observedJob !== next.run_id) {
+      if (next.state === 'ready') {
         try {
-          await refreshList(version);
-          if (version === epoch && shown()) await openSaved(next.canvas_id,next.revision,false);
+          scheduleFooterRefresh();
+          if (version === epoch && editing() && observedJob !== next.run_id && !openController) {
+            void refreshList(version).catch(() => {});
+            await openSaved(next.canvas_id,next.revision,false);
+          }
         } catch (error) {
           if (version === epoch && shown()) report(error.message);
         }
@@ -730,8 +1532,39 @@
     }
   }
 
+  async function startEmail() {
+    const conversation = scope();
+    if (emailStart.hidden || locked || activeJob(job) || !conversation || !matches() || !shown()) return;
+    const version = epoch;
+    if (lastEmailStart?.version !== version || lastEmailStart.conversation !== conversation) {
+      lastEmailStart = {version,conversation,id:crypto.randomUUID()};
+    }
+    locked = true;
+    updateControls();
+    try {
+      const result = await api('start_email',{request_id:lastEmailStart.id},conversation);
+      if (version !== epoch || !matches() || conversation !== scope()) return;
+      if (!Number.isSafeInteger(result.preparation_run_id) || result.preparation_run_id < 1) {
+        throw new Error('The Coding Agent request could not be verified.');
+      }
+      lastEmailStart = null;
+      emailStart.hidden = true;
+      report(['failed','cancelled'].includes(result.status) ? 'The email board preparation stopped. Check Top of Mind for its status.' :
+        'The Coding Agent will prepare a private email deadline board. Follow its progress in Top of Mind.');
+    } catch (error) {
+      if (version === epoch && shown()) report(error.message);
+    } finally {
+      if (version === epoch) {
+        locked = false;
+        updateControls();
+      }
+    }
+  }
+
   async function run(action,text,command) {
     text = text.trim();
+    if (/^\/commands$/i.test(text)) { openCommandLibrary();return; }
+    if (!text && action === 'repair' && previewFailed()) text = 'Fix this app so it opens and works in Canvas.';
     if (!text || text.length > 8000 || locked || activeJob(job) || !matches() || !chat()?.isReady()) {
       if (shown() && !text) report('Describe what you want the Coding Agent to make or change.');
       return;
@@ -739,11 +1572,12 @@
     const version = epoch;
     let conversation = scope();
     const fields = {prompt:text};
+    const requestedCommands = promptCommands(text);
     if (action === 'repair') {
       if (!current?.revision) return;
       fields.canvas_id = current.canvas.id;
       fields.revision = current.revision.id;
-      if (previewFailed()) fields.diagnostic = 'The isolated browser preview failed to start or stopped responding.';
+      if (previewFailed()) fields.diagnostic = 'The isolated browser preview failed. ' + failedPreview.diagnostic;
     }
     locked = true;
     updateControls();
@@ -753,9 +1587,16 @@
         conversation = await chat().ensureConversation();
         if (version !== epoch || !matches()) return;
       }
-      await openPanel();
+      openPanel();
       if (version !== epoch || !shown()) return;
       if (!conversation) throw new Error('Wait for Chat to finish loading, then try again.');
+      if (requestedCommands.size) {
+        if (!commandCatalog) await refreshList(version);
+        if (version !== epoch || !editing() || !matches()) return;
+        const available = (commandCatalog ?? []).map(([name]) => name).filter(name => requestedCommands.has(name));
+        if (available.length !== requestedCommands.size) throw new Error('Some Canvas commands in this request are unavailable. Check /commands.');
+        fields.commands = available;
+      }
       const intent = JSON.stringify([conversation,action,fields]);
       if (lastIntent?.intent !== intent) lastIntent = {intent,id:crypto.randomUUID()};
       fields.request_id = lastIntent.id;
@@ -801,23 +1642,34 @@
     if (!current?.revision || test.disabled || !matches()) return;
     locked = true;
     updateControls();
-    report('Starting an isolated test with a copy of the canvas data…');
+    report(current.email_source ? 'Checking the email deadlines with sample data…' :
+      'Starting an isolated test with a copy of the canvas data…');
     startPreview(true);
   }
 
-  async function recordTest(candidate) {
+  async function recordTest(candidate,emailWorkflowChecked) {
+    const connected = current.email_source === true;
+    if (connected && !emailWorkflowChecked) {
+      failPreview(candidate,'email_workflow');
+      return;
+    }
     try {
-      await api('test',{canvas_id:candidate.canvasId,revision:candidate.revision,state_revision:candidate.stateRevision},candidate.scope);
+      await api('test',{canvas_id:candidate.canvasId,revision:candidate.revision,state_revision:candidate.stateRevision,
+        ...(connected ? {email_fixture_checked:emailWorkflowChecked} : {}),
+        ...(candidate.imageToken ? {expected_image:candidate.imageToken} : {})},candidate.scope);
       if (!validFrame(candidate)) return;
       if (previewFailed()) failedPreview = null;
-      browserTest = {canvas:candidate.canvasId,revision:candidate.revision,snapshot:candidate.stateRevision};
-      report('Preview loaded successfully. You can try the app here before using this version.');
+      browserTest = {canvas:candidate.canvasId,revision:candidate.revision,snapshot:candidate.stateRevision,imageToken:candidate.imageToken};
+      requestArtwork();
+      report(connected ? 'The email deadline test passed with sample data.' :
+        'Preview loaded successfully. You can try the app here before using this version.');
     } catch (error) {
       if (validFrame(candidate)) report(error.message);
     } finally {
       if (validFrame(candidate)) {
         candidate.testing = false;
         locked = false;
+        if (connected) startPreview();
         updateControls();
       }
     }
@@ -830,13 +1682,46 @@
     locked = true;
     updateControls();
     try {
-      const data = await api('apply',{canvas_id:canvas.id,revision:revision.id,expected_active_revision:canvas.active_revision});
+      const imageToken = frame.imageToken;
+      const data = await api('apply',{canvas_id:canvas.id,revision:revision.id,expected_active_revision:canvas.active_revision,
+        ...(imageToken ? {expected_image:imageToken} : {})});
       if (version !== epoch || !shown()) return;
       if (job?.canvas_id === canvas.id && job.revision === revision.id) renderJob(null);
       renderCanvas(data);
+      requestArtwork();
       report('This version is active. Your saved app data was kept.');
+      scheduleFooterRefresh();
     } catch (error) {
       if (version === epoch) report(error.message);
+    } finally {
+      if (version === epoch) {
+        locked = false;
+        updateControls();
+      }
+    }
+  }
+
+  async function setAppHidden() {
+    const selected = current;
+    const version = epoch;
+    const conversation = scope();
+    if (!selected?.revision || locked || !editing() || !matches()) return;
+    const hidden = selected.canvas.hidden !== true;
+    locked = true;
+    updateControls();
+    try {
+      const data = await api('set_hidden',{canvas_id:selected.canvas.id,hidden},conversation);
+      if (version !== epoch || selected !== current || conversation !== scope() || !editing() || !matches()) return;
+      if (data.canvas?.id !== selected.canvas.id || data.canvas?.hidden !== hidden) {
+        throw new Error('The app’s shortcut visibility could not be verified.');
+      }
+      selected.canvas.hidden = hidden;
+      await refreshList(version);
+      if (version === epoch && selected === current && editing()) {
+        report(hidden ? 'Hidden from shortcuts. You can still open this app from Saved canvases.' : 'App shortcuts are visible.');
+      }
+    } catch (error) {
+      if (version === epoch && selected === current && editing()) report(error.message);
     } finally {
       if (version === epoch) {
         locked = false;
@@ -856,6 +1741,10 @@
       if (version !== epoch || !shown()) return;
       if (job?.canvas_id === id) renderJob(null);
       renderCanvas(null);
+      for (const group of [appIcons,editorAppIcons]) {
+        group.querySelector(`[data-canvas-id="${id}"]`)?.remove();
+        group.hidden = group.childElementCount === 0;
+      }
       await refreshList(version);
       if (version === epoch && shown()) report('Canvas deleted.');
     } catch (error) {
@@ -899,6 +1788,15 @@
   picker.addEventListener('change',() => void openSaved(picker.value));
   versions.addEventListener('change',() => void openSaved(current?.canvas.id,Number(versions.value)));
   chatForm?.addEventListener('submit',event => {
+    if (/^\s*\/commands\s*$/i.test(input?.value ?? '')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!matches() || !chat()?.isReady()) return;
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+      openCommandLibrary();
+      return;
+    }
     const command = input?.value.match(/^\s*\/build\s+([\s\S]+)$/i);
     if (!command) return;
     event.preventDefault();
@@ -910,18 +1808,35 @@
     panel.hidden = !shown();
     launch.setAttribute('aria-expanded',String(shown()));
     if (!shown()) {
+      delete thread.dataset.codingMode;
+      cancelOpen();
+      resetLibraryImagePicker();
+      reportApp('');
       if (frame?.testing) locked = false;
+      commandSettingsRequest?.abort();
+      publicationRequest?.abort();
+      publicationRequest = null;
+      cancelPublication(false);
+      stopSourceRefreshes();
       closePreview();
       updateControls();
     }
   });
   function resetContext() {
+    closeArtworkFrame();
+    artworkAttempts.clear();
     epoch++;
+    cancelOpen();
+    appTarget = null;
+    chatPosition = null;
     clearTimeout(poll);
     clearTimeout(resumeTimer);
+    clearTimeout(footerTimer);
     locked = false;
     pollingError = false;
     lastIntent = null;
+    lastEmailStart = null;
+    emailStart.hidden = true;
     failedPreview = null;
     ticked = null;
     observedJob = null;
@@ -930,13 +1845,14 @@
     renderCanvas(null);
     renderJob(null);
     picker.replaceChildren();
+    renderAppIcons([]);
     report('');
   }
   function updateParticipantScope() {
     resetContext();
     dock.hidden = participantContext();
     if (shown()) chat()?.showChatView();
-    if (!dock.hidden) void resume();
+    if (!dock.hidden) { void resume(); scheduleFooterRefresh(); }
   }
   window.addEventListener('stonefellow:chat-context-changing',resetContext);
   window.addEventListener('vp3:participant-selection-changed',updateParticipantScope);
@@ -944,51 +1860,100 @@
     participantActor = Number(event.detail?.participant_id) || 0;
     updateParticipantScope();
   });
-  window.addEventListener('vp3:chat-context-ready',() => void resume());
+  window.addEventListener('vp3:chat-context-ready',() => { void resume(); scheduleFooterRefresh(); });
+  window.addEventListener('vp3:canvas-artwork-updated',scheduleFooterRefresh);
+  window.addEventListener('vp3:canvas-artwork-updated',event => {
+    const {artwork,canvasId,ownerId,agentId,conversationId,binding} = event.detail || {};
+    if (!artwork || typeof artwork.icon_url !== 'string' || !shown() || !matches() || canvasId !== current?.canvas?.id
+      || artwork.id !== canvasId || ownerId !== owner || agentId !== agent || conversationId !== scope()
+      || binding !== String(window.STONEFELLOW_CHAT?.workingAttentionBinding || '')) return;
+    current.canvas.icon_url = artwork.icon_url;
+    current.canvas.icon_hash = artwork.icon_hash;
+    workspaceTitle.replaceChildren(canvasArt(current.canvas),document.createTextNode(current.canvas.title));
+  });
+  window.addEventListener('vp3:canvas-list-updated',scheduleFooterRefresh);
   window.addEventListener('vp3:chat-history-updated',scheduleResume);
-  window.addEventListener('focus',scheduleResume);
-  document.addEventListener('visibilitychange',() => { if (!document.hidden) scheduleResume(); });
+  window.addEventListener('storage',event => {
+    if (event.key !== commandChangesKey || !event.newValue) return;
+    try {
+      const change = JSON.parse(event.newValue);
+      if (change.owner === owner && change.agent === agent && change.canvasId === current?.canvas?.id) {
+        current.hasVerifiedGrants = true;
+        clearPrivateAppState(current);
+        setCommandSettings(null);
+        stopSourceRefreshes();
+        closePreview();
+        void loadCommandSettings();
+      }
+    } catch (_error) { /* Ignore unrelated storage events. */ }
+  });
+  window.addEventListener('focus',() => {
+    scheduleResume();
+    scheduleFooterRefresh();
+    if (current?.hasVerifiedGrants) void loadCommandSettings();
+    if (editing() && publishing.open && !locked && !publicationIntent) void loadPublication();
+  });
+  document.addEventListener('visibilitychange',() => {
+    if (!document.hidden) {
+      scheduleResume();
+      scheduleFooterRefresh();
+      if (current?.hasVerifiedGrants) void loadCommandSettings();
+      else if (shown() && (current?.email_source || declaresGmail())) startPreview();
+    } else if (current?.email_source || declaresGmail()) {
+      if (frame?.testing) locked = false;
+      stopSourceRefreshes();
+      closePreview();
+      updateControls();
+    }
+  });
   window.addEventListener('pagehide',() => {
     suspended = true;
+    resetLibraryImagePicker();
+    closeArtworkFrame();
+    clearTimeout(footerTimer);
+    listRequest++;
+    editorListRequest++;
     clearTimeout(resumeTimer);
     clearInterval(resumePoll);
     clearTimeout(poll);
     resumePoll = 0;
+    if (current?.email_source || declaresGmail() || current?.library_image?.image) {
+      if (frame?.testing) locked = false;
+      stopSourceRefreshes();
+      closePreview();
+    }
   });
   window.addEventListener('pageshow',() => {
     suspended = false;
     watchResume();
+    scheduleFooterRefresh();
     if (activeJob(job)) void pollJob(job.run_id,epoch,scope());
     else scheduleResume();
+    if (shown() && current?.library_image?.image) void openSaved(current.canvas.id,current.revision.id,false);
+    else if (current?.hasVerifiedGrants) void loadCommandSettings();
+    else if (shown() && (current?.email_source || declaresGmail())) startPreview();
   });
-  window.VP3CodingCanvasV1 = Object.freeze({
-    async open(id, revision) {
-      if (!matches() || !chat()?.isReady() || chat()?.isRestoring()
-        || typeof id !== 'string' || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id)
-        || (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1))) return false;
-      const version = epoch;
-      await openPanel();
-      if (version !== epoch || !shown() || !matches()) return false;
-      const opened = await openSaved(id, revision);
-      return opened && version === epoch && shown() && matches();
-    }
-  });
+  window.VP3CodingCanvasV1 = Object.freeze({open:openApp});
   const activityParams = new URLSearchParams(location.search);
   const activityCanvas = activityParams.get('canvas_id');
+  const newCanvas = !activityCanvas && activityParams.get('canvas_new') === '1';
   const activityRevisionRaw = activityParams.get('canvas_revision');
   const activityRevision = activityRevisionRaw === null ? undefined : Number(activityRevisionRaw);
   let activityCanvasOpened = false;
   function openActivityCanvas() {
-    if (activityCanvasOpened || !activityCanvas || !matches() || !chat()?.isReady() || chat()?.isRestoring()) return;
+    if (activityCanvasOpened || (!activityCanvas && !newCanvas) || !matches() || !chat()?.isReady() || chat()?.isRestoring()) return;
     activityCanvasOpened = true;
-    void window.VP3CodingCanvasV1.open(activityCanvas, activityRevision).then(opened => {
-      if (!opened) activityCanvasOpened = false;
-    });
+    if (newCanvas) {
+      void openPanel(false);
+      return;
+    }
+    void openApp(activityCanvas, activityRevision);
   }
   window.addEventListener('vp3:chat-context-ready', openActivityCanvas);
   dock.hidden = participantContext();
   watchResume();
   void resume();
+  scheduleFooterRefresh();
   updateControls();
   openActivityCanvas();
 })();

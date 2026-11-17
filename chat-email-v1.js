@@ -223,7 +223,7 @@
     const controller = new AbortController();
     pending = controller;
     const progress = {
-      review: 'Loading the exact draft…', confirm: 'Checking the reviewed send…',
+      review: 'Loading the exact draft…', review_latest: 'Reading the current Gmail thread…', confirm: 'Checking the reviewed send…',
       revise: 'Saving your edits…', revise_ai: 'Queuing your revision…', retry_write:'Queuing another writing attempt…',
       discard: 'Discarding the draft…'
     };
@@ -249,7 +249,7 @@
     } catch (error) {
       if (!valid(selection) || error.name === 'AbortError') return;
       status.textContent = error.message || 'The email review is unavailable.';
-      if (['confirm','review','revise','revise_ai','retry_write'].includes(action)) {
+      if (['confirm','review','review_latest','revise','revise_ai','retry_write'].includes(action)) {
         actions.replaceChildren(button('Refresh review', () => request('review')));
       }
     } finally {
@@ -270,6 +270,9 @@
       write_queued: 'The Email Specialist is queued to write this draft.',
       writing: draft.write_kind === 'revise' ? 'The Email Specialist is revising the saved draft.' : 'The Email Specialist is writing the reply.',
       write_failed: 'AI could not finish this draft. Retry with AI or use the manual editor.',
+      stale: 'A newer Gmail message arrived. Review the latest message before sending.',
+      source_check: 'Gmail could not verify the current thread. Reopen the latest message before sending.',
+      answered: 'You already replied to this message in Gmail.',
       sending: 'Gmail’s send outcome is pending. Check the status of this reviewed email.',
       sent: draft.watch_registered
         ? 'Gmail confirmed the send. A reply watch was registered for up to 30 days.'
@@ -283,7 +286,9 @@
         ? 'Gmail access changed while this send was pending. Check Sent in Gmail for the outcome.'
         : 'Gmail access changed. Check the account in Connections, then prepare a new draft.';
     } else {
-      status.textContent = states[draft.status] || 'The email review is unavailable.';
+      status.textContent = draft.status === 'prepared' && draft.latest_reply
+        ? 'Review the latest message and update your reply as needed before approving it.'
+        : (states[draft.status] || 'The email review is unavailable.');
     }
     if (draft.status === 'discarded') return;
 
@@ -306,6 +311,15 @@
     subject.readOnly = !editing || draft.is_reply === true;
     body.readOnly = !editing;
     details.append(addresses, labelField('Subject', subject), labelField('Message', body));
+    if (draft.latest_reply && typeof draft.latest_reply.excerpt === 'string') {
+      const latest = element('details');
+      latest.open = true;
+      const excerpt = element('pre', draft.latest_reply.excerpt);
+      excerpt.style.whiteSpace = 'pre-wrap';
+      excerpt.style.overflowWrap = 'anywhere';
+      latest.append(element('summary', 'Latest Gmail message'), element('strong', draft.latest_reply.subject), excerpt);
+      details.prepend(latest);
+    }
 
     const watch = element('input');
     watch.type = 'checkbox';
@@ -317,7 +331,12 @@
       label.append(watch, element('span', 'Watch for the first reply for 30 days'));
       details.append(label);
     }
-    if (['prepared','write_failed','write_queued'].includes(draft.status) && !draft.connection_changed) actions.append(button('Discard draft', () => request('discard')));
+    if (['prepared','write_failed','write_queued','stale','source_check','answered'].includes(draft.status) && !draft.connection_changed) actions.append(button('Discard draft', () => request('discard')));
+    if (draft.can_review_latest && !draft.connection_changed) {
+      const latest = button('Review latest Gmail message', () => request('review_latest'));
+      latest.className = 'vp3-chat-email-primary';
+      actions.append(latest);
+    }
     if (!draft.review_token && !draft.watch_review_token) return;
     const writeBody = body.value.trim();
     const complete = () => (draft.is_reply === true || Boolean(subject.value.trim())) && Boolean(body.value.trim());
@@ -438,9 +457,15 @@
       const message = data.message;
       const headers = element('dl');
       headers.append(element('dt','From'),element('dd',message.from),element('dt','Subject'),element('dd',message.subject || '(No subject)'));
-      const body = element('p',message.body || 'This message has no readable text.');
-      body.className = 'vp3-chat-email-message-body';
-      details.append(headers,body);
+      details.append(headers);
+      const body = message.body || 'This message has no readable text.';
+      const renderBody = window.VP3GmailInboxInitialV1?.renderMessageBody;
+      if (renderBody) renderBody(details,body,message.links,'vp3-chat-email-message-body');
+      else {
+        const text = element('p',body);
+        text.className = 'vp3-chat-email-message-body';
+        details.append(text);
+      }
       if (message.can_reply) {
         const instruction = element('input');
         instruction.type = 'text';

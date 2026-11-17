@@ -81,7 +81,7 @@ foreach([null,'text'] as $delivery){$text=voice_seed($delivery);voice_check(voic
 $long=voice_seed('voice',str_repeat('A useful source-grounded private next step. ',10));
 voice_check(voice_call('voice_candidates',$long)['candidates']===[],'a long voice-requested check-in falls back to visible text');
 $input=voice_seed();db()->exec('UPDATE team_user_presence SET agent_voice_enabled=0 WHERE user_id=1');
-voice_reject(fn()=>voice_call('voice_candidates',$input),409,'the actual VoiceMaster off setting prevents candidate disclosure');
+voice_check(voice_call('voice_candidates',$input)['candidates']===[],'the actual VoiceMaster off setting returns no candidates');
 voice_reject(fn()=>voice_call('voice_claim',$input),409,'the actual VoiceMaster off setting prevents a claim');
 db()->exec('UPDATE team_user_presence SET agent_voice_enabled=1 WHERE user_id=1');$GLOBALS['voiceAccountEntitled']=false;
 voice_reject(fn()=>voice_call('voice_claim',$input),409,'current voice entitlement is required in addition to the stored master setting');$GLOBALS['voiceAccountEntitled']=true;
@@ -89,8 +89,10 @@ foreach([['chat_busy'=>true],['chat_focused'=>false],['focused'=>false],['visibl
     voice_presence($change);voice_reject(fn()=>voice_call('voice_claim',$input),409,'current owner typing focus visibility and tab fences apply: '.array_key_first($change));
 }
 voice_presence();db()->exec("UPDATE agent_activity_state SET last_heartbeat_at='2000-01-01 00:00:00' WHERE user_id=1");
+voice_check(voice_call('voice_candidates',$input)['candidates']===[],'a stale owner heartbeat defers candidate listing');
 voice_reject(fn()=>voice_call('voice_claim',$input),409,'stale owner presence cannot authorize spoken output');voice_presence();
 $bad=$input;$bad['working_attention_binding']='other-owner-page';voice_reject(fn()=>voice_call('voice_claim',$bad),403,'a stale page binding cannot claim voice');
+voice_reject(fn()=>voice_call('voice_candidates',$bad),403,'a stale page binding cannot read voice candidates');
 $bad=$input;$bad['request_id']='not-a-uuid';voice_reject(fn()=>voice_call('voice_claim',$bad),0,'voice requests require a typed UUID identity');
 $bad=$input;$bad['message_id']++;voice_reject(fn()=>voice_call('voice_claim',$bad),409,'a different Chat message cannot borrow the source run receipt');
 voice_reject(fn()=>vp3_initiative_voice_v1(db(),['id'=>1,'is_active'=>1],18,170,'voice_claim',$input),403,'a sibling Agent cannot claim this conversation output');
@@ -115,7 +117,8 @@ function voice_packet(string $activity='quiet',string $session='33333333-3333-43
             'quiet_duration_ms'=>$activity==='quiet'?5000:0,'observed_window_ms'=>10000,'authentication_authority'=>false]];
 }
 $input=voice_seed();voice_presence(['live_context'=>voice_packet('energy')]);$visible=checkin_count();
-voice_reject(fn()=>voice_call('voice_candidates',$input),409,'actual nonverbal microphone energy defers the optional voice rendering');
+voice_check(voice_call('voice_candidates',$input)['candidates']===[],'actual microphone energy defers optional speech without failing the candidate request');
+voice_reject(fn()=>voice_call('voice_claim',$input),409,'microphone energy still prevents a speech claim');
 voice_check(checkin_count()===$visible&&!isset(voice_saved($input['run_id'])['initiative_voice']),
     'microphone deferral leaves the visible canonical text and its unconsumed voice decision intact');
 voice_presence(['live_context'=>voice_packet()]);$claim=voice_call('voice_claim',$input);

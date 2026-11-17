@@ -89,6 +89,12 @@ function agent_connection_email_followup_live_connection_v1(PDO $pdo, int $owner
     return $connection;
 }
 
+function agent_connection_email_followup_link_v1(array $connection,int $agent,int $conversation,int $chatMessage,string $providerId): string
+{
+    return hash_hmac('sha256',implode(':',['gmail-followup-chat-v1',$connection['owner_user_id'],$connection['id'],
+        $agent,$conversation,$chatMessage,$providerId]),$connection['authorization_key']);
+}
+
 /** Resolve exact delivered notices for one already-authorized private Chat. */
 function agent_connection_email_followup_delivered_v1(PDO $pdo, array $connection, int $agent, int $conversation, array $chatMessageIds): array
 {
@@ -108,10 +114,13 @@ function agent_connection_email_followup_delivered_v1(PDO $pdo, array $connectio
         $id = (int)$row['reply_chat_message_id'];
         $providerId = agent_connection_gmail_id_v1($row['reply_message_id']);
         $context = json_decode((string)$row['context_json'],true,24);
-        if ($providerId === '' || ($context['source'] ?? null) !== 'agent_connection_email_followup'
-            || ($context['email_followup']['connection_id'] ?? null) !== (int)$connection['id']
-            || ($context['email_followup']['agent_id'] ?? null) !== $agent
-            || (isset($messages[$id]) && $messages[$id]['message_id'] !== $providerId)) {
+        $native = ($context['source'] ?? null) === 'agent_connection_email_followup'
+            && ($context['email_followup']['connection_id'] ?? null) === (int)$connection['id']
+            && ($context['email_followup']['agent_id'] ?? null) === $agent;
+        $shared = ($context['source'] ?? null) === 'agent_connection_gmail_inbox_update'
+            && in_array(agent_connection_email_followup_link_v1($connection,$agent,$conversation,$id,$providerId),
+                (array)($context['gmail_inbox_update_v1']['followup_links'] ?? []),true);
+        if ($providerId === '' || (!$native && !$shared) || (isset($messages[$id]) && $messages[$id]['message_id'] !== $providerId)) {
             $ambiguous[$id] = true;
         }
         $messages[$id] ??= ['message_id'=>$providerId,'sender'=>agent_connection_gmail_address_v1($row['recipient_email']),
@@ -154,7 +163,8 @@ function agent_connection_email_followup_history_v1(PDO $pdo, array $user, int $
     $contexts = [];
     foreach ($messages as $index=>$message) {
         $raw = $message['context_json'] ?? null;
-        if (!is_string($raw) || (!str_contains($raw,'agent_connection_email_followup') && !str_contains($raw,'gmail_followup'))) continue;
+        if (!is_string($raw) || (!str_contains($raw,'agent_connection_email_followup') && !str_contains($raw,'gmail_followup')
+            && !str_contains($raw,'followup_links'))) continue;
         $context = json_decode($raw,true,24);
         if (!is_array($context)) continue;
         if (is_array($context['actions'] ?? null)) {
@@ -162,11 +172,14 @@ function agent_connection_email_followup_history_v1(PDO $pdo, array $user, int $
             $messages[$index]['context_json'] = json_encode($context,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
         }
         $id = (int)($message['id'] ?? 0);
-        if (($context['source'] ?? null) !== 'agent_connection_email_followup' || ($message['role'] ?? null) !== 'assistant' || $id < 1) continue;
+        $native = ($context['source'] ?? null) === 'agent_connection_email_followup';
+        $shared = ($context['source'] ?? null) === 'agent_connection_gmail_inbox_update'
+            && !empty($context['gmail_inbox_update_v1']['followup_links']) && empty($context['gmail_inbox_review_v1']);
+        if ((!$native && !$shared) || ($message['role'] ?? null) !== 'assistant' || $id < 1) continue;
         $contexts[$index] = $context;
         $notices[$index] = $id;
         // Older alerts stored the sender in their display text. Only the current grant can restore it.
-        $messages[$index]['message'] = 'A Gmail watch found a message in this Chat.';
+        if ($native) $messages[$index]['message'] = 'A Gmail watch found a message in this Chat.';
     }
     if (!$notices) return $messages;
     try {
@@ -429,6 +442,30 @@ function agent_connection_email_followup_reschedule_v1(PDO $pdo, array $watch, s
             $watch['owner_user_id'],$watch['operation_key'],$claim]);
 }
 
+/** Only existing, exact native watch notices can cover an Inbox alert in the same Chat. */
+function agent_connection_email_followup_posted_v1(PDO $pdo,array $connection,int $agent,int $conversation,array $providerIds): array
+{
+    if (!$providerIds || !agent_connection_email_followup_ready_v1($pdo)) return [];
+    $ids = implode(',',array_fill(0,count($providerIds),'?'));
+    $query = $pdo->prepare("SELECT DISTINCT f.reply_message_id,m.id,m.context_json FROM agent_connection_email_followups_v1 f
+        JOIN chat_messages m ON m.id=f.reply_chat_message_id AND m.conversation_id=f.conversation_id
+        WHERE f.owner_user_id=? AND f.connection_id=? AND f.authorization_key=? AND f.account_email=?
+        AND f.agent_id=? AND f.conversation_id=? AND f.status='delivered' AND m.role='assistant' AND m.user_id IS NULL
+        AND f.reply_message_id IN ($ids) ORDER BY m.id");
+    $query->execute([$connection['owner_user_id'],$connection['id'],$connection['authorization_key'],
+        agent_connection_gmail_address_v1($connection['account_email']),$agent,$conversation,...$providerIds]);
+    $notices = [];
+    while ($row = $query->fetch(PDO::FETCH_ASSOC)) {
+        $context = json_decode((string)$row['context_json'],true,12);
+        if (($context['source'] ?? null) === 'agent_connection_email_followup'
+            && ($context['email_followup']['connection_id'] ?? null) === (int)$connection['id']
+            && ($context['email_followup']['agent_id'] ?? null) === $agent) {
+            $notices[$row['reply_message_id']] ??= (int)$row['id'];
+        }
+    }
+    return $notices;
+}
+
 function agent_connection_email_followup_deliver_v1(PDO $pdo, array $watch, string $claim, array $reply): bool
 {
     // Observe an administrator pause committed while the provider request was running.
@@ -438,8 +475,20 @@ function agent_connection_email_followup_deliver_v1(PDO $pdo, array $watch, stri
         // The verified-send callback holds the connection first, then the original Chat.
         $connection = agent_connections_find_v1($pdo,$owner,(int)$watch['connection_id'],true);
         $record = $connection ? agent_connections_view_v1($connection) + ['authorization_key'=>$connection['authorization_key']] : null;
-        if (!agent_connection_email_followup_grant_v1($watch,$record)
-            || !agent_connection_email_followup_origin_v1($pdo,$watch,true)) {
+        $hasGrant = agent_connection_email_followup_grant_v1($watch,$record);
+        $senderWatch = ($watch['sender_after_ms']??null) !== null;
+        $inbox = null;
+        if ($hasGrant) {
+            require_once __DIR__.'/agent-email-matters-v1.php';
+            if (agent_email_matters_ready_v1($pdo)) {
+                require_once __DIR__.'/agent-connection-gmail-inbox-settings-v1.php';
+                if (agent_connection_gmail_inbox_ready_v1($pdo)) {
+                    $policy = agent_connection_gmail_inbox_policy_v1($pdo,$owner,true);
+                    if (!empty($policy['enabled']) && agent_connection_gmail_inbox_bound_policy_v1($policy,$connection)) $inbox = $policy;
+                }
+            }
+        }
+        if (!$hasGrant || !agent_connection_email_followup_origin_v1($pdo,$watch,true)) {
             agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,null);
             return false;
         }
@@ -458,14 +507,32 @@ function agent_connection_email_followup_deliver_v1(PDO $pdo, array $watch, stri
         if ($claimRow->fetchColumn() === false) return false;
         $providerId = agent_connection_gmail_id_v1($reply['message_id'] ?? null);
         if ($providerId === '') throw new DomainException('The watched Gmail message could not be identified.',409);
-        $senderWatch = ($watch['sender_after_ms']??null) !== null;
-        // A sender watch and a thread watch can match the same message. Reuse the notice in that Chat.
-        $prior = $pdo->prepare("SELECT f.reply_chat_message_id FROM agent_connection_email_followups_v1 f
-            JOIN chat_messages m ON m.id=f.reply_chat_message_id AND m.conversation_id=f.conversation_id AND m.role='assistant'
-            WHERE f.owner_user_id=? AND f.connection_id=? AND f.authorization_key=? AND f.agent_id=? AND f.conversation_id=?
-            AND f.status='delivered' AND f.reply_message_id=? ORDER BY f.reply_chat_message_id LIMIT 1");
-        $prior->execute([$owner,$watch['connection_id'],$watch['authorization_key'],$watch['agent_id'],$watch['conversation_id'],$providerId]);
-        $messageId = (int)$prior->fetchColumn();
+        // A sender watch, a thread watch and Inbox triage can reach the same message in either order.
+        $agent = (int)$watch['agent_id'];
+        $conversation = (int)$watch['conversation_id'];
+        $messageId = agent_connection_email_followup_posted_v1($pdo,$connection,$agent,$conversation,[$providerId])[$providerId] ?? 0;
+        if ($messageId === 0 && ($inbox['rules']['triage_enabled'] ?? false) === true) {
+            require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+            $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,['id'=>$owner]);
+            $messageId = agent_connection_gmail_inbox_update_alert_notice_v1($pdo,$scope,$agent,$conversation,$providerId,
+                agent_connection_gmail_id_v1($reply['thread_id'] ?? null));
+            if ($messageId > 0) {
+                $marker = $pdo->prepare('SELECT context_json FROM chat_messages WHERE id=? AND conversation_id=?'.agent_commerce_lock_pa2($pdo));
+                $marker->execute([$messageId,$conversation]);
+                $context = json_decode((string)$marker->fetchColumn(),true,12);
+                if (($context['source'] ?? null) !== 'agent_connection_gmail_inbox_update') {
+                    $messageId = 0;
+                } else {
+                    $links = (array)($context['gmail_inbox_update_v1']['followup_links'] ?? []);
+                    $link = agent_connection_email_followup_link_v1($connection,$agent,$conversation,$messageId,$providerId);
+                    if (!in_array($link,$links,true)) {
+                        $context['gmail_inbox_update_v1']['followup_links'] = [...$links,$link];
+                        $pdo->prepare('UPDATE chat_messages SET context_json=? WHERE id=? AND conversation_id=?')
+                            ->execute([json_encode($context,JSON_THROW_ON_ERROR),$messageId,$conversation]);
+                    }
+                }
+            }
+        }
         $posted = $messageId < 1;
         if ($posted) {
             $context = json_encode(['source'=>'agent_connection_email_followup','skip_brain_archive'=>true,'email_followup'=>[
@@ -489,6 +556,10 @@ function agent_connection_email_followup_deliver_v1(PDO $pdo, array $watch, stri
         $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='delivered',claim_key=NULL,next_check_at=NULL,reply_message_id=?,reply_chat_message_id=?
             WHERE owner_user_id=? AND operation_key=? AND claim_key=?")
             ->execute([$providerId,$messageId,$owner,$watch['operation_key'],$claim]);
+        if (!$senderWatch && $inbox !== null) {
+            agent_connection_gmail_inbox_project_matter_receipt_v1($pdo,static fn() =>
+                agent_email_matters_note_watched_reply_v1($pdo,$inbox,$watch,$reply));
+        }
         return $posted;
     });
 }

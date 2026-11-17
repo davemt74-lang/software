@@ -20,6 +20,8 @@ const replyDraft = {id:'d'.repeat(32), status:'prepared', is_reply:true, from:'o
   subject:'', body:'', review_token:'fixture-manual-token'};
 const newDraft = {id:'e'.repeat(32), status:'prepared', is_reply:false, from:'owner@example.test', to:sender,
   subject:'Fixture new subject', body:'Fixture saved body.', review_token:'fixture-new-token'};
+const staleDraft = {id:'f'.repeat(32), status:'stale', is_reply:true, from:'owner@example.test', to:sender,
+  subject:'Shipment date', body:'Monday works for me.', can_review_latest:true};
 const replyCalls = [];
 const searchRef = 'a1'.repeat(64);
 const followupId = 800;
@@ -54,7 +56,7 @@ await page.route('**/api/**', async route => {
       return ok({message:{subject:'Exact received email',from:sender,body:'This is the exact private body.',can_reply:true}});
     }
     if (payload.action !== 'specialist_status') {
-      const draft = [replyDraft,newDraft].find(value => value.id === payload.draft_id);
+      const draft = [replyDraft,newDraft,staleDraft].find(value => value.id === payload.draft_id);
       assert.ok(draft);
       assert.equal(payload.conversation_id,42);
       replyCalls.push(payload);
@@ -80,6 +82,11 @@ await page.route('**/api/**', async route => {
         assert.equal(payload.body,'This is my reply.');
         assert.equal(payload.review_token,'fixture-manual-token');
         Object.assign(replyDraft,{body:payload.body,review_token:'fixture-revised-token'});
+      } else if (payload.action === 'review_latest') {
+        assert.equal(draft,staleDraft);
+        assert.equal(payload.review_token,undefined);
+        Object.assign(staleDraft,{status:'prepared',can_review_latest:false,review_token:'fixture-current-thread-token',
+          latest_reply:{subject:'Shipment date',excerpt:'Friday is now the earliest available date.'}});
       } else if (payload.action === 'confirm') {
         assert.equal(draft,replyDraft);
         assert.equal(payload.review_token,'fixture-revised-token');
@@ -409,6 +416,16 @@ try {
   assert.equal(replyCalls.filter(call=>call.action==='confirm').length,1);
   await replyReview.getByRole('button',{name:'Close'}).click();
   await specialist.waitFor({state:'detached'});
+
+  await openDraft(staleDraft.id,'Review a Gmail draft with a newer reply');
+  await replyReview.getByText('A newer Gmail message arrived. Review the latest message before sending.',{exact:true}).waitFor();
+  assert.equal(await approveReply.count(),0);
+  await replyReview.getByRole('button',{name:'Review latest Gmail message'}).click();
+  await replyReview.getByText('Friday is now the earliest available date.',{exact:true}).waitFor();
+  await approveReply.waitFor();
+  assert.equal(await body.inputValue(),'Monday works for me.');
+  assert.equal(replyCalls.filter(call=>call.action==='confirm').length,1,'Reopening shows the latest message and waits for a fresh send approval.');
+  await replyReview.getByRole('button',{name:'Close'}).click();
 
   await page.setViewportSize({width:390,height:844});
   const tools = page.getByRole('dialog',{name:'Chat tools'});

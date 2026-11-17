@@ -225,6 +225,26 @@ $leadUrl='https://baking.example/oven-guide';
 $quote='A well insulated oven recovers heat faster after the door closes.';
 $hits=['ok'=>true,'results'=>[['url'=>$publicUrl,'title'=>'Oven heat recovery'],['url'=>$leadUrl,'title'=>'Oven temperature guide']]];
 $beforeReports=count(scope_messages());
+$afterOutageCalls=0;
+$outage=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$researchRunId),
+    static function()use(&$afterOutageCalls):never{++$afterOutageCalls;throw new LogicException('Unexpected synthesis.');},[
+        'search'=>static fn():array=>['ok'=>false,'results'=>[]],
+        'request'=>static function()use(&$afterOutageCalls):never{++$afterOutageCalls;throw new LogicException('Unexpected page request.');},
+    ]);
+$outageRun=agent_workflow_row_v1400($pdo,1,$researchRunId);
+$outageProof=$pdo->prepare('SELECT status,error_class,result_json FROM agent_workflow_receipts WHERE run_id=? AND attempt_no=1');
+$outageProof->execute([$researchRunId]);$outageProof=$outageProof->fetch();
+$outageResult=json_decode((string)($outageProof['result_json']??''),true);
+pipeline_check(!$outage['ok']&&$outage['reason']==='public_search_unavailable'&&$outageRun['status']==='approved'
+    &&agent_job_utc_timestamp_v1900($outageRun['next_attempt_at'])>time()
+    &&$outageProof['status']==='retry_scheduled'&&$outageProof['error_class']==='public_search_unavailable'
+    &&$outageResult['failure_cause']==='public_search_unavailable'&&$outageResult['failure_phase']==='tool'
+    &&$afterOutageCalls===0&&count(scope_messages())===$beforeReports,
+    'public search outage keeps its exact reason, schedules a bounded retry, and posts no false result');
+pipeline_check(agent_job_claim_run_v1900($pdo,$user,$researchRunId,'cloud',agent_worker_cloud_worker_id_v1910(1))===null,
+    'the saved retry cannot be claimed before its durable backoff');
+$pdo->prepare("UPDATE agent_workflow_runs SET next_attempt_at='2000-01-01 00:00:00' WHERE id=?")->execute([$researchRunId]);
+$pdo->prepare("UPDATE agent_workflow_actions SET available_at='2000-01-01 00:00:00' WHERE run_id=?")->execute([$researchRunId]);
 $afterExpiryCalls=0;
 $interrupted=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$researchRunId),
     static function()use(&$afterExpiryCalls):never{++$afterExpiryCalls;throw new LogicException('Unexpected synthesis.');},[
@@ -291,6 +311,20 @@ $ageReview->execute([gmdate('Y-m-d H:i:s',time()-301)]);
 vp3_initiative_schedule_v1($pdo,$user,17);
 pipeline_check(count(scope_runs(1,17,'initiative.plan'))===$beforePlans+1,
     'a later sweep of the same decision and evidence does not queue the thought again');
+
+$invalidGoal=array_replace($researchGoal,['focus'=>'']);
+vp3_initiative_enqueue_v1($pdo,$user,'initiative.prepare',$invalidGoal,hash('sha256','invalid-public-research-fixture'));
+$invalidRun=(int)array_slice(scope_runs(1,17,'initiative.prepare'),-1)[0]['id'];
+$invalidResult=vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$invalidRun),null,[
+    'search'=>static function()use(&$afterOutageCalls):never{++$afterOutageCalls;throw new LogicException('Unexpected search.');},
+]);
+$invalidRow=agent_workflow_row_v1400($pdo,1,$invalidRun);
+$invalidProof=$pdo->prepare('SELECT status,result_json FROM agent_workflow_receipts WHERE run_id=? AND attempt_no=1');
+$invalidProof->execute([$invalidRun]);$invalidProof=$invalidProof->fetch();
+$invalidEvidence=json_decode((string)($invalidProof['result_json']??''),true);
+pipeline_check(!$invalidResult['ok']&&$invalidRow['status']==='failed'&&$invalidProof['status']==='failed'
+    &&$invalidEvidence['failure_cause']==='invalid_data'&&$invalidRow['next_attempt_at']===null&&$afterOutageCalls===0,
+    'an invalid research assignment never calls public search and remains a terminal failure');
 
 $association=array_intersect_key($decision['initiative_followthrough'],['message_id'=>true,'reply_ref'=>true,'revision'=>true]);
 $declinedAt=time();

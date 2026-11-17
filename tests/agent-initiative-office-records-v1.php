@@ -246,4 +246,26 @@ office_check(vp3_calendar_prep_chat_intent_v1("What have I done and what's left 
     &&!vp3_calendar_prep_chat_intent_v1('Add an event to my calendar today')
     &&!vp3_calendar_prep_chat_intent_v1('What is left to prepare for tomorrow’s event?'),
     'the prep intent accepts today’s questions and leaves mutations and other dates with their own tools');
+$pdo->beginTransaction();
+$pdo->exec('DELETE FROM agent_memory_items WHERE id BETWEEN 1000 AND 1109');
+foreach(range(9010,9015) as $id)
+    $task->execute([$id,1,null,410,'task','Recent routine task','',json_encode(['task_status'=>'open']),1,'quiet-'.$id,.8,1,'2026-11-06 12:00:00']);
+$task->execute([9000,1,null,410,'task','Confirm the purchase order','',
+    json_encode(['task_status'=>'waiting','due_at'=>'2026-11-05']),1,'older-waiting',.8,1,'2026-11-01 12:00:00']);
+$task->execute([9001,1,null,410,'task','Different assignee deadline','',
+    json_encode(['task_status'=>'waiting','due_at'=>'2026-11-01','assigned_user_id'=>2]),1,'other-assignee',.8,1,'2026-11-01 12:00:00']);
+[$ranked,$rankedCoverage]=office_evidence($scope,null,$now);
+office_check(($ranked['task:9000']['task_attention']??null)===['waiting'=>true,'deadline'=>'overdue']
+    &&$ranked['task:9000']['due_at']==='2026-11-05'&&!isset($ranked['task:9001'])
+    &&$rankedCoverage['office_tasks']==='limited',
+    'verified waiting and overdue work survives recent routine tasks without admitting a different assignee');
+[$dueToday]=office_evidence($scope,['task:9000'],$now->modify('-1 day'));
+office_check($dueToday['task:9000']['task_attention']['deadline']==='due_today'
+    &&$dueToday['task:9000']['revision']===$ranked['task:9000']['revision']
+    &&office_read($scope,'tasks.read','task:9000',$dueToday)===office_read($scope,'tasks.read','task:9000',$ranked),
+    'date-only tasks stay due today through the local day and the relative deadline does not alter exact read proofs');
+$pdo->rollBack();
+office_check(vp3_initiative_task_attention_v1(['due_at'=>'2026-02-30'],$now)===null
+    &&vp3_initiative_task_attention_v1(['due_at'=>'2026-11-06T10:00:00Z'],$now)===['waiting'=>false,'deadline'=>'overdue'],
+    'invalid dates cannot create urgency and exact times become overdue when they pass');
 echo 'AGENT_INITIATIVE_OFFICE_RECORDS_V1=PASS ('.$checks.' cases)'.PHP_EOL;

@@ -2,7 +2,7 @@
   'use strict';
 
   let socialChatEnabled = true;
-  const compactRail = window.matchMedia('(max-width:760px)');
+  const compactRail = window.matchMedia('(max-width:820px)');
 
   function removeRedundantAgentHeading() {
     document.querySelectorAll('.workspace-main-sidebar .chat-sidebar-nav-section>.chat-history-label').forEach(label => {
@@ -67,10 +67,12 @@
     if (launcher.parentElement !== slot) slot.appendChild(launcher);
 
     launcher.dataset.railDocked = 'right-v132';
-    const users = rail.querySelector('.sf-online-users-v109');
-    const windows = document.getElementById('sfTeamChatWindowsV109');
-    if (users) users.hidden = !socialChatEnabled;
-    if (windows) windows.hidden = !socialChatEnabled;
+    if (!rail.hasAttribute('data-agent-chat-rail')) {
+      const users = rail.querySelector('.sf-online-users-v109');
+      const windows = document.getElementById('sfTeamChatWindowsV109');
+      if (users) users.hidden = !socialChatEnabled;
+      if (windows) windows.hidden = !socialChatEnabled;
+    }
 
     // The right rail remains present because it owns Chat Settings, even when
     // direct user-to-user chat is turned off.

@@ -82,15 +82,19 @@
         status.expires_at ? Date.parse(status.expires_at) : 0;
       if ((status.state === 'running' || status.expires_at) && !(expiresAt > now)) continue;
       const messageId = status.state === 'completed' ? status.message_id : 0;
-      if (status.state === 'completed' && (!assignments.has(id) || !Number.isSafeInteger(messageId) || messageId < 1)) continue;
-      const signature = JSON.stringify([status.state,status.kind,status.subject,expiresAt,messageId]);
+      const meeting = status.meeting_followup;
+      const followup = [meeting?.commitment,meeting?.title].find(value =>
+        typeof value === 'string' && value.trim() && Array.from(value).length <= 240) || '';
+      const linkedResult = Boolean(followup && messageId && expiresAt > now);
+      if (status.state === 'completed' && ((!assignments.has(id) && !linkedResult) || !Number.isSafeInteger(messageId) || messageId < 1)) continue;
+      const signature = JSON.stringify([status.state,status.kind,status.subject,expiresAt,messageId,followup]);
       const row = {status,expiresAt,signature};
       next.set(id,row);
       if (assignments.get(id)?.signature === signature) continue;
       window.VP3ChatSpecialists?.update(keyFor(id), {
         type:'research', state:status.state, label, title:status.subject, status:statuses[status.state], expiresAt,
-        desktop:status.state === 'running',
-        detail:status.kind === 'artist' ? 'Artist research' : 'Topic research',
+        desktop:status.state === 'running' || linkedResult, desktopResult:linkedResult,
+        detail:followup ? `Meeting follow-up · ${followup}` : status.kind === 'artist' ? 'Artist research' : 'Topic research',
         ...(messageId ? {viewLabel:'View result', onView:() => showResult(conversationId,messageId)} : {})
       });
     }

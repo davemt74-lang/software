@@ -182,7 +182,7 @@ function vp3_initiative_opportunity_sources_v1(PDO $pdo,array $user,array $princ
         ||(int)($principal['viewer_user_id']??$owner)!==$owner||vp3_participant_scope_v1()!==null){
         throw new RuntimeException('Private Initiative opportunity access is required.',403);
     }
-    return vp3_initiative_in_scope_v1($user,$aid,static function()use($pdo,$user,$principal,$selectedRefs,&$coverage):array{
+    return vp3_initiative_in_scope_v1($user,$aid,static function()use($pdo,$user,$principal,$aid,$now,$selectedRefs,&$coverage):array{
         $live=vp3_capability_live_user_v1($pdo,$user,$principal,[],null);
         if(!has_permission('account.access',$live))throw new RuntimeException('Initiative opportunity access changed.',403);
         $selected=[
@@ -194,6 +194,35 @@ function vp3_initiative_opportunity_sources_v1(PDO $pdo,array $user,array $princ
         foreach(['chat_history'=>'chat','canvas_work'=>'canvases','song_history'=>'songs'] as $family=>$reader){
             try{[$coverage[$family],$rows]=('vp3_initiative_opportunity_'.$reader.'_v1')($pdo,$live,$principal,$selected[$family]);$evidence+=$rows;}
             catch(Throwable $error){$coverage[$family]=in_array($error->getCode(),[403,404],true)?'forbidden':'unavailable';}
+        }
+        $media=vp3_initiative_opportunity_selected_v1($selectedRefs,'youtube-play-analysis','/\Ayoutube-play-analysis:([a-f0-9-]{36})\z/D');
+        if($media!==[]){
+            require_once __DIR__.'/agent-media-youtube-play-analysis-v1.php';
+            $coverage['media']='ready';
+            try{$evidence+=vp3_initiative_media_play_evidence_v1($pdo,$live,vp3_initiative_policy_v1($live,$aid),$now,$media);}
+            catch(Throwable $error){$coverage['media']=in_array($error->getCode(),[403,404],true)?'forbidden':'unavailable';}
+        }
+        if($selectedRefs!==null){
+            $visual=array_values(array_filter($selectedRefs,static fn(mixed $ref):bool=>is_string($ref)&&str_starts_with($ref,'media-image:')));
+            if($visual){
+                require_once __DIR__.'/agent-initiative-media-image-source-v1.php';
+                try{$evidence+=vp3_initiative_media_image_evidence_v1($pdo,$live,$principal,
+                    (int)(vp3_initiative_policy_v1($live,$aid)['conversation_id']??0),$now,$visual,$coverage);}
+                catch(RuntimeException $error){$coverage['media_images']=in_array($error->getCode(),[403,404],true)?'forbidden':'unavailable';}
+            }
+            $feedback=vp3_initiative_opportunity_selected_v1($selectedRefs,'canvas-feedback','/\Acanvas-feedback:([1-9][0-9]{0,15})\z/D');
+            if($feedback){
+                require_once __DIR__.'/agent-initiative-canvas-feedback-v1.php';
+                $coverage['canvas_feedback']='ready';
+                try{
+                    foreach($feedback as $ref=>$message){
+                        $source=vp3_initiative_canvas_feedback_source_v1($pdo,$live,$principal,(int)$message);
+                        if($source!==null)$evidence[$ref]=$source;
+                    }
+                }catch(Throwable $error){
+                    $coverage['canvas_feedback']='unavailable';
+                }
+            }
         }
         $live=vp3_capability_live_user_v1($pdo,$live,$principal,[],null);
         if(!has_permission('account.access',$live)||vp3_participant_scope_v1()!==null)throw new RuntimeException('Initiative opportunity access changed.',403);

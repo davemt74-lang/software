@@ -4,6 +4,8 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-connections-v1.php';
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
 require_once __DIR__.'/agent-connection-gmail-inbox-batches-v1.php';
+require_once __DIR__.'/agent-email-running-report-v1.php';
+require_once __DIR__.'/agent-connection-gmail-inbox-sync-v1.php';
 
 function agent_connection_gmail_inbox_install_v1(PDO $pdo): void
 {
@@ -34,6 +36,8 @@ function agent_connection_gmail_inbox_install_v1(PDO $pdo): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"));
     if ($sqlite) $pdo->exec('CREATE INDEX IF NOT EXISTS idx_gmail_inbox_review_due_v1 ON agent_connection_gmail_inbox_v1 (enabled,next_check_at)');
     agent_connection_gmail_inbox_batches_install_v1($pdo);
+    agent_email_running_report_install_v1($pdo);
+    agent_connection_gmail_inbox_sync_install_v1($pdo);
 }
 
 function agent_connection_gmail_inbox_ready_v1(PDO $pdo): bool
@@ -57,6 +61,12 @@ function agent_connection_gmail_inbox_storage_ready_v1(PDO $pdo): bool
         && agent_connection_gmail_inbox_initial_capacity_ready_v1($pdo);
 }
 
+function agent_connection_gmail_inbox_policy_rules_v1(array $row): array
+{
+    $rules = json_decode((string)($row['rules_json'] ?? ''),true);
+    return is_array($rules) ? $rules : ['senders'=>[],'domains'=>[],'subjects'=>[],'github_actions'=>false];
+}
+
 function agent_connection_gmail_inbox_policy_v1(PDO $pdo, int $ownerId, bool $lock = false): ?array
 {
     if ($ownerId < 1) return null;
@@ -65,8 +75,7 @@ function agent_connection_gmail_inbox_policy_v1(PDO $pdo, int $ownerId, bool $lo
     $query->execute([$ownerId]);
     $row = $query->fetch(PDO::FETCH_ASSOC);
     if (!$row) return null;
-    $rules = json_decode($row['rules_json'],true);
-    $row['rules'] = is_array($rules) ? $rules : ['senders'=>[],'domains'=>[],'subjects'=>[],'github_actions'=>false];
+    $row['rules'] = agent_connection_gmail_inbox_policy_rules_v1($row);
     return $row;
 }
 
@@ -102,6 +111,14 @@ function agent_connection_gmail_inbox_rules_v1(array $input): array
         throw new AgentConnectionExceptionV1('Inbox Review rules are invalid.',422);
     }
     $rules = ['github_actions'=>($input['ignore_github_actions'] ?? '') === '1'];
+    if (isset($input['triage_enabled'])) {
+        if ($input['triage_enabled'] !== '1') throw new AgentConnectionExceptionV1('Email triage settings are invalid.',422);
+        $rules['triage_enabled'] = true;
+    }
+    if (isset($input['content_analysis'])) {
+        if ($input['content_analysis'] !== '1') throw new AgentConnectionExceptionV1('Email content settings are invalid.',422);
+        $rules['content_analysis'] = true;
+    }
     foreach (['senders','domains','subjects'] as $kind) {
         $text = $input['ignore_'.$kind] ?? '';
         if (!is_string($text) || strlen($text) > 16384 || preg_match('//u',$text) !== 1
@@ -196,15 +213,47 @@ function agent_connection_gmail_inbox_revoke_v1(PDO $pdo, int $ownerId, int $con
     if ($update->rowCount() === 1) agent_connection_gmail_inbox_clear_output_v1($pdo,$ownerId);
 }
 
-function agent_connection_gmail_inbox_clear_output_v1(PDO $pdo, int $ownerId): void
+function agent_connection_gmail_inbox_clear_output_v1(PDO $pdo, int $ownerId, bool $preserveMatters = false): void
 {
     require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-notice-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+    require_once __DIR__.'/agent-email-matters-v1.php';
     agent_connection_gmail_inbox_receipts_clear_v1($pdo,$ownerId);
     agent_connection_gmail_inbox_batches_clear_v1($pdo,$ownerId);
     agent_connection_gmail_inbox_notice_purge_v1($pdo,$ownerId);
     agent_connection_gmail_inbox_initial_purge_v1($pdo,$ownerId);
+    agent_connection_gmail_inbox_sync_clear_v1($pdo,$ownerId);
+    if (!$preserveMatters) {
+        agent_connection_gmail_inbox_clear_triage_v1($pdo,$ownerId);
+        agent_email_matters_clear_v1($pdo,$ownerId);
+    }
+}
+
+function agent_connection_gmail_inbox_clear_triage_v1(PDO $pdo,int $ownerId): void
+{
+    require_once __DIR__.'/agent-email-triage-v1.php';
+    agent_email_triage_clear_v1($pdo,$ownerId);
+    agent_email_running_report_clear_v1($pdo,$ownerId);
+    require_once __DIR__.'/agent-connection-gmail-inbox-activity-v1.php';
+    agent_connection_gmail_inbox_activity_clear_v1($pdo,$ownerId);
+}
+
+/** A local projection failure must preserve the provider-confirmed receipt. */
+function agent_connection_gmail_inbox_project_matter_receipt_v1(PDO $pdo, Closure $project): void
+{
+    if (!$pdo->inTransaction()) throw new LogicException('Email matter projection requires the receipt transaction.');
+    $pdo->exec('SAVEPOINT vp3_email_matter_receipt');
+    try {
+        $project();
+    } catch (Throwable $error) {
+        $pdo->exec('ROLLBACK TO SAVEPOINT vp3_email_matter_receipt');
+        if (function_exists('agent_runtime_v125_trace')) {
+            agent_runtime_v125_trace('worker.gmail_matter.projection_failed',['error_class'=>get_class($error)]);
+        }
+    } finally {
+        $pdo->exec('RELEASE SAVEPOINT vp3_email_matter_receipt');
+    }
 }
 
 /** Verify the submitted grant and policy snapshots both before and after any provider request. */
@@ -219,7 +268,8 @@ function agent_connection_gmail_inbox_save_v1(PDO $pdo, array $user, array $inpu
     if ($ownerId < 1 || !$connectionId || !is_string($connectionRevision) || !preg_match('/\A[a-f0-9]{64}\z/D',$connectionRevision)
         || !is_string($revision) || ($revision !== '' && !preg_match('/\A[a-f0-9]{32}\z/D',$revision))
         || (isset($input['enabled']) && $input['enabled'] !== '1')
-        || !in_array($action,['save','restart'],true)) throw new AgentConnectionExceptionV1('Invalid Inbox Review request.',400);
+        || (isset($input['catch_up_recent']) && $input['catch_up_recent'] !== '1')
+        || !in_array($action,['save','restart','continue_sync'],true)) throw new AgentConnectionExceptionV1('Invalid Inbox Review request.',400);
 
     $load = static function (bool $lock) use ($pdo,$ownerId,$connectionId,$connectionRevision,$revision): array {
         $connection = agent_connections_find_v1($pdo,$ownerId,$connectionId,$lock && !agent_commerce_sqlite_pa2($pdo));
@@ -234,9 +284,24 @@ function agent_connection_gmail_inbox_save_v1(PDO $pdo, array $user, array $inpu
     };
     [$connection,$policy] = $load(false);
     $restart = $action === 'restart';
-    if ($restart && empty($policy['enabled'])) throw new AgentConnectionExceptionV1('Inbox Review is no longer active.',409);
-    $enabled = $restart || ($input['enabled'] ?? '') === '1';
-    $rules = $restart ? $policy['rules'] : agent_connection_gmail_inbox_rules_v1($input);
+    $continuing = $action === 'continue_sync';
+    if (($restart || $continuing) && empty($policy['enabled'])) {
+        throw new AgentConnectionExceptionV1('Inbox Review is no longer active.',409);
+    }
+    $enabled = $restart || $continuing || ($input['enabled'] ?? '') === '1';
+    $rules = $restart || $continuing ? $policy['rules'] : agent_connection_gmail_inbox_rules_v1($input);
+    $triage = $enabled && ($rules['triage_enabled'] ?? false) === true;
+    if (!$triage) unset($rules['content_analysis']);
+    $contentAnalysis = agent_email_running_report_enabled_v1(['rules'=>$rules]);
+    if ($contentAnalysis && !agent_email_running_report_ready_v1($pdo)) {
+        throw new AgentConnectionExceptionV1('Run Database Upgrade to enable Email content analysis.',503);
+    }
+    $catchUp = $action === 'save' && ($input['catch_up_recent'] ?? '') === '1';
+    if ($catchUp && !$triage) throw new AgentConnectionExceptionV1('Enable Email triage to review recent mail.',422);
+    if ($triage && (!agent_connection_gmail_inbox_triage_enabled_v1($pdo,['rules'=>$rules])
+        || !agent_connection_gmail_inbox_sync_ready_v1($pdo))) {
+        throw new AgentConnectionExceptionV1('Run Database Upgrade to enable Email triage.',503);
+    }
     $rulesJson = json_encode($rules,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
     if ($enabled && !agent_connection_gmail_inbox_authority_v1($user,$connection)) {
         throw new AgentConnectionExceptionV1('Gmail read and Agent Chat access are required.',403);
@@ -244,6 +309,7 @@ function agent_connection_gmail_inbox_save_v1(PDO $pdo, array $user, array $inpu
 
     $historyId = '';
     $enabledAt = null;
+    $catchUpBefore = 0;
     if ($enabled && ($restart || empty($policy['enabled']))) {
         if ($pdo->inTransaction()) throw new LogicException('Gmail baseline cannot be fetched inside a settings transaction.');
         $access = agent_connections_access_v1($ownerId,$connectionId,'read',$http,$connection['authorization_key']);
@@ -253,9 +319,14 @@ function agent_connection_gmail_inbox_save_v1(PDO $pdo, array $user, array $inpu
             throw new AgentConnectionExceptionV1('Gmail returned a different mailbox.',401);
         }
         $historyId = $profile['history_id'];
+        if ($restart && $triage && agent_connection_gmail_inbox_compare_cursor_v1($historyId,(string)$policy['history_id']) < 0) {
+            throw new AgentConnectionExceptionV1('Gmail did not verify the Inbox Review recovery cursor.',409);
+        }
+        $catchUpBefore = (int)floor(microtime(true)*1000)+1;
     }
 
-    return agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$ownerId,$connectionId,$load,$enabled,$restart,$rulesJson,$historyId,$enabledAt): string {
+    return agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$ownerId,$connectionId,$load,$enabled,$restart,$rulesJson,
+        $historyId,$enabledAt,$triage,$contentAnalysis,$catchUp,$catchUpBefore,$continuing): string {
         $owner = $pdo->prepare('SELECT * FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
         $owner->execute([$ownerId]);
         $live = $owner->fetch(PDO::FETCH_ASSOC);
@@ -269,14 +340,51 @@ function agent_connection_gmail_inbox_save_v1(PDO $pdo, array $user, array $inpu
         }
         $newRevision = bin2hex(random_bytes(16));
         $now = agent_commerce_time_pa2();
+        if ($continuing) {
+            agent_connection_gmail_inbox_sync_continue_v1($pdo,$policy);
+            $pdo->prepare("UPDATE agent_connection_gmail_inbox_v1 SET revision=?,claim_key=NULL,next_check_at=?,
+                last_status='waiting' WHERE owner_user_id=?")->execute([$newRevision,$now,$ownerId]);
+            return 'inbox_sync_continued';
+        }
+        if ($restart && $triage) {
+            $sync = agent_connection_gmail_inbox_sync_start_v1($policy,'recovery',$historyId,$catchUpBefore);
+            agent_connection_gmail_inbox_sync_save_v1($pdo,$policy,$sync);
+            agent_email_matters_reset_scan_v1($pdo,$policy);
+            $pdo->prepare("UPDATE agent_connection_gmail_inbox_v1 SET revision=?,claim_key=NULL,next_check_at=?,
+                last_status='waiting' WHERE owner_user_id=?")->execute([$newRevision,$now,$ownerId]);
+            return 'inbox_restarted';
+        }
         if ($enabled && $historyId === '') {
+            $firstContentAnalysis = $contentAnalysis && !agent_email_running_report_enabled_v1($policy);
+            $priorSync = $catchUp || $firstContentAnalysis ? agent_connection_gmail_inbox_sync_row_v1($pdo,$policy) : null;
+            $busySync = ($priorSync['status'] ?? null) === 'pending'
+                || (($priorSync['mode'] ?? null) === 'recovery' && $priorSync['status'] === 'truncated');
+            if ($catchUp && $busySync) {
+                throw new AgentConnectionExceptionV1('Finish the current Gmail catch-up before starting another.',409);
+            }
+            $startCatchUp = $catchUp || ($firstContentAnalysis && !$busySync && $policy['last_status'] !== 'restart_required');
             if (!hash_equals((string)$policy['rules_json'],$rulesJson)) {
                 require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
                 agent_connection_gmail_inbox_initial_purge_v1($pdo,$ownerId);
             }
-            $nextCheck = $policy['claim_key'] !== null && $policy['next_check_at'] !== null ? $now : $policy['next_check_at'];
-            $pdo->prepare('UPDATE agent_connection_gmail_inbox_v1 SET rules_json=?,revision=?,claim_key=NULL,next_check_at=? WHERE owner_user_id=?')
-                ->execute([$rulesJson,$newRevision,$nextCheck,$ownerId]);
+            if (!$triage && ($policy['rules']['triage_enabled'] ?? false) === true) {
+                agent_connection_gmail_inbox_sync_clear_v1($pdo,$ownerId);
+                agent_connection_gmail_inbox_clear_triage_v1($pdo,$ownerId);
+            }
+            if ($triage && !$contentAnalysis && agent_email_running_report_enabled_v1($policy)) {
+                agent_email_running_report_clear_v1($pdo,$ownerId);
+            }
+            $recover = $triage && ($policy['rules']['triage_enabled'] ?? false) !== true
+                && $policy['last_status'] === 'restart_required';
+            $schedule = $startCatchUp || $recover
+                || ($policy['claim_key'] !== null && $policy['next_check_at'] !== null);
+            $nextCheck = $schedule ? $now : $policy['next_check_at'];
+            $pdo->prepare('UPDATE agent_connection_gmail_inbox_v1 SET rules_json=?,revision=?,claim_key=NULL,next_check_at=?,last_status=? WHERE owner_user_id=?')
+                ->execute([$rulesJson,$newRevision,$nextCheck,$recover?'waiting':$policy['last_status'],$ownerId]);
+            if ($startCatchUp) {
+                $sync = agent_connection_gmail_inbox_sync_start_v1($policy,'catchup',(string)$policy['history_id'],(int)floor(microtime(true)*1000)+1);
+                agent_connection_gmail_inbox_sync_save_v1($pdo,$policy,$sync);
+            }
             return 'inbox_saved';
         }
 
@@ -286,10 +394,16 @@ function agent_connection_gmail_inbox_save_v1(PDO $pdo, array $user, array $inpu
             $pdo->prepare("UPDATE agent_connection_gmail_inbox_v1 SET connection_id=?,authorization_key=?,enabled=?,rules_json=?,revision=?,
                 history_id=?,enabled_at_ms=?,next_check_at=?,last_status=?,pending_event_id='',pending_offset=0,pending_fingerprint='',
                 history_page_token=NULL,claim_key=NULL,last_checked_at=NULL,last_review_json=NULL WHERE owner_user_id=?")->execute($values);
-            agent_connection_gmail_inbox_clear_output_v1($pdo,$ownerId);
+            agent_connection_gmail_inbox_clear_output_v1($pdo,$ownerId,$restart);
+            if ($restart) agent_email_matters_reset_scan_v1($pdo,$policy);
         } else {
             $pdo->prepare('INSERT INTO agent_connection_gmail_inbox_v1 (connection_id,authorization_key,enabled,rules_json,revision,
                 history_id,enabled_at_ms,next_check_at,last_status,owner_user_id) VALUES (?,?,?,?,?,?,?,?,?,?)')->execute($values);
+        }
+        if ($catchUp || $contentAnalysis) {
+            $livePolicy = agent_connection_gmail_inbox_policy_v1($pdo,$ownerId,true);
+            $sync = agent_connection_gmail_inbox_sync_start_v1($livePolicy,'catchup',$historyId,$catchUpBefore);
+            agent_connection_gmail_inbox_sync_save_v1($pdo,$livePolicy,$sync);
         }
         return $restart ? 'inbox_restarted' : ($enabled ? 'inbox_saved' : 'inbox_disabled');
     });

@@ -345,7 +345,7 @@ artist_admin_routing_v185_apply();
 agent_runtime_v125_boot();
 if (!request_performance_media_read()) {
 agent_runtime_v126_housekeeping_maybe();
-agent_appointment_lifecycle_housekeeping_maybe_v700();
+if (request_performance_appointment_housekeeping()) agent_appointment_lifecycle_housekeeping_maybe_v700();
 agent_commerce_housekeeping_maybe_v800();
 vp3_agent_referral_request_boot();
 agent_cognitive_loop_v310_boot();

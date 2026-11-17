@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__.'/agent-initiative-scope-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-research-status-v1.php';
+require_once dirname(__DIR__).'/includes/agent-media-entertainment-youtube-v1.php';
 
 function get_track_by_id(int $id): ?array
 {
@@ -152,9 +153,20 @@ scope_check($work['ok']&&count($result)===1&&$searches===['"Dawn Ensemble" lates
     '"Dawn Ensemble" official live performances music videos'],
     'the specialist checks news, shows, merch and public videos using only the exact public name and saves one report without YouTube consent');
 scope_check(!vp3_initiative_deliver_pending_v1($pdo,$user,17)&&$read()===[],'the completed research does not repeat or feed itself');
+$mediaScope=vp3_agent_activity_scope_v1($pdo,$user,17,170);
+$mediaBinding=vp3_initiative_policy_v1($user,17);
+$researchRef='media:research:'.$run;
+$readMedia=static fn():array=>vp3_media_youtube_findings_v1($pdo,$mediaScope,$mediaBinding,[$researchRef],new DateTimeImmutable());
+$mediaResearch=$readMedia()['items'][$researchRef]??[];
+scope_check(($mediaResearch['kind']??null)==='artist_research'&&$mediaResearch['title']==='Dawn Ensemble'
+    &&$mediaResearch['artist_url']===url('/dawn-ensemble')&&str_contains($mediaResearch['url'],'&message_id=')
+    &&$mediaResearch['trigger']===null&&!isset($mediaResearch['playback'])
+    &&!str_contains(json_encode($mediaResearch,JSON_THROW_ON_ERROR),'Private demo metadata'),
+    'Media shows exact completed native artist research and its authorized VP3 artist account while YouTube is off');
 vp3_native_music_research_save_v1($pdo,1,false);
 scope_check($read([$native])===[]&&vp3_initiative_research_status_v1($pdo,$user,17,170)['specialist']===null,
     'revocation removes current evidence and visible work');
+scope_check($readMedia()['items']===[],'Media stops showing the research when the listening grant is revoked');
 vp3_native_music_research_save_v1($pdo,1,true);
 scope_check(vp3_native_music_research_grant_v1($pdo,1)!==$grant&&$read([$native])[$native]['revision']!==$revision,
     'a renewed opt-in cannot revive work bound to the revoked grant');
