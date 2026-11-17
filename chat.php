@@ -517,6 +517,22 @@ $cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-specialis
     . '<link rel="stylesheet" href="'.e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))).'">'
     . '<script>window.VP3_CANVAS_MEDIA_V1='.json_encode(['endpoint'=>url('/api/chat-canvas-media-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0)],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
     . '<script src="'.e(url('/chat-canvas-media-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.js'),0,12))).'"></script>';
+$cognitiveCardsRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-image-composer-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-image-composer-v1.css'),0,12))).'">'
+    . '<script>window.VP3_IMAGE_COMPOSER_V1='.json_encode([
+        'endpoint'=>url('/api/chat-canvas-media-v1.php'),
+        'uploadEndpoint'=>url('/api/media-library-v86.php'),
+        'mediaFileEndpoint'=>url('/media-library-file-v86.php'),
+        'csrf'=>csrf_token(),'ownerKey'=>(string)$user['id'],
+        'agentId'=>(int)($activeUserAgent['id']??0),'workingAttentionBinding'=>$workingAttentionBinding,
+    ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/chat-image-composer-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-image-composer-v1.js'),0,12))).'"></script>'
+    . '<link rel="stylesheet" href="'.e(url('/chat-image-studio-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-image-studio-v1.css'),0,12))).'">'
+    . '<script>window.VP3_IMAGE_STUDIO_V1='.json_encode([
+        'endpoint'=>url('/api/chat-image-studio-v1.php'),
+        'csrf'=>csrf_token(),'ownerKey'=>(string)$user['id'],
+        'agentId'=>(int)($activeUserAgent['id']??0),'workingAttentionBinding'=>$workingAttentionBinding,
+    ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/chat-image-studio-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-image-studio-v1.js'),0,12))).'"></script>';
 if ($pdoForAgent && agent_brain_schema_ready() && has_permission('account.access',$user)
     && personal_capability_has_v242('agent_brain.access',$user) && personal_knowledge_available($user)) {
     $specialistPresence['research'] = 'idle';

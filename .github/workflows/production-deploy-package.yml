@@ -100,6 +100,19 @@ jobs:
           test -f _deploy/browser-companion/chat-research-worker.js
           test -f _deploy/includes/agent-integration-diagnostics-v1.php
           test -f _deploy/chat.php
+          test -f _deploy/chat-canvas-media-v1.js
+          test -f _deploy/chat-canvas-media-v1.css
+          test -f _deploy/chat-image-composer-v1.js
+          test -f _deploy/chat-image-composer-v1.css
+          test -f _deploy/chat-image-studio-v1.js
+          test -f _deploy/chat-image-studio-v1.css
+          test -f _deploy/api/chat-canvas-media-v1.php
+          test -f _deploy/api/chat-image-studio-v1.php
+          test -f _deploy/includes/chat-image-composer-v1.php
+          test -f _deploy/includes/chat-image-studio-v1.php
+          test -f _deploy/includes/agent-image-generation-v1.php
+          test -f _deploy/includes/agent-image-provider-v1.php
+          test -f _deploy/includes/agent-image-reference-v1.php
           test -f _deploy/.htaccess
           test -f _deploy/includes/profile-live-text-pa3d.php
           test -f _deploy/includes/profile-agent-handoff-pa3.php

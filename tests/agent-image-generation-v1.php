@@ -12,7 +12,7 @@ $checks=0;$calls=[];$u=['id'=>1,'is_active'=>1];$principal=['kind'=>'user_agent'
 function check($v,$label){if(!$v)throw new RuntimeException($label);$GLOBALS['checks']++;echo "PASS $label\n";}
 function reject($fn,$label){try{$fn();}catch(Throwable $e){check(true,$label);return;}throw new RuntimeException('Expected rejection: '.$label);}
 function queueImage($extra=[]): array{return vp3_image_queue_v1(db(),$GLOBALS['u'],$GLOBALS['principal'],array_replace($GLOBALS['plan'],$extra),image_fixture_turn_v1());}
-function transportImage($url,$body,$key): array{$GLOBALS['calls'][]=[$url,$body,$key];return image_fixture_response_v1($body['size']);}
+function transportImage($url,$body,$key): array{$GLOBALS['calls'][]=[$url,$body,$key];return image_fixture_response_v1($body['size'],$body['n']);}
 function imageCount(): int{return(int)db()->query('SELECT COUNT(*) FROM user_media_assets')->fetchColumn();}
 function ai_decrypt_secret(string $encrypted): string{return str_starts_with($encrypted,'fixture-cipher:')?substr($encrypted,15):'';}
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $aid,string $surface): array
@@ -117,6 +117,128 @@ try{
         $pdo->exec($sql);$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');$pdo->exec('DROP TRIGGER image_atomic_fixture');
         check($v['status']==='failed'&&imageCount()===$before&&count(glob(media_studio_user_root(1).'/*.png')?:[])===count($files),'a failed '.$failure.' commit rolls back the asset, output binding and completion receipt and removes its new file');
     }
+    foreach([0,5,'2',2.5,true,null] as $invalid){
+        $before=count($calls);
+        reject(fn()=>queueImage(['count'=>$invalid]),'image count rejects '.json_encode($invalid).' before admission');
+        check(count($calls)===$before,'an invalid image count makes no provider request');
+    }
+    $ctx=image_fixture_turn_v1();$g=vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>4],$ctx);
+    check($g['count']===4&&$g['completed_count']===0&&$g['assets']===[]&&$g['provider_started_at']===null,'a four-image request projects one queued batch with no invented progress');
+    $before=count($calls);$beforeAssets=imageCount();$beforeUsage=count($GLOBALS['imageUsage']);
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');$batchIds=array_column($v['assets'],'id');
+    check($v['status']==='completed'&&$v['count']===4&&$v['completed_count']===4&&count(array_unique($batchIds))===4
+        &&$v['asset']['id']===$batchIds[0]&&imageCount()===$beforeAssets+4&&count($calls)===$before+1&&end($calls)[1]['n']===4,
+        'one canonical worker makes one paid POST and saves four ordered private images');
+    check(end($GLOBALS['imagePreflight'])[3]===64000&&count($GLOBALS['imageUsage'])===$beforeUsage+1
+        &&end($GLOBALS['imageUsage'])[5]['total_tokens']===820,'batch quota covers all four outputs and actual aggregate usage is committed once');
+    check(is_string($v['provider_started_at'])&&preg_match('/\A\d{4}-\d{2}-\d{2}T.*\+00:00\z/',$v['provider_started_at'])===1,
+        'elapsed generation time uses an actual UTC provider dispatch timestamp');
+    $q=$pdo->prepare("SELECT result_json FROM agent_workflow_receipts WHERE run_id=? AND status='completed'");$q->execute([$g['job_id']]);$receipts=$q->fetchAll(PDO::FETCH_COLUMN);
+    $batchReceipt=json_decode($receipts[0],true);
+    check(count($receipts)===1&&$batchReceipt['image_asset_ids']===$batchIds&&(int)$batchReceipt['asset_id']===$batchIds[0]
+        &&(int)$batchReceipt['image_count']===4,'all batch assets share one exact canonical completion receipt');
+    foreach([[],[1,2,3,4,5],['1'],[0],[-1],[1,1],[1,true],[1,2.5],['first'=>1],'[1,2]'] as $invalid){
+        $safe=agent_workflow_public_json_v1400(json_encode(['image_asset_ids'=>$invalid,'api_token'=>'secret','other_array'=>[1]]));
+        check(!isset($safe['image_asset_ids'])&&!isset($safe['api_token'])&&!isset($safe['other_array']),
+            'receipt image IDs reject malformed '.json_encode($invalid).' while retaining existing redaction');
+    }
+    $again=vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>4],$ctx);vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    check($again['id']===$g['id']&&array_column($again['assets'],'id')===$batchIds&&count($calls)===$before+1,
+        'batch history reload and same-turn recovery preserve every image without another provider attempt');
+    reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>2],$ctx),'a consumed batch turn cannot change its image count');
+    foreach(['short_batch','malformed_last'] as $failure){
+        $g=queueImage(['count'=>3]);$before=count($calls);$beforeAssets=imageCount();$beforeUsage=count($GLOBALS['imageUsage']);
+        $files=glob(media_studio_user_root(1).'/*.png')?:[];
+        $badBatch=static function($url,$body,$key)use($failure):array{
+            $GLOBALS['calls'][]=[$url,$body,$key];$result=image_fixture_response_v1($body['size'],$body['n']);
+            if($failure==='short_batch')array_pop($result['data']);else $result['data'][2]['b64_json']='broken!';
+            return $result;
+        };
+        $failed=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),$badBatch);
+        check($failed['status']==='failed'&&$failed['assets']===[]&&$failed['completed_count']===0&&imageCount()===$beforeAssets
+            &&count(glob(media_studio_user_root(1).'/*.png')?:[])===count($files),'a '.$failure.' response cannot publish a partial batch');
+        check(count($GLOBALS['imageUsage'])===$beforeUsage+1&&end($GLOBALS['imageUsage'])[5]['total_tokens']===620,
+            'a '.$failure.' response still records confirmed paid token usage');
+        vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),$badBatch);
+        check(count($calls)===$before+1,'a '.$failure.' response never replays paid generation');
+    }
+    foreach(['second_asset','batch_receipt'] as $failure){
+        $g=queueImage(['count'=>3]);$beforeAssets=imageCount();$files=glob(media_studio_user_root(1).'/*.png')?:[];
+        $table=$failure==='second_asset'?'user_media_assets':'agent_workflow_receipts';
+        $condition=$failure==='second_asset'?"NEW.title LIKE '%2 of 3'":"NEW.status='completed'";
+        $sql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
+            ?"CREATE TRIGGER image_batch_atomic_fixture BEFORE INSERT ON $table WHEN $condition BEGIN SELECT RAISE(ABORT,'batch storage failure'); END"
+            :"CREATE TRIGGER image_batch_atomic_fixture BEFORE INSERT ON $table FOR EACH ROW BEGIN IF $condition THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='batch storage failure'; END IF; END";
+        $pdo->exec($sql);$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');$pdo->exec('DROP TRIGGER image_batch_atomic_fixture');
+        $q=$pdo->prepare('SELECT COUNT(*) FROM agent_image_generation_assets_v1 WHERE generation_id=?');$q->execute([$g['id']]);
+        check($v['status']==='failed'&&imageCount()===$beforeAssets&&(int)$q->fetchColumn()===0
+            &&count(glob(media_studio_user_root(1).'/*.png')?:[])===count($files),'a '.$failure.' failure rolls back the entire batch and every new file');
+    }
+    $legacyContext=image_fixture_turn_v1();$legacy=vp3_image_queue_v1($pdo,$u,$principal,$plan,$legacyContext);
+    $legacyRow=vp3_image_row_v1($pdo,$u,$legacy['id']);$legacyConfig=json_decode($legacyRow['config_json'],true);unset($legacyConfig['count']);
+    $pdo->prepare('UPDATE agent_image_generations_v1 SET config_json=?,request_hash=? WHERE generation_id=?')->execute([
+        json_encode($legacyConfig),hash('sha256',json_encode([11,7,$legacyConfig],JSON_THROW_ON_ERROR)),$legacy['id']]);
+    $before=count($calls);$recovered=vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>1],$legacyContext);
+    check($recovered['id']===$legacy['id']&&$recovered['count']===1&&count($calls)===$before,
+        'a pre-upgrade frozen Chat config without count recovers the exact job with no new charge');
+    agent_job_cancel_v1900($pdo,$u,$legacy['job_id']);
+    require_once dirname(__DIR__).'/includes/agent-image-reference-v1.php';
+    $referenceBytes=base64_decode(image_fixture_response_v1()['data'][0]['b64_json']);
+    $referencePath=media_studio_ensure_user_root(1).'/uploaded-base.png';file_put_contents($referencePath,$referenceBytes);
+    $pdo->prepare("INSERT INTO user_media_assets(user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,metadata_json,created_at,updated_at) VALUES(1,'photo','Uploaded base','image/png','private/user-media/1/uploaded-base.png',?,0,'upload','{}',UTC_TIMESTAMP(),UTC_TIMESTAMP())")->execute([strlen($referenceBytes)]);
+    $referenceAsset=(int)$pdo->lastInsertId();$ctx=image_fixture_turn_v1();$ctx['image_reference_asset_id']=$referenceAsset;
+    $reference=vp3_image_reference_validate_v1($pdo,$u,$principal,$ctx,$referenceAsset);
+    check($reference['asset_id']===$referenceAsset&&$reference['sha256']===hash('sha256',$referenceBytes)
+        &&$reference['width']===1024&&!isset($reference['bytes']),'attachment validation returns private identity and dimensions without exposing pixels');
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,['id'=>2,'is_active'=>1],['kind'=>'user_agent','owner_user_id'=>2,'agent_id'=>9],['conversation_id'=>13],$referenceAsset),
+        'another owner cannot attach a private base image');
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,['conversation_id'=>12],$referenceAsset),
+        'an attachment cannot cross into another Agent conversation');
+    $before=count($calls);$beforeAssets=imageCount();$g=vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>2],$ctx);
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');$wire=end($calls);
+    check($v['status']==='completed'&&$v['count']===2&&$v['reference_asset_id']===$referenceAsset
+        &&$v['reference_asset']['id']===$referenceAsset&&imageCount()===$beforeAssets+2&&count($calls)===$before+1
+        &&$wire[0]==='https://api.openai.com/v1/images/edits'&&$wire[1]['n']===2
+        &&$wire[1]['images']===[['image_url'=>'data:image/png;base64,'.base64_encode($referenceBytes)]],
+        'an attached base image generates two private edited results with one exact source-bound POST');
+    check(file_get_contents($referencePath)===$referenceBytes&&media_studio_asset($referenceAsset,$u)['source']==='upload',
+        'base-image generation preserves the original uploaded asset and file');
+    $again=vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>2],$ctx);
+    check($again['id']===$g['id']&&count($calls)===$before+1,'the exact base-image turn is replay safe after completion');
+    foreach(['before_send','during_provider','local_policy'] as $change){
+        file_put_contents($referencePath,$referenceBytes);$ctx=image_fixture_turn_v1();$ctx['image_reference_asset_id']=$referenceAsset;
+        $g=vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>2],$ctx);$before=count($calls);$beforeAssets=imageCount();
+        if($change==='before_send')file_put_contents($referencePath,$referenceBytes.'changed');
+        $sourceRace=static function($url,$body,$key)use($change,$referencePath,$referenceBytes):array{
+            $GLOBALS['calls'][]=[$url,$body,$key];
+            if($change==='during_provider')file_put_contents($referencePath,$referenceBytes.'changed');
+            if($change==='local_policy')$GLOBALS['imageMarketingLocalOnly']=true;
+            return image_fixture_response_v1($body['size'],$body['n']);
+        };
+        $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),$sourceRace);$GLOBALS['imageMarketingLocalOnly']=false;
+        check($v['status']==='failed'&&$v['assets']===[]&&imageCount()===$beforeAssets
+            &&count($calls)===$before+($change==='before_send'?0:1),'a base-image '.$change.' change prevents publishing any edited result');
+    }
+    file_put_contents($referencePath,$referenceBytes);$GLOBALS['imageMarketingLocalOnly']=true;
+    $ctx=image_fixture_turn_v1();$ctx['image_reference_asset_id']=$referenceAsset;$before=count($calls);
+    reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx),'a local-only Agent cannot admit a base-image upload to the provider');
+    check(count($calls)===$before,'a blocked base-image route sends no pixels');$GLOBALS['imageMarketingLocalOnly']=false;
+    foreach(['invalid raster'=>'not an image','oversized file'=>str_repeat('x',4*1024*1024+1),
+        'oversized dimensions'=>base64_decode(image_fixture_response_v1('4112x16')['data'][0]['b64_json'])] as $invalid=>$bytes){
+        file_put_contents($referencePath,$bytes);
+        $pdo->prepare('UPDATE user_media_assets SET file_size=? WHERE id=?')->execute([strlen($bytes),$referenceAsset]);
+        reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$ctx,$referenceAsset),
+            'an '.$invalid.' base image fails attachment validation before dispatch');
+    }
+    file_put_contents($referencePath,$referenceBytes);
+    $foreignPath=media_studio_ensure_user_root(2).'/foreign-base.png';file_put_contents($foreignPath,$referenceBytes);
+    $pdo->prepare('UPDATE user_media_assets SET file_path=?,file_size=? WHERE id=?')
+        ->execute(['private/user-media/2/foreign-base.png',strlen($referenceBytes),$referenceAsset]);
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$ctx,$referenceAsset),
+        'an owned media row cannot attach bytes from another owner private directory');
+    $pdo->prepare('UPDATE user_media_assets SET file_path=? WHERE id=?')
+        ->execute(['private/user-media/1/uploaded-base.png',$referenceAsset]);
+    check(count($calls)===$before,'invalid reference files never reach the paid image provider');
     $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
     if($mysql)$pdo->exec('ALTER TABLE agent_image_generations_v1 MODIFY user_message_id BIGINT NOT NULL');
     $request=bin2hex(random_bytes(16));$before=count($calls);
@@ -128,6 +250,8 @@ try{
     check((int)$pdo->query('SELECT COUNT(*) FROM chat_conversations')->fetchColumn()===$conversations&&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$messages,'Media Library generation creates no synthetic Chat conversation or message');
     if($mysql)check($pdo->query("SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='agent_image_generations_v1' AND COLUMN_NAME='user_message_id'")->fetchColumn()==='YES','workspace admission is compatible with the original non-null Chat image schema');
     check(vp3_image_queue_workspace_v1($pdo,$u,$plan,$request)['id']===$g['id'],'retrying the same Media Library request recovers the exact job');
+    check(vp3_image_queue_workspace_v1($pdo,$u,[...$plan,'count'=>1],$request)['id']===$g['id']&&count($calls)===$before,
+        'a pre-upgrade Media Library plan without count accepts an explicit default without a new job or charge');
     reject(fn()=>vp3_image_queue_workspace_v1($pdo,$u,[...$plan,'prompt'=>'A different subject'],$request),'a Media Library review key cannot become a different request');
     reject(fn()=>queueImage(),'Media Library and Chat share the one-active-image-per-owner limit');
     reject(fn()=>vp3_image_view_v1($pdo,['id'=>2],$row),'a Media Library record cannot be viewed by another owner');
@@ -297,6 +421,14 @@ try{
         &&(int)$entry['conversation_id']===11&&(int)$entry['total_tokens']===220&&(int)$entry['usage_units']===1
         &&$entry['credential_source']==='system'&&count($GLOBALS['imageUsage'])===$usageCount+1,
         'one image attempt records owner, Agent, Chat, exact funding, verified tokens and one subscription settlement');
+    $before=count($calls);$usageCount=count($GLOBALS['imageUsage']);$g=queueImage(['count'=>3]);
+    $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
+    $meter->execute([$g['job_id']]);$entries=$meter->fetchAll();$meter->closeCursor();$entry=$entries[0]??[];
+    check($v['status']==='completed'&&count($calls)===$before+1&&count($entries)===1
+        &&$entry['service_status']==='completed'&&(int)$entry['user_id']===1&&(int)$entry['agent_id']===7
+        &&(int)$entry['conversation_id']===11&&(int)$entry['total_tokens']===620&&(int)$entry['usage_units']===3
+        &&count($GLOBALS['imageUsage'])===$usageCount+1,
+        'a three-image batch meters three confirmed image units and aggregate tokens in exactly one attempt and settlement');
     $g=queueImage();$row=vp3_image_row_v1($pdo,$u,$g['id']);$oldConfig=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);
     unset($oldConfig['funding_source']);$oldConfig['provider_route']['funding']='system';$replaceConfig($row,$oldConfig);
     $v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');

@@ -5,16 +5,25 @@ const source=p=>fs.readFile(new URL('../'+p,import.meta.url),'utf8');
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(executablePath?{executablePath}:{})}),page=await browser.newPage({viewport:{width:390,height:844}}),errors=[],calls=[];
 page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(10000);
-let id='11111111-1111-4111-8111-111111111111',status='queued',denied=false,tickRelease,tickGate=new Promise(r=>tickRelease=r),mode='generation';
+let id='11111111-1111-4111-8111-111111111111',status='queued',denied=false,tickRelease,tickGate=new Promise(r=>tickRelease=r),mode='generation',imageCount=1,assetGate=null,assetRelease;
+const requestedAt=new Date(Date.now()-12000).toISOString(),startedAt=new Date(Date.now()-5000).toISOString();
 const specialistPrompt = 'Create a paper lighthouse at sunset';
 const marketingPrefill = {level:7,prompt:'put it on a café counter'};
 let specialistMessages = [];
 const orbStatuses=new Map();
 const asset={id:1,title:'Desert <img src=x onerror=alert(1)>',media_type:'photo',mime_type:'image/png',source:'openai_image',available:true,url:'/media-library-file-v86.php?id=1',editor_url:'/video-editor.php?asset=1'};
-const generation=(jobId=id,jobStatus=status)=>({id:jobId,title:'Desert artwork',prompt:'Cinematic desert <img src=x>',model:'gpt-image-2.5-flare',size:'1024x1024',quality:'medium',background:'opaque',status:jobStatus==='expired'?'generating':jobStatus,message:jobStatus==='failed'?'The provider result was not confirmed. No automatic retry.':'',provider_started:jobStatus!=='queued',asset:jobStatus==='completed'?asset:null,active_lease_expires_at:jobStatus==='generating'?Date.now()+30000:jobStatus==='expired'?Date.now()-1000:null});
-const html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside><main class="chat-main"><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section><div class="chat-composer-shell" id="chatComposerShell"><form class="chat-composer" id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form></div></main></div><aside class="sf-online-rail-v109" id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside></body></html>';
+const assetFor=number=>({...asset,id:number,title:number===1?asset.title:'Desert study '+number,url:'/media-library-file-v86.php?id='+number});
+const generation=(jobId=id,jobStatus=status)=>({id:jobId,title:'Desert artwork',prompt:'Cinematic desert <img src=x>',model:'gpt-image-2.5-flare',size:'1024x1024',quality:'medium',background:'opaque',count:imageCount,completed_count:jobStatus==='completed'?imageCount:0,created_at:requestedAt,provider_started_at:jobStatus==='queued'?null:startedAt,status:jobStatus==='expired'?'generating':jobStatus,message:jobStatus==='failed'?'The provider result was not confirmed. No automatic retry.':'',provider_started:jobStatus!=='queued',asset:jobStatus==='completed'?asset:null,...(imageCount>1?{assets:jobStatus==='completed'?Array.from({length:imageCount},(_,i)=>assetFor(i+1)):[]}:{}),active_lease_expires_at:jobStatus==='generating'?Date.now()+30000:jobStatus==='expired'?Date.now()-1000:null});
+const html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div class="chat-app"><aside class="chat-sidebar"><button id="newChatButton">New chat</button><div id="chatHistory"></div></aside><main class="chat-main"><header class="chat-topbar"><strong>Agent Chat</strong></header><section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section><div class="chat-composer-shell" id="chatComposerShell"><form class="chat-composer" id="chatForm"><textarea id="chatInput" aria-label="Message your Agent" placeholder="Message your Agent…"></textarea><button id="sendChatButton">Send</button></form></div></main></div><aside class="sf-online-rail-v109" id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside></body></html>';
+const fixtureImages=await page.evaluate(()=>[['#eac68c','#657f8a','#a86746'],['#bdd3cf','#657783','#cd895e'],['#e9c29f','#827083','#b97461'],['#eadfb7','#68857d','#a18b61']].map(([sky,back,front],index)=>{
+ const canvas=document.createElement('canvas');canvas.width=canvas.height=512;const context=canvas.getContext('2d');
+ context.fillStyle=sky;context.fillRect(0,0,512,512);context.fillStyle='#fff1c9';context.beginPath();context.arc(350-index*38,150+index*12,64,0,Math.PI*2);context.fill();
+ context.fillStyle=back;context.beginPath();context.moveTo(0,330);context.bezierCurveTo(160,180,300,400,512,250);context.lineTo(512,512);context.lineTo(0,512);context.fill();
+ context.fillStyle=front;context.beginPath();context.moveTo(0,420);context.bezierCurveTo(150,310,270,470,512,360);context.lineTo(512,512);context.lineTo(0,512);context.fill();
+ return canvas.toDataURL('image/png').split(',')[1];
+}));
 await page.route('https://images.test/',r=>r.fulfill({contentType:'text/html',body:html}));
-await page.route('**/media-library-file-v86.php?**',r=>r.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64')}));
+await page.route('**/media-library-file-v86.php?**',r=>r.fulfill({contentType:'image/png',body:Buffer.from(fixtureImages[(Number(new URL(r.request().url()).searchParams.get('id'))-1)%fixtureImages.length]||fixtureImages[0],'base64')}));
 await page.route('**/api/**',async r=>{
  const p=r.request().postDataJSON()||{};const path=new URL(r.request().url()).pathname;calls.push({path,...p});
  const ok=x=>r.fulfill({json:{ok:true,...x}});
@@ -25,7 +34,7 @@ await page.route('**/api/**',async r=>{
    if(jobStatus==='error')return r.fulfill({status:503,json:{ok:false,error:'Image status unavailable.'}});
    return ok({generation:generation(p.generation_id,jobStatus)});
   }
-  if(p.action==='assets')return ok({assets:mode==='hostile'?[{...asset,url:'https://foreign.test/secret.png'}]:[{...asset,available:mode!=='missing'}]});
+  if(p.action==='assets'){if(assetGate)await assetGate;return ok({assets:mode==='hostile'?[{...asset,url:'https://foreign.test/secret.png'}]:(p.asset_ids||[1]).map(number=>({...assetFor(number),available:mode!=='missing'}))});}
   if(p.action==='tick'){if(status==='queued'&&mode!=='specialist')status='generating';await tickGate;return ok({generation:generation()});}
   if(p.action==='cancel')status='cancelled';
   return ok({generation:generation()});
@@ -65,6 +74,7 @@ async function boot(withOrb=true){
  }
 }
 let checks=0;async function check(label,fn){await fn();checks++;console.log('PASS '+label);}
+async function capture(name){const directory=process.env.VP3_IMAGE_UI_SCREENSHOTS;if(!directory)return;await fs.mkdir(directory,{recursive:true});await page.screenshot({path:directory+'/'+name+'.png',fullPage:true});}
 const specialist = page.locator('[data-chat-specialist][data-chat-specialist-type="image-generator"]');
 const panel = page.getByRole('dialog',{name:'Image Generator',exact:true});
 const readyMessage = page.getByText('Image Generator finished. Your image is ready.', {exact:true});
@@ -116,7 +126,22 @@ try{
  await page.locator('#chatInput').fill('Continue chatting while that image runs');await page.locator('#chatForm').evaluate(f=>f.requestSubmit());await page.getByText('Another ordinary Chat reply.',{exact:true}).waitFor();
  await check('the composer and conversation stay usable while generation runs',async()=>{assert.equal(await page.locator('#chatInput').isDisabled(),false);assert.equal(calls.filter(c=>c.action==='tick').length,1);});
  status='completed';tickRelease();await page.locator('.vp3-canvas-media-card img').waitFor();
- await check('confirmed images display on the canvas with private download and editor links',async()=>{assert.match(await page.locator('.vp3-canvas-media').innerText(),/Desert <img/);assert.equal(await page.locator('.vp3-canvas-media img').count(),1);assert.equal(await page.getByRole('link',{name:'Download',exact:true}).getAttribute('href'),'https://images.test/media-library-file-v86.php?id=1');assert.equal(await page.getByRole('link',{name:'Open in editor',exact:true}).count(),1);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));});
+ await check('confirmed generated images render without a grey wrapper, nested cards or action toolbar',async()=>{
+  const card=cardFor(id);assert.equal(await card.locator('img').count(),1);assert.equal(await card.locator('img').getAttribute('alt'),asset.title);
+  assert.equal(await card.locator('figure').count(),0);assert.equal(await card.locator('.vp3-canvas-media-controls,details').count(),0);
+  assert.equal(await card.getByRole('link').count(),0);assert.equal(await card.getByText('gpt-image-2.5-flare',{exact:false}).count(),0);
+  assert.equal(await card.evaluate(element=>getComputedStyle(element).backgroundColor),'rgba(0, 0, 0, 0)');
+  assert.equal(await card.locator('img[src="x"]').count(),0);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ });
+ await check('tapping an image opens a canvas viewer with the same composer and Escape returns focus',async()=>{
+  const thumbnail=cardFor(id).getByRole('button',{name:'View '+asset.title+' in Chat',exact:true});await thumbnail.click();
+  const viewer=page.locator('#chatThread').getByRole('region',{name:'Image viewer',exact:true});await viewer.waitFor();
+  assert.equal(await page.getByRole('dialog').count(),0);assert.equal(await page.locator('#chatInput').isEnabled(),true);
+  assert.equal(await viewer.locator('.vp3-image-viewer-frame > img').getAttribute('src'),'https://images.test/media-library-file-v86.php?id=1');
+  assert.equal(await viewer.evaluate(element=>getComputedStyle(element).overflowY),'visible');
+  assert.equal(tickCount(id),1);await viewer.press('Escape');await viewer.waitFor({state:'detached'});
+  assert.equal(await thumbnail.evaluate(element=>document.activeElement===element),true);
+ });
  await specialist.waitFor({state:'hidden'});
  await panel.waitFor({state:'hidden'});
  await boot();await page.locator('.vp3-canvas-media-card img').waitFor();await check('a full reload restores the saved image without generating again',async()=>{assert.equal(calls.filter(c=>c.action==='tick').length,1);});
@@ -259,13 +284,88 @@ try{
   await expectOrbJobs(first,second);
   orbStatuses.set(second,'expired');
   await expectOrbJobs(first);
-  assert.equal(await cardFor(second).getByText('Generating image…',{exact:true}).count(),1);
+  assert.equal(await cardFor(second).getByText('Checking image status…',{exact:true}).count(),1);
   orbStatuses.set(first,'completed');orbStatuses.set(second,'generating');
   await expectOrbJobs(second);
   orbStatuses.set(second,'error');
   await cardFor(second).getByText('Image status unavailable.',{exact:true}).waitFor();
   await expectOrbJobs();
   assert.equal(tickCount(first)+tickCount(second),0);
+ });
+ mode='specialist';imageCount=4;id='99999999-9999-4999-8999-999999999999';status='queued';
+ specialistMessages=[{id:43,role:'assistant',message:'Your four image variations are queued.',context_json:JSON.stringify({canvas_media:{generation_ids:[id]}})}];
+ tickGate=new Promise(resolve=>tickRelease=resolve);
+ await page.setViewportSize({width:1280,height:900});await boot();
+ const batch=cardFor(id);
+ await batch.getByRole('status').filter({hasText:/queued/i}).waitFor();
+ await check('a saved four-image request shows honest queued stages and elapsed time without a fake percentage',async()=>{
+  assert.equal(await batch.locator('.vp3-image-progress-frame').count(),4);
+  assert.equal(await batch.locator('[aria-current="step"]').innerText(),'Queued');
+  assert.match(await batch.locator('time').innerText(),/^Request elapsed /);
+  assert.equal(await batch.locator('time').getAttribute('datetime'),requestedAt);
+  assert.equal(await batch.locator('[aria-valuenow]').count(),0);
+  assert.equal(await batch.locator('.vp3-image-progress-frame').first().evaluate(element=>getComputedStyle(element,'::before').animationName),'none');
+  assert.equal(await batch.locator('details,.vp3-canvas-media-controls').count(),0);
+  assert.equal(tickCount(id),1);
+ });
+ status='generating';await batch.getByRole('status').filter({hasText:'Generating 4 images…'}).waitFor();
+ await check('verified creating progress animates, uses the saved provider start, and respects reduced motion',async()=>{
+  assert.equal(await batch.locator('[aria-current="step"]').innerText(),'Creating');
+  assert.equal(await batch.locator('time').getAttribute('datetime'),startedAt);
+  assert.match(await batch.locator('time').innerText(),/^Creating for /);
+  assert.equal(await batch.locator('.vp3-image-progress-frame').first().evaluate(element=>getComputedStyle(element,'::before').animationName),'vp3-image-colors');
+  await capture('image-progress-desktop');await page.setViewportSize({width:390,height:844});await capture('image-progress-mobile');
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await batch.locator('.vp3-image-progress-frame').first().evaluate(element=>getComputedStyle(element,'::before').animationName),'none');
+  await page.emulateMedia({reducedMotion:'no-preference'});
+ });
+ status='completed';tickRelease();await batch.getByRole('status').filter({hasText:'Your 4 images are ready.'}).waitFor();
+ await check('all four confirmed images share one durable clean post and one worker request',async()=>{
+  assert.equal(await batch.locator('.vp3-image-tile').count(),4);
+  assert.deepEqual(await batch.locator('.vp3-image-tile').evaluateAll(elements=>elements.map(element=>Number(element.dataset.imageAssetId))),[1,2,3,4]);
+  assert.equal(await batch.locator('.vp3-image-progress,.vp3-canvas-media-controls,details').count(),0);
+  assert.equal(tickCount(id),1);await capture('image-gallery-mobile');
+  await page.setViewportSize({width:1280,height:900});await capture('image-gallery-desktop');
+  await page.setViewportSize({width:390,height:844});
+ });
+ await check('the inline multi-image viewer navigates exact assets and keeps a single Chat scroll on mobile',async()=>{
+  const third=batch.locator('.vp3-image-tile[data-image-asset-id="3"]');await third.click();
+  const viewer=page.locator('#chatThread .vp3-image-viewer');await viewer.waitFor();
+  const selected=viewer.locator('.vp3-image-viewer-frame > img');
+  assert.equal(await selected.getAttribute('src'),'https://images.test/media-library-file-v86.php?id=3');
+  assert.equal(await viewer.locator('.vp3-image-viewer-position').innerText(),'3 / 4');
+  await viewer.press('ArrowRight');assert.equal(await selected.getAttribute('src'),'https://images.test/media-library-file-v86.php?id=4');
+  assert.equal(await viewer.getByRole('button',{name:'Next image',exact:true}).isDisabled(),true);
+  await viewer.getByRole('button',{name:'View image 2',exact:true}).click();
+  assert.equal(await selected.getAttribute('src'),'https://images.test/media-library-file-v86.php?id=2');
+  assert.equal(await page.getByRole('dialog').count(),0);assert.equal(await page.locator('#chatInput').isEnabled(),true);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  assert.equal(await viewer.evaluate(element=>getComputedStyle(element).overflowY),'visible');
+  assert.equal(await page.locator('.chat-thread').evaluate(element=>getComputedStyle(element).overflowY),'auto');
+  await capture('image-viewer-mobile');await viewer.getByRole('button',{name:'Back to images',exact:true}).click();
+  assert.equal(await third.evaluate(element=>document.activeElement===element),true);assert.equal(tickCount(id),1);
+  await boot();await batch.locator('.vp3-image-tile').first().waitFor();assert.equal(await batch.locator('.vp3-image-tile').count(),4);assert.equal(tickCount(id),1);
+ });
+ await check('specialist history opens the same canvas viewer through the current scoped media API',async()=>{
+  const before=calls.filter(call=>call.action==='assets').length;
+  const opened=await page.evaluate(()=>window.VP3CanvasMedia.openImages([1,2,3,4],{index:1,focusReturn:document.getElementById('chatInput')}));
+  assert.equal(opened,true);const viewer=page.locator('#chatThread > .vp3-image-history-view .vp3-image-viewer');await viewer.waitFor();
+  assert.equal(await viewer.locator('.vp3-image-viewer-frame > img').getAttribute('src'),'https://images.test/media-library-file-v86.php?id=2');
+  assert.equal(calls.filter(call=>call.action==='assets').length,before+1);
+  const request=calls.filter(call=>call.action==='assets').at(-1);assert.deepEqual([request.agent_id,request.conversation_id,request.asset_ids],[7,42,[1,2,3,4]]);
+  assert.equal(await page.getByRole('dialog').count(),0);await viewer.press('Escape');assert.equal(await page.locator('.vp3-image-history-view').count(),0);
+  assert.equal(await page.locator('#chatInput').evaluate(element=>document.activeElement===element),true);assert.equal(tickCount(id),1);
+ });
+ await check('a history response arriving after a conversation switch cannot expose its old private images',async()=>{
+  assetGate=new Promise(resolve=>assetRelease=resolve);
+  await page.evaluate(()=>{window.pendingHistoryViewer=window.VP3CanvasMedia.openImages([1,2],{index:0});});
+  await page.getByText('Opening your saved images…',{exact:true}).waitFor();
+  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(55));
+  await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===55&&!window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
+  assetRelease();assert.equal(await page.evaluate(()=>window.pendingHistoryViewer),false);assetGate=null;
+  assert.equal(await page.locator('.vp3-image-history-view,.vp3-image-viewer,.vp3-canvas-media img').count(),0);assert.equal(tickCount(id),1);
+  assert.deepEqual(errors,[]);
  });
  console.log(`CHAT_CANVAS_MEDIA_BROWSER=PASS (${checks} cases; real Chat renderer and specialist, desktop and mobile)`);
 }finally{await browser.close();}

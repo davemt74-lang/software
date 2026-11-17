@@ -37,7 +37,7 @@ if (!function_exists('ai_provider_enabled')) {
     function ai_provider_enabled($p): bool{return empty($GLOBALS['noImageProvider']);}
 }
 function subscription_has_entitlement(...$args): bool{return empty($GLOBALS['noImageEntitlement']);}
-function subscription_ai_preflight(...$args): array{$GLOBALS['imagePreflight'][]=$args;return ['reservation_id'=>23,'max_output_tokens'=>empty($GLOBALS['lowImageQuota'])?16000:64];}
+function subscription_ai_preflight(...$args): array{$GLOBALS['imagePreflight'][]=$args;return ['reservation_id'=>23,'max_output_tokens'=>empty($GLOBALS['lowImageQuota'])?($args[3]??16000):64];}
 function subscription_ai_commit_usage(...$args): void{$GLOBALS['imageUsage'][]=$args;}
 function subscription_ai_release_reservation($id): void{$GLOBALS['imageReleased'][]=$id;}
 function url($path): string{return $path;}
@@ -59,9 +59,9 @@ if(!table_exists('agent_workflow_runs')){
 }
 function image_fixture_plan_v1(): array{return ['operation'=>'image_generate','ids'=>['images.generate'],'prompt'=>'A cinematic sunset over the Arizona desert','title'=>'Desert sunset','size'=>'1024x1024','quality'=>'medium','background'=>'opaque'];}
 function image_fixture_turn_v1(): array{$p=db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(11,1,'user','Create a desert image')");$p->execute();return ['conversation_id'=>11,'chat_user_message_id'=>(int)db()->lastInsertId()];}
-function image_fixture_response_v1(string $size='1024x1024'): array{
+function image_fixture_response_v1(string $size='1024x1024',int $count=1): array{
     [$width,$height]=array_map('intval',explode('x',$size));
     $chunk=static fn($type,$data)=>pack('N',strlen($data)).$type.$data.pack('N',crc32($type.$data));
     $png="\x89PNG\r\n\x1a\n".$chunk('IHDR',pack('NNCCCCC',$width,$height,8,6,0,0,0)).$chunk('IDAT',gzcompress(str_repeat("\0".str_repeat("\x40\x60\x80\xff",$width),$height))).$chunk('IEND','');
-    return ['data'=>[['b64_json'=>base64_encode($png)]],'usage'=>['input_tokens'=>20,'output_tokens'=>200,'total_tokens'=>220]];
+    return ['data'=>array_fill(0,$count,['b64_json'=>base64_encode($png)]),'usage'=>['input_tokens'=>20,'output_tokens'=>200*$count,'total_tokens'=>20+200*$count]];
 }

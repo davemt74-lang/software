@@ -107,6 +107,7 @@
   let specialistContent = null;
   let specialistSettings = null;
   let connectedSitesView = null;
+  let imageStudioView = null;
   let specialistMode = false;
   let workspace = false;
   let officeAllLoaded = false;
@@ -210,6 +211,8 @@
     stop();
     connectedSitesView?.dispose();
     connectedSitesView = null;
+    imageStudioView?.dispose();
+    imageStudioView = null;
     abortOfficeRequests();
     orbSurface?.rules?.reset();
     officeAllLoaded = false;
@@ -802,6 +805,7 @@
     const header = node('header','','vp3-agent-activity-header');
     const id = family(key);
     const connectedSites = id === 'connected-sites' && window.VP3ConnectedSites?.mountWorkspace;
+    const imageStudio = id === 'image-generator' && window.VP3ImageStudio?.mountWorkspace;
     const transcriptCanvas = id === 'transcripts' && typeof window.STONEFELLOW_TRANSCRIPTION_CANVAS?.open === 'function';
     workspaceButton = button(transcriptCanvas ? 'Open Transcription Intelligence'
       : ['gmail','media','curiosity','coding','marketing'].includes(id) ? 'Full report' : 'Open workspace',event => {
@@ -834,7 +838,15 @@
     specialistTrigger?.setAttribute('aria-haspopup','dialog');
     specialistTrigger?.setAttribute('aria-expanded','true');
     opened = true;
-    if (connectedSites) {
+    if (imageStudio) {
+      workspace = true;
+      host.dataset.workspace = 'true';
+      host.dataset.imageStudio = 'true';
+      workspaceButton.hidden = settingsButton.hidden = true;
+      status.hidden = true;
+      imageStudioView = imageStudio(sections,scope,() => close(false));
+      heading.focus({preventScroll:true});
+    } else if (connectedSites) {
       workspace = true;
       host.dataset.workspace = 'true';
       workspaceButton.hidden = true;
@@ -1225,7 +1237,7 @@
   function renderSpecialists() {
     const current = scope();
     const presentation = window.VP3TopOfMindFeedV1;
-    if (!specialistsHost || !opened || connectedSitesView || accessRejected || !current || !presentation?.specialistHeading) return;
+    if (!specialistsHost || !opened || connectedSitesView || imageStudioView || accessRejected || !current || !presentation?.specialistHeading) return;
     const inbox = snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items || [];
     const rows = specialistRows(inbox,presentation);
     const {specialistNames,specialistHeading} = presentation;
@@ -2580,6 +2592,7 @@
   }
   async function read() {
     if (!visible() || controller || specialistSettings) return;
+    if (imageStudioView || specialistMode && host?.dataset.imageStudio === 'true') { void imageStudioView?.refresh(); return; }
     if (connectedSitesView) { void connectedSitesView.refresh(); return; }
     const current = scope();
     if (!current) {
@@ -2776,7 +2789,7 @@
     if (event.key !== 'Escape' || event.defaultPrevented || !opened) return;
     event.preventDefault();
     if (specialistSettings) closeSpecialistSettings();
-    else if (specialistMode && workspace && !connectedSitesView) showWorkspace(false);
+    else if (specialistMode && workspace && !connectedSitesView && !imageStudioView) showWorkspace(false);
     else close();
   });
   window.addEventListener('pagehide',() => { close(false); disposed = true; });

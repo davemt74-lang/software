@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
 if (!function_exists('vp3_agent_chat_resolve_agent_v380')) require_once dirname(__DIR__) . '/includes/agent-chat-boundary-v380.php';
 header('Content-Type: application/json; charset=UTF-8');header('Cache-Control: no-store');
 try{
@@ -9,12 +10,24 @@ try{
     $input=json_decode($raw,true,16,JSON_THROW_ON_ERROR);if(!is_array($input))throw new InvalidArgumentException('Invalid media request.');
     $user=current_user();if(!$user)throw new RuntimeException('Sign in to view private media.',401);
     if(!has_permission('chat.access',$user))throw new RuntimeException('Chat access is unavailable.',403);
+    if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])
+        &&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])){
+        throw new RuntimeException('Your Chat session changed. Refresh the page and try again.',403);
+    }
     if(!is_string($input['csrf_token']??null)||!hash_equals(csrf_token(),$input['csrf_token']))throw new RuntimeException('Refresh the page to restore this session.',419);
     $pdo=db();if(!$pdo)throw new RuntimeException('Media storage is unavailable.',503);
     $cid=$input['conversation_id']??null;$aid=$input['agent_id']??null;if(!is_int($cid)||$cid<1||!is_int($aid)||$aid<0)throw new InvalidArgumentException('Use the current conversation and Agent.');
     $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$aid);$principal=vp3_agent_chat_principal_v380($user,$agent);$context=['conversation_id'=>$cid];
     $user=vp3_image_scope_v1($pdo,$user,$principal,$context);$action=$input['action']??'';
-    if($action==='assets'){
+    if($action==='reference'){
+        $id=$input['asset_id']??null;
+        if(!is_int($id)||$id<1||$id>9007199254740991)throw new InvalidArgumentException('Choose a valid base image.');
+        require_once dirname(__DIR__).'/includes/agent-image-reference-v1.php';
+        $reference=vp3_image_reference_validate_v1($pdo,$user,$principal,$context,$id);
+        $asset=media_studio_asset($id,$user);
+        vp3_image_scope_v1($pdo,$user,$principal,$context);
+        $result=['reference'=>$reference,'asset'=>media_studio_asset_payload($asset)];
+    }elseif($action==='assets'){
         $ids=$input['asset_ids']??null;if(!is_array($ids)||!array_is_list($ids)||count($ids)>12)throw new InvalidArgumentException('Choose up to twelve assets.');
         foreach($ids as $id)if(!is_int($id)||$id<1)throw new InvalidArgumentException('Invalid asset reference.');
         $assets=media_studio_assets_by_ids($ids,$user);$order=array_flip($ids);usort($assets,static fn($a,$b)=>$order[$a['id']]<=>$order[$b['id']]);vp3_image_scope_v1($pdo,$user,$principal,$context);$result=['assets'=>$assets];
@@ -37,6 +50,6 @@ try{
     }else throw new InvalidArgumentException('Unknown media operation.');
     echo json_encode(['ok'=>true]+$result,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 }catch(Throwable $e){
-    $status=$e instanceof InvalidArgumentException||$e instanceof JsonException?422:($e instanceof PDOException?503:(in_array($e->getCode(),[401,403,404,405,409,413,419,503],true)?$e->getCode():503));
+    $status=$e instanceof InvalidArgumentException||$e instanceof JsonException?422:($e instanceof PDOException?503:(in_array($e->getCode(),[401,403,404,405,409,413,419,422,503],true)?$e->getCode():503));
     http_response_code($status);echo json_encode(['ok'=>false,'error'=>$e instanceof PDOException?'Media storage is unavailable.':($status===503?'The media operation could not be verified. Refresh its status before creating another request.':$e->getMessage())]);
 }

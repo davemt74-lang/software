@@ -134,6 +134,12 @@ function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraf
             if($storeInitiativeDraft&&vp3_live_context_eyes_visit_ref_v1($value))$safe[$key]=$value;
             continue;
         }
+        if($key==='image_asset_ids'){
+            if(is_array($value)&&array_is_list($value)&&count($value)>=1&&count($value)<=4
+                &&!array_filter($value,static fn(mixed $id):bool=>!is_int($id)||$id<1)
+                &&count(array_unique($value))===count($value))$safe[$key]=$value;
+            continue;
+        }
         if(is_scalar($value)||$value===null)$safe[$key]=agent_workflow_text_v1400($value??'',$key==='mission_output'?16000:500);
     }
     return $safe;

@@ -49,7 +49,8 @@ jobs:
           meeting_actions = r'^(?:(?:includes|tests)/agent-meeting-[a-z0-9-]+\.php|tests/meeting-(?:chat-(?:actions-api|action-review-browser)|agenda-research-browser)\.mjs|tests/fixtures/meeting-(?:prep-calendar-fixture|agenda-research-page-v1)\.php|includes/(?:agent-calendar-prep-v1|agent-task-lists-v1|agent-reminders-v1|agent-initiative-office-actions-v1|agent-initiative-schedule-actions-v1|video-meetings(?:-[a-z0-9-]+)?)\.php|(?:api/video-meeting-agenda|meeting)\.php|video-meetings-(?:agenda-v18140|automation-v18130|intelligence-v1820)\.js)$'
           screen_reports = r'^(?:chat-screen-insights-v1\.(?:js|css)|(?:api|includes)/agent-screen-(?:insights|chat-report)-v1\.php|tests/(?:agent-ears-picker|agent-screen-(?:insights|chat-report)[^/]*|screen-insights-chat-report)\.(?:php|mjs))$'
           media_entertainment = r'^(?:(?:includes|tests)/agent-media-(?:entertainment|similar-artists)[^/]*\.(?:php|mjs)|tests/chat-youtube-[^/]*\.mjs|tests/initiative-youtube-offer-e2e\.mjs|tests/fixtures/initiative-media-chat-http\.php)$'
-          changed = diff.returncode != 0 or any(re.match(screen_reports, p) or re.match(media_entertainment, p) or re.match(meeting_actions, p) or re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(coordination, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(gmail_first_review, p) or re.match(email_specialist, p) or re.match(development, p) for p in diff.stdout.splitlines())
+          image_chat = r'^(?:(?:chat-canvas-media|chat-image-(?:composer|studio))-v1\.(?:js|css)|(?:api|includes|tests)/(?:agent-image-[^/]+|chat-image-[^/]+|chat-canvas-media-[^/]+)\.(?:php|mjs)|tests/fixtures/image-generation-v1\.php)$'
+          changed = diff.returncode != 0 or any(re.match(image_chat, p) or re.match(screen_reports, p) or re.match(media_entertainment, p) or re.match(meeting_actions, p) or re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(coordination, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(gmail_first_review, p) or re.match(email_specialist, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -126,8 +127,13 @@ jobs:
           php tests/agent-photo-media-v1.php
           php tests/agent-image-generation-v1.php
           php tests/agent-image-transport-v1.php
+          php tests/chat-image-composer-v1.php
           node tests/chat-canvas-media-api.mjs
           node tests/chat-canvas-media-browser.mjs
+          node tests/chat-image-composer-browser.mjs
+          php tests/chat-image-studio-v1.php
+          node tests/chat-image-studio-api.mjs
+          node tests/chat-image-studio-browser.mjs
           node tests/media-library-workspace-api.mjs
           node tests/media-library-workspace-browser.mjs
           php tests/initiative-work-mission-v1.php

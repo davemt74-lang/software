@@ -295,11 +295,24 @@ function agent_scheduling_timezone_v430(string $value,string $fallback='UTC'):st
 
 function ai_provider_api_key($provider): string{return isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY'])?'fixture-image-key':'';}
 function ai_provider_enabled($provider): bool{return isset($_SERVER['HTTP_X_FIXTURE_IMAGES_READY']);}
+function image_capability_png_v1(bool $changed=false): string{
+    $chunk=static fn(string $type,string $data):string=>pack('N',strlen($data)).$type.$data.pack('N',crc32($type.$data));
+    $pixel=$changed?"\x90\x40\x60\xff":"\x40\x60\x90\xff";
+    return "\x89PNG\r\n\x1a\n".$chunk('IHDR',pack('NNCCCCC',16,16,8,6,0,0,0))
+        .$chunk('IDAT',gzcompress(str_repeat("\0".str_repeat($pixel,16),16))).$chunk('IEND','');
+}
 function image_capability_fixture_v1(PDO $pdo): void{
     if(!defined('STONEFELLOW_ROOT'))define('STONEFELLOW_ROOT',dirname(__DIR__));
     workflow_agent_fixture_v1($pdo);
     foreach(['capability_key TEXT','action_key TEXT','action_type TEXT','label TEXT','summary TEXT','attempt_count INTEGER DEFAULT 0','result_summary TEXT','result_json TEXT','error_class TEXT','started_at TEXT','completed_at TEXT','updated_at TEXT'] as $c){$name=explode(' ',$c)[0];if(!column_exists('agent_workflow_actions',$name))$pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN '.$c);}
     foreach(['run_id INTEGER','owner_user_id INTEGER','action_id INTEGER','depends_on_action_id INTEGER'] as $c){$name=explode(' ',$c)[0];if(!column_exists('agent_workflow_action_dependencies',$name))$pdo->exec('ALTER TABLE agent_workflow_action_dependencies ADD COLUMN '.$c);}
     foreach(['receipt_key TEXT','result_json TEXT'] as $c){$name=explode(' ',$c)[0];if(!column_exists('agent_workflow_receipts',$name))$pdo->exec('ALTER TABLE agent_workflow_receipts ADD COLUMN '.$c);}
-    $pdo->exec("CREATE TABLE IF NOT EXISTS user_media_assets(id INTEGER PRIMARY KEY,user_id INTEGER,media_type TEXT,title TEXT,mime_type TEXT,file_path TEXT,file_size INTEGER,duration_seconds REAL,source TEXT,metadata_json TEXT,created_at TEXT,updated_at TEXT);CREATE TABLE IF NOT EXISTS video_editor_projects(id INTEGER PRIMARY KEY,user_id INTEGER);INSERT OR IGNORE INTO user_media_assets(id,user_id,media_type,title) VALUES(1,1,'photo','Fixture uploaded sunset'),(2,2,'photo','SECRET foreign photo')");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS user_media_assets(id INTEGER PRIMARY KEY,user_id INTEGER,media_type TEXT,title TEXT,mime_type TEXT,file_path TEXT,file_size INTEGER,duration_seconds REAL,source TEXT,metadata_json TEXT,created_at TEXT,updated_at TEXT);CREATE TABLE IF NOT EXISTS video_editor_projects(id INTEGER PRIMARY KEY,user_id INTEGER);INSERT OR IGNORE INTO user_media_assets(id,user_id,media_type,title) VALUES(1,1,'photo','Fixture uploaded sunset'),(2,2,'photo','SECRET foreign photo'),(3,1,'photo','Alternate private reference')");
+    foreach($pdo->query("SELECT id,user_id FROM user_media_assets WHERE id IN (1,2,3) AND COALESCE(file_path,'')=''")->fetchAll() as $row){
+        $relative='private/user-media/'.(int)$row['user_id'].'/capability-source-'.(int)$row['id'].'.png';
+        media_studio_ensure_user_root((int)$row['user_id']);$bytes=image_capability_png_v1((int)$row['id']===3);
+        file_put_contents(STONEFELLOW_ROOT.'/'.$relative,$bytes);
+        $pdo->prepare("UPDATE user_media_assets SET mime_type='image/png',file_path=?,file_size=?,source='upload',metadata_json='{}',created_at='2026-11-17 10:00:00',updated_at='2026-11-17 10:00:00' WHERE id=?")
+            ->execute([$relative,strlen($bytes),(int)$row['id']]);
+    }
 }

@@ -91,6 +91,20 @@ fs.copyFileSync('tests/fixtures/vrss-agent-v1.php',path.join(tmp,'includes/vrss-
 for(const name of ['analytics-agent-v1.php','radar-agent-v1.php','tracky-agent-v1.php'])fs.copyFileSync('tests/fixtures/'+name,path.join(tmp,'includes',name));
 fs.copyFileSync('tests/fixtures/observation-api-state-v1.php',path.join(tmp,'observation-state.php'));
 fs.writeFileSync(path.join(tmp,'state.php'),`<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['reminders'=>(int)db()->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn(),'conversations'=>(int)db()->query('SELECT COUNT(*) FROM chat_conversations')->fetchColumn(),'messages'=>(int)db()->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()]);`);
+fs.writeFileSync(path.join(tmp,'image-fixture-state.php'),`<?php
+require __DIR__.'/includes/bootstrap.php';
+$pdo=db();image_capability_fixture_v1($pdo);
+$mode=$_GET['mode']??'';$path=STONEFELLOW_ROOT.'/private/user-media/1/capability-source-1.png';
+if($mode==='remove')@unlink($path);
+elseif(in_array($mode,['change','restore'],true)){
+    $bytes=image_capability_png_v1($mode==='change');file_put_contents($path,$bytes);
+    $pdo->prepare('UPDATE user_media_assets SET file_size=?,updated_at=? WHERE id=1')
+        ->execute([strlen($bytes),$mode==='change'?'2026-11-17 10:00:01':'2026-11-17 10:00:00']);
+}
+header('Content-Type: application/json');
+echo json_encode(['generations'=>table_exists('agent_image_generations_v1')?(int)$pdo->query('SELECT COUNT(*) FROM agent_image_generations_v1')->fetchColumn():0,
+    'provider_attempts'=>table_exists('agent_image_generations_v1')?(int)$pdo->query("SELECT COUNT(*) FROM agent_image_generations_v1 WHERE provider_started_at<>''")->fetchColumn():0]);
+`);
 fs.writeFileSync(path.join(tmp,'calendar-prep-fixture.php'),`<?php
 require __DIR__.'/includes/bootstrap.php';
 $pdo=db();
@@ -572,6 +586,112 @@ try{
   const cancel=await fetch(base+'/api/chat-canvas-media-v1.php',{method:'POST',headers:{'Content-Type':'application/json',...mediaHeaders},body:JSON.stringify({csrf_token:'fixture',action:'cancel',confirmed:true,generation_id:id,conversation_id:cid,agent_id:agent})});
   const cancelled=await cancel.json();check(cancelled.generation?.status==='cancelled',endpoint+' cancel button uses the canonical owner job control: '+JSON.stringify(cancelled));
  }
+ const imageHeaders={'X-Fixture-Images-Ready':'1'};
+ const imagePlan={operation:'image_generate',ids:['images.generate'],prompt:'A cinematic Arizona desert sunset',title:'Desert artwork',count:4};
+ const imageModelHeaders={...imageHeaders,'X-Fixture-Participant-Owner-Plan':JSON.stringify(imagePlan)};
+ const imageState=async(mode='')=>await(await fetch(base+'/image-fixture-state.php'+(mode?'?mode='+mode:''),{headers:imageHeaders})).json();
+ async function imageControl(action,turn,agent,extra={}){
+  const result=await fetch(base+'/api/chat-canvas-media-v1.php',{method:'POST',headers:{'Content-Type':'application/json',...imageHeaders},
+   body:JSON.stringify({csrf_token:'fixture',action,conversation_id:turn.conversation_id,agent_id:agent,
+    generation_id:turn.canvas_media?.generation_ids?.[0],...extra})});
+  return {response:result,data:await result.json()};
+ }
+ async function queuedImage(endpoint,message,args,agent,count,reference=0,headers=imageModelHeaders){
+  const before=await imageState(),result=await post(endpoint,message,args,headers),turn=result.data;
+  check(turn?.tool_receipt?.capability==='images.generate'&&turn.tool_receipt.status==='completed'
+   &&turn.canvas_media?.generation_ids?.length===1,endpoint+' image prompt returns one canonical queue acknowledgement: '+result.body);
+  const {data}=await imageControl('get',turn,agent);
+  check(data.ok===true&&data.generation?.status==='queued'&&data.generation.count===count
+   &&data.generation.reference_asset_id===reference&&data.generation.provider_started===false
+   &&data.generation.completed_count===0&&data.generation.assets.length===0,
+   endpoint+' queued image count and exact base attachment match the owner request: '+JSON.stringify(data));
+  check((await imageState()).generations===before.generations+1,endpoint+' a multi-image prompt creates exactly one workflow generation record');
+  return turn;
+ }
+ async function cancelQueuedImage(turn,agent){
+  const {data}=await imageControl('cancel',turn,agent,{confirmed:true});
+  check(data.generation?.status==='cancelled','queued fixture image is released through canonical owner cancellation');
+ }
+ for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
+  const agent=endpoint.includes('v236')?7:0,context=endpoint.includes('stream')?{agent_context:{user_agent_id:agent}}:{};
+  const batch=await queuedImage(endpoint,'Create four images of a small desert observatory under a star-filled sky.',context,agent,4);
+  await cancelQueuedImage(batch,agent);
+  const edit=await queuedImage(endpoint,'Edit this image into a watercolor desert with a violet sky.',{...context,image_reference_asset_id:1},agent,1,1);
+  const editView=(await imageControl('get',edit,agent)).data.generation;
+  check(editView.mode==='chat_reference'&&editView.reference_asset?.id===1&&editView.reference_asset.available===true,
+   endpoint+' explicit edit binds the actual private PNG as the base image');
+  await cancelQueuedImage(edit,agent);
+  const variants=await queuedImage(endpoint,'Create three variations of this image with a different sunset palette in each.',
+   {...context,image_reference_asset_id:1},agent,3,1);
+  await cancelQueuedImage(variants,agent);
+  const inflated=await queuedImage(endpoint,'Design one image of a desert observatory beneath a starry sky.',context,agent,1);
+  await cancelQueuedImage(inflated,agent);
+  check((await imageControl('get',inflated,agent)).data.generation.count===1,
+   endpoint+' a model plan requesting four outputs cannot inflate a singular owner image request');
+  for(const reference of [2,999,0,'1',1.5]){
+   const before=await imageState();
+   const rejected=await post(endpoint,'Edit this image into a watercolor desert with a violet sky.',
+    {...context,conversation_id:variants.conversation_id,image_reference_asset_id:reference},imageModelHeaders);
+   check(rejected.data?.ok!==true&&!rejected.data?.canvas_media?.generation_ids?.length
+    &&(await imageState()).generations===before.generations,
+    endpoint+' foreign, missing or malformed base reference '+JSON.stringify(reference)+' cannot queue an image');
+  }
+  for(const message of ['Create five images of a quiet desert lake.','Design eight album cover images for a coastal release.']){
+   const before=await imageState(),rejected=await post(endpoint,message,context,imageModelHeaders);
+   check(!rejected.data?.canvas_media?.generation_ids?.length&&(await imageState()).generations===before.generations,
+    endpoint+' an explicit quantity above four is rejected instead of silently reduced: '+rejected.body);
+  }
+  const beforeDiscussion=await imageState();
+  const discussion=await post(endpoint,'What changes would suit this image?',{...context,image_reference_asset_id:1},imageModelHeaders);
+  check(!discussion.data?.canvas_media?.generation_ids?.length&&(await imageState()).generations===beforeDiscussion.generations,
+   endpoint+' attaching a base for discussion does not authorize a model to generate an image');
+ }
+ const replayImageChat=(await post('chat.php','',{action:'new'},imageHeaders)).data.conversation_id;
+ const replayImagePrompt='Edit this image into a moonlit watercolor scene with muted blue shadows.';
+ const replayImageArgs={conversation_id:replayImageChat,agent_context:{user_agent_id:0},image_reference_asset_id:1,idempotency_key:'image-source-stream-replay'};
+ const replayImage=await queuedImage('chat-stream-v121.php',replayImagePrompt,replayImageArgs,0,1,1);
+ const replayImageState=await imageState(),replayMessages=await state();
+ const exactImageRetry=await post('chat-stream-v121.php',replayImagePrompt,replayImageArgs,imageModelHeaders);
+ check(exactImageRetry.data?.replayed===true&&exactImageRetry.data.assistant_message_id===replayImage.assistant_message_id
+  &&(await imageState()).generations===replayImageState.generations&&(await state()).messages===replayMessages.messages,
+  'stream replay returns the exact saved image request without another queue or message');
+ for(const args of [{...replayImageArgs,image_reference_asset_id:3},Object.fromEntries(Object.entries(replayImageArgs).filter(([key])=>key!=='image_reference_asset_id'))]){
+  const changed=await post('chat-stream-v121.php',replayImagePrompt,args,imageModelHeaders);
+  check(changed.data?.ok!==true&&!changed.body.includes(replayImage.canvas_media.generation_ids[0])
+   &&(await imageState()).generations===replayImageState.generations,
+   'stream replay rejects a replaced or omitted base attachment without releasing the old result');
+ }
+ for(const mode of ['change','remove']){
+  await imageState(mode);
+  const changed=await post('chat-stream-v121.php',replayImagePrompt,replayImageArgs,imageModelHeaders);
+  check(changed.data?.ok!==true&&!changed.body.includes(replayImage.canvas_media.generation_ids[0])
+   &&(await imageState()).generations===replayImageState.generations,
+   'stream replay rejects '+mode+' of the same saved base file and never queues a replacement');
+  await imageState('restore');
+ }
+ await cancelQueuedImage(replayImage,0);
+ for(const [index,endpoint] of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php'].entries()){
+  const agent=endpoint.includes('v236')?7:0,ownerEndpoint=agent?'chat-v236.php?agent=7':'chat.php';
+  const cid=(await post(ownerEndpoint,'',{action:'new'},imageHeaders)).data.conversation_id;
+  const anchor=(await post(ownerEndpoint,'Can you create reminders?',{conversation_id:cid},imageHeaders)).data.assistant_message_id;
+  const args={conversation_id:cid,agent_context:{user_agent_id:agent},input_mode:'voice',image_reference_asset_id:1,
+   initiative_reply_auto_voice:true,initiative_reply:{message_id:anchor,reply_ref:'a'.repeat(64),revision:1},idempotency_key:'auto-voice-image-source-'+index};
+  const turn=await queuedImage(endpoint,replayImagePrompt,args,agent,1,1);
+  check(turn.initiative_reply_detached==='image_request',endpoint+' an explicit base-image edit detaches from incidental automatic voice reply targeting');
+  const before=await imageState(),messages=await state(),retry=await post(endpoint,replayImagePrompt,args,imageModelHeaders);
+  check(retry.data?.replayed===true&&retry.data.assistant_message_id===turn.assistant_message_id
+   &&(await imageState()).generations===before.generations&&(await state()).messages===messages.messages,
+   endpoint+' detached voice edit replays the exact queued request once');
+  const mismatch=await post(endpoint,replayImagePrompt,{...args,image_reference_asset_id:3},imageModelHeaders);
+  check(mismatch.data?.ok!==true&&!mismatch.body.includes(turn.canvas_media.generation_ids[0])&&(await imageState()).generations===before.generations,
+   endpoint+' detached voice cache rejects another owned base image instead of replaying stale output');
+  await imageState('change');
+  const changed=await post(endpoint,replayImagePrompt,args,imageModelHeaders);
+  check(changed.data?.ok!==true&&!changed.body.includes(turn.canvas_media.generation_ids[0])&&(await imageState()).generations===before.generations,
+   endpoint+' detached voice cache binds the saved base bytes and revision');
+  await imageState('restore');await cancelQueuedImage(turn,agent);
+ }
+ check((await imageState()).provider_attempts===0,'all image Chat integration cases queue, inspect and cancel without any paid provider execution');
  for(const endpoint of ['chat-v236.php?agent=7','chat-stream-v121.php','chat.php']){
   const context=endpoint.includes('stream')?{agent_context:{user_agent_id:7}}:{};
   const plan={operation:'private_share_read',ids:['apps.shares.read'],view:'all'};
