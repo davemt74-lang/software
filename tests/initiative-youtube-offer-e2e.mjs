@@ -98,9 +98,22 @@ if(str_starts_with($path,'/api/')){require __DIR__.$path;return;}
 if($path==='/media.php'&&($_GET['type']??null)==='audio'){require __DIR__.'/media.php';return;}
 require __DIR__.'/includes/bootstrap.php';
 if($path==='/fixture-state'){
+    // Keep the actual persisted checkpoint visible after a completed result
+    // invalidates its public projection. Use the production scope and hash.
+    [$scanScope,$scanParams]=vp3_agent_memory_scope_sql_v410(7);
+    $scanHash=vp3_agent_memory_scope_hash_v410(7,agent_brain_v122_memory_hash('initiative_sweep','coordination-scan'));
+    $read=db()->prepare('SELECT id,user_id,user_agent_id,memory_type,subject,memory_hash,memory_scope_version,is_active,metadata_json
+        FROM agent_memory_items WHERE user_id=? AND '.$scanScope.' AND memory_hash=? LIMIT 1');
+    $read->execute([1,...$scanParams,$scanHash]);
+    $scan=$read->fetch(PDO::FETCH_ASSOC)?:null;
+    if($scan!==null){
+        $metadata=json_decode((string)$scan['metadata_json'],true);
+        $scan['metadata']=is_array($metadata)?$metadata:null;
+    }
     header('Content-Type:application/json');
     echo json_encode([
-        'runs'=>db()->query('SELECT id,owner_user_id,agent_id,status,goal FROM agent_workflow_runs ORDER BY id')->fetchAll(),
+        'server_time'=>time(),'coordination_scan_hash'=>$scanHash,'coordination_scan'=>$scan,
+        'runs'=>db()->query('SELECT id,owner_user_id,agent_id,capability_key,status,goal FROM agent_workflow_runs ORDER BY id')->fetchAll(),
         'actions'=>db()->query('SELECT id,run_id,owner_user_id,sequence_no,action_key,capability_key,execution_target,attempt_count,status,result_json FROM agent_workflow_actions ORDER BY id')->fetchAll(),
         'receipts'=>db()->query('SELECT * FROM agent_workflow_receipts ORDER BY id')->fetchAll(),
         'plays'=>db()->query('SELECT id,user_id,track_id,source_context,last_position_seconds FROM track_play_sessions ORDER BY id')->fetchAll(),
@@ -232,6 +245,85 @@ try{
     const goal=JSON.parse(row.goal);
     return goal.tool==='coordination.review'&&goal.primary===primary;
   });
+  const completedMediaScan=(before,after,tick,conversation,revision)=>{
+    const row=after.coordination_scan,prior=before.coordination_scan;
+    assert.ok(row,'The completed tick must persist its real source scan.');
+    assert.deepEqual([row.user_id,row.user_agent_id,row.memory_type,row.subject,row.memory_scope_version],
+      [1,7,'initiative_sweep','coordination-scan',410]);
+    assert.equal(row.memory_hash,after.coordination_scan_hash);
+    assert.equal(row.is_active,0,'The verified new result invalidates the public scan projection.');
+    if(prior){
+      assert.equal(row.id,prior.id,'The coordinator updates its canonical scoped checkpoint.');
+      assert.equal(row.memory_hash,prior.memory_hash);
+      assert.notEqual(row.metadata_json,prior.metadata_json,'This tick must replace the previous scan evidence.');
+    }
+    const metadata=row.metadata;
+    assert.ok(metadata&&typeof metadata==='object');
+    assert.equal(metadata.conversation_id,conversation);
+    assert.equal(metadata.revision,revision);
+    assert.deepEqual(metadata.agent_scope,{version:'v4.10',user_agent_id:7,agent_kind:'user_agent',conversation_id:conversation});
+    assert.equal(metadata.outcome,tick.coordination);
+    assert.ok(Number.isInteger(metadata.scanned_at)&&metadata.scanned_at>=before.server_time
+      &&metadata.scanned_at<=after.server_time,'The scan must belong to this observed tick, including within one second.');
+    assert.ok(metadata.specialists?.media);
+    return metadata.specialists.media;
+  };
+  const verifiedIndependentPost=(before,after,tick,conversation,revision,allowed)=>{
+    const diagnostic=JSON.stringify({tick:tick,
+      run:after.runs.find(row=>row.id===tick.run_id),
+      actions:after.actions.filter(row=>row.run_id===tick.run_id),
+      receipts:after.receipts.filter(row=>row.run_id===tick.run_id),
+      newMessages:after.messages.filter(row=>row.conversation_id===conversation
+        &&!before.messages.some(previous=>previous.id===row.id))});
+    const handoff=after.runs.find(row=>row.id===tick.run_id);
+    assert.equal(handoff?.status,'completed',diagnostic);
+    assert.equal(handoff.owner_user_id,1);
+    assert.equal(handoff.agent_id,7);
+    const goal=JSON.parse(handoff.goal);
+    assert.equal(goal.tool,'coordination.review');
+    const route=goal.coordination_route;
+    const curiosity=route?.specialist==='curiosity'&&route.trigger==='open_question'&&route.action==='ask'
+      &&goal.primary.startsWith('curiosity:');
+    const starter=['starter-image','starter-mission'].find(kind=>route?.specialist==='casual'
+      &&route.trigger===kind&&route.action==='ask'&&goal.primary==='casual:'+kind);
+    assert.ok(allowed.includes(curiosity?'curiosity':starter?'casual:'+starter:''),diagnostic);
+    assert.equal(tick.coordination,curiosity?'queued_chat_handoff':'queued_checkin',diagnostic);
+    assert.equal(goal.binding.owner_user_id,1);
+    assert.equal(goal.binding.agent_id,7);
+    assert.equal(goal.binding.conversation_id,conversation);
+    assert.equal(goal.binding.revision,revision);
+    const actions=after.actions.filter(row=>row.run_id===handoff.id&&row.owner_user_id===1
+      &&row.sequence_no===1&&row.action_key==='initiative.prepare'&&row.capability_key==='initiative.prepare'
+      &&row.execution_target==='cloud');
+    assert.equal(actions.length,1);
+    const action=actions[0];
+    assert.equal(action.status,'completed');
+    const receipts=after.receipts.filter(row=>row.run_id===handoff.id&&row.owner_user_id===1
+      &&row.action_id===action.id&&row.attempt_no===action.attempt_count&&row.executor==='cloud'&&row.status==='completed');
+    assert.equal(receipts.length,1);
+    const handoffReceipt=receipts[0];
+    assert.equal(action.result_json,handoffReceipt.result_json);
+    const result=JSON.parse(handoffReceipt.result_json);
+    assert.equal(result.initiative_delivery,'delivered');
+    assert.equal(result.initiative_tool_result.output.type,'initiative_coordination');
+    assert.equal(result.initiative_tool_result.output.situation_id,goal.coordination_id);
+    assert.deepEqual(result.initiative_tool_result.output.evidence_revisions,goal.sources);
+    assert.deepEqual(Object.keys(goal.sources),[goal.primary]);
+    const posted=after.messages.find(row=>row.id===Number(result.initiative_message_id));
+    assert.equal(posted?.conversation_id,conversation);
+    assert.equal(posted.role,'assistant');
+    assert.equal(posted.message,result.initiative_draft);
+    const postedContext=JSON.parse(posted.context_json);
+    assert.equal(postedContext.source,'agent_initiative');
+    assert.equal(postedContext.initiative_run_id,handoff.id);
+    assert.deepEqual(postedContext.initiative_output,result.initiative_tool_result.output);
+    assert.deepEqual([postedContext.initiative_work.owner_user_id,postedContext.initiative_work.agent_id,
+      postedContext.initiative_work.conversation_id,postedContext.initiative_work.run_id],[1,7,conversation,handoff.id]);
+    assert.deepEqual(after.messages.filter(row=>row.conversation_id===conversation
+      &&!before.messages.some(previous=>previous.id===row.id)).map(row=>row.id),[posted.id],
+    'The invalidated checkpoint requires exactly one newly saved independent report.');
+    return {run:handoff,goal,action,receipt:handoffReceipt,result,post:posted};
+  };
   const youtubeRef=`media:youtube:${sourceId}`;
   const run=coordinationRuns(posted,youtubeRef)[0];
   assert.equal(run?.status,'completed');
@@ -516,70 +608,14 @@ try{
   assert.ok(idleResponse.ok(),await idleResponse.text());
   const idleTick=await idleResponse.json();
   assert.equal(idleTick.ok,true,JSON.stringify(idleTick));
-  let idleState=await state();
+  const idleState=await state();
   assertCatalogUnchanged(idleState);
   let idleReport=await catalogDiagnostic({allowInvalidated:true});
   if(idleReport===null){
     // A verified Curiosity question or Image example can complete in this tick.
-    // Require its exact fresh saved post before allowing one genuine rescan.
-    const diagnostic=JSON.stringify({tick:idleTick,
-      run:idleState.runs.find(row=>row.id===idleTick.run_id),
-      actions:idleState.actions.filter(row=>row.run_id===idleTick.run_id),
-      receipts:idleState.receipts.filter(row=>row.run_id===idleTick.run_id),
-      newMessages:idleState.messages.filter(row=>row.conversation_id===16
-        &&!beforeIdleCatalog.messages.some(previous=>previous.id===row.id))});
-    const handoff=idleState.runs.find(row=>row.id===idleTick.run_id);
-    assert.equal(handoff?.status,'completed',diagnostic);
-    assert.equal(handoff.owner_user_id,1);
-    assert.equal(handoff.agent_id,7);
-    const goal=JSON.parse(handoff.goal);
-    assert.equal(goal.tool,'coordination.review');
-    const route=goal.coordination_route;
-    const curiosity=route?.specialist==='curiosity'&&route.trigger==='open_question'&&route.action==='ask'
-      &&goal.primary.startsWith('curiosity:');
-    const imageExample=route?.specialist==='casual'&&route.trigger==='starter-image'&&route.action==='ask'
-      &&goal.primary==='casual:starter-image';
-    assert.ok(curiosity||imageExample,diagnostic);
-    assert.equal(idleTick.coordination,curiosity?'queued_chat_handoff':'queued_checkin',diagnostic);
-    assert.equal(goal.binding.owner_user_id,1);
-    assert.equal(goal.binding.agent_id,7);
-    assert.equal(goal.binding.conversation_id,16);
-    assert.equal(goal.binding.revision,policyRevision);
-    const actions=idleState.actions.filter(row=>row.run_id===handoff.id&&row.owner_user_id===1
-      &&row.sequence_no===1&&row.action_key==='initiative.prepare'&&row.capability_key==='initiative.prepare'
-      &&row.execution_target==='cloud');
-    assert.equal(actions.length,1);
-    const action=actions[0];
-    assert.equal(action.status,'completed');
-    const receipts=idleState.receipts.filter(row=>row.run_id===handoff.id&&row.owner_user_id===1
-      &&row.action_id===action.id&&row.attempt_no===action.attempt_count&&row.executor==='cloud'&&row.status==='completed');
-    assert.equal(receipts.length,1);
-    const handoffReceipt=receipts[0];
-    assert.equal(action.result_json,handoffReceipt.result_json);
-    const result=JSON.parse(handoffReceipt.result_json);
-    assert.equal(result.initiative_delivery,'delivered');
-    assert.equal(result.initiative_tool_result.output.type,'initiative_coordination');
-    assert.equal(result.initiative_tool_result.output.situation_id,goal.coordination_id);
-    assert.deepEqual(result.initiative_tool_result.output.evidence_revisions,goal.sources);
-    assert.deepEqual(Object.keys(goal.sources),[goal.primary]);
-    const posted=idleState.messages.find(row=>row.id===Number(result.initiative_message_id));
-    assert.equal(posted?.conversation_id,16);
-    assert.equal(posted.role,'assistant');
-    assert.equal(posted.message,result.initiative_draft);
-    const postedContext=JSON.parse(posted.context_json);
-    assert.equal(postedContext.source,'agent_initiative');
-    assert.equal(postedContext.initiative_run_id,handoff.id);
-    assert.deepEqual(postedContext.initiative_output,result.initiative_tool_result.output);
-    assert.deepEqual(idleState.messages.filter(row=>row.conversation_id===16
-      &&!beforeIdleCatalog.messages.some(previous=>previous.id===row.id)).map(row=>row.id),[posted.id],
-    'The invalidated checkpoint requires exactly one newly saved independent report.');
-    const rescanned=await catalogTick();
-    assert.ok(rescanned.ok(),await rescanned.text());
-    const rescanTick=await rescanned.json();
-    assert.equal(rescanTick.ok,true,JSON.stringify(rescanTick));
-    idleState=await state();
-    assertCatalogUnchanged(idleState);
-    idleReport=await catalogDiagnostic();
+    // Require its exact fresh saved post before reading that tick's scan.
+    verifiedIndependentPost(beforeIdleCatalog,idleState,idleTick,16,policyRevision,['curiosity','casual:starter-image']);
+    idleReport=completedMediaScan(beforeIdleCatalog,idleState,idleTick,16,policyRevision);
   }
   assert.equal(idleReport.offer_gate,'new_activity_required',
     'An acceptance and a cooldown expiry cannot cause an idle Chat to work through the catalog.');
@@ -612,6 +648,9 @@ try{
     });
     const body=await response.text();
     assert.ok(response.ok()&&body.startsWith('{'),body);
+    const result=JSON.parse(body);
+    assert.equal(result.ok,true,body);
+    return {result,revision};
   };
   const activityMatches=async(conversation,playing)=>page.waitForFunction(async({conversation,playing})=>{
     const {activity}=await (await fetch('/fixture-state')).json();
@@ -622,36 +661,117 @@ try{
     const ref=JSON.parse(row.goal).primary;
     return ref?.startsWith('casual:')&&!ref.startsWith('casual:starter-');
   }));
+  const waitForCasualPost=async(ref,before,question)=>{
+    const known=before.runs.map(row=>row.id);
+    await page.unroute(presentation,holdAutomaticTick);
+    await page.waitForFunction(async({ref,known})=>{
+      const snapshot=await (await fetch('/fixture-state')).json();
+      return snapshot.runs.some(run=>{
+        const goal=JSON.parse(run.goal);
+        if(known.includes(run.id)||run.status!=='completed'||goal.primary!==ref||goal.binding?.conversation_id!==17)return false;
+        return snapshot.receipts.some(receipt=>receipt.run_id===run.id&&receipt.status==='completed'
+          &&JSON.parse(receipt.result_json).initiative_delivery==='delivered');
+      });
+    },{ref,known},{timeout:45000});
+    await page.route(presentation,holdAutomaticTick);
+    const snapshot=await state();
+    const runs=snapshot.runs.filter(row=>!known.includes(row.id)&&row.status==='completed'
+      &&JSON.parse(row.goal).primary===ref&&JSON.parse(row.goal).binding?.conversation_id===17);
+    assert.equal(runs.length,1,'Fresh activity must deliver exactly one new invitation for this source.');
+    const run=runs[0],goal=JSON.parse(run.goal);
+    assert.deepEqual([run.owner_user_id,run.agent_id,goal.binding.owner_user_id,goal.binding.agent_id,goal.binding.conversation_id],[1,7,1,7,17]);
+    assert.equal(goal.tool,'coordination.review');
+    const actions=snapshot.actions.filter(row=>row.run_id===run.id&&row.owner_user_id===1&&row.sequence_no===1
+      &&row.action_key==='initiative.prepare'&&row.capability_key==='initiative.prepare'&&row.execution_target==='cloud');
+    assert.equal(actions.length,1);
+    const action=actions[0];assert.equal(action.status,'completed');
+    const receipts=snapshot.receipts.filter(row=>row.run_id===run.id&&row.owner_user_id===1&&row.action_id===action.id
+      &&row.attempt_no===action.attempt_count&&row.executor==='cloud'&&row.status==='completed');
+    assert.equal(receipts.length,1);
+    const receipt=receipts[0];assert.equal(action.result_json,receipt.result_json);
+    const result=JSON.parse(receipt.result_json);
+    assert.equal(result.initiative_delivery,'delivered');
+    assert.deepEqual(result.initiative_tool_result.output.evidence_revisions,goal.sources);
+    assert.deepEqual(Object.keys(goal.sources),[ref]);
+    const message=snapshot.messages.find(row=>row.id===Number(result.initiative_message_id));
+    assert.equal(message?.conversation_id,17);assert.equal(message.role,'assistant');
+    const context=JSON.parse(message.context_json);
+    assert.equal(context.source,'agent_initiative');assert.equal(context.initiative_run_id,run.id);
+    assert.deepEqual(context.initiative_output,result.initiative_tool_result.output);
+    assert.equal(message.message,result.initiative_draft);
+    assert.ok(!before.messages.some(row=>row.id===message.id));
+    await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(17));
+    const element=page.locator('[data-chat-message-id="'+message.id+'"]').filter({hasText:question});
+    await element.waitFor({timeout:45000});
+    return {state:snapshot,run,receipt,result,message,context,element};
+  };
   await fixturePost('/fixture-media-arm-casual');
   await page.goto(base+'/?conversation_id=17',{waitUntil:'domcontentloaded'});
   await activityMatches(17,false);
-  await initiativeTick(17);
+  const beforeStarter=await state();
+  const {result:starterTick,revision:casualRevision}=await initiativeTick(17);
   assert.equal((await casualRuns()).length,0,'Casual check-ins are opt-in.');
   const starterState=await state();
-  const starterRuns=starterState.runs.filter(row=>JSON.parse(row.goal).primary?.startsWith('casual:starter-'));
-  assert.equal(starterRuns.length,1,'Initiative can deliver a specialist example while Media check-ins are disabled.');
-  const starterReceipt=JSON.parse(starterState.receipts.find(row=>row.run_id===starterRuns[0].id&&row.status==='completed').result_json);
-  assert.equal(starterReceipt.initiative_delivery,'delivered');
-  const starterMessage=Number(starterReceipt.initiative_message_id);
-  const quietMediaDiagnostic=async()=>{
+  const starterRuns=starterState.runs.filter(row=>!beforeStarter.runs.some(prior=>prior.id===row.id)
+    &&JSON.parse(row.goal).binding?.conversation_id===17&&JSON.parse(row.goal).primary?.startsWith('casual:starter-'));
+  assert.equal(starterRuns.length,1,'This Chat selects one new specialist example independently of the earlier Chat.');
+  const selectedStarter=starterRuns[0],starterGoal=JSON.parse(selectedStarter.goal);
+  assert.equal(starterGoal.primary,'casual:starter-mission');
+  assert.deepEqual([selectedStarter.owner_user_id,selectedStarter.agent_id,starterGoal.binding.conversation_id],[1,7,17]);
+  assert.equal(starterGoal.binding.revision,casualRevision);
+  assert.equal(selectedStarter.status,'approved');
+  const queuedStarterActions=starterState.actions.filter(row=>row.run_id===selectedStarter.id);
+  assert.equal(queuedStarterActions.length,1);
+  assert.equal(queuedStarterActions[0].status,'queued');
+  assert.equal(queuedStarterActions[0].result_json,null);
+  assert.equal(starterTick.step,'assessment');
+  const assessment=starterState.runs.find(row=>row.id===starterTick.run_id);
+  assert.equal(assessment?.capability_key,'initiative.plan');
+  assert.equal(assessment.status,'completed');
+  assert.deepEqual([assessment.owner_user_id,assessment.agent_id,JSON.parse(assessment.goal).binding.conversation_id],[1,7,17]);
+  const assessmentAction=starterState.actions.find(row=>row.run_id===assessment.id&&row.owner_user_id===1
+    &&row.sequence_no===1&&row.action_key==='initiative.plan'&&row.capability_key==='initiative.plan'&&row.execution_target==='cloud');
+  assert.equal(assessmentAction?.status,'completed');
+  const assessmentReceipts=starterState.receipts.filter(row=>row.run_id===assessment.id&&row.action_id===assessmentAction.id
+    &&row.owner_user_id===1&&row.attempt_no===assessmentAction.attempt_count&&row.executor==='cloud'&&row.status==='completed');
+  assert.equal(assessmentReceipts.length,1);
+  assert.equal(assessmentAction.result_json,assessmentReceipts[0].result_json);
+  const quietMediaDiagnostic=async({allowInvalidated=false}={})=>{
     const response=await page.request.get(base+'/api/cognitive-presentation-v510.php?action=initiative_diagnostics&agent_id=7&conversation_id=17',{
       headers:{'X-VP3-Working-Attention':binding}
     });
-    return (await response.json()).diagnostics.engagement.specialist_scan.specialists.media;
+    assert.ok(response.ok(),await response.text());
+    const scan=(await response.json()).diagnostics.engagement.specialist_scan;
+    if(scan===null&&allowInvalidated)return null;
+    assert.ok(scan?.specialists?.media,'A completed quiet Media scan must expose its checkpoint.');
+    return scan.specialists.media;
   };
   const disabledMediaScan=await quietMediaDiagnostic();
   assert.equal(disabledMediaScan.offer_gate,'report_only');
   assert.equal(disabledMediaScan.chat_matches,0);
   assert.ok(disabledMediaScan.found>=1,'Disabling chat suggestions keeps verified tracks in the Media report.');
   await fixturePost('/fixture-catalog-availability?published=0');
-  await initiativeTick(17);
-  const emptyMediaScan=await quietMediaDiagnostic();
+  const beforeEmptyCatalog=await state();
+  const {result:emptyTick,revision:emptyRevision}=await initiativeTick(17);
+  assert.equal(emptyTick.step,'preparation');
+  assert.equal(emptyTick.run_id,selectedStarter.id);
+  const emptyState=await state();
+  const starter=verifiedIndependentPost(beforeEmptyCatalog,emptyState,emptyTick,17,emptyRevision,['casual:starter-mission']);
+  assert.equal(starter.run.goal,selectedStarter.goal);
+  const starterMessage=starter.post.id;
+  assert.equal(await quietMediaDiagnostic({allowInvalidated:true}),null,
+    'The completed Mission example invalidates the same tick’s public scan projection.');
+  const emptyMediaScan=completedMediaScan(beforeEmptyCatalog,emptyState,emptyTick,17,emptyRevision);
   assert.equal(emptyMediaScan.coverage,'ready');
   assert.equal(emptyMediaScan.found,0);
   assert.equal(emptyMediaScan.offer_gate,'no_playable_sources');
   const emptyMedia=await activity(17);
+  assert.equal(emptyMedia.media_report.coverage,'ready');
   assert.deepEqual(emptyMedia.media_report.findings,[]);
-  assert.match(emptyMedia.specialists.find(row=>row.id==='media'&&row.state==='checked')?.detail||'',/No playable track/u);
+  const emptySpecialist=emptyMedia.specialists.find(row=>row.id==='media');
+  assert.equal(emptySpecialist?.state,'idle');
+  assert.equal(emptySpecialist.detail,'Waiting for the first Media check in this Chat.',
+    'An invalidated checkpoint cannot present the Media specialist as currently checked.');
   assert.equal((await casualRuns()).length,0,'An empty Media scan does not invent a suggestion.');
   await fixturePost('/fixture-catalog-availability?published=1');
   console.log('PASS Media activity distinguishes playable report-only picks from a verified empty source check');
@@ -735,17 +855,20 @@ try{
   await initiativeTick(17);
   assert.equal((await casualRuns()).length,1,'Answering a check-in does not generate a new one right away.');
 
+  const beforeSecondMusic=await state();
   await post('Create a VP3 music playlist for energetic.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake?elapsed=1');
   await initiativeTick(17);
-  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(17));
-  await page.locator('[data-chat-message-role="assistant"]').filter({hasText:musicQuestion}).last().waitFor({timeout:45000});
+  const secondMusic=await waitForCasualPost('casual:music',beforeSecondMusic,musicQuestion);
   assert.equal((await casualRuns()).length,2,'Fresh activity makes the same kind eligible when no other kind is available.');
+  await secondMusic.element.getByRole('button',{name:'Reply',exact:true}).click();
   const declined = await post('No, thanks.');
   assert.equal(declined.initiative_followthrough?.state,'declined');
+  assert.equal(declined.initiative_followthrough.message_id,secondMusic.message.id);
 
+  const beforeCombinedMedia=await state();
   await fixturePost('/fixture-casual-enable-youtube');
   await post('Create a VP3 music playlist for calm.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
@@ -753,10 +876,9 @@ try{
   await fixturePost('/fixture-coordination-wake?elapsed=1');
   const attemptsBeforeYoutube=(await state()).youtube_attempts;
   await initiativeTick(17);
-  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(17));
   const mediaQuestion='Would you like to listen to music or watch a video?';
-  const casualMedia=page.locator('[data-chat-message-role="assistant"]').filter({hasText:mediaQuestion});
-  await casualMedia.waitFor({timeout:45000});
+  const combinedMedia=await waitForCasualPost('casual:media',beforeCombinedMedia,mediaQuestion);
+  const casualMedia=combinedMedia.element;
   assert.equal((await casualRuns()).length,3,'Another check-in follows fresh activity the same day.');
   const mediaState=await state();
   const mediaRun=coordinationRuns(mediaState,'casual:media')[0];
@@ -772,8 +894,10 @@ try{
   const mediaDebug=(await mediaDebugResponse.json()).diagnostics;
   assert.equal(mediaDebug.engagement.last_post.specialist,'media');
   assert.equal(mediaDebug.engagement.last_post.message_id,Number(mediaReceipt.initiative_message_id));
+  const mediaReplyBinding=combinedMedia.context.initiative_work.followthrough;
   const voicePayload={message:'Yes.',conversation_id:17,agent_context:{user_agent_id:7},
-    csrf_token:'fixture',idempotency_key:'fixture-casual-media-yes'};
+    csrf_token:'fixture',idempotency_key:'fixture-casual-media-yes',initiative_reply:{message_id:combinedMedia.message.id,
+      reply_ref:mediaReplyBinding.reply_ref,revision:mediaReplyBinding.revision}};
   const voiceReply=async()=>{
     const response=await page.request.post(base+'/api/chat-stream-v121.php',{
       headers:{'X-VP3-Working-Attention':binding},data:voicePayload
@@ -807,17 +931,19 @@ try{
   assert.equal(await page.locator('.vp3-youtube-frame').count(),0);
   console.log('PASS music-only and combined media check-ins share one slot; a vague voice reply clarifies, and the exact video choice asks for a topic');
 
+  const beforeEmailOffer=await state();
   await fixturePost('/fixture-casual-enable-gmail');
   await post('Create a VP3 music playlist for ambient.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake?elapsed=1');
   await initiativeTick(17);
-  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(17));
-  const casualEmail=page.locator('[data-chat-message-role="assistant"]').filter({hasText:'Want to draft an email?'});
-  await casualEmail.waitFor({timeout:45000});
+  const emailOffer=await waitForCasualPost('casual:email',beforeEmailOffer,'Want to draft an email?');
+  const casualEmail=emailOffer.element;
   assert.equal((await casualRuns()).length,4,'A later ordinary turn can make another check-in eligible on the same day.');
+  await casualEmail.getByRole('button',{name:'Reply',exact:true}).click();
   const emailReply=await post('Yes.');
+  assert.equal(emailReply.initiative_followthrough.message_id,emailOffer.message.id);
   assert.match(emailReply.answer,/draft.*go to/u);
   assert.deepEqual((await state()).email_drafts,[],'Bare assent does not invent a recipient or create a draft.');
   const exactDraft=await post('Draft an email to team@example.test\nSubject: Quick check-in\nBody: See you at the rehearsal.');
@@ -827,22 +953,25 @@ try{
   assert.equal(afterDraft.email_sends,0,'A created email draft awaits the existing review step.');
   console.log('PASS casual email offer → recipient and content prompt → existing private draft review with no send');
 
+  const beforeRepeatedMedia=await state();
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
   await fixturePost('/fixture-coordination-wake?elapsed=1');
   await initiativeTick(17);
-  await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.syncConversation(17));
-  const beforeChoice=await state();
+  const repeatedMedia=await waitForCasualPost('casual:media',beforeRepeatedMedia,mediaQuestion);
+  const beforeChoice=repeatedMedia.state;
   const combinedPosts=beforeChoice.messages.filter(row=>row.conversation_id===17&&row.role==='assistant'&&row.message===mediaQuestion);
   assert.equal(combinedPosts.length,2);
   await page.reload({waitUntil:'domcontentloaded'});
   await page.locator(`[data-chat-message-id="${combinedPosts.at(-1).id}"]`).filter({hasText:mediaQuestion}).waitFor({timeout:45000});
   const playsBeforeChoice=beforeChoice.plays.filter(row=>row.user_id===1).length;
   assert.equal(await page.locator('audio').evaluateAll(elements=>elements.some(audio=>!audio.paused)),false);
+  await page.locator('[data-chat-message-id="'+repeatedMedia.message.id+'"]').getByRole('button',{name:'Reply',exact:true}).click();
   const musicChoice=await post('Music, please.');
   assert.equal(musicChoice.media_playback?.operation,'play');
   assert.equal(musicChoice.media_playback.track_id,42);
   assert.equal(musicChoice.initiative_followthrough.state,'owner_resolved');
+  assert.equal(musicChoice.initiative_followthrough.message_id,repeatedMedia.message.id);
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('audio')).some(audio=>
     audio.dataset.trackId==='42'&&!audio.paused));
   await page.waitForFunction(async count=>{

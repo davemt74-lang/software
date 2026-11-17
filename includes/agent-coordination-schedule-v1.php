@@ -818,7 +818,8 @@ function vp3_coordination_admit_casual_v1(PDO $pdo,array $user,array $binding,ar
                 $failed=$pdo->prepare("SELECT updated_at FROM agent_workflow_runs
                     WHERE owner_user_id=? AND dedupe_key=? AND status='failed'");
                 $failed->execute([$owner,hash('sha256','initiative.prepare|'.$dedupe)]);
-                $failedAt=agent_job_utc_timestamp_v1900($failed->fetchColumn());
+                $failedTimestamp=$failed->fetchColumn();
+                $failedAt=agent_job_utc_timestamp_v1900($failedTimestamp===false?null:$failedTimestamp);
                 if($failedAt<1||$now-$failedAt<120)continue;
                 if(vp3_initiative_enqueue_v1($pdo,$user,'initiative.prepare',$work,hash('sha256',$dedupe.'|recover-failed-starter'))){
                     return 'queued_checkin';
