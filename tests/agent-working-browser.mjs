@@ -31,6 +31,8 @@ const server=http.createServer((req,res)=>{
       if(scope==='chat'){
         state.conversation_id=mode==='specialists-mismatch'?Number(cid)+1:Number(cid);
         const working=mode==='specialists-working'||mode==='hold';
+        if(mode.startsWith('specialists-'))state.health={state:working?'running':'idle',enabled:true,
+          active_jobs:working?[{id:'workflow:21',kind:'preparation',expiresAt:Date.now()+60000}]:[]};
         state.specialists=[
           {id:'planning',state:working?'working':'waiting_specialist',detail:working?'Checking meeting availability.':'Waiting for research.',
             progress:working?40:null,lease_expires_at:new Date(Date.now()+60000).toISOString(),conversation_id:state.conversation_id},
@@ -289,7 +291,7 @@ try{
       assert.equal(await specialist('tasks').getAttribute('aria-label'),'Tasks & Lists · Paused');
       assert.equal(await specialist('tasks').evaluate(node=>getComputedStyle(node,'::after').display),'none');
       assert.equal(await page.evaluate(()=>VP3ChatSpecialists.snapshot({includeResults:true}).find(item=>item.key==='planning').progress),40);
-      assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),false);
+      assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),false,'specialist preparation stays on its own indicator when no generic assessment is active');
       await specialist('planning').click();
       assert.deepEqual(await page.evaluate(()=>[specialistOpened,hubOpened]),[['planning'],[]]);
       assert.equal(await page.locator('.vp3-chat-specialist-panel').count(),0);
@@ -308,6 +310,7 @@ try{
       await page.clock.fastForward(2600);
       await page.locator('[data-chat-specialist="planning"][data-chat-specialist-state="waiting_specialist"]').waitFor();
       assert.equal(await specialist('planning').evaluate(node=>getComputedStyle(node,'::after').display),'none');
+      assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),false,'waiting specialists without an active lease cannot keep the shared indicator working');
     }finally{await page.close();}
   });
   await check('Mobile specialists stay in the menu, pulse only during work and open their own activity',async()=>{

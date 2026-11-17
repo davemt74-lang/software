@@ -195,7 +195,7 @@ function capabilities_browser_control_v1(): never
             $id=(int)($_GET['id']??capabilities_browser_value_v1('prepare_id'));
             $claim=$id===(int)capabilities_browser_value_v1('prepare_id')?capabilities_browser_value_v1('claim'):null;
             $claim=is_array($claim)?$claim:followthrough_fixture_claim_v1($id);
-            $done=vp3_initiative_execute_v1($pdo,['id'=>1,'is_active'=>1],$claim);
+            $done=vp3_initiative_execute_v1($pdo,['id'=>1,'is_active'=>1],$claim,allowDelivery:($_GET['defer_delivery']??'')!=='1');
             $state=capabilities_browser_state_v1()+['execution_result'=>$done];
         }elseif($action==='legacy_post'){
             $id=(int)capabilities_browser_value_v1('prepare_id');

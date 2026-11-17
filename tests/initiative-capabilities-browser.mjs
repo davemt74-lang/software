@@ -33,8 +33,10 @@ fs.writeFileSync(path.join(temp,'includes/initiative-followthrough-chat-fixture.
 fs.copyFileSync(path.join(source,'tests/fixtures/initiative-capabilities-chat.php'),path.join(temp,'includes/initiative-capabilities-chat-fixture.php'));
 fs.copyFileSync(path.join(source,'tests/fixtures/initiative-legacy-chat-report.php'),path.join(temp,'includes/initiative-legacy-chat-report.php'));
 let bootstrap=fs.readFileSync(path.join(source,'tests/fixtures/capability-chat-bootstrap.php'),'utf8');
-for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete'])
+for(const name of ['chat_remote_answer','ai_generate_chat_response','calendar_schedule_awareness_snapshot_v1330','agent_runtime_v125_idempotency_claim','agent_runtime_v125_idempotency_complete',
+  'track_is_playlist_request','track_is_next_request','track_media_from_answer','track_media_suggestions','track_merge_media_suggestions'])
   bootstrap=bootstrap.replace('function '+name+'(', 'function capability_fixture_'+name+'(');
+bootstrap+="\nrequire_once __DIR__.'/recommendations.php';\n";
 bootstrap=bootstrap.replace('declare(strict_types=1);','declare(strict_types=1); session_start();');
 // Existing private-file idempotency implementation; only its storage root is
 // redirected to this disposable account. No new adapter function is extracted.
@@ -110,7 +112,7 @@ try{
     const runId=Number(seed.prepare_id);assert.ok(runId>0);
     let state;
     if(mobile){
-      const prepared=await control('execute');assert.equal(prepared.execution_result.ok,true);
+      const prepared=await control('execute',{defer_delivery:'1'});assert.equal(prepared.execution_result.ok,true);
       const {result}=resultFor(prepared,runId);assert.equal(result.initiative_delivery,'pending');
       assert.equal(prepared.messages.some(row=>contextOf(row).initiative_run_id===runId),false);
       const beforeModels=prepared.calls.filter(row=>['capability_model','initiative_model','main_model'].includes(row.kind)).length;

@@ -190,11 +190,15 @@ async function loadChat(conversationId) {
   for (const file of ['chat.css','chat-specialist-rail-v1.css','chat-coding-canvas-v1.css']) {
     await page.addStyleTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   }
-  for (const file of ['chat-specialist-rail-v1.js','chat.js']) {
+  for (const file of ['chat-specialist-rail-v1.js','chat.js','coding-canvas-runtime-v1.js']) {
     await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   }
+  const resumed = conversationId > 0 ? page.waitForResponse(response =>
+    response.url().endsWith('/coding') && response.request().postDataJSON()?.action === 'resume') : null;
   await page.addScriptTag({content:codeEvent});
   await page.waitForFunction(() => window.STONEFELLOW_CHAT_CONTINUITY.isReady() && !window.STONEFELLOW_CHAT_CONTINUITY.isRestoring());
+  await page.waitForFunction(() => Boolean(window.VP3CanvasRuntimeV1 && window.VP3CodingCanvasV1));
+  if (resumed) await resumed;
 }
 
 async function nextDraft() {

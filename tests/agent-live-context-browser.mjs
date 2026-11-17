@@ -170,7 +170,15 @@ try{
  });await skewed.close();
  const start=requests.length,unbound=await open(0,'?unbound=1');await unbound.evaluate(()=>presence());await unbound.clock.runFor(2500);
  await check('unready and legacy activity omit the live-context write contract until a saved owner Chat is ready',async()=>{
-  assert.equal(await unbound.evaluate(()=>VP3LiveContext.snapshot()),null);assert.ok(requests.length>start);for(const row of requests.slice(start))assert.equal(Object.hasOwn(row.body.context,'live_context'),false);
+  assert.equal(await unbound.evaluate(()=>VP3LiveContext.snapshot()),null);
+  const tab=await unbound.evaluate(()=>StonefellowAgentActivity.activityTab());
+  await unbound.evaluate(()=>StonefellowAgentActivity.refreshCoreContext());
+  const ownRequests=requests.slice(start).filter(row=>row.body.context.activity_tab===tab);
+  assert.ok(ownRequests.length>0,'The unready tab must send its own actual activity heartbeat.');
+  for(const row of ownRequests){
+   assert.equal(row.body.context.chat_busy_reason,'restore');
+   assert.equal(Object.hasOwn(row.body.context,'live_context'),false);
+  }
  });await unbound.close();
  await check('the coordinator and existing active-share UI produce no browser exceptions',async()=>assert.deepEqual(errors,[]));
  console.log('AGENT_LIVE_CONTEXT_BROWSER=PASS ('+checks+' cases)');

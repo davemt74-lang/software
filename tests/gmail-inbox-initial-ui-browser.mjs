@@ -432,23 +432,29 @@ try {
   assert.equal(await musicResearch.getByRole('checkbox',{name:/Use recent VP3 Music listening/}).isChecked(),true,
     'The full Connections page shows the preference saved in specialist settings.');
   assert.equal(await musicResearch.locator('input[name="csrf_token"]').inputValue(),'fixture');
-  const checkinOptIn = page.getByRole('checkbox',{name:'Allow casual check-ins in Agent Chat'});
+  const checkinPreference = page.getByRole('combobox',{name:'Casual check-ins in Agent Chat'});
   const saveCheckins = page.getByRole('button',{name:'Save check-in preference'});
-  assert.equal(await checkinOptIn.isChecked(),false,'Casual check-ins require a separate opt-in.');
-  await checkinOptIn.check();
+  assert.equal(await checkinPreference.inputValue(),'default','The unset preference permits only music and video offers.');
+  assert.deepEqual(await checkinPreference.locator('option').evaluateAll(options=>options.map(option=>[option.value,option.textContent.trim()])),
+    [['default','Music and video'],['1','All check-ins'],['0','Off']]);
+  await checkinPreference.selectOption('1');
   await page.locator('[name="casual_checkin_owner"]').evaluate(element=>element.value='2');
   await saveCheckins.click();
   await page.getByText('Check-in preference could not be saved.',{exact:true}).waitFor();
-  assert.equal(await checkinOptIn.isChecked(),false);
-  await checkinOptIn.check();
+  assert.equal(await checkinPreference.inputValue(),'default');
+  await checkinPreference.selectOption('1');
   await saveCheckins.click();
   await page.getByText('Check-in preference saved.',{exact:true}).waitFor();
-  assert.equal(await checkinOptIn.isChecked(),true);
-  await checkinOptIn.uncheck();
+  assert.equal(await checkinPreference.inputValue(),'1');
+  await checkinPreference.selectOption('0');
   await saveCheckins.click();
   await page.getByText('Check-in preference saved.',{exact:true}).waitFor();
-  assert.equal(await checkinOptIn.isChecked(),false);
-  console.log('PASS casual check-ins require owner opt-in, preserve the preference and can be disabled');
+  assert.equal(await checkinPreference.inputValue(),'0');
+  await checkinPreference.selectOption('default');
+  await saveCheckins.click();
+  await page.getByText('Check-in preference saved.',{exact:true}).waitFor();
+  assert.equal(await checkinPreference.inputValue(),'default');
+  console.log('PASS casual check-ins preserve music/video defaults, explicit all/off choices and exact owner validation');
   await page.goto(origin+connectionsUrl);
   const startForm = page.locator('[data-gmail-review-start]');
   const windowSelect = startForm.locator('select[name="days"]');

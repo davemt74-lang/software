@@ -233,8 +233,12 @@ try {
   await sync();
   await refresh();
   await badge(gmailId).waitFor();
+  // Canonical sync preserves a user's earlier scroll position. Arrange the
+  // bottom-of-Chat scenario without claiming that programmatic movement is read.
+  await page.locator('#chatThread').evaluate(node => { node.scrollTop = node.scrollHeight; });
   await page.waitForTimeout(1400);
   assert.ok(!read.has(gmailId));
+  await badge(gmailId).waitFor();
   await wheelChat(page,36);
   await badge(gmailId).waitFor({state:'detached'});
   assert.ok(read.has(gmailId));
@@ -244,6 +248,8 @@ try {
   await sync();
   await refresh();
   await badge(scrollbarId).waitFor();
+  await page.locator('#chatThread').evaluate(node => { node.scrollTop = node.scrollHeight; });
+  assert.ok(!read.has(scrollbarId),'Programmatic positioning cannot acknowledge the new post.');
   const track = await page.locator('#chatThread').evaluate(node => {
     const bounds = node.getBoundingClientRect();
     const contentRight = bounds.left + node.clientLeft + node.clientWidth;

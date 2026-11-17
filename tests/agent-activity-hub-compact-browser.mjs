@@ -673,7 +673,7 @@ try {
   const completedReview=tasksWorkspace.locator('.vp3-agent-activity-item').filter({hasText:officeReviewTitle});
   await completedReview.getByText(officeReviewTitle,{exact:true}).waitFor();
   await completedReview.getByText('Next step: Confirm the head count before Friday.',{exact:true}).waitFor();
-  await completedReview.getByText('Question for you: How many people should the caterer plan for?',{exact:true}).waitFor();
+  await completedReview.getByText('Suggested question: How many people should the caterer plan for?',{exact:true}).waitFor();
   assert.equal(await tasksWorkspace.getByRole('button',{name:'View in Chat',exact:true}).count(),1,'The compact popup shows one exact review link');
   assert.equal(await tasksWorkspace.getByText('Reminder review: Venue access',{exact:true}).count(),0);
   assert.equal(await tasksWorkspace.getByRole('button',{name:'Open list'}).count(),0,'Raw office records stay in the workspace');

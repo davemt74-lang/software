@@ -7,7 +7,8 @@ const browser = await chromium.launch({headless:true,args:['--no-sandbox'],...(e
 const page = await browser.newPage();
 page.setDefaultTimeout(8000);
 const script = await fs.readFile(new URL('../chat-coding-canvas-v1.js',import.meta.url),'utf8');
-const canvas = {id:'01234567-89ab-4cde-8f01-0123456789ab',title:'Deadline board',active_revision:null,draft_revision:1};
+const runtime = await fs.readFile(new URL('../coding-canvas-runtime-v1.js',import.meta.url),'utf8');
+const canvas = {id:'01234567-89ab-4cde-8f01-0123456789ab',title:'Deadline board',agent_id:7,conversation_id:42,active_revision:null,draft_revision:1};
 const state = {revision:'a'.repeat(64),value:{}};
 const id = '1'.repeat(64), source = '2'.repeat(64);
 const row = {id,source_ref:source,subject:'Private verified email subject',stage:'awaiting_reply',
@@ -41,7 +42,8 @@ await page.route('https://canvas-email.test/api/coding',route => {
   requests.push(request);
   assert.equal(request.csrf_token,'fixture');
   assert.equal(request.agent_id,7);
-  assert.equal(request.conversation_id,42);
+  if(request.action==='list')assert.ok([0,42].includes(request.conversation_id),'Only the scoped app footer may list without a saved Chat');
+  else assert.equal(request.conversation_id,42);
   const respond = fields => route.fulfill({json:{ok:true,...fields}});
   switch (request.action) {
     case 'list': return respond({canvases:[canvas],email_start_available:false});
@@ -73,6 +75,7 @@ try {
     window.opened = [];
     window.VP3GmailInboxInitialV1 = {openTriageItem: request => { window.opened.push(request); return true; }};
   });
+  await page.addScriptTag({content:runtime});
   await page.addScriptTag({content:script});
   assert.equal(await page.evaluate(id => window.VP3CodingCanvasV1.open(id,1),canvas.id),true);
   const panel = page.locator('#chatCodingCanvasV1');
@@ -87,6 +90,7 @@ try {
   await frame.getByText('Write denied',{exact:true}).waitFor();
   assert.equal(requests.some(request => request.action==='save_state'),false,'Email rows never use the saved app data path');
 
+  await panel.getByRole('button',{name:'Edit app',exact:true}).click();
   await panel.getByRole('button',{name:'Test preview'}).click();
   await panel.getByRole('status').getByText('The email deadline test passed with sample data.').waitFor();
   await original.waitFor();
@@ -97,6 +101,7 @@ try {
   assert.equal(await original.count(),0,'Revocation removes the original app iframe and all rendered email rows');
 
   assert.equal(await page.evaluate(id => window.VP3CodingCanvasV1.open(id,2),canvas.id),true);
+  await panel.getByRole('button',{name:'Edit app',exact:true}).click();
   await panel.getByRole('button',{name:'Test preview'}).click();
   await panel.getByRole('status').getByText('The email deadline test failed.',{exact:false}).waitFor();
   assert.equal(requests.filter(request => request.action==='test').length,1,'Broken draft did not persist a passing test');
