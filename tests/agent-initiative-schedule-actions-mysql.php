@@ -23,30 +23,11 @@ function schedule_mysql_check(bool $ok,string $label):void{if(!$ok)throw new Run
 function schedule_mysql_count(string $table,string $where='1=1'):int{return(int)db()->query('SELECT COUNT(*) FROM '.$table.' WHERE '.$where)->fetchColumn();}
 function schedule_mysql_reminder(int $id):?array{$q=db()->prepare('SELECT * FROM agent_reminders_v1 WHERE id=? AND owner_user_id=1');$q->execute([$id]);return$q->fetch()?:null;}
 
-/** A real delivered source-specific Initiative read, not a fabricated proposal or resource grant. */
+/** A real owner-facing preparation with exact authorized schedule context. */
 function schedule_mysql_source(array $refs,string $tool,string $label):array
 {
-    $pdo=db();$u=action_mysql_user();$p=action_mysql_principal();
-    vp3_initiative_chat_v1($pdo,$u,$p,['conversation_id'=>10],'on',null);action_mysql_owner('Review '.$label);
-    $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(10,NULL,'assistant','I will inspect this exact saved schedule.')");
-    $pdo->prepare('UPDATE agent_activity_state SET last_heartbeat_at=NOW(),details_json=? WHERE user_id=1')
-        ->execute([json_encode(['visible'=>true,'conversation_id'=>10,'chat_focused'=>true,'chat_busy'=>false],JSON_THROW_ON_ERROR)]);
-    $binding=vp3_initiative_policy_v1($u,7);$scope=['user'=>$u,'principal'=>$p,'agent_id'=>7,'conversation_id'=>10];$coverage=[];
-    $evidence=vp3_initiative_capabilities_evidence_v1($pdo,$scope,$binding,new DateTimeImmutable('now',new DateTimeZone('UTC')),$refs,$coverage);
-    $sources=[];foreach($refs as $ref){if(!isset($evidence[$ref]))throw new RuntimeException('Actual native schedule source was unavailable.');$sources[$ref]=$evidence[$ref]['revision'];}
-    $goal=['binding'=>$binding,'sources'=>$sources,'capability_sources'=>array_fill_keys($refs,$tool),
-        'tool'=>$tool,'primary'=>$refs[0],'focus'=>'Prepare this exact saved schedule for an owner-reviewed action.','report'=>true];
-    $dedupe=hash('sha256',random_bytes(24));vp3_initiative_enqueue_v1($pdo,$u,'initiative.prepare',$goal,$dedupe);
-    $q=$pdo->prepare('SELECT id FROM agent_workflow_runs WHERE owner_user_id=1 AND dedupe_key=?');$q->execute([hash('sha256','initiative.prepare|'.$dedupe)]);$run=(int)$q->fetchColumn();
-    $claim=agent_job_claim_run_v1900($pdo,$u,$run,'cloud',agent_worker_cloud_worker_id_v1910(1));if(!$claim)throw new RuntimeException('Actual native schedule read could not be claimed.');
-    $executed=vp3_initiative_execute_v1($pdo,$u,$claim,static function(string $prompt,string $protocol):string{
-        if(db()->inTransaction())throw new LogicException('Native schedule inference held a transaction.');
-        return json_encode(['draft'=>'This exact saved schedule can advance through an owner-reviewed private action.'],JSON_THROW_ON_ERROR);
-    });
-    if(empty($executed['ok']))throw new RuntimeException('Actual native schedule preparation failed.');
-    $q=$pdo->prepare('SELECT result_json FROM agent_workflow_actions WHERE run_id=?');$q->execute([$run]);$saved=json_decode((string)$q->fetchColumn(),true,32,JSON_THROW_ON_ERROR);
-    $message=(int)($saved['initiative_message_id']??0);if(!$message)throw new RuntimeException('Actual native schedule read was not delivered.');
-    return ['message_id'=>$message,'loaded'=>action_mysql_load($message)];
+    $root=action_mysql_seed($label,array_fill_keys($refs,$tool));
+    return ['message_id'=>$root['message_id'],'loaded'=>$root['loaded']];
 }
 
 function schedule_mysql_approve(array $review,string $query='Apply this exact reviewed schedule'):array
@@ -99,6 +80,33 @@ try{
     schedule_mysql_check($cancelled['loaded']['evidence']['reminder:'.$rid]['kind']==='action_tombstone'
         &&$cancelled['action']['result']['source_transition']['removed_refs']===['reminder:'.$rid],'native cancelled reminder reload uses its verified narrow tombstone');
     schedule_mysql_replay($cancelled,'native cancelled reminder replay does not recreate or reactivate its source');
+    $retainedRef=$root['pending']['goal']['primary'];$retainedTaskId=(int)substr($retainedRef,5);$retainedTask=action_mysql_task($retainedTaskId);
+    schedule_mysql_check($cancelled['loaded']['run']['goal']===$root['pending']['run']['goal']
+        &&$cancelled['loaded']['goal']['capability_sources']['reminder:'.$rid]==='reminders.read'
+        &&isset($cancelled['loaded']['evidence'][$retainedRef])&&$retainedTask['metadata']['task_status']==='open',
+        'supporting reminder cancellation retains the immutable original declaration and revalidates the unaffected task');
+    $unchangedReceipts=schedule_mysql_count('agent_workflow_receipts');
+    $proof=$cancelled['action']['result']['source_transition'];$forged=$proof;
+    $forged['after_revisions'][$retainedRef]=null;$forged['removed_refs'][]=$retainedRef;$rejected=false;
+    try{vp3_initiative_action_sources_current_v1(db(),$root['pending'],$cancelled['action']['goal']['plan'],$cancelled['domain'],$forged);}
+    catch(RuntimeException $error){$rejected=$error->getCode()===409;}
+    schedule_mysql_check($rejected&&schedule_mysql_count('agent_workflow_receipts')===$unchangedReceipts
+        &&action_mysql_task($retainedTaskId)===$retainedTask,
+        'a forged transition cannot omit an unaffected supporting source or mutate its record');
+    $forgedRoot=$root['pending'];unset($forgedRoot['goal']['sources']['reminder:'.$rid],$forgedRoot['goal']['capability_sources']['reminder:'.$rid]);$rejected=false;
+    try{vp3_initiative_action_sources_current_v1(db(),$forgedRoot,$cancelled['action']['goal']['plan'],$cancelled['domain'],$proof);}
+    catch(RuntimeException $error){$rejected=$error->getCode()===409;}
+    schedule_mysql_check($rejected&&schedule_mysql_count('agent_workflow_receipts')===$unchangedReceipts,
+        'dropping a source declaration from the original proposal fails its canonical goal binding');
+    db()->prepare('UPDATE agent_memory_items SET subject=? WHERE id=?')->execute(['Retained source changed after cancellation',$retainedTaskId]);$rejected=false;
+    try{action_mysql_load($root['message_id']);}
+    catch(Vp3InitiativeSourcesChangedV1 $error){$rejected=$error->getCode()===409;}
+    catch(Vp3InitiativeSourceProofUnavailableV1 $error){$rejected=$error->family==='tasks'&&$error->getCode()===503&&$error->getPrevious()===null;}
+    finally{db()->prepare('UPDATE agent_memory_items SET subject=? WHERE id=?')->execute([$retainedTask['subject'],$retainedTaskId]);}
+    schedule_mysql_check($rejected&&schedule_mysql_reminder($rid)['status']==='cancelled'
+        &&schedule_mysql_count('agent_workflow_receipts')===$unchangedReceipts,
+        'a later unrelated task change invalidates cancellation replay without changing the verified effect or receipt');
+    schedule_mysql_replay($cancelled,'restoring the exact retained source permits readonly cancellation reconciliation');
 
     $day=(new DateTimeImmutable('+2 days'))->format('Y-m-d');
     $event=['title'=>'Native launch review','description'=>'Review the exact launch.','location'=>'Office','timezone'=>'America/New_York',

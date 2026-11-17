@@ -996,8 +996,11 @@ try{
   'private Gelato data is displayed live and kept out of persisted Chat history');
  const gelatoUnpaired=await post('chat.php','/ask gelato '+gelatoQuestion,{}, {...gelatoHeaders,'X-Fixture-User':'2'});
  const gelatoBare=await post('chat-v236.php?agent=7','/ask gelato',named,gelatoHeaders);
- check(gelatoUnpaired.data?.answer.includes('not paired with this VP3 account')&&gelatoBare.data?.answer.includes('What would you like to ask Gelato?')
-  &&gelatoReads().length===4,'unpaired owners, prompts and retries never trigger a Gelato read');
+ check(gelatoUnpaired.data?.answer.includes('not paired with this VP3 account')
+  &&gelatoBare.data?.answer.includes('What would you like to ask Fixture Kitchen Agent?'),
+  'unpaired owners receive setup guidance and a bare command uses the paired Agent name');
+ assert.deepEqual(gelatoReads(),[...gelatoExpectedReads,...gelatoExpectedReads],
+  'unpaired owners, prompts and retries never trigger a Gelato read');
  const gmailFixture=async (action,params={})=>{
   const response=await fetch(base+'/gmail-durable-chat.php?'+new URLSearchParams({action,...params}));
   const body=await response.text();

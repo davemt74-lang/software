@@ -4,6 +4,7 @@ declare(strict_types=1);
 // The existing disposable fixture runs the full canonical Canvas pipeline and
 // supports native MySQL through VP3_TEST_MYSQL_DSN; no production function is replaced.
 require __DIR__.'/agent-initiative-canvas-pipeline-v1.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-engagement-feedback-v1.php';
 $brainstormStart=$checks;
 function brainstorm_pipeline_evidence(): array
 {
@@ -54,6 +55,8 @@ function brainstorm_pipeline_model(?callable $during=null): Closure
             ]],JSON_THROW_ON_ERROR);
     };
 }
+
+if (defined('VP3_BRAINSTORM_PIPELINE_FIXTURE')) return;
 
 // Model a completed prior five-minute slot using the same real source snapshot
 // that the due scheduler will inspect now. Time itself is not a source change.
@@ -218,10 +221,10 @@ $setChatBusy=static function(bool $busy)use($pdo,$quiet):void{
         ->execute([json_encode(array_replace($quiet,['chat_busy'=>$busy]),JSON_THROW_ON_ERROR)]);
 };
 $setChatBusy(true);
-canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim((int)$quietCheck['id']))['ok']
+canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim((int)$quietCheck['id']),null,null,false)['ok']
     &&canvas_pipeline_result((int)$quietCheck['id'])['initiative_delivery']==='pending'
     &&canvas_pipeline_count('chat_messages','conversation_id=12')===0,
-    'the existing check-in can complete without interrupting the owner');
+    'the real worker can explicitly defer delivery while retaining one verified pending check-in');
 $quietPrincipal=vp3_agent_chat_principal_v380($owner,vp3_agent_chat_resolve_agent_v380($pdo,$owner,8));
 $beforeRead=count($GLOBALS['pipelineInference']);
 $findingsQuery='What did you find in the background?';
@@ -234,9 +237,13 @@ canvas_pipeline_check(!empty($answer['handled'])&&str_contains($answer['answer']
     'ordinary Chat can read the same verified pending background result without starting another inference or delivery');
 $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (12,NULL,'assistant',?,?)")
     ->execute(['Verified background findings were shown for this turn.',$statusReadContext]);
-$setChatBusy(false);
 canvas_pipeline_check(vp3_initiative_deliver_pending_v1($pdo,$owner,8)
     &&canvas_pipeline_result((int)$quietCheck['id'])['initiative_delivery']==='delivered'
     &&canvas_pipeline_count('chat_messages',"conversation_id=12 AND role='assistant' AND JSON_EXTRACT(context_json,'$.initiative_run_id') IS NOT NULL")===1,
-    'the canonical check-in delivers one useful message to the exact saved Chat');
+    'the canonical saved check-in delivers one text message to the exact authorized Chat while it is busy');
+$setChatBusy(false);
+canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$owner,8)
+    &&canvas_pipeline_count('chat_messages',"conversation_id=12 AND role='assistant' AND JSON_EXTRACT(context_json,'$.initiative_run_id') IS NOT NULL")===1
+    &&count($GLOBALS['pipelineInference'])===$beforeRead,
+    'returning to an idle Chat repeats neither the saved report nor its inference');
 echo 'INITIATIVE_BRAINSTORM_PIPELINE=PASS ('.($checks-$brainstormStart).' assertions, '.($mysql?'mysql':'sqlite').')'.PHP_EOL;

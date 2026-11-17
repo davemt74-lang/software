@@ -3,12 +3,17 @@ declare(strict_types=1);
 
 // Reuse the canonical follow-through seeder, workflow claimant, completed
 // receipts and source authorization. The provider transport is deterministic.
-ob_start();
-try {
-    require __DIR__.'/agent-initiative-followthrough-v1.php';
-} finally {
-    ob_end_clean();
+require __DIR__.'/fixtures/initiative-ai-settings-v1.php';
+require __DIR__.'/fixtures/initiative-scope-v1.php';
+require __DIR__.'/fixtures/initiative-followthrough-v1.php';
+// Keep both other private scopes enabled so Activity status exercises actual
+// provider readiness without inheriting another test suite's mutated state.
+foreach ([[$one,17,170],[$one,18,180],[$two,19,190]] as [$user,$agent,$cid]) {
+    $enabled = scope_command($user,$agent,$cid,'on');
+    if (empty($enabled['ok'])) throw new RuntimeException('Activity fixture policy could not be enabled.');
 }
+$pdo->prepare("INSERT INTO agent_activity_state VALUES(1,'chat','chat:170','paused',NOW(),NULL,?)")
+    ->execute([json_encode(['visible'=>true,'conversation_id'=>170,'chat_focused'=>true,'chat_busy'=>false],JSON_THROW_ON_ERROR)]);
 require_once dirname(__DIR__).'/includes/agent-activity-hub-v1.php';
 
 class ActivitySuggestionsReadPDO extends InitiativeScopePDO
@@ -68,7 +73,7 @@ $original = vp3_agent_activity_suggestions_v1($writer, $scope);
 $expected = array_reverse(array_map('suggestions_run_id', array_slice($roots, -3)));
 suggestions_check(suggestions_ids($original) === $expected,
     'the newest three actual verified preparations form the bounded suggestions');
-suggestions_check(($original['status']['coordination']['phase'] ?? null) === 'idle'
+suggestions_check(($original['status']['coordination']['phase'] ?? null) === 'waiting'
     && str_contains($original['status']['coordination']['detail'] ?? '', 'another Chat')
     && !in_array(170,array_column($original['status']['specialists'] ?? [],'conversation_id'),true),
     'specialist coordination stays in the foreground Chat even when prior suggestions link to the policy Chat');
@@ -142,6 +147,15 @@ suggestions_check(!array_intersect(suggestions_ids($afterAcknowledgment), array_
     && !str_contains(json_encode($afterAcknowledgment, JSON_THROW_ON_ERROR), 'Acknowledged activity'),
     'discussed, deferred, declined and owner-resolved preparations leave the suggestion list');
 
+$historyRoot = followthrough_seed_v1('Preparation using the earlier owner decisions');
+$historyAdvance = followthrough_decide_v1($historyRoot, 'advance', 'Continue with this newer owner decision');
+suggestions_check($historyAdvance['initiative_followthrough']['state'] === 'queued'
+    && !suggestions_contains(vp3_agent_activity_suggestions_v1($writer, $scope), $historyRoot),
+    'a preparation based on older owner decisions is withheld after its verified decision history changes');
+
+// Use a fresh canonical source revision for the independent queued-lifecycle
+// case. Older decisions no longer authorize this changed calendar evidence.
+$writer->exec("UPDATE initiative_scope_calendar SET title='A fresh queued activity source' WHERE owner_id=1");
 $queuedRoot = followthrough_seed_v1('Queued private activity');
 $advance = followthrough_decide_v1($queuedRoot, 'advance', 'Continue the verified private preparation');
 $queued = vp3_agent_activity_suggestions_v1($writer, $scope);

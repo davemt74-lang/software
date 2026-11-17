@@ -42,6 +42,9 @@ function can_manage_track_production(array $track,?array $user): bool{return $us
 function can_view_track(array $track,?array $user=null): bool{return ($track['visibility']??'')==='public'||can_manage_track_production($track,$user);}
 
 require_once dirname(__DIR__).'/includes/user-agent-system-v236.php';
+require_once dirname(__DIR__).'/includes/agent-brain-v82.php';
+require_once dirname(__DIR__).'/includes/agent-brain-v122.php';
+require_once dirname(__DIR__).'/includes/agent-initiative-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-opportunity-sources-v1.php';
 
 $dsn=getenv('VP3_TEST_MYSQL_DSN')?:'sqlite::memory:';$mysql=str_starts_with($dsn,'mysql:');
@@ -114,7 +117,11 @@ function opportunity_reject(callable $work): void
     try{$work();}catch(Throwable){opportunity_check(true,'Rejected');return;}throw new RuntimeException('Expected opportunity scope/reference rejection.');
 }
 [$rows,$coverage]=opportunity_read();
-opportunity_check($coverage===['chat_history'=>'ready','canvas_work'=>'ready','song_history'=>'ready'],'Canonical sources were not all ready: '.json_encode($coverage));
+$nativeCoverage=['chat_history'=>'ready','canvas_work'=>'ready','song_history'=>'ready'];
+opportunity_check($coverage===$nativeCoverage+['media'=>'ready'],'Canonical sources were not all ready: '.json_encode($coverage));
+opportunity_check(vp3_initiative_policy_v1($user,7)===[]
+    &&array_filter(array_keys($rows),static fn(string $ref):bool=>str_starts_with($ref,'youtube-play-analysis:'))===[],
+    'An unconfigured Initiative policy supplies no private YouTube findings and does not make unrelated sources unavailable.');
 foreach(['chat_history','canvas_work','song_history'] as $kind)opportunity_check(count(array_filter($rows,static fn(array $row):bool=>$row['kind']===$kind))===3,'Discovery did not bound '.$kind.' to three.');
 $encoded=json_encode($rows,JSON_THROW_ON_ERROR);
 foreach(['SECRET_CODE','SECRET_APP_DATA','OWNER_CONTENT_105','OWNER_CONTENT_106','OWNER_CONTENT_107','OWNER_CONTENT_201','OWNER_CONTENT_202','OWNER_CONTENT_203','AGENT_SELF_REPORT','FOREIGN_USER_IN_OWNER_CHAT','EXPLICIT_PARTICIPANT_CONTEXT','SHARED_CONTEXT_CONTENT','DO_NOT_ARCHIVE_PRIVATE_QUERY','FOREIGN_UNPLAYED_TRACK','Track 210'] as $secret)opportunity_check(!str_contains($encoded,$secret),'Disclosed '.$secret);
@@ -124,7 +131,7 @@ foreach(['chat-history:101','canvas-work:'.$uuid(1),'song-history:1'] as $ref)op
 
 $older=['chat-history:101','canvas-work:'.$uuid(1),'song-history:1'];
 [$selected,$selectedCoverage]=opportunity_read($older);
-opportunity_check(count($selected)===3&&$selectedCoverage===$coverage,'Exact older references did not rehydrate outside all discovery windows.');
+opportunity_check(count($selected)===3&&$selectedCoverage===$nativeCoverage,'Exact older references did not rehydrate outside all discovery windows.');
 [$same]=opportunity_read(array_keys($rows));
 foreach($rows as $ref=>$row)opportunity_check(($same[$ref]['revision']??null)===$row['revision'],'Discovery/selected revisions disagree for '.$ref);
 opportunity_check(str_contains($selected['song-history:1']['detail'],'2 sessions, 80 recorded listening seconds')&&str_contains($selected['song-history:1']['detail'],'0:23'),'Selected old track lost owner-scoped canonical aggregates or resume position.');

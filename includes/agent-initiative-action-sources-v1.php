@@ -226,6 +226,7 @@ function vp3_initiative_action_sources_capture_in_scope_v1(PDO $pdo,array $loade
     // Non-read tool proofs still use their original verifier. Only revisions of
     // exact native targets are replaced; no global freshness bypass exists.
     if($read===null){$goal=$loaded['goal'];$goal['sources']=array_replace($unaffected,array_filter($after['revisions'],static fn($r):bool=>$r!==null));
+        $goal['capability_sources']=array_intersect_key(vp3_initiative_capability_saved_source_map_v1($loaded['goal']),$goal['sources']);
         vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$goal,$loaded['result'],isset($loaded['meeting_research']));}
     return ['version'=>1,'identity'=>$identity,'domain_hash'=>vp3_initiative_action_sources_hash_v1($domainResult),
         'affected_refs'=>$refs,'parent_refs'=>$parents,'after_revisions'=>$after['revisions'],'removed_refs'=>$after['removed'],
@@ -250,6 +251,7 @@ function vp3_initiative_action_sources_current_in_scope_v1(PDO $pdo,array $loade
     $read=vp3_initiative_action_sources_read_v1($pdo,$loaded,$evidence,$after['removed']);
     if(($proof['read_hash']??null)!==($read===null?null:vp3_initiative_action_sources_hash_v1($read)))throw new RuntimeException('Action saved readonly evidence changed.',409);
     if($read===null){$goal=$loaded['goal'];$goal['sources']=array_replace($unaffected,array_filter($after['revisions'],static fn($r):bool=>$r!==null));
+        $goal['capability_sources']=array_intersect_key(vp3_initiative_capability_saved_source_map_v1($loaded['goal']),$goal['sources']);
         vp3_initiative_followthrough_sources_v1($pdo,$loaded['user'],$loaded['principal'],$goal,$loaded['result'],isset($loaded['meeting_research']));}
     return $evidence;
 }

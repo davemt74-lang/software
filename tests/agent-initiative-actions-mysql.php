@@ -120,9 +120,13 @@ try{
         $root=action_mysql_review(action_mysql_seed('Native stale '.$change));$before=$count('agent_workflow_receipts');$blocked=false;
         try{action_mysql_decide($root['pending'],['action_decision'=>'approve'],'Yes, approve before a concurrent change',static function()use($change,$root):void{
             $other=new PDO($GLOBALS['actionMysqlDsn'],$GLOBALS['actionMysqlUser'],$GLOBALS['actionMysqlPassword'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
-            if($change==='source')$other->prepare('UPDATE agent_memory_items SET memory_text=? WHERE id=?')->execute(['Source changed during the actual model call',$root['task_id']]);
+            if($change==='source')$other->prepare('UPDATE agent_memory_items SET subject=?,memory_text=? WHERE id=?')
+                ->execute(['Source changed during the actual model call','Source changed during the actual model call',$root['task_id']]);
             else $other->exec("DELETE FROM role_permissions WHERE role='artist' AND permission_key='agent_brain.access'");
-        });}catch(RuntimeException $error){$blocked=in_array((int)$error->getCode(),[403,409],true);}
+        });}catch(Vp3InitiativeSourceProofUnavailableV1 $error){
+            $blocked=$change==='source'&&$error->family==='tasks'&&$error->coverage==='unavailable'
+                &&$error->getCode()===503&&$error->getPrevious()===null;
+        }catch(RuntimeException $error){$blocked=in_array((int)$error->getCode(),[403,409],true);}
         action_mysql_check($blocked&&(action_mysql_task($root['task_id'])['metadata']['task_status']??'open')==='open'&&$count('agent_workflow_receipts')===$before,
             'an independently committed '.$change.' change during inference prevents any action effect or completion receipt');
         if($change==='permission')db()->exec("INSERT INTO role_permissions VALUES('artist','agent_brain.access')");

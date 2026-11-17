@@ -68,21 +68,37 @@ function action_mysql_owner(string $query): int
 }
 function action_mysql_ref(array $loaded): array{return ['message_id'=>(int)$loaded['message']['id'],'reply_ref'=>$loaded['state']['reply_ref'],'revision'=>$loaded['state']['revision']];}
 function action_mysql_load(int $message): array{return vp3_initiative_followthrough_load_v1(db(),action_mysql_user(),action_mysql_principal(),10,$message);}
-function action_mysql_seed(string $label): array
+function action_mysql_seed(string $label,array $supportingTools=[]): array
 {
     $pdo=db();$u=action_mysql_user();$p=action_mysql_principal();
     vp3_agent_memory_scope_set_current_v410(1,7);
     try{$task=vp3_task_list_save_task_v1($pdo,$u,$p,$label,null,'native-action-source-'.bin2hex(random_bytes(12)),10);}
     finally{unset($GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']);}
+    // These transaction tests start from a genuine owner-facing due-task
+    // proposal. Automatic tasks.read preparation belongs to the private Tasks
+    // workspace and no longer implies a Chat report.
+    $pdo->prepare("UPDATE agent_memory_items SET metadata_json=JSON_SET(metadata_json,'$.due_at',?) WHERE id=? AND user_id=1 AND user_agent_id=7")
+        ->execute([gmdate('Y-m-d\TH:i:s\Z',time()-600),$task]);
     vp3_initiative_chat_v1($pdo,$u,$p,['conversation_id'=>10],'on',null);action_mysql_owner('Review '.$label);
     $pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(10,NULL,'assistant','I will inspect this saved task.')");
     $pdo->prepare('UPDATE agent_activity_state SET last_heartbeat_at=NOW(),details_json=? WHERE user_id=1')
         ->execute([json_encode(['visible'=>true,'conversation_id'=>10,'chat_focused'=>true,'chat_busy'=>false],JSON_THROW_ON_ERROR)]);
-    $binding=vp3_initiative_policy_v1($u,7);$scope=['user'=>$u,'principal'=>$p,'agent_id'=>7,'conversation_id'=>10];$coverage=[];$ref='task:'.$task;
-    $evidence=vp3_initiative_capabilities_evidence_v1($pdo,$scope,$binding,new DateTimeImmutable('now',new DateTimeZone('UTC')),[$ref],$coverage);
+    $binding=vp3_initiative_policy_v1($u,7);$coverage=[];$ref='task:'.$task;
+    $evidence=vp3_initiative_evidence_v1($pdo,$u,new DateTimeImmutable('now',new DateTimeZone('UTC')),false,[],$coverage,[$ref],7);
     if(!isset($evidence[$ref]))throw new RuntimeException('Actual native task source was unavailable.');
-    $goal=['binding'=>$binding,'sources'=>[$ref=>$evidence[$ref]['revision']],'capability_sources'=>[$ref=>'tasks.read'],
-        'tool'=>'tasks.read','primary'=>$ref,'focus'=>'Prepare this exact saved task for a reviewed action.','report'=>true];
+    $sources=[$ref=>$evidence[$ref]['revision']];
+    if($supportingTools){
+        $scope=['user'=>$u,'principal'=>$p,'agent_id'=>7,'conversation_id'=>10];
+        $support=vp3_initiative_capabilities_evidence_v1($pdo,$scope,$binding,new DateTimeImmutable('now',new DateTimeZone('UTC')),array_keys($supportingTools),$coverage);
+        foreach($supportingTools as $sourceRef=>$tool){
+            if(!isset($support[$sourceRef]))throw new RuntimeException('Actual native supporting source was unavailable.');
+            $sources[$sourceRef]=$support[$sourceRef]['revision'];
+        }
+    }
+    $goal=['binding'=>$binding,'sources'=>$sources,
+        'canonical_sources'=>[$ref=>$evidence[$ref]['canonical_source_revision']??$evidence[$ref]['revision']],
+        'tool'=>'work.prepare_private','primary'=>$ref,'focus'=>'Prepare this exact saved task for a reviewed action.','report'=>true];
+    if($supportingTools)$goal['capability_sources']=$supportingTools;
     $dedupe=hash('sha256',random_bytes(24));vp3_initiative_enqueue_v1($pdo,$u,'initiative.prepare',$goal,$dedupe);
     $q=$pdo->prepare('SELECT id FROM agent_workflow_runs WHERE owner_user_id=1 AND dedupe_key=?');$q->execute([hash('sha256','initiative.prepare|'.$dedupe)]);$run=(int)$q->fetchColumn();
     $claim=agent_job_claim_run_v1900($pdo,$u,$run,'cloud',agent_worker_cloud_worker_id_v1910(1));
