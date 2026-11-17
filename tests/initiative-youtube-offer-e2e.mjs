@@ -100,7 +100,8 @@ require __DIR__.'/includes/bootstrap.php';
 if($path==='/fixture-state'){
     header('Content-Type:application/json');
     echo json_encode([
-        'runs'=>db()->query('SELECT id,status,goal FROM agent_workflow_runs ORDER BY id')->fetchAll(),
+        'runs'=>db()->query('SELECT id,owner_user_id,agent_id,status,goal FROM agent_workflow_runs ORDER BY id')->fetchAll(),
+        'actions'=>db()->query('SELECT id,run_id,owner_user_id,sequence_no,action_key,capability_key,execution_target,attempt_count,status,result_json FROM agent_workflow_actions ORDER BY id')->fetchAll(),
         'receipts'=>db()->query('SELECT * FROM agent_workflow_receipts ORDER BY id')->fetchAll(),
         'plays'=>db()->query('SELECT id,user_id,track_id,source_context,last_position_seconds FROM track_play_sessions ORDER BY id')->fetchAll(),
         'messages'=>db()->query('SELECT id,conversation_id,role,message,context_json FROM chat_messages ORDER BY id')->fetchAll(),
@@ -519,7 +520,12 @@ try{
   if(idleReport===null){
     // A saved Curiosity report invalidates discovery in the same real tick.
     // Require that exact completed post before allowing one genuine rescan.
-    assert.equal(idleTick.coordination,'queued_chat_handoff');
+    assert.equal(idleTick.coordination,'queued_chat_handoff',JSON.stringify({tick:idleTick,
+      run:idleState.runs.find(row=>row.id===idleTick.run_id),
+      actions:idleState.actions.filter(row=>row.run_id===idleTick.run_id),
+      receipts:idleState.receipts.filter(row=>row.run_id===idleTick.run_id),
+      newMessages:idleState.messages.filter(row=>row.conversation_id===16
+        &&!beforeIdleCatalog.messages.some(previous=>previous.id===row.id))}));
     const handoff=idleState.runs.find(row=>row.id===idleTick.run_id);
     assert.equal(handoff?.status,'completed');
     const goal=JSON.parse(handoff.goal);
