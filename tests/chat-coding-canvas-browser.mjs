@@ -356,7 +356,7 @@ try {
   const listResponse = page.waitForResponse(response => response.url().endsWith('/coding') && response.request().postDataJSON().action === 'list');
   release();
   await listResponse;
-  assert.equal(await panel.locator('select option').count(),0,'Late owner Canvas data stays hidden in participant context');
+  assert.equal(await panel.getByLabel('Saved canvases').locator('option').count(),0,'Late owner Canvas data stays hidden in participant context');
   assert.equal(await panel.locator('pre').textContent(),'');
   await page.evaluate(() => {
     window.VP3ParticipantContinuity = {selectedContext:() => null};

@@ -174,10 +174,11 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
           realWork++;
           pendingReport=true;
         }
-        if(blockedReason&&(!pendingReport||ownerBusy)){
+        if(blockedReason&&!pendingReport){
           return route.fulfill({json:{ok:false,reason:'blocked',health:health()}}).catch(()=>{});
         }
-        if(pendingReport&&!ownerBusy){
+        // Saved text is authorized by the bound Chat policy; speech has its own gate.
+        if(pendingReport){
           pendingReport=false;
           histories.get(42).push({id:2,role:'assistant',message:'I reviewed the transcript follow-ups and prepared the next steps.',
             context_json:JSON.stringify({source:'agent_initiative',initiative_run_id:91})});
@@ -821,8 +822,8 @@ try{
       assert.equal(await page.locator('#chatAgentBriefPopover').isHidden(),true);
       assert.equal(f.realWork,1);
 
-      // Private work keeps advancing while typing or speaking; its delivery
-      // remains governed separately by current canonical owner availability.
+      // Private work keeps advancing while typing or speaking. Saved text
+      // retains its canonical Chat binding and never requests speech.
       await page.locator('#chatInput').fill('My unfinished thought');
       let count=f.ticks.length;
       await page.clock.fastForward(16000);
@@ -904,7 +905,9 @@ try{
     await page.clock.fastForward(16000);
     await page.waitForFunction(()=>document.querySelector('[data-agent-initiative-setting="off"]'));
     assert.equal(busyOwner.realWork,1,'private preparation finishes while the owner has a draft');
-    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    await page.locator('[data-chat-message-id="2"] [data-chat-message-new]').waitFor();
+    assert.equal(await page.locator('#chatInput').inputValue(),'My unfinished thought','a saved text report preserves the owner draft');
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     const checked=page.locator('[data-agent-initiative-status]').getByText('No background worker has been observed. This open Chat can advance permitted work.',{exact:true});
     await checked.waitFor();
     let count=busyOwner.ticks.length;
@@ -915,20 +918,20 @@ try{
     await page.clock.fastForward(31000);await processingTick;
     await checked.waitFor();
     assert.ok(busyOwner.ticks.length>count);count=busyOwner.ticks.length;
-    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     await page.evaluate(()=>document.body.dataset.stonefellowAgentState='speaking');
     const speakingTick=page.waitForResponse(response=>response.request().method()==='POST'
       &&response.url().includes('/api/cognitive-presentation-v510.php')&&response.request().postDataJSON().action==='initiative_tick');
     await page.clock.fastForward(31000);await speakingTick;
     await checked.waitFor();
     assert.ok(busyOwner.ticks.length>count);
-    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),0);
+    assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     assert.deepEqual(await page.evaluate(()=>({speech:window.speechCalls,announcements:window.announcementCalls})),{speech:0,announcements:0});
     await page.evaluate(()=>document.body.dataset.stonefellowAgentState='idle');
     await page.clock.fastForward(31000);
     await page.locator('[data-chat-message-id="2"] [data-chat-message-new]').waitFor();
     assert.equal(busyOwner.realWork,1);
-    console.log('PASS private preparation advances through composer drafts, main Agent processing and speech; canonical report appears only after quiet, without synthesized speech');
+    console.log('PASS private preparation and saved text use the bound Chat through composer drafts; later processing and speech cannot duplicate the report or synthesize speech');
   }finally{await busyOwner.context.close();}
 
   const savedOnly=await fixture(17,{enabled:true,deliveryOnly:true,initialDraft:true});
@@ -936,25 +939,20 @@ try{
     const page=await savedOnly.open(),status=page.locator('[data-agent-initiative-status]');
     await status.getByText('Background preparation is paused because the AI allowance is exhausted.',{exact:true}).waitFor();
     await page.clock.fastForward(31000);
-    assert.equal(savedOnly.ticks.length,0,'delivery-only work waits for a quiet composer');
-    const quiet=page.waitForResponse(response=>response.url().endsWith('/api/agent-activity-v94.php')
-      &&response.request().postDataJSON()?.context?.chat_busy===false);
-    const delivery=page.waitForResponse(response=>response.url().endsWith('/api/cognitive-presentation-v510.php')
-      &&response.request().postDataJSON()?.action==='initiative_tick');
-    await page.locator('#chatInput').fill('');
-    await quiet;
-    await delivery;
+    assert.ok(savedOnly.ticks.length>0,'the bound Chat can receive saved text while its composer has a draft');
+    assert.equal(await page.locator('#chatInput').inputValue(),'My unfinished thought');
     await page.locator('[data-chat-message-id="2"] [data-chat-message-new]').waitFor();
     assert.equal(await page.getByText('I reviewed the transcript follow-ups and prepared the next steps.',{exact:true}).count(),1);
     assert.equal(savedOnly.realWork,0,'saved delivery does not run inference');
     const count=savedOnly.ticks.length;
     await page.clock.fastForward(16000);
     assert.equal(savedOnly.ticks.length,count,'delivery-only checks are rate limited while inference is unavailable');
+    await page.locator('#chatInput').fill('');
     await page.clock.fastForward(31000);
     assert.equal(await page.locator('[data-chat-message-id="2"]').count(),1);
     assert.deepEqual(await page.evaluate(()=>({speech:window.speechCalls,announcements:window.announcementCalls})),{speech:0,announcements:0});
     assert.deepEqual(savedOnly.errors,[]);
-    console.log('PASS saved verified result reaches quiet Chat once without inference even while AI allowance is exhausted');
+    console.log('PASS saved verified result reaches bound Chat once without inference, draft replacement or speech even while AI allowance is exhausted');
   }finally{await savedOnly.context.close();}
 
   const newAfterSaved=await fixture(17,{enabled:true});
