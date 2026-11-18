@@ -10,7 +10,7 @@ require_once __DIR__.'/fixtures/profile-commerce-followthrough-data-v1.php';
 require_once dirname(__DIR__).'/includes/agent-coordination-product-marketing-v1.php';
 require_once dirname(__DIR__).'/includes/profile-commerce-followthrough-v1.php';
 require_once dirname(__DIR__).'/includes/agent-catch-up-chat-v1.php';
-$native=pcap_fixture_init_v1();pfs_reset();$pdo=db();$fixture=profile_commerce_followthrough_fixture_v1($pdo);$checks=0;
+$native=pcap_fixture_init_v1('pfs_reset');$pdo=db();$fixture=profile_commerce_followthrough_fixture_v1($pdo);$checks=0;
 function pmf_check(bool $condition,string $label):void
 {if(!$condition)throw new RuntimeException('FAIL '.$label);++$GLOBALS['checks'];echo 'PASS '.$label.PHP_EOL;}
 function pmf_now(int $stamp):void{$GLOBALS['pa3Now']=$stamp;pfs_clock();}
@@ -29,6 +29,16 @@ function pmf_state():array
 function pmf_remove(string $path):void
 {if(!is_dir($path))return;foreach(scandir($path) as $file){if($file==='.'||$file==='..')continue;$entry=$path.'/'.$file;if(is_dir($entry))pmf_remove($entry);else unlink($entry);}rmdir($path);}
 register_shutdown_function(static fn()=>pmf_remove(STONEFELLOW_ROOT));
+
+$parents=$pdo->prepare('SELECT p.id FROM agent_commerce_products_v800 p
+    JOIN agent_commerce_provider_connections_v800 c ON c.id=p.fixed_connection_id AND c.owner_user_id=p.owner_user_id
+    JOIN agent_commerce_marketing_drafts_v1 d ON d.product_id=p.id AND d.owner_user_id=p.owner_user_id
+    JOIN agent_commerce_promotions_v1 m ON m.product_id=p.id AND m.draft_key=d.request_key AND m.owner_user_id=p.owner_user_id
+    JOIN agent_promotion_publications_v1 u ON u.promotion_id=m.id AND u.product_id=p.id AND u.owner_user_id=p.owner_user_id
+    WHERE p.id=? AND p.owner_user_id=1 AND c.id=? AND d.request_key=? AND m.id=? AND u.publication_id=?');
+$parents->execute([$native['product'],$native['seller'],$native['draft_key'],$native['promotion_id'],$native['publication_id']]);
+pmf_check((int)$parents->fetchColumn()===$native['product'],'the Profile reset precedes canonical Commerce seeding and retains every exact native product parent');
+$parents->closeCursor();
 
 $art=file_get_contents(STONEFELLOW_ROOT.'/private/user-media/1/original.png');
 $draft=['kind'=>'product_marketing_draft','draft_id'=>$native['draft_key'],'product_id'=>$native['product'],'title'=>'Field guide promotion',

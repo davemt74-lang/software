@@ -74,12 +74,14 @@ function pa5_fixture_product(string $slug,int $owner,int $connection,array $chan
     ],$changes));
 }
 
-function pa5_fixture_init(): array
+function pa5_fixture_init(?callable $reset=null): array
 {
     if(db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
         db()->exec('CREATE TABLE user_agents(id BIGINT UNSIGNED PRIMARY KEY,owner_user_id INTEGER,display_name VARCHAR(190),is_active INTEGER)');
     }
-    pa3_reset();
+    // Integrated Profile fixtures must reset their owner/native stores before
+    // Commerce rows exist: MySQL correctly cascades a later owner deletion.
+    ($reset??'pa3_reset')();
     agent_commerce_ensure_schema_v800(db());
     vp3_profile_checkout_ensure_schema_pa5(db());
     $connection=static fn(int $owner,string $account,string $status='connected')=>pa5_fixture_insert('agent_commerce_provider_connections_v800',[

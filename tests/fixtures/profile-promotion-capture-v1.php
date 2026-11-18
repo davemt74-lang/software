@@ -7,9 +7,9 @@ require_once dirname(__DIR__,2).'/includes/media-studio-v86.php';
 require_once dirname(__DIR__,2).'/includes/profile-product-promotion-v1.php';
 require_once dirname(__DIR__,2).'/includes/profile-promotion-click-v1.php';
 
-function pcap_fixture_init_v1(): array
+function pcap_fixture_init_v1(?callable $reset=null): array
 {
-    $f=pa5_fixture_init();
+    $f=pa5_fixture_init($reset);
     $p=db();
     $p->exec('CREATE TABLE IF NOT EXISTS user_blocks (blocker_user_id INTEGER NOT NULL,blocked_user_id INTEGER NOT NULL,PRIMARY KEY(blocker_user_id,blocked_user_id))');
     $p->exec('CREATE TABLE user_media_assets(id INTEGER PRIMARY KEY,user_id INTEGER,media_type VARCHAR(12),title VARCHAR(190),mime_type VARCHAR(40),file_path VARCHAR(300),file_size INTEGER,duration_seconds INTEGER DEFAULT 0,source VARCHAR(40),metadata_json TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
