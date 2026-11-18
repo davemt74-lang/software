@@ -11,6 +11,7 @@ require_once dirname(__DIR__).'/includes/initiative-workbench-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-work-product-publication-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-work-marketing-promotion-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
+require_once dirname(__DIR__).'/includes/initiative-marketing-plans-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-promotion-outcomes-v1.php';
 require_once dirname(__DIR__).'/includes/profile-agent.php';
 require_once dirname(__DIR__).'/includes/profile-conversation-checkout-pa5.php';
@@ -103,6 +104,33 @@ try {
     $otherAgent = array_replace($scope,['agent_id'=>8,'conversation_id'=>13]);
     $otherOwner = ['agent_id'=>9,'conversation_id'=>21,'user'=>['id'=>2,'is_active'=>1]];
     $sessionKey = str_repeat('1',64);
+    $planSnapshot = static function() use ($pdo,&$calls): string {
+        $state = ['model_calls'=>$calls,'provider_calls'=>$GLOBALS['pa2_http_calls']];
+        foreach (['agent_product_launches_v1','agent_commerce_products_v800','agent_commerce_marketing_drafts_v1',
+            'agent_commerce_promotions_v1','agent_commerce_orders_v800','agent_commerce_provider_connections_v800',
+            'user_media_assets','chat_conversations','chat_messages','agent_image_generations_v1',
+            'agent_image_generation_assets_v1','agent_workflow_runs','agent_workflow_actions',
+            'agent_workflow_events','agent_workflow_receipts','agent_promotion_publications_v1'] as $table) {
+            if (table_exists($table)) $state[$table] = $pdo->query('SELECT * FROM '.$table.' ORDER BY 1,2')->fetchAll();
+        }
+        return json_encode($state,JSON_THROW_ON_ERROR);
+    };
+    $checkPlan = static function(int $id,string $stage,string $label) use ($pdo,$scope,$sameAgentOtherChat,$planSnapshot): array {
+        $before = $planSnapshot();
+        $list = initiative_marketing_plans_list_v1($pdo,1,$sameAgentOtherChat,[]);
+        $matches = array_values(array_filter($list['plans'],static fn(array $plan): bool=>$plan['product_id']===$id));
+        $plan = initiative_marketing_plan_read_v1($pdo,1,$scope,[
+            'product_id'=>$id,'source_id'=>'999','draft_id'=>str_repeat('e',64),'creative_id'=>str_repeat('e',32),
+        ])['plan'];
+        launch_check_v1(count($matches)===1 && $matches[0]===$plan && $plan['stage']===$stage && $plan['stage_label']===$label
+            && $plan['agent_id']===7 && $plan['conversation_id']===11
+            && $plan['chat_url']==='/chat.php?agent=7&conversation_id=11&marketing_plan='.$id
+            && ($stage==='needs_attention' ? $plan['resume']===null && $plan['image']===null
+                : $plan['resume']['stage']===$stage && $plan['resume']['product_id']===$id)
+            && $planSnapshot()===$before,
+            'read-only marketing plans expose '.$stage.' from current evidence in the original Chat');
+        return $plan;
+    };
     $action = static fn(string $action,array $body,?array $chat=null,int $owner=1): array =>
         initiative_work_marketing_promotion_action_v1($pdo,$owner,$chat??$scope,$body+['action'=>$action],$sessionKey);
     $notices = static function() use ($pdo): array {
@@ -134,6 +162,18 @@ try {
         && $initial[0]['conversation_id']===11 && $initial[0]['role']==='assistant' && $initial[0]['stage']==='listing_review'
         && initiative_work_product_draft_v1(profile_commerce_owner_product_v900($pdo,1,$productId)),
         'the original Agent Chat receives one next step for the exact private draft');
+    $pdo->prepare("UPDATE agent_product_launches_v1 SET last_stage='published' WHERE product_id=?")->execute([$productId]);
+    $privatePlan = $checkPlan($productId,'listing_review','Review listing');
+    launch_check_v1($privatePlan['image']['id']===$assetId && $privatePlan['image']['url']==='/media-library-file-v86.php?id='.$assetId
+        && !isset($privatePlan['resume']['creative_id'])
+        && initiative_marketing_plans_list_v1($pdo,1,$otherAgent,[])['plans']===[]
+        && initiative_marketing_plans_list_v1($pdo,2,$otherOwner,[])['plans']===[],
+        'private plan discovery uses its exact source and excludes other Agents and owners despite a stale cached status');
+    launch_reject_v1(fn()=>initiative_marketing_plan_read_v1($pdo,1,$otherAgent,['product_id'=>$productId]),
+        'a different Agent cannot read a tracked plan');
+    launch_reject_v1(fn()=>initiative_marketing_plan_read_v1($pdo,2,$otherOwner,['product_id'=>$productId]),
+        'another owner cannot read a tracked plan');
+    $pdo->prepare("UPDATE agent_product_launches_v1 SET last_stage='listing_review' WHERE product_id=?")->execute([$productId]);
     $retry();
     launch_check_v1($notices()===$initial,'a repeated worker cycle does not duplicate the private draft notice');
 
@@ -154,6 +194,7 @@ try {
     launch_check_v1($listing['id']===$productId && $listing['price_cents']===2000
         && profile_product_promotions_public_v1($pdo,$profile)===[] && end($listingNotices)['stage']==='marketing_review',
         'listing approval activates the same product without creating a public promotion');
+    $checkPlan($productId,'marketing_review','Review promotion');
 
     $draftId = str_repeat('d',64);
     $draftInput = ['source_id'=>(string)$assetId,'product_id'=>$productId,'request_id'=>$draftId];
@@ -169,6 +210,7 @@ try {
     launch_check_v1($draftNotice['stage']==='design_review' && $draftNotice['draft_id']===$draftId
         && $draftNotice['source_id']===(string)$assetId && $draftNotice['conversation_id']===11,
         'the exact saved draft reaches the original Chat to start a private design');
+    $checkPlan($productId,'design_review','Design graphic');
     $designReview = $action('creative_prepare',$design);
     launch_check_v1(!table_exists('agent_image_generations_v1') && $notices()===$beforeReview && $calls===0,
         'a private design review creates neither an image job nor a launch notice');
@@ -181,6 +223,9 @@ try {
     $sweep();
     launch_check_v1($creative['status']==='queued' && is_array($claim) && $calls===0,
         'explicit approval admits one exact image job to the shared Cloud worker');
+    $pendingPlan = $checkPlan($productId,'image_pending','Creating image');
+    launch_check_v1($pendingPlan['resume']['creative_id']===$creativeId && $pendingPlan['resume']['draft_id']===$draftId,
+        'a running marketing plan resumes the exact admitted creative without advancing its job');
 
     // The browser stays closed. Interrupt only Chat storage, after the image
     // worker has obtained verified provider bytes through its real executor.
@@ -244,6 +289,7 @@ try {
     $checkInvalidCreative('same-size substituted output bytes');
     file_put_contents($generatedPath,$generated);
     file_put_contents($photoFile,launch_png_v1(32,32,"\x44\x66\x88\xff"));
+    $checkPlan($productId,'needs_attention','Needs attention');
     $retry();
     launch_check_v1($notices()===$failedBytes,'a changed original blocks delivery of its earlier generated scene');
     file_put_contents($photoFile,$photo);
@@ -263,6 +309,7 @@ try {
         && $resume['owner_user_id']===1 && $resume['agent_id']===7 && $resume['product_id']===$productId
         && $resume['draft_id']===$draftId && $resume['source_id']===(string)$assetId && $resume['creative_id']===$creativeId,
         'a browser-closed sweep brings the exact product, original, draft and completed design to its original Chat');
+    $checkPlan($productId,'creative_ready','Review graphic');
     $retry();
     launch_check_v1($notices()===$delivered && $calls===1
         && agent_job_claim_run_v1900($pdo,$user,$runId,'cloud',agent_worker_cloud_worker_id_v1910(1),300)===null
@@ -306,6 +353,7 @@ try {
     launch_check_v1($saved['status']==='saved' && profile_product_promotions_public_v1($pdo,$profile)===[]
         && end($saveNotices)['stage']==='publication_review',
         'saving the selected graphic still leaves publication for a distinct review');
+    $checkPlan($productId,'publication_review','Ready to publish');
     $publishReview = $action('creative_publish_preview',['creative_id'=>$creativeId]);
     $live = $action('creative_publish',['creative_id'=>$creativeId,'review_token'=>$publishReview['review_token'],'confirmed'=>true])['creative'];
     $sweep();
@@ -315,6 +363,23 @@ try {
         && $cards[0]['product_url']===$listing['product_url'] && $calls===1 && $GLOBALS['pa2_http_calls']===[]
         && end($publishedNotices)['stage']==='published',
         'only the explicit promotion approval exposes the exact graphic and its same-product listing');
+    $activePlan = $checkPlan($productId,'published','Active');
+    launch_check_v1($activePlan['resume']['creative_id']===$creativeId && $activePlan['resume']['draft_id']===$draftId
+        && !$activePlan['needs_attention'],
+        'published promotions remain active marketing plans with their exact stored creative');
+    $unfinishedId = commerce_fixture_insert_pa2($pdo,'agent_commerce_products_v800',[
+        'owner_user_id'=>1,'product_key'=>'plan-list-unfinished','title'=>'Unfinished product plan','is_active'=>0,
+        'metadata_json'=>json_encode(['listing_draft'=>'product_text_v1','profile_visibility'=>'hidden',
+            'agent_id'=>7,'conversation_id'=>11],JSON_THROW_ON_ERROR),
+    ]);
+    $pdo->prepare('INSERT INTO agent_product_launches_v1(product_id,owner_user_id,agent_id,conversation_id) VALUES(?,1,7,11)')
+        ->execute([$unfinishedId]);
+    $beforePlans = $planSnapshot();
+    $activeAndUnfinished = array_column(initiative_marketing_plans_list_v1($pdo,1,$scope,[])['plans'],'stage','product_id');
+    launch_check_v1($activeAndUnfinished===[$unfinishedId=>'listing_review',$productId=>'published']
+        && $planSnapshot()===$beforePlans,'the same read-only list includes unfinished and active marketing plans together');
+    $pdo->prepare('DELETE FROM agent_product_launches_v1 WHERE product_id=?')->execute([$unfinishedId]);
+    $pdo->prepare('DELETE FROM agent_commerce_products_v800 WHERE id=?')->execute([$unfinishedId]);
     $publicationId = $cards[0]['key'];
     $outcomes = static function() use ($pdo): array {
         $messages = $pdo->query('SELECT conversation_id,role,message,context_json FROM chat_messages ORDER BY id')->fetchAll();
@@ -337,6 +402,7 @@ try {
     launch_check_v1(profile_product_promotions_public_v1($pdo,$profile)===[]
         && profile_commerce_public_product_v900($pdo,$profile,'blue-mug')===$listing && end($pausedNotices)['stage']==='paused',
         'pausing the completed launch removes the promotion while the verified listing remains live');
+    $checkPlan($productId,'paused','Paused');
     $replacementId = sprintf('%032x',13);
     [$replacementGraphic] = $addAsset($photo,'promotion_design',['creative_id'=>$replacementId]);
     $action('creative_save',['creative_id'=>$replacementId,'asset_id'=>$replacementGraphic]);
@@ -411,6 +477,9 @@ try {
         && $photoNotice['product_id']===$textId && $photoNotice['stage']==='photo_needed'
         && empty($photoNotice['source_id']) && $photoNotice['conversation_id']===11,
         'listing approval asks for a specific photo choice and never invents an original');
+    $photoNeededPlan = $checkPlan($textId,'photo_needed','Choose an image');
+    launch_check_v1($photoNeededPlan['image']===null && !isset($photoNeededPlan['resume']['source_id']),
+        'a description-only marketing plan never borrows a library photo');
     $chosenDraft = str_repeat('c',64);
     $chosenInput = ['source_id'=>(string)$otherAsset,'product_id'=>$textId,'request_id'=>$chosenDraft];
     $chosenPreview = initiative_work_marketing_preview_v1($pdo,1,$scope,$chosenInput);

@@ -100,6 +100,7 @@
     const state = current;
     current = null;
     if (!state) return;
+    state.imagePicker?.close('destroyed');
     clearTimeout(state.timer);
     clearInterval(state.scopeTimer);
     state.controller.abort();
@@ -175,7 +176,9 @@
     const original = node('figure');
     const sourceImage = node('img');
     sourceImage.alt = 'Original product photo';
-    original.append(node('figcaption', 'Original product photo'), sourceImage);
+    const chooseImage = action('Choose from Media Library', () => openImagePicker(state));
+    chooseImage.dataset.marketingChooseImage = '';
+    original.append(node('figcaption', 'Original product photo'), sourceImage, chooseImage);
     const visitor = node('figure');
     visitor.dataset.marketingVisitor = '';
     const visitorImage = node('img');
@@ -187,6 +190,24 @@
     const listingHint = node('small', 'Make the product listing public in Profile Commerce to preview the visitor link.');
     visitor.append(node('figcaption', 'Visitor preview'), visitorImage, productLink, placeholder, listingHint);
     comparison.append(original, visitor);
+
+    const pickerHost = node('div');
+    pickerHost.dataset.marketingImagePicker = '';
+    const sourceChoice = node('section');
+    sourceChoice.dataset.marketingSourceChoice = '';
+    sourceChoice.className = 'vp3-marketing-source-choice';
+    sourceChoice.hidden = true;
+    const choiceImage = node('img');
+    const choiceTitle = node('h3');
+    const choiceCopy = node('div');
+    const reviewImage = action('Review selected image', () => reviewSelectedImage(state));
+    const keepImage = action('Keep current photo', () => {
+      state.stagedImage = null;
+      paint(state);
+      chooseImage.focus();
+    });
+    choiceCopy.append(choiceTitle, node('p', 'Review this image for a separate private draft before changing the current promotion.'), reviewImage, keepImage);
+    sourceChoice.append(choiceImage, choiceCopy);
 
     const confirmation = node('div');
     confirmation.dataset.marketingConfirmation = '';
@@ -231,9 +252,10 @@
     publicLink.rel = 'noopener noreferrer';
     const pause = action('Pause promotion', () => void pausePromotion(state));
     live.append(liveStatus, publicLink, pause);
-    panel.append(header, status, draftsLabel, settings, comparison, controls, confirmation, live);
+    panel.append(header, status, draftsLabel, settings, comparison, pickerHost, sourceChoice, controls, confirmation, live);
     return {panel, heading, status, drafts, draftsLabel, settings, level, levelHelp, headline, copy, prompt,
       promptLabel, style, removeBackground, cutout, tolerance, toleranceLabel, sourceImage, visitorImage,
+      chooseImage, pickerHost, sourceChoice, choiceImage, choiceTitle, reviewImage, keepImage,
       productLink, placeholder, listingHint, confirmation, confirmationText, generate,
       publish, back, prepare, retry, refresh, cancel, retryRender, save, campaign, campaignLabel, publishReview, management, mediaLibrary, live,
       liveStatus, publicLink, pause};
@@ -248,6 +270,62 @@
       prompt:level >= 5 ? input.prompt.value.trim() : '', style:input.style.value,
       remove_background:cutout, tolerance:cutout ? Number(input.tolerance.value) : 24
     };
+  }
+
+  function designSettings(state) {
+    const input = state.elements;
+    return {level:Number(input.level.value), headline:input.headline.value, copy:input.copy.value,
+      prompt:input.prompt.value, style:input.style.value, remove_background:input.removeBackground.checked,
+      tolerance:Number(input.tolerance.value), campaign_id:Number(input.campaign.value) || 0};
+  }
+
+  function openImagePicker(state) {
+    if (!active(state) || !state.draft || state.busy || state.rendering || working.has(state.variant?.status)
+      || state.imagePicker || !state.connection.validateImage || !window.VP3MediaLibraryPicker?.open) return;
+    const ticket = {reference:state.reference, settings:JSON.stringify(designSettings(state))};
+    state.imagePickerTicket = ticket;
+    const isCurrent = () => active(state) && state.imagePickerTicket === ticket && state.reference === ticket.reference
+      && !state.busy && !state.rendering && JSON.stringify(designSettings(state)) === ticket.settings;
+    state.imagePicker = window.VP3MediaLibraryPicker.open({
+      host:state.elements.pickerHost, endpoint:state.connection.mediaEndpoint, ownerKey:state.connection.ownerKey,
+      selectedId:state.stagedImage?.source_id || state.reference.source_id, title:'Choose a promotion image',
+      returnFocus:state.elements.chooseImage, maxBytes:4 * 1024 * 1024, acceptedMimes:['image/jpeg','image/png','image/webp'], isCurrent,
+      onSelect:async (asset, selection) => {
+        if (!isCurrent() || !selection.isCurrent()) return false;
+        const preview = await state.connection.validateImage(asset, selection);
+        if (!isCurrent() || !selection.isCurrent()) return false;
+        const currentDraft = preview.source_id === state.reference.source_id && Array.isArray(preview.details?.drafts)
+          && preview.details.drafts.some(draft => draft?.draft_id === state.reference.draft_id
+            && draft.product_id === state.reference.product_id && String(draft.asset_id) === state.reference.source_id);
+        state.stagedImage = currentDraft ? null : preview;
+        paint(state);
+        return true;
+      },
+      onClose:reason => {
+        if (state.imagePickerTicket !== ticket) return;
+        const interrupted = reason === 'stale' && isCurrent();
+        state.imagePicker = null;
+        state.imagePickerTicket = null;
+        if (interrupted) status(state, 'Media Library access changed. Choose an image again.');
+        paint(state);
+      }
+    });
+    if (!state.imagePicker) state.imagePickerTicket = null;
+    paint(state);
+  }
+
+  function reviewSelectedImage(state) {
+    if (!active(state) || !state.stagedImage || state.busy || state.rendering || state.imagePickerTicket) return;
+    const image = state.stagedImage;
+    const settings = designSettings(state);
+    const settingsKey = JSON.stringify(settings);
+    const handoff = {sourceId:image.source_id, productId:state.reference.product_id, settings,
+      isCurrent:() => active(state) && state.stagedImage === image && !state.busy && !state.rendering
+        && JSON.stringify(designSettings(state)) === settingsKey};
+    if (!window.VP3InitiativeWorkbench?.open('marketing', image.source_id, image.revision,
+      {productId:state.reference.product_id, marketingHandoff:handoff})) {
+      status(state, 'The image review could not be opened. Your current promotion is still available.');
+    }
   }
 
   function fillSettings(state, variant) {
@@ -265,7 +343,7 @@
   function paint(state) {
     if (!active(state)) return;
     const {elements: ui, variant, draft, approval, promotion} = state;
-    const busy = state.busy || state.rendering;
+    const busy = state.busy || state.rendering || Boolean(state.imagePickerTicket);
     const {level, headline, copy} = graphicSettings(state);
     const inProgress = working.has(variant?.status);
     const stored = saved.has(variant?.status);
@@ -280,6 +358,17 @@
     ui.settings.disabled = !draft || disabled;
     ui.draftsLabel.hidden = !state.variants.size;
     ui.drafts.disabled = busy || inProgress;
+    ui.chooseImage.disabled = !draft || busy || inProgress || !state.connection.validateImage || !window.VP3MediaLibraryPicker?.open;
+    ui.sourceChoice.hidden = !state.stagedImage;
+    ui.reviewImage.disabled = ui.keepImage.disabled = busy || inProgress;
+    if (state.stagedImage) {
+      setImage(ui.choiceImage, localUrl(state.stagedImage.details?.image_url, '/media-library-file-v86.php'));
+      ui.choiceImage.alt = state.stagedImage.source_title;
+      ui.choiceTitle.textContent = state.stagedImage.source_title;
+    } else {
+      setImage(ui.choiceImage, '');
+      ui.choiceTitle.textContent = '';
+    }
     ui.prepare.hidden = !draft || Boolean(approval) || inProgress;
     ui.prepare.disabled = busy || !headline || !copy;
     ui.retry.hidden = Boolean(draft) || busy;
@@ -374,7 +463,7 @@
   }
 
   async function work(state, message, callback) {
-    if (!active(state) || state.busy || state.rendering) return;
+    if (!active(state) || state.busy || state.rendering || state.imagePickerTicket) return;
     state.busy = true;
     status(state, message);
     paint(state);
@@ -424,12 +513,24 @@
       }
       state.promotion = promotion || (creative?.status === 'published' ? creative : null);
       const hints = state.prefill;
-      state.variant = !hints || working.has(creative?.status) ? creative : null;
+      const sourceChange = hints?.sourceChange;
+      const carrySettings = sourceChange && sourceChange.product_id === state.reference.product_id
+        && sourceChange.source_id === state.reference.source_id && sourceChange.owner_key === state.connection.ownerKey
+        && sourceChange.agent_id === state.connection.scope.agent_id && sourceChange.conversation_id === state.connection.scope.conversation_id;
+      state.variant = carrySettings ? null : !hints || working.has(creative?.status) ? creative : null;
       for (const item of data.variants || []) rememberVariant(state, item);
       fillSettings(state, state.variant);
       if (hints && !state.variant) {
         state.elements.level.value = String(hints.level ?? 1);
         state.elements.prompt.value = hints.prompt ?? '';
+        if (carrySettings) {
+          state.elements.headline.value = hints.headline;
+          state.elements.copy.value = hints.copy;
+          state.elements.style.value = hints.style;
+          state.elements.removeBackground.checked = hints.remove_background;
+          state.elements.tolerance.value = String(hints.tolerance);
+          state.elements.campaign.value = state.campaigns.has(hints.campaign_id) ? String(hints.campaign_id) : '';
+        }
       }
       if (state.variant) await receiveVariant(state, state.variant);
       else status(state, '');
@@ -690,7 +791,8 @@
     return true;
   }
 
-  for (const event of ['stonefellow:chat-context-changing', 'vp3:chat-conversation-changed', 'pagehide']) {
+  for (const event of ['stonefellow:chat-context-changing', 'vp3:chat-conversation-changed',
+    'vp3:participant-selection-changed', 'vp3:participant-task-context', 'pagehide']) {
     window.addEventListener(event, () => close(false));
   }
   document.addEventListener('visibilitychange', () => {

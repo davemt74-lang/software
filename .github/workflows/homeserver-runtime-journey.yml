@@ -50,7 +50,8 @@ jobs:
           screen_reports = r'^(?:chat-screen-insights-v1\.(?:js|css)|(?:api|includes)/agent-screen-(?:insights|chat-report)-v1\.php|tests/(?:agent-ears-picker|agent-screen-(?:insights|chat-report)[^/]*|screen-insights-chat-report)\.(?:php|mjs))$'
           media_entertainment = r'^(?:(?:includes|tests)/agent-media-(?:entertainment|similar-artists)[^/]*\.(?:php|mjs)|tests/chat-youtube-[^/]*\.mjs|tests/initiative-youtube-offer-e2e\.mjs|tests/fixtures/initiative-media-chat-http\.php)$'
           image_chat = r'^(?:(?:chat-canvas-media|chat-image-(?:composer|studio))-v1\.(?:js|css)|(?:api|includes|tests)/(?:agent-image-[^/]+|chat-image-[^/]+|chat-canvas-media-[^/]+)\.(?:php|mjs)|tests/fixtures/image-generation-v1\.php)$'
-          changed = diff.returncode != 0 or any(re.match(image_chat, p) or re.match(screen_reports, p) or re.match(media_entertainment, p) or re.match(meeting_actions, p) or re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(coordination, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(gmail_first_review, p) or re.match(email_specialist, p) or re.match(development, p) for p in diff.stdout.splitlines())
+          media_picker = r'^(?:(?:media-library-picker|chat-media-commands)-v1\.(?:js|css)|chat-marketing-canvas-v1\.js|(?:api/media-library-v86|includes/media-(?:collections-v1|studio-v86))\.php|tests/media-library-(?:picker-browser|workspace-(?:api|browser))\.mjs|tests/chat-media-commands-browser\.mjs|includes/initiative-marketing-plans-v1\.php)$'
+          changed = diff.returncode != 0 or any(re.match(media_picker, p) or re.match(image_chat, p) or re.match(screen_reports, p) or re.match(media_entertainment, p) or re.match(meeting_actions, p) or re.match(working_ui, p) or re.match(ai_service, p) or re.match(research, p) or re.match(coding, p) or re.match(coding_controls, p) or re.match(activity_hub, p) or re.match(coordination, p) or re.match(pattern, p) or re.match(initiative, p) or re.match(workbench, p) or re.match(live, p) or re.match(connections, p) or re.match(gmail_first_review, p) or re.match(email_specialist, p) or re.match(development, p) for p in diff.stdout.splitlines())
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('changed=' + str(changed).lower() + '\n')
               connection = diff.returncode != 0 or any(re.match(r'^(includes/homeserver-(https-relay-v1300|cloud-pairing-actions-v1200|reconciliation-v246|shared-agent-v210)\.php|api/homeserver-https-poll-v1300\.php|tests/(connection_lifecycle|homeserver-continuity-permissions|homeserver-https-transient-inference(?:-mysql)?)\.php|\.github/workflows/homeserver-runtime-journey\.yml)$', p) for p in diff.stdout.splitlines())
@@ -784,6 +785,7 @@ jobs:
     env:
       VP3_IMAGE_UI_SCREENSHOTS: artifacts/image-ui
       VP3_IMAGE_COMPOSER_SCREENSHOTS: artifacts/image-ui
+      VP3_MEDIA_PICKER_SCREENSHOTS: artifacts/media-picker
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -796,7 +798,7 @@ jobs:
           node-version: '22'
       - name: Prepare browser and evidence directory
         run: |
-          mkdir -p artifacts/image-ui
+          mkdir -p artifacts/image-ui artifacts/media-picker
           npm install --no-save --ignore-scripts playwright@1.62.1
           bash tools/install-ci-chromium.sh
       - name: Image jobs, private sources and controlled provider transport
@@ -820,6 +822,17 @@ jobs:
       - name: Image specialist tabs and prompt reuse
         if: ${{ !cancelled() }}
         run: node tests/chat-image-studio-browser.mjs | tee artifacts/image-studio-browser.log
+      - name: Shared Media Library and exact source review API
+        if: ${{ !cancelled() }}
+        run: |
+          node tests/media-library-workspace-api.mjs | tee artifacts/media-library-api.log
+          node tests/initiative-workbench-api.mjs | tee artifacts/media-picker-workbench-api.log
+      - name: Shared image picker and Product promotion browser
+        if: ${{ !cancelled() }}
+        run: |
+          node tests/media-library-picker-browser.mjs | tee artifacts/media-picker-browser.log
+          node tests/chat-media-commands-browser.mjs | tee artifacts/media-commands-browser.log
+          node tests/chat-initiative-workbench-browser.mjs | tee artifacts/media-picker-workbench-browser.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

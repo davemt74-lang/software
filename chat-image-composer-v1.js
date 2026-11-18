@@ -165,6 +165,39 @@
       return false;
     }finally{clearTimeout(timer);}
   }
+  async function attachLibraryImage(candidate,{conversationId,agentId,ownerKey,isCurrent,signal}={}){
+    const photo=safeAsset(candidate);
+    if(!photo||!['image/jpeg','image/png','image/webp'].includes(photo.mime_type))throw new Error('Choose an available JPEG, PNG or WebP image.');
+    if(typeof isCurrent!=='function'||conversationId!==currentId()||agentId!==agent||String(ownerKey)!==owner)return false;
+    const current=()=>{
+      try{return !signal?.aborted&&isCurrent()===true&&available()&&conversationId===currentId()
+        &&agentId===agent&&String(ownerKey)===owner;}catch{return false;}
+    };
+    if(!current())return false;
+    if(operation)throw new Error('Finish the current image attachment before choosing another.');
+    const op={kind:'selection',conversationId,controller:new AbortController()};
+    const abort=()=>{
+      op.controller.abort();
+      if(operation===op){operation=null;render();}
+    };
+    operation=op;referenceMessage('');render();
+    signal?.addEventListener('abort',abort,{once:true});
+    const timer=setTimeout(()=>{op.timedOut=true;op.controller.abort();},30000);
+    try{
+      const asset=await validate(photo.id,op);
+      if(!owned(op)||!current())return false;
+      selection={asset,conversationId,selectionId:++revision};operation=null;
+      if(offeredImage)retireOffer(offeredImage.viewToken);
+      remember();render();referenceMessage('Base image attached. Your draft is kept.');
+      return true;
+    }catch(error){
+      if(!current()||signal?.aborted||error.name==='AbortError'&&!op.timedOut)return false;
+      throw new Error(op.timedOut?'The image check timed out. Your current base and draft are kept.':error.message);
+    }finally{
+      clearTimeout(timer);signal?.removeEventListener('abort',abort);
+      if(operation===op){operation=null;render();}
+    }
+  }
   async function uploadFile(chosen){
     if(!chosen)return;
     if(!available()||operation){message('Finish the current Chat action before attaching an image.');return;}
@@ -234,6 +267,7 @@
   window.addEventListener('vp3:chat-context-ready',()=>{if(selection&&selection.conversationId!==currentId())clear();void restore();});
   window.addEventListener('pagehide',()=>operation?.controller.abort(),{once:true});
   window.VP3ImageComposer=Object.freeze({
+    attachAsset:attachLibraryImage,
     offerImage(asset,{conversationId,agentId,ownerKey,viewToken,index=0,count=1,isCurrent}={}){
       if(!viewToken||typeof isCurrent!=='function'||!identity()||conversationId!==currentId()||agentId!==agent
         ||String(ownerKey)!==owner||!Number.isInteger(index)||!Number.isInteger(count)||count<1||count>12||index<0||index>=count)return false;

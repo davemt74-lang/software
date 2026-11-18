@@ -19,6 +19,7 @@ const assets = [
   'chat.js', 'chat.css', 'chat-tools.js', 'chat-tools.css',
   'chat-image-composer-v1.js', 'chat-image-composer-v1.css',
   'chat-canvas-media-v1.js', 'chat-canvas-media-v1.css', 'chat-image-studio-v1.js', 'chat-image-studio-v1.css',
+  'media-library-picker-v1.js', 'media-library-picker-v1.css', 'chat-media-commands-v1.js', 'chat-media-commands-v1.css',
   'chat-voice.js', 'voice-lease-v122.js', 'agent-context-v131.js'
 ];
 
@@ -236,7 +237,7 @@ try {
     browser = await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
     const page = await browser.newPage({viewport:{width:1280,height:800}});
     page.setDefaultTimeout(12000);page.on('pageerror',error=>errors.push(error.message));
-    let uploadGate=null, referenceGate=null, sendGate=null, failUpload=false, referenceFailure=null, referenceMismatch=false;
+    let uploadGate=null, referenceGate=null, sendGate=null, newChatGate=null, commandPlan=null, failUpload=false, referenceFailure=null, referenceMismatch=false;
     await page.route('**/api/**',async route=>{
       const request=route.request(), pathname=new URL(request.url()).pathname;
       if(pathname==='/api/media-library-v86.php'){
@@ -250,6 +251,8 @@ try {
         return route.continue();
       }
       const payload=request.postDataJSON()||{};calls.push({pathname,...payload});
+      if(pathname==='/api/initiative-workbench-v1.php'&&commandPlan)return route.fulfill({json:{ok:true,
+        owner_key:'1',tool:'marketing',agent_id:7,conversation_id:payload.conversation_id,plan:commandPlan}});
       if(pathname==='/api/chat-image-studio-v1.php')return route.fulfill({json:{ok:true,state:{
         contract:'vp3.image-studio.v1',owner_user_id:1,agent_id:7,conversation_id:payload.conversation_id,
         working_attention_binding:request.headers()['x-vp3-working-attention'],source_revision:'a'.repeat(64),sources:[],next_before:null,brainstorm:null,
@@ -275,6 +278,10 @@ try {
         return route.continue();
       }
       if(['/api/chat-v236.php','/api/chat-stream-v121.php'].includes(pathname)){
+        if(payload.action==='new'&&newChatGate){
+          const gate=newChatGate,response=await route.fetch();gate.entered.resolve();await gate.release.promise;
+          await route.fulfill({response}).catch(()=>{});gate.completed.resolve();return;
+        }
         if(payload.action==='send'&&sendGate){const gate=sendGate;gate.entered.resolve();await gate.release.promise;}
         return route.continue();
       }
@@ -283,9 +290,9 @@ try {
     // Lazy participant/editor modules are outside this slice; all declared Chat
     // assets above are the production sources, served by the PHP fixture.
     await page.route('**/*.js?**',route=>route.fulfill({contentType:'text/javascript',body:''}));
-    async function boot({cid=11,voice=false,clear=false}={}) {
-      await page.goto(base + '/');
-      await page.evaluate(({cid,voice,clear})=>{
+    async function boot({cid=11,voice=false,clear=false,mediaCommands=false,query=''}={}) {
+      await page.goto(base + '/'+query);
+      await page.evaluate(({cid,voice,clear,mediaCommands})=>{
         if(clear){sessionStorage.clear();localStorage.clear();}
         const workingAttentionBinding=window.FIXTURE_BINDING;
         window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',initialConversationId:cid,workingAttentionBinding};
@@ -293,6 +300,7 @@ try {
           endpoint:'/api/chat-canvas-media-v1.php',uploadEndpoint:'/api/media-library-v86.php',mediaFileEndpoint:'/media-library-file-v86.php'};
         window.VP3_CANVAS_MEDIA_V1={endpoint:'/api/chat-canvas-media-v1.php',csrf:'fixture',userId:1,agentId:7};
         window.VP3_IMAGE_STUDIO_V1={endpoint:'/api/chat-image-studio-v1.php',csrf:'fixture',ownerKey:'1',agentId:7,workingAttentionBinding};
+        if(mediaCommands)window.VP3_INITIATIVE_WORKBENCH={endpoint:'/api/initiative-workbench-v1.php',mediaEndpoint:'/api/media-library-v86.php',csrf:'fixture',ownerKey:'1',agentId:7};
         localStorage.setItem('stonefellow:voice-mode:1','0');
         if(voice){
           window.STONEFELLOW_AGENT_CONTEXT={userId:1,surface:'chat',csrf:'fixture',proactiveEndpoint:'/api/context'};
@@ -309,9 +317,13 @@ try {
           const button=document.getElementById('chatVoiceButton');window.STONEFELLOW_CHAT_VOICE_BOOT={button};button.id='chatVoiceButtonLegacyDormant';
           window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){return{started:Promise.resolve(),push(){},end(){},stop(){}};},stop(){}});
         }
-      },{cid,voice,clear});
+      },{cid,voice,clear,mediaCommands});
       for(const file of ['chat.css','chat-tools.css','chat-image-composer-v1.css','chat-canvas-media-v1.css','chat-image-studio-v1.css'])await page.addStyleTag({url:base+'/'+file});
       for(const file of ['chat-canvas-media-v1.js','chat.js','chat-tools.js','chat-image-composer-v1.js','chat-image-studio-v1.js',...(voice?['voice-lease-v122.js','agent-context-v131.js','chat-voice.js']:[])])await page.addScriptTag({url:base+'/'+file});
+      if(mediaCommands){
+        for(const file of ['media-library-picker-v1.css','chat-media-commands-v1.css'])await page.addStyleTag({url:base+'/'+file});
+        for(const file of ['media-library-picker-v1.js','chat-media-commands-v1.js'])await page.addScriptTag({url:base+'/'+file});
+      }
       await page.waitForFunction(cid=>window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady()&&window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===cid,cid);
     }
     const input=page.getByRole('textbox',{name:'Message your Agent'});
@@ -670,6 +682,168 @@ try {
       assert.equal(sent[0].input_mode,'voice');assert.equal(sent[0].image_reference_asset_id,asset);
       const job=(await control()).jobs.at(-1);assert.equal(job.config.reference.asset_id,asset);assert.equal(job.config.count,2);assert.equal(job.config.reference.sha256,imageHash);
       await cancel(job);await page.getByRole('button',{name:'Stop voice conversation',exact:true}).click();
+    });
+    await check('library attachment verifies exact private bytes while keeping an existing typed prompt and creating no work',async()=>{
+      await control({mode:'ordinary'});await boot({clear:true});
+      await input.fill('Keep this complete image-edit draft.');
+      const before=await control(),beforeReferences=references().length,beforeSends=sends().length;
+      const candidate=before.assets.find(asset=>asset.id===generatedIds[2]);assert.equal(candidate?.available,true);
+      assert.equal(await page.evaluate(async asset=>{
+        const bound=window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext();
+        return window.VP3ImageComposer.attachAsset(asset,bound);
+      },candidate),true);
+      await waitForBase(candidate.id);
+      assert.equal(await input.inputValue(),'Keep this complete image-edit draft.');
+      assert.equal(references().length,beforeReferences+1);assert.equal(references().at(-1).asset_id,candidate.id);
+      assert.equal(sends().length,beforeSends);
+      const after=await control();assert.equal(after.assets.length,before.assets.length);assert.equal(after.jobs.length,before.jobs.length);
+    });
+    await check('a failed or mismatched library reference keeps the prior base and complete draft',async()=>{
+      const candidate=(await control()).assets.find(asset=>asset.id===generatedIds[3]);
+      for(const kind of ['failure','mismatch']){
+        referenceFailure=kind==='failure'?'This image is no longer available.':null;referenceMismatch=kind==='mismatch';
+        const result=await page.evaluate(async asset=>{
+          try{return {ok:await window.VP3ImageComposer.attachAsset(asset,window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext())};}
+          catch(error){return {error:error.message};}
+        },candidate);
+        assert.ok(result.error);assert.equal(await baseId(),generatedIds[2]);
+        assert.equal(await input.inputValue(),'Keep this complete image-edit draft.');
+      }
+      referenceFailure=null;referenceMismatch=false;
+    });
+    await check('cancelling a pending library attachment retires its real reference response without replacing the base',async()=>{
+      const candidate=(await control()).assets.find(asset=>asset.id===generatedIds[3]);
+      referenceGate=createGate();const gate=referenceGate;
+      const attaching=page.evaluate(async asset=>{
+        window.librarySelectionAbort=new AbortController();
+        return window.VP3ImageComposer.attachAsset(asset,{...window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext(),signal:window.librarySelectionAbort.signal});
+      },candidate);
+      await reached(gate);await page.evaluate(()=>window.librarySelectionAbort.abort());
+      await releaseReference(gate);assert.equal(await attaching,false);
+      assert.equal(await baseId(),generatedIds[2]);assert.equal(await input.inputValue(),'Keep this complete image-edit draft.');
+      const before=references().length;
+      assert.equal(await page.evaluate(asset=>window.VP3ImageComposer.attachAsset(asset,
+        {...window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext(),ownerKey:'2'}),candidate),false);
+      assert.equal(references().length,before,'A mismatched owner must not reach the reference endpoint.');
+    });
+    await check('pending library attachment cannot cross Chat, owner, Agent, session or participant changes',async()=>{
+      const before=await control(),beforeSends=sends().length;
+      const candidate=before.assets.find(asset=>asset.id===generatedIds[3]);
+      for(const change of ['chat','owner','agent','session','participant']){
+        await boot({clear:true});await input.fill('Original private direction');
+        referenceGate=createGate();const gate=referenceGate;
+        const attaching=page.evaluate(asset=>window.VP3ImageComposer.attachAsset(asset,
+          window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext()),candidate);
+        await reached(gate);
+        if(change==='chat'){
+          await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(14));
+          await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===14&&window.STONEFELLOW_CHAT_CONTINUITY_V87.isReady());
+        }else{
+          await page.evaluate(change=>{
+            if(change==='participant'){
+              window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:22})};
+              window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+            }else{
+              const key={owner:'userId',agent:'agentId',session:'workingAttentionBinding'}[change];
+              window.STONEFELLOW_CHAT[key]={owner:2,agent:9,session:'new-private-session'}[change];
+              window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+            }
+          },change);
+          assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext()),null);
+        }
+        const draft='Destination draft after '+change;await input.fill(draft);
+        await releaseReference(gate);assert.equal(await attaching,false,change);
+        assert.equal(await selected.count(),0,change);assert.equal(await input.inputValue(),draft,change);
+        assert.equal(await page.evaluate(()=>window.VP3ImageComposer.requestContext(
+          window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId())),null,change);
+      }
+      assert.equal(sends().length,beforeSends);
+      const after=await control();assert.equal(after.assets.length,before.assets.length);assert.equal(after.jobs.length,before.jobs.length);
+    });
+    await check('/images opens the real shared popup and attaches its exact generated selection through the production reference endpoint',async()=>{
+      await boot({clear:true,mediaCommands:true});
+      const before=await control(),beforeSends=sends().length;
+      await input.fill('/images');await input.press('Enter');
+      const picker=page.locator('[data-media-picker]');await picker.waitFor();
+      await picker.locator('[data-media-picker-search]').fill(before.assets.find(asset=>asset.id===generatedIds[2]).title);
+      await picker.locator('[data-media-picker-asset="'+generatedIds[2]+'"]').click();
+      assert.equal(await input.inputValue(),'');assert.equal(sends().length,beforeSends);
+      await page.evaluate(()=>{const input=document.getElementById('chatInput');input.value='A vintage cap, keeping the original person.';input.dispatchEvent(new Event('input'));});
+      await capture('images-command-selected-desktop');
+      await picker.locator('[data-media-picker-action="edit"]').click();
+      await picker.waitFor({state:'detached'});await waitForBase(generatedIds[2]);
+      assert.equal(references().at(-1).asset_id,generatedIds[2]);
+      assert.equal(await input.inputValue(),'A vintage cap, keeping the original person.');
+      assert.equal(sends().length,beforeSends);
+      const after=await control();assert.equal(after.assets.length,before.assets.length);assert.equal(after.jobs.length,before.jobs.length);
+    });
+    await check('exact /marketing is a local command, and an unsuccessful open or changed private context preserves its text',async()=>{
+      await boot({clear:true});
+      await page.evaluate(()=>{window.commandCalls=[];window.commandResult=true;window.VP3MediaCommands={open:(kind,bound)=>{
+        window.commandCalls.push({kind,owner:bound.ownerKey,agent:bound.agentId,cid:bound.conversationId,current:bound.isCurrent()});return window.commandResult;
+      }};});
+      const before=sends().length;
+      await input.fill('  /MARKETING  ');await input.press('Enter');
+      await page.waitForFunction(()=>window.commandCalls.length===1);
+      assert.deepEqual(await page.evaluate(()=>window.commandCalls),[{kind:'marketing',owner:'1',agent:7,cid:11,current:true}]);
+      assert.equal(await input.inputValue(),'');assert.equal(sends().length,before);
+      await page.evaluate(()=>{window.commandResult=false;});await input.fill('/images');await input.press('Enter');
+      await page.waitForFunction(()=>window.commandCalls.length===2);assert.equal(await input.inputValue(),'/images');
+      await page.evaluate(()=>{window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:22})};});
+      await input.fill('/marketing');await input.press('Enter');
+      assert.equal(await page.evaluate(()=>window.commandCalls.length),2);assert.equal(await input.inputValue(),'/marketing');assert.equal(sends().length,before);
+      await page.evaluate(()=>{delete window.VP3ParticipantContinuity;});
+      await send('Explain what the /images command does.');assert.equal(await page.evaluate(()=>window.commandCalls.length),2);
+    });
+    await check('double command submission initializes one Chat and preserves text typed before initialization finishes',async()=>{
+      await boot({cid:0,clear:true});const before=await control(),beforeSends=sends().length;
+      const beforeNew=calls.filter(call=>call.action==='new').length;
+      await page.evaluate(()=>{window.commandCalls=[];window.VP3MediaCommands={open:(kind,bound)=>{
+        window.commandCalls.push({kind,cid:bound.conversationId,current:bound.isCurrent()});return true;
+      }};});
+      assert.equal(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext()),null);
+      newChatGate=createGate();const gate=newChatGate;
+      await input.fill('/images');await input.press('Enter');await reached(gate);
+      await input.press('Enter');assert.equal(calls.filter(call=>call.action==='new').length,beforeNew+1);
+      await input.fill('New words typed while the Chat is being created');
+      gate.release.resolve();newChatGate=null;await gate.completed.promise;
+      await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()>0&&window.STONEFELLOW_CHAT_CONTINUITY_V87.isReady());
+      await page.evaluate(()=>Promise.resolve());
+      assert.equal(await input.inputValue(),'New words typed while the Chat is being created');
+      assert.deepEqual(await page.evaluate(()=>window.commandCalls),[]);assert.equal(sends().length,beforeSends);
+      const cid=await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext()?.conversationId);assert.ok(cid>0);
+      await input.fill('/images');await input.press('Enter');
+      await page.waitForFunction(()=>window.commandCalls.length===1);
+      assert.deepEqual(await page.evaluate(()=>window.commandCalls),[{kind:'images',cid,current:true}]);
+      assert.equal(await input.inputValue(),'');assert.equal(calls.filter(call=>call.action==='new').length,beforeNew+1);
+      assert.equal(sends().length,beforeSends);
+      const after=await control();assert.equal(after.assets.length,before.assets.length);assert.equal(after.jobs.length,before.jobs.length);
+    });
+    await check('a marketing plan link survives completed Chat restoration before the deferred command module loads',async()=>{
+      commandPlan={product_id:87,product_title:'Saved shirt listing',agent_id:7,conversation_id:11,
+        stage:'listing_review',stage_label:'Review listing',image:null,
+        resume:{owner_user_id:1,agent_id:7,conversation_id:11,product_id:87,stage:'listing_review'},
+        chat_url:'/chat.php?agent=7&conversation_id=11&marketing_plan=87'};
+      await boot({clear:true,query:'?agent=7&conversation_id=11&marketing_plan=87'});
+      const before=sends().length,beforeReads=calls.filter(call=>call.action==='marketing_plan').length;
+      await input.fill('Preserve my restored product direction');
+      assert.deepEqual(await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandIntent()),
+        {productId:87,conversationId:11,agentId:7});
+      await page.evaluate(()=>{
+        const url=new URL(location.href);url.searchParams.delete('conversation_id');window.history.replaceState(null,'',url);
+        window.VP3_INITIATIVE_WORKBENCH={endpoint:'/api/initiative-workbench-v1.php',mediaEndpoint:'/api/media-library-v86.php',csrf:'fixture',ownerKey:'1',agentId:7};
+        window.resumedPlans=[];window.VP3InitiativeWorkbench={openProductLaunch:plan=>{window.resumedPlans.push(plan);return true;}};
+      });
+      await page.addStyleTag({url:base+'/chat-media-commands-v1.css'});
+      await page.addScriptTag({url:base+'/chat-media-commands-v1.js'});
+      await page.waitForFunction(()=>window.resumedPlans.length===1);
+      assert.deepEqual(await page.evaluate(()=>window.resumedPlans),[commandPlan.resume]);
+      assert.equal(calls.filter(call=>call.action==='marketing_plan').length,beforeReads+1);
+      assert.equal(await input.inputValue(),'Preserve my restored product direction');assert.equal(sends().length,before);
+      await page.evaluate(()=>{window.dispatchEvent(new Event('vp3:chat-context-ready'));window.dispatchEvent(new Event('vp3:chat-context-ready'));});
+      assert.equal(calls.filter(call=>call.action==='marketing_plan').length,beforeReads+1);
+      assert.equal(await page.evaluate(()=>new URL(location.href).searchParams.has('marketing_plan')),false);
+      commandPlan=null;
     });
     assert.deepEqual(errors,[]);
     console.log('CHAT_IMAGE_COMPOSER_BROWSER=PASS ('+checks+' cases; real uploads, private files, scoped references, canonical queues and typed/voice Chat)');

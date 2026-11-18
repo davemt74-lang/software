@@ -2,6 +2,16 @@
   const cfg = window.STONEFELLOW_CHAT;
   const initiativePage = {owner:Number(cfg.userId || 0),agent:Number(cfg.agentId || 0),
     binding:String(cfg.workingAttentionBinding || ''),csrf:String(cfg.csrf || ''),endpoint:String(cfg.endpoint || '')};
+  // Deferred tools may load after Chat has restored and normalized the URL.
+  // Keep only the original destination hint; every resume still reads the server.
+  const initialMediaCommandIntent=(()=>{
+    const params=new URLSearchParams(location.search);
+    if(!['marketing_plan','conversation_id','agent'].every(key=>params.getAll(key).length===1))return null;
+    const positive=value=>/^[1-9]\d*$/.test(value||'')&&Number.isSafeInteger(Number(value))?Number(value):0;
+    const productId=positive(params.get('marketing_plan')),cid=positive(params.get('conversation_id'));
+    const value=params.get('agent'),agentId=value==='system'?0:positive(value)||-1;
+    return productId&&cid&&agentId===initiativePage.agent?Object.freeze({productId,conversationId:cid,agentId}):null;
+  })();
   const thread = document.getElementById('chatThread');
   const welcome = document.getElementById('chatWelcome');
   const form = document.getElementById('chatForm');
@@ -5514,8 +5524,45 @@
     }
   }
 
+  function mediaCommandContext() {
+    const cid=conversationId,revision=chatRevision,authority=historyAuthority;
+    const isCurrent=()=>initiativeIdentityMatchesV1()&&conversationId===cid&&chatRevision===revision&&historyAuthority===authority
+      &&cid>0&&contextReady&&!busy&&!initialRestorePending&&!restoringConversation&&thread.dataset.view==='chat'
+      &&!initiativeReplyTarget&&historyParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
+    return isCurrent()?{ownerKey:String(cfg.userId),agentId:Number(cfg.agentId||0),conversationId:cid,isCurrent}:null;
+  }
+
+  let openingMediaCommand=false;
+  async function openMediaCommandFromComposer(kind) {
+    if(openingMediaCommand)return;
+    const original=input.value,revision=chatRevision,authority=historyAuthority;
+    const current=()=>initiativeIdentityMatchesV1()&&chatRevision===revision&&historyAuthority===authority
+      &&contextReady&&!busy&&!initialRestorePending&&!restoringConversation&&thread.dataset.view==='chat'
+      &&!initiativeReplyTarget&&historyParticipant<=0&&!window.VP3ParticipantContinuity?.selectedContext?.();
+    if(!current()||typeof window.VP3MediaCommands?.open!=='function'){
+      showChatTurnNotice('Open a private Agent Chat to use /images or /marketing.');return;
+    }
+    openingMediaCommand=true;
+    try{
+      const cid=conversationId||await ensureConversationPa3();
+      if(!current()||input.value!==original||cid!==conversationId)return;
+      const bound=mediaCommandContext();
+      if(!bound||window.VP3MediaCommands.open(kind,bound)!==true){
+        showChatTurnNotice('Could not open this tool. Your Chat draft is kept.');return;
+      }
+      if(bound.isCurrent()&&input.value===original){
+        input.value='';input.dispatchEvent(new Event('input'));
+      }
+      showChatTurnNotice();
+    }catch(_){
+      if(current())showChatTurnNotice('Could not open this tool. Your Chat draft is kept.');
+    }finally{openingMediaCommand=false;}
+  }
+
   form.addEventListener('submit', event => {
     event.preventDefault();
+    const mediaCommand=/^\s*\/(images|marketing)\s*$/i.exec(input.value);
+    if(mediaCommand){void openMediaCommandFromComposer(mediaCommand[1].toLowerCase());return;}
     const product = /^\s*\/product(?:\s+([\s\S]*))?$/i.exec(input.value);
     if (product) {
       void openProductFromComposer(product[1]?.trim() || '');
@@ -5733,6 +5780,8 @@
       return requestTopOfMindTurn(command + topic.trim());
     },
     stageSpecialistPrompt,
+    mediaCommandContext,
+    mediaCommandIntent:()=>initiativeIdentityMatchesV1()?initialMediaCommandIntent:null,
     showChatView:() => setChatCanvasView('chat'),
     showCodingCanvasView:() => setChatCanvasView('coding'),
     showPlayerView:() => setChatCanvasView('player'),
