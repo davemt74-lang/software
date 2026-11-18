@@ -3,9 +3,11 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
 require_once __DIR__.'/schema-metadata.php';
+require_once __DIR__.'/profile-promotion-native-click-v1.php';
 
 function profile_promotion_attribution_schema_v1(PDO $pdo): void
 {
+    if($pdo->inTransaction())throw new LogicException('Install promotion attribution outside a transaction.');
     $sqlite = agent_commerce_sqlite_pa2($pdo);
     $engine = $sqlite ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_promotion_publications_v1 (
@@ -31,6 +33,7 @@ function profile_promotion_attribution_schema_v1(PDO $pdo): void
         publication_id CHAR(32) NOT NULL,
         placement VARCHAR(32) NOT NULL,
         created_at DATETIME NOT NULL,
+        native_context_json_v1 TEXT NULL,
         FOREIGN KEY (publication_id) REFERENCES agent_promotion_publications_v1(publication_id) ON DELETE CASCADE"
         .($sqlite ? '' : ', INDEX idx_promotion_click_publication (publication_id,placement)') . ')'.$engine);
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_promotion_orders_v1 (
@@ -46,6 +49,7 @@ function profile_promotion_attribution_schema_v1(PDO $pdo): void
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_promotion_click_publication ON agent_promotion_clicks_v1(publication_id,placement)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_promotion_order_click ON agent_promotion_orders_v1(click_id,order_id)');
     }
+    vp3_profile_promotion_native_click_install_v1($pdo);
 }
 
 function profile_promotion_attribution_ready_v1(PDO $pdo): bool
@@ -122,14 +126,14 @@ function profile_promotion_attribution_wake_v1(PDO $pdo, string $publicationId):
         ->execute([gmdate('Y-m-d H:i:s',time()+86400),$publicationId]);
 }
 
-/** Placement and visit identity are issued by a first-party surface. No visitor identity is stored. */
-function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, string $publicationId, string $placement, string $clickId): bool
+/** Native conversation proof is optional on older deployments and immutable once recorded. */
+function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, string $publicationId, string $placement, string $clickId,?array $nativeContext=null): bool
 {
     if ($owner < 1 || !profile_promotion_attribution_id_v1($publicationId) || !profile_promotion_attribution_id_v1($clickId)
         || !preg_match('/\A[a-z][a-z0-9_]{0,31}\z/D',$placement) || !profile_promotion_attribution_ready_v1($pdo)) return false;
     require_once __DIR__.'/profile-product-promotion-v1.php';
     $legacy = !profile_promotion_attribution_publication_v1($pdo,$owner,$publicationId);
-    return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$owner,$publicationId,$placement,$clickId,$legacy): bool {
+    return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$owner,$publicationId,$placement,$clickId,$legacy,$nativeContext): bool {
         // A legacy adoption inserts an owner FK. Match the existing publication lock order.
         if ($legacy) {
             $user = $pdo->prepare('SELECT id FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
@@ -145,15 +149,32 @@ function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, str
         $card = $profile ? profile_product_promotion_public_v1($pdo,$profile,$publicationId) : null;
         if (!$card || (int)$card['product_id'] !== (int)$promotion['product_id']) return false;
         $publication = profile_promotion_attribution_publication_v1($pdo,$owner,$publicationId);
-        if (!$publication) profile_promotion_attribution_register_v1($pdo,$promotion);
+        if (!$publication){
+            profile_promotion_attribution_register_v1($pdo,$promotion);
+            $publication=profile_promotion_attribution_publication_v1($pdo,$owner,$publicationId);
+        }
         elseif ($publication['promotion_id'] !== $promotion['id'] || (int)$publication['product_id'] !== (int)$promotion['product_id']) return false;
+        if(!$publication)return false;
+        $nativeColumn=vp3_profile_promotion_native_click_ready_v1($pdo);
+        $encoded=$nativeContext===null?null:json_encode($nativeContext,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+        if($nativeContext!==null&&!vp3_profile_promotion_native_click_proof_v1($pdo,
+            ['click_id'=>$clickId,'publication_id'=>$publicationId,'placement'=>$placement,'native_context_json_v1'=>$encoded],$publication,true))return false;
 
-        $find = $pdo->prepare('SELECT publication_id,placement FROM agent_promotion_clicks_v1 WHERE click_id=?');
+        $find = $pdo->prepare('SELECT publication_id,placement'.($nativeColumn?',native_context_json_v1':'').' FROM agent_promotion_clicks_v1 WHERE click_id=?'.agent_commerce_lock_pa2($pdo));
         $find->execute([$clickId]);
         $existing = $find->fetch(PDO::FETCH_ASSOC);
-        if ($existing) return $existing['publication_id'] === $publicationId && $existing['placement'] === $placement;
-        $pdo->prepare('INSERT INTO agent_promotion_clicks_v1 (click_id,publication_id,placement,created_at) VALUES (?,?,?,?)')
-            ->execute([$clickId,$publicationId,$placement,agent_commerce_time_pa2()]);
+        if ($existing){
+            if($existing['publication_id']!==$publicationId||$existing['placement']!==$placement)return false;
+            // Never retrofit a native association onto a legacy accepted click.
+            if(($existing['native_context_json_v1']??null)===null)return true;
+            $stored=vp3_profile_promotion_native_click_decode_v1($existing['native_context_json_v1'],
+                $existing+['click_id'=>$clickId],$publication);
+            return $stored!==null&&$nativeContext!==null&&$stored==$nativeContext;
+        }
+        $values=[$clickId,$publicationId,$placement,agent_commerce_time_pa2()];
+        if($nativeColumn)$values[]=$encoded;
+        $pdo->prepare('INSERT INTO agent_promotion_clicks_v1 (click_id,publication_id,placement,created_at'.($nativeColumn?',native_context_json_v1':'').') VALUES (?,?,?,?'.($nativeColumn?',?':'').')')
+            ->execute($values);
         profile_promotion_attribution_wake_v1($pdo,$publicationId);
         return true;
     });

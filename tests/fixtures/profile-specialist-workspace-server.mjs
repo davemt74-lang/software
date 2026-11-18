@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 
 /** Persistent isolated SQL fixture serving unchanged production Profile APIs. */
-export async function startProfileWorkspaceServer({analytics=false}={}){
+export async function startProfileWorkspaceServer({analytics=false,marketing=false}={}){
   const root=fileURLToPath(new URL('../../',import.meta.url));
   const temp=mkdtempSync(join(tmpdir(),'vp3-profile-workspace-'));
   const quote=value=>"'"+value.replaceAll('\\','\\\\').replaceAll("'","\\'")+"'";
@@ -19,7 +19,16 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
     copyFileSync(join(root,'api',file),join(temp,'api',file));
     writeFileSync(join(temp,'includes',file),'<?php require_once '+quote(join(root,'includes',file))+';');
   }
+  if(marketing){
+    copyFileSync(join(root,'api/initiative-workbench-v1.php'),join(temp,'api/initiative-workbench-v1.php'));
+    // Keep the HTTP envelope unchanged while making fixture-only failures diagnosable.
+    const api=join(temp,'api/initiative-workbench-v1.php');
+    writeFileSync(api,readFileSync(api,'utf8').replace('} catch (Throwable $error) {','} catch (Throwable $error) { error_log($error->__toString());'));
+    for(const file of ['agent-chat-boundary-v380.php','initiative-workbench-v1.php','initiative-work-marketing-v1.php','initiative-marketing-plans-v1.php','profile-product-marketing-outcome-v1.php'])
+      writeFileSync(join(temp,'includes',file),'<?php require_once '+quote(join(root,'includes',file))+';');
+  }
   writeFileSync(join(temp,'fixture.php'),`<?php
+    ${marketing?'define(\'STONEFELLOW_ROOT\','+quote(temp)+');':''}
     function vp3_profile_owner_draft_model_v1(PDO $pdo,array $scope,array $wire,string $prompt,Closure $dispatch):array{
       if(!$dispatch())return ['ok'=>false];
       file_put_contents(${quote(join(temp,'provider-dispatches'))},$wire['prepare_request_id']."\\n",FILE_APPEND);
@@ -29,6 +38,7 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
     require ${quote(join(root,'tests/fixtures/profile-specialist-analytics-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-call-outcomes-data-v1.php'))};
     ${analytics?'require '+quote(join(root,'tests/fixtures/profile-analytics-period-data-v1.php'))+';':''}
+    ${marketing?'require '+quote(join(root,'tests/fixtures/product-marketing-followthrough-v1.php'))+';require_once '+quote(join(root,'includes/agent-image-generation-v1.php'))+';':''}
     function pws_server_seed():array{
       $seed=pws_reset();
       foreach(['artist_transcript_segments_v172','artist_transcript_master_analysis_v237','artist_transcript_page_analysis_v237'] as $table)if(table_exists($table))db()->exec('DELETE FROM '.$table);
@@ -45,6 +55,7 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
       foreach(['8','9'] as $browser){$visit=pa4b_note(pa4b_context(0,$browser));$seed['visit_events'][]=(int)$visit['event']['id'];}
       pa3_login(1);
       ${analytics?"$seed['analytics']=profile_analytics_period_fixture_v1(db());pa3_login(1);":''}
+      ${marketing?"$seed['marketing']=product_marketing_followthrough_fixture_v1(db());unset($seed['marketing']['source_bytes']);pa3_login(1);":''}
       $seed['clock']=$GLOBALS['pa3Now'];
       file_put_contents(${quote(join(temp,'seed.json'))},json_encode($seed,JSON_THROW_ON_ERROR));
       file_put_contents(${quote(join(temp,'provider-dispatches'))},'');
@@ -71,7 +82,9 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
       }
       return $out;
     }
-    if(($_SERVER['REQUEST_METHOD']??'')==='GET'&&str_starts_with(parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH),'/api/')){
+    $publicationRead=${marketing?'true':'false'}&&parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH)==='/api/initiative-workbench-v1.php'
+      &&(json_decode(file_get_contents('php://input'),true)['action']??'')==='marketing_publication';
+    if((($_SERVER['REQUEST_METHOD']??'')==='GET'||$publicationRead)&&str_starts_with(parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH),'/api/')){
       $before=pws_server_fingerprint();$providerBefore=file_get_contents(${quote(join(temp,'provider-dispatches'))});
       db()->afterSql=static function(string $sql):void{
         if(!preg_match('/^\\s*(SELECT|PRAGMA)\\b/i',$sql)){
@@ -89,6 +102,7 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
     'agent-top-of-mind-v1.js','agent-top-of-mind-v1.css','chat-specialist-rail-v1.js','chat-specialist-rail-v1.css',
     'profile-agent-analytics.js','profile-agent-analytics.css','profile-specialist-workspace-v1.js','profile-specialist-workspace-v1.css',
     'profile-activity-chat.js','profile-activity-chat.css','profile-calls-pa3c.js','profile-calls-pa3c.css','profile-call-activity-pa3c.js','profile-call-activity-pa3c.css'];
+  if(marketing){assets.unshift('product-marketing-report-v1.css','product-marketing-report-v1.js');assets.push('chat-media-commands-v1.css','chat-media-commands-v1.js');}
   const page=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Profile workspace acceptance</title>
     <style>body{margin:0;font:15px/1.5 system-ui;background:#f6f8fb;color:#202b3b}main{max-width:760px;padding:24px;margin:auto}button{font:inherit}#sfOnlineRailV109{position:fixed;right:12px;top:120px}.chat-topbar-actions{display:flex;gap:8px}</style>
     ${assets.filter(file=>file.endsWith('.css')).map(file=>`<link rel="stylesheet" href="/${file}">`).join('')}
@@ -105,6 +119,9 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
     window.VP3_CHAT_SPECIALIST_PRESENCE={owner_user_id:1,agent_id:7,states:{profile:'idle'}};
     window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',state:()=>({state:'idle'}),conversationRef:()=>({id:fixtureScope.cid,agent:fixtureScope.agent}),conversationUrl:ref=>'/chat.php?agent='+ref.agent+'&conversation_id='+ref.id,isMainChat:()=>true,focusChat:()=>{},stop:()=>{}};
     window.STONEFELLOW_NOTIFICATION_CENTER={close:()=>{}};
+    ${marketing?`window.VP3_INITIATIVE_WORKBENCH={endpoint:'/api/initiative-workbench-v1.php',mediaEndpoint:'/api/media-library-v86.php',csrf:'pa3-fixture-csrf',ownerKey:'1',agentId:7};
+    window.fixtureLaunches=[];window.VP3InitiativeWorkbench={openProductLaunch:marker=>{fixtureLaunches.push(marker);return true;}};
+    STONEFELLOW_CHAT_CONTINUITY.mediaCommandContext=()=>{const bound={ownerKey:String(fixtureScope.owner),agentId:fixtureScope.agent,conversationId:fixtureScope.cid};bound.isCurrent=()=>bound.ownerKey===String(fixtureScope.owner)&&bound.agentId===fixtureScope.agent&&bound.conversationId===fixtureScope.cid;return bound;};`:''}
     </script>${assets.filter(file=>file.endsWith('.js')).map(file=>`<script src="/${file}"></script>`).join('')}</body></html>`;
   writeFileSync(join(temp,'page.html'),page);
   writeFileSync(join(temp,'router.php'),`<?php
@@ -112,10 +129,10 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
     if($path==='/health'){echo 'ready';return;}
     $assets=${JSON.stringify(assets)};
     if(in_array(ltrim($path,'/'),$assets,true)){header('Content-Type: '.(str_ends_with($path,'.css')?'text/css':'text/javascript').'; charset=utf-8');readfile(${quote(root)}.ltrim($path,'/'));return;}
-    if(in_array($path,['/api/profile-specialist-workspace-v1.php','/api/agent-activity-hub-v1.php'],true)){require __DIR__.$path;return;}
+    if(in_array($path,['/api/profile-specialist-workspace-v1.php','/api/agent-activity-hub-v1.php'${marketing?",'/api/initiative-workbench-v1.php'":''}],true)){require __DIR__.$path;return;}
     require __DIR__.'/includes/bootstrap.php';
-    if(in_array($path,['/session','/'],true)&&!current_user())pa3_login(1);
-    if($path==='/session'){header('Content-Type:application/json');echo json_encode(['binding'=>vp3_catch_up_page_binding_v1(current_user()),'csrf'=>csrf_token(),'seed'=>$seed]);return;}
+    if(in_array($path,['/session','/','/chat.php'],true)&&!current_user())pa3_login(1);
+    if($path==='/session'){header('Content-Type:application/json');echo json_encode(['binding'=>vp3_catch_up_page_binding_v1(current_user()),'csrf'=>csrf_token(),'seed'=>$seed,'has_review_key'=>isset($_SESSION['initiative_workbench_review_key_v1'])]);return;}
     if($path==='/fixture/reset'&&($_SERVER['REQUEST_METHOD']??'')==='POST'){header('Content-Type:application/json');echo json_encode(pws_server_seed());return;}
     if($path==='/fixture/state'){
       $state=[];foreach(['profile_agent_messages','profile_agent_handoff_operations_pa3','profile_owner_drafts_v1','profile_calls_pa3c','chat_messages'] as $table)$state[$table]=db()->query('SELECT * FROM '.$table)->fetchAll(PDO::FETCH_ASSOC);
@@ -129,6 +146,11 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
       elseif($action==='analytics_events_off')db()->exec('ALTER TABLE profile_events RENAME TO fixture_unavailable_profile_events');
       elseif($action==='analytics_events_restore')db()->exec('ALTER TABLE fixture_unavailable_profile_events RENAME TO profile_events');
       elseif($action==='analytics_revoke')db()->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key IN ('profile_chat.access','account.access')");
+      ${marketing?`elseif($action==='marketing_rotate')db()->exec("UPDATE agent_commerce_promotions_v1 SET public_key='99999999999999999999999999999999' WHERE id='11111111111111111111111111111111'");
+      elseif($action==='marketing_attribution_gap')db()->exec('DELETE FROM agent_promotion_orders_v1 WHERE order_id=992201');
+      elseif($action==='marketing_revoke')db()->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='chat.access'");
+      elseif($action==='marketing_profile_revoke')db()->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='profile_chat.access'");
+      elseif($action==='marketing_remove_product')db()->exec('DELETE FROM agent_commerce_products_v800 WHERE id=992101');`:''}
       elseif($action==='profile_off')db()->exec('UPDATE user_profiles SET profile_agent_enabled=0 WHERE user_id=1');
       elseif($action==='profile_missing')db()->exec('DELETE FROM user_profiles WHERE user_id=1');
       elseif($action==='recording_revoke')db()->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='artist_listening.access'");
@@ -148,7 +170,7 @@ export async function startProfileWorkspaceServer({analytics=false}={}){
       $state['contract']=($_GET['view']??'')==='work'?'vp3.agent.work.v1':'vp3.top-of-mind.v1';$state['health']=['enabled'=>false,'active_jobs'=>[]];$state['items']=[];$state['state']='ready';
       echo json_encode(['ok'=>true,'state'=>$state]);return;
     }
-    if($path==='/'){header('Content-Type:text/html; charset=utf-8');echo str_replace('__BINDING__',json_encode(vp3_catch_up_page_binding_v1(current_user())),file_get_contents(__DIR__.'/page.html'));return;}
+    if(in_array($path,['/','/chat.php'],true)){header('Content-Type:text/html; charset=utf-8');echo str_replace('__BINDING__',json_encode(vp3_catch_up_page_binding_v1(current_user())),file_get_contents(__DIR__.'/page.html'));return;}
     http_response_code(404);echo 'not found';
   `);
   const probe=net.createServer();await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));

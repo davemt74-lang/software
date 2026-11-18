@@ -1365,6 +1365,11 @@ function vp3_initiative_proactive_specialist_v1(array $goal): bool
     $tool=$goal['tool']??null;
     if(in_array($tool,['chat.check_in','work.prepare_private'],true)&&is_string($goal['primary']??null)
         &&str_starts_with($goal['primary'],'specialist:profile:'))return true;
+    if(in_array($tool,['chat.check_in','work.prepare_private'],true)&&is_string($goal['primary']??null)
+        &&str_starts_with($goal['primary'],'specialist:marketing:product-')){
+        require_once __DIR__.'/profile-product-marketing-ref-v1.php';
+        if(vp3_product_marketing_ref_parse_v1(substr($goal['primary'],11))!==null)return true;
+    }
     if($tool==='chat.check_in'&&is_array($goal['sources']??null)&&array_filter(array_keys($goal['sources']),
         static fn(string $ref):bool=>str_starts_with($ref,'specialist:transcript:')))return true;
     if($tool==='work.prepare_private'&&is_string($goal['primary']??null)

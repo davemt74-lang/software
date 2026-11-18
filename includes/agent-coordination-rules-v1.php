@@ -65,6 +65,8 @@ function vp3_coordination_rule_definitions_v1(): array
             'optimization_ready'=>['label'=>'Campaign recommendation ready','default'=>'report','actions'=>['watch','ask','report']],
             'setup_blocker'=>['label'=>'Campaign setup needs attention','default'=>'ask','actions'=>['watch','ask','report']],
             'campaign_outcome'=>['label'=>'Verified campaign outcome available','default'=>'report','actions'=>['watch','report']],
+            'product_plan'=>['label'=>'Existing product marketing plan','default'=>'ask','actions'=>['watch','ask','report']],
+            'product_outcome'=>['label'=>'Verified product promotion period','default'=>'report','actions'=>['watch','report']],
         ]],
         'transcripts'=>['label'=>'Transcriptions','triggers'=>[
             'open_question'=>['label'=>'An open question in a saved analysis','default'=>'ask','actions'=>['watch','ask','report']],

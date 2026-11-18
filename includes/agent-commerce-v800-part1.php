@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
+require_once __DIR__.'/commerce-checkout-open-clock-v1.php';
 
 function agent_commerce_schema_ready_v800(?PDO $pdo=null): bool
 {
@@ -221,6 +222,7 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       idempotency_key CHAR(64) NOT NULL,
       expires_at DATETIME NULL,
       completed_at DATETIME NULL,
+      opened_at_utc_ms BIGINT NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uq_commerce_checkout_provider_session (provider,external_session_id),
@@ -312,6 +314,7 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       CONSTRAINT fk_commerce_audit_agent FOREIGN KEY (actor_agent_id) REFERENCES user_agents(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     agent_commerce_recovery_ensure_schema_pa2($pdo);
+    agent_commerce_checkout_open_clock_install_v1($pdo);
     require_once __DIR__.'/profile-promotion-attribution-v1.php';
     profile_promotion_attribution_schema_v1($pdo);
 }

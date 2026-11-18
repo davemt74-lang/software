@@ -99,6 +99,13 @@ jobs:
           php tests/profile-event-clock-v1.php
           php tests/profile-analytics-period-v1.php
           php tests/profile-analytics-briefings-v1.php
+          php tests/profile-promotion-native-click-v1.php
+          node tests/profile-promotion-native-click-v1.mjs
+          php tests/product-marketing-followthrough-v1.php
+          php tests/product-marketing-briefings-v1.php
+          php tests/product-marketing-profile-findings-v1.php
+          node tests/product-marketing-report-v1.mjs
+          node tests/product-marketing-publication-http.mjs
           node tests/profile-specialist-analytics-period-v1.mjs
           node tests/profile-analytics-route-v1.mjs
           node tests/profile-analytics-route-http.mjs

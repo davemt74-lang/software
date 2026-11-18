@@ -39,10 +39,12 @@ try {
     $creativeAction = $tool === 'marketing' && in_array($action, ['creative_open','creative_prepare','creative_generate',
         'creative_status','creative_tick','creative_cancel','creative_save','creative_publish_preview','creative_publish','creative_pause'],true);
     $marketingPlanAction = $tool === 'marketing' && in_array($action,['marketing_plans','marketing_plan'],true);
+    $marketingPublicationAction = $tool === 'marketing' && $action === 'marketing_publication';
+    $marketingReadAction = $marketingPlanAction || $marketingPublicationAction;
     if (!$creativeAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
     if (!is_int($agentId) || $agentId < 0 || !is_int($conversationId) || $conversationId < 1
         || !in_array($tool, ['product', 'screen', 'mission', 'marketing'], true)
-        || (!$creativeAction && !$marketingPlanAction && !in_array($action, ['sources', 'preview', 'create'], true))) {
+        || (!$creativeAction && !$marketingReadAction && !in_array($action, ['sources', 'preview', 'create'], true))) {
         throw new DomainException('Choose a tool in the current saved Agent Chat.', 422);
     }
     $pdo = db();
@@ -60,14 +62,31 @@ try {
     $principal = vp3_agent_chat_principal_v380($user, $agent);
     $user = vp3_image_scope_v1($pdo, $user, $principal, ['conversation_id' => $conversationId]);
     $scope = ['agent_id' => $agentId, 'conversation_id' => $conversationId, 'user' => $user, 'principal' => $principal];
-    $key = $marketingPlanAction ? '' : ($_SESSION['initiative_workbench_review_key_v1'] ??= bin2hex(random_bytes(32)));
+    $key = $marketingReadAction ? '' : ($_SESSION['initiative_workbench_review_key_v1'] ??= bin2hex(random_bytes(32)));
     session_write_close();
 
     require_once dirname(__DIR__) . '/includes/initiative-work-' . $tool . '-v1.php';
     $response = ['ok' => true, 'owner_key' => (string)$owner, 'tool' => $tool,
         'agent_id' => $agentId, 'conversation_id' => $conversationId];
     $handler = 'initiative_work_' . $tool;
-    if ($marketingPlanAction) {
+    if ($marketingPublicationAction) {
+        if (array_diff(array_keys($body),['action','tool','owner_key','csrf_token','agent_id','conversation_id','product_id','publication_id','period_ref'])
+            || !is_int($body['product_id'] ?? null) || $body['product_id'] < 1 || $body['product_id'] > 9007199254740991
+            || !is_string($body['publication_id'] ?? null) || !preg_match('/\A[a-f0-9]{32}\z/D',$body['publication_id'])
+            || !is_string($body['period_ref'] ?? null)) {
+            throw new DomainException('Choose an exact publication and completed period.',422);
+        }
+        require_once dirname(__DIR__).'/includes/profile-product-marketing-outcome-v1.php';
+        $outcome = vp3_product_marketing_outcome_v1($pdo,$scope,$body['publication_id'],['ref'=>$body['period_ref']]);
+        if (($outcome['product_id'] ?? null) !== $body['product_id']
+            || ($outcome['publication_id'] ?? null) !== $body['publication_id']
+            || ($outcome['period_ref'] ?? null) !== $body['period_ref']
+            || ($outcome['original_scope']['agent_id'] ?? null) !== $agentId
+            || ($outcome['original_scope']['conversation_id'] ?? null) !== $conversationId) {
+            throw new DomainException('This publication belongs to a different original Chat or product.',404);
+        }
+        $response += ['outcome'=>$outcome,'resume'=>$outcome['resume']];
+    } elseif ($marketingPlanAction) {
         require_once dirname(__DIR__).'/includes/initiative-marketing-plans-v1.php';
         $response += $action === 'marketing_plans'
             ? initiative_marketing_plans_list_v1($pdo,$owner,$scope,$body)

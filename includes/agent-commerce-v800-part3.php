@@ -2,6 +2,8 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-promotion-attribution-v1.php';
+require_once __DIR__.'/commerce-checkout-open-clock-v1.php';
+const VP3_COMMERCE_CHECKOUT_OPEN_WRITER_V1='vp3.commerce-checkout-open-clock.v1';
 
 function agent_commerce_oauth_state_v800(array $user,string $provider): string
 {
@@ -113,6 +115,9 @@ function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connecti
 {
     if($pdo->inTransaction())throw new RuntimeException('Checkout must begin after the canonical order is committed.',409);
     if(!agent_commerce_recovery_schema_ready_pa2($pdo))throw new RuntimeException('Commerce recovery schema is unavailable.',503);
+    // Decide the completion UPDATE shape before provider I/O. A failed write
+    // never falls back to another mutation without its opening time.
+    $openClock=agent_commerce_checkout_open_clock_ready_v1($pdo);
     foreach([$returnUrl,$cancelUrl] as $url){$parts=parse_url($url);if(!is_array($parts)||!in_array(strtolower((string)($parts['scheme']??'')),['https','http'],true)||empty($parts['host'])||isset($parts['user'])||isset($parts['pass'])||strlen($url)>8192||preg_match('/[\x00-\x20\x7f]/',$url))throw new RuntimeException('Commerce return and cancel URLs must be absolute.',409);}
     $claim=agent_commerce_atomic_pa2($pdo,function()use($pdo,$order,$connectionId,$returnUrl,$cancelUrl,$reviewedMerchant):array{
         $s=$pdo->prepare('SELECT * FROM agent_commerce_orders_v800 WHERE id=?'.agent_commerce_lock_pa2($pdo));$s->execute([(int)$order['id']]);$live=$s->fetch(PDO::FETCH_ASSOC);
@@ -175,7 +180,7 @@ function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connecti
         else{$session=$response['id']??null;$providerOrder=$session;foreach((array)($response['links']??[]) as $link)if(is_array($link)&&($link['rel']??'')==='approve'){$url=$link['href']??null;break;}}
         foreach([$session,$providerOrder] as $id)if(!is_string($id)||!preg_match('/^[A-Za-z0-9_.:-]{1,190}$/D',$id))throw new RuntimeException('Payment provider did not return a usable checkout.',503);
         $parsed=is_string($url)?parse_url($url):false;if(!is_string($url)||strlen($url)>8192||!is_array($parsed)||strtolower((string)($parsed['scheme']??''))!=='https'||empty($parsed['host'])||isset($parsed['user'])||isset($parsed['pass'])||preg_match('/[\x00-\x20\x7f]/',$url))throw new RuntimeException('Payment provider did not return a usable checkout.',503);
-        $result=agent_commerce_atomic_pa2($pdo,function()use($pdo,$claim,$a,$session,$providerOrder,$url):array{
+        $result=agent_commerce_atomic_pa2($pdo,function()use($pdo,$claim,$a,$session,$providerOrder,$url,$openClock):array{
             $o=$pdo->prepare('SELECT * FROM agent_commerce_orders_v800 WHERE id=?'.agent_commerce_lock_pa2($pdo));$o->execute([(int)$a['order_id']]);$order=$o->fetch(PDO::FETCH_ASSOC);
             $s=$pdo->prepare('SELECT * FROM agent_commerce_checkout_attempts_v800 WHERE id=?'.agent_commerce_lock_pa2($pdo));$s->execute([(int)$a['id']]);$live=$s->fetch(PDO::FETCH_ASSOC);
             if(!$order||!$live||!hash_equals((string)$live['creation_lease_token'],(string)$claim['token'])||agent_commerce_date_pa2($live['creation_lease_expires_at'])<time())throw new RuntimeException('Checkout processing ownership changed.',503);
@@ -185,8 +190,12 @@ function agent_commerce_create_checkout_v800(PDO $pdo,array $order,int $connecti
                 &&hash_equals((string)$order['external_account_snapshot'],(string)$live['provider_account_id']);
             $active=$termsMatch&&in_array((string)$order['payment_status'],['awaiting_payment','partially_paid'],true)&&(empty($order['hold_expires_at'])||agent_commerce_date_pa2($order['hold_expires_at'])>time());$status=$active?'open':($termsMatch?'expired':'cancelled');$now=agent_commerce_time_pa2();
             $reason=$termsMatch?'':'checkout_terms_changed';
-            $pdo->prepare("UPDATE agent_commerce_checkout_attempts_v800 SET external_session_id=?,provider_order_id=?,checkout_url=?,status=?,creation_lease_token='',creation_lease_expires_at=NULL,last_error_class=?,updated_at=? WHERE id=? AND creation_lease_token=?")
-                ->execute([$session,$providerOrder,$url,$status,$reason,$now,(int)$a['id'],(string)$claim['token']]);
+            $opening=$openClock&&$status==='open';
+            $values=[$session,$providerOrder,$url,$status,$reason,$now];
+            if($opening)$values[]=agent_commerce_checkout_open_now_v1();
+            $pdo->prepare("UPDATE agent_commerce_checkout_attempts_v800 SET external_session_id=?,provider_order_id=?,checkout_url=?,status=?,creation_lease_token='',creation_lease_expires_at=NULL,last_error_class=?,updated_at=?"
+                .($opening?',opened_at_utc_ms=COALESCE(opened_at_utc_ms,?)':'')." WHERE id=? AND creation_lease_token=?")
+                ->execute([...$values,(int)$a['id'],(string)$claim['token']]);
             agent_commerce_audit_v800($pdo,(int)$order['id'],(int)$order['owner_user_id'],(int)($order['workspace_owner_user_id']??0)?:null,'guest',null,null,'checkout_created',(string)$order['payment_status'],(string)$order['payment_status'],(int)$live['amount_cents'],['provider'=>(string)$live['provider'],'attempt_id'=>(int)$live['id']]);
             if($status==='open')profile_promotion_attribution_touch_order_v1($pdo,$order);
             return agent_commerce_checkout_attempt_v800($pdo,(int)$live['id'])?:throw new RuntimeException('Checkout attempt could not be reloaded.');

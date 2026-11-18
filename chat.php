@@ -581,6 +581,7 @@ $cognitiveCardsRuntime .= '<script>window.VP3_CHAT_SPECIALIST_PRESENCE='.json_en
     'owner_user_id'=>(int)$user['id'], 'agent_id'=>(int)($activeUserAgent['id']??0), 'states'=>$specialistPresence,
 ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT).';</script>';
 $initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/media-library-picker-v1.css?v='.substr(hash_file('sha256',__DIR__.'/media-library-picker-v1.css'),0,12))).'">'
+    . '<link rel="stylesheet" href="'.e(url('/product-marketing-report-v1.css?v='.substr(hash_file('sha256',__DIR__.'/product-marketing-report-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-media-commands-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-media-commands-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-initiative-workbench-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.css'),0,12))).'">'
     . '<script>window.VP3_INITIATIVE_WORKBENCH='.json_encode([
@@ -588,6 +589,7 @@ $initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/media-libr
         'mediaEndpoint'=>url('/api/media-library-v86.php'),
         'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
     ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/product-marketing-report-v1.js?v='.substr(hash_file('sha256',__DIR__.'/product-marketing-report-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/media-library-picker-v1.js?v='.substr(hash_file('sha256',__DIR__.'/media-library-picker-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-marketing-creative-render-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-creative-render-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-marketing-canvas-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-canvas-v1.js'),0,12))).'" defer></script>'

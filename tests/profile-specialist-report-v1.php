@@ -140,5 +140,31 @@ pfr_check(vp3_profile_analytics_discoverable_v1($deposits)
     &&str_starts_with(vp3_profile_analytics_source_item_v1($deposits,7,11)['summary'],'USD 9007199254740993.12 verified payments'),
     'a verified payment period can be summarized independently of zero fully paid orders');
 
+$publication=str_repeat('b',32);$marketingRef=vp3_product_marketing_outcome_ref_v1($publication,$periodRef);
+$link=['ref'=>$marketingRef,'revision'=>str_repeat('c',64),'title'=>'Promotion results: Saved product',
+    'url'=>'/vp3/chat.php?agent=7&conversation_id=11&marketing_plan=42&marketing_publication='.$publication.'&marketing_period='.rawurlencode($periodRef),
+    'product_id'=>42,'publication_id'=>$publication];
+pfr_check(vp3_profile_specialist_marketing_link_v1($link)===$link,'a related promotion retains the exact original Chat, product, publication and fixed period');
+$planLink=['ref'=>'marketing:product-plan:42','revision'=>str_repeat('d',64),'title'=>'Marketing plan: Saved product',
+    'url'=>'/vp3/chat.php?agent=system&conversation_id=11&marketing_plan=42','product_id'=>42,'publication_id'=>null];
+pfr_check(vp3_profile_specialist_marketing_link_v1($planLink)===$planLink,'a plan source can retain its canonical existing system-Agent Chat without inventing a publication');
+foreach([
+    array_replace($link,['product_id'=>43]),array_replace($link,['publication_id'=>str_repeat('a',32)]),
+    array_replace($link,['revision'=>'unverified']),array_replace($link,['url'=>$link['url'].'&agent=8']),
+    array_replace($link,['url'=>str_replace('/vp3/chat.php','//attacker.example/vp3/chat.php',$link['url'])]),
+    array_replace($link,['url'=>str_replace('conversation_id=11','conversation_id=9007199254740992',$link['url'])]),
+    array_replace($link,['url'=>str_replace(rawurlencode($periodRef),rawurlencode(str_replace(':v1:1:',':v1:7:',$periodRef)),$link['url'])]),
+    array_replace($planLink,['publication_id'=>$publication]),
+] as $bad)pfr_check(vp3_profile_specialist_marketing_link_v1($bad)===null,'a related source cannot substitute scope, product, publication, revision or period');
+$linked=array_replace($urgent,['related_product_marketing'=>[$link,$link,$planLink],'product_marketing_coverage'=>'ready']);
+$linkedReport=vp3_profile_specialist_report_v1(['coverage'=>'ready','items'=>[$linked]]);
+pfr_check($linkedReport['findings'][0]['related_product_marketing']===[$link,$planLink]
+    &&$linkedReport['findings'][0]['presentation_owner']==='profile_handoff_pa3',
+    'bounded related links are deduplicated without replacing native Profile presentation');
+$linked['related_product_marketing'][]=array_replace($link,['url'=>'https://attacker.example']);
+$invalidRelated=vp3_profile_specialist_report_v1(['coverage'=>'ready','items'=>[$linked]]);
+pfr_check($invalidRelated['coverage']==='limited'&&count($invalidRelated['findings'])===1
+    &&$invalidRelated['findings'][0]['related_product_marketing']===[$link,$planLink],
+    'an invalid optional link is withheld without erasing the independently verified Profile finding');
 pfr_check(!function_exists('vp3_profile_handoff_owner_pa3')&&!function_exists('vp3_profile_call_context_pa3c'),'pure section and URL validation loads no public responder or storage authority');
 echo 'PROFILE_SPECIALIST_REPORT_V1=PASS ('.$checks.' checks; skips=0)' ."\n";

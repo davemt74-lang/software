@@ -42,7 +42,8 @@ function vp3_initiative_specialist_evidence_v1(PDO $pdo,array $user,array $bindi
         // questions are not evidence of owner preferences.
         if(in_array($specialist,['gmail','curiosity','casual'],true))continue;
         $route=vp3_coordination_item_route_v1($settings,$item);
-        if(($route['action']==='watch'&&$specialist!=='profile')||$route['trigger']==='start_plan')continue;
+        $productMarketing=vp3_coordination_product_marketing_presentation_owned_v1($item);
+        if(($route['action']==='watch'&&$specialist!=='profile'&&!$productMarketing)||$route['trigger']==='start_plan')continue;
         if($nativeRefs===null&&($counts[$specialist]??0)>=$perSpecialist)continue;
         $counts[$specialist]=($counts[$specialist]??0)+1;
         $key=$prefix.$ref;
@@ -61,6 +62,11 @@ function vp3_initiative_specialist_evidence_v1(PDO $pdo,array $user,array $bindi
             if(isset($item['profile_canonical_ref']))$evidence[$key]['profile_canonical_ref']=$item['profile_canonical_ref'];
             if(isset($item['presentation_owner']))$evidence[$key]['presentation_owner']=$item['presentation_owner'];
         }
+        if($productMarketing){
+            $evidence[$key]['product_marketing_presentation_owned']=true;
+            $evidence[$key]['presentation_owner']=$item['presentation_owner'];
+            $evidence[$key]['public_evidence_untrusted']=true;
+        }
     }
     return $evidence;
 }
@@ -77,6 +83,12 @@ function vp3_initiative_specialist_job_v1(array $job,array $evidence): array
         if(($source['specialist']??null)==='profile'&&($job['primary']??null)===$ref){
             // Profile's current native presenters and shared report route own
             // automatic Chat updates. General planning may retain private context.
+            $job['report']=false;
+        }
+        if(($source['specialist']??null)==='marketing'&&($source['product_marketing_presentation_owned']??false)===true
+            &&($job['primary']??null)===$ref){
+            // The exact existing launch/outcome presenter retains automatic
+            // delivery. The planner may prepare private review context only.
             $job['report']=false;
         }
         if(($source['specialist']??null)==='transcripts'){

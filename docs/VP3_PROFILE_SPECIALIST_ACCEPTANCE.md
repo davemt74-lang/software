@@ -51,7 +51,7 @@ Status: complete, 10/10 for this acceptance scope. PR #791 merged as `d31eb5aa0a
 
 ## Phase 5 — Profile analytics in briefings
 
-Status: recovered implementation under review and focused verification; final score follows hosted gates on the final source commit.
+Status: complete, 10/10 for this acceptance scope. PR #792 merged as `bbb6f1469d5491169333d9ac231231b8476527bc` after all 16 workflows passed on final source `0cd21397d3ed17dc5d627779c7b5ac6f28ec06aa` (38 successful checks; 4 expected path-filtered skips). All 14 desktop and compact final-source screenshots were independently reviewed.
 
 - Existing morning/catch-up/report mechanisms consume current Profile findings, with owner-local reporting boundaries and source availability.
 - Visits, recognized browser contacts, conversations, unanswered turns, call states, and outcome measures use explicit definitions and comparable windows.
@@ -61,7 +61,7 @@ Status: recovered implementation under review and focused verification; final sc
 
 ## Phase 6 — Product marketing follow-through
 
-Status: not started.
+Status: implemented after the verified Phase 5 merge. The Phase 6 pull request records final-source hosted results, screenshot review, release score and merge identity.
 
 - Profile conversation findings and attributable promotion outcomes link to exact existing product/plan/publication identifiers.
 - Draft, active, and paused product marketing work retain their existing lifecycle and original Chat/Agent binding.
@@ -124,3 +124,23 @@ Completed one-, seven- and thirty-day calendar periods retain the owner timezone
 Event times are recorded in a dedicated application UTC field only for future writes. An explicit idempotent upgrade records the activation and marks actual legacy rows without guessing their UTC timestamps. Old unmeasurable windows and newly unclocked rows have explicit partial coverage. Calls and accepted-turn replies use their existing native timestamps and verified receipts. Conversions remain recorded events; verified payments and refunds require canonical ledger and order proof, retain their currency and never pass through floating-point money arithmetic.
 
 The private workspace shows definitions, current and prior coverage, new-conversation reply cohorts, call lifecycle counts and separate current unresolved work. Empty observations, partial observations and unavailable storage remain distinct. Reads do not install schema, acknowledge work, initiate calls, start inference or create commerce actions.
+
+## Phase 5 release evidence
+
+[Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44318139878), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44318139850), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44318140027) passed on the final commit. The merged tree `b6520784be550c20d224b05b31cc87188a4f094b` exactly matches the tested source. Both PHP 8.1 and PHP 8.3 passed the 66 native MySQL clock checks (including 8 native concurrency checks), 90 period checks and 24 real briefing-pipeline checks, with no skips. Retained source, pipeline, authority and recovery suites remain enabled.
+
+Hosted browser results: 42 shared report checks, 87 retained workspace checks and 23 fixed-period checks. All 14 screenshots were reviewed. Artifacts: report `14432598968`, workspace `14432459331`, and periods `14432404518`. The period archive has verified SHA-256 `9cffa6aba510c716c9043c1a03e94faa6b9d1965789917ae89fc6edcb08197d0`.
+
+The hosted review exposed a missing dependency in an extracted-function fixture and a genuine Analytics fallback failure. The fixture now loads the same helper as production while retaining its legacy schema. Completed-period failures retain the independently authorized Traffic details selector, while 401/403/419 responses still clear the full view. An actual endpoint regression checks this fallback. The runtime test waits for its real preparation receipt before checking exact inference-call totals. All five scored areas earned 2/2.
+
+## Phase 6 implementation and verification scope
+
+Product Marketing participates in the existing Marketing report, source registry, private planning evidence, morning brief and explicit catch-up. Ordinary product plans remain independent of Campaign plugin availability. Every plan retains its current native lifecycle and original private Agent/Chat; every publication report binds the exact saved publication, reviewed source image, creative, draft, product and completed period. The original launch and outcome presenters retain automatic delivery responsibility. A report read cannot recover or create a plan, generate an image, publish, unpause, send a visitor message or open checkout. The explicit review action revalidates the saved tuple before opening its existing creative.
+
+Completed one-, seven- and thirty-day publication periods reuse the canonical Profile calendar contract and show their previous period, timezone provenance, coverage and metric definitions. Saved first-party promotion clicks, native conversations with proven clicks, orders first opening a usable checkout, verified paid/refunded orders and accepted exchanges showing the publication remain distinct measures. Payments and refunds use canonical Commerce receipts, frozen provider and order proof, full ledger reconciliation and exact decimal minor-unit strings per currency. Unknown earlier checkout dates or missing attribution are partial evidence, not complete zeroes, and no visitor count, purchase intent or conversion funnel is inferred.
+
+The normal Database Upgrade adds nullable native click proof and checkout-opening time fields. A signed native click records immutable owner/product/publication/public-conversation/Agent/session/browser proof in the click transaction. Current owner role assignments, capability seed and grants are locked and checked through commit. The first provider-confirmed usable active checkout receives an immutable application UTC timestamp in its completion transaction. Reservations, uncertain provider results, failed persistence, payment/refund events and legacy reuse do not manufacture an opening date. Existing NULL proof and date fields are never backfilled from current state.
+
+Profile conversation findings can add bounded literal visitor excerpts and exact existing product links while keeping their native presenter, current disposition and actual delivery evidence. An association requires the accepted turn, matching saved reply, exact workflow receipt and publication already existing at reply time. Current Profile grants, native conversation binding, visitor authentication, session lineage and block state govern excerpt disclosure. Both admission and reply times participate in the source proof; final current-authority and source fences reject changes after a snapshot. Historical exchanges use their saved reply's completed UTC day when no historical owner timezone was recorded, and never move to today's rolling period. Private and public conversation identifiers cannot substitute for one another.
+
+Focused SQL, the actual native admission/reply worker, production HTTP endpoints, pure report and routing tests exercise these contracts. The existing scheduler, catch-up, command activation and Chat recovery tests remain enabled. The PHP 8.1/8.3 matrix additionally runs native MySQL authority, stale-snapshot and concurrency cases. Hosted browser acceptance covers the existing Marketing report and original-Chat publication view at desktop and compact sizes, selected-period changes, historical publication rotation, payment precision, literal visitor excerpts, late responses, access revocation, preserved drafts and explicit creative review. Release acceptance still requires the complete final-source PHP, MySQL, browser, recovery and runtime gates plus screenshot inspection.

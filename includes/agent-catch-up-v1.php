@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-catch-up-missions-v1.php';
 require_once __DIR__.'/agent-catch-up-profile-calls-v1.php';
 require_once __DIR__.'/agent-catch-up-meeting-prep-v1.php';
 require_once __DIR__.'/agent-catch-up-profile-analytics-v1.php';
+require_once __DIR__.'/agent-catch-up-product-marketing-v1.php';
 
 function vp3_catch_up_page_binding_v1(array $user): string
 {
@@ -255,10 +256,11 @@ function vp3_catch_up_candidates_v1(PDO $pdo,array $user,string $scope='all',int
         'campaigns'=>fn()=>vp3_catch_up_campaigns_v1($pdo,$user),
         'rewards'=>fn()=>vp3_catch_up_rewards_v1($pdo,$user,$now),
     ];
+    if($conversationId>0)$commerce['product_marketing']=fn()=>vp3_catch_up_product_marketing_v1($pdo,$user,$agentId,$conversationId,$now);
     $sources=match($scope){'office'=>$office,'commerce'=>$commerce,default=>$office+$commerce};
     $coverage=[];$items=[];$preparedStarts=[];
     foreach($sources as $key=>$read){
-        if($agentId>0&&isset($commerce[$key])){$coverage[$key]='forbidden';continue;}
+        if($agentId>0&&isset($commerce[$key])&&$key!=='product_marketing'){$coverage[$key]='forbidden';continue;}
         try{
             [$coverage[$key],$found]=$read();
             foreach($found as $item)$items[]=$item+['_source_kind'=>$key];

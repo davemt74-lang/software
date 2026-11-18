@@ -143,12 +143,13 @@
     dialog.setAttribute('aria-labelledby', 'vp3MediaCommandsTitle');
     dialog.setAttribute('aria-describedby', 'vp3MediaCommandsIntro');
     const header = node('header', undefined, 'vp3-media-command-header');
-    const heading = node('h2', kind === 'images' ? 'Your images' : 'Marketing plans');
+    const heading = node('h2', kind === 'images' ? 'Your images' : kind === 'publication' ? 'Publication results' : 'Marketing plans');
     heading.id = 'vp3MediaCommandsTitle';
     const dismiss = button('Close', 'close');
     header.append(heading, dismiss);
     const intro = node('p', kind === 'images'
       ? 'Choose an image to edit in Chat or use for product marketing.'
+      : kind === 'publication' ? 'Review this saved publication and its attributed activity for the selected completed period.'
       : 'Continue a draft, review an image in progress, or return to an active or paused product promotion.', 'vp3-media-command-intro');
     intro.id = 'vp3MediaCommandsIntro';
     const status = node('p', '', 'vp3-media-command-status');
@@ -342,6 +343,7 @@
         session.nextBefore = null;
         session.more.hidden = true;
         session.empty.hidden = true;
+        if(session.kind==='publication'){session.content.replaceChildren();session.publication=null;}
       }
       const data = await response.json().catch(() => null);
       if (!stillCurrent()) return;
@@ -408,6 +410,46 @@
     }, () => void loadPlan(session, productId), 'Checking the latest saved plan…');
   }
 
+  function loadPublication(session, selection, review=false) {
+    const renderer=window.VP3ProductMarketingV1;
+    if(!renderer||!ensureCurrent(session)||!positive(selection.productId)||!/^[a-f0-9]{32}$/.test(selection.publicationId||'')
+      ||!renderer.periodRef(selection.periodRef))return Promise.resolve();
+    session.publication=null;
+    session.content.replaceChildren();
+    const fields={product_id:selection.productId,publication_id:selection.publicationId,period_ref:selection.periodRef};
+    return request(session,'marketing_publication',fields,data=>{
+      const options={chatUrl:chatPath,ownerId:Number(account.owner),agentId:session.bound.agentId,conversationId:session.bound.conversationId,
+        productId:selection.productId,publicationId:selection.publicationId,periodRef:selection.periodRef};
+      const outcome=renderer.outcomeModel(data.outcome,options);
+      if(!outcome||!data.resume||Object.keys(outcome.resume).some(key=>data.resume[key]!==outcome.resume[key])){
+        throw new Error('This exact publication and reporting period could not be verified.');
+      }
+      if(!ensureCurrent(session))return;
+      session.publication=outcome;
+      if(review){
+        if(window.VP3InitiativeWorkbench?.openProductLaunch?.(outcome.resume)!==true)throw new Error('The saved creative could not be opened in this Chat.');
+        close(session,'handoff');return;
+      }
+      const target=node('section');
+      const refresh=button('Refresh this publication','publication-refresh');
+      refresh.addEventListener('click',()=>{if(ensureCurrent(session)&&!session.pending)void loadPublication(session,selection);});
+      session.content.append(refresh,target);
+      renderer.renderOutcome(target,outcome,{...options,isCurrent:()=>current(session),
+        onPeriod:periodRef=>{if(!session.pending)void loadPublication(session,{...selection,periodRef});},
+        onReview:()=>{if(!session.pending)void loadPublication(session,selection,true);}});
+      session.status.textContent='This exact publication and period are ready to review.';
+    },()=>void loadPublication(session,selection),'Checking the saved publication and selected period…');
+  }
+
+  function openPublication(selection,bound=runtimeContext()) {
+    if(!scopeCurrent(bound)||!window.VP3ProductMarketingV1||selection?.agentId!==bound.agentId
+      ||selection.conversationId!==bound.conversationId||!positive(selection.productId)||!/^[a-f0-9]{32}$/.test(selection.publicationId||'')
+      ||!window.VP3ProductMarketingV1.periodRef(selection.periodRef))return false;
+    const session=createSession('publication',bound);if(!session)return false;
+    void loadPublication(session,{productId:selection.productId,publicationId:selection.publicationId,periodRef:selection.periodRef});
+    return true;
+  }
+
   function open(kind, bound) {
     if (!['images', 'marketing'].includes(kind) || !scopeCurrent(bound)
       || kind === 'images' && !window.VP3MediaLibraryPicker?.open) return false;
@@ -428,11 +470,18 @@
     if (typeof runtime?.mediaCommandIntent === 'function') {
       try {
         const intent = runtime.mediaCommandIntent();
-        return intent && typeof intent.productId === 'number' && positive(intent.productId)
-          && typeof intent.conversationId === 'number' && positive(intent.conversationId) && agentId(intent.agentId) >= 0 ? intent : null;
+        if(!intent||typeof intent.productId!=='number'||!positive(intent.productId)||typeof intent.conversationId!=='number'
+          ||!positive(intent.conversationId)||agentId(intent.agentId)<0)return null;
+        if(intent.publicationId!==undefined||intent.periodRef!==undefined){
+          if(!/^[a-f0-9]{32}$/.test(intent.publicationId||'')||!window.VP3ProductMarketingV1?.periodRef(intent.periodRef))return null;
+        }
+        return intent;
       } catch { return null; }
     }
     const url = new URL(location.href);
+    if(url.searchParams.has('marketing_publication')||url.searchParams.has('marketing_period')){
+      return window.VP3ProductMarketingV1?.destination(url.pathname+url.search,chatPath)||null;
+    }
     const productId = url.searchParams.getAll('marketing_plan').length === 1 ? positive(url.searchParams.get('marketing_plan')) : 0;
     const conversationId = url.searchParams.getAll('conversation_id').length === 1 ? positive(url.searchParams.get('conversation_id')) : 0;
     const selector = url.searchParams.getAll('agent').length === 1 ? url.searchParams.get('agent') : null;
@@ -448,6 +497,10 @@
     if (intentConsumed || active || !linkedProduct || !linkedConversation || linkedAgent < 0) return;
     const bound = runtimeContext();
     if (!scopeCurrent(bound) || bound.agentId !== linkedAgent || bound.conversationId !== linkedConversation) return;
+    if(intent?.publicationId){
+      if(openPublication(intent,bound))intentConsumed=true;
+      return;
+    }
     const session = createSession('marketing', bound);
     if (!session) return;
     intentConsumed = true;
@@ -460,11 +513,14 @@
     } catch { /* The in-memory consumed flag still prevents duplicate handoffs. */ }
     void loadPlan(session, linkedProduct);
   }
-  const invalidate = () => { if (active) close(active, 'stale'); };
+  const invalidate = event => {
+    if(intent?.publicationId&&event?.detail?.initialRestore!==true)intentConsumed=true;
+    if (active) close(active, 'stale');
+  };
   for (const event of ['stonefellow:chat-context-changing', 'vp3:chat-conversation-changed', 'vp3:participant-selection-changed', 'vp3:participant-task-context', 'pagehide']) {
     window.addEventListener(event, invalidate);
   }
   window.addEventListener('vp3:chat-context-ready', resumeLinkedPlan);
-  window.VP3MediaCommands = Object.freeze({version: 1, open});
+  window.VP3MediaCommands = Object.freeze({version: 1, open,openPublication});
   resumeLinkedPlan();
 })();

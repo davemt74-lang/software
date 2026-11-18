@@ -18,6 +18,9 @@
   color-scheme: light;
 }
 [data-media-command="marketing"] { width: min(56rem, calc(100vw - 1.5rem)); }
+[data-media-command="publication"] { width: min(56rem, calc(100vw - 1.5rem)); }
+[data-media-command="publication"] [data-media-command-publication-refresh] { margin-bottom:1rem; }
+[data-media-command="publication"] .vp3-product-marketing :is(h3,h4,h5,p,dl) { margin:0 0 .7rem; }
 [data-media-command]::backdrop { background: #17243a80; }
 [data-media-command] *, [data-media-command] *::before, [data-media-command] *::after { box-sizing: border-box; }
 [data-media-command] [hidden] { display: none !important; }

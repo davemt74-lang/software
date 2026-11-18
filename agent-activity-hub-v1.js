@@ -2095,6 +2095,20 @@
         if(!source.ref.startsWith('profile:event:')||typeof source.profile_event_type!=='string'||!/^[a-z][a-z0-9_]{0,63}$/.test(source.profile_event_type))return null;
         finding.profile_event_type=source.profile_event_type;
       }
+      if(source.related_product_marketing!==undefined){
+        if(!Array.isArray(source.related_product_marketing)||source.related_product_marketing.length>4)return null;
+        finding.related_product_marketing=[];const relatedRefs=new Set();
+        for(const related of source.related_product_marketing){
+          const target=window.VP3ProductMarketingV1?.source(related,productMarketingChatUrl());
+          const label=profileReportText(related?.title,190);
+          if(!target||!label||!/^[a-f0-9]{64}$/.test(related.revision||'')||relatedRefs.has(target.ref))return null;
+          relatedRefs.add(target.ref);finding.related_product_marketing.push({...target,title:label,revision:related.revision});
+        }
+      }
+      if(source.product_marketing_coverage!==undefined){
+        if(!['ready','limited','unavailable','unconfigured'].includes(source.product_marketing_coverage))return null;
+        finding.product_marketing_coverage=source.product_marketing_coverage;
+      }
       result.findings.push(finding);
     }
     return result;
@@ -2154,6 +2168,20 @@
           const disposition={pending:'Pending',handled:'Handled',ignored:'Dismissed',snoozed:'Snoozed',delivered:'Delivered'}[source.disposition]||'';
           const owner={profile_attention_pa4b:'Visitor notification',profile_handoff_pa3:'Conversation handoff',profile_speech_pa4a:'Visitor announcement',profile_calls_pa3c:'Call notification',office_tasks:'Reviewed task notification',profile_briefing_v1:'Morning briefing'}[source.presentation_owner]||'';
           const note=[disposition,owner].filter(Boolean).join(' · ');if(note)item.append(node('small',note));
+        }
+        if(source.related_product_marketing?.length){
+          const related=node('div','','vp3-profile-product-marketing-links');related.append(node('small','Related Product Marketing'));
+          for(const destination of source.related_product_marketing){const action=node('a',destination.title);action.href=destination.href;
+            action.dataset.productMarketingSource=destination.ref;action.dataset.productMarketingRevision=destination.revision;
+            action.addEventListener('click',event=>{
+              if(signature(current)!==signature(scope())||(options.isCurrent?!options.isCurrent():snapshot?.profile_report!==report)){
+                event.preventDefault();close(false);return;
+              }
+              if(openProductMarketingSource(destination,current,event))event.preventDefault();
+            });related.append(action);
+          }
+          if(source.product_marketing_coverage==='limited')related.append(node('small','Some related sources could not be verified.'));
+          item.append(related);
         }
         return item;
       };
@@ -2620,6 +2648,28 @@
     return form;
   }
 
+  function productMarketingChatUrl() {
+    return new URL(cfg.activityEndpoint,location.origin).pathname.replace(/\/api\/[^/]+$/,'')+'/chat.php';
+  }
+  function openProductMarketingSource(destination,current,event) {
+    if(!destination?.publicationId||event?.ctrlKey||event?.metaKey||event?.shiftKey||event?.altKey
+      ||destination.agentId!==current.agent||destination.conversationId!==current.cid)return false;
+    if(window.VP3MediaCommands?.openPublication(destination)!==true)return false;
+    close(false);return true;
+  }
+  function renderProductMarketingReview(current) {
+    const section=node('section','','vp3-agent-activity-source');
+    const report=snapshot?.product_marketing,renderer=window.VP3ProductMarketingV1;
+    if(!renderer){section.append(node('h4','Product Marketing'),node('p','Product Marketing could not be verified.'));return section;}
+    const isCurrent=()=>signature(current)===signature(scope())&&snapshot?.product_marketing===report;
+    renderer.renderReview(section,report,{chatUrl:productMarketingChatUrl(),ownerId:current.owner,isCurrent,
+      onAction:(action,event)=>openProductMarketingSource(renderer.destination(action.href,productMarketingChatUrl()),current,event)});
+    for(const card of section.querySelectorAll('[data-product-marketing-outcome]')){
+      const key='product-marketing:'+card.dataset.productMarketingOutcome;
+      card.open=detailOpen.get(key)??false;card.addEventListener('toggle',()=>detailOpen.set(key,card.open));
+    }
+    return section;
+  }
   function renderMarketingReview(current) {
     const review = snapshot?.marketing;
     const section = node('section','','vp3-agent-activity-source');
@@ -2765,7 +2815,7 @@
     const sources = ids.map(id => snapshot?.sections.find(source => source.id === id &&
       (source.items.length || specialist === 'planning' || ['canvas_suggestions','marketing'].includes(id)))).filter(Boolean);
     if (specialist === 'tasks') workspaceButton.textContent = officeReviewItems().length ? 'Full report' : 'Open workspace';
-    const reviews = specialist === 'marketing' && workspace ? [renderMarketingReview(current)] : [];
+    const reviews = specialist === 'marketing' && workspace ? [renderProductMarketingReview(current),renderMarketingReview(current)] : [];
     sections.replaceChildren(...reviews,...sources.map(source => source.id === 'office_reviews'
       ? renderSource(current,{...source,items:officeReviewItems()},workspace)
       : renderSource(current,source,specialist === 'planning' || workspace && ['coding','marketing'].includes(specialist))));

@@ -14,6 +14,12 @@ function vp3_profile_analytics_hash_v1(mixed $value): string
 {
     return hash('sha256',json_encode($value,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
 }
+/** Native PDO-backed receipts may serialize integer ids as decimal strings. */
+function vp3_profile_analytics_id_v1(mixed $value): ?int
+{
+    if((!is_int($value)&&!is_string($value))||!preg_match('/\A[1-9][0-9]{0,15}\z/D',(string)$value))return null;
+    $id=(int)$value;return $id<=9007199254740991&&(string)$id===(string)$value?$id:null;
+}
 function vp3_profile_analytics_epoch_v1(mixed $value): ?int
 {
     if((!is_int($value)&&!is_string($value))||!preg_match('/\A[1-9][0-9]{0,13}\z/D',(string)$value))return null;
@@ -308,8 +314,8 @@ function vp3_profile_analytics_conversations_v1(PDO $pdo,int $owner,array $windo
                 &&(int)$receipt['action_id']===(int)$turn['action_id']&&(int)$action['run_id']===(int)$run['id']
                 &&$run['source_key']==='profile-turn:'.$turn['id']&&$run['workflow_type']==='profile_visitor_reply'
                 &&(int)$run['agent_id']===(int)$turn['profile_agent_id']&&$action['action_key']===$run['source_key']
-                &&is_array($result)&&($result['turn_id']??null)===(int)$turn['id']&&($result['conversation_id']??null)===$cid
-                &&($result['visitor_message_id']??null)===(int)$turn['visitor_message_id']&&($result['answer_message_id']??null)===$mid;
+                &&is_array($result)&&vp3_profile_analytics_id_v1($result['turn_id']??null)===(int)$turn['id']&&vp3_profile_analytics_id_v1($result['conversation_id']??null)===$cid
+                &&vp3_profile_analytics_id_v1($result['visitor_message_id']??null)===(int)$turn['visitor_message_id']&&vp3_profile_analytics_id_v1($result['answer_message_id']??null)===$mid;
         }
         if(!$proof){$unverified[$cid][]=$mid;$gaps[$key]=true;continue;}
         $replyIds['agent'][$mid]=true;$replies[$cid][]=['id'=>$mid,'at'=>$stamp,'type'=>'agent'];
@@ -510,7 +516,7 @@ function vp3_profile_analytics_attempt_v1(array $attempt,array $order,string $am
     return false;
 }
 
-function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,array $history): array
+function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,array $history,?array $orderIds=null): array
 {
     $keys=['verified_paid_orders','verified_refunded_orders'];
     $out=['points'=>vp3_profile_analytics_empty_points_v1($keys),'coverage'=>'unconfigured','reason'=>'storage_unconfigured','evidence'=>[],'money'=>[]];
@@ -521,6 +527,14 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
     // invented "commerce.access" permission. Every contributing object still
     // needs its exact current owned order/product/merchant lineage below.
     $orders=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM agent_commerce_orders_v800 WHERE owner_user_id=? ORDER BY id',[$owner],true);
+    // An explicit empty publication subset never expands into all owner orders.
+    // Keep the full receipt identity inventory below, so a duplicated provider
+    // receipt cannot be made unique merely by filtering to one publication.
+    if($orderIds!==null){
+        foreach($orderIds as $id)if(!is_int($id)||$id<1)throw new RuntimeException('Invalid exact order subset.',422);
+        $wanted=array_fill_keys($orderIds,true);$orders=array_values(array_filter($orders,static fn(array $row):bool=>isset($wanted[(int)$row['id']])));
+        if(count($orders)!==count($wanted))throw new RuntimeException('An attributed order is unavailable.',409);
+    }
     $items=vp3_profile_analytics_rows_v1($pdo,'SELECT i.* FROM agent_commerce_order_items_v800 i JOIN agent_commerce_orders_v800 o ON o.id=i.order_id WHERE o.owner_user_id=? ORDER BY i.id',[$owner],true);
     $products=vp3_profile_analytics_rows_v1($pdo,'SELECT id,owner_user_id FROM agent_commerce_products_v800 WHERE owner_user_id=? ORDER BY id',[$owner],true);
     $attempts=vp3_profile_analytics_rows_v1($pdo,'SELECT a.* FROM agent_commerce_checkout_attempts_v800 a JOIN agent_commerce_orders_v800 o ON o.id=a.order_id WHERE o.owner_user_id=? ORDER BY a.id',[$owner],true);
