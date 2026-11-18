@@ -11,7 +11,7 @@ const identity=source.slice(source.indexOf('  function initiativeIdentityMatches
 assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity status must not be referenced');
 let response,requestCount=0,timer,delay,cleared=0;
 const requestBodies=[],syncedConversations=[],pendingMeetingReviews=[];
-const context={AbortController,DOMException,Event,navigator:{onLine:true},document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7,userId:1,workingAttentionBinding:'fixture-page-binding'},
+const context={AbortController,DOMException,Event,URLSearchParams,location:new URL('https://app.test/chat.php'),navigator:{onLine:true},document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7,userId:1,workingAttentionBinding:'fixture-page-binding'},
     window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;},dispatchEvent:()=>{}},
     fetch:async(_url,options)=>{requestCount++;requestBodies.push(JSON.parse(options.body));return response(options.signal);},
     writeActivityCursor:value=>{context.activityCursor=value;},updateNotificationBadge:value=>{context.unread=value;},

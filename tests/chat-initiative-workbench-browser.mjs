@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const { chromium } = createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({
@@ -31,6 +33,16 @@ const productUrl = '/dave/product/glazed-serving-bowl';
 const originalUrl = '/media-library-file-v86.php?id=31';
 const graphicUrl = '/media-library-file-v86.php?id=93';
 const unsafeTitle = '<img src=x onerror=alert(1)> Glazed bowl photo';
+const oldGeneratedId = 7;
+const oldUploadedId = 8;
+const libraryImages = [
+  ...Array.from({length:60}, (_, index) => ({id:160-index,title:`Saved product photo ${160-index}`,source:'upload'})),
+  {id:32,title:'Other product photo',source:'upload'},
+  {id:31,title:unsafeTitle,source:'upload'},
+  {id:oldUploadedId,title:'Original studio photograph',source:'upload'},
+  {id:oldGeneratedId,title:'Generated bowl in a garden',source:'openai_image'}
+].map(item => ({...item,media_type:'photo',mime_type:'image/png',file_size:4096,available:true,
+  created_at:'2026-10-01T12:00:00Z',url:`/media-library-file-v86.php?id=${item.id}`,collection_ids:[2]}));
 const sources = {
   product: [{ source_id: 'description', source_title: 'Describe a product' }, { source_id: '31', source_title: unsafeTitle }, { source_id: '32', source_title: 'Other product photo' }],
   marketing: [{ source_id: '31', source_title: unsafeTitle }],
@@ -61,7 +73,9 @@ const review = (body, source, screenshot) => ({
     mode: body.mode, captured_at: source.captured_at, provider: 'OpenAI', sends_capture: true, image_data: screenshot,
     summary: body.mode === 'cleanup' ? 'AI cleanup aims to keep the original layout and text. It can change details.'
       : 'AI redraw creates a new visual interpretation of the selected capture.'
-  } : body.source_id === 'description' ? {summary: body.product_description} : reviewDetails[body.tool]
+  } : body.source_id === 'description' ? {summary: body.product_description}
+    : ['product','marketing'].includes(body.tool) ? {...reviewDetails[body.tool],image_url:`/media-library-file-v86.php?id=${body.source_id}`}
+      : reviewDetails[body.tool]
 });
 const generation = status => ({
   id: image, title: asset.title, prompt: 'Redraw selected capture', model: 'gpt-image-1',
@@ -99,12 +113,15 @@ const html = `<!doctype html><html><head><meta charset="utf-8">
   <button id="sendChatButton">Send</button></form></div></main></body></html>`;
 
 async function fixture(page, {chatConfig = true, query = '', activeAgent = agent, ready = true,
-  marketingDrafts = reviewDetails.marketing.drafts, linkedProductImage = true, canvasAvailable = true} = {}) {
+  marketingDrafts = reviewDetails.marketing.drafts, linkedProductImage = true, canvasAvailable = true,
+  pickerAvailable = true, largeLibrary = false, products = [{id:105,title:productTitle},{id:106,title:'Matching side plate'}]} = {}) {
   page.setDefaultTimeout(8000);
   const calls = [];
   const mediaCalls = [];
   const uploads = [];
+  const browseCalls = [];
   const designs = new Map();
+  const privateDrafts = new Map([[draftId, outputs.marketing]]);
   const errors = [];
   let nextCreate;
   let nextPreview;
@@ -122,8 +139,22 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
     body: (route.request().url().endsWith('id=93') ? uploadedPng : originalPng)
       || Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
   }));
-  await page.route(`${root}${uploadEndpoint}`, async route => {
+  await page.route(url => url.origin === root && url.pathname === uploadEndpoint, async route => {
     const request = route.request();
+    if (request.method() === 'GET') {
+      const query = new URL(request.url()).searchParams;
+      assert.equal(request.headers()['x-vp3-media-owner'],owner);
+      assert.equal(query.get('action'),'browse');
+      assert.equal(query.get('type'),'photo');
+      browseCalls.push(Object.fromEntries(query));
+      const before = Number(query.get('before')) || Infinity;
+      const q = (query.get('q') || '').toLowerCase();
+      const source = query.get('source') || '';
+      const images = libraryImages.filter(item => item.id < before && item.title.toLowerCase().includes(q)
+        && (source !== 'generated' || item.source === 'openai_image') && (source !== 'uploaded' || item.source === 'upload'));
+      return route.fulfill({json:{ok:true,assets:images.slice(0,24),next_before:images.length > 24 ? images[23].id : null,
+        collections_available:true,collections:[{id:2,name:'Product photography',asset_count:libraryImages.length}]}});
+    }
     const payload = await new Response(request.postDataBuffer(), {headers:{'content-type':request.headers()['content-type']}}).formData();
     assert.equal(request.headers()['x-vp3-media-owner'], owner);
     assert.equal(payload.get('csrf_token'), 'fixture');
@@ -165,24 +196,26 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
     const ok = data => route.fulfill({ json: { ...envelope, ...data } });
     const fail = (status, error) => route.fulfill({ status, json: { ...envelope, ok: false, error } });
     if (body.action === 'creative_open') {
-      assert.equal(body.draft_id,draftId);
-      assert.equal(body.product_id,105);
-      assert.equal(body.source_id,'31');
-      const variants = [...designs.values()].reverse();
+      const draft = privateDrafts.get(body.draft_id);
+      assert.ok(draft);
+      assert.equal(body.product_id,draft.product_id);
+      assert.equal(body.source_id,String(draft.asset_id));
+      const variants = [...designs.values()].reverse().filter(item => item.draft_id === body.draft_id);
       const creative = nextCreativeOpen ? nextCreativeOpen(variants) : body.creative_id ? designs.get(body.creative_id) : variants[0];
       nextCreativeOpen = undefined;
-      return ok({draft:{...outputs.marketing,product_url:productUrl,cta:'Shop the bowl'},creative:creative || null,variants,promotion,
+      return ok({draft:{...draft,product_url:productUrl,cta:'Shop the bowl'},creative:creative || null,variants,promotion,
         campaigns:[{id:17,name:'Summer table',merchant_name:'Shop'},{id:23,name:'Autumn table',merchant_name:'Shop'}]});
     }
     if (body.action === 'creative_prepare' || body.action === 'creative_generate') {
-      assert.equal(body.draft_id,draftId);
-      assert.equal(body.product_id,105);
-      assert.equal(body.source_id,'31');
+      const draft = privateDrafts.get(body.draft_id);
+      assert.ok(draft);
+      assert.equal(body.product_id,draft.product_id);
+      assert.equal(body.source_id,String(draft.asset_id));
       assert.match(body.nonce,/^[a-f0-9]{32}$/);
       const {level,headline,copy,prompt,style,remove_background,tolerance} = body;
       const creative = {id:body.nonce,draft_id:body.draft_id,product_id:body.product_id,level,headline,copy,prompt,style,remove_background,tolerance,
         status:body.action==='creative_prepare'?'review':level<5?'ready':'queued',
-        source_image_url:originalUrl,product_url:productUrl,cta:'Shop the bowl'};
+        source_image_url:draft.image_url,product_url:productUrl,cta:'Shop the bowl'};
       if (body.action === 'creative_prepare') return ok({creative,review_token:'review-'+body.nonce});
       assert.equal(body.review_token,'review-'+body.nonce);
       assert.equal(body.confirmed,true);
@@ -219,14 +252,22 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
       }
       return ok({creative});
     }
-    if (body.action === 'sources') return ok({ sources: sources[body.tool] || [], ...(body.tool==='marketing'?{products:[{id:105,title:productTitle}]}:{}) });
-    const selected = sources[body.tool]?.find(source => source.source_id === body.source_id);
+    if (body.action === 'sources') {
+      const available = largeLibrary && ['product','marketing'].includes(body.tool)
+        ? [...(body.tool === 'product' ? [sources.product[0]] : []),
+          ...libraryImages.slice(0,50).map(item => ({source_id:String(item.id),source_title:item.title}))] : sources[body.tool] || [];
+      return ok({sources:available,...(body.tool === 'marketing' ? {products} : {})});
+    }
+    const librarySource = ['product','marketing'].includes(body.tool) && libraryImages.find(item => String(item.id) === body.source_id);
+    const selected = sources[body.tool]?.find(source => source.source_id === body.source_id)
+      || (librarySource && {source_id:String(librarySource.id),source_title:librarySource.title});
     if (!selected) return fail(404, 'That private source is unavailable.');
     if (body.action === 'preview') {
       const handlePreview = nextPreview;
       nextPreview = undefined;
       const preview = review(body, selected, screenshots[body.source_id]);
-      if (body.tool === 'marketing') preview.details = {...preview.details, drafts:marketingDrafts,
+      if (body.tool === 'marketing') preview.details = {...preview.details, drafts:body.source_id === '31' ? marketingDrafts
+        : marketingDrafts.filter(item => String(item.asset_id) === body.source_id && item.product_id === body.product_id),
         linked_product_image:linkedProductImage};
       if (handlePreview) return handlePreview({route,body,ok,fail,preview});
       return ok({ preview, review_token: token(body) });
@@ -237,6 +278,12 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
     const handleCreate = nextCreate;
     nextCreate = undefined;
     if (handleCreate) return handleCreate({ route, body, ok, fail });
+    if (body.tool === 'marketing' && (body.source_id !== '31' || body.product_id !== 105)) {
+      const draft = {...outputs.marketing,draft_id:body.product_id.toString(16).padStart(8,'0') + Number(body.source_id).toString(16).padStart(56,'0'),
+        product_id:body.product_id,asset_id:Number(body.source_id),image_url:`/media-library-file-v86.php?id=${body.source_id}`};
+      privateDrafts.set(draft.draft_id,draft);
+      return ok({output:draft});
+    }
     return ok({ output: outputs[body.tool] });
   });
   await page.goto(`${root}/${query}`);
@@ -269,9 +316,11 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
   }, { endpoint, mediaEndpoint, uploadEndpoint, owner, agent:activeAgent, conversation, capture, otherCapture, chatConfig, ready });
   originalPng = Buffer.from(screenshots.png,'base64');
   await page.addStyleTag({ path: workbenchStyle });
+  if (pickerAvailable) await page.addStyleTag({ path:fileURLToPath(new URL('../media-library-picker-v1.css', import.meta.url)) });
   await page.addScriptTag({ path: script('chat-tools') });
   await page.addScriptTag({ path: script('chat-canvas-media-v1') });
   await page.addScriptTag({ path: script('chat-marketing-creative-render-v1') });
+  if (pickerAvailable) await page.addScriptTag({ path: script('media-library-picker-v1') });
   if (canvasAvailable) await page.addScriptTag({ path: script('chat-marketing-canvas-v1') });
   await page.addScriptTag({ path: workbenchScript });
 
@@ -284,7 +333,7 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
     return body.action === action && body.tool === tool;
   });
   const flush = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  return { calls, mediaCalls, uploads, errors, dialog, button, control, waitForAction, flush, screenshots,
+  return { calls, mediaCalls, browseCalls, uploads, errors, dialog, button, control, waitForAction, flush, screenshots,
     onPreview: handler => { nextPreview = handler; },
     onCreate: handler => { nextCreate = handler; },
     onCreativeOpen: handler => { nextCreativeOpen = handler; } };
@@ -292,6 +341,30 @@ async function fixture(page, {chatConfig = true, query = '', activeAgent = agent
 
 let cases = 0;
 function pass(label) { cases++; console.log(`PASS ${label}`); }
+async function pickerScreenshot(target, filename) {
+  const folder = process.env.VP3_MEDIA_PICKER_SCREENSHOTS;
+  if (!folder) return;
+  await mkdir(folder,{recursive:true});
+  await target.screenshot({path:join(folder,filename)});
+}
+const picker = host => host.locator('[data-media-picker]');
+async function searchImage(host, title, id) {
+  const selection = picker(host);
+  await selection.locator('[data-media-picker-search]').fill(title);
+  await selection.locator(`[data-media-picker-asset="${id}"]`).click();
+  assert.equal(await selection.locator('[data-media-picker-preview]').getAttribute('data-media-picker-candidate'),String(id));
+  return selection;
+}
+const canvasSettings = canvas => canvas.evaluate(panel => ({
+  headline:panel.querySelector('[data-marketing-headline]').value,
+  copy:panel.querySelector('[data-marketing-copy]').value,
+  level:panel.querySelector('[data-marketing-level]').value,
+  prompt:panel.querySelector('[data-marketing-prompt]').value,
+  style:panel.querySelector('fieldset select').value,
+  removeBackground:panel.querySelector('fieldset input[type=checkbox]').checked,
+  tolerance:panel.querySelector('#vp3MarketingCutoutTolerance').value,
+  campaign:panel.querySelectorAll('.vp3-marketing-controls select')[0].value
+}));
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -669,6 +742,18 @@ try {
   await canvasButton('Approve and publish').waitFor();
   assert.match(await canvas.locator('[data-marketing-confirmation]').innerText(),/credited to Summer table/);
   assert.equal(promotionFixture.calls.some(call => call.action==='creative_publish'),false);
+  const approvedDesignSettings = await canvasSettings(canvas);
+  const approvedDesignCalls = promotionFixture.calls.length;
+  const approvedDesignCopy = await canvas.locator('[data-marketing-confirmation]').innerText();
+  await canvasButton('Choose from Media Library').click();
+  await picker(canvas).locator('[data-media-picker-asset="160"]').click();
+  await picker(canvas).locator('[data-media-picker-cancel]').click();
+  assert.deepEqual(await canvasSettings(canvas),approvedDesignSettings);
+  assert.equal(await canvas.locator('[data-marketing-confirmation]').innerText(),approvedDesignCopy);
+  assert.equal(await canvasButton('Approve and publish').isEnabled(),true);
+  assert.equal(await canvas.locator('[data-marketing-visitor] img').getAttribute('src'),root+graphicUrl);
+  assert.equal(promotionFixture.calls.length,approvedDesignCalls);
+  pass('Opening and cancelling the shared picker preserves the approved graphic, saved draft, publication review, and selected campaign');
   await canvas.locator('[data-marketing-copy]').fill('A different, unreviewed caption');
   assert.equal(await canvasButton('Approve and publish').isVisible(),false);
   await canvas.getByLabel('Recent designs').selectOption(selectedDesign.nonce);
@@ -729,6 +814,15 @@ try {
   assert.equal(await canvasButton('Approve and publish').isVisible(),false);
   assert.deepEqual(promotionFixture.calls.slice(beforeResume).map(call => [call.action,call.creative_id]),[['creative_open',selectedDesign.nonce]]);
   pass('Promotion results reopen the exact older creative despite a newer scene and leave publication to explicit review');
+
+  await canvasButton('Close promotion').click();
+  promotionFixture.onCreativeOpen(variants => ({...variants.find(item => item.id === selectedDesign.nonce),status:'starting'}));
+  const beforeStartingResume = promotionFixture.calls.length;
+  assert.equal(await promotionPage.evaluate(marker => window.VP3InitiativeWorkbench.openProductLaunch({...marker,stage:'image_starting'}),launch),true);
+  await canvasButton('Refresh image status').waitFor();
+  assert.equal(await canvas.getByLabel('Recent designs').inputValue(),selectedDesign.nonce);
+  assert.deepEqual(promotionFixture.calls.slice(beforeStartingResume).map(call => [call.action,call.creative_id]),[['creative_open',selectedDesign.nonce]]);
+  pass('A marketing plan at image_starting resumes its exact private creative without implicitly retrying generation');
 
   await canvasButton('Close promotion').click();
   promotionFixture.onCreativeOpen(variants => variants[0]);
@@ -856,6 +950,373 @@ try {
   await wrongListing.flush();
   assert.deepEqual(wrongListing.calls,[]);
   pass('A changed listing photo or wrong conversation cannot continue into the promotion');
+
+  const pickerPage = await browser.newPage({viewport:{width:1280,height:900}});
+  const productPicker = await fixture(pickerPage,{largeLibrary:true});
+  const typedDescription = '  A glazed serving bowl for sharing.\nKeep this wording while I compare photographs.  ';
+  await pickerPage.evaluate(() => window.VP3InitiativeWorkbench.open('product','description'));
+  await productPicker.control('source').locator('option[value="description"]').waitFor({state:'attached'});
+  await productPicker.control('product-description').fill(typedDescription);
+  assert.equal(await productPicker.control('source').locator('option').count(),52);
+  assert.equal(await productPicker.control('source').locator(`option[value="${oldGeneratedId}"]`).count(),0);
+  const originalProductCalls = productPicker.calls.length;
+  await productPicker.button('Choose from Media Library').click();
+  await picker(productPicker.dialog).locator('[data-media-picker-asset="160"]').click();
+  assert.equal(productPicker.calls.length,originalProductCalls);
+  await picker(productPicker.dialog).locator('[data-media-picker-cancel]').click();
+  assert.equal(await productPicker.control('source').inputValue(),'description');
+  assert.equal(await productPicker.control('product-description').inputValue(),typedDescription);
+  assert.equal(productPicker.calls.length,originalProductCalls);
+  pass('Product picker browsing and Cancel preserve the typed description without requesting a preview or creating anything');
+
+  await productPicker.button('Choose from Media Library').click();
+  const productSelection = picker(productPicker.dialog);
+  await productSelection.locator('[data-media-picker-asset="160"]').waitFor();
+  await productSelection.locator('[data-media-picker-more]').click();
+  await productSelection.locator('[data-media-picker-asset="113"]').waitFor();
+  await productSelection.locator('[data-media-picker-more]').click();
+  await productSelection.locator(`[data-media-picker-asset="${oldGeneratedId}"]`).click();
+  assert.equal(await productPicker.control('source').inputValue(),'description');
+  await productSelection.locator('[data-media-picker-use]').scrollIntoViewIfNeeded();
+  await pickerScreenshot(productPicker.dialog,'product-picker-desktop.png');
+  await productSelection.locator('[data-media-picker-use]').click();
+  await productSelection.waitFor({state:'hidden'});
+  assert.equal(await productPicker.control('source').inputValue(),String(oldGeneratedId));
+  assert.equal(await productPicker.control('product-description').inputValue(),typedDescription);
+  assert.equal(await productPicker.control('selected-image').locator('img').getAttribute('src'),root+`/media-library-file-v86.php?id=${oldGeneratedId}`);
+  assert.equal(productPicker.calls.at(-1).source_id,String(oldGeneratedId));
+  assert.equal(productPicker.calls.at(-1).action,'preview');
+  assert.equal(productPicker.calls.at(-1).tool,'product');
+  assert.equal(await productPicker.button('Create private draft').isVisible(),false);
+  assert.ok(productPicker.browseCalls.some(call => call.before === '137'));
+  assert.ok(productPicker.browseCalls.some(call => call.before === '113'));
+  await productPicker.button('Use a description').click();
+  assert.equal(await productPicker.control('source').inputValue(),'description');
+  assert.equal(await productPicker.control('product-description').inputValue(),typedDescription);
+  await productPicker.control('source').selectOption(String(oldGeneratedId));
+  await productPicker.button('Review source').click();
+  await productPicker.button('Create private draft').waitFor();
+  assert.equal(productPicker.calls.at(-1).source_id,String(oldGeneratedId));
+  assert.equal(await productPicker.control('review').locator('img').getAttribute('src'),root+`/media-library-file-v86.php?id=${oldGeneratedId}`);
+  assert.ok(productPicker.calls.every(call => ['sources','preview'].includes(call.action)));
+  assert.deepEqual(productPicker.uploads,[]);
+  pass('An image older than the latest 50 is chosen through library pagination, retains its exact ID and preview, and still requires source review');
+
+  const reviewedProduct = await productPicker.control('review').innerText();
+  await productPicker.button('Choose from Media Library').click();
+  await searchImage(productPicker.dialog,'Original studio photograph',oldUploadedId);
+  productPicker.onPreview(({fail}) => fail(404,'The selected photo is no longer available.'));
+  await picker(productPicker.dialog).locator('[data-media-picker-use]').click();
+  await picker(productPicker.dialog).getByText('The selected photo is no longer available.',{exact:true}).waitFor();
+  assert.equal(await productPicker.control('source').inputValue(),String(oldGeneratedId));
+  assert.equal(await productPicker.control('product-description').inputValue(),typedDescription);
+  assert.equal(await productPicker.control('review').innerText(),reviewedProduct);
+  await picker(productPicker.dialog).locator('[data-media-picker-cancel]').click();
+  assert.equal(await productPicker.button('Create private draft').isEnabled(),true);
+  pass('A failed exact-image validation leaves the Product source, description, and previous review intact');
+
+  await productPicker.button('Choose from Media Library').click();
+  await searchImage(productPicker.dialog,'Original studio photograph',oldUploadedId);
+  productPicker.onPreview(({body,ok,preview}) => ok({owner_key:'99',
+    preview:{...preview,source_title:'Another account private image'},review_token:token(body)}));
+  await picker(productPicker.dialog).locator('[data-media-picker-use]').click();
+  await picker(productPicker.dialog).getByText('The selected image could not be verified for this account and Chat.',{exact:true}).waitFor();
+  assert.equal(await productPicker.control('source').inputValue(),String(oldGeneratedId));
+  assert.equal(await productPicker.control('review').innerText(),reviewedProduct);
+  assert.equal(await pickerPage.getByText('Another account private image',{exact:true}).count(),0);
+  await picker(productPicker.dialog).locator('[data-media-picker-cancel]').click();
+  pass('A foreign-account exact preview cannot commit or render its private image metadata in the Product form');
+
+  await productPicker.button('Choose from Media Library').click();
+  await picker(productPicker.dialog).locator('[data-media-picker-asset="160"]').click();
+  let releaseImageSelection;
+  const imageSelectionGate = new Promise(resolve => { releaseImageSelection = resolve; });
+  let finishImageSelection;
+  const imageSelectionSettled = new Promise(resolve => { finishImageSelection = resolve; });
+  productPicker.onPreview(async ({body,ok,preview}) => {
+    await imageSelectionGate;
+    try { await ok({preview,review_token:token(body)}); } catch {} finally { finishImageSelection(); }
+  });
+  const pendingImageSelection = productPicker.waitForAction('preview','product');
+  await picker(productPicker.dialog).locator('[data-media-picker-use]').click();
+  await pendingImageSelection;
+  await picker(productPicker.dialog).locator('[data-media-picker-asset="159"]').click();
+  releaseImageSelection();
+  await imageSelectionSettled;
+  await productPicker.flush();
+  assert.equal(await productPicker.control('source').inputValue(),String(oldGeneratedId));
+  assert.equal(await picker(productPicker.dialog).locator('[data-media-picker-preview]').getAttribute('data-media-picker-candidate'),'159');
+  await picker(productPicker.dialog).locator('[data-media-picker-use]').click();
+  await picker(productPicker.dialog).waitFor({state:'hidden'});
+  assert.equal(await productPicker.control('source').inputValue(),'159');
+  assert.equal(await productPicker.control('product-description').inputValue(),typedDescription);
+  assert.ok(productPicker.calls.every(call => ['sources','preview'].includes(call.action)));
+  assert.deepEqual(productPicker.uploads,[]);
+  pass('Replacing a candidate while validation is in flight discards the old response and only Use image commits the replacement');
+
+  for (const contextChange of ['account','agent','conversation','participant','historical participant','binding']) {
+    await pickerPage.evaluate(() => {
+      window.STONEFELLOW_CHAT = {userId:12,agentId:7,workingAttentionBinding:'fixture-session'};
+      window.fixtureChatId = 42;
+      delete window.VP3ParticipantContinuity;
+      window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:0}}));
+      window.VP3InitiativeWorkbench.open('product','description');
+    });
+    await productPicker.control('source').locator('option[value="description"]').waitFor({state:'attached'});
+    await productPicker.control('product-description').fill(typedDescription);
+    await productPicker.button('Choose from Media Library').click();
+    await picker(productPicker.dialog).locator('[data-media-picker-asset="160"]').click();
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    let finish;
+    const settled = new Promise(resolve => { finish = resolve; });
+    productPicker.onPreview(async ({body,ok,preview}) => {
+      await gate;
+      try { await ok({preview:{...preview,source_title:'Late private source'},review_token:token(body)}); }
+      catch {} finally { finish(); }
+    });
+    const pendingSelection = productPicker.waitForAction('preview','product');
+    await picker(productPicker.dialog).locator('[data-media-picker-use]').click();
+    await pendingSelection;
+    await pickerPage.evaluate(change => {
+      if (change === 'account') window.STONEFELLOW_CHAT.userId = 99;
+      if (change === 'agent') window.STONEFELLOW_CHAT.agentId = 8;
+      if (change === 'conversation') window.fixtureChatId = 43;
+      if (change === 'participant') window.VP3ParticipantContinuity = {selectedContext:() => ({participant_id:9})};
+      if (change === 'historical participant') window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:9}}));
+      if (change === 'binding') window.STONEFELLOW_CHAT.workingAttentionBinding = 'replaced-session';
+    },contextChange);
+    release();
+    await settled;
+    await productPicker.dialog.waitFor({state:'hidden'});
+    assert.equal(await pickerPage.getByText('Late private source',{exact:true}).count(),0);
+    assert.equal(await productPicker.control('selected-image').locator('img').getAttribute('src'),null);
+    assert.equal(productPicker.calls.some(call => call.action === 'create'),false);
+  }
+  assert.deepEqual(productPicker.errors,[]);
+  pass('Account, Agent, Chat, selected or historical participant, and session changes invalidate pending image use before any destination mutation');
+
+  const marketingPickerPage = await browser.newPage({viewport:{width:390,height:844}});
+  const marketingPicker = await fixture(marketingPickerPage,{largeLibrary:true,marketingDrafts:[]});
+  await marketingPickerPage.evaluate(() => window.VP3InitiativeWorkbench.open('marketing','',{productId:106}));
+  await marketingPicker.control('source').locator('option[value="160"]').waitFor({state:'attached'});
+  assert.equal(await marketingPicker.control('product').inputValue(),'106');
+  await marketingPicker.button('Choose from Media Library').click();
+  await searchImage(marketingPicker.dialog,'Generated bowl in a garden',oldGeneratedId);
+  await picker(marketingPicker.dialog).locator('[data-media-picker-use]').click();
+  await picker(marketingPicker.dialog).waitFor({state:'hidden'});
+  assert.equal(await marketingPicker.control('product').inputValue(),'106');
+  assert.equal(await marketingPicker.control('source').inputValue(),String(oldGeneratedId));
+  assert.deepEqual(marketingPicker.calls.map(call => call.action),['sources','preview']);
+  assert.equal(marketingPicker.calls.at(-1).product_id,106);
+  assert.equal(marketingPicker.calls.at(-1).source_id,String(oldGeneratedId));
+  assert.deepEqual(marketingPicker.uploads,[]);
+  await marketingPicker.button('Review source').click();
+  await marketingPicker.button('Save private marketing draft').waitFor();
+  await marketingPicker.button('Save private marketing draft').click();
+  await marketingPicker.button('Design promotion in Canvas').click();
+  const changingCanvas = marketingPickerPage.locator('[data-marketing-canvas]');
+  const changingButton = name => changingCanvas.getByRole('button',{name,exact:true});
+  await changingButton('Review graphic settings').waitFor();
+  const initialMarketingDraft = marketingPicker.calls.find(call => call.action === 'creative_open').draft_id;
+  assert.equal(marketingPicker.calls.find(call => call.action === 'create').source_id,String(oldGeneratedId));
+  assert.equal(marketingPicker.calls.find(call => call.action === 'create').product_id,106);
+  pass('Marketing selection keeps the chosen product, and only explicit source review and draft creation open the exact saved image in Canvas');
+
+  await changingCanvas.locator('[data-marketing-headline]').fill('  Garden collection  ');
+  await changingCanvas.locator('[data-marketing-copy]').fill('A setting for summer.\nKeep this exact copy.');
+  await changingCanvas.locator('[data-marketing-level]').evaluate(input => { input.value = '6'; input.dispatchEvent(new Event('input',{bubbles:true})); });
+  await changingCanvas.locator('[data-marketing-prompt]').fill('  Set the bowl on a quiet garden table.  ');
+  const layoutStyle = changingCanvas.getByRole('combobox',{name:'Layout style'});
+  await layoutStyle.selectOption('warm');
+  assert.equal(await layoutStyle.inputValue(),'warm');
+  await changingCanvas.getByRole('checkbox',{name:'Remove a solid background',exact:true}).check();
+  await changingCanvas.locator('#vp3MarketingCutoutTolerance').evaluate(input => { input.value = '37'; input.dispatchEvent(new Event('input',{bubbles:true})); });
+  const preservedSettings = await canvasSettings(changingCanvas);
+  const canvasCalls = marketingPicker.calls.length;
+  await changingButton('Choose from Media Library').click();
+  await searchImage(changingCanvas,'Original studio photograph',oldUploadedId);
+  await picker(changingCanvas).locator('[data-media-picker-cancel]').click();
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  assert.equal(marketingPicker.calls.length,canvasCalls);
+  assert.equal(await changingCanvas.getByRole('img',{name:'Original product photo',exact:true}).getAttribute('src'),root+`/media-library-file-v86.php?id=${oldGeneratedId}`);
+  await changingButton('Choose from Media Library').click();
+  await searchImage(changingCanvas,'Original studio photograph',oldUploadedId);
+  marketingPicker.onPreview(({fail}) => fail(404,'The selected photo is no longer available.'));
+  await picker(changingCanvas).locator('[data-media-picker-use]').click();
+  await picker(changingCanvas).getByText('The selected photo is no longer available.',{exact:true}).waitFor();
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  assert.equal(await changingCanvas.locator('[data-marketing-source-choice]').isVisible(),false);
+  await picker(changingCanvas).locator('[data-media-picker-cancel]').click();
+  pass('Cancelling or failing a promotion image selection preserves the exact original photo, current draft, copy, layout, and scene settings');
+
+  await changingButton('Choose from Media Library').click();
+  await searchImage(changingCanvas,'Original studio photograph',oldUploadedId);
+  let releaseCanvasSelection;
+  const canvasSelectionGate = new Promise(resolve => { releaseCanvasSelection = resolve; });
+  let finishCanvasSelection;
+  const canvasSelectionSettled = new Promise(resolve => { finishCanvasSelection = resolve; });
+  marketingPicker.onPreview(async ({body,ok,preview}) => {
+    await canvasSelectionGate;
+    try { await ok({preview,review_token:token(body)}); } catch {} finally { finishCanvasSelection(); }
+  });
+  const pendingCanvasSelection = marketingPicker.waitForAction('preview','marketing');
+  await picker(changingCanvas).locator('[data-media-picker-use]').click();
+  await pendingCanvasSelection;
+  await picker(changingCanvas).locator('[data-media-picker-cancel]').click();
+  releaseCanvasSelection();
+  await canvasSelectionSettled;
+  await marketingPicker.flush();
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  assert.equal(await changingCanvas.locator('[data-marketing-source-choice]').isVisible(),false);
+  assert.equal(await changingCanvas.getByRole('img',{name:'Original product photo',exact:true}).getAttribute('src'),root+`/media-library-file-v86.php?id=${oldGeneratedId}`);
+  pass('Cancelling an in-flight promotion selection discards its late validation response and keeps the current design unchanged');
+
+  await changingButton('Choose from Media Library').click();
+  await searchImage(changingCanvas,'Original studio photograph',oldUploadedId);
+  await picker(changingCanvas).locator('[data-media-picker-use]').click();
+  await picker(changingCanvas).waitFor({state:'hidden'});
+  await changingCanvas.locator('[data-marketing-source-choice]').waitFor();
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  assert.equal(marketingPicker.calls.at(-1).action,'preview');
+  assert.equal(marketingPicker.calls.at(-1).product_id,106);
+  assert.equal(marketingPicker.calls.at(-1).source_id,String(oldUploadedId));
+  assert.equal(marketingPicker.calls.filter(call => call.action === 'create').length,1);
+  assert.equal(marketingPicker.calls.filter(call => call.action === 'creative_open').at(-1).draft_id,initialMarketingDraft);
+  assert.equal(await changingCanvas.getByRole('img',{name:'Original product photo',exact:true}).getAttribute('src'),root+`/media-library-file-v86.php?id=${oldGeneratedId}`);
+  assert.equal(await changingCanvas.locator('[data-marketing-source-choice] img').getAttribute('src'),root+`/media-library-file-v86.php?id=${oldUploadedId}`);
+  assert.equal(marketingPicker.calls.some(call => ['creative_prepare','creative_generate','creative_publish'].includes(call.action)),false);
+  await pickerScreenshot(changingCanvas,'marketing-staged-image-mobile.png');
+  await changingButton('Review selected image').click();
+  await marketingPicker.control('source').locator(`option[value="${oldUploadedId}"]`).waitFor({state:'attached'});
+  assert.equal(await marketingPicker.control('product').inputValue(),'106');
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  await marketingPicker.button('Close').click();
+  await marketingPicker.dialog.waitFor({state:'hidden'});
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  assert.equal(marketingPicker.calls.filter(call => call.action === 'creative_open').at(-1).draft_id,initialMarketingDraft);
+  assert.equal(await changingCanvas.locator('[data-marketing-source-choice]').isVisible(),true);
+  pass('Use image stages a replacement for review while the old promotion stays intact, including when the Workbench review is cancelled');
+
+  await changingButton('Review selected image').click();
+  await marketingPicker.control('source').locator(`option[value="${oldUploadedId}"]`).waitFor({state:'attached'});
+  marketingPicker.onPreview(({body,ok,preview}) => ok({preview:{...preview,revision:'d'.repeat(64)},review_token:token(body)}));
+  await marketingPicker.button('Review source').click();
+  await marketingPicker.dialog.getByText('This source changed after you selected it. Reload the source to review its current version.',{exact:true}).waitFor();
+  assert.equal(await marketingPicker.button('Save private marketing draft').isVisible(),false);
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  await marketingPicker.button('Close').click();
+  pass('A staged image retains its validated revision, so a changed photo cannot silently become a newly approved source');
+
+  await changingButton('Review selected image').click();
+  await marketingPicker.control('source').locator(`option[value="${oldUploadedId}"]`).waitFor({state:'attached'});
+  await marketingPicker.button('Review source').click();
+  await marketingPicker.button('Save private marketing draft').waitFor();
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  await marketingPicker.button('Save private marketing draft').click();
+  await marketingPicker.dialog.waitFor({state:'hidden'});
+  await changingButton('Review graphic settings').waitFor();
+  await marketingPickerPage.waitForFunction(id => document.querySelector('[data-marketing-canvas] img[alt="Original product photo"]')?.src.endsWith('id='+id),oldUploadedId);
+  assert.deepEqual(await canvasSettings(changingCanvas),preservedSettings);
+  const replacedDraft = marketingPicker.calls.filter(call => call.action === 'creative_open').at(-1);
+  assert.notEqual(replacedDraft.draft_id,initialMarketingDraft);
+  assert.equal(replacedDraft.product_id,106);
+  assert.equal(replacedDraft.source_id,String(oldUploadedId));
+  const replacementCreate = marketingPicker.calls.filter(call => call.action === 'create').at(-1);
+  assert.equal(replacementCreate.source_id,String(oldUploadedId));
+  assert.equal(replacementCreate.product_id,106);
+  assert.equal(replacementCreate.confirmed,true);
+  assert.equal(replacementCreate.review_token,token(replacementCreate));
+  assert.equal(marketingPicker.calls.some(call => ['creative_prepare','creative_generate','creative_publish'].includes(call.action)),false);
+  assert.deepEqual(marketingPicker.uploads,[]);
+  assert.deepEqual(marketingPicker.errors,[]);
+  assert.equal(await marketingPickerPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true);
+  pass('Explicit reviewed creation switches to a separate exact-source private draft and carries every entered design field without generating, uploading, or publishing');
+
+  const imageHandoffPage = await browser.newPage();
+  const imageHandoff = await fixture(imageHandoffPage,{largeLibrary:true});
+  const savedMarketingImage = libraryImages.find(item => item.id === oldGeneratedId);
+  const handoffChecks = await imageHandoffPage.evaluate(asset => {
+    const open = (image = asset, changes = {}) => window.VP3InitiativeWorkbench.openMarketingImage(image,
+      {ownerKey:'12',agentId:7,conversationId:42,isCurrent:() => true,...changes});
+    const rejected = [open(asset,{ownerKey:'99'}),open(asset,{agentId:8}),open(asset,{conversationId:43}),
+      open(asset,{isCurrent:() => false}),open({...asset,id:8}),open({...asset,available:false}),
+      open({...asset,file_size:4*1024*1024+1}),open({...asset,url:'https://foreign.test/media-library-file-v86.php?id=7'}),
+      open({...asset,url:'/unexpected/media-library-file-v86.php?id=7'})];
+    window.VP3ParticipantContinuity = {selectedContext:() => ({participant_id:9})};
+    rejected.push(open());
+    delete window.VP3ParticipantContinuity;
+    return {rejected,opened:open()};
+  },savedMarketingImage);
+  assert.deepEqual(handoffChecks.rejected,Array(10).fill(false));
+  assert.equal(handoffChecks.opened,true);
+  await imageHandoff.control('source').locator(`option[value="${oldGeneratedId}"]`).waitFor({state:'attached'});
+  assert.equal(await imageHandoff.control('tool').inputValue(),'marketing');
+  assert.equal(await imageHandoff.control('source').inputValue(),String(oldGeneratedId));
+  assert.equal(await imageHandoff.control('product').inputValue(),'');
+  assert.equal(await imageHandoff.button('Review source').isDisabled(),true);
+  assert.deepEqual(imageHandoff.calls.map(call => call.action),['sources']);
+  assert.deepEqual(imageHandoff.uploads,[]);
+  await imageHandoff.control('product').selectOption('106');
+  await imageHandoff.button('Review source').click();
+  await imageHandoff.button('Save private marketing draft').waitFor();
+  assert.equal(imageHandoff.calls.at(-1).source_id,String(oldGeneratedId));
+  assert.equal(imageHandoff.calls.at(-1).product_id,106);
+  assert.equal(imageHandoff.calls.some(call => call.action === 'create'),false);
+  pass('Use in Marketing opens the exact saved image only for a current private account/Agent/Chat and requires a product plus source review');
+
+  const firstProductPage = await browser.newPage();
+  const firstProduct = await fixture(firstProductPage,{largeLibrary:true,products:[]});
+  assert.equal(await firstProductPage.evaluate(asset => window.VP3InitiativeWorkbench.openMarketingImage(asset,
+    {ownerKey:'12',agentId:7,conversationId:42,isCurrent:() => true}),savedMarketingImage),true);
+  await firstProduct.control('source').locator(`option[value="${oldGeneratedId}"]`).waitFor({state:'attached'});
+  assert.equal(await firstProduct.control('product').locator('option').count(),1);
+  await firstProduct.dialog.getByText('Create a product listing first, then continue to its promotion from the saved listing.',{exact:true}).waitFor();
+  assert.equal(await firstProduct.button('Create product draft from this image').isEnabled(),true);
+  assert.equal(await firstProduct.button('Review source').isDisabled(),true);
+  assert.deepEqual(firstProduct.calls.map(call => call.action),['sources']);
+  await firstProduct.button('Create product draft from this image').click();
+  await firstProduct.control('source').locator(`option[value="${oldGeneratedId}"]`).waitFor({state:'attached'});
+  assert.equal(await firstProduct.control('tool').inputValue(),'product');
+  assert.equal(await firstProduct.control('source').inputValue(),String(oldGeneratedId));
+  assert.equal(await firstProduct.control('selected-image').locator('img').getAttribute('src'),root+`/media-library-file-v86.php?id=${oldGeneratedId}`);
+  assert.deepEqual(firstProduct.calls.map(call => call.action),['sources','sources']);
+  await firstProduct.button('Review source').click();
+  await firstProduct.button('Create private draft').waitFor();
+  assert.equal(firstProduct.calls.at(-1).tool,'product');
+  assert.equal(firstProduct.calls.at(-1).source_id,String(oldGeneratedId));
+  assert.equal(firstProduct.calls.some(call => call.action === 'create'),false);
+  assert.deepEqual(firstProduct.uploads,[]);
+  pass('Use in Marketing with no products offers the existing Product draft flow and retains the exact chosen image through its separate source review');
+
+  await firstProduct.button('Close').click();
+  await firstProductPage.evaluate(() => window.VP3InitiativeWorkbench.open('marketing'));
+  await firstProduct.control('source').locator('option[value="160"]').waitFor({state:'attached'});
+  assert.equal(await firstProduct.button('Choose from Media Library').isEnabled(),true);
+  await firstProduct.button('Choose from Media Library').click();
+  await searchImage(firstProduct.dialog,'Original studio photograph',oldUploadedId);
+  await picker(firstProduct.dialog).locator('[data-media-picker-use]').click();
+  await picker(firstProduct.dialog).waitFor({state:'hidden'});
+  assert.equal(firstProduct.calls.at(-1).action,'preview');
+  assert.equal(firstProduct.calls.at(-1).tool,'product');
+  assert.equal(firstProduct.calls.at(-1).source_id,String(oldUploadedId));
+  assert.equal(await firstProduct.control('source').inputValue(),String(oldUploadedId));
+  assert.equal(await firstProduct.button('Create product draft from this image').isEnabled(),true);
+  assert.equal(await firstProduct.button('Review source').isDisabled(),true);
+  assert.equal(firstProduct.calls.some(call => call.action === 'create'),false);
+  assert.deepEqual(firstProduct.errors,[]);
+  pass('An empty product catalog still permits visual image selection through read-only Product validation and an explicit product-draft handoff');
+
+  const withoutPickerPage = await browser.newPage();
+  const withoutPicker = await fixture(withoutPickerPage,{pickerAvailable:false});
+  await withoutPickerPage.evaluate(() => window.VP3InitiativeWorkbench.open('product','31'));
+  await withoutPicker.control('source').locator('option[value="31"]').waitFor({state:'attached'});
+  assert.equal(await withoutPicker.button('Choose from Media Library').isDisabled(),true);
+  await withoutPicker.button('Review source').click();
+  await withoutPicker.button('Create private draft').waitFor();
+  assert.deepEqual(withoutPicker.calls.map(call => call.action),['sources','preview']);
+  assert.deepEqual(withoutPicker.errors,[]);
+  pass('The original Product source dropdown and review remain usable if the shared picker runtime is unavailable');
 
   console.log(`CHAT_INITIATIVE_WORKBENCH_BROWSER=PASS (${cases} cases; real renderer and canonical image card, controlled API)`);
 } finally {

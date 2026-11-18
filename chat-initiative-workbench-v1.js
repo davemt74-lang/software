@@ -50,6 +50,26 @@
   const source = make('select');
   source.dataset.workbenchSource = '';
   const sourceLabel = label('Source', source);
+  const imageActions = make('div');
+  imageActions.className = 'vp3-workbench-image-actions';
+  const chooseImage = button('Choose from Media Library', () => openImagePicker());
+  chooseImage.dataset.workbenchChooseImage = '';
+  const useDescription = button('Use a description', () => {
+    if (![...source.options].some(option => option.value === 'description')) source.add(new Option('Describe a product', 'description'));
+    source.value = 'description';
+    changeSource();
+    productDescription.focus();
+  });
+  imageActions.append(chooseImage, useDescription);
+  const selectedImagePanel = make('figure');
+  selectedImagePanel.className = 'vp3-workbench-selected-image';
+  selectedImagePanel.dataset.workbenchSelectedImage = '';
+  selectedImagePanel.hidden = true;
+  const selectedImagePreview = make('img');
+  const selectedImageTitle = make('figcaption');
+  selectedImagePanel.append(selectedImagePreview, selectedImageTitle);
+  const pickerHost = make('div');
+  pickerHost.dataset.workbenchImagePicker = '';
   const mode = make('select');
   mode.dataset.workbenchMode = '';
   mode.add(new Option('AI cleanup', 'cleanup'));
@@ -73,6 +93,18 @@
   product.dataset.workbenchProduct = '';
   const productLabel = label('Product', product);
   productLabel.hidden = true;
+  const productStart = make('div');
+  productStart.className = 'vp3-workbench-product-start';
+  productStart.hidden = true;
+  const startProduct = button('Create product draft from this image', () => {
+    if (!dialog.open || !sameScope() || pending || imagePickerSession || !/^[1-9][0-9]*$/.test(source.value)) return;
+    const sourceId = source.value;
+    const image = selectedImage?.source_id === sourceId ? selectedImage : null;
+    if (!open('product', sourceId)) return;
+    if (image) showSelectedImage(image);
+    controls();
+  });
+  productStart.append(make('p', 'Create a product listing first, then continue to its promotion from the saved listing.'), startProduct);
 
   const actions = make('div');
   actions.className = 'vp3-workbench-actions';
@@ -87,7 +119,8 @@
   const result = make('div');
   result.dataset.workbenchResult = '';
   result.setAttribute('aria-live', 'polite');
-  dialog.append(header, intro, label('Work to create', lane), sourceLabel, productLabel, productDescriptionLabel, screenOptions, status, reviewPanel, actions, result);
+  dialog.append(header, intro, label('Work to create', lane), sourceLabel, productLabel, productStart, imageActions,
+    selectedImagePanel, pickerHost, productDescriptionLabel, screenOptions, status, reviewPanel, actions, result);
   document.body.append(dialog);
 
   const launch = button('Initiative workbench', () => open());
@@ -106,6 +139,11 @@
   let listingHandoff = false;
   let movingToCanvas = false;
   let scopeTimer = 0;
+  let participantActor = 0;
+  let imagePicker = null;
+  let imagePickerSession = null;
+  let selectedImage = null;
+  let marketingHandoff = null;
 
   function configurationMatches() {
     const current = window.VP3_INITIATIVE_WORKBENCH;
@@ -121,7 +159,7 @@
   }
 
   function currentScope() {
-    if (!configurationMatches()) return null;
+    if (!configurationMatches() || participantActor > 0 || window.VP3ParticipantContinuity?.selectedContext?.()) return null;
     const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     const cid = Number(chat?.conversationId?.() || 0);
     const aid = Number(chat?.agentId?.() ?? cfg.agentId ?? 0);
@@ -132,7 +170,8 @@
 
   function sameScope() {
     const now = currentScope();
-    return scope && now?.conversation_id === scope.conversation_id && now.agent_id === scope.agent_id;
+    return scope && now?.conversation_id === scope.conversation_id && now.agent_id === scope.agent_id
+      && (!marketingHandoff || marketingHandoff.isCurrent());
   }
 
   function clearReview() {
@@ -148,18 +187,29 @@
 
   function controls() {
     const active = dialog.open && sameScope();
+    const choosingImage = Boolean(imagePickerSession);
+    const imageLane = lane.value === 'product' || lane.value === 'marketing';
     lane.disabled = !active || pending?.action === 'create';
     source.disabled = !active || !!pending || !source.options.length;
     mode.disabled = instructions.disabled = !active || pending?.action === 'create';
-    reload.disabled = !active || !!pending;
+    reload.disabled = !active || !!pending || choosingImage;
     const fromDescription = lane.value === 'product' && source.value === 'description';
     productDescriptionLabel.hidden = !fromDescription;
     productDescription.disabled = !active || !!pending;
     productLabel.hidden = lane.value !== 'marketing';
     product.disabled = !active || !!pending;
-    review.disabled = !active || !!pending || !source.value || (fromDescription && !productDescription.value.trim()) || (lane.value === 'marketing' && !product.value);
+    const needsProduct = lane.value === 'marketing' && product.options.length === 1;
+    productStart.hidden = !needsProduct;
+    startProduct.disabled = !active || !!pending || choosingImage || !/^[1-9][0-9]*$/.test(source.value);
+    imageActions.hidden = !imageLane;
+    chooseImage.disabled = !active || !!pending || choosingImage || !window.VP3MediaLibraryPicker?.open
+      || (lane.value === 'marketing' && !product.value && !needsProduct);
+    useDescription.hidden = lane.value !== 'product';
+    useDescription.disabled = !active || !!pending || fromDescription;
+    selectedImagePanel.hidden = !imageLane || !selectedImage || selectedImage.source_id !== source.value;
+    review.disabled = !active || !!pending || choosingImage || !source.value || (fromDescription && !productDescription.value.trim()) || (lane.value === 'marketing' && !product.value);
     create.hidden = !reviewed;
-    create.disabled = !active || !!pending || !reviewed;
+    create.disabled = !active || !!pending || choosingImage || !reviewed;
     create.textContent = lanes[lane.value].create;
     screenOptions.hidden = lane.value !== 'screen';
     sourceLabel.firstChild.textContent = lanes[lane.value].source;
@@ -178,6 +228,11 @@
       ? String(options.productId) : '';
     const productId = pair?.[1] ?? marketingProductId;
     if (pair) sourceId = pair[2];
+    const handoff = tool === 'marketing' ? options?.marketingHandoff : null;
+    if (handoff && (typeof handoff.isCurrent !== 'function' || !handoff.isCurrent()
+      || handoff.productId !== Number(productId) || handoff.sourceId !== sourceId || !validDesignSettings(handoff.settings))) return false;
+    closeImagePicker('stale');
+    marketingHandoff = handoff ? {...handoff, settings:{...handoff.settings}} : null;
     listingHandoff = Boolean(pair && options?.listingHandoff === true);
     requestedSourceRevision = sourceRevision;
     const hints = tool === 'marketing' ? options?.marketingPrefill : null;
@@ -186,6 +241,7 @@
     productCreated = tool === 'product' && typeof options?.productCreated === 'function' ? options.productCreated : null;
     stopPending();
     clearReview();
+    selectedImage = null;
     scope = currentScope();
     lane.value = tool;
     source.replaceChildren();
@@ -193,6 +249,9 @@
     instructions.value = '';
     productDescription.value = tool === 'product' && sourceId === 'description' && typeof options?.productDescription === 'string'
       ? options.productDescription : '';
+    intro.textContent = marketingHandoff
+      ? 'Review this image for a separate private marketing draft. Your current promotion stays open while you review.'
+      : 'Choose a saved source, review how it will be used, then create a private result.';
     returnFocus = document.activeElement;
     window.dispatchEvent(new Event('vp3:initiative-workbench-open'));
     if (!dialog.open) dialog.showModal();
@@ -203,6 +262,7 @@
     if (scope) void loadSources(String(sourceId), productId);
     else status.textContent = 'Open an existing Agent Chat, or send a message to start one.';
     controls();
+    return dialog.open && sameScope();
   }
 
   function openProductRequest(description, conversationId, onCreated) {
@@ -214,6 +274,25 @@
     return dialog.open && sameScope();
   }
 
+  function openMarketingImage(asset, binding = {}) {
+    const bindingIsCurrent = () => {
+      if (typeof binding?.isCurrent !== 'function') return false;
+      try { if (!binding.isCurrent()) return false; } catch { return false; }
+      const active = currentScope();
+      return active && String(binding.ownerKey) === account.owner && binding.agentId === active.agent_id
+        && binding.conversationId === active.conversation_id;
+    };
+    if (!bindingIsCurrent() || !Number.isSafeInteger(asset?.id) || asset.id < 1 || asset.available !== true || asset.media_type !== 'photo'
+      || !['image/jpeg','image/png','image/webp'].includes(asset.mime_type)
+      || (asset.file_size !== undefined && (!Number.isSafeInteger(asset.file_size) || asset.file_size < 0 || asset.file_size > 4 * 1024 * 1024))) return false;
+    const preview = {source_id:String(asset.id),source_title:typeof asset.title === 'string' ? asset.title : 'Saved image',
+      details:{image_url:asset.url}};
+    if (!exactImageUrl(preview) || !bindingIsCurrent() || !open('marketing', preview.source_id)) return false;
+    showSelectedImage(preview);
+    controls();
+    return true;
+  }
+
   function scopeChanged() {
     window.clearInterval(scopeTimer);
     scopeTimer = 0;
@@ -221,23 +300,30 @@
     requestedMarketingPrefill = null;
     productCreated = null;
     listingHandoff = false;
+    closeImagePicker('stale');
+    marketingHandoff = null;
+    selectedImage = null;
     stopPending();
     clearReview();
     scope = null;
     source.replaceChildren();
+    product.replaceChildren();
+    productDescription.value = '';
     if (dialog.open) dialog.close();
     controls();
   }
 
   function validateAttempt(attempt) {
-    return dialog.open && pending === attempt && sameScope() && lane.value === attempt.tool;
+    return dialog.open && pending === attempt && sameScope() && lane.value === attempt.tool
+      && (!attempt.proposalKey || JSON.stringify(proposal()) === attempt.proposalKey);
   }
 
   async function request(action, fields, onSuccess) {
     if (!configurationMatches()) { scopeChanged(); return; }
     if (!sameScope() || !dialog.open) return;
     stopPending();
-    const attempt = {action, tool:lane.value, scope, controller:new AbortController()};
+    const attempt = {action, tool:lane.value, scope, controller:new AbortController(),
+      proposalKey:action === 'sources' ? '' : JSON.stringify(proposal())};
     pending = attempt;
     controls();
     try {
@@ -284,6 +370,7 @@
   }
 
   async function loadSources(preselect = '', productId = '') {
+    closeImagePicker('stale');
     const openedScope = scope;
     let loaded = false;
     clearReview();
@@ -337,6 +424,131 @@
     }
   }
 
+  function validDesignSettings(settings) {
+    return settings && Number.isInteger(settings.level) && settings.level >= 1 && settings.level <= 10
+      && typeof settings.headline === 'string' && Array.from(settings.headline).length <= 120
+      && typeof settings.copy === 'string' && Array.from(settings.copy).length <= 600
+      && typeof settings.prompt === 'string' && Array.from(settings.prompt).length <= 600
+      && ['clean', 'bold', 'warm'].includes(settings.style) && typeof settings.remove_background === 'boolean'
+      && Number.isInteger(settings.tolerance) && settings.tolerance >= 8 && settings.tolerance <= 64
+      && Number.isSafeInteger(settings.campaign_id) && settings.campaign_id >= 0;
+  }
+
+  function imageProposalKey() {
+    return JSON.stringify([lane.value, source.value, product.value, productDescription.value]);
+  }
+
+  function closeImagePicker(reason = 'cancelled') {
+    const picker = imagePicker;
+    const session = imagePickerSession;
+    picker?.close(reason);
+    if (imagePicker === picker) imagePicker = null;
+    if (imagePickerSession === session) imagePickerSession = null;
+  }
+
+  function showSelectedImage(preview) {
+    const imageUrl = exactImageUrl(preview);
+    if (!imageUrl) return;
+    selectedImage = preview;
+    selectedImagePreview.src = imageUrl;
+    selectedImagePreview.alt = preview.source_title;
+    selectedImageTitle.textContent = preview.source_title;
+  }
+
+  function exactImageUrl(preview) {
+    const imageUrl = safeUrl(preview?.details?.image_url, '/media-library-file-v86.php');
+    if (!imageUrl || !/^[1-9][0-9]*$/.test(preview.source_id || '')) return '';
+    const url = new URL(imageUrl);
+    const mediaPath = new URL('../media-library-file-v86.php', new URL(account.mediaEndpoint, location.href)).pathname;
+    return url.pathname === mediaPath && !url.hash && url.searchParams.getAll('id').length === 1 && url.searchParams.get('id') === preview.source_id
+      && [...url.searchParams.keys()].every(key => key === 'id') ? imageUrl : '';
+  }
+
+  async function validateImageSelection(asset, {tool, productId, bound, isCurrent, signal, expectedRevision = ''}) {
+    const current = () => {
+      const now = currentScope();
+      return !signal.aborted && isCurrent() && now?.conversation_id === bound.conversation_id && now.agent_id === bound.agent_id;
+    };
+    if (!current()) throw new Error('The image selection changed. Choose the image again.');
+    if (!Number.isSafeInteger(asset?.id) || asset.id < 1 || !['image/jpeg','image/png','image/webp'].includes(asset.mime_type)
+      || (Number(asset.file_size) > 4 * 1024 * 1024)) throw new Error('Choose a JPEG, PNG or WebP image up to 4 MB.');
+    if (tool === 'marketing' && (!Number.isSafeInteger(productId) || productId < 1)) throw new Error('Choose a product before using an image.');
+    const sourceId = String(asset.id);
+    const response = await fetch(account.endpoint, {
+      method:'POST', credentials:'same-origin', cache:'no-store', signal,
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'preview', tool, owner_key:account.owner, csrf_token:account.csrf, ...bound,
+        source_id:sourceId, ...(tool === 'marketing' ? {product_id:productId} : {})})
+    });
+    const data = await response.json().catch(() => null);
+    if (!current()) throw new Error('The image selection changed. Choose the image again.');
+    if (!response.ok || data?.ok !== true) throw new Error(data?.error || 'The selected image could not be verified. Try again.');
+    const preview = data.preview;
+    const imageUrl = exactImageUrl(preview);
+    if (data.owner_key !== account.owner || data.tool !== tool || data.agent_id !== bound.agent_id
+      || data.conversation_id !== bound.conversation_id || preview?.source_id !== sourceId
+      || typeof preview.source_title !== 'string' || !/^[a-f0-9]{64}$/.test(preview.revision || '')
+      || typeof data.review_token !== 'string' || !imageUrl) {
+      throw new Error('The selected image could not be verified for this account and Chat.');
+    }
+    if (expectedRevision && preview.revision !== expectedRevision) {
+      throw new Error('This source changed after it was selected. Reload the source to review its current version.');
+    }
+    if (!current()) throw new Error('The image selection changed. Choose the image again.');
+    return preview;
+  }
+
+  function openImagePicker() {
+    if (!sameScope() || !dialog.open || pending || !['product','marketing'].includes(lane.value)
+      || !window.VP3MediaLibraryPicker?.open || (lane.value === 'marketing' && !product.value && product.options.length !== 1)) return;
+    closeImagePicker('stale');
+    const session = {scope, tool:lane.value, productId:Number(product.value), key:imageProposalKey()};
+    imagePickerSession = session;
+    const isCurrent = () => imagePickerSession === session && dialog.open && sameScope() && scope === session.scope
+      && !pending && lane.value === session.tool && imageProposalKey() === session.key;
+    imagePicker = window.VP3MediaLibraryPicker.open({
+      host:pickerHost, endpoint:account.mediaEndpoint, ownerKey:account.owner, selectedId:source.value,
+      title:lane.value === 'product' ? 'Choose a product image' : 'Choose a marketing image',
+      returnFocus:chooseImage, maxBytes:4 * 1024 * 1024, acceptedMimes:['image/jpeg','image/png','image/webp'], isCurrent,
+      onSelect:async (asset, selection) => {
+        if (!selection.isCurrent() || !isCurrent()) return false;
+        const validationTool = session.tool === 'marketing' && !session.productId ? 'product' : session.tool;
+        const preview = await validateImageSelection(asset, {tool:validationTool, productId:session.productId,
+          bound:session.scope, isCurrent:selection.isCurrent, signal:selection.signal,
+          expectedRevision:source.value === String(asset.id) ? requestedSourceRevision : ''});
+        if (!selection.isCurrent() || !isCurrent()) return false;
+        if (![...source.options].some(option => option.value === preview.source_id)) {
+          source.add(new Option(preview.source_title, preview.source_id));
+        }
+        source.value = preview.source_id;
+        source.selectedOptions[0].text = preview.source_title;
+        requestedSourceRevision = preview.revision;
+        listingHandoff = false;
+        if (marketingHandoff && (marketingHandoff.sourceId !== preview.source_id || marketingHandoff.productId !== session.productId)) {
+          marketingHandoff = null;
+        }
+        clearReview();
+        showSelectedImage(preview);
+        session.key = imageProposalKey();
+        status.textContent = session.tool === 'marketing' && !session.productId
+          ? 'Image selected. Create a product draft to start its marketing.'
+          : 'Image selected. Review the source before creating a private draft.';
+        controls();
+        return true;
+      },
+      onClose:reason => {
+        if (imagePickerSession !== session) return;
+        const interrupted = reason === 'stale' && isCurrent();
+        imagePicker = null;
+        imagePickerSession = null;
+        if (interrupted) status.textContent = 'Media Library access changed. Choose an image again.';
+        controls();
+      }
+    });
+    if (!imagePicker) imagePickerSession = null;
+    controls();
+  }
+
   async function previewSource() {
     const fields = proposal();
     clearReview();
@@ -349,7 +561,9 @@
       const referenceRevision = lane.value === 'screen' && typeof data.preview.reference_revision === 'string'
         ? data.preview.reference_revision : data.preview.revision;
       if (requestedSourceRevision && referenceRevision !== requestedSourceRevision) {
-        status.textContent = 'This source changed after the Agent prepared its suggestion. Reload the source to review its current version.';
+        status.textContent = marketingHandoff || selectedImage?.revision === requestedSourceRevision
+          ? 'This source changed after you selected it. Reload the source to review its current version.'
+          : 'This source changed after the Agent prepared its suggestion. Reload the source to review its current version.';
         return;
       }
       const preview = data.preview;
@@ -369,10 +583,13 @@
           return;
         }
       }
-      reviewed = {fields, token:data.review_token, openCanvas:listingHandoff};
+      const handoff = marketingHandoff?.sourceId === fields.source_id && marketingHandoff.productId === fields.product_id
+        && marketingHandoff.isCurrent() ? marketingHandoff : null;
+      reviewed = {fields, token:data.review_token, openCanvas:listingHandoff || Boolean(handoff), handoff};
       const captured = dateLabel(details.captured_at);
       const sourceTitle = preview.source_title + (captured ? ' · ' + captured : '');
       if (fields.source_id !== 'description') source.selectedOptions[0].text = sourceTitle;
+      if (['product','marketing'].includes(lane.value)) showSelectedImage(preview);
       reviewPanel.append(make('h3', sourceTitle));
       let imageUrl = safeUrl(details.image_url, '/media-library-file-v86.php');
       if (lane.value === 'screen' && typeof details.image_data === 'string' && details.image_data.length <= 420000
@@ -396,7 +613,8 @@
         const savedDrafts = make('div');
         savedDrafts.className = 'vp3-workbench-actions';
         for (const draft of details.drafts) {
-          if (typeof draft?.draft_id !== 'string' || typeof draft.title !== 'string') continue;
+          if (typeof draft?.draft_id !== 'string' || !/^[a-f0-9]{64}$/.test(draft.draft_id)
+            || typeof draft.title !== 'string' || draft.product_id !== fields.product_id || String(draft.asset_id) !== fields.source_id) continue;
           savedDrafts.append(button('Design promotion · ' + draft.title, () => openMarketingDraft(draft.draft_id, fields.product_id, fields.source_id)));
         }
         if (savedDrafts.childElementCount) reviewPanel.append(savedDrafts);
@@ -442,7 +660,7 @@
     if (output.coverage) card.append(make('small', `${output.coverage.read_sources} readable excerpts from ${output.coverage.captured_sources} collected sources`));
   }
 
-  function openMarketingDraft(draftId, productId, sourceId, bound = sameScope() ? {...scope} : null, creativeId = '') {
+  function openMarketingDraft(draftId, productId, sourceId, bound = sameScope() ? {...scope} : null, creativeId = '', designSettings = null) {
     if (!bound || !window.VP3MarketingCanvas || typeof draftId !== 'string' || !/^[a-f0-9]{64}$/.test(draftId)
       || !Number.isSafeInteger(productId) || productId < 1 || typeof sourceId !== 'string' || !/^[1-9][0-9]*$/.test(sourceId)
       || (creativeId && !/^[a-f0-9]{32}$/.test(creativeId))) return false;
@@ -452,8 +670,11 @@
     };
     const opened = window.VP3MarketingCanvas.open(
       {draft_id:draftId, product_id:productId, source_id:sourceId},
-      {endpoint:account.endpoint, mediaEndpoint:account.mediaEndpoint, ownerKey:account.owner, csrf:account.csrf, scope:bound, isCurrent},
-      sameScope() && !creativeId ? requestedMarketingPrefill : null,
+      {endpoint:account.endpoint, mediaEndpoint:account.mediaEndpoint, ownerKey:account.owner, csrf:account.csrf, scope:bound, isCurrent,
+        validateImage:(asset, selection) => validateImageSelection(asset, {tool:'marketing', productId, bound,
+          isCurrent:() => isCurrent() && selection.isCurrent(), signal:selection.signal})},
+      designSettings ? {...designSettings, sourceChange:{product_id:productId, source_id:sourceId, ...bound, owner_key:account.owner}}
+        : sameScope() && !creativeId ? requestedMarketingPrefill : null,
       creativeId
     );
     if (opened && dialog.open) {
@@ -488,7 +709,7 @@
       return true;
     }
     if (marker.stage === 'design_review') return openMarketingDraft(marker.draft_id, marker.product_id, marker.source_id, bound);
-    if (!['image_pending','creative_ready','creative_failed','publication_review','published','paused','promotion_outcomes'].includes(marker.stage)
+    if (!['image_starting','image_pending','creative_ready','creative_failed','publication_review','published','paused','promotion_outcomes'].includes(marker.stage)
       || typeof marker.creative_id !== 'string' || !/^[a-f0-9]{32}$/.test(marker.creative_id)) return false;
     return openMarketingDraft(marker.draft_id, marker.product_id, marker.source_id, bound, marker.creative_id);
   }
@@ -535,7 +756,12 @@
 
   async function createResult() {
     if (!reviewed) return;
-    const {fields, token, openCanvas} = reviewed;
+    const {fields, token, openCanvas, handoff} = reviewed;
+    if (JSON.stringify(proposal()) !== JSON.stringify(fields) || (handoff && (marketingHandoff !== handoff || !handoff.isCurrent()))) {
+      clearReview();
+      controls();
+      return;
+    }
     status.textContent = 'Creating your private result…';
     await request('create', {...fields, review_token:token, confirmed:true}, data => {
       const output = data.output;
@@ -546,7 +772,8 @@
           status.textContent = 'The saved draft could not be verified for this listing.';
           return;
         }
-        if (openMarketingDraft(output.draft_id, fields.product_id, fields.source_id)) return;
+        if (handoff && (marketingHandoff !== handoff || !handoff.isCurrent())) return;
+        if (openMarketingDraft(output.draft_id, fields.product_id, fields.source_id, {...scope}, '', handoff?.settings)) return;
       }
       if (output) showResult(output);
       if (output?.kind === 'product_listing_draft' && output.source_id === 'description'
@@ -559,6 +786,8 @@
   }
 
   lane.addEventListener('change', () => {
+    closeImagePicker('stale');
+    marketingHandoff = null;
     requestedSourceRevision = '';
     requestedMarketingPrefill = null;
     productCreated = null;
@@ -570,6 +799,7 @@
     void loadSources();
   });
   function editProposal() {
+    closeImagePicker('stale');
     stopPending();
     clearReview();
     status.textContent = '';
@@ -578,6 +808,7 @@
   function changeSource() {
     requestedSourceRevision = '';
     listingHandoff = false;
+    marketingHandoff = null;
     editProposal();
   }
   source.addEventListener('change', changeSource);
@@ -585,6 +816,12 @@
   instructions.addEventListener('input', editProposal);
   productDescription.addEventListener('input', editProposal);
   product.addEventListener('change', changeSource);
+  dialog.addEventListener('cancel', event => {
+    if (!imagePickerSession) return;
+    event.preventDefault();
+    closeImagePicker();
+    controls();
+  });
   dialog.addEventListener('close', () => {
     if (dialog.open) return;
     window.clearInterval(scopeTimer);
@@ -592,6 +829,11 @@
     scope = null;
     listingHandoff = false;
     productCreated = null;
+    closeImagePicker('destroyed');
+    marketingHandoff = null;
+    selectedImage = null;
+    selectedImagePreview.removeAttribute('src');
+    selectedImageTitle.textContent = '';
     stopPending();
     clearReview();
     source.replaceChildren();
@@ -606,6 +848,11 @@
   });
   window.addEventListener('stonefellow:chat-context-changing', scopeChanged);
   window.addEventListener('vp3:chat-conversation-changed', scopeChanged);
+  window.addEventListener('vp3:participant-selection-changed', scopeChanged);
+  window.addEventListener('vp3:participant-task-context', event => {
+    participantActor = Number(event.detail?.participant_id) || 0;
+    scopeChanged();
+  });
   window.addEventListener('pagehide', scopeChanged);
   const resumeUrl = new URL(location.href);
   const resumeDraft = resumeUrl.searchParams.get('marketing_draft');
@@ -630,5 +877,5 @@
     window.addEventListener('vp3:chat-context-ready', resume);
     resume();
   }
-  window.VP3InitiativeWorkbench = Object.freeze({open,openProductLaunch,openProductRequest});
+  window.VP3InitiativeWorkbench = Object.freeze({open,openProductLaunch,openProductRequest,openMarketingImage});
 })();

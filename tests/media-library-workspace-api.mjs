@@ -184,6 +184,9 @@ try {
   const first = await read();
   assert.deepEqual(ids(first), Array.from({ length: 24 }, (_, i) => 32 - i));
   assert.equal(first.data.next_before, 9);
+  assert.equal(first.data.collections_available, false);
+  assert.deepEqual(first.data.collections, []);
+  assert.equal((await read({ collection_id: 1 })).response.status, 503);
   assert.equal((await post('begin', { media_type: 'photo', mime_type: 'image/png' }, 'wrong')).response.status, 419);
   const fresh = await upload('New photo', original);
   assert.equal(fresh.data.ok, true);
