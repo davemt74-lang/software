@@ -117,11 +117,21 @@ function homeserver_scope_v026_fetch(int $userId, bool $forceRefresh = false,boo
         'scope' => null,
         'last_known_cloud_blocked' => false,
     ];
-    if ($userId < 1 || !homeserver_scope_v026_supported($userId)) {
+    $connection=$pdo??(function_exists('db')?db():null);
+    $locked=$connection instanceof PDO&&$connection->inTransaction();
+    if ($userId < 1 || !homeserver_scope_v026_supported($userId,$locked,$connection)) {
         homeserver_scope_v026_set_last_cloud_block($userId, false);
         return $cache[$userId] = $state;
     }
     $state['supported'] = true;
+    // Foreground Chat normally resolves this request-local scope before taking
+    // an admission lock. A changed compute preference or a direct queue caller
+    // can arrive with a cold cache: do not enqueue/wait for tools.list while its
+    // HomeServer poll needs the same owner lock. Keep this outside the legacy
+    // catch below so uncertainty cannot be treated as permission for Cloud.
+    if($locked){
+        throw new RuntimeException('HomeServer scope must be checked before starting this operation. Try again.',503);
+    }
     if (!function_exists('homeserver_agent_v018_credentials')
         ||(!function_exists('homeserver_vp3_remote_operation_for_user')&&!function_exists('homeserver_vp3_remote_operation'))) {
         $state['reason'] = 'homeserver_unavailable';

@@ -18,6 +18,7 @@ const errors = [], calls = [], gates = [];
 const assets = [
   'chat.js', 'chat.css', 'chat-tools.js', 'chat-tools.css',
   'chat-image-composer-v1.js', 'chat-image-composer-v1.css',
+  'chat-canvas-media-v1.js', 'chat-canvas-media-v1.css', 'chat-image-studio-v1.js', 'chat-image-studio-v1.css',
   'chat-voice.js', 'voice-lease-v122.js', 'agent-context-v131.js'
 ];
 
@@ -85,11 +86,21 @@ if(isset($input['delete_asset'])){
     $asset=media_studio_asset((int)$input['delete_asset'],current_user());
     if($asset)@unlink(STONEFELLOW_ROOT.'/'.$asset['file_path']);
 }
+$seeded=null;
+if(!empty($input['seed_batch'])){
+    $plan=image_fixture_plan_v1();$plan['count']=4;$plan['title']='Desert variation';
+    $generation=vp3_image_queue_v1(db(),current_user(),['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],$plan,image_fixture_turn_v1());
+    $seeded=vp3_image_tick_v1(db(),current_user(),vp3_image_row_v1(db(),current_user(),$generation['id']),
+      static fn($url,$body,$key)=>image_fixture_response_v1($body['size'],$body['n']));
+    if($seeded['status']!=='completed')throw new RuntimeException('Generated batch fixture did not complete.');
+    db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json) VALUES(11,1,'assistant','Your four generated images are ready.',?)")
+      ->execute([json_encode(['canvas_media'=>['asset_ids'=>[],'generation_ids'=>[$generation['id']]]])]);
+}
 $jobs=[];
 if(table_exists('agent_image_generations_v1'))foreach(db()->query('SELECT * FROM agent_image_generations_v1')->fetchAll() as $row){
     $jobs[]=['id'=>$row['generation_id'],'conversation_id'=>(int)$row['conversation_id'],'config'=>json_decode($row['config_json'],true),'run_id'=>(int)$row['run_id']];
 }
-echo json_encode(['ok'=>true,'binding'=>vp3_catch_up_page_binding_v1(current_user()),'assets'=>media_studio_assets(current_user(),250),'jobs'=>$jobs]);
+echo json_encode(['ok'=>true,'binding'=>vp3_catch_up_page_binding_v1(current_user()),'assets'=>media_studio_assets(current_user(),250),'jobs'=>$jobs,'seeded'=>$seeded]);
 `);
 fs.writeFileSync(path.join(tmp, 'fixture-chat.php'), `<?php
 require __DIR__.'/includes/bootstrap.php';
@@ -149,7 +160,7 @@ async function json(response) {
   try { return JSON.parse(raw); } catch { throw Error(raw + '\n' + logs.slice(-3000)); }
 }
 const deferred = () => { let resolve; const promise = new Promise(done => resolve = done); return {promise, resolve}; };
-function createGate(index) { const gate={entered:deferred(),release:deferred(),index};gates.push(gate);return gate; }
+function createGate(index) { const gate={entered:deferred(),release:deferred(),completed:deferred(),index};gates.push(gate);return gate; }
 async function reached(gate) {
   let timer;
   try { await Promise.race([gate.entered.promise, new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Expected request did not reach its test gate.')),12000))]); }
@@ -209,14 +220,23 @@ try {
     assert.equal(job.config.count,3);assert.equal(job.config.reference.asset_id,seedAsset);assert.equal(job.config.reference.sha256,imageHash);
     await cancel(job);await control({mode:'ordinary'});
   });
+  let seeded,generatedIds,generatedHashes;
+  await check('four canonical generated outputs retain distinct private pixels and expose the exact third image as a reference',async()=>{
+    seeded=(await control({seed_batch:true})).seeded;
+    assert.equal(seeded.assets.length,4);generatedIds=seeded.assets.map(asset=>asset.id);
+    generatedHashes=await Promise.all(seeded.assets.map(async asset=>createHash('sha256').update(Buffer.from(await (await fetch(base+asset.url)).arrayBuffer())).digest('hex')));
+    assert.equal(new Set(generatedHashes).size,4,'Every batch variant must have distinct source bytes.');
+    const verified=await reference(generatedIds[2],(await control()).binding);
+    assert.equal(verified.data.reference.asset_id,generatedIds[2]);assert.equal(verified.data.reference.sha256,generatedHashes[2]);
+  });
   if (process.env.VP3_IMAGE_COMPOSER_FIXTURE_ONLY === '1') {
-    console.log('CHAT_IMAGE_COMPOSER_FIXTURE=PASS (real upload/reference/queue; no browser or provider launched)');
+    console.log('CHAT_IMAGE_COMPOSER_FIXTURE=PASS (real upload/reference/queue and controlled canonical batch; no browser or paid provider launched)');
   } else {
     const {chromium} = await import('playwright');
     browser = await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
     const page = await browser.newPage({viewport:{width:1280,height:800}});
     page.setDefaultTimeout(12000);page.on('pageerror',error=>errors.push(error.message));
-    let uploadGate=null, referenceGate=null, sendGate=null, failUpload=false;
+    let uploadGate=null, referenceGate=null, sendGate=null, failUpload=false, referenceFailure=null, referenceMismatch=false;
     await page.route('**/api/**',async route=>{
       const request=route.request(), pathname=new URL(request.url()).pathname;
       if(pathname==='/api/media-library-v86.php'){
@@ -230,8 +250,28 @@ try {
         return route.continue();
       }
       const payload=request.postDataJSON()||{};calls.push({pathname,...payload});
+      if(pathname==='/api/chat-image-studio-v1.php')return route.fulfill({json:{ok:true,state:{
+        contract:'vp3.image-studio.v1',owner_user_id:1,agent_id:7,conversation_id:payload.conversation_id,
+        working_attention_binding:request.headers()['x-vp3-working-attention'],source_revision:'a'.repeat(64),sources:[],next_before:null,brainstorm:null,
+        generations:[{...seeded,conversation_id:11,chat_label:'Image project',reference_asset_id:0}]
+      }}});
       if(pathname==='/api/chat-canvas-media-v1.php'){
-        if(payload.action==='reference'&&referenceGate){const gate=referenceGate;gate.entered.resolve();await gate.release.promise;}
+        // Keep browser sends at the real canonical queue boundary. The seeded
+        // four-output generation above uses an explicit controlled transport.
+        if(payload.action==='tick'){
+          const response=await route.fetch({postData:JSON.stringify({...payload,action:'get'})});
+          return route.fulfill({response});
+        }
+        if(payload.action==='reference'&&referenceGate){
+          const gate=referenceGate,response=await route.fetch();gate.entered.resolve();await gate.release.promise;
+          // Navigation/cancellation deliberately aborts these client requests.
+          await route.fulfill({response}).catch(()=>{});gate.completed.resolve();return;
+        }
+        if(payload.action==='reference'&&referenceFailure)return route.fulfill({status:422,json:{ok:false,error:referenceFailure}});
+        if(payload.action==='reference'&&referenceMismatch){
+          const response=await route.fetch(),data=await response.json(),other=seeded.assets[0];
+          data.asset=other;data.reference.asset_id=other.id;return route.fulfill({response,json:data});
+        }
         return route.continue();
       }
       if(['/api/chat-v236.php','/api/chat-stream-v121.php'].includes(pathname)){
@@ -251,6 +291,8 @@ try {
         window.STONEFELLOW_CHAT={userId:1,agentId:7,endpoint:'/api/chat-v236.php',csrf:'fixture',initialView:'chat',initialConversationId:cid,workingAttentionBinding};
         window.VP3_IMAGE_COMPOSER_V1={ownerKey:'1',agentId:7,csrf:'fixture',workingAttentionBinding,
           endpoint:'/api/chat-canvas-media-v1.php',uploadEndpoint:'/api/media-library-v86.php',mediaFileEndpoint:'/media-library-file-v86.php'};
+        window.VP3_CANVAS_MEDIA_V1={endpoint:'/api/chat-canvas-media-v1.php',csrf:'fixture',userId:1,agentId:7};
+        window.VP3_IMAGE_STUDIO_V1={endpoint:'/api/chat-image-studio-v1.php',csrf:'fixture',ownerKey:'1',agentId:7,workingAttentionBinding};
         localStorage.setItem('stonefellow:voice-mode:1','0');
         if(voice){
           window.STONEFELLOW_AGENT_CONTEXT={userId:1,surface:'chat',csrf:'fixture',proactiveEndpoint:'/api/context'};
@@ -268,8 +310,8 @@ try {
           window.StonefellowPremiumVoiceV122=()=>({warm:async()=>false,createStream(){return{started:Promise.resolve(),push(){},end(){},stop(){}};},stop(){}});
         }
       },{cid,voice,clear});
-      for(const file of ['chat.css','chat-tools.css','chat-image-composer-v1.css'])await page.addStyleTag({url:base+'/'+file});
-      for(const file of ['chat.js','chat-tools.js','chat-image-composer-v1.js',...(voice?['voice-lease-v122.js','agent-context-v131.js','chat-voice.js']:[])])await page.addScriptTag({url:base+'/'+file});
+      for(const file of ['chat.css','chat-tools.css','chat-image-composer-v1.css','chat-canvas-media-v1.css','chat-image-studio-v1.css'])await page.addStyleTag({url:base+'/'+file});
+      for(const file of ['chat-canvas-media-v1.js','chat.js','chat-tools.js','chat-image-composer-v1.js','chat-image-studio-v1.js',...(voice?['voice-lease-v122.js','agent-context-v131.js','chat-voice.js']:[])])await page.addScriptTag({url:base+'/'+file});
       await page.waitForFunction(cid=>window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady()&&window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===cid,cid);
     }
     const input=page.getByRole('textbox',{name:'Message your Agent'});
@@ -295,6 +337,20 @@ try {
       const directory=process.env.VP3_IMAGE_COMPOSER_SCREENSHOTS;if(!directory)return;
       fs.mkdirSync(directory,{recursive:true});await page.screenshot({path:path.join(directory,name+'.png'),fullPage:true});
     }
+    const viewer=page.getByRole('region',{name:'Image viewer',exact:true});
+    const choice=page.locator('#chatComposerShell .vp3-image-reference-choice');
+    const baseId=async()=>Number(new URL(await selected.getAttribute('src'),base).searchParams.get('id'));
+    async function waitForBase(id){
+      await page.waitForFunction(id=>{
+        const image=document.querySelector('.vp3-image-reference img');
+        return image&&new URL(image.src).searchParams.get('id')===String(id);
+      },id);
+    }
+    async function openGenerated(index){
+      assert.equal(await page.evaluate(({ids,index})=>window.VP3CanvasMedia.openImages(ids,{index,focusReturn:document.getElementById('chatInput')}),{ids:generatedIds,index}),true);
+      await viewer.waitFor();
+    }
+    async function releaseReference(gate){gate.release.resolve();referenceGate=null;await gate.completed.promise;await page.evaluate(()=>Promise.resolve());}
     await boot({clear:true});
     let currentAsset;
     await check('the Chat tools upload uses begin/chunk/finish and verifies a real private base without replacing a draft',async()=>{
@@ -352,6 +408,165 @@ try {
       const staging=page.evaluate(asset=>window.VP3ImageComposer.stagePrompt('This staged direction must not replace my typing',{count:4,referenceAssetId:asset,conversationId:11}),currentAsset);
       await reached(referenceGate);await input.fill('New words typed during image lookup');referenceGate.release.resolve();referenceGate=null;
       assert.equal(await staging,false);assert.equal(await input.inputValue(),'New words typed during image lookup');assert.equal(await selected.count(),0);
+    });
+    await check('choosing image three of a canonical batch offers that exact result in the composer without attaching, uploading or sending',async()=>{
+      const before=sends().length,beforeReferences=references().length,beforeUploads=uploads().length;
+      const card=page.locator('[data-generation-id="'+seeded.id+'"]');
+      await card.locator('.vp3-image-tile').nth(2).click();await choice.waitFor();
+      assert.equal(new URL(await viewer.locator('figure>img').getAttribute('src'),base).href,new URL(seeded.assets[2].url,base).href);
+      assert.equal(await choice.getByText('Image 3 of 4',{exact:true}).count(),1);
+      assert.equal(await selected.count(),0);assert.equal(references().length,beforeReferences);
+      assert.equal(uploads().length,beforeUploads);assert.equal(sends().length,before);
+      assert.equal(await input.inputValue(),'New words typed during image lookup');
+      assert.equal(await card.getByRole('button',{name:'Use this image',exact:true}).count(),0);
+      await choice.getByRole('button',{name:'Use this image',exact:true}).click();await waitForBase(generatedIds[2]);
+      assert.equal(references().at(-1).asset_id,generatedIds[2]);assert.equal(await input.inputValue(),'New words typed during image lookup');
+      assert.equal(await input.evaluate(element=>document.activeElement===element),true);
+      assert.equal(sends().length,before);assert.equal(uploads().length,beforeUploads);
+      await capture('generated-image-base-desktop');
+      await viewer.getByRole('button',{name:/Back to images$/}).click();
+      assert.equal(await choice.isVisible(),false);assert.equal(await baseId(),generatedIds[2]);
+    });
+    await check('a typed follow-up queues exactly the selected generated pixels, preserves the source batch and consumes only its valid receipt',async()=>{
+      await control({mode:'queue'});
+      const payload=await send('Generate 2 images: Make the background blue and keep everything else the same');
+      assert.equal(payload.image_reference_asset_id,generatedIds[2]);await selected.waitFor({state:'detached'});
+      const job=(await control()).jobs.at(-1);
+      assert.equal(job.config.reference.asset_id,generatedIds[2]);assert.equal(job.config.reference.sha256,generatedHashes[2]);assert.equal(job.config.count,2);
+      for(const [index,asset] of seeded.assets.entries()){
+        assert.equal(createHash('sha256').update(Buffer.from(await (await fetch(base+asset.url)).arrayBuffer())).digest('hex'),generatedHashes[index]);
+      }
+      await cancel(job);await control({mode:'ordinary'});await input.fill('New words typed during image lookup');
+    });
+    await check('the real Image History client opens the selected output in the real viewer and attaches it without restoring the original prompt',async()=>{
+      const before=sends().length;
+      await page.evaluate(()=>{
+        const host=document.createElement('section');host.id='fixtureImageHistory';document.getElementById('chatThread').append(host);
+        window.fixtureImageHistory=window.VP3ImageStudio.mountWorkspace(host,()=>({hasChat:true,owner:1,agent:7,
+          cid:window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId(),binding:window.FIXTURE_BINDING}),()=>{
+          window.fixtureImageHistory?.dispose();host.remove();
+        });
+      });
+      const history=page.locator('#fixtureImageHistory');await history.locator('[data-image-studio-thumbnail]').nth(2).click();
+      await history.waitFor({state:'detached'});await choice.getByText('Image 3 of 4',{exact:true}).waitFor();
+      await choice.getByRole('button',{name:'Use this image',exact:true}).click();await waitForBase(generatedIds[2]);
+      assert.equal(await input.inputValue(),'New words typed during image lookup');assert.equal(sends().length,before);
+      await viewer.getByRole('button',{name:/Back to Chat$/}).click();
+    });
+    await check('failed and mismatched saved-image replacements preserve the prior base, draft and keyboard focus at the composer',async()=>{
+      await openGenerated(1);const before=sends().length;
+      referenceFailure='This saved image cannot be used as an editing base.';
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).focus();
+      await page.keyboard.press('Enter');await page.getByText(referenceFailure,{exact:true}).waitFor();
+      assert.equal(await baseId(),generatedIds[2]);assert.equal(await input.inputValue(),'New words typed during image lookup');
+      assert.equal(await choice.getByRole('button',{name:'Replace base image',exact:true}).evaluate(element=>document.activeElement===element),true);
+      referenceFailure=null;referenceMismatch=true;
+      await page.keyboard.press('Enter');await page.getByText('The base image could not be verified.',{exact:true}).waitFor();
+      assert.equal(await baseId(),generatedIds[2]);assert.equal(sends().length,before);
+      assert.equal(await page.evaluate(()=>JSON.parse(sessionStorage.getItem('vp3:image-base:1:7:11')).assetId),generatedIds[2]);
+      referenceMismatch=false;
+    });
+    await check('cancelling a replacement retains the previous attachment and restores keyboard focus without sending',async()=>{
+      referenceGate=createGate();const gate=referenceGate,before=sends().length;
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).focus();await page.keyboard.press('Enter');await reached(gate);
+      assert.equal(await baseId(),generatedIds[2]);
+      assert.equal(await choice.getByRole('button',{name:'Cancel image selection',exact:true}).evaluate(element=>document.activeElement===element),true);
+      await page.getByRole('button',{name:'Send message',exact:true}).click();assert.equal(sends().length,before);
+      await choice.getByRole('button',{name:'Cancel image selection',exact:true}).focus();await page.keyboard.press('Enter');
+      assert.equal(await choice.getByRole('button',{name:'Replace base image',exact:true}).evaluate(element=>document.activeElement===element),true);
+      await releaseReference(gate);assert.equal(await baseId(),generatedIds[2]);
+      assert.equal(await input.inputValue(),'New words typed during image lookup');
+    });
+    await check('changing the viewed thumbnail retires a pending selection, and an explicit retry attaches only the newly chosen image',async()=>{
+      referenceGate=createGate();const gate=referenceGate;
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).click();await reached(gate);
+      await viewer.getByRole('button',{name:'View image 4',exact:true}).click();
+      await releaseReference(gate);assert.equal(await baseId(),generatedIds[2]);
+      assert.equal(await choice.getByText('Image 4 of 4',{exact:true}).count(),1);
+      assert.equal(await viewer.getByRole('button',{name:'View image 4',exact:true}).evaluate(element=>document.activeElement===element),true);
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).click();await waitForBase(generatedIds[3]);
+      assert.equal(await input.inputValue(),'New words typed during image lookup');
+      await page.getByRole('button',{name:'Remove base image',exact:true}).click();assert.equal(await selected.count(),0);
+      await choice.getByRole('button',{name:'Use this image',exact:true}).click();await waitForBase(generatedIds[3]);
+    });
+    await check('closing the viewer during replacement prevents the late result from changing the current base or draft',async()=>{
+      await viewer.getByRole('button',{name:'View image 2',exact:true}).click();referenceGate=createGate();const gate=referenceGate;
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).click();await reached(gate);
+      await viewer.getByRole('button',{name:/Back to Chat$/}).click();await releaseReference(gate);
+      assert.equal(await choice.isVisible(),false);assert.equal(await baseId(),generatedIds[3]);
+      assert.equal(await input.inputValue(),'New words typed during image lookup');
+    });
+    await check('a Chat switch during saved-image validation cannot attach the old image in the new Chat',async()=>{
+      await openGenerated(1);referenceGate=createGate();const gate=referenceGate;
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).click();await reached(gate);
+      await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(14));
+      await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===14&&window.STONEFELLOW_CHAT_CONTINUITY_V87.isReady());
+      await releaseReference(gate);assert.equal(await selected.count(),0);assert.equal(await choice.isVisible(),false);
+      assert.equal(await page.evaluate(()=>window.VP3ImageComposer.requestContext(14)),null);
+      await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(11));
+      await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===11&&window.STONEFELLOW_CHAT_CONTINUITY_V87.isReady());
+      await waitForBase(generatedIds[3]);assert.equal(await input.inputValue(),'New words typed during image lookup');
+    });
+    await check('participant changes cancel saved-image selection and retire both candidate and prior private attachment',async()=>{
+      await openGenerated(0);referenceGate=createGate();const gate=referenceGate;
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).click();await reached(gate);
+      await page.evaluate(()=>{
+        window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:22})};
+        window.dispatchEvent(new Event('vp3:participant-selection-changed'));
+      });
+      await releaseReference(gate);assert.equal(await selected.count(),0);assert.equal(await choice.isVisible(),false);assert.equal(await viewer.count(),0);
+      assert.equal(await page.evaluate(()=>sessionStorage.getItem('vp3:image-base:1:7:11')),null);
+      assert.equal(await input.inputValue(),'New words typed during image lookup');
+      await page.evaluate(()=>{delete window.VP3ParticipantContinuity;window.dispatchEvent(new Event('vp3:participant-selection-changed'));});
+    });
+    await check('a changed owner, Agent or page session cannot accept a late saved-image validation',async()=>{
+      for(const [key,value] of [['userId',2],['agentId',9],['workingAttentionBinding','replaced-page-session']]){
+        await openGenerated(1);referenceGate=createGate();const gate=referenceGate;
+        await choice.getByRole('button',{name:'Use this image',exact:true}).click();await reached(gate);
+        const prior=await page.evaluate(({key,value})=>{
+          const prior=window.STONEFELLOW_CHAT[key];window.STONEFELLOW_CHAT[key]=value;return prior;
+        },{key,value});
+        await releaseReference(gate);await choice.waitFor({state:'hidden'});
+        assert.equal(await selected.count(),0);assert.equal(await input.inputValue(),'New words typed during image lookup');
+        assert.equal(await page.evaluate(()=>sessionStorage.getItem('vp3:image-base:1:7:11')),null);
+        await page.evaluate(({key,prior})=>{window.STONEFELLOW_CHAT[key]=prior;},{key,prior});
+        if(await viewer.count())await viewer.getByRole('button',{name:/Back to Chat$/}).click();
+      }
+    });
+    await check('mobile replacement reserves measured space for both images, feedback and a multiline draft without covering viewer thumbnails',async()=>{
+      await page.setViewportSize({width:390,height:844});await openGenerated(2);await choice.waitFor();
+      await choice.getByRole('button',{name:'Use this image',exact:true}).click();await waitForBase(generatedIds[2]);
+      const draft='Keep this exact cover composition.\nMake the background warmer.\nKeep the lettering readable.\nGive me two variations to compare.';
+      await input.fill(draft);await viewer.getByRole('button',{name:'View image 4',exact:true}).click();
+      referenceFailure='This saved image cannot be used as an editing base.';
+      await choice.getByRole('button',{name:'Replace base image',exact:true}).click();
+      await page.getByText(referenceFailure,{exact:true}).waitFor();referenceFailure=null;
+      await page.waitForFunction(()=>parseFloat(getComputedStyle(document.getElementById('chatThread')).paddingBottom)
+        >=document.getElementById('chatComposerShell').getBoundingClientRect().height+15);
+      await page.locator('#chatThread').evaluate(element=>element.scrollTo({top:element.scrollHeight,behavior:'instant'}));
+      const bounds=await choice.evaluate(element=>{
+        const row=element.getBoundingClientRect(),form=document.getElementById('chatForm').getBoundingClientRect();
+        const base=document.querySelector('.vp3-image-reference').getBoundingClientRect();
+        const thumbnail=document.querySelector('.vp3-image-viewer-thumbnails button:last-child'),thumb=thumbnail.getBoundingClientRect();
+        const hit=document.elementFromPoint(thumb.left+thumb.width/2,thumb.top+thumb.height/2);
+        return {left:row.left,right:row.right,bottom:row.bottom,top:row.top,baseTop:base.top,baseBottom:base.bottom,
+          formTop:form.top,formBottom:form.bottom,thumbTop:thumb.top,thumbBottom:thumb.bottom,thumbClickable:thumbnail===hit||thumbnail.contains(hit),
+          width:innerWidth,height:innerHeight,documentWidth:document.documentElement.scrollWidth};
+      });
+      assert.ok(bounds.left>=0&&bounds.right<=bounds.width+1&&bounds.documentWidth<=bounds.width+1);
+      assert.ok(bounds.bottom<=bounds.baseTop&&bounds.baseBottom<=bounds.formTop&&bounds.formBottom<=bounds.height);
+      assert.ok(bounds.thumbTop>=0&&bounds.thumbBottom<bounds.top);assert.equal(bounds.thumbClickable,true);
+      assert.equal(await baseId(),generatedIds[2]);assert.equal(await input.inputValue(),draft);
+      assert.equal(await input.isEnabled(),true);await capture('generated-image-choice-mobile');
+      await viewer.getByRole('button',{name:'View image 2',exact:true}).click();
+      assert.equal(await choice.getByText('Image 2 of 4',{exact:true}).count(),1);assert.equal(await baseId(),generatedIds[2]);
+      await viewer.getByRole('button',{name:/Back to Chat$/}).click();
+      await input.fill('New words typed during image lookup');
+      const before=references().length;await boot();await waitForBase(generatedIds[2]);assert.equal(references().length,before+1);
+      assert.equal(await input.inputValue(),'New words typed during image lookup');
+      await page.getByRole('button',{name:'Remove base image',exact:true}).click();assert.equal(await selected.count(),0);
+      await page.waitForFunction(()=>!document.getElementById('chatThread').hasAttribute('data-vp3-image-composer-space'));
+      await page.setViewportSize({width:1280,height:800});
     });
     await check('an interrupted upload keeps the draft and can be retried; remove is clickable and clears only its attachment',async()=>{
       failUpload=true;await page.getByRole('button',{name:'Chat tools',exact:true}).click();

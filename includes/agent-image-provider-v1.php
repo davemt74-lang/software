@@ -22,6 +22,17 @@ function vp3_image_count_v1(array $config): int
     return $count;
 }
 
+function vp3_image_output_bytes_limit_v1(): int
+{
+    return 25*1024*1024;
+}
+
+/** Transfer the transient pixels so the worker cannot retain them during response decoding. */
+function vp3_image_take_source_v1(?string &$sourceImage): ?string
+{
+    $source=$sourceImage;$sourceImage=null;return $source;
+}
+
 /** Verify the PNG container as well as its header before publishing provider bytes. */
 function vp3_image_png_check_v1(string $bytes): void
 {
@@ -31,8 +42,12 @@ function vp3_image_png_check_v1(string $bytes): void
         if(++$chunks>4096)throw new RuntimeException('provider_image_unconfirmed');
         $length=unpack('N',substr($bytes,$offset,4))[1];$type=substr($bytes,$offset+4,4);
         if($length>$size-$offset-12||!preg_match('/^[A-Za-z]{4}$/D',$type)||($chunks===1&&($type!=='IHDR'||$length!==13))||($chunks>1&&$type==='IHDR'))throw new RuntimeException('provider_image_unconfirmed');
-        $payload=substr($bytes,$offset+8,$length);$crc=substr($bytes,$offset+8+$length,4);
-        if(!hash_equals(hash('crc32b',$type.$payload,true),$crc))throw new RuntimeException('provider_image_unconfirmed');
+        // A valid ancillary chunk can fill most of the output allowance. Hash
+        // bounded slices without copying the full payload and its type prefix.
+        $digest=hash_init('crc32b');hash_update($digest,$type);
+        for($read=0;$read<$length;$read+=65536)hash_update($digest,substr($bytes,$offset+8+$read,min(65536,$length-$read)));
+        $crc=substr($bytes,$offset+8+$length,4);
+        if(!hash_equals(hash_final($digest,true),$crc))throw new RuntimeException('provider_image_unconfirmed');
         $offset+=$length+12;if($type==='IDAT'&&$length>0)$data=true;
         if($type==='IEND'){$end=$length===0&&$offset===$size;break;}
     }
@@ -50,19 +65,45 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
     if($sourceImage!==null){
         $marketing=($config['mode']??'')==='marketing_reference';
         $reference=($config['mode']??'')==='chat_reference';
-        // Owned photo references retain the four-MiB limit plus Base64 overhead.
+        // Ordinary photos retain the four-MiB limit. An extended input is a frozen,
+        // server-verified generated output, revalidated by the worker before this call.
         $max=$marketing||$reference?5_600_000:420_000;
         $mime=$marketing||$reference?'(?:jpeg|png|webp)':'jpeg';
+        $generated=$reference&&is_array($config['reference']??null)&&array_key_exists('generated_output',$config['reference']);
+        if($generated){
+            $saved=$config['reference'];$proof=$saved['generated_output'];
+            if(!is_array($proof)||array_keys($proof)!==['generation_id','sequence_no']
+                ||!is_string($proof['generation_id'])||!preg_match('/\A[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}\z/',$proof['generation_id'])
+                ||!is_int($proof['sequence_no'])||$proof['sequence_no']<1||$proof['sequence_no']>4
+                ||!is_int($saved['asset_id']??null)||$saved['asset_id']<1||($saved['mime_type']??null)!=='image/png'
+                ||!is_string($saved['sha256']??null)||!preg_match('/\A[a-f0-9]{64}\z/',$saved['sha256'])){
+                throw new RuntimeException('image_reference_changed');
+            }
+            $max=4*intdiv(vp3_image_output_bytes_limit_v1()+2,3)+strlen('data:image/png;base64,');$mime='png';
+        }
         if(strlen($sourceImage)>$max||!preg_match('~^data:image/'.$mime.';base64,[A-Za-z0-9+/]+={0,2}$~D',$sourceImage))throw new RuntimeException($marketing?'marketing_source_changed':($reference?'image_reference_changed':'image_source_changed'));
+        if($generated){
+            // Hash in bounded Base64-aligned chunks rather than allocating another full raster.
+            $digest=hash_init('sha256');$decodedBytes=0;
+            for($offset=strlen('data:image/png;base64,');$offset<strlen($sourceImage);$offset+=65536){
+                $chunk=base64_decode(substr($sourceImage,$offset,65536),true);
+                if(!is_string($chunk)||($decodedBytes+=strlen($chunk))>vp3_image_output_bytes_limit_v1())throw new RuntimeException('image_reference_changed');
+                hash_update($digest,$chunk);
+            }
+            if(!hash_equals($saved['sha256'],hash_final($digest)))throw new RuntimeException('image_reference_changed');
+        }
         $endpoint='https://api.openai.com/v1/images/edits';
         $body['images']=[['image_url'=>$sourceImage]];
     }
-    if($transport)$result=$transport($endpoint,$body,$key);
+    if($transport){$result=$transport($endpoint,$body,$key);unset($body,$sourceImage);}
     else{
         $received='';$curl=curl_init($endpoint);
-        curl_setopt_array($curl,[CURLOPT_POST=>true,CURLOPT_HTTPHEADER=>['Authorization: Bearer '.$key,'Content-Type: application/json'],CURLOPT_POSTFIELDS=>json_encode($body,JSON_THROW_ON_ERROR),CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>120,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROXY=>'',CURLOPT_NETRC=>CURL_NETRC_IGNORED,CURLOPT_WRITEFUNCTION=>static function($ch,string $chunk)use(&$received): int{if(strlen($received)+strlen($chunk)>36*1024*1024)return 0;$received.=$chunk;return strlen($chunk);}]);
+        curl_setopt_array($curl,[CURLOPT_POST=>true,CURLOPT_HTTPHEADER=>['Authorization: Bearer '.$key,'Content-Type: application/json'],CURLOPT_POSTFIELDS=>json_encode($body,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES),CURLOPT_CONNECTTIMEOUT=>10,CURLOPT_TIMEOUT=>120,CURLOPT_FOLLOWLOCATION=>false,CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,CURLOPT_PROXY=>'',CURLOPT_NETRC=>CURL_NETRC_IGNORED,CURLOPT_WRITEFUNCTION=>static function($ch,string $chunk)use(&$received): int{if(strlen($received)+strlen($chunk)>36*1024*1024)return 0;$received.=$chunk;return strlen($chunk);}]);
+        unset($body,$sourceImage);
         if(defined('CURLOPT_PROTOCOLS'))curl_setopt($curl,CURLOPT_PROTOCOLS,CURLPROTO_HTTPS);
-        $ok=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);curl_close($curl);
+        $ok=curl_exec($curl);$status=(int)curl_getinfo($curl,CURLINFO_HTTP_CODE);curl_close($curl);unset($curl);
+        // Destroy the handle before decoding: its callback retains $received
+        // by reference, and PHP 8 curl_close alone does not release the handle.
         if($ok===false)throw new RuntimeException('provider_outcome_unconfirmed');
         if($status<200||$status>=300)throw new RuntimeException(match($status){401,403=>'provider_access_denied',429=>'provider_rate_limited',400,404,422=>'provider_request_rejected',default=>'provider_outcome_unconfirmed'});
         $result=json_decode($received,true,32,JSON_THROW_ON_ERROR);unset($received);
@@ -81,14 +122,18 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
     if(!is_array($result['data']??null)||!array_is_list($result['data'])||count($result['data'])!==$count)throw new RuntimeException('provider_image_unconfirmed');
     $images=[];$encodedBytes=0;$decodedBytes=0;
     [$expectedWidth,$expectedHeight]=array_map('intval',explode('x',$config['size']));
-    foreach($result['data'] as $index=>$item){
+    for($index=0;$index<$count;$index++){
+        $item=$result['data'][$index];
         if(!is_array($item)||!is_string($item['b64_json']??null))throw new RuntimeException('provider_image_unconfirmed');
         $encoded=$item['b64_json'];$encodedBytes+=strlen($encoded);
         if($encodedBytes>34*1024*1024)throw new RuntimeException('image_too_large');
-        $bytes=base64_decode($encoded,true);unset($encoded,$result['data'][$index]);
+        // Release this encoded item after decoding. Iterating the mutable data
+        // array by value would retain the original batch until the loop ends.
+        unset($item,$result['data'][$index]);
+        $bytes=base64_decode($encoded,true);unset($encoded);
         if(!is_string($bytes)||strlen($bytes)<24)throw new RuntimeException('provider_image_unconfirmed');
         $decodedBytes+=strlen($bytes);
-        if($decodedBytes>25*1024*1024)throw new RuntimeException('image_too_large');
+        if($decodedBytes>vp3_image_output_bytes_limit_v1())throw new RuntimeException('image_too_large');
         vp3_image_png_check_v1($bytes);
         $image=@getimagesizefromstring($bytes);
         if(!$image||($image['mime']??'')!=='image/png'||$image[0]<1||$image[1]<1||$image[0]>4096||$image[1]>4096||$image[0]*$image[1]>16777216)throw new RuntimeException('provider_image_unconfirmed');

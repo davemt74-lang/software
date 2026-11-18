@@ -382,7 +382,7 @@ jobs:
     needs: transfer-scope
     if: needs.transfer-scope.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     services:
       mysql:
         image: mysql:8.0
@@ -467,6 +467,7 @@ jobs:
           php tests/cloud-mission-web-v1.php
           php tests/cloud-mission-sources-v1.php
           php tests/agent-image-generation-v1.php
+          php tests/agent-image-runtime-storage-v1.php
       - name: Saved screen evidence and exact-session MySQL locks
         env:
           VP3_SECTION7_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=section7;charset=utf8mb4
@@ -801,6 +802,7 @@ jobs:
       - name: Image jobs, private sources and controlled provider transport
         run: |
           php tests/agent-image-generation-v1.php | tee artifacts/image-domain.log
+          php tests/agent-image-runtime-storage-v1.php | tee artifacts/image-runtime-storage.log
           php tests/agent-image-transport-v1.php | tee artifacts/image-transport.log
           php tests/chat-image-composer-v1.php | tee artifacts/image-composer-domain.log
           node tests/chat-canvas-media-api.mjs | tee artifacts/image-media-api.log
