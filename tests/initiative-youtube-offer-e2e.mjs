@@ -1117,8 +1117,15 @@ try{
   await post('Create a VP3 music playlist for ambient.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
-  await fixturePost('/fixture-coordination-wake?elapsed=1');
-  await waitForCasualIdle();
+  // Email uses the new ordinary turn as its prerequisite. Keep the recent
+  // Media post and its real idle spacing intact while this email is prepared.
+  await fixturePost('/fixture-coordination-wake');
+  const emailMediaReadinessResponse=await page.request.get(base+'/fixture-casual-readiness');
+  assert.ok(emailMediaReadinessResponse.ok(),await emailMediaReadinessResponse.text());
+  const emailMediaReadiness=await emailMediaReadinessResponse.json();
+  assert.deepEqual([emailMediaReadiness.owner_user_id,emailMediaReadiness.agent_id,emailMediaReadiness.conversation_id],[1,7,17]);
+  assert.equal(emailMediaReadiness.ready,false);
+  assert.equal(emailMediaReadiness.hold,'idle_spacing');
   await initiativeTick(17);
   const emailOffer=await waitForCasualPost('casual:email',beforeEmailOffer,'Want to draft an email?');
   const casualEmail=emailOffer.element;
