@@ -62,8 +62,10 @@
 
 .vp3-profile-period{display:grid;gap:18px;min-width:0}
 .vp3-profile-period-meta,.vp3-profile-period-group,.vp3-profile-period-backlog{min-width:0;display:grid;gap:8px}
+.vp3-profile-period-meta{gap:5px}
 .vp3-profile-period-meta p,.vp3-profile-period-group>p,.vp3-profile-period-backlog p{margin:0}
 .vp3-profile-period-meta small{display:block;color:#526177}
+.vp3-profile-period-details{min-width:0}.vp3-profile-period-details>summary{cursor:pointer;font-weight:600}.vp3-profile-period-details>div{display:grid;gap:6px;padding-top:10px}
 .vp3-profile-period-choices{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
 .vp3-profile-period-choices button[aria-pressed=true]{background:#eef4ff;border-color:#8faef0;font-weight:700}
 .vp3-profile-period-table{border-collapse:collapse;table-layout:fixed;width:100%;max-width:100%}
@@ -78,6 +80,7 @@
 .vp3-profile-period-definitions dt{font-weight:600}
 .vp3-profile-period-definitions dd{margin:0 0 8px;overflow-wrap:anywhere}
 .vp3-profile-period-coverage,.vp3-profile-period-backlog{padding:12px;background:#f4f7fb;border:1px solid #dbe3ee;border-radius:9px}
+.vp3-profile-period-coverage{margin:0}
 #vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-profile-period :where(p,span,label,button,th,td,a,b,strong,dt,dd,summary){font-size:13px;line-height:1.5}
 #vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-profile-period small{font-size:12px;line-height:1.5}
 #vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-profile-period h4{font-size:16px;line-height:1.4;margin:0}

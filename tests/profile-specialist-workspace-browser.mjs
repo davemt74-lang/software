@@ -112,8 +112,23 @@ try{
   await page.waitForFunction(ref=>document.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===ref,server.seed.analytics.ref);
   check((await panel().innerText()).includes('Period timezone: UTC')&&await panel().locator('[data-profile-analytics-metric="visit_records"]').count()===1,
     'completed period uses actual native aggregate evidence and its fixed timezone');
+  check(await panel().getByRole('heading',{name:'Completed day · 16 Nov 2026',exact:true}).count()===1
+    &&(await panel().innerText()).includes('Previous period: 15 Nov 2026'),'completed-period headings show the selected and previous included calendar dates');
+  const periodDetails=()=>panel().locator('[data-profile-period-details]');
+  check(await periodDetails().evaluate(element=>!element.open),'exact period metadata starts collapsed');
   await readablePeriods();await contained();await panel().evaluate(element=>{element.scrollTop=0;});
   await page.screenshot({path:'artifacts/profile-specialist-workspace/profile-period-desktop.png',fullPage:true});
+  const readsBeforeDetails=requests.length;
+  await periodDetails().locator('summary').focus();await page.keyboard.press('Enter');
+  check(await periodDetails().evaluate(element=>element.open)
+    &&(await periodDetails().innerText()).includes('2026-11-16T00:00:00+00:00 to 2026-11-17T00:00:00+00:00')
+    &&(await periodDetails().innerText()).includes('2026-11-15T00:00:00+00:00 to 2026-11-16T00:00:00+00:00')
+    &&(await periodDetails().innerText()).includes('The start is included; the end is excluded.')
+    &&(await periodDetails().innerText()).includes('Timezone source in this link: account choice.')
+    &&(await periodDetails().innerText()).includes('Fixed cutoff:')&&(await periodDetails().innerText()).includes('Evidence checked:'),
+    'keyboard-opened Period details retain exact offset bounds, inclusion rule, source, cutoff and evidence check');
+  await page.keyboard.press('Enter');
+  check(await periodDetails().evaluate(element=>!element.open)&&requests.length===readsBeforeDetails,'closing period details changes only presentation');
   await panel().getByRole('button',{name:'7 days',exact:true}).click();
   const seven=server.seed.analytics.period_options.find(option=>option.period===7).ref;
   await page.waitForFunction(ref=>document.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===ref,seven);
@@ -264,7 +279,17 @@ try{
   await tab('Analytics').click();await panel().getByRole('button',{name:'Completed periods',exact:true}).click();
   await panel().locator('.vp3-profile-period').waitFor();await readablePeriods();await contained();
   await panel().evaluate(element=>{element.scrollTop=0;});
+  const firstPeriodValue=await panel().locator('[data-profile-analytics-metric="visit_records"] strong').first().boundingBox();
+  const compactPanel=await panel().boundingBox();
+  check(firstPeriodValue&&compactPanel&&firstPeriodValue.y+firstPeriodValue.height<=compactPanel.y+compactPanel.height-8,
+    'compact completed periods show the first metric value before scrolling: '+JSON.stringify({firstPeriodValue,compactPanel}));
   await page.screenshot({path:'artifacts/profile-specialist-workspace/profile-period-compact.png',fullPage:true});
+  await periodDetails().locator('summary').focus();await page.keyboard.press('Enter');
+  check(await periodDetails().evaluate(element=>element.open)&&(await periodDetails().innerText()).includes('Fixed cutoff:'),
+    'compact Period details remain keyboard-accessible');
+  await readablePeriods();await contained();await panel().evaluate(element=>{element.scrollTop=0;});
+  await page.screenshot({path:'artifacts/profile-specialist-workspace/profile-period-details-compact.png',fullPage:true});
+  await page.keyboard.press('Enter');
   await panel().getByRole('button',{name:'Traffic details',exact:true}).click();await panel().locator('.vp3-analytics-shell').waitFor();await readableAnalytics();await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-analytics.png',fullPage:true});
   await page.keyboard.press('Escape');

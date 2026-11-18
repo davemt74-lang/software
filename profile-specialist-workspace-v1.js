@@ -185,6 +185,13 @@
     const padded=digits.padStart(3,'0'),whole=padded.slice(0,-2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
     return currency+' '+(negative?'-':withSign&&digits!=='0'?'+':'')+whole+'.'+padded.slice(-2);
   }
+  function analyticsCalendarRange(from,to,timezone) {
+    // These are fixed period instants. Format in the saved period zone, never
+    // the browser's zone; the final included instant names the last local day.
+    const formatter=new Intl.DateTimeFormat('en-GB',{timeZone:timezone,year:'numeric',month:'short',day:'numeric'});
+    const first=new Date(from),last=new Date(to-1),start=formatter.format(first),end=formatter.format(last);
+    return start===end?start:typeof formatter.formatRange==='function'?formatter.formatRange(first,last):start+' – '+end;
+  }
   function normalizeSelection(value={}) {
     const tab=tabs.some(([key])=>key===value.tab)?value.tab:'overview';
     const publicConversationId=positive(value.publicConversationId)?value.publicConversationId:0;
@@ -1003,14 +1010,21 @@
     function renderAnalyticsPeriod(target,value,mine) {
       const frame=node('section','','vp3-profile-period');frame.dataset.profileAnalyticsPeriod=value.ref;
       const meta=node('div','','vp3-profile-period-meta');
-      meta.append(node('h4',value.window.period===1?'Completed day':'Completed '+value.window.period+' days'));
-      meta.append(node('p',value.window.from_local+' to '+value.window.to_local));
-      meta.append(node('small','The start is included; the end is excluded.'));
+      const selectedRange=analyticsCalendarRange(value.window.from_utc_ms,value.window.to_utc_ms,value.window.timezone);
+      const previousRange=analyticsCalendarRange(value.window.previous.from_utc_ms,value.window.previous.to_utc_ms,value.window.timezone);
+      meta.append(node('h4',(value.window.period===1?'Completed day':'Completed '+value.window.period+' days')+' · '+selectedRange));
+      meta.append(node('p','Previous period: '+previousRange));
       meta.append(node('p','Period timezone: '+value.window.timezone));
-      meta.append(node('small','Timezone source in this link: '+{explicit:'account choice',schedule:'schedule choice',utc_fallback:'UTC fallback'}[value.window.timezone_source]+'.'));
-      meta.append(node('p','Previous period: '+value.window.previous.from_local+' to '+value.window.previous.to_local));
-      meta.append(node('small','Fixed cutoff: '+new Date(value.window.as_of_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')));
-      meta.append(node('small','Evidence checked: '+new Date(value.observed_at_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')));
+      const details=node('details','','vp3-profile-period-details');details.dataset.profilePeriodDetails='';
+      details.append(node('summary','Period details'));
+      const detailBody=node('div');
+      detailBody.append(node('p','Selected period: '+value.window.from_local+' to '+value.window.to_local));
+      detailBody.append(node('p','Previous period: '+value.window.previous.from_local+' to '+value.window.previous.to_local));
+      detailBody.append(node('small','The start is included; the end is excluded. The date headings name the included local calendar days.'));
+      detailBody.append(node('small','Timezone source in this link: '+{explicit:'account choice',schedule:'schedule choice',utc_fallback:'UTC fallback'}[value.window.timezone_source]+'.'));
+      detailBody.append(node('small','Fixed cutoff: '+new Date(value.window.as_of_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')));
+      detailBody.append(node('small','Evidence checked: '+new Date(value.observed_at_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')));
+      details.append(detailBody);meta.append(details);
       frame.append(meta);
       const choices=node('div','','vp3-profile-period-choices');choices.setAttribute('role','group');choices.setAttribute('aria-label','Completed period length');
       for(const option of value.period_options){
