@@ -8,8 +8,14 @@ const relative=value=>{if(!value)return '';const d=new Date(String(value).replac
 const req=async(action,payload=null)=>{const post=payload!==null;const url=post?endpoint:`${endpoint}?action=${encodeURIComponent(action)}`;const options=post?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,csrf_token:cfg.csrf,...payload})}:{credentials:'same-origin',cache:'no-store'};const r=await fetch(url,options),d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile activity is unavailable.');return d;};
 let state=null,timer=0,canvas=null,backdrop=null,button=null,badge=null,activeTab='activity',selectedConversation=0,bootstrapped=false,lastActivityId=0;
 let selectedThread=null,displayedThread=null,threadRead=0,stateRead=0,refreshBusy=false;
-const drafts=new Map(),threadMutations=new Map();
+const drafts=new Map(),threadMutations=new Map(),replyAttempts=new Map();
 const conversationId=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0;
+function prepareReply(id,message){
+  const previous=replyAttempts.get(id);if(previous?.message===message)return previous;
+  const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+  const attempt={conversation_id:id,message,request_id:Array.from(bytes,n=>n.toString(16).padStart(2,'0')).join('')};
+  replyAttempts.set(id,attempt);return attempt;
+}
 const threadSelected=binding=>binding!==null&&selectedThread===binding&&selectedConversation===binding.id;
 const threadDisplayed=binding=>threadSelected(binding)&&displayedThread===binding;
 function rememberDraft(){const form=canvas?.querySelector('[data-profile-reply]');if(displayedThread&&form)drafts.set(displayedThread.id,form.elements.message.value);}
@@ -82,9 +88,10 @@ async function sendReply(e,binding){
   const input=e.currentTarget.elements.message,raw=input.value,message=raw.trim();if(!message)return;
   drafts.set(binding.id,raw);const token={};threadMutations.set(binding.id,token);threadRead++;stateRead++;updateThreadControls(binding);threadNotice(binding);
   try{
-    const d=await req('owner_reply',{conversation_id:binding.id,message});
-    if(conversationId(d.conversation_id)!==binding.id)throw new Error('The reply could not be confirmed for this conversation.');
+    const attempt=prepareReply(binding.id,message),d=await req('owner_reply',attempt);
+    if(conversationId(d.conversation_id)!==binding.id||d.request_id!==attempt.request_id||!conversationId(d.message_id)||typeof d.duplicate!=='boolean')throw new Error('The reply could not be confirmed for this conversation. Your draft is kept; retry checks the same request.');
     if(!threadDisplayed(binding))return;
+    if(replyAttempts.get(binding.id)===attempt)replyAttempts.delete(binding.id);
     if(input.value===raw){input.value='';drafts.delete(binding.id);}
     stateRead++;state=d.state||state;updateButton();updateBell();threadMutations.delete(binding.id);
     const fresh=await refreshConversation(binding);threadNotice(binding,fresh?'Reply sent.':'Reply sent. The latest messages could not be loaded.',!fresh);

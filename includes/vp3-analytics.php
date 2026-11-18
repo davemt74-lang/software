@@ -118,96 +118,181 @@ function vp3_analytics_scope_sql(int $propertyId,string $alias='s'): array
     return $propertyId>0?[" AND {$alias}.property_id=?",[$propertyId]]:['',[]];
 }
 
+/** One database clock fixes the bounds of every aggregate in a response. */
+function vp3_analytics_reporting_window_v1(PDO $pdo,int $days): array
+{
+    $days=max(1,min(90,$days));
+    $driver=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    if($driver==='mysql'){
+        $row=$pdo->query("SELECT NOW() AS as_of,DATE_SUB(NOW(),INTERVAL $days DAY) AS from_at,UTC_TIMESTAMP() AS utc_now,@@session.time_zone AS zone,@@system_time_zone AS system_zone,TIMESTAMPDIFF(SECOND,UTC_TIMESTAMP(),NOW()) AS utc_offset")->fetch(PDO::FETCH_ASSOC);
+    }elseif($driver==='sqlite'){
+        $row=$pdo->query("SELECT datetime('now') AS as_of,datetime('now','-$days days') AS from_at,datetime('now') AS utc_now,'UTC' AS zone,'UTC' AS system_zone,0 AS utc_offset")->fetch(PDO::FETCH_ASSOC);
+    }else throw new RuntimeException('Analytics reporting clock is unsupported.');
+    if(!is_array($row))throw new RuntimeException('Analytics reporting clock is unavailable.');
+    $utc=new DateTimeZone('UTC');
+    foreach(['from_at','as_of','utc_now'] as $key){
+        $value=$row[$key]??null;
+        $date=is_string($value)?DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$value,$utc):false;
+        if(!$date||$date->format('Y-m-d H:i:s')!==$value)throw new RuntimeException('Analytics reporting clock is invalid.');
+    }
+    $offset=$row['utc_offset']??null;
+    if(!(is_int($offset)||(is_string($offset)&&preg_match('/^-?(?:0|[1-9][0-9]{0,5})$/D',$offset)))||abs((int)$offset)>86400)throw new RuntimeException('Analytics reporting offset is invalid.');
+    $offset=(int)$offset;
+    if((new DateTimeImmutable($row['as_of'],$utc))->getTimestamp()-(new DateTimeImmutable($row['utc_now'],$utc))->getTimestamp()!==$offset||strcmp($row['from_at'],$row['as_of'])>0)throw new RuntimeException('Analytics reporting clock disagrees.');
+    foreach(['zone','system_zone'] as $key)if(!is_string($row[$key]??null)||!preg_match('/^[A-Za-z0-9_+.:\/-]{1,80}$/D',$row[$key]))throw new RuntimeException('Analytics reporting timezone is unavailable.');
+    $zone=$row['zone']==='SYSTEM'?'SYSTEM (server '.$row['system_zone'].')':$row['zone'];
+    $zone.='; UTC'.($offset<0?'-':'+').sprintf('%02d:%02d',intdiv(abs($offset),3600),intdiv(abs($offset)%3600,60)).' at read';
+    return ['from'=>$row['from_at'],'to'=>$row['as_of'],'zone'=>$zone,'days'=>$days];
+}
+
+function vp3_analytics_query_rows_v1(PDO $pdo,string $sql,array $params): array
+{
+    $query=$pdo->prepare($sql);$query->execute($params);
+    return $query->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/** The JSON expression is safe even when a historical row contains malformed JSON. */
+function vp3_analytics_json_sql_v1(PDO $pdo,string $field,bool $type=false): string
+{
+    if(!in_array($field,['collector','event_name','device_type','browser_family'],true))throw new InvalidArgumentException('Invalid Analytics field.');
+    $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
+    $value="JSON_EXTRACT(e.details_json,'$.".$field."')";
+    $value=$type?($mysql?'JSON_TYPE('.$value.')':"JSON_TYPE(e.details_json,'$.".$field."')"):($mysql?'JSON_UNQUOTE('.$value.')':$value);
+    return 'CASE WHEN JSON_VALID(e.details_json) THEN '.$value.' ELSE NULL END';
+}
+
+/** Native visits are timestamped events; the browser contact's view_count is lifetime data. */
+function vp3_analytics_native_visits_v1(PDO $pdo,int $owner,array $window): array
+{
+    if(!table_exists('profile_events')||!table_exists('profile_visit_sessions'))throw new RuntimeException('Native Profile visit history is unavailable.');
+    $rows=vp3_analytics_query_rows_v1($pdo,"SELECT COUNT(*) AS visits,COUNT(DISTINCT e.profile_session_id) AS browser_contacts
+        FROM profile_events e LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id
+        WHERE e.owner_user_id=? AND (e.profile_session_id IS NULL OR s.owner_user_id=e.owner_user_id)
+          AND e.event_type='profile_view' AND e.created_at>=? AND e.created_at<=?",[$owner,$window['from'],$window['to']]);
+    return ['visits'=>(int)$rows[0]['visits'],'browser_contacts'=>(int)$rows[0]['browser_contacts']];
+}
+
 function vp3_analytics_dashboard_state(PDO $pdo,array $user,int $propertyId=0,int $days=30): array
 {
     $uid=(int)($user['id']??0);$days=max(1,min(90,$days));
-    $empty=['ready'=>false,'days'=>$days,'property_id'=>0,'properties'=>[],'stats'=>[],'timeline'=>[],'top_pages'=>[],'referrers'=>[],'devices'=>[],'browsers'=>[],'events'=>[],'property_stats'=>[]];
+    $empty=['ready'=>false,'coverage'=>'unavailable','days'=>$days,'property_id'=>$propertyId,'properties'=>[],'stats'=>[],'timeline'=>[],'top_pages'=>[],'referrers'=>[],'devices'=>[],'browsers'=>[],'events'=>[],'property_stats'=>[]];
     if($uid<1||!vp3_radar_schema_ready($pdo))return $empty;
     $properties=vp3_analytics_property_rows($pdo,$uid);
-    if(!vp3_analytics_property_allowed($properties,$propertyId))$propertyId=0;
-    [$sessionScope,$sessionParams]=vp3_analytics_scope_sql($propertyId,'s');
+    if(!vp3_analytics_property_allowed($properties,$propertyId))return array_replace($empty,['properties'=>$properties,'error'=>'Choose an available owned Analytics property.']);
+    $window=vp3_analytics_reporting_window_v1($pdo,$days);
+    $params=[$uid,$window['from'],$window['to']];
     [$eventScope,$eventParams]=vp3_analytics_scope_sql($propertyId,'e');
-    $since="DATE_SUB(NOW(),INTERVAL {$days} DAY)";
+    [$sessionScope,$sessionParams]=vp3_analytics_scope_sql($propertyId,'s');
+    $scopedParams=[...$params,...$eventParams];
+    $sessionFrom=' FROM vp3_radar_sessions s JOIN vp3_radar_properties p ON p.id=s.property_id AND p.owner_user_id=s.owner_user_id WHERE p.owner_user_id=? AND s.last_seen_at>=? AND s.last_seen_at<=?';
+    $eventFrom=' FROM vp3_radar_events e JOIN vp3_radar_properties p ON p.id=e.property_id AND p.owner_user_id=e.owner_user_id WHERE p.owner_user_id=? AND e.occurred_at>=? AND e.occurred_at<=?';
+    $humanSession="s.agent_contact_id IS NULL AND s.visitor_type='human'";
+    $agentSession="s.agent_contact_id IS NOT NULL OR SUBSTR(s.visitor_type,1,7)='webmcp_'";
+    $humanView="e.event_type='analytics_page_view' AND e.agent_contact_id IS NULL";
+    $agentView="e.event_type IN ('agent_profile_view','external_agent_page_view') AND e.agent_contact_id IS NOT NULL";
+    $pageView="(($humanView) OR ($agentView))";
+    $browserEvent="e.agent_contact_id IS NULL AND e.event_type IN ('analytics_page_view','analytics_event')";
+    $name=vp3_analytics_json_sql_v1($pdo,'event_name');
+    $collector=vp3_analytics_json_sql_v1($pdo,'collector');
+    $jsonString=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'STRING':'text';
+    $validJson='('.vp3_analytics_json_sql_v1($pdo,'collector',true)."='$jsonString' AND $collector='browser_analytics' AND "
+        .vp3_analytics_json_sql_v1($pdo,'event_name',true)."='$jsonString' AND LENGTH($name) BETWEEN 1 AND 64 AND "
+        .vp3_analytics_json_sql_v1($pdo,'device_type',true)."='$jsonString' AND ".vp3_analytics_json_sql_v1($pdo,'browser_family',true)."='$jsonString')";
+    $isConversion="e.event_type='analytics_event' AND e.agent_contact_id IS NULL AND ($name IN ('signup','contact_form','purchase','booking','lead','conversion') OR SUBSTR($name,1,11)='conversion.')";
 
-    $human=$pdo->prepare("SELECT COUNT(*) sessions,COALESCE(SUM(page_view_count),0) page_views FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.agent_contact_id IS NULL AND s.visitor_type='human' AND s.last_seen_at>={$since}{$sessionScope}");
-    $human->execute(array_merge([$uid],$sessionParams));$humanRow=$human->fetch()?:[];
-    $agents=$pdo->prepare("SELECT COUNT(*) sessions,COALESCE(SUM(page_view_count),0) page_views FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND (s.agent_contact_id IS NOT NULL OR s.visitor_type LIKE 'webmcp\\_%') AND s.last_seen_at>={$since}{$sessionScope}");
-    $agents->execute(array_merge([$uid],$sessionParams));$agentRow=$agents->fetch()?:[];
-    $nativeId=vp3_analytics_native_property_id($pdo,$uid);$includeNative=$propertyId===0||($nativeId>0&&$propertyId===$nativeId);
-    $nativeHumanSessions=0;$nativeHumanViews=0;
-    if($includeNative&&table_exists('profile_visit_sessions')){
-        $n=$pdo->prepare("SELECT COUNT(*) sessions,COALESCE(SUM(view_count),0) views FROM profile_visit_sessions WHERE owner_user_id=? AND last_seen_at>={$since}");$n->execute([$uid]);$nr=$n->fetch()?:[];$nativeHumanSessions=(int)($nr['sessions']??0);$nativeHumanViews=(int)($nr['views']??0);
+    // Complete aggregates never share the recent-feed row cap. Property cards use the same event definitions.
+    $sessionRows=vp3_analytics_query_rows_v1($pdo,"SELECT s.property_id,COUNT(*) AS sessions,
+        COALESCE(SUM(CASE WHEN $humanSession THEN 1 ELSE 0 END),0) AS human_sessions,
+        COALESCE(SUM(CASE WHEN $agentSession THEN 1 ELSE 0 END),0) AS agent_sessions".$sessionFrom.' GROUP BY s.property_id',$params);
+    $eventRows=vp3_analytics_query_rows_v1($pdo,"SELECT e.property_id,
+        COALESCE(SUM(CASE WHEN $humanView THEN 1 ELSE 0 END),0) AS human_page_views,
+        COALESCE(SUM(CASE WHEN $agentView THEN 1 ELSE 0 END),0) AS agent_page_views,
+        COALESCE(SUM(CASE WHEN $isConversion THEN 1 ELSE 0 END),0) AS conversions,
+        COALESCE(SUM(CASE WHEN e.event_type='analytics_event' AND e.agent_contact_id IS NULL THEN 1 ELSE 0 END),0) AS custom_events,
+        COALESCE(SUM(CASE WHEN e.risk_score>=70 THEN 1 ELSE 0 END),0) AS high_risk_events,
+        COALESCE(SUM(CASE WHEN e.event_type='webmcp_tool_called' THEN 1 ELSE 0 END),0) AS webmcp_tool_calls,
+        COALESCE(SUM(CASE WHEN e.event_type='webmcp_tool_completed' THEN 1 ELSE 0 END),0) AS webmcp_completed,
+        COALESCE(SUM(CASE WHEN e.event_type='webmcp_tool_failed' THEN 1 ELSE 0 END),0) AS webmcp_failed,
+        COALESCE(SUM(CASE WHEN e.event_type='webmcp_tool_denied' THEN 1 ELSE 0 END),0) AS webmcp_denied,
+        COALESCE(SUM(CASE WHEN ($browserEvent) AND NOT COALESCE($validJson,0) THEN 1 ELSE 0 END),0) AS invalid_browser_events"
+        .$eventFrom.' GROUP BY e.property_id',$params);
+    $stats=array_fill_keys(['sessions','human_sessions','agent_sessions','human_page_views','agent_page_views','conversions','custom_events','high_risk_events','webmcp_tool_calls','webmcp_completed','webmcp_failed','webmcp_denied'],0);
+    $propertyCounts=[];
+    foreach([...$sessionRows,...$eventRows] as $row){
+        $id=(int)$row['property_id'];$propertyCounts[$id]??=[];
+        if(($propertyId===0||$propertyId===$id)&&(int)($row['invalid_browser_events']??0)>0)throw new RuntimeException('Analytics event metadata is incomplete.');
+        foreach($row as $key=>$value){
+            if(!array_key_exists($key,$stats))continue;
+            $propertyCounts[$id][$key]=(int)$value;
+            if($propertyId===0||$propertyId===$id)$stats[$key]+=(int)$value;
+        }
+    }
+    $stats['unclassified_sessions']=$stats['sessions']-$stats['human_sessions']-$stats['agent_sessions'];
+    $stats['page_views']=$stats['human_page_views']+$stats['agent_page_views'];
+    $native=array_values(array_filter($properties,static fn(array $p):bool=>$p['property_type']==='native'));
+    if(count($native)>1)throw new RuntimeException('Native Analytics property is ambiguous.');
+    $nativeId=(int)($native[0]['id']??0);$includeNative=$nativeId>0&&($propertyId===0||$propertyId===$nativeId);
+    $nativeStats=null;
+    if($nativeId>0&&($includeNative||(table_exists('profile_events')&&table_exists('profile_visit_sessions'))))$nativeStats=vp3_analytics_native_visits_v1($pdo,$uid,$window);
+    $stats['native_visit_events']=$includeNative?$nativeStats['visits']:0;
+    $stats['native_browser_contacts']=$includeNative?$nativeStats['browser_contacts']:0;
+
+    $distributions=[];
+    foreach(['devices'=>['device_type',['Desktop','Mobile','Tablet','Other']],'browsers'=>['browser_family',['Chrome','Edge','Firefox','Safari','Other']]] as $key=>[$field,$labels]){
+        $value=vp3_analytics_json_sql_v1($pdo,$field);$allowed="'".implode("','",$labels)."'";
+        $group="CASE WHEN $value IN ($allowed) THEN $value ELSE 'Other' END";
+        $rows=vp3_analytics_query_rows_v1($pdo,"SELECT $group AS label,COUNT(*) AS count".$eventFrom." AND ($browserEvent)".$eventScope.' GROUP BY '.$group.' ORDER BY count DESC,label',$scopedParams);
+        $distributions[$key]=array_map(static fn(array $r):array=>['label'=>$r['label'],'count'=>(int)$r['count']],$rows);
     }
 
-    $eventStmt=$pdo->prepare("SELECT e.id,e.event_type,e.path,e.occurred_at,e.details_json,e.agent_contact_id,e.risk_score,e.severity,p.label property_label,p.property_type,c.display_name,c.operator_name,c.visitor_class
-      FROM vp3_radar_events e INNER JOIN vp3_radar_properties p ON p.id=e.property_id LEFT JOIN vp3_agent_contacts c ON c.id=e.agent_contact_id
-      WHERE e.owner_user_id=? AND e.occurred_at>={$since}{$eventScope} ORDER BY e.occurred_at DESC,e.id DESC LIMIT 1200");
-    $eventStmt->execute(array_merge([$uid],$eventParams));$eventRows=$eventStmt->fetchAll()?:[];
-    $conversions=0;$customEvents=0;$webmcpCalls=0;$webmcpCompleted=0;$webmcpFailed=0;$webmcpDenied=0;$devices=[];$browsers=[];$recent=[];$webmcpActivity=[];
-    foreach($eventRows as $row){
+    $feedSelect='SELECT e.id,e.event_type,e.path,e.occurred_at,e.details_json,e.agent_contact_id,e.risk_score,e.severity,p.label AS property_label,p.property_type,c.display_name,c.operator_name,c.visitor_class';
+    $feedFrom=' FROM vp3_radar_events e JOIN vp3_radar_properties p ON p.id=e.property_id AND p.owner_user_id=e.owner_user_id LEFT JOIN vp3_agent_contacts c ON c.id=e.agent_contact_id AND c.owner_user_id=e.owner_user_id WHERE p.owner_user_id=? AND e.occurred_at>=? AND e.occurred_at<=?';
+    $feed=vp3_analytics_query_rows_v1($pdo,$feedSelect.$feedFrom.$eventScope.' ORDER BY e.occurred_at DESC,e.id DESC LIMIT 80',$scopedParams);
+    $webmcpFeed=vp3_analytics_query_rows_v1($pdo,$feedSelect.$feedFrom." AND SUBSTR(e.event_type,1,7)='webmcp_'".$eventScope.' ORDER BY e.occurred_at DESC,e.id DESC LIMIT 80',$scopedParams);
+    $project=static function(array $row):array{
         $details=json_decode((string)($row['details_json']??''),true);if(!is_array($details))$details=[];
-        $eventType=(string)$row['event_type'];
-        if($eventType==='analytics_event'){
-            $customEvents++;$eventName=(string)($details['event_name']??'');if(in_array($eventName,VP3_ANALYTICS_CONVERSION_EVENTS,true)||str_starts_with($eventName,'conversion.'))$conversions++;
-        }
-        if(str_starts_with($eventType,'webmcp_')){
-            if($eventType==='webmcp_tool_called')$webmcpCalls++;
-            elseif($eventType==='webmcp_tool_completed')$webmcpCompleted++;
-            elseif($eventType==='webmcp_tool_failed')$webmcpFailed++;
-            elseif($eventType==='webmcp_tool_denied')$webmcpDenied++;
-            if(count($webmcpActivity)<80)$webmcpActivity[]=[
-                'id'=>(int)$row['id'],'event_name'=>$eventType,'property_label'=>(string)$row['property_label'],
-                'property_type'=>(string)$row['property_type'],'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
-                'display_name'=>(string)($row['display_name']??''),'operator_name'=>(string)($row['operator_name']??''),
-                'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'status'=>(string)($details['status']??''),
-                'interaction_id'=>(string)($details['interaction_id']??''),'attribution_origin'=>(string)($details['attribution_origin']??''),
-                'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0),
-                'risk_score'=>(int)$row['risk_score'],'occurred_at'=>(string)$row['occurred_at'],
-            ];
-        }
-        if((string)($details['collector']??'')==='browser_analytics'){
-            $device=(string)($details['device_type']??'Other');$browser=(string)($details['browser_family']??'Other');$devices[$device]=($devices[$device]??0)+1;$browsers[$browser]=($browsers[$browser]??0)+1;
-        }
-        if(count($recent)<80)$recent[]=[
-            'id'=>(int)$row['id'],'event_type'=>(string)$row['event_type'],'path'=>(string)$row['path'],'occurred_at'=>(string)$row['occurred_at'],
-            'property_label'=>(string)$row['property_label'],'property_type'=>(string)$row['property_type'],'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
+        return ['id'=>(int)$row['id'],'event_type'=>$row['event_type'],'path'=>$row['path'],'occurred_at'=>$row['occurred_at'],
+            'property_label'=>$row['property_label'],'property_type'=>$row['property_type'],
+            'agent_contact_id'=>$row['agent_contact_id']!==null?(int)$row['agent_contact_id']:null,
             'display_name'=>(string)($row['display_name']??''),'operator_name'=>(string)($row['operator_name']??''),'visitor_class'=>(string)($row['visitor_class']??''),
-            'risk_score'=>(int)$row['risk_score'],'severity'=>(string)$row['severity'],'event_name'=>(string)($details['event_name']??''),'value'=>$details['value']??null,
+            'risk_score'=>(int)$row['risk_score'],'severity'=>$row['severity'],'event_name'=>(string)($details['event_name']??''),'value'=>$details['value']??null,
             'surface'=>(string)($details['surface']??''),'tool'=>(string)($details['tool']??''),'webmcp_status'=>(string)($details['status']??''),
             'interaction_id'=>(string)($details['interaction_id']??''),'attribution_origin'=>(string)($details['attribution_origin']??''),
-            'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0),
-        ];
-    }
-    arsort($devices);arsort($browsers);
+            'referral_id'=>(int)($details['referral_id']??0)?:null,'duration_ms'=>(int)($details['duration_ms']??0)];
+    };
+    $recent=array_map($project,$feed);$webmcpActivity=[];
+    foreach($webmcpFeed as $row){$event=$project($row);$event['event_name']=$event['event_type'];$event['status']=$event['webmcp_status'];$webmcpActivity[]=$event;}
 
-    $timeline=$pdo->prepare("SELECT DATE(s.last_seen_at) day,COUNT(*) sessions,COALESCE(SUM(s.page_view_count),0) page_views,COALESCE(SUM(s.agent_contact_id IS NOT NULL OR s.visitor_type LIKE 'webmcp\\_%'),0) agent_sessions FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.last_seen_at>={$since}{$sessionScope} GROUP BY DATE(s.last_seen_at) ORDER BY day");
-    $timeline->execute(array_merge([$uid],$sessionParams));$timelineRows=$timeline->fetchAll()?:[];
-    $timelineMap=[];foreach($timelineRows as $row)$timelineMap[(string)$row['day']]=['day'=>(string)$row['day'],'sessions'=>(int)$row['sessions'],'page_views'=>(int)$row['page_views'],'agent_sessions'=>(int)$row['agent_sessions'],'native_sessions'=>0,'native_views'=>0];
-    if($includeNative&&table_exists('profile_visit_sessions')){
-        $nt=$pdo->prepare("SELECT DATE(last_seen_at) day,COUNT(*) sessions,COALESCE(SUM(view_count),0) views FROM profile_visit_sessions WHERE owner_user_id=? AND last_seen_at>={$since} GROUP BY DATE(last_seen_at) ORDER BY day");$nt->execute([$uid]);
-        foreach($nt->fetchAll()?:[] as $row){$day=(string)$row['day'];$timelineMap[$day]??=['day'=>$day,'sessions'=>0,'page_views'=>0,'agent_sessions'=>0,'native_sessions'=>0,'native_views'=>0];$timelineMap[$day]['native_sessions']=(int)$row['sessions'];$timelineMap[$day]['native_views']=(int)$row['views'];}
+    $timelineMap=[];
+    $dayRow=static fn(string $day):array=>['day'=>$day,'sessions'=>0,'page_views'=>0,'agent_sessions'=>0,'native_visit_events'=>0,'native_browser_contacts'=>0];
+    $rows=vp3_analytics_query_rows_v1($pdo,"SELECT DATE(s.last_seen_at) AS day,COUNT(*) AS sessions,COALESCE(SUM(CASE WHEN $agentSession THEN 1 ELSE 0 END),0) AS agent_sessions".$sessionFrom.$sessionScope.' GROUP BY DATE(s.last_seen_at) ORDER BY day',[...$params,...$sessionParams]);
+    foreach($rows as $row){$day=$row['day'];$timelineMap[$day]=$dayRow($day);$timelineMap[$day]['sessions']=(int)$row['sessions'];$timelineMap[$day]['agent_sessions']=(int)$row['agent_sessions'];}
+    $rows=vp3_analytics_query_rows_v1($pdo,'SELECT DATE(e.occurred_at) AS day,COUNT(*) AS page_views'.$eventFrom." AND $pageView".$eventScope.' GROUP BY DATE(e.occurred_at) ORDER BY day',$scopedParams);
+    foreach($rows as $row){$day=$row['day'];$timelineMap[$day]??=$dayRow($day);$timelineMap[$day]['page_views']=(int)$row['page_views'];}
+    if($includeNative){
+        $rows=vp3_analytics_query_rows_v1($pdo,"SELECT DATE(e.created_at) AS day,COUNT(*) AS visits,COUNT(DISTINCT e.profile_session_id) AS browser_contacts
+            FROM profile_events e LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id
+            WHERE e.owner_user_id=? AND (e.profile_session_id IS NULL OR s.owner_user_id=e.owner_user_id)
+              AND e.event_type='profile_view' AND e.created_at>=? AND e.created_at<=? GROUP BY DATE(e.created_at) ORDER BY day",$params);
+        foreach($rows as $row){$day=$row['day'];$timelineMap[$day]??=$dayRow($day);$timelineMap[$day]['native_visit_events']=(int)$row['visits'];$timelineMap[$day]['native_browser_contacts']=(int)$row['browser_contacts'];}
     }
     ksort($timelineMap);
-
-    $pages=$pdo->prepare("SELECT e.path,COUNT(*) events,COALESCE(SUM(e.agent_contact_id IS NULL),0) human_events,COALESCE(SUM(e.agent_contact_id IS NOT NULL),0) agent_events FROM vp3_radar_events e WHERE e.owner_user_id=? AND e.occurred_at>={$since} AND e.event_type NOT LIKE 'webmcp\\_%'{$eventScope} GROUP BY e.path ORDER BY events DESC,e.path LIMIT 20");
-    $pages->execute(array_merge([$uid],$eventParams));$topPages=$pages->fetchAll()?:[];
-    $refs=$pdo->prepare("SELECT s.referrer_host,COUNT(*) sessions FROM vp3_radar_sessions s WHERE s.owner_user_id=? AND s.last_seen_at>={$since} AND s.referrer_host<>''{$sessionScope} GROUP BY s.referrer_host ORDER BY sessions DESC,s.referrer_host LIMIT 20");
-    $refs->execute(array_merge([$uid],$sessionParams));$referrers=$refs->fetchAll()?:[];
-    $propertyStats=$pdo->prepare("SELECT p.id,p.label,p.property_type,p.domain,COUNT(s.id) sessions,COALESCE(SUM(s.page_view_count),0) page_views,COALESCE(SUM(s.agent_contact_id IS NOT NULL),0) agent_sessions FROM vp3_radar_properties p LEFT JOIN vp3_radar_sessions s ON s.property_id=p.id AND s.last_seen_at>={$since} WHERE p.owner_user_id=? GROUP BY p.id ORDER BY page_views DESC,sessions DESC,p.id");
-    $propertyStats->execute([$uid]);$propertyRows=$propertyStats->fetchAll()?:[];
-
-    $humanSessions=(int)($humanRow['sessions']??0)+$nativeHumanSessions;$humanViews=(int)($humanRow['page_views']??0)+$nativeHumanViews;$agentSessions=(int)($agentRow['sessions']??0);$agentViews=(int)($agentRow['page_views']??0);
-    return [
-        'ready'=>true,'days'=>$days,'property_id'=>$propertyId,'properties'=>$properties,
-        'stats'=>[
-            'human_sessions'=>$humanSessions,'agent_sessions'=>$agentSessions,'sessions'=>$humanSessions+$agentSessions,
-            'human_page_views'=>$humanViews,'agent_page_views'=>$agentViews,'page_views'=>$humanViews+$agentViews,
-            'conversions'=>$conversions,'custom_events'=>$customEvents,'high_risk_events'=>count(array_filter($eventRows,static fn(array $r):bool=>(int)$r['risk_score']>=70)),
-            'webmcp_tool_calls'=>$webmcpCalls,'webmcp_completed'=>$webmcpCompleted,'webmcp_failed'=>$webmcpFailed,'webmcp_denied'=>$webmcpDenied,
-        ],
-        'timeline'=>array_values($timelineMap),'top_pages'=>$topPages,'referrers'=>$referrers,
-        'devices'=>array_map(static fn(string $k,int $v):array=>['label'=>$k,'count'=>$v],array_keys($devices),array_values($devices)),
-        'browsers'=>array_map(static fn(string $k,int $v):array=>['label'=>$k,'count'=>$v],array_keys($browsers),array_values($browsers)),
-        'events'=>$recent,'webmcp_activity'=>$webmcpActivity,'property_stats'=>$propertyRows,
-    ];
+    $topPages=vp3_analytics_query_rows_v1($pdo,"SELECT e.path,COUNT(*) AS events,COALESCE(SUM(CASE WHEN $humanView THEN 1 ELSE 0 END),0) AS human_events,COALESCE(SUM(CASE WHEN $agentView THEN 1 ELSE 0 END),0) AS agent_events".$eventFrom." AND $pageView".$eventScope.' GROUP BY e.path ORDER BY events DESC,e.path LIMIT 20',$scopedParams);
+    $referrers=vp3_analytics_query_rows_v1($pdo,'SELECT s.referrer_host,COUNT(*) AS sessions'.$sessionFrom." AND s.referrer_host<>''".$sessionScope.' GROUP BY s.referrer_host ORDER BY sessions DESC,s.referrer_host LIMIT 20',[...$params,...$sessionParams]);
+    $propertyRows=[];
+    foreach($properties as $property){
+        $counts=$propertyCounts[(int)$property['id']]??[];
+        $row=array_intersect_key($property,array_flip(['id','label','property_type','domain']));
+        foreach(['sessions','human_sessions','agent_sessions','human_page_views','agent_page_views'] as $key)$row[$key]=(int)($counts[$key]??0);
+        $row['page_views']=$row['human_page_views']+$row['agent_page_views'];
+        $row['native_visit_events']=$property['property_type']==='native'?($nativeStats['visits']??null):null;
+        $row['native_browser_contacts']=$property['property_type']==='native'?($nativeStats['browser_contacts']??null):null;
+        $propertyRows[]=$row;
+    }
+    usort($propertyRows,static fn(array $a,array $b):int=>$b['page_views']<=>$a['page_views']?:$b['sessions']<=>$a['sessions']?:(int)$a['id']<=>(int)$b['id']);
+    return ['ready'=>true,'coverage'=>'complete','days'=>$days,'property_id'=>$propertyId,'properties'=>$properties,
+        'reporting_window'=>$window,'native_included'=>$includeNative,'native_page_views_available'=>false,
+        'stats'=>$stats,'timeline'=>array_values($timelineMap),'top_pages'=>$topPages,'referrers'=>$referrers,
+        'devices'=>$distributions['devices'],'browsers'=>$distributions['browsers'],
+        'events'=>$recent,'webmcp_activity'=>$webmcpActivity,'property_stats'=>$propertyRows];
 }

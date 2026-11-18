@@ -88,12 +88,18 @@ function notification_is_profile_source_pa4b(array $row): bool
 function notification_profile_projection_pa4b(PDO $pdo,array $user,array $row): array
 {
     if(!notification_is_profile_source_pa4b($row))return $row;
-    $safe=array_replace($row,['title'=>'Profile attention','body'=>'The saved Profile source is unavailable for current presentation.','target_url'=>url('/profile-agent.php?tab=attention'),'attention_prompt'=>'Review the saved Profile activity.','voice_allowed'=>false,'presentation_owner'=>'profile_attention_pa4b','source_status'=>'historical_unverified','source_label'=>'Profile source','source_role'=>'system','source_complete'=>false,'attention_id'=>0,'state_revision'=>0,'wake_generation'=>0,'can_read'=>false]);
+    $safe=array_replace($row,['title'=>'Profile attention','body'=>'The saved Profile source is unavailable for current presentation.','target_url'=>url('/profile-agent.php?tab=attention'),'attention_prompt'=>'Review the saved Profile activity.','voice_allowed'=>false,'presentation_owner'=>'profile_attention_pa4b','source_status'=>'historical_unverified','source_label'=>'Profile source','source_role'=>'system','source_complete'=>false,'attention_id'=>0,'state_revision'=>0,'wake_generation'=>0,'can_read'=>false,
+        'attention_type'=>'','attention_disposition'=>null,'attention_wake_due'=>false]);
     if(!function_exists('vp3_profile_attention_source_pa4b')||($row['source_type']??'')!=='profile_event')return $safe;
     try{
         $source=vp3_profile_attention_source_pa4b($pdo,$user,(int)$row['id']);
         $safe['source_status']=$source['status'];$safe['source_complete']=true;$safe['presentation_owner']=$source['presentation_owner'];
         $safe['attention_id']=(int)$source['attention']['id'];$safe['state_revision']=(int)$source['attention']['state_revision'];$safe['wake_generation']=(int)$source['attention']['wake_generation'];$safe['can_read']=(int)$source['attention']['read_generation']<(int)$source['attention']['wake_generation'];
+        // Read receipts and visible presentation do not settle owner work. The
+        // canonical attention ledger owns disposition and scheduled wake state.
+        $safe['attention_type']=$source['event_type'];
+        $safe['attention_disposition']=vp3_profile_attention_disposition_pa4b($source['attention']);
+        $safe['attention_wake_due']=vp3_profile_attention_due_pa4b($source['attention']);
         if($source['status']==='verified'){
             $safe['title']=mb_substr($source['projection']['title'],0,240);$safe['body']=$source['projection']['body'];
             $safe['source_label']=$source['projection']['speaker_label'];$safe['source_role']=$source['projection']['actor_role'];

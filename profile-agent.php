@@ -180,7 +180,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 <script src="<?= e(url('/profile-agent-radar-gateway.js?v=agent-access-controls-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-access-requests.js?v=agent-messaging-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-analytics-bridge.js?v=vp3-analytics-20260906')) ?>"></script>
-<script src="<?= e(url('/profile-agent-analytics.js?v=vp3-analytics-20260906')) ?>"></script>
+<script src="<?= e(url('/profile-agent-analytics.js?v='.substr(hash_file('sha256',__DIR__.'/profile-agent-analytics.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-personal-settings-v242.js?v=profile-owner-v242-20260905')) ?>"></script>
 </body>
 </html>

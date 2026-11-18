@@ -33,5 +33,5 @@ try{
     ]);
 }catch(Throwable $e){
     error_log('Profile revenue intelligence failed: '.$e->getMessage());
-    profile_revenue_intelligence_json_v180(false,['error'=>'Profile conversion intelligence could not be loaded.'],500);
+    profile_revenue_intelligence_json_v180(false,['error'=>'Profile conversion intelligence could not be loaded.','coverage'=>'unavailable'],503);
 }

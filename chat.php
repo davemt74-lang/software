@@ -28,6 +28,7 @@ $mediaOverlayBuild = 'chat-media-overlays-source-light-20260905';
 $agentOverlayBuild = 'agent-updates-hidden-v206-20260901';
 $agentIdentityBuild = 'cloud-agent-onboarding-readiness-v110-20261001';
 $profileActivityBuild = 'profile-activity-safety-pa1-20261103';
+$profileActivityBuild .= '-' . substr(hash('sha256', hash_file('sha256', __DIR__ . '/profile-activity-chat.js') . hash_file('sha256', __DIR__ . '/profile-activity-chat.css')), 0, 12);
 $headerUiBuild = 'live-wiring-20260903-3';
 $teamChatAdminBuild = 'team-chat-bootstrap-v236-20260905';
 $teamChatAdminBuild .= '-' . substr(hash_file('sha256', __DIR__ . '/team-chat-admin-v109.js'), 0, 12);

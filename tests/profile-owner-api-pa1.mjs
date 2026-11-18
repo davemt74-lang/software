@@ -27,7 +27,7 @@ async function request(method,fields={},headers={},query={}){
   return {response,data,text};
 }
 const csrf={csrf_token:'fixture-owner-csrf'};
-const mutations={save_profile:{username:'changed'},save_profile_media:{media_type:'cover'},save_profile_agent:{profile_agent_id:7,profile_agent_enabled:1},save_profile_access:{resource_type:'knowledge',profile_agent_allowed:1},attention_action:{attention_id:1,attention_action:'ignored'},conversation_status:{conversation_id:101,status:'resolved'},owner_reply:{conversation_id:101,message:'Should never be sent'}};
+const mutations={save_profile:{username:'changed'},save_profile_media:{media_type:'cover'},save_profile_agent:{profile_agent_id:7,profile_agent_enabled:1},save_profile_access:{resource_type:'knowledge',profile_agent_allowed:1},attention_action:{attention_id:1,attention_action:'ignored'},conversation_status:{conversation_id:101,status:'resolved'},owner_reply:{conversation_id:101,message:'Should never be sent',request_id:'c'.repeat(32)}};
 try{
   let ready=false;for(let i=0;i<60;i++){try{await state();ready=true;break;}catch{await new Promise(r=>setTimeout(r,50));}}assert.ok(ready,logs);
   const initial=await state();
@@ -56,13 +56,29 @@ try{
     r=await request('POST',{action,...mutations[action],conversation_id:201,...csrf});
     check(r.response.status===404&&!r.text.includes('SECRET'),`${action} rejects a foreign conversation under the real row boundary`);
   }
-  r=await request('POST',{action:'owner_reply',conversation_id:102,message:'Owner historical reply',...csrf});
+  for(const request_id of [undefined,'',[],'not-a-request']){
+    r=await request('POST',{action:'owner_reply',conversation_id:102,message:'Owner historical reply',...csrf,...(request_id===undefined?{}:{request_id})});
+    check(r.response.status===422&&r.data.code==='OWNER_REPLY_REQUEST_REQUIRED'&&r.data.error.includes('Refresh Profile Activity'),'missing or invalid owner request identity asks the stale client to refresh without sending');
+  }
+  const historicalReply={action:'owner_reply',conversation_id:102,message:'Owner historical reply',request_id:'a'.repeat(32),...csrf};
+  r=await request('POST',historicalReply);
   let saved=await state();
   check(r.response.status===200&&r.data.conversation_id===102&&r.data.messages.at(-1).message==='Owner historical reply','successful reply acknowledges the exact historical owned thread');
   check(saved.profile_agent_messages.filter(m=>m.sender_type==='owner').length===1&&saved.profile_agent_messages.at(-1).conversation_id==102&&saved.profile_agent_conversations.find(c=>c.id==102).status==='owner_joined','owner reply stores once in the selected thread and takes over that thread');
   const sentEvent=saved.profile_events[0],sentMetadata=sentEvent&&JSON.parse(sentEvent.metadata_json);
   check(saved.profile_events.length===1&&sentEvent.owner_user_id==1&&sentEvent.profile_session_id==12&&sentEvent.profile_agent_id==8&&sentEvent.visitor_user_id==4&&sentEvent.event_type==='message_sent'&&sentMetadata.conversation_id===102&&sentMetadata.message_id==saved.profile_agent_messages.at(-1).id&&sentMetadata.sender_type==='owner'&&sentMetadata.sender_user_id===1&&!('source_authority' in sentMetadata),'historical owner reply records its exact canonical actor and message without inventing visitor authority');
   check(saved.agent_attention_items.find(a=>a.id==2).status==='handled'&&saved.agent_attention_items.find(a=>a.id==1).status==='pending'&&saved.agent_attention_items.find(a=>a.id==3).status==='pending','owner reply handles only that thread’s attention');
+  const historicalReceipt=r.data,savedHistorical=JSON.stringify(saved);
+  check(historicalReceipt.request_id===historicalReply.request_id&&historicalReceipt.message_id>0&&historicalReceipt.duplicate===false,'historical reply acknowledges its exact durable request and message');
+  r=await request('POST',historicalReply);
+  check(r.response.status===200&&r.data.duplicate===true&&r.data.message_id===historicalReceipt.message_id&&r.data.request_id===historicalReply.request_id,'historical committed-write lost-ACK retry recovers the same stored owner message');
+  check(JSON.stringify(await state())===savedHistorical,'historical reply retry does not duplicate its message/event or change responder state');
+  r=await request('POST',{...historicalReply,message:'Changed request body'});
+  check(r.response.status===409&&r.data.code==='OWNER_REPLY_CONFLICT'&&JSON.stringify(await state())===savedHistorical,'historical request ID cannot be reused with different reply content');
+  r=await request('POST',{...historicalReply,conversation_id:101});
+  check(r.response.status===409&&r.data.code==='OWNER_REPLY_CONFLICT'&&JSON.stringify(await state())===savedHistorical,'historical owner-wide request ID cannot create a second message in another owned thread');
+  r=await request('POST',historicalReply,{'X-Fixture-Profile-Denied':'1'});
+  check(r.response.status===403&&JSON.stringify(await state())===savedHistorical,'historical replay still requires current Profile permission');
   r=await request('POST',{action:'conversation_status',conversation_id:101,status:'resolved',...csrf});
   saved=await state();
   check(r.response.status===200&&r.data.conversation_id===101&&saved.profile_agent_conversations.find(c=>c.id==101).status==='resolved','valid status POST acknowledges and updates the exact owned thread');
@@ -72,7 +88,7 @@ try{
   }
   const beforeFailure=await state();
   for(const fault of ['insert','after_insert','event_insert']){
-    r=await request('POST',{action:'owner_reply',conversation_id:101,message:'Uncommitted reply',...csrf},{'X-Fixture-Fault':fault});
+    r=await request('POST',{action:'owner_reply',conversation_id:101,message:'Uncommitted reply',request_id:'b'.repeat(32),...csrf},{'X-Fixture-Fault':fault});
     check(r.response.status===500&&r.data.code==='PROFILE_AGENT_REQUEST_FAILED'&&!/SECRET|SQLSTATE|private\/|config\.php/.test(r.text),'database '+fault+' failure exposes no server diagnostic');
     check(JSON.stringify(await state())===JSON.stringify(beforeFailure),'database '+fault+' failure rolls back the full owner reply transaction');
   }

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require (string)getenv('VP3_PA3_ROOT').'/tests/fixtures/profile-handoff-pa3.php';
+if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$pdo->sqliteCreateFunction('GREATEST',static fn(...$values)=>max($values));
 session_start();
 $fixtureUser=(int)($_SERVER['HTTP_X_FIXTURE_USER']??0);
 if($fixtureUser>0){$row=pa3_owner($fixtureUser);$_SESSION['user_id']=$fixtureUser;$_SESSION['auth_password_fingerprint']=auth_password_fingerprint($fixtureUser,(string)$row['password_hash']);}
@@ -14,3 +15,5 @@ $pdo->failSql=match($_SERVER['HTTP_X_FIXTURE_FAULT']??''){
     default=>'',
 };
 function agent_brain_schema_ready(): bool{return false;}
+// Every fixture account is a member; the legacy artist migration is a no-op.
+function personal_profile_migrate_legacy_artist_v242(PDO $pdo,array $user): void{}
