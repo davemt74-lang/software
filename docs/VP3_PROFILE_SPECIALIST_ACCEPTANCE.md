@@ -51,7 +51,7 @@ Status: complete, 10/10 for this acceptance scope. PR #791 merged as `d31eb5aa0a
 
 ## Phase 5 — Profile analytics in briefings
 
-Status: implementation and focused verification in progress. Final scoring requires hosted PHP 8.1/8.3, native MySQL races, browser review, and every final-source PR gate.
+Status: base delivery merged in PR #792 as `bbb6f1469d5491169333d9ac231231b8476527bc` while PR #793 was under validation. PR #793 reconciles both implementations and adds current-authority concurrency evidence, canonical native admission/receipt validation and compact period presentation. Its final score requires all hosted gates against the combined source.
 
 - Existing morning/catch-up/report mechanisms consume current Profile findings, with owner-local reporting boundaries and source availability.
 - Visits, recognized browser contacts, conversations, unanswered turns, call states, and outcome measures use explicit definitions and comparable windows.
@@ -130,3 +130,7 @@ Historical native conversations retain current ownership and exact admission, me
 The same pure period formatter feeds the shared Profile source, explicit private Chat catch-up and existing morning brief. A briefing presentation owner prevents a competing automatic standalone report without claiming that delivery already occurred. Exact source revisions exclude current backlog and observation time. Saved briefing history rechecks the original fixed reference; source correction, revoked access or a Watch rule withdraws its text and links. Proof slots for period and curiosity sources are reserved before optional related links reach the existing twelve-source history bound.
 
 New regression gates exercise the real event writers and installer, normalized local-day boundaries and daylight-saving transitions, uncapped aggregates, exact receipt lineage, money arithmetic, current authority under stale snapshots, the shared registry and saved morning proof, and production Chat navigation. The shared workspace keeps completed periods separate from retained Traffic details. Final-source hosted results and screenshot review will be recorded in the Phase 5 pull request before scoring and merge.
+
+## Phase 5 concurrent-main reconciliation
+
+PR #792 merged fixed-period analytics and preserves independent Traffic details during period read failures. Its retained workflow invocations, separate period HTTP/browser suites, upgrade readiness regressions, exact day-start checks and payment/refund ledger completeness checks remain in the combined version. PR #793 adds strict current-row authority under old transaction snapshots, real admitted-turn and saved-receipt compatibility, compact date headings and accessible exact metadata. Final validation runs against the combined tree before this follow-up merges.

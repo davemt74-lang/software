@@ -11,12 +11,14 @@ export const periodRef=(days=1,end=cutoff,zone='UTC',source='u')=>'profile:analy
 const local=(ms,zone)=>{
   const parts=new Intl.DateTimeFormat('en-CA',{timeZone:zone,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(ms);
   const get=key=>parts.find(item=>item.type===key).value;
-  return get('year')+'-'+get('month')+'-'+get('day')+' '+get('hour')+':'+get('minute')+':'+get('second');
+  const clock=Date.UTC(Number(get('year')),Number(get('month'))-1,Number(get('day')),Number(get('hour')),Number(get('minute')),Number(get('second')));
+  const offset=(clock-ms)/60000,sign=offset<0?'-':'+';
+  return get('year')+'-'+get('month')+'-'+get('day')+'T'+get('hour')+':'+get('minute')+':'+get('second')+sign+String(Math.floor(Math.abs(offset)/60)).padStart(2,'0')+':'+String(Math.abs(offset)%60).padStart(2,'0');
 };
 export function periodValue(ref=periodRef()){
   const [, , , daysText,endText,source,encoded]=ref.split(':'),days=Number(daysText),end=Number(endText),zone=Buffer.from(encoded,'base64url').toString();
   const from=(end-days*86400)*1000,previous=from-days*86400000;
-  const point=n=>({value:n,observed_value:n,coverage:'complete',reason:'complete'});
+  const point=n=>({value:n,observed_value:null,coverage:'complete',reason:'complete'});
   const currentCohort={eligible:3,replied:2,unanswered:1,unverifiable:0,coverage:'complete',reason:'complete'};
   const calls={accepted:{direct:2,assisted:1},finished:{ended:1,declined:1,cancelled:1,expired:0,failed:0},acceptance_delay:{eligible:3,verified:3,unverifiable:0}};
   return {contract:'vp3.profile-analytics-period.v1',ref,revision:'a'.repeat(64),coverage:'ready',observed_at_utc_ms:(end+3600)*1000,
@@ -30,9 +32,10 @@ export function periodValue(ref=periodRef()){
     first_reply_cohorts:{current:{...currentCohort},previous:{...currentCohort}},
     call_breakdowns:{current:structuredClone(calls),previous:structuredClone(calls)},
     money:[{key:'verified_payments',currency:'USD',amount_unit:'commerce_cent',scale:2,scale_source:'vp3.commerce.v800',
-      current:{value_minor:'9007199254740993123',observed_value_minor:'9007199254740993123',coverage:'complete',reason:'complete'},
-      previous:{value_minor:'9007199254740993122',observed_value_minor:'9007199254740993122',coverage:'complete',reason:'complete'},comparison:{delta_minor:'1'}}],
+      current:{value_minor:'9007199254740993123',observed_value_minor:null,coverage:'complete',reason:'complete'},
+      previous:{value_minor:'9007199254740993122',observed_value_minor:null,coverage:'complete',reason:'complete'},comparison:{delta_minor:'1'}}],
     backlog:{as_of_utc_ms:(end+3600)*1000,revision:'b'.repeat(64),coverage:'ready',
-      metrics:[{key:'current_unresolved_conversations',value:7,coverage:'complete',reason:'complete'}]}
+      metrics:[{key:'current_unresolved_conversations',value:7,coverage:'complete',reason:'complete'},
+        {key:'current_unanswered_visitor_turns',value:1,observed_value:null,coverage:'complete',reason:'complete'}]}
   };
 }

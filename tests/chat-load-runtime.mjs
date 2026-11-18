@@ -12,7 +12,7 @@ assert.doesNotMatch(source,/\bliveStatus\b|chatLiveStatus/,'Removed activity sta
 let response,requestCount=0,timer,delay,cleared=0;
 const requestBodies=[],syncedConversations=[],pendingMeetingReviews=[];
 const context={AbortController,DOMException,Event,URLSearchParams,location:new URL('https://app.test/chat.php'),navigator:{onLine:true},document:{hidden:false,getElementById:()=>null},cfg:{endpoint:'/api/chat.php',csrf:'token',agentId:7,userId:1,workingAttentionBinding:'fixture-page-binding'},
-    window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;},dispatchEvent:()=>{}},
+    window:{setTimeout:(fn,ms)=>{timer=fn;delay=ms;return 1;},clearTimeout:()=>{cleared++;},dispatchEvent:()=>{},addEventListener(){}},
     fetch:async(_url,options)=>{requestCount++;requestBodies.push(JSON.parse(options.body));return response(options.signal);},
     writeActivityCursor:value=>{context.activityCursor=value;},updateNotificationBadge:value=>{context.unread=value;},
     syncConversationMessagesV101:async id=>{syncedConversations.push(id);},activityRequest:null,activityWakePending:false,activityCursor:0,

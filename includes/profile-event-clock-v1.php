@@ -76,7 +76,7 @@ function vp3_profile_event_clock_status_v1(PDO $pdo,bool $current=false): array
         if (!vp3_profile_event_clock_columns_v1($pdo)) return $out;
         $out['columns_available'] = true;
         try {
-            $suffix = $current && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR SHARE' : '';
+            $suffix = $current && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' LOCK IN SHARE MODE' : '';
             $rows = $pdo->query('SELECT id,contract,token,activated_at_utc_ms FROM profile_event_clock_activation_v1 ORDER BY id LIMIT 2'.$suffix)
                 ->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $error) {

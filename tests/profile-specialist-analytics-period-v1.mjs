@@ -16,7 +16,7 @@ const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);re
 function harness({selected=periodRef(),override=null}={}){
   const document=workspaceDocument(),host=document.createElement('div');document.body.append(host);
   const scope={owner:1,agent:7,cid:11,binding:'binding',hasChat:true},events=new Map(),requests=[];
-  const state={override,latest:periodValue(periodRef(1,cutoff+15*3600,'Asia/Tokyo','e')),traffic:0,disposed:0};
+  const state={override,latest:periodValue(periodRef(1,cutoff-9*3600,'Asia/Tokyo','e')),traffic:0,disposed:0};
   const window={VP3_PROFILE_WORKSPACE_V1:{endpoint:'/sub/api/profile-specialist-workspace-v1.php',csrf:'fixture',chatUrl:'/sub/chat.php'},
     addEventListener:(name,fn)=>{if(!events.has(name))events.set(name,new Set());events.get(name).add(fn);},
     removeEventListener:(name,fn)=>events.get(name)?.delete(fn),dispatchEvent:event=>{for(const fn of events.get(event.type)||[])fn(event);},
@@ -29,7 +29,7 @@ function harness({selected=periodRef(),override=null}={}){
       if(!value)value={status:200,data:{analytics_period:input.ref?periodValue(input.ref):structuredClone(state.latest)}};
       if(value.error)throw value.error;
       return {ok:value.status<400,status:value.status,json:async()=>value.envelope||{ok:value.status<400,contract:'vp3.profile-workspace.v1',action:input.action,
-        scope:{owner_user_id:1,chat_agent_id:7,chat_conversation_id:11},working_attention_binding:'binding',observed_at:'2026-11-18T01:00:00Z',data:value.data,error:value.message}};
+        scope:{owner_user_id:1,chat_agent_id:7,chat_conversation_id:11},working_attention_binding:'binding',observed_at:'2026-11-18T12:00:00Z',data:value.data,error:value.message}};
     }};
   vm.createContext(context);vm.runInContext(instrumented,context);
   const api=window.VP3ProfileWorkspaceV1.mountWorkspace(host,{scope:()=>scope,selection:{tab:'analytics',analyticsRef:selected},readReports:async()=>({}),renderReport:(target,_value,options)=>{state.onSelect=options.onSelect;target.textContent='Fixture Reports';}});
@@ -69,12 +69,12 @@ function harness({selected=periodRef(),override=null}={}){
   check(ref(periodRef())?.period===1,'canonical fixed ref parses');
   check(!ref(periodRef()+'=')&&!ref(periodRef().replace(':u:',':x:')),'padding and unknown provenance rejected');
   check(!ref(periodRef(1,cutoff+1)),'nonmidnight cutoff rejected');
-  const havanaGap=Math.floor(Date.parse('2026-03-08T05:00:00Z')/1000);
-  check(ref(periodRef(1,havanaGap,'America/Havana','e'))!==null,'normalized first valid local-day instant survives a midnight gap');
-  check(!ref(periodRef(1,havanaGap+1,'America/Havana','e')),'a nonboundary second after skipped midnight is rejected');
-  check(ref(periodRef(1,Math.floor(Date.parse('2026-11-01T04:00:00Z')/1000),'America/Havana','e'))!==null
-    &&!ref(periodRef(1,Math.floor(Date.parse('2026-11-01T05:00:00Z')/1000),'America/Havana','e')),'repeated midnight accepts only the first start of that local date');
   check(!ref(periodRef(1,cutoff,'America/New_York','u')),'UTC fallback cannot claim another zone');
+  for(const [stamp,zone] of [['2026-03-08T05:00:00Z','America/Havana'],['2026-09-06T04:00:00Z','America/Santiago'],['2026-11-01T04:00:00Z','America/Havana']]){
+    check(ref(periodRef(1,Date.parse(stamp)/1000,zone,'e'))!==null,'canonical local day boundary accepts skipped or first repeated midnight in '+zone);
+  }
+  check(ref(periodRef(1,Date.parse('2026-11-01T05:00:00Z')/1000,'America/Havana','e'))===null,'second repeated midnight is not a different report cutoff');
+  check(!ref(periodRef(1,Date.parse('2026-03-08T05:00:01Z')/1000,'America/Havana','e')),'a nonboundary second after skipped midnight is rejected');
   const href='/sub/chat.php?agent=system&conversation_id=11&profile_analytics='+encodeURIComponent(periodRef());
   check(f.pure.analyticsSource({ref:periodRef(),url:href},'/sub/chat.php')?.chatAgentId===0,'system Agent and base path supported');
   for(const bad of [href+'&agent=system',href+'&extra=1',href.replace('/sub/','/other/'),href+'#fragment','//attacker.test'+href,href.replace('conversation_id=11','conversation_id=9007199254740992')]){
@@ -85,6 +85,8 @@ function harness({selected=periodRef(),override=null}={}){
   for(const mutate of [
     value=>value.window.timezone='Asia/Tokyo',
     value=>value.window.previous.to_utc_ms--,
+    value=>value.window.from_local='2026-11-16T00:00:00+00:00',
+    value=>value.window.previous.from_utc_ms-=3600000,
     value=>value.period_options[1].ref=periodRef(7,cutoff-86400),
     value=>value.metrics.pop(),
     value=>value.metrics[0].current={value:0,observed_value:null,coverage:'unavailable',reason:'storage_unavailable'},
@@ -92,17 +94,20 @@ function harness({selected=periodRef(),override=null}={}){
     value=>value.money[0].scale=0,
     value=>value.money[0].amount_unit='currency_minor',
     value=>value.money[0].current.value_minor=9007199254740992,
-    value=>{value.metrics[0].current={value:null,observed_value:2,coverage:'partial',reason:'source_proof_incomplete'};value.metrics[0].comparison={delta:1,percent:50};},
-    value=>{value.backlog.metrics[0].coverage='unavailable';value.backlog.metrics[0].reason='storage_unavailable';}
+    value=>{value.metrics[0].current={value:null,observed_value:2,coverage:'partial',reason:'source_proof_incomplete'};value.metrics[0].comparison={delta:1,percent:50};}
   ]){const broken=structuredClone(valid);mutate(broken);check(model(broken,periodRef())===null,'mismatched or misleading period response rejected');}
   check(model(valid,periodRef(7))===null,'another valid period cannot satisfy exact request');
+  const corruptBacklog=structuredClone(valid);corruptBacklog.backlog.metrics[0].coverage='unavailable';
+  check(model(corruptBacklog,periodRef())===null,'unavailable current backlog cannot retain an earlier numeric total');
+  const corruptDelta=structuredClone(valid);corruptDelta.money[0].comparison.delta_minor='2';
+  check(model(corruptDelta,periodRef())===null,'ledger delta must match exact decimal-string arithmetic');
   const empty=periodValue();const emptyDelay=empty.metrics.find(row=>row.key==='median_first_reply_seconds');emptyDelay.current={value:null,observed_value:null,coverage:'complete',reason:'no_observations'};emptyDelay.comparison=null;
   check(model(empty,periodRef())!==null,'empty verified delay cohort can be complete with no numeric median');
   f.api.dispose();
 }
 {
   const partial=periodValue();partial.coverage='limited';partial.groups.events={coverage:'unavailable',reason:'storage_unconfigured'};
-  for(const metric of partial.metrics.filter(row=>row.group==='events')){metric.current={value:null,observed_value:null,coverage:'unavailable',reason:'storage_unconfigured'};metric.previous={...metric.current};metric.comparison=null;}
+  for(const metric of partial.metrics.filter(row=>row.group==='events')){metric.current={value:null,observed_value:null,coverage:'unavailable',reason:'storage_unconfigured'};metric.previous={...metric.current};metric.comparison={delta:null,percent:null};}
   const delay=partial.metrics.find(row=>row.key==='median_first_reply_seconds');
   delay.current={value:null,observed_value:12.5,coverage:'partial',reason:'source_proof_incomplete'};delay.comparison={delta:null,percent:null};
   const f=harness({override:async()=>({status:200,data:{analytics_period:partial}})});await flush();
@@ -126,9 +131,32 @@ function harness({selected=periodRef(),override=null}={}){
   f.api.dispose();
 }
 {
+  const f=harness();await flush();
+  f.state.override=async()=>({status:503,data:{},message:'Completed-period storage is temporarily unavailable.'});
+  await f.api.refresh();await flush();
+  check(!f.host.querySelector('[data-profile-analytics-period]')&&f.host.textContent.includes('Retry completed period')
+    &&f.host.querySelector('[data-profile-analytics-view="traffic"]')?.isConnected,
+    'period outage clears prior facts while keeping the independent traffic view reachable');
+  f.click('Traffic details');await flush();
+  check(f.state.traffic===1&&f.host.textContent.includes('Retained rolling traffic'),'traffic view opens after completed-period failure');
+  f.click('Completed periods');await flush();f.state.override=null;f.click('Retry completed period');await flush();
+  check(f.host.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===periodRef()
+    &&f.requests.at(-1).ref===periodRef(),'explicit period retry restores the same fixed source');
+  f.api.dispose();
+}
+{
+  const gate=deferred();const f=harness({override:async()=>gate.promise});await flush();
+  f.click('Traffic details');await flush();
+  gate.resolve({status:503,data:{},message:'Obsolete period failure.'});await flush();
+  check(f.state.traffic===1&&f.host.textContent.includes('Retained rolling traffic')&&!f.host.textContent.includes('Obsolete period failure.'),
+    'late failed period request cannot replace the newly selected traffic view');
+  f.api.dispose();
+}
+{
   const f=harness();await flush();f.state.override=async()=>({status:403,data:{},message:'Profile access changed.'});
   await f.api.refresh();await flush();
   check(!f.host.textContent.includes('USD 90,071')&&f.host.textContent.includes('Reload Chat'),'authority loss clears prior period facts');
+  check(!f.host.querySelector('[data-profile-analytics-view="traffic"]'),'authority loss removes both analytics mode controls');
   f.api.dispose();
 }
 

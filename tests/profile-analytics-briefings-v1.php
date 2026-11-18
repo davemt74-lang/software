@@ -54,7 +54,7 @@ $metrics=array_column($period['metrics'],null,'key');
 canvas_pipeline_check($metrics['visit_records']['current']['value']===3&&$metrics['visit_records']['previous']['value']===1,
     'the integration fixture has exact comparable recorded visit periods');
 $snapshot=vp3_coordination_sources_v1($pdo,$owner,$binding,[$ref],$now);
-canvas_pipeline_check(array_keys($snapshot['items'])===[$ref]&&in_array($snapshot['coverage']['profile'],['ready','limited'],true),
+canvas_pipeline_check(array_keys($snapshot['items'])===[$ref]&&$snapshot['coverage']['profile']==='ready',
     'the actual registry resolves an exact completed Profile period under the saved private Chat');
 $source=$snapshot['items'][$ref];
 canvas_pipeline_check($source['profile_source_kind']==='analytics'&&$source['trigger']==='analytics_period'
@@ -62,8 +62,12 @@ canvas_pipeline_check($source['profile_source_kind']==='analytics'&&$source['tri
     &&$source['legacy_delivered']===false&&$source['question']===''&&$source['next_step']==='',
     'completed facts have a briefing owner without inventing delivered Chat, owner questions or required work');
 canvas_pipeline_check(vp3_coordination_source_ref_valid_v1($ref)&&vp3_coordination_valid_refs_v1([$ref=>$source['revision']])
-    &&vp3_coordination_profile_presentation_owned_v1(['primary'=>$ref],[$ref=>$source]),
+    &&vp3_coordination_profile_presentation_owned_v1(['primary'=>$ref],[$ref=>$source])
+    &&vp3_initiative_goal_specialist_v1(['tool'=>'work.prepare_private','primary'=>'specialist:'.$ref])==='profile',
     'source selection, saved-work references and the existing duplicate-presentation guard accept the same exact period');
+$projection=vp3_profile_specialist_report_v1($snapshot);
+canvas_pipeline_check(count($projection['findings'])===1&&$projection['questions_for_you']===[]&&$projection['actions_followups']===[],
+    'the shared five-section Profile report exposes period facts without inventing an owner obligation');
 $generic='specialist:'.$ref;
 $evidence=[$generic=>['kind'=>'specialist_finding','specialist'=>'profile','private_summary_only'=>true,
     'profile_presentation_owned'=>true,'routing'=>'report']];
@@ -71,7 +75,7 @@ $job=vp3_initiative_specialist_job_v1(['tool'=>'work.prepare_private','primary'=
 canvas_pipeline_check($job['report']===false&&vp3_initiative_proactive_specialist_v1($job),
     'generic preparation keeps period facts private instead of creating a competing automatic report');
 [$coverage,$catchup]=vp3_catch_up_profile_analytics_v1($pdo,$owner,7,11,$now);
-canvas_pipeline_check(count($catchup)===1&&$catchup[0]['id']===$ref&&$catchup[0]['url']===$source['url']
+canvas_pipeline_check($coverage==='ready'&&count($catchup)===1&&$catchup[0]['id']===$ref&&$catchup[0]['url']===$source['url']
     &&$catchup[0]['_source_revision']===$source['revision']&&$catchup[0]['reason']===$source['summary'],
     'explicit catch-up uses the same recorded facts, source revision and exact scoped destination');
 $answer=vp3_catch_up_chat_result_v1(['items'=>$catchup,'coverage'=>['profile_analytics'=>$coverage],'as_of'=>$now->format(DATE_ATOM)]);
@@ -92,6 +96,9 @@ $pdo->exec('UPDATE user_profiles SET is_public=0,profile_agent_enabled=0 WHERE u
 $private=vp3_coordination_sources_v1($pdo,$owner,$binding,[$ref],$now);
 canvas_pipeline_check(($private['items'][$ref]['revision']??null)===$source['revision'],
     'turning off the public Profile does not revoke authorized private historical analytics');
+$discovery=vp3_coordination_sources_v1($pdo,$owner,$binding,null,$now,specialistOnly:'profile');
+canvas_pipeline_check(isset($discovery['items'][$ref]),
+    'ordinary Profile discovery includes verified historical periods while public visibility is off');
 $pdo->exec('UPDATE user_profiles SET is_public=1,profile_agent_enabled=1 WHERE user_id=1');
 $pdo->prepare("UPDATE profile_agent_conversations SET status='resolved' WHERE id=?")->execute([$fixture['ids']['unanswered_conversation']]);
 $backlogChanged=vp3_profile_analytics_period_v1($pdo,$fixture['scope'],['ref'=>$ref],$now->modify('+5 minutes'));
@@ -110,19 +117,35 @@ canvas_pipeline_check($latest['ref']!==$ref&&$latest['window']['timezone']==='Am
     'Latest uses current owner timezone while an old reference retains its encoded reporting context');
 $pdo->exec("UPDATE users SET timezone='UTC' WHERE id=1");
 
+$settings=vp3_coordination_rules_v1($pdo,$owner,7);
+$assessment=vp3_morning_brief_assess_v1($snapshot['items'],$snapshot['coverage'],$settings,[]);
+canvas_pipeline_check(isset($assessment['selected'][$ref])&&$assessment['selected'][$ref]['revision']===$source['revision']
+    &&$assessment['links'][0]['url']===$source['url'],
+    'the actual morning assessment keeps the fixed ref, revision and exact source link');
 $published=agent_commerce_atomic_pa2($pdo,static function()use($pdo,$owner,$binding,$snapshot,$now):bool{
     vp3_initiative_owner_lock_v1($pdo,$owner);return vp3_morning_brief_v1($pdo,$owner,$binding,$snapshot,$now);
 });
 canvas_pipeline_check($published&&count(profile_period_brief_rows())===1,'the existing morning publisher saves the period once without model inference');
 $row=profile_period_brief_rows()[0];$context=json_decode($row['context_json'],true,32,JSON_THROW_ON_ERROR);
 canvas_pipeline_check($context['sources'][0]['source']===$ref&&$context['sources'][0]['url']===$source['url']
-    &&vp3_coordination_chat_history_v1($pdo,$owner,7,11,[$row])===[$row],
+    &&vp3_coordination_chat_history_v1($pdo,$owner,7,11,[$row])===[$row]
+    &&vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)===$row,
     'ordinary saved Chat history revalidates the exact period and retains the original destination');
 $again=agent_commerce_atomic_pa2($pdo,static function()use($pdo,$owner,$binding,$snapshot,$now):bool{
     vp3_initiative_owner_lock_v1($pdo,$owner);return vp3_morning_brief_v1($pdo,$owner,$binding,$snapshot,$now->modify('+1 hour'));
 });
 canvas_pipeline_check(!$again&&count(profile_period_brief_rows())===1&&$GLOBALS['pipelineInference']===[],
     'repeated morning reads cannot duplicate the period post or start provider work');
+$pdo->exec("UPDATE users SET timezone='Pacific/Auckland' WHERE id=1");
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)===$row,
+    'saved briefing history stays valid after timezone preferences change');
+$pdo->exec("UPDATE users SET timezone='UTC' WHERE id=1");
+$pdo->prepare("UPDATE profile_agent_conversations SET status='open' WHERE id=?")->execute([$fixture['ids']['unanswered_conversation']]);
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)===$row,
+    'reopening current backlog preserves the completed-period briefing');
+$pdo->prepare("UPDATE profile_agent_conversations SET status='resolved' WHERE id=?")->execute([$fixture['ids']['unanswered_conversation']]);
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)===$row,
+    'resolving current backlog does not rewrite a completed-period briefing');
 coordination_fixture_rule($pdo,$owner,'profile','analytics_period','watch');
 $hidden=vp3_coordination_chat_history_v1($pdo,$owner,7,11,[$row])[0];
 canvas_pipeline_check($hidden['message']==='The sources behind this morning brief have changed or are no longer available.',
@@ -130,6 +153,24 @@ canvas_pipeline_check($hidden['message']==='The sources behind this morning brie
 coordination_fixture_rule($pdo,$owner,'profile','analytics_period','report');
 canvas_pipeline_check(vp3_coordination_chat_history_v1($pdo,$owner,7,11,[$row])===[$row],
     'restoring the report rule recovers the unchanged exact period without another post');
+$pdo->exec('UPDATE user_agents SET is_active=0 WHERE id=7');
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)['message']!==$row['message'],
+    'revoking the original private Agent withholds the saved Profile briefing');
+$pdo->exec('UPDATE user_agents SET is_active=1 WHERE id=7');
+$pdo->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='profile_chat.access'");
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)['message']!==$row['message'],
+    'a live Profile permission revocation defeats inherited cached transport permissions in saved history');
+$pdo->exec("INSERT INTO role_permissions(role,permission_key) VALUES('fan','profile_chat.access')");
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)===$row,
+    'restoring the canonical role grant restores the original verified briefing');
+$pdo->prepare('UPDATE profile_events SET recorded_at_utc_ms=recorded_at_utc_ms+1 WHERE id=?')->execute([$fixture['ids']['event']]);
+$corrected=vp3_profile_analytics_period_v1($pdo,$fixture['scope'],['ref'=>$ref],$now);
+canvas_pipeline_check(array_column($corrected['metrics'],null,'key')['visit_records']['current']['value']===$metrics['visit_records']['current']['value']
+    &&vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)['message']!==$row['message'],
+    'a canonical source-time correction invalidates the old proof even when aggregate totals match');
+$pdo->prepare('UPDATE profile_events SET recorded_at_utc_ms=recorded_at_utc_ms-1 WHERE id=?')->execute([$fixture['ids']['event']]);
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$row,$context)===$row,
+    'restoring the original canonical evidence restores the unchanged fixed-period proof');
 $pdo->prepare('DELETE FROM profile_events WHERE id=?')->execute([$fixture['ids']['event']]);
 $changed=vp3_coordination_sources_v1($pdo,$owner,$binding,[$ref],$now);
 canvas_pipeline_check($changed['items'][$ref]['revision']!==$source['revision']

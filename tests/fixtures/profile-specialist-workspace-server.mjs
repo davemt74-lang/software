@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 
 /** Persistent isolated SQL fixture serving unchanged production Profile APIs. */
-export async function startProfileWorkspaceServer(){
+export async function startProfileWorkspaceServer({analytics=true}={}){
   const root=fileURLToPath(new URL('../../',import.meta.url));
   const temp=mkdtempSync(join(tmpdir(),'vp3-profile-workspace-'));
   const quote=value=>"'"+value.replaceAll('\\','\\\\').replaceAll("'","\\'")+"'";
@@ -28,7 +28,7 @@ export async function startProfileWorkspaceServer(){
     require ${quote(join(root,'tests/fixtures/profile-specialist-workspace-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-specialist-analytics-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-call-outcomes-data-v1.php'))};
-    require ${quote(join(root,'tests/fixtures/profile-analytics-period-data-v1.php'))};
+    ${analytics?'require '+quote(join(root,'tests/fixtures/profile-analytics-period-data-v1.php'))+';':''}
     require ${quote(join(root,'includes/profile-analytics-destination-v1.php'))};
     function pws_server_seed():array{
       $seed=pws_reset();
@@ -45,11 +45,13 @@ export async function startProfileWorkspaceServer(){
       $seed['visit_events']=[];
       foreach(['8','9'] as $browser){$visit=pa4b_note(pa4b_context(0,$browser));$seed['visit_events'][]=(int)$visit['event']['id'];}
       pa3_login(1);
-      $seed['analytics']=profile_analytics_period_fixture_v1(db(),1,7,11);
+      ${analytics?`$seed['analytics']=profile_analytics_period_fixture_v1(db(),1,7,11);
       $systemChat=db()->query('SELECT * FROM chat_conversations WHERE id=11')->fetch(PDO::FETCH_ASSOC);
       $systemChat['id']=94001;$systemChat['user_agent_id']=null;
       profile_analytics_period_fixture_row_v1(db(),'chat_conversations',$systemChat);
       $seed['system_chat']=94001;
+      pa3_login(1);
+      `:''}
       $seed['clock']=$GLOBALS['pa3Now'];
       file_put_contents(${quote(join(temp,'seed.json'))},json_encode($seed,JSON_THROW_ON_ERROR));
       file_put_contents(${quote(join(temp,'provider-dispatches'))},'');
@@ -190,6 +192,11 @@ window.STONEFELLOW_NOTIFICATION_CENTER={close:()=>{}};
       if($action==='revoke')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key='profile_chat.access'");
       elseif($action==='restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) SELECT role,'profile_chat.access' FROM users WHERE id=1");
       elseif($action==='timezone_change')db()->exec("UPDATE users SET timezone='Asia/Tokyo' WHERE id=1");
+      elseif($action==='analytics_events_off')db()->exec('ALTER TABLE profile_events RENAME TO fixture_unavailable_profile_events');
+      elseif($action==='analytics_events_restore')db()->exec('ALTER TABLE fixture_unavailable_profile_events RENAME TO profile_events');
+      elseif($action==='analytics_revoke')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key IN ('profile_chat.access','account.access')");
+      elseif($action==='analytics_period_off')db()->exec("DELETE FROM settings WHERE setting_key='personal_capabilities_seed_v242'");
+      elseif($action==='analytics_period_restore')db()->exec("INSERT INTO settings(setting_key,setting_value) VALUES('personal_capabilities_seed_v242','1')");
       elseif($action==='profile_off')db()->exec('UPDATE user_profiles SET profile_agent_enabled=0 WHERE user_id=1');
       elseif($action==='profile_missing')db()->exec('DELETE FROM user_profiles WHERE user_id=1');
       elseif($action==='recording_revoke')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key='artist_listening.access'");

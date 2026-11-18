@@ -25,7 +25,7 @@ function fixture(){
  const thread=document.getElementById('chatThread');
  const messageElements=()=>thread.querySelectorAll('article.message.user,article.message.assistant').filter(element=>!element.classList.contains('typing'));
  const ctx={console,AbortController,DOMException,Event,URLSearchParams,location:new URL('https://app.test/chat.php'),CustomEvent:class{constructor(type,init={}){this.type=type;this.detail=init.detail;}},
-  document,window:{dispatchEvent(){},setTimeout(){}},navigator:{onLine:true},input:document.getElementById('chatInput'),
+  document,window:{dispatchEvent(){},addEventListener(){},setTimeout(){}},navigator:{onLine:true},input:document.getElementById('chatInput'),
   send:document.getElementById('sendChatButton'),form:document.getElementById('chatForm'),welcome:document.getElementById('chatWelcome'),
   cfg:{agentId:0},thread,
   busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,lastLoadedMessageId:0,

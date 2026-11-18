@@ -40,6 +40,9 @@ function profile_analytics_period_fixture_row_v1(PDO $pdo,string $table,array $r
     $q=$pdo->prepare('SELECT '.$key.' FROM '.$table.' WHERE '.$key.'=?');$q->execute([$row[$key]]);$exists=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
     if($exists){$values=$row;unset($values[$key]);$set=implode(',',array_map(static fn(string $column):string=>$column.'=?',array_keys($values)));
         if($values)$pdo->prepare('UPDATE '.$table.' SET '.$set.' WHERE '.$key.'=?')->execute([...array_values($values),$row[$key]]);
+    // Keep this explicit-column fixture insert outside the inherited PA3
+    // adapter's exact legacy visit-upsert prefix. That adapter intentionally
+    // translates the production five-value upsert, not arbitrary seeded IDs.
     }else{$pdo->prepare('INSERT INTO '.$table.'('.implode(',',array_keys($row)).') VALUES ('.implode(',',array_fill(0,count($row),'?')).')')->execute(array_values($row));}
 }
 function profile_analytics_period_fixture_hash_v1(array $row,array $keys):string

@@ -172,6 +172,13 @@ try{
   const reset=await fetch(server.base+'/fixture/reset',{method:'POST',headers});const freshSeed=await reset.json();
   const document=workspaceDocument(),host=document.createElement('section');document.body.append(host);
   const uiWindow={VP3_PROFILE_WORKSPACE_V1:{endpoint:'/api/profile-specialist-workspace-v1.php',csrf:session.csrf,profileUrl:'/profile-agent.php'},dispatchEvent(){}};
+  const trafficRead={result:null,error:null};
+  uiWindow.VP3ProfileAnalytics={mountWorkspace(target,transport){
+    Promise.all([transport.readAnalytics({propertyId:0,days:30}),transport.readIntelligence({})]).then(([analytics,revenue])=>{
+      trafficRead.result={analytics,revenue};target.textContent='Retained traffic loaded through the production API.';
+    },error=>{trafficRead.error=error;});
+    return {dispose(){}};
+  }};
   const uiContext=vm.createContext({window:uiWindow,document,crypto:webcrypto,URL,Intl,atob,btoa,AbortController,Event,setTimeout,clearTimeout,
     location:{origin:server.base,reload(){}},fetch:(url,options)=>fetch(url,{...options,headers:{...options.headers,Cookie:headers.Cookie}})});
   vm.runInContext(readFileSync(new URL('../profile-specialist-workspace-v1.js',import.meta.url),'utf8'),uiContext);
@@ -195,6 +202,19 @@ try{
   const followup=await stored();
   check(followup.profile_owner_drafts_v1.length===2&&followup.profile_owner_drafts_v1.some(row=>row.status==='sent')&&followup.provider_dispatches.length===2,
     'a new explicit preparation after a sent reply preserves its earlier receipt');
+  // Remove canonical permission evidence explicitly. This real API 503 must
+  // not hide the independently authorized legacy traffic view.
+  await control('analytics_period_off');
+  mounted.select({tab:'analytics'});
+  await waitFor(()=>uiButton('Retry completed period'));
+  check(host.textContent.includes('Profile workspace could not be refreshed')&&uiButton('Traffic details')?.isConnected,
+    'a real completed-period failure preserves the Analytics view selector');
+  uiButton('Traffic details').click();await waitFor(()=>trafficRead.result||trafficRead.error);
+  assert.equal(trafficRead.error,null);
+  check(trafficRead.result.analytics.ready===true&&trafficRead.result.revenue.ready===true
+    &&host.textContent.includes('Retained traffic loaded through the production API.'),
+    'the retained traffic renderer receives its real authorized data after the period failure');
+  await control('analytics_period_restore');
   mounted.select({tab:'calls',callView:'history',callId:freshSeed.outcomes.assisted.call_id,publicConversationId:freshSeed.outcomes.assisted.public_conversation_id});
   await waitFor(()=>host.querySelectorAll('[data-profile-transcript-segment]').length===50);
   check(host.textContent.includes('The saved call discussed public opening hours'),'mounted UI accepts the actual canonical saved analysis and section wire fields');
@@ -206,7 +226,7 @@ try{
   await control('recording_revoke');await mounted.refresh();await waitFor(()=>host.textContent.includes('Your current access does not include'));
   check(host.textContent.includes('Call ended')&&!host.querySelector('[data-profile-transcript-segment]')&&!host.querySelector('[data-profile-followup]'),
     'mounted recording revocation clears old saved facts without losing authorized terminal call state');
-  mounted.select({tab:'analytics',analyticsRef:freshSeed.analytics.ref});
+  mounted.select({tab:'analytics',analyticsView:'periods',analyticsRef:freshSeed.analytics.ref});
   await waitFor(()=>host.querySelector('[data-profile-analytics-period]'));
   check(host.querySelector('[data-profile-analytics-period]').dataset.profileAnalyticsPeriod===freshSeed.analytics.ref
     &&host.textContent.includes('Period timezone: UTC'),'mounted fixed renderer accepts actual production aggregate wire fields');
@@ -217,6 +237,7 @@ try{
     'saved period and semantic proof stay fixed when only the current timezone setting changes');
   uiButton('Latest completed periods').click();await waitFor(()=>host.textContent.includes('Period timezone: Asia/Tokyo'));
   check(host.textContent.includes('Timezone source in this link: account choice'),'explicit latest action resolves current timezone settings');
+  check(server.readWriteFailure()==='','mounted reads and completed-period failure perform no storage write or inference');
   mounted.dispose();
   console.log(`PROFILE_SPECIALIST_WORKSPACE_HTTP=PASS (${checks} checks)`);
 }catch(error){console.error(server.logs());throw error;}

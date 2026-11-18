@@ -65,6 +65,7 @@ jobs:
           node tests/profile-specialist-analytics-period-v1.mjs
           node tests/profile-analytics-route-v1.mjs
           node tests/profile-analytics-route-http.mjs
+          node tests/profile-analytics-period-http.mjs
       - name: Completed Profile periods, clocks and briefings on native MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
@@ -294,6 +295,14 @@ jobs:
           if-no-files-found: ignore
       - name: Profile workspace tabs, reviewed replies and current Chat
         run: node tests/profile-specialist-workspace-browser.mjs
+      - name: Completed Profile analytics periods, fixed briefing links and compact layout
+        run: node tests/profile-analytics-period-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-period-browser-evidence
+          path: artifacts/profile-analytics-period/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:

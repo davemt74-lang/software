@@ -550,8 +550,20 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
     foreach($payments as $row){$paymentMap[(int)$row['id']]=$row;$paymentIdentity[$row['provider'].'|'.$row['external_payment_id']]=($paymentIdentity[$row['provider'].'|'.$row['external_payment_id']]??0)+1;}
     foreach($refunds as $row)$refundIdentity[$row['provider'].'|'.$row['external_refund_id']]=($refundIdentity[$row['provider'].'|'.$row['external_refund_id']]??0)+1;
     $gap=false;$paidGap=false;$refundGap=false;$invalidOrders=[];$orderPayments=[];$bucket=[];$currencySet=[];
-    $rawPaid=[];$rawRefunded=[];foreach($payments as $row)if($row['status']==='completed')$rawPaid[(int)$row['order_id']]=true;
-    foreach($refunds as $row)if($row['status']==='completed')$rawRefunded[(int)$row['order_id']]=true;
+    // Reconcile against all recorded completions, including those after the
+    // selected cutoff. Otherwise a missing earlier ledger row can look like a
+    // verified zero, or a valid later completion can invalidate an old period.
+    $rawPaid=[];$rawRefunded=[];$rawPaidInvalid=[];$rawRefundedInvalid=[];
+    foreach($payments as $row)if($row['status']==='completed'){
+        $oid=(int)$row['order_id'];$amount=vp3_profile_analytics_uint_v1($row['amount_cents']??null);
+        if($amount===null||$amount==='0')$rawPaidInvalid[$oid]=true;
+        else $rawPaid[$oid]=vp3_profile_analytics_add_v1($rawPaid[$oid]??'0',$amount);
+    }
+    foreach($refunds as $row)if($row['status']==='completed'){
+        $oid=(int)$row['order_id'];$amount=vp3_profile_analytics_uint_v1($row['amount_cents']??null);
+        if($amount===null||$amount==='0')$rawRefundedInvalid[$oid]=true;
+        else $rawRefunded[$oid]=vp3_profile_analytics_add_v1($rawRefunded[$oid]??'0',$amount);
+    }
     $counts=['current'=>['verified_paid_orders'=>0,'verified_refunded_orders'=>0],'previous'=>['verified_paid_orders'=>0,'verified_refunded_orders'=>0]];
     foreach($orders as $order){
         $meta=vp3_profile_analytics_json_v1($order['metadata_json']??null);
@@ -568,8 +580,10 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
             &&$connection['provider']===$order['provider_snapshot']&&$connection['external_account_id']===$order['external_account_snapshot'];
         if(!$valid){$invalidOrders[$oid]=true;$gap=true;}
         $orderMap[$oid]=$order+['_currency'=>$currency,'_valid'=>$valid];
-        if((int)($order['amount_paid_cents']??0)>0&&!isset($rawPaid[$oid])){$paidGap=true;$invalidOrders[$oid]=true;}
-        if((int)($order['amount_refunded_cents']??0)>0&&!isset($rawRefunded[$oid]))$refundGap=true;
+        $canonicalPaid=vp3_profile_analytics_uint_v1($order['amount_paid_cents']??null);
+        $canonicalRefunded=vp3_profile_analytics_uint_v1($order['amount_refunded_cents']??null);
+        if($canonicalPaid===null||isset($rawPaidInvalid[$oid])||$canonicalPaid!==($rawPaid[$oid]??'0')){$paidGap=true;$invalidOrders[$oid]=true;}
+        if($canonicalRefunded===null||isset($rawRefundedInvalid[$oid])||$canonicalRefunded!==($rawRefunded[$oid]??'0'))$refundGap=true;
     }
     foreach($payments as $payment){
         $oid=(int)$payment['order_id'];$order=$orderMap[$oid]??null;if(!$order||$payment['status']!=='completed')continue;
@@ -649,7 +663,7 @@ function vp3_profile_analytics_group_error_v1(Throwable $error,array $keys): arr
     return ['coverage'=>$coverage,'reason'=>$reason,'points'=>vp3_profile_analytics_empty_points_v1($keys,$reason),'evidence'=>[],
         'money'=>[],'cohorts'=>vp3_profile_analytics_empty_cohorts_v1('unavailable',$reason),'breakdowns'=>vp3_profile_analytics_empty_calls_v1()];
 }
-function vp3_profile_analytics_backlog_v1(PDO $pdo,int $owner,int $now): array
+function vp3_profile_analytics_backlog_v1(PDO $pdo,int $owner,int $now,?array $history=null): array
 {
     $coverage='ready';$reason='complete';$count=null;
     try{
@@ -657,8 +671,26 @@ function vp3_profile_analytics_backlog_v1(PDO $pdo,int $owner,int $now): array
         else{$rows=vp3_profile_analytics_rows_v1($pdo,"SELECT id,status FROM profile_agent_conversations WHERE owner_user_id=? ORDER BY id",[$owner],true);
             $count=0;foreach($rows as $row)if(in_array($row['status'],['open','owner_joined'],true))$count++;}
     }catch(Throwable $error){if(vp3_profile_analytics_retryable_v1($error))throw $error;$coverage='unavailable';$reason='storage_unavailable';}
-    $metric=['key'=>'current_unresolved_conversations','value'=>$count,'coverage'=>$coverage==='ready'?'complete':'unavailable','reason'=>$reason];
-    return ['as_of_utc_ms'=>$now,'revision'=>vp3_profile_analytics_hash_v1([$owner,$metric]),'coverage'=>$coverage,'metrics'=>[$metric]];
+    $metrics=[['key'=>'current_unresolved_conversations','label'=>'Unresolved conversations now',
+        'definition'=>'Owned public Profile threads currently open or joined by the owner; separate from completed reporting periods.',
+        'value'=>$count,'coverage'=>$coverage==='ready'?'complete':'unavailable','reason'=>$reason]];
+    $pending=null;$pendingCoverage='unavailable';$pendingReason='storage_unconfigured';
+    try{
+        if($history!==null&&vp3_profile_analytics_table_v1($pdo,'profile_agent_handoff_turns_pa3')){
+            $rows=vp3_profile_analytics_rows_v1($pdo,"SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND state IN ('awaiting_delivery','awaiting_owner','owner_claimed','agent_ready','agent_running') ORDER BY id",[$owner],true);
+            $pending=0;$pendingCoverage='complete';$pendingReason='complete';
+            foreach($rows as $row){
+                if(!vp3_profile_analytics_turn_valid_v1($row,$history,$owner)){$pendingCoverage='partial';$pendingReason='source_proof_incomplete';continue;}
+                ++$pending;
+            }
+        }
+    }catch(Throwable $error){if(vp3_profile_analytics_retryable_v1($error))throw $error;$pending=null;$pendingCoverage='unavailable';$pendingReason='storage_unavailable';}
+    $metrics[]=['key'=>'current_unanswered_visitor_turns','label'=>'Unanswered visitor turns now',
+        'definition'=>'Verified native visitor turns currently awaiting an owner or Agent response; blocked and cancelled turns are excluded.',
+        'value'=>$pendingCoverage==='complete'?$pending:null,'observed_value'=>$pendingCoverage==='partial'?$pending:null,
+        'coverage'=>$pendingCoverage,'reason'=>$pendingReason];
+    if($coverage==='ready'&&$pendingCoverage!=='complete')$coverage='limited';
+    return ['as_of_utc_ms'=>$now,'revision'=>vp3_profile_analytics_hash_v1([$owner,$metrics]),'coverage'=>$coverage,'metrics'=>$metrics];
 }
 
 /**
@@ -719,7 +751,7 @@ function vp3_profile_analytics_period_v1(PDO $pdo,array $scope,array $selection=
         $money=$commerce['money']??[];$cohorts=$conversations['cohorts'];$breakdowns=$calls['breakdowns'];
         $revision=vp3_profile_analytics_hash_v1([VP3_PROFILE_ANALYTICS_PERIOD_V1,$owner,$scope['agent_id'],$scope['conversation_id'],$period['ref'],
             $coverage,$metrics,$groups,$money,$cohorts,$breakdowns,$evidence]);
-        $observed=$now->getTimestamp()*1000+(int)$now->format('v');$backlog=vp3_profile_analytics_backlog_v1($pdo,$owner,$observed);
+        $observed=$now->getTimestamp()*1000+(int)$now->format('v');$backlog=vp3_profile_analytics_backlog_v1($pdo,$owner,$observed,$history);
         $scope=vp3_profile_analytics_authority_current_v1($pdo,$scope);
         $result=['contract'=>VP3_PROFILE_ANALYTICS_PERIOD_V1,'ref'=>$period['ref'],'revision'=>$revision,'coverage'=>$coverage,'observed_at_utc_ms'=>$observed,
             'window'=>$window,'period_options'=>$period['period_options'],'metrics'=>$metrics,'groups'=>$groups,

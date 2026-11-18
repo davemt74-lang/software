@@ -66,22 +66,48 @@
     authority_unavailable:'Access to the required evidence could not be verified.',
     timezone_unavailable:'The period timezone could not be verified.'
   };
+  const analyticsZoneFormatters=new Map(),analyticsDayStarts=new Map();
+  function analyticsCalendarParts(stamp,zone) {
+    let formatter=analyticsZoneFormatters.get(zone);
+    if(!formatter){formatter=new Intl.DateTimeFormat('en-GB',{timeZone:zone,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});analyticsZoneFormatters.set(zone,formatter);}
+    const values={};for(const part of formatter.formatToParts(new Date(stamp*1000)))if(part.type!=='literal')values[part.type]=part.value;
+    return {date:values.year+'-'+values.month+'-'+values.day,time:values.hour+':'+values.minute+':'+values.second,
+      clock:Date.UTC(Number(values.year),Number(values.month)-1,Number(values.day),Number(values.hour),Number(values.minute),Number(values.second))/1000};
+  }
+  function analyticsDayStart(date,zone) {
+    const key=zone+'|'+date;if(analyticsDayStarts.has(key))return analyticsDayStarts.get(key);
+    const nominal=Date.parse(date+'T00:00:00Z')/1000;if(!Number.isSafeInteger(nominal))return null;
+    // Prefer the first exact midnight when a timezone repeats it. Sampling
+    // offsets also handles a brief midnight followed by a previous-date fold.
+    const candidates=[];
+    for(let offset=-36*3600;offset<=36*3600;offset+=6*3600){
+      const stamp=nominal+offset,parts=analyticsCalendarParts(stamp,zone),candidate=nominal-(parts.clock-stamp),actual=analyticsCalendarParts(candidate,zone);
+      if(actual.date===date&&actual.time==='00:00:00')candidates.push(candidate);
+    }
+    let first;
+    if(candidates.length)first=Math.min(...candidates);
+    else {
+      // A skipped midnight starts at the first available instant of that day.
+      let low=nominal-36*3600,high=nominal+36*3600;
+      while(low<high){const middle=Math.floor((low+high)/2);if(analyticsCalendarParts(middle,zone).date<date)low=middle+1;else high=middle;}
+      first=analyticsCalendarParts(low,zone).date===date?low:null;
+    }
+    if(analyticsDayStarts.size>256)analyticsDayStarts.clear();analyticsDayStarts.set(key,first);return first;
+  }
   function analyticsRef(value) {
     if(typeof value!=='string'||value.length>180||value.slice(8).length>155)return null;
     const match=/^profile:analytics:v1:(1|7|30):([1-9][0-9]{8,10}):(e|s|u):([A-Za-z0-9_-]{1,100})$/.exec(value);
     if(!match)return null;
     const cutoff=Number(match[2]);
-    if(!positive(cutoff)||cutoff<946684800||cutoff>=4133980800)return null;
+    if(!positive(cutoff)||cutoff<946684800||cutoff>=4133980800||cutoff>Math.floor(Date.now()/1000))return null;
     let zone;
     try {
       zone=atob(match[4].replace(/-/g,'+').replace(/_/g,'/'));
       if(!zone||zone.length>75||!/^[A-Za-z0-9_+./-]+$/.test(zone)
         ||btoa(zone).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')!==match[4]
         ||match[3]==='u'&&zone!=='UTC')return null;
-      const formatter=new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'});
-      const localDate=seconds=>formatter.formatToParts(new Date(seconds*1000)).filter(part=>['year','month','day'].includes(part.type)).map(part=>part.value).join('-');
-      // Some zones skip midnight or repeat it. Only the first valid second of the local date is canonical.
-      if(localDate(cutoff)===localDate(cutoff-1))return null;
+      const local=analyticsCalendarParts(cutoff,zone);
+      if(analyticsDayStart(local.date,zone)!==cutoff)return null;
     }catch{return null;}
     return {ref:value,period:Number(match[1]),cutoff,timezone:zone,timezone_source:{e:'explicit',s:'schedule',u:'utc_fallback'}[match[3]]};
   }
@@ -102,14 +128,30 @@
     const number=n=>n===null||typeof n==='number'&&Number.isFinite(n)&&n>=0&&(unit==='seconds'||Number.isSafeInteger(n));
     return value&&analyticsPointCoverage.has(value.coverage)&&Object.hasOwn(analyticsReasons,value.reason)
       &&number(value.value)&&number(value.observed_value)
-      &&(value.coverage==='complete'||value.value===null)
+      &&(value.coverage==='complete'?value.observed_value===null:value.value===null)
+      &&(value.coverage!=='unavailable'||value.observed_value===null)
       &&(unit==='seconds'||value.coverage!=='complete'||nonnegative(value.value));
   }
   function analyticsMoneyPoint(value) {
     const amount=n=>n===null||typeof n==='string'&&/^(?:0|[1-9][0-9]{0,79})$/.test(n);
     return value&&analyticsPointCoverage.has(value.coverage)&&Object.hasOwn(analyticsReasons,value.reason)
       &&amount(value.value_minor)&&amount(value.observed_value_minor)
-      &&(value.coverage==='complete'?value.value_minor!==null:value.value_minor===null);
+      &&(value.coverage==='complete'?value.value_minor!==null&&value.observed_value_minor===null:value.value_minor===null)
+      &&(value.coverage!=='unavailable'||value.observed_value_minor===null);
+  }
+  function analyticsWindowMatches(window,ref) {
+    try {
+      const endDate=analyticsCalendarParts(ref.cutoff,ref.timezone).date;
+      const shift=(date,days)=>new Date(Date.parse(date+'T00:00:00Z')-days*86400000).toISOString().slice(0,10);
+      const from=analyticsDayStart(shift(endDate,ref.period),ref.timezone),previous=analyticsDayStart(shift(endDate,2*ref.period),ref.timezone);
+      if(from===null||previous===null||window.from_utc_ms!==from*1000||window.previous.from_utc_ms!==previous*1000)return false;
+      const local=(text,stamp)=>{
+        if(typeof text!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(text)||Date.parse(text)!==stamp)return false;
+        const parts=analyticsCalendarParts(stamp/1000,ref.timezone);return text.slice(0,19)===parts.date+'T'+parts.time;
+      };
+      return local(window.from_local,window.from_utc_ms)&&local(window.to_local,window.to_utc_ms)
+        &&local(window.previous.from_local,window.previous.from_utc_ms)&&window.previous.to_local===window.from_local;
+    }catch{return false;}
   }
   function analyticsPeriodModel(value,requestedRef='') {
     const ref=analyticsRef(value?.ref),window=value?.window;
@@ -124,7 +166,7 @@
       ||!plain(window.previous.from_local,120)||!plain(window.previous.to_local,120)
       ||!Array.isArray(value.period_options)||value.period_options.length!==3
       ||!Array.isArray(value.metrics)||value.metrics.length!==Object.keys(analyticsMetricCatalog).length
-      ||!value.groups)return null;
+      ||!value.groups||value.observed_at_utc_ms<ref.cutoff*1000||!analyticsWindowMatches(window,ref))return null;
     const periods=new Set();
     for(const option of value.period_options){
       const other=analyticsRef(option?.ref);
@@ -134,16 +176,20 @@
     }
     const keys=new Set();
     for(const metric of value.metrics){
-      const known=analyticsMetricCatalog[metric?.key];
+      const known=Object.hasOwn(analyticsMetricCatalog,metric?.key)?analyticsMetricCatalog[metric.key]:null;
       if(!known||keys.has(metric.key)||metric.group!==known[0]||metric.unit!==known[1]
         ||!plain(metric.definition,600)||!analyticsNumberPoint(metric.current,metric.unit)||!analyticsNumberPoint(metric.previous,metric.unit))return null;
       keys.add(metric.key);
       const comparison=metric.comparison;
       if(comparison!==null){
-        if(!comparison||!['delta','percent'].every(key=>comparison[key]===null||typeof comparison[key]==='number'&&Number.isFinite(comparison[key]))
-          ||(metric.current.coverage!=='complete'||metric.previous.coverage!=='complete')&&(comparison.delta!==null||comparison.percent!==null)
-          ||metric.previous.value===0&&comparison.percent!==null
-          ||(metric.current.value===null||metric.previous.value===null)&&(comparison.delta!==null||comparison.percent!==null))return null;
+        if(!comparison||!['delta','percent'].every(key=>comparison[key]===null||typeof comparison[key]==='number'&&Number.isFinite(comparison[key])))return null;
+        const comparable=metric.current.coverage==='complete'&&metric.previous.coverage==='complete'&&metric.current.value!==null&&metric.previous.value!==null;
+        if(!comparable){if(comparison.delta!==null||comparison.percent!==null)return null;}
+        else {
+          const delta=metric.current.value-metric.previous.value;
+          if(comparison.delta!==delta||metric.previous.value===0&&comparison.percent!==null)return null;
+          if(metric.previous.value!==0&&(comparison.percent===null||Math.abs(comparison.percent-100*delta/Math.abs(metric.previous.value))>0.005001))return null;
+        }
       }
     }
     for(const [key] of analyticsGroups){
@@ -157,8 +203,13 @@
         ||currencies.has(key)||row.amount_unit!=='commerce_cent'||row.scale!==2||row.scale_source!=='vp3.commerce.v800'
         ||!analyticsMoneyPoint(row.current)||!analyticsMoneyPoint(row.previous))return null;
       currencies.add(key);
-      if(row.comparison!==null&&(!row.comparison||(row.current.coverage!=='complete'||row.previous.coverage!=='complete')&&row.comparison.delta_minor!==null
-        ||row.comparison.delta_minor!==null&&!/^-?(?:0|[1-9][0-9]{0,79})$/.test(row.comparison.delta_minor)))return null;
+      if(row.comparison!==null){
+        if(!row.comparison)return null;
+        const delta=row.comparison.delta_minor,complete=row.current.coverage==='complete'&&row.previous.coverage==='complete';
+        if(!complete){if(delta!==null)return null;}
+        else if(typeof delta!=='string'||!/^-?(?:0|[1-9][0-9]{0,79})$/.test(delta)
+          ||delta!==(BigInt(row.current.value_minor)-BigInt(row.previous.value_minor)).toString())return null;
+      }
     }
     const optionalCount=n=>n===null||nonnegative(n);
     if(!value.first_reply_cohorts||!value.call_breakdowns)return null;
@@ -171,12 +222,14 @@
         ||!['eligible','verified','unverifiable'].every(key=>optionalCount(calls.acceptance_delay?.[key])))return null;
     }
     const backlog=value.backlog;
-    if(!backlog||!positive(backlog.as_of_utc_ms)||!revision(backlog.revision)||!analyticsCoverage.has(backlog.coverage)
-      ||!Array.isArray(backlog.metrics)||backlog.metrics.length!==1
-      ||backlog.metrics[0]?.key!=='current_unresolved_conversations'
-      ||!analyticsPointCoverage.has(backlog.metrics[0].coverage)||!optionalCount(backlog.metrics[0].value)
-      ||(backlog.metrics[0].coverage==='complete'?!nonnegative(backlog.metrics[0].value):backlog.metrics[0].value!==null)
-      ||!Object.hasOwn(analyticsReasons,backlog.metrics[0].reason))return null;
+    if(!backlog||!positive(backlog.as_of_utc_ms)||backlog.as_of_utc_ms!==value.observed_at_utc_ms||!revision(backlog.revision)||!analyticsCoverage.has(backlog.coverage)
+      ||!Array.isArray(backlog.metrics)||backlog.metrics.length!==2)return null;
+    const backlogKeys=new Set();
+    for(const metric of backlog.metrics){
+      if(!['current_unresolved_conversations','current_unanswered_visitor_turns'].includes(metric?.key)||backlogKeys.has(metric.key)
+        ||!analyticsNumberPoint({...metric,observed_value:metric.observed_value??null},'count'))return null;
+      backlogKeys.add(metric.key);
+    }
     return value;
   }
   function analyticsLedgerAmount(value,currency,withSign=false) {
@@ -995,9 +1048,10 @@
         const section=node('section');section.append(node('h4',label));
         const cohort=value.first_reply_cohorts[key],calls=value.call_breakdowns[key];
         const display=n=>n===null?'unavailable':String(n);
-        section.append(node('p','First-request cohort: '+display(cohort.eligible)+' eligible; '+display(cohort.replied)
+        section.append(node('p',(cohort.coverage==='complete'?'First-request cohort: ':'Observed first-request cohort (partial coverage): ')+display(cohort.eligible)+' eligible; '+display(cohort.replied)
           +' replied before cutoff; '+display(cohort.unanswered)+' unanswered at cutoff; '+display(cohort.unverifiable)+' unverifiable.'));
         if(cohort.coverage!=='complete')section.append(node('p',analyticsReasons[cohort.reason]||'First-response evidence is incomplete.'));
+        if(value.groups.calls.coverage!=='ready')section.append(node('p','Call breakdowns below are observed subsets where evidence is available; complete totals could not be established.'));
         section.append(node('p','Accepted calls: '+display(calls.accepted.direct)+' direct; '+display(calls.accepted.assisted)+' Agent assisted.'));
         section.append(node('p','Recorded outcomes: '+['ended','declined','cancelled','expired','failed'].map(name=>display(calls.finished[name])+' '+name).join('; ')+'.'));
         section.append(node('p','Offer-to-accept evidence: '+display(calls.acceptance_delay.verified)+' verified out of '
@@ -1055,11 +1109,16 @@
       if(value.money.length)money.append(analyticsTable(value.money,true));
       else money.append(node('p',value.groups.commerce.coverage==='ready'?'No verified ledger amounts in these periods.':'Ledger amounts are unavailable or incomplete for these periods.'));
       frame.append(money,analyticsCohortDetail(value));
-      const backlog=node('section','','vp3-profile-period-backlog'),point=value.backlog.metrics[0];
-      backlog.append(node('h4','Current unresolved conversations'));
-      backlog.append(node('p',point.value===null?'Current total unavailable.':String(point.value)+' current open or owner-joined conversations.'));
-      backlog.append(node('small','Checked '+new Date(value.backlog.as_of_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')+'. This is a current count, separate from the completed periods.'));
-      if(point.coverage!=='complete')backlog.append(node('p',analyticsReasons[point.reason]||'Current conversation coverage is incomplete.'));
+      const backlog=node('section','','vp3-profile-period-backlog');
+      backlog.append(node('h4','Current unresolved work'));
+      for(const point of value.backlog.metrics){
+        const row=node('section');row.dataset.profileBacklog=point.key;
+        row.append(node('h5',point.key==='current_unresolved_conversations'?'Current unresolved conversations':'Current unanswered visitor requests'));
+        row.append(analyticsPoint({...point,observed_value:point.observed_value??null}));
+        if(plain(point.definition,600))row.append(node('p',point.definition));
+        backlog.append(row);
+      }
+      backlog.append(node('small','Checked '+new Date(value.backlog.as_of_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')+'. These current counts are separate from the completed periods.'));
       frame.append(backlog);
       const context=currentScope(),chatUrl=localUrl(cfg.chatUrl||endpoint.replace(/\/api\/[^/]+$/,'/chat.php'));
       if(context&&chatUrl){
@@ -1082,12 +1141,22 @@
       if(selection.analyticsView==='periods'){
         const requestedRef=selection.analyticsRef;
         target.append(node('p','Checking the completed period…','vp3-profile-empty'));
-        const result=await request('analytics_period',requestedRef?{ref:requestedRef}:{});
-        if(!current(mine))return;
-        const value=analyticsPeriodModel(result.data.analytics_period,requestedRef);
-        if(!value)throw new Error('The completed-period response could not be verified.');
-        selection.analyticsRef=value.ref;analyticsSelection.analyticsRef=value.ref;
-        renderAnalyticsPeriod(target,value,mine);return;
+        try {
+          const result=await request('analytics_period',requestedRef?{ref:requestedRef}:{});
+          if(!current(mine))return;
+          const value=analyticsPeriodModel(result.data.analytics_period,requestedRef);
+          if(!value)throw new Error('The completed-period response could not be verified.');
+          selection.analyticsRef=value.ref;analyticsSelection.analyticsRef=value.ref;
+          renderAnalyticsPeriod(target,value,mine);
+        } catch(error) {
+          if(!current(mine))return;
+          if([401,403,419].includes(error?.status))throw error;
+          // A period outage must leave the independently authorized traffic
+          // view reachable. Authority failures still clear the entire view.
+          target.replaceChildren(node('p',errorMessage(error),'vp3-profile-empty'),
+            button('Retry completed period',()=>void refresh()));
+        }
+        return;
       }
       if (!window.VP3ProfileAnalytics?.mountWorkspace) {target.append(node('p','Traffic details are unavailable.','vp3-profile-empty'));return;}
       analyticsView=window.VP3ProfileAnalytics.mountWorkspace(target,{

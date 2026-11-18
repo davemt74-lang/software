@@ -103,6 +103,7 @@ jobs:
           node tests/profile-specialist-analytics-period-v1.mjs
           node tests/profile-analytics-route-v1.mjs
           node tests/profile-analytics-route-http.mjs
+          node tests/profile-analytics-period-http.mjs
           node tests/profile-analytics-reliability-v1.mjs
           php tests/agent-release-routing-v1.php
           php tests/agent-release-tools-v1.php

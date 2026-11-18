@@ -36,6 +36,12 @@ function vp3_profile_analytics_day_start_v1(string $date,DateTimeZone $zone): Da
     vp3_profile_analytics_period_bad_ref_v1();
 }
 
+/** Compatibility entry point with the same first-real-instant boundary. */
+function vp3_profile_analytics_local_day_start_v1(DateTimeImmutable $local): DateTimeImmutable
+{
+    return vp3_profile_analytics_day_start_v1($local->format('Y-m-d'),$local->getTimezone());
+}
+
 function vp3_profile_analytics_period_ref_v1(int $days,int $cutoff,string $zone,string $source): string
 {
     $code=match($source){'explicit','e'=>'e','schedule','s'=>'s','utc_fallback','u'=>'u',default=>''};
