@@ -16,37 +16,71 @@
   const addImage=shell.querySelector('[data-profile-chat-add-image]');
   const addFile=shell.querySelector('[data-profile-chat-add-file]');
   const attachmentHost=shell.querySelector('[data-profile-chat-attachments]');
-  let attachmentMaxBytes=0,queuedAttachment=null;
+  let attachmentMaxBytes=0,queuedAttachment=null,attachmentAvailabilityChecked=false;
   const presence=shell.querySelector('[data-profile-agent-presence]');
   const contactStatus=shell.querySelector('[data-profile-chat-contact-status]');
   const settings={panel:shell.querySelector('[data-profile-chat-settings]'),button:shell.querySelector('[data-profile-chat-settings-toggle]')};
   const chatOptions={panel:shell.querySelector('[data-profile-chat-options]'),button:shell.querySelector('[data-profile-chat-options-toggle]')};
-  let openPanel=null;
+  const attachmentHelp={panel:shell.querySelector('[data-profile-attachment-help]'),button:null};
+  const attachmentHelpTitle=shell.querySelector('[data-profile-attachment-help-title]');
+  const attachmentHelpMessage=shell.querySelector('[data-profile-attachment-help-message]');
+  const attachmentHelpOptions=shell.querySelector('[data-profile-attachment-help-options]');
+  const ownerPreview=Boolean(shell.querySelector('[data-profile-chat-preview]'));
+  let openPanel=null,attachmentHelpKind='image',attachmentHelpDestination='';
   function showPanel(next,focus=true){
     const previous=openPanel;
-    if(next===previous)return;
+    if(next&&!next.panel)return;
     openPanel=next;
-    for(const entry of [settings,chatOptions]){
+    for(const entry of [settings,chatOptions,attachmentHelp]){
       if(entry.panel)entry.panel.hidden=entry!==next;
       entry.button?.setAttribute('aria-expanded',String(entry===next));
     }
+    for(const button of [addImage,addFile])button?.setAttribute('aria-expanded',String(next===attachmentHelp&&button===attachmentHelp.button));
     if(thread){thread.hidden=Boolean(next);if(!next)thread.scrollTop=thread.scrollHeight;}
     if(focus){if(next)next.panel.querySelector('h2')?.focus();else previous?.button?.focus();}
   }
+  function renderAttachmentHelp(kind,info){
+    if(attachmentHelpTitle)attachmentHelpTitle.textContent=kind==='image'?'Share an image':'Share a file';
+    if(attachmentHelpMessage&&attachmentHelpMessage.textContent!==info.message)attachmentHelpMessage.textContent=info.message;
+    if(attachmentHelp.panel)attachmentHelp.panel.dataset.state=info.state;
+    attachmentHelpDestination=info.action||'';
+    if(attachmentHelpOptions){
+      attachmentHelpOptions.hidden=!attachmentHelpDestination;
+      attachmentHelpOptions.textContent=info.actionLabel||'Open chat options';
+    }
+  }
+  function openAttachmentHelp(button,kind,info){
+    attachmentHelpKind=kind;attachmentHelp.button=button;
+    renderAttachmentHelp(kind,info);
+    if(attachmentHelp.panel)showPanel(attachmentHelp);
+    else if(status){status.dataset.quiet='false';status.textContent=info.message;}
+  }
+  attachmentHelpOptions?.addEventListener('click',()=>{
+    if(attachmentHelpDestination==='settings'){
+      showPanel(settings);if(liveChoice&&!liveChoice.disabled)liveChoice.focus();
+    }else if(attachmentHelpDestination==='options')showPanel(chatOptions);
+    else if(attachmentHelpDestination==='reload')window.location.reload();
+  });
+  shell.querySelector('[data-profile-attachment-help-close]')?.addEventListener('click',()=>showPanel(null));
   for(const entry of [settings,chatOptions]){
     if(entry.panel)entry.button?.addEventListener('click',()=>showPanel(openPanel===entry?null:entry));
   }
   shell.querySelector('[data-profile-chat-settings-jump]')?.addEventListener('click',()=>{
     showPanel(settings);if(liveChoice&&!liveChoice.disabled)liveChoice.focus();
   });
-  if(settings.panel){
+  if(settings.panel||chatOptions.panel||attachmentHelp.panel){
     shell.addEventListener('keydown',event=>{
       if(event.key!=='Escape'||!openPanel)return;
       event.stopPropagation();showPanel(null);
     });
     window.addEventListener('vp3:profile-agent-visibility',event=>{if(!event.detail?.open)showPanel(null,false);});
   }
-  if(!thread||!form||!textarea||!submit||!status||shell.querySelector('[data-profile-chat-preview]'))return;
+  if(ownerPreview){
+    for(const [button,kind] of [[addImage,'image'],[addFile,'file']])button?.addEventListener('click',()=>openAttachmentHelp(button,kind,{
+      state:'preview',message:'You’re viewing your own profile. Images and files can be shared after you join a visitor’s conversation. Open your Chat to respond to visitors.',action:'options',actionLabel:'Open chat options'
+    }));
+  }
+  if(!thread||!form||!textarea||!submit||!status||ownerPreview)return;
   const conversationStorageKey=()=>`stonefellow-profile-agent:v1:${cfg.username}:${String(cfg.conversationNamespace||'unbound')}`;
   let storageKey=conversationStorageKey();
   let conversationId=cfg.conversationNamespace?Math.max(0,Number(localStorage.getItem(storageKey)||0)):0;
@@ -418,6 +452,21 @@
       (conversationStatus==='owner_joined'&&chat?.mode==='auto'&&liveChoice?.checked!==false)
     );
   }
+  function attachmentInteractionState(){
+    const owner=chat?.owner_name||cfg.ownerName||'the profile owner';
+    if(!alive||sessionChanged)return {state:'session',message:'Your visitor session changed. Reload this profile before sharing an image or file.',action:'reload',actionLabel:'Reload chat'};
+    if(sending)return {state:'sending',message:'Your message is being sent. Wait for it to finish before adding another image or file.'};
+    if(pendingSend)return {state:'pending',message:'Retry your saved message before adding another image or file. Any file already attached stays with that message.'};
+    if(endBusy||checkoutCreating)return {state:'busy',message:'Another chat action is in progress. Wait for it to finish before adding an image or file.'};
+    if(initialStatePending||sessionRefreshing)return {state:'checking',message:'Checking file sharing availability. You can try again when the chat has loaded.'};
+    if(!attachmentAvailabilityChecked)return {state:'unknown',message:'File sharing availability could not be checked. Reload this profile to try again.',action:'reload',actionLabel:'Reload chat'};
+    if(attachmentMaxBytes<1)return {state:'unavailable',message:'File sharing is unavailable on this profile. You can keep chatting in text.'};
+    if(ownerAttachmentAvailable())return {state:'ready',ready:true,message:'File sharing is ready. Use Add image or Add file below to choose what you want to share.'};
+    if(chat?.live_status==='waiting')return {state:'waiting',message:`Your live chat request is waiting for ${owner}. Images and files become available when they join.`,action:'settings',actionLabel:'View live chat request'};
+    if(!chat)return {state:'unknown',message:'Live chat availability could not be checked. You can keep chatting in text and check Chat options again.',action:'options'};
+    if(!chat.live_text_available)return {state:'offline',message:`${owner} is currently unavailable for live chat. Images and files can be shared after they join your conversation.`,action:'options'};
+    return {state:'owner_required',message:`Images and files can be shared after ${owner} joins your conversation. Open live chat settings, then send a message to request them.`,action:'settings',actionLabel:'Open live chat settings'};
+  }
   function setQueuedAttachment(file){
     queuedAttachment=file;
     if(!attachmentHost)return;
@@ -432,29 +481,37 @@
     updateAttachmentControls();
   }
   function updateAttachmentControls(){
-    const available=ownerAttachmentAvailable()&&alive&&!sessionChanged;
+    const availability=attachmentInteractionState();
     for(const [button,label] of [[addImage,'Add image'],[addFile,'Add file']]){
       if(!button)continue;
-      button.disabled=!available||sending||endBusy||Boolean(pendingSend);
-      button.title=available?label:'Available when you’re chatting with the profile owner';
+      // These buttons always have a local response; only an authorized human
+      // conversation opens a picker. The server still owns upload admission.
+      button.disabled=false;
+      button.title=availability.ready?label:label+' options';
     }
+    if(openPanel===attachmentHelp)renderAttachmentHelp(attachmentHelpKind,availability);
     const remove=attachmentHost?.querySelector('button');
     if(remove)remove.disabled=sending||Boolean(pendingSend);
   }
-  function chooseAttachment(accept){
-    if(!ownerAttachmentAvailable()||sending||pendingSend||sessionChanged)return;
+  function chooseAttachment(accept,kind,button){
+    const availability=attachmentInteractionState();
+    if(!availability.ready){openAttachmentHelp(button,kind,availability);return;}
+    showPanel(null,false);
     const selectedConversation=conversationId;
     const input=document.createElement('input');input.type='file';input.accept=accept;
     input.addEventListener('change',()=>{
       const file=input.files?.[0];
-      if(!file||!alive||sessionChanged||conversationId!==selectedConversation||!ownerAttachmentAvailable()||sending||pendingSend)return;
+      if(!file)return;
+      const current=attachmentInteractionState();
+      if(!current.ready){openAttachmentHelp(button,kind,current);return;}
+      if(conversationId!==selectedConversation){openAttachmentHelp(button,kind,{state:'changed',message:'The conversation changed. Choose your image or file again for this conversation.'});return;}
       if(file.size<1||file.size>attachmentMaxBytes){setNotice('Choose a file between 1 byte and 2 MB.');return;}
       formNotice='';setQueuedAttachment(file);setNotice('');
     },{once:true});
     input.click();
   }
-  addImage?.addEventListener('click',()=>chooseAttachment('.jpg,.jpeg,.png,.webp,.gif'));
-  addFile?.addEventListener('click',()=>chooseAttachment('.pdf,.txt,.csv'));
+  addImage?.addEventListener('click',()=>chooseAttachment('.jpg,.jpeg,.png,.webp,.gif','image',addImage));
+  addFile?.addEventListener('click',()=>chooseAttachment('.pdf,.txt,.csv','file',addFile));
   function normalizeChat(value){
     if(!value||value.contract!=='vp3.profile-chat-choice.v1'||typeof value.owner_name!=='string'||value.owner_name.length>240
        ||!['auto','agent','live'].includes(value.mode)||!['none','waiting','accepted','declined','expired','unavailable','ended'].includes(value.live_status)
@@ -663,6 +720,7 @@
       if(data.agent?.name)cfg.agentName=data.agent.name;
       if(Object.prototype.hasOwnProperty.call(data.agent||{},'greeting'))cfg.greeting=data.agent.greeting||'';
       attachmentMaxBytes=Number.isSafeInteger(data.attachment_max_bytes)?Math.max(0,data.attachment_max_bytes):0;
+      attachmentAvailabilityChecked=true;
       renderMessages(data.messages||[]);refreshPromotionCards(data.active_promotion_keys);applyConversationState(data.conversation||null,data.handoff,data.chat);
       if(conversationId){startPolling();void checkoutSurface?.refresh();}
       if(pendingSend&&!sessionChanged)void sendSaved(pendingSend);
@@ -711,7 +769,12 @@
   async function heartbeat(){
     if(initialStatePending||document.visibilityState!=='visible'||sessionChanged||sending||endBusy||presenceBusy||!alive)return;
     presenceBusy=true;
-    try{const data=await request('state',{},'GET');applyConversationState(data.conversation||null,data.handoff,data.chat);void dispatchIfDue();}
+    try{
+      const data=await request('state',{},'GET');
+      attachmentMaxBytes=Number.isSafeInteger(data.attachment_max_bytes)?Math.max(0,data.attachment_max_bytes):0;
+      attachmentAvailabilityChecked=true;
+      applyConversationState(data.conversation||null,data.handoff,data.chat);void dispatchIfDue();
+    }
     catch(error){if(!error.stale&&invalidVisitorSession(error))stopChangedSession();}
     finally{presenceBusy=false;}
   }
@@ -895,6 +958,7 @@
     initialStatePending=false;
     if(!alive||sessionChanged)return;
     if(sessionRefreshing){sessionRefreshing=false;textarea.disabled=false;submit.disabled=false;}
+    updateAttachmentControls();
     void loadSpeechPreference();void checkoutSurface?.refresh();
     if(!shell.hidden)void callSurface?.refresh();
   });

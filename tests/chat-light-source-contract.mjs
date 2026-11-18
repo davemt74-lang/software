@@ -25,7 +25,8 @@ for (const removed of ['shows','photos','merch']) {
 assert.ok(legacy.includes("require __DIR__ . '/includes/member-user-menu.php'"), 'Chat must use the same complete account menu as other member pages');
 assert.match(fs.readFileSync('includes/member-navigation.php','utf8'), /'profile','View Profile',\$profileUrl/, 'Canonical account navigation must retain View Profile');
 assert.equal(overlay.includes('body[data-agent-theme="light"]'), false, 'media overlay presentation must not depend on theme state');
-assert.match(profileActivity, /actions\.insertBefore\(button,avatar\|\|null\)/, 'Profile Activity badge must live in the upper-right action cluster');
+assert.doesNotMatch(profileActivity, /\.chat-topbar-actions|chat-profile-activity-button/, 'Profile Activity must leave the main header without an extra specialist icon');
+assert.match(profileActivity, /window\.STONEFELLOW_PROFILE_ACTIVITY=\{open/, 'Profile Activity must retain its existing navigation bridge');
 
 assert.match(teamChatCss, /\.sf-online-rail-v109\{[^}]*background:#f8fafc/, 'Team Chat rail must be light at source');
 assert.match(teamChatCss, /\.sf-team-chat-windows-v109/, 'Team Chat popup window owner must remain in the canonical stylesheet');

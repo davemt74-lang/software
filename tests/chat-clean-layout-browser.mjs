@@ -50,8 +50,7 @@ $mainSidebarHistoryRows=[['id'=>42,'title'=>'Workshop research','updated_at'=>'2
  ['id'=>43,'title'=>'Ideas for the next project','updated_at'=>'2026-11-09 14:00:00']];
 ob_start();require $root.'/includes/main-sidebar.php';$sidebar=ob_get_clean();
 $memberHeaderTitle='Agent Chat';$memberHeaderSubtitle='Longfellow';$memberHeaderActiveKey='chat';$memberHeaderShowAgentOrb=false;
-$memberHeaderActions='<button type="button" class="chat-transcription-canvas-button" aria-label="Open Transcription Intelligence"></button>'
- . '<button type="button" class="chat-profile-activity-button" aria-label="Open Profile Activity"><em>28</em></button>';
+$memberHeaderActions='<button type="button" class="chat-transcription-canvas-button" aria-label="Open Transcription Intelligence"></button>';
 ob_start();require $root.'/includes/member-header.php';$header=ob_get_clean();
 echo json_encode(['sidebar'=>$sidebar,'header'=>$header],JSON_THROW_ON_ERROR);
 `);

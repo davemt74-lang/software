@@ -60,6 +60,10 @@
 .profile-agent-panel p{margin:0 0 10px;color:var(--profile-muted);font-size:12px}
 .profile-agent-panel .profile-agent-live-choice{padding:0 0 10px}
 .profile-agent-panel .profile-agent-panel-action{display:inline-grid;place-items:center;min-height:44px;padding:8px 12px;border:1px solid var(--profile-line);border-radius:8px;background:#fff;color:var(--profile-text);font:inherit;text-decoration:none;cursor:pointer}
+.profile-agent-panel .profile-agent-panel-action[hidden]{display:none}
+.profile-agent-panel-actions{display:flex;flex-wrap:wrap;gap:8px}
+.profile-agent-preview-options{margin:0 0 14px;padding-inline-start:20px;font-size:12px;line-height:1.6}
+.profile-agent-preview-options li+li{margin-top:6px}
 .profile-agent-widget .profile-agent-footer .profile-agent-compose{display:flex;flex-direction:column;gap:6px;margin:0;padding:9px 12px 8px}
 .profile-agent-footer .profile-agent-compose textarea{width:100%;padding:8px 10px;font-size:16px}
 .profile-agent-footer .profile-agent-toolbar{display:flex;gap:4px;align-items:center;min-width:0}
