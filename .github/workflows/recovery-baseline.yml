@@ -106,6 +106,13 @@ jobs:
           node tests/profile-analytics-period-http.mjs
           node tests/profile-analytics-reliability-v1.mjs
           php tests/profile-commerce-followthrough-ref-v1.php
+          php tests/profile-promotion-native-click-v1.php
+          node tests/profile-promotion-native-click-v1.mjs
+          php tests/product-marketing-followthrough-v1.php
+          php tests/product-marketing-briefings-v1.php
+          php tests/product-marketing-profile-findings-v1.php
+          node tests/product-marketing-report-v1.mjs
+          node tests/product-marketing-publication-http.mjs
           php tests/profile-promotion-capture-v1.php
           php tests/commerce-checkout-open-clock-v1.php
           php tests/profile-commerce-followthrough-v1.php

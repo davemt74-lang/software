@@ -25,7 +25,7 @@ function pcap_record_v1(array $f,array $native,string $id): bool
 }
 try{
     $f=pcap_fixture_init_v1();$p=db();
-    pcap_check_v1(profile_promotion_capture_ready_v1($p),'canonical installation makes all three forward capture columns available');
+    pcap_check_v1(profile_promotion_capture_ready_v1($p),'canonical installation makes both forward capture fields available');
     $native=pcap_fixture_native_v1();$cid=$native['public_conversation_id'];$click=str_repeat('1',32);
     $before=pcap_fixture_observed_v1();$cookies=$_COOKIE;
     $ctx=profile_promotion_capture_native_context_v1($p,profile_for_user($p,1,false),current_user(),$cid);
@@ -34,8 +34,9 @@ try{
     $low=(int)floor(microtime(true)*1000);
     pcap_check_v1(pcap_record_v1($f,$native,$click),'the production accepted-click writer stores a verified native binding');
     $row=pcap_fixture_click_v1($click);$evidence=pcap_evidence_v1($f,$click);
-    pcap_check_v1((int)$row['public_conversation_id']===$cid&&preg_match('/\A[a-f0-9]{64}\z/D',$row['public_conversation_binding_sha256_v1'])===1,
-        'the exact public conversation ID and immutable digest are saved together');
+    pcap_check_v1(($stored=json_decode($row['native_context_json_v1'],true,8,JSON_THROW_ON_ERROR))['public_conversation_id']===$cid
+        &&$stored['product_id']===$f['product']&&preg_match('/\A[a-f0-9]{64}\z/D',$stored['session_hash'])===1,
+        'the exact public conversation and immutable native proof are saved together in one closed record');
     pcap_check_v1($evidence['availability']==='ready'&&$evidence['public_conversation_id']===$cid&&$evidence['recorded_at_utc_ms']>=$low-1000&&$evidence['recorded_at_utc_ms']<=(int)floor(microtime(true)*1000),
         'exact evidence returns the recorded UTC click time and no guessed payment or page-view time');
     pcap_check_v1((int)$native['context']['agent_id']===7&&(int)profile_promotion_attribution_publication_v1($p,1,$f['publication_id'])['agent_id']===8,
@@ -145,7 +146,7 @@ try{
     foreach(['credential_hash'=>str_repeat('e',64),'transport'=>'external_site','profile_session_id'=>$sid+100,'visitor_user_id'=>3] as $field=>$value){
         $bad=$originalBinding;$bad[$field]=$value;
         $p->prepare('UPDATE profile_agent_messages SET context_json=? WHERE id=?')->execute([json_encode($bad,JSON_THROW_ON_ERROR),$bindingRow['id']]);
-        pcap_check_v1(pcap_evidence_v1($f,$click)['availability']==='unavailable','a changed '.$field.' cannot pass the saved immutable native digest');
+        pcap_check_v1(pcap_evidence_v1($f,$click)['availability']==='unavailable','a changed '.$field.' cannot pass the saved immutable native proof');
     }
     foreach(['{bad',str_repeat(' ',65537)] as $bad){
         $p->prepare('UPDATE profile_agent_messages SET context_json=? WHERE id=?')->execute([$bad,$bindingRow['id']]);
@@ -183,30 +184,41 @@ try{
     try{pcap_reject_v1(fn()=>pcap_record_v1($f,$native,$faultClick),'an uncertain click INSERT is not retried with an older SQL shape');}finally{$p->afterSql=null;}
     pcap_check_v1($inserts===1&&pcap_fixture_click_v1($faultClick)===null&&!$p->inTransaction(),
         'failure after a click INSERT rolls back the complete transaction without a fallback duplicate');
-    pcap_check_v1(pcap_record_v1($f,$native,$faultClick)&&pcap_fixture_click_v1($faultClick)['public_conversation_binding_sha256_v1']!==null,
+    pcap_check_v1(pcap_record_v1($f,$native,$faultClick)&&pcap_fixture_click_v1($faultClick)['native_context_json_v1']!==null,
         'a later explicit retry records one verified click after the failed transaction');
-    $p->beforeSql=static function(string $sql):void{if(str_contains($sql,'SELECT public_conversation_id,public_conversation_binding_sha256_v1'))throw new PDOException('Operational schema read failure.');};
+    $lateClick=str_repeat('b',32);$revoked=false;$rejected=false;
+    $p->afterSql=static function(string $sql,PA3PDO $connection)use(&$revoked):void{
+        if(str_starts_with($sql,'INSERT INTO agent_promotion_clicks_v1')){
+            $connection->afterSql=null;
+            $connection->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'");
+            $revoked=true;
+        }
+    };
+    try{pcap_record_v1($f,$native,$lateClick);}catch(VP3ProfileAgentPublicException){$rejected=true;}finally{$p->afterSql=null;}
+    pcap_check_v1($revoked&&$rejected&&pcap_fixture_click_v1($lateClick)===null&&!$p->inTransaction()
+        &&(int)$p->query("SELECT COUNT(*) FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'")->fetchColumn()===1,
+        'the canonical context writer rechecks authority after insertion and rolls back both click and late revocation');
+    $p->beforeSql=static function(string $sql):void{if(str_contains($sql,'SELECT native_context_json_v1'))throw new PDOException('Operational schema read failure.');};
     try{
         pcap_check_v1(pcap_evidence_v1($f,$click)['availability']==='unavailable','a failed schema read is unavailable evidence');
         pcap_reject_v1(fn()=>pcap_record_v1($f,$native,str_repeat('8',32)),'an operational schema error cannot silently choose the legacy INSERT');
     }finally{$p->beforeSql=null;}
     pcap_check_v1(pcap_fixture_click_v1(str_repeat('8',32))===null,'failed schema verification writes no click');
     $retry=new PDOException('Deadlock');$retry->errorInfo=['40001',1213,'Deadlock'];
-    $p->beforeSql=static function(string $sql)use($retry):void{if(str_contains($sql,'SELECT public_conversation_id'))throw $retry;};
+    $p->beforeSql=static function(string $sql)use($retry):void{if(str_contains($sql,'SELECT native_context_json_v1'))throw $retry;};
     try{try{pcap_evidence_v1($f,$click);throw new LogicException('Retry was swallowed.');}catch(PDOException $error){pcap_check_v1($error===$retry,'retryable native transaction failures propagate to the caller recovery boundary');}}
     finally{$p->beforeSql=null;}
 
     // Definite missing columns preserve the old writer, without a read migration.
-    $p->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN public_conversation_id');
-    $p->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN public_conversation_binding_sha256_v1');
+    $p->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN native_context_json_v1');
     pcap_check_v1(!profile_promotion_capture_ready_v1($p)&&pcap_evidence_v1($f,$click)['availability']==='unavailable',
         'a partially deployed capture schema is explicitly unavailable and is not installed by a read');
     $oldShape=str_repeat('9',32);
-    pcap_check_v1(pcap_record_v1($f,$native,$oldShape)&&!column_exists('agent_promotion_clicks_v1','public_conversation_id'),
+    pcap_check_v1(pcap_record_v1($f,$native,$oldShape)&&!column_exists('agent_promotion_clicks_v1','native_context_json_v1'),
         'the canonical click writer remains available on the definitely older schema without read-time DDL');
     profile_promotion_capture_install_v1($p,'clicks');$oldRow=pcap_fixture_click_v1($oldShape);
-    pcap_check_v1($oldRow['public_conversation_id']===null&&$oldRow['public_conversation_binding_sha256_v1']===null,
-        'explicit upgrade leaves old click association columns NULL');
+    pcap_check_v1($oldRow['native_context_json_v1']===null,
+        'explicit upgrade leaves old click association proof NULL');
     pcap_check_v1(pcap_record_v1($f,$native,$oldShape)&&pcap_fixture_click_v1($oldShape)===$oldRow,
         'an upgraded legacy replay never guesses its historical public conversation');
     $p->beginTransaction();

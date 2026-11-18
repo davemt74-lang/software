@@ -2,10 +2,30 @@
   const cfg = window.STONEFELLOW_CHAT;
   const initiativePage = {owner:Number(cfg.userId || 0),agent:Number(cfg.agentId || 0),
     binding:String(cfg.workingAttentionBinding || ''),csrf:String(cfg.csrf || ''),endpoint:String(cfg.endpoint || '')};
+  // A released publication URL keeps its exact original tuple and period.
+  // Normalize only a server-verified predecessor before any plan auto-open.
+  (()=>{
+    const target=cfg.marketingFollowthroughDestination;
+    if(!target||target.ownerUserId!==initiativePage.owner||target.chatAgentId!==initiativePage.agent
+      ||target.chatConversationId!==Number(cfg.initialConversationId)||target.workingAttentionBinding!==initiativePage.binding
+      ||typeof target.legacyHref!=='string'||typeof target.href!=='string')return;
+    try{
+      const actual=new URL(location.href),old=new URL(target.legacyHref,actual.origin),next=new URL(target.href,actual.origin);
+      if(old.origin!==actual.origin||next.origin!==actual.origin||old.pathname!==actual.pathname||next.pathname!==actual.pathname
+        ||old.hash||next.hash||old.username||old.password||next.username||next.password
+        ||[...actual.searchParams].length!==[...old.searchParams].length
+        ||![...old.searchParams].every(([key,value])=>actual.searchParams.getAll(key).length===1&&actual.searchParams.get(key)===value)
+        ||[...next.searchParams].length!==3||next.searchParams.get('marketing_followthrough')!==target.ref
+        ||next.searchParams.get('agent')!==(target.chatAgentId===0?'system':String(target.chatAgentId))
+        ||next.searchParams.get('conversation_id')!==String(target.chatConversationId))return;
+      window.history.replaceState(null,'',next.pathname+next.search+actual.hash);
+    }catch{}
+  })();
   // Deferred tools may load after Chat has restored and normalized the URL.
   // Keep only the original destination hint; every resume still reads the server.
   const initialMediaCommandIntent=(()=>{
     const params=new URLSearchParams(location.search);
+    if(params.has('marketing_publication')||params.has('marketing_period'))return null;
     if(!['marketing_plan','conversation_id','agent'].every(key=>params.getAll(key).length===1))return null;
     const positive=value=>/^[1-9]\d*$/.test(value||'')&&Number.isSafeInteger(Number(value))?Number(value):0;
     const productId=positive(params.get('marketing_plan')),cid=positive(params.get('conversation_id'));
@@ -63,8 +83,8 @@
   function cancelMarketingFollowthroughDestinationV1() {
     initialMarketingFollowthroughCancelled=true;
     try{
-      const url=new URL(location.href);if(!url.searchParams.has('marketing_followthrough'))return;
-      url.searchParams.delete('marketing_followthrough');url.searchParams.delete('conversation_id');
+      const url=new URL(location.href);if(!['marketing_followthrough','marketing_publication','marketing_period'].some(key=>url.searchParams.has(key)))return;
+      for(const key of ['marketing_followthrough','marketing_publication','marketing_period','marketing_plan','conversation_id'])url.searchParams.delete(key);
       url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));
       window.history.replaceState(null,'',url.pathname+url.search+url.hash);
     }catch{}
@@ -232,6 +252,10 @@
         }
         if(url.searchParams.has('marketing_followthrough')){
           url.searchParams.delete('marketing_followthrough');
+          url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));changed=true;
+        }
+        if(url.searchParams.has('marketing_publication')||url.searchParams.has('marketing_period')){
+          for(const key of ['marketing_plan','marketing_publication','marketing_period'])url.searchParams.delete(key);
           url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));changed=true;
         }
         if(url.searchParams.has('conversation_id')){url.searchParams.delete('conversation_id');changed=true;}

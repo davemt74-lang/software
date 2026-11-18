@@ -65,6 +65,7 @@ function vp3_marketing_followthrough_request_v1(PDO $pdo,array $user,array $inpu
         if(array_key_exists('period',$selection))$selection['period']=vp3_marketing_followthrough_id_v1($selection['period']);
         if(isset($selection['ref'])&&(array_key_exists('publication_id',$selection)||array_key_exists('period',$selection)))
             throw new RuntimeException('Choose either a fixed report or a publication period.',422);
+        if(is_string($selection['ref']??null))$selection['ref']=vp3_profile_commerce_followthrough_legacy_ref_v1($selection['ref'])??$selection['ref'];
         $data=['followthrough'=>vp3_profile_commerce_followthrough_v1($pdo,$scope,$selection)];
     }
     // The principal and browser session must still be current after all source

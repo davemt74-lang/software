@@ -21,6 +21,7 @@ export async function startProfileWorkspaceServer({analytics=true,marketing=fals
     writeFileSync(join(temp,'includes',file),'<?php require_once '+quote(join(root,'includes',file))+';');
   }
   if(marketing)for(const name of ['initiative-work-marketing-v1.php','initiative-work-marketing-promotion-v1.php','initiative-marketing-plans-v1.php'])writeFileSync(join(temp,'includes',name),'<?php require_once '+quote(join(root,'includes',name))+';');
+  if(marketing)writeFileSync(join(temp,'includes','profile-analytics-authority-v1.php'),'<?php require_once '+quote(join(root,'includes/profile-analytics-authority-v1.php'))+';');
   writeFileSync(join(temp,'fixture.php'),`<?php
     ${marketing?"if(!defined('STONEFELLOW_ROOT'))define('STONEFELLOW_ROOT',__DIR__);":''}
     function vp3_profile_owner_draft_model_v1(PDO $pdo,array $scope,array $wire,string $prompt,Closure $dispatch):array{
@@ -40,7 +41,7 @@ export async function startProfileWorkspaceServer({analytics=true,marketing=fals
       profile_specialist_analytics_fixture_v1(db());
       db()->prepare("UPDATE profile_agent_messages SET created_at=? WHERE sender_type='visitor'")->execute([gmdate('Y-m-d H:i:s',time()-10)]);
       pfs_advance(5000);
-      $seed['outcomes']=pco_seed_v1(db(),['agent_id'=>7,'include_ending'=>false]);
+      $seed['outcomes']=pco_seed_v1(db(),['agent_id'=>7,'include_ending'=>false,'tasks'=>${marketing?3:23}]);
       $offer=pa3c_offer('visitor',pa3c_context(2,'d'));
       vp3_profile_call_owner_action_pa3c(db(),pa3c_owner(),pa3c_owner_input($offer,'accept'));
       vp3_profile_call_work_pa3c(db(),(int)$offer['call_id'],'pa3c_provider');
@@ -57,7 +58,25 @@ export async function startProfileWorkspaceServer({analytics=true,marketing=fals
       pa3_login(1);
       `:''}
       ${marketing?`$seed['followthrough']=profile_commerce_followthrough_fixture_v1(db(),1,${marketingAgent},${marketingAgent===0?94001:11});
+      ${marketingAgent===7?"profile_commerce_followthrough_fixture_event_v1(db(),$seed['followthrough']);":''}
       profile_analytics_period_fixture_table_v1(db(),'agent_commerce_product_bindings_v800',['product_id'=>'BIGINT PRIMARY KEY','binding_type'=>"VARCHAR(40) NOT NULL DEFAULT ''",'binding_id'=>'BIGINT NULL']);
+      profile_analytics_period_fixture_table_v1(db(),'agent_commerce_products_v800',['description'=>'TEXT NULL','metadata_json'=>'TEXT NULL','is_active'=>'INTEGER NOT NULL DEFAULT 1','product_type'=>"VARCHAR(32) NOT NULL DEFAULT 'physical'",
+        'fulfillment_type'=>"VARCHAR(32) NOT NULL DEFAULT 'manual'",'payment_mode'=>"VARCHAR(24) NOT NULL DEFAULT 'one_time'",'price_cents'=>'BIGINT NOT NULL DEFAULT 2000',
+        'deposit_cents'=>'BIGINT NOT NULL DEFAULT 0','currency'=>"VARCHAR(8) NOT NULL DEFAULT 'usd'",'updated_at'=>'DATETIME NULL']);
+      profile_analytics_period_fixture_table_v1(db(),'user_media_assets',['file_size'=>'BIGINT NOT NULL DEFAULT 0']);
+      $private=db()->query('SELECT * FROM agent_commerce_products_v800 WHERE id='.(int)$seed['followthrough']['ids']['product'])->fetch(PDO::FETCH_ASSOC);
+      $private['id']=993101;$private['product_key']='profile:private-marketing-hub';$private['title']='Private T-shirt listing';$private['is_active']=0;
+      $private['metadata_json']=json_encode(['listing_draft'=>'product_text_v1','agent_id'=>${marketingAgent},'conversation_id'=>${marketingAgent===0?94001:11},'source_title'=>'Description','visibility'=>'hidden'],JSON_THROW_ON_ERROR);
+      profile_analytics_period_fixture_row_v1(db(),'agent_commerce_products_v800',$private);
+      profile_analytics_period_fixture_row_v1(db(),'agent_product_launches_v1',['product_id'=>993101,'owner_user_id'=>1,'agent_id'=>${marketingAgent},'conversation_id'=>${marketingAgent===0?94001:11},
+        'draft_key'=>null,'creative_id'=>null,'last_stage'=>'listing_review','last_notice_key'=>str_repeat('f',64),'next_check_at'=>'2020-01-01 00:00:00'],'product_id');
+      $seed['followthrough']['ids']['private_plan']=993101;
+      // Keep discovery meaningful when this historical fixture runs much later;
+      // the extra unthreaded click is outside both saved fixed-period windows.
+      $today=(new DateTimeImmutable('today',new DateTimeZone('UTC')))->getTimestamp();
+      if($today>=$seed['followthrough']['cutoff']+2*86400)profile_analytics_period_fixture_row_v1(db(),'agent_promotion_clicks_v1',[
+        'click_id'=>md5('marketing-hub-current-profile-click'),'publication_id'=>$seed['followthrough']['publication_id'],
+        'placement'=>'profile','created_at'=>gmdate('Y-m-d H:i:s',$today-3600)],'click_id');
       pa3_login(1);`:''}
       $seed['clock']=$GLOBALS['pa3Now'];
       file_put_contents(${quote(join(temp,'seed.json'))},json_encode($seed,JSON_THROW_ON_ERROR));
@@ -93,9 +112,27 @@ export async function startProfileWorkspaceServer({analytics=true,marketing=fals
           file_put_contents(${quote(join(temp,'unexpected-write'))},'Workspace GET attempted a storage write.');
           throw new RuntimeException('Fixture rejected a read-side write.');
         }
+        if(is_file(${quote(join(temp,'marketing-logout-after-read'))})){
+          $stack=array_column(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS),'function');$position=array_search('vp3_profile_analytics_authority_current_v1',$stack,true);
+          if($position!==false&&($stack[$position+1]??null)==='vp3_agent_activity_product_marketing_v1'){
+            unlink(${quote(join(temp,'marketing-logout-after-read'))});
+            if(session_status()!==PHP_SESSION_ACTIVE)session_start(['use_cookies'=>false,'cache_limiter'=>'']);
+            $_SESSION=[];session_destroy();reset_current_user_cache();
+          }
+        }
+        if(is_file(${quote(join(temp,'marketing-profile-revoke-after-read'))})){
+          $stack=array_column(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS),'function');$position=array_search('vp3_profile_analytics_authority_current_v1',$stack,true);
+          if($position!==false&&($stack[$position+1]??null)==='vp3_agent_activity_product_marketing_v1')$GLOBALS['pwsMarketingSourcesReturned']=true;
+          if(!empty($GLOBALS['pwsMarketingSourcesReturned'])&&in_array('current_user',$stack,true)&&!in_array('vp3_agent_activity_hub_v1',$stack,true)){
+            unlink(${quote(join(temp,'marketing-profile-revoke-after-read'))});$hook=db()->afterSql;db()->afterSql=null;
+            try{db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key='profile_chat.access'");}
+            finally{db()->afterSql=$hook;}$GLOBALS['pwsInjectedProfileRevocation']=true;
+          }
+        }
       };
       register_shutdown_function(static function()use($before,$providerBefore):void{
-        if($before!==pws_server_fingerprint()||$providerBefore!==file_get_contents(${quote(join(temp,'provider-dispatches'))}))
+        $after=pws_server_fingerprint();if(!empty($GLOBALS['pwsInjectedProfileRevocation'])){unset($before['role_permissions'],$after['role_permissions']);}
+        if($before!==$after||$providerBefore!==file_get_contents(${quote(join(temp,'provider-dispatches'))}))
           file_put_contents(${quote(join(temp,'unexpected-write'))},'Workspace GET changed storage or dispatched inference.');
       });
     }
@@ -189,7 +226,7 @@ ${marketing?['media-library-picker-v1.js','chat-marketing-creative-render-v1.js'
       try{vp3_profile_workspace_scope_v1(db(),current_user(),$selectedAgent,$selectedChat);}catch(Throwable $e){$allowed=false;}
       $binding=vp3_catch_up_page_binding_v1(current_user());
       $destination=vp3_profile_analytics_destination_bind_v1($requested,(int)current_user()['id'],$selectedAgent,$selectedChat,$binding,$appBase.'/chat.php',$allowed);
-      $marketingDestination=${marketing?"vp3_marketing_followthrough_destination_bind_v1($marketingRequested,(int)current_user()['id'],$selectedAgent,$selectedChat,$binding,$appBase.'/chat.php',$allowed)":'null'};
+      $marketingDestination=${marketing?"vp3_marketing_followthrough_destination_bind_v1($marketingRequested,(int)current_user()['id'],$selectedAgent,$selectedChat,$binding,$appBase.'/chat.php',$allowed,db())":'null'};
       $jsonFlags=JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR;
       $profileEnabled=personal_capability_has_v242('profile_agent.access',current_user())&&personal_capability_has_v242('profile_chat.access',current_user());
       $profileWorkspaceConfig=$profileEnabled?'window.VP3_PROFILE_WORKSPACE_V1='.json_encode(['endpoint'=>$appBase.'/api/profile-specialist-workspace-v1.php','csrf'=>csrf_token(),'ownerKey'=>'1','agentId'=>$selectedAgent,'workingAttentionBinding'=>$binding,'profileUrl'=>$appBase.'/profile-agent.php','chatUrl'=>$appBase.'/chat.php'],$jsonFlags).';':'';
@@ -202,6 +239,13 @@ ${marketing?['media-library-picker-v1.js','chat-marketing-creative-render-v1.js'
     }
     if($path==='/fixture/reset'&&($_SERVER['REQUEST_METHOD']??'')==='POST'){header('Content-Type:application/json');echo json_encode(pws_server_seed());return;}
     if($path==='/fixture/fingerprint'){header('Content-Type:application/json');echo json_encode(pws_server_fingerprint(),JSON_THROW_ON_ERROR);return;}
+    if($path==='/fixture/marketing-sources'){
+      header('Content-Type:application/json');
+      try{require_once ${quote(join(root,'includes/agent-activity-hub-v1.php'))};require_once ${quote(join(root,'includes/agent-coordination-product-marketing-v1.php'))};
+        $scope=vp3_agent_activity_scope_v1(db(),current_user(),${marketingAgent},${marketingAgent===0?94001:11});
+        echo json_encode(vp3_coordination_product_marketing_sources_v1(db(),$scope,null,new DateTimeImmutable('now',new DateTimeZone('UTC'))),JSON_THROW_ON_ERROR);
+      }catch(Throwable $error){http_response_code(500);echo json_encode(['error'=>get_class($error).': '.$error->getMessage()]);}return;
+    }
     if($path==='/fixture/state'){
       $state=[];foreach(['profile_agent_messages','profile_agent_handoff_operations_pa3','profile_owner_drafts_v1','profile_calls_pa3c','chat_messages'] as $table)$state[$table]=db()->query('SELECT * FROM '.$table)->fetchAll(PDO::FETCH_ASSOC);
       $dispatches=file_get_contents(${quote(join(temp,'provider-dispatches'))});$state['provider_dispatches']=$dispatches===''?[]:explode("\\n",trim($dispatches));
@@ -219,10 +263,12 @@ ${marketing?['media-library-picker-v1.js','chat-marketing-creative-render-v1.js'
       elseif($action==='analytics_period_restore')db()->exec("INSERT INTO settings(setting_key,setting_value) VALUES('personal_capabilities_seed_v242','1')");
       elseif($action==='followthrough_clicks_off')db()->exec('ALTER TABLE agent_promotion_clicks_v1 RENAME TO fixture_promotion_clicks_unavailable');
       elseif($action==='followthrough_clicks_restore')db()->exec('ALTER TABLE fixture_promotion_clicks_unavailable RENAME TO agent_promotion_clicks_v1');
-      elseif($action==='followthrough_legacy_click')db()->prepare('UPDATE agent_promotion_clicks_v1 SET public_conversation_id=NULL,public_conversation_binding_sha256_v1=NULL WHERE click_id=?')->execute([$seed['followthrough']['ids']['native_click']]);
+      elseif($action==='followthrough_legacy_click')db()->prepare('UPDATE agent_promotion_clicks_v1 SET native_context_json_v1=NULL WHERE click_id=?')->execute([$seed['followthrough']['ids']['native_click']]);
       elseif($action==='followthrough_changed')db()->prepare('UPDATE agent_commerce_promotions_v1 SET conversation_id=12 WHERE id=?')->execute([$seed['followthrough']['ids']['original_creative']]);
       elseif($action==='revoke_chat')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key='chat.access'");
       elseif($action==='logout'){$_SESSION=[];session_destroy();reset_current_user_cache();}
+      elseif($action==='marketing_logout_after_read')file_put_contents(${quote(join(temp,'marketing-logout-after-read'))},'1');
+      elseif($action==='marketing_profile_revoke_after_read')file_put_contents(${quote(join(temp,'marketing-profile-revoke-after-read'))},'1');
       elseif($action==='profile_off')db()->exec('UPDATE user_profiles SET profile_agent_enabled=0 WHERE user_id=1');
       elseif($action==='profile_missing')db()->exec('DELETE FROM user_profiles WHERE user_id=1');
       elseif($action==='recording_revoke')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key='artist_listening.access'");

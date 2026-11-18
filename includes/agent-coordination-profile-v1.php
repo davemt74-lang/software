@@ -298,9 +298,21 @@ function vp3_coordination_profile_conversation_v1(PDO $pdo,array $scope,int $id,
     if(!$settled&&$presentationOwner==='')$presentationOwner=$attention['presentation_owner']??'profile_attention_pa4b';
     $historicalDelivery=$delivered;
     if($settled&&$presentationOwner==='')$delivered=false;
+    require_once __DIR__.'/profile-commerce-followthrough-v1.php';
+    try{$related=vp3_profile_commerce_conversation_associations_v1($pdo,$scope,$id,$now);}
+    catch(Throwable $error){
+        if(vp3_profile_analytics_retryable_v1($error)||$error->getCode()===403)throw $error;
+        $related=['coverage'=>'unavailable','items'=>[]];
+    }
+    if($related['items']||$related['coverage']!=='unconfigured')$semantic[]=['related_product_marketing',$related];
+    foreach($related['items'] as $link){
+        if(count($report['key_findings'])>=6)break;
+        $report['key_findings'][]=vp3_profile_specialist_text_v1('A saved Agent reply showed the promotion. Visitor question: “'.$link['question'].'”');
+    }
     return vp3_coordination_profile_item_v1('conversation',$id,$title,$statement,$settled?($conversation['status']==='resolved'?'resolved':'updated'):($needsOwner?'needs_attention':'open'),
         $settled?'activity':($needsOwner?'needs_owner':'open_conversation'),$needsOwner?'high':($settled?'low':'normal'),vp3_profile_specialist_href_v1('/profile-agent.php?tab=inbox&conversation='.$id),
-        $semantic,$report,$attention['disposition']??'pending',$presentationOwner,$delivered)+['profile_historical_delivery'=>$historicalDelivery];
+        $semantic,$report,$attention['disposition']??'pending',$presentationOwner,$delivered)+['profile_historical_delivery'=>$historicalDelivery,
+            'related_product_marketing'=>$related['items'],'related_product_marketing_coverage'=>$related['coverage']];
 }
 
 function vp3_coordination_profile_call_v1(PDO $pdo,array $scope,int $id,DateTimeImmutable $now): ?array

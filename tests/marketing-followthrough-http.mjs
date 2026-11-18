@@ -45,6 +45,18 @@ try{
   }
   const linked=await pageConfig(fixedQuery,'/nested/app');check(linked.config.marketingFollowthroughDestination?.ref===seed.ref
     &&linked.config.marketingFollowthroughDestination.href.startsWith('/nested/app/chat.php?')&&linked.html.includes('/nested/app/chat-marketing-followthrough-v1.js'),'actual production destination helper retains exact tuple before real Chat script restore');
+  const legacyQuery=new URLSearchParams({agent:'7',conversation_id:'11',marketing_plan:String(seed.ids.product),marketing_publication:seed.publication_id,marketing_period:seed.period_ref}).toString();
+  const legacyPage=await pageConfig(legacyQuery,'/nested/app');
+  check(legacyPage.config.marketingFollowthroughDestination?.ref===seed.ref
+    &&legacyPage.config.marketingFollowthroughDestination.href===linked.config.marketingFollowthroughDestination.href
+    &&new URL(legacyPage.config.marketingFollowthroughDestination.legacyHref,server.base).searchParams.get('marketing_plan')===String(seed.ids.product),
+    'released five-parameter link preserves exact original product, publication and period through actual SQL binding');
+  check((await pageConfig(legacyQuery.replace('marketing_plan='+seed.ids.product,'marketing_plan='+(seed.ids.product+1)))).config.marketingFollowthroughDestination===null,
+    'released link with a mismatched product cannot obtain a current navigation hint');
+  const oldRef='marketing:product-outcome:'+seed.publication_id+':'+seed.period_ref.slice('profile:analytics:'.length);
+  const oldRead=await read('report',{ref:oldRef});
+  check(oldRead.data.followthrough.ref===seed.ref&&oldRead.data.followthrough.revision===value.revision,
+    'explicit old-ref read reaches the one canonical collector without rolling the period');
   for(const raw of [fixedQuery+'&agent=7',fixedQuery.replace('agent=7','agent=99999'),fixedQuery.replace('conversation_id=11','conversation_id=99999'),fixedQuery+'&profile_analytics='+encodeURIComponent(seed.period_ref),fixedQuery.replace('agent=7','agent[]=7')])
     check((await pageConfig(raw)).config.marketingFollowthroughDestination===null,'duplicate, competing or fallback original route cannot become a follow-through destination');
   const sub=await request('report',{ref:seed.ref},{base:'/nested/app'});check(sub.response.status===200&&sub.body.data.followthrough.current_plan.url.startsWith('/nested/app/chat.php?'),'actual canonical report links respect a subdirectory deployment');

@@ -42,7 +42,8 @@ function vp3_initiative_specialist_evidence_v1(PDO $pdo,array $user,array $bindi
         // questions are not evidence of owner preferences.
         if(in_array($specialist,['gmail','curiosity','casual'],true))continue;
         $route=vp3_coordination_item_route_v1($settings,$item);
-        if(($route['action']==='watch'&&$specialist!=='profile')||$route['trigger']==='start_plan')continue;
+        $ownedProduct=$specialist==='marketing'&&vp3_product_marketing_ref_kind_v1($ref)!==null;
+        if(($route['action']==='watch'&&$specialist!=='profile'&&!$ownedProduct)||$route['trigger']==='start_plan')continue;
         if($nativeRefs===null&&($counts[$specialist]??0)>=$perSpecialist)continue;
         $counts[$specialist]=($counts[$specialist]??0)+1;
         $key=$prefix.$ref;

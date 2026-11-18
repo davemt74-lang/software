@@ -744,6 +744,40 @@ function vp3_agent_activity_marketing_v1(PDO $pdo, array $scope, DateTimeImmutab
     return ['items'=>$items, 'coverage'=>$snapshot['coverage']];
 }
 
+/** The Marketing Hub links the same exact sources used by briefs and follow-through. */
+function vp3_agent_activity_product_marketing_v1(PDO $pdo,array $scope,DateTimeImmutable $now): array
+{
+    $result=['contract'=>'vp3.product-marketing-summary.v1','coverage'=>'unconfigured','items'=>[]];
+    if($scope['conversation_id']<1)return $result;
+    require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+    $snapshot=vp3_coordination_product_marketing_sources_v1($pdo,$scope,null,$now);
+    $result['coverage']=in_array($snapshot['coverage']??null,['ready','limited','unavailable','unconfigured'],true)
+        ?$snapshot['coverage']:'unavailable';
+    if(!in_array($result['coverage'],['ready','limited'],true))return $result;
+    $periods=false;
+    foreach($snapshot['items']??[] as $item){
+        $kind=vp3_product_marketing_ref_kind_v1($item['ref']??null);
+        if($kind===null||!is_string($item['revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$item['revision'])){
+            $result['coverage']='limited';continue;
+        }
+        $expected=$kind==='plan'?vp3_product_marketing_plan_href_v1($scope['agent_id'],$scope['conversation_id'],(int)substr($item['ref'],23))
+            :vp3_profile_commerce_followthrough_href_v1($scope['agent_id'],$scope['conversation_id'],$item['ref']);
+        if(($item['url']??null)!==$expected){$result['coverage']='limited';continue;}
+        $row=['ref'=>$item['ref'],'revision'=>$item['revision'],'kind'=>$kind,'url'=>$expected];
+        foreach(['title'=>190,'summary'=>1200,'next_step'=>320,'status'=>40] as $key=>$limit)
+            $row[$key]=vp3_agent_activity_text_v1($item[$key]??'',$limit);
+        if($row['title']===''||$row['summary']===''){$result['coverage']='limited';continue;}
+        $result['items'][]=$row;$periods=$periods||$kind==='followthrough';
+        if(count($result['items'])>=18){if(count($snapshot['items'])>18)$result['coverage']='limited';break;}
+    }
+    // Native plan summaries remain readable without Profile permission. Any
+    // period facts must retain Profile authority through the final reread.
+    $own=!$pdo->inTransaction();if($own)$pdo->beginTransaction();
+    try{vp3_profile_analytics_authority_current_v1($pdo,$scope,$periods);if($own)$pdo->commit();}
+    catch(Throwable $error){if($own&&$pdo->inTransaction())$pdo->rollBack();throw $error;}
+    return $result;
+}
+
 function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $conversationId = 0, string $view = '',
     string $collection = '', ?int $cursor = null, int $listId = 0): array
 {
@@ -902,6 +936,12 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         } catch (Throwable $error) {
             $coordination['marketing'] = ['coverage'=>'unavailable','campaigns'=>[]];
         }
+        try{$coordination['product_marketing']=vp3_agent_activity_product_marketing_v1($pdo,$fresh,$now);}
+        catch(Throwable $error){
+            if(in_array($error->getCode(),[403,404],true))throw $error;
+            $coordination['product_marketing']=['contract'=>'vp3.product-marketing-summary.v1','coverage'=>'unavailable','items'=>[]];
+        }
+        $coverage['product_marketing']=$coordination['product_marketing']['coverage'];
     }
     if ($view === '' || $mediaOnly) {
         try {

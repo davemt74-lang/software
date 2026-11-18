@@ -73,12 +73,15 @@ function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope,bool $
             $catalog=permission_catalog();$personal=personal_capability_catalog_v242();
             foreach($permissions as $key)if(!isset($catalog[$key])&&!isset($personal[$key]))
                 throw new RuntimeException('Profile analytics permission definitions are unavailable.',503);
-            $seed=vp3_profile_analytics_rows_v1($pdo,'SELECT setting_value FROM settings WHERE setting_key=?',[STONEFELLOW_PERSONAL_CAPABILITIES_SEED],true)[0]??null;
-            // An absent marker cannot be protected by a row lock under every
-            // caller isolation level. Do not certify defaults from a gap.
-            if(!$seed)throw new RuntimeException('Profile analytics permission state is unavailable.',503);
-            $seedValue=(string)($seed['setting_value']??'');
-            if(!in_array($seedValue,['','0','1'],true))throw new RuntimeException('Profile analytics permission state is invalid.',503);
+            $seedValue='1';
+            if(array_intersect($permissions,array_keys($personal))){
+                $seed=vp3_profile_analytics_rows_v1($pdo,'SELECT setting_value FROM settings WHERE setting_key=?',[STONEFELLOW_PERSONAL_CAPABILITIES_SEED],true)[0]??null;
+                // Personal defaults need a real locked marker. Account/Chat
+                // inventory uses explicit grants and does not depend on it.
+                if(!$seed)throw new RuntimeException('Profile analytics permission state is unavailable.',503);
+                $seedValue=(string)($seed['setting_value']??'');
+                if(!in_array($seedValue,['','0','1'],true))throw new RuntimeException('Profile analytics permission state is invalid.',503);
+            }
             $marks=implode(',',array_fill(0,count($permissions),'?'));
             // Parent keys precede grant rows, matching the permission FK.
             vp3_profile_analytics_rows_v1($pdo,"SELECT permission_key FROM permissions WHERE permission_key IN ($marks) ORDER BY permission_key",$permissions,true);

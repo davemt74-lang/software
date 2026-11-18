@@ -93,6 +93,47 @@ function vp3_profile_specialist_url_v1(string $kind,mixed $url,?string $ref=null
 
 function vp3_profile_specialist_href_v1(string $path): string{return function_exists('url')?url($path):$path;}
 
+/** Additive exact links; malformed optional relations never replace native authority. */
+function vp3_profile_specialist_related_product_marketing_v1(array $item): array
+{
+    $invalid=['related_product_marketing'=>[],'related_product_marketing_coverage'=>'unavailable'];
+    $coverage=$item['related_product_marketing_coverage']??null;$rows=$item['related_product_marketing']??null;
+    if(!preg_match('/\Aprofile:conversation:([1-9][0-9]{0,15})\z/D',(string)($item['ref']??''),$parent)
+        ||!in_array($coverage,['ready','limited','unconfigured','unavailable'],true)||!is_array($rows)||!array_is_list($rows)||count($rows)>4
+        ||(in_array($coverage,['unavailable','unconfigured'],true)&&$rows!==[]))return $invalid;
+    $safe=[];$seen=[];$base=preg_quote(vp3_profile_specialist_href_v1('/chat.php'),'~');
+    foreach($rows as $row){
+        $valid=is_array($row)&&($row['relation']??null)==='saved_promotion_reply'
+            &&is_string($row['ref']??null)&&is_string($row['revision']??null)&&preg_match('/\A[a-f0-9]{64}\z/D',$row['revision'])
+            &&is_string($row['publication_id']??null)&&preg_match('/\A[a-f0-9]{32}\z/D',$row['publication_id'])
+            &&is_string($row['url']??null)&&preg_match('~\A'.$base.'\?agent=(system|[1-9][0-9]{0,15})&conversation_id=([1-9][0-9]{0,15})&(?:marketing_followthrough|marketing_plan)=[^&]+\z~D',$row['url'],$destination);
+        foreach(['product_id','public_conversation_id','turn_id','visitor_message_id','answer_message_id','linked_at_utc_ms'] as $key)
+            if(!is_int($row[$key]??null)||$row[$key]<1||$row[$key]>9007199254740991)$valid=false;
+        foreach(['title'=>240,'question'=>600] as $key=>$limit)
+            if(!is_string($row[$key]??null)||$row[$key]===''||!mb_check_encoding($row[$key],'UTF-8')
+                ||vp3_profile_specialist_text_v1($row[$key],$limit)!==$row[$key])$valid=false;
+        if(!$valid||$row['public_conversation_id']!==(int)$parent[1]||$row['answer_message_id']<=$row['visitor_message_id']){$coverage='limited';continue;}
+        if(isset($seen[$row['publication_id']])){if($seen[$row['publication_id']]!==$row)$coverage='limited';continue;}
+        $agent=$destination[1]==='system'?0:(int)$destination[1];$chat=(int)$destination[2];
+        try{
+            if(str_starts_with($row['ref'],'marketing:ft:v1:')){
+                $period=vp3_profile_commerce_followthrough_decode_v1($row['ref']);
+                $valid=$period['publication_id']===$row['publication_id']&&$row['linked_at_utc_ms']>=$period['window']['from_utc_ms']
+                    &&$row['linked_at_utc_ms']<$period['window']['to_utc_ms']
+                    &&$row['url']===vp3_profile_commerce_followthrough_href_v1($agent,$chat,$row['ref']);
+            }else{
+                $valid=$row['ref']==='marketing:product-plan:'.$row['product_id']&&$agent<=9007199254740991&&$chat<=9007199254740991
+                    &&$row['url']===vp3_profile_specialist_href_v1('/chat.php?agent='.($agent?:'system').'&conversation_id='.$chat.'&marketing_plan='.$row['product_id']);
+            }
+        }catch(Throwable){$valid=false;}
+        if(!$valid){$coverage='limited';continue;}
+        $safe[]=array_intersect_key($row,array_flip(['ref','revision','title','url','publication_id','product_id','public_conversation_id',
+            'turn_id','visitor_message_id','answer_message_id','question','linked_at_utc_ms','relation']));
+        $seen[$row['publication_id']]=$row;
+    }
+    return ['related_product_marketing'=>$safe,'related_product_marketing_coverage'=>$coverage];
+}
+
 /** Group only explicitly typed informational visits; never infer intent from volume. */
 function vp3_profile_specialist_routine_visit_v1(array $item): bool
 {
@@ -142,6 +183,10 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
                 $out['coverage']='limited';continue;
             }
             $safe['profile_event_type']=$item['profile_event_type'];
+        }
+        if(array_key_exists('related_product_marketing',$item)||array_key_exists('related_product_marketing_coverage',$item)){
+            $relations=vp3_profile_specialist_related_product_marketing_v1($item);$safe+=$relations;
+            if($relations['related_product_marketing_coverage']!==($item['related_product_marketing_coverage']??null))$out['coverage']='limited';
         }
         foreach(['title'=>190,'summary'=>1200,'status'=>40,'priority'=>20,'trigger'=>40,'disposition'=>30] as $key=>$limit)
             $safe[$key]=vp3_profile_specialist_text_v1($item[$key]??'',$limit);

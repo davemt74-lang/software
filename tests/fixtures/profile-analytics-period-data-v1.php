@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once dirname(__DIR__,2).'/includes/agent-workflow-runs-v1400.php';
+
 /**
  * Additive isolated test data. No provider, session reset or production permission
  * override. Legacy integration bootstraps stub transport permission functions;

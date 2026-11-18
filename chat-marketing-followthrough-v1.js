@@ -59,6 +59,9 @@
   function creativeMarker(value,publication,context){return value&&value.owner_user_id===context.ownerUserId&&value.agent_id===context.chatAgentId
     &&value.conversation_id===context.chatConversationId&&value.product_id===publication.product_id&&value.source_id===String(publication.source_asset_id)
     &&value.draft_id===publication.draft_key&&value.creative_id===publication.promotion_id&&value.stage==='promotion_outcomes';}
+  function publicationState(value){return value&&(['ready','unavailable'].includes(value.availability))
+    &&(value.availability==='ready'?['active','paused','historical'].includes(value.state):value.state===null);}
+  function publicationStateText(value){return value?.availability==='ready'?'Current state: '+{active:'Active publication',paused:'Paused publication',historical:'Earlier publication'}[value.state]:'Current publication state is unavailable.';}
   function reportModel(value,context,endpoint,requested=''){
     const parsed=parseRef(value?.ref),window=value?.window;
     if(value?.contract!==reportContract||!parsed||value.ref!==parsed.ref||requested&&value.ref!==requested||!revision(value.revision)||!coverage.has(value.coverage)
@@ -100,6 +103,7 @@
       ||!(target.revision===null||revision(target.revision)))return null;
       if(key==='current_plan'){if(target.availability==='ready'?(!revision(target.revision)||!currentPlanUrl(target.url,value.publication,endpoint)):target.url!==null)return null;}
       else if(target.availability==='ready'?(!revision(target.revision)||!creativeMarker(target.marker,value.publication,context)):target.marker!==null)return null;}
+    if(value.current_publication!==undefined&&!publicationState(value.current_publication))return null;
     return value;
   }
   function publicationsModel(value,context,endpoint,productId){
@@ -107,7 +111,7 @@
       ||typeof value.has_more!=='boolean'||!(value.next_cursor===null||text(value.next_cursor,2048))||value.has_more&&!value.next_cursor)return null;
     const ids=new Set();for(const row of value.publications){const destination=source(row,new URL('../chat.php',endpoint).pathname);
       if(!tuple(row,context)||row.product_id!==productId||!text(row.title,240)||!destination||row.publication_id!==destination.publicationId||ids.has(row.publication_id)
-        ||!(row.recorded_at_utc_ms===null||positive(row.recorded_at_utc_ms)))return null;ids.add(row.publication_id);}
+        ||!(row.recorded_at_utc_ms===null||positive(row.recorded_at_utc_ms))||row.current_publication!==undefined&&!publicationState(row.current_publication))return null;ids.add(row.publication_id);}
     if(['unavailable','unconfigured'].includes(value.coverage)&&value.publications.length)return null;return value;
   }
   function pointText(value,money=false,currency=''){
@@ -116,6 +120,14 @@
     if(value.coverage==='complete')return format(exact);
     if(value.coverage==='partial'&&observed!==null)return 'Observed '+format(observed)+' · partial';
     return 'Unavailable';
+  }
+  function changeText(row,money=false){
+    if(row.current.coverage!=='complete'||row.previous.coverage!=='complete')return 'Not comparable';
+    if(!row.comparison)return 'Unavailable';
+    if(money)return row.comparison.delta_minor===null?'Unavailable':tools().ledgerAmount(row.comparison.delta_minor,row.currency,true);
+    const {delta,percent}=row.comparison;if(delta===null)return 'Unavailable';
+    const change=(delta>0?'+':'')+String(delta);
+    return percent===null?change+' · no percentage (previous 0)':change+' · '+(percent>0?'+':'')+Number(percent.toFixed(2))+'%';
   }
   function mount(host,options={}){
     const endpoint=endpointUrl(window.VP3_INITIATIVE_WORKBENCH?.followthroughEndpoint),initial=capture(options.context?.());
@@ -148,7 +160,9 @@
       const list=node('ul','','vp3-marketing-followthrough-publications');
       for(const row of listRows.values()){
         const item=node('li'),label=row.recorded_at_utc_ms?'Tracking recorded '+new Date(row.recorded_at_utc_ms).toISOString().slice(0,10):'Tracking date unavailable';
-        item.append(node('h4',row.title||'Recorded publication'),node('p',label),node('small','Publication '+row.publication_id),button('View follow-through',()=>void loadReport({ref:row.ref})));
+        item.append(node('h4',row.title||'Recorded publication'),node('p',label));
+        if(row.current_publication)item.append(node('p',publicationStateText(row.current_publication)));
+        item.append(button('View follow-through',()=>void loadReport({ref:row.ref})));
         item.dataset.marketingPublication=row.publication_id;list.append(item);
       }
       body.append(list);if(!listRows.size)body.append(node('p',value.coverage==='ready'?'No recorded publications for this plan.':'Publication records are unavailable.'));
@@ -181,16 +195,18 @@
     function renderReport(value){
       body.replaceChildren();body.dataset.marketingFixedRef=value.ref;
       if(value.publication.title)body.append(node('h3',value.publication.title));
+      if(value.current_publication)body.append(node('p',publicationStateText(value.current_publication)));
       body.append(periodDetails(value));const controls=node('div','','vp3-marketing-followthrough-tools');controls.setAttribute('aria-label','Completed period length');
       for(const option of value.period_options){const control=button(option.period===1?'1 day':option.period+' days',()=>void loadReport({ref:option.ref}));control.setAttribute('aria-pressed',String(option.ref===value.ref));controls.append(control);}
       controls.append(button('Refresh this period',()=>void loadReport({ref:value.ref})),button('Latest completed periods',()=>void loadReport({publicationId:value.publication.publication_id,period:value.window.period})));
       body.append(controls);if(value.coverage!=='ready')body.append(node('p',(value.coverage==='limited'?'Partial coverage.':value.coverage==='unconfigured'?'The required reporting records are not configured.':'Reporting evidence is unavailable.')+' Unavailable evidence is not counted as zero.','vp3-marketing-followthrough-coverage'));
       for(const [group,label] of groups){const section=node('section');section.dataset.marketingMetricGroup=group;section.append(node('h4',label));
         if(value.groups[group].coverage!=='ready')section.append(node('p',reason(value.groups[group].reason)||'Only verified observations are available.'));
-        const table=node('table'),head=node('thead'),header=node('tr');for(const name of ['Measure','Selected period','Previous period'])header.append(node('th',name));head.append(header);table.append(head);
+        const table=node('table'),head=node('thead'),header=node('tr');for(const name of ['Measure','Selected period','Previous period','Change'])header.append(node('th',name));head.append(header);table.append(head);
+        const cell=(label,value)=>{const element=node('td',value);element.dataset.label=label;return element;};
         const rows=node('tbody');for(const metric of value.metrics.filter(row=>row.group===group)){const row=node('tr'),name=node('th',catalog[metric.key][1]);name.setAttribute('scope','row');
-          row.dataset.marketingMetric=metric.key;row.append(name,node('td',pointText(metric.current)),node('td',pointText(metric.previous)));rows.append(row);}
-        if(group==='commerce')for(const amount of value.money){const row=node('tr');row.dataset.marketingMoney=amount.key+':'+amount.currency;row.append(node('th',amount.key==='verified_payments'?'Verified payments':'Verified refunds'),node('td',pointText(amount.current,true,amount.currency)),node('td',pointText(amount.previous,true,amount.currency)));rows.append(row);}
+          row.dataset.marketingMetric=metric.key;row.append(name,cell('Selected period',pointText(metric.current)),cell('Previous period',pointText(metric.previous)),cell('Change',changeText(metric)));rows.append(row);}
+        if(group==='commerce')for(const amount of value.money){const row=node('tr'),name=node('th',amount.key==='verified_payments'?'Verified payments':'Verified refunds');name.setAttribute('scope','row');row.dataset.marketingMoney=amount.key+':'+amount.currency;row.append(name,cell('Selected period',pointText(amount.current,true,amount.currency)),cell('Previous period',pointText(amount.previous,true,amount.currency)),cell('Change',changeText(amount,true)));rows.append(row);}
         table.append(rows);section.append(table);
         if(group==='commerce')section.append(node('p','Commerce ledger amounts use the recorded two-decimal scale. Currency totals are kept separate.'));
         body.append(section);

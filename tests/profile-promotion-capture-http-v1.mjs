@@ -19,7 +19,7 @@ if(PHP_SAPI!=='cli'&&str_starts_with($_SERVER['REQUEST_URI']??'','/profile-promo
     $fault=is_file(STONEFELLOW_ROOT.'/fault')?trim(file_get_contents(STONEFELLOW_ROOT.'/fault')):'';
     $pdo->beforeSql=static function(string $sql)use($fault):void{
         if(preg_match('/^\\s*(?:CREATE|ALTER|DROP)\\b/i',$sql))throw new LogicException('A public link attempted schema migration.');
-        if($fault==='schema'&&str_starts_with($sql,'SELECT public_conversation_id'))throw new PDOException('SECRET capture schema failure.');
+        if($fault==='schema'&&str_starts_with($sql,'SELECT native_context_json_v1'))throw new PDOException('SECRET capture schema failure.');
     };
     $pdo->afterSql=static function(string $sql)use($fault):void{
         if(str_starts_with($sql,'INSERT INTO agent_promotion_clicks_v1')){
@@ -58,8 +58,7 @@ if($command==='restore'){
     $pdo->exec("UPDATE users SET is_active=1,password_hash='visitor-a-password' WHERE id=2");
 }
 if($command==='old_schema'){
-    $pdo->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN public_conversation_id');
-    $pdo->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN public_conversation_binding_sha256_v1');
+    $pdo->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN native_context_json_v1');
 }
 if($command==='upgrade')profile_promotion_capture_install_v1($pdo,'clicks');
 if($command==='evidence'){echo json_encode(profile_promotion_public_click_evidence_v1($pdo,1,$f['publication_id'],$argv[2]),JSON_THROW_ON_ERROR);exit;}
@@ -134,7 +133,7 @@ try{
 
   const accepted=await request(link.url,browser);const captured=state(),row=captured.clicks.find(value=>value.click_id===link.claim.click_id);
   check(accepted.status===303&&accepted.location===target+'?promotion_click='+link.claim.click_id,'a real accepted native click redirects with its exact opaque attribution ID');
-  check(Number(row.public_conversation_id)===link.cid&&/^[a-f0-9]{64}$/.test(row.public_conversation_binding_sha256_v1),'the endpoint persists exact public conversation identity with its native binding digest');
+  check(JSON.parse(row.native_context_json_v1).public_conversation_id===link.cid&&/^[a-f0-9]{64}$/.test(JSON.parse(row.native_context_json_v1).session_hash),'the endpoint persists exact public conversation identity in its closed native proof');
   check(!accepted.text&&!/credential|session_key|password|binding_sha256/.test(accepted.location),'public navigation never serializes hidden authority evidence');
   const proof=cli('evidence',link.claim.click_id);
   check(proof.availability==='ready'&&proof.public_conversation_id===link.cid,'the captured row can be reread through the production historical evidence helper');
@@ -166,21 +165,22 @@ try{
   const legacyBrowser=jar(),legacyLink=await issue(legacyBrowser,{visitor:2,browser:'1'});cli('legacy',legacyLink.claim.click_id);
   const legacyBefore=state().clicks.find(value=>value.click_id===legacyLink.claim.click_id);
   await request(legacyLink.url,legacyBrowser);
-  check(legacyBefore.public_conversation_id===null&&legacyBefore.public_conversation_binding_sha256_v1===null&&JSON.stringify(state().clicks.find(value=>value.click_id===legacyLink.claim.click_id))===JSON.stringify(legacyBefore),
+  check(legacyBefore.native_context_json_v1===null&&JSON.stringify(state().clicks.find(value=>value.click_id===legacyLink.claim.click_id))===JSON.stringify(legacyBefore),
     'a real HTTP replay of a legacy click never backfills a current public conversation');
   const profileBrowser=jar(),profileLink=await issue(profileBrowser,{mode:'profile',cid:0});
   const plain=await request(profileLink.url,profileBrowser);const plainRow=state().clicks.find(value=>value.click_id===profileLink.claim.click_id);
-  check(plain.location===target+'?promotion_click='+profileLink.claim.click_id&&plainRow.public_conversation_id===null&&cli('evidence',profileLink.claim.click_id).availability==='ready',
+  check(plain.location===target+'?promotion_click='+profileLink.claim.click_id&&plainRow.native_context_json_v1===null&&cli('evidence',profileLink.claim.click_id).availability==='ready'
+    &&!plain.sets.some(value=>/^sf_profile_(?:visitor|conversation)=/.test(value)),
     'a Profile-page click remains valid unthreaded placement evidence without native-cookie creation');
 
   const pendingBrowser=jar(),pending=await issue(pendingBrowser,{visitor:2,browser:'2'}),beforeSchema=state();
   fs.writeFileSync(path.join(tmp,'fault'),'schema');const schemaFailed=await request(pending.url,pendingBrowser);fs.rmSync(path.join(tmp,'fault'));
   check(schemaFailed.location===target&&JSON.stringify(state())===JSON.stringify(beforeSchema),'an operational schema failure cannot silently downgrade an accepted native click');
   cli('old_schema');const old=await request(pending.url,pendingBrowser);
-  check(old.location===target+'?promotion_click='+pending.claim.click_id&&!('public_conversation_id'in state().clicks.find(value=>value.click_id===pending.claim.click_id)),
+  check(old.location===target+'?promotion_click='+pending.claim.click_id&&!('native_context_json_v1'in state().clicks.find(value=>value.click_id===pending.claim.click_id)),
     'definitely missing optional columns preserve real link navigation with the old one-shot writer and no DDL');
   cli('upgrade');const afterUpgrade=state().clicks.find(value=>value.click_id===pending.claim.click_id);await request(pending.url,pendingBrowser);
-  check(afterUpgrade.public_conversation_id===null&&afterUpgrade.public_conversation_binding_sha256_v1===null&&JSON.stringify(state().clicks.find(value=>value.click_id===pending.claim.click_id))===JSON.stringify(afterUpgrade),
+  check(afterUpgrade.native_context_json_v1===null&&JSON.stringify(state().clicks.find(value=>value.click_id===pending.claim.click_id))===JSON.stringify(afterUpgrade),
     'explicit upgrade followed by HTTP replay leaves original unknown association evidence NULL');
   check(!/PHP (?:Warning|Fatal error)|Uncaught/.test(logs),'the real endpoint completes without PHP warnings or uncaught errors');
   console.log(`PROFILE_PROMOTION_CAPTURE_HTTP_V1=PASS driver=${seed.driver} checks=${checks}`);

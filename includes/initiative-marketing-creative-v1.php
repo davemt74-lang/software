@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/initiative-work-product-v1.php';
+require_once __DIR__.'/initiative-work-marketing-v1.php';
 require_once __DIR__.'/agent-image-generation-v1.php';
 
 function initiative_marketing_creative_binding_v1(array $variant): array

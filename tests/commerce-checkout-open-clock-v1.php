@@ -52,19 +52,19 @@ try{
         $f=coc_order_v1($provider);$writes=[];$uncertain=true;$reserved=null;
         coc_transport_v1($f,static function(array $headers,mixed $body,bool $form)use($f,&$writes,&$uncertain,&$reserved):void{
             $reserved=coc_row_v1($f);$writes[]=[$headers,$body,$form];
-            coc_check_v1($reserved['status']==='creating'&&$reserved['checkout_url']===null&&$reserved['opened_recorded_at_utc_ms']===null&&!db()->inTransaction(),
+            coc_check_v1($reserved['status']==='creating'&&$reserved['checkout_url']===null&&$reserved['opened_at_utc_ms']===null&&!db()->inTransaction(),
                 $f['provider'].' reservations and in-flight provider requests have no checkout-open time');
             if($uncertain)throw new RuntimeException('Provider response was lost.');
         });
         coc_reject_v1(fn()=>coc_call_v1($f),$provider.' uncertain provider creation is not locally usable checkout evidence');
         $pending=coc_row_v1($f);
-        coc_check_v1($pending['status']==='creating'&&$pending['opened_recorded_at_utc_ms']===null&&$pending['creation_lease_token']==='',
+        coc_check_v1($pending['status']==='creating'&&$pending['opened_at_utc_ms']===null&&$pending['creation_lease_token']==='',
             $provider.' an unverified provider outcome remains retryable and unclocked');
         $uncertain=false;$low=(int)floor(microtime(true)*1000);$saved=coc_call_v1($f);$high=(int)floor(microtime(true)*1000);
-        coc_check_v1($saved['status']==='open'&&(int)$saved['opened_recorded_at_utc_ms']>=$low&&(int)$saved['opened_recorded_at_utc_ms']<=$high&&$writes[0]===$writes[1],
+        coc_check_v1($saved['status']==='open'&&(int)$saved['opened_at_utc_ms']>=$low&&(int)$saved['opened_at_utc_ms']<=$high&&$writes[0]===$writes[1],
             $provider.' the first committed usable link receives application UTC time on the original operation');
         $again=coc_call_v1($f);
-        coc_check_v1($again['opened_recorded_at_utc_ms']===$saved['opened_recorded_at_utc_ms']&&count($writes)===2&&coc_row_v1($f)['id']===$saved['id'],
+        coc_check_v1($again['opened_at_utc_ms']===$saved['opened_at_utc_ms']&&count($writes)===2&&coc_row_v1($f)['id']===$saved['id'],
             $provider.' open checkout replay never rewrites the first time or calls the provider again');
     }
 
@@ -87,10 +87,10 @@ try{
         try{coc_reject_v1(fn()=>coc_call_v1($f),$fault.' rejects an uncommitted checkout completion');}
         finally{$pdo->failSql='';$pdo->afterSql=null;}
         $attempt=coc_row_v1($f);
-        coc_check_v1($attempt['status']==='creating'&&$attempt['opened_recorded_at_utc_ms']===null&&$attempt['checkout_url']===null&&$writes===1&&!$pdo->inTransaction(),
+        coc_check_v1($attempt['status']==='creating'&&$attempt['opened_at_utc_ms']===null&&$attempt['checkout_url']===null&&$writes===1&&!$pdo->inTransaction(),
             $fault.' rolls back the clock and usable link without a fallback completion write');
         $fail=false;$low=(int)floor(microtime(true)*1000);$saved=coc_call_v1($f);
-        coc_check_v1($writes===2&&$saved['id']===$attempt['id']&&(int)$saved['opened_recorded_at_utc_ms']>=$low,
+        coc_check_v1($writes===2&&$saved['id']===$attempt['id']&&(int)$saved['opened_at_utc_ms']>=$low,
             $fault.' later explicit retry records its actual first committed open time');
     }
 
@@ -107,10 +107,10 @@ try{
     try{coc_reject_v1(fn()=>coc_call_v1($f),'lost commit acknowledgement does not pretend the caller received a usable result');}
     finally{$pdo->afterSql=null;$pdo->afterCommit=null;}
     $committed=coc_row_v1($f);
-    coc_check_v1($committed['status']==='open'&&(int)$committed['opened_recorded_at_utc_ms']>0&&$writes===1&&$completed===1,
+    coc_check_v1($committed['status']==='open'&&(int)$committed['opened_at_utc_ms']>0&&$writes===1&&$completed===1,
         'a committed but unacknowledged open retains one durable clock and no retry write');
     $recovered=coc_call_v1($f);
-    coc_check_v1($recovered['opened_recorded_at_utc_ms']===$committed['opened_recorded_at_utc_ms']&&$writes===1,
+    coc_check_v1($recovered['opened_at_utc_ms']===$committed['opened_at_utc_ms']&&$writes===1,
         'a retry after a lost commit acknowledgement recovers the same original usable link and clock');
 
     // A successor uses the real claim path after the original lease has expired.
@@ -126,7 +126,7 @@ try{
     coc_reject_v1(fn()=>coc_call_v1($f),'an expired first worker cannot overwrite its successor after provider I/O');
     $kept=coc_row_v1($f);
     coc_check_v1($turn===2&&$kept['status']==='open'&&$kept['external_session_id']===$successor['external_session_id']
-        &&$kept['opened_recorded_at_utc_ms']===$successor['opened_recorded_at_utc_ms']&&str_ends_with($kept['external_session_id'],'successor'),
+        &&$kept['opened_at_utc_ms']===$successor['opened_at_utc_ms']&&str_ends_with($kept['external_session_id'],'successor'),
         'independent-connection lease takeover preserves the successor’s exact open time and provider identity');
 
     foreach(['amount','currency','merchant','expired_hold','paid'] as $change){
@@ -138,7 +138,7 @@ try{
         });
         coc_reject_v1(fn()=>coc_call_v1($f),$change.' during provider I/O cannot publish an active checkout');
         $a=coc_row_v1($f);
-        coc_check_v1($a['status']!=='open'&&$a['opened_recorded_at_utc_ms']===null,
+        coc_check_v1($a['status']!=='open'&&$a['opened_at_utc_ms']===null,
             $change.' never records a usable checkout-open time');
     }
 
@@ -146,7 +146,7 @@ try{
     if($config['driver']==='mysql')$pdo->exec("SET time_zone='-07:00'");
     coc_transport_v1($f);$low=(int)floor(microtime(true)*1000);
     try{$shifted=coc_call_v1($f);}finally{date_default_timezone_set($zone);if($config['driver']==='mysql')$pdo->exec("SET time_zone='+00:00'");}
-    coc_check_v1((int)$shifted['opened_recorded_at_utc_ms']>=$low&&(int)$shifted['opened_recorded_at_utc_ms']<=(int)floor(microtime(true)*1000),
+    coc_check_v1((int)$shifted['opened_at_utc_ms']>=$low&&(int)$shifted['opened_at_utc_ms']<=(int)floor(microtime(true)*1000),
         'checkout recorded UTC milliseconds are independent of PHP and database timezone');
 
     // The persisted timestamp survives canonical payment and receipt replay.
@@ -156,27 +156,27 @@ try{
     agent_commerce_process_webhook_v800($pdo,'stripe',$event['payload'],$event['headers']);
     agent_commerce_process_webhook_v800($pdo,'stripe',$event['payload'],$event['headers']);
     $paid=coc_row_v1($pay);
-    coc_check_v1($paid['status']==='completed'&&$paid['opened_recorded_at_utc_ms']===$opened['opened_recorded_at_utc_ms'],
+    coc_check_v1($paid['status']==='completed'&&$paid['opened_at_utc_ms']===$opened['opened_at_utc_ms'],
         'verified payment and its replay preserve the historical checkout-open clock');
 
     $legacy=commerce_fixture_order_pa2($pdo);$legacyBefore=agent_commerce_checkout_attempt_v800($pdo,$legacy['attempt_id']);$requests=count($GLOBALS['pa2_http_calls']);
     $legacyReplay=coc_call_v1($legacy);
-    coc_check_v1($legacyBefore['opened_recorded_at_utc_ms']===null&&$legacyReplay['opened_recorded_at_utc_ms']===null&&count($GLOBALS['pa2_http_calls'])===$requests,
+    coc_check_v1($legacyBefore['opened_at_utc_ms']===null&&$legacyReplay['opened_at_utc_ms']===null&&count($GLOBALS['pa2_http_calls'])===$requests,
         'an already-open legacy attempt remains unclocked on replay rather than being dated today');
 
     // A missing optional column is different from an uncertain database failure.
-    $f=coc_order_v1();$pdo->failSql='SELECT opened_recorded_at_utc_ms';$requests=count($GLOBALS['pa2_http_calls']);
+    $f=coc_order_v1();$pdo->failSql='SELECT opened_at_utc_ms';$requests=count($GLOBALS['pa2_http_calls']);
     try{coc_reject_v1(fn()=>coc_call_v1($f),'an operational capture-schema failure does not silently discard clock evidence');}
     finally{$pdo->failSql='';}
     coc_check_v1(coc_row_v1($f)===null&&count($GLOBALS['pa2_http_calls'])===$requests,
         'unverified schema failure stops before reservation or provider I/O');
-    $pdo->exec('ALTER TABLE agent_commerce_checkout_attempts_v800 DROP COLUMN opened_recorded_at_utc_ms');
+    $pdo->exec('ALTER TABLE agent_commerce_checkout_attempts_v800 DROP COLUMN opened_at_utc_ms');
     coc_check_v1(!profile_promotion_capture_checkout_clock_v1($pdo),'a definitely missing checkout measurement column is detected query-only');
     coc_transport_v1($f);$old=coc_call_v1($f);
-    coc_check_v1($old['status']==='open'&&!array_key_exists('opened_recorded_at_utc_ms',$old)&&!column_exists('agent_commerce_checkout_attempts_v800','opened_recorded_at_utc_ms'),
+    coc_check_v1($old['status']==='open'&&!array_key_exists('opened_at_utc_ms',$old)&&!column_exists('agent_commerce_checkout_attempts_v800','opened_at_utc_ms'),
         'an older schema still serves a usable checkout with its one legacy completion-write shape');
     profile_promotion_capture_install_v1($pdo,'checkout');$upgraded=coc_row_v1($f);
-    coc_check_v1($upgraded['opened_recorded_at_utc_ms']===null&&coc_call_v1($f)['opened_recorded_at_utc_ms']===null,
+    coc_check_v1($upgraded['opened_at_utc_ms']===null&&coc_call_v1($f)['opened_at_utc_ms']===null,
         'explicit upgrade and later replay never backfill old usable checkout dates');
     $before=commerce_fixture_rows_pa2($pdo,'agent_commerce_checkout_attempts_v800');profile_promotion_capture_install_v1($pdo,'checkout');
     coc_check_v1($before===commerce_fixture_rows_pa2($pdo,'agent_commerce_checkout_attempts_v800'),'repeated checkout clock migration preserves every existing attempt');

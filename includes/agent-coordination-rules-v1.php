@@ -109,6 +109,13 @@ function vp3_coordination_rule_patch_v1(array $rules, mixed $patch): array
     if (!is_array($patch) || $patch === []) throw new InvalidArgumentException('Choose a Top of Mind rule.');
     $definitions = vp3_coordination_rule_definitions_v1();
     foreach ($patch as $specialist=>$choices) {
+        // Preserve the released Product Marketing control record while the
+        // report's metric/ref contract is consolidated. Reads never rewrite it.
+        if($specialist==='marketing'&&is_array($choices)&&array_key_exists('product_outcome',$choices)){
+            if(array_key_exists('promotion_period',$choices)&&$choices['promotion_period']!==$choices['product_outcome'])
+                throw new InvalidArgumentException('Conflicting product marketing reporting rules.');
+            $choices['promotion_period']=$choices['product_outcome'];unset($choices['product_outcome']);
+        }
         $triggers = $definitions[$specialist]['triggers'] ?? null;
         if ($triggers === null || !is_array($choices) || $choices === []) {
             throw new InvalidArgumentException('Choose a known specialist and filter.');

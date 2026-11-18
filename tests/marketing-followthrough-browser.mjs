@@ -130,6 +130,8 @@ try{
     await f.openSaved();
     check(await f.dialog().locator('[data-marketing-metric]').count()===7&&await f.dialog().locator('[data-marketing-exchange]').count()===1,'actual collector renders seven measures and one proof-backed public exchange');
     check((await f.dialog().innerText()).includes('Original T-shirt promotion')&&(await f.dialog().innerText()).includes('USD 20.00'),'historical publication title and exact currency amount reach the visible report');
+    check(await f.dialog().locator('[data-marketing-metric="recorded_cta_clicks"] td[data-label="Change"]').innerText()==='+1 · +100%','actual saved click totals retain their exact count and percentage comparison');
+    check(await f.dialog().locator('[data-marketing-money="verified_payments:USD"] td[data-label="Change"]').innerText()==='USD +10.00','actual payment change uses the exact separate-currency ledger amount');
     check(!f.requests.some(row=>row.payload.action==='creative_open'||row.payload.action==='marketing_plan'),'reading follow-through does not open a creative or change the current plan');
     await f.top();await f.contained();await f.page.screenshot({path:'artifacts/marketing-followthrough/desktop-report.png',fullPage:true});
     const originalRef=await f.fixed().getAttribute('data-marketing-fixed-ref');

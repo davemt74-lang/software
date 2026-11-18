@@ -99,6 +99,12 @@ function setting(string $key,mixed $fallback=''): mixed{return $GLOBALS['pa3Sett
 function url(string $path): string{return (string)($GLOBALS['pa3AppBase']??'').$path;}
 function user_account_types_for_user_id(int $id,string $role): array{return [$role];}
 function user_roles_for_user(array $user): array{return [(string)$user['role']];}
+// Closed catalog seams support current SQL grant checks in native admission.
+if(!function_exists('user_roles')){function user_roles():array{return ['member'=>'Member','fan'=>'Fan','artist'=>'Artist','manager'=>'Manager','producer'=>'Producer','supervisor'=>'Supervisor','investor'=>'Investor','admin'=>'Admin'];}}
+if(!function_exists('valid_role')){function valid_role(string $role):bool{return isset(user_roles()[$role]);}}
+if(!function_exists('personal_capability_catalog_v242')){function personal_capability_catalog_v242():array{return ['agent_brain.access'=>[],'personal_knowledge.access'=>[],'personal_knowledge.manage'=>[],'profile_agent.access'=>[],'profile_chat.access'=>[],'voice_profile.access'=>[]];}}
+if(!function_exists('personal_capability_default_roles_v242')){function personal_capability_default_roles_v242():array{return array_fill_keys(array_keys(personal_capability_catalog_v242()),array_keys(user_roles()));}}
+if(!defined('STONEFELLOW_PERSONAL_CAPABILITIES_SEED'))define('STONEFELLOW_PERSONAL_CAPABILITIES_SEED','personal_capabilities_seed_v242');
 function permissions_schema_ready(): bool{return true;}
 function personal_capability_seeded_v242(): bool{return true;}
 function personal_capability_schema_ready_v242(?PDO $pdo=null): bool{return true;}
@@ -153,6 +159,12 @@ function pa3_reset(): void
     foreach(['profile_agent_handoff_operations_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_owners_pa3','agent_workflow_receipts','agent_workflow_action_dependencies','agent_workflow_events','agent_workflow_actions','agent_workflow_runs','chat_messages','chat_conversations','team_user_presence'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
     if($p->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'&&!table_exists('users'))$p->exec('CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,display_name VARCHAR(190),email VARCHAR(190),role VARCHAR(40),is_active INTEGER,avatar_path VARCHAR(255),password_hash VARCHAR(255),last_login_at DATETIME)');
     profile_public_authority_fixture_pa1($p);
+    $p->exec('CREATE TABLE IF NOT EXISTS user_account_types (user_id INTEGER NOT NULL,role VARCHAR(40) NOT NULL,assigned_explicitly_at DATETIME NULL,PRIMARY KEY(user_id,role))');
+    $p->exec('CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT NULL)');
+    $p->exec('CREATE TABLE IF NOT EXISTS permissions (permission_key VARCHAR(190) PRIMARY KEY)');
+    $p->exec("DELETE FROM settings WHERE setting_key='personal_capabilities_seed_v242'");
+    $p->exec("INSERT INTO settings (setting_key,setting_value) VALUES ('personal_capabilities_seed_v242','1')");
+    foreach(['profile_agent.access','profile_chat.access'] as $key)$p->prepare('INSERT IGNORE INTO permissions (permission_key) VALUES (?)')->execute([$key]);
     $p->exec("INSERT INTO role_permissions VALUES('member','chat.access'),('member','account.access')");
     $auto=$p->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY':'INTEGER PRIMARY KEY AUTOINCREMENT';
     $p->exec("CREATE TABLE IF NOT EXISTS team_user_presence(user_id INTEGER PRIMARY KEY,presence_mode VARCHAR(16) NOT NULL DEFAULT 'online',social_chat_enabled INTEGER NOT NULL DEFAULT 1,sound_enabled INTEGER NOT NULL DEFAULT 1)");

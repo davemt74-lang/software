@@ -25,6 +25,15 @@ function vp3_profile_commerce_followthrough_decode_v1(string $canonicalRef,?Date
     return array_replace($period,['ref'=>$canonicalRef,'publication_id'=>$match[1],'period_ref'=>$periodRef,'period_options'=>$options]);
 }
 
+/** Translate only the released predecessor's exact identity; never refresh its period. */
+function vp3_profile_commerce_followthrough_legacy_ref_v1(string $ref,?DateTimeImmutable $now=null): ?string
+{
+    if(strlen($ref)>165||!preg_match('/\Amarketing:product-outcome:([a-f0-9]{32}):v1:(.+)\z/D',$ref,$match))return null;
+    $canonical='marketing:ft:v1:'.$match[1].':'.$match[2];
+    try{return vp3_profile_commerce_followthrough_decode_v1($canonical,$now)['ref'];}
+    catch(RuntimeException $error){if($error->getCode()!==422)throw $error;return null;}
+}
+
 function vp3_profile_commerce_followthrough_href_v1(int $agent,int $chat,string $canonicalRef): string
 {
     if($agent<0||$agent>9007199254740991||$chat<1||$chat>9007199254740991)

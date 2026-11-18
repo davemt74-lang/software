@@ -63,7 +63,7 @@
 [data-media-command] .vp3-marketing-followthrough details>div{display:grid;gap:7px;padding-top:10px}
 [data-media-command] .vp3-marketing-followthrough table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px}
 [data-media-command] .vp3-marketing-followthrough :is(th,td){padding:8px 6px;text-align:left;vertical-align:top;border-bottom:1px solid #e0e6ef}
-[data-media-command] .vp3-marketing-followthrough th:first-child{width:42%}
+[data-media-command] .vp3-marketing-followthrough th:first-child{width:34%}
 [data-media-command] .vp3-marketing-followthrough thead{background:#eef3f9}
 [data-media-command] .vp3-marketing-followthrough section{display:grid;gap:8px;min-width:0}
 [data-media-command] .vp3-marketing-followthrough article{display:grid;gap:8px;min-width:0;padding:12px;border:1px solid #dbe3ee;border-radius:9px;background:#f8faff}
@@ -73,6 +73,15 @@
 [data-media-command] .vp3-marketing-followthrough-notice:empty{display:none}
 [data-media-command] .vp3-marketing-followthrough dt{font-weight:650}
 [data-media-command] .vp3-marketing-followthrough dd{margin:0 0 8px}
+@media (max-width: 600px) {
+  [data-media-command] .vp3-marketing-followthrough :is(table,tbody){display:block;width:100%}
+  [data-media-command] .vp3-marketing-followthrough thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  [data-media-command] .vp3-marketing-followthrough tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 8px;padding:8px 0;border-bottom:1px solid #e0e6ef}
+  [data-media-command] .vp3-marketing-followthrough tbody th{grid-column:1/-1;width:auto!important;padding:0 0 6px;border:0}
+  [data-media-command] .vp3-marketing-followthrough tbody td{min-width:0;padding:3px 0;border:0}
+  [data-media-command] .vp3-marketing-followthrough tbody td:last-child{grid-column:1/-1}
+  [data-media-command] .vp3-marketing-followthrough tbody td::before{content:attr(data-label);display:block;color:#59677c;font-size:12px;font-weight:600}
+}
 @media (min-width: 701px) {
   #vp3MediaCommands[data-media-command="images"] [data-media-picker] .vp3-media-picker-grid { max-height: min(32dvh, 18rem); }
   #vp3MediaCommands[data-media-command="images"] [data-media-picker] .vp3-media-picker-picture { aspect-ratio: 4 / 3; max-height: min(24dvh, 11rem); }

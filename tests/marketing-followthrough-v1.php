@@ -52,4 +52,29 @@ mft_check(vp3_marketing_followthrough_destination_bind_v1($requested,1,0,11,$bin
 mft_check(vp3_marketing_followthrough_destination_bind_v1($requested,1,7,11,$binding,'/chat.php',false)===null,'absent current authority withholds destination');
 $system=vp3_marketing_followthrough_destination_request_v1(str_replace('agent=7','agent=system',$query),$now);
 mft_check(vp3_marketing_followthrough_destination_bind_v1($system,1,0,11,$binding,'/chat.php',true)['chatAgentId']===0,'explicit system Agent route supported');
+$legacyRef='marketing:product-outcome:'.$seed['publication_id'].':'.substr($seed['period_ref'],strlen('profile:analytics:'));
+$legacyQuery=http_build_query(['agent'=>'7','conversation_id'=>'11','marketing_plan'=>(string)$seed['ids']['product'],
+    'marketing_publication'=>$seed['publication_id'],'marketing_period'=>$seed['period_ref']],'','&',PHP_QUERY_RFC3986);
+$legacyRequest=vp3_marketing_followthrough_destination_request_v1($legacyQuery,$now);
+$legacy=vp3_marketing_followthrough_destination_bind_v1($legacyRequest,1,7,11,$binding,'/nested/app/chat.php',true,$pdo);
+mft_check($legacy['ref']===$seed['ref']&&$legacy['href']===$bound['href']
+    &&$legacy['legacyHref']==='/nested/app/chat.php?'.$legacyQuery,
+    'released publication URL translates to the same exact canonical period and retains its verified old URL');
+mft_check(vp3_marketing_followthrough_destination_bind_v1($legacyRequest,1,7,11,$binding,'/chat.php',true)===null,
+    'old product selector requires a real publication binding lookup');
+$wrongProduct=array_replace($legacyRequest,['legacy_product_id'=>$seed['ids']['product']+1]);
+mft_check(vp3_marketing_followthrough_destination_bind_v1($wrongProduct,1,7,11,$binding,'/chat.php',true,$pdo)===null,
+    'legacy product/publication mismatch cannot open another plan');
+foreach([$legacyQuery.'&marketing_period='.rawurlencode($seed['period_ref']),$legacyQuery.'&marketing_followthrough='.rawurlencode($seed['ref']),
+    str_replace('marketing_plan='.$seed['ids']['product'],'marketing_plan=0'.$seed['ids']['product'],$legacyQuery),
+    str_replace('marketing_publication='.$seed['publication_id'],'marketing_publication=bad',$legacyQuery)] as $invalid)
+    mft_check(vp3_marketing_followthrough_destination_request_v1($invalid,$now)===null,'ambiguous or malformed released publication URL is withheld');
+$oldRefRequest=vp3_marketing_followthrough_destination_request_v1('agent=7&conversation_id=11&marketing_followthrough='.rawurlencode($legacyRef),$now);
+mft_check(vp3_marketing_followthrough_destination_bind_v1($oldRefRequest,1,7,11,$binding,'/chat.php',true)['ref']===$seed['ref'],
+    'old source reference maps only its original publication and frozen period');
+mft_check($read(['ref'=>$legacyRef])['data']['followthrough']['ref']===$seed['ref'],
+    'explicit API compatibility reads use the same current-authorized canonical collector');
+mft_check(vp3_profile_commerce_followthrough_legacy_ref_v1($legacyRef.':extra',$now)===null
+    &&vp3_profile_commerce_followthrough_legacy_ref_v1(strtoupper($legacyRef),$now)===null,
+    'legacy compatibility does not weaken canonical period validation');
 echo 'MARKETING_FOLLOWTHROUGH_V1=PASS ('.$checks.' checks, '.$pdo->getAttribute(PDO::ATTR_DRIVER_NAME).')'.PHP_EOL;

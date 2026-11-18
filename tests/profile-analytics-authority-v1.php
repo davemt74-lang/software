@@ -93,6 +93,10 @@ $pdo->exec("UPDATE settings SET setting_value='0' WHERE setting_key='personal_ca
 paaa_ok(paaa_read($scope)['user']['id']==1,'verified pre-seed personal defaults retain existing canonical behavior');
 $pdo->exec("DELETE FROM settings WHERE setting_key='personal_capabilities_seed_v242'");
 paaa_denied(fn()=>paaa_read($scope),503,'a missing seed marker cannot certify default permission from an unlocked gap');
+paaa_ok(paaa_read($scope,false)['user']['id']==1,'account and Chat inventory requires its explicit grants but no unrelated personal-default seed');
+$pdo->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='chat.access'");
+paaa_denied(fn()=>paaa_read($scope,false),403,'missing personal seed never excuses a revoked private Chat grant');
+$pdo->exec("INSERT INTO role_permissions(role,permission_key) VALUES('fan','chat.access')");
 $pdo->exec("INSERT INTO settings VALUES('personal_capabilities_seed_v242','invalid')");
 paaa_denied(fn()=>paaa_read($scope),503,'malformed seed provenance cannot certify personal defaults');
 $pdo->exec("UPDATE settings SET setting_value='1' WHERE setting_key='personal_capabilities_seed_v242'");

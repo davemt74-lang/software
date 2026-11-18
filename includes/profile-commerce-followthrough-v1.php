@@ -110,6 +110,15 @@ function vp3_profile_commerce_period_v1(PDO $pdo,array $scope,array $selection,D
     return vp3_profile_commerce_followthrough_decode_v1($ref,$now);
 }
 
+/** Current publishing state is a separate observation, never a fixed-period fact. */
+function vp3_profile_commerce_publication_state_v1(array $publication): array
+{
+    $variant=$publication['promotion'];
+    $same=($variant['public_key']??null)===$publication['safe']['publication_id'];
+    $state=$same&&$variant['status']==='published'?'active':($same&&$variant['status']==='paused'?'paused':'historical');
+    return ['availability'=>'ready','state'=>$state];
+}
+
 /** Choices expose only authorized private plan/publication facts, not visitor outcomes. */
 function vp3_profile_commerce_publications_v1(PDO $pdo,array $scope,int $productId,string $cursor='',?DateTimeImmutable $now=null): array
 {
@@ -139,7 +148,7 @@ function vp3_profile_commerce_publications_v1(PDO $pdo,array $scope,int $product
             foreach($rows as $row){
                 try{$publication=vp3_profile_commerce_publication_v1($pdo,$fresh,$row['publication_id']);
                     $period=vp3_profile_commerce_period_v1($pdo,$fresh,['publication_id'=>$row['publication_id']],$now);
-                    $result['publications'][]=$publication['safe']+['ref'=>$period['ref'],
+                    $result['publications'][]=$publication['safe']+['ref'=>$period['ref'],'current_publication'=>vp3_profile_commerce_publication_state_v1($publication),
                         'url'=>vp3_profile_commerce_followthrough_href_v1($fresh['agent_id'],$fresh['conversation_id'],$period['ref'])];
                     $proofs[$row['publication_id']]=$publication['proof'];
                 }catch(RuntimeException $error){if($error instanceof PDOException||vp3_profile_analytics_retryable_v1($error)||!in_array($error->getCode(),[404,409,503],true))throw $error;
@@ -148,11 +157,66 @@ function vp3_profile_commerce_publications_v1(PDO $pdo,array $scope,int $product
             if($result['has_more'])$result['next_cursor']=rtrim(strtr(base64_encode(json_encode(['owner'=>$owner,'agent'=>$fresh['agent_id'],'chat'=>$fresh['conversation_id'],
                 'product'=>$productId,'before'=>$rows[count($rows)-1]['publication_id']],JSON_THROW_ON_ERROR)),'+/','-_'),'=');
         }
-        return [$result,static function(array $current)use($pdo,$productId,$owner,$proofs):void{
+        return [$result,static function(array $current)use($pdo,$productId,$owner,$proofs,$result):array{
             if(!vp3_profile_analytics_rows_v1($pdo,'SELECT id FROM agent_commerce_products_v800 WHERE id=? AND owner_user_id=?',[$productId,$owner],true))throw new RuntimeException('This product is no longer available.',404);
-            foreach($proofs as $id=>$proof)if(!hash_equals($proof,vp3_profile_commerce_publication_v1($pdo,$current,$id)['proof']))throw new RuntimeException('The publication changed. Read it again.',409);
+            $states=[];
+            foreach($proofs as $id=>$proof){$latest=vp3_profile_commerce_publication_v1($pdo,$current,$id);
+                if(!hash_equals($proof,$latest['proof']))throw new RuntimeException('The publication changed. Read it again.',409);
+                $states[$id]=vp3_profile_commerce_publication_state_v1($latest);
+            }
+            $rows=$result['publications'];foreach($rows as &$row)$row['current_publication']=$states[$row['publication_id']];unset($row);
+            return ['publications'=>$rows];
         }];
     });
+}
+
+function vp3_profile_commerce_exchange_item_v1(string $publicationId,array $proof,array $turn,array $visitor,array $answer): array
+{
+    $revision=vp3_profile_analytics_hash_v1([$publicationId,$proof,$turn['_at'],hash('sha256',(string)$visitor['message']),hash('sha256',(string)$answer['message']),
+        vp3_profile_analytics_hash_v1(vp3_profile_analytics_json_v1($turn['accepted_json']))]);
+    return ['public_conversation_id'=>$proof['public_conversation_id'],'turn_id'=>$proof['turn_id'],
+        'visitor_message_id'=>$proof['visitor_message_id'],'answer_message_id'=>$proof['answer_message_id'],
+        'visitor_at_utc_ms'=>$turn['_at'],'linked_at_utc_ms'=>$proof['at'],'question'=>vp3_profile_commerce_text_v1($visitor['message'],600),
+        'answer_excerpt'=>vp3_profile_commerce_text_v1($answer['message'],240),'revision'=>$revision,
+        'open_selection'=>['tab'=>'conversations','publicConversationId'=>$proof['public_conversation_id']]];
+}
+
+/** Bounded current proof for one displayed historical exchange. No live public gate. */
+function vp3_profile_commerce_exchange_current_v1(PDO $pdo,int $owner,array $publication,int $conversationId,int $answerId): ?array
+{
+    $publicationId=$publication['publication_id'];
+    $conversation=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM profile_agent_conversations WHERE id=? AND owner_user_id=?',[$conversationId,$owner],true)[0]??null;
+    $answer=vp3_profile_analytics_rows_v1($pdo,"SELECT * FROM profile_agent_messages WHERE id=? AND conversation_id=? AND sender_type='agent'",[$answerId,$conversationId],true)[0]??null;
+    if(!$conversation||!$answer)return null;
+    $answeredAt=vp3_profile_analytics_utc_v1($answer['created_at']??null);
+    if($answeredAt===null||$answeredAt<$publication['recorded_at_utc_ms'])return null;
+    $context=vp3_profile_analytics_json_v1($answer['context_json']??null);
+    if(($context['product_promotion_key']??null)!==$publicationId)return null;
+    $turnId=$context['profile_handoff']['turn_id']??null;
+    if(!is_int($turnId)||$turnId<1)return null;
+    $turn=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM profile_agent_handoff_turns_pa3 WHERE id=? AND conversation_id=? AND owner_user_id=?',[$turnId,$conversationId,$owner],true)[0]??null;
+    if(!$turn)return null;
+    $bindings=vp3_profile_analytics_rows_v1($pdo,"SELECT context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type='system' ORDER BY id LIMIT 2",[$conversationId],true);
+    $binding=count($bindings)===1?vp3_profile_analytics_json_v1($bindings[0]['context_json']):null;
+    $aid=(int)$conversation['profile_agent_id'];$sid=(int)$conversation['profile_session_id'];$visitorId=(int)($conversation['visitor_user_id']??0);
+    $agent=vp3_profile_analytics_rows_v1($pdo,'SELECT id,owner_user_id FROM user_agents WHERE id=? AND owner_user_id=?',[$aid,$owner],true)[0]??null;
+    $session=vp3_profile_analytics_rows_v1($pdo,'SELECT id,owner_user_id,session_key FROM profile_visit_sessions WHERE id=? AND owner_user_id=?',[$sid,$owner],true)[0]??null;
+    if(!$agent||!$session||!vp3_profile_agent_conversation_authority_valid_v1($binding,$owner)
+        ||$binding['transport']!=='native'||(int)($binding['profile_agent_id']??0)!==$aid
+        ||(int)($binding['profile_session_id']??0)!==$sid||$binding['visitor_user_id']!==$visitorId||$visitorId===$owner)return null;
+    $visitor=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM profile_agent_messages WHERE id=? AND conversation_id=?',[(int)$turn['visitor_message_id'],$conversationId],true)[0]??null;
+    if(!$visitor)return null;
+    $history=['conversations'=>[$conversationId=>$conversation],'valid'=>[$conversationId=>$binding],
+        'messages'=>[(int)$visitor['id']=>$visitor],'sessions'=>[$sid=>$session]];
+    $stamp=vp3_profile_analytics_utc_v1($turn['created_at']??null);
+    if($stamp===null||!vp3_profile_analytics_turn_valid_v1($turn,$history,$owner))return null;
+    $turn['_at']=$stamp;
+    $run=vp3_profile_analytics_rows_v1($pdo,"SELECT id,agent_id,source_key,source_kind,workflow_type FROM agent_workflow_runs WHERE id=? AND owner_user_id=? AND source_kind='profile_visitor_turn'",[(int)$turn['run_id'],$owner],true)[0]??null;
+    $action=vp3_profile_analytics_rows_v1($pdo,"SELECT id,run_id,action_key,capability_key FROM agent_workflow_actions WHERE id=? AND owner_user_id=? AND capability_key='profile.visitor.reply'",[(int)$turn['action_id'],$owner],true)[0]??null;
+    $key=hash('sha256',$owner.'|'.$turn['run_id'].'|'.$turn['action_id'].'|profile-turn:'.$turn['id'].':reply');
+    $receipts=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM agent_workflow_receipts WHERE owner_user_id=? AND receipt_key=? ORDER BY id LIMIT 2',[$owner,$key],true);
+    $proof=vp3_profile_analytics_agent_reply_proof_v1($owner,$answer,$turn,$run?[(int)$run['id']=>$run]:[],$action?[(int)$action['id']=>$action]:[],[$key=>$receipts]);
+    return $proof?vp3_profile_commerce_exchange_item_v1($publicationId,$proof,$turn,$visitor,$answer):null;
 }
 
 function vp3_profile_commerce_catalog_v1(): array
@@ -195,7 +259,9 @@ function vp3_profile_commerce_clicks_v1(PDO $pdo,int $owner,array $publication,a
     foreach($rows as $row){
         $id=$row['click_id'];$stamp=vp3_profile_analytics_utc_v1($row['created_at']??null);
         if(!is_string($id)||!preg_match('/\A[a-f0-9]{32}\z/D',$id)||!in_array($row['placement'],['profile','profile_agent'],true)||$stamp===null){$gap=true;continue;}
-        $out['rows'][$id]=$row+['_at'=>$stamp];$side=vp3_profile_analytics_window_key_v1($stamp,$window);if($side===null)continue;
+        $side=vp3_profile_analytics_window_key_v1($stamp,$window);
+        if($stamp<$publication['recorded_at_utc_ms']){if($side!==null)$gap=true;continue;}
+        $out['rows'][$id]=$row+['_at'=>$stamp];if($side===null)continue;
         $counts[$side]['recorded_cta_clicks']++;$breakdowns[$side][$row['placement']]++;
         $out['evidence'][]=['click',$id,$row['placement'],$stamp];
         if($row['placement']==='profile_agent'&&$capture){
@@ -238,16 +304,11 @@ function vp3_profile_commerce_exchanges_v1(PDO $pdo,int $owner,array $publicatio
         if($stamp!==null&&$side===null)continue;
         $turn=$turnMap[(int)($context['profile_handoff']['turn_id']??0)]??null;
         $proof=vp3_profile_analytics_agent_reply_proof_v1($owner,$message,$turn,$runMap,$actionMap,$receiptMap);
-        if(!$proof||$side===null){$gap=true;continue;}
+        if(!$proof||$side===null||$proof['at']<$publication['recorded_at_utc_ms']){$gap=true;continue;}
         $visitor=$history['messages'][$proof['visitor_message_id']];$count[$side]++;
-        $revision=vp3_profile_analytics_hash_v1([$publication['publication_id'],$proof,$turn['_at'],hash('sha256',(string)$visitor['message']),hash('sha256',(string)$message['message']),
-            vp3_profile_analytics_hash_v1(vp3_profile_analytics_json_v1($turn['accepted_json']))]);
-        $out['evidence'][]=['exchange',$proof['public_conversation_id'],$proof['turn_id'],$proof['visitor_message_id'],$proof['answer_message_id'],$revision];
-        if($side==='current')$items[]=['public_conversation_id'=>$proof['public_conversation_id'],'turn_id'=>$proof['turn_id'],
-            'visitor_message_id'=>$proof['visitor_message_id'],'answer_message_id'=>$proof['answer_message_id'],
-            'visitor_at_utc_ms'=>$turn['_at'],'linked_at_utc_ms'=>$proof['at'],'question'=>vp3_profile_commerce_text_v1($visitor['message'],600),
-            'answer_excerpt'=>vp3_profile_commerce_text_v1($message['message'],240),'revision'=>$revision,
-            'open_selection'=>['tab'=>'conversations','publicConversationId'=>$proof['public_conversation_id']]];
+        $item=vp3_profile_commerce_exchange_item_v1($publication['publication_id'],$proof,$turn,$visitor,$message);
+        $out['evidence'][]=['exchange',$proof['public_conversation_id'],$proof['turn_id'],$proof['visitor_message_id'],$proof['answer_message_id'],$item['revision']];
+        if($side==='current')$items[]=$item;
     }
     foreach(['current','previous'] as $side)$out['points']['promotion_linked_exchanges'][$side]=vp3_profile_analytics_point_v1($count[$side],$gap?'partial':'complete',$gap?'source_proof_incomplete':'complete');
     usort($items,static fn(array $a,array $b):int=>[$b['linked_at_utc_ms'],$b['answer_message_id']]<=>[$a['linked_at_utc_ms'],$a['answer_message_id']]);
@@ -308,7 +369,7 @@ function vp3_profile_commerce_checkouts_v1(PDO $pdo,int $owner,array $window,arr
     $counts=['current'=>0,'previous'=>0];$gap=($orders['gap']??false)===true;$clockGap=false;
     foreach($rows as $attempt){
         $order=$orders['orders'][(int)$attempt['order_id']]??null;if(!$order)continue;
-        $clock=$attempt['opened_recorded_at_utc_ms']??null;$stamp=vp3_profile_analytics_epoch_v1($clock);
+        $clock=$attempt['opened_at_utc_ms']??null;$stamp=vp3_profile_analytics_epoch_v1($clock);
         $external=(string)($attempt['external_session_id']??'');
         $mayHaveOpened=$external!==''&&!str_starts_with($external,'pending:');
         if($clock===null){if($mayHaveOpened){$gap=true;$clockGap=true;}continue;}
@@ -366,7 +427,7 @@ function vp3_profile_commerce_actions_v1(PDO $pdo,array $scope,array $publicatio
             'creative_id'=>$safe['promotion_id'],'stage'=>'promotion_outcomes'];
         $creative=['availability'=>'ready','reason'=>'complete','revision'=>vp3_profile_analytics_hash_v1([$publication['proof'],$assetId,$variant['asset_sha256']]),'marker'=>$marker];
     }
-    return ['current_plan'=>$current,'exact_creative'=>$creative];
+    return ['current_plan'=>$current,'exact_creative'=>$creative,'current_publication'=>vp3_profile_commerce_publication_state_v1($publication)];
 }
 
 function vp3_profile_commerce_actions_safe_v1(PDO $pdo,array $scope,array $publication): array
@@ -375,7 +436,8 @@ function vp3_profile_commerce_actions_safe_v1(PDO $pdo,array $scope,array $publi
     catch(Throwable $error){
         if(vp3_profile_analytics_retryable_v1($error))throw $error;
         return ['current_plan'=>['availability'=>'unavailable','reason'=>'source_unavailable','revision'=>null,'url'=>null],
-            'exact_creative'=>['availability'=>'unavailable','reason'=>'source_unavailable','revision'=>null,'marker'=>null]];
+            'exact_creative'=>['availability'=>'unavailable','reason'=>'source_unavailable','revision'=>null,'marker'=>null],
+            'current_publication'=>vp3_profile_commerce_publication_state_v1($publication)];
     }
 }
 
@@ -417,11 +479,88 @@ function vp3_profile_commerce_followthrough_v1(PDO $pdo,array $scope,array $sele
         $result=['contract'=>VP3_PROFILE_COMMERCE_FOLLOWTHROUGH_V1,'ref'=>$period['ref'],'revision'=>$revision,'coverage'=>$coverage,
             'observed_at_utc_ms'=>$now->getTimestamp()*1000+(int)$now->format('v'),'window'=>$window,'period_options'=>$period['period_options'],
             'publication'=>$safe,'metrics'=>$metrics,'groups'=>$groups,'click_breakdowns'=>$breakdowns,'money'=>$money,'exchanges'=>$exchangeView]+$actions;
-        return [$result,static function(array $current)use($pdo,$period,$publication):array{
+        return [$result,static function(array $current)use($pdo,$period,$publication,$exchangeView):array{
             $latest=vp3_profile_commerce_publication_v1($pdo,$current,$period['publication_id']);
             if(!hash_equals($publication['proof'],$latest['proof']))
                 throw new RuntimeException('The publication source changed. Read it again.',409);
+            foreach($exchangeView['items'] as $item){
+                $verified=vp3_profile_commerce_exchange_current_v1($pdo,(int)$current['user']['id'],$latest['safe'],$item['public_conversation_id'],$item['answer_message_id']);
+                if(!$verified||!hash_equals($item['revision'],$verified['revision']))
+                    throw new RuntimeException('The saved promotion conversation changed. Read it again.',409);
+            }
             return vp3_profile_commerce_actions_safe_v1($pdo,$current,$latest);
+        }];
+    });
+}
+
+/** Exact saved replies can link an existing native finding to its original plan. */
+function vp3_profile_commerce_conversation_associations_v1(PDO $pdo,array $scope,int $conversationId,DateTimeImmutable $now,int $limit=4): array
+{
+    if($conversationId<1||$limit<1||$limit>4)throw new InvalidArgumentException('Invalid promotion conversation selection.');
+    $empty=['coverage'=>'unconfigured','items'=>[]];
+    $tables=['agent_promotion_publications_v1','profile_agent_conversations','profile_agent_messages','profile_visit_sessions','user_agents',
+        'profile_agent_handoff_turns_pa3','agent_workflow_runs','agent_workflow_actions','agent_workflow_receipts'];
+    if(!vp3_profile_analytics_tables_v1($pdo,$tables))return $empty;
+    require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+    return vp3_profile_commerce_read_v1($pdo,$scope,true,static function(array $fresh)use($pdo,$conversationId,$now,$limit):array{
+        $owner=(int)$fresh['user']['id'];
+        if(!vp3_profile_analytics_rows_v1($pdo,'SELECT id FROM profile_agent_conversations WHERE id=? AND owner_user_id=?',[$conversationId,$owner],true))
+            throw new RuntimeException('This Profile conversation is no longer available.',404);
+        $candidates=vp3_profile_analytics_rows_v1($pdo,"SELECT id,context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type='agent'
+            AND CASE WHEN JSON_VALID(context_json) THEN JSON_EXTRACT(context_json,'$.product_promotion_key') ELSE NULL END IS NOT NULL
+            ORDER BY id DESC LIMIT 25",[$conversationId],true);
+        $coverage=count($candidates)>24?'limited':'ready';$items=[];$proofs=[];$seen=[];
+        foreach(array_slice($candidates,0,24) as $candidate){
+            $context=vp3_profile_analytics_json_v1($candidate['context_json']??null);$id=$context['product_promotion_key']??null;
+            if(!is_string($id)||!preg_match('/\A[a-f0-9]{32}\z/D',$id)){$coverage='limited';continue;}
+            if(isset($seen[$id]))continue;
+            // A public conversation ID is never joined to a private Chat ID.
+            $own=vp3_profile_analytics_rows_v1($pdo,'SELECT publication_id FROM agent_promotion_publications_v1 WHERE publication_id=? AND owner_user_id=? AND agent_id=? AND conversation_id=?',
+                [$id,$owner,$fresh['agent_id'],$fresh['conversation_id']],true);
+            if(!$own)continue;
+            if(count($items)>=$limit){$coverage='limited';break;}
+            try{
+                $publication=vp3_profile_commerce_publication_v1($pdo,$fresh,$id);
+                $exchange=vp3_profile_commerce_exchange_current_v1($pdo,$owner,$publication['safe'],$conversationId,(int)$candidate['id']);
+                if(!$exchange){$coverage='limited';continue;}
+                if($exchange['linked_at_utc_ms']>$now->getTimestamp()*1000+(int)$now->format('v')){$coverage='limited';continue;}
+                $linked=(new DateTimeImmutable('@'.intdiv($exchange['linked_at_utc_ms'],1000)))->setTimezone(new DateTimeZone('UTC'));
+                $cutoff=$linked->setTime(0,0)->modify('+1 day')->getTimestamp();
+                $ref=$cutoff<=$now->getTimestamp()
+                    ?'marketing:ft:v1:'.$id.':1:'.$cutoff.':u:VVRD'
+                    :'marketing:product-plan:'.$publication['safe']['product_id'];
+                $snapshot=vp3_coordination_product_marketing_sources_v1($pdo,$fresh,[substr($ref,10)],$now);
+                $source=$snapshot['items'][$ref]??null;
+                if(!$source){$coverage='limited';continue;}
+                if(($snapshot['coverage']??null)!=='ready')$coverage='limited';
+                $items[]=['ref'=>$ref,'revision'=>$source['revision'],'title'=>$source['title'],'url'=>$source['url'],
+                    'publication_id'=>$id,'product_id'=>$publication['safe']['product_id'],'public_conversation_id'=>$conversationId,
+                    'turn_id'=>$exchange['turn_id'],'visitor_message_id'=>$exchange['visitor_message_id'],'answer_message_id'=>$exchange['answer_message_id'],
+                    'question'=>$exchange['question'],'linked_at_utc_ms'=>$exchange['linked_at_utc_ms'],'relation'=>'saved_promotion_reply'];
+                $proofs[]=['publication_id'=>$id,'publication_proof'=>$publication['proof'],'exchange'=>$exchange,'ref'=>$ref,'source_revision'=>$source['revision']];
+                $seen[$id]=true;
+            }catch(PDOException $error){throw $error;}
+            catch(RuntimeException|DomainException $error){
+                if($error->getCode()===403)throw $error;
+                if(!in_array($error->getCode(),[404,409,422,503],true))throw $error;
+                $coverage='limited';
+            }
+        }
+        return [['coverage'=>$coverage,'items'=>$items],static function(array $current)use($pdo,$conversationId,$proofs,$now):void{
+            $owner=(int)$current['user']['id'];
+            if(!vp3_profile_analytics_rows_v1($pdo,'SELECT id FROM profile_agent_conversations WHERE id=? AND owner_user_id=?',[$conversationId,$owner],true))
+                throw new RuntimeException('This Profile conversation is no longer available.',404);
+            foreach($proofs as $saved){
+                $publication=vp3_profile_commerce_publication_v1($pdo,$current,$saved['publication_id']);
+                $exchange=vp3_profile_commerce_exchange_current_v1($pdo,$owner,$publication['safe'],$conversationId,$saved['exchange']['answer_message_id']);
+                if(!hash_equals($publication['proof'],$saved['publication_proof'])||!$exchange||!hash_equals($exchange['revision'],$saved['exchange']['revision']))
+                    throw new RuntimeException('The saved promotion association changed. Read it again.',409);
+                if(str_starts_with($saved['ref'],'marketing:product-plan:')){
+                    $snapshot=vp3_coordination_product_marketing_sources_v1($pdo,$current,[substr($saved['ref'],10)],$now);
+                    if(!isset($snapshot['items'][$saved['ref']])||!hash_equals($saved['source_revision'],$snapshot['items'][$saved['ref']]['revision']))
+                        throw new RuntimeException('The related current plan changed. Read it again.',409);
+                }
+            }
         }];
     });
 }

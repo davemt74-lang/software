@@ -83,14 +83,19 @@ function profile_commerce_followthrough_fixture_v1(PDO $pdo,int $owner=1,int $pr
         'visitor_message_id'=>$visitorMessage,'visitor_user_id'=>98002,'transport'=>'native','credential_hash'=>$binding['credential_hash'],'client_request_id'=>str_repeat('f',32),'request_hash'=>hash('sha256',$question),'chat_mode'=>'agent','accepted_json'=>$jsonEncode($accepted),
         'state'=>'replied','version'=>2,'conversation_epoch'=>1,'run_id'=>$runId,'action_id'=>$actionId,'answer_message_id'=>$answerMessage,'created_at'=>$date($current),'updated_at'=>$date($current+20000)]);
     profile_analytics_period_fixture_row_v1($pdo,'profile_agent_messages',['id'=>$answerMessage,'conversation_id'=>$cid,'sender_type'=>'agent','sender_user_id'=>null,'message'=>$answer,
-        'context_json'=>$jsonEncode(['product_promotion_key'=>$pub,'profile_handoff'=>['contract'=>'vp3.profile-handoff.v1','turn_id'=>$tid,'visitor_message_id'=>$visitorMessage]]),'created_at'=>$date($current+20000)]);
+        'context_json'=>$jsonEncode(['product_promotion_key'=>$pub,'source_dependencies'=>[],'profile_handoff'=>['contract'=>'vp3.profile-handoff.v1','turn_id'=>$tid,'visitor_message_id'=>$visitorMessage]]),'created_at'=>$date($current+20000)]);
     $result=agent_workflow_public_json_v1400($jsonEncode(['turn_id'=>$tid,'conversation_id'=>$cid,'visitor_message_id'=>$visitorMessage,'answer_message_id'=>$answerMessage]));
     profile_analytics_period_fixture_row_v1($pdo,'agent_workflow_receipts',['id'=>998011,'run_id'=>$runId,'action_id'=>$actionId,'owner_user_id'=>$owner,
         'receipt_key'=>hash('sha256',$owner.'|'.$runId.'|'.$actionId.'|profile-turn:'.$tid.':reply'),'executor'=>'cloud','worker_id'=>'fixture','attempt_no'=>1,'status'=>'completed','summary'=>'Saved exact reply','result_json'=>$jsonEncode($result),'error_class'=>'','created_at'=>$date($current+20000)]);
     $previousClick=str_repeat('3',32);$nativeClick=str_repeat('4',32);$plainClick=str_repeat('5',32);
+    $q=$pdo->prepare('SELECT * FROM agent_promotion_publications_v1 WHERE publication_id=?');$q->execute([$pub]);$publication=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
     foreach([[$previousClick,'profile',$previous-60000,null],[$nativeClick,'profile_agent',$current+30000,$cid],[$plainClick,'profile',$current+40000,null]] as [$clickId,$placement,$at,$publicCid]){
-        $click=['click_id'=>$clickId,'publication_id'=>$pub,'placement'=>$placement,'created_at'=>$date($at),'public_conversation_id'=>$publicCid,'public_conversation_binding_sha256_v1'=>null];
-        if($publicCid!==null)$click['public_conversation_binding_sha256_v1']=profile_promotion_public_binding_digest_v1($click+['owner_user_id'=>$owner],$conversation,$binding,$session);
+        $click=['click_id'=>$clickId,'publication_id'=>$pub,'placement'=>$placement,'created_at'=>$date($at),'native_context_json_v1'=>null];
+        if($publicCid!==null){
+            $snapshot=profile_promotion_native_context_snapshot_v1($click,$publication,$conversation,$binding,$session,hash('sha256','98002|fixture-visitor-password'));
+            if($snapshot===null)throw new RuntimeException('The native click fixture proof is invalid.');
+            $click['native_context_json_v1']=$jsonEncode($snapshot);
+        }
         profile_analytics_period_fixture_row_v1($pdo,'agent_promotion_clicks_v1',$click,'click_id');
     }
     $orderAt=$previous;$orderUtc=$date($orderAt);
@@ -102,10 +107,24 @@ function profile_commerce_followthrough_fixture_v1(PDO $pdo,int $owner=1,int $pr
     profile_analytics_period_fixture_row_v1($pdo,'agent_promotion_orders_v1',['order_id'=>992201,'click_id'=>$previousClick],'order_id');
     // Isolated provenance seed, never a production backfill: these attempts
     // were opened before their exact recorded payment in the fixed period.
-    $pdo->prepare('UPDATE agent_commerce_checkout_attempts_v800 SET opened_recorded_at_utc_ms=? WHERE id=993401')->execute([$previous+60000]);
-    $pdo->prepare('UPDATE agent_commerce_checkout_attempts_v800 SET opened_recorded_at_utc_ms=? WHERE id=993402')->execute([$current+60000]);
+    $pdo->prepare('UPDATE agent_commerce_checkout_attempts_v800 SET opened_at_utc_ms=? WHERE id=993401')->execute([$previous+60000]);
+    $pdo->prepare('UPDATE agent_commerce_checkout_attempts_v800 SET opened_at_utc_ms=? WHERE id=993402')->execute([$current+60000]);
     return ['scope'=>$base['scope'],'ref'=>vp3_profile_commerce_followthrough_ref_v1($pub,$base['ref']),'period_ref'=>$base['ref'],'publication_id'=>$pub,'cutoff'=>$cutoff,
         'ids'=>['product'=>$product,'original_creative'=>$creative,'current_creative'=>$newCreative,'current_publication'=>$newPub,'draft'=>$draft,'current_draft'=>$newDraft,
             'source_asset'=>996001,'output_asset'=>996002,'public_conversation'=>$cid,'turn'=>$tid,'visitor_message'=>$visitorMessage,'answer_message'=>$answerMessage,
             'session'=>$session['id'],'receipt'=>998011,'native_click'=>$nativeClick,'previous_click'=>$previousClick,'plain_click'=>$plainClick,'order'=>992201]];
+}
+
+/** Optional hosted-UI seed: the canonical writer records the saved reply event. */
+function profile_commerce_followthrough_fixture_event_v1(PDO $pdo,array $fixture): ?array
+{
+    require_once dirname(__DIR__,2).'/includes/profile-attention-pa4b.php';
+    $q=$pdo->prepare('SELECT * FROM profile_agent_conversations WHERE id=? AND owner_user_id=?');
+    $q->execute([$fixture['ids']['public_conversation'],(int)$fixture['scope']['user']['id']]);$conversation=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+    if(!$conversation)throw new RuntimeException('The fixture native conversation is unavailable.');
+    $owns=!$pdo->inTransaction();if($owns)$pdo->beginTransaction();
+    try{
+        $event=vp3_profile_attention_message_sent_pa4b($pdo,$conversation,$fixture['ids']['answer_message']);
+        if($owns)$pdo->commit();return $event;
+    }catch(Throwable $error){if($owns&&$pdo->inTransaction())$pdo->rollBack();throw $error;}
 }

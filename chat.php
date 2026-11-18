@@ -271,7 +271,7 @@ $marketingFollowthroughDestination = vp3_marketing_followthrough_destination_bin
     $marketingFollowthroughRequested!==null && vp3_participant_scope_v1()===null
         && has_permission('account.access',$user) && has_permission('chat.access',$user)
         && personal_capability_has_v242('profile_agent.access',$user)
-        && personal_capability_has_v242('profile_chat.access',$user)
+        && personal_capability_has_v242('profile_chat.access',$user),$pdoForAgent
 );
 
 $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict";var cfg=window.STONEFELLOW_CHAT||{};cfg.endpoint='

@@ -73,10 +73,31 @@ function harness({selection={ref:marketingRef()},override=null,pureOnly=false}={
   const f=harness({selection:{productId:87},override:input=>{
     if(input.action==='publications'){const value=publicationsValue(input.cursor?['d'.repeat(32)]:[publicationId,'e'.repeat(32)]);if(!input.cursor){value.has_more=true;value.next_cursor='next-page';}return {status:200,data:{publications:value}};}return null;
   }});await flush();check(f.requests[0].input.action==='publications'&&f.host.querySelectorAll('[data-marketing-publication]').length===2,'plan opens explicit publication choices');
+  check(!f.host.textContent.includes(publicationId)&&f.host.textContent.includes('Tracking recorded'),'publication picker uses saved title/date rather than raw record identifiers');
   check(f.host.textContent.includes('Saved shirt promotion <img src=x onerror=alert(1)>')&&!f.host.querySelector('img'),'publication choices identify the exact saved title while escaping public-looking text');
   check(!f.host.querySelector('[data-marketing-fixed-ref]'),'publication listing does not silently select a current creative');
   f.click('Load more publications');await flush();check(f.requests.at(-1).input.cursor==='next-page'&&f.host.querySelectorAll('[data-marketing-publication]').length===3,'publication pagination appends checked choices');
   f.click('View follow-through');await flush();check(f.requests.at(-1).input.ref===marketingRef(),'selected publication opens exact report');f.api.dispose();
+}
+{
+  const value=followthroughValue();
+  for(const metric of value.metrics){const delta=metric.current.value-metric.previous.value;
+    metric.comparison={delta,percent:metric.previous.value===0?null:100*delta/metric.previous.value};}
+  value.money[0].current.value_minor='9007199254740993123';value.money[0].previous.value_minor='100';
+  value.money[0].comparison={delta_minor:'9007199254740993023'};
+  const refund=structuredClone(value.money[0]);refund.key='verified_refunds';refund.currency='EUR';refund.current.value_minor='105';refund.previous.value_minor='250';refund.comparison={delta_minor:'-145'};value.money.push(refund);
+  const f=harness({override:()=>({status:200,data:{followthrough:value}})});await flush();
+  const change=key=>f.host.querySelector('[data-marketing-metric="'+key+'"]').querySelectorAll('td').at(-1).textContent;
+  check(change('recorded_cta_clicks')==='+2 · +200%','complete numeric comparisons display their verified count and percentage change');
+  check(change('promotion_linked_exchanges')==='+1 · no percentage (previous 0)'&&change('verified_refunded_orders')==='0 · no percentage (previous 0)','zero baseline retains exact count difference without inventing percentage');
+  check(f.host.querySelector('[data-marketing-money="verified_payments:USD"]').textContent.includes('USD +90,071,992,547,409,930.23'),'large positive currency change remains an exact decimal string');
+  check(f.host.querySelector('[data-marketing-money="verified_refunds:EUR"]').textContent.includes('EUR -1.45'),'negative currency change preserves sign, scale and separate currency');
+  value.metrics[0].current={value:null,observed_value:2,coverage:'partial',reason:'source_proof_incomplete'};value.metrics[0].comparison={delta:null,percent:null};
+  value.money[0].current={value_minor:null,observed_value_minor:'500',coverage:'partial',reason:'receipt_proof_incomplete'};value.money[0].comparison={delta_minor:null};
+  await f.api.refresh();await flush();
+  check(change('recorded_cta_clicks')==='Not comparable'&&f.host.querySelector('[data-marketing-money="verified_payments:USD"]').querySelectorAll('td').at(-1).textContent==='Not comparable','partial count and money observations never become comparable changes');
+  check(f.host.querySelector('[data-marketing-metric="recorded_cta_clicks"]').querySelectorAll('td').every(cell=>cell.dataset.label),'compact metric cells retain selected/previous/change labels');
+  f.api.dispose();
 }
 {
   const f=harness();await flush();f.state.override=()=>({status:200,data:{followthrough:(()=>{const value=followthroughValue();value.coverage='limited';value.metrics[0].current={value:null,observed_value:2,coverage:'partial',reason:'legacy_conversation_attribution'};value.metrics[6].current={value:null,observed_value:null,coverage:'unavailable',reason:'storage_unavailable'};return value;})()}});

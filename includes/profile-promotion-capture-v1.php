@@ -4,6 +4,8 @@ declare(strict_types=1);
 // Loading capture definitions performs no migration and creates no visitor state.
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
 require_once __DIR__.'/profile-agent-boundary-v390.php';
+require_once __DIR__.'/profile-promotion-native-click-v1.php';
+require_once __DIR__.'/commerce-checkout-open-clock-v1.php';
 
 const VP3_PROFILE_PROMOTION_CAPTURE_V1='vp3.profile-promotion-capture.v1';
 
@@ -39,8 +41,8 @@ function profile_promotion_capture_retryable_v1(Throwable $error): bool
 function profile_promotion_capture_columns_v1(PDO $pdo,string $store): bool
 {
     $sql=match($store){
-        'clicks'=>'SELECT public_conversation_id,public_conversation_binding_sha256_v1 FROM agent_promotion_clicks_v1 WHERE 1=0',
-        'checkout'=>'SELECT opened_recorded_at_utc_ms FROM agent_commerce_checkout_attempts_v800 WHERE 1=0',
+        'clicks'=>'SELECT native_context_json_v1 FROM agent_promotion_clicks_v1 WHERE 1=0',
+        'checkout'=>'SELECT opened_at_utc_ms FROM agent_commerce_checkout_attempts_v800 WHERE 1=0',
         default=>throw new InvalidArgumentException('Unknown Commerce capture store.'),
     };
     try{$q=$pdo->query($sql);$q->closeCursor();return true;}
@@ -69,25 +71,8 @@ function profile_promotion_capture_install_v1(PDO $pdo,string $store='all'): voi
     if($pdo->inTransaction())throw new RuntimeException('Commerce capture upgrade requires a separate migration transaction.');
     if(!in_array($store,['all','clicks','checkout'],true))throw new InvalidArgumentException('Unknown Commerce capture store.');
     if(!in_array($pdo->getAttribute(PDO::ATTR_DRIVER_NAME),['sqlite','mysql'],true))throw new RuntimeException('Commerce capture storage is unsupported.');
-    $columns=[
-        'clicks'=>['agent_promotion_clicks_v1'=>[
-            'public_conversation_id'=>'BIGINT NULL','public_conversation_binding_sha256_v1'=>'CHAR(64) NULL',
-        ]],
-        'checkout'=>['agent_commerce_checkout_attempts_v800'=>['opened_recorded_at_utc_ms'=>'BIGINT NULL']],
-    ];
-    foreach($columns as $kind=>$tables){
-        if($store!=='all'&&$store!==$kind)continue;
-        foreach($tables as $table=>$definitions)foreach($definitions as $column=>$definition){
-            try{$q=$pdo->query('SELECT '.$column.' FROM '.$table.' WHERE 1=0');$q->closeCursor();continue;}
-            catch(PDOException $error){if(!profile_promotion_capture_missing_v1($error))throw $error;}
-            try{$pdo->exec('ALTER TABLE '.$table.' ADD COLUMN '.$column.' '.$definition);}
-            catch(PDOException $error){
-                $native=(int)($error->errorInfo[1]??0);
-                if($native!==1060&&!($native===1&&str_contains(strtolower($error->getMessage()),'duplicate column name:')))throw $error;
-                $q=$pdo->query('SELECT '.$column.' FROM '.$table.' WHERE 1=0');$q->closeCursor();
-            }
-        }
-    }
+    if($store==='all'||$store==='clicks')vp3_profile_promotion_native_click_install_v1($pdo);
+    if($store==='all'||$store==='checkout')agent_commerce_checkout_open_clock_install_v1($pdo);
 }
 
 function profile_promotion_capture_rows_v1(PDO $pdo,string $sql,array $parameters=[],bool $current=false): array
@@ -99,52 +84,6 @@ function profile_promotion_capture_rows_v1(PDO $pdo,string $sql,array $parameter
     $q=$pdo->prepare($sql);
     if(!$q instanceof PDOStatement||!$q->execute($parameters))throw new RuntimeException('Commerce capture storage is unavailable.',503);
     $rows=$q->fetchAll(PDO::FETCH_ASSOC);$q->closeCursor();return $rows;
-}
-
-/** Pure immutable binder. Mutable responder tokens and CRM descriptions are excluded. */
-function profile_promotion_public_binding_digest_v1(array $click,array $conversation,array $binding,array $session): ?string
-{
-    $owner=profile_promotion_capture_integer_v1($click['owner_user_id']??null);
-    $cid=profile_promotion_capture_integer_v1($click['public_conversation_id']??null);
-    $aid=profile_promotion_capture_integer_v1($conversation['profile_agent_id']??null);
-    $sid=profile_promotion_capture_integer_v1($conversation['profile_session_id']??null);
-    $visitor=profile_promotion_capture_integer_v1($conversation['visitor_user_id']??0,true);
-    foreach(['publication_id','click_id'] as $key)
-        if(!is_string($click[$key]??null)||!preg_match('/\A[a-f0-9]{32}\z/D',$click[$key]))return null;
-    if(!$owner||!$cid||!$aid||!$sid||$visitor===null||$visitor===$owner||($click['placement']??null)!=='profile_agent'
-        ||profile_promotion_capture_integer_v1($conversation['id']??null)!==$cid
-        ||profile_promotion_capture_integer_v1($conversation['owner_user_id']??null)!==$owner
-        ||!vp3_profile_agent_conversation_authority_valid_v1($binding,$owner)||$binding['transport']!=='native'
-        ||profile_promotion_capture_integer_v1($binding['profile_agent_id']??null)!==$aid
-        ||profile_promotion_capture_integer_v1($binding['profile_session_id']??null)!==$sid
-        ||$binding['visitor_user_id']!==$visitor
-        ||profile_promotion_capture_integer_v1($session['id']??null)!==$sid
-        ||profile_promotion_capture_integer_v1($session['owner_user_id']??null)!==$owner
-        ||!is_string($session['session_key']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$session['session_key']))return null;
-    $proof=[
-        'contract'=>'vp3.profile-promotion-public-binding.v1','publication_id'=>$click['publication_id'],
-        'click_id'=>$click['click_id'],'placement'=>'profile_agent','owner_user_id'=>$owner,'public_conversation_id'=>$cid,
-        'authority_contract'=>$binding['contract'],'transport'=>'native','profile_agent_id'=>$aid,'profile_session_id'=>$sid,
-        'visitor_user_id'=>$visitor,'credential_hash'=>$binding['credential_hash'],'session_sha256'=>hash('sha256',$session['session_key']),
-    ];
-    return hash('sha256',json_encode($proof,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR));
-}
-
-/** Internal exact native rows; does not consult current visitor cookies or public availability. */
-function profile_promotion_capture_native_rows_v1(PDO $pdo,int $owner,int $cid,bool $current=false): ?array
-{
-    $conversation=profile_promotion_capture_rows_v1($pdo,
-        'SELECT id,owner_user_id,profile_agent_id,profile_session_id,visitor_user_id FROM profile_agent_conversations WHERE id=? AND owner_user_id=?',[$cid,$owner],$current)[0]??null;
-    if(!$conversation)return null;
-    $bindings=profile_promotion_capture_rows_v1($pdo,
-        "SELECT SUBSTR(context_json,1,65537) context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type='system' ORDER BY id LIMIT 2",[$cid],$current);
-    if(count($bindings)!==1||!is_string($bindings[0]['context_json'])||strlen($bindings[0]['context_json'])>65536)return null;
-    try{$binding=json_decode($bindings[0]['context_json'],true,16,JSON_THROW_ON_ERROR);}catch(JsonException){return null;}
-    if(!is_array($binding))return null;
-    $agent=profile_promotion_capture_rows_v1($pdo,'SELECT id,owner_user_id FROM user_agents WHERE id=?',[(int)$conversation['profile_agent_id']],$current)[0]??null;
-    $session=profile_promotion_capture_rows_v1($pdo,'SELECT id,owner_user_id,session_key FROM profile_visit_sessions WHERE id=?',[(int)$conversation['profile_session_id']],$current)[0]??null;
-    if(!$agent||!$session||profile_promotion_capture_integer_v1($agent['owner_user_id']??null)!==$owner)return null;
-    return compact('conversation','binding','session');
 }
 
 /** Existing cookies are a prerequisite; even the canonical read-only context may otherwise mint them. */
@@ -192,21 +131,18 @@ function profile_promotion_public_click_evidence_v1(PDO $pdo,int $owner,string $
         $scope=[];
         foreach(['publication_id','promotion_id','owner_user_id','product_id','agent_id','conversation_id','source_asset_id','draft_key','campaign_id','review_request'] as $key)
             $scope[$key]=$publication[$key]===null?null:(string)$publication[$key];
-        $native=null;$cid=$click['public_conversation_id'];$digest=$click['public_conversation_binding_sha256_v1'];
-        $availability='ready';
-        if($cid===null&&$digest===null){
+        $native=null;$cid=null;$availability='ready';
+        if($click['native_context_json_v1']===null){
             if($click['placement']==='profile_agent')$availability='unattributed';
         }else{
-            $cid=profile_promotion_capture_integer_v1($cid);
-            if($click['placement']!=='profile_agent'||!$cid||!is_string($digest)||!preg_match('/\A[a-f0-9]{64}\z/D',$digest))return $out;
-            $native=profile_promotion_capture_native_rows_v1($pdo,$owner,$cid,$current);
-            if(!$native)return $out;
-            $expected=profile_promotion_public_binding_digest_v1($click+['owner_user_id'=>$owner],$native['conversation'],$native['binding'],$native['session']);
-            if($expected===null||!hash_equals($digest,$expected))return $out;
+            if($click['placement']!=='profile_agent')return $out;
+            $native=vp3_profile_promotion_native_click_proof_v1($pdo,$click,$publication,$current);
+            if($native===null)return $out;
+            $cid=$native['public_conversation_id'];
         }
         $proof=['publication'=>$scope,'click'=>[
             'click_id'=>$clickId,'publication_id'=>$publicationId,'placement'=>$click['placement'],'created_at'=>$click['created_at'],
-            'public_conversation_id'=>$cid,'public_conversation_binding_sha256_v1'=>$digest,
+            'native_context'=>$native,
         ]];
         return ['availability'=>$availability,'source_revision'=>hash('sha256',json_encode($proof,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)),
             'public_conversation_id'=>$cid,'recorded_at_utc_ms'=>$recorded*1000];

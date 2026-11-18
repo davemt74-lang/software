@@ -85,6 +85,13 @@ jobs:
           node tests/agent-profile-specialist-report-http.mjs
       - name: Product marketing publication evidence and shared briefings
         run: |
+          php tests/profile-promotion-native-click-v1.php
+          node tests/profile-promotion-native-click-v1.mjs
+          php tests/product-marketing-followthrough-v1.php
+          php tests/product-marketing-briefings-v1.php
+          php tests/product-marketing-profile-findings-v1.php
+          node tests/product-marketing-report-v1.mjs
+          node tests/product-marketing-publication-http.mjs
           php tests/profile-commerce-followthrough-ref-v1.php
           php tests/profile-promotion-capture-v1.php
           php tests/commerce-checkout-open-clock-v1.php
@@ -103,6 +110,11 @@ jobs:
           VP3_TEST_MYSQL_USER: root
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: |
+          php tests/profile-promotion-native-click-v1.php
+          node tests/profile-promotion-native-click-v1.mjs
+          php tests/product-marketing-followthrough-v1.php
+          php tests/product-marketing-briefings-v1.php
+          php tests/product-marketing-profile-findings-v1.php
           php tests/profile-promotion-capture-v1.php
           php tests/commerce-checkout-open-clock-v1.php
           php tests/profile-commerce-followthrough-v1.php
@@ -326,6 +338,14 @@ jobs:
         run: node tests/profile-analytics-period-browser.mjs
       - name: Product marketing publications, original Chat restoration and compact layout
         run: node tests/marketing-followthrough-browser.mjs
+      - name: Product Marketing Hub, related Profile findings and released publication links
+        run: node tests/product-marketing-followthrough-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: product-marketing-browser-evidence
+          path: artifacts/product-marketing-followthrough/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:

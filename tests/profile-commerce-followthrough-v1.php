@@ -57,6 +57,18 @@ pft_ok($baseline['publication']['title']==='Original T-shirt promotion'&&$baseli
     &&$baseline['exact_creative']['marker']['draft_id']===$fixture['ids']['draft'],'the original creative and older exact draft survive a newer current plan');
 $list=vp3_profile_commerce_publications_v1(db(),$fixture['scope'],$fixture['ids']['product'],'',$now);
 pft_ok(count($list['publications'])===2&&$list['coverage']==='ready'&&!$list['has_more'],'publication choices stay in the exact product and original private Chat');
+pft_ok($baseline['current_publication']===['availability'=>'ready','state'=>'paused']
+    &&array_column(array_column($list['publications'],'current_publication'),'state')===['active','paused'],
+    'report and picker expose separate current publication status without raw technical labels');
+pft_case(static function(PDO $pdo)use($baseline):void{
+    $f=$GLOBALS['fixture'];$pdo->prepare("UPDATE agent_commerce_promotions_v1 SET status='published' WHERE id=?")->execute([$f['ids']['original_creative']]);
+    $pdo->exec("UPDATE agent_commerce_products_v800 SET title='Renamed current listing' WHERE id=992101");
+    $r=pft_read();pft_ok($r['revision']===$baseline['revision']&&$r['current_publication']['state']==='active',
+        'current activation and listing rename do not rewrite fixed publication facts');
+    $pdo->prepare('UPDATE agent_commerce_promotions_v1 SET public_key=? WHERE id=?')->execute([str_repeat('b',32),$f['ids']['original_creative']]);
+    $r=pft_read();pft_ok($r['revision']===$baseline['revision']&&$r['current_publication']['state']==='historical',
+        'a replaced publication remains explicitly historical with unchanged period evidence');
+});
 pft_case(static function(PDO $pdo):void{
     $f=$GLOBALS['fixture'];$row=pft_row($pdo,'agent_promotion_publications_v1',$f['publication_id'],'publication_id');
     for($i=0;$i<25;$i++){$row['publication_id']=substr(hash('sha256','publication-page-'.$i),0,32);profile_analytics_period_fixture_row_v1($pdo,'agent_promotion_publications_v1',$row,'publication_id');}
@@ -74,6 +86,15 @@ pft_ok($baseline['exchanges']['total']===1&&$baseline['exchanges']['items'][0]['
 $encoded=json_encode($baseline,JSON_THROW_ON_ERROR);
 pft_ok(!preg_match('/credential_hash|session_sha256|session_key|context_json|password|fixture_analytics_merchant|campaign_id/', $encoded),'safe report projection omits native credentials, raw context, merchant and Campaign data');
 pft_ok(pft_read(null,null,$now->modify('+2 days'))['revision']===$baseline['revision'],'checking a fixed period later preserves its source revision');
+pft_case(static function(PDO $pdo):void{
+    $f=$GLOBALS['fixture'];$answer=pft_row($pdo,'profile_agent_messages',$f['ids']['answer_message']);
+    $after=(new DateTimeImmutable($answer['created_at'],new DateTimeZone('UTC')))->modify('+1 minute')->format('Y-m-d H:i:s');
+    $pdo->prepare('UPDATE agent_promotion_publications_v1 SET created_at=? WHERE publication_id=?')->execute([$after,$f['publication_id']]);
+    $r=pft_read();
+    pft_ok(pft_metric($r,'promotion_linked_exchanges')['coverage']==='partial'&&$r['exchanges']['items']===[]
+        &&pft_metric($r,'recorded_cta_clicks')['coverage']==='partial'&&pft_metric($r,'recorded_cta_clicks')['value']===null,
+        'replies and recorded clicks before their exact publication tracking identity are partial, not verified results');
+});
 pft_case(static function(PDO $pdo)use($baseline):void{
     $pdo->exec("UPDATE agent_product_launches_v1 SET last_stage='paused',creative_id=NULL WHERE product_id=992101");
     $r=pft_read();pft_ok($r['revision']===$baseline['revision']&&$r['current_plan']['revision']!==$baseline['current_plan']['revision'],'current plan state remains separate from fixed-period evidence');
@@ -103,18 +124,21 @@ foreach([['ref'=>$fixture['ref'],'period'=>1],['publication_id'=>$fixture['publi
     pft_denied(fn()=>pft_read($bad),422,'malformed or ambiguous exact publication selection is rejected');
 
 pft_case(static function(PDO $pdo)use($baseline):void{
-    $pdo->prepare('UPDATE agent_promotion_clicks_v1 SET public_conversation_id=NULL,public_conversation_binding_sha256_v1=NULL WHERE click_id=?')->execute([$GLOBALS['fixture']['ids']['native_click']]);$r=pft_read();
+    $pdo->prepare('UPDATE agent_promotion_clicks_v1 SET native_context_json_v1=NULL WHERE click_id=?')->execute([$GLOBALS['fixture']['ids']['native_click']]);$r=pft_read();
     pft_ok(pft_metric($r,'recorded_cta_clicks')['value']===2&&pft_metric($r,'conversation_attributed_clicks')['coverage']==='partial'
         &&pft_metric($r,'conversation_attributed_clicks')['value']===null&&pft_metric($r,'conversation_attributed_clicks')['observed_value']===0,'legacy click association is unknown while canonical CTA event totals remain usable');
     pft_ok(pft_metric($r,'verified_paid_orders')['value']===1,'missing native click association does not erase independently frozen promotion order attribution');
 });
 foreach([
     ['UPDATE profile_visit_sessions SET session_key=? WHERE id=990011',[hash('sha256','changed-session')]],
-    ['UPDATE agent_promotion_clicks_v1 SET public_conversation_id=11 WHERE click_id=?',[$fixture['ids']['native_click']]],
-    ['UPDATE agent_promotion_clicks_v1 SET public_conversation_binding_sha256_v1=? WHERE click_id=?',[str_repeat('0',64),$fixture['ids']['native_click']]],
+
 ] as [$sql,$params])pft_case(static function(PDO $pdo)use($sql,$params):void{
     $pdo->prepare($sql)->execute($params);$r=pft_read();
     pft_ok(pft_metric($r,'conversation_attributed_clicks')['coverage']==='partial'&&pft_metric($r,'recorded_cta_clicks')['value']===2,'changed native click proof cannot reassign the saved public conversation');
+});
+foreach(['public_conversation_id'=>11,'session_hash'=>str_repeat('0',64)] as $field=>$value)pft_case(static function(PDO $pdo)use($field,$value):void{
+    pft_json($pdo,'agent_promotion_clicks_v1','native_context_json_v1',$GLOBALS['fixture']['ids']['native_click'],static fn(array $proof):array=>array_replace($proof,[$field=>$value]),'click_id');
+    $r=pft_read();pft_ok(pft_metric($r,'conversation_attributed_clicks')['coverage']==='partial'&&pft_metric($r,'recorded_cta_clicks')['value']===2,'changed closed native click proof cannot reassign the saved public conversation: '.$field);
 });
 pft_case(static function(PDO $pdo):void{
     $pdo->prepare('UPDATE agent_promotion_clicks_v1 SET created_at=? WHERE click_id=?')->execute([gmdate('Y-m-d H:i:s',$GLOBALS['fixture']['cutoff']),$GLOBALS['fixture']['ids']['plain_click']]);
@@ -190,12 +214,12 @@ pft_case(static function(PDO $pdo):void{
         'a payment before the proven frozen promotion order cannot certify payment completion or its later refund');
 });
 pft_case(static function(PDO $pdo):void{
-    $pdo->exec('UPDATE agent_commerce_checkout_attempts_v800 SET opened_recorded_at_utc_ms=NULL WHERE id=993402');$r=pft_read();
+    $pdo->exec('UPDATE agent_commerce_checkout_attempts_v800 SET opened_at_utc_ms=NULL WHERE id=993402');$r=pft_read();
     pft_ok(pft_metric($r,'verified_checkout_openings')['coverage']==='partial'&&pft_metric($r,'verified_checkout_openings')['value']===null
         &&pft_metric($r,'verified_checkout_openings')['reason']==='checkout_clock_missing'&&pft_metric($r,'verified_paid_orders')['value']===1,'legacy opening clocks remain unknown without erasing verified payment facts');
 });
 pft_case(static function(PDO $pdo):void{
-    $pdo->exec('UPDATE agent_commerce_checkout_attempts_v800 SET opened_recorded_at_utc_ms=1 WHERE id=993402');
+    $pdo->exec('UPDATE agent_commerce_checkout_attempts_v800 SET opened_at_utc_ms=1 WHERE id=993402');
     pft_ok(pft_metric(pft_read(),'verified_checkout_openings')['coverage']==='partial','malformed opening clocks never become zero or epoch-derived progress');
 });
 pft_case(static function(PDO $pdo):void{
@@ -213,45 +237,58 @@ foreach([['agent_promotion_clicks_v1','recorded_cta_clicks'],['agent_workflow_re
 }
 // Simulate a real pre-upgrade store. Only this isolated test's explicit
 // installer restores columns; the reader must not migrate or invent history.
-$savedClicks=db()->query('SELECT click_id,public_conversation_id,public_conversation_binding_sha256_v1 FROM agent_promotion_clicks_v1')->fetchAll(PDO::FETCH_ASSOC);
+$savedClicks=db()->query('SELECT click_id,native_context_json_v1 FROM agent_promotion_clicks_v1')->fetchAll(PDO::FETCH_ASSOC);
 try{
-    db()->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN public_conversation_id');
-    db()->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN public_conversation_binding_sha256_v1');
+    db()->exec('ALTER TABLE agent_promotion_clicks_v1 DROP COLUMN native_context_json_v1');
     $r=pft_read();
     pft_ok(pft_metric($r,'recorded_cta_clicks')['value']===2&&pft_metric($r,'conversation_attributed_clicks')['coverage']==='unavailable'
         &&pft_metric($r,'conversation_attributed_clicks')['value']===null&&pft_metric($r,'verified_paid_orders')['value']===1,
         'missing capture columns leave association unknown while saved CTA and frozen payment facts remain usable');
     pft_ok(!profile_promotion_capture_click_columns_v1(db()),'a pre-upgrade association read never creates missing capture columns');
 }finally{
-    profile_promotion_capture_install_v1(db(),'clicks');$restore=db()->prepare('UPDATE agent_promotion_clicks_v1 SET public_conversation_id=?,public_conversation_binding_sha256_v1=? WHERE click_id=?');
-    foreach($savedClicks as $row)$restore->execute([$row['public_conversation_id'],$row['public_conversation_binding_sha256_v1'],$row['click_id']]);
+    profile_promotion_capture_install_v1(db(),'clicks');$restore=db()->prepare('UPDATE agent_promotion_clicks_v1 SET native_context_json_v1=? WHERE click_id=?');
+    foreach($savedClicks as $row)$restore->execute([$row['native_context_json_v1'],$row['click_id']]);
 }
-$savedOpenings=db()->query('SELECT id,opened_recorded_at_utc_ms FROM agent_commerce_checkout_attempts_v800')->fetchAll(PDO::FETCH_ASSOC);
+$savedOpenings=db()->query('SELECT id,opened_at_utc_ms FROM agent_commerce_checkout_attempts_v800')->fetchAll(PDO::FETCH_ASSOC);
 try{
-    db()->exec('ALTER TABLE agent_commerce_checkout_attempts_v800 DROP COLUMN opened_recorded_at_utc_ms');$r=pft_read();
+    db()->exec('ALTER TABLE agent_commerce_checkout_attempts_v800 DROP COLUMN opened_at_utc_ms');$r=pft_read();
     pft_ok($r['groups']['checkouts']['coverage']==='unconfigured'&&pft_metric($r,'verified_checkout_openings')['coverage']==='unavailable'
         &&pft_metric($r,'verified_checkout_openings')['value']===null&&pft_metric($r,'verified_paid_orders')['value']===1,
         'missing link-availability clock is explicitly unconfigured and never guessed from checkout or payment time');
     pft_ok(!profile_promotion_capture_checkout_clock_v1(db()),'a pre-upgrade checkout read never creates the missing recorded clock');
 }finally{
-    profile_promotion_capture_install_v1(db(),'checkout');$restore=db()->prepare('UPDATE agent_commerce_checkout_attempts_v800 SET opened_recorded_at_utc_ms=? WHERE id=?');
-    foreach($savedOpenings as $row)$restore->execute([$row['opened_recorded_at_utc_ms'],$row['id']]);
+    profile_promotion_capture_install_v1(db(),'checkout');$restore=db()->prepare('UPDATE agent_commerce_checkout_attempts_v800 SET opened_at_utc_ms=? WHERE id=?');
+    foreach($savedOpenings as $row)$restore->execute([$row['opened_at_utc_ms'],$row['id']]);
 }
 foreach([['agent_commerce_products_v800','owner_user_id',992101],['user_media_assets','user_id',996001]] as [$table,$column,$id])pft_case(static function(PDO $pdo)use($table,$column,$id):void{
     $pdo->exec('UPDATE '.$table.' SET '.$column.'=4 WHERE id='.$id);
     pft_denied(fn()=>pft_read(),$table==='user_media_assets'?409:404,'currently reassigned publication source cannot expose historical details: '.$table);
 });
-$ownerReads=0;db()->beforeSql=static function(string $sql,PA3PDO $pdo)use(&$ownerReads):void{
-    if($sql==='SELECT * FROM users WHERE id=?'&&++$ownerReads===3){$pdo->beforeSql=null;$pdo->exec('UPDATE user_media_assets SET user_id=4 WHERE id=996001');}
+$ownerReadSql='SELECT * FROM users WHERE id=?'.(db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' LOCK IN SHARE MODE':'');
+$ownerReads=0;$lateSourceChanged=false;db()->beforeSql=static function(string $sql,PA3PDO $pdo)use(&$ownerReads,&$lateSourceChanged,$ownerReadSql):void{
+    if($sql===$ownerReadSql&&++$ownerReads===3){$pdo->beforeSql=null;$pdo->exec('UPDATE user_media_assets SET user_id=4 WHERE id=996001');$lateSourceChanged=true;}
 };
 pft_denied(fn()=>pft_read(),409,'source ownership revoked after the aggregate snapshot is withheld by the final current publication fence');db()->beforeSql=null;
-pft_ok(!$pdo->inTransaction()&&pft_read()['revision']===$baseline['revision'],'denied owned snapshot is rolled back and a fresh authorized read recovers');
-$ownerReads=0;db()->beforeSql=static function(string $sql,PA3PDO $pdo)use(&$ownerReads):void{
-    if($sql==='SELECT * FROM users WHERE id=?'&&++$ownerReads===3){$pdo->beforeSql=null;$pdo->exec('UPDATE user_media_assets SET user_id=4 WHERE id=996002');}
+pft_ok($lateSourceChanged&&$ownerReads===3&&!$pdo->inTransaction()&&pft_read()['revision']===$baseline['revision'],'the late mutation ran, the denied owned snapshot rolled back and a fresh authorized read recovers');
+$ownerReads=0;$lateOutputChanged=false;db()->beforeSql=static function(string $sql,PA3PDO $pdo)use(&$ownerReads,&$lateOutputChanged,$ownerReadSql):void{
+    if($sql===$ownerReadSql&&++$ownerReads===3){$pdo->beforeSql=null;$pdo->exec('UPDATE user_media_assets SET user_id=4 WHERE id=996002');$lateOutputChanged=true;}
 };
-try{$r=pft_read();pft_ok($r['revision']===$baseline['revision']&&$r['exact_creative']['availability']==='unavailable'&&$r['exact_creative']['marker']===null,
+try{$r=pft_read();pft_ok($lateOutputChanged&&$ownerReads===3&&$r['revision']===$baseline['revision']&&$r['exact_creative']['availability']==='unavailable'&&$r['exact_creative']['marker']===null,
     'late output-image reassignment removes the review action without rewriting the fixed-period facts');}
 finally{db()->beforeSql=null;db()->exec('UPDATE user_media_assets SET user_id=1 WHERE id=996002');}
+foreach([
+    'public thread owner'=>static fn(PDO $pdo)=>$pdo->exec('UPDATE profile_agent_conversations SET owner_user_id=4 WHERE id=991011'),
+    'immutable native session'=>static fn(PDO $pdo)=>$pdo->exec("UPDATE profile_visit_sessions SET session_key='changed-current-session' WHERE id=990011"),
+    'completed reply receipt'=>static fn(PDO $pdo)=>$pdo->exec("UPDATE agent_workflow_receipts SET result_json='{}' WHERE id=998011"),
+] as $label=>$mutate){
+    $ownerReads=0;$changed=false;db()->beforeSql=static function(string $sql,PA3PDO $pdo)use(&$ownerReads,&$changed,$ownerReadSql,$mutate):void{
+        if($sql===$ownerReadSql&&++$ownerReads===3){$pdo->beforeSql=null;$mutate($pdo);$changed=true;}
+    };
+    pft_denied(fn()=>pft_read(),409,'final current exchange fence withholds changed '.$label);
+    db()->beforeSql=null;
+    pft_ok($changed&&$ownerReads===3&&!db()->inTransaction()&&pft_read()['revision']===$baseline['revision'],
+        'the actual late '.$label.' mutation was rolled back without exposing the saved question');
+}
 
 // A genuine public admission writes the promotion key and canonical reply
 // receipt from the worker bootstrap, without loading the API context bridge.

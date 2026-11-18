@@ -484,6 +484,7 @@
       } catch { return null; }
     }
     const url = new URL(location.href);
+    if(url.searchParams.has('marketing_publication')||url.searchParams.has('marketing_period'))return null;
     const productId = url.searchParams.getAll('marketing_plan').length === 1 ? positive(url.searchParams.get('marketing_plan')) : 0;
     const conversationId = url.searchParams.getAll('conversation_id').length === 1 ? positive(url.searchParams.get('conversation_id')) : 0;
     const selector = url.searchParams.getAll('agent').length === 1 ? url.searchParams.get('agent') : null;

@@ -27,9 +27,8 @@ $partialSpeech=[
     'partial-assistance-research'=>['profile_call_research_pa3c','result_json'],
     'partial-profile-event-time'=>['profile_events','recorded_at_utc_ms'],
     'partial-profile-event-cutover'=>['profile_events','clock_legacy_token_v1'],
-    'partial-promotion-public-conversation'=>['agent_promotion_clicks_v1','public_conversation_id'],
-    'partial-promotion-public-binding'=>['agent_promotion_clicks_v1','public_conversation_binding_sha256_v1'],
-    'partial-checkout-open-time'=>['agent_commerce_checkout_attempts_v800','opened_recorded_at_utc_ms'],
+    'partial-promotion-native-context'=>['agent_promotion_clicks_v1','native_context_json_v1'],
+    'partial-checkout-open-time'=>['agent_commerce_checkout_attempts_v800','opened_at_utc_ms'],
 ];
 if (!isset($argv[1])) {
     $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
