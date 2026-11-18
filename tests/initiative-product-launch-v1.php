@@ -317,6 +317,40 @@ try {
         && profile_product_promotions_public_v1($pdo,$profile)===[],
         'repeated delivery is idempotent, never replays the provider, and never saves or publishes artwork');
 
+    // Imported historical drafts can fall outside the recent list even though
+    // ordinary creation still enforces its existing twelve-draft limit.
+    $draftRow=$pdo->prepare('SELECT draft_json,created_at FROM agent_commerce_marketing_drafts_v1 WHERE owner_user_id=1 AND product_id=? AND request_key=?');
+    $draftRow->execute([$productId,$draftId]);$storedDraft=$draftRow->fetch(PDO::FETCH_ASSOC);
+    $pdo->prepare('UPDATE agent_commerce_marketing_drafts_v1 SET created_at=? WHERE owner_user_id=1 AND product_id=? AND request_key=?')
+        ->execute(['2000-01-01 00:00:00',$productId,$draftId]);
+    $historicalKeys=[];
+    $insertHistorical=$pdo->prepare('INSERT INTO agent_commerce_marketing_drafts_v1(product_id,owner_user_id,request_key,draft_json) VALUES(?,1,?,?)');
+    for($i=201;$i<=213;$i++){
+        $key=sprintf('%064x',$i);$historicalKeys[]=$key;
+        $otherDraft=array_replace(json_decode($storedDraft['draft_json'],true,16,JSON_THROW_ON_ERROR),['draft_id'=>$key,'asset_id'=>$otherAsset]);
+        $insertHistorical->execute([$productId,$key,json_encode($otherDraft,JSON_THROW_ON_ERROR)]);
+    }
+    launch_check_v1(!isset(initiative_work_marketing_drafts_v1($pdo,1,$productId)[$draftId])
+        && initiative_product_launch_state_v1($pdo,1,$scope,$productId,$draftId,$creativeId)['draft_id']===$draftId,
+        'an exact historical draft remains readable beyond the recent list without a newer-draft fallback');
+    $pdo->prepare('UPDATE agent_commerce_marketing_drafts_v1 SET draft_json=? WHERE request_key=?')
+        ->execute(['{invalid sibling',$historicalKeys[0]]);
+    $draftSnapshot=$planSnapshot();
+    $exactDraft=initiative_work_marketing_draft_v1($pdo,1,$productId,$draftId);
+    launch_check_v1($exactDraft['asset_id']===$assetId && $exactDraft['draft_id']===$draftId
+        && initiative_product_launch_state_v1($pdo,1,$scope,$productId,$draftId,$creativeId)['stage']==='creative_ready'
+        && $planSnapshot()===$draftSnapshot,
+        'an unrelated malformed recent draft cannot block or mutate an exact historical launch read');
+    launch_reject_v1(fn()=>initiative_work_marketing_draft_v1($pdo,2,$productId,$draftId),'another owner cannot read an exact historical draft');
+    launch_reject_v1(fn()=>initiative_work_marketing_draft_v1($pdo,1,$productId+1,$draftId),'another product cannot reuse the exact draft identifier');
+    $pdo->prepare('UPDATE agent_commerce_marketing_drafts_v1 SET draft_json=? WHERE request_key=?')
+        ->execute([json_encode(array_replace($exactDraft,['product_id'=>$productId+1]),JSON_THROW_ON_ERROR),$draftId]);
+    launch_reject_v1(fn()=>initiative_work_marketing_draft_v1($pdo,1,$productId,$draftId),'a changed product inside the selected saved draft is rejected');
+    $pdo->prepare('UPDATE agent_commerce_marketing_drafts_v1 SET draft_json=?,created_at=? WHERE request_key=?')
+        ->execute([$storedDraft['draft_json'],$storedDraft['created_at'],$draftId]);
+    $deleteHistorical=$pdo->prepare('DELETE FROM agent_commerce_marketing_drafts_v1 WHERE request_key=?');
+    foreach($historicalKeys as $key)$deleteHistorical->execute([$key]);
+
     // Older than the normal 12-variant query, with other drafts and sources
     // available to make silent fallback detectable.
     $pdo->prepare('UPDATE agent_commerce_promotions_v1 SET created_at=?,updated_at=? WHERE id=?')

@@ -14,7 +14,7 @@ function vp3_catch_up_chat_request_v1(string $query): ?array
         'bring me up to speed','give me a quick catch-up','give me a quick catch up',
         'what are my priorities right now','what should be top of mind for me',"what's on my plate right now"=>'all',
         'catch me up on work','what needs attention in my office','what should i focus on right now'=>'office',
-        'catch me up on commerce','what needs attention in my store',
+        'catch me up on commerce','catch me up on product marketing','catch me up on my product marketing plans','what needs attention in my store',
         'what needs my attention in my store','what needs attention in my business'=>'commerce',
         default=>null,
     };
@@ -59,7 +59,7 @@ function vp3_catch_up_chat_result_v1(array $brief,string $window='current'): arr
     if($scopeNote!==''&&($items||$checked))$lines[]=$scopeNote;
     if($items){
         $periodCount=count(array_filter($items,static fn(array $item):bool=>str_starts_with((string)($item['id']??''),'profile:analytics:v1:')));
-        $productCount=count(array_filter($items,static fn(array $item):bool=>str_starts_with((string)($item['id']??''),'marketing:product-')));
+        $productCount=count(array_filter($items,static fn(array $item):bool=>str_starts_with((string)($item['id']??''),'marketing:product-plan:')||str_starts_with((string)($item['id']??''),'marketing:ft:v1:')));
         if($productCount>0){
             $lines[]=$productCount===count($items)?'Here are the current product marketing findings.':
                 ($productCount+$periodCount===count($items)?'Here are the completed periods and product marketing findings.':

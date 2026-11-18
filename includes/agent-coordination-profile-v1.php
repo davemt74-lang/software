@@ -36,7 +36,7 @@ function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $bindin
             throw new InvalidArgumentException('Invalid Profile source reference.');
     }
     $scope=vp3_coordination_profile_authority_v1($pdo,$scope,$binding);
-    $native=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>!str_starts_with($ref,'analytics:')));
+    $native=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>!str_starts_with($ref,'analytics:')&&!str_starts_with($ref,'ft:')));
     $periods=$refs===null?[null]:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'analytics:')));
     $periodItems=[];$periodCoverage='ready';
     if($periods){
@@ -59,6 +59,16 @@ function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $bindin
             }
         }
     }
+    $commerceRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'ft:')));
+    $commerce=['items'=>[],'coverage'=>'unconfigured'];
+    if($commerceRefs!==[]){
+        require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+        $commerce=vp3_coordination_product_marketing_sources_v1($pdo,$scope,$commerceRefs,$now,true);
+        $periodItems+=$commerce['items'];
+        // Keep optional empty follow-through separate from period availability.
+        if($commerce['items']||($commerceRefs!==null&&$commerceRefs!==[]))
+            $periodCoverage=$periods?vp3_product_marketing_coverage_v1([$periodCoverage,$commerce['coverage']]):$commerce['coverage'];
+    }
     // An explicit analytics selection never invokes public Profile discovery.
     if($native===[]){
         vp3_coordination_profile_authority_v1($pdo,$scope,$binding);
@@ -68,7 +78,7 @@ function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $bindin
     if($periodItems){
         $out['items']+=$periodItems;
         $out['coverage']=in_array($out['coverage'],['ready','unconfigured'],true)&&$periodCoverage==='ready'?'ready':'limited';
-    }elseif($refs!==null&&$periods&&$periodCoverage!=='ready'){
+    }elseif($refs!==null&&($periods||$commerceRefs)&&$periodCoverage!=='ready'){
         $out['coverage']=$out['items']?'limited':$periodCoverage;
     }
     // Unconfigured or empty optional period facts do not manufacture automatic
@@ -288,37 +298,21 @@ function vp3_coordination_profile_conversation_v1(PDO $pdo,array $scope,int $id,
     if(!$settled&&$presentationOwner==='')$presentationOwner=$attention['presentation_owner']??'profile_attention_pa4b';
     $historicalDelivery=$delivered;
     if($settled&&$presentationOwner==='')$delivered=false;
-    // Association is evidence from the accepted visitor turn and its saved
-    // receipt-bound reply. The native conversation keeps presentation ownership.
-    $related=[];$relatedCoverage='unconfigured';
-    require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
-    if(vp3_profile_analytics_tables_v1($pdo,['agent_product_launches_v1','agent_commerce_products_v800','agent_commerce_marketing_drafts_v1',
-        'agent_commerce_promotions_v1','agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1','user_media_assets'])){
-        try{
-            $association=vp3_product_marketing_conversation_associations_v1($pdo,$scope,$id,$now);
-            $relatedCoverage=$association['coverage'];$proofs=[];
-            foreach($association['items'] as $associationItem){
-                $link=vp3_profile_specialist_marketing_link_v1($associationItem['source']+[
-                    'product_id'=>$associationItem['product_id'],
-                    'publication_id'=>str_starts_with($associationItem['source']['ref'],'marketing:product-plan:')?null:$associationItem['publication_id']]);
-                if(!$link){$relatedCoverage='limited';continue;}
-                $related[$link['ref']]=$link;$proofs[]=$associationItem['revision'];
-                $quote=vp3_profile_specialist_text_v1($associationItem['excerpt']??'',150);
-                $product=vp3_profile_specialist_text_v1($associationItem['product_title']??'',80);
-                if($quote!==''&&count($report['key_findings'])<6)$report['key_findings'][]=
-                    vp3_profile_specialist_text_v1('Visitor message: “'.$quote.'” The saved Agent reply showed the promotion for '.$product.'.');
-            }
-            if($proofs)$semantic[]=['product_marketing_associations',$proofs,array_values($related)];
-        }catch(Throwable $error){
-            if(vp3_profile_analytics_retryable_v1($error)||$error->getCode()===403||($error instanceof PDOException&&$pdo->inTransaction()))throw $error;
-            if(!$error instanceof RuntimeException&&!$error instanceof DomainException)throw $error;
-            $relatedCoverage='unavailable';
-        }
+    require_once __DIR__.'/profile-commerce-followthrough-v1.php';
+    try{$related=vp3_profile_commerce_conversation_associations_v1($pdo,$scope,$id,$now);}
+    catch(Throwable $error){
+        if(vp3_profile_analytics_retryable_v1($error)||$error->getCode()===403)throw $error;
+        $related=['coverage'=>'unavailable','items'=>[]];
+    }
+    if($related['items']||$related['coverage']!=='unconfigured')$semantic[]=['related_product_marketing',$related];
+    foreach($related['items'] as $link){
+        if(count($report['key_findings'])>=6)break;
+        $report['key_findings'][]=vp3_profile_specialist_text_v1('A saved Agent reply showed the promotion. Visitor question: “'.$link['question'].'”');
     }
     return vp3_coordination_profile_item_v1('conversation',$id,$title,$statement,$settled?($conversation['status']==='resolved'?'resolved':'updated'):($needsOwner?'needs_attention':'open'),
         $settled?'activity':($needsOwner?'needs_owner':'open_conversation'),$needsOwner?'high':($settled?'low':'normal'),vp3_profile_specialist_href_v1('/profile-agent.php?tab=inbox&conversation='.$id),
         $semantic,$report,$attention['disposition']??'pending',$presentationOwner,$delivered)+['profile_historical_delivery'=>$historicalDelivery,
-            'related_product_marketing'=>array_values($related),'product_marketing_coverage'=>$relatedCoverage];
+            'related_product_marketing'=>$related['items'],'related_product_marketing_coverage'=>$related['coverage']];
 }
 
 function vp3_coordination_profile_call_v1(PDO $pdo,array $scope,int $id,DateTimeImmutable $now): ?array

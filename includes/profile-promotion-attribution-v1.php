@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
 require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/profile-promotion-native-click-v1.php';
+require_once __DIR__.'/profile-promotion-capture-v1.php';
 
 function profile_promotion_attribution_schema_v1(PDO $pdo): void
 {
@@ -126,19 +127,39 @@ function profile_promotion_attribution_wake_v1(PDO $pdo, string $publicationId):
         ->execute([gmdate('Y-m-d H:i:s',time()+86400),$publicationId]);
 }
 
-/** Native conversation proof is optional on older deployments and immutable once recorded. */
-function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, string $publicationId, string $placement, string $clickId,?array $nativeContext=null): bool
+/** One writer stores closed native proof; the older internal context call remains compatible. */
+function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, string $publicationId, string $placement, string $clickId,?array $nativeContext=null,int $publicConversationId=0): bool
 {
     if ($owner < 1 || !profile_promotion_attribution_id_v1($publicationId) || !profile_promotion_attribution_id_v1($clickId)
         || !preg_match('/\A[a-z][a-z0-9_]{0,31}\z/D',$placement) || !profile_promotion_attribution_ready_v1($pdo)) return false;
+    $native=$nativeContext!==null||$publicConversationId!==0;
+    $fullContext=$publicConversationId>0;
+    if($native&&($placement!=='profile_agent'||$nativeContext===null))return false;
+    if($native&&!$fullContext)$publicConversationId=profile_promotion_capture_integer_v1($nativeContext['public_conversation_id']??null)??0;
+    if($native&&($publicConversationId<1||($fullContext&&(int)($nativeContext['owner_user_id']??0)!==$owner)))return false;
+    if($native&&(!is_string($_COOKIE['sf_profile_visitor']??null)
+        ||!preg_match('/\A(?:[a-f0-9]{48}|[a-f0-9]{64})\z/D',$_COOKIE['sf_profile_visitor'])
+        ||!is_string($_COOKIE['sf_profile_conversation']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$_COOKIE['sf_profile_conversation'])))return false;
     require_once __DIR__.'/profile-product-promotion-v1.php';
     $legacy = !profile_promotion_attribution_publication_v1($pdo,$owner,$publicationId);
-    return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$owner,$publicationId,$placement,$clickId,$legacy,$nativeContext): bool {
+    return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$owner,$publicationId,$placement,$clickId,$legacy,$nativeContext,$native,$fullContext,$publicConversationId): bool {
         // A legacy adoption inserts an owner FK. Match the existing publication lock order.
         if ($legacy) {
             $user = $pdo->prepare('SELECT id FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
             $user->execute([$owner]);
             if (!$user->fetchColumn()) return false;
+        }
+        $ctx=null;
+        if($native){
+            vp3_profile_promotion_owner_current_v1($pdo,$owner);
+            $profile=profile_for_user($pdo,$owner,false);
+            if(!$profile)return false;
+            // Closed proof supplied by the signed-link wrapper is still checked
+            // against the current browser here. Internal callers cannot replay
+            // an old proof as authority for another newly accepted click.
+            $ctx=$fullContext?$nativeContext:profile_promotion_capture_native_context_v1($pdo,$profile,current_user(),$publicConversationId);
+            if($ctx===null)return false;
+            $ctx=vp3_profile_promotion_admission_current_v1($pdo,$ctx,$publicConversationId);
         }
         $find = $pdo->prepare("SELECT * FROM agent_commerce_promotions_v1 WHERE owner_user_id=? AND public_key=? AND status='published'"
             .agent_commerce_lock_pa2($pdo));
@@ -156,9 +177,21 @@ function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, str
         elseif ($publication['promotion_id'] !== $promotion['id'] || (int)$publication['product_id'] !== (int)$promotion['product_id']) return false;
         if(!$publication)return false;
         $nativeColumn=vp3_profile_promotion_native_click_ready_v1($pdo);
-        $encoded=$nativeContext===null?null:json_encode($nativeContext,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
-        if($nativeContext!==null&&!vp3_profile_promotion_native_click_proof_v1($pdo,
+        $proof=null;
+        if($native){
+            $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$publicConversationId,true);
+            $proof=profile_promotion_native_context_snapshot_v1(['click_id'=>$clickId,'publication_id'=>$publicationId,'placement'=>$placement],
+                $publication,$conversation,$ctx['conversation_authority']+['profile_agent_id'=>(int)$ctx['agent_id'],
+                    'profile_session_id'=>(int)$ctx['session_id']],$ctx['session'],(string)($ctx['accepted_visitor_auth_revision']??''));
+            if($proof===null||(!$fullContext&&$proof!=$nativeContext))return false;
+        }
+        $encoded=$proof===null?null:json_encode($proof,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
+        if($proof!==null&&!vp3_profile_promotion_native_click_proof_v1($pdo,
             ['click_id'=>$clickId,'publication_id'=>$publicationId,'placement'=>$placement,'native_context_json_v1'=>$encoded],$publication,true))return false;
+        $finish=static function(bool $accepted)use($pdo,$ctx,$publicConversationId):bool{
+            if($accepted&&$ctx!==null)vp3_profile_promotion_admission_current_v1($pdo,$ctx,$publicConversationId);
+            return $accepted;
+        };
 
         $find = $pdo->prepare('SELECT publication_id,placement'.($nativeColumn?',native_context_json_v1':'').' FROM agent_promotion_clicks_v1 WHERE click_id=?'.agent_commerce_lock_pa2($pdo));
         $find->execute([$clickId]);
@@ -166,17 +199,17 @@ function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, str
         if ($existing){
             if($existing['publication_id']!==$publicationId||$existing['placement']!==$placement)return false;
             // Never retrofit a native association onto a legacy accepted click.
-            if(($existing['native_context_json_v1']??null)===null)return true;
+            if(($existing['native_context_json_v1']??null)===null)return $finish(true);
             $stored=vp3_profile_promotion_native_click_decode_v1($existing['native_context_json_v1'],
                 $existing+['click_id'=>$clickId],$publication);
-            return $stored!==null&&$nativeContext!==null&&$stored==$nativeContext;
+            return $finish($stored!==null&&$proof!==null&&$stored==$proof);
         }
         $values=[$clickId,$publicationId,$placement,agent_commerce_time_pa2()];
         if($nativeColumn)$values[]=$encoded;
         $pdo->prepare('INSERT INTO agent_promotion_clicks_v1 (click_id,publication_id,placement,created_at'.($nativeColumn?',native_context_json_v1':'').') VALUES (?,?,?,?'.($nativeColumn?',?':'').')')
             ->execute($values);
         profile_promotion_attribution_wake_v1($pdo,$publicationId);
-        return true;
+        return $finish(true);
     });
 }
 

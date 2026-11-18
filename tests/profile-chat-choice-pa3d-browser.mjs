@@ -27,7 +27,7 @@ const assets=new Map(['profile-agent.js','profile.css','profile-calls-pa3c.js','
 const server=http.createServer((request,response)=>{
  const path=new URL(request.url,'http://localhost');
  if(assets.has(path.pathname)){response.writeHead(200,{'Content-Type':path.pathname.endsWith('.css')?'text/css':'text/javascript'});response.end(assets.get(path.pathname));return;}
- response.writeHead(200,{'Content-Type':'text/html'});
+ response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
  const preview=path.searchParams.has('preview'),speechEndpoint=path.searchParams.has('speech')?'/api/profile-speech-pa4a.php':undefined;
  const config={username:'fixture-owner',ownerName:'Dave',endpoint:'/api/profile-agent.php',conversationNamespace:namespace,profileToken:'FIXTURE_PROFILE_TOKEN',speechEndpoint,callEndpoint:'/api/profile-calls-pa3c.php'};
  response.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/profile.css"><link rel="stylesheet" href="/profile-calls-pa3c.css"><link rel="stylesheet" href="/profile-speech-pa4a.css"><style>#chatInput{display:none}</style><body class="profile-page">${preview?widgets.owner:widgets.visitor}<textarea id="chatInput">PRIVATE_OWNER_DRAFT</textarea><script>window.STONEFELLOW_PROFILE_AGENT=${JSON.stringify(config)};${launcher}</script><script src="/profile-calls-pa3c.js"></script><script src="/profile-agent.js"></script>`);

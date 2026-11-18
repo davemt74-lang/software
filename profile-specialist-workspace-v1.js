@@ -245,6 +245,13 @@
     const first=new Date(from),last=new Date(to-1),start=formatter.format(first),end=formatter.format(last);
     return start===end?start:typeof formatter.formatRange==='function'?formatter.formatRange(first,last):start+' – '+end;
   }
+  // Marketing publication inventory needs the same pure fixed-period validation
+  // even when the current account does not have Profile workspace access.
+  const fixedPeriodTools=Object.freeze({parseRef:analyticsRef,windowMatches:analyticsWindowMatches,
+    numberPoint:analyticsNumberPoint,moneyPoint:analyticsMoneyPoint,ledgerAmount:analyticsLedgerAmount,
+    calendarRange:analyticsCalendarRange,reasons:Object.freeze({...analyticsReasons})});
+  window.VP3FixedPeriodToolsV1=fixedPeriodTools;
+  if(document.currentScript?.hasAttribute('data-vp3-period-tools-only'))return;
   function normalizeSelection(value={}) {
     const tab=tabs.some(([key])=>key===value.tab)?value.tab:'overview';
     const publicConversationId=positive(value.publicConversationId)?value.publicConversationId:0;
@@ -1286,7 +1293,7 @@
     window.addEventListener('pagehide',cancelPendingAnalyticsDestination,{once:true});
     openInitialAnalyticsDestination();
   }
-  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination});
+  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination,periodTools:fixedPeriodTools});
   initializeAnalyticsDestination();
   window.dispatchEvent(new Event('vp3:profile-workspace-ready'));
 })();

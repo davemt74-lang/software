@@ -16,7 +16,16 @@ function native_reject_v1(callable $call,string $label):void
     native_check_v1($rejected&&native_rows_v1()===$before,$label);
 }
 function native_mutate_v1(callable $work):void
-{db()->beginTransaction();try{$work();}finally{if(db()->inTransaction())db()->rollBack();}}
+{
+    $session=$_SESSION;$cookies=$_COOKIE;
+    db()->beginTransaction();
+    try{$work();}finally{
+        if(db()->inTransaction())db()->rollBack();
+        // Each revoked-login scenario uses the real authentication boundary;
+        // its cleared browser login must not leak into the next fixture case.
+        $_SESSION=$session;$_COOKIE=$cookies;reset_current_user_cache();
+    }
+}
 
 try{
     $f=native_click_fixture_v1();$pdo=db();$key=$f['key'];
@@ -65,11 +74,19 @@ try{
         ['UPDATE user_agents SET owner_user_id=4 WHERE id=7','transferred public Agent'],
         ['UPDATE agent_commerce_products_v800 SET owner_user_id=4 WHERE id='.$f['product'],'transferred product'],
         ["UPDATE profile_visit_sessions SET session_key='changed'",'changed session binding'],
+    ] as [$sql,$label])native_mutate_v1(function()use($pdo,$sql,$label,$click,$publication){
+        $pdo->exec($sql);native_check_v1(vp3_profile_promotion_native_click_proof_v1($pdo,$click,$publication,true)===null,$label.' withholds current public association proof');
+    });
+    foreach([
         ["UPDATE users SET password_hash='changed' WHERE id=2",'changed visitor authentication'],
         ['UPDATE users SET is_active=0 WHERE id=2','inactive visitor'],
         ['INSERT INTO user_blocks (blocker_user_id,blocked_user_id) VALUES (1,2)','current owner block'],
-    ] as [$sql,$label])native_mutate_v1(function()use($pdo,$sql,$label,$click,$publication){
-        $pdo->exec($sql);native_check_v1(vp3_profile_promotion_native_click_proof_v1($pdo,$click,$publication,true)===null,$label.' withholds current public association proof');
+    ] as [$sql,$label])native_mutate_v1(function()use($pdo,$sql,$label,$click,$publication,$proof,$record,$key){
+        $pdo->exec($sql);
+        native_check_v1(vp3_profile_promotion_native_click_proof_v1($pdo,$click,$publication,true)===$proof,
+            $label.' preserves immutable historical association for the authorized private owner');
+        native_reject_v1(fn()=>vp3_profile_promotion_accept_click_v1($pdo,$record,$key,native_click_fixture_query_v1($key,11,4)),
+            $label.' still rejects newly accepted native clicks');
     });
     $before=serialize(native_rows_v1());$sessions=serialize($_SESSION);$cookies=serialize($_COOKIE);
     $pdo->beginTransaction();
@@ -81,7 +98,7 @@ try{
     native_check_v1($unavailable,'storage failure propagates as unavailable rather than an unproved or zero count');
     $late=false;
     $pdo->beforeSql=static function(string $sql,$connection)use(&$late):void{
-        if(str_starts_with($sql,'SELECT owner_user_id,profile_agent_id,profile_session_id,visitor_user_id,status FROM profile_agent_conversations')){
+        if(str_starts_with($sql,'SELECT id,owner_user_id,profile_agent_id,profile_session_id,visitor_user_id,status FROM profile_agent_conversations')){
             $connection->beforeSql=null;$connection->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'");$late=true;
         }
     };
@@ -109,7 +126,10 @@ try{
         try{
             native_check_v1(vp3_profile_promotion_native_click_proof_v1($pdo,$click,$publication)!==null,'ordinary historical proof establishes the caller repeatable-read snapshot');
             $other->exec("UPDATE users SET password_hash='revoked-after-snapshot' WHERE id=2");
-            native_check_v1(vp3_profile_promotion_native_click_proof_v1($pdo,$click,$publication,true)===null&&$pdo->inTransaction(),'current native proof sees committed visitor revocation beyond an older caller snapshot without ending its transaction');
+            native_check_v1(vp3_profile_promotion_native_click_proof_v1($pdo,$click,$publication,true)===$proof&&$pdo->inTransaction(),
+                'current historical proof survives a later visitor password change without ending the caller transaction');
+            native_reject_v1(fn()=>vp3_profile_promotion_accept_click_v1($pdo,$record,$key,native_click_fixture_query_v1($key,11,4)),
+                'new admission rejects visitor authentication changed beyond the caller repeatable-read snapshot');
         }finally{
             if($pdo->inTransaction())$pdo->rollBack();
             $other->exec("UPDATE users SET password_hash='visitor-a-password' WHERE id=2");

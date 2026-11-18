@@ -1,57 +1,61 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import vm from 'node:vm';
 import {startProfileWorkspaceServer} from './fixtures/profile-specialist-workspace-server.mjs';
-import {workspaceDocument} from './fixtures/profile-workspace-dom-v1.mjs';
 
-const server=await startProfileWorkspaceServer({marketing:true});
-let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;};
-try{
-  const login=await fetch(server.base+'/session'),session=await login.json(),cookie=login.headers.get('set-cookie').split(';')[0];
-  const headers={Cookie:cookie,'Content-Type':'application/json','X-VP3-Working-Attention':session.binding};
-  const selection={action:'marketing_publication',tool:'marketing',owner_key:'1',csrf_token:session.csrf,agent_id:7,conversation_id:11,
-    product_id:session.seed.marketing.product_ids[0],publication_id:session.seed.marketing.publications[0],period_ref:session.seed.marketing.ref};
-  const request=async changes=>{const response=await fetch(server.base+'/api/initiative-workbench-v1.php',{method:'POST',headers,body:JSON.stringify({...selection,...changes})});
-    return {status:response.status,body:await response.json()};};
-  const control=async action=>{const response=await fetch(server.base+'/fixture/control',{method:'POST',headers,body:JSON.stringify({action})});assert.equal(response.status,200,await response.text());};
-  const first=await request();assert.equal(first.status,200,JSON.stringify(first.body)+'\n'+server.logs());
-  const outcome=first.body.outcome;
-  check(outcome.publication_id===selection.publication_id&&outcome.period_ref===selection.period_ref,'real selector preserves immutable publication and fixed period');
-  check(outcome.original_scope.agent_id===7&&outcome.original_scope.conversation_id===11,'public analytics conversation is not original private Chat authority');
-  check(outcome.metrics.find(row=>row.key==='accepted_promotion_clicks').current.value===2,'real accepted click records are aggregated in the selected period');
-  check(outcome.metrics.find(row=>row.key==='verified_paid_orders').current.value===1&&outcome.money[0].current.value_minor==='2000','publication subset keeps exact verified payment proof');
-  check(first.body.resume.publication_id===selection.publication_id&&first.body.resume.creative_id===outcome.creative_id,'response carries the exact historical creative marker for explicit review');
-  check(!JSON.stringify(first.body).includes('review_token'),'read-only publication does not issue an approval or mutation token');
-  check((await (await fetch(server.base+'/session',{headers})).json()).has_review_key===false,'query-only request does not create a private workbench review key');
-  const document=workspaceDocument(),window={},context={window,document,location:{origin:server.base},URL,Date,Intl,atob,btoa};
-  vm.createContext(context);vm.runInContext(readFileSync(new URL('../product-marketing-report-v1.js',import.meta.url),'utf8'),context);
-  const options={chatUrl:'/chat.php',ownerId:1},host=document.createElement('section');
-  check(window.VP3ProductMarketingV1.renderOutcome(host,outcome,options)&&host.textContent.includes('USD 20.00'),'real response is accepted by the production renderer');
-  const seven=await request({period_ref:selection.period_ref.replace(':v1:1:',':v1:7:')});assert.equal(seven.status,200,JSON.stringify(seven.body));
-  check(seven.body.outcome.associations.items.length===1&&outcome.associations.items.length===0,'literal associated question appears only inside its selected completed period');
-  check(window.VP3ProductMarketingV1.renderOutcome(host,seven.body.outcome,options)&&host.querySelector('[data-product-marketing-exchange]')?.querySelector('a').href==='/profile-agent.php?tab=inbox&conversation=991002','real visitor excerpt links its exact public conversation');
-  const hubResponse=await fetch(server.base+'/api/agent-activity-hub-v1.php?agent_id=7&conversation_id=11&view=marketing',{headers}),hub=await hubResponse.json();
-  assert.equal(hubResponse.status,200,JSON.stringify(hub));
-  check(window.VP3ProductMarketingV1.reviewModel(hub.state.product_marketing,options),'real Hub exposes a complete separately validated Product Marketing review');
-  check(hub.state.product_marketing.plans.length===2&&hub.state.product_marketing.publications.length===2,'existing plans and publications appear without creating another plan');
-  check(hub.state.marketing?.coverage==='unconfigured'||hub.state.marketing?.coverage==='unavailable','unavailable Campaign plugin does not hide ordinary Product Marketing');
-  for(const [changes,status] of [[{product_id:992102},404],[{conversation_id:991002},403],[{publication_id:'A'.repeat(32)},422],
-    [{period_ref:selection.period_ref.replace(':1:',':2:')},422],[{period:7},422],[{confirmed:true},422],[{csrf_token:'bad'},419],[{owner_key:'2'},409]]){
-    const response=await request(changes);check(response.status===status&&!response.body.outcome,'invalid scope, tuple or mutation fields fail closed: '+JSON.stringify(changes));
-  }
-  await control('marketing_rotate');const historical=await request();assert.equal(historical.status,200,JSON.stringify(historical.body));
-  check(historical.body.outcome.publication_status==='historical'&&historical.body.outcome.publication_id===selection.publication_id,'current creative republication cannot replace the original selected publication');
-  check(historical.body.outcome.metrics.find(row=>row.key==='accepted_promotion_clicks').current.value===2,'historical publication retains its own fixed counts after rotation');
-  check(historical.body.outcome.actions.some(action=>action.kind==='chat'&&action.message_id===session.seed.marketing.native_message_id),'recorded native outcome stays a related exact message action');
-  await control('marketing_attribution_gap');const partial=await request();assert.equal(partial.status,200,JSON.stringify(partial.body));
-  const payments=partial.body.outcome.metrics.find(row=>row.key==='verified_paid_orders').current;
-  check(payments.value===null&&payments.coverage==='partial','missing expected attribution is partial rather than an invented zero');
-  check(window.VP3ProductMarketingV1.renderOutcome(host,partial.body.outcome,options)&&host.textContent.includes('Observed subset'),'real partial attribution payload remains reviewable and labeled');
-  await control('marketing_profile_revoke');const privateOnly=await request({period_ref:selection.period_ref.replace(':v1:1:',':v1:7:')});assert.equal(privateOnly.status,200,JSON.stringify(privateOnly.body));
-  check(privateOnly.body.outcome.associations.coverage==='unavailable'&&privateOnly.body.outcome.associations.items.length===0,'Profile permission loss withholds all visitor excerpts while retaining ordinary Commerce read access');
-  check(window.VP3ProductMarketingV1.renderOutcome(host,privateOnly.body.outcome,options)&&host.querySelector('[data-product-marketing-exchange]')===null,'fresh unavailable association removes already rendered visitor text');
-  await control('marketing_remove_product');const deleted=await request();check([404,409].includes(deleted.status)&&!deleted.body.outcome,'deleted owned product removes archived publication access');
-  await control('marketing_revoke');const revoked=await request();check(revoked.status===403&&!revoked.body.outcome,'current Chat permission revocation removes all publication evidence');
-  check(server.readWriteFailure()==='','all production report GETs and exact publication POST reads leave SQL and inference unchanged');
-  console.log('PRODUCT_MARKETING_PUBLICATION_HTTP=PASS ('+checks+' checks; real API/session/SQL, canonical DTO, historical rotation and query-only reads)');
-}finally{await server.close();}
+// Production Hub and canonical report endpoints; only their physical fixture storage is isolated.
+let checks=0;const check=(truth,label)=>{assert.ok(truth,label);checks++;};
+for(const agent of [7,0]){
+  const server=await startProfileWorkspaceServer({marketing:true,marketingAgent:agent});
+  try{
+    let session,cookie;
+    const login=async()=>{const response=await fetch(server.base+'/session');session=await response.json();cookie=response.headers.get('set-cookie')?.split(';')[0]||cookie;};
+    await login();const chat=agent===0?session.seed.system_chat:11,seed=session.seed.followthrough;
+    const headers=()=>({Cookie:cookie,'X-VP3-WORKING-ATTENTION':session.binding});
+    const get=async(path,options={})=>{const response=await fetch(server.base+path,{headers:headers(),...options});return {response,body:await response.json()};};
+    const hub=async(base='',changes={})=>get(base+'/api/agent-activity-hub-v1.php?'+new URLSearchParams({view:'marketing',agent_id:String(agent),conversation_id:String(chat),...changes}));
+    const control=async action=>{const result=await get('/fixture/control',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({action})});assert.equal(result.response.status,200,JSON.stringify(result.body));};
+    const before=(await get('/fixture/fingerprint')).body;
+    const read=await hub();check(read.response.status===200&&read.body.ok===true,'authorized original private Chat reads the Marketing Hub');
+    const state=read.body.state,summary=state.product_marketing;
+    check(summary.contract==='vp3.product-marketing-summary.v1'&&summary.coverage===state.coverage.product_marketing
+      &&['ready','limited'].includes(summary.coverage),'Hub reports honest canonical summary coverage');
+    check(state.marketing&&Array.isArray(state.marketing.campaigns),'existing Campaign review remains alongside Product Marketing');
+    check(summary.items.some(row=>row.ref==='marketing:product-plan:'+seed.ids.private_plan&&row.status==='listing_review'),'native private listing review is visible without creating another plan');
+    const publication=summary.items.find(row=>row.kind==='followthrough');check(Boolean(publication),'Hub exposes an exact completed publication period');
+    const canonical=(await get('/fixture/marketing-sources')).body;
+    for(const row of summary.items)check(canonical.items[row.ref]?.revision===row.revision&&canonical.items[row.ref]?.url===row.url,'Hub reuses the canonical source revision and original Chat destination');
+    const link=new URL(publication.url,server.base);check(link.searchParams.get('agent')===(agent===0?'system':String(agent))
+      &&link.searchParams.get('conversation_id')===String(chat)&&link.searchParams.get('marketing_followthrough')===publication.ref,'Hub source retains exact original private scope and fixed reference');
+    const report=await get('/api/marketing-followthrough-v1.php?'+new URLSearchParams({action:'report',chat_agent_id:String(agent),chat_conversation_id:String(chat),ref:publication.ref}));
+    check(report.response.status===200&&report.body.data.followthrough.ref===publication.ref,'canonical detail accepts the exact Hub source without resolving a different period');
+    check(report.body.data.followthrough.metrics.length===7&&report.body.data.followthrough.current_publication.availability==='ready','one detail contract retains all seven metrics and separately checked current state');
+    if(agent===7){
+      const profile=await get('/api/agent-activity-hub-v1.php?'+new URLSearchParams({view:'profile',agent_id:'7',conversation_id:String(chat)}));
+      const finding=profile.body.state?.profile_report?.findings?.find(row=>row.ref==='profile:conversation:'+seed.ids.public_conversation);
+      check(profile.response.status===200&&finding?.related_product_marketing_coverage==='ready'&&finding.related_product_marketing.length===1,'actual Profile report preserves its canonical receipt-associated marketing source');
+      const related=finding.related_product_marketing[0],target=new URL(related.url,server.base);
+      check(related.public_conversation_id===seed.ids.public_conversation&&target.searchParams.get('conversation_id')===String(chat)
+        &&target.searchParams.get('marketing_followthrough')===related.ref,'public conversation association retains its separate exact original private Chat route');
+      const relatedRead=await get('/api/marketing-followthrough-v1.php?'+new URLSearchParams({action:'report',chat_agent_id:'7',chat_conversation_id:String(chat),ref:related.ref}));
+      check(relatedRead.response.status===200&&relatedRead.body.data.followthrough.ref===related.ref
+        &&relatedRead.body.data.followthrough.exchanges.items.some(row=>row.turn_id===related.turn_id&&row.visitor_message_id===related.visitor_message_id
+          &&row.answer_message_id===related.answer_message_id),'related source opens the identical fixed selection and saved exchange receipt');
+    }
+    const nested=await hub('/nested/app');check(nested.response.status===200&&nested.body.state.product_marketing.items.every(row=>row.url.startsWith('/nested/app/chat.php?')),'Hub source links respect a subdirectory deployment');
+    check(JSON.stringify((await get('/fixture/fingerprint')).body)===JSON.stringify(before)&&server.readWriteFailure()==='','Hub and exact detail reads write no SQL and dispatch no provider');
+    const bad=await hub('',{conversation_id:agent===0?'11':'12'});check(bad.response.status===403&&!bad.body.state,'another Agent or private Chat cannot inherit the summary');
+    await control('revoke');const privateOnly=await hub();
+    check(privateOnly.response.status===200&&privateOnly.body.state.product_marketing.items.length>0
+      &&privateOnly.body.state.product_marketing.items.every(row=>row.kind==='plan'),'private plan summaries remain available without granting Profile period facts');
+    const forbidden=await get('/api/marketing-followthrough-v1.php?'+new URLSearchParams({action:'report',chat_agent_id:String(agent),chat_conversation_id:String(chat),ref:publication.ref}));
+    check(forbidden.response.status===403&&!forbidden.body.data,'private summary availability cannot grant the full Profile report');
+    await control('restore');await control('marketing_profile_revoke_after_read');const permissionRace=await hub();
+    check(permissionRace.response.status===403&&!permissionRace.body.state,'Profile revocation after source collection is caught by the final period-summary authority fence');
+    const afterRevocation=await hub();check(afterRevocation.response.status===200&&afterRevocation.body.state.product_marketing.items.every(row=>row.kind==='plan'),'next fresh read returns only still-authorized private plans after the late grant change');
+    await control('restore');await control('marketing_logout_after_read');const revoked=await hub();
+    check(revoked.response.status===403&&!revoked.body.state,'logout after source collection is caught by the actual Hub session/page-binding fence');
+    const loggedOut=await hub();check(loggedOut.response.status===401&&!loggedOut.body.state,'destroyed actual session cannot reread the Hub');
+    await login();const recovered=await hub();check(recovered.response.status===200,'a fresh authorized session can check the same canonical sources');
+    check(server.readWriteFailure()==='','final session fencing does not mutate report storage');
+  }catch(error){console.error(server.logs());throw error;}finally{await server.close();}
+}
+console.log('PRODUCT_MARKETING_PUBLICATION_HTTP=PASS ('+checks+' checks; production Hub, canonical detail, actual session and SQL)');

@@ -75,7 +75,7 @@ function vp3_agent_activity_coordination_v1(PDO $pdo, array $scope): array
         foreach (array_slice($row['sources'] ?? [], 0, 5) as $source) {
             $specialist = $source['specialist'] ?? '';
             $title = vp3_agent_activity_text_v1($source['title'] ?? '', 120);
-            if ($title === '' || !in_array($specialist, ['gmail','tasks','planning','research','media','canvas','curiosity','connected-sites','casual','transcripts','marketing','profile'], true)) continue;
+            if ($title === '' || !in_array($specialist, ['gmail','tasks','planning','research','media','canvas','curiosity','connected-sites','casual','transcripts','profile'], true)) continue;
             $href = $source['url'] ?? '';
             $entry = ['specialist'=>$specialist, 'title'=>$title, 'url'=>is_string($href) && strlen($href) <= 1900
                 && str_starts_with($href, '/') && !str_starts_with($href, '//') && !str_contains($href, '\\') ? $href : ''];
@@ -744,6 +744,40 @@ function vp3_agent_activity_marketing_v1(PDO $pdo, array $scope, DateTimeImmutab
     return ['items'=>$items, 'coverage'=>$snapshot['coverage']];
 }
 
+/** The Marketing Hub links the same exact sources used by briefs and follow-through. */
+function vp3_agent_activity_product_marketing_v1(PDO $pdo,array $scope,DateTimeImmutable $now): array
+{
+    $result=['contract'=>'vp3.product-marketing-summary.v1','coverage'=>'unconfigured','items'=>[]];
+    if($scope['conversation_id']<1)return $result;
+    require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+    $snapshot=vp3_coordination_product_marketing_sources_v1($pdo,$scope,null,$now);
+    $result['coverage']=in_array($snapshot['coverage']??null,['ready','limited','unavailable','unconfigured'],true)
+        ?$snapshot['coverage']:'unavailable';
+    if(!in_array($result['coverage'],['ready','limited'],true))return $result;
+    $periods=false;
+    foreach($snapshot['items']??[] as $item){
+        $kind=vp3_product_marketing_ref_kind_v1($item['ref']??null);
+        if($kind===null||!is_string($item['revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$item['revision'])){
+            $result['coverage']='limited';continue;
+        }
+        $expected=$kind==='plan'?vp3_product_marketing_plan_href_v1($scope['agent_id'],$scope['conversation_id'],(int)substr($item['ref'],23))
+            :vp3_profile_commerce_followthrough_href_v1($scope['agent_id'],$scope['conversation_id'],$item['ref']);
+        if(($item['url']??null)!==$expected){$result['coverage']='limited';continue;}
+        $row=['ref'=>$item['ref'],'revision'=>$item['revision'],'kind'=>$kind,'url'=>$expected];
+        foreach(['title'=>190,'summary'=>1200,'next_step'=>320,'status'=>40] as $key=>$limit)
+            $row[$key]=vp3_agent_activity_text_v1($item[$key]??'',$limit);
+        if($row['title']===''||$row['summary']===''){$result['coverage']='limited';continue;}
+        $result['items'][]=$row;$periods=$periods||$kind==='followthrough';
+        if(count($result['items'])>=18){if(count($snapshot['items'])>18)$result['coverage']='limited';break;}
+    }
+    // Native plan summaries remain readable without Profile permission. Any
+    // period facts must retain Profile authority through the final reread.
+    $own=!$pdo->inTransaction();if($own)$pdo->beginTransaction();
+    try{vp3_profile_analytics_authority_current_v1($pdo,$scope,$periods);if($own)$pdo->commit();}
+    catch(Throwable $error){if($own&&$pdo->inTransaction())$pdo->rollBack();throw $error;}
+    return $result;
+}
+
 function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $conversationId = 0, string $view = '',
     string $collection = '', ?int $cursor = null, int $listId = 0): array
 {
@@ -902,19 +936,12 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         } catch (Throwable $error) {
             $coordination['marketing'] = ['coverage'=>'unavailable','campaigns'=>[]];
         }
-        $productReview=['contract'=>'vp3.product-marketing-review.v1','coverage'=>'unconfigured',
-            'observed_at_utc_ms'=>(int)$now->format('Uv'),'plans'=>[],'publications'=>[],'sources'=>[]];
-        if($conversationId>0){
-            try{
-                require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
-                $productReview=vp3_product_marketing_review_v1($pdo,$fresh,$now);
-            }catch(Throwable $error){
-                if(in_array($error->getCode(),[403,404],true))throw $error;
-                $productReview['coverage']='unavailable';
-            }
+        try{$coordination['product_marketing']=vp3_agent_activity_product_marketing_v1($pdo,$fresh,$now);}
+        catch(Throwable $error){
+            if(in_array($error->getCode(),[403,404],true))throw $error;
+            $coordination['product_marketing']=['contract'=>'vp3.product-marketing-summary.v1','coverage'=>'unavailable','items'=>[]];
         }
-        $coordination['product_marketing']=$productReview;
-        $coverage['product_marketing']=$productReview['coverage'];
+        $coverage['product_marketing']=$coordination['product_marketing']['coverage'];
     }
     if ($view === '' || $mediaOnly) {
         try {

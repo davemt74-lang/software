@@ -61,7 +61,6 @@ require dirname(__DIR__).'/includes/profile-attention-pa4b.php';
 require dirname(__DIR__).'/includes/profile-event-projection-pa4b.php';
 require dirname(__DIR__).'/includes/profile-event-clock-v1.php';
 require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
-require_once dirname(__DIR__).'/includes/commerce-checkout-open-clock-v1.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
 require_once dirname(__DIR__).'/includes/agent-connection-youtube-playback-v1.php';
@@ -84,7 +83,7 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
 {
     initiative_product_launch_schema_v1($pdo??$GLOBALS['fixture']);
     profile_promotion_attribution_schema_v1($pdo??$GLOBALS['fixture']);
-    agent_commerce_checkout_open_clock_install_v1($pdo??$GLOBALS['fixture']);
+    profile_promotion_capture_install_v1($pdo??$GLOBALS['fixture'],'checkout');
     $GLOBALS['calls'][]=__FUNCTION__;
 }
 // Older Profile migrations are isolated dependencies in this page fixture. Keep
@@ -135,7 +134,7 @@ if($modern){
     if ($mode !== 'missing-coding-canvas') vp3_coding_canvas_schema_v1($fixture);
     initiative_product_launch_schema_v1($fixture);
     profile_promotion_attribution_schema_v1($fixture);
-    agent_commerce_checkout_open_clock_install_v1($fixture);
+    profile_promotion_capture_install_v1($fixture,'checkout');
     agent_connection_youtube_consent_schema_v1($fixture);
     agent_connection_youtube_quota_schema_v1($fixture);
     agent_connection_youtube_results_schema_v1($fixture);
@@ -209,7 +208,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check(vp3_ai_service_usage_ready_v1($fixture) && in_array('ai_usage_accounting_v032_ensure_schema',$calls,true), 'Upgrade skipped AI service usage storage');
     check(vp3_coding_canvas_ready_v1($fixture), 'Upgrade skipped private Coding Canvas storage');
     check(vp3_profile_event_clock_ready_v1($fixture), 'Upgrade skipped forward Profile event time activation');
-    check(vp3_profile_promotion_native_click_ready_v1($fixture)&&agent_commerce_checkout_open_clock_ready_v1($fixture), 'Upgrade skipped forward marketing evidence columns');
+    check(profile_promotion_capture_ready_v1($fixture), 'Upgrade skipped immutable promotion and checkout-open evidence');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');

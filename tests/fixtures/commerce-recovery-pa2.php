@@ -16,7 +16,15 @@ final class PA2CommerceStatement extends PDOStatement
 final class PA2CommercePDO extends PDO
 {
     public mixed $afterSql=null;
+    /** Optional failure seam after a real commit; ordinary fixture behavior is unchanged. */
+    public mixed $afterCommit=null;
     public string $failSql='';
+    public function commit(): bool
+    {
+        $ok=parent::commit();
+        if($this->afterCommit)($this->afterCommit)($this);
+        return $ok;
+    }
     public function sql(string $sql): string
     {
         if ($this->failSql!=='' && str_contains($sql,$this->failSql)) throw new PDOException('SECRET injected Commerce database diagnostic');

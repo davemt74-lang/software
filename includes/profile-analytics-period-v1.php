@@ -14,18 +14,11 @@ function vp3_profile_analytics_hash_v1(mixed $value): string
 {
     return hash('sha256',json_encode($value,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
 }
-/** Native durable receipts accept only exact positive integer identities. */
 function vp3_profile_analytics_receipt_id_v1(mixed $value): ?int
 {
     if(is_int($value))return $value>0?$value:null;
     if(!is_string($value)||!preg_match('/\A[1-9][0-9]{0,18}\z/D',$value))return null;
     $id=(int)$value;return $id>0&&(string)$id===$value?$id:null;
-}
-/** Public report identities additionally fit the browser's exact integer range. */
-function vp3_profile_analytics_id_v1(mixed $value): ?int
-{
-    $id=vp3_profile_analytics_receipt_id_v1($value);
-    return $id!==null&&$id<=9007199254740991?$id:null;
 }
 function vp3_profile_analytics_epoch_v1(mixed $value): ?int
 {
@@ -261,6 +254,36 @@ function vp3_profile_analytics_empty_cohorts_v1(string $coverage='unavailable',s
     $one=['eligible'=>null,'replied'=>null,'unanswered'=>null,'unverifiable'=>null,'coverage'=>$coverage,'reason'=>$reason];
     return ['current'=>$one,'previous'=>$one];
 }
+/** Exact completed Agent answer receipt. $turn must already pass turn_valid_v1. */
+function vp3_profile_analytics_agent_reply_proof_v1(int $owner,array $message,?array $turn,array $runMap,array $actionMap,array $receiptMap): ?array
+{
+    $mid=(int)($message['id']??0);$cid=(int)($message['conversation_id']??0);
+    $context=vp3_profile_analytics_json_v1($message['context_json']??null);$marker=$context['profile_handoff']??null;
+    $stamp=vp3_profile_analytics_utc_v1($message['created_at']??null);
+    if(!$turn||!is_array($marker)||($marker['contract']??null)!=='vp3.profile-handoff.v1'
+        ||($marker['turn_id']??null)!==(int)$turn['id']||($marker['visitor_message_id']??null)!==(int)$turn['visitor_message_id']
+        ||(int)$turn['owner_user_id']!==$owner||(int)$turn['conversation_id']!==$cid
+        ||($message['sender_type']??null)!=='agent'||($message['sender_user_id']??null)!==null
+        ||$stamp===null||!isset($turn['_at'])||$stamp<$turn['_at']||$mid<=(int)$turn['visitor_message_id'])return null;
+    $run=$runMap[(int)$turn['run_id']]??null;$action=$actionMap[(int)$turn['action_id']]??null;
+    $hash=hash('sha256',$owner.'|'.$turn['run_id'].'|'.$turn['action_id'].'|profile-turn:'.$turn['id'].':reply');
+    $found=$receiptMap[$hash]??[];$receipt=count($found)===1?$found[0]:null;
+    $result=$receipt?vp3_profile_analytics_json_v1($receipt['result_json']??null):null;
+    if(!$run||!$action||!$receipt||$receipt['status']!=='completed'||(int)$receipt['owner_user_id']!==$owner
+        ||(int)$receipt['run_id']!==(int)$turn['run_id']||(int)$receipt['action_id']!==(int)$turn['action_id']
+        ||(int)$action['run_id']!==(int)$run['id']||$run['source_key']!=='profile-turn:'.$turn['id']
+        ||$run['workflow_type']!=='profile_visitor_reply'||(int)$run['agent_id']!==(int)$turn['profile_agent_id']
+        ||$action['action_key']!==$run['source_key']||!is_array($result)
+        // Native durable receipts normalize scalar IDs to canonical strings;
+        // older integer JSON represents the same exact positive identity.
+        ||vp3_profile_analytics_receipt_id_v1($result['turn_id']??null)!==(int)$turn['id']
+        ||vp3_profile_analytics_receipt_id_v1($result['conversation_id']??null)!==$cid
+        ||vp3_profile_analytics_receipt_id_v1($result['visitor_message_id']??null)!==(int)$turn['visitor_message_id']
+        ||vp3_profile_analytics_receipt_id_v1($result['answer_message_id']??null)!==$mid)return null;
+    return ['receipt_id'=>(int)$receipt['id'],'at'=>$stamp,'public_conversation_id'=>$cid,'turn_id'=>(int)$turn['id'],
+        'visitor_message_id'=>(int)$turn['visitor_message_id'],'answer_message_id'=>$mid];
+}
+
 function vp3_profile_analytics_conversations_v1(PDO $pdo,int $owner,array $window,array $history): array
 {
     $keys=['accepted_visitor_turns','active_conversations','new_conversations','owner_takeovers','owner_reply_messages','agent_reply_messages','median_first_reply_seconds'];
@@ -315,30 +338,12 @@ function vp3_profile_analytics_conversations_v1(PDO $pdo,int $owner,array $windo
             continue;
         }
         $context=vp3_profile_analytics_json_v1($message['context_json']??null);$marker=$context['profile_handoff']??null;$turn=$valid[(int)($marker['turn_id']??0)]??null;
-        $stamp=vp3_profile_analytics_utc_v1($message['created_at']??null);
-        $proof=$turn&&is_array($marker)&&($marker['contract']??null)==='vp3.profile-handoff.v1'
-            &&($marker['visitor_message_id']??null)===(int)$turn['visitor_message_id']&&(int)$turn['conversation_id']===$cid
-            &&$message['sender_user_id']===null&&$stamp!==null&&$stamp>=$turn['_at']&&$mid>(int)$turn['visitor_message_id'];
-        $receipt=null;
-        if($proof){
-            $run=$runMap[(int)$turn['run_id']]??null;$action=$actionMap[(int)$turn['action_id']]??null;
-            $hash=hash('sha256',$owner.'|'.$turn['run_id'].'|'.$turn['action_id'].'|profile-turn:'.$turn['id'].':reply');
-            $found=$receiptMap[$hash]??[];$receipt=count($found)===1?$found[0]:null;$result=$receipt?vp3_profile_analytics_json_v1($receipt['result_json']??null):null;
-            $proof=$run&&$action&&$receipt&&$receipt['status']==='completed'&&(int)$receipt['run_id']===(int)$turn['run_id']
-                &&(int)$receipt['action_id']===(int)$turn['action_id']&&(int)$action['run_id']===(int)$run['id']
-                &&$run['source_key']==='profile-turn:'.$turn['id']&&$run['workflow_type']==='profile_visitor_reply'
-                &&(int)$run['agent_id']===(int)$turn['profile_agent_id']&&$action['action_key']===$run['source_key']
-                // Canonical durable receipts normalize scalar IDs to strings;
-                // older integer JSON is equivalent only when exact and positive.
-                &&is_array($result)&&vp3_profile_analytics_receipt_id_v1($result['turn_id']??null)===(int)$turn['id']
-                &&vp3_profile_analytics_receipt_id_v1($result['conversation_id']??null)===$cid
-                &&vp3_profile_analytics_receipt_id_v1($result['visitor_message_id']??null)===(int)$turn['visitor_message_id']
-                &&vp3_profile_analytics_receipt_id_v1($result['answer_message_id']??null)===$mid;
-        }
+        $proof=vp3_profile_analytics_agent_reply_proof_v1($owner,$message,$turn,$runMap,$actionMap,$receiptMap);
+        $stamp=$proof['at']??null;
         if(!$proof){$unverified[$cid][]=$mid;$gaps[$key]=true;continue;}
         $replyIds['agent'][$mid]=true;$replies[$cid][]=['id'=>$mid,'at'=>$stamp,'type'=>'agent'];
         $side=vp3_profile_analytics_window_key_v1($stamp,$window);
-        if($side!==null){$numbers[$side][$key]++;$out['evidence'][]=['agent_reply',$mid,(int)$turn['id'],(int)$receipt['id'],$stamp];}
+        if($side!==null){$numbers[$side][$key]++;$out['evidence'][]=['agent_reply',$mid,(int)$turn['id'],$proof['receipt_id'],$stamp];}
     }
     $cohorts=[];$delays=['current'=>[],'previous'=>[]];
     foreach(['current','previous'] as $side)$cohorts[$side]=['eligible'=>0,'replied'=>0,'unanswered'=>0,'unverifiable'=>0,'coverage'=>'complete','reason'=>'complete'];
@@ -534,8 +539,21 @@ function vp3_profile_analytics_attempt_v1(array $attempt,array $order,string $am
     return false;
 }
 
-function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,array $history,?array $orderIds=null): array
+function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,array $history,?array $exactOrderIds=null,array $orderNotBefore=[]): array
 {
+    $selection=null;
+    if($exactOrderIds!==null){
+        if(!array_is_list($exactOrderIds))throw new InvalidArgumentException('Exact order selection must be a list.');
+        $selection=[];foreach($exactOrderIds as $id){
+            if(!is_int($id)||$id<1||isset($selection[$id]))throw new InvalidArgumentException('Choose distinct exact positive order IDs.');
+            $selection[$id]=true;
+        }
+    }
+    // Only a caller with independently verified immutable creation clocks may
+    // add this constraint. Legacy owner-wide order timestamps remain unknown.
+    foreach($orderNotBefore as $id=>$stamp)
+        if(!is_int($id)||!isset($selection[$id])||!is_int($stamp)||vp3_profile_analytics_epoch_v1($stamp)!==$stamp)
+            throw new InvalidArgumentException('Choose a verified creation clock for each selected order.');
     $keys=['verified_paid_orders','verified_refunded_orders'];
     $out=['points'=>vp3_profile_analytics_empty_points_v1($keys),'coverage'=>'unconfigured','reason'=>'storage_unconfigured','evidence'=>[],'money'=>[]];
     $tables=['agent_commerce_orders_v800','agent_commerce_order_items_v800','agent_commerce_products_v800','agent_commerce_provider_connections_v800',
@@ -545,14 +563,13 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
     // invented "commerce.access" permission. Every contributing object still
     // needs its exact current owned order/product/merchant lineage below.
     $orders=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM agent_commerce_orders_v800 WHERE owner_user_id=? ORDER BY id',[$owner],true);
-    // An explicit empty publication subset never expands into all owner orders.
-    // Keep the full receipt identity inventory below, so a duplicated provider
-    // receipt cannot be made unique merely by filtering to one publication.
-    if($orderIds!==null){
-        foreach($orderIds as $id)if(!is_int($id)||$id<1)throw new RuntimeException('Invalid exact order subset.',422);
-        $wanted=array_fill_keys($orderIds,true);$orders=array_values(array_filter($orders,static fn(array $row):bool=>isset($wanted[(int)$row['id']])));
-        if(count($orders)!==count($wanted))throw new RuntimeException('An attributed order is unavailable.',409);
+    $selectionMissing=false;
+    if($selection!==null){
+        $orders=array_values(array_filter($orders,static fn(array $row):bool=>isset($selection[(int)$row['id']])));
+        $selectionMissing=count($orders)!==count($selection);
     }
+    // Keep owner-wide receipt identity maps below: a duplicate external ID on
+    // another order cannot be hidden by selecting a narrower publication.
     $items=vp3_profile_analytics_rows_v1($pdo,'SELECT i.* FROM agent_commerce_order_items_v800 i JOIN agent_commerce_orders_v800 o ON o.id=i.order_id WHERE o.owner_user_id=? ORDER BY i.id',[$owner],true);
     $products=vp3_profile_analytics_rows_v1($pdo,'SELECT id,owner_user_id FROM agent_commerce_products_v800 WHERE owner_user_id=? ORDER BY id',[$owner],true);
     $attempts=vp3_profile_analytics_rows_v1($pdo,'SELECT a.* FROM agent_commerce_checkout_attempts_v800 a JOIN agent_commerce_orders_v800 o ON o.id=a.order_id WHERE o.owner_user_id=? ORDER BY a.id',[$owner],true);
@@ -564,7 +581,7 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
     foreach($attempts as $row)$attemptMap[(int)$row['id']]=$row;
     foreach($payments as $row){$paymentMap[(int)$row['id']]=$row;$paymentIdentity[$row['provider'].'|'.$row['external_payment_id']]=($paymentIdentity[$row['provider'].'|'.$row['external_payment_id']]??0)+1;}
     foreach($refunds as $row)$refundIdentity[$row['provider'].'|'.$row['external_refund_id']]=($refundIdentity[$row['provider'].'|'.$row['external_refund_id']]??0)+1;
-    $gap=false;$paidGap=false;$refundGap=false;$invalidOrders=[];$orderPayments=[];$bucket=[];$currencySet=[];
+    $gap=$selectionMissing;$paidGap=false;$refundGap=false;$invalidOrders=[];$orderPayments=[];$bucket=[];$currencySet=[];
     // Reconcile against all recorded completions, including those after the
     // selected cutoff. Otherwise a missing earlier ledger row can look like a
     // verified zero, or a valid later completion can invalidate an old period.
@@ -584,7 +601,7 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
         $meta=vp3_profile_analytics_json_v1($order['metadata_json']??null);
         if(($meta['source']??null)!=='profile_commerce_v900'){
             // Legacy post-creation enrichment is not frozen Profile attribution.
-            if(in_array($meta['profile_conversion_source']??null,['public_profile_booking','profile_commerce_v900'],true))$gap=true;
+            if($selection!==null||in_array($meta['profile_conversion_source']??null,['public_profile_booking','profile_commerce_v900'],true))$gap=true;
             continue;
         }
         $oid=(int)$order['id'];$currency=strtoupper((string)$order['currency']);$valid=preg_match('/\A[A-Z]{3}\z/D',$currency)===1;
@@ -606,6 +623,7 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
         if($stamp!==null&&$stamp>=$window['to_utc_ms'])continue;
         $amount=vp3_profile_analytics_uint_v1($payment['amount_cents']??null);$attempt=$attemptMap[(int)($payment['checkout_attempt_id']??0)]??null;
         $valid=$order['_valid']&&$stamp!==null&&$amount!==null&&$amount!=='0'&&$payment['external_payment_id']!==''
+            &&(!isset($orderNotBefore[$oid])||$stamp>=$orderNotBefore[$oid])
             &&$paymentIdentity[$payment['provider'].'|'.$payment['external_payment_id']]===1&&$attempt
             &&(int)$attempt['order_id']===$oid&&(int)$attempt['connection_id']===(int)$order['connection_id']
             &&$attempt['status']==='completed'&&$attempt['provider']===$payment['provider']&&$payment['provider']===$order['provider_snapshot']

@@ -105,9 +105,9 @@ function vp3_coordination_source_ref_valid_v1(string $ref): bool
         require_once __DIR__.'/agent-profile-specialist-v1.php';
         return vp3_profile_specialist_ref_kind_v1($ref)!==null;
     }
-    if($family==='marketing'&&str_starts_with($native,'product-')){
-        require_once __DIR__.'/profile-product-marketing-ref-v1.php';
-        return vp3_product_marketing_ref_parse_v1($ref)!==null;
+    if($family==='marketing'&&!str_starts_with($native,'campaign-')){
+        require_once __DIR__.'/agent-product-marketing-summary-v1.php';
+        return vp3_product_marketing_ref_kind_v1($ref)!==null;
     }
     return true;
 }
