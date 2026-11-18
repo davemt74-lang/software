@@ -64,6 +64,7 @@ function vp3_image_admission_route_v1(PDO $pdo,array $user): array
 function vp3_image_schema_v1(PDO $pdo,bool $workbench=false): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_image_generations_v1 (generation_id CHAR(36) NOT NULL PRIMARY KEY,owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,conversation_id BIGINT NOT NULL,user_message_id BIGINT NULL,request_hash CHAR(64) NOT NULL,run_id BIGINT NOT NULL UNIQUE,config_json TEXT NOT NULL,provider_started_at VARCHAR(32) NOT NULL DEFAULT '',asset_id BIGINT NOT NULL DEFAULT 0,usage_json TEXT NULL,error_code VARCHAR(60) NOT NULL DEFAULT '',created_at VARCHAR(32) NOT NULL,UNIQUE(owner_user_id,user_message_id))");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS agent_image_generation_assets_v1 (generation_id CHAR(36) NOT NULL,owner_user_id BIGINT NOT NULL,sequence_no INTEGER NOT NULL,asset_id BIGINT NOT NULL,PRIMARY KEY(generation_id,sequence_no),UNIQUE(owner_user_id,asset_id))");
     if($workbench&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
         $nullable=$pdo->query("SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()
             AND TABLE_NAME='agent_image_generations_v1' AND COLUMN_NAME='user_message_id'")->fetchColumn();
@@ -100,8 +101,10 @@ function vp3_image_workspace_owner_v1(PDO $pdo,array $user): array
 function vp3_image_text_plan_v1(array $plan): array
 {
     $prompt=$plan['prompt']??'';$title=$plan['title']??'';$size=$plan['size']??'1024x1024';$quality=$plan['quality']??'medium';$background=$plan['background']??'opaque';
+    $count=vp3_image_count_v1($plan);
     if(!is_string($prompt)||mb_strlen(trim($prompt))<3||mb_strlen($prompt)>4000||!is_string($title)||mb_strlen($title)>190||!in_array($size,['1024x1024','1536x1024','1024x1536'],true)||!in_array($quality,['low','medium','high'],true)||!in_array($background,['opaque','transparent'],true))throw new InvalidArgumentException('Use a prompt of 3 to 4,000 characters, an optional title of up to 190 characters, and one of the available image settings.');
-    return ['prompt'=>trim($prompt),'title'=>trim($title),'size'=>$size,'quality'=>$quality,'background'=>$background];
+    return ['prompt'=>trim($prompt),'title'=>trim($title),'size'=>$size,'quality'=>$quality,'background'=>$background,
+        ...(array_key_exists('count',$plan)?['count'=>$count]:[])];
 }
 function vp3_image_lock_conversation_v1(PDO $pdo,int $uid,int $cid,int $aid): void
 {
@@ -126,7 +129,8 @@ function vp3_image_run_v1(PDO $pdo,array $user,array $row,bool $lock=false): arr
 function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
 {
     vp3_image_authority_v1($pdo,$user,$row);$run=vp3_image_run_v1($pdo,$user,$row);
-    $config=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);$status=match($run['status']){'approved','queued'=>'queued','executing'=>'generating',default=>$run['status']};
+    $config=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);$count=vp3_image_count_v1($config);
+    $status=match($run['status']){'approved','queued'=>'queued','executing'=>'generating',default=>$run['status']};
     $activeLeaseExpiresAt=null;$leaseExpired=false;
     if($run['status']==='executing'&&(int)($run['current_action_id']??0)>0&&!empty($run['lease_token'])){
         $expires=strtotime((string)($run['lease_expires_at']??'').' UTC');
@@ -136,7 +140,20 @@ function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
             elseif($expires<$now)$leaseExpired=true;
         }
     }
-    $asset=null;if($status==='completed'&&(int)$row['asset_id']>0){$saved=media_studio_asset((int)$row['asset_id'],$user);if($saved)$asset=media_studio_asset_payload($saved);if(!$asset||!$asset['available'])$status='file_unavailable';}
+    $assets=[];$asset=null;
+    if($status==='completed'){
+        $ids=[];
+        if(table_exists('agent_image_generation_assets_v1')){
+            $q=$pdo->prepare('SELECT asset_id FROM agent_image_generation_assets_v1 WHERE generation_id=? AND owner_user_id=? ORDER BY sequence_no');
+            $q->execute([$row['generation_id'],(int)$user['id']]);$ids=array_map('intval',$q->fetchAll(PDO::FETCH_COLUMN));
+        }
+        if(!$ids&&(int)$row['asset_id']>0)$ids=[(int)$row['asset_id']];
+        foreach($ids as $id){$saved=media_studio_asset($id,$user);if($saved)$assets[]=media_studio_asset_payload($saved);}
+        $asset=$assets[0]??null;
+        if(count($assets)!==$count||count(array_filter($assets,static fn(array $item):bool=>$item['available']))!==$count)$status='file_unavailable';
+    }
+    $referenceId=(int)($config['reference']['asset_id']??0);$referenceAsset=null;
+    if($referenceId>0){$saved=media_studio_asset($referenceId,$user);if($saved&&$saved['media_type']==='photo')$referenceAsset=media_studio_asset_payload($saved);}
     $messages=[
         'provider_access_denied'=>'OpenAI denied this image request. Check image-model access for the selected API key.',
         'provider_rate_limited'=>'OpenAI rate-limited the image request. It was not automatically retried.',
@@ -151,6 +168,7 @@ function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
         'quota_preflight_failed'=>'The AI quota check did not complete. No image request was sent to OpenAI.',
         'image_storage_unavailable'=>'The generated image could not be saved in private storage. The request was not automatically retried.',
         'image_source_changed'=>'The selected screen capture changed or was removed. No edited image was saved.',
+        'image_reference_changed'=>'The attached base image changed or was removed. No edited images were saved.',
         'marketing_source_changed'=>'The reviewed marketing variant or product photo changed. No image was saved.',
         'canvas_icon_source_changed'=>'The private Canvas or its icon changed before this image finished.',
     ];
@@ -160,7 +178,10 @@ function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
             ?'The Cloud worker stopped before confirming the image. OpenAI may have processed the request. It was not automatically retried.'
             :'The Cloud worker stopped before sending the image request to OpenAI.';
     }
-    return ['id'=>$row['generation_id'],'title'=>$config['title'],'prompt'=>$config['prompt'],'model'=>$config['model'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'status'=>$status,'message'=>$message,'asset'=>$asset,'job_id'=>(int)$row['run_id'],'provider_started'=>$row['provider_started_at']!=='','created_at'=>$row['created_at'],'active_lease_expires_at'=>$activeLeaseExpiresAt,
+    $providerStarted=$row['provider_started_at']!==''?strtotime($row['provider_started_at'].' UTC'):false;
+    return ['id'=>$row['generation_id'],'title'=>$config['title'],'prompt'=>$config['prompt'],'model'=>$config['model'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'status'=>$status,'message'=>$message,'asset'=>$asset,'assets'=>$assets,'count'=>$count,
+        'completed_count'=>count(array_filter($assets,static fn(array $item):bool=>$item['available'])),'reference_asset_id'=>$referenceId,'reference_asset'=>$referenceAsset,
+        'job_id'=>(int)$row['run_id'],'provider_started'=>$row['provider_started_at']!=='','provider_started_at'=>$providerStarted!==false?gmdate('c',$providerStarted):null,'created_at'=>$row['created_at'],'active_lease_expires_at'=>$activeLeaseExpiresAt,
         ...($leaseExpired?['lease_expired'=>true]:[]),...(isset($config['mode'])?['mode'=>$config['mode']]:[])];
 }
 
@@ -170,8 +191,18 @@ function vp3_image_queue_v1(PDO $pdo,array $user,array $principal,array $plan,ar
     $user=vp3_image_scope_v1($pdo,$user,$principal,$context);$uid=(int)$user['id'];$cid=(int)$context['conversation_id'];$aid=($principal['kind']??'')==='user_agent'?(int)$principal['agent_id']:0;$turn=(int)($context['chat_user_message_id']??0);
     vp3_image_queue_ready_v1($pdo,$user,false);
     $q=$pdo->prepare("SELECT id FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");$q->execute([$turn,$cid,$uid]);if(!$q->fetchColumn())throw new RuntimeException('The current user turn could not be verified.',403);
-    $config=['prompt'=>$plan['prompt'],'title'=>mb_substr($plan['title']?:$plan['prompt'],0,190),'size'=>$plan['size'],'quality'=>$plan['quality'],'background'=>$plan['background']];
-    return vp3_image_admit_v1($pdo,$user,$cid,$aid,$turn,hash('sha256','image:'.$uid.':'.$turn),static fn(string $model):array=>[...$config,'model'=>$model]);
+    $plan=vp3_image_text_plan_v1($plan);
+    $config=['prompt'=>$plan['prompt'],'title'=>mb_substr($plan['title']?:$plan['prompt'],0,190),'size'=>$plan['size'],'quality'=>$plan['quality'],'background'=>$plan['background'],'count'=>vp3_image_count_v1($plan)];
+    $referenceId=array_key_exists('image_reference_asset_id',$context)?$context['image_reference_asset_id']:0;
+    if(!is_int($referenceId)||$referenceId<0)throw new InvalidArgumentException('Choose a valid private base image.');
+    if($referenceId>0)require_once __DIR__.'/agent-image-reference-v1.php';
+    return vp3_image_admit_v1($pdo,$user,$cid,$aid,$turn,hash('sha256','image:'.$uid.':'.$turn),
+        static function(string $model)use($pdo,$user,$principal,$context,$aid,$referenceId,$config):array{
+            if($referenceId===0)return [...$config,'model'=>$model];
+            vp3_image_reference_cloud_v1($pdo,$user,$aid);
+            $source=vp3_image_reference_validate_v1($pdo,$user,$principal,$context,$referenceId);
+            return [...$config,'model'=>$model,'mode'=>'chat_reference','reference'=>$source];
+        });
 }
 
 function vp3_image_queue_ready_v1(PDO $pdo,array $user,bool $checkProvider=true): void
@@ -224,6 +255,7 @@ function vp3_image_admit_v1(PDO $pdo,array $user,int $cid,int $aid,?int $turn,st
             $config=$configure($saved['model']);
             if(isset($saved['provider_route']))$config['provider_route']=$saved['provider_route'];
             if(isset($saved['funding_source']))$config['funding_source']=$saved['funding_source'];
+            if(!isset($saved['count'])&&($config['count']??1)===1)unset($config['count']);
         }else{
             $route=vp3_image_admission_route_v1($pdo,$user);
             $config=$configure($route['target']['model']);
@@ -254,13 +286,13 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
 {
     require_once __DIR__.'/agent-worker-cloud-v1910.php';
     $run=agent_worker_cloud_active_row_v1910($pdo,$user,$claim);if(!$run||$run['action_capability_key']!=='images.generate'||$run['source_kind']!=='image_generation')throw new RuntimeException('Image execution lease is unavailable.',409);
-    $row=vp3_image_row_v1($pdo,$user,$run['source_key']);$bound=vp3_image_run_v1($pdo,$user,$row);if((int)$bound['id']!==(int)$run['id']||$run['action_key']!==$row['generation_id'])throw new RuntimeException('Image action binding changed.',409);$reservation=0;$file='';$createdFile=false;$committed=false;$sent=false;
-    $edit=$row['user_message_id']===null&&!vp3_image_workspace_row_v1($row);$sourceImage=null;$marketing=false;$icon=false;
+    $row=vp3_image_row_v1($pdo,$user,$run['source_key']);$bound=vp3_image_run_v1($pdo,$user,$row);if((int)$bound['id']!==(int)$run['id']||$run['action_key']!==$row['generation_id'])throw new RuntimeException('Image action binding changed.',409);$reservation=0;$createdFiles=[];$committed=false;$sent=false;
+    $edit=$row['user_message_id']===null&&!vp3_image_workspace_row_v1($row);$sourceImage=null;$marketing=false;$icon=false;$reference=false;$count=1;$confirmedImages=0;
     $ticket=[];$reportedUsage=[];$usageSettled=false;$startedAt=null;$target=[];$funding='';
-    $settleUsage=static function(string $status,bool $confirmedNoCharge=false)use($pdo,$row,&$user,&$target,&$funding,&$ticket,&$reservation,&$reportedUsage,&$usageSettled,&$startedAt):void{
+    $settleUsage=static function(string $status,bool $confirmedNoCharge=false)use($pdo,$row,&$user,&$target,&$funding,&$ticket,&$reservation,&$reportedUsage,&$usageSettled,&$startedAt,&$confirmedImages):void{
         if($usageSettled)return;
         if(!empty($ticket['metered'])){
-            $options=($reportedUsage['output_tokens']??0)>0?['units'=>1,'unit'=>'image']:[];
+            $options=$confirmedImages>0?['units'=>$confirmedImages,'unit'=>'image']:[];
             if($confirmedNoCharge)$options['confirmed_no_charge']=true;
             if($startedAt!==null)$options['latency_ms']=(int)round((microtime(true)-$startedAt)*1000);
             $settled=vp3_ai_service_usage_finish_v1($pdo,$ticket,$reportedUsage,$status,$options);
@@ -277,6 +309,10 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
     try{
         $user=vp3_image_authority_v1($pdo,$user,$row);if(!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('subscription_required');
         $config=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);
+        $count=vp3_image_count_v1($config);$maxOutput=16000*$count;
+        if(!table_exists('agent_image_generation_assets_v1'))vp3_image_schema_v1($pdo);
+        $reference=($config['mode']??null)==='chat_reference';
+        if($reference)$edit=true;
         $icon=($config['mode']??null)==='canvas_icon';
         if($icon){
             require_once __DIR__.'/coding-canvas-icon-v1.php';
@@ -286,7 +322,10 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $route=vp3_image_route_v1($pdo,$user,$config);$target=$route['target'];$funding=$route['funding'];$policy=$route['policy'];
         if($edit){
             $marketing=in_array($config['mode']??null,['marketing_scene','marketing_reference'],true);
-            if($marketing){
+            if($reference){
+                require_once __DIR__.'/agent-image-reference-v1.php';
+                $resolveSource='vp3_image_reference_job_source_v1';
+            }elseif($marketing){
                 require_once __DIR__.'/initiative-marketing-creative-v1.php';
                 $resolveSource='initiative_marketing_creative_job_source_v1';
             }else{
@@ -297,7 +336,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         }
         $inputTokens=max(1,(int)ceil(mb_strlen($config['prompt'])/3.5))+($edit&&($config['mode']??'')!=='marketing_scene'?4096:0);
         try{
-            $ticket=vp3_ai_service_usage_begin_v1($pdo,$user,'image_generation',$target['provider'],$target['model'],$funding,$inputTokens,16000,[
+            $ticket=vp3_ai_service_usage_begin_v1($pdo,$user,'image_generation',$target['provider'],$target['model'],$funding,$inputTokens,$maxOutput,[
                 'agent_id'=>(int)$row['agent_id'],'conversation_id'=>(int)$row['conversation_id'],'run_id'=>(int)$row['run_id'],
                 'stage'=>$edit&&($config['mode']??'')!=='marketing_scene'?'edit':'generate','attempt_key'=>'image:'.$row['generation_id'],
                 'job_tokens'=>$policy['job_tokens'],'daily_tokens'=>$policy['daily_tokens'],'monthly_tokens'=>$policy['monthly_tokens'],
@@ -308,9 +347,9 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         }
         // The image endpoint has no request parameter to apply a reduced token allowance.
         if(!empty($ticket['metered'])){
-            if((int)$ticket['max_output_tokens']<16000)throw new RuntimeException('service_budget_exceeded');
+            if((int)$ticket['max_output_tokens']<$maxOutput)throw new RuntimeException('service_budget_exceeded');
         }elseif($funding==='system'){
-            $quota=subscription_ai_preflight($user,'image_generation',$inputTokens,16000);$reservation=(int)$quota['reservation_id'];if((int)$quota['max_output_tokens']<16000)throw new RuntimeException('subscription_required');
+            $quota=subscription_ai_preflight($user,'image_generation',$inputTokens,$maxOutput);$reservation=(int)$quota['reservation_id'];if((int)$quota['max_output_tokens']<$maxOutput)throw new RuntimeException('subscription_required');
         }else{
             throw new RuntimeException('service_usage_unavailable');
         }
@@ -330,29 +369,42 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $pdo->commit();
         $sent=true;$startedAt=microtime(true);
         $output=vp3_image_provider_v1($config,$user,$transport,$sourceImage,$route['api_key'],static function(array $usage)use(&$reportedUsage):void{$reportedUsage=$usage;});
+        $confirmedImages=count($output['images']);
         // Record actual paid usage even if the owner cancels while the provider runs.
         $settleUsage('completed');
         $user=vp3_image_authority_v1($pdo,$user,$row);if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim))throw new RuntimeException('execution_cancelled');
         if($edit)$resolveSource($pdo,$user,$row,$config);
         $root=media_studio_ensure_user_root((int)$user['id']);$base=realpath(media_studio_private_root());if(!$base||realpath($root)!==$base.DIRECTORY_SEPARATOR.(int)$user['id'])throw new RuntimeException('image_storage_unavailable');
-        $file=$root.'/generated-'.$row['generation_id'].'.png';$handle=@fopen($file,'x+b');if(!$handle)throw new RuntimeException('image_storage_unavailable');$createdFile=true;
-        try{if(fwrite($handle,$output['bytes'])!==strlen($output['bytes']))throw new RuntimeException('image_storage_unavailable');}finally{fclose($handle);}@chmod($file,0600);
+        foreach($output['images'] as $index=>$image){
+            $file=$root.'/generated-'.$row['generation_id'].($count>1?'-'.($index+1):'').'.png';
+            $handle=@fopen($file,'x+b');if(!$handle)throw new RuntimeException('image_storage_unavailable');$createdFiles[]=$file;
+            try{if(fwrite($handle,$image['bytes'])!==strlen($image['bytes']))throw new RuntimeException('image_storage_unavailable');}finally{fclose($handle);}@chmod($file,0600);
+        }
         $pdo->beginTransaction();
-        if($marketing||$icon)vp3_image_lock_owner_v1($pdo,(int)$user['id']);
+        if($marketing||$icon||$reference)vp3_image_lock_owner_v1($pdo,(int)$user['id']);
         vp3_image_run_v1($pdo,$user,$row,true);$user=vp3_image_authority_v1($pdo,$user,$row);if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim,$edit||$icon))throw new RuntimeException('execution_cancelled');
         if($icon)vp3_coding_canvas_icon_job_source_v1($pdo,$user,$row,$config);
         if($edit){
             vp3_image_lock_conversation_v1($pdo,(int)$user['id'],(int)$row['conversation_id'],(int)$row['agent_id']);
             $resolveSource($pdo,$user,$row,$config,true);
         }
-        $meta=['generation_id'=>$row['generation_id'],'model'=>$target['model'],'provider'=>$target['provider'],'funding'=>$funding,'prompt'=>$config['prompt'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'sha256'=>$output['sha256'],'width'=>$output['width'],'height'=>$output['height'],'usage'=>$output['usage']];
-        if($edit)$meta['edit_mode']=$config['mode'];
-        if($icon)$meta['canvas_id']=$config['canvas_icon']['id'];
-        if($marketing)$meta['marketing_variant_id']=$config['marketing']['id'];
-        $relative='private/user-media/'.(int)$user['id'].'/'.basename($file);
-        $pdo->prepare("INSERT INTO user_media_assets(user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,metadata_json,created_at,updated_at) VALUES(?,'photo',?,'image/png',?,?,0,'openai_image',?,UTC_TIMESTAMP(),UTC_TIMESTAMP())")->execute([(int)$user['id'],$config['title'],$relative,strlen($output['bytes']),json_encode($meta,JSON_THROW_ON_ERROR)]);$asset=(int)$pdo->lastInsertId();
-        $pdo->prepare('UPDATE agent_image_generations_v1 SET asset_id=?,error_code=\'\' WHERE generation_id=? AND owner_user_id=?')->execute([$asset,$row['generation_id'],(int)$user['id']]);
-        $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,true,'Requested image saved in the private media library.',['asset_id'=>$asset,'generation_id'=>$row['generation_id'],'effect_state'=>'image_saved'],'',false);$pdo->commit();$committed=true;
+        $assets=[];
+        foreach($output['images'] as $index=>$image){
+            $meta=['generation_id'=>$row['generation_id'],'model'=>$target['model'],'provider'=>$target['provider'],'funding'=>$funding,'prompt'=>$config['prompt'],'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'sha256'=>$image['sha256'],'width'=>$image['width'],'height'=>$image['height'],'usage'=>$output['usage'],
+                'usage_scope'=>'generation','generation_count'=>$count,'generation_index'=>$index+1];
+            if($edit)$meta['edit_mode']=$config['mode'];
+            if($icon)$meta['canvas_id']=$config['canvas_icon']['id'];
+            if($marketing)$meta['marketing_variant_id']=$config['marketing']['id'];
+            if($reference)$meta['reference_asset_id']=$config['reference']['asset_id'];
+            $relative='private/user-media/'.(int)$user['id'].'/'.basename($createdFiles[$index]);
+            $title=$count>1?mb_substr($config['title'],0,175).' · '.($index+1).' of '.$count:$config['title'];
+            $pdo->prepare("INSERT INTO user_media_assets(user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,metadata_json,created_at,updated_at) VALUES(?,'photo',?,'image/png',?,?,0,'openai_image',?,UTC_TIMESTAMP(),UTC_TIMESTAMP())")->execute([(int)$user['id'],$title,$relative,strlen($image['bytes']),json_encode($meta,JSON_THROW_ON_ERROR)]);
+            $asset=(int)$pdo->lastInsertId();$assets[]=$asset;
+            $pdo->prepare('INSERT INTO agent_image_generation_assets_v1(generation_id,owner_user_id,sequence_no,asset_id) VALUES(?,?,?,?)')->execute([$row['generation_id'],(int)$user['id'],$index+1,$asset]);
+        }
+        $pdo->prepare('UPDATE agent_image_generations_v1 SET asset_id=?,error_code=\'\' WHERE generation_id=? AND owner_user_id=?')->execute([$assets[0],$row['generation_id'],(int)$user['id']]);
+        $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,true,$count===1?'Requested image saved in the private media library.':'Requested images saved in the private media library.',
+            ['asset_id'=>$assets[0],'image_asset_ids'=>$assets,'image_count'=>$count,'generation_id'=>$row['generation_id'],'effect_state'=>'image_saved'],'',false);$pdo->commit();$committed=true;
         if($icon)return ['ok'=>true,'reason'=>'completed','receipt'=>$receipt];
         if($marketing){
             try{
@@ -363,8 +415,10 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $priorScope=$GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']??null;
         try{
             if(function_exists('vp3_agent_memory_scope_set_current_v410'))vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)$row['agent_id']);
-            if(function_exists('vp3_cognitive_media_event_v2390'))vp3_cognitive_media_event_v2390($pdo,(int)$user['id'],$asset,'photo','openai_image');
-            if(function_exists('agent_brain_store_memory')&&personal_capability_has_v242('agent_brain.access',$user))agent_brain_store_memory($user,'file','Media asset #'.$asset,'Saved generated image "'.$config['title'].'" in the private media library.',0,.95,['asset_id'=>$asset,'media_type'=>'photo','source'=>'openai_image']);
+            foreach($assets as $asset){
+                if(function_exists('vp3_cognitive_media_event_v2390'))vp3_cognitive_media_event_v2390($pdo,(int)$user['id'],$asset,'photo','openai_image');
+                if(function_exists('agent_brain_store_memory')&&personal_capability_has_v242('agent_brain.access',$user))agent_brain_store_memory($user,'file','Media asset #'.$asset,'Saved generated image "'.$config['title'].'" in the private media library.',0,.95,['asset_id'=>$asset,'media_type'=>'photo','source'=>'openai_image']);
+            }
         }catch(Throwable $ignored){}finally{if($priorScope===null)unset($GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']);else $GLOBALS['VP3_AGENT_MEMORY_SCOPE_V410']=$priorScope;}
         return ['ok'=>true,'reason'=>'completed','receipt'=>$receipt];
     }catch(Throwable $e){
@@ -373,17 +427,17 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
             'provider_access_denied','provider_rate_limited','provider_request_rejected','provider_outcome_unconfirmed',
             'provider_image_unconfirmed','provider_usage_unconfirmed','image_too_large','image_storage_unavailable',
             'subscription_required','provider_unavailable','provider_route_changed','service_policy_denied','service_budget_exceeded',
-            'service_usage_unavailable','quota_preflight_failed','execution_cancelled','image_source_changed','marketing_source_changed','canvas_icon_source_changed',
+            'service_usage_unavailable','quota_preflight_failed','execution_cancelled','image_source_changed','image_reference_changed','marketing_source_changed','canvas_icon_source_changed',
         ],true)?$e->getMessage():($sent?'provider_outcome_unconfirmed':'quota_preflight_failed');
-        if($edit&&$e instanceof DomainException)$code=$e->getCode()===503?'provider_unavailable':($marketing?'marketing_source_changed':'image_source_changed');
+        if($edit&&$e instanceof DomainException)$code=$e->getCode()===503?'provider_unavailable':($marketing?'marketing_source_changed':($reference?'image_reference_changed':'image_source_changed'));
         $providerRejected=in_array($code,['provider_access_denied','provider_rate_limited','provider_request_rejected'],true);
-        $knownFailure=$providerRejected||in_array($code,['image_source_changed','marketing_source_changed','canvas_icon_source_changed'],true);
+        $knownFailure=$providerRejected||in_array($code,['image_source_changed','image_reference_changed','marketing_source_changed','canvas_icon_source_changed'],true);
         try{$settleUsage(!$sent?'aborted':($reportedUsage!==[]||$knownFailure?'failed':'unknown'),$sent&&$providerRejected&&$reportedUsage===[]);}
         catch(Throwable $ignored){$code='service_usage_unavailable';}
         $pdo->prepare('UPDATE agent_image_generations_v1 SET error_code=? WHERE generation_id=? AND owner_user_id=?')->execute([$code,$row['generation_id'],(int)$user['id']]);
         $receipt=null;if(agent_worker_cloud_active_row_v1910($pdo,$user,$claim))$receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,'Image result was not confirmed; no automatic provider replay.',['effect_state'=>'unconfirmed'],$code,false);
         return ['ok'=>false,'reason'=>$code,'receipt'=>$receipt];
-    }finally{if($reservation>0)subscription_ai_release_reservation($reservation);if(!$committed&&$createdFile&&$file!==''&&is_file($file))@unlink($file);}
+    }finally{if($reservation>0)subscription_ai_release_reservation($reservation);if(!$committed)foreach($createdFiles as $file)if(is_file($file))@unlink($file);}
 }
 
 /** Reconcile a stale lease for this exact image without starting provider work. */

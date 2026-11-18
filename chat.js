@@ -5122,6 +5122,9 @@
 
   async function sendMessage(message, inputMode = 'text', openGmailDraft = false) {
     if (busy || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
+    let imageReference=null;
+    try{imageReference=window.VP3ImageComposer?.requestContext?.(conversationId)||null;}
+    catch(error){recoveryStatus(error.message);return;}
     if(initiativePosts.size&&!initiativeIdentityMatchesV1()){
       clearInitiativeReplyV1(true);recoveryStatus('The account or session changed. Refresh Chat before replying to an Agent update.');return;
     }
@@ -5220,6 +5223,7 @@
         input_mode:inputMode === 'voice' ? 'voice' : 'text'
       };
       if(workingContextRef)payload.working_context_ref=workingContextRef;
+      if(imageReference)payload.image_reference_asset_id=imageReference.assetId;
       if(initiativeReply)payload.initiative_reply=initiativeReply;
       if(automaticVoiceReply){
         payload.initiative_reply_auto_voice=true;
@@ -5295,6 +5299,7 @@
       keepDraft('',request.conversationId);
       if(request.parkedReply)removeParkedInitiativeReplyV1(request.parkedReply);
       window.VP3ProjectKnowledgeR6?.consume(data.project_knowledge_r6);window.VP3KnowledgeRevisionsR11?.consume();
+      window.VP3ImageComposer?.consume?.(data,imageReference);
 
       if(browserAgentContext&&browserContextRuntime&&typeof browserContextRuntime.consume==='function'){
         browserContextRuntime.consume();

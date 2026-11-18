@@ -11,7 +11,29 @@ function vp3_agent_chat_reply_image_reference_v1(string $text): bool
 /** A direct request with its scene omitted can explicitly open an image brief. */
 function vp3_agent_chat_image_needs_scene_v1(string $text): bool
 {
-    return preg_match('~\A\s*(?:please[\s,]+)?(?:generate|create|draw|make|render)\s+(?:me\s+)?(?:an?\s+)?(?:new\s+)?(?:image|picture|photo(?:graph)?|render|illustration)[.!]?\s*\z~iu',$text) === 1;
+    return preg_match('~\A\s*(?:please[\s,]+)?(?:generate|create|draw|make|render)\s+(?:me\s+)?(?:(?:an?|one|two|three|four|[1-4])\s+)?(?:new\s+)?(?:image|picture|photo(?:graph)?|render|illustration)s?[.!]?\s*\z~iu',$text) === 1;
+}
+
+/** Read only an explicit quantity immediately after the image command. */
+function vp3_agent_chat_image_count_v1(string $text): int
+{
+    $numbers=['zero'=>0,'one'=>1,'two'=>2,'three'=>3,'four'=>4,'five'=>5,'six'=>6,'seven'=>7,'eight'=>8,
+        'nine'=>9,'ten'=>10,'eleven'=>11,'twelve'=>12,'thirteen'=>13,'fourteen'=>14,'fifteen'=>15,
+        'sixteen'=>16,'seventeen'=>17,'eighteen'=>18,'nineteen'=>19,'twenty'=>20,'thirty'=>30,
+        'forty'=>40,'fifty'=>50,'sixty'=>60,'seventy'=>70,'eighty'=>80,'ninety'=>90,'hundred'=>100,
+        'thousand'=>1000,'million'=>1000000,'dozen'=>12];
+    $command='\A\s*(?:please[\s,]+|(?:can|could|would|will) you\s+)*(?:generate|create|draw|make|render|design|produce)\s+(?:me\s+)?';
+    $quantity='(?<count>[+-]?[0-9]+(?:\.[0-9]+)?|'.implode('|',array_keys($numbers)).')';
+    // A quantity can describe the output noun ("three album cover images"), but
+    // never a scene introduced by "of", "with", etc. ("an image of three cats").
+    $boundary='(?:of|for|with|showing|depicting|in|on|at|from|to|using|based|and|or|but|if|when|before|after|a|an|the|my|this|that|these|those)';
+    $descriptors='(?<descriptors>(?:(?!'.$boundary.'\b)[\p{L}][\p{L}\p{N}\x{2019}\x27-]*\s+){0,8})';
+    $noun='(?:images?|pictures?|photos?|photographs?|renders?|illustrations?|versions?|variations?)\b';
+    if(!preg_match('~'.$command.'(?:a\s+(?:set|batch|series|collection)\s+of\s+)?'.$quantity.'\s+'.$descriptors.$noun.'~iu',$text,$match))return 1;
+    $value=strtolower($match['count']);
+    if(str_contains($value,'.'))return 0; // Invalid explicit quantities fail normal plan validation.
+    if(preg_match('~\A(?:hundred|thousand|million|dozen)\b~iu',$match['descriptors']))return 5;
+    return $numbers[$value]??(int)$value;
 }
 
 /** Accept the owner's literal new-image brief or an exact adjacent image proposal. */
@@ -19,8 +41,9 @@ function vp3_agent_chat_reply_image_plan_v1(string $text, ?array $previousAssist
 {
     $command = '~\A\s*(?:please[\s,]+|(?:can|could|would) you\s+)*(?:generate|create|draw|make|render)\s+(?:me\s+)?';
     $formatPattern = '(?:(?<format>square|landscape|portrait)\s+)?';
-    $image = '(?:image|picture|photo(?:graph)?|render|illustration)';
-    $literal = $command.'(?:(?:an?|one)\s+)?(?:new\s+)?'.$formatPattern.$image.'(?:\s+(?:of|showing|depicting|with|for)\s+|\s*:\s*)(?<prompt>.+?)\s*\z~isu';
+    $image = '(?:image|picture|photo(?:graph)?|render|illustration)s?';
+    $quantity='(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|[1-9][0-9]?)';
+    $literal = $command.'(?:'.$quantity.'\s+)?(?:(?:new|different|distinct)\s+)?'.$formatPattern.$image.'(?:\s+(?:of|showing|depicting|with|for)\s+|\s*:\s*)(?<prompt>.+?)\s*\z~isu';
     $subjectFirst = $command.'(?:an?|one)\s+(?:new\s+)?'.$formatPattern.'(?<subject>[\p{L}\p{N}][\p{L}\p{N}\x{2019}\x27 -]{1,100}?)\s+'.$image.'(?<details>\s+(?:of|showing|depicting|with|for)\s+.+?)?[.!?]?\s*\z~isu';
     $format = '';
     if (preg_match($literal, $text, $match) === 1) {
@@ -47,7 +70,8 @@ function vp3_agent_chat_reply_image_plan_v1(string $text, ?array $previousAssist
     $transparent = preg_match('~\btransparent background\b~iu', $prompt) === 1
         && preg_match('~\b(?:without|no|not)\s+(?:an?\s+)?transparent background\b~iu', $prompt) === 0;
     require_once __DIR__.'/agent-image-generation-v1.php';
-    return vp3_image_text_plan_v1(['prompt'=>$prompt, 'size'=>$size, 'background'=>$transparent?'transparent':'opaque']);
+    $count=vp3_agent_chat_image_count_v1($text);
+    return vp3_image_text_plan_v1(['prompt'=>$prompt, 'size'=>$size, 'background'=>$transparent?'transparent':'opaque',...($count!==1?['count'=>$count]:[])]);
 }
 
 function vp3_agent_chat_reply_image_prompt_valid_v1(string $prompt): bool

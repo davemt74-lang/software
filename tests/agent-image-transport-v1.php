@@ -31,9 +31,32 @@ $body=json_decode($options[CURLOPT_POSTFIELDS],true);
 if($network!==3||$target!=='https://api.openai.com/v1/images/edits'||$body['images']!==[['image_url'=>$reference]])throw new RuntimeException('Marketing reference transport contract mismatch.');
 try{vp3_image_provider_v1($marketing,['id'=>1],null,'https://example.test/product.png');throw new LogicException('External product reference accepted.');}
 catch(RuntimeException $e){if($e->getMessage()!=='marketing_source_changed'||$network!==3)throw $e;}
+$singleWire=$wire;$before=$network;
+$wire=json_encode(['data'=>array_fill(0,4,['b64_json'=>base64_encode($png)]),'usage'=>['input_tokens'=>10,'output_tokens'=>80,'total_tokens'=>90]]);
+$batch=vp3_image_provider_v1([...$config,'count'=>4],['id'=>1]);$body=json_decode($options[CURLOPT_POSTFIELDS],true);
+if($network!==$before+1||$body['n']!==4||count($batch['images'])!==4||$batch['usage']['total_tokens']!==90
+    ||$target!=='https://api.openai.com/v1/images/generations')throw new RuntimeException('Four-image transport contract mismatch.');
+$before=$network;$edited=vp3_image_provider_v1([...$config,'count'=>4,'mode'=>'chat_reference'],['id'=>1],null,$reference);
+$body=json_decode($options[CURLOPT_POSTFIELDS],true);
+if($network!==$before+1||$body['n']!==4||$body['images']!==[['image_url'=>$reference]]||count($edited['images'])!==4
+    ||$target!=='https://api.openai.com/v1/images/edits')throw new RuntimeException('Base-image batch transport contract mismatch.');
+foreach([0,5,'2',true,null] as $count){
+    $before=$network;
+    try{vp3_image_provider_v1([...$config,'count'=>$count],['id'=>1]);throw new LogicException('Invalid batch count accepted.');}
+    catch(InvalidArgumentException $error){if($network!==$before)throw new RuntimeException('Invalid count reached the provider.');}
+}
+foreach([null,'https://example.test/base.png'] as $input){
+    $before=$network;
+    try{vp3_image_provider_v1([...$config,'mode'=>'chat_reference'],['id'=>1],null,$input);throw new LogicException('Unbound base image accepted.');}
+    catch(RuntimeException $error){if($error->getMessage()!=='image_reference_changed'||$network!==$before)throw $error;}
+}
+$wire=$singleWire;$before=$network;$charged=[];
+try{vp3_image_provider_v1([...$config,'count'=>4],['id'=>1],null,null,null,static function($usage)use(&$charged){$charged=$usage;});throw new LogicException('Short provider batch accepted.');}
+catch(RuntimeException $error){if($error->getMessage()!=='provider_image_unconfirmed'||$network!==$before+1||$charged['total_tokens']!==30)throw $error;}
 foreach([401=>'provider_access_denied',403=>'provider_access_denied',404=>'provider_request_rejected',422=>'provider_request_rejected',429=>'provider_rate_limited',302=>'provider_outcome_unconfirmed',503=>'provider_outcome_unconfirmed'] as $code=>$reason){$status=$code;$before=$network;try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Unsuccessful provider response accepted.');}catch(RuntimeException $e){if($e->getMessage()!==$reason||$network!==$before+1)throw $e;}}
 $status=200;$failed=true;$before=$network;try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Timeout accepted.');}catch(RuntimeException $e){if($e->getMessage()!=='provider_outcome_unconfirmed'||$network!==$before+1)throw $e;}
 $failed=false;$wire=str_repeat('x',36*1024*1024+1);try{vp3_image_provider_v1($config,['id'=>1]);throw new LogicException('Oversized response accepted.');}catch(RuntimeException $e){if($e->getMessage()!=='provider_outcome_unconfirmed')throw $e;}
-echo "IMAGE_TRANSPORT_V1=PASS (fixed generate/edit endpoints, TLS, credential isolation, byte bound, no redirects and exactly one paid POST per attempt)\n";
+try{vp3_image_provider_v1([...$config,'count'=>4],['id'=>1]);throw new LogicException('Oversized batch response accepted.');}catch(RuntimeException $e){if($e->getMessage()!=='provider_outcome_unconfirmed')throw $e;}
+echo "IMAGE_TRANSPORT_V1=PASS (fixed generate/edit endpoints, one-to-four images, exact base references, aggregate byte bound, TLS, credential isolation, no redirects and exactly one paid POST per attempt)\n";
 
 }

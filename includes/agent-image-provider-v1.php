@@ -15,6 +15,13 @@ function vp3_image_provider_ready_v1(): bool
     return function_exists('ai_provider_api_key')&&function_exists('curl_init')&&vp3_image_settings_v1()['enabled']&&ai_provider_enabled('openai')&&ai_provider_api_key('openai')!=='';
 }
 
+function vp3_image_count_v1(array $config): int
+{
+    $count=array_key_exists('count',$config)?$config['count']:1;
+    if(!is_int($count)||$count<1||$count>4)throw new InvalidArgumentException('Choose between one and four images.');
+    return $count;
+}
+
 /** Verify the PNG container as well as its header before publishing provider bytes. */
 function vp3_image_png_check_v1(string $bytes): void
 {
@@ -36,14 +43,17 @@ function vp3_image_png_check_v1(string $bytes): void
 function vp3_image_provider_v1(array $config,array $user,?callable $transport=null,?string $sourceImage=null,?string $apiKey=null,?callable $recordUsage=null): array
 {
     $key=$apiKey??ai_provider_api_key('openai');if($key==='')throw new RuntimeException('provider_unavailable');
-    $body=['model'=>$config['model'],'prompt'=>$config['prompt'],'n'=>1,'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'output_format'=>'png','moderation'=>'auto','safety_identifier'=>hash('sha256','vp3-image-user:'.(int)$user['id'])];
+    $count=vp3_image_count_v1($config);
+    if(($config['mode']??'')==='chat_reference'&&$sourceImage===null)throw new RuntimeException('image_reference_changed');
+    $body=['model'=>$config['model'],'prompt'=>$config['prompt'],'n'=>$count,'size'=>$config['size'],'quality'=>$config['quality'],'background'=>$config['background'],'output_format'=>'png','moderation'=>'auto','safety_identifier'=>hash('sha256','vp3-image-user:'.(int)$user['id'])];
     $endpoint='https://api.openai.com/v1/images/generations';
     if($sourceImage!==null){
         $marketing=($config['mode']??'')==='marketing_reference';
-        // Marketing references use the owned product-photo limit plus Base64 overhead.
-        $max=$marketing?5_600_000:420_000;
-        $mime=$marketing?'(?:jpeg|png|webp)':'jpeg';
-        if(strlen($sourceImage)>$max||!preg_match('~^data:image/'.$mime.';base64,[A-Za-z0-9+/]+={0,2}$~D',$sourceImage))throw new RuntimeException($marketing?'marketing_source_changed':'image_source_changed');
+        $reference=($config['mode']??'')==='chat_reference';
+        // Owned photo references retain the four-MiB limit plus Base64 overhead.
+        $max=$marketing||$reference?5_600_000:420_000;
+        $mime=$marketing||$reference?'(?:jpeg|png|webp)':'jpeg';
+        if(strlen($sourceImage)>$max||!preg_match('~^data:image/'.$mime.';base64,[A-Za-z0-9+/]+={0,2}$~D',$sourceImage))throw new RuntimeException($marketing?'marketing_source_changed':($reference?'image_reference_changed':'image_source_changed'));
         $endpoint='https://api.openai.com/v1/images/edits';
         $body['images']=[['image_url'=>$sourceImage]];
     }
@@ -68,14 +78,24 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
         // A verified provider charge can exist even if the returned image fails validation.
         if($recordUsage!==null)$recordUsage($usage);
     }
-    if(!is_array($result['data']??null)||count($result['data'])!==1||!is_string($result['data'][0]['b64_json']??null))throw new RuntimeException('provider_image_unconfirmed');
-    $encoded=$result['data'][0]['b64_json'];if(strlen($encoded)>34*1024*1024)throw new RuntimeException('image_too_large');
-    $bytes=base64_decode($encoded,true);unset($encoded);if(!is_string($bytes)||strlen($bytes)<24||strlen($bytes)>25*1024*1024)throw new RuntimeException('provider_image_unconfirmed');
-    vp3_image_png_check_v1($bytes);
-    $image=@getimagesizefromstring($bytes);
-    if(!$image||($image['mime']??'')!=='image/png'||$image[0]<1||$image[1]<1||$image[0]>4096||$image[1]>4096||$image[0]*$image[1]>16777216)throw new RuntimeException('provider_image_unconfirmed');
+    if(!is_array($result['data']??null)||!array_is_list($result['data'])||count($result['data'])!==$count)throw new RuntimeException('provider_image_unconfirmed');
+    $images=[];$encodedBytes=0;$decodedBytes=0;
     [$expectedWidth,$expectedHeight]=array_map('intval',explode('x',$config['size']));
-    if($image[0]!==$expectedWidth||$image[1]!==$expectedHeight)throw new RuntimeException('provider_image_unconfirmed');
+    foreach($result['data'] as $index=>$item){
+        if(!is_array($item)||!is_string($item['b64_json']??null))throw new RuntimeException('provider_image_unconfirmed');
+        $encoded=$item['b64_json'];$encodedBytes+=strlen($encoded);
+        if($encodedBytes>34*1024*1024)throw new RuntimeException('image_too_large');
+        $bytes=base64_decode($encoded,true);unset($encoded,$result['data'][$index]);
+        if(!is_string($bytes)||strlen($bytes)<24)throw new RuntimeException('provider_image_unconfirmed');
+        $decodedBytes+=strlen($bytes);
+        if($decodedBytes>25*1024*1024)throw new RuntimeException('image_too_large');
+        vp3_image_png_check_v1($bytes);
+        $image=@getimagesizefromstring($bytes);
+        if(!$image||($image['mime']??'')!=='image/png'||$image[0]<1||$image[1]<1||$image[0]>4096||$image[1]>4096||$image[0]*$image[1]>16777216)throw new RuntimeException('provider_image_unconfirmed');
+        if($image[0]!==$expectedWidth||$image[1]!==$expectedHeight)throw new RuntimeException('provider_image_unconfirmed');
+        $images[]=['bytes'=>$bytes,'width'=>$image[0],'height'=>$image[1],'sha256'=>hash('sha256',$bytes)];
+    }
     if($usage===null||$usage['output_tokens']<1)throw new RuntimeException('provider_usage_unconfirmed');
-    return ['bytes'=>$bytes,'width'=>$image[0],'height'=>$image[1],'sha256'=>hash('sha256',$bytes),'usage'=>$usage];
+    // The first image fields preserve existing one-image worker integrations.
+    return $images[0]+['images'=>$images,'usage'=>$usage];
 }

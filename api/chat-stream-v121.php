@@ -42,6 +42,7 @@ if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_pa
 }
 $pdo=db();if(!$pdo||!table_exists('chat_conversations')||!table_exists('chat_messages')||!user_agent_system_schema_ready_v236($pdo))throw new RuntimeException('Chat storage is not ready.');$brainAllowed=personal_capability_has_v242('agent_brain.access',$user);
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=$_POST;$csrf=(string)($input['csrf_token']??'');if($csrf===''||!hash_equals(csrf_token(),$csrf)){http_response_code(401);throw new RuntimeException('Session expired. Refresh the page and try again.');}$query=trim((string)($input['message']??''));if($query==='')throw new RuntimeException('Enter a message.');if(mb_strlen($query)>6000)throw new RuntimeException('That message is too long.');$userId=(int)$user['id'];$conversationId=max(0,(int)($input['conversation_id']??0));$activeAgent=chat_v121_agent($pdo,$user,$input,$conversationId);$principal=vp3_agent_chat_principal_v380($user,$activeAgent);$agentScopeId=vp3_agent_chat_agent_id_v380($activeAgent);
+$imageReferenceId=vp3_chat_image_reference_input_v1($input);
 $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
 if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A saved owner Chat is required for this reply.',422);
 $input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
@@ -53,7 +54,7 @@ if(vp3_agent_chat_auto_voice_image_v2160($input)){
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);
     chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-$newImageTurn=vp3_agent_chat_reply_image_plan_v1($query)!==null||vp3_agent_chat_image_needs_scene_v1($query);
+$newImageTurn=$imageReferenceId>0||vp3_agent_chat_reply_image_plan_v1($query)!==null||vp3_agent_chat_image_needs_scene_v1($query);
 $initiativeRequest=null;
 $connectedSitePlan=$initiativeReply===null&&$participantActor===null&&empty($input['ephemeral_protocol'])
     ?vp3_connected_sites_chat_request_v1($pdo,$user,$principal,$query,$conversationId):null;
@@ -141,6 +142,13 @@ if($idempotencyKey!==''){
         }else{
         if(($claim['state']??'')!=='completed'||!is_array($claim['result']??null))throw new RuntimeException('That voice turn is already processing.',503);
         $replay=$claim['result'];$failedBinding=$replay['initiative_reply_failure']??null;
+        if($imageReferenceId>0||isset($replay['image_reference_request_v1'])){
+            $expectedReference=vp3_chat_image_reference_request_v1($pdo,$user,$principal,$input,['conversation_id'=>$conversationId]);
+            if(($replay['image_reference_request_v1']??null)!==$expectedReference){
+                throw new RuntimeException('The base image or image prompt changed. Send a new request.',409);
+            }
+            unset($replay['image_reference_request_v1']);
+        }
         if(is_array($failedBinding)){
             $followthroughReplay=true;
             if(($initiativeReply===null&&$initiativeRequest===null)||($failedBinding['initiative_reply']??null)!==$initiativeReply
@@ -292,6 +300,7 @@ if($idempotencyKey!==''){
 }
 agent_runtime_v125_trace('chat.turn.accepted',['user_id'=>$userId,'conversation_id'=>$conversationId,'agent_id'=>$agentScopeId,'idempotent'=>$idempotencyKey!=='']);
 if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,vp3_agent_chat_public_prompt_v2160($query),$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!chat_v121_owned($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
+if($imageReferenceId>0)$imageReferenceRequest=vp3_chat_image_reference_request_v1($pdo,$user,$principal,$input,['conversation_id'=>$conversationId]);
 if($participantActor!==null&&array_key_exists('initiative_reply',$input))throw new RuntimeException('Use the private owner Chat for this reply.',403);
 if($participantActor!==null){
     $done=vp3_participant_chat_send_v1($pdo,$user,$principal,$input,$participantActor,$conversationId);
@@ -299,13 +308,14 @@ if($participantActor!==null){
     chat_v121_emit(['type'=>'start','conversation_id'=>$conversationId,'user_message_id'=>$done['user_message_id'],'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
     chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
-if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$mediaRequest||$casualRequest||$publicResearchRequest||$initiativeStatusRead||$emailRequest||$meetingPrepRequest||$meetingActionRequest){
+if($imageReferenceId>0||array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$youtubeRequest||$mediaRequest||$casualRequest||$publicResearchRequest||$initiativeStatusRead||$emailRequest||$meetingPrepRequest||$meetingActionRequest){
     // Use the same owner-scoped executor for these voice and typed turns.
     $input['conversation_id']=$conversationId;
     $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,allowConnectedSites:true);
     $assistantMessageId=(int)$done['assistant_message_id'];$done['input_mode']='voice';
     if($idempotencyClaimed&&$idempotencyKey!==''){
         $replay=$done;
+        if($imageReferenceId>0)$replay['image_reference_request_v1']=$imageReferenceRequest;
         unset($replay['connected_site_playback_v1'],$replay['connected_site_queue_v1']);
         if(($done['connected_site_provider_v1']??null)==='stoneward'&&empty($done['media_offer_reply_v1'])){
             $replay['connected_site_query_hash']=hash('sha256',$query);
@@ -351,6 +361,7 @@ if(array_key_exists('initiative_reply',$input)||$initiativeRequest!==null||$yout
     chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
 $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];$rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['user_agent_id']=$agentScopeId;
+unset($rawAgentContext['image_reference_asset_id'],$rawAgentContext['image_reference']);
 $historyStmt=$pdo->prepare('SELECT id,role,message,context_json FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');
 $historyStmt->execute([$conversationId]);$history=array_reverse($historyStmt->fetchAll());$historyStmt->closeCursor();
 $history=vp3_coordination_chat_history_v1($pdo,$user,$agentScopeId,$conversationId,$history);
@@ -504,6 +515,7 @@ if($brainAllowed){agent_background_v125_enqueue('conversation-summary',['user_id
 chat_v121_emit(['type'=>'done','data'=>$done]);
 }catch(Throwable $e){if($assistantMessageId>0&&$pdo instanceof PDO){try{$pdo->prepare("DELETE FROM chat_messages WHERE id=? AND conversation_id=? AND message='' ")->execute([$assistantMessageId,$conversationId]);}catch(Throwable $cleanup){}}$publicError=ai_v100_safe_exception($e,'The voice conversation request could not be completed.');if($idempotencyClaimed&&$idempotencyScope!==''&&$idempotencyKey!==''){
     $failedVoice=['ok'=>false,'error'=>$publicError,'conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'trace_id'=>agent_runtime_v125_trace_id()];
+    if(isset($imageReferenceRequest))$failedVoice['image_reference_request_v1']=$imageReferenceRequest;
     if(!empty($emailReviewRequest))$failedVoice['gmail_query_hash']=hash('sha256',$query);
     if(!empty($connectedSitePlan))$failedVoice['connected_site_query_hash']=hash('sha256',$query);
     if(!empty($meetingPrepRequest))$failedVoice['meeting_prep_query_hash']=hash('sha256',$query);

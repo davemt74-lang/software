@@ -30,6 +30,7 @@ require_once __DIR__.'/video-meetings-memory-v18120.php';
 require_once __DIR__.'/video-meetings-commitment-command-v18230-chat.php';
 require_once __DIR__.'/agent-initiative-followthrough-v1.php';
 require_once __DIR__.'/agent-chat-reply-tools-v1.php';
+require_once __DIR__.'/chat-image-composer-v1.php';
 require_once __DIR__.'/agent-coordination-chat-v1.php';
 require_once __DIR__.'/agent-inference-budget-v1.php';
 require_once __DIR__.'/agent-meeting-chat-actions-v1.php';
@@ -90,7 +91,14 @@ function vp3_agent_chat_image_turn_v2160(PDO $pdo,array $user,array $principal,a
     $imageContext=false;
     if(!empty($input['ephemeral_protocol'])||!knowledge_retrieval_v162_owner_session($user,$principal)
         ||vp3_participant_scope_v1()!==null||!empty($input['project_knowledge_r6']['attachments'])
-        ||isset($input['working_context_ref'])||vp3_marketing_canvas_request_v1($query))return null;
+        ||isset($input['working_context_ref']))return null;
+    $referenceId=vp3_chat_image_reference_input_v1($input);
+    if($referenceId>0){
+        if(!vp3_chat_image_reference_intent_allowed_v1($query))return null;
+        $plan=vp3_agent_chat_reply_image_plan_v1($query)??vp3_chat_image_reference_plan_v1($query);
+        return $plan!==null?['plan'=>$plan,'image_reference_asset_id'=>$referenceId]:null;
+    }
+    if(vp3_marketing_canvas_request_v1($query))return null;
     $plan=vp3_agent_chat_reply_image_plan_v1($query);
     if($plan!==null)return ['plan'=>$plan];
     if(vp3_agent_chat_image_needs_scene_v1($query))return ['needs_scene'=>true];
@@ -110,7 +118,8 @@ function vp3_agent_chat_image_turn_v2160(PDO $pdo,array $user,array $principal,a
         &&vp3_agent_chat_image_needs_scene_v1((string)$anchor['message'])){
         $scene=vp3_agent_chat_image_scene_v1($query);
         if($scene!==null){
-            return ['plan'=>vp3_agent_chat_reply_image_plan_v1('Generate an image of '.$scene)];
+            $count=vp3_agent_chat_image_count_v1((string)$anchor['message']);
+            return ['plan'=>vp3_agent_chat_reply_image_plan_v1('Generate '.$count.' images of '.$scene)];
         }
     }
     $referential=vp3_agent_chat_reply_image_reference_v1($query)
@@ -133,6 +142,7 @@ function vp3_agent_chat_image_turn_result_v2160(PDO $pdo,array $user,array $prin
     ?callable $authority=null): array
 {
     $scope=['conversation_id'=>$cid,'chat_user_message_id'=>$mid];
+    if(isset($imageTurn['image_reference_asset_id']))$scope['image_reference_asset_id']=$imageTurn['image_reference_asset_id'];
     if(isset($imageTurn['plan']))return vp3_capability_image_generate_v1($pdo,$user,$principal,$imageTurn['plan'],$scope,$authority);
     $result=['handled'=>true,'actions'=>[],'sources'=>[]];
     if(!empty($imageTurn['needs_scene'])){
@@ -685,11 +695,18 @@ function vp3_agent_chat_reply_native_playback_v2160(?array $casualTarget,?array 
 /** The automatic microphone can be open when the owner starts a new image request. */
 function vp3_agent_chat_auto_voice_image_v2160(array $input): bool
 {
-    return ($input['initiative_reply_auto_voice']??null)===true&&isset($input['initiative_reply'])
+    $eligible=($input['initiative_reply_auto_voice']??null)===true&&isset($input['initiative_reply'])
         &&(int)($input['conversation_id']??0)>0&&empty($input['ephemeral_protocol'])&&empty($input['project_knowledge_r6']['attachments'])
         &&!isset($input['working_context_ref'])&&is_string($input['message']??null)
-        &&is_string($input['idempotency_key']??null)&&preg_match('~\A[A-Za-z0-9:_.-]{8,160}\z~D',$input['idempotency_key'])
-        &&!vp3_marketing_canvas_request_v1($input['message'])&&vp3_agent_chat_reply_image_plan_v1($input['message'])!==null;
+        &&is_string($input['idempotency_key']??null)&&preg_match('~\A[A-Za-z0-9:_.-]{8,160}\z~D',$input['idempotency_key']);
+    if(!$eligible)return false;
+    if(vp3_chat_image_reference_input_v1($input)>0){
+        return vp3_chat_image_reference_intent_allowed_v1($input['message'])
+            &&(vp3_agent_chat_reply_image_plan_v1($input['message'])!==null
+                ||vp3_chat_image_reference_plan_v1($input['message'])!==null);
+    }
+    return !vp3_marketing_canvas_request_v1($input['message'])
+        &&vp3_agent_chat_reply_image_plan_v1($input['message'])!==null;
 }
 
 function vp3_agent_chat_auto_voice_image_send_v2160(PDO $pdo,array $user,?array $agent,array $principal,array $input,
@@ -699,28 +716,43 @@ function vp3_agent_chat_auto_voice_image_send_v2160(PDO $pdo,array $user,?array 
     $cid=(int)$input['conversation_id'];$agentId=(int)$principal['agent_id'];
     vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
     vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$cid],$authority);
+    $referenceId=vp3_chat_image_reference_input_v1($input);
     $scope='auto-voice-image:user-'.(int)$user['id'].':agent-'.$agentId.':chat-'.$cid;
     $key=hash('sha256',json_encode([$input['idempotency_key'],$reply,trim($input['message'])],JSON_THROW_ON_ERROR));
+    unset($input['initiative_reply'],$input['initiative_reply_auto_voice']);
+    $referenceRequest=vp3_chat_image_reference_request_v1($pdo,$user,$principal,$input,['conversation_id'=>$cid]);
     $claim=agent_runtime_v125_idempotency_claim($scope,$key,86400);
     if(empty($claim['claimed'])){
         $cached=$claim['result']??null;
-        if(($claim['state']??null)==='completed'&&is_array($cached)&&!empty($cached['ok']))return $cached+['replayed'=>true];
+        if(($claim['state']??null)==='completed'&&is_array($cached)&&!empty($cached['ok'])){
+            if(($referenceId>0||isset($cached['image_reference_request_v1']))
+                &&($cached['image_reference_request_v1']??null)!==$referenceRequest){
+                throw new RuntimeException('The base image or image prompt changed. Send a new request.',409);
+            }
+            unset($cached['image_reference_request_v1']);
+            return $cached+['replayed'=>true];
+        }
         throw new RuntimeException('The image request could not be confirmed. Check the image card in this Chat.',503);
     }
-    unset($input['initiative_reply'],$input['initiative_reply_auto_voice']);
     $result=vp3_agent_chat_send_inner_v2160($pdo,$user,$agent,$principal,$input,$brainAllowed,$authority,$allowConnectedSites);
     if(($result['tool_receipt']['capability']??null)!=='images.generate'||($result['tool_receipt']['operation']??null)!=='queue'){
         throw new RuntimeException('The image request could not be verified.',503);
     }
     $result['initiative_reply_detached']='image_request';
-    agent_runtime_v125_idempotency_complete($scope,$key,$result);
+    $cached=$result;
+    if($referenceId>0)$cached['image_reference_request_v1']=$referenceRequest;
+    agent_runtime_v125_idempotency_complete($scope,$key,$cached);
     return $result;
 }
 
 function vp3_agent_chat_send_v2160(PDO $pdo,array $user,?array $activeAgent,array $principal,array $input,bool $brainAllowed,?callable $currentAuthority=null,bool $allowConnectedSites=false): array
 {
+    $imageReferenceId=vp3_chat_image_reference_input_v1($input);
     if(vp3_agent_chat_auto_voice_image_v2160($input)){
         return vp3_agent_chat_auto_voice_image_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,$currentAuthority,$allowConnectedSites);
+    }
+    if($imageReferenceId>0){
+        return vp3_agent_chat_send_inner_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,$currentAuthority,$allowConnectedSites);
     }
     if($allowConnectedSites&&empty($input['ephemeral_protocol'])&&is_string($input['message']??null)
         &&(int)($input['conversation_id']??0)>0){
@@ -979,6 +1011,8 @@ $query=trim((string)($input['message']??''));$conversationId=(int)($input['conve
 $activeAgentId=vp3_agent_chat_agent_id_v380($activeAgent);
 if($conversationId<1){$workspaceId=artist_workspace_v181_scope_id($user);$conversation=vp3_agent_chat_create_conversation_v380($pdo,$user,$activeAgent,vp3_agent_chat_public_prompt_v2160($query),$workspaceId);$conversationId=(int)$conversation['id'];}elseif(!vp3_agent_chat_runtime_conversation_v2160($pdo,$conversationId,$userId,$activeAgent))throw new RuntimeException('Conversation not found for this agent.');
 $participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);
+$imageReferenceContext=vp3_chat_image_reference_context_v1($pdo,$user,$principal,$input,
+    ['conversation_id'=>$conversationId,'user_agent_id'=>$activeAgentId]);
 $initiativeStatusRead=!$ephemeralProtocol&&in_array(vp3_initiative_command_v1($query),['status','findings'],true);
 $youtubeHistoryRequest=$allowConnectedSites&&!$ephemeralProtocol&&agent_connection_youtube_history_request_v1($query);
 if(array_key_exists('initiative_reply',$input)&&($participantActor!==null||$ephemeralProtocol))throw new RuntimeException('Use the private owner Chat for this reply.',403);
@@ -1010,6 +1044,7 @@ if(function_exists('vp3_live_session_note_action_v2370')){
     ]);}catch(Throwable $e){error_log('VP3 live-session Chat user action failed: '.$e->getMessage());}
 }
 $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];
+unset($rawAgentContext['image_reference_asset_id'],$rawAgentContext['image_reference']);
 unset($rawAgentContext['working_context_ref'],$rawAgentContext['initiative_reply'],$rawAgentContext['initiative_followthrough'],$rawAgentContext['followthrough'],$rawAgentContext['advisory_context'],$rawAgentContext['verified_followthrough'],$rawAgentContext['initiative_reply_anchor_v1'],$rawAgentContext['initiative_reply_recovery'],$rawAgentContext['initiative_request'],$rawAgentContext['initiative_claim'],$rawAgentContext['initiative_voice_request'],$rawAgentContext['initiative_reply_unassociated_v1']);
 $workingSelection=null;
 $followthroughSelection=null;
@@ -1075,7 +1110,7 @@ $youtubeFollowup=$allowConnectedSites&&!$ephemeralProtocol&&$initiativeReply===n
 $youtubeQuery=$allowConnectedSites&&!$ephemeralProtocol&&!$youtubeHistoryRequest&&$youtubeFollowup===null
     ?agent_connection_youtube_chat_plan_v1($query):null;
 $mediaCommand=$allowConnectedSites&&!$ephemeralProtocol&&vp3_media_chat_command_v2160($query);
-if($imageTurn===null&&!$ephemeralProtocol&&!$mediaCommand&&!$initiativeStatusRead&&!$emailRequest&&!$youtubeHistoryRequest&&$youtubeFollowup===null&&$youtubeQuery===null&&$publicResearchPlan===null&&$meetingResearchPlan===null&&$connectedSitePlan===null){
+if($imageTurn===null&&empty($imageReferenceContext['image_reference_asset_id'])&&!$ephemeralProtocol&&!$mediaCommand&&!$initiativeStatusRead&&!$emailRequest&&!$youtubeHistoryRequest&&$youtubeFollowup===null&&$youtubeQuery===null&&$publicResearchPlan===null&&$meetingResearchPlan===null&&$connectedSitePlan===null){
     $priorAuthority=$currentAuthority;
     $followthroughAuthority=static function()use($pdo,$user,$input,$priorAuthority):void{
         if($priorAuthority)$priorAuthority();
@@ -1159,6 +1194,7 @@ if($capabilityTool===null){
     $meetingMemory=[];
     $agentContext=['conversation_id'=>$conversationId,'user_agent_id'=>$activeAgentId];
 }
+$agentContext=array_replace($agentContext,$imageReferenceContext);
 $persistedAgentContext=$agentContext;
 unset($persistedAgentContext['browser_context']);
 unset($persistedAgentContext['screen_observations']);

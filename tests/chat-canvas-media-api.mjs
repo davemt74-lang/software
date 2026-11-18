@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
+import {createHmac} from 'node:crypto';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-image-api-'));fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
 fs.copyFileSync('api/chat-canvas-media-v1.php',path.join(tmp,'api/chat-canvas-media-v1.php'));fs.copyFileSync('media-library-file-v86.php',path.join(tmp,'media-library-file-v86.php'));
@@ -10,7 +11,7 @@ fs.copyFileSync('api/media-library-image-v1.php',path.join(tmp,'api/media-librar
 fs.copyFileSync('tests/fixtures/image-generation-v1.php',path.join(tmp,'includes/image-fixture.php'));fs.copyFileSync('tests/fixtures/workflow-agent-schema-v1.php',path.join(tmp,'includes/workflow-agent-schema-v1.php'));
 fs.mkdirSync(path.join(tmp,'sessions'));
 fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),`<?php define('STONEFELLOW_ROOT',dirname(__DIR__));session_save_path(STONEFELLOW_ROOT.'/sessions');session_start();$GLOBALS['imageFixtureFile']=dirname(__DIR__).'/image.sqlite';$GLOBALS['noImageProvider']=!isset($_SERVER['HTTP_X_FIXTURE_PROVIDER']);$GLOBALS['noImageEntitlement']=isset($_SERVER['HTTP_X_FIXTURE_NO_QUOTA']);require __DIR__.'/image-fixture.php';`);
-fs.writeFileSync(path.join(tmp,'seed.php'),`<?php require __DIR__.'/includes/bootstrap.php';$GLOBALS['noImageProvider']=false;$u=['id'=>1,'is_active'=>1];$p=['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7];$g=vp3_image_queue_v1(db(),$u,$p,image_fixture_plan_v1(),image_fixture_turn_v1());if(($_GET['mode']??'')==='complete')$g=vp3_image_tick_v1(db(),$u,vp3_image_row_v1(db(),$u,$g['id']),function($url,$body,$key){file_put_contents(__DIR__.'/provider-calls.txt','.',FILE_APPEND);return image_fixture_response_v1($body['size']);});header('Content-Type: application/json');echo json_encode($g);`);
+fs.writeFileSync(path.join(tmp,'seed.php'),`<?php require __DIR__.'/includes/bootstrap.php';$GLOBALS['noImageProvider']=false;$u=['id'=>1,'is_active'=>1];$p=['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7];$plan=image_fixture_plan_v1();if(isset($_GET['count']))$plan['count']=(int)$_GET['count'];$g=vp3_image_queue_v1(db(),$u,$p,$plan,image_fixture_turn_v1());if(($_GET['mode']??'')==='complete')$g=vp3_image_tick_v1(db(),$u,vp3_image_row_v1(db(),$u,$g['id']),function($url,$body,$key){file_put_contents(__DIR__.'/provider-calls.txt','.',FILE_APPEND);return image_fixture_response_v1($body['size'],$body['n']);});header('Content-Type: application/json');echo json_encode($g);`);
 fs.writeFileSync(path.join(tmp,'complete-workspace.php'),`<?php require __DIR__.'/includes/bootstrap.php';$GLOBALS['noImageProvider']=false;$u=['id'=>1,'is_active'=>1];$g=vp3_image_tick_v1(db(),$u,vp3_image_row_v1(db(),$u,$_GET['id']),function($url,$body,$key){file_put_contents(__DIR__.'/provider-calls.txt','.',FILE_APPEND);return image_fixture_response_v1($body['size']);});header('Content-Type: application/json');echo json_encode($g);`);
 const server=net.createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;await new Promise(r=>server.close(r));
 const child=spawn(process.env.VP3_PHP_BINARY||'php',['-S',`127.0.0.1:${port}`,'-t',tmp],{stdio:['ignore','ignore','pipe']});let logs='';child.stderr.on('data',v=>logs+=v);
@@ -42,6 +43,40 @@ try{
  await check('private asset batch lookup cannot disclose another owner image',async()=>{
   const own=await post({action:'assets',asset_ids:[asset]});assert.equal(own.data.assets[0].id,asset);assert.equal(own.data.assets[0].available,true);
   const foreign=await post({action:'assets',asset_ids:[asset],conversation_id:13,agent_id:9},{'X-Fixture-User':'2'});assert.deepEqual(foreign.data.assets,[]);
+ });
+ await check('selecting a private base validates its bytes and does not invoke a provider',async()=>{
+  const before=callCount();
+  const selected=await post({action:'reference',asset_id:asset},{'X-Fixture-No-Quota':'1'});
+  assert.equal(selected.r.status,200);assert.equal(selected.data.reference.asset_id,asset);
+  assert.equal(selected.data.reference.mime_type,'image/png');assert.equal(selected.data.reference.width,1024);
+  assert.match(selected.data.reference.sha256,/^[a-f0-9]{64}$/);assert.match(selected.data.reference.revision,/^[a-f0-9]{64}$/);
+  assert.equal(selected.data.asset.id,asset);assert.equal(selected.data.reference.bytes,undefined);
+  assert.equal(selected.raw.includes('fixture-image-secret'),false);assert.equal(callCount(),before);
+ });
+ await check('base selection rejects foreign ownership, invalid scope and malformed identifiers',async()=>{
+  assert.equal((await post({action:'reference',asset_id:asset,conversation_id:13,agent_id:9},{'X-Fixture-User':'2'})).r.status,404);
+  assert.equal((await post({action:'reference',asset_id:asset,agent_id:8})).data.ok,false);
+  for(const invalid of [String(asset),0,-1,null,{},9007199254740992]){
+   assert.equal((await post({action:'reference',asset_id:invalid})).r.status,422);
+  }
+  assert.equal((await post({action:'reference',asset_id:999999})).r.status,404);
+ });
+ await check('a supplied page identity must match the current owner session',async()=>{
+  const headers={Cookie:'PHPSESSID=image-reference-owner','X-VP3-Working-Attention':createHmac('sha256','fixture').update('working-attention|1|image-reference-owner').digest('hex')};
+  assert.equal((await post({action:'reference',asset_id:asset},headers)).r.status,200);
+  assert.equal((await post({action:'reference',asset_id:asset},{...headers,'X-VP3-Working-Attention':'stale-page'})).r.status,403);
+  assert.equal((await post({action:'reference',asset_id:asset},{...headers,Cookie:'PHPSESSID=another-image-owner'})).r.status,403);
+ });
+ await check('a four-image job reloads all ordered private results after one provider call',async()=>{
+  const before=callCount();
+  const batch=await(await fetch(base+'/seed.php?mode=complete&count=4')).json();
+  assert.equal(batch.status,'completed');assert.equal(batch.count,4);assert.equal(batch.completed_count,4);
+  const ids=batch.assets.map(a=>a.id);assert.equal(new Set(ids).size,4);assert.equal(batch.asset.id,ids[0]);
+  for(const action of ['get','tick']){
+   const restored=await post({action,generation_id:batch.id});
+   assert.deepEqual(restored.data.generation.assets.map(a=>a.id),ids);
+  }
+  assert.equal(callCount(),before+1);
  });
  await check('the existing authenticated file route serves actual saved PNG bytes',async()=>{const own=await fetch(base+'/media-library-file-v86.php?id='+asset);assert.equal(own.status,200);assert.match(own.headers.get('content-type'),/image\/png/);assert.equal(own.headers.get('x-content-type-options'),'nosniff');const bytes=new Uint8Array(await own.arrayBuffer());assert.deepEqual([...bytes.slice(0,8)],[137,80,78,71,13,10,26,10]);assert.equal((await fetch(base+'/media-library-file-v86.php?id='+asset,{headers:{'X-Fixture-User':'2'}})).status,404);});
  await check('malformed references and oversized batches fail before reading media',async()=>{assert.equal((await post({action:'assets',asset_ids:Array.from({length:13},(_,i)=>i+1)})).r.status,422);assert.equal((await post({action:'assets',asset_ids:['1']})).r.status,422);assert.equal((await post({action:'get',generation_id:'../../secret'})).r.status,422);});

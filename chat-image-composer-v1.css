@@ -1,0 +1,15 @@
+.vp3-image-upload-tool{padding:2px 0 12px;border-bottom:1px solid #e5e7eb;margin-bottom:12px}
+.vp3-image-upload-button{display:inline-flex;align-items:center;min-height:40px;padding:9px 14px;border:1px solid #d1d5db;border-radius:10px;background:#fff;color:#111827;font:600 13px/1.4 system-ui;cursor:pointer}
+.vp3-image-upload-tool p{margin:6px 0 0;color:#6b7280;font:12px/1.45 system-ui}
+.vp3-image-upload-tool .vp3-image-upload-status:empty{display:none}
+.vp3-image-reference[hidden]{display:none!important}
+.vp3-image-reference{display:flex;align-items:center;gap:10px;width:100%;max-width:790px;box-sizing:border-box;margin:0 auto 8px;padding:9px 11px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;color:#111827;font:12px/1.4 system-ui;pointer-events:auto}
+.vp3-image-reference>img{flex:0 0 48px;width:48px;height:48px;object-fit:contain;border-radius:6px;background:transparent}
+.vp3-image-reference>div{flex:1;min-width:0;display:grid;gap:2px}
+.vp3-image-reference strong{font-weight:600}.vp3-image-reference span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#6b7280}
+.vp3-image-reference>button{flex:0 0 32px;min-width:32px;min-height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:#6b7280;font:22px/1 system-ui;cursor:pointer}
+.vp3-image-reference progress{width:min(240px,100%);height:4px;margin-top:5px;accent-color:#2563eb}
+.vp3-image-reference .vp3-image-upload-indicator{flex:0 0 32px;width:32px;height:32px;border:2px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:vp3-image-upload-spin 1s linear infinite}
+.vp3-image-upload-button:focus-visible,.vp3-image-reference>button:focus-visible{outline:2px solid #2563eb;outline-offset:3px}
+@keyframes vp3-image-upload-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.vp3-image-reference .vp3-image-upload-indicator{animation:none;border-style:dotted}}
