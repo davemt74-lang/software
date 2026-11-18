@@ -1016,7 +1016,7 @@
     if(profileReport){
       if(event.isTrusted&&current.hasChat&&specialistRows(current).has('profile')
         &&window.VP3AgentActivityHub?.openSpecialist?.('profile',profileReport,{label:'Profile',fullReport:true,
-          focusReturn:document.getElementById('chatInput')})===true){
+          focusReturn:document.getElementById('chatInput'),selection:{tab:'reports'}})===true){
         window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
       }
       return;

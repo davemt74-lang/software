@@ -79,6 +79,37 @@ check(!saved.thread.textContent.includes('Visitor one')&&saved.thread.textConten
 const ack=await attentionFixture(),heldAck=ack.hold('profile_attention_ack'),acking=ack.refresh();await settle();unavailable(ack.rawRows.get(11));await ack.refresh({present:false});heldAck.work.release();await acking;await settle();
 check(!ack.thread.textContent.includes('A public question.')&&ack.controller.getState().items[0].source_status==='unavailable','late visible ACK cannot restore a now-revoked source body');
 
+// The real drawer can read again while a newly awakened card's ACK is in flight.
+// That older state response must not strand a committed ACK or revive its source.
+async function heldWakeAck(extraItems=[]) {
+  const f=await attentionFixture({items:[attentionItem({disposition:'snoozed',snoozed_until_ms:1799999999000,eligible:true,read:true}),...extraItems]});
+  const presentation=f.hold('profile_attention_present'),first=f.refresh();await settle();
+  const state=f.hold('profile_attention_state'),second=f.refresh();await settle();
+  const ack=f.hold('profile_attention_ack');presentation.work.release();await settle();
+  state.work.release();await second;await settle();
+  return {f,ack,first};
+}
+for(const revoke of [false,true]){
+  const {f,ack,first}=await heldWakeAck();
+  check(f.rawRows.get(11).presented&&!f.controller.getState().items[0].presented,'held wake ACK is committed while a newer state response still shows unpresented');
+  const before=f.requests.length,writes=f.requests.filter(input=>['profile_attention_present','profile_attention_ack','profile_attention_update'].includes(input.action)).length;
+  const recovery=f.hold('profile_attention_state');ack.work.release();await first;await settle();
+  check(!!recovery.work&&f.requests.length===before+1&&recovery.work.body.page===0&&recovery.work.body.conversation_id===42&&recovery.work.body.agent_id===7,'discarded current ACK triggers one exact current-page recovery read');
+  if(revoke){unavailable(f.rawRows.get(11));await f.refresh({present:false});}
+  recovery.work.release();await settle();
+  check(revoke?!f.thread.textContent.includes('A public question.')&&f.controller.getState().items[0].source_status==='unavailable':f.controller.getState().items[0].presented&&f.controller.getState().items[0].wake_generation===2&&f.thread.textContent.includes('Unread · Presented · Needs attention'),revoke?'newer source revocation dominates the older ACK recovery response':'current recovery displays the committed awakened generation without another poll');
+  check(f.requests.filter(input=>['profile_attention_present','profile_attention_ack','profile_attention_update'].includes(input.action)).length===writes,'ACK recovery performs no presentation, acknowledgement or disposition mutation');f.dispose();
+}
+for(const change of ['chat','agent','dispose','page']){
+  const extra=change==='page'?Array.from({length:25},(_,i)=>attentionItem({attention_id:i+12,notification_id:i+22,profile_event_id:i+32,public_conversation_id:i+202,public_message_id:i+302,disposition:'handled',read:true,eligible:false,can_snooze:false,can_handle:false,can_ignore:false})):[];
+  const {f,ack,first}=await heldWakeAck(extra);
+  if(change==='dispose')f.dispose();
+  else if(change==='page')await f.controller.refresh({page:1,present:false});
+  else await f.contextChange(change==='chat'?55:42,change==='agent'?8:7);
+  const before=f.requests.length;ack.work.release();await first;await settle();
+  check(f.requests.length===before&&(change!=='page'||f.controller.getState().page===1),'discarded ACK cannot schedule recovery after '+change+' changes');f.dispose();
+}
+
 const retry=await attentionFixture({mode:'portal'});await retry.refresh();retry.failures.set('profile_attention_update',{status:503});await retry.click(11,'handled');const first=issued(retry,'profile_attention_update')[0];retry.failures.delete('profile_attention_update');await retry.click(11,'handled');const second=issued(retry,'profile_attention_update')[1];
 check(first.request_id===second.request_id&&JSON.stringify(first)===JSON.stringify(second),'uncertain lifecycle write retries exact original request/body without duplicating intent');
 const conflict=await attentionFixture({mode:'portal'});await conflict.refresh();Object.assign(conflict.rawRows.get(11),{state_revision:2,disposition:'ignored',can_handle:false,can_ignore:false,can_snooze:false,eligible:false});await conflict.click(11,'handled');

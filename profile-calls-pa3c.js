@@ -207,12 +207,12 @@
         if(!id){this.clearActivity();return;}
         if(this.activity?.id===id)return;
         this.activity={id,callId:call_id};
-        this.emitActivity({id,conversationId:conversation_id,status:state==='active'?'active':'connecting',assisted:true,agent:assistance.agent});
+        this.emitActivity({id,callId:call_id,conversationId:conversation_id,status:state==='active'?'active':'connecting',assisted:true,agent:assistance.agent});
       }else if(this.activity?.callId===call_id){
         if(!id||id!==this.activity.id){this.clearActivity();return;}
         if(!this.activity.ended&&(state==='ending'||TERMINAL.has(state))){
           this.activity.ended=true;
-          this.emitActivity({id,conversationId:conversation_id,status:'ended',assisted:true,agent:assistance.agent});
+          this.emitActivity({id,callId:call_id,conversationId:conversation_id,status:'ended',assisted:true,agent:assistance.agent});
         }
       }
     }
@@ -299,9 +299,9 @@
       finally{this.offerBusy=false;controls.buttons.forEach(button=>button.disabled=!controls.allowed);}
     }
     offers(host,context){
-      const row=node('div','profile-call-offer-actions'),notice=node('p','profile-call-notice'),disclosure=node('p','profile-call-notice'),buttons=[];const controls={row,notice,disclosure,buttons,context,allowed:false,last:0};
-      const disclosureId=`vp3-call-assistance-offer-${this.scopeControls.size}`;disclosure.setAttribute('id',disclosureId);disclosure.dataset.callAssistanceOffer='';disclosure.hidden=true;row.appendChild(disclosure);
-      for(const [mode,label] of [['audio','Request audio call'],['video','Request video call']]){const button=node('button','',label);button.type='button';button.disabled=true;button.dataset.callOffer=mode;if(mode==='audio')button.setAttribute('aria-describedby',disclosureId);button.addEventListener('click',()=>void this.offer(mode,controls));row.appendChild(button);buttons.push(button);}row.appendChild(notice);host.appendChild(row);this.scopeControls.add(controls);return controls;
+      const row=node('div','profile-call-offer-actions'),notice=node('p','profile-call-notice'),disclosure=node('p','profile-call-notice'),buttons=[];const controls={row,notice,disclosure,buttons,context,allowed:false,last:0,listeners:[],disposed:false};
+      const disclosureId=`vp3-call-assistance-offer-${this.offerSequence=(this.offerSequence||0)+1}`;disclosure.setAttribute('id',disclosureId);disclosure.dataset.callAssistanceOffer='';disclosure.hidden=true;row.appendChild(disclosure);
+      for(const [mode,label] of [['audio','Request audio call'],['video','Request video call']]){const button=node('button','',label);button.type='button';button.disabled=true;button.dataset.callOffer=mode;if(mode==='audio')button.setAttribute('aria-describedby',disclosureId);const listener=()=>{if(!controls.disposed)void this.offer(mode,controls);};button.addEventListener('click',listener);controls.listeners.push([button,listener]);row.appendChild(button);buttons.push(button);}row.appendChild(notice);host.appendChild(row);this.scopeControls.add(controls);return controls;
     }
     setOffers(controls,data,message='Live calls are unavailable right now. You can keep messaging.'){
       controls.allowed=data?.can_offer===true;
@@ -312,9 +312,9 @@
       controls.buttons.forEach(button=>button.disabled=!controls.allowed||this.offerBusy);
     }
     async refreshOffers(controls){
-      const binding=controls.context();if(!binding||!controls.row.isConnected||controls.checking)return;
+      const binding=controls.context();if(!binding||controls.disposed||!controls.row.isConnected||controls.checking)return;
       const snapshot=this.capture(),key=JSON.stringify(binding);controls.checking=true;
-      const current=()=>this.current(snapshot)&&controls.row.isConnected&&JSON.stringify(controls.context())===key;
+      const current=()=>!controls.disposed&&this.current(snapshot)&&controls.row.isConnected&&JSON.stringify(controls.context())===key;
       try{const data=await this.request('state',binding,'GET');if(!current())return;if(data.contract!==CONTRACT||typeof data.can_offer!=='boolean')throw new Error('Call capability unavailable.');controls.last=time();this.setOffers(controls,data);}
       catch(_){if(current())this.setOffers(controls,null);}
       finally{controls.checking=false;}
@@ -363,7 +363,29 @@
     const request=async(action,payload,method)=>{const url=new URL(config.endpoint,location.href),options={method,credentials:'same-origin',cache:'no-store'};if(method==='GET'){Object.entries({action,...payload}).forEach(([key,value])=>url.searchParams.set(key,String(value)));}else{options.headers={'Content-Type':'application/json'};options.body=JSON.stringify({action,csrf_token:config.csrf,...payload});}const response=await fetch(url,options),data=await response.json().catch(()=>null);if(!response.ok||!data?.ok){const error=new Error('Call request unavailable.');error.status=response.status;error.code=data?.code||'';throw error;}return data;};
     ownerSurface=new Surface({role:'owner',context:ownerContext,request,mount:delivery=>(window.STONEFELLOW_CHAT_CONTINUITY_V87||{}).mountProfileCall?.(delivery)}).start();return ownerSurface;
   }
-  window.VP3ProfileCallsPa3c={mountVisitor,speechBusy,attachOwnerThread(host,options){if(!ownerSurface)return;const control=ownerSurface.offers(host,()=>options.binding());void ownerSurface.refreshOffers(control);},refresh:()=>ownerSurface?.refresh(),invalidateVisitor(surface,reason){surface?.invalidate(reason);}};
+  function attachOwnerThread(host,options){
+    const surface=ownerSurface;if(!surface||!host?.appendChild||typeof options?.binding!=='function')return null;
+    const control=surface.offers(host,()=>options.binding());void surface.refreshOffers(control);
+    return Object.freeze({dispose(){
+      if(control.disposed)return;control.disposed=true;control.allowed=false;
+      for(const [button,listener] of control.listeners)button.removeEventListener('click',listener);
+      control.listeners=[];control.context=()=>null;surface.scopeControls.delete(control);control.row.remove();
+    }});
+  }
+  function focusOwnerCall(selection,{beforeFocus}={}){
+    if(!selection||!positive(selection.callId)||!positive(selection.publicConversationId)
+      ||!positive(selection.chatConversationId)||!Number.isSafeInteger(selection.chatAgentId)||selection.chatAgentId<0)return false;
+    const surface=ownerSurface,record=surface?.records.get(selection.callId);if(!record)return false;
+    const valid=()=>surface===ownerSurface&&surface.records.get(selection.callId)===record&&record.node.isConnected&&!record.node.hidden
+      &&surface.current(record.snapshot)&&record.call.call_id===selection.callId&&record.call.conversation_id===selection.publicConversationId
+      &&record.snapshot.binding.chat_conversation_id===selection.chatConversationId&&record.snapshot.binding.chat_agent_id===selection.chatAgentId;
+    if(!valid())return false;
+    if(typeof beforeFocus==='function')beforeFocus();
+    if(!valid())return false;
+    if(record.node.getAttribute('tabindex')===null)record.node.setAttribute('tabindex','-1');
+    record.node.scrollIntoView?.({block:'nearest',behavior:'auto'});record.node.focus({preventScroll:true});return true;
+  }
+  window.VP3ProfileCallsPa3c={mountVisitor,speechBusy,attachOwnerThread,focusOwnerCall,refresh:()=>ownerSurface?.refresh(),invalidateVisitor(surface,reason){surface?.invalidate(reason);}};
   window.addEventListener('stonefellow:chat-context-changing',()=>ownerSurface?.invalidate('Chat context changed.'));
   window.addEventListener('vp3:chat-context-ready',()=>void ownerSurface?.refresh());
   window.addEventListener('vp3:profile-call-message',()=>void ownerSurface?.refresh());

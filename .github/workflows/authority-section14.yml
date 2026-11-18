@@ -70,6 +70,27 @@ jobs:
         run: |
           php tests/profile-specialist-sources-v1.php
           php tests/profile-specialist-pipeline-v1.php
+      - name: Profile workspace, reviewed drafts and mounted views
+        run: |
+          php tests/profile-specialist-workspace-v1.php
+          php tests/profile-owner-drafts-v1.php
+          php tests/profile-owner-drafts-provider-v1.php
+          php tests/profile-specialist-analytics-v1.php
+          php tests/profile-workspace-calls-v1.php
+          node tests/profile-specialist-workspace-v1.mjs
+          node tests/profile-specialist-analytics-ui-v1.mjs
+          node tests/profile-call-workspace-v1.mjs
+          node tests/profile-specialist-workspace-http.mjs
+      - name: Profile workspace native MySQL authority and recovery
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-specialist-workspace-v1.php
+          php tests/profile-owner-drafts-v1.php
+          php tests/profile-specialist-analytics-v1.php
+          php tests/profile-workspace-calls-v1.php
       - name: Profile Agent PA1 SQLite and HTTP authority
         run: |
           php tests/profile-public-authority-pa1.php
@@ -238,4 +259,12 @@ jobs:
         with:
           name: profile-specialist-browser-evidence
           path: artifacts/profile-specialist/
+          if-no-files-found: ignore
+      - name: Profile workspace tabs, reviewed replies and current Chat
+        run: node tests/profile-specialist-workspace-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-workspace-browser-evidence
+          path: artifacts/profile-specialist-workspace/
           if-no-files-found: ignore

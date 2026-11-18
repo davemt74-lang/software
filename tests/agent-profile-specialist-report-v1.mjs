@@ -123,7 +123,7 @@ const validatorBegin=script.indexOf('  function validState(data,current) {');
 const validatorEnd=script.indexOf('  async function act(',validatorBegin);
 assert.ok(readerBegin>0&&readerEnd>readerBegin&&validatorBegin>0&&validatorEnd>validatorBegin);
 Object.assign(context,{AbortController,generation:0,controller:null,timer:0,specialistSettings:null,imageStudioView:null,
-  connectedSitesView:null,host:{dataset:{}},specialistMode:true,selectedSpecialist:'profile',officeAllLoaded:false,
+  connectedSitesView:null,profileView:null,host:{dataset:{}},specialistMode:true,selectedSpecialist:'profile',officeAllLoaded:false,
   accessRejected:false,status:new Element('p'),verified:new Element('small'),renders:0,open:true,
   family:key=>key.split(':')[0],visible:()=>context.open,officeWorkspace:()=>false,
   setTimeout:()=>1,clearTimeout:()=>{},leaseCurrent:()=>true,

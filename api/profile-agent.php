@@ -186,17 +186,9 @@ if(in_array($action,$ownerActions,true)){
             $conversation=vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid,true);if(!$conversation)throw new VP3ProfileAgentPublicException('CONVERSATION_NOT_FOUND','Conversation not found.',404);
             $receipt=vp3_profile_owner_reply_recover_v1($pdo,$user,$cid,$requestId,$reply);
             if($receipt===null){
-                vp3_profile_agent_response_token_v1($pdo,$cid,true);
                 $handoff=profile_agent_owner_handoff_pa3($pdo,$user,$conversation,'reply',$reply,$requestId);
                 if($handoff===null){
-                    $context=['profile_owner_reply_v1'=>vp3_profile_owner_reply_marker_v1($uid,$cid,$requestId,$reply)];
-                    $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'owner',?,?,?)")->execute([$cid,$uid,$reply,json_encode($context,JSON_THROW_ON_ERROR)]);
-                    $messageId=(int)$pdo->lastInsertId();
-                    $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=?")->execute([mb_strimwidth($reply,0,900,'…'),$cid,$uid]);
-                    require_once dirname(__DIR__).'/includes/profile-attention-pa4b.php';
-                    vp3_profile_attention_message_sent_pa4b($pdo,$conversation,$messageId);
-                    vp3_profile_attention_settle_conversation_pa4b($pdo,$uid,$cid);
-                    $receipt=['message_id'=>$messageId,'duplicate'=>false];
+                    $receipt=vp3_profile_owner_reply_legacy_save_v1($pdo,$user,$conversation,$requestId,$reply);
                 }else $receipt=['message_id'=>(int)$handoff['message_id'],'duplicate'=>$handoff['duplicate']===true];
             }
             $pdo->commit();

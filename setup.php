@@ -7,6 +7,7 @@ require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
 require_once __DIR__ . '/includes/homeserver-https-relay-v1300.php';
 require_once __DIR__ . '/includes/homeserver-shared-agent-v210.php';
 require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
+require_once __DIR__ . '/includes/profile-owner-drafts-v1.php';
 require_once __DIR__ . '/includes/profile-calls-pa3c.php';
 require_once __DIR__ . '/includes/profile-call-activity-pa3c.php';
 require_once __DIR__ . '/includes/profile-visitor-speech-pa4a.php';
@@ -82,6 +83,7 @@ try {
     agent_job_engine_ensure_schema_v1900($pdo);
     agent_work_control_ensure_schema_v173($pdo);
     vp3_profile_handoff_ensure_schema_pa3($pdo);
+    vp3_profile_owner_drafts_ensure_schema_v1($pdo);
     vp3_profile_call_ensure_schema_pa3c($pdo);
     vp3_profile_call_activity_ensure_schema_pa3c($pdo);
     vp3_profile_speech_ensure_schema_pa4a($pdo);

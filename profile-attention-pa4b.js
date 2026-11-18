@@ -249,11 +249,18 @@
     }
     async function acknowledge(item,element,bound) {
       if (!idle(bound) || !markerMatches(element,item,bound) || !visible(element) || item.presented || !sameItem(rows.get(item.attention_id),item)) return false;
-      const observedAtStart=sourceObservation,key=[bound.epoch,item.delivery_id,item.state_revision].join(':');
+      const observedAtStart=sourceObservation,key=[bound.epoch,item.delivery_id,item.state_revision].join(':'),ackPageEpoch=pageEpoch,ackPage=requestedPage;
       if(acknowledging.has(key))return false;acknowledging.add(key);
       try {
         const result=await write('ack',item,bound,{delivery_id:item.delivery_id,chat_message_id:item.chat_message_id,visible:true,tab_id:tabId,client_instance_id:clientId});
-        if (!current(bound) || result.observed!==sourceObservation || !markerMatches(element,result.item,bound) || !merge(result.item)) return false;
+        if (!current(bound) || !markerMatches(element,result.item,bound)) return false;
+        if (result.observed!==sourceObservation) {
+          // A newer read may predate this committed ACK. Reread current source
+          // instead of applying the late payload or repeating a visible action.
+          if (ackPageEpoch===pageEpoch && ackPage===requestedPage) await refresh({present:false});
+          return false;
+        }
+        if (!merge(result.item)) return false;
         itemErrors.delete(item.attention_id);
         renderSaved(element,result.item);emit();return true;
       } catch (cause) {if(current(bound)&&observedAtStart===sourceObservation){if([401,403,419].includes(cause.status))markUnavailable('Current Profile attention access could not be verified.',true);else{itemErrors.set(item.attention_id,cause.message);renderSaved(element,item);emit();}}return false;}

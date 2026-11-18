@@ -21,7 +21,7 @@ Status: complete, 10/10 for this acceptance scope. PR #788 merged as `a781a75dfc
 
 ## Phase 2 — Shared Profile specialist
 
-Status: implemented and locally reviewed; awaiting final-source hosted gates before scoring and merge.
+Status: complete, 10/10 for this acceptance scope. PR #789 merged as `ec31558b4e44e3e746c0e5169f415adec73222e4` after all 13 workflows passed on final source `dc161379e94d9ec95eff8d3ffbb9192efc06c845` (33 successful checks; 4 expected path-filtered skips).
 
 - A single Profile source/report adapter reads currently authorized conversations, attention, calls, reviewed follow-ups, and verified activity.
 - Findings retain stable references, revisions, source links, coverage, and current disposition.
@@ -31,7 +31,7 @@ Status: implemented and locally reviewed; awaiting final-source hosted gates bef
 
 ## Phase 3 — Owner Profile workspace
 
-Status: not started.
+Status: implementation complete; final-source hosted gates and visual evidence pending before final scoring and merge.
 
 - The existing specialist interface provides Overview, Conversations, Calls, Analytics, and Reports without duplicate active inboxes or nested page scrolling.
 - Exact visitor threads and current responder mode are visible; takeover/reply/delegate/resolve reuse existing domain actions.
@@ -83,4 +83,16 @@ Phase 1 final-source evidence: [Section 14 Authority and Security](https://githu
 
 The source suite exercises discovery and exact rereads through current private owner/Agent/Chat authority, independent public responder identity, canonical source provenance and disposition, semantic revision stability, missing source coverage, and no-write report reads. The pipeline suite uses actual SQLite/MySQL workflow records and receipts to verify that a saved five-section Profile report can follow an explicitly selected report rule while native visitor/call obligations and Office-owned follow-ups retain their presentation owner.
 
-The Activity Hub HTTP suite runs the production endpoint and checks exact scoped reports, unavailable/limited/unconfigured states, method and session authority, and unchanged storage. Renderer tests exercise all five sections, safe source links including subdirectory installs, hostile visitor text, and asynchronous Chat/Agent switches. The hosted browser suite checks the actual shared specialist interface on desktop and compact screens. These checks join the existing gates; Phase 2 remains unscored until all final-source workflows pass.
+The Activity Hub HTTP suite runs the production endpoint and checks exact scoped reports, unavailable/limited/unconfigured states, method and session authority, and unchanged storage. Renderer tests exercise all five sections, safe source links including subdirectory installs, hostile visitor text, and asynchronous Chat/Agent switches. The hosted browser suite checks the actual shared specialist interface on desktop and compact screens. All 309 focused checks pass on both hosted PHP versions. Native MySQL additionally passes the 113 source checks and 94 pipeline checks per version, with zero source-suite skips. Final desktop and compact screenshots were inspected. All five scoring areas earned 2/2.
+
+Phase 2 final-source evidence: [Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44283207631), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44283207796), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44283207688). The merged tree `540f873956766322ae67cf659c2e4018f5115db2` exactly matches the tested source.
+
+## Phase 3 verification scope
+
+The existing Activity Hub hosts one Profile workspace with Overview, Conversations, Calls, Analytics, and Reports. The specialist rail, Top of Mind, and existing Profile activity launcher select that workspace. Conversation inventory includes resolved and historical threads independently of attention suppression, with bounded cursor pagination and older-message reads. Native visitor and call cards remain in main Chat; focusing an existing call does not deliver a new card, reconnect, or replace media tracks.
+
+All workspace requests carry the exact owner, private Agent, saved Chat, and current page binding. Read operations do not acknowledge activity, install schema, start inference, or acquire a public responder lease. Public Profile visibility remains separate from private workspace access. Current capabilities and the actual browser session are checked again before returning results. Analytics uses the existing complete native aggregates and conversion-event definitions, with explicit unavailable coverage, current property ownership, and no initialization on read. Owner-local completed calendar windows remain Phase 5 work.
+
+Private reply preparation requires an exact current visitor turn already claimed by the owner. Its durable request, source revision, dispatch token, and send receipt preserve recovery across an uncertain response without a second provider attempt or public message. An edited draft is sent only by an explicit owner action against its reviewed source. The normal public responder retains its original admission rules. Cloud preparation uses governed foreground usage and one physical attempt; optional HomeServer preparation reserves the attempt in the same transaction as its transient queue insertion. Preparing a draft neither sends it nor starts another worker.
+
+Focused SQL, production HTTP, and renderer tests cover authority changes, pagination, request replay, source changes during preparation, late completion, explicit regeneration, unavailable storage, switching tabs, and preserved input. Native MySQL gates exercise authority and transactional recovery, including competing HomeServer queue reservations. Hosted browser gates cover the shared workspace at desktop and compact sizes, keyboard focus, saved reply recovery, and native call/media continuity. Existing regression invocations remain enabled. Final hosted results and screenshots must be reviewed before awarding 10/10 and merging this phase.

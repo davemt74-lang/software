@@ -189,7 +189,7 @@ function homeserver_execution_v230_recent(int $userId,int $limit=20): array
 }
 
 function homeserver_execution_v230_execute(
-    int $userId,string $operation,array $payload=[],?callable $fallback=null,bool $transientContext=false
+    int $userId,string $operation,array $payload=[],?callable $fallback=null,bool $transientContext=false,?callable $beforeDispatch=null
 ): array {
     if($userId<1)throw new RuntimeException('Authentication required.');
     $policy=homeserver_execution_v230_policy($operation,$payload);
@@ -210,7 +210,7 @@ function homeserver_execution_v230_execute(
         }
         if(!function_exists('homeserver_https_v1300_remote_operation'))throw new RuntimeException('HomeServer relay is unavailable.');
         $result=$transientContext
-            ?homeserver_https_v1300_remote_operation($userId,(string)$policy['operation'],$payload,true)
+            ?homeserver_https_v1300_remote_operation($userId,(string)$policy['operation'],$payload,true,$beforeDispatch)
             :homeserver_https_v1300_remote_operation($userId,(string)$policy['operation'],$payload);
         if(!is_array($result))$result=['value'=>$result];
         $duration=max(0,(int)round((microtime(true)-$started)*1000));

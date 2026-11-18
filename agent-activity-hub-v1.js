@@ -109,6 +109,7 @@
   let specialistSettings = null;
   let connectedSitesView = null;
   let imageStudioView = null;
+  let profileView = null;
   let specialistMode = false;
   let workspace = false;
   let officeAllLoaded = false;
@@ -214,6 +215,8 @@
     connectedSitesView = null;
     imageStudioView?.dispose();
     imageStudioView = null;
+    profileView?.dispose();
+    profileView = null;
     abortOfficeRequests();
     orbSurface?.rules?.reset();
     officeAllLoaded = false;
@@ -733,7 +736,7 @@
     delete host.dataset.settings;
     specialistContent.hidden = false;
     host.querySelector('h2').textContent = selectedLabel;
-    workspaceButton.hidden = Boolean(connectedSitesView);
+    workspaceButton.hidden = Boolean(connectedSitesView || profileView);
     backButton.hidden = true;
     settingsButton.setAttribute('aria-expanded','false');
     host.scrollTop = 0;
@@ -787,9 +790,12 @@
     void canvas.open(sessionId ? {sessionId} : {});
   }
 
-  function openSpecialist(key,trigger,{label,focusReturn,fullReport = false} = {}) {
+  function openSpecialist(key,trigger,{label,focusReturn,fullReport = false,selection} = {}) {
     if (!scope(true)?.hasChat || typeof key !== 'string' || !specialistKey.test(key)) return false;
-    if (opened && specialistMode && selectedSpecialist === key) { close(); return true; }
+    if (opened && specialistMode && selectedSpecialist === key) {
+      if (profileView) { if (selection) profileView.select(selection);return true; }
+      close(); return true;
+    }
     if (opened) close(false);
     specialistMode = true;
     selectedSpecialist = key;
@@ -810,6 +816,7 @@
     const id = family(key);
     const connectedSites = id === 'connected-sites' && window.VP3ConnectedSites?.mountWorkspace;
     const imageStudio = id === 'image-generator' && window.VP3ImageStudio?.mountWorkspace;
+    const profileWorkspace = id === 'profile' && window.VP3_PROFILE_WORKSPACE_V1?.endpoint && window.VP3ProfileWorkspaceV1?.mountWorkspace;
     const transcriptCanvas = id === 'transcripts' && typeof window.STONEFELLOW_TRANSCRIPTION_CANVAS?.open === 'function';
     workspaceButton = button(transcriptCanvas ? 'Open Transcription Intelligence'
       : ['gmail','media','curiosity','coding','marketing','profile'].includes(id) ? 'Full report' : 'Open workspace',event => {
@@ -842,7 +849,19 @@
     specialistTrigger?.setAttribute('aria-haspopup','dialog');
     specialistTrigger?.setAttribute('aria-expanded','true');
     opened = true;
-    if (imageStudio) {
+    if (profileWorkspace) {
+      workspace = true;
+      host.dataset.workspace = 'true';
+      host.dataset.profileWorkspace = 'true';
+      workspaceButton.hidden = true;
+      status.hidden = true;
+      profileView = profileWorkspace(sections,{scope,readReports:readProfileReport,renderReport:(target,value,options={}) => {
+        const current=scope();
+        if (current) renderProfileWorkspace(current,{host:target,value:{profile_report:value.report,observed_at:value.observedAt},
+          full:options.full!==false,onSelect:options.onSelect,isCurrent:()=>target.isConnected&&signature(current)===signature(scope())});
+      },onClose:restore=>close(restore),selection:selection||{tab:'overview'}});
+      heading.focus({preventScroll:true});
+    } else if (imageStudio) {
       workspace = true;
       host.dataset.workspace = 'true';
       host.dataset.imageStudio = 'true';
@@ -863,7 +882,7 @@
       if (fullReport) showWorkspace(true);
       else heading.focus({preventScroll:true});
     }
-    void read();
+    if (!profileView) void read();
     return true;
   }
   function specialistSnapshot() {
@@ -1241,7 +1260,7 @@
   function renderSpecialists() {
     const current = scope();
     const presentation = window.VP3TopOfMindFeedV1;
-    if (!specialistsHost || !opened || connectedSitesView || imageStudioView || accessRejected || !current || !presentation?.specialistHeading) return;
+    if (!specialistsHost || !opened || connectedSitesView || imageStudioView || profileView || accessRejected || !current || !presentation?.specialistHeading) return;
     const inbox = snapshot?.sections.find(section => section.id === 'gmail_inbox')?.items || [];
     const rows = specialistRows(inbox,presentation);
     const {specialistNames,specialistHeading} = presentation;
@@ -1284,7 +1303,8 @@
         const actions = node('div','','vp3-agent-activity-actions');
         const launch = button(reportLabels[id],event => {
           if (!event.isTrusted || signature(current) !== signature(scope())) return;
-          openSpecialist(id,launch,{label:name,focusReturn:document.getElementById('chatInput'),fullReport:true});
+          openSpecialist(id,launch,{label:name,focusReturn:document.getElementById('chatInput'),fullReport:true,
+            ...(id==='profile'?{selection:{tab:'reports'}}:{})});
         });
         launch.dataset.specialistFocus = id + ':report';
         actions.append(launch);
@@ -1995,9 +2015,10 @@
     }
     return result;
   }
-  function renderProfileWorkspace(current) {
-    if (!snapshot) { sections.replaceChildren(); return; }
-    const report = snapshot.profile_report;
+  function renderProfileWorkspace(current,options={}) {
+    const target=options.host||sections,value=options.value||snapshot,expanded=options.full??workspace;
+    if (!value) { target.replaceChildren(); return; }
+    const report = value.profile_report;
     const model = profileReportModel(report);
     const body = node('section','','vp3-agent-activity-source');
     body.dataset.profileReport = model?.coverage || 'unavailable';
@@ -2005,7 +2026,7 @@
     const coverage = model?.coverage || 'unavailable';
     body.append(node('p',coverage === 'unconfigured' && current.cid === 0
       ? 'Save this Chat to read Profile activity.' : profileReportCoverage[coverage],'vp3-agent-activity-status'));
-    const observed = Date.parse(snapshot.observed_at);
+    const observed = Date.parse(value.observed_at);
     if (Number.isFinite(observed)) body.append(node('small','Checked ' + new Date(observed).toLocaleString()));
     const readable = model && ['ready','limited'].includes(coverage);
     for (const [key,title,empty] of profileReportSections) {
@@ -2015,9 +2036,9 @@
       const values = readable ? (key === 'next_step' ? [model[key]].filter(Boolean) : model[key]) : [];
       if (values.length) {
         const list = node('ul','','vp3-curiosity-questions');
-        for (const value of values.slice(0,workspace ? 6 : 2)) list.append(node('li',value));
+        for (const value of values.slice(0,expanded ? 6 : 2)) list.append(node('li',value));
         section.append(list);
-        if (!workspace && values.length > 2) section.append(node('small','More in the full report.'));
+        if (!expanded && values.length > 2) section.append(node('small','More in the full report.'));
       } else section.append(node('p',readable ? empty : 'Available after the Profile sources can be checked.'));
       body.append(section);
     }
@@ -2026,25 +2047,44 @@
       sources.setAttribute('aria-label','Profile report sources');
       sources.append(node('h4','Sources'));
       const list = node('ul','','vp3-curiosity-questions');
-      for (const source of model.findings.slice(0,workspace ? 24 : 3)) {
+      for (const source of model.findings.slice(0,expanded ? 24 : 3)) {
         const item = node('li');
         const link = node('a',source.title);
         link.href = source.href;
         link.dataset.profileSource = source.ref;
         link.addEventListener('click',event => {
-          if (signature(current) !== signature(scope()) || snapshot?.profile_report !== report) {
+          if (signature(current) !== signature(scope()) || (options.isCurrent ? !options.isCurrent() : snapshot?.profile_report !== report)) {
             event.preventDefault();
             close(false);
+          } else if (options.onSelect?.(source)===true) {
+            event.preventDefault();
           }
         });
         item.append(link);
         list.append(item);
       }
       sources.append(list);
-      if (!workspace && model.findings.length > 3) sources.append(node('small','More sources in the full report.'));
+      if (!expanded && model.findings.length > 3) sources.append(node('small','More sources in the full report.'));
       body.append(sources);
     }
-    sections.replaceChildren(body);
+    target.replaceChildren(body);
+  }
+
+  async function readProfileReport({signal}={}) {
+    const current=scope();
+    if (!current) throw Object.assign(new Error('This Chat’s access could not be verified.'),{status:403});
+    const request=new AbortController(),relay=()=>request.abort();
+    if (signal?.aborted) request.abort();else signal?.addEventListener('abort',relay,{once:true});
+    const timeout=setTimeout(()=>request.abort(),15000);
+    try {
+      const response=await requestActivity(activityUrl(current,'profile'),current,request);
+      const data=await response.json().catch(()=>null);
+      if (request.signal.aborted || signature(current)!==signature(scope())) throw Object.assign(new Error('Profile context changed.'),{name:'AbortError'});
+      if (!response.ok) throw Object.assign(new Error('The Profile report could not be verified.'),{status:response.status});
+      if (data?.ok!==true||!validState(data.state,current)||!profileReportModel(data.state.profile_report)
+        || data.state.coverage?.profile_report!==data.state.profile_report.coverage) throw new Error('The Profile report could not be verified.');
+      return {report:data.state.profile_report,observedAt:data.state.observed_at};
+    } finally {clearTimeout(timeout);signal?.removeEventListener('abort',relay);}
   }
 
   function renderCuriosityWorkspace(current) {
@@ -2722,6 +2762,7 @@
     if (!visible() || controller || specialistSettings) return;
     if (imageStudioView || specialistMode && host?.dataset.imageStudio === 'true') { void imageStudioView?.refresh(); return; }
     if (connectedSitesView) { void connectedSitesView.refresh(); return; }
+    if (profileView) { void profileView.refresh(); return; }
     const current = scope();
     if (!current) {
       if (!specialistMode || !scope(true)?.hasChat) close(false);
@@ -2866,6 +2907,11 @@
     return true;
   }
   window.VP3AgentActivityHub = Object.freeze({open,openSpecialist,close,
+    openProfile:(selection={},trigger=null) => {
+      if (!window.VP3ProfileWorkspaceV1?.mountWorkspace || !window.VP3_PROFILE_WORKSPACE_V1?.endpoint) return false;
+      return openSpecialist('profile',trigger,{label:'Profile',focusReturn:trigger||document.getElementById('chatInput'),fullReport:true,selection});
+    },
+    refreshProfile:() => { if (profileView) void profileView.refresh(); },
     stageExample:(id,cid) => {
       const current = scope();
       if (!current?.hasChat || current.cid !== cid) return false;
@@ -2924,7 +2970,7 @@
     if (event.key !== 'Escape' || event.defaultPrevented || !opened) return;
     event.preventDefault();
     if (specialistSettings) closeSpecialistSettings();
-    else if (specialistMode && workspace && !connectedSitesView && !imageStudioView) showWorkspace(false);
+    else if (specialistMode && workspace && !connectedSitesView && !imageStudioView && !profileView) showWorkspace(false);
     else close();
   });
   window.addEventListener('pagehide',() => { close(false); disposed = true; });

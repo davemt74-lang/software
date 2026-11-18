@@ -124,9 +124,13 @@ function homeserver_https_v1300_wait_transient(string $requestId,int $userId,arr
     if($userId<1||(int)($session['user_id']??0)!==$userId
         ||!homeserver_https_v1300_transient_ready($pdo))throw new RuntimeException('Transient HomeServer inference is unavailable.');
     if($pdo->inTransaction())throw new RuntimeException('Transient HomeServer inference cannot wait inside a transaction.');
-    $timeoutMs=max(1000,min(28000,$timeoutMs));$deadline=microtime(true)+$timeoutMs/1000;$ownsRequest=false;
+    $timeoutMs=max(1000,min(28000,$timeoutMs));
+    $remaining=function_exists('vp3_ai_budget_remaining_v1')?vp3_ai_budget_remaining_v1():null;
+    if($remaining!==null)$timeoutMs=min($timeoutMs,max(0,(int)floor($remaining*1000)));
+    $deadline=microtime(true)+$timeoutMs/1000;$ownsRequest=false;$firstRead=true;
     try{
-        while(microtime(true)<$deadline){
+        while($firstRead||microtime(true)<$deadline){
+            $firstRead=false;
             $pdo->beginTransaction();
             try{
                 $lock=$pdo->prepare('SELECT id,is_active FROM users WHERE id=? FOR UPDATE');$lock->execute([$userId]);
@@ -154,7 +158,7 @@ function homeserver_https_v1300_wait_transient(string $requestId,int $userId,arr
                 }
                 $pdo->commit();
             }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw $error;}
-            usleep(250000);
+            usleep(max(0,min(250000,(int)(($deadline-microtime(true))*1000000))));
         }
         throw new RuntimeException('HomeServer transient request timed out.');
     }finally{
@@ -351,8 +355,10 @@ function homeserver_https_v1300_poll(array $session,array $body): array
     return ['ok'=>true,'transport'=>'vp3_https','cloud_version'=>VP3_HOMESERVER_RELEASE_VERSION,'requests'=>$requests,'poll_after_ms'=>900,'server_time'=>gmdate(DATE_ATOM)];
 }
 
-function homeserver_https_v1300_queue(int $userId,string $operation,array $payload=[],bool $transientContext=false,?array $expectedSession=null): string
+function homeserver_https_v1300_queue(int $userId,string $operation,array $payload=[],bool $transientContext=false,?array $expectedSession=null,?callable $beforeDispatch=null): string
 {
+    if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005)
+        throw new RuntimeException('HomeServer inference time budget was exhausted.',503);
     $operation=trim($operation);
     if($userId<1||!preg_match('/^[a-z0-9._-]{1,80}$/',$operation))throw new RuntimeException('HomeServer operation is invalid.');
     if($transientContext&&$operation!=='agent.infer.local')throw new RuntimeException('Transient context requires agent.infer.local.');
@@ -368,6 +374,7 @@ function homeserver_https_v1300_queue(int $userId,string $operation,array $paylo
     $id=homeserver_https_v1300_uuid();
     if($transientContext){
         $expectedSession??=$session;
+        if($beforeDispatch!==null&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql')$pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
         $pdo->beginTransaction();
         try{
             $q=$pdo->prepare('SELECT id,is_active FROM users WHERE id=? FOR UPDATE');$q->execute([$userId]);
@@ -379,6 +386,11 @@ function homeserver_https_v1300_queue(int $userId,string $operation,array $paylo
             $last=strtotime((string)($current['last_seen_at']??'').' UTC')?:0;
             if($last<time()-VP3_HOMESERVER_HTTPS_ONLINE_SECONDS||$last>time()+5)throw new RuntimeException('HomeServer is offline.');
             homeserver_https_v1300_scrub_transient($pdo,100,$userId);
+            // Optional caller reservation and exact source authority commit with
+            // this queue insert. A rolled-back insert consumes no attempt.
+            if($beforeDispatch!==null&&$beforeDispatch()!==true)throw new RuntimeException('HomeServer inference authorization changed.',403);
+            if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005)
+                throw new RuntimeException('HomeServer inference time budget was exhausted.',503);
             $pdo->prepare("INSERT INTO homeserver_https_requests(public_id,user_id,device_id,operation,payload_json,transient_context,status,expires_at)
                 VALUES (?,?,?,?,?,1,'queued',DATE_ADD(UTC_TIMESTAMP(),INTERVAL ? SECOND))")
                 ->execute([$id,$userId,(string)$current['device_id'],$operation,$json,VP3_HOMESERVER_HTTPS_REQUEST_TTL_SECONDS]);
@@ -393,7 +405,10 @@ function homeserver_https_v1300_queue(int $userId,string $operation,array $paylo
 
 function homeserver_https_v1300_wait(string $requestId,int $timeoutMs=24000): array
 {
-    $timeoutMs=max(1000,min(28000,$timeoutMs));$deadline=microtime(true)+($timeoutMs/1000);
+    $timeoutMs=max(1000,min(28000,$timeoutMs));
+    $remaining=function_exists('vp3_ai_budget_remaining_v1')?vp3_ai_budget_remaining_v1():null;
+    if($remaining!==null)$timeoutMs=min($timeoutMs,max(0,(int)floor($remaining*1000)));
+    $deadline=microtime(true)+($timeoutMs/1000);
     $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
     $transientColumn=function_exists('homeserver_https_v1300_transient_ready')&&homeserver_https_v1300_transient_ready($pdo)?',transient_context':'';
     while(microtime(true)<$deadline){
@@ -413,18 +428,18 @@ function homeserver_https_v1300_wait(string $requestId,int $timeoutMs=24000): ar
             return $payload;
         }
         if($status==='expired')throw new RuntimeException('HomeServer request expired.');
-        usleep(250000);
+        usleep(max(0,min(250000,(int)(($deadline-microtime(true))*1000000))));
     }
     throw new RuntimeException('HomeServer request timed out.');
 }
 
-function homeserver_https_v1300_remote_operation(int $userId,string $operation,array $payload=[],bool $transientContext=false): array
+function homeserver_https_v1300_remote_operation(int $userId,string $operation,array $payload=[],bool $transientContext=false,?callable $beforeDispatch=null): array
 {
     if($transientContext){
         if($operation!=='agent.infer.local')throw new RuntimeException('Transient context requires agent.infer.local.');
         $session=homeserver_https_v1300_session($userId);
         if(!$session)throw new RuntimeException('HomeServer HTTPS session is not active.');
-        return homeserver_https_v1300_wait_transient(homeserver_https_v1300_queue($userId,$operation,$payload,true,$session),$userId,$session);
+        return homeserver_https_v1300_wait_transient(homeserver_https_v1300_queue($userId,$operation,$payload,true,$session,$beforeDispatch),$userId,$session);
     }
     return homeserver_https_v1300_wait(homeserver_https_v1300_queue($userId,$operation,$payload));
 }

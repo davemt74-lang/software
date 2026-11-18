@@ -114,6 +114,15 @@ jobs:
           php tests/profile-specialist-pipeline-v1.php
           node tests/agent-profile-specialist-report-v1.mjs
           node tests/agent-profile-specialist-report-http.mjs
+          php tests/profile-specialist-workspace-v1.php
+          php tests/profile-owner-drafts-v1.php
+          php tests/profile-owner-drafts-provider-v1.php
+          php tests/profile-specialist-analytics-v1.php
+          php tests/profile-workspace-calls-v1.php
+          node tests/profile-specialist-workspace-v1.mjs
+          node tests/profile-specialist-analytics-ui-v1.mjs
+          node tests/profile-call-workspace-v1.mjs
+          node tests/profile-specialist-workspace-http.mjs
           php tests/profile-handoff-pa3.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php

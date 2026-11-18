@@ -720,14 +720,17 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         &&($turnControl['protocol']??'')==='vp3.gmail-reply-draft.v1';
     $gmailAnalysis=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-thread-analysis.v1';
+    $profileOwnerReply=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.profile-owner-reply-draft.v1';
     $beforeDispatch=match(true){
         $gmailSummary=>$turnControl['before_gmail_summary_dispatch']??null,
         $gmailReply=>$turnControl['before_gmail_reply_dispatch']??null,
         $gmailAnalysis=>$turnControl['before_gmail_analysis_dispatch']??null,
+        $profileOwnerReply=>$turnControl['before_profile_owner_reply_dispatch']??null,
         default=>null,
     };
     if($gmailSummary)$budget=384;
-    if($gmailReply)$budget=1600;
+    if($gmailReply||$profileOwnerReply)$budget=1600;
     if($gmailAnalysis)$budget=900;
     if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens'])){
         $budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));
@@ -755,12 +758,12 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             $result=ai_curl_json('https://api.openai.com/v1/responses',
                 ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
                 ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis,$observer,$beforeDispatch);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$profileOwnerReply,$observer,$beforeDispatch);
         }else{
             $result=ai_curl_json('https://api.anthropic.com/v1/messages',
                 ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
                 ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis,$observer,$beforeDispatch);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$profileOwnerReply,$observer,$beforeDispatch);
         }
         $usage=[];$answer='';
         if(!empty($result['ok'])){
@@ -810,7 +813,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             'failure_code'=>'provider_response_empty','status'=>$result['status']??null,
             'stop_service_fallback'=>$meter?->active??false];
         $last['_legacy_usage_key']=$observedKey;
-        if(!empty($last['stop_service_fallback']))return $last;
+        if($profileOwnerReply||!empty($last['stop_service_fallback']))return $last;
     }
     return $last;
 }
@@ -866,10 +869,12 @@ function ai_generate_chat_response(
         &&($turnControl['protocol']??'')==='vp3.gmail-reply-draft.v1';
     $gmailAnalysis=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-thread-analysis.v1';
+    $profileOwnerReply=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.profile-owner-reply-draft.v1';
     // Phone callers have no owner-session authority. Never run private Chat
     // context enrichment for this surface, including on a retry.
     if (($turnControl['surface']??'')==='phone_voice') $context=[];
-    elseif($gmailSummary||$gmailReply||$gmailAnalysis) $history=$context=$visionImages=[];
+    elseif($gmailSummary||$gmailReply||$gmailAnalysis||$profileOwnerReply) $history=$context=$visionImages=[];
     elseif($developmentOutline) $context=[];
     elseif(($turnControl['surface']??'')!=='cloud_mission'&&!$initiative
         && !$visionImages&&function_exists('chat_response_context'))$context=chat_response_context($query,$context);
@@ -891,6 +896,10 @@ function ai_generate_chat_response(
     if($gmailReply&&(!$meter?->active||($serviceContext['service']??null)!=='conversation'
         ||!empty($serviceContext['background'])||!(($turnControl['before_gmail_reply_dispatch']??null) instanceof Closure))){
         return ai_v100_service_failure('Gmail reply usage accounting or access verification is unavailable.','service_usage_unavailable');
+    }
+    if($profileOwnerReply&&(!$meter?->active||($serviceContext['service']??null)!=='conversation'
+        ||!empty($serviceContext['background'])||!(($turnControl['before_profile_owner_reply_dispatch']??null) instanceof Closure))){
+        return ai_v100_service_failure('Profile draft usage accounting or access verification is unavailable.','service_usage_unavailable');
     }
     if($gmailAnalysis&&(!$meter?->active||($serviceContext['service']??null)!=='initiative'
         ||($serviceContext['background']??null)!==true
@@ -979,7 +988,7 @@ function ai_generate_chat_response(
                 $result['compute_source']='user_provider';
                 $result['system_tokens_charged']=false;
             }
-            if($gmailSummary||$gmailReply||$gmailAnalysis||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
+            if($gmailSummary||$gmailReply||$gmailAnalysis||$profileOwnerReply||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
         }
 
         if(!$meter?->active&&!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){

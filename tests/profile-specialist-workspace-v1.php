@@ -1,0 +1,81 @@
+<?php
+declare(strict_types=1);
+require __DIR__.'/fixtures/profile-specialist-workspace-v1.php';
+
+$checks=0;
+function pws_check(bool $ok,string $message): void{global $checks;if(!$ok)throw new RuntimeException('FAIL: '.$message);$checks++;echo "ok $checks - $message\n";}
+function pws_denied(callable $work,int|array $expected,string $message): void
+{try{$work();}catch(Throwable $e){$code=property_exists($e,'httpStatus')?$e->httpStatus:$e->getCode();pws_check(in_array($code,(array)$expected,true),$message.' ('.$code.')');return;}throw new RuntimeException('FAIL: '.$message.' accepted');}
+
+$ids=pws_reset();$pdo=db();$before=pa4b_snapshot();
+$read=pa4b_readonly(fn()=>pws_request('conversation',['public_conversation_id'=>$ids['primary']]));
+pws_check($read['contract']===VP3_PROFILE_WORKSPACE_V1&&$read['scope']===['owner_user_id'=>1,'chat_agent_id'=>7,'chat_conversation_id'=>11],'exact owner/private Agent/private Chat envelope');
+pws_check($read['data']['public_conversation_id']===$ids['primary']&&$read['data']['current_turn']['turn_id']===$ids['primary_turn'],'selected public thread and canonical turn remain separate');
+pws_check(!$read['data']['assistance']['can_prepare']&&$read['data']['assistance']['reason']==='owner_claim_required','private assistance requires an explicit owner claim');
+pws_check(pa4b_snapshot()===$before,'conversation read changes no messages, delivery, event, attention or notification');
+$encoded=json_encode($read,JSON_THROW_ON_ERROR);
+pws_check(!str_contains($encoded,'PRIVATE_CHAT_SECRET')&&!str_contains($encoded,'FOREIGN_CHAT_SECRET')&&!str_contains($encoded,'credential_hash')&&!str_contains($encoded,'response_token'),'projection contains neither private Chat history nor browser credentials');
+$list=pa4b_readonly(fn()=>pws_request('conversations',['filter'=>'all']))['data'];
+pws_check(count($list['items'])===3&&in_array($ids['legacy'],array_column($list['items'],'public_conversation_id'),true),'inventory includes historical conversations without attention findings');
+$pdo->prepare("UPDATE profile_agent_conversations SET status='resolved' WHERE id=?")->execute([$ids['legacy']]);
+pws_check(count(pws_request('conversations',['filter'=>'active'])['data']['items'])===2&&count(pws_request('conversations',['filter'=>'resolved'])['data']['items'])===1,'active and resolved filters have truthful independent counts');
+$legacy=pws_request('conversation',['public_conversation_id'=>$ids['legacy']])['data'];
+pws_check($legacy['current_turn']===null&&$legacy['conversation']['can_manual_reply']&&!$legacy['assistance']['can_prepare']&&$legacy['assistance']['reason']==='no_accepted_turn','older threads retain manual reply without synthesizing a turn');
+$unsaved=pa4b_readonly(fn()=>pws_request('overview',[],7,0))['data'];
+pws_check($unsaved['status']==='save_chat_required'&&$unsaved['profile']===null&&$unsaved['conversations']['items']===[],'unsaved Chat shows empty setup with no Profile inventory');
+pws_denied(fn()=>pws_request('conversation',['public_conversation_id'=>$ids['primary']],7,0),422,'saved Chat required for conversation reads');
+pws_denied(fn()=>pws_request('conversation',['public_conversation_id'=>$ids['primary']],8,11),403,'wrong private Agent cannot borrow a Chat');
+pws_denied(fn()=>pws_request('conversation',['public_conversation_id'=>$ids['primary']],9,13),403,'foreign private Chat is denied');
+pws_denied(fn()=>pws_request('conversation',['public_conversation_id'=>'01']),422,'noncanonical target IDs are denied');
+pws_denied(fn()=>pws_request('conversations',['filter'=>[]]),422,'array filters are rejected without coercion');
+pws_denied(fn()=>pws_request('conversations',['cursor'=>'invalid']),422,'invalid pagination cursor is denied');
+pws_denied(fn()=>pws_request('conversation',['public_conversation_id'=>$ids['primary'],'owner_user_id'=>4]),422,'owner cannot be supplied through extra request fields');
+pa3_login(1);
+pws_denied(fn()=>vp3_profile_workspace_request_v1($pdo,pa3_owner(),'POST',['action'=>'conversation','chat_agent_id'=>7,'chat_conversation_id'=>11,'public_conversation_id'=>$ids['primary']],vp3_catch_up_page_binding_v1(pa3_owner())),405,'wrong HTTP method cannot execute another action');
+pws_denied(fn()=>vp3_profile_workspace_request_v1($pdo,pa3_owner(),'GET',['action'=>'overview','chat_agent_id'=>7,'chat_conversation_id'=>11],str_repeat('a',64)),403,'page/session binding is required');
+pws_denied(fn()=>pws_request('conversation',['public_conversation_id'=>$ids['primary']],7,11,static fn()=>pa3_owner(4)),403,'final actual-session guard rejects a changed owner');
+$pdo->exec("DELETE FROM role_permissions WHERE permission_key='profile_chat.access'");
+pws_denied(fn()=>pws_request('overview',[],7,0),403,'unsaved setup still checks current personal Profile capability');
+$ids=pws_reset();$claimed=pws_claim($ids['primary']);$turn=vp3_profile_workspace_turn_v1($pdo,1,$ids['primary']);
+pws_check($claimed['current_turn']['state']==='owner_claimed'&&$claimed['assistance']['can_prepare'],'claim returns fresh source and enabled reviewed drafting');
+pws_denied(fn()=>vp3_profile_agent_accepted_context_pa3($pdo,$turn),404,'ordinary public responder still rejects owner takeover');
+pws_check((int)vp3_profile_agent_accepted_context_pa3($pdo,$turn,false,true)['turn_id']===$ids['primary_turn'],'private owner draft reuses exact accepted native source');
+$reply=['public_conversation_id'=>$ids['primary'],'turn_id'=>$claimed['current_turn']['turn_id'],'revision'=>$claimed['current_turn']['revision'],
+    'operation'=>'reply','request_id'=>str_repeat('e',32),'message'=>'Which size do you normally wear?'];
+$sent=pws_request('conversation_action',$reply)['data'];$count=pa3_count('profile_agent_messages',"sender_type='owner' AND conversation_id=".$ids['primary']);$snapshot=pa4b_snapshot();
+$retry=pws_request('conversation_action',$reply)['data'];
+pws_check(!$sent['duplicate']&&$retry['duplicate']&&$sent['message_id']===$retry['message_id'],'lost-ACK retry preserves original accepted revision and saved reply identity');
+pws_check($count===1&&pa4b_snapshot()===$snapshot,'reply replay creates no competing message, attention or delivery');
+pws_denied(fn()=>pws_request('conversation_action',array_replace($reply,['message'=>'Different body'])),409,'same request cannot change reviewed reply text');
+pws_denied(fn()=>pws_request('conversation_action',array_replace($reply,['public_conversation_id'=>$ids['secondary']])),[404,409],'same request cannot move into another public conversation');
+pws_check(vp3_profile_handoff_thread_pa3($pdo,1,$ids['primary'])['mode']==='owner'&&count($GLOBALS['pa3ModelCalls'])===0,'manual owner reply retains sole responder and dispatches no inference');
+$manual=['public_conversation_id'=>$ids['legacy'],'turn_id'=>0,'revision'=>0,'operation'=>'reply','request_id'=>str_repeat('f',32),'message'=>'An exact reply on the earlier thread.'];
+$old=pws_request('conversation_action',$manual)['data'];$oldRetry=pws_request('conversation_action',$manual)['data'];
+pws_check(!$old['duplicate']&&$oldRetry['duplicate']&&$old['message_id']===$oldRetry['message_id'],'legacy no-turn reply uses canonical historical receipt recovery');
+pws_denied(fn()=>pws_request('conversation_action',array_replace($manual,['operation'=>'claim'])),422,'legacy thread does not invent live responder control');
+pws_denied(fn()=>pws_request('conversation_action',array_replace($manual,['prepare_request_id'=>str_repeat('b',32)])),422,'reviewed draft cannot silently become a no-turn send');
+$pdo->exec('INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUES(14,1,NULL,\'System Agent\')');
+pws_check(pws_request('conversation',['public_conversation_id'=>$ids['primary']],0,14)['scope']['chat_agent_id']===0,'System Agent has a separate exact private workspace scope');
+$pdo->exec('UPDATE user_profiles SET profile_agent_enabled=0,is_public=0 WHERE user_id=1');
+$hidden=pws_request('conversation',['public_conversation_id'=>$ids['primary']])['data'];
+pws_check($hidden['conversation']['can_manual_reply']&&!$hidden['assistance']['can_prepare']&&$hidden['assistance']['reason']==='source_unavailable','disabled public Profile retains owner history/manual access while stopping new assisted inference');
+$pdo->exec('UPDATE user_profiles SET profile_agent_enabled=1,is_public=1 WHERE user_id=1');
+$pdo->exec('DROP TABLE profile_owner_drafts_v1');
+$unupgraded=pws_request('conversation',['public_conversation_id'=>$ids['primary']])['data'];
+pws_check($unupgraded['conversation']['can_manual_reply']&&!$unupgraded['assistance']['can_prepare']&&$unupgraded['assistance']['reason']==='draft_storage_unavailable','missing optional draft storage leaves manual replies usable with explicit status');
+pws_denied(fn()=>pws_request('draft_status',['public_conversation_id'=>$ids['primary'],'latest'=>1]),503,'missing draft schema is unavailable, never an empty history');
+vp3_profile_owner_drafts_ensure_schema_v1($pdo);
+for($i=0;$i<43;$i++)$pdo->prepare("INSERT INTO profile_agent_messages(conversation_id,sender_type,sender_user_id,message) VALUES(?,'owner',1,?)")->execute([$ids['legacy'],'History '.$i]);
+$page=pws_request('conversation',['public_conversation_id'=>$ids['legacy']])['data']['messages'];
+$older=pws_request('conversation',['public_conversation_id'=>$ids['legacy'],'before_message_id'=>$page['next_before_message_id']])['data']['messages'];
+pws_check(count($page['items'])===40&&$page['has_more']&&count($older['items'])===6&&!$older['has_more'],'bounded history paging includes complete older messages without hidden system rows');
+pws_check(count(array_intersect(array_column($page['items'],'message_id'),array_column($older['items'],'message_id')))===0,'older message pages do not duplicate records');
+$ids=pws_reset();
+for($i=0;$i<23;$i++)$pdo->prepare("INSERT INTO profile_agent_conversations(owner_user_id,profile_agent_id,profile_session_id,visitor_user_id,status,last_summary) VALUES(1,7,0,NULL,'resolved','Historical')")->execute();
+$first=pws_request('conversations',['filter'=>'all'])['data'];$second=pws_request('conversations',['filter'=>'all','cursor'=>$first['next_cursor']])['data'];
+pws_check(count($first['items'])===20&&$first['has_more']&&count($second['items'])===6&&!$second['has_more'],'stable cursor returns remaining inventory with bounded pages');
+pws_check(!array_intersect(array_column($first['items'],'public_conversation_id'),array_column($second['items'],'public_conversation_id')),'inventory cursor does not repeat equal-timestamp conversations');
+pws_denied(fn()=>pws_request('conversations',['filter'=>'resolved','cursor'=>$first['next_cursor']]),422,'cursor cannot cross filters');
+$pdo->exec('INSERT INTO chat_conversations(id,user_id,user_agent_id,title) VALUES(14,1,7,\'Another private Chat\')');
+pws_denied(fn()=>pws_request('conversations',['filter'=>'all','cursor'=>$first['next_cursor']],7,14),422,'cursor cannot cross private Chat scopes');
+echo "PASS Profile workspace: $checks checks (".$pdo->getAttribute(PDO::ATTR_DRIVER_NAME).")\n";

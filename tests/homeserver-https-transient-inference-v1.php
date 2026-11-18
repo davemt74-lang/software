@@ -6,6 +6,7 @@ declare(strict_types=1);
 final class TransientRelaySQLite extends PDO
 {
     public bool $denyDelete=false;
+    public bool $denyInsert=false;
     public ?array $metadataFailure=null;
     public mixed $beforeOwnerLock=null;
     public ?array $autoResponse=null;
@@ -25,6 +26,7 @@ final class TransientRelaySQLite extends PDO
     }
     public function prepare(string $query,array $options=[]): PDOStatement|false
     {
+        if($this->denyInsert&&str_contains($query,'INSERT INTO homeserver_https_requests('))throw new RuntimeException('Fixture queue insertion unavailable.');
         if($this->denyDelete&&str_contains($query,'DELETE FROM homeserver_https_requests WHERE public_id='))
             throw new RuntimeException('Fixture cleanup unavailable.');
         if($this->beforeOwnerLock!==null&&str_contains($query,'FROM users WHERE id=? FOR UPDATE')){
@@ -244,5 +246,34 @@ $pdo->denyDelete=true;
 htThrows(fn()=>homeserver_https_v1300_wait_transient($id,1,$session,1000),'cleanup unavailable');
 $pdo->denyDelete=false;htExpire($id);homeserver_https_v1300_scrub_transient($pdo);
 htCheck(htCount()===0,'cleanup failure prevents success and an expiry sweep can still remove the orphan');
+
+// Optional private-draft attempt reservations must be atomic with the real queue.
+$pdo=htReset();$session=homeserver_https_v1300_session(1);
+$pdo->exec('CREATE TABLE fixture_private_draft(id INTEGER PRIMARY KEY,attempted INTEGER NOT NULL DEFAULT 0)');$pdo->exec('INSERT INTO fixture_private_draft(id) VALUES(1)');
+$inside=false;$reserve=static function()use($pdo,&$inside):bool{
+    $inside=$pdo->inTransaction();$q=$pdo->prepare('UPDATE fixture_private_draft SET attempted=1 WHERE id=1 AND attempted=0');$q->execute();return $q->rowCount()===1;
+};
+$id=homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$session,$reserve);
+htCheck($inside&&htCount()===1&&(int)$pdo->query('SELECT attempted FROM fixture_private_draft')->fetchColumn()===1,'private dispatch reservation and transient prompt commit in one queue transaction');
+htThrows(fn()=>homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$session,$reserve),'authorization changed');
+htCheck(htCount()===1,'consumed private dispatch reservation cannot queue another attempt');
+$pdo->exec('UPDATE fixture_private_draft SET attempted=0');$pdo->denyInsert=true;
+htThrows(fn()=>homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$session,$reserve),'queue insertion unavailable');
+$pdo->denyInsert=false;
+htCheck((int)$pdo->query('SELECT attempted FROM fixture_private_draft')->fetchColumn()===0&&htCount()===1,'failed queue insert rolls back the unused private attempt reservation');
+$pdo=htReset();$callbackCalls=0;$fallbacks=0;$pdo->autoResponse=['ok'=>true,'status'=>200,'payload'=>['reply'=>'A private draft']];
+$result=homeserver_execution_v230_execute(1,'agent.infer.local',$payload,static function()use(&$fallbacks){$fallbacks++;return [];},true,
+    static function()use(&$callbackCalls):bool{$callbackCalls++;return db()->inTransaction();});
+htCheck($callbackCalls===1&&$fallbacks===0&&$result['result']['reply']==='A private draft'&&htCount()===0,'executor forwards optional reservation through remote operation to the physical queue');
+
+require_once __DIR__.'/../includes/agent-inference-budget-v1.php';
+$pdo=htReset();$session=homeserver_https_v1300_session(1);$pdo->exec('CREATE TABLE fixture_private_draft(id INTEGER PRIMARY KEY,attempted INTEGER NOT NULL DEFAULT 0)');$pdo->exec('INSERT INTO fixture_private_draft(id) VALUES(1)');
+htThrows(fn()=>vp3_ai_with_budget_v1(2,static fn()=>homeserver_https_v1300_queue(1,'agent.infer.local',$GLOBALS['payload'],true,null,
+    static function():bool{db()->exec('UPDATE fixture_private_draft SET attempted=1');$GLOBALS['VP3_AI_INFERENCE_BUDGET_V1']['deadline']=0.0;return true;})),'time budget was exhausted');
+htCheck(htCount()===0&&(int)$pdo->query('SELECT attempted FROM fixture_private_draft')->fetchColumn()===0,'budget consumed by queue locks rolls back reservation before dispatch');
+$id=homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$session);$start=microtime(true);
+$GLOBALS['VP3_AI_INFERENCE_BUDGET_V1']=['deadline'=>hrtime(true)/1e9+0.02];
+try{htThrows(fn()=>homeserver_https_v1300_wait_transient($id,1,$session),'timed out');}finally{unset($GLOBALS['VP3_AI_INFERENCE_BUDGET_V1']);}
+htCheck(microtime(true)-$start<0.5&&htCount()===0,'transient wait respects remaining inference budget and removes exact expired context');
 
 echo 'HOMESERVER_HTTPS_TRANSIENT_INFERENCE_V1=PASS checks='.$GLOBALS['checks'].PHP_EOL;

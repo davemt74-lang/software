@@ -32,7 +32,7 @@ const notice={textContent:'',className:''};
 let revenueResponse=response({ok:true,intelligence}),nextAnalytics=null;
 const requests=[];
 const context={
-  URL,Date,Intl,console,
+  URL,Date,Intl,console,AbortController,
   window:{PROFILE_AGENT_PORTAL:{analyticsEndpoint:'/api/vp3-analytics.php'},location:{origin:'https://fixture.example'},addEventListener(){}},
   document:{visibilityState:'visible',getElementById(id){return id==='profileAgentAnalytics'?host:id==='profileAgentNotice'?notice:null;}},
   setInterval(){return 1;},clearInterval(){},
@@ -44,8 +44,9 @@ const context={
   },
 };
 vm.createContext(context);
-// Expose only refresh for the harness; rendering and user-change handlers remain the production code.
-vm.runInContext(source.replace('render();load(true);','window.__analyticsRefresh=load;render();load(true);'),context);
+// Exercise the actual Refresh control; the renderer is not instrumented.
+vm.runInContext(source,context);
+const refresh=async()=>{listeners.get('data-analytics-refresh:click')();await flush();};
 await flush();
 check(host.innerHTML.includes('Radar sessions')&&host.innerHTML.includes('Page-view events')&&host.innerHTML.includes('Profile visits'),'dashboard distinguishes Radar sessions, page views and native visits');
 check(host.innerHTML.includes('4 page-view events · 2 Profile-visit events')&&!host.innerHTML.includes('999999')&&!host.innerHTML.includes('999,999'),'timeline ignores historical native_views payloads and labels both event types');
@@ -56,19 +57,19 @@ check(host.innerHTML.includes('database timezone UTC; UTC+00:00 at read'),'repor
 check(!host.innerHTML.includes('<img src=x')&&host.innerHTML.includes('&lt;img src=x'),'property labels remain escaped untrusted data');
 
 revenueResponse=response({ok:true,intelligence:{periods:[],revenue_all_time:[]}});
-await context.window.__analyticsRefresh(false);
+await refresh();
 check(host.innerHTML.includes('Profile conversion intelligence is unavailable. No totals were established.')&&!host.innerHTML.includes('0 conversions in the last 30 days'),'legacy empty revenue success cannot render invented zero totals');
 revenueResponse=response({ok:false,error:'Profile conversion intelligence could not be loaded.',coverage:'unavailable'},false);
-await context.window.__analyticsRefresh(false);
+await refresh();
 check(host.innerHTML.includes('Profile conversion intelligence could not be loaded.')&&!host.innerHTML.includes('From Profile traffic to real business'),'an unavailable revenue response replaces previous revenue totals');
 revenueResponse=response({ok:true,intelligence});
-await context.window.__analyticsRefresh(false);
+await refresh();
 check(host.innerHTML.includes('From Profile traffic to real business'),'revenue recovers after a successful verified read');
 
 nextAnalytics=async()=>response({ok:false,error:'Analytics source unavailable.'},false);
-await context.window.__analyticsRefresh(false);
+await refresh();
 check(host.innerHTML.includes('Analytics source unavailable.')&&!host.innerHTML.includes('vp3-analytics-metric')&&host.innerHTML.includes('Retry analytics'),'traffic failure replaces stale totals with an explicit retry state');
-await context.window.__analyticsRefresh(false);
+await refresh();
 check(host.innerHTML.includes('vp3-analytics-metric'),'traffic recovers from its retry state');
 
 const pending=deferred();let oldRequest;const before=renders.length;
@@ -86,9 +87,9 @@ check(host.innerHTML.includes('value="11" selected')&&host.innerHTML.includes('v
 check(!/vp3-analytics-metric"><strong>[^<]*<\/strong><span>Profile visits<\/span>/.test(host.innerHTML),'an external property does not present unrelated native visit totals');
 
 nextAnalytics=async url=>{const wrong=analytics(url);wrong.property_id=0;return response({ok:true,analytics:wrong});};
-await context.window.__analyticsRefresh(false);
+await refresh();
 check(host.innerHTML.includes('The Analytics reporting selection changed.')&&!host.innerHTML.includes('vp3-analytics-metric'),'an unexpected server selection cannot be rendered as requested totals');
-await context.window.__analyticsRefresh(false);
+await refresh();
 const pendingError=deferred();nextAnalytics=()=>pendingError.promise;
 listeners.get('data-analytics-days:change')({target:{value:'30'}});
 await flush();listeners.get('data-analytics-days:change')({target:{value:'7'}});
