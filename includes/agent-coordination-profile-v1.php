@@ -57,7 +57,7 @@ function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $bindin
         $groups=[
             'conversation'=>vp3_coordination_profile_query_v1($pdo,"SELECT id FROM profile_agent_conversations WHERE owner_user_id=? AND (status IN ('open','owner_joined') OR (status='resolved' AND last_message_at>=".$recentConversation.")) ORDER BY last_message_at DESC,id DESC LIMIT 25",[$owner]),
             'event'=>vp3_coordination_profile_query_v1($pdo,"SELECT source_event_id id FROM agent_attention_items WHERE owner_user_id=? AND COALESCE(source_conversation_id,0)=0 AND status IN ('pending','seen','snoozed') ORDER BY id DESC LIMIT 25",[$owner]),
-            'call'=>$callReady?vp3_coordination_profile_query_v1($pdo,"SELECT id FROM profile_calls_pa3c WHERE owner_user_id=? AND (state IN ('offered','provisioning','connecting','active','ending') OR updated_at_ms>=?) ORDER BY updated_at_ms DESC,id DESC LIMIT 25",[$owner,(int)$now->format('Uv')-7*86400000]):[],
+            'call'=>$callReady?vp3_coordination_profile_query_v1($pdo,"SELECT id FROM profile_calls_pa3c WHERE owner_user_id=? AND (state IN ('offered','preparing','ready','active','ending') OR updated_at_ms>=?) ORDER BY updated_at_ms DESC,id DESC LIMIT 25",[$owner,(int)$now->format('Uv')-7*86400000]):[],
             'followup'=>$followupReady==='ready'?vp3_coordination_profile_followup_candidates_v1($pdo,$scope):[],
         ];
         $refs=[];
@@ -198,11 +198,11 @@ function vp3_coordination_profile_conversation_v1(PDO $pdo,array $scope,int $id,
     if($settled)$needsOwner=false;
     $label=vp3_profile_specialist_text_v1($source['projection']['speaker_label'],100)?:'A visitor';
     $body=vp3_profile_specialist_text_v1($source['projection']['body'],210);
-    $statement=$message?($source['sender_type']==='visitor'?'Public visitor statement (untrusted): ':'Latest public '.$source['sender_type'].' statement: ').'“'.$body.'”':$body;
+    $statement=$message?(['visitor'=>'Visitor message: ','owner'=>'You: ','agent'=>'Profile Agent: '][$source['sender_type']]).'“'.$body.'”':$body;
     if($message&&defined('VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1')&&$message['context_json']===VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1)$statement='A visitor attachment is available in the authorized conversation.';
     $title=$settled?($conversation['status']==='resolved'?'Resolved Profile conversation':'Profile conversation update'):($needsOwner?'Profile conversation needs your attention':'Open Profile conversation');
     $next=$settled?'':($needsOwner?'Review the current visitor thread and decide whether to reply, delegate, or resolve it.':'Review the current Profile conversation when useful.');
-    $historyFact=$conversation['status']==='resolved'?'The Profile conversation is marked resolved.':'The latest saved Profile message is from '.($source['sender_type']==='owner'?'the owner.':'the Profile Agent.');
+    $historyFact=$conversation['status']==='resolved'?'The Profile conversation is marked resolved.':'The latest saved Profile message is from '.($source['sender_type']==='owner'?'you.':'the Profile Agent.');
     $report=vp3_profile_specialist_sections_v1([$settled?$historyFact:$label.' has an open Profile conversation.',$statement],
         $needsOwner?['The current visitor request still needs owner attention.']:[],
         $needsOwner?['The owner response to this visitor request is still unresolved.']:[],
@@ -225,7 +225,7 @@ function vp3_coordination_profile_conversation_v1(PDO $pdo,array $scope,int $id,
         }
     }
     $callsAvailable=vp3_profile_call_schema_ready_pa3c($pdo);
-    $liveCall=$callsAvailable?vp3_coordination_profile_query_v1($pdo,"SELECT id FROM profile_calls_pa3c WHERE owner_user_id=? AND conversation_id=? AND state IN ('offered','provisioning','connecting','active','ending') LIMIT 1",[$owner,$id]):[['unverified'=>true]];
+    $liveCall=$callsAvailable?vp3_coordination_profile_query_v1($pdo,"SELECT id FROM profile_calls_pa3c WHERE owner_user_id=? AND conversation_id=? AND state IN ('offered','preparing','ready','active','ending') LIMIT 1",[$owner,$id]):[['unverified'=>true]];
     $activeAttention=$attention!==null&&!$attention['suppressed']&&(!$attention['read']||$attention['wake_due']||$needsOwner);
     $presentationOwner=$activeTurn?'profile_handoff_pa3':($liveCall?'profile_calls_pa3c':($activeAttention?($attention['presentation_owner']??'profile_attention_pa4b'):''));
     if(!$settled&&$presentationOwner==='')$presentationOwner=$attention['presentation_owner']??'profile_attention_pa4b';
@@ -243,7 +243,7 @@ function vp3_coordination_profile_call_v1(PDO $pdo,array $scope,int $id,DateTime
     vp3_profile_call_integrity_pa3c($row);
     $context=vp3_profile_call_context_pa3c($pdo,$owner,(int)$row['conversation_id'],false,$row);
     $state=(string)$row['state'];
-    if(!in_array($state,['offered','provisioning','connecting','active','ending','ended','declined','cancelled','expired','failed'],true)
+    if(!in_array($state,['offered','preparing','ready','active','ending','ended','declined','cancelled','expired','failed'],true)
         ||!in_array($row['mode'],['audio','video'],true)||!in_array($row['offered_by'],['visitor','owner'],true)||(int)$row['revision']<1)vp3_coordination_profile_changed_v1();
     $at=(int)$now->format('Uv');$missed=$row['offered_by']==='visitor'&&$row['accepted_at_ms']===null
         &&(int)$row['offer_expires_at_ms']<=$at&&($state==='offered'||($state==='expired'&&$row['last_reason']==='offer_expired'));
@@ -255,7 +255,8 @@ function vp3_coordination_profile_call_v1(PDO $pdo,array $scope,int $id,DateTime
     $status=$missed?'missed':$state;
     $summary=$missed?'An incoming '.$mode.' call expired before it was answered.':match($state){
         'offered'=>'A '.$mode.' call offer is waiting on its existing call card.',
-        'provisioning','connecting'=>'A '.$mode.' call is connecting.',
+        'preparing'=>'A '.$mode.' call is preparing its connection.',
+        'ready'=>'The '.$mode.' call connection has been prepared. Open its call card for current availability.',
         'active'=>'The saved call state reports an active '.$mode.' call.',
         'ending'=>'The '.$mode.' call is closing; verified cleanup is still pending.',
         'ended'=>'The '.$mode.' call has ended.',

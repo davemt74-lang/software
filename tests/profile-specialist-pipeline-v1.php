@@ -10,8 +10,8 @@ require_once dirname(__DIR__).'/includes/agent-initiative-specialist-registry-v1
 require_once dirname(__DIR__).'/includes/agent-top-of-mind-specialists-v1.php';
 
 function get_tracks(): array { return []; }
-// Physical provider configuration only: canonical call actions remain real,
-// and this suite never dispatches a room operation or joins a call.
+// Only physical provider configuration/transport is simulated. Canonical call
+// actions and worker transitions remain real; no network room or join is used.
 function vp3_profile_call_livekit_readiness_pa3c(): array
 {
     return ['ready'=>true,'config_fingerprint'=>hash('sha256','profile-pipeline-provider')];
@@ -19,6 +19,16 @@ function vp3_profile_call_livekit_readiness_pa3c(): array
 function vp3_profile_call_livekit_snapshot_pa3c(): array
 {
     return ['encrypted'=>'fixture-provider-configuration','config_fingerprint'=>hash('sha256','profile-pipeline-provider')];
+}
+
+function profile_pipeline_call_provider(string $operation,array $binding,array $options=[]): array
+{
+    if(db()->inTransaction()||$operation!=='create')throw new RuntimeException('Unexpected Profile pipeline provider operation.');
+    $GLOBALS['profilePipelineProviderCalls'][]=$operation;
+    return ['status'=>'ready','room_sid'=>'RM_'.substr($binding['public_id'],0,20),
+        'room_name'=>$binding['room_name'],'config_fingerprint'=>$binding['provider_config_fingerprint'],
+        'owner_connected'=>false,'visitor_connected'=>false,'participants'=>[],'recording'=>false,
+        'observed_at_ms'=>vp3_profile_call_now_pa3c()];
 }
 
 function profile_pipeline_reject(callable $operation, string $message, ?int $code=null): void
@@ -289,6 +299,21 @@ canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$owner,7)
     &&canvas_pipeline_count('chat_messages','conversation_id=11')===$chatCount,
     'a new policy revision cannot revive the pending report from the earlier private Chat binding');
 
+// Give this data-only historical thread the current native guest credential so
+// acceptance goes through the real visitor authority rather than a state edit.
+require_once dirname(__DIR__).'/includes/profile-visitor-crm-v243.php';
+profile_specialist_fixture_column_v1($pdo,'users','avatar_path',"VARCHAR(255) NOT NULL DEFAULT ''");
+profile_specialist_fixture_column_v1($pdo,'users','email',"VARCHAR(190) NOT NULL DEFAULT ''");
+$pdo->exec("CREATE TABLE IF NOT EXISTS team_user_presence(user_id INTEGER PRIMARY KEY,presence_mode VARCHAR(16) NOT NULL DEFAULT 'online',social_chat_enabled INTEGER NOT NULL DEFAULT 1,sound_enabled INTEGER NOT NULL DEFAULT 1)");
+$_COOKIE['sf_profile_conversation']=bin2hex(random_bytes(32));
+$nativeAuthority=profile_conversation_native_authority_v1((int)$owner['id'],0);
+$nativeBinding=$nativeAuthority+['profile_agent_id'=>$settled['public_agent'],'profile_session_id'=>$settled['session']];
+$pdo->prepare("UPDATE profile_agent_messages SET context_json=? WHERE conversation_id=? AND sender_type='system'")
+    ->execute([json_encode($nativeBinding,JSON_THROW_ON_ERROR),$settled['conversation']]);
+$eventQuery=$pdo->prepare('SELECT metadata_json FROM profile_events WHERE id=?');$eventQuery->execute([$settled['event']]);
+$eventMetadata=json_decode((string)$eventQuery->fetchColumn(),true,16,JSON_THROW_ON_ERROR);
+$eventMetadata['source_authority']['credential_hash']=$nativeAuthority['credential_hash'];
+$pdo->prepare('UPDATE profile_events SET metadata_json=? WHERE id=?')->execute([json_encode($eventMetadata,JSON_THROW_ON_ERROR),$settled['event']]);
 $native=profile_pipeline_prepare($settled,'This informational reply is current before a new call offer.',$model);
 $beforeNative=vp3_coordination_sources_v1($pdo,$owner,$binding,[$ref])['items'][$ref];
 $offered=vp3_profile_call_owner_action_pa3c($pdo,$owner,['operation'=>'offer','request_id'=>bin2hex(random_bytes(16)),
@@ -298,30 +323,58 @@ canvas_pipeline_check($duringNative['profile_presentation_owned']===true&&$durin
     &&$duringNative['revision']!==$beforeNative['revision']&&$duringNative['profile_report']===$beforeNative['profile_report']
     &&canvas_pipeline_count('profile_call_deliveries_pa3c')===0,
     'a real current call offer changes presentation responsibility without inventing delivery or changing the saved reply');
+$callContext=vp3_profile_call_context_pa3c($pdo,(int)$owner['id'],$settled['conversation']);
+$visitorContext=['owner_user_id'=>(int)$owner['id'],'agent_id'=>$settled['public_agent'],
+    'session_id'=>$settled['session'],'conversation_authority'=>$nativeAuthority,'visitor'=>null,
+    'profile'=>$callContext['profile'],'agent'=>$callContext['agent'],'session'=>$callContext['session']];
+$_SERVER['HTTP_X_FIXTURE_ANONYMOUS']='1';
+try{
+    $accepted=vp3_profile_call_visitor_action_pa3c($pdo,$visitorContext,['operation'=>'accept','request_id'=>bin2hex(random_bytes(16)),
+        'conversation_id'=>$settled['conversation'],'call_id'=>$offered['call_id'],'revision'=>$offered['revision']]);
+}finally{unset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS']);}
+canvas_pipeline_check($accepted['call']['state']==='preparing'
+    &&canvas_pipeline_count('profile_agent_handoff_turns_pa3','conversation_id='.$settled['conversation'])===0
+    &&canvas_pipeline_count('agent_attention_items','source_conversation_id='.$settled['conversation'])===0,
+    'canonical visitor acceptance prepares the settled thread call without a handoff turn or attention item to mask ownership');
 canvas_pipeline_check(!vp3_initiative_deliver_pending_v1($pdo,$owner,7)
     &&coordination_fixture_receipt($native['id'])['initiative_delivery']==='withheld'
     &&coordination_fixture_receipt($native['id'])['initiative_delivery_reason']==='source_changed'
     &&canvas_pipeline_count('chat_messages','conversation_id=11')===$chatCount,
-    'final dispatch rechecks presentation responsibility after preparation and withdraws its older Profile snapshot');
-// Exercise the final boundary independently of discovery: even an admitted
-// current-source assignment cannot compete with an existing native presenter.
-$nativeGoal=$native['goal'];$nativeGoal['sources']=[$ref=>$duringNative['revision']];
-canvas_pipeline_check(vp3_initiative_enqueue_v1($pdo,$owner,'initiative.prepare',$nativeGoal,
-    hash('sha256','profile-native-final-boundary|'.$duringNative['revision'])),'the native-hold fixture enters the existing governed queue');
-$nativeCurrent=profile_pipeline_last($ref);
-$nativeResult=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($nativeCurrent['id']),$model);
-$nativeReceipt=coordination_fixture_receipt($nativeCurrent['id']);
-canvas_pipeline_check(($nativeResult['ok']??false)===true&&$nativeReceipt['initiative_delivery']==='private'
-    &&$nativeReceipt['initiative_delivery_reason']==='native_presentation'
-    &&canvas_pipeline_count('chat_messages','conversation_id=11')===$chatCount,
-    'the real worker final gate keeps even a current native-owned Profile report private without claiming prior delivery');
-$beforeRuns=count(coordination_fixture_runs('coordination.review'));
-coordination_fixture_schedule($owner);
-$checkpoint=vp3_coordination_scan_checkpoint_v1($owner,$binding);
-canvas_pipeline_check(count(coordination_fixture_runs('coordination.review'))===$beforeRuns
-    &&in_array('native_presentation',array_column($checkpoint['specialists']['profile']['dispositions']??[],'reason'),true)
-    &&($checkpoint['specialists']['profile']['legacy_handled']??-1)===0,
-    'the ordinary scheduler holds current native obligations with an honest presentation reason and no fake receipt');
+    'final dispatch withdraws the pre-call Profile snapshot after canonical acceptance enters preparing');
+$GLOBALS['profilePipelineProviderCalls']=[];
+foreach(['preparing','ready'] as $callState){
+    if($callState==='ready'){
+        $worked=vp3_profile_call_work_pa3c($pdo,(int)$offered['call_id'],'profile_pipeline_call_provider');
+        canvas_pipeline_check($worked['state']==='ready'&&$GLOBALS['profilePipelineProviderCalls']===['create'],
+            'the canonical call worker reaches ready through one simulated physical create operation');
+    }
+    $duringNative=vp3_coordination_sources_v1($pdo,$owner,$binding,[$ref])['items'][$ref];
+    canvas_pipeline_check($duringNative['status']==='updated'&&$duringNative['profile_presentation_owned']===true
+        &&$duringNative['presentation_owner']==='profile_calls_pa3c'&&$duringNative['legacy_delivered']===false
+        &&$duringNative['revision']!==$beforeNative['revision']&&$duringNative['profile_report']===$beforeNative['profile_report']
+        &&canvas_pipeline_count('profile_call_deliveries_pa3c')===0,
+        'the settled conversation remains owned by its '.$callState.' call without a fabricated delivery receipt');
+    // Exercise final delivery independently of discovery, using the actual
+    // current conversation source rather than altered presentation flags.
+    $nativeGoal=$native['goal'];$nativeGoal['sources']=[$ref=>$duringNative['revision']];
+    canvas_pipeline_check(vp3_initiative_enqueue_v1($pdo,$owner,'initiative.prepare',$nativeGoal,
+        hash('sha256','profile-native-final-boundary|'.$callState.'|'.$duringNative['revision'])),
+        'the '.$callState.' native-hold fixture enters the existing governed queue');
+    $nativeCurrent=profile_pipeline_last($ref);
+    $nativeResult=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($nativeCurrent['id']),$model);
+    $nativeReceipt=coordination_fixture_receipt($nativeCurrent['id']);
+    canvas_pipeline_check(($nativeResult['ok']??false)===true&&$nativeReceipt['initiative_delivery']==='private'
+        &&$nativeReceipt['initiative_delivery_reason']==='native_presentation'
+        &&canvas_pipeline_count('chat_messages','conversation_id=11')===$chatCount,
+        'the real worker keeps the '.$callState.' conversation report private for its existing native presenter');
+    $beforeRuns=count(coordination_fixture_runs('coordination.review'));
+    coordination_fixture_schedule($owner);
+    $checkpoint=vp3_coordination_scan_checkpoint_v1($owner,$binding);
+    canvas_pipeline_check(count(coordination_fixture_runs('coordination.review'))===$beforeRuns
+        &&in_array('native_presentation',array_column($checkpoint['specialists']['profile']['dispositions']??[],'reason'),true)
+        &&($checkpoint['specialists']['profile']['legacy_handled']??-1)===0,
+        'the scheduler holds the '.$callState.' native obligation without claiming it was already delivered');
+}
 $row=vp3_top_of_mind_profile_status_v1($pdo,$owner,$principal,7,11,$binding,time(),true);
 canvas_pipeline_check(($row['id']??null)==='profile'&&in_array($row['source_coverage']??null,['ready','limited'],true)
     &&$row['state']==='checked'&&$inferences===0,
