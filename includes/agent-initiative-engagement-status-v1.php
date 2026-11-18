@@ -128,9 +128,9 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
     $verifiedAssessment=$health['last_assessment']??[];
     $lanes=['app-suggestions'=>'app_suggestions','image-generator'=>'media_images'];
     $monitors=['gmail'=>'Monitoring Gmail findings','planning'=>'Monitoring planning changes','tasks'=>'Monitoring tasks and reminders',
-        'media'=>'Monitoring new watch and listen findings'];
+        'media'=>'Monitoring new watch and listen findings','profile'=>'Monitoring verified visitor conversations and follow-ups'];
     $jobs=[];
-    foreach(['gmail','planning','tasks','media','brainstorm','app-suggestions','coding','image-generator'] as $family){
+    foreach(['gmail','planning','tasks','media','profile','brainstorm','app-suggestions','coding','image-generator'] as $family){
         $own=$assignments[$family]??null;
         $lane=isset($lanes[$family])?($engagement['opportunity_checks'][$lanes[$family]]['assignment']??null):null;
         $work=$own??$lane??[];
@@ -210,7 +210,7 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
                 ($work['opportunity_stage']??null)==='proposal_ready'||($post['result']??null)==='canvas_proposal'=>'canvas_proposal',
                 ($work['opportunity_stage']??null)==='concept_ready'||($post['result']??null)==='image_concept'=>'image_proposal',
                 $post!==null=>'chat',
-                ($work['delivery_reason']??null)==='specialist_report'=>'top_of_mind',
+                in_array($work['delivery_reason']??null,['specialist_report','native_presentation'],true)=>'top_of_mind',
                 ($work['delivery']??null)==='private'=>'private_preparation',
                 default=>null,
             };
@@ -239,6 +239,7 @@ function vp3_initiative_engagement_job_action_v1(string $family,array $work,stri
         'gmail'=>'Review email findings and a useful next step',
         'planning'=>'Review scheduling facts and conflicts',
         'tasks'=>'Review a task, list or reminder',
+        'profile'=>'Review verified visitor conversations, calls and follow-ups',
         'media'=>($work['step']??null)==='youtube.playback_offer'?'Prepare a playback suggestion':'Review what was watched or played',
         'brainstorm'=>match($phase){
             'analyzing','reviewing'=>'Review current specialist findings','brainstorming'=>'Find useful next steps across the evidence',
@@ -344,9 +345,9 @@ function vp3_initiative_engagement_handoffs_v1(PDO $pdo,array $user,int $agentId
                         ?($deliveryGate==='ready'&&$pendingReason==='delivery_held'?'delivery_held':$deliveryGate):'result_unavailable');
             }elseif(in_array($delivery,['private','withheld'],true)){
                 $reason=$result['initiative_delivery_reason']??'private';
-                $reason=in_array($reason,['private','duplicate','source_changed','policy_changed','rule_changed','result_unavailable','transcript_history'],true)
+                $reason=in_array($reason,['private','duplicate','native_presentation','source_changed','policy_changed','rule_changed','result_unavailable','transcript_history'],true)
                     ?$reason:'result_unavailable';
-                $state=in_array($reason,['private','duplicate','transcript_history'],true)?'skipped':'blocked';
+                $state=in_array($reason,['private','duplicate','native_presentation','transcript_history'],true)?'skipped':'blocked';
             }
         }
         $rows[$specialist]=['state'=>$state,'reason'=>$reason,'run_id'=>(int)$run['id'],
@@ -511,7 +512,7 @@ function vp3_initiative_engagement_preparation_v1(PDO $pdo,int $owner,array $run
         &&is_array($output['evidence_revisions']??null)){
         foreach(array_keys($output['evidence_revisions']) as $ref){
             if(!is_string($ref))continue;
-            $input=match(strtok($ref,':')){'gmail'=>'gmail','office'=>'tasks','planning'=>'planning','media'=>'media',default=>null};
+            $input=match(strtok($ref,':')){'gmail'=>'gmail','office'=>'tasks','planning'=>'planning','media'=>'media','profile'=>'profile',default=>null};
             if($input!==null)$inputSpecialists[$input]=true;
         }
     }
@@ -547,7 +548,7 @@ function vp3_initiative_engagement_preparation_v1(PDO $pdo,int $owner,array $run
     };
     return ['run_id'=>$id,'action_id'=>isset($action['id'])?(int)$action['id']:null,
         'step'=>is_string($step)&&preg_match('/\A[a-z_]+(?:\.[a-z_]+){1,3}\z/D',$step)?$step:'work.prepare_private',
-        'specialist'=>in_array($specialist,['gmail','planning','tasks','media','canvas','curiosity','casual','connected-sites','transcripts','marketing','commerce'],true)?$specialist:null,
+        'specialist'=>in_array($specialist,['gmail','planning','tasks','media','canvas','curiosity','casual','connected-sites','transcripts','marketing','commerce','profile'],true)?$specialist:null,
         'status'=>in_array($status,['approved','queued','executing','interrupted','completed','failed','paused','cancelled'],true)?$status:'unknown',
         'attempt'=>isset($action['attempt_count'])?(int)$action['attempt_count']:null,
         'at'=>vp3_initiative_engagement_time_v1($marked),
@@ -560,7 +561,7 @@ function vp3_initiative_engagement_preparation_v1(PDO $pdo,int $owner,array $run
         'input_specialists'=>array_keys($inputSpecialists),
         'delivery'=>in_array($delivery,['private','pending','withheld','delivered'],true)?$delivery:null,
         'delivery_reason'=>in_array($reason,['private','specialist_report','source_changed','policy_changed','rule_changed',
-            'duplicate','meeting_changed','result_unavailable','public_topic_unavailable','transcript_history','transcript_pacing','delivery_held'],true)?$reason:null,
+            'duplicate','native_presentation','meeting_changed','result_unavailable','public_topic_unavailable','transcript_history','transcript_pacing','delivery_held'],true)?$reason:null,
         'opportunity_stage'=>$step==='image.prepare'&&($output['type']??null)==='initiative_image_concept'
             &&($output['status']??null)==='concept_ready'?'concept_ready':$stage,
         'message_id'=>$delivery==='delivered'&&$messageId!==false?$messageId:null];

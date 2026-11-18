@@ -404,7 +404,7 @@
     task_research:'Task research',transcript_research:'Transcript research',email_canvas:'Email Canvas',canvas:'Canvas Apps',
     office_tasks:'Office tasks',office_reminders:'Office reminders',office_calendar:'Office calendar',
     activity_context:'Activity context',gmail:'Gmail',planning:'Planning',media:'Media & Entertainment',curiosity:'Curiosity',
-    casual:'Casual check-ins','connected-sites':'Connected Sites',marketing:'Marketing',media_images:'Media image source'
+    casual:'Casual check-ins','connected-sites':'Connected Sites',marketing:'Marketing',media_images:'Media image source',profile:'Profile'
   };
 
   function initiativeFailureSource(failure) {
@@ -500,7 +500,7 @@
     specialist: {
       gmail:'Gmail',planning:'Planning',tasks:'Tasks & Lists',media:'Media & Entertainment',canvas:'Canvas Apps',curiosity:'Curiosity',casual:'Casual check-ins',
       research:'Research',eyes:'Agent Eyes','connected-sites':'Connected Sites',transcripts:'Transcriptions',
-      coding:'Coding','image-generator':'Image Generator',mission:'Missions',marketing:'Marketing',commerce:'Commerce'
+      coding:'Coding','image-generator':'Image Generator',mission:'Missions',marketing:'Marketing',commerce:'Commerce',profile:'Profile'
     },
     rule_action: {ask:'Ask in Chat',report:'Report in Chat',watch:'Keep in Top of Mind'},
     rule_trigger: {
@@ -513,9 +513,12 @@
       stoneward_repeat:'A track you return to on Stonefellow',idle_invitation:'Media check-ins',high_priority:'High priority',
       open_question:'Question to get to know you',open_followup:'Saved transcription follow-up',pos_attention:'A POS ticket needs attention',
       daily_sales:'Daily sales totals are available',optimization_ready:'A campaign recommendation is ready',
-      setup_blocker:'Campaign setup needs attention',campaign_outcome:'Verified campaign outcome available'
+      setup_blocker:'Campaign setup needs attention',campaign_outcome:'Verified campaign outcome available',
+      needs_owner:'Visitor needs your reply',open_conversation:'Open Profile conversation',missed_call:'Missed Profile call',
+      reviewed_followup:'Reviewed Profile follow-up',activity:'Profile activity'
     },
     scan_disposition: {
+      native_presentation:'The existing visitor, call, or task presentation owns this update',
       queued:'Queued for Chat',existing_handoff:'Already queued for Chat',handoff_pending:'Held behind an assignment for this specialist',
       already_handled:'Skipped because the finding was already handled',
       dedupe_conflicts:'Skipped because a matching assignment was already recorded',
@@ -548,6 +551,7 @@
     },
     delivery_reason: {
       private:'This assignment was for private work',specialist_report:'Saved in the specialist report',
+      native_presentation:'The existing visitor, call, or task presentation owns this update',
       source_changed:'Source records changed before delivery',
       policy_changed:'Initiative settings changed',rule_changed:'The current Top of Mind rule changed',
       duplicate:'The update was already reported',meeting_changed:'The meeting changed before delivery',
@@ -610,7 +614,7 @@
         owner_turn_pending:'Waiting for the current Chat turn',recent_proactive_post:'Waiting after a recent proactive update',
         awaiting_reply:'Earlier question still open. Continuing to explore other topics.',no_question:'No current question',higher_priority:'Higher-priority work is queued',
         report_only:'The last scan kept questions in the Curiosity report',already_offered:'This question already appeared in Chat'};
-      for (const family of ['gmail','tasks','planning','media','canvas','curiosity','connected-sites','transcripts','marketing']) {
+      for (const family of ['gmail','tasks','planning','media','canvas','curiosity','connected-sites','transcripts','marketing','profile']) {
         const result = scan.specialists?.[family];
         if (!Object.hasOwn(coverageLabels,result?.coverage)) continue;
         const details = [coverageLabels[result.coverage]];
@@ -697,7 +701,7 @@
     };
     const replyStates = {open:'Awaiting your reply',discussed:'Reply recorded',deferred:'Follow-up deferred',
         queued:'Follow-up queued',stale:'Finding changed',declined:'Declined',owner_resolved:'Marked resolved by owner',completed:'Follow-up completed'};
-    for (const family of ['tasks','planning','gmail','canvas','curiosity','media','connected-sites','transcripts','marketing']) {
+    for (const family of ['tasks','planning','gmail','canvas','curiosity','media','connected-sites','transcripts','marketing','profile']) {
       const handoff = engagement.specialist_handoffs?.[family];
       if (!id(handoff?.run_id) || !Object.hasOwn(handoffStates,handoff.state)) continue;
       const details = [handoffStates[handoff.state]];
@@ -1250,7 +1254,7 @@
 
   const debugSpecialists = [
     ['gmail','Gmail'],['planning','Planning & Scheduling'],['tasks','Tasks & Lists'],
-    ['transcripts','Transcriptions'],['media','Media & Entertainment'],['curiosity','Curiosity'],
+    ['transcripts','Transcriptions'],['media','Media & Entertainment'],['profile','Profile'],['curiosity','Curiosity'],
     ['connected-sites','Connected Sites'],['canvas','Canvas Apps'],['research','Research'],
     ['coding','Coding'],['image-generator','Image Generator'],['mission','Missions'],
     ['marketing','Marketing'],['commerce','Commerce'],['development','Agent Development'],['app-suggestions','App Suggestions'],
@@ -1263,7 +1267,7 @@
   const debugWorkTone = {executing:'working',queued:'working',approved:'working',failed:'warning',interrupted:'warning',
     unavailable:'warning',paused:'muted',cancelled:'muted',completed:'ready'};
   const debugActivityColors = {
-    gmail:'#bf3b36',planning:'#82501b',tasks:'#2459a4',transcripts:'#7441aa',media:'#197254',curiosity:'#a13e75',
+    gmail:'#bf3b36',planning:'#82501b',tasks:'#2459a4',transcripts:'#7441aa',media:'#197254',profile:'#35647e',curiosity:'#a13e75',
     'connected-sites':'#11747e',canvas:'#5148a2',research:'#2c6c81',coding:'#38632c','image-generator':'#b04724',
     mission:'#59486c',marketing:'#ae4c5a',commerce:'#775919',development:'#46556d','app-suggestions':'#675cc1',eyes:'#256d56',brainstorm:'#176984',
   };

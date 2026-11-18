@@ -75,7 +75,7 @@ function vp3_agent_activity_coordination_v1(PDO $pdo, array $scope): array
         foreach (array_slice($row['sources'] ?? [], 0, 5) as $source) {
             $specialist = $source['specialist'] ?? '';
             $title = vp3_agent_activity_text_v1($source['title'] ?? '', 120);
-            if ($title === '' || !in_array($specialist, ['gmail','tasks','planning','research','media','canvas','curiosity','connected-sites','casual','transcripts'], true)) continue;
+            if ($title === '' || !in_array($specialist, ['gmail','tasks','planning','research','media','canvas','curiosity','connected-sites','casual','transcripts','profile'], true)) continue;
             $href = $source['url'] ?? '';
             $entry = ['specialist'=>$specialist, 'title'=>$title, 'url'=>is_string($href) && strlen($href) <= 1900
                 && str_starts_with($href, '/') && !str_starts_with($href, '//') && !str_contains($href, '\\') ? $href : ''];
@@ -755,6 +755,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
     $transcriptsOnly = $view === 'transcripts';
     $codingOnly = $view === 'coding';
     $marketingOnly = $view === 'marketing';
+    $profileOnly = $view === 'profile';
     if ($transcriptsOnly && !has_permission('artist_listening.access',$scope['user'])) {
         throw new RuntimeException('Transcription access changed.',403);
     }
@@ -773,7 +774,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         'gmail_outcomes'=>['Gmail', static fn() => vp3_agent_activity_gmail_outcomes_v1($pdo, $scope, $now)],
     ];
     if ($gmailOnly) $readers = ['gmail_inbox'=>$readers['gmail_inbox']];
-    if ($mediaOnly || $curiosityOnly || $transcriptsOnly) $readers = [];
+    if ($mediaOnly || $curiosityOnly || $transcriptsOnly || $profileOnly) $readers = [];
     if ($codingOnly) $readers = array_intersect_key($readers, array_flip(['canvases','canvas_suggestions']));
     if ($marketingOnly) $readers = ['marketing'=>['Campaign recommendations', static fn() => vp3_agent_activity_marketing_v1($pdo,$scope,$now)]];
     if ($view === 'planning') {
@@ -854,6 +855,46 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         }
     }
     $coordination = [];
+    if ($profileOnly) {
+        require_once __DIR__.'/agent-profile-specialist-v1.php';
+        $profileSnapshot = ['items'=>[], 'coverage'=>['profile'=>'unconfigured']];
+        if ($conversationId > 0) {
+            $binding = ['owner_user_id'=>(int)$fresh['user']['id'], 'agent_id'=>$agentId,
+                'conversation_id'=>$conversationId, 'enabled'=>false];
+            try {
+                require_once __DIR__.'/agent-coordination-sources-v1.php';
+                $profileSnapshot = vp3_coordination_sources_v1($pdo,$fresh['user'],$binding,null,$now,true,'profile');
+            } catch (Throwable $error) {
+                // Private Chat and Profile authority are checked again below. Source failure
+                // must not turn a previously populated report into an all-clear.
+                $profileSnapshot = ['items'=>[], 'coverage'=>['profile'=>'unavailable']];
+            }
+        }
+        $coordination['profile_report'] = vp3_profile_specialist_report_v1($profileSnapshot);
+        $coverage['profile_report'] = $coordination['profile_report']['coverage'];
+        $profileState = $coverage['profile_report'];
+        $attention['specialists'] = [['id'=>'profile', 'conversation_id'=>$conversationId,
+            'state'=>match ($profileState) {
+                'unavailable'=>'unavailable', 'unconfigured'=>'blocked',
+                default=>$coordination['profile_report']['findings'] ? 'ready' : 'checked',
+            },
+            'source_coverage'=>$profileState, 'progress'=>null,
+            'detail'=>match ($profileState) {
+                'limited'=>'Some Profile sources could be checked. The report may be incomplete.',
+                'unavailable'=>'Profile sources could not be verified.',
+                'unconfigured'=>$conversationId > 0 ? 'Profile activity is not configured or available in this Chat.' : 'Save this Chat to read Profile activity.',
+                default=>'Current Profile activity is available in the report.',
+            }]];
+        // The source transaction has ended: reread both private Chat authority
+        // and the current Profile grants before releasing any saved-Chat report.
+        // A permission failure must escape as 403, including empty projections.
+        if ($conversationId > 0) {
+            require_once __DIR__.'/agent-coordination-profile-v1.php';
+            $fresh = vp3_coordination_profile_authority_v1($pdo,$fresh,$binding);
+        } else {
+            $fresh = vp3_agent_activity_scope_v1($pdo,$fresh['user'],$agentId,$conversationId);
+        }
+    }
     if ($marketingOnly) {
         try {
             require_once __DIR__.'/agent-marketing-review-v1.php';
@@ -959,7 +1000,7 @@ function vp3_agent_activity_hub_request_v1(PDO $pdo, array $user, string $method
     if ((int)($user['id'] ?? 0) < 1 || $binding === '' || !hash_equals(vp3_catch_up_page_binding_v1($user), $binding)) {
         throw new RuntimeException('Your Agent session changed.', 403);
     }
-    if (!in_array($view, ['', 'gmail', 'tasks', 'planning', 'media', 'curiosity', 'transcripts', 'coding', 'marketing'], true)) throw new RuntimeException('Choose a valid activity view.', 422);
+    if (!in_array($view, ['', 'gmail', 'tasks', 'planning', 'media', 'curiosity', 'transcripts', 'coding', 'marketing', 'profile'], true)) throw new RuntimeException('Choose a valid activity view.', 422);
     if (!in_array($collection, ['', 'reviews', 'all', 'tasks', 'lists', 'reminders', 'list_items'], true)
         || ($view !== 'tasks' && $collection !== '')
         || ($cursor !== '' && (in_array($collection, ['', 'reviews', 'all'], true) || !vp3_agent_activity_inventory_id_v1($cursor)))

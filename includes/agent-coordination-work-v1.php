@@ -4,8 +4,9 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-coordination-rules-v1.php';
 require_once __DIR__.'/agent-initiative-errors-v1.php';
 require_once __DIR__.'/agent-coordination-material-v1.php';
+require_once __DIR__.'/agent-profile-specialist-v1.php';
 
-const VP3_COORDINATION_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing'];
+const VP3_COORDINATION_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing','profile'];
 
 /** The initial anchor stays stable even as other specialists update the linked evidence. */
 function vp3_coordination_scan_id_v1(array $user,array $binding,string $ref): string
@@ -88,10 +89,54 @@ function vp3_coordination_valid_refs_v1(mixed $sources): bool
 {
     if(!is_array($sources)||!$sources||count($sources)>5)return false;
     foreach($sources as $ref=>$revision){
-        if(!is_string($ref)||!preg_match('/\A(?:gmail|office|planning|media|canvas|curiosity|casual|connected-sites|transcript|marketing):[a-zA-Z0-9:@_-]{1,155}\z/D',$ref)
+        if(!is_string($ref)||!preg_match('/\A(?:gmail|office|planning|media|canvas|curiosity|casual|connected-sites|transcript|marketing|profile):[a-zA-Z0-9:@_-]{1,155}\z/D',$ref)
             ||!is_string($revision)||!preg_match('/\A[a-f0-9]{64}\z/D',$revision))return false;
+        if(str_starts_with($ref,'profile:')&&!preg_match('/\Aprofile:(?:conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',$ref))return false;
     }
     return true;
+}
+
+/** Versioned Profile sections are saved as bounded facts, never as instructions or authority. */
+function vp3_coordination_profile_report_normalize_v1(mixed $value): ?array
+{
+    if(!vp3_profile_specialist_sections_valid_v1($value))return null;
+    $fields=['contract','key_findings','actions_followups','open_questions','next_step','questions_for_you'];
+    $out=['contract'=>VP3_PROFILE_SPECIALIST_REPORT_V1];
+    foreach(array_slice($fields,1) as $field){
+        if($field==='next_step'){
+            $out[$field]=trim($value[$field]);
+            continue;
+        }
+        $rows=$value[$field];
+        $out[$field]=[];
+        foreach($rows as $row){
+            $text=trim($row);
+            if($text==='')return null;
+            $out[$field][]=$text;
+        }
+    }
+    return mb_strlen(vp3_coordination_profile_report_draft_v1($out))<=8000?$out:null;
+}
+
+function vp3_coordination_profile_report_draft_v1(array $report): string
+{
+    $sections=[];
+    foreach(['key_findings'=>'Key findings','actions_followups'=>'Actions and follow-ups',
+        'open_questions'=>'Open questions','next_step'=>'Next step','questions_for_you'=>'Questions for you'] as $key=>$label){
+        $value=$report[$key];
+        $body=is_array($value)?($value?implode("\n",array_map(static fn(string $text):string=>'- '.$text,$value)):'None recorded.')
+            :($value!==''?$value:'No next step recorded.');
+        $sections[]=$label."\n".$body;
+    }
+    return implode("\n\n",$sections);
+}
+
+/** A native presenter owns delivery even before any presentation receipt exists. */
+function vp3_coordination_profile_presentation_owned_v1(array $goal,array $evidence): bool
+{
+    if(isset($goal['followthrough']))return false;
+    $item=$evidence[$goal['primary']??'']??[];
+    return ($item['specialist']??null)==='profile'&&($item['profile_presentation_owned']??false)===true;
 }
 
 /** The queue and Chat only keep the bounded structured result, not the provider response. */
@@ -120,6 +165,15 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
             ||!preg_match('/\A[a-f0-9]{32}\z/D',$out['gmail_reply_draft_id']))return null;
         $output['gmail_reply_draft_id']=$out['gmail_reply_draft_id'];
     }
+    if(array_key_exists('profile_report',$out)){
+        $report=vp3_coordination_profile_report_normalize_v1($out['profile_report']);
+        if($report===null||count($output['evidence_revisions'])!==1
+            ||!preg_match('/\Aprofile:(?:conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',array_key_first($output['evidence_revisions']))
+            ||!in_array($output['state'],['needs_owner','watching'],true)
+            ||($output['state']==='watching'&&$report['questions_for_you']!==[])
+            ||($output['state']==='needs_owner'&&$report['questions_for_you']!==[$output['question']]))return null;
+        $output['profile_report']=$report;
+    }
     $safe=[];
     if(array_key_exists('draft',$work)){
         if(!is_string($work['draft'])||$work['draft']!==vp3_coordination_draft_v1($output))return null;
@@ -131,6 +185,7 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
 
 function vp3_coordination_draft_v1(array $output): string
 {
+    if(isset($output['profile_report']))return vp3_coordination_profile_report_draft_v1($output['profile_report']);
     $ref=array_key_first($output['evidence_revisions']);
     if(count($output['evidence_revisions'])===1&&(str_starts_with($ref,'casual:')||str_starts_with($ref,'curiosity:'))
         &&$output['state']==='needs_owner'){
@@ -150,6 +205,8 @@ function vp3_coordination_saved_revisions_v1(array $goal,array $work): array
     if(($goal['tool']??null)!=='coordination.review'||!is_string($primary)||!vp3_coordination_valid_refs_v1($sources)
         ||!isset($sources[$primary])||$out===null||$out['situation_id']!==($goal['coordination_id']??null)
         ||!isset($out['evidence_revisions'][$primary]))throw new RuntimeException('Top of Mind evidence changed.',409);
+    $profileReport=str_starts_with($primary,'profile:')&&!isset($goal['followthrough'])&&!isset($goal['coordination_work']);
+    if($profileReport!==isset($out['profile_report']))throw new RuntimeException('Profile report evidence changed.',409);
     foreach($out['evidence_revisions'] as $ref=>$revision){
         if(($sources[$ref]??null)!==$revision)throw new RuntimeException('Top of Mind evidence changed.',409);
     }
@@ -180,7 +237,7 @@ function vp3_coordination_read_v1(PDO $pdo,array $user,array $binding,array $rev
         if(!is_array($item)||!is_string($item['revision']??null)||!hash_equals($revision,$item['revision'])){
             $specialist=match(explode(':',$ref,2)[0]){
                 'office'=>'tasks','planning'=>'planning','media'=>'media','canvas'=>'canvas','curiosity'=>'curiosity','connected-sites'=>'connected-sites',
-                'transcript'=>'transcripts','marketing'=>'marketing','casual'=>'casual',default=>'gmail'
+                'transcript'=>'transcripts','marketing'=>'marketing','profile'=>'profile','casual'=>'casual',default=>'gmail'
             };
             if(($snapshot['coverage'][$specialist]??null)==='unavailable'){
                 throw new Vp3InitiativeSourceProofUnavailableV1($specialist,'unavailable');
@@ -195,6 +252,10 @@ function vp3_coordination_read_v1(PDO $pdo,array $user,array $binding,array $rev
 function vp3_coordination_result_evidence_v1(PDO $pdo,array $user,array $binding,array $goal,array $toolResult): array
 {
     $items=vp3_coordination_read_v1($pdo,$user,$binding,vp3_coordination_saved_revisions_v1($goal,$toolResult));
+    if(isset($toolResult['output']['profile_report'])){
+        $expected=vp3_coordination_saved_result_v1($goal,$items,$goal['coordination_route']??[]);
+        if($expected['output']!==$toolResult['output'])throw new Vp3InitiativeSourcesChangedV1();
+    }
     vp3_coordination_task_context_current_v1($pdo,$user,$goal,$items);
     foreach($items as &$item){
         $item['detail']=$item['summary'];
@@ -375,6 +436,12 @@ function vp3_coordination_saved_result_v1(array $goal,array $evidence,array $rou
     $result=['output'=>['type'=>'initiative_coordination','situation_id'=>$goal['coordination_id'],
         'state'=>$question!==''?'needs_owner':'watching','title'=>$title,'summary'=>$summary,'next_step'=>$next,
         'question'=>$question,'evidence_revisions'=>$revisions]];
+    if(($route['specialist']??null)==='profile'){
+        $report=vp3_coordination_profile_report_normalize_v1($primary['profile_report']??null);
+        if($report===null)throw new InvalidArgumentException('The saved Profile report could not be verified.');
+        $report['questions_for_you']=$question!==''?[$question]:[];
+        $result['output']['profile_report']=$report;
+    }
     if(($normalized=vp3_coordination_result_normalize_v1($result))===null)throw new InvalidArgumentException('The saved specialist finding could not be verified.');
     return ['draft'=>vp3_coordination_draft_v1($normalized['output']),'output'=>$normalized['output']];
 }
@@ -384,7 +451,7 @@ function vp3_coordination_prepare_v1(PDO $pdo,array $user,array $goal,int $runId
     $work=isset($goal['coordination_work'])||$continuation!==null;
     $route=vp3_coordination_route_current_v1($pdo,$user,$goal,$evidence);
     $canUseSaved=!$work&&in_array($route['action']??null,['ask','report'],true);
-    if(!$work&&($route['specialist']??null)==='media')return vp3_coordination_saved_result_v1($goal,$evidence,$route);
+    if(!$work&&in_array($route['specialist']??null,['media','profile'],true))return vp3_coordination_saved_result_v1($goal,$evidence,$route);
     if($canUseSaved&&($goal['coordination_saved']??false)===true)return vp3_coordination_saved_result_v1($goal,$evidence,$route);
     $gmailAsk=!$work&&vp3_coordination_gmail_ask_v1($route);
     $related=$gmailAsk?vp3_coordination_gmail_related_v1($evidence[$goal['primary']],$evidence):[];
@@ -612,6 +679,7 @@ function vp3_coordination_other_chat_delivered_v1(PDO $pdo,array $user,array $go
 function vp3_coordination_should_report_v1(PDO $pdo,array $user,array $goal,int $runId,array $work,array $evidence): bool
 {
     $output=$work['output'];
+    if(vp3_coordination_profile_presentation_owned_v1($goal,$evidence))return false;
     if(isset($goal['followthrough']))return true;
     if(isset($goal['coordination_work']))return false;
     $action=$goal['coordination_route']['action']??null;
@@ -738,7 +806,7 @@ function vp3_coordination_handoff_repairable_v1(PDO $pdo,array $user,array $run,
     // An Ask or Report may be enabled again after its previous handoff was withdrawn.
     // Current sources and rules are checked again at queue admission and delivery.
     if($delivery==='withheld'&&in_array($reason,['source_changed','rule_changed','policy_changed'],true))return true;
-    if(!in_array($delivery,['private','withheld'],true)||$reason!=='duplicate')return false;
+    if(!in_array($delivery,['private','withheld'],true)||!in_array($reason,['duplicate','native_presentation'],true))return false;
     // An old suppressed duplicate only stays handled while a current post,
     // pending copy, or verified owner decision can still account for it.
     $work=$result['initiative_tool_result'];

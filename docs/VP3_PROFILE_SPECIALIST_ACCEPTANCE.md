@@ -10,7 +10,7 @@ Each phase has five scored areas, worth two points each: requested behavior, cur
 
 ## Phase 1 — Profile reliability
 
-Status: implemented; final regression review and required PR checks pending.
+Status: complete, 10/10 for this acceptance scope. PR #788 merged as `a781a75dfce3dd172988a236568b075529f52463` after all 15 workflows passed on final source `d141c41197351b0e20c8826675c6e483262ad531` (38 successful checks; 4 expected path-filtered skips).
 
 - A lost owner-reply acknowledgement cannot duplicate a visitor-visible message through the live visitor card or either older inbox. Retries retain the exact operation identity and original source version. Both an accepted handoff and a historical conversation without a current turn are covered.
 - Shared activity context respects canonical handled/ignored/snoozed disposition. Visible presentation, Read, and resolution remain separate. A routine read visit does not become a new interruption, and an unresolved visitor request remains unresolved.
@@ -21,7 +21,7 @@ Status: implemented; final regression review and required PR checks pending.
 
 ## Phase 2 — Shared Profile specialist
 
-Status: not started.
+Status: implemented and locally reviewed; awaiting final-source hosted gates before scoring and merge.
 
 - A single Profile source/report adapter reads currently authorized conversations, attention, calls, reviewed follow-ups, and verified activity.
 - Findings retain stable references, revisions, source links, coverage, and current disposition.
@@ -77,4 +77,10 @@ For each phase, record the reviewed commit, scored evidence, pull request, requi
 
 Focused regressions cover historical and accepted-turn reply replay through the real HTTP endpoints, stable request identities in both older inbox clients, current canonical attention disposition through presentation and mutation, uncapped analytics aggregates, exact event windows, unavailable reads, and reporting-selection changes while requests are pending. Native MySQL variants exercise real aggregate SQL and transaction locks in the Section 14 matrix. Existing browser and runtime journeys remain enabled.
 
-A 10/10 acceptance score remains conditional on review completion and all required final-source PR checks. Merge evidence is recorded in the phase PR and carried into the next phase's acceptance update.
+Phase 1 final-source evidence: [Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44272160301), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44272159933), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44272160010). The merged tree `c10cd6f19ecebac34f6d34e75064809f4b7e1a9c` exactly matches the tested source. All five scoring areas earned 2/2.
+
+## Phase 2 verification scope
+
+The source suite exercises discovery and exact rereads through current private owner/Agent/Chat authority, independent public responder identity, canonical source provenance and disposition, semantic revision stability, missing source coverage, and no-write report reads. The pipeline suite uses actual SQLite/MySQL workflow records and receipts to verify that a saved five-section Profile report can follow an explicitly selected report rule while native visitor/call obligations and Office-owned follow-ups retain their presentation owner.
+
+The Activity Hub HTTP suite runs the production endpoint and checks exact scoped reports, unavailable/limited/unconfigured states, method and session authority, and unchanged storage. Renderer tests exercise all five sections, safe source links including subdirectory installs, hostile visitor text, and asynchronous Chat/Agent switches. The hosted browser suite checks the actual shared specialist interface on desktop and compact screens. These checks join the existing gates; Phase 2 remains unscored until all final-source workflows pass.

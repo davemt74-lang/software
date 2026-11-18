@@ -70,6 +70,13 @@ function vp3_coordination_rule_definitions_v1(): array
             'open_question'=>['label'=>'An open question in a saved analysis','default'=>'ask','actions'=>['watch','ask','report']],
             'open_followup'=>['label'=>'An open follow-up in a saved analysis','default'=>'report','actions'=>['watch','report']],
         ]],
+        'profile'=>['label'=>'Profile','triggers'=>[
+            'needs_owner'=>['label'=>'A visitor needs your input','default'=>'ask','actions'=>['watch','ask','report']],
+            'open_conversation'=>['label'=>'An open visitor conversation','default'=>'watch','actions'=>['watch','ask','report']],
+            'missed_call'=>['label'=>'A missed visitor call','default'=>'report','actions'=>['watch','ask','report']],
+            'reviewed_followup'=>['label'=>'A reviewed visitor follow-up','default'=>'report','actions'=>['watch','ask','report']],
+            'activity'=>['label'=>'Other verified profile activity','default'=>'watch','actions'=>['watch','report']],
+        ]],
     ];
 }
 
@@ -158,7 +165,7 @@ function vp3_coordination_route_v1(array $settings, string $specialist, array $t
 /** A work specialist's explicit delivery rule takes priority over private work and suggestions. */
 function vp3_coordination_chat_route_v1(array $route): bool
 {
-    return in_array($route['specialist']??null,['gmail','planning','tasks','canvas','connected-sites','transcripts'],true)
+    return in_array($route['specialist']??null,['gmail','planning','tasks','canvas','connected-sites','transcripts','profile'],true)
         && in_array($route['action']??null,['ask','report'],true);
 }
 

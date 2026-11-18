@@ -28,6 +28,7 @@
     planning:{label:'Planning & Scheduling'},tasks:{label:'Tasks & Lists'},
     gmail:{label:'Gmail',fallbackFor:['email','gmail-inbox-review']},
     media:{label:'Media & Entertainment'},
+    profile:{label:'Profile',viewLabel:'Open Profile report'},
     curiosity:{label:'Curiosity'},
     transcripts:{label:'Transcriptions',viewLabel:'Open Transcription Intelligence',
       onView:()=>window.STONEFELLOW_TRANSCRIPTION_CANVAS?.open?.() ?? false},

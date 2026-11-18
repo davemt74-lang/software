@@ -30,6 +30,8 @@ function vp3_initiative_goal_specialist_v1(array $goal): ?string
 {
     $tool = $goal['tool'] ?? '';
     if ($tool === 'reminders.read' && ($goal['office_entry'] ?? null) === true) return 'tasks';
+    if ($tool === 'work.prepare_private' && is_string($goal['primary'] ?? null)
+        && preg_match('/\Aspecialist:profile:(?:conversation|event|call|followup):[1-9][0-9]{0,17}\z/D', $goal['primary'])) return 'profile';
     if ($tool === 'coordination.review') {
         $route = $goal['coordination_route']['specialist'] ?? null;
         if ($route === 'casual' && is_string($goal['primary'] ?? null)) {

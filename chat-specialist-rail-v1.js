@@ -20,6 +20,7 @@
     'research':'M10 3a7 7 0 1 0 0 14 7 7 0 1 0 0-14 M15 15l5 5',
     'planning':'M4 6h16v14H4z M4 10h16 M8 4v4 M16 4v4 M8 14h3 M8 17h6',
     'tasks':'M4 6l2 2 3-4 M12 6h8 M4 13l2 2 3-4 M12 13h8 M4 20h4 M12 20h8',
+    'profile':'M8 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6 M2 20v-2a6 6 0 0 1 12 0v2 M15 5h7v8h-3l-3 3v-3h-1',
     'media':'M3 14v-2a9 9 0 0 1 18 0v2 M3 14a2 2 0 0 1 2-2h2v8H5a2 2 0 0 1-2-2z M21 14a2 2 0 0 0-2-2h-2v8h2a2 2 0 0 0 2-2z',
     'transcripts':'M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6',
     'brainstorm':'M9 18h6 M10 21h4 M8 14a6 6 0 1 1 8 0l-1 2H9z',
