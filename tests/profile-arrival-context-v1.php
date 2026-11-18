@@ -4,7 +4,7 @@ require_once __DIR__.'/fixtures/profile-visitor-speech-pa4a.php';
 $checks=0;
 function pac_reset(): void{ps_reset();db()->exec("INSERT INTO team_user_presence(user_id,presence_mode,social_chat_enabled,sound_enabled,agent_voice_enabled) VALUES(1,'online',1,1,1)");}
 function pac_ok(bool $ok,string $message): void{if(!$ok)throw new RuntimeException('FAIL '.$message);$GLOBALS['checks']++;}
-function pac_denied(callable $run,string $message,?string $code=null): void{try{$run();}catch(VP3ProfileSpeechException $e){pac_ok($code===null||$e->publicCode===$code,$message);return;}throw new RuntimeException('FAIL expected denial: '.$message);}
+function pac_denied(callable $run,string $message,?string $code=null): void{try{$run();}catch(VP3ProfileSpeechException $e){pac_ok($code===null||$e->publicCode===$code,$message.($code===null?'':' (expected '.$code.', received '.$e->publicCode.')'));return;}throw new RuntimeException('FAIL expected denial: '.$message);}
 function pac_source(array $item): array{return vp3_profile_speech_source_pa4a(db(),vp3_profile_speech_item_pa4a(db(),(int)$item['id']));}
 function pac_auto(array $item,array $extra=[]): array{return vp3_profile_speech_delivery_pa4a(db(),ps_owner(),ps_scope($extra+['item_id'=>(int)$item['id'],'revision'=>(int)$item['revision'],'mode'=>'automatic']));}
 function pac_view(array $item): array{foreach(ps_state(['public_conversation_id'=>(int)$item['public_conversation_id']])['items'] as $row)if($row['id']===(int)$item['id'])return $row;throw new RuntimeException('Missing exact speech projection.');}
@@ -70,8 +70,19 @@ foreach(['expired','away','dnd','offline','social','hidden','suppressed'] as $re
     pac_ok(pa3_count('chat_messages')===$beforeMessages,$reason.' creates no hidden saved Chat row');
 }
 
-pac_reset();$item=ps_page();$beforeMessages=pa3_count('chat_messages');$changed=false;$p->afterSql=static function(string $sql)use($p,&$changed):void{if(!$changed&&str_starts_with($sql,'INSERT INTO chat_messages')){$changed=true;$p->exec('UPDATE team_user_presence SET social_chat_enabled=0 WHERE user_id=1');}};
-try{pac_denied(fn()=>pac_auto($item),'late owner-setting change at actual insertion rolls back new visual delivery','PROFILE_SPEECH_DELIVERY_WITHHELD');}finally{$p->afterSql=null;}
+pac_reset();$item=ps_page();$beforeMessages=pa3_count('chat_messages');$changed=false;$insertedAndBound=false;
+$p->afterSql=static function(string $sql)use($p,$item,$beforeMessages,&$changed,&$insertedAndBound):void{
+    // Wait until production has captured lastInsertId(). A same-connection UPDATE
+    // immediately after INSERT would erase MySQL's pending insertion receipt.
+    if(!$changed&&str_starts_with($sql,'UPDATE profile_speech_items_pa4a SET delivery_id=')){
+        $changed=true;
+        $bound=vp3_profile_speech_item_pa4a($p,(int)$item['id']);
+        $insertedAndBound=pa3_count('chat_messages')===$beforeMessages+1&&(int)$bound['chat_message_id']>0&&$bound['delivery_id']!=='';
+        $p->exec('UPDATE team_user_presence SET social_chat_enabled=0 WHERE user_id=1');
+    }
+};
+try{pac_denied(fn()=>pac_auto($item),'late owner-setting change after insertion and binding rolls back new visual delivery','PROFILE_SPEECH_DELIVERY_WITHHELD');}finally{$p->afterSql=null;}
+pac_ok($insertedAndBound,'late policy mutation runs after a real inserted Chat row and exact source binding exist');
 pac_ok($changed&&pa3_count('chat_messages')===$beforeMessages&&(int)vp3_profile_speech_item_pa4a($p,(int)$item['id'])['chat_message_id']===0,'final locked gate rolls back both Chat row and source binding');
 
 pac_reset();$m=ps_message('Read this exact visitor turn.','live',ps_context(2));$item=$m['item'];$arrival=$p->query("SELECT * FROM profile_speech_items_pa4a WHERE kind='arrival' ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
