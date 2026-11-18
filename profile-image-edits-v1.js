@@ -6,6 +6,22 @@
   const requestId=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
   const node=(tag,value,className='')=>{const element=document.createElement(tag);if(value!==undefined)element.textContent=value;if(className)element.className=className;return element;};
   const button=(label,handler)=>{const element=node('button',label,'profile-agent-panel-action');element.type='button';element.addEventListener('click',handler);return element;};
+  const creditLabel=(value,limit)=>text(value,limit)?value.replace(/[\p{Cc}\p{Cf}\p{Z}]+/gu,' ').trim():'';
+  function sourceCredit(value){
+    if(!value||value.contract!=='vp3.profile-image-credit.v1'||value.price_cents!==0
+      ||!Array.isArray(value.references)||value.references.length<1||value.references.length>3)return null;
+    const owner=creditLabel(value.owner_name,200),catalog=creditLabel(value.catalog_name,100);
+    const references=value.references.map(reference=>creditLabel(reference?.title,500));
+    return owner&&catalog&&references.every(Boolean)?{owner_name:owner,catalog_name:catalog,references}:null;
+  }
+  function sourceCreditView(credit){
+    const section=node('section',undefined,'profile-image-source-credit');section.dataset.profileImageSourceCredit='';section.setAttribute('aria-label','Image source credit');
+    if(!credit){section.append(node('p','Reference details are unavailable for this saved edit.'));return section;}
+    section.append(node('strong','Reference images used'),node('p','Profile owner: '+credit.owner_name),node('p','Collection: '+credit.catalog_name));
+    const references=node('ul');references.setAttribute('aria-label','Selected reference images');
+    for(const title of credit.references)references.append(node('li',title));
+    section.append(references,node('p','Free use · $0.00'));return section;
+  }
 
   function mount({shell,thread,form,cfg,context,registerPanel,showPanel,onDraft,notice,focusComposer,ownerPreview=false,loadCollection=null}){
     let service=null,draft=null,recovery=null,blobUrl='',busy=false,sequence=0,jobs=new Map(),stopped=false;
@@ -56,8 +72,9 @@
     viewer.id='profileImageViewer';viewer.setAttribute('aria-labelledby','profileImageViewerTitle');
     const viewerTitle=node('h2','Edited photo');viewerTitle.id='profileImageViewerTitle';viewerTitle.tabIndex=-1;
     const viewerImage=node('img');viewerImage.alt='Edited photo';
+    const viewerCredit=node('div');
     const viewerActions=node('div',undefined,'profile-agent-panel-actions');
-    viewer.append(viewerTitle,viewerImage,viewerActions);shell.querySelector('.profile-agent-footer').before(viewer);
+    viewer.append(viewerTitle,viewerImage,viewerCredit,viewerActions);shell.querySelector('.profile-agent-footer').before(viewer);
     const viewerEntry={panel:viewer,button:null};registerPanel(viewerEntry);
 
     function onPanelChange(next){
@@ -273,7 +290,7 @@
         ||(value.kind==='input'?type!=='visitor':type!=='agent')||!text(value.filename,255)||!value.filename.trim()
         ||!['image/jpeg','image/png','image/webp'].includes(value.mime)||!Number.isSafeInteger(value.bytes)||value.bytes<1||value.bytes>26214400)return null;
       const url=localImageUrl(value.url,id,true),download=localImageUrl(value.download_url,id,false);
-      return url&&download?{...value,id,url,download_url:download}:null;
+      return url&&download?{...value,id,url,download_url:download,source_credit:value.kind==='result'?sourceCredit(value.source_credit):null}:null;
     }
     function reuse(image,trigger){
       try{
@@ -287,7 +304,8 @@
     }
     function showImage(image,trigger){
       viewerEntry.button=trigger;viewerTitle.textContent=image.kind==='result'?'Edited photo':'Original photo';viewerImage.alt=viewerTitle.textContent;
-      viewerImage.src=image.url;viewerActions.replaceChildren();
+      viewerImage.src=image.url;viewerActions.replaceChildren();viewerCredit.replaceChildren();
+      if(image.kind==='result')viewerCredit.append(sourceCreditView(image.source_credit));
       const download=node('a','Download photo','profile-agent-panel-action');download.href=image.download_url;download.download=image.filename;
       viewerActions.append(download);
       if(image.kind==='result')viewerActions.append(button('Edit this result',()=>reuse(image,trigger)));
@@ -300,6 +318,7 @@
       const thumbnail=node('img');thumbnail.alt=image.kind==='result'?'Edited photo':'Photo supplied for editing';thumbnail.loading='lazy';thumbnail.src=image.url;
       thumbnail.addEventListener('error',()=>{thumbnail.remove();openImage.textContent='Photo preview unavailable';openImage.disabled=true;},{once:true});
       openImage.replaceChildren(thumbnail,node('span',image.kind==='result'?'View edited photo':'View original photo'));container.append(openImage);
+      if(image.kind==='result')container.append(sourceCreditView(image.source_credit));
     }
     function timestamp(value){
       if(typeof value==='number')return value<1e12?value*1000:value;
@@ -371,7 +390,7 @@
         renderDraft();
       },
       pending:value=>{busy=value;sync();},
-      reset(stop=false){collectionSequence++;collectionLoading=false;collectionError='';clearDraft(false);jobs.clear();service=null;renderCatalogs();viewerImage.removeAttribute('src');viewerActions.replaceChildren();displayPanel(null,false);panel.hidden=viewer.hidden=true;openButtons.forEach(openButton=>{openButton.hidden=true;});if(shareButton)shareButton.hidden=true;if(stop){stopped=true;clearInterval(timer);}sync();}
+      reset(stop=false){collectionSequence++;collectionLoading=false;collectionError='';clearDraft(false);jobs.clear();service=null;renderCatalogs();viewerImage.removeAttribute('src');viewerActions.replaceChildren();viewerCredit.replaceChildren();displayPanel(null,false);panel.hidden=viewer.hidden=true;openButtons.forEach(openButton=>{openButton.hidden=true;});if(shareButton)shareButton.hidden=true;if(stop){stopped=true;clearInterval(timer);}sync();}
     };
   }
   window.VP3ProfileImageEditsV1={mount};

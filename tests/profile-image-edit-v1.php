@@ -65,9 +65,11 @@ if(defined('VP3_PROFILE_IMAGE_TEST_HELPERS_ONLY'))return;
 try{
     pa3_reset();edit_check(!vp3_profile_image_edit_availability_v1($pdo,1)['enabled'],'pre-upgrade image editing stays disabled without DDL');
     edit_setup();vp3_profile_image_edit_install_v1($pdo);edit_check(vp3_profile_image_edit_ready_v1($pdo),'image edit schema installs idempotently');
+    edit_check(vp3_profile_image_edit_credit_label_v1("\u{FEFF}\u{00A0}Saved\u{2028}Owner\u{202F}",200)==='Saved Owner'&&vp3_profile_image_edit_credit_label_v1("\u{FEFF}\u{00A0}\u{2028}",200)==='','historical credit labels normalize Unicode spaces, separators and invisible format controls consistently');
     foreach(['not pixels',edit_png().str_repeat('x',VP3_PROFILE_IMAGE_INPUT_MAX_V1),substr(edit_png(),0,-8)] as $bad)edit_denied(fn()=>vp3_profile_image_edit_raster_v1($bad,'bad.png'),'invalid or oversized upload rejected before admission');
     edit_denied(fn()=>vp3_profile_image_edit_intent_v1(['catalog_id'=>$GLOBALS['editCollection']],null),'an edit requires one explicit subject');
     edit_denied(fn()=>vp3_profile_image_edit_intent_v1(['catalog_id'=>$GLOBALS['editCollection'],'base_message_id'=>1],vp3_profile_image_edit_raster_v1(edit_png(),'a.png')),'two subjects cannot silently pick a base');
+    $pdo->prepare('UPDATE users SET display_name=? WHERE id=1')->execute(["  Fixture\n\tOwner  "]);
     $request=str_repeat('a',32);$receipt=edit_admit(0,$request);$row=edit_row($receipt);$cid=(int)$receipt['conversation_id'];
     edit_check($row['state']==='queued'&&(int)$row['turn_id']===(int)$receipt['handoff']['turn_id']&&$receipt['handoff']['state']==='agent_ready'&&!$GLOBALS['editProviderCalls'],'offline owner admits one durable native image turn without inference');
     $duplicate=edit_admit(0,$request);edit_check($duplicate['duplicate']&&pa3_count('profile_image_edits_v1')===1,'lost admission response recovers the original request without a second input');
@@ -76,11 +78,25 @@ try{
     pa3_age();edit_denied(fn()=>edit_admit(),'another active edit cannot spend concurrently','PROFILE_IMAGE_BUSY');
     $projection=vp3_profile_image_edit_public_projection_v1($pdo,pa3_context(),$cid,vp3_profile_agent_public_state_service_v110($pdo,pa3_context(),$cid));
     edit_check($projection['image_edits'][0]['state']==='queued'&&$projection['messages'][0]['image_edit']['kind']==='input'&&str_contains($projection['messages'][0]['image_edit']['url'],'conversation_namespace='),'saved input and queued state project only as conversation URLs');
+    edit_check(!isset($projection['messages'][0]['image_edit']['source_credit'])&&json_decode($row['config_json'],true)['source_credit_owner_name']==='Fixture Owner','admission freezes a bounded normalized public owner label without attributing the visitor input');
     edit_check(!str_contains(json_encode($projection),'input_content')&&!str_contains(json_encode($projection),'fixture-image-key')&&!str_contains(json_encode($projection),'private/user-media'),'public projections exclude private storage, pixel bytes and provider keys');
     pa3_login(4);$_COOKIE=[];$result=edit_dispatch($receipt);$row=edit_row($receipt);
     edit_check($result['reason']==='completed'&&$row['state']==='completed'&&(int)$row['result_message_id']>0,'public worker edits and publishes without an owner browser session');
     edit_check(count($GLOBALS['editProviderCalls'])===1&&count($GLOBALS['imageSettlements'])===1&&$GLOBALS['imageSettlements'][0][5]['total_tokens']===550,'one provider request records confirmed actual usage once');
     $body=$GLOBALS['editProviderCalls'][0][1];edit_check(count($body['images'])===3&&$body['n']===1&&$body['images'][0]['image_url']==='data:image/png;base64,'.base64_encode(edit_png())&&str_contains($body['prompt'],'Soft light and muted colors.'),'provider receives subject first, approved style pixels and frozen owner direction');
+    edit_check(!isset($body['source_credit_owner_name']),'public source credit metadata is not sent to the image provider');
+    $creditRow=$row;$credit=['contract'=>'vp3.profile-image-credit.v1','owner_name'=>'Fixture Owner','catalog_name'=>'Warm style','references'=>[['title'=>'Style 11'],['title'=>'Style 12']],'price_cents'=>0];
+    $ctx=pa3_context();$completed=vp3_profile_image_edit_public_projection_v1($pdo,$ctx,$cid,vp3_profile_agent_public_state_service_v110($pdo,$ctx,$cid));$completedMessages=array_column($completed['messages'],null,'id');
+    edit_check(($completedMessages[$row['result_message_id']]['image_edit']['source_credit']??null)===$credit,'completed public result credits exactly its frozen owner, collection and all selected references with zero price');
+    $ownerMessages=vp3_profile_image_edit_messages_v1($pdo,1,$cid,[['id'=>(int)$row['result_message_id'],'sender_type'=>'agent']],true);
+    edit_check(($ownerMessages[0]['image_edit']['source_credit']??null)===$credit,'authorized owner conversation receives the same bounded historical credit as the visitor');
+    $legacy=$row;$legacyConfig=json_decode($row['config_json'],true);unset($legacyConfig['source_credit_owner_name']);$legacy['config_json']=json_encode($legacyConfig);
+    edit_check(vp3_profile_image_edit_source_credit_v1($legacy)===array_replace($credit,['owner_name'=>'Profile owner']),'legacy verified snapshots use a stable generic owner instead of a current or invented identity');
+    $saved=json_decode($row['catalog_json'],true);
+    foreach([array_replace($saved,['price_cents'=>1]),array_replace($saved,['owner_user_id'=>4]),array_replace($saved,['selection_asset_id'=>11]),array_replace($saved,['references'=>[]]),array_replace($saved,['references'=>array_fill(0,4,$saved['references'][0])]),null] as $invalid){
+        $invalidRow=array_replace($row,['catalog_json'=>json_encode($invalid)]);$fileView=vp3_profile_image_edit_file_projection_v1($invalidRow,'result',false,$ctx);
+        edit_check(!isset($fileView['source_credit'])&&!empty($fileView['url']),'invalid historical credit cannot invent free provenance or hide the authorized image');
+    }
     edit_dispatch($receipt);edit_check(count($GLOBALS['editProviderCalls'])===1&&pa3_count('profile_image_edits_v1',"state='completed'")===1,'completed dispatch retry cannot repurchase or double count a completed use');
     $file=vp3_profile_image_edit_file_v1($pdo,1,$cid,(int)$row['result_message_id']);edit_check($file['bytes']===edit_png(1024,127),'authorized published result serves exact validated PNG bytes');
     edit_denied(fn()=>vp3_profile_image_edit_file_v1($pdo,4,$cid,(int)$row['result_message_id']),'other owner cannot address output','PROFILE_IMAGE_NOT_FOUND');
@@ -92,6 +108,11 @@ try{
     $config=json_decode($child['config_json'],true);edit_check($config['reference']['generated_output']['request_id']===$row['request_id'],'saved generated provenance comes from the authorized parent request');
     pa3_age();edit_denied(fn()=>edit_admit(0,null,['base_message_id'=>(int)$row['result_message_id']]),'a prior result cannot be imported into a different conversation','PROFILE_IMAGE_UNAVAILABLE');
     pa3_age();$third=edit_admit($cid);edit_dispatch($third);pa3_age();edit_denied(fn()=>edit_admit($cid),'visitor daily allowance counts separate completed edits','PROFILE_IMAGE_LIMIT');
+    $pdo->exec("UPDATE users SET display_name='Renamed owner' WHERE id=1");$pdo->exec("UPDATE vp3_media_collections_v1 SET name='Renamed collection'");$pdo->exec("UPDATE user_media_assets SET title='Renamed image'");
+    $ctx=pa3_context();$renamed=vp3_profile_image_edit_public_projection_v1($pdo,$ctx,$cid,vp3_profile_agent_public_state_service_v110($pdo,$ctx,$cid));$renamedMessages=array_column($renamed['messages'],null,'id');
+    edit_check(($renamedMessages[$creditRow['result_message_id']]['image_edit']['source_credit']??null)===$credit,'later owner, collection and image renames cannot rewrite saved result credit');
+    edit_setup();$selected=edit_admit(0,null,['image_id'=>12]);edit_dispatch($selected);$selected=edit_row($selected);
+    edit_check(vp3_profile_image_edit_source_credit_v1($selected)===array_replace($credit,['references'=>[['title'=>'Style 12']]]),'an exact image edit credits only the selected reference rather than every image in its collection');
 
     edit_setup();$receipt=edit_admit();$GLOBALS['editHook']=function()use($receipt):void{$turn=vp3_profile_handoff_row_pa3(db(),(int)$receipt['handoff']['turn_id']);vp3_profile_handoff_owner_action_pa3(db(),pa3_owner(),['operation'=>'claim','turn_id'=>(int)$turn['id'],'revision'=>(int)$turn['version'],'conversation_id'=>(int)$turn['conversation_id'],'chat_conversation_id'=>11,'chat_agent_id'=>7,'request_id'=>str_repeat('c',32)]);};
     edit_dispatch($receipt);$row=edit_row($receipt);edit_check($row['state']==='cancelled'&&!$row['result_message_id']&&pa3_count('profile_agent_messages',"sender_type='agent'")===0,'human takeover during provider call withdraws the result before publication');

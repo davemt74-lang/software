@@ -47,7 +47,7 @@ $readStatements=0;db()->beforeSql=static function(string $sql)use(&$readStatemen
 };
 $baseline=pap_read();db()->beforeSql=null;
 pap_ok($readStatements>30&&$baseline['coverage']==='ready'&&!db()->inTransaction(),'the complete baseline is query-only and closes only its owned read transactions');
-pap_ok(count($baseline['metrics'])===17&&array_keys($baseline['groups'])===['events','conversations','calls','commerce'],'the response always carries the closed seventeen-measure catalog and four groups');
+pap_ok(count($baseline['metrics'])===21&&array_keys($baseline['groups'])===['events','conversations','calls','commerce','images'],'the response always carries the closed twenty-one-measure catalog and five groups');
 $expected=['visit_records'=>[3,1],'recognized_browser_contacts'=>[1,1],'accepted_visitor_turns'=>[2,1],
     'active_conversations'=>[2,1],'new_conversations'=>[2,1],'owner_takeovers'=>[1,0],'owner_reply_messages'=>[1,0],
     'agent_reply_messages'=>[0,1],'calls_offered'=>[2,1],'calls_accepted'=>[1,1],'calls_finished'=>[2,1],
@@ -211,7 +211,7 @@ foreach(['profile_calls_pa3c'=>'calls','agent_commerce_payments_v800'=>'commerce
     $key=$group==='calls'?'calls_offered':'verified_paid_orders';
     pap_ok($r['coverage']==='limited'&&$r['groups'][$group]['coverage']===($group==='commerce'?'limited':'unavailable')
         &&pap_metric($r,$key)['coverage']==='unavailable'&&pap_metric($r,$key)['value']===null
-        &&count($r['metrics'])===17&&!str_contains(json_encode($r,JSON_THROW_ON_ERROR),'SECRET'),'storage failure is explicit unavailable data with the complete response shape: '.$group);
+        &&count($r['metrics'])===21&&!str_contains(json_encode($r,JSON_THROW_ON_ERROR),'SECRET'),'storage failure is explicit unavailable data with the complete response shape: '.$group);
 }
 pap_case(static function(PDO $pdo):void{
     $pdo->beforeSql=static function(string $sql):void{
@@ -221,9 +221,9 @@ pap_case(static function(PDO $pdo):void{
             throw new PDOException('SECRET unavailable metric-family fixture');
     };
     $r=pap_read();$pdo->beforeSql=null;
-    pap_ok($r['coverage']==='unavailable'&&count(array_filter($r['groups'],static fn(array $g):bool=>$g['coverage']==='unavailable'))===4
+    pap_ok($r['coverage']==='unavailable'&&count(array_filter($r['groups'],static fn(array $g):bool=>$g['coverage']==='unavailable'))===5
         &&$r['backlog']['coverage']==='limited'&&$r['backlog']['metrics'][0]['coverage']==='complete'&&$r['backlog']['metrics'][0]['value']===1,
-        'a usable current backlog cannot make four unavailable fixed-period families appear usable');
+        'a usable current backlog cannot make five unavailable fixed-period families appear usable');
 });
 pap_case(static function(PDO $pdo):void{
     $pdo->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='profile_chat.access'");
@@ -379,7 +379,7 @@ function p5_snapshot(ProfilePeriodPDO $pdo): string
 }
 
 $before=p5_snapshot($pdo);$baseline=p5_read();$m=p5_metrics($baseline);
-p5_check($baseline['coverage']==='ready'&&count($m)===17,'all seventeen defined period measures use available verified storage');
+p5_check($baseline['coverage']==='ready'&&count($m)===21,'all twenty-one defined period measures use available verified storage');
 p5_check($baseline['ref']===$fixture['ref']&&$baseline['window']['to_utc_ms']===$fixture['cutoff']*1000,'the selected fixed reference and cutoff are echoed exactly');
 foreach(['visit_records'=>[3,1],'recognized_browser_contacts'=>[1,1],'accepted_visitor_turns'=>[2,1],'active_conversations'=>[2,1],
     'new_conversations'=>[2,1],'owner_takeovers'=>[1,0],'owner_reply_messages'=>[1,0],'agent_reply_messages'=>[0,1],
@@ -572,6 +572,9 @@ p5_mutation(function(PDO $pdo){
     $pdo->exec("INSERT INTO agent_scheduling_schedules VALUES(1,1,'America/New_York',0,1),(2,1,'America/Phoenix',1,1),(3,2,'Asia/Tokyo',1,1)");
     $r=p5_read(['period'=>1]);p5_check($r['window']['timezone']==='America/Phoenix'&&$r['window']['timezone_source']==='schedule','the owner default schedule supplies timezone before unrelated schedules');
 });
+
+require_once __DIR__.'/profile-image-analytics-cases-v1.php';
+profile_image_analytics_cases_v1($pdo,$fixture,$now,'p5_check');
 
 // Revocation after the completed aggregate snapshot must suppress its result.
 $revoked=false;

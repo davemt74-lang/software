@@ -83,11 +83,24 @@ current.key='artist|another-visitor|31';staleChooser.files=[photo];staleChooser.
 await flush();
 check(shell.querySelector('[data-profile-image-panel]').textContent.includes('conversation changed'),'a file chooser opened for another visitor context is rejected');current.key='artist|visitor|31';
 const imageUrl=(id,preview=true,overrides={})=>'/api/profile-agent.php?'+new URLSearchParams({action:'image',username:'artist',conversation_namespace:namespace,conversation_id:'31',message_id:String(id),...(preview?{preview:'1'}:{}),...overrides});
-const image={kind:'result',request_id:'b'.repeat(32),source_message_id:101,filename:'edited-photo.png',mime:'image/png',bytes:123,url:imageUrl(202),download_url:imageUrl(202,false)};
+const credit={contract:'vp3.profile-image-credit.v1',owner_name:'\uFEFFFixture\u00A0Owner',catalog_name:'Warm portrait style',references:[{title:'Amber portrait'},{title:'\u2028Soft light\u202F'}],price_cents:0};
+const image={kind:'result',request_id:'b'.repeat(32),source_message_id:101,filename:'edited-photo.png',mime:'image/png',bytes:123,url:imageUrl(202),download_url:imageUrl(202,false),source_credit:credit};
 const result=make('div');surface.renderMessage(result,image,202,'agent');thread.append(result);
 check(result.querySelector('img')?.src===new URL(image.url,window.location.href).href,'saved Agent results use the authorized conversation image route');
+const cardCredit=result.querySelector('[data-profile-image-source-credit]');
+check(cardCredit.textContent.includes('Profile owner: Fixture Owner')&&cardCredit.textContent.includes('Collection: Warm portrait style')&&cardCredit.querySelectorAll('li').map(item=>item.textContent).join('|')==='Amber portrait|Soft light'&&cardCredit.textContent.includes('Free use · $0.00'),'result card shows the saved owner, collection, exact reference names and zero price');
 result.querySelector('button').click();
 check(selectedPanel?.panel.dataset.profileImageViewer===''&&shell.querySelector('[data-profile-image-viewer] a')?.download==='edited-photo.png','result opens an inline viewer with a real download');
+check(shell.querySelector('[data-profile-image-viewer] [data-profile-image-source-credit]').textContent===cardCredit.textContent,'inline viewer preserves exactly the same source credit as its result card');
+const original=make('div');surface.renderMessage(original,{...image,kind:'input',url:imageUrl(101),download_url:imageUrl(101,false)},101,'visitor');original.querySelector('button').click();
+check(!original.querySelector('[data-profile-image-source-credit]')&&!shell.querySelector('[data-profile-image-viewer] [data-profile-image-source-credit]'),'original visitor photo never inherits source credit from the previously viewed result');
+const literal=make('div');surface.renderMessage(literal,{...image,source_credit:{...credit,owner_name:'<script>attack()</script>',references:[{title:'<img src=x onerror=attack()>'}]}},202,'agent');
+check(literal.textContent.includes('<script>attack()</script>')&&literal.textContent.includes('<img src=x onerror=attack()>')&&!literal.querySelector('script')&&literal.querySelectorAll('img').length===1,'source credit labels render as literal text without creating markup or additional images');
+for(const invalid of [undefined,{...credit,price_cents:1},{...credit,references:Array(4).fill({title:'Reference'})},{...credit,owner_name:'x'.repeat(201)},{...credit,references:[{title:''}]}]){
+  const legacy=make('div');surface.renderMessage(legacy,{...image,source_credit:invalid},202,'agent');legacy.querySelector('button').click();
+  check(legacy.textContent.includes('Reference details are unavailable for this saved edit.')&&!legacy.textContent.includes('Free use')&&shell.querySelector('[data-profile-image-viewer] a')?.download==='edited-photo.png','missing or invalid saved credit is explicit while the authorized image and download remain usable');
+}
+result.querySelector('button').click();
 const input=make('div',{'data-message-id':'101'});thread.append(input);
 const job={request_id:image.request_id,input_message_id:101,result_message_id:202,state:'queued',catalog_id:7,image_id:12,started_at_ms:null,active_lease_expires_at:null};
 surface.update({image_edits:[job]});
@@ -128,7 +141,7 @@ let releaseCollection;collectionLoader=()=>new Promise(resolve=>{releaseCollecti
 check(shell.querySelector('[data-profile-image-collection-state]').textContent.includes('Loading'),'slow collection reads show an honest loading state');chatTab.click();releaseCollection({ok:true,image_editing:availability});await flush();
 check(!thread.hidden&&!surface.enabled()&&collectionTab.getAttribute('aria-pressed')==='false','closing the collection discards its late read without reopening or reviving stale images');
 surface.reset(true);
-check(!surface.hasDraft()&&revoked.length>0&&!shell.querySelector('[data-profile-image-viewer] img').src&&open.hidden,'reset revokes local photo previews and clears old conversation image state');
+check(!surface.hasDraft()&&revoked.length>0&&!shell.querySelector('[data-profile-image-viewer] img').src&&!shell.querySelector('[data-profile-image-viewer] [data-profile-image-source-credit]')&&open.hidden,'reset revokes local photo previews and clears old conversation image and credit state');
 const ownerShell=make('section'),ownerThread=make('div'),ownerFooter=make('footer',{class:'profile-agent-footer'}),ownerForm=make('form'),ownerToolbar=make('div',{class:'profile-agent-toolbar'}),ownerNav=make('div'),ownerChat=make('button',{'data-profile-conversation-open':''}),ownerCollection=make('button',{'data-profile-image-collection-open':''});
 ownerForm.append(ownerToolbar);ownerFooter.append(ownerForm);ownerNav.append(ownerChat,ownerCollection);ownerShell.append(ownerNav,ownerThread,ownerFooter);document.body.append(ownerShell);
 let ownerReads=0,ownerDraftChanges=0;const ownerPanels=[];

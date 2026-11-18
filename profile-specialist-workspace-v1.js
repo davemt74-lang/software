@@ -32,6 +32,10 @@
     catch { return ''; }
   }
   const analyticsMetricCatalog={
+    image_creations_completed:['images','count','Completed image creations'],
+    image_initial_creations:['images','count','Initial creations'],
+    image_revisions_completed:['images','count','Completed revisions'],
+    image_requests_failed:['images','count','Verified failed requests'],
     visit_records:['events','count','Visit records'],
     recognized_browser_contacts:['events','count','Recognized browser contacts'],
     accepted_visitor_turns:['conversations','count','Accepted visitor requests'],
@@ -50,7 +54,7 @@
     verified_paid_orders:['commerce','count','Verified paid orders'],
     verified_refunded_orders:['commerce','count','Verified refund-affected orders']
   };
-  const analyticsGroups=[['events','Visits'],['conversations','Conversations'],['calls','Calls'],['commerce','Commerce']];
+  const analyticsGroups=[['images','Free image creations'],['events','Visits'],['conversations','Conversations'],['calls','Calls'],['commerce','Commerce']];
   const analyticsCoverage=new Set(['ready','limited','unavailable','unconfigured']);
   const analyticsPointCoverage=new Set(['complete','partial','unavailable']);
   const analyticsReasons={
@@ -153,6 +157,65 @@
         &&local(window.previous.from_local,window.previous.from_utc_ms)&&window.previous.to_local===window.from_local;
     }catch{return false;}
   }
+  const analyticsImageFailureCodes=new Set(['provider_access','provider_busy','request_rejected','result_unconfirmed','usage_unconfirmed',
+    'image_too_large','storage_unavailable','allowance_unavailable','provider_unavailable','source_changed','other']);
+  const analyticsImageLabel=(value,max)=>!!plain(value,max)&&value.trim()===value&&!/[\u0000-\u001f\u007f-\u009f]/.test(value);
+  function analyticsImageFailures(rows,total=null) {
+    if(!Array.isArray(rows)||rows.length>analyticsImageFailureCodes.size)return false;
+    const seen=new Set();let count=0;
+    for(const row of rows){
+      if(!analyticsImageFailureCodes.has(row?.code)||seen.has(row.code)||!analyticsImageLabel(row.label,160)||!positive(row.count))return false;
+      seen.add(row.code);count+=row.count;
+    }
+    return Number.isSafeInteger(count)&&(total===null||count<=total);
+  }
+  function analyticsImageUsage(value,metrics) {
+    if(value?.contract!=='vp3.profile-image-analytics.v1')return false;
+    for(const period of ['current','previous']){
+      const side=value[period],point=key=>metrics.find(row=>row.key===key)?.[period];
+      const number=key=>{const item=point(key);return item?.coverage==='complete'?item.value:item?.observed_value??null;};
+      const completed=number('image_creations_completed'),initial=number('image_initial_creations'),revised=number('image_revisions_completed');
+      if(!side||!analyticsPointCoverage.has(side.coverage)||!Object.hasOwn(analyticsReasons,side.reason)
+        ||!analyticsPointCoverage.has(side.rankings_coverage)||!analyticsPointCoverage.has(side.failure_coverage)
+        ||typeof side.catalogs_truncated!=='boolean'||typeof side.images_truncated!=='boolean'
+        ||!analyticsImageFailures(side.failures,number('image_requests_failed'))
+        ||side.failure_coverage==='unavailable'&&side.failures.length
+        ||side.rankings_coverage!==point('image_creations_completed')?.coverage
+        ||side.failure_coverage!==point('image_requests_failed')?.coverage)return false;
+      if(completed!==null&&initial!==null&&revised!==null&&initial+revised!==completed)return false;
+      for(const [key,idKey,labelKey,limit] of [['top_catalogs','collection_id','name',100],['top_images','asset_id','title',500]]){
+        const rows=side[key];if(!Array.isArray(rows)||rows.length>10||side.rankings_coverage==='unavailable'&&rows.length)return false;
+        const seen=new Set();let prior=null,sum=0;
+        for(const row of rows){
+          if(!positive(row?.[idKey])||seen.has(row[idKey])||!analyticsImageLabel(row[labelKey],limit)||!positive(row.completed_count)
+            ||completed!==null&&row.completed_count>completed
+            ||prior&&(row.completed_count>prior.completed_count||row.completed_count===prior.completed_count&&row[idKey]<prior[idKey]))return false;
+          if(key==='top_catalogs'&&(!nonnegative(row.initial_count)||!nonnegative(row.revision_count)||row.initial_count+row.revision_count!==row.completed_count))return false;
+          seen.add(row[idKey]);prior=row;sum+=row.completed_count;
+        }
+        if(key==='top_catalogs'&&completed!==null&&(sum>completed||side.rankings_coverage==='complete'&&!side.catalogs_truncated&&sum!==completed))return false;
+      }
+      if(side.rankings_coverage==='unavailable'&&(side.catalogs_truncated||side.images_truncated))return false;
+    }
+    return true;
+  }
+  function analyticsImageBacklog(backlog) {
+    const allowance=backlog.image_allowance,failures=backlog.image_failures;
+    const day=Math.floor(backlog.as_of_utc_ms/86400000)*86400000;
+    if(!allowance||!['complete','unavailable'].includes(allowance.coverage)||!Object.hasOwn(analyticsReasons,allowance.reason)
+      ||allowance.timezone!=='UTC'||allowance.day_start_utc_ms!==day||allowance.resets_at_utc_ms!==day+86400000)return false;
+    if(allowance.coverage==='complete'){
+      if(typeof allowance.enabled!=='boolean'||!positive(allowance.daily_limit)||allowance.daily_limit>100
+        ||!positive(allowance.visitor_daily_limit)||allowance.visitor_daily_limit>20||!nonnegative(allowance.used)
+        ||allowance.remaining!==Math.max(0,allowance.daily_limit-allowance.used))return false;
+    }else if(allowance.enabled!==null||!['daily_limit','visitor_daily_limit','used','remaining'].every(key=>allowance[key]===null))return false;
+    if(!failures||!analyticsPointCoverage.has(failures.coverage)||!Object.hasOwn(analyticsReasons,failures.reason))return false;
+    const total=failures.coverage==='complete'?failures.count:failures.observed_count;
+    if(failures.coverage==='complete'&&(!nonnegative(failures.count)||failures.observed_count!==null)
+      ||failures.coverage==='partial'&&(failures.count!==null||!nonnegative(failures.observed_count))
+      ||failures.coverage==='unavailable'&&(failures.count!==null||failures.observed_count!==null))return false;
+    return analyticsImageFailures(failures.reasons,total)&&(failures.coverage!=='unavailable'||failures.reasons.length===0);
+  }
   function analyticsPeriodModel(value,requestedRef='') {
     const ref=analyticsRef(value?.ref),window=value?.window;
     if(value?.contract!=='vp3.profile-analytics-period.v1'||!ref||requestedRef&&ref.ref!==requestedRef
@@ -230,6 +293,7 @@
         ||!analyticsNumberPoint({...metric,observed_value:metric.observed_value??null},'count'))return null;
       backlogKeys.add(metric.key);
     }
+    if(!analyticsImageUsage(value.image_usage,value.metrics)||!analyticsImageBacklog(backlog))return null;
     return value;
   }
   function analyticsLedgerAmount(value,currency,withSign=false) {
@@ -601,6 +665,18 @@
           const link=node('a');link.href=editUrl;link.target='_blank';link.rel='noopener';link.append(image);
           link.addEventListener('click',event=>{if(!currentScope()||selection.publicConversationId!==id)event.preventDefault();});row.append(link);
           if(downloadUrl){const download=node('a',edit.kind==='result'?'Download edited photo':'Download original photo');download.href=downloadUrl;download.download='';download.addEventListener('click',event=>{if(!currentScope()||selection.publicConversationId!==id)event.preventDefault();});row.append(download);}
+          if(edit.kind==='result'){
+            const credit=edit.source_credit,creditLabel=(value,limit)=>plain(value,limit).replace(/[\p{Cc}\p{Cf}\p{Z}]+/gu,' ').trim();
+            const owner=creditLabel(credit?.owner_name,200),catalog=creditLabel(credit?.catalog_name,100);
+            const references=Array.isArray(credit?.references)&&credit.references.length<=3?credit.references.map(reference=>creditLabel(reference?.title,500)):[];
+            const box=node('section','','vp3-profile-image-credit');box.dataset.profileImageSourceCredit='';box.setAttribute('aria-label','Image source credit');
+            if(credit?.contract==='vp3.profile-image-credit.v1'&&credit.price_cents===0&&owner&&catalog&&references.length&&references.every(Boolean)){
+              box.append(node('strong','Reference images used'),node('p','Profile owner: '+owner),node('p','Collection: '+catalog));
+              const sources=node('ul');sources.setAttribute('aria-label','Selected reference images');for(const title of references)sources.append(node('li',title));
+              box.append(sources,node('p','Free use · $0.00'));
+            }else box.append(node('p','Reference details are unavailable for this saved edit.'));
+            row.append(box);
+          }
         }
         messages.append(row);
       }
@@ -1076,6 +1152,79 @@
       detail.append(node('p','Reply delays use verified first replies before the fixed cutoff. Call outcomes use the currently verified saved outcome. Offer-to-accept delay does not measure time spent talking.'));
       return detail;
     }
+    function analyticsImageFailureList(rows) {
+      const list=node('ul','','vp3-profile-image-failures');
+      for(const row of rows){const item=node('li');item.append(node('span',row.label),node('strong',new Intl.NumberFormat().format(row.count)));list.append(item);}
+      return list;
+    }
+    function analyticsImageRankings(side) {
+      const grid=node('div','','vp3-profile-image-rankings');
+      for(const [key,title,nameKey,truncated] of [['top_catalogs','Top reference catalogs','name',side.catalogs_truncated],['top_images','Top reference images','title',side.images_truncated]]){
+        const section=node('section');section.dataset.profileImageRanking=key;section.append(node('h5',title));
+        if(side.rankings_coverage!=='complete')section.append(node('p',side.rankings_coverage==='partial'?'Verified subset · source evidence is incomplete.':'Source usage is unavailable.'));
+        if(side[key].length){
+          const list=node('ol');
+          for(const row of side[key]){
+            const item=node('li');item.append(node('strong',row[nameKey]));
+            item.append(node('span',new Intl.NumberFormat().format(row.completed_count)+' completed creation'+(row.completed_count===1?'':'s')));
+            if(key==='top_catalogs')item.append(node('small',row.initial_count+' initial · '+row.revision_count+' revision'+(row.revision_count===1?'':'s')));
+            list.append(item);
+          }
+          section.append(list);
+        }else if(side.rankings_coverage==='complete')section.append(node('p','No completed creations in this period.'));
+        else if(side.rankings_coverage==='partial')section.append(node('p','No completed creations with verified references in the available records.'));
+        if(truncated)section.append(node('small','Showing the 10 most used sources.'));
+        grid.append(section);
+      }
+      return grid;
+    }
+    function analyticsImagePeriodDetail(side) {
+      const section=node('div','','vp3-profile-image-period-detail');section.append(analyticsImageRankings(side));
+      if(side.failures.length||side.failure_coverage!=='complete'){
+        const failures=node('section');failures.append(node('h5','Failed image requests'));
+        if(side.failure_coverage!=='complete')failures.append(node('p',side.failure_coverage==='partial'
+          ?'Only failures with verified timing can be placed in this period. Current saved failures appear separately below.'
+          :'Failure totals for this period are unavailable.'));
+        if(side.failures.length)failures.append(analyticsImageFailureList(side.failures));
+        section.append(failures);
+      }
+      return section;
+    }
+    function analyticsImageUsageDetail(value) {
+      const detail=node('div','','vp3-profile-image-insights');detail.dataset.profileImageInsights='';
+      detail.append(node('p','Reference usage counts completed creations. One creation can use more than one reference image; these counts do not identify unique visitors.'));
+      detail.append(analyticsImagePeriodDetail(value.current));
+      const previous=node('details','','vp3-profile-period-definitions');previous.append(node('summary','Previous period source usage'),analyticsImagePeriodDetail(value.previous));detail.append(previous);
+      const expected=endpoint.replace(/\/api\/[^/]+$/,'/profile-agent.php');
+      const profileUrl=localUrl(cfg.profileUrl||expected);
+      if(profileUrl&&expected.endsWith('/profile-agent.php')){
+        const url=new URL(profileUrl,location.origin);
+        if(url.pathname===expected){
+          url.search='';url.searchParams.set('tab','agent');url.hash='profileImageUseHistory';
+          const link=node('a','Review saved creations');link.href=url.pathname+url.search+url.hash;link.dataset.profileImageHistoryLink='';detail.append(link);
+        }
+      }
+      return detail;
+    }
+    function analyticsImageCurrent(backlog) {
+      const section=node('section','','vp3-profile-image-current');section.dataset.profileImageCurrent='';
+      const allowance=backlog.image_allowance,failures=backlog.image_failures;
+      const current=node('section');current.dataset.profileImageAllowance='';current.append(node('h5','Today’s image allowance'));
+      if(allowance.coverage==='complete'){
+        current.append(node('strong',allowance.used+' of '+allowance.daily_limit+' requests used · '+allowance.remaining+' remaining'));
+        current.append(node('p',(allowance.enabled?'Free photo editing is enabled.':'Free photo editing is currently off.')+' Each visitor can use up to '+allowance.visitor_daily_limit+' requests per UTC day.'));
+        current.append(node('small','Admitted requests use allowance even if an edit fails or is cancelled. This is the current daily allowance, separate from completed-period results.'));
+      }else current.append(node('p','Allowance unavailable. '+(analyticsReasons[allowance.reason]||'Current allowance could not be verified.')));
+      current.append(node('small','Daily reset: '+new Date(allowance.resets_at_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')+'.'));
+      section.append(current);
+      const saved=node('section');saved.dataset.profileImageFailures='';saved.append(node('h5','Saved failed image requests'));
+      const count=failures.coverage==='complete'?failures.count:failures.observed_count;
+      saved.append(node('strong',count===null?'Unavailable':new Intl.NumberFormat().format(count)+(failures.coverage==='partial'?' verified in available records':'')));
+      if(failures.coverage!=='complete')saved.append(node('p',analyticsReasons[failures.reason]||'Some failure evidence could not be verified.'));
+      if(failures.reasons.length)saved.append(analyticsImageFailureList(failures.reasons));
+      saved.append(node('small','Current saved failures across the creation history. These records are not a count of failures in the selected completed period.'));
+      section.append(saved);return section;
+    }
     function renderAnalyticsPeriod(target,value,mine) {
       const frame=node('section','','vp3-profile-period');frame.dataset.profileAnalyticsPeriod=value.ref;
       const meta=node('div','','vp3-profile-period-meta');
@@ -1113,7 +1262,9 @@
         const groupState=value.groups[group];
         if(groupState.coverage!=='ready')section.append(node('p',analyticsReasons[groupState.reason]||'Coverage is incomplete for this group.'));
         const metrics=value.metrics.filter(metric=>metric.group===group);
+        if(group==='images')section.append(node('p','These creations used approved references priced at $0.00. A revision counts as a separate completed creation.'));
         section.append(analyticsTable(metrics));
+        if(group==='images')section.append(analyticsImageUsageDetail(value.image_usage));
         const definitions=node('details','','vp3-profile-period-definitions');definitions.append(node('summary','Definitions and coverage'));
         const list=node('dl');
         for(const metric of metrics){list.append(node('dt',analyticsMetricCatalog[metric.key][2]),node('dd',metric.definition));}
@@ -1125,7 +1276,7 @@
       else money.append(node('p',value.groups.commerce.coverage==='ready'?'No verified ledger amounts in these periods.':'Ledger amounts are unavailable or incomplete for these periods.'));
       frame.append(money,analyticsCohortDetail(value));
       const backlog=node('section','','vp3-profile-period-backlog');
-      backlog.append(node('h4','Current unresolved work'));
+      backlog.append(node('h4','Current activity and allowance'),analyticsImageCurrent(value.backlog));
       for(const point of value.backlog.metrics){
         const row=node('section');row.dataset.profileBacklog=point.key;
         row.append(node('h5',point.key==='current_unresolved_conversations'?'Current unresolved conversations':'Current unanswered visitor requests'));

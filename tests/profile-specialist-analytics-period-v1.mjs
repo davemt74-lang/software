@@ -58,6 +58,15 @@ function harness({selected=periodRef(),override=null}={}){
   check(f.host.textContent.includes('USD +0.01'),'money comparison uses saved scale');
   check(f.host.textContent.includes('Current unresolved conversations')&&f.host.textContent.includes('separate from the completed periods'),'current backlog separately labeled');
   check(f.host.querySelector('[data-profile-period-link]').href.includes('conversation_id=11'),'exact current Chat source link');
+  check(f.host.querySelector('.vp3-profile-period-group').textContent.includes('Free image creations'),'image usage is the first completed-period group');
+  check(f.host.querySelector('[data-profile-analytics-metric="image_creations_completed"]').textContent.includes('8')
+    &&f.host.querySelector('[data-profile-analytics-metric="image_revisions_completed"]').textContent.includes('3'),'initial creations and revisions retain distinct verified measures');
+  check(f.host.querySelector('[data-profile-image-insights]').textContent.includes('Studio portraits')
+    &&f.host.querySelector('[data-profile-image-insights]').textContent.includes('Warm window light'),'catalog and exact reference titles appear in source usage');
+  check(f.host.querySelector('[data-profile-image-history-link]').href==='/sub/profile-agent.php?tab=agent#profileImageUseHistory','review link retains deployment base and targets existing creation history');
+  check(f.host.querySelector('[data-profile-image-allowance]').textContent.includes('4 of 10 requests used · 6 remaining')
+    &&f.host.querySelector('[data-profile-image-allowance]').textContent.includes('2026-11-19 00:00:00 UTC'),'current allowance shows exact UTC reset separately from completed results');
+  check(f.host.querySelector('[data-profile-image-failures]').textContent.includes('across the creation history'),'saved failures do not claim selected-period timing');
   await f.api.refresh();await flush();check(f.requests.at(-1).ref===periodRef(),'refresh retains fixed reference');
   f.click('7 days');await flush();check(f.requests.at(-1).ref===periodRef(7),'sibling uses same cutoff and zone');
   f.click('Traffic details');await flush();check(f.state.traffic===1&&f.host.textContent.includes('Retained rolling traffic'),'retained rolling renderer selected explicitly');
@@ -103,6 +112,49 @@ function harness({selected=periodRef(),override=null}={}){
   check(model(corruptDelta,periodRef())===null,'ledger delta must match exact decimal-string arithmetic');
   const empty=periodValue();const emptyDelay=empty.metrics.find(row=>row.key==='median_first_reply_seconds');emptyDelay.current={value:null,observed_value:null,coverage:'complete',reason:'no_observations'};emptyDelay.comparison=null;
   check(model(empty,periodRef())!==null,'empty verified delay cohort can be complete with no numeric median');
+  for(const mutate of [
+    value=>delete value.image_usage,
+    value=>value.image_usage.current.top_catalogs[0].completed_count++,
+    value=>value.image_usage.current.top_images.push({...value.image_usage.current.top_images[0]}),
+    value=>value.image_usage.current.top_catalogs.reverse(),
+    value=>value.image_usage.current.top_images[0].completed_count=100,
+    value=>value.image_usage.current.top_catalogs[0].name='Untrusted\nlabel',
+    value=>value.image_usage.current.failure_coverage='unavailable',
+    value=>value.image_usage.current.failures[0].code='raw_provider_exception',
+    value=>value.image_usage.current.failures[0].count=100,
+    value=>value.backlog.image_allowance.remaining++,
+    value=>value.backlog.image_allowance.day_start_utc_ms+=3600000,
+    value=>value.backlog.image_allowance.resets_at_utc_ms+=3600000,
+    value=>value.backlog.image_allowance.timezone='America/Phoenix',
+    value=>value.backlog.image_allowance.coverage='unavailable',
+    value=>value.backlog.image_failures.count=0,
+    value=>value.backlog.image_failures.coverage='partial'
+  ]){const broken=structuredClone(valid);mutate(broken);check(model(broken,periodRef())===null,'inconsistent image evidence and allowance rejected');}
+  f.api.dispose();
+}
+{
+  const wire=periodValue();wire.coverage='limited';wire.groups.images={coverage:'unavailable',reason:'storage_unavailable'};
+  for(const metric of wire.metrics.filter(row=>row.group==='images')){
+    metric.current={value:null,observed_value:null,coverage:'unavailable',reason:'storage_unavailable'};metric.previous={...metric.current};metric.comparison=null;
+  }
+  for(const key of ['current','previous'])wire.image_usage[key]={coverage:'unavailable',reason:'storage_unavailable',rankings_coverage:'unavailable',failure_coverage:'unavailable',top_catalogs:[],top_images:[],catalogs_truncated:false,images_truncated:false,failures:[]};
+  wire.backlog.image_allowance={...wire.backlog.image_allowance,coverage:'unavailable',reason:'storage_unavailable',enabled:null,daily_limit:null,visitor_daily_limit:null,used:null,remaining:null};
+  wire.backlog.image_failures={coverage:'unavailable',reason:'storage_unavailable',count:null,observed_count:null,reasons:[]};
+  const f=harness({override:async()=>({status:200,data:{analytics_period:wire}})});await flush();
+  check(f.host.querySelector('[data-profile-analytics-metric="image_creations_completed"]').textContent.includes('Unavailable'),'image storage outage does not become zero creations');
+  check(f.host.querySelector('[data-profile-image-allowance]').textContent.includes('Allowance unavailable')
+    &&!f.host.querySelector('[data-profile-image-allowance]').textContent.includes('remaining'),'unreadable allowance has no fabricated remaining balance');
+  check(f.host.querySelector('[data-profile-image-failures]').textContent.includes('Unavailable')
+    &&f.host.textContent.includes('USD 90,071'),'image failure outage preserves independently verified commerce');
+  f.api.dispose();
+}
+{
+  const wire=periodValue();wire.image_usage.current.top_catalogs[0].name='<img src=x onerror=alert(1)>';
+  wire.backlog.image_failures={...wire.backlog.image_failures,coverage:'partial',reason:'source_proof_incomplete',count:null,observed_count:3};
+  const f=harness({override:async()=>({status:200,data:{analytics_period:wire}})});await flush();
+  check(f.host.querySelector('[data-profile-image-insights]').textContent.includes('<img src=x onerror=alert(1)>')
+    &&f.host.querySelectorAll('img').length===0,'saved catalog labels remain literal text');
+  check(f.host.querySelector('[data-profile-image-failures]').textContent.includes('3 verified in available records'),'partial current failures are labeled as verified subset');
   f.api.dispose();
 }
 {

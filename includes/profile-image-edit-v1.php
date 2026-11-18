@@ -132,6 +132,10 @@ function vp3_profile_image_edit_admit_v1(PDO $pdo,array $ctx,array $conversation
     if(!subscription_has_entitlement($ctx['owner_user'],'main_ai.access'))vp3_profile_image_edit_error_v1('Photo editing is unavailable under this profile’s AI allowance.','PROFILE_IMAGE_ALLOWANCE',429);
     try{$route=vp3_image_route_v1($pdo,$ctx['owner_user']);}catch(Throwable $e){vp3_profile_image_edit_error_v1('Photo editing is unavailable under this profile’s current AI settings.','PROFILE_IMAGE_UNAVAILABLE',503);}
     $prompt=(string)$ctx['image_edit_prompt'];$config=['mode'=>'profile_style_reference','count'=>1,'prompt'=>"Catalog style direction:\n".(string)($snapshot['instructions']??'')."\n\nVisitor edit request:\n".$prompt,'model'=>$route['target']['model'],'funding_source'=>$route['funding'],'size'=>'1024x1024','quality'=>'medium','background'=>'opaque','reference'=>['mime_type'=>$file['mime'],'sha256'=>$file['sha256'],'byte_size'=>$file['bytes']]+($proof?['generated_output'=>$proof]:[])];
+    // Public display credit is frozen separately from the catalog's authority snapshot.
+    // It is presentation metadata only; the provider builds its own whitelisted body.
+    $config['source_credit_owner_name']=vp3_profile_image_edit_credit_label_v1($ctx['profile']['display_name']??null,200)
+        ?:vp3_profile_image_edit_credit_label_v1($ctx['profile']['username']??null,200)?:'Profile owner';
     if($route['policy']['configured'])$config['provider_route']=$route['target'];
     $request=bin2hex(random_bytes(16));$q=$pdo->prepare('INSERT INTO profile_image_edits_v1 (request_id,owner_user_id,profile_agent_id,conversation_id,profile_session_id,visitor_user_id,visitor_key,visitor_message_id,root_message_id,base_message_id,request_hash,prompt,input_name,input_mime,input_bytes,input_sha256,input_width,input_height,input_content,catalog_json,config_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     $values=[$request,$owner,(int)$ctx['agent_id'],$cid,(int)$ctx['session_id'],$visitor,$visitorKey,$messageId,$rootMessage,$intent['base_message_id'],$intent['fingerprint'],$prompt,$file['name'],$file['mime'],$file['bytes'],$file['sha256'],$file['width'],$file['height'],$intent['base_message_id']>0?null:$file['content'],json_encode($snapshot,JSON_THROW_ON_ERROR),json_encode($config,JSON_THROW_ON_ERROR),gmdate('Y-m-d H:i:s')];
@@ -296,12 +300,52 @@ function vp3_profile_image_edit_url_v1(int $cid,int $messageId,bool $ownerView,?
     }
     if($preview)$args['preview']='1';return url('/api/profile-agent.php').'?'.http_build_query($args,'','&',PHP_QUERY_RFC3986);
 }
+function vp3_profile_image_edit_credit_label_v1(mixed $value,int $limit): string
+{
+    if(!is_string($value)||strlen($value)>$limit*4)return '';
+    $label=preg_replace('/[\p{Cc}\p{Cf}\p{Z}]+/u',' ',$value);
+    return is_string($label)&&mb_strlen(trim($label))<=$limit?trim($label):'';
+}
+/** Historical labels only. Never substitute today's catalog, reference, or owner names. */
+function vp3_profile_image_edit_source_credit_v1(array $row): ?array
+{
+    $json=$row['catalog_json']??null;$owner=(int)($row['owner_user_id']??0);
+    if(!is_string($json)||strlen($json)>65536||$owner<1)return null;
+    $saved=json_decode($json,true,20);if(!is_array($saved))return null;$references=$saved['references']??null;
+    if(!is_array($saved)||($saved['snapshot_version']??null)!==1||($saved['owner_user_id']??null)!==$owner
+        ||!is_int($saved['collection_id']??null)||$saved['collection_id']<1
+        ||!is_int($saved['catalog_revision']??null)||$saved['catalog_revision']<1
+        ||!is_int($saved['selection_asset_id']??null)||$saved['selection_asset_id']<0||($saved['price_cents']??null)!==0
+        ||!is_array($references)||!array_is_list($references)||count($references)<1||count($references)>3)return null;
+    $catalog=vp3_profile_image_edit_credit_label_v1($saved['catalog_name']??null,100);if($catalog==='')return null;
+    $selected=$saved['selection_asset_id'];$names=[];$ids=[];$bytes=0;
+    foreach($references as $reference){
+        if(!is_array($reference)||!is_int($reference['asset_id']??null)||$reference['asset_id']<1
+            ||isset($ids[$reference['asset_id']])||!is_string($reference['title']??null)
+            ||strlen($reference['title'])>2000||mb_strlen($reference['title'])>500||!is_int($reference['byte_size']??null)||$reference['byte_size']<1
+            ||!in_array($reference['mime_type']??null,['image/jpeg','image/png','image/webp'],true)
+            ||!is_string($reference['sha256']??null)||!preg_match('/^[a-f0-9]{64}$/D',$reference['sha256'])
+            ||!is_string($reference['revision']??null)||!preg_match('/^[a-f0-9]{64}$/D',$reference['revision'])
+            ||!is_int($reference['width']??null)||!is_int($reference['height']??null)
+            ||min($reference['width'],$reference['height'])<1||max($reference['width'],$reference['height'])>4096)return null;
+        $ids[$reference['asset_id']]=true;$bytes+=$reference['byte_size'];
+        $names[]=['title'=>vp3_profile_image_edit_credit_label_v1($reference['title'],500)?:'Untitled image'];
+    }
+    if($bytes>VP3_PROFILE_IMAGE_CATALOG_REFERENCE_BYTES_V1||($selected>0&&(count($ids)!==1||!isset($ids[$selected]))))return null;
+    $config=$row['config_json']??null;
+    $config=is_string($config)&&strlen($config)<=65536?json_decode($config,true,20):null;
+    $name=vp3_profile_image_edit_credit_label_v1(is_array($config)?($config['source_credit_owner_name']??null):null,200);
+    return ['contract'=>'vp3.profile-image-credit.v1','owner_name'=>$name?:'Profile owner','catalog_name'=>$catalog,
+        'references'=>$names,'price_cents'=>0];
+}
 function vp3_profile_image_edit_file_projection_v1(array $row,string $kind,bool $ownerView,?array $ctx=null): array
 {
     $result=$kind==='result';$mid=(int)$row[$result?'result_message_id':'visitor_message_id'];$cid=(int)$row['conversation_id'];
-    return ['kind'=>$kind,'request_id'=>$row['request_id'],'source_message_id'=>(int)$row['visitor_message_id'],'root_message_id'=>(int)$row['root_message_id'],
+    $view=['kind'=>$kind,'request_id'=>$row['request_id'],'source_message_id'=>(int)$row['visitor_message_id'],'root_message_id'=>(int)$row['root_message_id'],
         'filename'=>$result?'edited-photo.png':$row['input_name'],'mime'=>$result?'image/png':$row['input_mime'],'bytes'=>(int)$row[$result?'output_bytes':'input_bytes'],
         'url'=>vp3_profile_image_edit_url_v1($cid,$mid,$ownerView,$ctx),'download_url'=>vp3_profile_image_edit_url_v1($cid,$mid,$ownerView,$ctx,false)];
+    if($result&&($credit=vp3_profile_image_edit_source_credit_v1($row))!==null)$view['source_credit']=$credit;
+    return $view;
 }
 /** Call only after the caller has authorized this exact public conversation. */
 function vp3_profile_image_edit_messages_v1(PDO $pdo,int $owner,int $cid,array $messages,bool $ownerView=false,?array $ctx=null): array
@@ -309,7 +353,7 @@ function vp3_profile_image_edit_messages_v1(PDO $pdo,int $owner,int $cid,array $
     if(!$messages||!vp3_profile_image_edit_ready_v1($pdo))return $messages;
     $ids=array_values(array_filter(array_map('intval',array_column($messages,'id'))));if(!$ids)return $messages;
     $in=implode(',',array_fill(0,count($ids),'?'));
-    $q=$pdo->prepare("SELECT request_id,conversation_id,visitor_message_id,root_message_id,result_message_id,input_name,input_mime,input_bytes,output_bytes,state FROM profile_image_edits_v1 WHERE owner_user_id=? AND conversation_id=? AND (visitor_message_id IN ($in) OR result_message_id IN ($in))");$q->execute(array_merge([$owner,$cid],$ids,$ids));$map=[];
+    $q=$pdo->prepare("SELECT request_id,owner_user_id,conversation_id,visitor_message_id,root_message_id,result_message_id,input_name,input_mime,input_bytes,output_bytes,state,catalog_json,config_json FROM profile_image_edits_v1 WHERE owner_user_id=? AND conversation_id=? AND (visitor_message_id IN ($in) OR result_message_id IN ($in))");$q->execute(array_merge([$owner,$cid],$ids,$ids));$map=[];
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){$map[(int)$row['visitor_message_id']]=[$row,'input'];if($row['state']==='completed'&&(int)$row['result_message_id']>0)$map[(int)$row['result_message_id']]=[$row,'result'];}
     foreach($messages as &$message){$entry=$map[(int)$message['id']]??null;if($entry&&($message['sender_type']??null)===($entry[1]==='input'?'visitor':'agent'))$message['image_edit']=vp3_profile_image_edit_file_projection_v1($entry[0],$entry[1],$ownerView,$ctx);}unset($message);
     return $messages;

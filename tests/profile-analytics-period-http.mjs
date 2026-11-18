@@ -6,7 +6,7 @@ import {startProfileWorkspaceServer} from './fixtures/profile-specialist-workspa
 import {workspaceDocument} from './fixtures/profile-workspace-dom-v1.mjs';
 
 // Real workspace endpoint, session and SQL; only the browser DOM is replaced.
-const server=await startProfileWorkspaceServer({analytics:true});
+const server=await startProfileWorkspaceServer({analytics:true,imageAnalytics:true});
 const source=readFileSync(new URL('../profile-specialist-workspace-v1.js',import.meta.url),'utf8');
 let checks=0;
 const check=(value,label)=>{assert.ok(value,label);checks++;};
@@ -27,6 +27,11 @@ try{
   check(result.metrics.find(row=>row.key==='verified_paid_orders').current.value===2,'verified payment completions remain separate from collected conversion events');
   check(result.money.some(row=>row.currency==='USD')&&result.money.some(row=>row.currency==='EUR'),'real ledger keeps currencies separate');
   check(result.backlog.metrics.some(row=>row.key==='current_unanswered_visitor_turns'),'current unanswered requests have a separate backlog measure');
+  check(result.metrics.find(row=>row.key==='image_creations_completed').current.value===2
+    &&result.metrics.find(row=>row.key==='image_revisions_completed').current.value===1,'native initial and revision receipts produce two exact completions');
+  check(result.image_usage.current.top_catalogs[0].name==='Soft watercolor'
+    &&result.image_usage.current.top_images[0].title==='Watercolor portrait','native source usage retains frozen catalog and image names');
+  check(result.backlog.image_allowance.used===2&&result.backlog.image_allowance.remaining===3,'live allowance includes admitted queued and cancelled work');
   const document=workspaceDocument(),host=document.createElement('div');document.body.append(host);
   const scope={owner:1,agent:7,cid:11,binding:session.binding,hasChat:true};
   const window={VP3_PROFILE_WORKSPACE_V1:{endpoint:'/api/profile-specialist-workspace-v1.php',csrf:session.csrf,chatUrl:'/chat.php'},dispatchEvent(){},addEventListener(){},removeEventListener(){}};
@@ -39,6 +44,8 @@ try{
   check(host.querySelector('[data-profile-analytics-period]').dataset.profileAnalyticsPeriod===result.ref,'production renderer accepts the production partial-coverage response');
   check(host.textContent.includes('USD 20.00')&&host.textContent.includes('EUR 15.00'),'real ledger amounts render with saved scale');
   check(host.textContent.includes('Current unanswered visitor requests'),'production backlog measure is visible');
+  check(host.querySelector('[data-profile-image-insights]').textContent.includes('Soft watercolor')
+    &&host.querySelector('[data-profile-image-allowance]').textContent.includes('2 of 5 requests used · 3 remaining'),'production image usage and allowance render together with distinct timing');
   const control=async action=>{const response=await fetch(server.base+'/fixture/control',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({action})});assert.equal(response.status,200,await response.text());};
   await control('profile_off');await view.refresh();
   check(host.querySelector('[data-profile-analytics-period]')!==null,'private owner analytics survives public Profile disablement');
@@ -47,6 +54,11 @@ try{
   check(visits?.textContent.includes('Unavailable')&&!visits.textContent.includes('3'),'missing event storage removes prior totals instead of rendering a false zero');
   check(host.textContent.includes('USD 20.00'),'independent verified commerce evidence survives an event outage');
   await control('analytics_events_restore');
+  await control('analytics_images_off');await view.refresh();
+  check(host.querySelector('[data-profile-analytics-metric="image_creations_completed"]').textContent.includes('Unavailable')
+    &&host.querySelector('[data-profile-image-allowance]').textContent.includes('Allowance unavailable'),'unavailable image storage does not fabricate zero activity or allowance');
+  check(host.textContent.includes('USD 20.00'),'image storage failure preserves independent verified totals');
+  await control('analytics_images_restore');
   check((await request({ref:result.ref,period:7})).status===422,'ambiguous fixed-ref and period inputs rejected');
   check((await request({ref:result.ref,chat_conversation_id:12})).status===403,'fixed source cannot cross private Agent and Chat authority');
   await control('analytics_revoke');await view.refresh();

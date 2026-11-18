@@ -12,6 +12,7 @@
     catch (_) { return ''; }
   };
   let state = null, selected = 0, requestVersion = 0, saving = false;
+  let historyDestinationPending = location.hash === '#profileImageUseHistory';
   const drafts = new Map();
   root.innerHTML = '<div class="profile-agent-card"><h2>Free photo edits</h2><p role="status">Loading image settings…</p></div>';
 
@@ -113,6 +114,11 @@
     const labels = {queued:'Queued',editing:'Editing',running:'Editing',completed:'Completed',ready:'Completed',failed:'Could not complete',cancelled:'Cancelled',superseded:'Stopped after conversation changed'};
     host.replaceChildren();
     const heading = document.createElement('h3'); heading.textContent = 'Recent photo edits'; host.append(heading);
+    if (historyDestinationPending) {
+      historyDestinationPending = false;
+      heading.tabIndex = -1;
+      requestAnimationFrame(() => { if (heading.isConnected && location.hash === '#profileImageUseHistory') { heading.scrollIntoView({block: 'start'}); heading.focus({preventScroll: true}); } });
+    }
     if (history.available === false) { const message = document.createElement('p'); message.textContent = 'Image activity requires Profile chat access.'; host.append(message); return; }
     const summary = document.createElement('p'); summary.textContent = `${Number(history.total_completed || 0).toLocaleString()} completed edits. Each record keeps the original, prompt, source references, and result together.`; host.append(summary);
     if (!records.length) { const empty = document.createElement('p'); empty.textContent = 'Visitor edits will appear here when the service is used.'; host.append(empty); }
@@ -150,7 +156,7 @@
       <section class="profile-image-catalog-settings"><h3>Reference catalogs</h3><p>Choose a Media Library collection and approve its example images. Free edits are tracked here without a payment step.</p>
       <a href="${esc(cfg.mediaLibraryUrl || '/media-library.php')}">Open Media Library</a>
       <label class="profile-agent-field"><span id="profileImageCollectionLabel">Collection</span><select data-image-catalog-select aria-labelledby="profileImageCollectionLabel"><option value="0">Choose a collection</option>${(state.collections || []).map(item => `<option value="${positive(item.id)}"${positive(item.id) === selected ? ' selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
-      <div data-image-catalog-editor></div></section><section data-image-use-history></section>
+      <div data-image-catalog-editor></div></section><section id="profileImageUseHistory" data-image-use-history></section>
       <p class="profile-agent-notice" data-image-settings-notice role="status" aria-live="polite"></p></div>`;
     renderCatalog(); renderHistory();
   }

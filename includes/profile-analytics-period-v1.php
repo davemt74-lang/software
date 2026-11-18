@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/profile-analytics-period-ref-v1.php';
 require_once __DIR__.'/profile-analytics-authority-v1.php';
 require_once __DIR__.'/profile-agent-boundary-v390.php';
+require_once __DIR__.'/profile-image-analytics-v1.php';
 
 function vp3_profile_analytics_json_v1(mixed $value): ?array
 {
@@ -83,6 +84,10 @@ function vp3_profile_analytics_catalog_v1(): array
         'verified_paid_orders'=>['commerce','Orders reaching verified payment completion','count','Owned Profile orders whose verified cumulative payments first reached the frozen total in this period; later refunds remain separate.'],
         'verified_refunded_orders'=>['commerce','Orders with verified refunds','count','Distinct owned Profile orders with a verified completed refund in this period.'],
         'median_first_reply_seconds'=>['conversations','Median first reply delay','seconds','New-native-conversation cohort; the first exact verified reply before the reporting cutoff. Unanswered and unverifiable conversations remain separate.'],
+        'image_creations_completed'=>['images','Completed free image creations','count','Distinct free Profile image requests with exact native completion receipts, dated by saved UTC completion within this owner-local period.'],
+        'image_initial_creations'=>['images','Initial image creations','count','Verified completed free requests starting from a visitor upload; retries of the same request count once.'],
+        'image_revisions_completed'=>['images','Completed image revisions','count','Verified completed free requests using a proved earlier result from the same conversation; each distinct revision counts once.'],
+        'image_requests_failed'=>['images','Dated failed image requests','count','Distinct failed free requests with an exact native failure reply and receipt in this period. Undated failures remain incomplete and current failures are shown separately.'],
     ];
 }
 function vp3_profile_analytics_empty_points_v1(array $keys,string $reason='storage_unconfigured'): array
@@ -765,9 +770,11 @@ function vp3_profile_analytics_period_v1(PDO $pdo,array $scope,array $selection=
         catch(Throwable $error){$calls=vp3_profile_analytics_group_error_v1($error,$callKeys);}
         try{$commerce=vp3_profile_analytics_commerce_v1($pdo,$owner,$window,$history??['valid'=>[],'conversations'=>[]]);}
         catch(Throwable $error){$commerce=vp3_profile_analytics_group_error_v1($error,$commerceKeys);}
-        $points=$events['points']+$conversations['points']+$calls['points']+$commerce['points'];$metrics=[];
+        try{if($historyError)throw $historyError;$images=vp3_profile_image_analytics_v1($pdo,$owner,$window,$history);}
+        catch(Throwable $error){if(vp3_profile_analytics_retryable_v1($error))throw $error;$images=vp3_profile_image_analytics_empty_v1($error->getCode()===424?'storage_unconfigured':'storage_unavailable');}
+        $points=$events['points']+$conversations['points']+$calls['points']+$commerce['points']+$images['points'];$metrics=[];
         foreach($catalog as $key=>[$group,$label,$unit,$definition])$metrics[]=vp3_profile_analytics_metric_v1($key,$group,$label,$unit,$definition,$points[$key]['current'],$points[$key]['previous']);
-        $groups=[];foreach(['events'=>$events,'conversations'=>$conversations,'calls'=>$calls,'commerce'=>$commerce] as $key=>$value)
+        $groups=[];foreach(['events'=>$events,'conversations'=>$conversations,'calls'=>$calls,'commerce'=>$commerce,'images'=>$images] as $key=>$value)
             $groups[$key]=['coverage'=>$value['coverage'],'reason'=>$value['reason']];
         // Recorded conversions are displayed under Commerce, but retain their
         // independent event-clock evidence and coverage.
@@ -779,16 +786,20 @@ function vp3_profile_analytics_period_v1(PDO $pdo,array $scope,array $selection=
             $usable=$usable||$point['coverage']==='complete'||($point['coverage']==='partial'&&$point['observed_value']!==null);
             $complete=$complete&&$point['coverage']==='complete';$hasUnavailable=$hasUnavailable||$point['reason']==='storage_unavailable';}
         $coverage=$complete?'ready':($usable?'limited':($hasUnavailable?'unavailable':'unconfigured'));
-        $evidence=array_merge($events['evidence'],$conversations['evidence'],$calls['evidence'],$commerce['evidence']);
+        $evidence=array_merge($events['evidence'],$conversations['evidence'],$calls['evidence'],$commerce['evidence'],$images['evidence']);
         usort($evidence,static fn(array $a,array $b):int=>strcmp(json_encode($a,JSON_THROW_ON_ERROR),json_encode($b,JSON_THROW_ON_ERROR)));
         $money=$commerce['money']??[];$cohorts=$conversations['cohorts'];$breakdowns=$calls['breakdowns'];
         $revision=vp3_profile_analytics_hash_v1([VP3_PROFILE_ANALYTICS_PERIOD_V1,$owner,$scope['agent_id'],$scope['conversation_id'],$period['ref'],
-            $coverage,$metrics,$groups,$money,$cohorts,$breakdowns,$evidence]);
+            $coverage,$metrics,$groups,$money,$cohorts,$breakdowns,$images['usage'],$evidence]);
         $observed=$now->getTimestamp()*1000+(int)$now->format('v');$backlog=vp3_profile_analytics_backlog_v1($pdo,$owner,$observed,$history);
+        $backlog['image_allowance']=vp3_profile_image_analytics_allowance_v1($pdo,$owner,$observed);
+        $backlog['image_failures']=$images['failures'];
+        $backlog['revision']=vp3_profile_analytics_hash_v1([$backlog['revision'],$backlog['image_allowance'],$backlog['image_failures']]);
+        if($backlog['coverage']==='ready'&&($backlog['image_allowance']['coverage']!=='complete'||$backlog['image_failures']['coverage']!=='complete'))$backlog['coverage']='limited';
         $scope=vp3_profile_analytics_authority_current_v1($pdo,$scope);
         $result=['contract'=>VP3_PROFILE_ANALYTICS_PERIOD_V1,'ref'=>$period['ref'],'revision'=>$revision,'coverage'=>$coverage,'observed_at_utc_ms'=>$observed,
             'window'=>$window,'period_options'=>$period['period_options'],'metrics'=>$metrics,'groups'=>$groups,
-            'first_reply_cohorts'=>$cohorts,'call_breakdowns'=>$breakdowns,'money'=>$money,'backlog'=>$backlog];
+            'first_reply_cohorts'=>$cohorts,'call_breakdowns'=>$breakdowns,'money'=>$money,'image_usage'=>$images['usage'],'backlog'=>$backlog];
         if($owns){
             $pdo->commit();
             // This is a new current authority read after the aggregate snapshot,

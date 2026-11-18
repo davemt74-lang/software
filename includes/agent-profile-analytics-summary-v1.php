@@ -17,6 +17,10 @@ function vp3_profile_analytics_metric_text_v1(array $metric,string $side='curren
         'verified_paid_orders'=>'verified paid orders','verified_refunded_orders'=>'verified refunded orders',
         'median_first_reply_seconds'=>'seconds median first reply for new conversations',
         'median_call_accept_seconds'=>'seconds median delay before call acceptance',
+        'image_creations_completed'=>'completed free image creations',
+        'image_initial_creations'=>'initial free image creations',
+        'image_revisions_completed'=>'completed free image revisions',
+        'image_requests_failed'=>'failed image requests',
     ];
     $key=$metric['key']??null;$row=$metric[$side]??null;
     if(!is_string($key)||!isset($labels[$key])||!is_array($row))return null;
@@ -26,7 +30,12 @@ function vp3_profile_analytics_metric_text_v1(array $metric,string $side='curren
     $seconds=in_array($key,['median_first_reply_seconds','median_call_accept_seconds'],true);
     if(!$seconds&&floor((float)$value)!=(float)$value)return null;
     $number=$seconds?rtrim(rtrim(number_format((float)$value,2,'.',''),'0'),'.'):number_format((float)$value,0,'.',',');
-    return $number.' '.$labels[$key].($coverage==='partial'?' observed (partial)':'');
+    $label=$labels[$key];
+    if($value==1)$label=match($key){
+        'image_creations_completed'=>'completed free image creation','image_initial_creations'=>'initial free image creation',
+        'image_revisions_completed'=>'completed free image revision','image_requests_failed'=>'failed image request',default=>$label,
+    };
+    return $number.' '.$label.($coverage==='partial'?' observed (partial)':'');
 }
 
 function vp3_profile_analytics_metric_pair_v1(array $metric): ?string
@@ -38,6 +47,91 @@ function vp3_profile_analytics_metric_pair_v1(array $metric): ?string
         if($previous!==null)$current.='; previous period: '.$previous;
     }
     return $current;
+}
+
+/** Optional image highlights use proved period totals and frozen reference names only. */
+function vp3_profile_analytics_image_report_v1(array $metrics,mixed $usage): array
+{
+    $out=['facts'=>[],'summary'=>[],'actions'=>[],'question'=>'','next_step'=>''];
+    $keys=['image_creations_completed','image_initial_creations','image_revisions_completed','image_requests_failed'];
+    $values=[];$active=false;
+    foreach($keys as $key){
+        $metric=$metrics[$key]??[];if(!is_array($metric))continue;
+        foreach(['current','previous'] as $side){
+            if(vp3_profile_analytics_metric_text_v1($metric,$side)===null)continue;
+            $part=$metric[$side];$number=$part['coverage']==='complete'?$part['value']:$part['observed_value'];
+            $values[$key][$side]=$number;if($number>0)$active=true;
+        }
+    }
+    if(!$active)return $out;
+    $number=static fn(int|float $value):string=>number_format((float)$value,0,'.',',');
+    $total=$values['image_creations_completed']['current']??null;
+    $failed=$values['image_requests_failed']['current']??null;
+    $overview=[];
+    foreach($keys as $key)if(isset($metrics[$key])&&($text=vp3_profile_analytics_metric_text_v1($metrics[$key]))!==null)$overview[]=$text;
+    if($overview)$out['facts'][]=implode('; ',$overview).'.';
+    if($total!==null){
+        $summary=vp3_profile_analytics_metric_text_v1($metrics['image_creations_completed']);
+        $initial=$values['image_initial_creations']['current']??null;$revisions=$values['image_revisions_completed']['current']??null;
+        if($initial!==null&&$revisions!==null&&$initial+$revisions===$total
+            &&($metrics['image_creations_completed']['current']['coverage']??null)==='complete'
+            &&($metrics['image_initial_creations']['current']['coverage']??null)==='complete'
+            &&($metrics['image_revisions_completed']['current']['coverage']??null)==='complete'){
+            $summary.=' ('.$number($initial).' initial; '.$number($revisions).($revisions==1?' revision':' revisions').')';
+        }
+        if($total>0)$out['summary'][]=$summary;
+        elseif(($values['image_creations_completed']['previous']??0)>0)$out['summary'][]=vp3_profile_analytics_metric_pair_v1($metrics['image_creations_completed']);
+    }
+    $side=is_array($usage)&&($usage['contract']??null)==='vp3.profile-image-analytics.v1'&&is_array($usage['current']??null)?$usage['current']:[];
+    $rankFacts=[];
+    if($total>0&&($metrics['image_creations_completed']['current']['coverage']??null)==='complete'
+        &&($side['rankings_coverage']??null)==='complete'){
+        foreach(['top_catalogs'=>['collection_id','name','catalogs_truncated','catalog'],
+            'top_images'=>['asset_id','title','images_truncated','reference image']] as $key=>[$id,$title,$truncated,$label]){
+            $rows=$side[$key]??null;$valid=is_array($rows)&&array_is_list($rows)&&count($rows)<=10&&is_bool($side[$truncated]??null);
+            $seen=[];$previousCount=null;$sum=0;
+            if($valid)foreach($rows as $row){
+                if(!is_array($row)||!is_int($row[$id]??null)||$row[$id]<1||$row[$id]>9007199254740991
+                    ||isset($seen[$row[$id]])||!is_string($row[$title]??null)||!mb_check_encoding($row[$title],'UTF-8')
+                    ||mb_strlen($row[$title])>500||!is_int($row['completed_count']??null)||$row['completed_count']<1
+                    ||$row['completed_count']>$total||($previousCount!==null&&$row['completed_count']>$previousCount)){$valid=false;break;}
+                if($key==='top_catalogs'&&(!is_int($row['initial_count']??null)||!is_int($row['revision_count']??null)
+                    ||$row['initial_count']<0||$row['revision_count']<0||$row['initial_count']+$row['revision_count']!==$row['completed_count'])){$valid=false;break;}
+                $seen[$row[$id]]=true;$previousCount=$row['completed_count'];$sum+=$row['completed_count'];
+            }
+            if(!$valid||!$rows||($key==='top_catalogs'&&$sum>$total))continue;
+            $top=$rows[0];$name=vp3_profile_specialist_text_v1($top[$title],60);
+            if($name==='')$name=ucfirst($label).' '.$top[$id];
+            $tie=(isset($rows[1])&&$rows[1]['completed_count']===$top['completed_count'])||($side[$truncated]&&count($rows)===1);
+            $rankFacts[]=($tie?'One of the most-used '.$label.'s':'Most-used '.$label).': “'.$name.'”, used in '.$number($top['completed_count']).' completed creations.';
+            if($key==='top_catalogs')$out['summary'][]=($tie?'Top catalog tie':'Top catalog').': “'.$name.'” ('.$number($top['completed_count']).')';
+        }
+    }
+    if($rankFacts)$out['facts'][]=implode(' ',$rankFacts);
+    if($failed>0){
+        $out['summary'][]=vp3_profile_analytics_metric_text_v1($metrics['image_requests_failed']);
+        $reasons=['provider_access'=>'provider access','provider_busy'=>'provider busy','request_rejected'=>'request rejected',
+            'result_unconfirmed'=>'result not confirmed','usage_unconfirmed'=>'processing usage not confirmed',
+            'image_too_large'=>'image too large','storage_unavailable'=>'result storage unavailable',
+            'allowance_unavailable'=>'allowance unavailable','provider_unavailable'=>'image provider unavailable',
+            'source_changed'=>'reference or conversation changed','other'=>'other processing failures'];
+        $rows=$side['failures']??null;$parts=[];$seen=[];$sum=0;
+        $valid=in_array($side['failure_coverage']??null,['complete','partial'],true)&&is_array($rows)&&array_is_list($rows)&&count($rows)<=count($reasons);
+        if($valid)foreach($rows as $row){
+            if(!is_array($row)){$valid=false;break;}
+            $code=$row['code']??null;$count=$row['count']??null;
+            if(!is_string($code)||!isset($reasons[$code])||isset($seen[$code])||!is_int($count)||$count<1||$count>$failed){$valid=false;break;}
+            $sum+=$count;$seen[$code]=true;$parts[]=$reasons[$code].': '.$number($count);
+        }
+        if($valid&&$sum<=$failed&&$parts)$out['facts'][]='Recorded image failure reasons: '.implode('; ',array_slice($parts,0,2)).'.';
+        $out['actions'][]='You can review the recorded image failures in this Profile period and open their saved conversations.';
+    }
+    if($total>0){
+        $out['actions'][]='You can review the completed creations and the reference images used in this Profile period.';
+        $out['question']='Would you like to review those creations or plan another reference collection?';
+    }
+    if($out['actions'])$out['next_step']='Open this Profile period to review image activity.';
+    return $out;
 }
 
 /** Ledger scale is explicit; integer strings never pass through floating-point money. */
@@ -98,13 +192,18 @@ function vp3_profile_analytics_source_item_v1(array $data,int $agent,int $chat):
     if($data['coverage']==='limited')$period.=' Some totals are partial or unavailable.';
     $metrics=[];
     foreach($data['metrics'] as $metric)if(is_array($metric)&&is_string($metric['key']??null))$metrics[$metric['key']]=$metric;
+    $images=vp3_profile_analytics_image_report_v1($metrics,$data['image_usage']??null);
     $facts=[$period];
-    foreach([
+    $groups=$images['facts']?[
+        ['visit_records','recognized_browser_contacts','new_conversations','accepted_visitor_turns'],
+        ['calls_offered','calls_accepted','calls_finished','recorded_product_conversions','recorded_booking_conversions','verified_paid_orders','verified_refunded_orders'],
+    ]:[
         ['visit_records','recognized_browser_contacts'],
         ['new_conversations','accepted_visitor_turns'],
         ['calls_offered','calls_accepted','calls_finished'],
         ['recorded_product_conversions','recorded_booking_conversions','verified_paid_orders','verified_refunded_orders'],
-    ] as $keys){
+    ];
+    foreach($groups as $keys){
         $parts=[];foreach($keys as $key)if(isset($metrics[$key])&&($text=vp3_profile_analytics_metric_text_v1($metrics[$key]))!==null)$parts[]=$text;
         if($parts)$facts[]=implode('; ',$parts).'.';
     }
@@ -112,10 +211,16 @@ function vp3_profile_analytics_source_item_v1(array $data,int $agent,int $chat):
     foreach($data['money'] as $row)if(is_array($row)&&($text=vp3_profile_analytics_money_text_v1($row))!==null)$details[]=$text;
     if(!$details)foreach(['median_first_reply_seconds','median_call_accept_seconds'] as $key)
         if(isset($metrics[$key])&&($text=vp3_profile_analytics_metric_pair_v1($metrics[$key]))!==null)$details[]=$text;
-    if($details)$facts[]=implode('; ',array_slice($details,0,2)).'.';
-    $summary=[];$fallback=[];
+    $detail=$details?implode('; ',array_slice($details,0,2)).'.':null;
+    // The report is bounded to six highlights. Keep image evidence and money
+    // visible; the exact period destination retains every underlying measure.
+    if($images['facts'])$facts=array_merge([$period],$images['facts'],$detail!==null?[$detail]:[],array_slice($facts,1));
+    elseif($detail!==null)$facts[]=$detail;
+    $summary=$images['summary'];$fallback=[];
     $keys=array_values(array_unique(array_merge(['visit_records','accepted_visitor_turns','calls_accepted','verified_paid_orders'],array_keys($metrics))));
     foreach($keys as $key){
+        if(count($summary)>=3)break;
+        if($images['summary']&&str_starts_with($key,'image_'))continue;
         if(!isset($metrics[$key]))continue;$metric=$metrics[$key];
         $text=vp3_profile_analytics_metric_pair_v1($metric);if($text===null)continue;
         $fallback[]=$text;$positive=false;
@@ -123,21 +228,20 @@ function vp3_profile_analytics_source_item_v1(array $data,int $agent,int $chat):
             $part=$metric[$side];if(($part['coverage']==='complete'?$part['value']:$part['observed_value'])>0)$positive=true;
         }
         if($positive)$summary[]=$text;
-        if(count($summary)>=3)break;
     }
     if(!$summary)$summary=array_slice($fallback,0,2);
     foreach($data['money'] as $row){
         if(!is_array($row)||($text=vp3_profile_analytics_money_text_v1($row))===null)continue;
         $part=$row['current'];$value=$part['coverage']==='complete'?$part['value_minor']:$part['observed_value_minor'];
-        if($value!=='0'){array_unshift($summary,$text);break;}
+        if($value!=='0'){if($images['summary'])$summary[]=$text;else array_unshift($summary,$text);break;}
     }
     $summary=($data['coverage']==='limited'?'Partial coverage. ':'').implode('; ',array_slice($summary,0,4)).'.';
     if($summary==='.'||$summary==='Partial coverage. .')$summary='Period details are available with the stated source coverage.';
-    $report=vp3_profile_specialist_sections_v1($facts);
+    $report=vp3_profile_specialist_sections_v1($facts,$images['actions'],[],$images['next_step'],$images['question']!==''?[$images['question']]:[]);
     $url=vp3_profile_analytics_period_href_v1($agent,$chat,$data['ref']);
     $revision=hash('sha256',json_encode(['profile-period-report-v1',$data['revision'],$url,$title,$summary,$report],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
     return ['ref'=>$data['ref'],'revision'=>$revision,'specialist'=>'profile','title'=>$title,
-        'summary'=>vp3_profile_specialist_text_v1($summary,1200),'next_step'=>'','question'=>'','url'=>$url,
+        'summary'=>vp3_profile_specialist_text_v1($summary,1200),'next_step'=>$images['next_step'],'question'=>$images['question'],'url'=>$url,
         'status'=>'completed_period','priority'=>'low','trigger'=>'analytics_period','profile_source_kind'=>'analytics',
         'disposition'=>'current','presentation_owner'=>'profile_briefing_v1','profile_presentation_owned'=>true,
         'legacy_delivered'=>false,'private_summary_only'=>true,'public_evidence_untrusted'=>true,
