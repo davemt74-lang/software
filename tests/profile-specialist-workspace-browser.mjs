@@ -282,7 +282,9 @@ try{
   await tab('Analytics').click();await panel().getByRole('button',{name:'Completed periods',exact:true}).click();
   await panel().locator('.vp3-profile-period').waitFor();await readablePeriods();await contained();
   await panel().evaluate(element=>{element.scrollTop=0;});
-  const firstPeriodValue=await panel().locator('[data-profile-analytics-metric="visit_records"] strong').first().boundingBox();
+  const firstMetric=panel().locator('[data-profile-analytics-metric]').first();
+  check(await firstMetric.getAttribute('data-profile-analytics-metric')==='image_creations_completed','compact completed periods lead with image creations');
+  const firstPeriodValue=await firstMetric.locator('strong').first().boundingBox();
   const compactPanel=await panel().boundingBox();
   check(firstPeriodValue&&compactPanel&&firstPeriodValue.y+firstPeriodValue.height<=compactPanel.y+compactPanel.height-8,
     'compact completed periods show the first metric value before scrolling: '+JSON.stringify({firstPeriodValue,compactPanel}));
