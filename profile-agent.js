@@ -26,12 +26,14 @@
   const attachmentHelpMessage=shell.querySelector('[data-profile-attachment-help-message]');
   const attachmentHelpOptions=shell.querySelector('[data-profile-attachment-help-options]');
   const ownerPreview=Boolean(shell.querySelector('[data-profile-chat-preview]'));
+  const extraPanels=[];
+  let imageSurface=null;
   let openPanel=null,attachmentHelpKind='image',attachmentHelpDestination='';
   function showPanel(next,focus=true){
     const previous=openPanel;
     if(next&&!next.panel)return;
     openPanel=next;
-    for(const entry of [settings,chatOptions,attachmentHelp]){
+    for(const entry of [settings,chatOptions,attachmentHelp,...extraPanels]){
       if(entry.panel)entry.panel.hidden=entry!==next;
       entry.button?.setAttribute('aria-expanded',String(entry===next));
     }
@@ -48,6 +50,7 @@
       attachmentHelpOptions.hidden=!attachmentHelpDestination;
       attachmentHelpOptions.textContent=info.actionLabel||'Open chat options';
     }
+    imageSurface?.attachmentChoice(kind,info.ready===true);
   }
   function openAttachmentHelp(button,kind,info){
     attachmentHelpKind=kind;attachmentHelp.button=button;
@@ -95,7 +98,7 @@
   let speechPreference=null,speechChoice=null,speechNotice=null,speechBusy=false,speechSequence=0,speechAttempt=null;
   let chat=null,choiceTouched=false,endBusy=false,presenceBusy=false,uncertainEnd=null;
   let retryStorageKey=storageKey+':pending';
-  let initialStatePending=true,sessionRefreshing=false,checkoutReturnSeen=false;
+  let initialStatePending=true,sessionRefreshing=false,checkoutReturnSeen=false,imageRecoveryBusy=false;
   const submitLabel=submit.querySelector('[data-profile-send-label]')||submit;
   const originalSubmitLabel=submitLabel.textContent||'Send';
   function labelSubmit(label){submitLabel.textContent=label;if(submitLabel!==submit)submit.title=label;}
@@ -108,6 +111,13 @@
     const saved=JSON.parse(sessionStorage.getItem(retryStorageKey)||'null');
     if(saved&&/^[a-f0-9]{32}$/.test(saved.client_request_id||'')&&typeof saved.message==='string'&&saved.message.trim()!==''&&saved.message.length<=4000
        &&Number.isSafeInteger(saved.conversation_id)&&saved.conversation_id>=0
+       &&(saved.kind===undefined||(saved.kind==='image_edit'&&!Object.hasOwn(saved,'upload')&&Number.isSafeInteger(saved.catalog_id)&&saved.catalog_id>0
+         &&Number.isSafeInteger(saved.image_id)&&saved.image_id>=0&&Number.isSafeInteger(saved.catalog_revision)&&saved.catalog_revision>0
+         &&Array.from(saved.message).length<=2000&&((Number.isSafeInteger(saved.base_message_id)&&saved.base_message_id>0)
+           ||(!saved.base_message_id&&saved.image_subject&&/^[a-f0-9]{64}$/.test(saved.image_subject.sha256||'')
+             &&typeof saved.image_subject.name==='string'&&saved.image_subject.name.length>0&&saved.image_subject.name.length<=255
+             &&Number.isSafeInteger(saved.image_subject.bytes)&&saved.image_subject.bytes>0&&saved.image_subject.bytes<=4194304
+             &&typeof saved.image_subject.mime==='string'&&saved.image_subject.mime.length<=100))))
        &&(saved.chat_mode===undefined||['auto','agent','live'].includes(saved.chat_mode))
        &&(saved.continue_live===undefined||(typeof saved.continue_live==='boolean'&&(!saved.continue_live||saved.chat_mode==='live'))))pendingSend=saved;
   }catch(_error){}
@@ -374,7 +384,7 @@
     }
     return link;
   }
-  function messageNode(type,text,id=0,attachment=null){
+  function messageNode(type,text,id=0,attachment=null,imageEdit=null){
     const div=document.createElement('div');div.className=`profile-agent-message ${type}`;div.dataset.messageId=String(id||0);
     const speaker=document.createElement('strong');speaker.className='profile-agent-message-speaker';
     speaker.textContent=type==='visitor'?'You':type==='owner'?(chat?.owner_name||cfg.ownerName||'Profile owner'):(cfg.agentName||'Profile Agent');
@@ -383,6 +393,7 @@
     div.append(speaker,body);
     const link=type==='visitor'?attachmentLink(attachment,id):null;
     if(link)div.appendChild(link);
+    imageSurface?.renderMessage(div,imageEdit,id,type);
     return div;
   }
   function promotionNode(promotion){
@@ -421,10 +432,10 @@
       if(!active.has(card.dataset.profileProductPromotion))card.remove();
     });
   }
-  function appendMessage(type,text,id=0,promotion=null,attachment=null){
-    if(!String(text||'').trim()&&!attachment)return;
+  function appendMessage(type,text,id=0,promotion=null,attachment=null,imageEdit=null){
+    if(!String(text||'').trim()&&!attachment&&!imageEdit)return;
     if(id>0&&thread.querySelector(`[data-message-id="${id}"]`)){lastMessageId=Math.max(lastMessageId,id);return;}
-    const node=messageNode(type,text,id,attachment);
+    const node=messageNode(type,text,id,attachment,imageEdit);
     const card=type==='agent'?promotionNode(promotion):null;
     if(card)node.append(card);
     const host=checkoutHost?.parentNode===thread?checkoutHost:callHost?.parentNode===thread?callHost:null;
@@ -438,12 +449,13 @@
     if(callHost?.parentNode===thread)callHost.remove();
     if(checkoutHost?.parentNode===thread)checkoutHost.remove();
     thread.innerHTML='';lastMessageId=0;
-    (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion,m.attachment));
+    (messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion,m.attachment,m.image_edit));
     if(!messages?.length&&cfg.greeting)appendMessage('agent',cfg.greeting);
     if(checkoutHost)thread.appendChild(checkoutHost);
     if(callHost)thread.appendChild(callHost);
+    imageSurface?.renderStatuses();
   }
-  function activeHandoff(){return chat?.media_call_active===true||Boolean(chat&&['waiting','accepted'].includes(chat.live_status))||Boolean(handoff&&['awaiting_delivery','awaiting_owner','agent_ready','agent_running'].includes(String(handoff.dispatch_state||handoff.state||'')));}
+  function activeHandoff(){return imageSurface?.hasActive()||chat?.media_call_active===true||Boolean(chat&&['waiting','accepted'].includes(chat.live_status))||Boolean(handoff&&['awaiting_delivery','awaiting_owner','agent_ready','agent_running'].includes(String(handoff.dispatch_state||handoff.state||'')));}
   function dispatchPaused(){return handoff?.dispatch_execution_paused===true||(handoff?.dispatch_execution_paused===undefined&&Number(handoff?.dispatch_turn_id||handoff?.turn_id||0)===Number(handoff?.turn_id||0)&&handoff?.execution_paused===true);}
   function ownerAttachmentAvailable(){
     return attachmentMaxBytes>0&&conversationId>0&&(
@@ -468,6 +480,7 @@
     return {state:'owner_required',message:`Images and files can be shared after ${owner} joins your conversation. Open live chat settings, then send a message to request them.`,action:'settings',actionLabel:'Open live chat settings'};
   }
   function setQueuedAttachment(file){
+    if(file)imageSurface?.clearDraft(false);
     queuedAttachment=file;
     if(!attachmentHost)return;
     attachmentHost.replaceChildren();
@@ -492,6 +505,8 @@
     if(openPanel===attachmentHelp)renderAttachmentHelp(attachmentHelpKind,availability);
     const remove=attachmentHost?.querySelector('button');
     if(remove)remove.disabled=sending||Boolean(pendingSend);
+    imageSurface?.sync();
+    labelSubmit(pendingSend?(pendingSend.kind==='image_edit'?'Retry photo edit':'Retry message'):imageSurface?.hasDraft()?'Edit photo':originalSubmitLabel);
   }
   function chooseAttachment(accept,kind,button){
     const availability=attachmentInteractionState();
@@ -510,7 +525,11 @@
     },{once:true});
     input.click();
   }
-  addImage?.addEventListener('click',()=>chooseAttachment('.jpg,.jpeg,.png,.webp,.gif','image',addImage));
+  addImage?.addEventListener('click',()=>{
+    if(imageSurface?.enabled())openAttachmentHelp(addImage,'image',attachmentInteractionState());
+    else chooseAttachment('.jpg,.jpeg,.png,.webp,.gif','image',addImage);
+  });
+  shell.querySelector('[data-profile-image-share-owner]')?.addEventListener('click',()=>chooseAttachment('.jpg,.jpeg,.png,.webp,.gif','image',addImage));
   addFile?.addEventListener('click',()=>chooseAttachment('.pdf,.txt,.csv','file',addFile));
   function normalizeChat(value){
     if(!value||value.contract!=='vp3.profile-chat-choice.v1'||typeof value.owner_name!=='string'||value.owner_name.length>240
@@ -619,6 +638,7 @@
   function resetConversation(){
     if(queuedAttachment||pendingSend?.upload)textarea.value='';
     setQueuedAttachment(null);
+    imageSurface?.reset();
     callSurface?.invalidate('The visitor conversation changed.');checkoutSurface?.reset();callContextEpoch++;
     requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;chat=null;choiceTouched=false;uncertainEnd=null;localStorage.removeItem(storageKey);clearTimeout(pollTimer);pollTimer=0;updateChatChoice();
   }
@@ -665,6 +685,10 @@
     const body=action==='visitor_session'?{action,username:cfg.username}:{action,username:cfg.username,conversation_id:conversationId,...(cfg.conversationNamespace?{conversation_namespace:cfg.conversationNamespace}:{}),...payload};
     if(method==='GET'){
       const q=new URLSearchParams(body);url+=`?${q}`;
+    }else if(action==='image_edit'){
+      options.body=new FormData();
+      options.body.append('image_edit_payload',JSON.stringify({...body,profile_token:cfg.profileToken}));
+      if(upload)options.body.append('profile_image',upload,upload.name);
     }else if(upload){
       options.body=new FormData();
       options.body.append('attachment_payload',JSON.stringify({...body,profile_token:cfg.profileToken}));
@@ -721,6 +745,7 @@
       if(Object.prototype.hasOwnProperty.call(data.agent||{},'greeting'))cfg.greeting=data.agent.greeting||'';
       attachmentMaxBytes=Number.isSafeInteger(data.attachment_max_bytes)?Math.max(0,data.attachment_max_bytes):0;
       attachmentAvailabilityChecked=true;
+      imageSurface?.update(data);
       renderMessages(data.messages||[]);refreshPromotionCards(data.active_promotion_keys);applyConversationState(data.conversation||null,data.handoff,data.chat);
       if(conversationId){startPolling();void checkoutSurface?.refresh();}
       if(pendingSend&&!sessionChanged)void sendSaved(pendingSend);
@@ -742,7 +767,8 @@
     pollBusy=true;
     try{
       const data=await request('poll',{after_id:lastMessageId},'GET');
-      (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion,m.attachment));
+      (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion,m.attachment,m.image_edit));
+      imageSurface?.update(data);
       refreshPromotionCards(data.active_promotion_keys);
       applyConversationState(data.conversation||null,data.handoff,data.chat);
       void dispatchIfDue();
@@ -773,28 +799,82 @@
       const data=await request('state',{},'GET');
       attachmentMaxBytes=Number.isSafeInteger(data.attachment_max_bytes)?Math.max(0,data.attachment_max_bytes):0;
       attachmentAvailabilityChecked=true;
+      imageSurface?.update(data);
       applyConversationState(data.conversation||null,data.handoff,data.chat);void dispatchIfDue();
     }
     catch(error){if(!error.stale&&invalidVisitorSession(error))stopChangedSession();}
     finally{presenceBusy=false;}
   }
-  function savePending(value){pendingSend=value;try{if(value&&!value.upload)sessionStorage.setItem(retryStorageKey,JSON.stringify(value));else sessionStorage.removeItem(retryStorageKey);}catch(_error){}}
+  function savePending(value){
+    pendingSend=value;
+    try{
+      if(value?.kind==='image_edit'){
+        const {upload,...saved}=value;sessionStorage.setItem(retryStorageKey,JSON.stringify(saved));
+      }else if(value&&!value.upload)sessionStorage.setItem(retryStorageKey,JSON.stringify(value));
+      else sessionStorage.removeItem(retryStorageKey);
+      return true;
+    }catch(_error){return false;}
+  }
   function messageRequestId(){const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');}
+  function verifyImageReceipt(data,saved){
+    if(data.client_request_id!==saved.client_request_id||!Number.isSafeInteger(Number(data.visitor_message_id))||Number(data.visitor_message_id)<1
+      ||!data.image_edit||data.image_edit.kind!=='input'||!/^[a-f0-9]{32}$/.test(data.image_edit.request_id||'')
+      ||data.image_edit.source_message_id!==Number(data.visitor_message_id)||!Number.isSafeInteger(data.conversation_id)||data.conversation_id<1
+      ||(saved.conversation_id>0&&data.conversation_id!==saved.conversation_id)
+      ||!Array.isArray(data.image_edits)||!data.image_edits.some(job=>job.request_id===data.image_edit.request_id&&job.input_message_id===Number(data.visitor_message_id)))
+      throw new Error('The saved photo edit could not be verified. Retry the same photo edit.');
+  }
+  async function recoverImagePending(saved){
+    if(imageRecoveryBusy||sending||!alive||sessionChanged||pendingSend?.client_request_id!==saved.client_request_id)return;
+    imageRecoveryBusy=true;textarea.disabled=true;submit.disabled=true;setNotice('Checking your saved photo edit…');updateAttachmentControls();
+    try{
+      const data=await request('image_edit_receipt',{client_request_id:saved.client_request_id},'GET');
+      if(pendingSend?.client_request_id!==saved.client_request_id)return;
+      if(data.client_request_id!==saved.client_request_id||typeof data.found!=='boolean')throw new Error('The saved photo edit could not be checked. Retry to check it again.');
+      if(data.found){
+        verifyImageReceipt(data,saved);conversationId=data.conversation_id;localStorage.setItem(storageKey,String(conversationId));
+        savePending(null);textarea.value='';formNotice='';imageSurface?.accepted();imageSurface?.update(data);
+        renderMessages(data.messages||[]);applyConversationState(data.conversation||null,data.handoff,data.chat);startPolling();
+        void dispatchIfDue();
+      }else{
+        imageSurface?.recover(saved,async file=>{
+          if(pendingSend?.client_request_id!==saved.client_request_id||!alive||sessionChanged)return;
+          const restored={...saved,upload:file};savePending(restored);await sendSaved(restored);
+        });
+        formNotice='Choose the same original photo to retry your saved edit. Its instructions and request are preserved.';setNotice(formNotice);
+      }
+    }catch(error){
+      if(error.stale)return;
+      if(invalidVisitorSession(error)){stopChangedSession();return;}
+      formNotice='Your photo edit could not be checked yet. Retry to check its saved result before sending another edit.';setNotice(formNotice);
+    }finally{
+      imageRecoveryBusy=false;if(alive&&!sessionChanged){textarea.disabled=false;submit.disabled=false;updateAttachmentControls();}
+    }
+  }
   async function sendSaved(saved){
-    if(sending||checkoutCreating||sessionChanged||!alive)return;
-    showPanel(null,false);requestEpoch++;sending=true;formNotice='';uncertainEnd=null;savePending(saved);updateChatChoice();let accepted=false;
+    if(sending||imageRecoveryBusy||checkoutCreating||sessionChanged||!alive)return;
+    if(saved.kind==='image_edit'&&saved.image_subject&&!saved.upload)return recoverImagePending(saved);
+    showPanel(null,false);requestEpoch++;sending=true;formNotice='';uncertainEnd=null;
+    if(!savePending(saved)&&saved.kind==='image_edit'){
+      sending=false;formNotice='Your browser could not save this photo edit for retry. Keep this page open, allow session storage, then retry.';setNotice(formNotice);updateChatChoice();return;
+    }
+    updateChatChoice();let accepted=false;
     let optimistic=thread.querySelector(`[data-client-request-id="${saved.client_request_id}"]`);
-    if(!optimistic&&!saved.upload){optimistic=appendMessage('visitor',saved.message);if(optimistic)optimistic.dataset.clientRequestId=saved.client_request_id;}
+    if(!optimistic&&!saved.upload&&saved.kind!=='image_edit'){optimistic=appendMessage('visitor',saved.message);if(optimistic)optimistic.dataset.clientRequestId=saved.client_request_id;}
     textarea.value='';textarea.disabled=true;submit.disabled=true;setNotice('Saving your message…',true);
     try{
-      const {upload,...intent}=saved;
-      const data=await request('message',intent,'POST',cfg.endpoint,upload);
+      const {upload,kind,image_subject,...intent}=saved;
+      const data=await request(kind==='image_edit'?'image_edit':'message',intent,'POST',cfg.endpoint,upload);
       if(data.client_request_id!==saved.client_request_id||!Number.isSafeInteger(Number(data.visitor_message_id))||Number(data.visitor_message_id)<1)throw new Error('The saved message could not be verified. Retry the same message.');
-      if(upload&&!data.attachment)throw new Error('The saved attachment could not be verified. Retry the same message.');
+      if(kind==='image_edit')verifyImageReceipt(data,saved);
+      if(upload&&kind!=='image_edit'&&!data.attachment)throw new Error('The saved attachment could not be verified. Retry the same message.');
       conversationId=Number(data.conversation_id||0);if(conversationId)localStorage.setItem(storageKey,String(conversationId));
       const existing=thread.querySelector(`[data-message-id="${Number(data.visitor_message_id)}"]`);
       if(optimistic){if(existing&&existing!==optimistic)optimistic.remove();else optimistic.dataset.messageId=String(data.visitor_message_id);}
-      if(upload){
+      if(kind==='image_edit'){
+        appendMessage('visitor',saved.message,Number(data.visitor_message_id),null,null,data.image_edit);
+        imageSurface?.accepted();imageSurface?.update(data);
+      }else if(upload){
         appendMessage('visitor',saved.message,Number(data.visitor_message_id),null,data.attachment);
         setQueuedAttachment(null);
       }
@@ -805,8 +885,8 @@
       if(error.stale)return;
       if(invalidVisitorSession(error)){stopChangedSession();return;}
       if(error.status===404){savePending(null);resetConversation();renderMessages([]);formNotice='The Profile Agent changed. Start a new conversation after refreshing this profile.';setNotice(formNotice);}
-      else if([409,422,429].includes(error.status)){
-        savePending(null);optimistic?.remove();textarea.value=saved.message;formNotice=error.message;setNotice(formNotice);
+      else if([400,403,409,413,422,429].includes(error.status)){
+        savePending(null);if(saved.kind==='image_edit')imageSurface?.rejected(saved);optimistic?.remove();textarea.value=saved.message;formNotice=error.message;setNotice(formNotice);
       }else{textarea.value=saved.message;setNotice('Your message may already be saved. Retry this same message to check its result.');}
     }
     finally{
@@ -842,8 +922,13 @@
   });
   endLiveButton?.addEventListener('click',()=>void endLiveChat());
   form?.addEventListener('submit',event=>{
-    event.preventDefault();const message=String(textarea.value||'').trim();if((!message&&!queuedAttachment&&!pendingSend?.upload)||sessionRefreshing||sending||checkoutCreating||endBusy||sessionChanged)return;
+    event.preventDefault();const message=String(textarea.value||'').trim();if((!message&&!queuedAttachment&&!pendingSend?.upload&&!imageSurface?.hasDraft())||sessionRefreshing||sending||imageRecoveryBusy||checkoutCreating||endBusy||sessionChanged)return;
     if(pendingSend){if(message!==pendingSend.message){setNotice('Retry the saved message first so it is not sent twice.');return;}void sendSaved(pendingSend);return;}
+    if(imageSurface?.hasDraft()){
+      try{void sendSaved({message,conversation_id:conversationId,client_request_id:messageRequestId(),...imageSurface.prepare(message)});}
+      catch(error){formNotice=error.message;setNotice(formNotice);}
+      return;
+    }
     if(queuedAttachment&&!ownerAttachmentAvailable()){formNotice='The profile owner must be in the chat to receive this attachment. You can remove it to send text.';showHandoffStatus();return;}
     const activeMedia=chat?.media_call_active===true;
     const ownerContinuation=conversationStatus==='owner_joined'&&chat?.mode==='auto'&&liveChoice?.checked!==false;
@@ -852,6 +937,18 @@
     void sendSaved({message,conversation_id:conversationId,client_request_id:messageRequestId(),chat_mode:mode,...(continuing?{continue_live:true}:{}),...(queuedAttachment?{upload:queuedAttachment}:{})});
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
+  if(window.VP3ProfileImageEditsV1){
+    imageSurface=window.VP3ProfileImageEditsV1.mount({shell,thread,form,cfg,
+      context:()=>({key:[cfg.username,cfg.conversationNamespace,conversationId,callContextEpoch].join('|'),id:conversationId,
+        active:alive&&!sessionChanged,sessionChanged,loading:initialStatePending||sessionRefreshing,clockOffset,
+        busy:sending||imageRecoveryBusy||Boolean(pendingSend)||endBusy||checkoutCreating,
+        sending:sending||imageRecoveryBusy||endBusy||checkoutCreating,
+        human:chat?.media_call_active===true||conversationStatus==='owner_joined'||Boolean(chat&&['waiting','accepted'].includes(chat.live_status))}),
+      registerPanel:entry=>extraPanels.push(entry),showPanel,
+      onDraft:()=>{if(imageSurface?.hasDraft())setQueuedAttachment(null);formNotice='';updateAttachmentControls();},
+      notice:message=>{formNotice=message;setNotice(message);},focusComposer:()=>textarea.focus()
+    });
+  }
   function speechProjection(value){
     if(value?.contract!=='vp3.profile-speech.v1'||!['preset','male','female','neutral'].includes(value.style)||!Number.isSafeInteger(value.revision)||value.revision<1||typeof value.ready!=='boolean'||!Array.isArray(value.presets)||value.presets.length>100)return null;
     if(value.preset_key!==null&&value.preset_key!==''&&(typeof value.preset_key!=='string'||!/^[a-f0-9]{64}$/.test(value.preset_key)))return null;
@@ -951,7 +1048,7 @@
     });
     window.addEventListener('vp3:profile-agent-visibility',event=>{if(event.detail?.open)void callSurface.refresh();else callSurface.invalidate('You closed the live call view.');});
   }
-  window.addEventListener('pagehide',()=>{callSurface?.stop('You left the profile.');checkoutSurface?.reset(true);alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);clearInterval(checkoutTimer);},{once:true});
+  window.addEventListener('pagehide',()=>{callSurface?.stop('You left the profile.');checkoutSurface?.reset(true);imageSurface?.reset(true);alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);clearInterval(checkoutTimer);},{once:true});
   window.addEventListener('vp3:profile-agent-open',()=>{if(initialStatePending)return;if(conversationId)void poll();else void heartbeat();});
   updateChatChoice();
   void loadState().finally(()=>{

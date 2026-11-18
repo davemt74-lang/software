@@ -107,6 +107,8 @@ function vp3_profile_agent_accepted_context_pa3(PDO $pdo,array $turn,bool $lock=
 function vp3_profile_agent_accepted_generate_pa3(PDO $pdo,array $turn,array $claim,?callable $infer=null): array
 {
     $ctx=vp3_profile_agent_accepted_context_pa3($pdo,$turn);
+    require_once __DIR__.'/profile-image-edit-v1.php';
+    if(vp3_profile_image_edit_ready_v1($pdo)&&vp3_profile_image_edit_row_v1($pdo,(int)$turn['visitor_message_id']))return vp3_profile_image_edit_generate_v1($pdo,$turn,$claim,$infer);
     $owner=(int)$ctx['owner_user_id'];$profile=$ctx['profile'];$agent=$ctx['agent'];$visitor=$ctx['visitor'];$ownerUser=$ctx['owner_user'];
     $query=(string)$ctx['visitor_message']['message'];$cid=(int)$turn['conversation_id'];
     $historical=vp3_profile_agent_public_history_v1($pdo,$ctx,$cid,(int)$turn['visitor_message_id']);
@@ -168,6 +170,7 @@ function vp3_profile_agent_accepted_generate_pa3(PDO $pdo,array $turn,array $cla
 function vp3_profile_agent_accepted_recheck_pa3(PDO $pdo,array $turn,array $generated,bool $lock=true): array
 {
     $ctx=vp3_profile_agent_accepted_context_pa3($pdo,$turn,$lock);
+    if(isset($generated['message_context']['profile_image_request']))vp3_profile_image_edit_recheck_v1($pdo,$turn,$generated,$lock);
     if(!is_array($generated['context']??null)||!is_array($generated['history_sources']??null)
        ||!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$generated['context'],$generated['history_sources']))vp3_profile_agent_public_unavailable_v1();
     return vp3_profile_agent_accepted_context_pa3($pdo,$turn,$lock);

@@ -173,6 +173,7 @@ function vp3_profile_handoff_request_hash_pa3(array $ctx,string $query,string $c
     if($chatMode!=='auto')$binding[]=$chatMode;
     if($continueLive)$binding[]='continue_live';
     if(isset($ctx['profile_attachment_fingerprint']))$binding[]=$ctx['profile_attachment_fingerprint'];
+    if(isset($ctx['profile_image_edit_fingerprint']))$binding[]=['profile_image_edit'=>$ctx['profile_image_edit_fingerprint']];
     return hash('sha256',json_encode($binding,JSON_THROW_ON_ERROR));
 }
 function vp3_profile_handoff_retry_pa3(PDO $pdo,array $ctx,string $requestId,string $query,string $chatMode='auto',bool $continueLive=false): ?array
@@ -246,7 +247,7 @@ function vp3_profile_handoff_admit_pa3(PDO $pdo,array $ctx,array $conversation,i
     $pdo->prepare('UPDATE profile_agent_handoff_turns_pa3 SET run_id=?,action_id=?,notification_id=? WHERE id=?')->execute([$runId,$actionId,$notification?:null,$turnId]);
     vp3_profile_handoff_schedule_pa3($pdo,$uid,$cid);
     $savedTurn=vp3_profile_handoff_row_pa3($pdo,$turnId)??throw new RuntimeException('Visitor turn was not saved.');
-    if(!isset($ctx['profile_attachment_fingerprint'])&&function_exists('vp3_profile_speech_message_pa4a')){
+    if(!isset($ctx['profile_attachment_fingerprint'])&&!isset($ctx['profile_image_edit_fingerprint'])&&function_exists('vp3_profile_speech_message_pa4a')){
         // Optional narration never grants or changes the public responder.
         try{vp3_profile_speech_message_pa4a($pdo,$ctx,$savedTurn);}catch(VP3ProfileSpeechException $e){if($e->httpStatus!==403)throw $e;}
     }
@@ -421,6 +422,9 @@ function vp3_profile_handoff_mode_pa3(PDO $pdo,int $owner,int $cid,string $mode,
     $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,true);if(!$thread)vp3_profile_handoff_error_pa3('HANDOFF_NOT_FOUND',404);
     if($mode!=='owner'&&vp3_profile_handoff_media_active_pa3d($pdo,$owner,$cid,true))vp3_profile_handoff_error_pa3('HANDOFF_MEDIA_ACTIVE',409);
     $now=vp3_profile_handoff_now_pa3();$epoch=(int)$thread['epoch']+1;$state=match($mode){'agent'=>'agent_ready','owner'=>'owner_claimed','pending'=>'awaiting_delivery',default=>'cancelled'};
+    // A new responder epoch withdraws queued/in-flight photo edits permanently.
+    require_once __DIR__.'/profile-image-edit-v1.php';
+    vp3_profile_image_edit_cancel_v1($pdo,$owner,$cid);
     $requestedMode=$requestedMode??(string)$thread['requested_mode'];vp3_profile_handoff_chat_mode_pa3d($requestedMode);
     if($liveStatus===null)$liveStatus=$requestedMode==='live'?match($mode){'owner'=>'accepted','pending'=>'waiting','agent'=>$thread['live_status']==='waiting'?'declined':'ended',default=>'ended'}:'none';
     if(!in_array($liveStatus,['none','waiting','accepted','declined','expired','unavailable','ended'],true))throw new RuntimeException('Visitor live status is invalid.');
@@ -563,6 +567,7 @@ function vp3_profile_handoff_execute_claim_pa3(PDO $pdo,array $user,array $claim
             if(!empty($generated['needs_owner']))profile_agent_needs_owner($pdo,$ctx['profile'],$ctx['agent'],vp3_profile_agent_public_event_session_v1($ctx),$ctx['conversation'],(string)$ctx['visitor_message']['message']);
             $context=$generated['message_context'];$context['profile_handoff']=['contract'=>VP3_PROFILE_HANDOFF_PA3,'turn_id'=>(int)$turn['id'],'visitor_message_id'=>(int)$turn['visitor_message_id']];$json=json_encode($context,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);if(strlen($json)>131072)throw new RuntimeException('Visitor answer provenance is unavailable.');
             $pdo->prepare("INSERT INTO profile_agent_messages(conversation_id,sender_type,sender_user_id,message,context_json,created_at) VALUES(?,'agent',NULL,?,?,?)")->execute([(int)$turn['conversation_id'],trim($generated['answer']),$json,vp3_profile_handoff_date_pa3()]);$messageId=(int)$pdo->lastInsertId();
+            if(isset($generated['message_context']['profile_image_request']))vp3_profile_image_edit_publish_v1($pdo,$current,$generated,$messageId);
             if(function_exists('vp3_profile_attention_message_sent_pa4b'))vp3_profile_attention_message_sent_pa4b($pdo,$ctx['conversation'],$messageId);
             $pdo->prepare('UPDATE profile_agent_conversations SET last_message_at=?,updated_at=? WHERE id=? AND owner_user_id=?')->execute([vp3_profile_handoff_date_pa3(),vp3_profile_handoff_date_pa3(),(int)$turn['conversation_id'],$owner]);
             vp3_profile_agent_accepted_recheck_pa3($pdo,$current,$generated,true);vp3_profile_handoff_execution_fence_pa3($pdo,$turn,$claim);

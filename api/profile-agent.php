@@ -4,6 +4,7 @@ require dirname(__DIR__) . '/includes/bootstrap.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-transcription-context.php';
 require_once dirname(__DIR__) . '/includes/profile-agent-public-service-v110.php';
 require_once dirname(__DIR__) . '/includes/profile-chat-attachments-v1.php';
+require_once dirname(__DIR__) . '/includes/profile-image-edit-v1.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, private');
 
@@ -92,13 +93,18 @@ $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if(!in_array($method,['GET','POST'],true))profile_agent_method_required('GET, POST');
 $input=$method==='POST'?json_decode((string)file_get_contents('php://input'),true):$_GET;if(!is_array($input))$input=$_POST;
 $attachmentUpload=$method==='POST'&&array_key_exists('attachment_payload',$_POST);
+$imageEditUpload=$method==='POST'&&array_key_exists('image_edit_payload',$_POST);
+if($imageEditUpload){
+    $input=is_string($_POST['image_edit_payload'])?json_decode($_POST['image_edit_payload'],true):null;
+    if($attachmentUpload||!is_array($input)||($input['action']??null)!=='image_edit')profile_agent_json(false,['error'=>'The photo edit request is invalid.','code'=>'PROFILE_IMAGE_INVALID'],422);
+}
 if($attachmentUpload){
     $input=is_string($_POST['attachment_payload'])?json_decode($_POST['attachment_payload'],true):null;
     if(!is_array($input)||($input['action']??null)!=='message')profile_agent_json(false,['error'=>'The attachment request is invalid.','code'=>'PROFILE_ATTACHMENT_INVALID'],422);
 }
 $action=$input['action']??'state';if(!is_string($action))profile_agent_json(false,['error'=>'Choose a Profile Agent action.','code'=>'VALIDATION_FAILED'],422);$action=trim($action);
-$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply','owner_attachment','doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'];
-$ownerReads=['owner_state','conversation_messages','owner_attachment'];
+$ownerActions=['owner_state','save_profile','save_profile_media','save_profile_agent','save_profile_access','attention_action','conversation_messages','conversation_status','owner_reply','owner_attachment','owner_image','doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'];
+$ownerReads=['owner_state','conversation_messages','owner_attachment','owner_image'];
 // A URL, preload, HEAD request or cross-site navigation must never send an
 // owner reply or change Profile settings, attention or conversation status.
 if($method!=='POST'&&in_array($action,$ownerActions,true)&&!in_array($action,$ownerReads,true))profile_agent_method_required('POST');
@@ -150,6 +156,7 @@ if(in_array($action,$ownerActions,true)){
         $conversation=profile_runtime_conversation_owner($pdo,$cid,$uid)?:throw new RuntimeException('Conversation not found.');
         $messages=profile_agent_messages($pdo,$cid);
         if(personal_capability_has_v242('profile_chat.access',$user))$messages=vp3_profile_chat_attachment_messages_v1($pdo,$messages);
+        if(personal_capability_has_v242('profile_chat.access',$user))$messages=vp3_profile_image_edit_messages_v1($pdo,$uid,$cid,$messages,true);
         profile_agent_json(true,['conversation'=>$conversation,'messages'=>$messages]);
     }
     if($action==='owner_attachment'){
@@ -157,6 +164,12 @@ if(in_array($action,$ownerActions,true)){
         if($method!=='GET')profile_agent_method_required('GET');
         if(!personal_capability_has_v242('profile_chat.access',$user)||!vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid))profile_agent_json(false,['error'=>'Attachment not found.'],404);
         vp3_profile_chat_attachment_output_v1($pdo,$uid,$cid,(int)($input['message_id']??0),($input['preview']??null)==='1');
+    }
+    if($action==='owner_image'){
+        $cid=(int)($input['conversation_id']??0);
+        if($method!=='GET')profile_agent_method_required('GET');
+        if(!personal_capability_has_v242('profile_chat.access',$user)||!vp3_profile_agent_owner_conversation_v390($pdo,$cid,$uid))profile_agent_json(false,['error'=>'Image not found.'],404);
+        vp3_profile_image_edit_output_v1($pdo,$uid,$cid,(int)($input['message_id']??0),($input['preview']??null)==='1');
     }
     if($action==='conversation_status'){
         $cid=max(0,(int)($input['conversation_id']??0));$status=(string)($input['status']??'');if(!in_array($status,['open','owner_joined','resolved'],true))throw new VP3ProfileAgentPublicException('VALIDATION_FAILED','Unknown conversation status.',422);
@@ -195,6 +208,7 @@ if(in_array($action,$ownerActions,true)){
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
         $messages=profile_agent_messages($pdo,$cid);
         if(personal_capability_has_v242('profile_chat.access',$user))$messages=vp3_profile_chat_attachment_messages_v1($pdo,$messages);
+        if(personal_capability_has_v242('profile_chat.access',$user))$messages=vp3_profile_image_edit_messages_v1($pdo,$uid,$cid,$messages,true);
         profile_agent_json(true,['conversation_id'=>$cid,'request_id'=>$requestId]+$receipt+['state'=>profile_agent_owner_state_v242($pdo,$user),'messages'=>$messages]);
     }
 }
@@ -205,7 +219,7 @@ if($action==='visitor_session'){
     if($method!=='GET')profile_agent_method_required('GET');
     if(array_diff(array_keys($input),['action','username']))profile_agent_json(false,['error'=>'Choose a profile to refresh its visitor session.','code'=>'VALIDATION_FAILED'],422);
 }
-$publicCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$user,in_array($action,['poll','attachment'],true));$owner=(int)$publicCtx['owner_user_id'];
+$publicCtx=vp3_profile_agent_public_context_v110($pdo,$profile,$user,in_array($action,['poll','attachment','image','image_edit_receipt'],true));$owner=(int)$publicCtx['owner_user_id'];
 $expected=hash('sha256','profile-widget-v1|'.(string)$publicCtx['conversation_authority']['credential_hash']);
 if($action==='visitor_session'){
     profile_agent_json(true,['conversation_namespace'=>$expected,'profile_token'=>profile_chat_token($owner)]);
@@ -223,13 +237,13 @@ if($action==='state'){
     $result=vp3_profile_agent_public_state_service_v110($pdo,$publicCtx,$cid);
     $result['attachment_max_bytes']=vp3_profile_chat_attachment_ready_v1($pdo)?VP3_PROFILE_CHAT_ATTACHMENT_MAX_V1:0;
     $result['messages']=vp3_profile_chat_attachment_messages_v1($pdo,$result['messages']);
-    profile_agent_json(true,$result);
+    profile_agent_json(true,vp3_profile_image_edit_public_projection_v1($pdo,$publicCtx,$cid,$result));
 }
 if($action==='poll'){
     $cid=max(0,(int)($input['conversation_id']??0));$after=max(0,(int)($input['after_id']??0));
     $result=vp3_profile_agent_public_poll_service_v110($pdo,$publicCtx,$cid,$after);
     $result['messages']=vp3_profile_chat_attachment_messages_v1($pdo,$result['messages']);
-    profile_agent_json(true,$result);
+    profile_agent_json(true,vp3_profile_image_edit_public_projection_v1($pdo,$publicCtx,$cid,$result));
 }
 if($action==='attachment'){
     if($method!=='GET')profile_agent_method_required('GET');
@@ -238,7 +252,31 @@ if($action==='attachment'){
     vp3_profile_agent_public_bound_conversation_v1($pdo,$publicCtx,$cid);
     vp3_profile_chat_attachment_output_v1($pdo,$owner,$cid,(int)($input['message_id']??0),($input['preview']??null)==='1');
 }
+if($action==='image'){
+    if($method!=='GET')profile_agent_method_required('GET');
+    $cid=(int)($input['conversation_id']??0);
+    if($cid<1||!isset($input['conversation_namespace']))profile_agent_json(false,['error'=>'Image not found.'],404);
+    vp3_profile_agent_public_bound_conversation_v1($pdo,$publicCtx,$cid);
+    vp3_profile_image_edit_output_v1($pdo,$owner,$cid,(int)($input['message_id']??0),($input['preview']??null)==='1');
+}
+if($action==='image_edit_receipt'){
+    if($method!=='GET')profile_agent_method_required('GET');
+    if(!isset($input['conversation_namespace']))vp3_profile_image_edit_error_v1('Refresh this profile before recovering a photo edit.','PROFILE_SESSION_CHANGED',409);
+    $requestId=$input['client_request_id']??null;if(!is_string($requestId))vp3_profile_image_edit_error_v1('Choose a saved photo edit request.');
+    profile_agent_json(true,vp3_profile_image_edit_receipt_v1($pdo,$publicCtx,$requestId));
+}
 if($method!=='POST')profile_agent_method_required('POST');
+if($action==='image_edit'){
+    if(!isset($input['conversation_namespace']))vp3_profile_image_edit_error_v1('Refresh this profile before editing a photo.','PROFILE_SESSION_CHANGED',409);
+    $cid=vp3_profile_image_edit_id_v1($input['conversation_id']??0,true);
+    $file=isset($_FILES['profile_image'])?vp3_profile_image_edit_upload_v1($_FILES['profile_image']):null;
+    $intent=vp3_profile_image_edit_intent_v1($input,$file);
+    $requestId=$input['client_request_id']??null;
+    if(!is_string($requestId)||!preg_match('/^[a-f0-9]{32}$/D',$requestId))vp3_profile_image_edit_error_v1('The photo edit retry identifier is invalid.');
+    $message=$input['message']??null;if(!is_string($message))vp3_profile_image_edit_error_v1('Describe how you want the photo edited.');
+    $result=vp3_profile_agent_public_message_service_v110($pdo,$publicCtx,$message,$cid,['async'=>true,'chat_mode'=>'agent','client_request_id'=>$requestId,'image_edit'=>$intent]);
+    profile_agent_json(true,vp3_profile_image_edit_public_projection_v1($pdo,$publicCtx,(int)$result['conversation_id'],$result));
+}
 if($action==='message'){
     $cid=max(0,(int)($input['conversation_id']??0));
     $delivery=['async'=>true,'client_request_id'=>$input['client_request_id']??''];

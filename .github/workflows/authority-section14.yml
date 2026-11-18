@@ -45,6 +45,25 @@ jobs:
           node tests/permission-architecture-v188.mjs
           node tests/agent-tool-authorization-v400.mjs
           php tests/agent-permissions-v035-contract.php
+      - name: Free Profile image catalogs, protected edits and exact recovery
+        run: |
+          php -l includes/profile-image-catalog-v1.php
+          php -l includes/profile-image-edit-v1.php
+          php -l api/profile-image-settings-v1.php
+          php tests/profile-image-catalog-v1.php
+          php tests/profile-image-edit-v1.php
+          php tests/agent-image-transport-v1.php
+          node tests/profile-image-settings-api-v1.mjs
+          node tests/profile-image-edit-api-v1.mjs
+          node tests/profile-image-edits-v1.mjs
+      - name: Free Profile image catalogs and edits on native MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-image-catalog-v1.php
+          php tests/profile-image-edit-v1.php
       - name: Profile analytics complete windows and unavailable reads
         run: |
           php tests/profile-analytics-reliability-v1.php
@@ -320,6 +339,18 @@ jobs:
           node tests/profile-call-activity-pa3c-browser.mjs
       - name: Public Agent or live owner text choice, consent, recovery and mobile
         run: node tests/profile-chat-choice-pa3d-browser.mjs
+      - name: Free Profile photo editing, revisions, owner settings and mobile
+        run: |
+          node tests/profile-image-edits-browser-v1.mjs
+          node tests/profile-image-settings-browser-v1.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-image-browser-evidence
+          path: |
+            artifacts/profile-image-edits/
+            artifacts/profile-image-settings/
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:

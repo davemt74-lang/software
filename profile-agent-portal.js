@@ -208,7 +208,9 @@ function renderThread(binding,c,m){
   const html=m.map(x=>{
     const file=x.attachment?.name&&conversationId(x.id)
       ? `<br><a href="${esc(cfg.endpoint)}?action=owner_attachment&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}" download>Download ${esc(x.attachment.name)}</a>`:'';
-    return `<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent')}</small>${esc(x.message)}${file}</div>`;
+    const edited=['input','result'].includes(x.image_edit?.kind)&&conversationId(x.id)
+      ? `<a href="${esc(cfg.endpoint)}?action=owner_image&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}&amp;preview=1" target="_blank" rel="noopener"><img class="profile-agent-edit-image" src="${esc(cfg.endpoint)}?action=owner_image&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}&amp;preview=1" alt="${x.image_edit.kind==='result'?'Edited visitor photo':'Original visitor photo'}" loading="lazy"></a><a href="${esc(cfg.endpoint)}?action=owner_image&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}" download>Download ${x.image_edit.kind==='result'?'edited':'original'} photo</a>`:'';
+    return `<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent')}</small>${esc(x.message)}${file}${edited}</div>`;
   }).join('')||'<div class="profile-agent-empty">No messages yet.</div>';
   if(messages.innerHTML!==html){const top=messages.scrollTop,atEnd=messages.scrollHeight-messages.scrollTop-messages.clientHeight<40;messages.innerHTML=html;messages.scrollTop=atEnd?messages.scrollHeight:top;}
   updateThreadControls(binding);

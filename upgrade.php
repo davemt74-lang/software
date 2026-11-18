@@ -9,6 +9,8 @@ require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-command-grants-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-publishing-v1.php';
 require_once __DIR__ . '/includes/media-collections-v1.php';
+require_once __DIR__ . '/includes/profile-image-catalog-v1.php';
+require_once __DIR__ . '/includes/profile-image-edit-v1.php';
 require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
@@ -307,6 +309,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_coding_canvas_source_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_publishing_ready_v1($schemaConnection)
         && vp3_media_collections_ready_v1($schemaConnection)
+        && vp3_profile_image_catalog_ready_v1($schemaConnection)
+        && vp3_profile_image_edit_ready_v1($schemaConnection)
         && chat_settings_schema_ready_v237($schemaConnection)
         && chat_settings_agent_orb_shape_schema_ready_v237($schemaConnection)
         && chat_settings_agent_auto_greet_schema_ready_v237($schemaConnection)
@@ -421,6 +425,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_coding_canvas_command_grants_install_v1($pdo);
             vp3_coding_canvas_publishing_install_v1($pdo);
             vp3_media_collections_install_v1($pdo);
+            vp3_profile_image_catalog_install_v1($pdo);
             artist_listening_v237_ensure_schema();
             studio_participants_ensure_schema();
             studio_voice_profile_ensure_schema();
@@ -509,6 +514,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             profile_agent_ensure_schema();
             vp3_profile_event_clock_install_v1($pdo);
             vp3_profile_handoff_ensure_schema_pa3($pdo);
+            vp3_profile_image_edit_install_v1($pdo);
             vp3_profile_owner_drafts_ensure_schema_v1($pdo);
             vp3_profile_call_ensure_schema_pa3c($pdo);
             vp3_profile_call_activity_ensure_schema_pa3c($pdo);

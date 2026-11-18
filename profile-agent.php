@@ -30,6 +30,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 <title>Profile Agent | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-portal.css?v=agent-radar-interface-20260906')) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-image-settings-v1.css?v='.substr(hash_file('sha256',__DIR__.'/profile-image-settings-v1.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-attention-pa4b.css?v='.substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar.css?v=agent-radar-interface-20260906')) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-agent-radar-sites.css?v=agent-manifest-messaging-20260906')) ?>">
@@ -116,6 +117,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 
       <section class="profile-agent-view" data-pa-view="agent">
         <div class="profile-agent-panel" id="profileAgentSettings"></div>
+        <div class="profile-agent-panel" id="profileImageSettings"></div>
       </section>
 
       <section class="profile-agent-view" data-pa-view="knowledge">
@@ -157,6 +159,10 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 </div>
 <script>window.PROFILE_AGENT_PORTAL=<?= json_encode([
   'endpoint'=>url('/api/profile-agent.php'),
+  'imageSettingsEndpoint'=>url('/api/profile-image-settings-v1.php'),
+  'ownerUserId'=>(int)$user['id'],
+  'mediaLibraryUrl'=>url('/media-library.php'),
+  'upgradeUrl'=>url('/upgrade.php'),
   'radarEndpoint'=>url('/api/agent-radar.php'),
   'radarSitesEndpoint'=>url('/api/agent-radar-sites.php'),
   'radarPolicyEndpoint'=>url('/api/agent-radar-policy.php'),
@@ -177,6 +183,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
 ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script src="<?= e(url('/profile-attention-pa4b.js?v='.substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-agent-portal.js?v='.substr(hash_file('sha256',__DIR__.'/profile-agent-portal.js'),0,12))) ?>"></script>
+<script src="<?= e(url('/profile-image-settings-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-image-settings-v1.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-agent-radar-sites.js?v=agent-manifest-messaging-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-radar-gateway.js?v=agent-access-controls-20260906')) ?>"></script>
 <script src="<?= e(url('/profile-agent-access-requests.js?v=agent-messaging-20260906')) ?>"></script>
