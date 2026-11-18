@@ -25,7 +25,7 @@ if(($argv[1]??'')==='init'){
         'is_profile_agent'=>'INTEGER NOT NULL DEFAULT 0',
         'voice_enabled'=>'INTEGER NOT NULL DEFAULT 0',
         'created_at'=>'DATETIME', 'updated_at'=>'DATETIME',
-    ] as $column=>$definition)$pdo->exec('ALTER TABLE user_agents ADD COLUMN '.$column.' '.$definition);
+    ] as $column=>$definition)if(!column_exists('user_agents',$column))$pdo->exec('ALTER TABLE user_agents ADD COLUMN '.$column.' '.$definition);
     echo $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);exit;
 }
 if(($argv[1]??'')==='state'){

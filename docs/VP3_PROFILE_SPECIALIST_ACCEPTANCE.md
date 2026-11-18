@@ -12,7 +12,7 @@ Each phase has five scored areas, worth two points each: requested behavior, cur
 
 Status: implemented; final regression review and required PR checks pending.
 
-- A lost owner-reply acknowledgement cannot duplicate a visitor-visible message through either older inbox. Retries retain the exact operation identity and original source version. Both an accepted handoff and a historical conversation without a current turn are covered.
+- A lost owner-reply acknowledgement cannot duplicate a visitor-visible message through the live visitor card or either older inbox. Retries retain the exact operation identity and original source version. Both an accepted handoff and a historical conversation without a current turn are covered.
 - Shared activity context respects canonical handled/ignored/snoozed disposition. Visible presentation, Read, and resolution remain separate. A routine read visit does not become a new interruption, and an unresolved visitor request remains unresolved.
 - Analytics totals aggregate all matching events; the bounded recent feed is not used as a period total.
 - Native Profile period activity and traffic-spike comparisons use timestamped visit events instead of lifetime browser-contact view counters. Metrics use accurate names and comparable windows.

@@ -108,6 +108,16 @@ $foreign=vp3_analytics_dashboard_state($pdo,['id'=>1],21,30);
 reliability_check($foreign['ready']===false&&$foreign['stats']===[]&&$foreign['property_id']===21,'an unmatched or foreign property does not broaden to all owned traffic');
 $all=vp3_analytics_dashboard_state($pdo,['id'=>1],0,30);
 reliability_check($all['stats']['sessions']===4&&$all['stats']['page_views']===6,'corrupt cross-owner property/session joins cannot enter all-owned totals');
+// An automated WebMCP visitor may have no Agent CRM contact; absence of identity is not human classification.
+$session=$pdo->prepare("INSERT INTO vp3_radar_sessions(id,property_id,owner_user_id,agent_contact_id,visitor_type,page_view_count,last_seen_at,referrer_host) VALUES(118,11,1,NULL,'webmcp_unclassified',999999,?,'')");$session->execute([$clock['to']]);
+reliability_event($pdo,4400,1,11,118,null,'webmcp_tool_called',$stamp('-3 minutes'),['tool'=>'public_profile','status'=>'called']);
+$pdo->exec("UPDATE vp3_radar_events SET path='/webmcp-unclassified' WHERE id=4400");
+$webmcp=vp3_analytics_dashboard_state($pdo,['id'=>1],11,30);
+reliability_check($webmcp['stats']['sessions']===3&&$webmcp['stats']['human_sessions']===1&&$webmcp['stats']['agent_sessions']===2&&$webmcp['stats']['unclassified_sessions']===0,'unclassified WebMCP sessions remain automated traffic without an Agent CRM contact');
+reliability_check($webmcp['stats']['webmcp_tool_calls']===1251&&$webmcp['stats']['page_views']===4&&$webmcp['stats']['conversions']===1301
+    &&!in_array('/webmcp-unclassified',array_column($webmcp['top_pages'],'path'),true),'WebMCP lifecycle activity increments tool calls without inflating browser conversions or Top pages');
+$webmcpMetrics=vp3_analytics_intelligence_property_metrics_v310($pdo,1,['id'=>11,'property_type'=>'external']);
+reliability_check($webmcpMetrics['current_agent_sessions']===2&&$webmcpMetrics['current_human_sessions']===1,'traffic-spike actor classification also treats unclassified WebMCP sessions as automated');
 $native=vp3_analytics_dashboard_state_v2($pdo,['id'=>1],13,30);
 reliability_check($native['stats']['native_visit_events']===2&&$native['stats']['native_browser_contacts']===1,'native visits use deduplicated events and distinct owner browser contacts');
 reliability_check($native['stats']['human_sessions']===0&&$native['stats']['page_views']===1&&$native['native_page_views_available']===false,'native browser contacts and lifetime view counters are never relabeled as sessions or page views');

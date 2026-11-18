@@ -295,6 +295,27 @@
     if(!active())return;
     window.requestAnimationFrame(()=>window.requestAnimationFrame(()=>{for(const record of cards.values())void acknowledge(record);}));
   }
+  function retainAttemptRevision(record,operation,payload){
+    if(!record.attempt)return true;
+    let saved;try{saved=JSON.parse(record.attempt.key);}catch(_){}
+    const prior=Array.isArray(saved)&&saved.length===2?saved[1]:null,priorOperation=saved?.[0];
+    const fields=['turn_id','revision','conversation_id','chat_conversation_id','chat_agent_id'];
+    const valid=token(record.attempt.request_id)&&['claim','reply','delegate','resolve'].includes(priorOperation)
+      &&prior&&typeof prior==='object'&&!Array.isArray(prior)
+      &&['turn_id','revision','conversation_id','chat_conversation_id'].every(key=>positive(prior[key]))&&nonnegative(prior.chat_agent_id)
+      &&Object.keys(prior).length===fields.length+(priorOperation==='reply'?1:0)
+      &&Object.keys(prior).every(key=>fields.includes(key)||(priorOperation==='reply'&&key==='message'))
+      &&(priorOperation!=='reply'||(typeof prior.message==='string'&&prior.message.trim()&&prior.message.length<=4000));
+    if(!valid){record.notice.textContent='The earlier request could not be verified. Check this visitor conversation before sending again.';return false;}
+    if(priorOperation!==operation||prior.message!==payload.message)return true;
+    if(['turn_id','conversation_id','chat_conversation_id','chat_agent_id'].some(key=>prior[key]!==payload[key])||prior.revision>payload.revision){
+      record.notice.textContent='This earlier request belongs to a different Chat or visitor state. Open its original Chat to check the result. Your draft is kept.';return false;
+    }
+    // Polling can observe a committed reply before its lost ACK is retried.
+    // Preserve the original operation hash so the server recovers its receipt
+    // instead of treating the newer revision as another owner reply.
+    payload.revision=prior.revision;return true;
+  }
   async function perform(record,operation){
     if(!allowed(record,operation))return;
     const message=operation==='reply'?String(record.input.value||'').trim():'';
@@ -302,6 +323,7 @@
     if(operation==='reply'&&message.length>4000){record.notice.textContent='Your reply is longer than 4,000 characters. Shorten it before sending.';record.input.focus();return;}
     const payload={turn_id:record.data.turn_id,revision:record.data.revision,conversation_id:record.data.conversation_id,chat_conversation_id:record.binding.chat_conversation_id,chat_agent_id:record.binding.chat_agent_id};
     if(operation==='reply')payload.message=message;
+    if(!retainAttemptRevision(record,operation,payload))return;
     const key=JSON.stringify([operation,payload]);
     if(!record.attempt||record.attempt.key!==key)record.attempt={key,request_id:randomToken()};
     payload.request_id=record.attempt.request_id;const attempt=record.attempt,snapshot=capture();

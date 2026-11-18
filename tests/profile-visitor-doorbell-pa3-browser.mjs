@@ -44,7 +44,7 @@ async function fixture(viewport={width:1200,height:1000}){
    profile:{profile_agent_id:7,profile_agent_enabled:true,profile_agent_greeting:'Hello'},
    agents:[{id:7,display_name:'Profile helper'}]
  };
- const turns=new Map([[101,ownerCard(101,{server_now_ms:clock})]]),messages=new Map([[42,[]],[55,[]]]),deliveries=new Map(),tabs=new Map(),operations=new Map();
+ const turns=new Map([[101,ownerCard(101,{server_now_ms:clock})]]),messages=new Map([[42,[]],[55,[]]]),deliveries=new Map(),tabs=new Map(),operations=new Map(),operationInputs=new Map();
  const putMessage=(cid,id,text,context={})=>{if(!messages.has(cid))messages.set(cid,[]);messages.get(cid).push({id,role:'assistant',message:text,context_json:JSON.stringify(context)});};
  await page.route('**/api/**',async route=>{
   const request=route.request(),url=new URL(request.url()),input=request.postDataJSON()||{action:url.searchParams.get('action')},path=url.pathname;calls.push({path,...input});let payload={ok:true};
@@ -81,7 +81,10 @@ async function fixture(viewport={width:1200,height:1000}){
    const turn=turns.get(input.turn_id);if(turn.state==='awaiting_delivery'){turn.state='awaiting_owner';turn.revision++;turn.acknowledged_at_ms=clock;turn.pickup_deadline_ms=clock+15000;}
    Object.assign(payload,{contract,duplicate:false,turn:{...copy(turn),server_now_ms:clock}});
   }else if(['doorbell_claim','doorbell_reply','doorbell_delegate','doorbell_resolve'].includes(input.action)){
-   if(operations.has(input.request_id))payload=copy(operations.get(input.request_id));
+   if(operations.has(input.request_id)){
+    assert.deepEqual(input,operationInputs.get(input.request_id),'saved operation replay preserves the original request');
+    payload={...copy(operations.get(input.request_id)),duplicate:true,turn:{...copy(turns.get(input.turn_id)),server_now_ms:clock}};
+   }
    else{
     const turn=turns.get(input.turn_id);turn.revision++;turn.state=({doorbell_claim:'owner_claimed',doorbell_reply:'replied',doorbell_delegate:'agent_ready',doorbell_resolve:'cancelled'})[input.action];turn.responder=input.action==='doorbell_delegate'?'agent':input.action==='doorbell_resolve'?'none':'owner';
     if(input.action==='doorbell_reply')turn.history.push({id:++nextMessage,sender_type:'owner',message:input.message,created_at:'2026-11-03 12:00:01'});
@@ -91,11 +94,11 @@ async function fixture(viewport={width:1200,height:1000}){
      else if(input.action==='doorbell_delegate'){turn.chat.mode='agent';turn.chat.live_status=accepted?'ended':'declined';turn.chat.can_end_live_chat=false;}
      else if(input.action==='doorbell_resolve'){turn.chat.live_status='ended';turn.chat.can_end_live_chat=false;}
     }
-    Object.assign(payload,{turn_id:input.turn_id,conversation_id:input.conversation_id,request_id:input.request_id,turn:{...copy(turn),server_now_ms:clock}});operations.set(input.request_id,copy(payload));
+    Object.assign(payload,{duplicate:false,turn_id:input.turn_id,conversation_id:input.conversation_id,request_id:input.request_id,turn:{...copy(turn),server_now_ms:clock}});operations.set(input.request_id,copy(payload));operationInputs.set(input.request_id,copy(input));
    }
   }else Object.assign(payload,{conversations:[],items:[],tracks:[],updates:[],route:'chat'});
   const index=holds.findIndex(h=>h.action===input.action);
-  if(index>=0){const hold=holds.splice(index,1)[0];hold.arrived({input,payload,async release(overrides={},status=200){const finished=page.waitForEvent('requestfinished',{predicate:r=>r===request});await route.fulfill({status,contentType:'application/json',body:JSON.stringify({...payload,...overrides})});await finished;await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));}});}
+  if(index>=0){const hold=holds.splice(index,1)[0];hold.arrived({input,payload,async release(overrides={},status=200){const finished=page.waitForEvent('requestfinished',{predicate:r=>r===request});await route.fulfill({status,contentType:'application/json',body:JSON.stringify({...payload,...overrides})});await finished;await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));},async fail(){const failed=page.waitForEvent('requestfailed',{predicate:r=>r===request});await route.abort('failed');await failed;await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));}});}
   else await route.fulfill({contentType:'application/json',body:JSON.stringify(payload)});
  });
  const f={page,errors,calls,turns,messages,deliveries,operations,tabs,get clock(){return clock;},advance(ms){clock+=ms;},hold:action=>new Promise(arrived=>holds.push({action,arrived})),card:id=>page.locator('[data-profile-doorbell-turn="'+id+'"]'),
@@ -135,6 +138,21 @@ try{
   await f.page.locator('#chatInput').fill('A normal private question');await f.page.locator('#chatForm').evaluate(form=>form.requestSubmit());await f.page.getByText('Private Chat response.',{exact:true}).waitFor();
   check(f.calls.some(c=>c.path==='/api/chat-v236.php'&&c.action==='send'&&c.message==='A normal private question')&&!f.calls.some(c=>c.action==='doorbell_reply'&&c.message==='A normal private question'),'regular composer continues through the private Chat endpoint');
   await f.close();
+ }
+ {
+  const f=await fixture();await f.boot();const card=f.card(101);await card.locator('.profile-doorbell-countdown').waitFor();
+  await card.locator('textarea').fill('Committed visitor reply with lost ACK');
+  const pending=f.hold('doorbell_reply');await card.locator('button[type=submit]').click();const first=await pending;await first.fail();
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="101"] .profile-doorbell-notice')?.textContent.includes('could not be confirmed'));
+  await f.refresh();
+  check(f.turns.get(101).revision>first.input.revision&&f.turns.get(101).history.filter(m=>m.sender_type==='owner').length===1,'browser fixture retains the committed reply while its acknowledgment is lost');
+  await f.page.reload();await f.card(101).waitFor();
+  check(await f.card(101).locator('textarea').inputValue()===first.input.message,'reload retains the uncertain reply and its original prepared attempt');
+  const pendingRetry=f.hold('doorbell_reply');await f.card(101).locator('button[type=submit]').click();const retry=await pendingRetry;
+  check(JSON.stringify(retry.input)===JSON.stringify(first.input)&&retry.payload.duplicate&&f.turns.get(101).history.filter(m=>m.sender_type==='owner').length===1,'browser retry after committed-state refresh and reload reuses the original revision/request without duplicating');
+  await retry.release();await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="101"] textarea')?.value==='');
+  await f.card(101).locator('textarea').fill(first.input.message);const pendingNew=f.hold('doorbell_reply');await f.card(101).locator('button[type=submit]').click();const next=await pendingNew;
+  check(next.input.request_id!==first.input.request_id&&next.input.revision>first.input.revision,'a separately submitted identical browser message gets a new operation after confirmation');await next.release();await f.close();
  }
  {
   const f = await fixture();
