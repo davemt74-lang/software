@@ -27,13 +27,19 @@
 .vp3-profile-workspace button:disabled{opacity:.55;cursor:default}.vp3-profile-workspace button{font:inherit}
 .vp3-profile-feedback{padding:10px 0;color:var(--muted,#536476)}.vp3-profile-recovery blockquote{margin:8px 0;padding:10px;border-left:3px solid #ab8246;white-space:pre-wrap}
 .vp3-profile-workspace .vp3-analytics-shell{padding:0;box-shadow:none;border:0;min-width:0}.vp3-profile-workspace .vp3-analytics-grid{grid-template-columns:1fr;min-width:0}.vp3-profile-workspace .vp3-analytics-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
-.vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) :is(p,span,small,label,select,button,th,td,a,b,strong){font-size:13px;line-height:1.5}
-.vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) small{font-size:12px}
+/* The legacy portal uses pseudo-class selectors for property text. Keep this
+   mounted typography above that cascade without changing the portal itself. */
+#vp3ChatSpecialistActivity .vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) :where(p,span,small,label,select,button,th,td,a,b,strong,.vp3-analytics-empty,.vp3-analytics-privacy){font-size:13px;line-height:1.5}
+#vp3ChatSpecialistActivity .vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) small{font-size:12px}
 .vp3-profile-workspace :is(.vp3-analytics-head,.profile-revenue-head){display:flex;flex-wrap:wrap;gap:12px}
 .vp3-profile-workspace :is(.vp3-analytics-head,.profile-revenue-head)>div{min-width:0;max-width:100%}
-.vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) h2{font-size:18px;line-height:1.4}
-.vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) h3{font-size:15px;line-height:1.4}
-.vp3-profile-workspace .vp3-analytics-metric strong,.vp3-profile-workspace .profile-revenue-total strong{font-size:22px}
+#vp3ChatSpecialistActivity .vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) h2{font-size:18px;line-height:1.4}
+#vp3ChatSpecialistActivity .vp3-profile-workspace :is(.vp3-analytics-shell,.profile-revenue-shell) h3{font-size:15px;line-height:1.4}
+#vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-analytics-metric strong,#vp3ChatSpecialistActivity .vp3-profile-workspace .profile-revenue-total strong{font-size:22px}
+.vp3-profile-workspace .vp3-analytics-controls{min-width:0;max-width:100%}
+.vp3-profile-workspace .vp3-analytics-controls select{box-sizing:border-box;min-width:0;max-width:100%;flex:1 1 170px}
+.vp3-profile-workspace .vp3-analytics-day{min-width:38px;grid-template-rows:minmax(0,1fr) auto}
+.vp3-profile-workspace .profile-revenue-total{box-sizing:border-box;min-width:0;max-width:100%}
 .vp3-profile-workspace .profile-revenue-grid{grid-template-columns:1fr}
 .vp3-profile-workspace .profile-revenue-periods{grid-template-columns:1fr}
 .vp3-profile-workspace .profile-revenue-period-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}

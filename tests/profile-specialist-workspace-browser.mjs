@@ -55,8 +55,20 @@ try{
     const bounds=await panel().boundingBox(),viewport=page.viewportSize();
     check(bounds&&bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=viewport.width+1&&bounds.y+bounds.height<=viewport.height+1,'shared workspace stays inside the viewport');
     check(await panel().evaluate(element=>element.scrollWidth<=element.clientWidth+1),'workspace has no horizontal overflow');
-    check(await panel().evaluate(element=>[...element.querySelectorAll('*')].filter(node=>node.tagName!=='TEXTAREA'&&['auto','scroll'].includes(getComputedStyle(node).overflowY)&&node.scrollHeight>node.clientHeight+1).length===0),'workspace content has no nested vertical scroller');
+    const scrollers=await panel().evaluate(element=>[...element.querySelectorAll('*')]
+      .filter(node=>node.tagName!=='TEXTAREA'&&['auto','scroll'].includes(getComputedStyle(node).overflowY)&&node.scrollHeight>node.clientHeight+1)
+      .map(node=>({tag:node.tagName,className:node.className,clientHeight:node.clientHeight,scrollHeight:node.scrollHeight})));
+    check(scrollers.length===0,'workspace content has no nested vertical scroller: '+JSON.stringify(scrollers));
     check(await page.locator('#profileActivityCanvas').count()===0,'legacy Profile canvas is not mounted alongside the workspace');
+  }
+  async function readableAnalytics(){
+    const offenders=await panel().locator(':is(.vp3-analytics-shell,.profile-revenue-shell) :is(p,span,small,label,select,button,th,td,a,b,strong,h2,h3,.vp3-analytics-empty,.vp3-analytics-privacy)')
+      .evaluateAll(nodes=>nodes.filter(node=>node.textContent.trim()&&node.getClientRects().length&&parseFloat(getComputedStyle(node).fontSize)<12)
+        .map(node=>({tag:node.tagName,className:node.className,parentClass:node.parentElement.className,fontSize:getComputedStyle(node).fontSize,text:node.textContent.trim().slice(0,100)})));
+    check(offenders.length===0,'mounted Analytics explanatory text is readable (at least 12px): '+JSON.stringify(offenders));
+    const totals=await panel().locator('.vp3-analytics-metric strong,.profile-revenue-total strong')
+      .evaluateAll(nodes=>nodes.map(node=>({text:node.textContent,fontSize:getComputedStyle(node).fontSize})));
+    check(totals.length>0&&totals.every(node=>parseFloat(node.fontSize)>=20),'Analytics totals retain a clear visual hierarchy: '+JSON.stringify(totals));
   }
   async function stored(){const response=await page.request.get(server.base+'/fixture/state');assert.equal(response.status(),200);return response.json();}
   await mkdir('artifacts/profile-specialist-workspace',{recursive:true});
@@ -88,7 +100,7 @@ try{
   await tab('Analytics').click();
   await panel().locator('.vp3-analytics-shell').waitFor();
   check((await panel().innerText()).includes('Recorded conversion value'),'Analytics uses the mounted renderer with measured conversion labels');
-  check(await panel().locator('.vp3-analytics-shell small').evaluateAll(nodes=>nodes.every(node=>parseFloat(getComputedStyle(node).fontSize)>=12)),'mounted Analytics explanatory text is readable');
+  await readableAnalytics();
   await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/desktop-analytics.png',fullPage:true});
   await openThread();
@@ -156,7 +168,7 @@ try{
   check(await tab('Overview').getAttribute('aria-selected')==='true','ArrowLeft selects the preceding workspace tab');
   await page.keyboard.press('End');await panel().locator('[data-profile-report]').waitFor();
   check(await tab('Reports').getAttribute('aria-selected')==='true','End selects the final tab with its current report');
-  await tab('Analytics').click();await panel().locator('.vp3-analytics-shell').waitFor();await contained();
+  await tab('Analytics').click();await panel().locator('.vp3-analytics-shell').waitFor();await readableAnalytics();await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-analytics.png',fullPage:true});
   await page.keyboard.press('Escape');
   check(await panel().count()===0&&await page.evaluate(()=>document.activeElement?.id==='chatInput'),'Escape closes one shell and restores the Chat composer focus');
