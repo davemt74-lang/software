@@ -101,6 +101,14 @@ h.fill('Edited private answer');h.state.views.set(1,view(1,2));h.state.drafts.ge
 await h.controller.refresh();await flush();
 check(h.button('Send reply to visitor').disabled,'a stale generated/edited draft cannot silently become a manual send');
 h.submit();await flush();check(h.state.writes===0,'stale reviewed draft remains unsent');
+const freshInput=h.host.querySelector('[data-profile-reply-body]');freshInput.focus();h.fill('');
+check(h.button('Use this text for the current reply').parentNode.hidden&&!h.host.querySelector('.vp3-profile-feedback'),'clearing all stale text removes its obsolete review warnings');
+freshInput.value='A fresh reply to the current visitor';freshInput.setSelectionRange(8,8);freshInput.dispatchEvent({type:'input'});
+check(!h.button('Send reply to visitor').disabled,'new text after clearing a stale draft enables Send without an extra refresh');
+check(freshInput===h.host.querySelector('[data-profile-reply-body]')&&h.document.activeElement===freshInput&&freshInput.selectionStart===8&&freshInput.selectionEnd===8,'input control refresh preserves the same textarea, focus and caret');
+h.submit();await flush();
+const freshSend=h.calls.find(row=>row.payload.action==='conversation_action')?.payload;
+check(h.state.writes===1&&freshSend?.turn_id===102&&freshSend.revision===2&&freshSend.message==='A fresh reply to the current visitor'&&!freshSend.prepare_request_id,'fresh manual reply binds to the current turn without reusing the stale generated draft');
 h.controller.dispose();
 
 // Response loss after a real mutation preserves the immutable operation through reopen.

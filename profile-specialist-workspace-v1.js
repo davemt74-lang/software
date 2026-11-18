@@ -303,8 +303,9 @@
       const id=value.public_conversation_id,turn=value.current_turn;
       const busy=saved.actionAttempt?.pending||saved.prepareAttempt?.pending;
       const uncertain=saved.actionAttempt?.state==='uncertain';
-      const staleText=Boolean(saved.text&&(!sameTextSource(saved.textSource,textSource(value))
+      const textIsStale=()=>Boolean(saved.text&&(!sameTextSource(saved.textSource,textSource(value))
         || saved.linkedPrepareId&&(!saved.draft?.current||saved.draft.state!=='ready'||saved.draft.prepare_request_id!==saved.linkedPrepareId)));
+      const staleText=textIsStale();
       content.replaceChildren();
       content.append(button('Back to conversations',()=>select({tab:'conversations'})));
       const who=plain(value.conversation.visitor_label,240)||'Visitor conversation';
@@ -377,10 +378,17 @@
       const form=node('form','','vp3-profile-reply');form.dataset.profileReply='';
       const label=node('label','Your reply to this visitor');
       const input=node('textarea');input.rows=4;input.maxLength=4000;input.dataset.profileReplyBody='';input.value=saved.text;
+      let staleRecovery=null,feedback=null;
       input.addEventListener('input',()=>{
         if(input.value&&!saved.textSource)saved.textSource=textSource(value);
         saved.text=input.value;saved.edited=true;
         if(!input.value){saved.textSource=null;saved.linkedPrepareId='';}
+        const stale=textIsStale();
+        send.disabled=Boolean(!canReply||busy||uncertain||stale);
+        if(staleRecovery)staleRecovery.hidden=!stale;
+        if(!stale&&saved.notice==='Review this text against the current visitor messages before sending.'){
+          saved.notice='';feedback?.remove();
+        }
       });label.append(input);form.append(label);
       const canReply=turn?turn.can_reply===true:value.conversation.can_manual_reply===true;
       input.disabled=Boolean(busy||!canReply);
@@ -388,6 +396,7 @@
       form.append(send);form.addEventListener('submit',event=>{event.preventDefault();void performAction('reply',value,saved);});content.append(form);
       if (staleText) {
         const changed=node('section','','vp3-profile-recovery');
+        staleRecovery=changed;
         changed.append(node('p','The conversation changed after this text was started. Review the current messages before using it for a new reply.'));
         const review=button('Use this text for the current reply',()=>{
           if(!currentScope()||busy||uncertain)return;
@@ -400,7 +409,7 @@
         if (saved.actionAttempt.payload.operation==='reply') recovery.append(node('blockquote',saved.actionAttempt.payload.message));
         recovery.append(button('Retry previous action',()=>void performAction(saved.actionAttempt.payload.operation,value,saved,true)));content.append(recovery);
       }
-      if (saved.notice) { const feedback=node('p',saved.notice,'vp3-profile-feedback');feedback.setAttribute('role','status');content.append(feedback); }
+      if (saved.notice) { feedback=node('p',saved.notice,'vp3-profile-feedback');feedback.setAttribute('role','status');content.append(feedback); }
       if (focus&&!input.disabled) { input.focus({preventScroll:true});input.setSelectionRange(selectionStart,selectionEnd); }
     }
     async function performAction(operation,value,saved,retry=false) {

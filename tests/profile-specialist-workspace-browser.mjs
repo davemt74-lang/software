@@ -5,14 +5,14 @@ import {startProfileWorkspaceServer} from './fixtures/profile-specialist-workspa
 
 // Hosted browser acceptance: real API/session/SQL/provider fixture; never a live visitor/provider.
 const server=await startProfileWorkspaceServer();
-let browser=null,held=null,mode='ready',checks=0;
+let browser=null,page=null,held=null,mode='ready',checks=0;
 const gates=new Set(),requests=[],errors=[];
 const defer=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 const check=(truth,label)=>{assert.ok(truth,label);checks++;};
 const started=async gate=>{let timer;try{await Promise.race([gate.started.promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('The expected delayed request did not start.')),15000);})]);}finally{clearTimeout(timer);}};
 try{
   browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});
-  const page=await browser.newPage({viewport:{width:1280,height:960}});page.setDefaultTimeout(15000);
+  page=await browser.newPage({viewport:{width:1280,height:960}});page.setDefaultTimeout(15000);
   page.on('pageerror',error=>errors.push(error.message));
   await page.route('**/api/profile-specialist-workspace-v1.php**',async route=>{
     const request=route.request();const payload=request.method()==='POST'?request.postDataJSON():Object.fromEntries(new URL(request.url()).searchParams);
@@ -67,8 +67,8 @@ try{
   check(await tab('Overview').getAttribute('aria-selected')==='true','normal Profile entry starts with Overview');
   await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/desktop-overview.png',fullPage:true});
-  await page.locator('[data-chat-specialist="profile"]').click();
-  check(await panel().count()===1,'selecting the existing Profile specialist keeps the same shell open');
+  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();
+  check(await panel().count()===1,'visible Profile launcher reentry keeps the same shell open');
   await openThread();
   await panel().getByRole('button',{name:'Take over',exact:true}).click();
   await panel().getByRole('button',{name:'Prepare private draft',exact:true}).waitFor({state:'visible'});
@@ -168,7 +168,15 @@ try{
   check(server.readWriteFailure()==='','all browser GETs preserve storage and do not dispatch inference');
   assert.deepEqual(errors,[],'browser runtime has no page errors');
   console.log(`PROFILE_SPECIALIST_WORKSPACE_BROWSER=PASS (${checks} checks)`);
-}catch(error){console.error(server.logs());throw error;}
+}catch(error){
+  if(page&&!page.isClosed()){
+    try{
+      await mkdir('artifacts/profile-specialist-workspace',{recursive:true});
+      await page.screenshot({path:'artifacts/profile-specialist-workspace/failure.png',fullPage:true,timeout:5000});
+    }catch(screenshotError){console.error('Failure screenshot unavailable:',screenshotError.message);}
+  }
+  console.error(server.logs());throw error;
+}
 finally{
   held?.release.resolve();for(const gate of gates)gate.release.resolve();
   await browser?.close();await server.close();
