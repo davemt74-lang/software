@@ -14,18 +14,40 @@ function vp3_profile_analytics_period_encode_v1(int $days,int $cutoff,string $zo
     return 'profile:analytics:v1:'.$days.':'.$cutoff.':'.$source.':'.rtrim(strtr(base64_encode($zone),'+/','-_'),'=');
 }
 
+/** The first real instant of a local date, including a skipped or repeated midnight. */
+function vp3_profile_analytics_day_start_v1(string $date,DateTimeZone $zone): DateTimeImmutable
+{
+    // Construct from the date itself, rather than carrying a later fold's UTC
+    // offset through setTime(). A wholly skipped date normalizes forward.
+    $normalized=new DateTimeImmutable($date.' 00:00:00',$zone);
+    $date=$normalized->format('Y-m-d');
+    $anchor=(new DateTimeImmutable($date.' 00:00:00',new DateTimeZone('UTC')))->getTimestamp();
+    $candidates=[$normalized->getTimestamp()];
+    foreach($zone->getTransitions($anchor-172800,$anchor+172800)?:[] as $transition){
+        $candidates[]=$anchor-(int)$transition['offset'];
+        $candidates[]=(int)$transition['ts'];
+    }
+    sort($candidates,SORT_NUMERIC);
+    foreach(array_unique($candidates) as $stamp){
+        $at=(new DateTimeImmutable('@'.$stamp))->setTimezone($zone);
+        $before=(new DateTimeImmutable('@'.($stamp-1)))->setTimezone($zone);
+        if($at->format('Y-m-d')===$date&&$before->format('Y-m-d')!==$date)return $at;
+    }
+    vp3_profile_analytics_period_bad_ref_v1();
+}
+
+/** Compatibility entry point with the same first-real-instant boundary. */
+function vp3_profile_analytics_local_day_start_v1(DateTimeImmutable $local): DateTimeImmutable
+{
+    return vp3_profile_analytics_day_start_v1($local->format('Y-m-d'),$local->getTimezone());
+}
+
 function vp3_profile_analytics_period_ref_v1(int $days,int $cutoff,string $zone,string $source): string
 {
     $code=match($source){'explicit','e'=>'e','schedule','s'=>'s','utc_fallback','u'=>'u',default=>''};
     $ref=vp3_profile_analytics_period_encode_v1($days,$cutoff,$zone,$code);
     vp3_profile_analytics_period_decode_v1($ref);
     return $ref;
-}
-
-/** Construct afresh so an ambiguous midnight cannot inherit the caller's later offset. */
-function vp3_profile_analytics_local_day_start_v1(DateTimeImmutable $local): DateTimeImmutable
-{
-    return new DateTimeImmutable($local->format('Y-m-d').' 00:00:00',$local->getTimezone());
 }
 
 function vp3_profile_analytics_period_decode_v1(string $ref,?DateTimeImmutable $now=null): array
@@ -39,14 +61,14 @@ function vp3_profile_analytics_period_decode_v1(string $ref,?DateTimeImmutable $
         vp3_profile_analytics_period_bad_ref_v1();
     $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));
     if($cutoff<946684800||$cutoff>=4133980800||$cutoff>$now->getTimestamp())vp3_profile_analytics_period_bad_ref_v1();
-    $end=(new DateTimeImmutable('@'.$cutoff))->setTimezone(new DateTimeZone($zone));
-    // A local day can start at 01:00 when midnight is skipped, or have two
-    // midnights when clocks move back. Only its canonical first boundary is a
-    // valid cutoff; it cannot change as the owner returns later that same day.
-    if(vp3_profile_analytics_local_day_start_v1($end)->getTimestamp()!==$cutoff)vp3_profile_analytics_period_bad_ref_v1();
-    // Calendar arithmetic preserves the owner's day boundaries across DST.
-    $start=vp3_profile_analytics_local_day_start_v1($end->modify('-'.$days.' days'));
-    $previous=vp3_profile_analytics_local_day_start_v1($start->modify('-'.$days.' days'));
+    $timezone=new DateTimeZone($zone);
+    $end=(new DateTimeImmutable('@'.$cutoff))->setTimezone($timezone);
+    if(vp3_profile_analytics_day_start_v1($end->format('Y-m-d'),$timezone)->getTimestamp()!==$cutoff)vp3_profile_analytics_period_bad_ref_v1();
+    // Date-only calendar arithmetic avoids carrying a normalized 01:00 or a
+    // repeated-midnight offset into the preceding boundaries.
+    $calendar=new DateTimeImmutable($end->format('Y-m-d'),new DateTimeZone('UTC'));
+    $start=vp3_profile_analytics_day_start_v1($calendar->modify('-'.$days.' days')->format('Y-m-d'),$timezone);
+    $previous=vp3_profile_analytics_day_start_v1($calendar->modify('-'.($days*2).' days')->format('Y-m-d'),$timezone);
     if($previous->getTimestamp()>=$start->getTimestamp()||$start->getTimestamp()>=$cutoff)vp3_profile_analytics_period_bad_ref_v1();
     $source=match($code){'e'=>'explicit','s'=>'schedule',default=>'utc_fallback'};
     $window=['period'=>$days,'timezone'=>$zone,'timezone_source'=>$source,

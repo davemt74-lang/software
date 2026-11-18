@@ -317,10 +317,16 @@ try {
 
   const selection=[{track_id:9,revision:'b'.repeat(64)},{track_id:19,revision:'c'.repeat(64)}];
   await send('Start DJ with mellow songs.',action('dj_start',{queue:selection}));
-  await native.waitForFunction(()=>!document.querySelector('[data-media-queue-audio][data-track-id="9"]')?.paused);
+  await native.waitForFunction(()=>{
+    const audio=document.querySelector('[data-media-queue-audio][data-track-id="9"]');
+    return audio!==null&&audio.paused===false;
+  });
   assert.equal(await native.locator('#chatNowPlayingNext').isDisabled(),false);
   await native.locator('#chatNowPlayingNext').click();
-  await native.waitForFunction(()=>!document.querySelector('[data-media-queue-audio][data-track-id="19"]')?.paused);
+  await native.waitForFunction(()=>{
+    const audio=document.querySelector('[data-media-queue-audio][data-track-id="19"]');
+    return audio!==null&&audio.paused===false;
+  });
   await send('Stop DJ.',action('dj_stop'));
   await native.locator('[data-media-queue-audio]').first().waitFor({state:'detached'});
   assert.equal(await native.locator('#chatNowPlaying').isVisible(),false);

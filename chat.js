@@ -40,7 +40,7 @@
       window.history.replaceState(null,'',url.pathname+url.search+url.hash);
     } catch {}
   }
-  window.addEventListener('stonefellow:chat-context-changing',event=>{
+  if(initialProfileAnalyticsDestination)window.addEventListener('stonefellow:chat-context-changing',event=>{
     if(event.detail?.initialRestore!==true)cancelProfileAnalyticsDestinationV1();
   });
   const thread = document.getElementById('chatThread');

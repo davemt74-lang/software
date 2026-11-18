@@ -7,7 +7,7 @@ import {periodRef,periodValue,cutoff} from './fixtures/profile-analytics-period-
 
 const source=readFileSync(new URL('../profile-specialist-workspace-v1.js',import.meta.url),'utf8');
 const instrumented=source.replace('  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination});',
-  '  window.__period={analyticsRef,analyticsSource,analyticsPeriodModel,analyticsLedgerAmount};\n  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination});');
+  '  window.__period={analyticsRef,analyticsSource,analyticsPeriodModel,analyticsLedgerAmount,analyticsCalendarRange};\n  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination});');
 assert.notEqual(instrumented,source,'production model test seam found');
 let checks=0;
 const check=(value,label)=>{assert.ok(value,label);checks++;};
@@ -38,7 +38,20 @@ function harness({selected=periodRef(),override=null}={}){
 }
 {
   const f=harness();await flush();
-  check(f.host.textContent.includes('Completed day')&&f.host.textContent.includes('Period timezone: UTC'),'fixed date and zone render');
+  check(f.host.textContent.includes('Completed day · 17 Nov 2026')&&f.host.textContent.includes('Previous period: 16 Nov 2026')
+    &&f.host.textContent.includes('Period timezone: UTC'),'included local calendar dates and saved zone render concisely');
+  const details=f.host.querySelector('[data-profile-period-details]'),wire=periodValue();
+  check(details&&!details.open&&details.getAttribute('open')===null&&details.querySelector('summary').textContent==='Period details','exact period metadata starts inside a native collapsed disclosure');
+  check(details.textContent.includes(wire.window.from_local+' to '+wire.window.to_local)
+    &&details.textContent.includes(wire.window.previous.from_local+' to '+wire.window.previous.to_local)
+    &&details.textContent.includes('The start is included; the end is excluded.')
+    &&details.textContent.includes('Timezone source in this link: UTC fallback.')
+    &&details.textContent.includes('Fixed cutoff:')&&details.textContent.includes('Evidence checked:'),'collapsed details preserve exact bounds, provenance, cutoff and evidence check');
+  const calendarRange=f.pure.analyticsCalendarRange;
+  check(calendarRange(Date.parse('2026-11-16T15:00:00Z'),Date.parse('2026-11-17T15:00:00Z'),'Asia/Tokyo')==='17 Nov 2026','display dates follow the saved zone rather than the browser zone');
+  check(calendarRange(Date.parse('2026-03-08T05:00:00Z'),Date.parse('2026-03-09T04:00:00Z'),'America/Havana')==='8 Mar 2026'
+    &&calendarRange(Date.parse('2026-11-01T04:00:00Z'),Date.parse('2026-11-02T05:00:00Z'),'America/Havana')==='1 Nov 2026','gap and repeated-midnight periods retain their included local date');
+  check(calendarRange(Date.parse('2024-02-28T00:00:00Z'),Date.parse('2024-03-01T00:00:00Z'),'UTC').replace(/\s/g,'')==='28–29Feb2024','inclusive display range retains leap day and excludes the cutoff date');
   check(f.requests[0].action==='analytics_period'&&f.requests[0].ref===periodRef(),'exact selected ref requested');
   check(f.requests[0].chat_agent_id==='7'&&f.requests[0].chat_conversation_id==='11','private scope sent separately');
   check(f.host.textContent.includes('USD 90,071,992,547,409,931.23'),'large ledger amount preserves every digit');
@@ -61,6 +74,7 @@ function harness({selected=periodRef(),override=null}={}){
     check(ref(periodRef(1,Date.parse(stamp)/1000,zone,'e'))!==null,'canonical local day boundary accepts skipped or first repeated midnight in '+zone);
   }
   check(ref(periodRef(1,Date.parse('2026-11-01T05:00:00Z')/1000,'America/Havana','e'))===null,'second repeated midnight is not a different report cutoff');
+  check(!ref(periodRef(1,Date.parse('2026-03-08T05:00:01Z')/1000,'America/Havana','e')),'a nonboundary second after skipped midnight is rejected');
   const href='/sub/chat.php?agent=system&conversation_id=11&profile_analytics='+encodeURIComponent(periodRef());
   check(f.pure.analyticsSource({ref:periodRef(),url:href},'/sub/chat.php')?.chatAgentId===0,'system Agent and base path supported');
   for(const bad of [href+'&agent=system',href+'&extra=1',href.replace('/sub/','/other/'),href+'#fragment','//attacker.test'+href,href.replace('conversation_id=11','conversation_id=9007199254740992')]){
@@ -79,7 +93,8 @@ function harness({selected=periodRef(),override=null}={}){
     value=>{value.metrics[0].previous.value=0;value.metrics[0].comparison.percent=100;},
     value=>value.money[0].scale=0,
     value=>value.money[0].amount_unit='currency_minor',
-    value=>value.money[0].current.value_minor=9007199254740992
+    value=>value.money[0].current.value_minor=9007199254740992,
+    value=>{value.metrics[0].current={value:null,observed_value:2,coverage:'partial',reason:'source_proof_incomplete'};value.metrics[0].comparison={delta:1,percent:50};}
   ]){const broken=structuredClone(valid);mutate(broken);check(model(broken,periodRef())===null,'mismatched or misleading period response rejected');}
   check(model(valid,periodRef(7))===null,'another valid period cannot satisfy exact request');
   const corruptBacklog=structuredClone(valid);corruptBacklog.backlog.metrics[0].coverage='unavailable';

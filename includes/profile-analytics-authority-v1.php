@@ -42,15 +42,6 @@ function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): arra
         ||($aid>0&&(int)($principal['owner_user_id']??0)!==$owner))$denied();
     try{
         if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
-            try{$isolation=vp3_profile_analytics_rows_v1($pdo,'SELECT @@transaction_isolation AS isolation_level')[0]['isolation_level']??'';}
-            catch(PDOException $error){
-                // MariaDB retains the older variable name. Only an unknown
-                // variable permits this fallback; outages are not a new read.
-                if((int)($error->errorInfo[1]??0)!==1193)throw $error;
-                $isolation=vp3_profile_analytics_rows_v1($pdo,'SELECT @@tx_isolation AS isolation_level')[0]['isolation_level']??'';
-            }
-            if(!in_array(strtoupper(str_replace('_','-',(string)$isolation)),['REPEATABLE-READ','SERIALIZABLE'],true))
-                throw new RuntimeException('Profile analytics needs a consistent current-authority snapshot.',503);
             $required=['users','user_account_types','user_agents','chat_conversations','settings','permissions','role_permissions'];
             $marks=implode(',',array_fill(0,count($required),'?'));
             $engines=vp3_profile_analytics_rows_v1($pdo,"SELECT TABLE_NAME,ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ($marks)",$required);
@@ -60,8 +51,8 @@ function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): arra
         $user=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM users WHERE id=?',[$owner],true)[0]??null;
         if(!$user||(int)($user['is_active']??0)!==1)$denied();
         $primary=(string)($user['role']??'');$roles=valid_role($primary)?[$primary]:[];
-        // Drain the complete indexed owner range, including unassigned legacy
-        // rows, so a role insertion/revocation cannot cross this fence.
+        // Lock every current assignment actually used. New grants cannot
+        // revoke an already-proven grant; removal of a used row is blocked.
         $assignments=vp3_profile_analytics_rows_v1($pdo,'SELECT role,assigned_explicitly_at FROM user_account_types WHERE user_id=? ORDER BY role',[$owner],true);
         foreach($assignments as $row)if(valid_role((string)$row['role'])
             &&($row['role']===$primary||$row['assigned_explicitly_at']!==null))$roles[]=(string)$row['role'];
@@ -79,6 +70,9 @@ function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): arra
             foreach($permissions as $key)if(!isset($catalog[$key])&&!isset($personal[$key]))
                 throw new RuntimeException('Profile analytics permission definitions are unavailable.',503);
             $seed=vp3_profile_analytics_rows_v1($pdo,'SELECT setting_value FROM settings WHERE setting_key=?',[STONEFELLOW_PERSONAL_CAPABILITIES_SEED],true)[0]??null;
+            // An absent marker cannot be protected by a row lock under every
+            // caller isolation level. Do not certify defaults from a gap.
+            if(!$seed)throw new RuntimeException('Profile analytics permission state is unavailable.',503);
             $seedValue=(string)($seed['setting_value']??'');
             if(!in_array($seedValue,['','0','1'],true))throw new RuntimeException('Profile analytics permission state is invalid.',503);
             $marks=implode(',',array_fill(0,count($permissions),'?'));

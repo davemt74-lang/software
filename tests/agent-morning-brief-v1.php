@@ -125,6 +125,30 @@ canvas_pipeline_check(substr_count($withPrimary['message'],$period['summary'])==
 canvas_pipeline_check(vp3_morning_brief_assess_v1([$periodRef=>$period],['profile'=>'unavailable'],$settings,[])===null,
     'an unavailable Profile period cannot fabricate a completed morning review');
 
+$crowded=[$profileNative['ref']=>$profileNative];
+for($n=1;$n<=5;$n++){
+    $mail=array_replace($snapshot['items'][$source],['ref'=>'gmail:'.hash('sha256','period-budget-mail-'.$n),
+        'title'=>'Review request '.$n,'summary'=>'A distinct saved reschedule request '.$n,
+        'material'=>['key'=>hash('sha256','period-budget-'.$n),'revision'=>hash('sha256','period-budget-proof-'.$n),
+            'observed_at'=>1731801600,'intent'=>'reschedule','topic'=>'fixture review '.$n]]);
+    $left='planning:calendar:event:'.(9000+$n*2);$right='planning:calendar:event:'.(9001+$n*2);
+    $slot=['specialist'=>'planning','status'=>'ready','start_at'=>'2024-11-16T10:00:00Z','end_at'=>'2024-11-16T11:00:00Z',
+        'timezone'=>'UTC','next_step'=>'','question'=>'','summary'=>'A verified overlap.','url'=>'/vp3/calendar.php',
+        'revision'=>hash('sha256','period-slot-'.$n),'priority'=>'normal'];
+    $crowded[$mail['ref']]=$mail;
+    $crowded[$left]=$slot+['ref'=>$left,'title'=>'Fixture review '.$n,'trigger'=>'conflict','related_ref'=>$right];
+    $crowded[$right]=$slot+['ref'=>$right,'title'=>'Different topic '.$n,'trigger'=>'context_only'];
+}
+$crowded[$periodRef]=$period;
+$capSettings=$settings;$capSettings['rules']=vp3_coordination_rule_patch_v1($settings['rules'],['curiosity'=>['open_question'=>'ask']]);
+$curiosity=['ref'=>'curiosity:'.str_repeat('a',32).':'.str_repeat('b',32),'specialist'=>'curiosity','trigger'=>'open_question',
+    'title'=>'A saved question','summary'=>'Review the original owner question.','revision'=>str_repeat('c',64),
+    'url'=>'/vp3/chat.php?agent=7&conversation_id=11&message_id=22'];
+$budgeted=vp3_morning_brief_assess_v1($crowded,['gmail'=>'ready','planning'=>'ready','profile'=>'ready','curiosity'=>'ready'],$capSettings,[],$curiosity);
+canvas_pipeline_check(count($budgeted['selected'])===12&&isset($budgeted['selected'][$periodRef],$budgeted['selected'][$curiosity['ref']])
+    &&count($budgeted['links'])===12&&substr_count($budgeted['message'],'Related Planning & Scheduling item')===4,
+    'period and curiosity proof slots are reserved before optional planning links reach the twelve-source history limit');
+
 $nativeBefore=$pdo->query('SELECT * FROM agent_email_running_report_v1 ORDER BY thread_key')->fetchAll(PDO::FETCH_ASSOC);
 $runsBefore=canvas_pipeline_count('agent_workflow_runs');
 $ledgerBefore=canvas_pipeline_count('ai_execution_ledger');
