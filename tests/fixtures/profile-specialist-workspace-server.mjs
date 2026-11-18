@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 
 /** Persistent isolated SQL fixture serving unchanged production Profile APIs. */
-export async function startProfileWorkspaceServer({analytics=true,marketing=false,marketingAgent=7}={}){
+export async function startProfileWorkspaceServer({analytics=true,imageAnalytics=false,marketing=false,marketingAgent=7}={}){
   if(![0,7].includes(marketingAgent)||marketing&&marketingAgent===0&&!analytics)throw new Error('Unsupported isolated Marketing fixture scope.');
   const root=fileURLToPath(new URL('../../',import.meta.url));
   const temp=mkdtempSync(join(tmpdir(),'vp3-profile-workspace-'));
@@ -51,6 +51,7 @@ export async function startProfileWorkspaceServer({analytics=true,marketing=fals
       foreach(['8','9'] as $browser){$visit=pa4b_note(pa4b_context(0,$browser));$seed['visit_events'][]=(int)$visit['event']['id'];}
       pa3_login(1);
       ${analytics?`$seed['analytics']=profile_analytics_period_fixture_v1(db(),1,7,11);
+      ${imageAnalytics?"$seed['image_analytics']=profile_image_analytics_fixture_v1(db(),$seed['analytics'],new DateTimeImmutable('now',new DateTimeZone('UTC')));":''}
       $systemChat=db()->query('SELECT * FROM chat_conversations WHERE id=11')->fetch(PDO::FETCH_ASSOC);
       $systemChat['id']=94001;$systemChat['user_agent_id']=null;
       profile_analytics_period_fixture_row_v1(db(),'chat_conversations',$systemChat);
@@ -258,6 +259,8 @@ ${marketing?['media-library-picker-v1.js','chat-marketing-creative-render-v1.js'
       elseif($action==='timezone_change')db()->exec("UPDATE users SET timezone='Asia/Tokyo' WHERE id=1");
       elseif($action==='analytics_events_off')db()->exec('ALTER TABLE profile_events RENAME TO fixture_unavailable_profile_events');
       elseif($action==='analytics_events_restore')db()->exec('ALTER TABLE fixture_unavailable_profile_events RENAME TO profile_events');
+      elseif($action==='analytics_images_off')db()->exec('ALTER TABLE profile_image_edits_v1 RENAME TO fixture_unavailable_profile_image_edits');
+      elseif($action==='analytics_images_restore')db()->exec('ALTER TABLE fixture_unavailable_profile_image_edits RENAME TO profile_image_edits_v1');
       elseif($action==='analytics_revoke')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key IN ('profile_chat.access','account.access')");
       elseif($action==='analytics_period_off')db()->exec("DELETE FROM settings WHERE setting_key='personal_capabilities_seed_v242'");
       elseif($action==='analytics_period_restore')db()->exec("INSERT INTO settings(setting_key,setting_value) VALUES('personal_capabilities_seed_v242','1')");

@@ -77,11 +77,26 @@
 .vp3-profile-period-point{display:grid;gap:4px}
 .vp3-profile-period-definitions{border:1px solid #d4deea;border-radius:9px;padding:10px 12px;min-width:0}
 .vp3-profile-period-definitions summary{cursor:pointer;font-weight:600}
+.vp3-profile-image-credit{display:grid;gap:4px;min-width:0;margin-top:9px;padding:10px 12px;border:1px solid #dbe3ee;border-radius:9px;background:#f4f7fb;color:#344256;font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.vp3-profile-image-credit p,.vp3-profile-image-credit ul{margin:0}
+.vp3-profile-image-credit ul{padding-left:20px}
 .vp3-profile-period-definitions dl{margin:10px 0 0;display:grid;gap:6px}
 .vp3-profile-period-definitions dt{font-weight:600}
 .vp3-profile-period-definitions dd{margin:0 0 8px;overflow-wrap:anywhere}
 .vp3-profile-period-coverage,.vp3-profile-period-backlog{padding:12px;background:#f4f7fb;border:1px solid #dbe3ee;border-radius:9px}
 .vp3-profile-period-coverage{margin:0}
+.vp3-profile-image-insights,.vp3-profile-image-period-detail{display:grid;gap:14px;min-width:0}
+.vp3-profile-image-insights p{margin:0;color:var(--muted,#526177)}
+.vp3-profile-image-rankings,.vp3-profile-image-current{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;min-width:0}
+.vp3-profile-image-rankings>section,.vp3-profile-image-current>section{border:1px solid var(--line,#dbe3ee);border-radius:9px;padding:12px;min-width:0;background:var(--card,#fff)}
+.vp3-profile-image-rankings h5,.vp3-profile-image-period-detail h5,.vp3-profile-image-current h5{font-size:14px;line-height:1.5;margin:0 0 9px}
+.vp3-profile-image-rankings ol{margin:0;padding-left:20px;display:grid;gap:10px}
+.vp3-profile-image-rankings li>strong,.vp3-profile-image-rankings li>span,.vp3-profile-image-rankings small,.vp3-profile-image-current small{display:block}
+.vp3-profile-image-rankings small,.vp3-profile-image-current small{color:var(--muted,#526177);margin-top:4px}
+.vp3-profile-image-failures{padding:0;margin:8px 0;list-style:none;display:grid;gap:5px}
+.vp3-profile-image-failures li{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.vp3-profile-image-current p{margin:6px 0}
+@container(max-width:560px){.vp3-profile-image-rankings,.vp3-profile-image-current{grid-template-columns:1fr}}
 #vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-profile-period :where(p,span,label,button,th,td,a,b,strong,dt,dd,summary){font-size:13px;line-height:1.5}
 #vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-profile-period small{font-size:12px;line-height:1.5}
 #vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-profile-period h4{font-size:16px;line-height:1.4;margin:0}

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__,2).'/includes/agent-workflow-runs-v1400.php';
+require_once __DIR__.'/profile-image-analytics-data-v1.php';
 
 /**
  * Additive isolated test data. No provider, session reset or production permission
@@ -70,11 +71,17 @@ function profile_analytics_period_fixture_v1(PDO $pdo,int $owner=1,int $privateA
         'profile_events'=>['id'=>$pk,'owner_user_id'=>$integer,'profile_session_id'=>'BIGINT NULL','visitor_user_id'=>'BIGINT NULL','profile_agent_id'=>'BIGINT NULL','event_type'=>"VARCHAR(64) NOT NULL DEFAULT ''",'metadata_json'=>$json,'created_at'=>'DATETIME NULL','priority'=>$integer,'dedupe_key'=>"VARCHAR(64) NULL"],
         'profile_agent_conversations'=>['id'=>$pk,'owner_user_id'=>$integer,'profile_agent_id'=>$integer,'profile_session_id'=>$integer,'visitor_user_id'=>'BIGINT NULL','status'=>"VARCHAR(24) NOT NULL DEFAULT 'open'",'started_at'=>'DATETIME NULL','last_message_at'=>'DATETIME NULL','last_summary'=>$text],
         'profile_agent_messages'=>['id'=>$pk,'conversation_id'=>$integer,'sender_type'=>"VARCHAR(12) NOT NULL DEFAULT 'visitor'",'sender_user_id'=>'BIGINT NULL','message'=>'TEXT NULL','context_json'=>$json,'created_at'=>'DATETIME NULL'],
-        'profile_agent_handoff_turns_pa3'=>['id'=>$pk,'owner_user_id'=>$integer,'profile_agent_id'=>$integer,'profile_session_id'=>$integer,'conversation_id'=>$integer,'visitor_message_id'=>$integer,'visitor_user_id'=>$integer,'transport'=>"VARCHAR(20) NOT NULL DEFAULT 'native'",'credential_hash'=>$text,'client_request_id'=>$text,'request_hash'=>$text,'accepted_json'=>$json,'state'=>$text,'version'=>'INTEGER NOT NULL DEFAULT 1','conversation_epoch'=>'INTEGER NOT NULL DEFAULT 1','run_id'=>'BIGINT NULL','action_id'=>'BIGINT NULL','created_at'=>'DATETIME NULL'],
+        'profile_agent_handoff_turns_pa3'=>['id'=>$pk,'owner_user_id'=>$integer,'profile_agent_id'=>$integer,'profile_session_id'=>$integer,'conversation_id'=>$integer,'visitor_message_id'=>$integer,'visitor_user_id'=>$integer,'transport'=>"VARCHAR(20) NOT NULL DEFAULT 'native'",'credential_hash'=>$text,'client_request_id'=>$text,'request_hash'=>$text,'chat_mode'=>"VARCHAR(8) NOT NULL DEFAULT 'auto'",'accepted_json'=>$json,'state'=>$text,'version'=>'INTEGER NOT NULL DEFAULT 1','conversation_epoch'=>'INTEGER NOT NULL DEFAULT 1','run_id'=>'BIGINT NULL','action_id'=>'BIGINT NULL','created_at'=>'DATETIME NULL'],
         'profile_agent_handoff_operations_pa3'=>['owner_user_id'=>$integer,'request_id'=>"VARCHAR(32) NOT NULL",'turn_id'=>$integer,'operation'=>$text,'request_hash'=>$text,'message_id'=>'BIGINT NULL','created_at_ms'=>$integer,'PRIMARY KEY'=>'(owner_user_id,request_id)'],
         'agent_workflow_runs'=>['id'=>$pk,'owner_user_id'=>$integer,'agent_id'=>$integer,'source_key'=>$text,'source_kind'=>$text,'workflow_type'=>$text],
         'agent_workflow_actions'=>['id'=>$pk,'owner_user_id'=>$integer,'run_id'=>$integer,'action_key'=>$text,'capability_key'=>$text],
         'agent_workflow_receipts'=>['id'=>$pk,'owner_user_id'=>$integer,'run_id'=>$integer,'action_id'=>$integer,'receipt_key'=>$text,'status'=>$text,'result_json'=>$json],
+        'profile_image_settings_v1'=>['owner_user_id'=>$pk,'enabled'=>'INTEGER NOT NULL DEFAULT 0','daily_limit'=>'INTEGER NOT NULL DEFAULT 10','visitor_daily_limit'=>'INTEGER NOT NULL DEFAULT 3','revision'=>'INTEGER NOT NULL DEFAULT 1'],
+        'profile_image_edits_v1'=>['request_id'=>'CHAR(32) PRIMARY KEY','owner_user_id'=>$integer,'profile_agent_id'=>$integer,'conversation_id'=>$integer,'profile_session_id'=>$integer,'visitor_user_id'=>$integer,
+            'visitor_key'=>$text,'visitor_message_id'=>$integer,'turn_id'=>'BIGINT NULL','conversation_epoch'=>$integer,'root_message_id'=>$integer,'base_message_id'=>$integer,
+            'request_hash'=>$text,'prompt'=>'TEXT NULL','input_name'=>$text,'input_mime'=>$text,'input_sha256'=>$text,'input_bytes'=>$integer,'input_width'=>$integer,'input_height'=>$integer,
+            'catalog_json'=>$json,'config_json'=>$json,'state'=>"VARCHAR(16) NOT NULL DEFAULT 'queued'",'output_sha256'=>$text,'output_bytes'=>$integer,'output_width'=>$integer,'output_height'=>$integer,
+            'result_message_id'=>'BIGINT NULL','error_code'=>$text,'created_at'=>'DATETIME NULL','completed_at'=>'DATETIME NULL'],
         'profile_calls_pa3c'=>['id'=>$pk,'owner_user_id'=>$integer,'profile_agent_id'=>$integer,'profile_session_id'=>$integer,'conversation_id'=>$integer,'visitor_user_id'=>$integer,
             'credential_hash'=>$text,'authority_json'=>$json,'binding_hash'=>$text,'public_id'=>$text,'room_name'=>$text,'owner_identity'=>$text,'visitor_identity'=>$text,
             'provider_snapshot'=>$json,'provider_config_fingerprint'=>$text,'mode'=>$text,'offered_by'=>$text,'created_at_ms'=>$integer,'accepted_at_ms'=>'BIGINT NULL','ended_at_ms'=>'BIGINT NULL',

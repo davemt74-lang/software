@@ -29,6 +29,7 @@ function profile_period_brief_state(): array
     $state=[];
     foreach(['profile_events','profile_event_clock_activation_v1','profile_agent_conversations','profile_agent_messages',
         'profile_agent_handoff_turns_pa3','profile_agent_handoff_operations_pa3','profile_calls_pa3c',
+        'profile_image_edits_v1','profile_image_settings_v1',
         'agent_commerce_orders_v800','agent_commerce_payments_v800','agent_commerce_refunds_v800',
         'agent_workflow_runs','agent_workflow_actions','agent_workflow_receipts','chat_messages','ai_execution_ledger'] as $table){
         $rows=db()->query('SELECT * FROM '.$table)->fetchAll(PDO::FETCH_ASSOC);
@@ -176,6 +177,110 @@ $changed=vp3_coordination_sources_v1($pdo,$owner,$binding,[$ref],$now);
 canvas_pipeline_check($changed['items'][$ref]['revision']!==$source['revision']
     &&vp3_coordination_chat_history_v1($pdo,$owner,7,11,[$row])[0]['message']!==$row['message'],
     'a correction to actual period evidence invalidates the old saved briefing proof');
+
+// Canonical free image receipts reuse this same period, source and Chat path.
+$images=profile_image_analytics_fixture_v1($pdo,$fixture,$now);
+$imageBefore=profile_period_brief_state();
+$imagePeriod=vp3_profile_analytics_period_v1($pdo,$fixture['scope'],['ref'=>$ref],$now);
+$imageMetrics=array_column($imagePeriod['metrics'],null,'key');
+$imageSnapshot=vp3_coordination_sources_v1($pdo,$owner,$binding,[$ref],$now);
+$imageSource=$imageSnapshot['items'][$ref];
+canvas_pipeline_check($imageMetrics['image_creations_completed']['current']['value']===2
+    &&$imageMetrics['image_initial_creations']['current']['value']===1
+    &&$imageMetrics['image_revisions_completed']['current']['value']===1
+    &&$imageMetrics['image_requests_failed']['current']['value']===1
+    &&$imageSource['ref']===$ref&&$imageSource['url']===$source['url']
+    &&str_starts_with($imageSource['summary'],'2 completed free image creations (1 initial; 1 revision)')
+    &&str_contains(mb_substr($imageSource['summary'],0,220),'Soft watercolor')
+    &&str_contains(mb_substr($imageSource['summary'],0,220),'1 failed image request'),
+    'proved initial creations, revisions, catalog use and failures lead the existing period source within the morning text bound');
+$imageReport=vp3_profile_specialist_report_v1($imageSnapshot);
+$imageReportText=implode(' ',$imageReport['key_findings']);
+canvas_pipeline_check(count($imageReport['findings'])===1&&$imageReport['findings'][0]['url']===$source['url']
+    &&str_contains($imageReportText,'Watercolor portrait')&&str_contains($imageReportText,'provider busy: 1')
+    &&count($imageReport['actions_followups'])===2
+    &&$imageReport['questions_for_you']===['Would you like to review those creations or plan another reference collection?']
+    &&$imageSource['presentation_owner']==='profile_briefing_v1'&&$imageSource['profile_presentation_owned']===true,
+    'the existing Profile specialist carries source-backed image findings and optional review guidance without a second presenter');
+[$imageCoverage,$imageCatchup]=vp3_catch_up_profile_analytics_v1($pdo,$owner,7,11,$now);
+$imageCandidates=vp3_catch_up_candidates_v1($pdo,$owner,'office',7,false,$now,false,11);
+$imageCandidate=array_values(array_filter($imageCandidates['items'],static fn(array $item):bool=>$item['id']===$ref))[0]??null;
+canvas_pipeline_check($imageCoverage==='ready'&&count($imageCatchup)===1&&$imageCatchup[0]['id']===$ref
+    &&$imageCatchup[0]['reason']===$imageSource['summary']&&$imageCatchup[0]['_source_revision']===$imageSource['revision']
+    &&$imageCatchup[0]['url']===$imageSource['url']&&$imageCandidate!==null
+    &&$imageCandidate['reason']===$imageSource['summary'],
+    'explicit catch-up and the main Chat collector share the verified image period, summary, revision and destination');
+$imageAnswer=vp3_catch_up_chat_result_v1(['items'=>$imageCatchup,'coverage'=>['profile_analytics'=>$imageCoverage],'as_of'=>$now->format(DATE_ATOM)]);
+$imageAnswerText=$imageAnswer['answer']??$imageAnswer['message']??'';
+$imagePublic=json_encode([$imageSource,$imageCatchup,$imageAnswer],JSON_THROW_ON_ERROR);
+canvas_pipeline_check(str_contains($imageAnswerText,'2 completed free image creations')&&str_contains($imageAnswerText,'Soft watercolor')
+    &&!str_contains($imagePublic,'PRIVATE exact visitor')&&!str_contains($imagePublic,'PRIVATE fixture style instruction')
+    &&!str_contains($imagePublic,'visitor-photo.png')&&!str_contains($imagePublic,'image_allowance'),
+    'the factual Chat response includes image usage without visitor prompts, upload metadata, private instructions or live allowance');
+$imageDiscovery=vp3_coordination_sources_v1($pdo,$owner,$binding,null,$now,specialistOnly:'profile');
+canvas_pipeline_check(($imageDiscovery['items'][$ref]['revision']??null)===$imageSource['revision']
+    &&vp3_coordination_profile_presentation_owned_v1(['primary'=>$ref],[$ref=>$imageSource]),
+    'ordinary Profile discovery keeps image facts in the same completed-period attention loop and duplicate guard');
+canvas_pipeline_check(profile_period_brief_state()===$imageBefore&&$GLOBALS['pipelineInference']===[],
+    'image period, report and catch-up reads leave requests, settings, workflows, payments and inference untouched');
+
+// A second local day allows the normal morning publisher to save this exact
+// updated source without bypassing its once-per-day marker.
+$imagePublishNow=$now->modify('+1 day');
+$imagePublished=agent_commerce_atomic_pa2($pdo,static function()use($pdo,$owner,$binding,$imageSnapshot,$imagePublishNow):bool{
+    vp3_initiative_owner_lock_v1($pdo,$owner);return vp3_morning_brief_v1($pdo,$owner,$binding,$imageSnapshot,$imagePublishNow);
+});
+$imageRows=profile_period_brief_rows();$imageRow=end($imageRows);
+$imageContext=json_decode($imageRow['context_json'],true,32,JSON_THROW_ON_ERROR);
+canvas_pipeline_check($imagePublished&&count($imageRows)===2
+    &&str_contains($imageRow['message'],'2 completed free image creations (1 initial; 1 revision)')
+    &&str_contains($imageRow['message'],'Soft watercolor')&&str_contains($imageRow['message'],'1 failed image request')
+    &&$imageContext['sources'][0]['source']===$ref&&$imageContext['sources'][0]['url']===$imageSource['url']
+    &&vp3_coordination_chat_history_v1($pdo,$owner,7,11,[$imageRow])===[$imageRow],
+    'the real morning publisher saves image findings in ordinary Chat with the same exact period proof and link');
+$imageAgain=agent_commerce_atomic_pa2($pdo,static function()use($pdo,$owner,$binding,$imageSnapshot,$imagePublishNow):bool{
+    vp3_initiative_owner_lock_v1($pdo,$owner);return vp3_morning_brief_v1($pdo,$owner,$binding,$imageSnapshot,$imagePublishNow->modify('+1 hour'));
+});
+canvas_pipeline_check(!$imageAgain&&count(profile_period_brief_rows())===2&&$GLOBALS['pipelineInference']===[],
+    'image findings cannot duplicate the daily Chat brief or launch image generation');
+$pdo->prepare('UPDATE profile_image_settings_v1 SET daily_limit=6,revision=revision+1 WHERE owner_user_id=?')->execute([(int)$owner['id']]);
+$allowancePeriod=vp3_profile_analytics_period_v1($pdo,$fixture['scope'],['ref'=>$ref],$now);
+canvas_pipeline_check($imagePeriod['backlog']['image_allowance']['remaining']===3
+    &&$allowancePeriod['backlog']['image_allowance']['remaining']===4
+    &&$allowancePeriod['revision']===$imagePeriod['revision']
+    &&vp3_profile_analytics_source_item_v1($allowancePeriod,7,11)===$imageSource
+    &&vp3_morning_brief_history_v1($pdo,$owner,7,11,$imageRow,$imageContext)===$imageRow,
+    'changing today\'s owner allowance changes live status while preserving the completed image report and saved Chat proof');
+$pdo->prepare('UPDATE profile_image_settings_v1 SET daily_limit=5,revision=revision-1 WHERE owner_user_id=?')->execute([(int)$owner['id']]);
+$catalogQuery=$pdo->prepare('SELECT catalog_json FROM profile_image_edits_v1 WHERE request_id=?');
+$catalogQuery->execute([$images['revision']['request_id']]);$originalCatalog=$catalogQuery->fetchColumn();$catalogQuery->closeCursor();
+$correctedCatalog=json_decode($originalCatalog,true,32,JSON_THROW_ON_ERROR);
+$correctedCatalog['catalog_name']='Corrected watercolor';$correctedCatalog['references'][0]['title']='Corrected portrait';
+$catalogUpdate=$pdo->prepare('UPDATE profile_image_edits_v1 SET catalog_json=? WHERE request_id=?');
+$catalogUpdate->execute([json_encode($correctedCatalog,JSON_THROW_ON_ERROR),$images['revision']['request_id']]);
+$correctedImagePeriod=vp3_profile_analytics_period_v1($pdo,$fixture['scope'],['ref'=>$ref],$now);
+$correctedImageSource=vp3_profile_analytics_source_item_v1($correctedImagePeriod,7,11);
+canvas_pipeline_check(array_column($correctedImagePeriod['metrics'],null,'key')['image_creations_completed']['current']['value']===2
+    &&$correctedImageSource['revision']!==$imageSource['revision']
+    &&str_contains($correctedImageSource['summary'],'Corrected watercolor')
+    &&str_contains(implode(' ',$correctedImageSource['profile_report']['key_findings']),'Corrected portrait')
+    &&vp3_coordination_chat_history_v1($pdo,$owner,7,11,[$imageRow])[0]['message']!==$imageRow['message'],
+    'correcting frozen catalog or image evidence revises the period source and withdraws old Chat facts even when totals match');
+$catalogUpdate->execute([$originalCatalog,$images['revision']['request_id']]);
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$imageRow,$imageContext)===$imageRow,
+    'restoring the original frozen image evidence restores its unchanged saved briefing');
+$pdo->prepare("UPDATE agent_workflow_receipts SET status='failed' WHERE id=?")->execute([$images['revision']['receipt_id']]);
+[$partialImageCoverage,$partialImageCatchup]=vp3_catch_up_profile_analytics_v1($pdo,$owner,7,11,$now);
+canvas_pipeline_check($partialImageCoverage==='limited'&&count($partialImageCatchup)===1
+    &&str_contains($partialImageCatchup[0]['reason'],'1 completed free image creation observed (partial)')
+    &&!str_contains($partialImageCatchup[0]['reason'],'Top catalog')
+    &&vp3_morning_brief_history_v1($pdo,$owner,7,11,$imageRow,$imageContext)['message']!==$imageRow['message'],
+    'missing completion proof keeps observed image counts explicitly partial, suppresses rankings and withdraws stale saved facts');
+$pdo->prepare("UPDATE agent_workflow_receipts SET status='completed' WHERE id=?")->execute([$images['revision']['receipt_id']]);
+canvas_pipeline_check(vp3_morning_brief_history_v1($pdo,$owner,7,11,$imageRow,$imageContext)===$imageRow
+    &&$GLOBALS['pipelineInference']===[],
+    'restored image proof is revalidated through the existing Brain assessment without provider work');
+
 $pdo->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='profile_chat.access'");
 profile_period_brief_reject(fn()=>vp3_catch_up_profile_analytics_v1($pdo,$owner,7,11,$now),
     'a current Profile grant revocation withholds explicit catch-up facts');

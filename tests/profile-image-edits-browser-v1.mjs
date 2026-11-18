@@ -57,7 +57,8 @@ async function fixture({viewport={width:390,height:780},loseAfterCommit=false,lo
  const catalogs=[{collection_id:7,name:'Warm portrait style',catalog_revision:3,price_cents:0,references:[{asset_id:12,title:'Amber portrait',price_cents:paid?100:0,preview_url:referenceUrl(12)},{asset_id:14,title:'Soft window light',price_cents:0,preview_url:referenceUrl(14)}]}];
  const availability=()=>({contract:'vp3.profile-image-edit.v1',enabled:!empty&&!disabled,max_input_bytes:4194304,catalogs:empty||disabled?[]:catalogs,daily_limit:10,visitor_daily_limit:3,...(disabled?{reason:'Free photo editing is not enabled on this profile.'}:empty?{reason:'No approved free images are available in this collection yet.'}:{})});
  const url=(id,preview)=>'/api/profile-agent.php?'+new URLSearchParams({action:'image',username:'fixture-owner',conversation_namespace:namespace,conversation_id:'31',message_id:String(id),...(preview?{preview:'1'}:{})});
- const image=(kind,id,job)=>({kind,request_id:job.request_id,source_message_id:job.input_message_id,root_message_id:job.root_message_id,filename:kind==='result'?'edited-photo.png':'portrait.png',mime:'image/png',bytes:photo.length,url:url(id,true),download_url:url(id,false)});
+ const image=(kind,id,job)=>({kind,request_id:job.request_id,source_message_id:job.input_message_id,root_message_id:job.root_message_id,filename:kind==='result'?'edited-photo.png':'portrait.png',mime:'image/png',bytes:photo.length,url:url(id,true),download_url:url(id,false),
+   ...(kind==='result'?{source_credit:{contract:'vp3.profile-image-credit.v1',owner_name:'Dave',catalog_name:'Warm portrait style',references:catalogs[0].references.filter(reference=>!job.image_id||reference.asset_id===job.image_id).map(reference=>({title:reference.title})),price_cents:0}}:{})});
  imageResponse=params=>!changed&&params.get('username')==='fixture-owner'&&params.get('conversation_namespace')===namespace&&params.get('conversation_id')==='31'
    ?messages.find(item=>item.id===Number(params.get('message_id')))?.image_edit:null;
  referenceResponse=params=>!changed&&!empty&&!disabled&&!paid&&params.get('username')==='fixture-owner'&&params.get('catalog_id')==='7'&&params.get('catalog_revision')==='3'&&['12','14'].includes(params.get('image_id'));
@@ -143,8 +144,15 @@ try{
   check(submitted.body.catalog_id===7&&submitted.body.image_id===14&&submitted.body.catalog_revision===3&&submitted.file?.size===photo.length&&submitted.file.name==='portrait.png','offline visitor edit submits exact catalog, image, prompt and subject through the separate AI upload action');
   check(!('image_subject'in submitted.body)&&f.state.providerAttempts===1,'local recovery metadata stays out of the public action and only one provider attempt starts');
   await f.page.locator('#profileAgentShell').screenshot({path:evidence+'/editing-mobile.png'});
-  const job=await f.complete();await f.page.locator(`[data-profile-image-result="${job.result_message_id}"]`).click();
+  const job=await f.complete();
+  const cardCredit=f.page.locator(`[data-message-id="${job.result_message_id}"] [data-profile-image-source-credit]`);
+  check((await cardCredit.textContent()).includes('Profile owner: Dave')&&(await cardCredit.textContent()).includes('Collection: Warm portrait style')&&(await cardCredit.locator('li').allTextContents()).join('|')==='Soft window light'&&(await cardCredit.textContent()).includes('Free use · $0.00'),'completed result card credits the saved owner, catalog and exact selected reference at zero price');
+  await f.page.locator(`[data-profile-image-result="${job.result_message_id}"]`).click();
   check(await f.page.locator('[data-profile-image-viewer]').isVisible()&&!await f.page.getByRole('log').isVisible(),'result viewer shares the conversation canvas');
+  const viewerCredit=f.page.locator('[data-profile-image-viewer] [data-profile-image-source-credit]');
+  check(await viewerCredit.textContent()===await cardCredit.textContent(),'mobile result viewer retains exactly the credit shown on its saved result card');
+  await viewerCredit.scrollIntoViewIfNeeded();
+  check(await f.page.locator('[data-profile-image-viewer]').evaluate(panel=>panel.scrollWidth<=panel.clientWidth+1),'source credit wraps within the mobile conversation canvas');
   await f.page.locator('#profileAgentShell').screenshot({path:evidence+'/result-mobile.png'});
   const downloaded=f.page.waitForEvent('download');await f.page.getByRole('link',{name:'Download photo',exact:true}).click();const download=await downloaded;
   check(download.suggestedFilename()==='edited-photo.png','download keeps the saved image filename (received '+download.suggestedFilename()+')');

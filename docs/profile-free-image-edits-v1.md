@@ -26,6 +26,20 @@ If the first upload's acknowledgment is lost, a read-only receipt lookup recover
 
 The owner can inspect tracked uses and the linked original, prompt, reference catalog, and output in the authorized Profile conversation. Visitor originals and generated results are private conversation records; publication to a public catalog remains a separate action.
 
+## Creation insights and source credit
+
+In the owner's main Chat, open the Profile specialist and choose **Analytics → Completed periods**. The first section, **Free image creations**, compares completed creations, initial creations, completed revisions, and verified failed requests with the previous matching period. The existing 1, 7, and 30 day choices retain their saved timezone and fixed cutoff. A completed revision is a separate creation; recovering, polling, or downloading the same request does not add a creation.
+
+The source lists show the most used catalogs and reference images in each period. Counts describe completed creations, not unique people or inferred preferences. A creation can use multiple reference images, so image counts need not add up to the creation total. Names come from the approved snapshots saved with each request. If a source was renamed during a period, its most recent verified use supplies the displayed name. Later changes to a public catalog do not rewrite those saved names or erase authorized private history. **Review saved creations** opens the existing owner history, where each original, prompt, reference, result, and conversation can be inspected.
+
+**Today’s image allowance** is separate from the completed-period comparison. It shows admitted requests used, requests remaining, the current owner and visitor limits, and the UTC reset. Failed and cancelled admitted requests still use the daily allowance, matching generation admission. Current saved failures show safe categories across the creation history. A failure is assigned to a completed period only when its exact native failure reply and receipt prove its time; a saved failure without that proof leaves period coverage incomplete. Missing storage is shown as unavailable, never as zero activity or a fresh allowance.
+
+Profile reports, catch-up, morning Chat, and the saved Brain source use the same existing completed-period evidence and source link. When verified image activity exists, the report leads with creation and revision counts, useful catalog usage, and safe failure information. It can offer to review creations or discuss another collection. Reading a report does not start generation or create a separate scanner. Changes to today's allowance do not invalidate a completed-period finding; corrections to its underlying saved evidence do.
+
+Each finished image displays **Reference images used** in its result card, viewer, and authorized owner conversation. The credit includes the Profile owner's public display name, catalog, exact selected reference titles, and **$0.00**. The owner name is frozen when the request is admitted, and source titles are frozen in the approved catalog snapshot. Older verified results without a saved owner name use **Profile owner**. If saved source proof is invalid or missing, the result explains that source credit is unavailable rather than substituting current catalog data. This label describes the references used for that edit; it does not claim that the images trained a model or establish legal ownership.
+
+This addition uses the existing image and analytics records and requires no new database migration. Free-only eligibility, owner allowances, and the absence of a payment workflow remain the same.
+
 ## Authority, persistence, and provider behavior
 
 ### Public collection and reference reads
@@ -51,6 +65,8 @@ A persisted dispatch marker permits at most one provider attempt per request, in
 ## Verification and release
 
 Focused checks must cover real storage and authorization, free/paid eligibility and explicit-zero overrides, owner and visitor caps, exact-request replay, source revocation, takeover during processing, protected downloads, ordered provider inputs, and the existing human attachment boundary. Real HTTP tests also browse anonymously and as the owner with the database in read-only mode, compare exact approved reference bytes, deny foreign/unapproved/changed/revoked sources, and preserve thumbnail URLs through normal chat state and polling. Browser acceptance covers collection discovery, staging, reload, completion, revisions, owner setup, and mobile layout.
+
+Creation insights additionally verify exact request/turn/receipt lineage, revision parentage, duplicate suppression, frozen zero-price source snapshots, partial or unavailable coverage, owner-local period boundaries, and the distinct UTC allowance. Existing SQLite and native MySQL analytics gates exercise the same cases. Shared report tests verify catch-up and morning Chat reuse, source invalidation after evidence corrections, no invalidation from live allowance changes, and read-only behavior. Desktop and narrow-screen browser acceptance checks populated image rankings, unavailable storage, source credit, history navigation, and the absence of nested scrolling.
 
 This document describes the feature under development. It does not assert a deployment or live-provider result. Deployment uses the normal reviewed pull request, required checks, database upgrade, and full production ZIP workflow.
 

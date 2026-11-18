@@ -4,7 +4,7 @@ import {chromium} from 'playwright';
 import {startProfileWorkspaceServer} from './fixtures/profile-specialist-workspace-server.mjs';
 
 // Hosted browser acceptance using the real scoped endpoint and isolated SQL.
-const server=await startProfileWorkspaceServer({analytics:true});
+const server=await startProfileWorkspaceServer({analytics:true,imageAnalytics:true});
 let browser,page,checks=0;
 const errors=[],requests=[];
 const check=(value,label)=>{assert.ok(value,label);checks++;};
@@ -34,6 +34,14 @@ try{
   check((await metric('visit_records').innerText()).includes('3')&&(await metric('visit_records').innerText()).includes('1'),'selected and previous native visit evidence displayed');
   check((await panel().innerText()).includes('USD 20.00')&&(await panel().innerText()).includes('EUR 15.00'),'browser keeps verified currencies separate');
   check(await panel().locator('[data-profile-backlog]').count()===2,'current conversation and unanswered-request backlog shown separately');
+  check((await metric('image_creations_completed').locator('td').nth(0).innerText()).trim()==='2'
+    &&(await metric('image_initial_creations').locator('td').nth(0).innerText()).trim()==='1'
+    &&(await metric('image_revisions_completed').locator('td').nth(0).innerText()).trim()==='1','native completed creations distinguish initial requests and revisions');
+  check((await panel().locator('[data-profile-image-ranking="top_catalogs"]').first().innerText()).includes('Soft watercolor')
+    &&(await panel().locator('[data-profile-image-ranking="top_images"]').first().innerText()).includes('Watercolor portrait'),'frozen source names appear in usage rankings');
+  check((await panel().locator('[data-profile-image-allowance]').innerText()).includes('2 of 5 requests used · 3 remaining')
+    &&(await panel().locator('[data-profile-image-allowance]').innerText()).includes('UTC'),'current UTC allowance includes queued and cancelled requests');
+  check((await panel().locator('[data-profile-image-history-link]').getAttribute('href')).endsWith('/profile-agent.php?tab=agent#profileImageUseHistory'),'creation review leads to existing owner history');
   await layout();await panel().evaluate(el=>{el.scrollTop=0;});
   await page.screenshot({path:'artifacts/profile-analytics-period/desktop-period.png',fullPage:true});
   await panel().getByRole('button',{name:'7 days',exact:true}).click();
@@ -46,6 +54,8 @@ try{
   await page.waitForFunction(ref=>document.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===ref,server.seed.analytics.ref);
   await page.setViewportSize({width:390,height:844});await layout();await panel().evaluate(el=>{el.scrollTop=0;});
   await page.screenshot({path:'artifacts/profile-analytics-period/compact-period.png',fullPage:true});
+  await panel().locator('[data-profile-image-insights]').scrollIntoViewIfNeeded();
+  await page.screenshot({path:'artifacts/profile-analytics-period/compact-image-usage.png',fullPage:true});
   const commerce=metric('verified_payments:USD');await commerce.scrollIntoViewIfNeeded();
   await page.screenshot({path:'artifacts/profile-analytics-period/compact-commerce.png',fullPage:true});
   await panel().getByRole('button',{name:'Traffic details',exact:true}).click();await panel().locator('.vp3-analytics-shell').waitFor();
@@ -57,7 +67,12 @@ try{
   await control('analytics_events_off');await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();await period().waitFor();
   check((await metric('visit_records').innerText()).includes('Unavailable'),'event outage is visibly unavailable');
   check((await panel().innerText()).includes('USD 20.00'),'verified commerce remains visible during independent event outage');
-  await control('analytics_events_restore');await control('analytics_revoke');
+  await control('analytics_events_restore');await control('analytics_images_off');
+  await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();await period().waitFor();
+  check((await metric('image_creations_completed').innerText()).includes('Unavailable')
+    &&(await panel().locator('[data-profile-image-allowance]').innerText()).includes('Allowance unavailable'),'missing image storage is visibly unavailable for usage and allowance');
+  check((await panel().innerText()).includes('USD 20.00'),'independent commerce remains visible during image outage');
+  await control('analytics_images_restore');await control('analytics_revoke');
   await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();await panel().getByRole('button',{name:'Reload Chat',exact:true}).waitFor();
   check(await period().count()===0&&!(await panel().innerText()).includes('USD 20.00'),'permission loss clears period values');
   check(requests.every(request=>request.method==='GET'),'Analytics interactions use read endpoints only');

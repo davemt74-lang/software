@@ -140,6 +140,76 @@ pfr_check(vp3_profile_analytics_discoverable_v1($deposits)
     &&str_starts_with(vp3_profile_analytics_source_item_v1($deposits,7,11)['summary'],'USD 9007199254740993.12 verified payments'),
     'a verified payment period can be summarized independently of zero fully paid orders');
 
+$imageData=$periodData;
+$imageData['metrics']=array_merge($imageData['metrics'],[
+    $makeMetric('image_creations_completed',8,3),$makeMetric('image_initial_creations',6,2),
+    $makeMetric('image_revisions_completed',2,1),$makeMetric('image_requests_failed',2,1),
+]);
+$imageData['image_usage']=['contract'=>'vp3.profile-image-analytics.v1','current'=>[
+    'coverage'=>'complete','rankings_coverage'=>'complete','failure_coverage'=>'complete',
+    'top_catalogs'=>[
+        ['collection_id'=>7,'name'=>'Warm Portraits','completed_count'=>5,'initial_count'=>4,'revision_count'=>1],
+        ['collection_id'=>8,'name'=>'Cool Portraits','completed_count'=>3,'initial_count'=>2,'revision_count'=>1],
+    ],
+    'top_images'=>[['asset_id'=>12,'title'=>'Amber portrait','completed_count'=>5],['asset_id'=>14,'title'=>'Soft window light','completed_count'=>3]],
+    'catalogs_truncated'=>false,'images_truncated'=>false,
+    'failures'=>[['code'=>'provider_busy','label'=>'RAW_PROVIDER_INSTRUCTION_MUST_NOT_LEAK','count'=>1],['code'=>'source_changed','label'=>'Another injected label','count'=>1]],
+]];
+$imageData['backlog']['image_allowance']=['remaining'=>12345,'secret'=>'CURRENT_ALLOWANCE_MUST_NOT_LEAK'];
+$imageSource=vp3_profile_analytics_source_item_v1($imageData,7,11);
+pfr_check(str_starts_with($imageSource['summary'],'8 completed free image creations (6 initial; 2 revisions)')
+    &&str_contains(mb_substr($imageSource['summary'],0,220),'Warm Portraits')
+    &&str_contains(mb_substr($imageSource['summary'],0,220),'2 failed image requests'),
+    'the bounded morning summary highlights actual creations, revisions, top catalog and recorded failures ahead of generic traffic');
+pfr_check(str_contains(implode(' ',$imageSource['profile_report']['key_findings']),'Amber portrait')
+    &&str_contains(implode(' ',$imageSource['profile_report']['key_findings']),'provider busy: 1')
+    &&!str_contains(json_encode($imageSource),'RAW_PROVIDER_INSTRUCTION')&&!str_contains(json_encode($imageSource),'CURRENT_ALLOWANCE'),
+    'image report names exact reference use and safe failure buckets without raw provider labels or live allowance state');
+$imageReport=vp3_profile_specialist_report_v1(['coverage'=>'ready','items'=>[$imageSource]]);
+pfr_check($imageReport['coverage']==='ready'&&count($imageReport['findings'])===1
+    &&$imageReport['findings'][0]['url']===$periodUrl&&count($imageReport['actions_followups'])===2
+    &&$imageReport['questions_for_you']===['Would you like to review those creations or plan another reference collection?']
+    &&$imageSource['presentation_owner']==='profile_briefing_v1'&&$imageSource['profile_presentation_owned']===true,
+    'the existing Profile report carries optional image review guidance through the same exact period and briefing owner');
+$movedAllowance=$imageData;$movedAllowance['backlog']['image_allowance']['remaining']=0;$movedAllowance['observed_at_utc_ms']+=60000;
+pfr_check(vp3_profile_analytics_source_item_v1($movedAllowance,7,11)===$imageSource,
+    'changing a live allowance or checked time cannot rewrite a completed image period or its saved briefing proof');
+$ties=$imageData;
+$ties['image_usage']['current']['top_catalogs'][0]=['collection_id'=>7,'name'=>'Warm Portraits','completed_count'=>4,'initial_count'=>3,'revision_count'=>1];
+$ties['image_usage']['current']['top_catalogs'][1]=['collection_id'=>8,'name'=>'Cool Portraits','completed_count'=>4,'initial_count'=>3,'revision_count'=>1];
+$tieSource=vp3_profile_analytics_source_item_v1($ties,7,11);
+pfr_check(str_contains($tieSource['summary'],'Top catalog tie')
+    &&str_contains(implode(' ',$tieSource['profile_report']['key_findings']),'One of the most-used catalogs'),
+    'equal completed-use counts never claim a unique favorite or visitor preference');
+$partialImages=$imageData;$partialImages['coverage']='limited';
+$partialImages['metrics'][3]['current']=['coverage'=>'partial','value'=>null,'observed_value'=>8,'reason'=>'unverified_completion'];
+$partialImages['image_usage']['current']['rankings_coverage']='partial';
+$partialImageSource=vp3_profile_analytics_source_item_v1($partialImages,7,11);
+pfr_check(str_starts_with($partialImageSource['summary'],'Partial coverage. 8 completed free image creations observed (partial)')
+    &&!str_contains($partialImageSource['summary'],'Top catalog')&&!str_contains(implode(' ',$partialImageSource['profile_report']['key_findings']),'Most-used'),
+    'partial completion evidence retains its qualification and cannot establish an overall most-used reference');
+foreach([
+    ['collection_id'=>7,'name'=>'INVALID_CATALOG','completed_count'=>9,'initial_count'=>8,'revision_count'=>1],
+    ['collection_id'=>7,'name'=>['INVALID_CATALOG'],'completed_count'=>5,'initial_count'=>4,'revision_count'=>1],
+    ['collection_id'=>7,'name'=>'INVALID_CATALOG','completed_count'=>5,'initial_count'=>5,'revision_count'=>1],
+] as $invalidRank){
+    $invalidImageData=$imageData;$invalidImageData['image_usage']['current']['top_catalogs']=[$invalidRank];
+    pfr_check(!str_contains(json_encode(vp3_profile_analytics_source_item_v1($invalidImageData,7,11)),'INVALID_CATALOG'),
+        'invalid reference counts, names or revision subtotals cannot enter a verified ranking highlight');
+}
+$unknownFailure=$imageData;$unknownFailure['image_usage']['current']['failures']=[['code'=>'UNTRUSTED_FAILURE','label'=>'UNTRUSTED_FAILURE','count'=>2]];
+pfr_check(!str_contains(json_encode(vp3_profile_analytics_source_item_v1($unknownFailure,7,11)),'UNTRUSTED_FAILURE'),
+    'failure detail uses a fixed enum instead of arbitrary provider or snapshot prose');
+$emptyImages=$periodData;$emptyImages['image_usage']=$imageData['image_usage'];
+foreach(['image_creations_completed','image_initial_creations','image_revisions_completed','image_requests_failed'] as $key)$emptyImages['metrics'][]=$makeMetric($key,0,0);
+pfr_check(vp3_profile_analytics_source_item_v1($emptyImages,7,11)===$periodSource,
+    'empty image use adds no ranking claim, review obligation, owner question or repeated briefing chatter');
+$imagesOnly=$imageData;$imagesOnly['metrics']=array_slice($imageData['metrics'],3);
+pfr_check(vp3_profile_analytics_discoverable_v1($imagesOnly),'verified image activity alone can enter the existing Profile discovery path');
+$changedImage=$imageData;$changedImage['image_usage']['current']['top_images'][0]['title']='Corrected frozen reference';
+pfr_check(vp3_profile_analytics_source_item_v1($changedImage,7,11)['revision']!==$imageSource['revision'],
+    'a corrected frozen reference attribution changes the exact image briefing proof');
+
 $publication=str_repeat('b',32);$marketingRef=vp3_profile_commerce_followthrough_ref_v1($publication,$periodRef);
 $link=['ref'=>$marketingRef,'revision'=>str_repeat('c',64),'title'=>'Promotion results: Saved product',
     'url'=>vp3_profile_commerce_followthrough_href_v1(7,11,$marketingRef),'product_id'=>42,'publication_id'=>$publication,

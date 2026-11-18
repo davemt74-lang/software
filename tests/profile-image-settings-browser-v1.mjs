@@ -43,10 +43,14 @@ try{
     if(url.pathname==='/media-library-file-v86.php')return route.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRz0AAAAASUVORK5CYII=','base64')});
     return route.fulfill({contentType:'text/html',body:html});
   });
-  await page.goto(origin+'/profile-agent.php?tab=agent');
+  await page.goto(origin+'/profile-agent.php?tab=agent#profileImageUseHistory');
   await page.getByRole('button',{name:'Save photo editing',exact:true}).waitFor();
+  await page.waitForFunction(()=>document.activeElement===document.querySelector('#profileImageUseHistory h3'));
+  check(await page.locator('#profileImageUseHistory h3').evaluate(heading=>{
+    const rect=heading.getBoundingClientRect();return heading.textContent==='Recent photo edits'&&heading.tabIndex===-1&&rect.top>=0&&rect.bottom<=innerHeight;
+  }),'initial saved-creations history link lands on its visible heading with keyboard focus after loading');
   check(!await page.getByRole('checkbox',{name:'Offer free photo edits in Profile chat'}).isChecked(),'service starts disabled');
-  check(posts.length===0,'loading and reading history never save settings or start a generation');
+  check(posts.length===0,'landing on and reading saved history never save settings or start a generation');
   await page.getByRole('checkbox',{name:'Offer free photo edits in Profile chat'}).check();
   await page.getByLabel('Edits per day across your profile').fill('8');
   await page.getByRole('button',{name:'Save photo editing',exact:true}).click();

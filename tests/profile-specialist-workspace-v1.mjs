@@ -268,6 +268,21 @@ gate=defer();h=harness({selection:{tab:'calls',callView:'history',callId:91,publ
 h.scope.cid=12;gate.resolve();await flush();
 check(!h.host.textContent.includes('Saved call summary')&&!h.host.querySelector('[data-profile-transcript-segment]'),'private Chat switch cannot receive a delayed saved call outcome');h.controller.dispose();
 
+const imageCredit={contract:'vp3.profile-image-credit.v1',owner_name:'\uFEFFSaved\u00A0<owner>',catalog_name:'Original collection',references:[{title:'Selected <img src=x onerror=attack()> reference'},{title:'\u2028Second saved reference\u202F'}],price_cents:0};
+h=harness({override:(payload,normal)=>{
+  const result=normal(payload);if(payload.action!=='conversation')return result;
+  return {...result,messages:{...result.messages,items:[
+    {message_id:101,sender_type:'visitor',text:'Visitor photo',created_at:'2026-11-18 12:00:00',image_edit:{kind:'input',url:'/vp3/api/profile-agent.php?action=owner_image&conversation_id=1&message_id=101&preview=1',download_url:'/vp3/api/profile-agent.php?action=owner_image&conversation_id=1&message_id=101',source_credit:imageCredit}},
+    {message_id:102,sender_type:'agent',text:'Edited photo',created_at:'2026-11-18 12:00:01',image_edit:{kind:'result',url:'/vp3/api/profile-agent.php?action=owner_image&conversation_id=1&message_id=102&preview=1',download_url:'/vp3/api/profile-agent.php?action=owner_image&conversation_id=1&message_id=102',source_credit:imageCredit}},
+    {message_id:103,sender_type:'agent',text:'Older edited photo',created_at:'2026-11-18 12:00:02',image_edit:{kind:'result',url:'/vp3/api/profile-agent.php?action=owner_image&conversation_id=1&message_id=103&preview=1',download_url:'/vp3/api/profile-agent.php?action=owner_image&conversation_id=1&message_id=103',source_credit:{...imageCredit,price_cents:100}}}
+  ]}};
+}});await flush();
+const ownerResult=h.host.querySelector('[data-message-id="102"]'),ownerCredit=ownerResult.querySelector('[data-profile-image-source-credit]');
+check(ownerCredit.textContent.includes('Profile owner: Saved <owner>')&&ownerCredit.textContent.includes('Collection: Original collection')&&ownerCredit.querySelectorAll('li').map(item=>item.textContent).join('|')==='Selected <img src=x onerror=attack()> reference|Second saved reference'&&ownerCredit.textContent.includes('Free use · $0.00'),'owner result shows the frozen exact source credit and zero price');
+check(ownerResult.querySelectorAll('img').length===1&&!ownerCredit.querySelector('img')&&!h.host.querySelector('[data-message-id="101"] [data-profile-image-source-credit]'),'owner source titles stay literal and visitor inputs do not receive generated-result credit');
+const legacyResult=h.host.querySelector('[data-message-id="103"]');
+check(legacyResult.textContent.includes('Reference details are unavailable for this saved edit.')&&!legacyResult.textContent.includes('Free use')&&legacyResult.querySelectorAll('a').some(link=>link.textContent==='Download edited photo'),'owner can still view and download a historical result with unavailable or invalid credit');h.controller.dispose();
+
 new vm.Script(readFileSync(new URL('../agent-activity-hub-v1.js',import.meta.url),'utf8'));
 new vm.Script(readFileSync(new URL('../profile-activity-chat.js',import.meta.url),'utf8'));
 console.log(`PROFILE_SPECIALIST_WORKSPACE_V1=PASS (${checks} checks)`);

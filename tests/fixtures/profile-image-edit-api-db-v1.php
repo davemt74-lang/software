@@ -26,6 +26,11 @@ if($action==='parallel'){
     exit;
 }
 if($action==='paid'){$pdo->exec('UPDATE profile_image_catalogs_v1 SET default_price_cents=100,revision=revision+1');$pdo->exec('UPDATE profile_image_catalog_refs_v1 SET price_override_cents=NULL');exit;}
+if($action==='rename_credit_sources'){
+    $pdo->exec("UPDATE users SET display_name='Renamed owner' WHERE id=1");
+    $pdo->exec("UPDATE vp3_media_collections_v1 SET name='Renamed collection'");
+    $pdo->exec("UPDATE user_media_assets SET title='Renamed image'");exit;
+}
 if($action==='gallery_change'){
     switch($argv[3]??''){
         case 'priced_default':$pdo->exec('UPDATE profile_image_catalogs_v1 SET default_price_cents=100,revision=revision+1');break;

@@ -74,7 +74,8 @@ try{
   check(analytics.data.analytics.ready===true&&analytics.data.analytics.coverage==='complete','Analytics tab reads complete authorized aggregates');
   check((await read('revenue')).data.revenue.ready===true,'conversion intelligence reads through the same private scope');
   const fixed=(await read('analytics_period',{ref:session.seed.analytics.ref})).data.analytics_period;
-  check(fixed.contract==='vp3.profile-analytics-period.v1'&&fixed.ref===session.seed.analytics.ref&&fixed.metrics.length===17,
+  check(fixed.contract==='vp3.profile-analytics-period.v1'&&fixed.ref===session.seed.analytics.ref&&fixed.metrics.length===21
+    &&fixed.image_usage.contract==='vp3.profile-image-analytics.v1',
     'fixed period API returns the complete closed metric contract');
   check(fixed.window.as_of_utc_ms===session.seed.analytics.cutoff*1000&&fixed.window.timezone==='UTC'
     &&fixed.period_options.every(option=>option.ref.split(':').slice(4).join(':')===fixed.ref.split(':').slice(4).join(':')),
