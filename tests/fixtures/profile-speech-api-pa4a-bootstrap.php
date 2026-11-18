@@ -8,7 +8,11 @@ if(isset($_SERVER['HTTP_X_FIXTURE_NOW']))$GLOBALS['pa3Now']=(int)$_SERVER['HTTP_
 $GLOBALS['psReady']=($_SERVER['HTTP_X_FIXTURE_READY']??'1')==='1';$GLOBALS['psFingerprint']=hash('sha256','speech-config');$GLOBALS['psVoices']=ps_voices();$GLOBALS['psProviderCalls']=[];
 $GLOBALS['psProviderMode']=match($_SERVER['HTTP_X_FIXTURE_PROVIDER_MODE']??''){'unknown'=>'outcome_unverified','rejected'=>'rejected',default=>'ready'};
 if(($_SERVER['HTTP_X_FIXTURE_DELIVERY_MODE']??'')==='late_social_off')db()->afterSql=static function(string $sql):void{
-    if(!str_starts_with($sql,'INSERT INTO chat_messages'))return;db()->afterSql=null;
+    // Production must first capture MySQL's connection-local lastInsertId().
+    // Change policy after the exact binding exists, before the final locked gate.
+    if(!str_starts_with($sql,'UPDATE profile_speech_items_pa4a SET delivery_id='))return;db()->afterSql=null;
+    $bound=db()->query("SELECT s.id,s.chat_message_id,s.delivery_id FROM profile_speech_items_pa4a s INNER JOIN chat_messages m ON m.id=s.chat_message_id AND m.conversation_id=s.chat_conversation_id WHERE s.owner_user_id=1 AND s.chat_conversation_id=11 AND s.chat_agent_id=7 AND s.delivery_id<>'' ORDER BY s.id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+    ps_http_log('delivery_policy_change',['item_id'=>(int)($bound['id']??0),'chat_message_id'=>(int)($bound['chat_message_id']??0),'inserted_and_bound'=>$bound!==false&&(int)$bound['chat_message_id']>0&&$bound['delivery_id']!=='','chat_message_count'=>pa3_count('chat_messages')]);
     db()->exec('UPDATE team_user_presence SET social_chat_enabled=0 WHERE user_id=1');
 };
 function ps_http_log(string $operation,array $data=[]): void
