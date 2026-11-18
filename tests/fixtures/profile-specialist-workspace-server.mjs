@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 
 /** Persistent isolated SQL fixture serving unchanged production Profile APIs. */
-export async function startProfileWorkspaceServer(){
+export async function startProfileWorkspaceServer({analytics=false}={}){
   const root=fileURLToPath(new URL('../../',import.meta.url));
   const temp=mkdtempSync(join(tmpdir(),'vp3-profile-workspace-'));
   const quote=value=>"'"+value.replaceAll('\\','\\\\').replaceAll("'","\\'")+"'";
@@ -28,6 +28,7 @@ export async function startProfileWorkspaceServer(){
     require ${quote(join(root,'tests/fixtures/profile-specialist-workspace-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-specialist-analytics-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-call-outcomes-data-v1.php'))};
+    ${analytics?'require '+quote(join(root,'tests/fixtures/profile-analytics-period-data-v1.php'))+';':''}
     function pws_server_seed():array{
       $seed=pws_reset();
       foreach(['artist_transcript_segments_v172','artist_transcript_master_analysis_v237','artist_transcript_page_analysis_v237'] as $table)if(table_exists($table))db()->exec('DELETE FROM '.$table);
@@ -43,6 +44,7 @@ export async function startProfileWorkspaceServer(){
       $seed['visit_events']=[];
       foreach(['8','9'] as $browser){$visit=pa4b_note(pa4b_context(0,$browser));$seed['visit_events'][]=(int)$visit['event']['id'];}
       pa3_login(1);
+      ${analytics?"$seed['analytics']=profile_analytics_period_fixture_v1(db());pa3_login(1);":''}
       $seed['clock']=$GLOBALS['pa3Now'];
       file_put_contents(${quote(join(temp,'seed.json'))},json_encode($seed,JSON_THROW_ON_ERROR));
       file_put_contents(${quote(join(temp,'provider-dispatches'))},'');
@@ -99,7 +101,7 @@ export async function startProfileWorkspaceServer(){
     window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:fixtureScope.binding};
     window.STONEFELLOW_CHAT_CONTINUITY=window.STONEFELLOW_CHAT_CONTINUITY_V87={agentId:()=>fixtureScope.agent,conversationId:()=>fixtureScope.cid,isReady:()=>true,isRestoring:()=>false};
     window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:fixtureScope.binding,activityEndpoint:'/api/agent-activity-hub-v1.php',topOfMindEndpoint:'/fixture/work'};
-    window.VP3_PROFILE_WORKSPACE_V1={endpoint:'/api/profile-specialist-workspace-v1.php',csrf:'pa3-fixture-csrf',ownerKey:'1',agentId:7,workingAttentionBinding:fixtureScope.binding,profileUrl:'/profile-agent.php'};
+    window.VP3_PROFILE_WORKSPACE_V1={endpoint:'/api/profile-specialist-workspace-v1.php',csrf:'pa3-fixture-csrf',ownerKey:'1',agentId:7,workingAttentionBinding:fixtureScope.binding,profileUrl:'/profile-agent.php',chatUrl:'/chat.php'};
     window.VP3_CHAT_SPECIALIST_PRESENCE={owner_user_id:1,agent_id:7,states:{profile:'idle'}};
     window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',state:()=>({state:'idle'}),conversationRef:()=>({id:fixtureScope.cid,agent:fixtureScope.agent}),conversationUrl:ref=>'/chat.php?agent='+ref.agent+'&conversation_id='+ref.id,isMainChat:()=>true,focusChat:()=>{},stop:()=>{}};
     window.STONEFELLOW_NOTIFICATION_CENTER={close:()=>{}};
@@ -124,6 +126,9 @@ export async function startProfileWorkspaceServer(){
       $input=json_decode(file_get_contents('php://input'),true);$action=$input['action']??'';
       if($action==='revoke')db()->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'");
       elseif($action==='restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) VALUES('member','profile_chat.access')");
+      elseif($action==='analytics_events_off')db()->exec('ALTER TABLE profile_events RENAME TO fixture_unavailable_profile_events');
+      elseif($action==='analytics_events_restore')db()->exec('ALTER TABLE fixture_unavailable_profile_events RENAME TO profile_events');
+      elseif($action==='analytics_revoke')db()->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key IN ('profile_chat.access','account.access')");
       elseif($action==='profile_off')db()->exec('UPDATE user_profiles SET profile_agent_enabled=0 WHERE user_id=1');
       elseif($action==='profile_missing')db()->exec('DELETE FROM user_profiles WHERE user_id=1');
       elseif($action==='recording_revoke')db()->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='artist_listening.access'");

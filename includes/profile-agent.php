@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/profile-event-clock-v1.php';
+const VP3_PROFILE_EVENT_CREATE_CLOCK_CONTRACT_V1 = 'vp3.profile-event-clock.v1';
+
 const STONEFELLOW_PROFILE_AGENT_BUILD = 'profile-agent-attention-20260903';
 const STONEFELLOW_PROFILE_VIEW_DEDUPE_SECONDS = 1800;
 
@@ -76,6 +79,8 @@ function profile_agent_ensure_schema(?PDO $pdo = null): void
       priority SMALLINT UNSIGNED NOT NULL DEFAULT 10,
       dedupe_key CHAR(64) NULL,
       metadata_json LONGTEXT NULL,
+      recorded_at_utc_ms BIGINT NULL,
+      clock_legacy_token_v1 CHAR(32) NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uq_profile_event_dedupe (dedupe_key),
       INDEX idx_profile_event_owner (owner_user_id,created_at,id),
@@ -324,8 +329,13 @@ function profile_event_create(PDO $pdo,int $ownerUserId,array $session,string $t
     $owns=!$pdo->inTransaction();$savepoint='profile_event_'.bin2hex(random_bytes(6));if($owns)$pdo->beginTransaction();else $pdo->exec('SAVEPOINT '.$savepoint);$created=true;
     try{
         try{
-            $stmt=$pdo->prepare('INSERT INTO profile_events (owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json) VALUES (?,?,?,?,?,?,?,?)');
-            $stmt->execute([$ownerUserId,(int)$session['id'],(int)($session['visitor_user_id']??0)?:null,$agentId?:null,$type,$priority,$dedupeKey,json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)]);
+            // Decide the single INSERT shape before writing. Never retry an uncertain
+            // INSERT without its clock or overwrite an existing dedupe row's time.
+            $clocked=vp3_profile_event_clock_columns_v1($pdo);
+            $values=[$ownerUserId,(int)$session['id'],(int)($session['visitor_user_id']??0)?:null,$agentId?:null,$type,$priority,$dedupeKey,json_encode($metadata,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR)];
+            if($clocked)$values[]=vp3_profile_event_clock_now_v1();
+            $stmt=$pdo->prepare('INSERT INTO profile_events (owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json'.($clocked?',recorded_at_utc_ms':'').') VALUES (?,?,?,?,?,?,?,?'.($clocked?',?':'').')');
+            $stmt->execute($values);
             $id=(int)$pdo->lastInsertId();$get=$pdo->prepare('SELECT * FROM profile_events WHERE id=?');$get->execute([$id]);$row=$get->fetch()?:null;
         }catch(PDOException $e){
             if((string)$e->getCode()!=='23000'||$dedupeKey===null)throw $e;$get=$pdo->prepare('SELECT * FROM profile_events WHERE owner_user_id=? AND dedupe_key=?');$get->execute([$ownerUserId,$dedupeKey]);$row=$get->fetch();

@@ -91,7 +91,7 @@ function vp3_coordination_valid_refs_v1(mixed $sources): bool
     foreach($sources as $ref=>$revision){
         if(!is_string($ref)||!preg_match('/\A(?:gmail|office|planning|media|canvas|curiosity|casual|connected-sites|transcript|marketing|profile):[a-zA-Z0-9:@_-]{1,155}\z/D',$ref)
             ||!is_string($revision)||!preg_match('/\A[a-f0-9]{64}\z/D',$revision))return false;
-        if(str_starts_with($ref,'profile:')&&!preg_match('/\Aprofile:(?:conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',$ref))return false;
+        if(str_starts_with($ref,'profile:')&&vp3_profile_specialist_ref_kind_v1($ref)===null)return false;
     }
     return true;
 }
@@ -168,7 +168,7 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
     if(array_key_exists('profile_report',$out)){
         $report=vp3_coordination_profile_report_normalize_v1($out['profile_report']);
         if($report===null||count($output['evidence_revisions'])!==1
-            ||!preg_match('/\Aprofile:(?:conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',array_key_first($output['evidence_revisions']))
+            ||vp3_profile_specialist_ref_kind_v1(array_key_first($output['evidence_revisions']))===null
             ||!in_array($output['state'],['needs_owner','watching'],true)
             ||($output['state']==='watching'&&$report['questions_for_you']!==[])
             ||($output['state']==='needs_owner'&&$report['questions_for_you']!==[$output['question']]))return null;

@@ -71,6 +71,7 @@ function vp3_coordination_rule_definitions_v1(): array
             'open_followup'=>['label'=>'An open follow-up in a saved analysis','default'=>'report','actions'=>['watch','report']],
         ]],
         'profile'=>['label'=>'Profile','triggers'=>[
+            'analytics_period'=>['label'=>'Completed Profile reporting period','default'=>'report','actions'=>['watch','report']],
             'needs_owner'=>['label'=>'A visitor needs your input','default'=>'ask','actions'=>['watch','ask','report']],
             'open_conversation'=>['label'=>'An open visitor conversation','default'=>'watch','actions'=>['watch','ask','report']],
             'missed_call'=>['label'=>'A missed visitor call','default'=>'report','actions'=>['watch','ask','report']],

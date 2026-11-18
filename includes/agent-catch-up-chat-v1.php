@@ -58,7 +58,8 @@ function vp3_catch_up_chat_result_v1(array $brief,string $window='current'): arr
     }
     if($scopeNote!==''&&($items||$checked))$lines[]=$scopeNote;
     if($items){
-        $lines[]=$scopeNote===''?'Here’s what needs your attention.':'Here’s what needs your attention now.';
+        $periodCount=count(array_filter($items,static fn(array $item):bool=>str_starts_with((string)($item['id']??''),'profile:analytics:v1:')));
+        $lines[]=$periodCount===count($items)?'Here’s the latest completed Profile period.':($periodCount>0?'Here are your current priorities and completed Profile period.':($scopeNote===''?'Here’s what needs your attention.':'Here’s what needs your attention now.'));
         foreach($items as $item){
             $lines[]='• '.$item['title'].' — '.$item['reason'];
             $sources[]=['source'=>'agent-catch-up:'.$item['id'],'title'=>$item['source_label'],'url'=>$item['url']];

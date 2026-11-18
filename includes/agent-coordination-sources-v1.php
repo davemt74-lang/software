@@ -100,7 +100,12 @@ function vp3_coordination_source_ref_valid_v1(string $ref): bool
 {
     [$family,$native] = array_pad(explode(':',$ref,2),2,'');
     $pattern = vp3_coordination_source_registry_v1()[$family]['native_ref'] ?? null;
-    return $pattern !== null && preg_match('/\A(?:'.$pattern.')\z/D',$native) === 1;
+    if($pattern === null || preg_match('/\A(?:'.$pattern.')\z/D',$native) !== 1)return false;
+    if($family==='profile'){
+        require_once __DIR__.'/agent-profile-specialist-v1.php';
+        return vp3_profile_specialist_ref_kind_v1($ref)!==null;
+    }
+    return true;
 }
 
 function vp3_coordination_curiosity_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array

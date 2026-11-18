@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {periodRef} from './fixtures/profile-analytics-period-ui-v1.mjs';
 
 // Execute the production report projection and DOM renderer. HTML insertion is
 // deliberately unavailable: visitor text must remain text at every boundary.
@@ -20,7 +21,7 @@ class Element {
   insertAdjacentHTML() { throw new Error('Profile reports must not insert HTML'); }
 }
 const state={owner:1,agent:7,cid:11,binding:'fixture-binding'};
-const context=vm.createContext({URL,Date,Set,Map,console,
+const context=vm.createContext({URL,Date,Set,Map,console,Intl,atob,btoa,
   cfg:{activityEndpoint:'/vp3/api/agent-activity-hub-v1.php'},location:{origin:'https://fixture.test'},
   current:{...state},workspace:true,snapshot:null,sections:new Element('div'),closed:false,
   positive:value=>Number.isSafeInteger(value)&&value>0,
@@ -184,6 +185,23 @@ check(model(report({findings:[{...visit(301),presentation_owner:'unknown_publish
 check(model(report({findings:[{...visit(301),profile_event_type:'<script>profile_view</script>'}]}))===null,'malformed event type cannot change presentation');
 check(model(report({findings:[{...source(),profile_event_type:'profile_view'}]}))===null,'conversation is not reclassified as a routine visit');
 check(model(report({findings:[{...visit(301),profile_presentation_owned:false}]}))===null,'inconsistent presentation ownership is rejected');
+
+
+const fixedRef=periodRef();
+const fixedSource={ref:fixedRef,revision:'d'.repeat(64),title:'Completed Profile period · UTC',summary:'Verified period evidence',
+  url:'/vp3/chat.php?agent=7&conversation_id=11&profile_analytics='+encodeURIComponent(fixedRef),
+  profile_source_kind:'analytics',presentation_owner:'profile_briefing_v1',profile_presentation_owned:true,legacy_delivered:false};
+check(model(report({findings:[fixedSource]}))?.findings[0].href===fixedSource.url,'fixed analytics source retains exact original private Chat destination');
+check(model(report({findings:[fixedSource]}))?.findings[0].legacy_delivered===false,'briefing ownership is not a delivery receipt');
+check(model(report({findings:[{...fixedSource,url:fixedSource.url.replace('agent=7','agent=system')}]}))!==null,'system Agent analytics route is supported');
+check(model(report({findings:[{...fixedSource,url:fixedSource.url.replace('conversation_id=11','conversation_id=12')}]}))!==null,'another original Chat remains an exact link rather than being rewritten');
+for(const url of [fixedSource.url+'&agent=7',fixedSource.url+'&redirect=/elsewhere',fixedSource.url+'#fragment',
+  fixedSource.url.replace('/vp3/','/wrong/'),fixedSource.url.replace(encodeURIComponent(fixedRef),encodeURIComponent(periodRef(7)))]){
+  check(model(report({findings:[{...fixedSource,url}]}))===null,'ambiguous or mismatched fixed analytics link rejected');
+}
+check(model(report({findings:[{...fixedSource,profile_presentation_owned:false}]}))===null,'briefing presenter requires the explicit owned-presentation flag');
+const fixedRendered=render(report({findings:[fixedSource]}));
+check(descendants(fixedRendered,'a')[0].dataset.profileSource===fixedRef&&descendants(fixedRendered,'a')[0].dataset.profileSourceRevision==='d'.repeat(64),'exact fixed ref and revision survive rendering');
 
 const orb=fs.readFileSync(new URL('../agent-orb.js',import.meta.url),'utf8');
 const catalogBegin=orb.indexOf('  const specialistFamilies={');

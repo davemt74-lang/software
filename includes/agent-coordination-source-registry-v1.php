@@ -69,7 +69,7 @@ function vp3_coordination_source_registry_v1(): array
         'profile'=>[
             'specialist'=>'profile',
             'sweep'=>'always',
-            'native_ref'=>'(?:conversation|event|call|followup):[1-9][0-9]{0,17}',
+            'native_ref'=>'(?:(?:conversation|event|call|followup):[1-9][0-9]{0,17}|analytics:v1:(?:1|7|30):[1-9][0-9]{8,9}:[esu]:[A-Za-z0-9_-]{2,100})',
             'read'=>static function(PDO $pdo,array $scope,array $binding,?array $refs,DateTimeImmutable $now): array {
                 require_once __DIR__.'/agent-coordination-profile-v1.php';
                 return vp3_coordination_profile_sources_v1($pdo,$scope,$binding,$refs,$now);

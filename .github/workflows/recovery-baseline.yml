@@ -95,6 +95,14 @@ jobs:
           php tests/agent-radar-read-v1.php
           php tests/agent-analytics-read-v1.php
           php tests/profile-analytics-reliability-v1.php
+          php tests/profile-analytics-period-ref-v1.php
+          php tests/profile-event-clock-v1.php
+          php tests/profile-analytics-period-v1.php
+          php tests/profile-analytics-briefings-v1.php
+          node tests/profile-specialist-analytics-period-v1.mjs
+          node tests/profile-analytics-route-v1.mjs
+          node tests/profile-analytics-route-http.mjs
+          node tests/profile-analytics-period-http.mjs
           node tests/profile-analytics-reliability-v1.mjs
           php tests/agent-release-routing-v1.php
           php tests/agent-release-tools-v1.php

@@ -41,7 +41,7 @@ Status: complete, 10/10 for this acceptance scope. PR #790 merged as `d5d51cca6b
 
 ## Phase 4 — Contextual engagement and call history
 
-Status: implementation in progress; final scoring follows focused verification, hosted browser review, and all final-source PR gates.
+Status: complete, 10/10 for this acceptance scope. PR #791 merged as `d31eb5aa0a8e0f79a9ac7924d3c2df16395bfb5d` after all 12 workflows passed on final source `12adb7e6697d1712e12754ca50b5d8c34ebe930f` (31 successful checks; 4 expected path-filtered skips). Desktop and compact final-source screenshots were independently reviewed.
 
 - Meaningful first-time and returning visits use observed context; routine traffic can be grouped. No importance rule equates raw visit count with meaningful intent.
 - Existing presentation ownership prevents duplicate doorbell, speech, attention, and specialist interruptions.
@@ -51,7 +51,7 @@ Status: implementation in progress; final scoring follows focused verification, 
 
 ## Phase 5 — Profile analytics in briefings
 
-Status: not started.
+Status: recovered implementation under review and focused verification; final score follows hosted gates on the final source commit.
 
 - Existing morning/catch-up/report mechanisms consume current Profile findings, with owner-local reporting boundaries and source availability.
 - Visits, recognized browser contacts, conversations, unanswered turns, call states, and outcome measures use explicit definitions and comparable windows.
@@ -109,6 +109,18 @@ The Calls workspace separates current calls from paginated history and keeps a s
 
 Routine visit prose is grouped within the checked source view. Each original source reference, revision, disposition, and native presentation owner remains available. Unresolved conversations, calls, and reviewed work retain priority over routine visits, and no count is presented as unique people or purchase intent.
 
-Focused SQL, real endpoint, renderer, and retained native call/speech suites cover these contracts. The release gates add both new SQL suites on SQLite and native MySQL for PHP 8.1 and PHP 8.3, retaining every existing workflow invocation. Final scoring remains pending final-source hosted checks and desktop/compact browser review.
+Focused SQL, real endpoint, renderer, and retained native call/speech suites cover these contracts. The release gates add both new SQL suites on SQLite and native MySQL for PHP 8.1 and PHP 8.3, retaining every existing workflow invocation. Final source passed both PHP versions on SQLite and native MySQL: 88 arrival checks, 105 call outcome checks, 100 projection recovery checks, and 95 speech HTTP checks. The browser suites passed 87 workspace, 42 report, 50 native call and 53 speech checks. All five scoring areas earned 2/2.
 
 Phase 3 final-source evidence: [Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44295726514), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44295726100), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44295726252). The merged tree `3cc735aeb5d49383950e00a94a9e9831b960306f` exactly matches the tested source. Browser artifact `14422559545` has verified SHA-256 `520878ace9d37cc1b5d4e1fc42e139e24785bf9446e335b490da158546a5c460`.
+
+## Phase 4 release evidence
+
+[Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44307932833), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44307933020), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44307932835) passed on the final commit. The merged tree `36f5ec50b765d2a63098bcf0b13b08761a8580be` exactly matches the tested source. Browser artifact `14429390930` has SHA-256 `f858d17ade240f8f9f1cf3da7cd0acff1ebe51d2378e56a75270962f847aebc1`. Recovery after the prior connection interruption independently confirmed the merge and reviewed all eight final screenshots.
+
+## Phase 5 implementation scope
+
+Completed one-, seven- and thirty-day calendar periods retain the owner timezone, its provenance, original cutoff and matching previous period in a canonical source reference. Opening a saved briefing reopens that exact period in its original private Agent and Chat. Current backlog is separate and cannot silently rewrite a historical period. The existing morning, catch-up and specialist report paths share the same proof, current authority checks and presentation responsibility. Routine period summaries do not create another worker or independent automatic interruption.
+
+Event times are recorded in a dedicated application UTC field only for future writes. An explicit idempotent upgrade records the activation and marks actual legacy rows without guessing their UTC timestamps. Old unmeasurable windows and newly unclocked rows have explicit partial coverage. Calls and accepted-turn replies use their existing native timestamps and verified receipts. Conversions remain recorded events; verified payments and refunds require canonical ledger and order proof, retain their currency and never pass through floating-point money arithmetic.
+
+The private workspace shows definitions, current and prior coverage, new-conversation reply cohorts, call lifecycle counts and separate current unresolved work. Empty observations, partial observations and unavailable storage remain distinct. Reads do not install schema, acknowledge work, initiate calls, start inference or create commerce actions.
