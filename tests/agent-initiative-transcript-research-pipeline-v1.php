@@ -73,7 +73,12 @@ scope_check(count($sources)===3 && isset($sourceByItem['public-guidance'], $sour
     && vp3_transcript_focus_id_v1($pdo, 1, 17, 170)===0,
     'an enabled owner’s older saved plugin findings are eligible with no open slideout');
 
-$before = count(scope_runs(1, 17, 'initiative.prepare'));
+// The shared scheduler may also prepare a coordination review for the same
+// transcript. Count Research jobs by their real tool, while retaining exact
+// cardinality and source checks so extra or misbound Research jobs still fail.
+$researchRuns = static fn(): array => array_values(array_filter(scope_runs(1,17,'initiative.prepare'),
+    static fn(array $run): bool => (json_decode($run['goal'],true,24,JSON_THROW_ON_ERROR)['tool']??null)==='topic.research'));
+$before = count($researchRuns());
 $ref = $sourceByItem['public-guidance'];
 vp3_initiative_in_scope_v1($user,17,static fn()=>vp3_initiative_schedule_scoped_v1($pdo,$user,[$ref]));
 $fallbackPlan = (int)array_slice(scope_runs(1,17,'initiative.plan'),-1)[0]['id'];
@@ -84,7 +89,7 @@ $fallbackPlanned = vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$fallb
             'an exact saved transcript question is eligible for the normal assessment');
         return '{"jobs":[],"opportunities":[]}';
     });
-$fallbackRuns = array_slice(scope_runs(1,17,'initiative.prepare'),$before);
+$fallbackRuns = array_slice($researchRuns(),$before);
 $fallbackGoal = json_decode((string)($fallbackRuns[0]['goal']??'{}'),true,24,JSON_THROW_ON_ERROR);
 scope_check($fallbackPlanned['ok']&&count($fallbackRuns)===1&&($fallbackGoal['tool']??null)==='topic.research'
     && ($fallbackGoal['primary']??null)===$ref&&($fallbackGoal['sources']??null)===[$ref=>$sources[$ref]['revision']]
@@ -110,7 +115,7 @@ $planned = vp3_initiative_execute_v1($pdo, $user, scope_claim($user, $planId),
         }
         return json_encode(['jobs'=>$jobs], JSON_THROW_ON_ERROR);
     });
-$runs = array_slice(scope_runs(1, 17, 'initiative.prepare'), $before);
+$runs = array_slice($researchRuns(), $before);
 $runBySource = [];
 foreach ($runs as $run) {
     $goal = json_decode($run['goal'], true, 24, JSON_THROW_ON_ERROR);
@@ -461,11 +466,11 @@ scope_check(is_string($meetingRef) && $meetingSources[$meetingRef]['research']['
     'a saved native meeting question and its carried-forward open commitment resolve from existing records');
 
 $activity->execute(['{"visible":false,"conversation_id":170}']);
-$meetingRunCount = count(scope_runs(1,17,'initiative.prepare'));
+$meetingRunCount = count($researchRuns());
 $ambiguousPlan=vp3_meeting_research_plan_v1('Research freight from our last meeting');
 $ambiguous=vp3_meeting_research_chat_v1($pdo,$user,$scope['principal'],170,$ambiguousPlan);
 scope_check(($ambiguous['tool_receipt']['status']??null)==='clarification_required'
-    && count(scope_runs(1,17,'initiative.prepare'))===$meetingRunCount,
+    && count($researchRuns())===$meetingRunCount,
     'an ambiguous meeting question asks for its exact wording and starts no Research run');
 vp3_initiative_in_scope_v1($user,17,static fn()=>vp3_initiative_schedule_scoped_v1($pdo,$user,[$meetingRef]));
 $meetingPlan = (int)array_slice(scope_runs(1,17,'initiative.plan'),-1)[0]['id'];
@@ -476,7 +481,7 @@ $meetingPlanned = vp3_initiative_execute_v1($pdo,$user,scope_claim($user,$meetin
             'ordinary assessment can select the exact saved meeting transcript question');
         return '{"jobs":[],"opportunities":[]}';
     });
-$meetingRuns = array_slice(scope_runs(1,17,'initiative.prepare'),$meetingRunCount);
+$meetingRuns = array_slice($researchRuns(),$meetingRunCount);
 $meetingRun = (int)($meetingRuns[0]['id']??0);
 scope_check(!empty($meetingPlanned['ok']) && count($meetingRuns)===1 && $meetingRun>0,
     'the existing Research queue owns a single run for the meeting transcript question');
@@ -489,14 +494,14 @@ foreach (range(1,2) as $attempt) {
     $linked = vp3_meeting_research_chat_v1($pdo,$user,$scope['principal'],170,$meetingPlan);
     scope_check(($linked['tool_receipt']['status']??null)==='read_complete'
         && ($linked['tool_receipt']['record_id']??null)===$meetingRun
-        && count(scope_runs(1,17,'initiative.prepare'))===$meetingRunCount+1,
+        && count($researchRuns())===$meetingRunCount+1,
         'request '.$attempt.' returns the existing exact Research run without another queue entry');
 }
 $link = vp3_meeting_research_saved_link_v1($pdo,1,$meetingRun);
 $events = agent_workflow_events_v1400($pdo,1,$meetingRun);
 $userLinks = array_filter($events,static fn(array $event): bool=>
     $event['event_type']==='meeting_research_linked' && $event['actor_kind']==='user');
-$meetingRuns = array_slice(scope_runs(1,17,'initiative.prepare'),$meetingRunCount);
+$meetingRuns = array_slice($researchRuns(),$meetingRunCount);
 scope_check(count($userLinks)===1 && ($link['source']['source_ref']??null)===$meetingRef
     && ($link['target']??null)===$meetingTarget && $meetingRuns[0]['goal']===$meetingGoal,
     'the existing workflow records one exact meeting link without rewriting the Research goal');
@@ -640,7 +645,7 @@ $approvedMeeting = array_column(vp3_top_of_mind_v1($pdo,$user,17,170)['items'],n
 scope_check(($approval['advisory_context']['verified_action']['status']??null)==='completed'
     && ($approval['advisory_context']['domain_result']['verified']??null)===true && (int)$taskCount->fetchColumn()===1
     && ($approvedMeeting['meeting_followup_action']??null)===['skill'=>'task','status'=>'completed']
-    && $agenda->fetchColumn()==='open' && count(scope_runs(1,17,'initiative.prepare'))===$meetingRunCount+1,
+    && $agenda->fetchColumn()==='open' && count($researchRuns())===$meetingRunCount+1,
     'owner approval creates one verified task while the native commitment remains open and Research is not rerun');
 scope_check($planningStatus()['state']==='ready'&&str_contains($planningStatus()['detail'],'saved and verified'),
     'Planning reports the verified task save without closing the native meeting commitment');
@@ -663,7 +668,7 @@ $newRun=vp3_meeting_research_chat_v1($pdo,$user,$scope['principal'],170,$newPlan
 $newRunId=(int)($newRun['tool_receipt']['record_id']??0);
 $newLink=vp3_meeting_research_saved_link_v1($pdo,1,$newRunId);
 scope_check($newRunId>$meetingRun && ($newRun['tool_receipt']['status']??null)==='read_complete'
-    && count(scope_runs(1,17,'initiative.prepare'))===$meetingRunCount+2
+    && count($researchRuns())===$meetingRunCount+2
     && ($newLink['source']['source_ref']??null)!==$meetingRef
     && ($newLink['target']['source_meeting_id']??null)===$meeting['prior_meeting_id'],
     'an exact new request queues one ordinary Research run when no existing assignment matches');
