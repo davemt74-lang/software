@@ -15,6 +15,34 @@ function psit_check(bool $ok,string $label): void
     echo 'PASS '.$label."\n";
 }
 
+/** The source timestamps and injected lifecycle clock must describe the same instant. */
+function psit_clock(): void
+{
+    $pdo=db();
+    $stamp=static fn():string=>gmdate('Y-m-d H:i:s',intdiv(vp3_profile_attention_now_pa4b(),1000));
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
+        // Native NOW()/CURRENT_TIMESTAMP otherwise advance while the inherited
+        // lifecycle fixture stays frozen, especially during MySQL schema setup.
+        $pdo->exec('SET timestamp='.intdiv(vp3_profile_attention_now_pa4b(),1000));
+    }else{
+        foreach(['NOW','UTC_TIMESTAMP','CURRENT_TIMESTAMP'] as $name)$pdo->sqliteCreateFunction($name,$stamp);
+    }
+    $row=$pdo->query('SELECT NOW() AS event_clock,CURRENT_TIMESTAMP AS default_clock')->fetch(PDO::FETCH_ASSOC);
+    if($row['event_clock']!==$stamp()||$row['default_clock']!==$stamp())throw new RuntimeException('Profile situation fixture clocks disagree.');
+}
+
+function psit_reset(): void
+{
+    pa4b_reset();
+    psit_clock();
+}
+
+function psit_advance(int $milliseconds): void
+{
+    $GLOBALS['pa3Now']+=$milliseconds;
+    psit_clock();
+}
+
 function psit_note(string $type='profile_view'): array
 {
     if($type==='profile_view')return pa4b_note();
@@ -67,8 +95,10 @@ function psit_projection(array $note): array
     return notification_profile_projection_pa4b(db(),pa4b_owner(),$note['notification']);
 }
 
-pa4b_reset();$note=psit_note();$shown=psit_present($note);$before=pa4b_snapshot();$effects=pp_no_external_snapshot();
+psit_reset();$note=psit_note();$shown=psit_present($note);$before=pa4b_snapshot();$effects=pp_no_external_snapshot();
 $projection=psit_projection($note);$pending=psit_read($note);
+psit_check($note['notification']['created_at']===gmdate('Y-m-d H:i:s',intdiv(vp3_profile_attention_now_pa4b(),1000)),
+    'native source creation and the injected situation clock use one fixed instant');
 psit_check($shown['item']['presented']&&!$shown['item']['read']
     &&$projection['attention_type']==='profile_view'&&$projection['attention_disposition']==='pending'
     &&$projection['attention_wake_due']===false,'canonical presentation leaves the pending visit and read receipt distinct');
@@ -78,10 +108,13 @@ psit_check(pa4b_snapshot()===$before&&pp_no_external_snapshot()===$effects,
     'situation reads do not acknowledge, publish, run inference or start external work');
 psit_update($note,'read');$read=psit_read($note);$projection=psit_projection($note);
 psit_check($projection['attention_disposition']==='pending'&&!$projection['can_read']
-    &&$read['signals'][0]['state']==='current','a routine read visit stays current without manufacturing unresolved owner work');
+    &&count($read['signals'])===1&&$read['signals'][0]['state']==='current','a routine read visit stays current without manufacturing unresolved owner work');
 psit_check(psit_read($note)===$read,'repeated projection cannot turn a routine read visit back into needs-attention');
+psit_advance(8*86400000);
+psit_check(psit_read($note)===['coverage'=>'ready','signals'=>[]],
+    'a routine read visit still ages out of the existing seven-day situation window');
 
-pa4b_reset();$question=psit_note('needs_owner');$shown=psit_present($question);
+psit_reset();$question=psit_note('needs_owner');$shown=psit_present($question);
 psit_check($shown['item']['presented']&&!$shown['item']['read']
     &&psit_read($question)['signals'][0]['state']==='needs_attention',
     'visible acknowledgement does not resolve a saved unanswered owner question');
@@ -89,11 +122,14 @@ psit_update($question,'read');$readQuestion=psit_read($question);$projection=psi
 psit_check($projection['attention_type']==='needs_owner'&&$projection['attention_disposition']==='pending'
     &&!$projection['can_read']&&$readQuestion['signals'][0]['state']==='needs_attention',
     'reading an explicit needs-owner request does not claim it was answered');
+psit_advance(8*86400000);$oldQuestion=psit_read($question);
+psit_check(count($oldQuestion['signals'])===1&&$oldQuestion['signals'][0]['state']==='needs_attention',
+    'an unresolved owner question remains actionable beyond routine notification recency');
 
 foreach(['profile_view','needs_owner'] as $type){
     foreach(['handled','ignored'] as $operation){
         foreach([false,true] as $readFirst){
-            pa4b_reset();$note=psit_note($type);psit_present($note);
+            psit_reset();$note=psit_note($type);psit_present($note);
             if($readFirst)psit_update($note,'read');
             $settled=psit_update($note,$operation);$before=pa4b_snapshot();
             $projection=psit_projection($note);$result=psit_read($note);
@@ -106,13 +142,13 @@ foreach(['profile_view','needs_owner'] as $type){
 }
 
 foreach(['profile_view','needs_owner'] as $type){
-    pa4b_reset();$note=psit_note($type);psit_present($note);psit_update($note,'read');
+    psit_reset();$note=psit_note($type);psit_present($note);psit_update($note,'read');
     $snoozed=psit_update($note,'snooze');$generation=$snoozed['item']['wake_generation'];$before=pa4b_snapshot();
     $projection=psit_projection($note);
     psit_check($projection['attention_disposition']==='snoozed'&&!$projection['attention_wake_due']
         &&psit_read($note)===['coverage'=>'ready','signals'=>[]]&&pa4b_snapshot()===$before,
         $type.' remains suppressed during its canonical snooze without changing source state');
-    $GLOBALS['pa3Now']+=86400001;$before=pa4b_snapshot();$due=psit_read($note);$projection=psit_projection($note);
+    psit_advance(86400001);$before=pa4b_snapshot();$due=psit_read($note);$projection=psit_projection($note);
     psit_check($projection['attention_wake_due']&&$projection['attention_disposition']==='snoozed'
         &&!$projection['can_read']&&count($due['signals'])===1&&$due['signals'][0]['state']==='needs_attention'
         &&pa4b_snapshot()===$before,
@@ -125,7 +161,7 @@ foreach(['profile_view','needs_owner'] as $type){
         $type.' recovered generation retains one exact source with a current lifecycle revision');
 }
 
-pa4b_reset();$note=psit_note('needs_owner');$shown=psit_present($note);$projection=psit_projection($note);
+psit_reset();$note=psit_note('needs_owner');$shown=psit_present($note);$projection=psit_projection($note);
 psit_check($shown['item']['chat_agent_id']===7&&$shown['item']['chat_conversation_id']===11
     &&$projection['presentation_owner']===$shown['item']['presentation_owner']&&$projection['voice_allowed']===false,
     'existing named-Agent live delivery and presentation ownership remain intact');
@@ -134,20 +170,20 @@ psit_check(psit_read($note,7)['signals']===[]&&psit_read($note,8)['signals']===[
 psit_check(psit_read($note,0,pa3_owner(4))['signals']===[],
     'another owner cannot receive this Profile situation');
 
-pa4b_reset();$message=pa4b_message('PRIVATE_PROFILE_SITUATION_STATEMENT');psit_present($message);
+psit_reset();$message=pa4b_message('PRIVATE_PROFILE_SITUATION_STATEMENT');psit_present($message);
 db()->exec('UPDATE user_profiles SET profile_agent_enabled=0 WHERE user_id=1');$before=pa4b_snapshot();
 $projection=psit_projection($message);$result=psit_read($message);
 psit_check($projection['source_status']==='unavailable'&&$result['signals']===[]
     &&$result['coverage']==='limited'&&!str_contains(json_encode([$projection,$result]),'PRIVATE_PROFILE_SITUATION_STATEMENT')
     &&pa4b_snapshot()===$before,'revoked source stays absent with incomplete coverage and no stale statement');
 
-pa4b_reset();$note=psit_note();
+psit_reset();$note=psit_note();
 db()->prepare('UPDATE profile_events SET metadata_json=? WHERE id=?')->execute(['{}',(int)$note['event']['id']]);
 $projection=psit_projection($note);$result=psit_read($note);
 psit_check($projection['source_status']==='historical_unverified'&&$result===['coverage'=>'limited','signals'=>[]],
     'unverified historical evidence cannot become an empty successful or actionable Profile review');
 
-pa4b_reset();$note=psit_note();$before=pa4b_snapshot();
+psit_reset();$note=psit_note();$before=pa4b_snapshot();
 db()->failSql='SELECT * FROM profile_events';
 try{$projection=psit_projection($note);$result=psit_read($note);}
 finally{db()->failSql='';}
