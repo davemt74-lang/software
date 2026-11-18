@@ -36,7 +36,7 @@ function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $bindin
             throw new InvalidArgumentException('Invalid Profile source reference.');
     }
     $scope=vp3_coordination_profile_authority_v1($pdo,$scope,$binding);
-    $native=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>!str_starts_with($ref,'analytics:')));
+    $native=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>!str_starts_with($ref,'analytics:')&&!str_starts_with($ref,'ft:')));
     $periods=$refs===null?[null]:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'analytics:')));
     $periodItems=[];$periodCoverage='ready';
     if($periods){
@@ -59,6 +59,16 @@ function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $bindin
             }
         }
     }
+    $commerceRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'ft:')));
+    $commerce=['items'=>[],'coverage'=>'unconfigured'];
+    if($commerceRefs!==[]){
+        require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+        $commerce=vp3_coordination_product_marketing_sources_v1($pdo,$scope,$commerceRefs,$now,true);
+        $periodItems+=$commerce['items'];
+        // Keep optional empty follow-through separate from period availability.
+        if($commerce['items']||($commerceRefs!==null&&$commerceRefs!==[]))
+            $periodCoverage=$periods?vp3_product_marketing_coverage_v1([$periodCoverage,$commerce['coverage']]):$commerce['coverage'];
+    }
     // An explicit analytics selection never invokes public Profile discovery.
     if($native===[]){
         vp3_coordination_profile_authority_v1($pdo,$scope,$binding);
@@ -68,7 +78,7 @@ function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $bindin
     if($periodItems){
         $out['items']+=$periodItems;
         $out['coverage']=in_array($out['coverage'],['ready','unconfigured'],true)&&$periodCoverage==='ready'?'ready':'limited';
-    }elseif($refs!==null&&$periods&&$periodCoverage!=='ready'){
+    }elseif($refs!==null&&($periods||$commerceRefs)&&$periodCoverage!=='ready'){
         $out['coverage']=$out['items']?'limited':$periodCoverage;
     }
     // Unconfigured or empty optional period facts do not manufacture automatic

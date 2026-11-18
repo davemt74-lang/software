@@ -25,7 +25,7 @@ function vp3_profile_analytics_retryable_v1(Throwable $error): bool
 }
 
 /** Current canonical authority, without ending or changing a caller transaction. */
-function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): array
+function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope,bool $requireProfile=true): array
 {
     $denied=static function():never{throw new RuntimeException('Current private Profile access is required.',403);};
     if(!$pdo->inTransaction())throw new RuntimeException('Profile analytics needs an active read transaction.',503);
@@ -64,7 +64,11 @@ function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): arra
         }
         $chat=vp3_profile_analytics_rows_v1($pdo,'SELECT id,user_id,user_agent_id FROM chat_conversations WHERE id=?',[$cid],true)[0]??null;
         if(!$chat||(int)$chat['user_id']!==$owner||($aid===0?$chat['user_agent_id']!==null:(int)($chat['user_agent_id']??0)!==$aid))$denied();
-        $permissions=['account.access','chat.access','profile_agent.access','profile_chat.access'];
+        // Existing analytics callers retain every Profile grant. Private plan
+        // inventory may use only account/Chat authority; it cannot expose any
+        // public visitor, conversation, call or commerce outcome through this mode.
+        $permissions=['account.access','chat.access'];
+        if($requireProfile)array_push($permissions,'profile_agent.access','profile_chat.access');
         if(!in_array('admin',$roles,true)){
             $catalog=permission_catalog();$personal=personal_capability_catalog_v242();
             foreach($permissions as $key)if(!isset($catalog[$key])&&!isset($personal[$key]))

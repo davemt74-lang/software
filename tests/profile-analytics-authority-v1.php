@@ -48,9 +48,9 @@ function paaa_blocked(PDO $writer,string $sql,string $label):void
     try{$writer->exec($sql);}catch(PDOException $error){paaa_ok((int)($error->errorInfo[1]??0)===1205,$label);return;}
     throw new RuntimeException('FAIL '.$label.' was not locked');
 }
-function paaa_read(array $scope):array
+function paaa_read(array $scope,bool $requireProfile=true):array
 {
-    $pdo=db();paaa_begin($pdo);try{return vp3_profile_analytics_authority_current_v1($pdo,$scope);}finally{if($pdo->inTransaction())$pdo->rollBack();}
+    $pdo=db();paaa_begin($pdo);try{return vp3_profile_analytics_authority_current_v1($pdo,$scope,$requireProfile);}finally{if($pdo->inTransaction())$pdo->rollBack();}
 }
 $tail=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' ENGINE=InnoDB':'';
 foreach([
@@ -83,6 +83,9 @@ $GLOBALS['paaa_participant']=['kind'=>'shared'];paaa_denied(fn()=>paaa_read($sco
 foreach($permissions as $key){
     $pdo->prepare("DELETE FROM role_permissions WHERE role='fan' AND permission_key=?")->execute([$key]);
     paaa_denied(fn()=>paaa_read($scope),403,'current canonical grant is required: '.$key);
+    if(str_starts_with($key,'profile_'))paaa_ok(paaa_read($scope,false)['user']['id']==1,
+        'private plan inventory remains independent of the optional Profile grant: '.$key);
+    else paaa_denied(fn()=>paaa_read($scope,false),403,'private plan inventory still requires the current grant: '.$key);
     $pdo->prepare("INSERT INTO role_permissions VALUES('fan',?)")->execute([$key]);
 }
 $pdo->exec("DELETE FROM role_permissions WHERE permission_key IN ('profile_agent.access','profile_chat.access')");
@@ -135,6 +138,18 @@ if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
         paaa_ok($pdo->inTransaction(),'denial preserves the caller transaction: '.$label);
         $pdo->rollBack();$writer->exec($restore);$native++;
     }
+    paaa_begin($pdo);
+    $old=paaa_scalar($pdo,"SELECT COUNT(*) FROM role_permissions WHERE role='fan' AND permission_key='chat.access'");
+    $writer->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='chat.access'");
+    paaa_ok(paaa_scalar($pdo,"SELECT COUNT(*) FROM role_permissions WHERE role='fan' AND permission_key='chat.access'")===$old,
+        'private inventory race begins from a real stale Chat grant snapshot');
+    paaa_denied(fn()=>vp3_profile_analytics_authority_current_v1($pdo,$scope,false),403,
+        'account/Chat-only inventory rejects a committed grant revocation despite its old snapshot');
+    $pdo->rollBack();$writer->exec("INSERT INTO role_permissions VALUES('fan','chat.access')");$native++;
+    paaa_begin($pdo);vp3_profile_analytics_authority_current_v1($pdo,$scope,false);
+    paaa_blocked($writer,"DELETE FROM role_permissions WHERE role='fan' AND permission_key='chat.access'",
+        'private inventory retains its required Chat grant until the caller releases its transaction');
+    $pdo->rollBack();$native++;
     $writer->exec("DELETE FROM role_permissions WHERE permission_key='profile_agent.access'");
     $writer->exec("INSERT INTO user_account_types VALUES(1,'admin','2026-11-01 00:00:00')");
     paaa_begin($pdo);paaa_ok(personal_capability_has_v242('profile_agent.access',$scope['user']),'the old production reader initially sees explicit admin');

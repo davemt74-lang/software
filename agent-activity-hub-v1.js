@@ -2022,6 +2022,17 @@
     return agent===null||conversation===null?null:{...ref,chatAgentId:agent,chatConversationId:conversation,href};
   }
   function profileSourceUrl(source) {
+    if(source?.ref?.startsWith('profile:ft:')){
+      const match=/^profile:ft:v1:([a-f0-9]{32}):(.+)$/.exec(source.ref);
+      const period=match&&profileAnalyticsRef('profile:analytics:v1:'+match[2]),href=localUrl(source.url||source.href);
+      if(!period||!href||/[\\\u0000-\u0020\u007f]/.test(source.url||source.href))return '';
+      const url=new URL(href,location.origin),base=new URL(cfg.activityEndpoint,location.origin).pathname.replace(/\/api\/[^/]+$/,'');
+      const id=value=>/^[1-9][0-9]{0,15}$/.test(value||'')&&positive(Number(value));
+      return url.pathname===base+'/chat.php'&&!url.hash&&!url.username&&!url.password&&[...url.searchParams].length===3
+        &&['agent','conversation_id','marketing_followthrough'].every(key=>url.searchParams.getAll(key).length===1)
+        &&(url.searchParams.get('agent')==='system'||id(url.searchParams.get('agent')))&&id(url.searchParams.get('conversation_id'))
+        &&url.searchParams.get('marketing_followthrough')==='marketing:ft:v1:'+match[1]+':'+match[2]?href:'';
+    }
     if(source?.ref?.startsWith('profile:analytics:')){
       const base=new URL(cfg.activityEndpoint,location.origin).pathname.replace(/\/api\/[^/]+$/,'');
       return profileAnalyticsSource(source,base+'/chat.php')?.href||'';
@@ -2080,14 +2091,14 @@
         const value=profileReportText(source[key],limit);if(value===null)return null;finding[key]=value;
       }
       if(source.profile_source_kind!==undefined){
-        if(source.profile_source_kind!==source.ref.split(':')[1])return null;
+        if(source.profile_source_kind!==(source.ref.startsWith('profile:ft:')?'commerce':source.ref.split(':')[1]))return null;
         finding.profile_source_kind=source.profile_source_kind;
       }
       for(const key of ['profile_presentation_owned','legacy_delivered']){
         if(source[key]===undefined)continue;if(typeof source[key]!=='boolean')return null;finding[key]=source[key];
       }
       if(source.presentation_owner!==undefined){
-        if(!['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks','profile_briefing_v1'].includes(source.presentation_owner)
+        if(!['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks','profile_briefing_v1','product_marketing_briefing_v1'].includes(source.presentation_owner)
           || source.profile_presentation_owned!==undefined&&source.profile_presentation_owned!==(source.presentation_owner!==''))return null;
         finding.presentation_owner=source.presentation_owner;
       }
@@ -2145,6 +2156,8 @@
           if (signature(current) !== signature(scope()) || (options.isCurrent ? !options.isCurrent() : snapshot?.profile_report !== report)) {
             event.preventDefault();
             close(false);
+          } else if (source.ref.startsWith('profile:ft:')&&window.VP3MarketingFollowthroughV1?.openSource?.(source)===true) {
+            event.preventDefault();close(false);
           } else if (options.onSelect?.(source)===true) {
             event.preventDefault();
           }

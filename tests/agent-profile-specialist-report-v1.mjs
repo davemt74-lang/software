@@ -188,6 +188,15 @@ check(model(report({findings:[{...visit(301),profile_presentation_owned:false}]}
 
 
 const fixedRef=periodRef();
+const marketingCanonical='marketing:ft:v1:'+('1'.repeat(32))+':'+fixedRef.slice('profile:analytics:v1:'.length);
+const marketingSource={ref:marketingCanonical.replace(/^marketing:/,'profile:'),revision:'8'.repeat(64),title:'Product follow-through',
+  url:'/vp3/chat.php?agent=7&conversation_id=11&marketing_followthrough='+encodeURIComponent(marketingCanonical),
+  profile_source_kind:'commerce',presentation_owner:'product_marketing_briefing_v1',profile_presentation_owned:true,legacy_delivered:false};
+check(model(report({findings:[marketingSource]}))?.findings[0].href===marketingSource.url,'Profile commerce alias keeps canonical Marketing destination and presentation ownership');
+check(model(report({findings:[{...marketingSource,profile_source_kind:'ft'}]}))===null,'commerce source kind is explicit rather than inferred from short alias subtype');
+for(const url of [marketingSource.url+'&agent=7',marketingSource.url+'#fragment',marketingSource.url.replace('/vp3/','/other/'),
+  marketingSource.url.replace(encodeURIComponent(marketingCanonical),encodeURIComponent(marketingCanonical.replace(':1:',':7:')))])
+  check(model(report({findings:[{...marketingSource,url}]}))===null,'ambiguous or different exact Marketing destination rejected');
 const fixedSource={ref:fixedRef,revision:'d'.repeat(64),title:'Completed Profile period · UTC',summary:'Verified period evidence',
   url:'/vp3/chat.php?agent=7&conversation_id=11&profile_analytics='+encodeURIComponent(fixedRef),
   profile_source_kind:'analytics',presentation_owner:'profile_briefing_v1',profile_presentation_owned:true,legacy_delivered:false};

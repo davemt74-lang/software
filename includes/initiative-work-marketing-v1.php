@@ -36,6 +36,29 @@ function initiative_work_marketing_drafts_v1(PDO $pdo, int $owner, int $productI
     return $drafts;
 }
 
+/** Read one immutable draft binding, independently of the recent-draft list. */
+function initiative_work_marketing_draft_v1(PDO $pdo, int $owner, int $productId, string $draftId, bool $lock=false): array
+{
+    if ($owner < 1 || $productId < 1 || !preg_match('/\A[a-f0-9]{64}\z/D',$draftId)) {
+        throw new DomainException('Choose an exact saved marketing draft.',422);
+    }
+    if (!table_exists('agent_commerce_marketing_drafts_v1')) {
+        throw new DomainException('Private marketing draft storage is unavailable.',503);
+    }
+    $query = $pdo->prepare('SELECT d.draft_json FROM agent_commerce_marketing_drafts_v1 d
+        INNER JOIN agent_commerce_products_v800 p ON p.id=d.product_id AND p.owner_user_id=d.owner_user_id
+        WHERE d.owner_user_id=? AND d.product_id=? AND d.request_key=?'.($lock ? agent_commerce_lock_pa2($pdo) : ''));
+    $query->execute([$owner,$productId,$draftId]);
+    $json = $query->fetchColumn();
+    if (!is_string($json)) throw new DomainException('The marketing draft is unavailable.',404);
+    try { $draft=json_decode($json,true,16,JSON_THROW_ON_ERROR); }
+    catch (JsonException $error) { throw new DomainException('The saved marketing draft could not be verified.',409,$error); }
+    if (!is_array($draft) || array_is_list($draft) || ($draft['product_id']??null)!==$productId) {
+        throw new DomainException('The saved marketing draft has a different product.',409);
+    }
+    return array_replace($draft,['draft_id'=>$draftId]);
+}
+
 /** Resolve current owner records and hash the inputs used to draft copy. */
 function initiative_work_marketing_context_v1(PDO $pdo, int $owner, array $scope, array $input, bool $lock=false): array
 {

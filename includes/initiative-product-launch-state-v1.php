@@ -97,7 +97,7 @@ function initiative_product_launch_state_v1(PDO $pdo, int $owner, array $scope, 
         $state['creative_id'] = $creativeId;
     }
     if ($draftId !== null) {
-        $draft = initiative_work_marketing_drafts_v1($pdo,$owner,$productId)[$draftId] ?? null;
+        $draft = initiative_work_marketing_draft_v1($pdo,$owner,$productId,$draftId);
         if (!$draft || ($draft['product_id'] ?? null) !== $productId || !is_int($draft['asset_id'] ?? null)
             || ($variant !== null && ($variant['source_asset_id'] !== $draft['asset_id']
                 || $variant['source_sha256'] !== ($draft['asset_sha256'] ?? null)))) {

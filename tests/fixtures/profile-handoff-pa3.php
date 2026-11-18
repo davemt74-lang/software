@@ -96,7 +96,7 @@ function column_exists(string $table,string $column): bool
     $q=db()->prepare('SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');$q->execute([$table,$column]);return(bool)$q->fetchColumn();
 }
 function setting(string $key,mixed $fallback=''): mixed{return $GLOBALS['pa3Settings'][$key]??$fallback;}
-function url(string $path): string{return $path;}
+function url(string $path): string{return (string)($GLOBALS['pa3AppBase']??'').$path;}
 function user_account_types_for_user_id(int $id,string $role): array{return [$role];}
 function user_roles_for_user(array $user): array{return [(string)$user['role']];}
 function permissions_schema_ready(): bool{return true;}

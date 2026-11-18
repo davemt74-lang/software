@@ -6,8 +6,8 @@ import {workspaceDocument} from './fixtures/profile-workspace-dom-v1.mjs';
 import {periodRef,periodValue,cutoff} from './fixtures/profile-analytics-period-ui-v1.mjs';
 
 const source=readFileSync(new URL('../profile-specialist-workspace-v1.js',import.meta.url),'utf8');
-const instrumented=source.replace('  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination});',
-  '  window.__period={analyticsRef,analyticsSource,analyticsPeriodModel,analyticsLedgerAmount,analyticsCalendarRange};\n  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination});');
+const instrumented=source.replace('  window.VP3ProfileWorkspaceV1=Object.freeze({',
+  '  window.__period={analyticsRef,analyticsSource,analyticsPeriodModel,analyticsLedgerAmount,analyticsCalendarRange};\n  window.VP3ProfileWorkspaceV1=Object.freeze({');
 assert.notEqual(instrumented,source,'production model test seam found');
 let checks=0;
 const check=(value,label)=>{assert.ok(value,label);checks++;};

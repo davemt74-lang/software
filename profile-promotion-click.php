@@ -44,8 +44,12 @@ if ($method==='GET' && $claim && !str_contains($purpose,'prefetch') && !str_cont
         $owner = (int)$record['profile']['user_id'];
         $viewer = current_user();
         $digest = @hash_file('sha256',$record['path']);
+        $nativeContext=null;
+        if($claim['placement']==='profile_agent'){
+            $nativeContext=profile_promotion_capture_native_context_v1($pdo,$record['profile'],$viewer,$claim['conversation_id']);
+        }
         if ((int)($viewer['id']??0)!==$owner && is_string($digest) && hash_equals($record['sha256'],$digest)
-            && profile_promotion_attribution_record_click_v1($pdo,$owner,$key,$claim['placement'],$claim['click_id'])) {
+            && profile_promotion_attribution_record_click_v1($pdo,$owner,$key,$claim['placement'],$claim['click_id'],$nativeContext,$claim['conversation_id'])) {
             profile_product_promotion_click_remember_v1($claim['click_id'],$owner,(int)$record['card']['product_id'],$claim['conversation_id']);
             $destination .= '?promotion_click='.$claim['click_id'];
         }

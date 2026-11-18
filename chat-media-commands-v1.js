@@ -5,7 +5,7 @@
   const chat = window.STONEFELLOW_CHAT;
   if (!cfg?.endpoint || !cfg.mediaEndpoint || !cfg.csrf || !cfg.ownerKey || !chat) return;
   const account = Object.freeze({owner: String(cfg.ownerKey), agent: Number(cfg.agentId), csrf: String(cfg.csrf),
-    endpoint: String(cfg.endpoint), mediaEndpoint: String(cfg.mediaEndpoint), binding: String(chat.workingAttentionBinding || '')});
+    endpoint: String(cfg.endpoint), mediaEndpoint: String(cfg.mediaEndpoint), followthroughEndpoint:String(cfg.followthroughEndpoint||''), binding: String(chat.workingAttentionBinding || '')});
   const formats = ['image/jpeg', 'image/png', 'image/webp'];
   const ordinaryLimit = 4 * 1024 * 1024;
   const generatedLimit = 25 * 1024 * 1024;
@@ -62,6 +62,7 @@
     return Boolean(current && live && account.binding && String(current.ownerKey) === account.owner
       && Number(current.agentId) === account.agent && String(current.csrf) === account.csrf
       && String(current.endpoint) === account.endpoint && String(current.mediaEndpoint) === account.mediaEndpoint
+      && String(current.followthroughEndpoint||'')===account.followthroughEndpoint
       && String(live.userId) === account.owner && Number(live.agentId) === account.agent
       && String(live.workingAttentionBinding || '') === account.binding);
   }
@@ -120,6 +121,8 @@
     session.pending = null;
     session.picker?.destroy();
     session.picker = null;
+    session.followthrough?.dispose();session.followthrough=null;
+    window.VP3MarketingFollowthroughV1?.cancelPendingDestination?.();
     if (active === session) active = null;
     // Removing our modal avoids the browser restoring an obsolete Chat opener on
     // a stale-context close. Valid cancellation restores focus explicitly below.
@@ -176,9 +179,9 @@
     more.hidden = true;
     if (kind === 'marketing') content.append(list, empty, more);
     dialog.append(header, intro, status, error, content);
-    const session = {id: ++sequence, kind, bound, dialog, status, error, errorText, retry, content, list, empty, more,
+    const session = {id: ++sequence, kind, bound, dialog, heading, intro, status, error, errorText, retry, content, list, empty, more,
       returnFocus: document.activeElement, closed: false, serial: 0, pending: null, retryAction: null,
-      timer: 0, picker: null, plans: new Map(), nextBefore: null, selectedAction: ''};
+      timer: 0, picker: null, followthrough:null, followthroughHost:null, plans: new Map(), nextBefore: null, selectedAction: ''};
     dismiss.addEventListener('click', () => close(session));
     dialog.addEventListener('cancel', event => { event.preventDefault(); close(session); });
     dialog.addEventListener('close', () => { if (!session.closed) close(session); });
@@ -310,6 +313,12 @@
       }
     }
     detail.append(heading, stage, context, control);
+    if(sameChat&&account.followthroughEndpoint&&window.VP3MarketingFollowthroughV1){
+      const followthrough=button('View follow-through','followthrough');
+      followthrough.dataset.mediaPlanFollowthrough=String(plan.product_id);
+      followthrough.addEventListener('click',()=>showFollowthrough(session,{productId:plan.product_id}));
+      detail.append(followthrough);
+    }
     item.append(picture, detail);
     const previous = session.plans.get(plan.product_id);
     if (previous) previous.item.replaceWith(item);
@@ -411,6 +420,7 @@
   function open(kind, bound) {
     if (!['images', 'marketing'].includes(kind) || !scopeCurrent(bound)
       || kind === 'images' && !window.VP3MediaLibraryPicker?.open) return false;
+    window.VP3MarketingFollowthroughV1?.cancelPendingDestination?.();
     const session = createSession(kind, bound);
     if (!session) return false;
     if (kind === 'images') {
@@ -419,6 +429,47 @@
       }
     } else void loadPlans(session);
     return !session.closed;
+  }
+
+  function backToPlans(session){
+    if(!ensureCurrent(session))return;
+    session.followthrough?.dispose();session.followthrough=null;session.followthroughHost?.remove();session.followthroughHost=null;
+    session.heading.textContent='Marketing plans';
+    session.heading.tabIndex=-1;session.heading.focus({preventScroll:true});
+    session.intro.textContent='Continue a draft, review an image in progress, or return to an active or paused product promotion.';
+    session.list.hidden=false;session.list.replaceChildren();session.plans.clear();session.nextBefore=null;session.more.hidden=true;session.empty.hidden=true;
+    clearError(session);void loadPlans(session);
+  }
+
+  function showFollowthrough(session,selection){
+    if(!ensureCurrent(session)||session.kind!=='marketing'||!account.followthroughEndpoint||!window.VP3MarketingFollowthroughV1?.mount)return false;
+    window.VP3MarketingFollowthroughV1.cancelPendingDestination();
+    session.pending?.controller.abort();session.pending=null;session.serial++;session.followthrough?.dispose();session.followthroughHost?.remove();
+    clearError(session);session.status.textContent='';session.list.hidden=true;session.empty.hidden=true;session.more.hidden=true;
+    session.heading.textContent='Marketing follow-through';session.intro.textContent='Inspect a recorded publication, then choose the next step for its original creative or current plan.';
+    session.heading.tabIndex=-1;session.heading.focus({preventScroll:true});
+    const host=node('div');session.followthroughHost=host;session.content.append(host);
+    session.followthrough=window.VP3MarketingFollowthroughV1.mount(host,{selection,
+      context:()=>current(session)?{ownerUserId:Number(account.owner),chatAgentId:session.bound.agentId,chatConversationId:session.bound.conversationId,workingAttentionBinding:account.binding}:null,
+      onBack:()=>backToPlans(session),onAuthorityChanged:()=>{session.plans.clear();session.list.replaceChildren();session.nextBefore=null;},
+      onCreative:marker=>{if(!ensureCurrent(session)||window.VP3InitiativeWorkbench?.openProductLaunch?.(marker)!==true)return false;close(session,'handoff');return true;},
+      onCurrentPlan:productId=>{if(ensureCurrent(session))void loadPlan(session,productId);},
+      onConversation:selection=>{
+        if(!ensureCurrent(session)||selection?.tab!=='conversations'||!positive(selection.publicConversationId))return false;
+        if(window.VP3AgentActivityHub?.openProfile?.(selection)!==true)return false;
+        close(session,'handoff');return true;
+      }
+    });
+    if(!session.followthrough){backToPlans(session);showError(session,'Marketing follow-through is not available in this Chat.');return false;}
+    syncControls(session);return true;
+  }
+
+  function openFollowthrough(selection,bound){
+    if(!scopeCurrent(bound)||!account.followthroughEndpoint||!window.VP3MarketingFollowthroughV1)return false;
+    const parsed=selection?.ref?window.VP3MarketingFollowthroughV1.parseRef(selection.ref):null;
+    if(selection?.ref&&!parsed||!selection?.ref&&!positive(selection?.productId))return false;
+    const session=active&&active.kind==='marketing'&&current(active)?active:createSession('marketing',bound);
+    return Boolean(session&&showFollowthrough(session,parsed?{ref:parsed.ref}:{productId:selection.productId}));
   }
 
   function initialIntent() {
@@ -465,6 +516,7 @@
     window.addEventListener(event, invalidate);
   }
   window.addEventListener('vp3:chat-context-ready', resumeLinkedPlan);
-  window.VP3MediaCommands = Object.freeze({version: 1, open});
+  window.VP3MediaCommands = Object.freeze({version: 1, open,openFollowthrough});
+  window.dispatchEvent(new Event('vp3:media-commands-ready'));
   resumeLinkedPlan();
 })();

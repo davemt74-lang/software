@@ -340,6 +340,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
         && vp3_profile_projection_schema_ready_pa4b($schemaConnection)
         && vp3_profile_event_clock_ready_v1($schemaConnection)
+        && profile_promotion_capture_ready_v1($schemaConnection)
         && vp3_profile_checkout_schema_ready_pa5($schemaConnection)
         && vp3_gelato_schema_ready_v1($schemaConnection)
         && vp3_stoneward_schema_ready_v1($schemaConnection)

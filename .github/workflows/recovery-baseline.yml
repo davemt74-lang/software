@@ -105,6 +105,18 @@ jobs:
           node tests/profile-analytics-route-http.mjs
           node tests/profile-analytics-period-http.mjs
           node tests/profile-analytics-reliability-v1.mjs
+          php tests/profile-commerce-followthrough-ref-v1.php
+          php tests/profile-promotion-capture-v1.php
+          php tests/commerce-checkout-open-clock-v1.php
+          php tests/profile-commerce-followthrough-v1.php
+          php tests/product-marketing-report-v1.php
+          php tests/product-marketing-pipeline-v1.php
+          php tests/marketing-followthrough-v1.php
+          php tests/agent-morning-brief-v1.php
+          php tests/initiative-product-launch-v1.php
+          node tests/profile-promotion-capture-http-v1.mjs
+          node tests/marketing-followthrough-ui-v1.mjs
+          node tests/marketing-followthrough-http.mjs
           php tests/agent-release-routing-v1.php
           php tests/agent-release-tools-v1.php
           php tests/agent-profile-webmcp-read-v1.php

@@ -113,7 +113,7 @@ function vp3_coordination_marketing_recommendations_v1(PDO $pdo, array $scope, ?
     return $out;
 }
 
-function vp3_coordination_marketing_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array
+function vp3_coordination_campaign_marketing_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array
 {
     $recommendationRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'campaign-optimization:')));
     $reportRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>
@@ -128,6 +128,32 @@ function vp3_coordination_marketing_sources_v1(PDO $pdo,array $scope,?array $ref
     $coverage=in_array('ready',$states,true)?'ready':$recommendations['coverage'];
     if (in_array('limited',$states,true) || in_array('unavailable',$states,true) && $states[0]!==$states[1]) $coverage='limited';
     return ['items'=>$findings+$recommendations['items'],'coverage'=>$coverage];
+}
+
+/** Product plans are independent of the optional Campaigns plugin. */
+function vp3_coordination_marketing_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array
+{
+    require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+    $campaignRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'campaign-')));
+    $productRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>!str_starts_with($ref,'campaign-')));
+    try{
+        $campaign=$campaignRefs===[]?['items'=>[],'coverage'=>'unconfigured']
+            :vp3_coordination_campaign_marketing_sources_v1($pdo,$scope,$campaignRefs,$now);
+    }catch(PDOException $error){
+        if(vp3_profile_analytics_retryable_v1($error))throw $error;
+        $campaign=['items'=>[],'coverage'=>'unavailable'];
+    }
+    try{
+        $product=$productRefs===[]?['items'=>[],'coverage'=>'unconfigured']
+            :vp3_coordination_product_marketing_sources_v1($pdo,$scope,$productRefs,$now);
+    }catch(PDOException $error){
+        if(vp3_profile_analytics_retryable_v1($error))throw $error;
+        $product=['items'=>[],'coverage'=>'unavailable'];
+    }
+    $items=$campaign['items']+$product['items'];
+    $coverage=vp3_product_marketing_coverage_v1([$campaign['coverage'],$product['coverage']]);
+    if($refs===null&&count($items)>24){$items=array_slice($items,0,24,true);$coverage='limited';}
+    return ['items'=>$items,'coverage'=>$coverage];
 }
 
 function vp3_coordination_marketing_item_v1(array $row): ?array

@@ -27,6 +27,9 @@ $partialSpeech=[
     'partial-assistance-research'=>['profile_call_research_pa3c','result_json'],
     'partial-profile-event-time'=>['profile_events','recorded_at_utc_ms'],
     'partial-profile-event-cutover'=>['profile_events','clock_legacy_token_v1'],
+    'partial-promotion-public-conversation'=>['agent_promotion_clicks_v1','public_conversation_id'],
+    'partial-promotion-public-binding'=>['agent_promotion_clicks_v1','public_conversation_binding_sha256_v1'],
+    'partial-checkout-open-time'=>['agent_commerce_checkout_attempts_v800','opened_recorded_at_utc_ms'],
 ];
 if (!isset($argv[1])) {
     $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
@@ -76,10 +79,12 @@ if (!in_array($mode,['post','missing-orb-shape'],true)) {
 }
 $fixture->exec('CREATE TABLE agent_commerce_products_v800(id INTEGER PRIMARY KEY)');
 $fixture->exec('CREATE TABLE agent_commerce_orders_v800(id INTEGER PRIMARY KEY)');
+$fixture->exec('CREATE TABLE agent_commerce_checkout_attempts_v800(id INTEGER PRIMARY KEY)');
 function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
 {
     initiative_product_launch_schema_v1($pdo??$GLOBALS['fixture']);
     profile_promotion_attribution_schema_v1($pdo??$GLOBALS['fixture']);
+    profile_promotion_capture_install_v1($pdo??$GLOBALS['fixture'],'checkout');
     $GLOBALS['calls'][]=__FUNCTION__;
 }
 // Older Profile migrations are isolated dependencies in this page fixture. Keep
@@ -130,6 +135,7 @@ if($modern){
     if ($mode !== 'missing-coding-canvas') vp3_coding_canvas_schema_v1($fixture);
     initiative_product_launch_schema_v1($fixture);
     profile_promotion_attribution_schema_v1($fixture);
+    profile_promotion_capture_install_v1($fixture,'checkout');
     agent_connection_youtube_consent_schema_v1($fixture);
     agent_connection_youtube_quota_schema_v1($fixture);
     agent_connection_youtube_results_schema_v1($fixture);
@@ -203,6 +209,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check(vp3_ai_service_usage_ready_v1($fixture) && in_array('ai_usage_accounting_v032_ensure_schema',$calls,true), 'Upgrade skipped AI service usage storage');
     check(vp3_coding_canvas_ready_v1($fixture), 'Upgrade skipped private Coding Canvas storage');
     check(vp3_profile_event_clock_ready_v1($fixture), 'Upgrade skipped forward Profile event time activation');
+    check(profile_promotion_capture_ready_v1($fixture), 'Upgrade skipped immutable promotion and checkout-open evidence');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');

@@ -149,6 +149,41 @@ canvas_pipeline_check(count($budgeted['selected'])===12&&isset($budgeted['select
     &&count($budgeted['links'])===12&&substr_count($budgeted['message'],'Related Planning & Scheduling item')===4,
     'period and curiosity proof slots are reserved before optional planning links reach the twelve-source history limit');
 
+// Both period summaries must keep their exact evidence when Marketing, Profile,
+// mail/planning relations and a saved Curiosity question share one brief.
+$marketingRef=vp3_profile_commerce_followthrough_ref_v1(str_repeat('d',32),$periodRef);
+$marketingPeriod=array_replace($period,['ref'=>$marketingRef,'canonical_ref'=>$marketingRef,
+    'canonical_revision'=>$period['revision'],'specialist'=>'marketing','marketing_source_kind'=>'followthrough',
+    'trigger'=>'promotion_period','title'=>'Original promotion: completed period','summary'=>'2 recorded clicks; 1 verified paid order.',
+    'url'=>vp3_profile_commerce_followthrough_href_v1(7,11,$marketingRef),
+    'presentation_owner'=>'product_marketing_briefing_v1','marketing_presentation_owned'=>true]);
+$marketingPlan=array_replace($marketingPeriod,['ref'=>'marketing:product-plan:992101','marketing_source_kind'=>'plan',
+    'trigger'=>'product_plan','title'=>'Review T-shirt listing','summary'=>'The existing product plan is ready to review.',
+    'presentation_owner'=>'agent_product_launch']);
+unset($marketingPlan['canonical_ref'],$marketingPlan['canonical_revision']);
+$marketingAlias=array_replace($marketingPeriod,['ref'=>'profile:'.substr($marketingRef,10),'specialist'=>'profile',
+    'profile_source_kind'=>'commerce','trigger'=>'commerce_followthrough','profile_canonical_ref'=>$marketingRef]);
+$withMarketing=[$marketingPlan['ref']=>$marketingPlan]+$crowded+[$marketingRef=>$marketingPeriod,$marketingAlias['ref']=>$marketingAlias];
+$marketingSettings=$capSettings;
+$marketingSettings['rules']=vp3_coordination_rule_patch_v1($capSettings['rules'],['marketing'=>['product_plan'=>'report','promotion_period'=>'report']]);
+$marketingCoverage=['gmail'=>'ready','planning'=>'ready','profile'=>'ready','marketing'=>'ready','curiosity'=>'ready'];
+$marketingBudget=vp3_morning_brief_assess_v1($withMarketing,$marketingCoverage,$marketingSettings,[],$curiosity);
+canvas_pipeline_check(count($marketingBudget['selected'])===12&&count($marketingBudget['links'])===12
+    &&isset($marketingBudget['selected'][$periodRef],$marketingBudget['selected'][$marketingRef],$marketingBudget['selected'][$curiosity['ref']])
+    &&substr_count($marketingBudget['message'],'Related Planning & Scheduling item')===3,
+    'both fixed periods and Curiosity retain proof slots before optional planning links fill the shared twelve-source bound');
+canvas_pipeline_check(!isset($marketingBudget['selected'][$marketingAlias['ref']])
+    &&substr_count($marketingBudget['message'],$marketingPeriod['summary'])===1
+    &&count(array_filter($marketingBudget['links'],static fn(array $link):bool=>$link['source']===$marketingRef))===1,
+    'shared Profile and Marketing evidence contributes one period summary and one canonical original-Chat link');
+$marketingWatch=$marketingSettings;
+$marketingWatch['rules']=vp3_coordination_rule_patch_v1($marketingSettings['rules'],['marketing'=>['promotion_period'=>'watch']]);
+$watchMarketingBudget=vp3_morning_brief_assess_v1($withMarketing,$marketingCoverage,$marketingWatch,[],$curiosity);
+canvas_pipeline_check(!isset($watchMarketingBudget['selected'][$marketingRef],$watchMarketingBudget['selected'][$marketingAlias['ref']])
+    &&!str_contains($watchMarketingBudget['message'],$marketingPeriod['summary'])
+    &&isset($watchMarketingBudget['selected'][$periodRef],$watchMarketingBudget['selected'][$marketingPlan['ref']]),
+    'Marketing Watch suppresses both promotion copies while retaining the independently reportable plan and Profile period');
+
 $nativeBefore=$pdo->query('SELECT * FROM agent_email_running_report_v1 ORDER BY thread_key')->fetchAll(PDO::FETCH_ASSOC);
 $runsBefore=canvas_pipeline_count('agent_workflow_runs');
 $ledgerBefore=canvas_pipeline_count('ai_execution_ledger');

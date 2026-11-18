@@ -215,6 +215,7 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
       external_session_id VARCHAR(190) NOT NULL,
       external_payment_id VARCHAR(190) NOT NULL DEFAULT '',
       checkout_url TEXT NULL,
+      opened_recorded_at_utc_ms BIGINT NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'open',
       amount_cents INT UNSIGNED NOT NULL,
       currency CHAR(3) NOT NULL,
@@ -314,6 +315,7 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
     agent_commerce_recovery_ensure_schema_pa2($pdo);
     require_once __DIR__.'/profile-promotion-attribution-v1.php';
     profile_promotion_attribution_schema_v1($pdo);
+    profile_promotion_capture_install_v1($pdo,'checkout');
 }
 
 function agent_commerce_config_v800(): array

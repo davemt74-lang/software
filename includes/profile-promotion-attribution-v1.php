@@ -3,9 +3,11 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-commerce-recovery-pa2.php';
 require_once __DIR__.'/schema-metadata.php';
+require_once __DIR__.'/profile-promotion-capture-v1.php';
 
 function profile_promotion_attribution_schema_v1(PDO $pdo): void
 {
+    if($pdo->inTransaction())throw new RuntimeException('Promotion attribution upgrade requires a separate migration transaction.');
     $sqlite = agent_commerce_sqlite_pa2($pdo);
     $engine = $sqlite ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_promotion_publications_v1 (
@@ -31,6 +33,8 @@ function profile_promotion_attribution_schema_v1(PDO $pdo): void
         publication_id CHAR(32) NOT NULL,
         placement VARCHAR(32) NOT NULL,
         created_at DATETIME NOT NULL,
+        public_conversation_id BIGINT NULL,
+        public_conversation_binding_sha256_v1 CHAR(64) NULL,
         FOREIGN KEY (publication_id) REFERENCES agent_promotion_publications_v1(publication_id) ON DELETE CASCADE"
         .($sqlite ? '' : ', INDEX idx_promotion_click_publication (publication_id,placement)') . ')'.$engine);
     $pdo->exec("CREATE TABLE IF NOT EXISTS agent_promotion_orders_v1 (
@@ -46,6 +50,7 @@ function profile_promotion_attribution_schema_v1(PDO $pdo): void
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_promotion_click_publication ON agent_promotion_clicks_v1(publication_id,placement)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_promotion_order_click ON agent_promotion_orders_v1(click_id,order_id)');
     }
+    profile_promotion_capture_install_v1($pdo,'clicks');
 }
 
 function profile_promotion_attribution_ready_v1(PDO $pdo): bool
@@ -122,19 +127,38 @@ function profile_promotion_attribution_wake_v1(PDO $pdo, string $publicationId):
         ->execute([gmdate('Y-m-d H:i:s',time()+86400),$publicationId]);
 }
 
-/** Placement and visit identity are issued by a first-party surface. No visitor identity is stored. */
-function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, string $publicationId, string $placement, string $clickId): bool
+/** Only an existing native conversation can add immutable public-thread evidence. */
+function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, string $publicationId, string $placement, string $clickId, ?array $nativeContext=null, int $publicConversationId=0): bool
 {
     if ($owner < 1 || !profile_promotion_attribution_id_v1($publicationId) || !profile_promotion_attribution_id_v1($clickId)
         || !preg_match('/\A[a-z][a-z0-9_]{0,31}\z/D',$placement) || !profile_promotion_attribution_ready_v1($pdo)) return false;
+    $native=$placement==='profile_agent'&&($nativeContext!==null||$publicConversationId>0);
+    if(($native&&($nativeContext===null||$publicConversationId<1||(int)($nativeContext['owner_user_id']??0)!==$owner))
+        ||($placement!=='profile_agent'&&($nativeContext!==null||$publicConversationId!==0)))return false;
+    $captureColumns=profile_promotion_capture_click_columns_v1($pdo);
     require_once __DIR__.'/profile-product-promotion-v1.php';
+    if($native)require_once __DIR__.'/profile-agent-public-service-v110.php';
     $legacy = !profile_promotion_attribution_publication_v1($pdo,$owner,$publicationId);
-    return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$owner,$publicationId,$placement,$clickId,$legacy): bool {
+    return agent_commerce_atomic_pa2($pdo,static function() use ($pdo,$owner,$publicationId,$placement,$clickId,$legacy,$native,$nativeContext,$publicConversationId,$captureColumns): bool {
         // A legacy adoption inserts an owner FK. Match the existing publication lock order.
         if ($legacy) {
             $user = $pdo->prepare('SELECT id FROM users WHERE id=?'.agent_commerce_lock_pa2($pdo));
             $user->execute([$owner]);
             if (!$user->fetchColumn()) return false;
+        }
+        $binding=null;
+        if($native){
+            $ctx=vp3_profile_agent_public_live_v1($pdo,$nativeContext,true);
+            vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$publicConversationId,true);
+            if($captureColumns){
+                $rows=profile_promotion_capture_native_rows_v1($pdo,$owner,$publicConversationId,true);
+                if(!$rows)return false;
+                $binding=profile_promotion_public_binding_digest_v1([
+                    'owner_user_id'=>$owner,'publication_id'=>$publicationId,'click_id'=>$clickId,
+                    'placement'=>$placement,'public_conversation_id'=>$publicConversationId,
+                ],$rows['conversation'],$rows['binding'],$rows['session']);
+                if($binding===null)return false;
+            }
         }
         $find = $pdo->prepare("SELECT * FROM agent_commerce_promotions_v1 WHERE owner_user_id=? AND public_key=? AND status='published'"
             .agent_commerce_lock_pa2($pdo));
@@ -148,12 +172,22 @@ function profile_promotion_attribution_record_click_v1(PDO $pdo, int $owner, str
         if (!$publication) profile_promotion_attribution_register_v1($pdo,$promotion);
         elseif ($publication['promotion_id'] !== $promotion['id'] || (int)$publication['product_id'] !== (int)$promotion['product_id']) return false;
 
-        $find = $pdo->prepare('SELECT publication_id,placement FROM agent_promotion_clicks_v1 WHERE click_id=?');
+        $find = $pdo->prepare('SELECT publication_id,placement'.($captureColumns?',public_conversation_id,public_conversation_binding_sha256_v1':'').' FROM agent_promotion_clicks_v1 WHERE click_id=?');
         $find->execute([$clickId]);
         $existing = $find->fetch(PDO::FETCH_ASSOC);
-        if ($existing) return $existing['publication_id'] === $publicationId && $existing['placement'] === $placement;
-        $pdo->prepare('INSERT INTO agent_promotion_clicks_v1 (click_id,publication_id,placement,created_at) VALUES (?,?,?,?)')
-            ->execute([$clickId,$publicationId,$placement,agent_commerce_time_pa2()]);
+        if ($existing) {
+            if($existing['publication_id']!==$publicationId||$existing['placement']!==$placement)return false;
+            if(!$captureColumns)return true;
+            $priorId=$existing['public_conversation_id'];$priorDigest=$existing['public_conversation_binding_sha256_v1'];
+            // A replay never retrofits an old click to today's browser identity.
+            if($priorId===null&&$priorDigest===null)return true;
+            return $native&&$binding!==null&&(int)$priorId===$publicConversationId
+                &&is_string($priorDigest)&&hash_equals($priorDigest,$binding);
+        }
+        $values=[$clickId,$publicationId,$placement,agent_commerce_time_pa2()];
+        if($captureColumns)array_push($values,$binding===null?null:$publicConversationId,$binding);
+        $pdo->prepare('INSERT INTO agent_promotion_clicks_v1 (click_id,publication_id,placement,created_at'.($captureColumns?',public_conversation_id,public_conversation_binding_sha256_v1':'').') VALUES (?,?,?,?'.($captureColumns?',?,?':'').')')
+            ->execute($values);
         profile_promotion_attribution_wake_v1($pdo,$publicationId);
         return true;
     });

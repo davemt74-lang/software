@@ -62,6 +62,8 @@ function vp3_coordination_rule_definitions_v1(): array
             'daily_sales'=>['label'=>'Daily sales totals are available','default'=>'report','actions'=>['watch','report']],
         ]],
         'marketing'=>['label'=>'Marketing','triggers'=>[
+            'product_plan'=>['label'=>'Product marketing plan status','default'=>'watch','actions'=>['watch','report']],
+            'promotion_period'=>['label'=>'Completed promotion reporting period','default'=>'report','actions'=>['watch','report']],
             'optimization_ready'=>['label'=>'Campaign recommendation ready','default'=>'report','actions'=>['watch','ask','report']],
             'setup_blocker'=>['label'=>'Campaign setup needs attention','default'=>'ask','actions'=>['watch','ask','report']],
             'campaign_outcome'=>['label'=>'Verified campaign outcome available','default'=>'report','actions'=>['watch','report']],
@@ -71,6 +73,7 @@ function vp3_coordination_rule_definitions_v1(): array
             'open_followup'=>['label'=>'An open follow-up in a saved analysis','default'=>'report','actions'=>['watch','report']],
         ]],
         'profile'=>['label'=>'Profile','triggers'=>[
+            'commerce_followthrough'=>['label'=>'Verified product marketing follow-through','default'=>'report','actions'=>['watch','report']],
             'analytics_period'=>['label'=>'Completed Profile reporting period','default'=>'report','actions'=>['watch','report']],
             'needs_owner'=>['label'=>'A visitor needs your input','default'=>'ask','actions'=>['watch','ask','report']],
             'open_conversation'=>['label'=>'An open visitor conversation','default'=>'watch','actions'=>['watch','ask','report']],

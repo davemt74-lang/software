@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-analytics-period-ref-v1.php';
+require_once __DIR__.'/profile-commerce-followthrough-ref-v1.php';
 
 /** Pure report projection. Loading this file never loads a public responder or reads storage. */
 const VP3_PROFILE_SPECIALIST_REPORT_V1='vp3.profile-report.v1';
@@ -48,6 +49,9 @@ function vp3_profile_specialist_ref_kind_v1(mixed $ref): ?string
 {
     if(!is_string($ref)||strlen($ref)>180)return null;
     if(preg_match('/\Aprofile:(conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',$ref,$match))return $match[1];
+    if(str_starts_with($ref,'profile:ft:v1:')){
+        try{vp3_profile_commerce_followthrough_decode_v1('marketing:'.substr($ref,8));return 'commerce';}catch(Throwable){return null;}
+    }
     if(!str_starts_with($ref,'profile:analytics:v1:'))return null;
     try{vp3_profile_analytics_period_decode_v1($ref);return 'analytics';}catch(Throwable){return null;}
 }
@@ -63,6 +67,13 @@ function vp3_profile_analytics_period_href_v1(int $agent,int $chat,string $ref):
 function vp3_profile_specialist_url_v1(string $kind,mixed $url,?string $ref=null): bool
 {
     if(!is_string($url))return false;
+    if($kind==='commerce'){
+        if($ref===null||vp3_profile_specialist_ref_kind_v1($ref)!=='commerce')return false;
+        $chat=preg_quote(vp3_profile_specialist_href_v1('/chat.php'),'~');
+        if(!preg_match('~\A'.$chat.'\?agent=(system|[1-9][0-9]{0,15})&conversation_id=([1-9][0-9]{0,15})&marketing_followthrough=([^&]+)\z~D',$url,$m))return false;
+        try{return $url===vp3_profile_commerce_followthrough_href_v1($m[1]==='system'?0:(int)$m[1],(int)$m[2],'marketing:'.substr($ref,8));}
+        catch(Throwable){return false;}
+    }
     if($kind==='analytics'){
         if($ref===null||vp3_profile_specialist_ref_kind_v1($ref)!=='analytics')return false;
         $chat=preg_quote(vp3_profile_specialist_href_v1('/chat.php'),'~');
@@ -122,7 +133,7 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
         // remain readable, but their event kind is not guessed for grouping.
         if(array_key_exists('presentation_owner',$item)){
             $owner=$item['presentation_owner'];
-            if(!is_string($owner)||!in_array($owner,['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks','profile_briefing_v1'],true)
+            if(!is_string($owner)||!in_array($owner,['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks','profile_briefing_v1','product_marketing_briefing_v1'],true)
                 ||$item['profile_presentation_owned']!==($owner!=='')){$out['coverage']='limited';continue;}
             $safe['presentation_owner']=$owner;
         }

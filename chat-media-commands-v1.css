@@ -51,6 +51,28 @@
 [data-media-command] .vp3-media-command-empty { display: grid; justify-items: center; gap: .6rem; min-height: 12rem; align-content: center; padding: 1.5rem; border: 1px dashed #ccd6e6; border-radius: .8rem; background: #f8faff; color: #607089; text-align: center; font-size: .86rem; }
 [data-media-command] .vp3-media-command-empty h3 { color: #344760; font-size: 1rem; font-weight: 650; }
 [data-media-command] :is(button, a, input, select):focus-visible { outline: 3px solid #3d5cb3; outline-offset: 3px; }
+[data-media-command] .vp3-marketing-followthrough{display:grid;gap:16px;min-width:0;font-size:14px;line-height:1.5}
+[data-media-command] .vp3-marketing-followthrough :is(p,span,button,th,td,dt,dd,summary){font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+[data-media-command] .vp3-marketing-followthrough small{font-size:12px;overflow-wrap:anywhere}
+[data-media-command] .vp3-marketing-followthrough :is(h3,h4){margin:0;font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+[data-media-command] .vp3-marketing-followthrough h4{font-size:14px}
+[data-media-command] .vp3-marketing-followthrough>div:last-child{display:grid;gap:18px;min-width:0}
+[data-media-command] .vp3-marketing-followthrough-tools{display:flex;flex-wrap:wrap;gap:8px}
+[data-media-command] .vp3-marketing-followthrough-meta{display:grid;gap:5px;min-width:0}
+[data-media-command] .vp3-marketing-followthrough details>summary{cursor:pointer;font-weight:650}
+[data-media-command] .vp3-marketing-followthrough details>div{display:grid;gap:7px;padding-top:10px}
+[data-media-command] .vp3-marketing-followthrough table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px}
+[data-media-command] .vp3-marketing-followthrough :is(th,td){padding:8px 6px;text-align:left;vertical-align:top;border-bottom:1px solid #e0e6ef}
+[data-media-command] .vp3-marketing-followthrough th:first-child{width:42%}
+[data-media-command] .vp3-marketing-followthrough thead{background:#eef3f9}
+[data-media-command] .vp3-marketing-followthrough section{display:grid;gap:8px;min-width:0}
+[data-media-command] .vp3-marketing-followthrough article{display:grid;gap:8px;min-width:0;padding:12px;border:1px solid #dbe3ee;border-radius:9px;background:#f8faff}
+[data-media-command] .vp3-marketing-followthrough-publications{display:grid;gap:12px;list-style:none;padding:0}
+[data-media-command] .vp3-marketing-followthrough-publications li{display:grid;justify-items:start;gap:8px;min-width:0;padding:12px;border:1px solid #dbe3ee;border-radius:9px}
+[data-media-command] .vp3-marketing-followthrough-coverage{padding:10px 12px;background:#f4f7fb;border:1px solid #dbe3ee;border-radius:9px}
+[data-media-command] .vp3-marketing-followthrough-notice:empty{display:none}
+[data-media-command] .vp3-marketing-followthrough dt{font-weight:650}
+[data-media-command] .vp3-marketing-followthrough dd{margin:0 0 8px}
 @media (min-width: 701px) {
   #vp3MediaCommands[data-media-command="images"] [data-media-picker] .vp3-media-picker-grid { max-height: min(32dvh, 18rem); }
   #vp3MediaCommands[data-media-command="images"] [data-media-picker] .vp3-media-picker-picture { aspect-ratio: 4 / 3; max-height: min(24dvh, 11rem); }
