@@ -2011,7 +2011,28 @@
       const title = profileReportText(source?.title,190);
       if (!href || !title || !/^[a-f0-9]{64}$/.test(source.revision || '') || refs.has(source.ref)) return null;
       refs.add(source.ref);
-      result.findings.push({ref:source.ref,title,href});
+      const finding={ref:source.ref,revision:source.revision,title,href};
+      for(const [key,limit] of [['status',40],['priority',20],['trigger',40],['disposition',30]]){
+        if(source[key]===undefined)continue;
+        const value=profileReportText(source[key],limit);if(value===null)return null;finding[key]=value;
+      }
+      if(source.profile_source_kind!==undefined){
+        if(source.profile_source_kind!==source.ref.split(':')[1])return null;
+        finding.profile_source_kind=source.profile_source_kind;
+      }
+      for(const key of ['profile_presentation_owned','legacy_delivered']){
+        if(source[key]===undefined)continue;if(typeof source[key]!=='boolean')return null;finding[key]=source[key];
+      }
+      if(source.presentation_owner!==undefined){
+        if(!['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks'].includes(source.presentation_owner)
+          || source.profile_presentation_owned!==undefined&&source.profile_presentation_owned!==(source.presentation_owner!==''))return null;
+        finding.presentation_owner=source.presentation_owner;
+      }
+      if(source.profile_event_type!==undefined){
+        if(!source.ref.startsWith('profile:event:')||typeof source.profile_event_type!=='string'||!/^[a-z][a-z0-9_]{0,63}$/.test(source.profile_event_type))return null;
+        finding.profile_event_type=source.profile_event_type;
+      }
+      result.findings.push(finding);
     }
     return result;
   }
@@ -2046,12 +2067,17 @@
       const sources = node('section','','vp3-agent-activity-source');
       sources.setAttribute('aria-label','Profile report sources');
       sources.append(node('h4','Sources'));
-      const list = node('ul','','vp3-curiosity-questions');
-      for (const source of model.findings.slice(0,expanded ? 24 : 3)) {
+      const routine=source=>source.profile_source_kind==='event'&&['profile_view','return_visitor'].includes(source.profile_event_type)
+        && typeof source.presentation_owner==='string'&&source.trigger==='activity'&&source.priority==='low';
+      const visits=model.findings.filter(routine),other=model.findings.filter(source=>!routine(source));
+      const sourceItem=source=>{
         const item = node('li');
         const link = node('a',source.title);
         link.href = source.href;
         link.dataset.profileSource = source.ref;
+        link.dataset.profileSourceRevision=source.revision;
+        if(source.disposition!==undefined)link.dataset.profileSourceDisposition=source.disposition;
+        if(source.presentation_owner!==undefined)link.dataset.profilePresentationOwner=source.presentation_owner;
         link.addEventListener('click',event => {
           if (signature(current) !== signature(scope()) || (options.isCurrent ? !options.isCurrent() : snapshot?.profile_report !== report)) {
             event.preventDefault();
@@ -2061,10 +2087,20 @@
           }
         });
         item.append(link);
-        list.append(item);
+        if(routine(source)){
+          const disposition={pending:'Pending',handled:'Handled',ignored:'Dismissed',snoozed:'Snoozed',delivered:'Delivered'}[source.disposition]||'';
+          const owner={profile_attention_pa4b:'Visitor notification',profile_handoff_pa3:'Conversation handoff',profile_speech_pa4a:'Visitor announcement',profile_calls_pa3c:'Call notification',office_tasks:'Reviewed task notification'}[source.presentation_owner]||'';
+          const note=[disposition,owner].filter(Boolean).join(' · ');if(note)item.append(node('small',note));
+        }
+        return item;
+      };
+      if(other.length){const list=node('ul','','vp3-curiosity-questions');for(const source of other.slice(0,expanded?24:3))list.append(sourceItem(source));sources.append(list);}
+      if(visits.length){
+        const group=node('details','','vp3-profile-visit-group');group.dataset.profileVisitGroup='';
+        group.append(node('summary',visits.length+' visit '+(visits.length===1?'record':'records')+' in this checked view'));
+        const list=node('ul','','vp3-curiosity-questions');for(const source of visits)list.append(sourceItem(source));group.append(list);sources.append(group);
       }
-      sources.append(list);
-      if (!expanded && model.findings.length > 3) sources.append(node('small','More sources in the full report.'));
+      if (!expanded && other.length > 3) sources.append(node('small','More sources in the full report.'));
       body.append(sources);
     }
     target.replaceChildren(body);

@@ -214,6 +214,24 @@ try{
       'the browser focus bridge closes only the workspace and focuses the same live call card');
     check(f.requests.filter(r=>/_(delivery|dispatch|accept|join|end)$/.test(r.action||'')).length===nativeOperations,
       'workspace mounting, closing and focusing send no native call mutation or duplicate delivery');
+    f.calls.set(42,callCard('owner',{call_id:42,conversation_id:32,state:'ended',can_accept:false,can_decline:false,can_cancel:false,can_end:false,can_join:false,cleanup_pending:false,dispatch_due:false}));
+    await f.refresh();const oldCard=f.page.locator('.profile-call-card[data-profile-call-id="42"]');await oldCard.getByRole('button',{name:'View outcome'}).waitFor();
+    const outcomeOperations=f.requests.filter(r=>/_(delivery|dispatch|accept|join|end)$/.test(r.action||'')).length;
+    await f.page.evaluate(()=>{
+      window.__outcomeSelections=[];window.VP3AgentActivityHub={openProfile(selection,trigger){window.__outcomeSelections.push(selection);const host=document.createElement('section');host.id='savedOutcomeWorkspace';host.textContent='Saved call outcome';host.dataset.callId=String(selection.callId);document.body.append(host);return true;}};
+    });
+    await oldCard.getByRole('button',{name:'View outcome'}).click();
+    check(await f.page.evaluate(()=>JSON.stringify(window.__outcomeSelections[0])===JSON.stringify({tab:'calls',callView:'history',callId:42,publicConversationId:32})),
+      'actual native View outcome selects the exact old call in the existing workspace');
+    await f.page.evaluate(()=>document.getElementById('savedOutcomeWorkspace').remove());await oldCard.getByRole('button',{name:'View outcome'}).click();
+    // The stored Chat message and its nested call card both carry this ID.
+    check(await f.page.evaluate(()=>document.querySelector('.profile-call-card[data-profile-call-id="41"]')===window.__keptCallNode
+      &&window.__callMediaFixture.rooms[0]===window.__keptCallRoom&&window.__callMediaFixture.disconnects===0
+      &&window.__callMediaFixture.tracks.every(track=>!track.stopped)&&window.__outcomeSelections.length===2),
+      'opening and reopening old saved outcomes preserves the active native card and live media');
+    check(f.requests.filter(r=>/_(delivery|dispatch|accept|join|end)$/.test(r.action||'')).length===outcomeOperations,
+      'the native outcome launcher creates no delivery, dispatch, acceptance, join or end');
+    await f.page.evaluate(()=>document.getElementById('savedOutcomeWorkspace').remove());
     check(await f.page.evaluate(()=>{window.dispatchEvent(new Event('stonefellow:chat-context-changing'));return document.getElementById('profileCallActivityPa3c').hidden&&!document.getElementById('vp3CallActivityDrawer').open;}),
       'changing Chat context clears the drawer synchronously');
     await f.close();

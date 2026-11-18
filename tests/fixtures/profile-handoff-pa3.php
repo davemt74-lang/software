@@ -16,10 +16,13 @@ final class PA3Statement extends PDOStatement
 }
 final class PA3PDO extends PDO
 {
+    /** Optional test observer; production SQL and default fixture behavior are unchanged. */
+    public mixed $beforeSql=null;
     public mixed $afterSql=null;
     public string $failSql='';
     public function prepare(string $sql,array $options=[]): PDOStatement|false
     {
+        if($hook=$this->beforeSql)$hook($sql,$this);
         if($this->failSql!==''&&str_contains($sql,$this->failSql))throw new PDOException('SECRET fixture SQL diagnostic');
         if($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
             $sql=str_replace([' FOR UPDATE','INSERT IGNORE'],['','INSERT OR IGNORE'],$sql);
@@ -33,8 +36,14 @@ final class PA3PDO extends PDO
         }
         return parent::prepare($sql,$options);
     }
+    public function query(string $query,?int $fetchMode=null,mixed ...$fetchModeArgs): PDOStatement|false
+    {
+        if($hook=$this->beforeSql)$hook($query,$this);
+        return $fetchMode===null?parent::query($query):parent::query($query,$fetchMode,...$fetchModeArgs);
+    }
     public function exec(string $sql): int|false
     {
+        if($hook=$this->beforeSql)$hook($sql,$this);
         if($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
             // Use the production job DDL, adapting only SQL dialect syntax.
             $sql=str_replace('BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY','INTEGER PRIMARY KEY AUTOINCREMENT',$sql);
@@ -139,7 +148,7 @@ function pa3_context(int $visitor=0,string $browser='b'): array
 }
 function pa3_reset(): void
 {
-    $p=db();if($p->inTransaction())$p->rollBack();$p->afterSql=null;$p->failSql='';
+    $p=db();if($p->inTransaction())$p->rollBack();$p->beforeSql=null;$p->afterSql=null;$p->failSql='';
     $GLOBALS['pa3ModelCalls']=[];$GLOBALS['pa3ModelHook']=null;$GLOBALS['pa3Now']=(int)floor(microtime(true)*1000);$GLOBALS['pa3Settings']=[];
     foreach(['profile_agent_handoff_operations_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_owners_pa3','agent_workflow_receipts','agent_workflow_action_dependencies','agent_workflow_events','agent_workflow_actions','agent_workflow_runs','chat_messages','chat_conversations','team_user_presence'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
     if($p->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'&&!table_exists('users'))$p->exec('CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,display_name VARCHAR(190),email VARCHAR(190),role VARCHAR(40),is_active INTEGER,avatar_path VARCHAR(255),password_hash VARCHAR(255),last_login_at DATETIME)');

@@ -37,6 +37,7 @@ try{
     }
     try{await route.fulfill({response,json:value});}catch(error){if(!/closed|disposed|cancel|abort/i.test(error.message))throw error;}
   });
+  const fixtureVisitRefs=server.seed.visit_events.map(id=>'profile:event:'+id);
   const panel=()=>page.locator('#vp3ChatSpecialistActivity');
   const tab=name=>panel().getByRole('tab',{name,exact:true});
   const reply=()=>panel().locator('[data-profile-reply-body]');
@@ -71,6 +72,7 @@ try{
     check(totals.length>0&&totals.every(node=>parseFloat(node.fontSize)>=20),'Analytics totals retain a clear visual hierarchy: '+JSON.stringify(totals));
   }
   async function stored(){const response=await page.request.get(server.base+'/fixture/state');assert.equal(response.status(),200);return response.json();}
+  async function control(action){const response=await page.request.post(server.base+'/fixture/control',{data:{action}});assert.equal(response.status(),200,await response.text());}
   await mkdir('artifacts/profile-specialist-workspace',{recursive:true});
   await reload();
   await page.locator('[data-chat-specialist="profile"]').click();
@@ -142,6 +144,60 @@ try{
   await panel().getByRole('button',{name:'Close',exact:true}).click();
   check(await page.evaluate(()=>nativeCardBefore===document.getElementById('fixtureNativeCall')&&nativeMediaBefore===nativeCardBefore.querySelector('[data-fixture-media]')&&nativeMediaBefore.isConnected),'workspace lifecycle preserves the existing native card/media DOM');
 
+  // Current/history navigation uses the real endpoint; terminal sections remain static.
+  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();await tab('Calls').click();
+  await panel().getByRole('button',{name:'Call history',exact:true}).click();
+  await panel().locator(`[data-profile-workspace-call="${server.seed.outcomes.assisted.call_id}"]`).getByRole('button',{name:'View outcome',exact:true}).click();
+  const outcomeSection=key=>panel().locator(`[data-profile-outcome-section="${key}"]`);
+  await outcomeSection('analysis').getByText('The saved call discussed public opening hours and an owner-reviewed follow-up.',{exact:true}).waitFor();
+  const historyReads=requests.length,historyWrites=requests.filter(row=>row.method==='POST').length,historyDispatches=(await stored()).provider_dispatches.length;
+  check(await panel().locator('[data-profile-outcome-section]').count()===4,'real terminal history renders analysis, transcript, research and reviewed follow-ups');
+  check(await panel().getByRole('button',{name:'Call history',exact:true}).getAttribute('aria-pressed')==='true','selected outcome stays in the actual history filter');
+  check(await outcomeSection('followups').locator('[data-profile-followup]').count()===20,'initial reviewed follow-ups are genuinely paged');
+  await contained();await panel().evaluate(element=>{element.scrollTop=0;});
+  await page.screenshot({path:'artifacts/profile-specialist-workspace/desktop-call-outcome.png',fullPage:true});
+  await outcomeSection('transcript').locator('summary').click();
+  await outcomeSection('transcript').getByRole('button',{name:'Load more transcript',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-profile-transcript-segment]').length===55);
+  await outcomeSection('research').getByRole('button',{name:'Load more research',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-profile-research]').length===7);
+  await outcomeSection('followups').getByRole('button',{name:'Load more follow-ups',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-profile-followup]').length===23);
+  check(await panel().locator('[data-profile-transcript-segment]').count()===55&&await panel().locator('[data-profile-research]').count()===7,
+    'browser appends every real stored transcript and research page');
+  check(await panel().locator('[data-profile-followup]').count()===23,'browser retains every reviewed task page including completed and cancelled records');
+  check(!requests.slice(historyReads).some(row=>row.payload.action==='call_activity'||row.method==='POST'),'terminal pagination does not start live activity or mutate the call');
+  check((await stored()).provider_dispatches.length===historyDispatches,'outcome reads never dispatch an inference');
+  await contained();
+  await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-profile-transcript-segment]').length===50);
+  await control('transcript_change');await outcomeSection('transcript').locator('summary').click();
+  await outcomeSection('transcript').getByRole('button',{name:'Load more transcript',exact:true}).click();
+  await panel().getByRole('button',{name:'Reload outcome',exact:true}).waitFor();
+  check(await panel().locator('[data-profile-transcript-segment],[data-profile-followup]').count()===0,
+    'a real source correction removes all accumulated outcome sections before reload');
+  await panel().getByRole('button',{name:'Reload outcome',exact:true}).click();
+  await outcomeSection('analysis').getByText('The saved analysis no longer matches the current transcript. Open the saved transcript to review it.',{exact:true}).waitFor();
+  check(!(await outcomeSection('analysis').innerText()).includes('The saved call discussed'),'stale saved analysis is withheld in the browser');
+  await control('analysis_refresh');await control('recording_revoke');
+  await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();
+  await outcomeSection('transcript').getByText('Your current access does not include this saved section.',{exact:true}).waitFor({state:'attached'});
+  check((await panel().innerText()).includes('Call ended')&&await panel().locator('[data-profile-transcript-segment],[data-profile-followup]').count()===0,
+    'recording denial keeps authorized call state and removes all recording-derived content');
+  await control('recording_restore');await reload();
+  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();
+  await panel().locator('.vp3-profile-service').waitFor();check(await tab('Overview').getAttribute('aria-selected')==='true','normal entry after reload still starts Overview');
+  await tab('Calls').click();await outcomeSection('analysis').getByText('The saved call discussed public opening hours and an owner-reviewed follow-up.',{exact:true}).waitFor();
+  check(await panel().getByRole('button',{name:'Call history',exact:true}).getAttribute('aria-pressed')==='true',
+    'after reload, Calls restores the exact saved history selection and rereads its current evidence');
+  await panel().getByRole('button',{name:'Back to calls',exact:true}).click();
+  await panel().locator(`[data-profile-workspace-call="${server.seed.outcomes.ordinary.call_id}"]`).getByRole('button',{name:'View outcome',exact:true}).click();
+  await outcomeSection('analysis').getByText('This section does not apply to this call.',{exact:true}).waitFor();
+  check(await panel().locator('[data-profile-transcript-segment]').count()===0,'ordinary completed call does not invent assisted content');
+  check(requests.filter(row=>row.method==='POST').length===historyWrites,'all completed-call navigation and section recovery remain read-only');
+  await control('tasks_complete');
+  await panel().getByRole('button',{name:'Close',exact:true}).click();
+
   await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();await openThread();
   held={started:defer(),release:defer()};const threadGate=held;mode='delay_thread';
   await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();await started(threadGate);
@@ -164,10 +220,26 @@ try{
   check(await tab('Reports').getAttribute('aria-selected')==='true','compact Top of Mind report action selects Reports in the shared shell');
   check(JSON.stringify(await panel().locator('[data-profile-report-section] h4').allTextContents())===JSON.stringify(['Key findings','Actions & follow-ups','Open questions','Next step','Questions for you']),'Reports retains the shared five-section projection');
   await contained();await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-reports.png',fullPage:true});
+  const visitGroup=panel().locator('[data-profile-visit-group]');
+  await visitGroup.getByText('2 visit records in this checked view',{exact:true}).waitFor();
+  const beforeVisitActions=requests.filter(row=>row.method==='POST').length;
+  await visitGroup.locator('summary').click();
+  const visitLinks=await visitGroup.locator('[data-profile-source]').evaluateAll(links=>links.map(link=>({ref:link.dataset.profileSource,revision:link.dataset.profileSourceRevision,owner:link.dataset.profilePresentationOwner})));
+  check(visitLinks.length===2&&visitLinks.every(link=>fixtureVisitRefs.includes(link.ref)&&/^[a-f0-9]{64}$/.test(link.revision)&&link.owner==='profile_attention_pa4b'),
+    'compact routine group retains each current native source and presentation proof');
+  check(requests.filter(row=>row.method==='POST').length===beforeVisitActions,'expanding routine visits never acknowledges or resolves them');
+  await contained();await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-visit-group.png',fullPage:true});
+
   await tab('Conversations').focus();await page.keyboard.press('ArrowLeft');
   check(await tab('Overview').getAttribute('aria-selected')==='true','ArrowLeft selects the preceding workspace tab');
   await page.keyboard.press('End');await panel().locator('[data-profile-report]').waitFor();
   check(await tab('Reports').getAttribute('aria-selected')==='true','End selects the final tab with its current report');
+  await page.evaluate(()=>window.STONEFELLOW_PROFILE_ACTIVITY.open({tab:'calls',callView:'history',callId:fixtureSeed.outcomes.assisted.call_id,publicConversationId:fixtureSeed.outcomes.assisted.public_conversation_id}));
+  await outcomeSection('analysis').getByText('The saved call discussed public opening hours and an owner-reviewed follow-up.',{exact:true}).waitFor();
+  check(await panel().getByRole('button',{name:'Call history',exact:true}).getAttribute('aria-pressed')==='true','legacy outcome bridge preserves the exact history selection');
+  const outcomeFonts=await panel().locator('.vp3-profile-call-detail :is(p,small,dt,dd,summary,a,strong)').evaluateAll(nodes=>nodes.filter(node=>node.textContent.trim()&&node.getClientRects().length&&parseFloat(getComputedStyle(node).fontSize)<12).map(node=>({tag:node.tagName,text:node.textContent.slice(0,70),font:getComputedStyle(node).fontSize})));
+  check(outcomeFonts.length===0,'compact saved outcome text stays readable: '+JSON.stringify(outcomeFonts));
+  await contained();await panel().evaluate(element=>{element.scrollTop=0;});await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-call-outcome.png',fullPage:true});
   await tab('Analytics').click();await panel().locator('.vp3-analytics-shell').waitFor();await readableAnalytics();await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-analytics.png',fullPage:true});
   await page.keyboard.press('Escape');

@@ -163,6 +163,28 @@ context.requestActivity=async()=>({ok:false,status:403});
 await vm.runInContext('read()',context);
 check(context.accessRejected&&context.snapshot===null,'revoked private scope clears the report and requires a new session');
 
+// Explicit checked-view visits retain exact member proofs without becoming new obligations.
+const visit=(id,type='profile_view')=>({...source('event',id,'/vp3/profile-agent.php?tab=visitors&session='+id),
+  title:'Saved visit '+id,profile_event_type:type,presentation_owner:'profile_attention_pa4b',profile_presentation_owned:true,
+  legacy_delivered:false,disposition:'pending',trigger:'activity',priority:'low',status:'current'});
+const visitReport=report({coverage:'limited',findings:[visit(301),source(),visit(302,'return_visitor')]});
+let grouped=render(visitReport,false),details=descendants(grouped,'details');
+check(details.length===1&&details[0].textContent.includes('2 visit records in this checked view'),'explicit routine visits form one bounded checked-view group');
+check(descendants(grouped,'a').length===3&&descendants(details[0],'a').length===2,'compact grouping retains every exact visit source alongside nonroutine sources');
+const members=descendants(details[0],'a');
+check(members[0].dataset.profileSource==='profile:event:301'&&members[0].dataset.profileSourceRevision==='a'.repeat(64)
+  &&members[0].dataset.profileSourceDisposition==='pending'&&members[0].dataset.profilePresentationOwner==='profile_attention_pa4b','group members retain revision, disposition and presentation ownership');
+check(descendants(grouped,'button').length===0&&grouped.textContent.includes('may be incomplete'),'opening a limited visit group adds no acknowledgement or action');
+const projected=model(visitReport).findings[0];
+check(projected.profile_event_type==='profile_view'&&projected.legacy_delivered===false&&projected.profile_presentation_owned===true,'report model retains typed native evidence and receipt flags');
+for(const candidate of [{...visit(301),profile_event_type:undefined},{...visit(301),presentation_owner:undefined},{...visit(301),priority:'high'},source('event',301,'/vp3/profile-agent.php?tab=visitors&session=301')]){
+  grouped=render(report({findings:[candidate]}));check(descendants(grouped,'details').length===0,'missing routine proof or higher priority remains an individual source');
+}
+check(model(report({findings:[{...visit(301),presentation_owner:'unknown_publisher'}]}))===null,'unrecognized visit presentation owner is rejected');
+check(model(report({findings:[{...visit(301),profile_event_type:'<script>profile_view</script>'}]}))===null,'malformed event type cannot change presentation');
+check(model(report({findings:[{...source(),profile_event_type:'profile_view'}]}))===null,'conversation is not reclassified as a routine visit');
+check(model(report({findings:[{...visit(301),profile_presentation_owned:false}]}))===null,'inconsistent presentation ownership is rejected');
+
 const orb=fs.readFileSync(new URL('../agent-orb.js',import.meta.url),'utf8');
 const catalogBegin=orb.indexOf('  const specialistFamilies={');
 const catalogEnd=orb.indexOf('  function installOrbAppearance(',catalogBegin);

@@ -25,6 +25,9 @@ function vp3_profile_workspace_call_row_v1(PDO $pdo,array $scope,int $id): array
     if(!in_array($row['state'],['offered','preparing','ready','active','ending','ended','declined','cancelled','expired','failed'],true)
         ||!in_array($row['mode'],['audio','video'],true)||!in_array($row['offered_by'],['owner','visitor'],true)||(int)$row['revision']<1)
         throw new RuntimeException('This Profile call changed.',409);
+    if(in_array($row['state'],['ended','declined','cancelled','expired','failed'],true)
+        &&((int)($row['ended_at_ms']??0)<1||(int)$row['ended_at_ms']<(int)$row['created_at_ms']))
+        throw new RuntimeException('This Profile call outcome could not be verified.',409);
     vp3_profile_call_context_pa3c($pdo,(int)$scope['user']['id'],(int)$row['conversation_id'],false,$row);
     return $row;
 }
@@ -51,6 +54,7 @@ function vp3_profile_workspace_call_card_v1(PDO $pdo,array $scope,array $row): a
     };
     return ['call_id'=>(int)$row['id'],'public_conversation_id'=>(int)$row['conversation_id'],
         'revision'=>(int)$row['revision'],'mode'=>(string)$row['mode'],'state'=>(string)$row['state'],'state_label'=>$label,
+        'detail_kind'=>in_array($row['state'],['ended','declined','cancelled','expired','failed'],true)?'outcome':'current',
         'visitor_label'=>$card['visitor_label'],'agent_name'=>$card['agent_name'],
         'assisted'=>!empty($row['assisted']),'activity_available'=>!empty($row['assisted'])&&$row['mode']==='audio'
             &&has_permission('artist_listening.access',$scope['user'])&&vp3_profile_call_activity_schema_ready_pa3c($pdo),
@@ -66,23 +70,31 @@ function vp3_profile_workspace_call_read_v1(PDO $pdo,array $scope,int $id): arra
     return $card;
 }
 
-/** Current native calls and this Chat's saved cards, not a complete call history. */
-function vp3_profile_workspace_calls_v1(PDO $pdo,array $scope,array $selection=[]): array
+/** Current calls and terminal history are independent of native Chat delivery. */
+function vp3_profile_workspace_calls_v1(PDO $pdo,array $scope,array $selection=[],string $filter='current',string $cursor=''): array
 {
     foreach($selection as $key=>$value)if(!in_array($key,['conversation_id','call_id'],true)||!is_int($value)||$value<0)
         throw new InvalidArgumentException('Invalid Profile call selection.');
     $scope=vp3_profile_workspace_call_scope_v1($pdo,$scope);
+    if(!in_array($filter,['current','history'],true))throw new RuntimeException('Choose a valid call filter.',422);
     if(!vp3_profile_call_schema_ready_pa3c($pdo))throw new RuntimeException('Profile calls are unavailable.',503);
     $owner=(int)$scope['user']['id'];$conversation=$selection['conversation_id']??0;$selected=$selection['call_id']??0;
     if($conversation>0)vp3_profile_call_context_pa3c($pdo,$owner,$conversation);
-    $sql="SELECT c.id FROM profile_calls_pa3c c WHERE c.owner_user_id=? AND
-        (c.state IN ('offered','preparing','ready','active','ending') OR EXISTS(
-            SELECT 1 FROM profile_call_deliveries_pa3c d WHERE d.call_id=c.id AND d.owner_user_id=c.owner_user_id
-                AND d.chat_conversation_id=? AND d.chat_agent_id=?))";
-    $args=[$owner,$scope['conversation_id'],$scope['agent_id']];
+    $binding=['owner'=>$owner,'agent'=>$scope['agent_id'],'chat'=>$scope['conversation_id'],'conversation'=>$conversation,'filter'=>$filter];
+    $sql="SELECT c.id FROM profile_calls_pa3c c WHERE c.owner_user_id=? AND c.state IN (".
+        ($filter==='current'?"'offered','preparing','ready','active','ending'":"'ended','declined','cancelled','expired','failed'").')';
+    $args=[$owner];
     if($conversation>0){$sql.=' AND c.conversation_id=?';$args[]=$conversation;}
+    if($cursor!==''){
+        $page=vp3_profile_call_outcome_decode_v1($cursor);
+        if(array_keys($page)!==['binding','before']||$page['binding']!==$binding||!is_int($page['before'])||$page['before']<1)
+            throw new RuntimeException('Refresh the call list.',422);
+        $sql.=' AND c.id<?';$args[]=$page['before'];
+    }
     $q=$pdo->prepare($sql.' ORDER BY c.id DESC LIMIT 21');$q->execute($args);$ids=$q->fetchAll(PDO::FETCH_COLUMN);
-    $out=['calls'=>[],'coverage'=>count($ids)>20?'limited':'ready','has_more'=>count($ids)>20,'selected'=>null];
+    $more=count($ids)>20;$pageIds=array_slice($ids,0,20);
+    $out=['calls'=>[],'coverage'=>$more?'limited':'ready','has_more'=>$more,'selected'=>null,'filter'=>$filter,
+        'next_cursor'=>$more?vp3_profile_call_outcome_encode_v1(['binding'=>$binding,'before'=>(int)end($pageIds)]):null];
     foreach(array_slice($ids,0,20) as $id){
         try{$out['calls'][]=vp3_profile_workspace_call_read_v1($pdo,$scope,(int)$id);}
         catch(PDOException $error){throw $error;}
@@ -95,6 +107,8 @@ function vp3_profile_workspace_calls_v1(PDO $pdo,array $scope,array $selection=[
     vp3_profile_workspace_call_scope_v1($pdo,$scope);
     return $out;
 }
+
+require_once __DIR__.'/profile-call-outcomes-v1.php';
 
 /** Authenticate the stored recording itself, not just the assistance pointer. */
 function vp3_profile_workspace_call_transcript_v1(PDO $pdo,array $scope,array $call): int

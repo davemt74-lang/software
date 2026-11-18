@@ -22,10 +22,12 @@ function vp3_profile_speech_error_pa4a(string $code='PROFILE_SPEECH_CHANGED',int
         'PROFILE_SPEECH_UNAVAILABLE'=>'This visitor speech source is no longer available.',
         'PROFILE_SPEECH_BUSY'=>'Voice playback is busy or a call is in progress.',
         'PROFILE_SPEECH_MUTED'=>'Visitor speech is muted or the current Chat is not available for playback.',
+        'PROFILE_SPEECH_DELIVERY_WITHHELD'=>'This visitor notice is not eligible for automatic delivery. Review the current Profile conversation instead.',
         'PROFILE_SPEECH_VOICE_UNAVAILABLE'=>'No permitted distinct visitor voice is available for this preference.',
         'PROFILE_SPEECH_RETRY_REQUIRED'=>'The previous speech request may have used provider quota. Choose Retry explicitly to create another request.',
         'PROFILE_SPEECH_AUDIO_EXPIRED'=>'The saved audio has expired. A new request requires an explicit retry.',
         'PROFILE_SPEECH_ALREADY_PLAYED'=>'Automatic playback for this visitor item has already been consumed.',
+        'PROFILE_SPEECH_AUTOMATIC_UNAVAILABLE'=>'Automatic playback is no longer available for this visitor item. Review its current Profile conversation.',
         default=>'This visitor speech item changed. Refresh its card before continuing.',
     };
     throw new VP3ProfileSpeechException($code,$message,$status,$code==='PROFILE_SPEECH_BUSY'?2:0);
@@ -136,7 +138,7 @@ function vp3_profile_speech_arrival_pa4a(PDO $pdo,array $ctx,string $arrivalCont
         if((int)$voice['arrival_generation']<1||(int)$voice['last_activity_at_ms']>$now||$now-(int)$voice['last_activity_at_ms']>=VP3_PROFILE_SPEECH_ARRIVAL_MS_PA4A){$pdo->prepare('UPDATE profile_visitor_voices_pa4a SET arrival_generation=arrival_generation+1,arrival_started_at_ms=?,last_activity_at_ms=?,updated_at_ms=? WHERE id=?')->execute([$now,$now,$now,(int)$voice['id']]);}
         else $pdo->prepare('UPDATE profile_visitor_voices_pa4a SET last_activity_at_ms=?,updated_at_ms=? WHERE id=?')->execute([$now,$now,(int)$voice['id']]);
         $voice=vp3_profile_speech_voice_row_pa4a($pdo,(int)$voice['id'],true);$item=vp3_profile_speech_insert_item_pa4a($pdo,$ctx,$voice,'arrival','arrival|'.$voice['id'].'|'.$voice['arrival_generation'],$cid,0,0,'',$arrivalContext);
-        if($arrivalContext==='chat'&&$item['arrival_context']==='page'&&(int)$item['auto_consumed']===0){
+        if($arrivalContext==='chat'&&$item['arrival_context']==='page'&&(int)$item['auto_consumed']===0&&(int)$item['chat_message_id']===0){
             $q=$pdo->prepare("SELECT id FROM profile_speech_attempts_pa4a WHERE item_id=? AND provider_state IN ('sending','ready','outcome_unverified') LIMIT 1");$q->execute([(int)$item['id']]);
             if(!$q->fetchColumn()){
                 $pdo->prepare("UPDATE profile_speech_items_pa4a SET arrival_context='chat',public_conversation_id=?,source_hash=?,revision=revision+1,updated_at_ms=? WHERE id=?")->execute([$cid,hash('sha256','arrival|'.$voice['id'].'|'.$voice['arrival_generation'].'|chat|'.$cid),$now,(int)$item['id']]);$item=vp3_profile_speech_item_pa4a($pdo,(int)$item['id'],true);$pdo->prepare('UPDATE profile_speech_items_pa4a SET binding_hash=? WHERE id=?')->execute([vp3_profile_speech_binding_pa4a($item),(int)$item['id']]);
@@ -154,14 +156,14 @@ function vp3_profile_speech_page_entry_pa4a(PDO $pdo,array $profile,?array $visi
 }
 function vp3_profile_speech_link_event_pa4a(PDO $pdo,array $item,int $eventId): void
 {
-    if($eventId<1||$item['kind']!=='arrival')return;$q=$pdo->prepare("SELECT id FROM profile_events WHERE id=? AND owner_user_id=? AND profile_session_id=? AND event_type='profile_view'");$q->execute([$eventId,(int)$item['owner_user_id'],(int)$item['profile_session_id']]);if(!$q->fetchColumn())return;
+    if($eventId<1||$item['kind']!=='arrival')return;$q=$pdo->prepare("SELECT id FROM profile_events WHERE id=? AND owner_user_id=? AND profile_session_id=? AND profile_agent_id=? AND COALESCE(visitor_user_id,0)=CAST(? AS SIGNED) AND event_type='profile_view'");$q->execute([$eventId,(int)$item['owner_user_id'],(int)$item['profile_session_id'],(int)$item['profile_agent_id'],(int)$item['visitor_user_id']]);if(!$q->fetchColumn())return;
     $pdo->prepare('UPDATE profile_speech_items_pa4a SET source_event_id=? WHERE id=? AND owner_user_id=? AND source_event_id IS NULL')->execute([$eventId,(int)$item['id'],(int)$item['owner_user_id']]);
 }
 /** Presentation ownership only; notification read state and pickup ACK remain independent. */
 function vp3_profile_speech_notification_owned_pa4a(PDO $pdo,array $user,array $notification): bool
 {
     if(!vp3_profile_speech_schema_ready_pa4a($pdo)||(int)($notification['user_id']??0)!==(int)($user['id']??0)||($notification['source_type']??null)!=='profile_event'||(int)($notification['source_id']??0)<1)return false;
-    $q=$pdo->prepare("SELECT s.id FROM profile_speech_items_pa4a s INNER JOIN profile_events e ON e.id=s.source_event_id AND e.owner_user_id=s.owner_user_id AND e.profile_session_id=s.profile_session_id WHERE s.owner_user_id=? AND s.kind='arrival' AND e.event_type='profile_view' AND s.source_event_id=? LIMIT 1");$q->execute([(int)$user['id'],(int)$notification['source_id']]);return(bool)$q->fetchColumn();
+    $q=$pdo->prepare("SELECT s.id FROM profile_speech_items_pa4a s INNER JOIN profile_events e ON e.id=s.source_event_id AND e.owner_user_id=s.owner_user_id AND e.profile_session_id=s.profile_session_id AND e.profile_agent_id=s.profile_agent_id AND COALESCE(e.visitor_user_id,0)=s.visitor_user_id WHERE s.owner_user_id=? AND s.kind='arrival' AND e.event_type='profile_view' AND s.source_event_id=? LIMIT 1");$q->execute([(int)$user['id'],(int)$notification['source_id']]);return(bool)$q->fetchColumn();
 }
 /** Called inside successful native admission; it never changes pickup or responder state. */
 function vp3_profile_speech_message_pa4a(PDO $pdo,array $ctx,array $turn): ?array
@@ -187,7 +189,7 @@ function vp3_profile_speech_maintenance_pa4a(PDO $pdo,int $limit=20): array
 }
 
 /** Read a saved arrival/message with current source permissions. It is not an inference grant. */
-function vp3_profile_speech_source_pa4a(PDO $pdo,array $item,bool $lock=false): array
+function vp3_profile_speech_source_pa4a(PDO $pdo,array $item,bool $lock=false,bool $withArrivalContext=true): array
 {
     vp3_profile_speech_dependencies_pa4a();if(!hash_equals((string)$item['binding_hash'],vp3_profile_speech_binding_pa4a($item)))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
     $s=vp3_profile_speech_json_pa4a((string)$item['authority_json'],4096);if(($s['contract']??null)!=='vp3.profile-speech-source.v1')vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
@@ -201,11 +203,11 @@ function vp3_profile_speech_source_pa4a(PDO $pdo,array $item,bool $lock=false): 
     if(!function_exists('vp3_observation_personal_permission_v1'))require_once __DIR__.'/agent-observation-authority-v1.php';
     foreach(['profile_agent.access','profile_chat.access'] as $permission)if(!vp3_observation_personal_permission_v1($pdo,$user,$permission))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
     $q=$pdo->prepare('SELECT id,owner_user_id,session_key FROM profile_visit_sessions WHERE id=? AND owner_user_id=?'.$suffix);$q->execute([$s['profile_session_id'],$owner]);$session=$q->fetch(PDO::FETCH_ASSOC);if(!$session||!hash_equals($s['session_hash'],hash('sha256',(string)$session['session_key'])))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
-    $visitor=null;$label='A visitor';
+    $visitor=null;$label='A visitor';$identity_disclosed=false;
     if($visitorId>0){
         $q=$pdo->prepare('SELECT id,display_name,is_active,password_hash FROM users WHERE id=?'.$suffix);$q->execute([$visitorId]);$visitor=$q->fetch(PDO::FETCH_ASSOC);
         if(!$visitor||empty($visitor['is_active'])||!is_string($s['visitor_auth_revision']??null)||!hash_equals($s['visitor_auth_revision'],hash('sha256',$visitorId.'|'.(string)$visitor['password_hash'])))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
-        $q=$pdo->prepare('SELECT share_visit_identity FROM user_profiles WHERE user_id=?'.$suffix);$q->execute([$visitorId]);if(in_array($q->fetchColumn(),[1,'1',true],true)){$name=mb_substr(trim((string)$visitor['display_name']),0,100);if($name!=='')$label=$name;}
+        $q=$pdo->prepare('SELECT share_visit_identity FROM user_profiles WHERE user_id=?'.$suffix);$q->execute([$visitorId]);if(in_array($q->fetchColumn(),[1,'1',true],true)){$identity_disclosed=true;$name=mb_substr(trim((string)$visitor['display_name']),0,100);if($name!=='')$label=$name;}
     }elseif(($s['visitor_auth_revision']??'')!=='')vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
     try{vp3_profile_call_block_check_pa3c($pdo,$owner,$visitorId,$lock);}catch(VP3ProfileCallException $e){vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);}
     $cid=(int)$item['public_conversation_id'];$conversation=null;$turn=null;$text='';
@@ -223,7 +225,9 @@ function vp3_profile_speech_source_pa4a(PDO $pdo,array $item,bool $lock=false): 
     }else vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
     $automatic=$item['kind']==='arrival';if($item['kind']==='visitor_message'){$thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,$lock);$automatic=$thread&&$thread['mode']==='owner'&&$turn['state']==='owner_claimed'&&(int)$turn['conversation_epoch']===(int)$thread['epoch'];}
     $automatic=$automatic&&(int)$item['auto_consumed']===0&&(int)$item['automatic_expires_at_ms']>vp3_profile_speech_now_pa4a()&&(int)$item['created_at_ms']<=vp3_profile_speech_now_pa4a();
-    return compact('user','profile','agent','session','visitor','label','text','conversation','turn','automatic')+['text_hash'=>hash('sha256',$text)];
+    $arrival_context=null;
+    if($item['kind']==='arrival'&&$withArrivalContext){require_once __DIR__.'/profile-arrival-context-v1.php';$arrival_context=vp3_profile_arrival_context_v1($pdo,$item,compact('label','identity_disclosed'),$lock);$text=$arrival_context['text'];unset($arrival_context['text']);}
+    return compact('user','profile','agent','session','visitor','label','text','conversation','turn','automatic','identity_disclosed','arrival_context')+['text_hash'=>hash('sha256',$text)];
 }
 function vp3_profile_speech_scope_pa4a(array $input,bool $delivery=false): array
 {
@@ -232,9 +236,16 @@ function vp3_profile_speech_scope_pa4a(array $input,bool $delivery=false): array
 }
 function vp3_profile_speech_owner_pa4a(PDO $pdo,array $user,array $scope,bool $voice=false,bool $lock=false): array
 {
+    if($lock){
+        $suffix=vp3_profile_handoff_lock_pa3($pdo);$q=$pdo->prepare('SELECT id,is_active FROM users WHERE id=?'.$suffix);$q->execute([(int)$user['id']]);$live=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$live||empty($live['is_active']))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
+        if((int)$scope['chat_agent_id']>0){$q=$pdo->prepare('SELECT id FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1'.$suffix);$q->execute([(int)$scope['chat_agent_id'],(int)$user['id']]);if(!$q->fetchColumn())vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);}
+        $q=$pdo->prepare('SELECT user_id,user_agent_id FROM chat_conversations WHERE id=?'.$suffix);$q->execute([(int)$scope['chat_conversation_id']]);$chat=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$chat||(int)$chat['user_id']!==(int)$user['id']||(int)($chat['user_agent_id']??0)!==(int)$scope['chat_agent_id'])vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
+    }
     try{$user=vp3_profile_handoff_owner_pa3($pdo,$user,(int)$scope['chat_conversation_id'],(int)$scope['chat_agent_id']);}catch(VP3ProfileHandoffException $e){vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);}
     if(!$voice)return $user;
-    try{vp3_profile_handoff_tab_pa3($pdo,(int)$user['id'],$scope['tab_id'],(int)$scope['chat_conversation_id'],(int)$scope['chat_agent_id'],true);}catch(VP3ProfileHandoffException $e){vp3_profile_speech_error_pa4a('PROFILE_SPEECH_MUTED',409);}
+    vp3_profile_speech_tab_pa4a($pdo,(int)$user['id'],$scope,$lock);
     if(!function_exists('chat_settings_agent_voice_allowed_v237'))require_once __DIR__.'/chat-settings-v237.php';if(!chat_settings_agent_voice_allowed_v237($user))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_MUTED',403);
     try{$q=$pdo->prepare('SELECT presence_mode,social_chat_enabled,sound_enabled,agent_voice_enabled FROM team_user_presence WHERE user_id=? LIMIT 2'.($lock?vp3_profile_handoff_lock_pa3($pdo):''));$q->execute([(int)$user['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);}catch(PDOException $e){vp3_profile_speech_error_pa4a('PROFILE_SPEECH_NOT_READY',503);}
     if(count($rows)>1)vp3_profile_speech_error_pa4a('PROFILE_SPEECH_MUTED',409);
@@ -242,15 +253,67 @@ function vp3_profile_speech_owner_pa4a(PDO $pdo,array $user,array $scope,bool $v
     if(vp3_profile_handoff_availability_pa3($pdo,(int)$user['id'],$lock)!=='available')vp3_profile_speech_error_pa4a('PROFILE_SPEECH_MUTED',409);
     if(vp3_profile_call_owner_busy_pa3c($pdo,(int)$user['id']))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_BUSY',409);return $user;
 }
-function vp3_profile_speech_delivery_check_pa4a(PDO $pdo,array $item,array $scope): void
+function vp3_profile_speech_tab_pa4a(PDO $pdo,int $owner,array $scope,bool $lock=false): void
+{
+    if(!$lock){try{vp3_profile_handoff_tab_pa3($pdo,$owner,$scope['tab_id'],(int)$scope['chat_conversation_id'],(int)$scope['chat_agent_id'],true);return;}catch(VP3ProfileHandoffException $e){vp3_profile_speech_error_pa4a('PROFILE_SPEECH_MUTED',409);}}
+    // A locking current read is required inside the delivery transaction;
+    // an earlier repeatable-read snapshot must not revive a hidden/switched tab.
+    $q=$pdo->prepare('SELECT * FROM profile_agent_handoff_presence_pa3 WHERE owner_user_id=? AND tab_id=?'.vp3_profile_handoff_lock_pa3($pdo));$q->execute([$owner,$scope['tab_id']]);$row=$q->fetch(PDO::FETCH_ASSOC);$now=vp3_profile_speech_now_pa4a();
+    if(!$row||(int)$row['chat_conversation_id']!==(int)$scope['chat_conversation_id']||(int)$row['chat_agent_id']!==(int)$scope['chat_agent_id']||(int)$row['visible']!==1||(int)$row['last_seen_ms']>$now||(int)$row['last_seen_ms']<$now-VP3_PROFILE_HANDOFF_PRESENCE_MS_PA3)vp3_profile_speech_error_pa4a('PROFILE_SPEECH_MUTED',409);
+}
+/** An existing native card may host speech without becoming a speech-owned Chat message. */
+function vp3_profile_speech_native_destination_pa4a(PDO $pdo,array $item,array $scope,bool $lock=false,bool $currentTab=true): int
+{
+    if($item['kind']!=='visitor_message')return 0;
+    $q=$pdo->prepare('SELECT d.chat_message_id FROM profile_agent_handoff_deliveries_pa3 d INNER JOIN profile_agent_handoff_turns_pa3 t ON t.id=d.turn_id AND t.owner_user_id=d.owner_user_id WHERE d.owner_user_id=? AND d.turn_id=? AND t.conversation_id=? AND t.visitor_message_id=? AND d.chat_conversation_id=? AND d.chat_agent_id=?'.($currentTab?' AND d.tab_id=?':'').' ORDER BY d.created_at_ms DESC LIMIT 1'.($lock?vp3_profile_handoff_lock_pa3($pdo):''));
+    $args=[(int)$item['owner_user_id'],(int)$item['turn_id'],(int)$item['public_conversation_id'],(int)$item['visitor_message_id'],(int)$scope['chat_conversation_id'],(int)$scope['chat_agent_id']];if($currentTab)$args[]=$scope['tab_id'];$q->execute($args);$id=(int)$q->fetchColumn();
+    if($id>0){try{vp3_profile_handoff_card_identity_pa3($pdo,(int)$item['owner_user_id'],(int)$scope['chat_conversation_id'],$id,(int)$item['turn_id'],(int)$item['public_conversation_id']);}catch(VP3ProfileHandoffException $e){vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);}}
+    return $id;
+}
+function vp3_profile_speech_delivery_check_pa4a(PDO $pdo,array $item,array $scope): string
 {
     foreach(['chat_conversation_id','chat_agent_id','chat_message_id'] as $key)if((int)$item[$key]!== (int)($scope[$key]??-1))vp3_profile_speech_error_pa4a();
     foreach(['delivery_id','tab_id','client_hash'] as $key)if(!is_string($scope[$key]??null)||!hash_equals((string)$item[$key],$scope[$key]))vp3_profile_speech_error_pa4a();
     $q=$pdo->prepare('SELECT m.context_json,c.user_id,c.user_agent_id FROM chat_messages m INNER JOIN chat_conversations c ON c.id=m.conversation_id WHERE m.id=? AND m.conversation_id=?');$q->execute([(int)$item['chat_message_id'],(int)$item['chat_conversation_id']]);$message=$q->fetch(PDO::FETCH_ASSOC);$context=$message?json_decode((string)$message['context_json'],true):null;$marker=is_array($context)?($context['profile_speech']??null):null;
-    if(!$message||(int)$message['user_id']!==(int)$item['owner_user_id']||(int)($message['user_agent_id']??0)!==(int)$item['chat_agent_id']||!is_array($marker)||($marker['contract']??null)!==VP3_PROFILE_SPEECH_PA4A||(int)($marker['item_id']??0)!==(int)$item['id']||($marker['kind']??null)!==$item['kind']||(int)($marker['public_conversation_id']??-1)!==(int)$item['public_conversation_id'])vp3_profile_speech_error_pa4a();
+    if(!$message||(int)$message['user_id']!==(int)$item['owner_user_id']||(int)($message['user_agent_id']??0)!==(int)$item['chat_agent_id'])vp3_profile_speech_error_pa4a();
+    if(is_array($marker)&&($marker['contract']??null)===VP3_PROFILE_SPEECH_PA4A&&(int)($marker['item_id']??0)===(int)$item['id']&&($marker['kind']??null)===$item['kind']&&(int)($marker['public_conversation_id']??-1)===(int)$item['public_conversation_id'])return 'speech';
+    if($item['kind']==='visitor_message'&&vp3_profile_speech_native_destination_pa4a($pdo,$item,$scope)===(int)$item['chat_message_id'])return 'handoff';
+    vp3_profile_speech_error_pa4a();
+}
+/** Visual notification policy is separate from whether TTS is configured or muted. */
+function vp3_profile_speech_automatic_delivery_pa4a(PDO $pdo,array $item,array $source,array $scope,bool $lock=false): array
+{
+    $deny=static fn(string $reason):array=>['allowed'=>false,'reason'=>$reason];$owner=(int)$item['owner_user_id'];$cid=(int)$item['public_conversation_id'];$suffix=$lock?vp3_profile_handoff_lock_pa3($pdo):'';
+    if(!$source['automatic'])return $deny('expired_or_consumed');
+    try{vp3_profile_speech_owner_pa4a($pdo,$source['user'],$scope,false,$lock);vp3_profile_speech_tab_pa4a($pdo,$owner,$scope,$lock);}catch(VP3ProfileSpeechException $e){return $deny('current_chat_unavailable');}
+    $q=$pdo->prepare('SELECT presence_mode,social_chat_enabled FROM team_user_presence WHERE user_id=? LIMIT 2'.$suffix);$q->execute([$owner]);$presence=$q->fetchAll(PDO::FETCH_ASSOC);
+    if(count($presence)>1||($presence&&($presence[0]['presence_mode']!=='online'||!in_array($presence[0]['social_chat_enabled'],[1,'1',true],true))))return $deny('owner_unavailable');
+    if(vp3_profile_handoff_availability_pa3($pdo,$owner,$lock)!=='available')return $deny('owner_unavailable');
+    if((int)($item['source_event_id']??0)>0){
+        $q=$pdo->prepare('SELECT status,snoozed_until FROM agent_attention_items WHERE owner_user_id=? AND source_event_id=?'.$suffix);$q->execute([$owner,(int)$item['source_event_id']]);
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $attention){if(in_array($attention['status'],['handled','ignored','snoozed'],true))return $deny('attention_suppressed');}
+    }
+    if($cid>0){
+        $q=$pdo->prepare("SELECT * FROM profile_calls_pa3c WHERE owner_user_id=? AND conversation_id=? AND state IN ('offered','preparing','ready','active','ending') ORDER BY id DESC LIMIT 1".$suffix);$q->execute([$owner,$cid]);
+        if($call=$q->fetch(PDO::FETCH_ASSOC)){try{vp3_profile_call_integrity_pa3c($call);vp3_profile_call_context_pa3c($pdo,$owner,$cid,$lock,$call);}catch(VP3ProfileCallException $e){return $deny('current_source_unavailable');}return $deny('native_call_presentation');}
+        if($item['kind']==='visitor_message'){
+            $native=vp3_profile_speech_native_destination_pa4a($pdo,$item,$scope,$lock);
+            return $native>0?['allowed'=>true,'reason'=>'','native_chat_message_id'=>$native]:$deny('awaiting_native_card');
+        }
+        $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,$lock);
+        $q=$pdo->prepare('SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND conversation_id=? ORDER BY id DESC LIMIT 1'.$suffix);$q->execute([$owner,$cid]);$turn=$q->fetch(PDO::FETCH_ASSOC);
+        if($turn&&in_array($turn['state'],['awaiting_delivery','awaiting_owner','owner_claimed','agent_ready','agent_running'],true)){
+            $visible=($turn['chat_mode']??'auto')!=='agent'&&($thread['requested_mode']??'auto')!=='agent';
+            if(!$visible){$q=$pdo->prepare('SELECT d.delivery_id FROM profile_agent_handoff_deliveries_pa3 d INNER JOIN profile_agent_handoff_turns_pa3 t ON t.id=d.turn_id AND t.owner_user_id=d.owner_user_id WHERE d.owner_user_id=? AND t.conversation_id=? AND d.chat_conversation_id=? AND d.chat_agent_id=? LIMIT 1'.$suffix);$q->execute([$owner,$cid,(int)$scope['chat_conversation_id'],(int)$scope['chat_agent_id']]);$visible=(bool)$q->fetchColumn();}
+            if($visible)return $deny('native_handoff_presentation');
+        }
+    }
+    return ['allowed'=>true,'reason'=>''];
 }
 function vp3_profile_speech_projection_pa4a(PDO $pdo,array $item,array $source,array $scope): array
 {
+    $visual=vp3_profile_speech_automatic_delivery_pa4a($pdo,$item,$source,$scope);
+    $native=vp3_profile_speech_native_destination_pa4a($pdo,$item,$scope,false,(int)$item['chat_message_id']===0);$deliveryKind=$native>0&&((int)$item['chat_message_id']===0||(int)$item['chat_message_id']===$native)?'handoff':'speech';
     $reason='';$can=true;try{vp3_profile_speech_provider_pa4a();vp3_profile_speech_config_valid_pa4a(vp3_profile_speech_config_pa4a());vp3_profile_speech_owner_pa4a($pdo,$source['user'],$scope,true);}catch(VP3ProfileSpeechException $e){$can=false;$reason=match($e->publicCode){'PROFILE_SPEECH_BUSY'=>'call_or_voice_busy','PROFILE_SPEECH_NOT_READY'=>'not_ready','PROFILE_SPEECH_VOICE_UNAVAILABLE'=>'voice_unavailable',default=>'muted_or_unavailable'};}
     $state='available';$q=$pdo->prepare('SELECT * FROM profile_speech_attempts_pa4a WHERE item_id=? ORDER BY attempt_no DESC LIMIT 1');$q->execute([(int)$item['id']]);$attempt=$q->fetch(PDO::FETCH_ASSOC);$playback='none';$retry=false;
     if($attempt){
@@ -263,7 +326,7 @@ function vp3_profile_speech_projection_pa4a(PDO $pdo,array $item,array $source,a
         $retry=$can&&!in_array($attempt['provider_state'],['reserved','sending'],true)&&($state==='expired'||in_array($attempt['provider_state'],['outcome_unverified','rejected'],true)||($attempt['provider_state']==='blocked'&&$attempt['provider_attempted']!==0&&$attempt['provider_attempted']!=='0'));
     }
     $canPlay=$can&&!in_array($state,['pending','granted','playing','outcome_unverified','expired'],true)&&!$retry;
-    return ['id'=>(int)$item['id'],'revision'=>(int)$item['revision'],'kind'=>$item['kind'],'public_conversation_id'=>(int)$item['public_conversation_id'],'turn_id'=>(int)$item['turn_id'],'visitor_message_id'=>(int)$item['visitor_message_id'],'visitor_label'=>$source['label'],'display_text'=>$source['text'],'voice_assignment_id'=>(int)$item['voice_assignment_id'],'voice_revision'=>(int)$item['voice_revision'],'voice_label'=>$item['kind']==='arrival'?'Agent voice':'Visitor voice','state'=>$state,'playback_state'=>$playback,'can_play'=>$canPlay,'can_retry'=>$retry,'automatic_allowed'=>$can&&$source['automatic']&&!$attempt,'reason'=>$reason,'chat_conversation_id'=>(int)$item['chat_conversation_id'],'chat_agent_id'=>(int)$item['chat_agent_id'],'chat_message_id'=>(int)$item['chat_message_id'],'delivery_id'=>(string)$item['delivery_id'],'attempt_id'=>$attempt?(int)$attempt['id']:0,'latest_attempt_id'=>$attempt?(int)$attempt['id']:null,'latest_attempt_state'=>$attempt?$attempt['provider_state']:null,'latest_attempt_reason'=>$attempt?$attempt['last_reason']:null];
+    return ['id'=>(int)$item['id'],'revision'=>(int)$item['revision'],'kind'=>$item['kind'],'public_conversation_id'=>(int)$item['public_conversation_id'],'turn_id'=>(int)$item['turn_id'],'visitor_message_id'=>(int)$item['visitor_message_id'],'visitor_label'=>$source['label'],'display_text'=>$source['text'],'arrival_context'=>$source['arrival_context'],'voice_assignment_id'=>(int)$item['voice_assignment_id'],'voice_revision'=>(int)$item['voice_revision'],'voice_label'=>$item['kind']==='arrival'?'Agent voice':'Visitor voice','state'=>$state,'playback_state'=>$playback,'can_play'=>$canPlay,'can_retry'=>$retry,'automatic_allowed'=>$can&&$visual['allowed']&&!$attempt,'automatic_delivery_allowed'=>$visual['allowed'],'delivery_reason'=>$visual['reason'],'delivery_kind'=>$deliveryKind,'native_chat_message_id'=>$deliveryKind==='handoff'?$native:0,'reason'=>$reason,'chat_conversation_id'=>(int)$item['chat_conversation_id'],'chat_agent_id'=>(int)$item['chat_agent_id'],'chat_message_id'=>(int)$item['chat_message_id'],'delivery_id'=>(string)$item['delivery_id'],'attempt_id'=>$attempt?(int)$attempt['id']:0,'latest_attempt_id'=>$attempt?(int)$attempt['id']:null,'latest_attempt_state'=>$attempt?$attempt['provider_state']:null,'latest_attempt_reason'=>$attempt?$attempt['last_reason']:null];
 }
 function vp3_profile_speech_state_pa4a(PDO $pdo,array $user,array $input): array
 {
@@ -276,11 +339,22 @@ function vp3_profile_speech_state_pa4a(PDO $pdo,array $user,array $input): array
 function vp3_profile_speech_delivery_pa4a(PDO $pdo,array $user,array $input): array
 {
     vp3_profile_speech_require_pa4a($pdo);$scope=vp3_profile_speech_scope_pa4a($input);$id=vp3_profile_speech_id_pa4a($input['item_id']??null);$revision=vp3_profile_speech_id_pa4a($input['revision']??null);$user=vp3_profile_speech_owner_pa4a($pdo,$user,$scope);$initial=vp3_profile_speech_item_pa4a($pdo,$id);if(!$initial||(int)$initial['owner_user_id']!==(int)$user['id'])vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
-    return vp3_profile_handoff_atomic_pa3($pdo,function()use($pdo,$user,$scope,$id,$revision,$initial){
+    $mode=$input['mode']??'automatic';if(!in_array($mode,['automatic','manual'],true))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_INVALID',422);
+    if($mode==='manual'){
+        if($initial['kind']!=='visitor_message')vp3_profile_speech_error_pa4a('PROFILE_SPEECH_INVALID',422);
+        foreach(['public_conversation_id','turn_id','visitor_message_id'] as $key)if(vp3_profile_speech_id_pa4a($input[$key]??null)!==(int)$initial[$key])vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
+    }elseif(array_intersect(['public_conversation_id','turn_id','visitor_message_id'],array_keys($input)))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_INVALID',422);
+    return vp3_profile_handoff_atomic_pa3($pdo,function()use($pdo,$user,$scope,$id,$revision,$initial,$mode){
         vp3_profile_call_slot_pa3c($pdo,(int)$user['id'],true);if((int)$initial['public_conversation_id']>0)vp3_profile_handoff_conversation_pa3($pdo,(int)$user['id'],(int)$initial['public_conversation_id'],true);$source=vp3_profile_speech_source_pa4a($pdo,$initial,true);$item=vp3_profile_speech_item_pa4a($pdo,$id,true);if(!$item||(int)$item['revision']!==$revision||!hash_equals($item['binding_hash'],$initial['binding_hash']))vp3_profile_speech_error_pa4a();
-        vp3_profile_speech_owner_pa4a($pdo,$user,$scope);try{vp3_profile_handoff_tab_pa3($pdo,(int)$user['id'],$scope['tab_id'],$scope['chat_conversation_id'],$scope['chat_agent_id'],true);}catch(VP3ProfileHandoffException $e){vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);}$now=vp3_profile_speech_now_pa4a();
+        vp3_profile_speech_owner_pa4a($pdo,$user,$scope);vp3_profile_speech_tab_pa4a($pdo,(int)$user['id'],$scope,true);$now=vp3_profile_speech_now_pa4a();
         if((int)$item['chat_message_id']>0&&((int)$item['chat_conversation_id']!==$scope['chat_conversation_id']||(int)$item['chat_agent_id']!==$scope['chat_agent_id']))vp3_profile_speech_error_pa4a();
-        if((int)$item['chat_message_id']<1){$marker=['sources'=>[],'profile_speech'=>['contract'=>VP3_PROFILE_SPEECH_PA4A,'item_id'=>$id,'revision'=>$revision,'kind'=>$item['kind'],'public_conversation_id'=>(int)$item['public_conversation_id']]];$pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at) VALUES(?,NULL,'assistant',?,?,?)")->execute([$scope['chat_conversation_id'],$item['kind']==='arrival'?'Profile visitor announcement.':'Profile visitor message.',json_encode($marker,JSON_THROW_ON_ERROR),vp3_profile_handoff_date_pa3()]);$messageId=(int)$pdo->lastInsertId();}else $messageId=(int)$item['chat_message_id'];
+        $newBinding=(int)$item['chat_message_id']<1;
+        if($mode==='manual'){vp3_profile_speech_provider_pa4a();vp3_profile_speech_config_valid_pa4a(vp3_profile_speech_config_pa4a());vp3_profile_speech_owner_pa4a($pdo,$user,$scope,true,true);}
+        if($newBinding&&$mode==='automatic'&&!vp3_profile_speech_automatic_delivery_pa4a($pdo,$item,$source,$scope,true)['allowed'])vp3_profile_speech_error_pa4a('PROFILE_SPEECH_DELIVERY_WITHHELD',409);
+        $native=vp3_profile_speech_native_destination_pa4a($pdo,$item,$scope,true);
+        if($newBinding&&$native<1&&vp3_profile_speech_native_destination_pa4a($pdo,$item,$scope,true,false)>0)vp3_profile_speech_error_pa4a('PROFILE_SPEECH_DELIVERY_WITHHELD',409);
+        if($newBinding&&$native>0)$messageId=$native;
+        elseif($newBinding){$marker=['sources'=>[],'profile_speech'=>['contract'=>VP3_PROFILE_SPEECH_PA4A,'item_id'=>$id,'revision'=>$revision,'kind'=>$item['kind'],'public_conversation_id'=>(int)$item['public_conversation_id']]];$pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at) VALUES(?,NULL,'assistant',?,?,?)")->execute([$scope['chat_conversation_id'],$item['kind']==='arrival'?'Profile visitor announcement.':'Profile visitor message.',json_encode($marker,JSON_THROW_ON_ERROR),vp3_profile_handoff_date_pa3()]);$messageId=(int)$pdo->lastInsertId();}else $messageId=(int)$item['chat_message_id'];
         if($item['tab_id']!==$scope['tab_id']||$item['client_hash']!==$scope['client_hash']||$item['delivery_id']===''){
             $busy=$pdo->prepare("SELECT id FROM profile_speech_attempts_pa4a WHERE item_id=? AND ((provider_state IN ('reserved','sending') AND lease_until_ms>?) OR (playback_state IN ('granted','playing') AND play_lease_until_ms>?)) LIMIT 1");$busy->execute([$id,$now,$now]);if($busy->fetchColumn())vp3_profile_speech_error_pa4a('PROFILE_SPEECH_BUSY',409);
             $pdo->prepare('UPDATE profile_speech_items_pa4a SET delivery_id=?,chat_conversation_id=?,chat_agent_id=?,chat_message_id=?,tab_id=?,client_hash=?,revision=revision+1,updated_at_ms=? WHERE id=?')->execute([bin2hex(random_bytes(16)),$scope['chat_conversation_id'],$scope['chat_agent_id'],$messageId,$scope['tab_id'],$scope['client_hash'],$now,$id]);
@@ -291,7 +365,14 @@ function vp3_profile_speech_delivery_pa4a(PDO $pdo,array $user,array $input): ar
             if($item['kind']==='arrival'&&(int)$item['source_event_id']>0){$eventSource=vp3_profile_projection_source_pa4b($pdo,(int)$user['id'],(int)$item['source_event_id']);vp3_profile_projection_capture_marker_pa4b($pdo,$eventSource,$destination);}
             elseif($item['kind']==='visitor_message')vp3_profile_projection_oblige_message_marker_pa4b($pdo,(int)$user['id'],(int)$item['visitor_message_id'],$destination);
         }
-        return ['contract'=>VP3_PROFILE_SPEECH_PA4A,'item'=>vp3_profile_speech_projection_pa4a($pdo,$item,$source,$scope),'delivery_id'=>$item['delivery_id'],'chat_conversation_id'=>$scope['chat_conversation_id'],'chat_agent_id'=>$scope['chat_agent_id'],'chat_message_id'=>$messageId,'server_now_ms'=>$now];
+        $projection=vp3_profile_speech_projection_pa4a($pdo,$item,$source,$scope);
+        // Repeat the locked policy at the final commit boundary, after marker
+        // projection. A late presence/source change must roll back a new card.
+        $source=vp3_profile_speech_source_pa4a($pdo,$item,true);vp3_profile_speech_owner_pa4a($pdo,$user,$scope,$mode==='manual',true);
+        if(!hash_equals(hash('sha256',$projection['display_text']),$source['text_hash']))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_UNAVAILABLE',403);
+        if($newBinding&&$mode==='automatic'&&!vp3_profile_speech_automatic_delivery_pa4a($pdo,$item,$source,$scope,true)['allowed'])vp3_profile_speech_error_pa4a('PROFILE_SPEECH_DELIVERY_WITHHELD',409);
+        vp3_profile_speech_delivery_check_pa4a($pdo,$item,$bound);
+        return ['contract'=>VP3_PROFILE_SPEECH_PA4A,'item'=>$projection,'delivery_kind'=>$projection['delivery_kind'],'delivery_id'=>$item['delivery_id'],'chat_conversation_id'=>$scope['chat_conversation_id'],'chat_agent_id'=>$scope['chat_agent_id'],'chat_message_id'=>$messageId,'server_now_ms'=>$now];
     });
 }
 
@@ -372,7 +453,7 @@ function vp3_profile_speech_claim_pa4a(PDO $pdo,array $user,array $input,bool $r
         vp3_profile_speech_owner_pa4a($pdo,$user,$scope,true,true);vp3_profile_speech_delivery_check_pa4a($pdo,$item,$scope);$now=vp3_profile_speech_now_pa4a();
         $q=$pdo->prepare('SELECT * FROM profile_speech_attempts_pa4a WHERE owner_user_id=? AND request_id=?'.vp3_profile_handoff_lock_pa3($pdo));$q->execute([$owner,$request]);$prior=$q->fetch(PDO::FETCH_ASSOC);
         if($prior){if(!hash_equals($prior['request_hash'],$hash)||(int)$prior['item_id']!==$id)vp3_profile_speech_error_pa4a();vp3_profile_speech_attempt_current_pa4a($pdo,$user,$item,$source,$scope,$prior,$policy);return vp3_profile_speech_claim_reply_pa4a($pdo,$prior,$item,$source,$scope,true);}
-        if((int)$item['revision']!==$revision)vp3_profile_speech_error_pa4a();if($mode==='automatic'&&!$source['automatic'])vp3_profile_speech_error_pa4a((int)$item['auto_consumed']>0?'PROFILE_SPEECH_ALREADY_PLAYED':'PROFILE_SPEECH_UNAVAILABLE',409);
+        if((int)$item['revision']!==$revision)vp3_profile_speech_error_pa4a();if($mode==='automatic'&&(!$source['automatic']||!vp3_profile_speech_automatic_delivery_pa4a($pdo,$item,$source,$scope,true)['allowed']))vp3_profile_speech_error_pa4a((int)$item['auto_consumed']>0?'PROFILE_SPEECH_ALREADY_PLAYED':'PROFILE_SPEECH_AUTOMATIC_UNAVAILABLE',409);
         $busy=$pdo->prepare("SELECT id FROM profile_speech_attempts_pa4a WHERE owner_user_id=? AND delivery_state='available' AND (((provider_state IN ('reserved','sending') OR (provider_state='ready' AND playback_state IN ('none','granted','playing'))) AND lease_until_ms>?) OR (playback_state IN ('granted','playing') AND play_lease_until_ms>?)) LIMIT 1".vp3_profile_handoff_lock_pa3($pdo));$busy->execute([$owner,$now,$now]);if($busy->fetchColumn())vp3_profile_speech_error_pa4a('PROFILE_SPEECH_BUSY',409);
         $voice=vp3_profile_speech_select_voice_pa4a($pdo,$item,$assignment,$policy);$assignment=vp3_profile_speech_voice_row_pa4a($pdo,(int)$assignment['id'],true);vp3_profile_speech_voice_current_pa4a($pdo,$user,$item,$scope,$voice,$policy);
         if((int)$item['voice_revision']!==(int)$assignment['assignment_revision']){$pdo->prepare('UPDATE profile_speech_items_pa4a SET voice_revision=?,revision=revision+1,updated_at_ms=? WHERE id=?')->execute([(int)$assignment['assignment_revision'],$now,$id]);$item=vp3_profile_speech_item_pa4a($pdo,$id,true);}
@@ -386,7 +467,7 @@ function vp3_profile_speech_claim_pa4a(PDO $pdo,array $user,array $input,bool $r
         $number=$last?(int)$last['attempt_no']+1:1;$state=$cache?'ready':'reserved';$config=$policy['config'];$expires=$cache?min($now+VP3_PROFILE_SPEECH_ATTEMPT_MS_PA4A,(int)$cache['audio_expires_at_ms']):$now+VP3_PROFILE_SPEECH_ATTEMPT_MS_PA4A;
         $pdo->prepare('INSERT INTO profile_speech_attempts_pa4a(owner_user_id,item_id,attempt_no,request_id,request_hash,mode,retry_of,cache_of,item_revision,voice_revision,text_hash,voice_json,config_fingerprint,model_id,output_format,scope_json,ticket_hash,provider_state,lease_until_ms,provider_attempted,input_characters,created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$owner,$id,$number,$request,$hash,$mode,$retryOf?:null,$cache?(int)$cache['id']:null,(int)$item['revision'],(int)$assignment['assignment_revision'],$source['text_hash'],json_encode($voice,JSON_THROW_ON_ERROR),$config['config_fingerprint'],$config['model_id'],$config['output_format'],json_encode($scope,JSON_THROW_ON_ERROR),hash('sha256',bin2hex(random_bytes(32))),$state,$expires,0,mb_strlen($source['text']),$now,$now]);$attemptId=(int)$pdo->lastInsertId();
         if($cache)$pdo->prepare('UPDATE profile_speech_attempts_pa4a SET audio_key=?,audio_bytes=?,audio_sha256=?,audio_expires_at_ms=?,result_json=? WHERE id=?')->execute([$cache['audio_key'],(int)$cache['audio_bytes'],$cache['audio_sha256'],(int)$cache['audio_expires_at_ms'],json_encode(['status'=>'ready','cached'=>true,'cache_of'=>(int)$cache['id']],JSON_THROW_ON_ERROR),$attemptId]);
-        $attempt=vp3_profile_speech_attempt_row_pa4a($pdo,$attemptId,true);$source=vp3_profile_speech_source_pa4a($pdo,$item,true);vp3_profile_speech_owner_pa4a($pdo,$user,$scope,true,true);return vp3_profile_speech_claim_reply_pa4a($pdo,$attempt,$item,$source,$scope,false);
+        $attempt=vp3_profile_speech_attempt_row_pa4a($pdo,$attemptId,true);$source=vp3_profile_speech_source_pa4a($pdo,$item,true);vp3_profile_speech_owner_pa4a($pdo,$user,$scope,true,true);if($mode==='automatic'&&!vp3_profile_speech_automatic_delivery_pa4a($pdo,$item,$source,$scope,true)['allowed'])vp3_profile_speech_error_pa4a('PROFILE_SPEECH_AUTOMATIC_UNAVAILABLE',409);return vp3_profile_speech_claim_reply_pa4a($pdo,$attempt,$item,$source,$scope,false);
     });
 }
 
@@ -496,7 +577,10 @@ function vp3_profile_speech_play_pa4a(PDO $pdo,array $user,array $input,?callabl
             if(!hash_equals($attempt['play_request_id'],$request)||!in_array($attempt['playback_state'],['granted','playing'],true)||(int)$attempt['play_lease_until_ms']<=$now)vp3_profile_speech_error_pa4a('PROFILE_SPEECH_ALREADY_PLAYED',409);
             return ['contract'=>VP3_PROFILE_SPEECH_PA4A,'attempt_id'=>(int)$attempt['id'],'play_token'=>$attempt['play_token'],'server_now_ms'=>$now,'lease_until_ms'=>(int)$attempt['play_lease_until_ms'],'absolute_until_ms'=>(int)$attempt['play_absolute_until_ms'],'report_sequence'=>(int)$attempt['report_sequence'],'granted'=>true,'duplicate'=>true];
         }
-        if($attempt['mode']==='automatic'&&((int)$item['auto_consumed']!==0||!$source['automatic']))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_ALREADY_PLAYED',409);
+        if($attempt['mode']==='automatic'){
+            if((int)$item['auto_consumed']!==0)vp3_profile_speech_error_pa4a('PROFILE_SPEECH_ALREADY_PLAYED',409);
+            if(!$source['automatic']||!vp3_profile_speech_automatic_delivery_pa4a($pdo,$item,$source,$scope,true)['allowed'])vp3_profile_speech_error_pa4a('PROFILE_SPEECH_AUTOMATIC_UNAVAILABLE',409);
+        }
         $q=$pdo->prepare("SELECT id FROM profile_speech_attempts_pa4a WHERE owner_user_id=? AND id<>? AND playback_state IN ('granted','playing') AND play_lease_until_ms>? LIMIT 1".vp3_profile_handoff_lock_pa3($pdo));$q->execute([(int)$user['id'],(int)$attempt['id'],$now]);if($q->fetchColumn())vp3_profile_speech_error_pa4a('PROFILE_SPEECH_BUSY',409);
         $token=bin2hex(random_bytes(16));$absolute=min((int)$attempt['audio_expires_at_ms'],$now+600000);$until=min($now+VP3_PROFILE_SPEECH_PLAY_MS_PA4A,$absolute);
         $pdo->prepare("UPDATE profile_speech_attempts_pa4a SET play_request_id=?,play_token=?,playback_state='granted',play_lease_until_ms=?,play_started_at_ms=?,play_absolute_until_ms=?,report_sequence=0,updated_at_ms=? WHERE id=?")->execute([$request,$token,$until,$now,$absolute,$now,(int)$attempt['id']]);

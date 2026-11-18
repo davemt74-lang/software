@@ -14,6 +14,16 @@
 .vp3-profile-conversation,.vp3-profile-call{display:flex;align-items:flex-start;flex-wrap:wrap;gap:8px;padding:12px;border:1px solid var(--line,#d7dce3);border-radius:9px;background:var(--card,#fff)}
 .vp3-profile-conversation>div{flex:1 1 250px;min-width:0}.vp3-profile-conversation p{margin:5px 0}.vp3-profile-conversation small{display:block;color:var(--muted,#536476)}
 .vp3-profile-conversation>button{margin-left:auto}.vp3-profile-call>strong{flex:1 1 200px}.vp3-profile-call>p{margin:0;flex:1 1 150px}
+.vp3-profile-call>div{flex:1 1 210px;min-width:0}.vp3-profile-call>div p{margin:3px 0}.vp3-profile-call>div small{display:block;color:var(--muted,#536476)}
+.vp3-profile-call-filters{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.vp3-profile-call-filters button[aria-pressed=true]{background:var(--bg,#eef4ff);border-color:#8caede;font-weight:700}
+.vp3-profile-call-detail:empty{display:none}.vp3-profile-call-detail{margin-bottom:20px}.vp3-profile-call-detail:focus{outline:none}
+.vp3-profile-call-facts{display:grid;grid-template-columns:minmax(80px,auto) minmax(0,1fr);gap:4px 14px;margin:12px 0}.vp3-profile-call-facts dt{font-weight:600}.vp3-profile-call-facts dd{margin:0}
+.vp3-profile-outcome-section{border:1px solid var(--line,#d7dce3);border-radius:9px;margin:12px 0;background:var(--card,#fff)}
+.vp3-profile-outcome-section>summary{padding:12px;font-weight:650;cursor:pointer}.vp3-profile-outcome-section>div{padding:0 12px 12px}.vp3-profile-outcome-section>div>button{display:block;margin-top:12px}
+.vp3-profile-outcome-items{padding:0;margin:8px 0;list-style:none;display:grid;gap:12px}.vp3-profile-outcome-item{border-top:1px solid var(--line,#d7dce3);padding-top:10px}.vp3-profile-outcome-item:first-child{border-top:0;padding-top:0}
+.vp3-profile-outcome-item p{white-space:pre-wrap;margin:5px 0}.vp3-profile-outcome-item small{display:block;color:var(--muted,#536476)}.vp3-profile-outcome-item ul{padding-left:20px;margin:6px 0}
+#vp3ChatSpecialistActivity .vp3-profile-workspace :is(.vp3-profile-call-detail,.vp3-profile-call,.vp3-profile-visit-group) small{font-size:12px;line-height:1.5}
+.vp3-profile-visit-group{margin:12px 0;padding:10px 12px;border:1px solid var(--line,#d7dce3);border-radius:8px}.vp3-profile-visit-group>summary{font-weight:600;cursor:pointer}.vp3-profile-visit-group small{display:block;color:var(--muted,#536476)}
 .vp3-profile-state{font-size:12px;line-height:1.5;padding:3px 7px;background:var(--bg,#eef3f8);border-radius:6px;max-width:100%}
 .vp3-profile-actions{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
 .vp3-profile-messages{padding:0;margin:14px 0;list-style:none;display:grid;gap:10px}

@@ -184,4 +184,34 @@ for(const change of ['revision','call','context']){
   select.value='key:'+'a'.repeat(64);select.dispatchEvent(new Event('change'));await f.settle();const preset=f.requests.filter(r=>r.action==='visitor_preference').at(-1);
   check(preset.style==='preset'&&preset.preset_key==='a'.repeat(64),'approved named preset uses only its opaque public key');await f.stop();
 }
+{
+  const f=await speechFixture({items:[speechItem({kind:'arrival',public_conversation_id:0,turn_id:0,visitor_message_id:0,automatic_delivery_allowed:false,automatic_allowed:false})]});
+  await f.advance(3500);check(!f.requests.some(r=>r.action==='owner_delivery')&&!f.speech(81)&&f.providerCalls===0,'expired or otherwise withheld unsaved candidate never creates a Chat marker or paid speech');await f.stop();
+}
+{
+  const f=await speechFixture({items:[speechItem({kind:'arrival',public_conversation_id:0,turn_id:0,visitor_message_id:0,can_play:false,automatic_allowed:false,automatic_delivery_allowed:true})]});
+  check(Boolean(f.speech(81))&&f.requests.filter(r=>r.action==='owner_delivery').length===1&&f.providerCalls===0,'silent visual delivery is independent of voice readiness and never synthesizes');await f.stop();
+}
+{
+  const f=await speechFixture({items:[speechItem({chat_conversation_id:42,chat_agent_id:7,chat_message_id:981,delivery_id:'e'.repeat(32),automatic_delivery_allowed:false,automatic_allowed:false,can_play:false})]});
+  check(Boolean(f.speech(81))&&f.thread.querySelectorAll('[data-chat-message-id="981"]').length===1&&f.providerCalls===0,'saved expired/muted marker recovers its exact existing Chat destination');await f.stop();
+}
+{
+  const f=await speechFixture({items:[speechItem({delivery_kind:'handoff',native_chat_message_id:701,automatic_allowed:true})]});await f.advance(1000);
+  check(f.speech(81)?.className==='profile-speech-embedded'&&f.card(101).contains(f.speech(81))&&!f.thread.querySelector('[data-chat-message-id="981"]'),'native visitor speech embeds in the exact existing live card without a second Chat message');
+  check(f.providerCalls===1&&f.audio.length===1&&!f.audio[0].paused&&f.requests.some(r=>r.action==='owner_claim'&&r.mode==='automatic'),'visible native card preserves source-bound automatic visitor playback');
+  check(!f.requests.some(r=>r.action==='doorbell_ack'||r.action==='doorbell_reply')&&sourceOnly(f),'speech embedding never manufactures native pickup ACK, public reply, or browser source text');
+  f.audio[0].finish();await f.settle();f.card(101).querySelector('[data-speech-action=visitor-play]').click();await f.settle();
+  check(f.providerCalls===1&&f.requests.filter(r=>r.action==='owner_claim').length===2&&f.requests.filter(r=>r.action==='owner_delivery').length===1,'manual native-card replay reuses the exact saved speech binding and cached artifact');await f.stop();
+}
+{
+  const f=await speechFixture({items:[speechItem({delivery_kind:'handoff',native_chat_message_id:802,automatic_allowed:true})]});await f.advance(1000);
+  check(!f.requests.some(r=>r.action==='owner_delivery')&&f.providerCalls===0&&!f.speech(81),'another visitor card cannot serve as the native speech destination');await f.stop();
+}
+for(const change of ['hidden','context']){
+  const f=await speechFixture({items:[]});const held=f.hold('owner_delivery');f.records.set(81,speechItem({delivery_kind:'handoff',native_chat_message_id:701,automatic_allowed:true}));void f.refresh();await f.settle();
+  check(Boolean(held.work),'fixture holds exact native speech binding before '+change+' change');
+  if(change==='hidden')f.card(101).hidden=true;else await f.changeContext();held.work.resolve();await f.settle();
+  check(f.providerCalls===0&&!f.speech(81),'late native binding cannot attach or play after '+change+' change');await f.stop();
+}
 console.log('PROFILE_SPEECH_PA4A=PASS ('+checks+' runtime assertions)');

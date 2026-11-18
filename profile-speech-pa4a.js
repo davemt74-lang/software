@@ -18,7 +18,8 @@
   function normalize(raw){
     if(!raw||!['id','revision','voice_assignment_id','voice_revision'].every(key=>positive(raw[key]))||!nonnegative(raw.public_conversation_id)||!['arrival','visitor_message'].includes(raw.kind)||!states.has(raw.state))return null;
     if(raw.kind==='arrival'?(raw.turn_id!==0||raw.visitor_message_id!==0):!['public_conversation_id','turn_id','visitor_message_id'].every(key=>positive(raw[key])))return null;
-    if(typeof raw.can_play!=='boolean'||typeof raw.automatic_allowed!=='boolean'||typeof raw.visitor_label!=='string'||raw.visitor_label.length>240||typeof raw.display_text!=='string'||raw.display_text.length>16000||typeof raw.reason!=='string'||raw.reason.length>100)return null;
+    if(typeof raw.can_play!=='boolean'||typeof raw.automatic_allowed!=='boolean'||typeof raw.automatic_delivery_allowed!=='boolean'||!['speech','handoff'].includes(raw.delivery_kind)||!nonnegative(raw.native_chat_message_id)||typeof raw.visitor_label!=='string'||raw.visitor_label.length>240||typeof raw.display_text!=='string'||raw.display_text.length>16000||typeof raw.reason!=='string'||raw.reason.length>100)return null;
+    if(raw.delivery_kind==='handoff'&&(raw.kind!=='visitor_message'||!positive(raw.native_chat_message_id)))return null;
     if(raw.can_retry!==undefined&&typeof raw.can_retry!=='boolean')return null;
     if(raw.latest_attempt_id!==undefined&&raw.latest_attempt_id!==null&&!nonnegative(raw.latest_attempt_id))return null;
     if(raw.playback_state!==undefined&&!['none','granted','playing','ended','interrupted','blocked'].includes(raw.playback_state))return null;
@@ -56,9 +57,10 @@
       (window.VP3ConversationControls?.isEnabled?.()===true&&!coordinated)||(window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.()===true&&!ownEchoActive())||captureBusy(coordinated)||[...document.querySelectorAll('audio,video')].some(media=>media!==player?.audio&&!media.paused&&!media.ended);
   }
   function selectedSource(record){const control=record.manualControl,source=control?.options.source();return Boolean(control?.host.isConnected&&source&&source.turn_id===record.item.turn_id&&source.public_conversation_id===record.item.public_conversation_id&&source.visitor_message_id===record.item.visitor_message_id);}
-  function presented(record){return painted(record.node)||(selectedSource(record)&&painted(record.manualControl.host));}
+  function presented(record){if(record.item.delivery_kind==='handoff')return selectedSource(record)&&nativeControl(record.item)===record.manualControl;return painted(record.node)||(selectedSource(record)&&painted(record.manualControl.host));}
   function eligible(record,automatic=false,retry=false){const ctx=context();return current(record.snapshot)&&(retry?record.item.can_retry===true||record.retryAllowed:record.item.can_play)&&presented(record)&&!mediaBusy()&&(!automatic||(voiceMaster&&ctx.availability==='available'&&ctx.reachable&&record.item.automatic_allowed));}
   function safeError(error){
+    if(error?.code==='PROFILE_SPEECH_AUTOMATIC_UNAVAILABLE')return 'Automatic playback is no longer available for this visitor item. Review its current Profile conversation.';
     if(/AUDIO_EXPIRED$/.test(error?.code||''))return 'This saved audio expired. Generating it again may use additional voice credits.';
     if(error?.code==='PROFILE_SPEECH_OUTCOME_UNVERIFIED'||error?.status===202)return 'The speech result is not confirmed. Your visitor text remains available. Check the status before retrying.';
     if(error?.name==='NotAllowedError')return 'Your browser blocked playback. Choose Play to listen; the visitor text remains visible.';
@@ -179,12 +181,19 @@
       stop(safeError(error),session.started?'interrupted':'blocked');
     }finally{if(player===session&&!session.audio)stop('The speech result is not confirmed. Your visitor text remains available.');}
   }
-  function create(item,element,bound,snapshot,fresh){
-    const card=node('section','profile-speech-card');card.dataset.speechItem=String(item.id);
+  function nativeControl(item){
+    if(item.delivery_kind!=='handoff')return null;const matches=[];
+    for(const control of controls){const source=control.options.source();if(source&&['turn_id','public_conversation_id','visitor_message_id'].every(key=>source[key]===item[key])&&painted(control.host)&&control.host.closest('[data-chat-message-id="'+item.native_chat_message_id+'"]'))matches.push(control);}
+    return matches.length===1?matches[0]:null;
+  }
+  function create(item,element,bound,snapshot,fresh,control=null){
+    const card=node('section',control?'profile-speech-embedded':'profile-speech-card');card.dataset.speechItem=String(item.id);
     const label=node('h3','profile-speech-label'),text=node('p','profile-speech-text'),actions=node('div','profile-speech-controls'),playButton=node('button','','Play'),stopButton=node('button','','Stop'),retry=node('button','','Generate again'),notice=node('p','profile-speech-notice');
     playButton.type=stopButton.type=retry.type='button';playButton.dataset.speechAction='play';stopButton.dataset.speechAction='stop';retry.dataset.speechAction='retry';notice.setAttribute('role','status');actions.append(playButton,stopButton,retry);card.append(label,text,actions,notice);
-    const body=element.querySelector('.message-body')||element;body.appendChild(card);const placeholder=element.querySelector('.message-text');if(placeholder)placeholder.hidden=true;
-    const record={item,node:card,element,label,text,play:playButton,stop:stopButton,retry,notice,binding:bound,snapshot,fresh,autoTried:false};items.set(item.id,record);
+    const body=control?.host||element.querySelector('.message-body')||element;body.appendChild(card);const placeholder=element.querySelector('.message-text');if(placeholder&&!control)placeholder.hidden=true;
+    if(control){label.hidden=text.hidden=playButton.hidden=stopButton.hidden=true;}
+    const record={item,node:card,element,label,text,play:control?.play||playButton,stop:control?.stop||stopButton,retry,notice,binding:bound,snapshot,fresh,autoTried:false};items.set(item.id,record);
+    if(control)record.manualControl=control;
     playButton.addEventListener('click',()=>playFromControl(record));stopButton.addEventListener('click',()=>stop());retry.addEventListener('click',()=>void play(record,false,true));render(record);return record;
   }
   async function refresh(){
@@ -204,12 +213,16 @@
             record.item=item;record.snapshot=snapshot;if(item.can_play&&item.latest_attempt_id===record.lastAttemptId&&['ended','interrupted','blocked'].includes(item.playback_state))record.claim=null;render(record);
           }continue;
         }
-        const {data:delivery}=await request('owner_delivery',{item_id:item.id,revision:item.revision,chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id,tab_id:snapshot.tab_id,client_instance_id:clientInstance,request_id:random()});
+        const sourceControl=item.delivery_kind==='handoff'?nativeControl(item):null;
+        if(item.delivery_kind==='handoff'&&!sourceControl)continue;
+        if(!positive(item.chat_message_id)&&!item.automatic_delivery_allowed)continue;
+        const {data:delivery}=await request('owner_delivery',{item_id:item.id,revision:item.revision,chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id,tab_id:snapshot.tab_id,client_instance_id:clientInstance,request_id:random(),mode:'automatic'});
         if(!current(snapshot))return;const next=normalize(delivery.item);
         if(!next||next.id!==item.id||delivery.chat_conversation_id!==snapshot.chat_conversation_id||delivery.chat_agent_id!==snapshot.chat_agent_id||!positive(delivery.chat_message_id)||!token(delivery.delivery_id))continue;
+        if(next.delivery_kind!==item.delivery_kind||next.delivery_kind==='handoff'&&(nativeControl(next)!==sourceControl||next.native_chat_message_id!==delivery.chat_message_id))continue;
         const existed=thread.querySelector('[data-chat-message-id="'+delivery.chat_message_id+'"]');
-        const element=canonical().mountProfileSpeech?.(delivery);if(!element)continue;
-        record=create(next,element,{chat_conversation_id:delivery.chat_conversation_id,chat_agent_id:delivery.chat_agent_id,chat_message_id:delivery.chat_message_id,delivery_id:delivery.delivery_id},snapshot,!existed);
+        const element=sourceControl?sourceControl.host.closest('[data-chat-message-id="'+delivery.chat_message_id+'"]'):canonical().mountProfileSpeech?.(delivery);if(!element)continue;
+        record=create(next,element,{chat_conversation_id:delivery.chat_conversation_id,chat_agent_id:delivery.chat_agent_id,chat_message_id:delivery.chat_message_id,delivery_id:delivery.delivery_id},snapshot,sourceControl?!positive(item.chat_message_id):!existed,sourceControl);
       }
       for(const record of items.values())if(current(record.snapshot)&&!seen.has(record.item.id)){
         if(player?.record===record&&sequence>player.openedSequence)stop('This visitor speech is no longer available.');
@@ -238,11 +251,13 @@
       const matches=data.items.map(normalize).filter(item=>item&&item.kind==='visitor_message'&&item.turn_id===source.turn_id&&item.public_conversation_id===source.public_conversation_id&&item.visitor_message_id===source.visitor_message_id);
       if(matches.length!==1||!matches[0].can_play)throw new Error('Visitor speech unavailable.');const item=matches[0];let record=sourceRecord(source);
       if(!record?.node.isConnected){
-        const {data:delivery}=await request('owner_delivery',{item_id:item.id,revision:item.revision,chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id,tab_id:snapshot.tab_id,client_instance_id:clientInstance,request_id:random()});
+        if(item.delivery_kind==='handoff'&&nativeControl(item)!==control)throw new Error('The selected visitor card changed.');
+        const {data:delivery}=await request('owner_delivery',{item_id:item.id,revision:item.revision,chat_conversation_id:snapshot.chat_conversation_id,chat_agent_id:snapshot.chat_agent_id,tab_id:snapshot.tab_id,client_instance_id:clientInstance,request_id:random(),mode:'manual',public_conversation_id:source.public_conversation_id,turn_id:source.turn_id,visitor_message_id:source.visitor_message_id});
         if(!sameSource())return;const next=normalize(delivery.item);
         if(!next||next.id!==item.id||next.turn_id!==source.turn_id||next.public_conversation_id!==source.public_conversation_id||next.visitor_message_id!==source.visitor_message_id||delivery.chat_conversation_id!==snapshot.chat_conversation_id||delivery.chat_agent_id!==snapshot.chat_agent_id||!positive(delivery.chat_message_id)||!token(delivery.delivery_id))throw new Error('Visitor speech changed.');
-        const element=canonical().mountProfileSpeech?.(delivery);if(!element)throw new Error('Visitor speech could not be displayed.');
-        record=create(next,element,{chat_conversation_id:delivery.chat_conversation_id,chat_agent_id:delivery.chat_agent_id,chat_message_id:delivery.chat_message_id,delivery_id:delivery.delivery_id},snapshot,false);
+        const embedded=next.delivery_kind==='handoff';if(embedded&&(nativeControl(next)!==control||next.native_chat_message_id!==delivery.chat_message_id))throw new Error('The selected visitor card changed.');
+        const element=embedded?control.host.closest('[data-chat-message-id="'+delivery.chat_message_id+'"]'):canonical().mountProfileSpeech?.(delivery);if(!element)throw new Error('Visitor speech could not be displayed.');
+        record=create(next,element,{chat_conversation_id:delivery.chat_conversation_id,chat_agent_id:delivery.chat_agent_id,chat_message_id:delivery.chat_message_id,delivery_id:delivery.delivery_id},snapshot,false,embedded?control:null);
       }else{record.item=item;record.snapshot=snapshot;render(record);}
       if(!sameSource())return;record.manualControl=control;await play(record);
     }catch(_){if(sameSource())control.options.notice('Visitor speech is unavailable for this message. You can read it and reply in text.');}

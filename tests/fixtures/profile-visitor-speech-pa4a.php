@@ -37,7 +37,7 @@ require_once dirname(__DIR__,2).'/includes/profile-visitor-speech-pa4a.php';
 
 function ps_reset(): void
 {
-    $p=db();if($p->inTransaction())$p->rollBack();$p->afterSql=null;$p->failSql='';foreach(['profile_speech_attempts_pa4a','profile_speech_items_pa4a','profile_visitor_voices_pa4a'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
+    $p=db();if($p->inTransaction())$p->rollBack();$p->beforeSql=null;$p->afterSql=null;$p->failSql='';foreach(['profile_speech_attempts_pa4a','profile_speech_items_pa4a','profile_visitor_voices_pa4a'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
     pa3c_reset();vp3_profile_speech_ensure_schema_pa4a($p);
     if(!column_exists('team_user_presence','agent_voice_enabled'))$p->exec('ALTER TABLE team_user_presence ADD COLUMN agent_voice_enabled INTEGER NOT NULL DEFAULT 1');
     $p->exec("INSERT INTO role_permissions(role,permission_key) VALUES('member','voice_profile.access'),('member','voice.access')");
@@ -52,8 +52,18 @@ function ps_message(string $text='Visitor speech fixture.',string $mode='agent',
     $ctx??=ps_context();$out=vp3_profile_agent_public_message_service_v110(db(),$ctx,$text,$cid,['async'=>true,'chat_mode'=>$mode,'client_request_id'=>bin2hex(random_bytes(16))]);
     $q=db()->prepare("SELECT * FROM profile_speech_items_pa4a WHERE kind='visitor_message' ORDER BY id DESC LIMIT 1");$q->execute();return ['response'=>$out,'context'=>$ctx,'item'=>$q->fetch(PDO::FETCH_ASSOC)?:null];
 }
+function ps_native_card(array $item,bool $claim=true,array $extra=[]): array
+{
+    $p=db();$scope=ps_scope($extra);$turn=vp3_profile_handoff_row_pa3($p,(int)$item['turn_id']);
+    if($claim){vp3_profile_handoff_owner_action_pa3($p,ps_owner(),['operation'=>'claim','turn_id'=>(int)$turn['id'],'revision'=>(int)$turn['version'],'conversation_id'=>(int)$turn['conversation_id'],'chat_conversation_id'=>$scope['chat_conversation_id'],'chat_agent_id'=>$scope['chat_agent_id'],'request_id'=>bin2hex(random_bytes(16))]);$turn=vp3_profile_handoff_row_pa3($p,(int)$turn['id']);}
+    return vp3_profile_handoff_delivery_pa3($p,ps_owner(),['turn_id'=>(int)$turn['id'],'revision'=>(int)$turn['version'],'chat_conversation_id'=>$scope['chat_conversation_id'],'chat_agent_id'=>$scope['chat_agent_id'],'tab_id'=>$scope['tab_id']]);
+}
 function ps_state(array $extra=[]): array{return vp3_profile_speech_state_pa4a(db(),ps_owner(),ps_scope($extra));}
-function ps_delivery(array $item,array $extra=[]): array{return vp3_profile_speech_delivery_pa4a(db(),ps_owner(),ps_scope($extra+['item_id'=>(int)$item['id'],'revision'=>(int)$item['revision']]));}
+function ps_delivery(array $item,array $extra=[]): array
+{
+    $selected=$item['kind']==='visitor_message'?['mode'=>'manual','public_conversation_id'=>(int)$item['public_conversation_id'],'turn_id'=>(int)$item['turn_id'],'visitor_message_id'=>(int)$item['visitor_message_id']]:['mode'=>'automatic'];
+    return vp3_profile_speech_delivery_pa4a(db(),ps_owner(),ps_scope($extra+['item_id'=>(int)$item['id'],'revision'=>(int)$item['revision']]+$selected));
+}
 function ps_input(array $delivery,array $extra=[]): array
 {
     $item=$delivery['item']??$delivery;return ps_scope($extra+['item_id'=>(int)$item['id'],'revision'=>(int)$item['revision'],'delivery_id'=>$item['delivery_id'],'chat_message_id'=>(int)$item['chat_message_id'],'request_id'=>bin2hex(random_bytes(16)),'mode'=>'manual']);

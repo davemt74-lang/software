@@ -31,7 +31,7 @@ Status: complete, 10/10 for this acceptance scope. PR #789 merged as `ec31558b4e
 
 ## Phase 3 — Owner Profile workspace
 
-Status: implementation complete; final-source hosted gates and visual evidence pending before final scoring and merge.
+Status: complete, 10/10 for this acceptance scope. PR #790 merged as `d5d51cca6b6008e4792e06b187b0dea85ae14651` after all 15 workflows passed on final source `ed2118632fa9494af99b58416a6f12ffa6498179` (38 successful checks; 3 expected path-filtered skips).
 
 - The existing specialist interface provides Overview, Conversations, Calls, Analytics, and Reports without duplicate active inboxes or nested page scrolling.
 - Exact visitor threads and current responder mode are visible; takeover/reply/delegate/resolve reuse existing domain actions.
@@ -41,7 +41,7 @@ Status: implementation complete; final-source hosted gates and visual evidence p
 
 ## Phase 4 — Contextual engagement and call history
 
-Status: not started.
+Status: implementation in progress; final scoring follows focused verification, hosted browser review, and all final-source PR gates.
 
 - Meaningful first-time and returning visits use observed context; routine traffic can be grouped. No importance rule equates raw visit count with meaningful intent.
 - Existing presentation ownership prevents duplicate doorbell, speech, attention, and specialist interruptions.
@@ -95,4 +95,20 @@ All workspace requests carry the exact owner, private Agent, saved Chat, and cur
 
 Private reply preparation requires an exact current visitor turn already claimed by the owner. Its durable request, source revision, dispatch token, and send receipt preserve recovery across an uncertain response without a second provider attempt or public message. An edited draft is sent only by an explicit owner action against its reviewed source. The normal public responder retains its original admission rules. Cloud preparation uses governed foreground usage and one physical attempt; optional HomeServer preparation reserves the attempt in the same transaction as its transient queue insertion. Preparing a draft neither sends it nor starts another worker.
 
-Focused SQL, production HTTP, and renderer tests cover authority changes, pagination, request replay, source changes during preparation, late completion, explicit regeneration, unavailable storage, switching tabs, and preserved input. Native MySQL gates exercise authority and transactional recovery, including competing HomeServer queue reservations. Hosted browser gates cover the shared workspace at desktop and compact sizes, keyboard focus, saved reply recovery, and native call/media continuity. Existing regression invocations remain enabled. Final hosted results and screenshots must be reviewed before awarding 10/10 and merging this phase.
+Focused SQL, production HTTP, and renderer tests cover authority changes, pagination, request replay, source changes during preparation, late completion, explicit regeneration, unavailable storage, switching tabs, and preserved input. Native MySQL gates exercise authority and transactional recovery, including competing HomeServer queue reservations. Hosted browser gates cover the shared workspace at desktop and compact sizes, keyboard focus, saved reply recovery, and native call/media continuity. Existing regression invocations remain enabled.
+
+Final source passes 198 new workspace/draft/analytics/call SQL checks per PHP version on native MySQL, with no skips. The workspace browser passes 53 checks, the shared report browser passes 42, and all retained visitor/call/speech/attention browser suites pass. Desktop and compact screenshots were inspected. A deterministic regression also verifies read-only recovery when a visible attention acknowledgement overlaps a newer observation, including revocation during recovery. All five scoring areas earned 2/2.
+
+### Phase 4 implementation and verification scope
+
+Arrival context uses the saved native visitor principal, browser credential, and application timestamps. A first recorded visit is explicitly scoped to that browser history. Returning context may quote a strictly earlier, currently authorized visitor statement and a currently disclosed accepted relationship. Reused CRM recognition, raw visit counts, and legacy database wall-clock dates do not establish identity, intent, or historical ordering.
+
+Automatic visual notice eligibility is independent of voice configuration. An eligible silent notice remains available when speech is muted or unconfigured, while expired, suppressed, unavailable-owner, hidden-tab, and competing native presentation states cannot create a new automatic Chat row. Existing verified markers can recover after expiry. Speech for a claimed visitor message reuses the exact existing native handoff card, with its own speech attempt and playback receipts; it does not insert another card, acknowledge pickup, or replace the live card's controls. Manual playback requires the exact selected visitor message.
+
+The Calls workspace separates current calls from paginated history and keeps a selected call independent of the list page. Calls still ending remain current. Completed calls expose bounded saved transcript, analysis, research, and reviewed task sections under current source and private Agent authority. Complete source hashes protect continuation pages, including edits that preserve timestamps. Limited evidence has explicit coverage and an exact source link. Generated summaries distinguish accepted source findings from owner review of the generated result; rejected findings do not reappear as ordinary recommendations. History reads do not start a provider, capture, scheduler, or live media session.
+
+Routine visit prose is grouped within the checked source view. Each original source reference, revision, disposition, and native presentation owner remains available. Unresolved conversations, calls, and reviewed work retain priority over routine visits, and no count is presented as unique people or purchase intent.
+
+Focused SQL, real endpoint, renderer, and retained native call/speech suites cover these contracts. The release gates add both new SQL suites on SQLite and native MySQL for PHP 8.1 and PHP 8.3, retaining every existing workflow invocation. Final scoring remains pending final-source hosted checks and desktop/compact browser review.
+
+Phase 3 final-source evidence: [Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44295726514), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44295726100), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44295726252). The merged tree `3cc735aeb5d49383950e00a94a9e9831b960306f` exactly matches the tested source. Browser artifact `14422559545` has verified SHA-256 `520878ace9d37cc1b5d4e1fc42e139e24785bf9446e335b490da158546a5c460`.

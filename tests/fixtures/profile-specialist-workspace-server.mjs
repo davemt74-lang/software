@@ -27,16 +27,22 @@ export async function startProfileWorkspaceServer(){
     }
     require ${quote(join(root,'tests/fixtures/profile-specialist-workspace-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-specialist-analytics-v1.php'))};
+    require ${quote(join(root,'tests/fixtures/profile-call-outcomes-data-v1.php'))};
     function pws_server_seed():array{
       $seed=pws_reset();
+      foreach(['artist_transcript_segments_v172','artist_transcript_master_analysis_v237','artist_transcript_page_analysis_v237'] as $table)if(table_exists($table))db()->exec('DELETE FROM '.$table);
       profile_specialist_analytics_fixture_v1(db());
       db()->prepare("UPDATE profile_agent_messages SET created_at=? WHERE sender_type='visitor'")->execute([gmdate('Y-m-d H:i:s',time()-10)]);
       pfs_advance(5000);
+      $seed['outcomes']=pco_seed_v1(db(),['agent_id'=>7,'include_ending'=>false]);
       $offer=pa3c_offer('visitor',pa3c_context(2,'d'));
       vp3_profile_call_owner_action_pa3c(db(),pa3c_owner(),pa3c_owner_input($offer,'accept'));
       vp3_profile_call_work_pa3c(db(),(int)$offer['call_id'],'pa3c_provider');
       pa3_login(1);
       $seed['call_id']=(int)$offer['call_id'];$seed['call_conversation_id']=(int)$offer['conversation_id'];
+      $seed['visit_events']=[];
+      foreach(['8','9'] as $browser){$visit=pa4b_note(pa4b_context(0,$browser));$seed['visit_events'][]=(int)$visit['event']['id'];}
+      pa3_login(1);
       $seed['clock']=$GLOBALS['pa3Now'];
       file_put_contents(${quote(join(temp,'seed.json'))},json_encode($seed,JSON_THROW_ON_ERROR));
       file_put_contents(${quote(join(temp,'provider-dispatches'))},'');
@@ -120,6 +126,11 @@ export async function startProfileWorkspaceServer(){
       elseif($action==='restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) VALUES('member','profile_chat.access')");
       elseif($action==='profile_off')db()->exec('UPDATE user_profiles SET profile_agent_enabled=0 WHERE user_id=1');
       elseif($action==='profile_missing')db()->exec('DELETE FROM user_profiles WHERE user_id=1');
+      elseif($action==='recording_revoke')db()->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='artist_listening.access'");
+      elseif($action==='recording_restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) VALUES('member','artist_listening.access')");
+      elseif($action==='transcript_change')db()->prepare("UPDATE artist_transcript_segments_v172 SET transcript_text=transcript_text||' Corrected saved detail.' WHERE id=(SELECT MIN(id) FROM artist_transcript_segments_v172 WHERE session_id=?)")->execute([(int)$seed['outcomes']['assisted']['session_id']]);
+      elseif($action==='analysis_refresh')pco_analysis_v1(db(),(int)$seed['outcomes']['assisted']['session_id']);
+      elseif($action==='tasks_complete')db()->prepare("UPDATE agent_memory_items SET metadata_json=json_set(metadata_json,'$.task_status','completed') WHERE memory_type='task' AND json_extract(metadata_json,'$.source_session_id')=CAST(? AS INTEGER)")->execute([(int)$seed['outcomes']['assisted']['session_id']]);
       elseif($action==='new_message'){
         pfs_advance(5000);pa3_admit('A new visitor question changes this reply.',(int)$seed['primary'],bin2hex(random_bytes(16)),0,'b');pa3_login(1);
         $seed['clock']=$GLOBALS['pa3Now'];file_put_contents(${quote(join(temp,'seed.json'))},json_encode($seed,JSON_THROW_ON_ERROR));

@@ -9,9 +9,9 @@ function pwc_reject(callable $work,int $code,string $label): void
     try{$work();}catch(RuntimeException|InvalidArgumentException $error){pwc_check((int)$error->getCode()===$code,$label.' ['.$error->getCode().']');return;}
     throw new RuntimeException('FAIL accepted '.$label);
 }
-function pwc_list(array $selection=[],int $agent=8,int $chat=12): array
+function pwc_list(array $selection=[],int $agent=8,int $chat=12,string $filter='current'): array
 {
-    return pa4b_readonly(fn()=>vp3_profile_workspace_calls_v1(db(),pfs_scope($agent,$chat),$selection));
+    return pa4b_readonly(fn()=>vp3_profile_workspace_calls_v1(db(),pfs_scope($agent,$chat),$selection,$filter));
 }
 function pwc_activity(int $call,int $after=0,int $agent=8,int $chat=12): array
 {
@@ -19,7 +19,7 @@ function pwc_activity(int $call,int $after=0,int $agent=8,int $chat=12): array
 }
 
 pwc_reset();$before=pwc_snapshot();
-pwc_check(pwc_list()===['calls'=>[],'coverage'=>'ready','has_more'=>false,'selected'=>null],'a configured empty Calls tab is a verified empty read');
+pwc_check(pwc_list()===['calls'=>[],'coverage'=>'ready','has_more'=>false,'selected'=>null,'filter'=>'current','next_cursor'=>null],'a configured empty Calls tab is a verified empty read');
 pwc_check($before===pwc_snapshot(),'opening an empty Calls tab creates no calls, delivery, work or provider request');
 $offer=pa3c_offer('owner',pa3c_context(2));$id=(int)$offer['call_id'];$cid=(int)$offer['conversation_id'];$before=pwc_snapshot();
 $list=pwc_list(['conversation_id'=>$cid,'call_id'=>$id]);$card=$list['selected'];
@@ -42,10 +42,10 @@ pwc_reset();$offer=pa3c_offer('visitor',pa3c_context(2));$id=(int)$offer['call_i
 pwc_check(pwc_list()['calls']===[]&&pwc_list(['call_id'=>$id])['selected']['state']==='expired','undelivered completed offers are not mislabeled as a full current call history, while exact selection remains exact');
 $row=vp3_profile_call_row_pa3c(db(),$id);
 $delivery=vp3_profile_call_owner_delivery_pa3c(db(),pa3c_owner(),['call_id'=>$id,'revision'=>(int)$row['revision'],'chat_conversation_id'=>12,'chat_agent_id'=>8]);
-pwc_check(pwc_list()['calls'][0]['chat_message_id']===$delivery['chat_message_id'],'an already saved current-Chat card retains its exact native message identity');
+pwc_check(pwc_list([],8,12,'history')['calls'][0]['chat_message_id']===$delivery['chat_message_id'],'an already saved current-Chat card retains its exact native message identity in call history');
 db()->prepare("UPDATE chat_messages SET role='user' WHERE id=?")->execute([$delivery['chat_message_id']]);
 pwc_reject(fn()=>pwc_list(['call_id'=>$id]),409,'a changed native message cannot be presented as an original call card');
-$limited=pwc_list();pwc_check($limited['calls']===[]&&$limited['coverage']==='limited','discovery reports a source verification gap without exposing the changed card');
+$limited=pwc_list([],8,12,'history');pwc_check($limited['calls']===[]&&$limited['coverage']==='limited','history discovery reports a source verification gap without exposing the changed card');
 
 pwc_reset();$offer=pa3c_offer('owner',pa3c_context(2));$id=(int)$offer['call_id'];$changed=false;
 db()->afterSql=static function(string $sql,PA3PDO $pdo)use($id,&$changed):void{
