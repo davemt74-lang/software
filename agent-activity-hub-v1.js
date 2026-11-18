@@ -54,7 +54,7 @@
   const continuity = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const ruleActionLabels = {watch:'Keep in Top of Mind',prepare:'Prepare privately',ask:'Ask in Chat',report:'Report in Chat'};
   const ruleKey = /^[a-z][a-z0-9_-]{0,47}$/;
-  const ruleSpecialists = new Set(['gmail','tasks','planning','media','curiosity','connected-sites','transcripts','marketing']);
+  const ruleSpecialists = new Set(['gmail','tasks','planning','media','curiosity','connected-sites','transcripts','marketing','profile']);
   const connectionSpecialists = {gmail:'gmail',research:'research',youtube:'youtube',music:'music',media:'music',
     transcripts:'transcripts',transcription:'transcripts'};
   const specialistExamples = {
@@ -101,6 +101,7 @@
   let orbSurface = null;
   let specialistTrigger = null;
   let selectedLabel = '';
+  let specialistScope = '';
   let workspaceButton = null;
   let backButton = null;
   let settingsButton = null;
@@ -571,7 +572,7 @@
     if (expanded) host.dataset.workspace = 'true';
     else delete host.dataset.workspace;
     workspaceButton.hidden = expanded;
-    settingsButton.hidden = expanded || family(selectedSpecialist) === 'curiosity' && !localUrl(cfg.coordinationRulesEndpoint);
+    settingsButton.hidden = expanded || ['curiosity','profile'].includes(family(selectedSpecialist)) && !localUrl(cfg.coordinationRulesEndpoint);
     backButton.hidden = !expanded;
     if (family(selectedSpecialist) === 'tasks') {
       if (!expanded) {
@@ -675,6 +676,8 @@
   function populateSpecialistSettings(view,current,key) {
     const settings = cfg.specialistSettings || {};
     const rulesEndpoint = localUrl(cfg.coordinationRulesEndpoint);
+    if (key === 'profile') view.body.append(node('p',
+      'Visitor, call and reviewed task notifications continue in their existing interfaces. Current Profile reports remain available here.'));
     if (ruleSpecialists.has(key) && rulesEndpoint) {
       if (positive(current.cid)) {
         const rules = createRulesEditor(rulesEndpoint,key);
@@ -790,6 +793,7 @@
     if (opened) close(false);
     specialistMode = true;
     selectedSpecialist = key;
+    specialistScope = signature(scope(true));
     specialistTrigger = trigger;
     returnFocus = focusReturn || trigger;
     selectedLabel = String(label || window.VP3TopOfMindFeedV1?.specialistNames?.[family(key)] || 'Specialist').slice(0,120);
@@ -808,7 +812,7 @@
     const imageStudio = id === 'image-generator' && window.VP3ImageStudio?.mountWorkspace;
     const transcriptCanvas = id === 'transcripts' && typeof window.STONEFELLOW_TRANSCRIPTION_CANVAS?.open === 'function';
     workspaceButton = button(transcriptCanvas ? 'Open Transcription Intelligence'
-      : ['gmail','media','curiosity','coding','marketing'].includes(id) ? 'Full report' : 'Open workspace',event => {
+      : ['gmail','media','curiosity','coding','marketing','profile'].includes(id) ? 'Full report' : 'Open workspace',event => {
       if (!transcriptCanvas) { showWorkspace(true); return; }
       openSavedTranscription(scope(),event);
     });
@@ -819,7 +823,7 @@
     settingsButton.setAttribute('aria-controls','vp3ChatSpecialistSettings');
     settingsButton.setAttribute('aria-expanded','false');
     settingsButton.append(specialistSettingsIcon());
-    settingsButton.hidden = ['curiosity','connected-sites'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
+    settingsButton.hidden = ['curiosity','connected-sites','profile'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
     backButton = button('Back',() => specialistSettings ? closeSpecialistSettings() : showWorkspace(false));
     backButton.hidden = true;
     header.append(heading,workspaceButton,backButton,settingsButton,button('Close',() => close()));
@@ -1274,7 +1278,7 @@
       section.classList.toggle('selected',!specialistMode && id === selected);
       section.setAttribute('aria-label',name);
       section.insertAdjacentHTML('afterbegin',specialistHeading(name,row.state,row.progress));
-      const reportLabels = {curiosity:'Open Curiosity report',media:'Open Media report',
+      const reportLabels = {profile:'Open Profile report',curiosity:'Open Curiosity report',media:'Open Media report',
         'connected-sites':'Open Connected Sites report',marketing:'Open Marketing report'};
       if (Object.hasOwn(reportLabels,id) && !specialistMode && current.hasChat) {
         const actions = node('div','','vp3-agent-activity-actions');
@@ -1923,6 +1927,126 @@
     }
     return view;
   }
+  const profileReportSections = [
+    ['key_findings','Key findings','No current findings in the checked Profile sources.'],
+    ['actions_followups','Actions & follow-ups','No saved actions or follow-ups in the checked sources.'],
+    ['open_questions','Open questions','No open questions in the checked sources.'],
+    ['next_step','Next step','No next step recorded in the checked sources.'],
+    ['questions_for_you','Questions for you','No questions for you in the checked sources.']
+  ];
+  const profileReportCoverage = {
+    ready:'Current Profile sources checked.',
+    limited:'Some Profile sources could be checked. This report may be incomplete.',
+    unavailable:'The Profile report could not be verified. Try again shortly.',
+    unconfigured:'Profile activity is not configured or available in this Chat.'
+  };
+  const profileReportText = (value,limit=320) => typeof value === 'string' && Array.from(value).length <= limit
+    && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value) ? value.trim() : null;
+  function profileSourceUrl(source) {
+    const ref = /^profile:(conversation|event|call|followup):([1-9][0-9]{0,18})$/.exec(source?.ref || '');
+    const href = localUrl(source?.url);
+    if (!ref || !positive(Number(ref[2])) || !href || /[\u0000-\u0020\u007f]/.test(source.url)) return '';
+    const url = new URL(href,location.origin);
+    const base = new URL(cfg.activityEndpoint,location.origin).pathname.replace(/\/api\/[^/]+$/,'');
+    if (url.hash || url.username || url.password) return '';
+    const exactId = key => {
+      const values = url.searchParams.getAll(key);
+      return values.length === 1 && /^[1-9][0-9]{0,15}$/.test(values[0]) && positive(Number(values[0]));
+    };
+    if (ref[1] === 'followup') {
+      return url.pathname === base + '/artist-listening.php' && [...url.searchParams].length === 1
+        && exactId('session') ? href : '';
+    }
+    if (url.pathname !== base + '/profile-agent.php' || [...url.searchParams].length !== 2
+      || url.searchParams.getAll('tab').length !== 1) return '';
+    const tab = url.searchParams.get('tab');
+    if (['conversation','call'].includes(ref[1]) && tab === 'inbox' && exactId('conversation')) {
+      if (ref[1] === 'conversation' && url.searchParams.get('conversation') !== ref[2]) return '';
+      return href;
+    }
+    return ref[1] === 'event' && tab === 'visitors' && exactId('session') ? href : '';
+  }
+  function profileReportModel(report) {
+    if (report?.contract !== 'vp3.profile-report.v1' || !Object.hasOwn(profileReportCoverage,report.coverage)
+      || !Array.isArray(report.findings) || report.findings.length > 24) return null;
+    const result = {coverage:report.coverage,findings:[]};
+    for (const [key] of profileReportSections) {
+      if (key === 'next_step') {
+        result[key] = profileReportText(report[key]);
+        if (result[key] === null) return null;
+      } else {
+        if (!Array.isArray(report[key]) || report[key].length > 6) return null;
+        result[key] = report[key].map(value => profileReportText(value));
+        if (result[key].some(value => value === null || !value)) return null;
+      }
+    }
+    // An error or missing configuration cannot retain facts from an earlier read.
+    if (['unavailable','unconfigured'].includes(report.coverage)) {
+      for (const [key] of profileReportSections) result[key] = key === 'next_step' ? '' : [];
+      return result;
+    }
+    const refs = new Set();
+    for (const source of report.findings) {
+      const href = profileSourceUrl(source);
+      const title = profileReportText(source?.title,190);
+      if (!href || !title || !/^[a-f0-9]{64}$/.test(source.revision || '') || refs.has(source.ref)) return null;
+      refs.add(source.ref);
+      result.findings.push({ref:source.ref,title,href});
+    }
+    return result;
+  }
+  function renderProfileWorkspace(current) {
+    if (!snapshot) { sections.replaceChildren(); return; }
+    const report = snapshot.profile_report;
+    const model = profileReportModel(report);
+    const body = node('section','','vp3-agent-activity-source');
+    body.dataset.profileReport = model?.coverage || 'unavailable';
+    body.setAttribute('aria-label','Profile report');
+    const coverage = model?.coverage || 'unavailable';
+    body.append(node('p',coverage === 'unconfigured' && current.cid === 0
+      ? 'Save this Chat to read Profile activity.' : profileReportCoverage[coverage],'vp3-agent-activity-status'));
+    const observed = Date.parse(snapshot.observed_at);
+    if (Number.isFinite(observed)) body.append(node('small','Checked ' + new Date(observed).toLocaleString()));
+    const readable = model && ['ready','limited'].includes(coverage);
+    for (const [key,title,empty] of profileReportSections) {
+      const section = node('section','','vp3-agent-activity-source');
+      section.dataset.profileReportSection = key;
+      section.append(node('h4',title));
+      const values = readable ? (key === 'next_step' ? [model[key]].filter(Boolean) : model[key]) : [];
+      if (values.length) {
+        const list = node('ul','','vp3-curiosity-questions');
+        for (const value of values.slice(0,workspace ? 6 : 2)) list.append(node('li',value));
+        section.append(list);
+        if (!workspace && values.length > 2) section.append(node('small','More in the full report.'));
+      } else section.append(node('p',readable ? empty : 'Available after the Profile sources can be checked.'));
+      body.append(section);
+    }
+    if (readable && model.findings.length) {
+      const sources = node('section','','vp3-agent-activity-source');
+      sources.setAttribute('aria-label','Profile report sources');
+      sources.append(node('h4','Sources'));
+      const list = node('ul','','vp3-curiosity-questions');
+      for (const source of model.findings.slice(0,workspace ? 24 : 3)) {
+        const item = node('li');
+        const link = node('a',source.title);
+        link.href = source.href;
+        link.dataset.profileSource = source.ref;
+        link.addEventListener('click',event => {
+          if (signature(current) !== signature(scope()) || snapshot?.profile_report !== report) {
+            event.preventDefault();
+            close(false);
+          }
+        });
+        item.append(link);
+        list.append(item);
+      }
+      sources.append(list);
+      if (!workspace && model.findings.length > 3) sources.append(node('small','More sources in the full report.'));
+      body.append(sources);
+    }
+    sections.replaceChildren(body);
+  }
+
   function renderCuriosityWorkspace(current) {
     if (!snapshot) { sections.replaceChildren(); return; }
     const active = sections.contains(document.activeElement) ? document.activeElement.dataset.curiosityFocus : '';
@@ -2445,6 +2569,10 @@
 
   function renderWorkspaceSources(current) {
     const specialist = family(selectedSpecialist);
+    if (specialist === 'profile') {
+      renderProfileWorkspace(current);
+      return;
+    }
     if (specialist === 'media') {
       renderMediaWorkspace(current);
       return;
@@ -2608,7 +2736,7 @@
     controller = request;
     const timeout = setTimeout(() => request.abort(),10000);
     const selected = family(selectedSpecialist);
-    const view = specialistMode && (['gmail','tasks','media','curiosity','transcripts','coding','marketing'].includes(selected) || selected === 'planning' && workspace) ? selected : '';
+    const view = specialistMode && (['gmail','tasks','media','curiosity','transcripts','coding','marketing','profile'].includes(selected) || selected === 'planning' && workspace) ? selected : '';
     const list = officeWorkspace() ? officeList : null;
     const fullInventory = officeWorkspace() && !list;
     try {
@@ -2635,6 +2763,8 @@
       const data = await response.json();
       if (!isCurrent()) return;
       if (!response.ok || data?.ok !== true || !validState(data.state,current)) throw new Error('Top of Mind could not be refreshed.');
+      if (view === 'profile' && (!profileReportModel(data.state.profile_report)
+        || data.state.coverage?.profile_report !== data.state.profile_report.coverage)) throw new Error('The Profile report could not be verified.');
       accessRejected = false;
       if (list) {
         if (data.state.list_id !== list.id || data.state.sections.length !== 1 || !officeCollectionSource(data.state,'list_items')
@@ -2677,6 +2807,7 @@
           ? 'Inbox analysis could not be loaded. Retrying shortly.'
           : view === 'media' ? 'Media analysis could not be loaded. Retrying shortly.'
           : view === 'curiosity' ? 'The Curiosity report could not be loaded. Retrying shortly.'
+          : view === 'profile' ? 'The Profile report could not be loaded. Retrying shortly.'
           : fullInventory ? 'Saved tasks, lists and reminders could not be loaded. Retrying shortly.'
           : specialistMode ? 'Activity could not be refreshed. Retrying shortly.'
             : 'The latest items are unavailable. Use Refresh to try again.';
@@ -2750,6 +2881,10 @@
   window.dispatchEvent(new Event('vp3:agent-activity-ready'));
   window.addEventListener('vp3:chat-context-ready',() => {
     window.dispatchEvent(new Event('vp3:agent-activity-ready'));
+    if (specialistMode && family(selectedSpecialist) === 'profile' && specialistScope !== signature(scope(true))) {
+      close(false);
+      return;
+    }
     if (specialistSettings && specialistSettings.scopeKey !== signature(scope())) { close(false); return; }
     if (specialistMode && visible() && !accessRejected) void read();
     renderPresence();

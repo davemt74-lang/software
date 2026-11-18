@@ -66,6 +66,15 @@ function vp3_coordination_source_registry_v1(): array
                 return vp3_coordination_transcripts_sources_v1($pdo,$scope,$binding,$refs,$now);
             },
         ],
+        'profile'=>[
+            'specialist'=>'profile',
+            'sweep'=>'always',
+            'native_ref'=>'(?:conversation|event|call|followup):[1-9][0-9]{0,17}',
+            'read'=>static function(PDO $pdo,array $scope,array $binding,?array $refs,DateTimeImmutable $now): array {
+                require_once __DIR__.'/agent-coordination-profile-v1.php';
+                return vp3_coordination_profile_sources_v1($pdo,$scope,$binding,$refs,$now);
+            },
+        ],
         'marketing'=>[
             'specialist'=>'marketing',
             'sweep'=>'enabled',

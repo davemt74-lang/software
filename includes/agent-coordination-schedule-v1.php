@@ -100,7 +100,7 @@ function vp3_coordination_pending_v1(PDO $pdo,array $user,array $binding,bool $s
     $specialist=$json('$.coordination_route.specialist');
     $action=$json('$.coordination_route.action');
     $saved=$savedOnly?' AND CAST('.$json('$.coordination_saved').' AS CHAR) IN (\'true\',\'1\')':'';
-    $handoff=$chatOnly?" AND $specialist IN ('gmail','planning','tasks','canvas','connected-sites','transcripts','marketing') AND $action IN ('ask','report')
+    $handoff=$chatOnly?" AND $specialist IN ('gmail','planning','tasks','canvas','connected-sites','transcripts','marketing','profile') AND $action IN ('ask','report')
         AND ".$json('$.coordination_work')." IS NULL AND ".$json('$.followthrough')." IS NULL":'';
     $familyFilter=$specialistOnly===null?" AND COALESCE($specialist,'') NOT IN ('casual','curiosity')":" AND $specialist=?";
     $due=vp3_initiative_job_due_sql_v1($pdo);
@@ -445,6 +445,10 @@ function vp3_coordination_admit_v1(PDO $pdo,array $user,array $binding,bool $exe
     foreach($candidates as $candidate){
         $primary=$candidate['primary'];
         if(isset($covered[$primary]))continue;
+        if(vp3_coordination_profile_presentation_owned_v1(['primary'=>$primary],$items)){
+            vp3_coordination_scan_mark_v1($matches,$primary,'native_presentation');
+            continue;
+        }
         if($routes[$primary]['specialist']==='transcripts'&&vp3_coordination_chat_route_v1($routes[$primary])){
             $hold=vp3_coordination_transcript_handoff_hold_v1($pdo,$user,$binding,$items[$primary],$transcriptPaced);
             if($hold!==null){
@@ -480,6 +484,10 @@ function vp3_coordination_admit_v1(PDO $pdo,array $user,array $binding,bool $exe
     foreach($candidates as $candidate){
         $primary=$candidate['primary'];$route=$routes[$primary];
         if(isset($covered[$primary])||isset($transcriptHolds[$primary]))continue;
+        if(vp3_coordination_profile_presentation_owned_v1(['primary'=>$primary],$items)){
+            vp3_coordination_scan_mark_v1($matches,$primary,'native_presentation');
+            continue;
+        }
         $media=$items[$primary]['specialist']==='media';
         $curiosity=$items[$primary]['specialist']==='curiosity';
         $planningStart=$primary===VP3_COORDINATION_PLANNING_START_V1;
@@ -630,7 +638,7 @@ function vp3_coordination_admit_v1(PDO $pdo,array $user,array $binding,bool $exe
         $savedTaskQuestion=$route['specialist']==='tasks'&&$route['action']==='ask'&&$items[$primary]['question']!=='';
         $taskContext=$savedTaskQuestion&&$executionReady?vp3_coordination_task_list_context_v1($items,$routes,$primary):null;
         $standalone=$media||$curiosity||($savedTaskQuestion&&$taskContext===null)||$planningStart
-            ||in_array($route['specialist'],['canvas','connected-sites','transcripts','marketing'],true);
+            ||in_array($route['specialist'],['canvas','connected-sites','transcripts','marketing','profile'],true);
         $sources=$standalone?[$primary=>$items[$primary]['revision']]
             :match(true){
                 $taskContext!==null=>[$primary=>$items[$primary]['revision'],$taskContext=>$items[$taskContext]['revision']],

@@ -103,7 +103,7 @@ final class Vp3InitiativeSourceProofUnavailableV1 extends RuntimeException
         'email-canvas'=>'email_canvas','curiosity-finding'=>'curiosity','specialist'=>'specialist_reports',
         'specialist-result'=>'specialist_results','youtube-play-analysis'=>'media','media-image'=>'media_images',
     ];
-    private const ADDITIONAL_FAMILIES=['office_tasks','office_reminders','office_calendar','activity_context','gmail','planning','media','canvas','casual','connected-sites','marketing'];
+    private const ADDITIONAL_FAMILIES=['office_tasks','office_reminders','office_calendar','activity_context','gmail','planning','media','canvas','casual','connected-sites','marketing','profile'];
 
     public function __construct(public readonly string $family,public readonly string $coverage,?Throwable $previous=null)
     {

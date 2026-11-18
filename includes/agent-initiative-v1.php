@@ -1363,6 +1363,8 @@ function vp3_initiative_proactive_specialist_v1(array $goal): bool
 {
     if(isset($goal['followthrough'])||isset($goal['followup']))return false;
     $tool=$goal['tool']??null;
+    if(in_array($tool,['chat.check_in','work.prepare_private'],true)&&is_string($goal['primary']??null)
+        &&str_starts_with($goal['primary'],'specialist:profile:'))return true;
     if($tool==='chat.check_in'&&is_array($goal['sources']??null)&&array_filter(array_keys($goal['sources']),
         static fn(string $ref):bool=>str_starts_with($ref,'specialist:transcript:')))return true;
     if($tool==='work.prepare_private'&&is_string($goal['primary']??null)
@@ -1479,7 +1481,7 @@ function vp3_initiative_deliver_pending_scoped_v1(PDO $pdo,array $user): bool
                         $evidence=vp3_coordination_result_evidence_v1($pdo,$live,$policy,$goal,$result['initiative_tool_result']??[]);
                         $failureReason='rule_changed';
                         vp3_coordination_route_current_v1($pdo,$live,$goal,$evidence);
-                        $failureReason='duplicate';
+                        $failureReason=vp3_coordination_profile_presentation_owned_v1($goal,$evidence)?'native_presentation':'duplicate';
                         if(!vp3_coordination_should_report_v1($pdo,$live,$goal,(int)$row['run_id'],$result['initiative_tool_result'],$evidence)){
                             throw new RuntimeException('Top of Mind delivery changed.',409);
                         }
@@ -2050,7 +2052,8 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 vp3_coordination_queue_work_v1($pdo,$live,$payload,(int)$run['id'],$toolResult);
                 if(!vp3_coordination_should_report_v1($pdo,$live,$payload,(int)$run['id'],$toolResult,$evidence)){
                     $delivery='private';
-                    $deliveryReason=in_array($payload['coordination_route']['action']??null,['ask','report'],true)?'duplicate':'private';
+                    $deliveryReason=vp3_coordination_profile_presentation_owned_v1($payload,$evidence)?'native_presentation'
+                        :(in_array($payload['coordination_route']['action']??null,['ask','report'],true)?'duplicate':'private');
                 }
                 if($delivery==='pending'&&($payload['coordination_route']['specialist']??null)==='transcripts'
                     &&vp3_coordination_transcript_automatic_v1($payload)){

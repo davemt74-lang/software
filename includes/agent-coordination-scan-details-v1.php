@@ -6,7 +6,7 @@ require_once __DIR__.'/agent-coordination-rules-v1.php';
 const VP3_COORDINATION_SCAN_DISPOSITIONS_V1=[
     'queued','existing_handoff','handoff_pending','already_handled','dedupe_conflicts','handoff_failed','handoff_cancelled','handoff_paused',
     'quiet_chat_required','owner_turn_pending','recent_proactive_post','playing','cooldown','new_activity_required',
-    'already_offered','route_unavailable','transcript_history','transcript_pacing','next_scan','observe_only',
+    'already_offered','route_unavailable','transcript_history','transcript_pacing','native_presentation','next_scan','observe_only',
 ];
 
 /** References are used only while selecting work. Neither the checkpoint nor Debug keeps them. */

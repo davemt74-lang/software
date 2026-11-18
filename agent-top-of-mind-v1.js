@@ -13,7 +13,7 @@
   const specialistNames={gmail:'Gmail',planning:'Planning & Scheduling',tasks:'Tasks & Lists',
     media:'Media & Entertainment',curiosity:'Curiosity',transcripts:'Transcriptions',canvas:'Canvas Apps',casual:'Casual check-ins',research:'Research',brainstorm:'Opportunity assessment','image-generator':'Image Generator',
     coding:'Coding Agent',development:'Agent Development',mission:'Missions','connected-sites':'Connected Sites',
-    marketing:'Marketing',commerce:'Commerce'};
+    marketing:'Marketing',commerce:'Commerce',profile:'Profile'};
   const handoffNames={...specialistNames,brainstorm:'ob1',transcripts:'Transcripts',commerce:'Commerce'};
   function handoffLabel(handoff){
     const known=id=>typeof id==='string'&&Object.hasOwn(handoffNames,id);
@@ -167,10 +167,15 @@
         ${typeof entry.detail==='string'&&entry.detail?`<small>${esc(entry.detail)}</small>`:''}
         ${entry.canView===true?`<button type="button" data-top-of-mind-specialist-view="${entry.key}">${esc(typeof entry.viewLabel==='string'&&entry.viewLabel||'View in Chat')}</button>`:''}</li>`;
     }).join('');
+    const profileCoverage={ready:'Profile sources checked',limited:'Profile sources partially checked',
+      unavailable:'Profile sources unavailable',unconfigured:'Profile activity is not configured or available'};
+    const profile=row.id==='profile'
+      ? `${Object.hasOwn(profileCoverage,row.source_coverage)?`<small>${profileCoverage[row.source_coverage]}</small>`:''}
+        ${current.hasChat?'<button type="button" data-top-of-mind-profile-report>Open Profile report</button>':''}`:'';
     return `<section class="agent-top-of-mind-context agent-top-of-mind-specialist" aria-label="${esc(name)}" data-top-of-mind-specialist="${row.id}">
       ${specialistHeading(name,row.state,row.progress)}
       ${typeof row.detail==='string'&&row.detail?`<p>${esc(row.detail)}</p>`:''}
-      ${result}${entries?`<ul aria-label="${esc(name)} work">${entries}</ul>`:''}${renderOpenEngagements(current,row)}${contents}</section>`;
+      ${profile}${result}${entries?`<ul aria-label="${esc(name)} work">${entries}</ul>`:''}${renderOpenEngagements(current,row)}${contents}</section>`;
   }
   function transcriptReportRows(row){
     const reports=[];
@@ -1007,6 +1012,15 @@
       return;
     }
     if(!current)return;
+    const profileReport=event.target.closest('[data-top-of-mind-profile-report]');
+    if(profileReport){
+      if(event.isTrusted&&current.hasChat&&specialistRows(current).has('profile')
+        &&window.VP3AgentActivityHub?.openSpecialist?.('profile',profileReport,{label:'Profile',fullReport:true,
+          focusReturn:document.getElementById('chatInput')})===true){
+        window.STONEFELLOW_NOTIFICATION_CENTER?.close?.();
+      }
+      return;
+    }
     const specialist=event.target.closest('[data-top-of-mind-specialist-view]');
     if(specialist){
       if(!event.isTrusted)return;

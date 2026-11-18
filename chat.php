@@ -468,6 +468,12 @@ if ($pdoForAgent && has_permission('account.access',$user) && has_permission('ch
     $specialistPresence['media'] = 'idle';
     $specialistPresence['curiosity'] = 'idle';
     $specialistPresence['connected-sites'] = 'idle';
+    require_once __DIR__.'/includes/participant-updates-v1.php';
+    if (vp3_participant_scope_v1() === null
+        && personal_capability_has_v242('profile_agent.access', $user)
+        && personal_capability_has_v242('profile_chat.access', $user)) {
+        $specialistPresence['profile'] = 'idle';
+    }
     if (has_permission('artist_listening.access',$user)) {
         $specialistPresence['transcripts'] = 'idle';
     }

@@ -42,7 +42,7 @@ function vp3_initiative_specialist_evidence_v1(PDO $pdo,array $user,array $bindi
         // questions are not evidence of owner preferences.
         if(in_array($specialist,['gmail','curiosity','casual'],true))continue;
         $route=vp3_coordination_item_route_v1($settings,$item);
-        if($route['action']==='watch'||$route['trigger']==='start_plan')continue;
+        if(($route['action']==='watch'&&$specialist!=='profile')||$route['trigger']==='start_plan')continue;
         if($nativeRefs===null&&($counts[$specialist]??0)>=$perSpecialist)continue;
         $counts[$specialist]=($counts[$specialist]??0)+1;
         $key=$prefix.$ref;
@@ -51,9 +51,16 @@ function vp3_initiative_specialist_evidence_v1(PDO $pdo,array $user,array $bindi
             'title'=>$item['title'],'detail'=>mb_substr($item['summary'],0,480),'url'=>$item['url'],
             'next_step'=>$item['next_step'],'question'=>$item['question'],
             'priority'=>$item['priority'],'status'=>$item['status'],'routing'=>$route['action'],
-            'private_summary_only'=>in_array($specialist,['canvas','connected-sites','marketing'],true),
+            'private_summary_only'=>in_array($specialist,['canvas','connected-sites','marketing','profile'],true),
             'revision'=>vp3_coordination_source_hash_v1([$item['revision'],$route]),
         ];
+        if($specialist==='profile'){
+            $evidence[$key]['public_evidence_untrusted']=true;
+            $evidence[$key]['profile_presentation_owned']=($item['profile_presentation_owned']??false)===true;
+            $evidence[$key]['profile_source_kind']=$item['profile_source_kind'];
+            if(isset($item['profile_canonical_ref']))$evidence[$key]['profile_canonical_ref']=$item['profile_canonical_ref'];
+            if(isset($item['presentation_owner']))$evidence[$key]['presentation_owner']=$item['presentation_owner'];
+        }
     }
     return $evidence;
 }
@@ -66,6 +73,11 @@ function vp3_initiative_specialist_job_v1(array $job,array $evidence): array
         if(($source['kind']??null)!=='specialist_finding')continue;
         if(!empty($source['private_summary_only'])&&$job['tool']!=='work.prepare_private'){
             throw new Vp3InitiativePlanValidationV1('invalid_job_sources','This specialist report is available only for private preparation.');
+        }
+        if(($source['specialist']??null)==='profile'&&($job['primary']??null)===$ref){
+            // Profile's current native presenters and shared report route own
+            // automatic Chat updates. General planning may retain private context.
+            $job['report']=false;
         }
         if(($source['specialist']??null)==='transcripts'){
             if($job['tool']==='chat.check_in'){

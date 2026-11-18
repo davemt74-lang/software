@@ -20,6 +20,7 @@ function has_permission($key,$u): bool{return empty($GLOBALS['imageDenied'])&&!i
 function personal_capability_has_v242(...$args): bool{return match($args[0]??''){
     'agent_brain.access'=>!empty($GLOBALS['initiativeBrainAccess']),
     'personal_knowledge.access','personal_knowledge.manage'=>!empty($GLOBALS['initiativeScreenAccess']),
+    'profile_agent.access','profile_chat.access'=>!empty($GLOBALS['profileSpecialistCapabilities'][$args[0]]),
     default=>false,
 };}
 function current_user(): ?array{return isset($_SERVER['HTTP_X_FIXTURE_ANONYMOUS'])?null:['id'=>(int)($_SERVER['HTTP_X_FIXTURE_USER']??1),'is_active'=>1];}

@@ -121,7 +121,7 @@ function vp3_top_of_mind_coordination_specialists_v1(PDO $pdo,array $user,int $a
     $names=['gmail'=>'the current Gmail finding','tasks'=>'a task, list, or reminder finding',
         'planning'=>'the current schedule','media'=>'a VP3 Media suggestion','canvas'=>'a private Canvas app record',
         'curiosity'=>'the next Curiosity question','connected-sites'=>'a connected POS finding','marketing'=>'a campaign recommendation',
-        'transcripts'=>'a saved transcription finding'];
+        'transcripts'=>'a saved transcription finding','profile'=>'verified visitor conversations, calls and follow-ups'];
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $json=static function(string $path,string $column='r.goal')use($sqlite):string{
         $value="JSON_EXTRACT(CASE WHEN JSON_VALID($column) THEN $column ELSE '{}' END,'$path')";
@@ -139,7 +139,7 @@ function vp3_top_of_mind_coordination_specialists_v1(PDO $pdo,array $user,int $a
         WHERE r.owner_user_id=? AND CAST(COALESCE(r.agent_id,0) AS CHAR)=?
         AND r.source_kind='agent_initiative' AND r.source_key LIKE 'coordination:%' AND r.workflow_type='initiative'
         AND r.capability_key='initiative.prepare' AND r.execution_target='cloud' AND CAST($conversation AS CHAR)=? AND $revision=?
-        AND ($specialist IN ('gmail','tasks','planning','media','canvas','curiosity','connected-sites','transcripts','marketing') OR ($specialist='casual'
+        AND ($specialist IN ('gmail','tasks','planning','media','canvas','curiosity','connected-sites','transcripts','marketing','profile') OR ($specialist='casual'
             AND $primarySource IN ('casual:media','casual:music','casual:youtube','casual:youtube_history')))
         AND ((r.status='executing' AND a.status='executing' AND r.current_action_id=a.id AND r.lease_expires_at>?)
             OR (r.status IN ('approved','queued') AND a.status='queued')
@@ -193,7 +193,7 @@ function vp3_top_of_mind_prefer_work_v1(?array $current,array $candidate): array
 }
 
 const VP3_TOP_OF_MIND_ENGAGEMENT_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','research',
-    'image-generator','coding','mission','connected-sites','brainstorm','development','transcripts','marketing','commerce'];
+    'image-generator','coding','mission','connected-sites','brainstorm','development','transcripts','marketing','commerce','profile'];
 const VP3_TOP_OF_MIND_ENGAGEMENT_PAGE_SIZE_V1=8;
 
 /** These exact source names retain the originating specialist for casual or starter questions. */
@@ -239,7 +239,7 @@ function vp3_top_of_mind_open_engagement_candidates_v1(PDO $pdo,int $owner,int $
     $followupQuestion=$json('m.context_json','$.initiative_output.followup_question');
     $familySql="CASE WHEN $output='initiative_coordination' AND $ownerQuestion='needs_owner' AND $tool='coordination.review' THEN
         CASE WHEN $route='casual' AND $routeAction='ask' THEN CASE ".implode(' ',$casualCases)." END
-        WHEN $route IN ('gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing') AND $routeAction='ask' THEN $route END
+        WHEN $route IN ('gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing','profile') AND $routeAction='ask' THEN $route END
         WHEN $output='initiative_capability_read' AND $tool IN ('tasks.read','tasks.lists.read','reminders.read')
             AND $state='open' AND $followupQuestion IS NOT NULL THEN 'tasks' END";
     $cursorSql=$before>0?'AND m.id<?':'';
@@ -392,13 +392,45 @@ function vp3_top_of_mind_specialist_scan_v1(string $id,array $scan): array
         default=>null,
     };
     $detail??=$gate??match(true){
+        $id==='profile'&&in_array('native_presentation',array_column($scan['dispositions']??[],'reason'),true)=>
+            'Current visitor, call or task updates remain with their existing presentation. Profile findings are available for review.',
         $found===0=>'The last check found no current findings.',
         $matches===null=>'Current findings are available in the report. Chat eligibility is awaiting review.',
         $matches===0=>'Current findings are available in the report. None matched a Chat rule.',
         $handled>=$matches=>'The last check found that matching Chat updates were already handled.',
         default=>'The last check found '.($matches===1?'one finding':$matches.' findings').' that matched Chat rules.',
     };
-    return ['id'=>$id,'state'=>$state,'detail'=>$detail,'progress'=>null];
+    return ['id'=>$id,'state'=>$state,'detail'=>$detail,'progress'=>null]
+        +($id==='profile'?['source_coverage'=>$scan['coverage']]:[]);
+}
+
+/** The Profile workspace reads current facts; status reads never deliver a visitor or call. */
+function vp3_top_of_mind_profile_status_v1(PDO $pdo,array $user,array $principal,int $agentId,int $cid,array $policy,int $now,
+    bool $includeReports): ?array
+{
+    if($cid<1)return null;
+    require_once __DIR__.'/agent-coordination-profile-v1.php';
+    $binding=['owner_user_id'=>(int)$user['id'],'agent_id'=>$agentId,'conversation_id'=>$cid]
+        + (($policy['conversation_id']??null)===$cid?$policy:[]);
+    try{
+        vp3_coordination_profile_authority_v1($pdo,
+            ['user'=>$user,'principal'=>$principal,'agent_id'=>$agentId,'conversation_id'=>$cid],$binding);
+        if(!$includeReports)return ['id'=>'profile','state'=>'idle','detail'=>'Open Profile to review visitor conversations, calls and follow-ups.',
+            'progress'=>null,'conversation_id'=>$cid];
+        $snapshot=vp3_coordination_sources_v1($pdo,$user,$binding,now:new DateTimeImmutable('@'.$now),specialistOnly:'profile');
+    }catch(RuntimeException $error){
+        if($error->getCode()===403)return null;
+        vp3_initiative_health_diagnostic_v1($error,'profile_status_read',(int)$user['id'],$agentId,$cid);
+        $snapshot=['items'=>[],'coverage'=>['profile'=>'unavailable']];
+    }
+    $coverage=$snapshot['coverage']['profile']??'unavailable';
+    [$state,$detail]=match($coverage){
+        'unconfigured'=>['blocked','Profile sources are not configured for this owner.'],
+        'unavailable'=>['unavailable','Current Profile findings could not be verified.'],
+        'limited'=>['checked','Profile findings are available with limited source coverage.'],
+        default=>['checked',$snapshot['items']?'Current Profile findings are available for review.':'No current Profile findings in the sources checked.'],
+    };
+    return ['id'=>'profile','state'=>$state,'detail'=>$detail,'progress'=>null,'conversation_id'=>$cid,'source_coverage'=>$coverage];
 }
 
 /** Connections can be usable on demand even while a proactive report is pending. Read saved state only. */
@@ -552,6 +584,8 @@ function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,in
         vp3_top_of_mind_curiosity_status_v1($pdo,$user,$agentId,$cid)];
     $transcripts=vp3_top_of_mind_transcripts_status_v1($pdo,$user,$agentId,$cid,$policy,$now,$includeTranscriptReports);
     if($transcripts!==null)$out[]=$transcripts;
+    $profile=vp3_top_of_mind_profile_status_v1($pdo,$user,$principal,$agentId,$cid,$policy,$now,$includeTranscriptReports);
+    if($profile!==null)$out[]=$profile;
     $tasks=vp3_top_of_mind_tasks_v1($pdo,$user,$cid,$policy,$health,$now);
     if($tasks!==null)$out[]=$tasks;
     if($gmail!==null){
@@ -651,6 +685,8 @@ function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,in
     }
     if($transcripts===null)unset($specialists['transcripts']);
     elseif(isset($transcripts['transcript_reports']))$specialists['transcripts']['transcript_reports']=$transcripts['transcript_reports'];
+    if($profile===null)unset($specialists['profile']);
+    elseif(isset($profile['source_coverage']))$specialists['profile']['source_coverage']=$profile['source_coverage'];
     return array_values($specialists);
 }
 
