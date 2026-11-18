@@ -518,7 +518,7 @@
       reviewed_followup:'Reviewed Profile follow-up',activity:'Profile activity'
     },
     scan_disposition: {
-      native_presentation:'The existing visitor, call, or task presentation owns this update',
+      native_presentation:'The existing visitor, call, task, or morning briefing presentation owns this update',
       queued:'Queued for Chat',existing_handoff:'Already queued for Chat',handoff_pending:'Held behind an assignment for this specialist',
       already_handled:'Skipped because the finding was already handled',
       dedupe_conflicts:'Skipped because a matching assignment was already recorded',
@@ -551,7 +551,7 @@
     },
     delivery_reason: {
       private:'This assignment was for private work',specialist_report:'Saved in the specialist report',
-      native_presentation:'The existing visitor, call, or task presentation owns this update',
+      native_presentation:'The existing visitor, call, task, or morning briefing presentation owns this update',
       source_changed:'Source records changed before delivery',
       policy_changed:'Initiative settings changed',rule_changed:'The current Top of Mind rule changed',
       duplicate:'The update was already reported',meeting_changed:'The meeting changed before delivery',

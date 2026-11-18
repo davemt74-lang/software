@@ -25,7 +25,7 @@ function fixture(){
  const thread=document.getElementById('chatThread');
  const messageElements=()=>thread.querySelectorAll('article.message.user,article.message.assistant').filter(element=>!element.classList.contains('typing'));
  const ctx={console,AbortController,DOMException,Event,URLSearchParams,location:new URL('https://app.test/chat.php'),CustomEvent:class{constructor(type,init={}){this.type=type;this.detail=init.detail;}},
-  document,window:{dispatchEvent(){},setTimeout(){}},navigator:{onLine:true},input:document.getElementById('chatInput'),
+  document,window:{dispatchEvent(){},addEventListener(){},setTimeout(){}},navigator:{onLine:true},input:document.getElementById('chatInput'),
   send:document.getElementById('sendChatButton'),form:document.getElementById('chatForm'),welcome:document.getElementById('chatWelcome'),
   cfg:{agentId:0},thread,
   busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,lastLoadedMessageId:0,
@@ -111,5 +111,5 @@ console.log(`CHAT_SEND_RECOVERY=PASS (${checks} assertions; actual send owner; t
 
 // Run the production URL handoff cleanup, preserving unrelated agent/query state.
 const remember=section('  function rememberConversation()', '  function initialConversation()');
-for(const ready of [false,true]){let replaced='';const stored=new Map();const ctx={URL,Date,Number,contextReady:ready,conversationId:73,selectionKey:'active',location:{href:'https://example.test/sub/chat.php?conversation_id=73&agent=5&view=chat#chat'},history:{replaceState:(_a,_b,url)=>replaced=url},localStorage:{setItem:(k,v)=>stored.set(k,v)}};vm.createContext(ctx);vm.runInContext(remember+';rememberConversation();',ctx);assert.equal(JSON.parse(stored.get('active')).id,73);assert.equal(replaced,ready?'/sub/chat.php?agent=5&view=chat#chat':'');}
+for(const ready of [false,true]){let replaced='';const stored=new Map();const ctx={URL,Date,Number,contextReady:ready,conversationId:73,selectionKey:'active',location:{href:'https://example.test/sub/chat.php?conversation_id=73&agent=5&view=chat#chat'},history:{nodeType:1},window:{history:{replaceState:(_a,_b,url)=>replaced=url}},profileAnalyticsUrlMatchesV1:()=>false,localStorage:{setItem:(k,v)=>stored.set(k,v)}};vm.createContext(ctx);vm.runInContext(remember+';rememberConversation();',ctx);assert.equal(JSON.parse(stored.get('active')).id,73);assert.equal(replaced,ready?'/sub/chat.php?agent=5&view=chat#chat':'');}
 console.log('CHAT_HANDOFF_CLEANUP=PASS (2 cases)');

@@ -100,6 +100,7 @@ try{
   await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/desktop-conversation.png',fullPage:true});
   await tab('Analytics').click();
+  await panel().getByRole('button',{name:'Traffic details',exact:true}).click();
   await panel().locator('.vp3-analytics-shell').waitFor();
   check((await panel().innerText()).includes('Recorded conversion value'),'Analytics uses the mounted renderer with measured conversion labels');
   await readableAnalytics();
@@ -240,7 +241,7 @@ try{
   const outcomeFonts=await panel().locator('.vp3-profile-call-detail :is(p,small,dt,dd,summary,a,strong)').evaluateAll(nodes=>nodes.filter(node=>node.textContent.trim()&&node.getClientRects().length&&parseFloat(getComputedStyle(node).fontSize)<12).map(node=>({tag:node.tagName,text:node.textContent.slice(0,70),font:getComputedStyle(node).fontSize})));
   check(outcomeFonts.length===0,'compact saved outcome text stays readable: '+JSON.stringify(outcomeFonts));
   await contained();await panel().evaluate(element=>{element.scrollTop=0;});await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-call-outcome.png',fullPage:true});
-  await tab('Analytics').click();await panel().locator('.vp3-analytics-shell').waitFor();await readableAnalytics();await contained();
+  await tab('Analytics').click();await panel().getByRole('button',{name:'Traffic details',exact:true}).click();await panel().locator('.vp3-analytics-shell').waitFor();await readableAnalytics();await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-analytics.png',fullPage:true});
   await page.keyboard.press('Escape');
   check(await panel().count()===0&&await page.evaluate(()=>document.activeElement?.id==='chatInput'),'Escape closes one shell and restores the Chat composer focus');

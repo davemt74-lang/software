@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+// Keep the original destination before legacy selection or return-token routing can rewrite GET.
+$profileAnalyticsOriginalQuery = (string)($_SERVER['QUERY_STRING'] ?? '');
+
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'voice-learning-v1-20261101';
 $controlBuild .= '-vrss-outcome-cards-s8b-20261103';
@@ -248,10 +251,22 @@ if (!$agentFeatureReady) {
     $agentInitialConversationId = (int)$chatInitialConversationId;
 }
 $workingAttentionBinding = vp3_catch_up_page_binding_v1($user);
+require_once __DIR__.'/includes/profile-analytics-destination-v1.php';
+require_once __DIR__.'/includes/participant-updates-v1.php';
+$profileAnalyticsRequested = vp3_profile_analytics_destination_request_v1($profileAnalyticsOriginalQuery);
+$profileAnalyticsDestination = vp3_profile_analytics_destination_bind_v1(
+    $profileAnalyticsRequested,(int)$user['id'],(int)($activeUserAgent['id']??0),
+    $agentInitialConversationId,$workingAttentionBinding,url('/chat.php'),
+    $profileAnalyticsRequested!==null && vp3_participant_scope_v1()===null
+        && has_permission('account.access',$user) && has_permission('chat.access',$user)
+        && personal_capability_has_v242('profile_agent.access',$user)
+        && personal_capability_has_v242('profile_chat.access',$user)
+);
 
 $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict";var cfg=window.STONEFELLOW_CHAT||{};cfg.endpoint='
     . json_encode($chatApiEndpoint, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';cfg.workingAttentionBinding=' . json_encode($workingAttentionBinding)
+    . ';cfg.profileAnalyticsDestination=' . json_encode($profileAnalyticsDestination,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)
     . ';cfg.agentId=' . (int)($activeUserAgent['id'] ?? 0)
     . ';cfg.autoGreetEnabled=' . (chat_settings_agent_auto_greet_enabled_v237($pdoForAgent, $user) ? 'true' : 'false')
     . ';cfg.initialConversationId=' . (int)$agentInitialConversationId . ';window.STONEFELLOW_AGENT_IDENTITY_V236={'
@@ -481,7 +496,7 @@ if ($pdoForAgent && has_permission('account.access',$user) && has_permission('ch
                 'endpoint'=>url('/api/profile-specialist-workspace-v1.php'),
                 'csrf'=>csrf_token(),'ownerKey'=>(string)$user['id'],
                 'agentId'=>(int)($activeUserAgent['id']??0),'workingAttentionBinding'=>$workingAttentionBinding,
-                'profileUrl'=>url('/profile-agent.php'),
+                'profileUrl'=>url('/profile-agent.php'),'chatUrl'=>url('/chat.php'),
             ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR).';</script>'
             . '<script src="'.e(url('/profile-specialist-workspace-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-specialist-workspace-v1.js'),0,12))).'"></script>';
     }

@@ -89,6 +89,42 @@ $unsafe['url']='https://untrusted.example.test/private';
 $safeLinks=vp3_morning_brief_assess_v1([$source=>$unsafe],$snapshot['coverage'],$settings,[]);
 canvas_pipeline_check($safeLinks['links']===[],'source links cannot introduce external destinations into the brief');
 
+// Completed-period facts belong in the existing brief, including when six
+// priority lines have already been selected. Preserve their exact source proof.
+$periodRef=vp3_profile_analytics_period_ref_v1(1,1731801600,'UTC','utc_fallback');
+$period=array_replace($snapshot['items'][$source],[
+    'ref'=>$periodRef,'specialist'=>'profile','profile_source_kind'=>'analytics','trigger'=>'analytics_period',
+    'title'=>'Profile analytics: completed fixture period','summary'=>'8 visit records; 3 accepted visitor turns.',
+    'next_step'=>'','question'=>'','url'=>vp3_profile_analytics_period_href_v1(7,11,$periodRef),
+    'presentation_owner'=>'profile_briefing_v1','profile_presentation_owned'=>true,'legacy_delivered'=>false,
+]);
+$periodOnly=vp3_morning_brief_assess_v1([$periodRef=>$period],['profile'=>'ready'],$settings,[]);
+canvas_pipeline_check(array_keys($periodOnly['selected'])===[$periodRef]
+    &&str_contains($periodOnly['message'],$period['summary'])&&$periodOnly['links'][0]['url']===$period['url'],
+    'a completed Profile period enters the ordinary morning brief with its fixed scoped destination');
+$profileNative=array_replace($period,['ref'=>'profile:conversation:99001','profile_source_kind'=>'conversation',
+    'trigger'=>'reviewed_followup','title'=>'Conversation requires review','summary'=>'A visitor is waiting for the owner.',
+    'url'=>'/vp3/profile-agent.php?conversation_id=99001']);
+$full=[$profileNative['ref']=>$profileNative]+$many+[$periodRef=>$period];
+$withPeriod=vp3_morning_brief_assess_v1($full,['profile'=>'ready','gmail'=>'ready'],$settings,[]);
+canvas_pipeline_check(count($withPeriod['selected'])===7&&isset($withPeriod['selected'][$periodRef])
+    &&substr_count($withPeriod['message'],'• ')===6&&substr_count($withPeriod['message'],$period['summary'])===1
+    &&count(array_filter($withPeriod['links'],static fn(array $link):bool=>$link['source']===$periodRef))===1,
+    'six primary lines retain one completed-period proof and link folded into the existing Profile line');
+$profileWatch=$settings;
+$profileWatch['rules']=vp3_coordination_rule_patch_v1($settings['rules'],['profile'=>['analytics_period'=>'watch']]);
+$watchPeriod=vp3_morning_brief_assess_v1($full,['profile'=>'ready','gmail'=>'ready'],$profileWatch,[]);
+canvas_pipeline_check(!isset($watchPeriod['selected'][$periodRef])&&!str_contains($watchPeriod['message'],$period['summary']),
+    'watch-only analytics never leaks into another Profile line in the morning brief');
+$withPrimary=vp3_morning_brief_assess_v1([$periodRef=>$period,$profileNative['ref']=>$profileNative],
+    ['profile'=>'limited'],$settings,[]);
+canvas_pipeline_check(substr_count($withPrimary['message'],$period['summary'])===1
+    &&count(array_filter($withPrimary['links'],static fn(array $link):bool=>$link['source']===$periodRef))===1
+    &&str_contains($withPrimary['message'],'Profile (partial)'),
+    'a primary period is not appended twice and retains the source coverage qualification');
+canvas_pipeline_check(vp3_morning_brief_assess_v1([$periodRef=>$period],['profile'=>'unavailable'],$settings,[])===null,
+    'an unavailable Profile period cannot fabricate a completed morning review');
+
 $nativeBefore=$pdo->query('SELECT * FROM agent_email_running_report_v1 ORDER BY thread_key')->fetchAll(PDO::FETCH_ASSOC);
 $runsBefore=canvas_pipeline_count('agent_workflow_runs');
 $ledgerBefore=canvas_pipeline_count('ai_execution_ledger');

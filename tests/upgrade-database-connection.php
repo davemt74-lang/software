@@ -8,7 +8,7 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'profile_calls_pa3c','profile_call_slots_pa3c','profile_call_operations_pa3c','profile_call_deliveries_pa3c',
     'profile_call_assistance_pa3c','profile_call_research_pa3c',
     'profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a',
-    'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b',
+    'profile_attention_operations_pa4b','profile_attention_deliveries_pa4b','profile_event_projections_pa4b','profile_event_clock_activation_v1',
     'profile_conversation_checkouts_pa5','agent_product_launches_v1',
     'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1',
     'vp3_youtube_watch_v1','vp3_youtube_playhead_v1','vp3_youtube_saved_playlists_v1','vp3_youtube_playlist_plays_v1',
@@ -25,6 +25,8 @@ $partialSpeech=[
     'partial-projection-receipt'=>['profile_event_projections_pa4b','result_hash'],
     'partial-assistance-revision'=>['profile_call_assistance_pa3c','capture_revision'],
     'partial-assistance-research'=>['profile_call_research_pa3c','result_json'],
+    'partial-profile-event-time'=>['profile_events','recorded_at_utc_ms'],
+    'partial-profile-event-cutover'=>['profile_events','clock_legacy_token_v1'],
 ];
 if (!isset($argv[1])) {
     $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
@@ -55,6 +57,7 @@ require_once dirname(__DIR__).'/includes/profile-call-activity-pa3c.php';
 require dirname(__DIR__).'/includes/profile-visitor-speech-pa4a.php';
 require dirname(__DIR__).'/includes/profile-attention-pa4b.php';
 require dirname(__DIR__).'/includes/profile-event-projection-pa4b.php';
+require dirname(__DIR__).'/includes/profile-event-clock-v1.php';
 require_once dirname(__DIR__).'/includes/agent-commerce-recovery-pa2.php';
 require_once dirname(__DIR__).'/includes/initiative-product-launch-v1.php';
 require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
@@ -81,9 +84,16 @@ function agent_commerce_ensure_schema_v800(?PDO $pdo=null): void
 }
 // Older Profile migrations are isolated dependencies in this page fixture. Keep
 // their historical attention/notification shape, then execute real PA4B DDL.
+// Actual writer clock behavior is covered by profile-event-clock-v1.php. The
+// page fixture isolates those writers while exercising real upgrade readiness.
+const VP3_PROFILE_EVENT_CREATE_CLOCK_CONTRACT_V1='vp3.profile-event-clock.v1';
+const VP3_PROFILE_CONVERSION_CLOCK_CONTRACT_V1='vp3.profile-event-clock.v1';
+function profile_event_create(): never {throw new LogicException('An upgrade must not create a visitor event.');}
+function profile_conversion_outcome_record_v179(): never {throw new LogicException('An upgrade must not create a conversion.');}
 function profile_agent_ensure_schema(?PDO $connection=null): void
 {
     $p=$connection??$GLOBALS['fixture'];
+    $p->exec('CREATE TABLE IF NOT EXISTS profile_events (id INTEGER PRIMARY KEY,owner_user_id INTEGER NOT NULL)');
     $p->exec('CREATE TABLE IF NOT EXISTS profile_agent_messages (id INTEGER PRIMARY KEY)');
     vp3_profile_chat_attachment_install_v1($p);
     $p->exec("CREATE TABLE IF NOT EXISTS agent_attention_items(id INTEGER PRIMARY KEY,owner_user_id INTEGER,source_event_id INTEGER UNIQUE,source_conversation_id INTEGER,profile_agent_id INTEGER,visitor_user_id INTEGER,attention_type VARCHAR(50),priority INTEGER,status VARCHAR(20) DEFAULT 'pending',headline VARCHAR(255),summary TEXT,assessment TEXT,recommended_response TEXT,actions_json TEXT,context_json TEXT,snoozed_until DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
@@ -115,7 +125,7 @@ function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
     if(!vp3_ai_service_usage_ready_v1($pdo))$pdo->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
     $GLOBALS['calls'][]=__FUNCTION__;
 }
-if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);}
+if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);vp3_profile_event_clock_install_v1($fixture);}
 if($modern){
     if ($mode !== 'missing-coding-canvas') vp3_coding_canvas_schema_v1($fixture);
     initiative_product_launch_schema_v1($fixture);
@@ -192,6 +202,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check(vp3_initiative_youtube_playlist_ready_v1($fixture), 'Upgrade skipped the pending YouTube report cache');
     check(vp3_ai_service_usage_ready_v1($fixture) && in_array('ai_usage_accounting_v032_ensure_schema',$calls,true), 'Upgrade skipped AI service usage storage');
     check(vp3_coding_canvas_ready_v1($fixture), 'Upgrade skipped private Coding Canvas storage');
+    check(vp3_profile_event_clock_ready_v1($fixture), 'Upgrade skipped forward Profile event time activation');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
 } elseif ($mode === 'complete-get') {
     check($complete&&$dbCalls===1&&$calls===[],'Complete GET must inspect speech columns read-only and report ready');
@@ -205,7 +216,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
 } elseif ($mode === 'csrf') {
     check($error === 'Session expired. Please try again.' && $dbCalls === 0 && $calls === [], 'CSRF rejection allowed upgrade work');
 } else {
-    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas'],true);
+    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas','missing-profile_event_clock_activation_v1'],true);
     check(!$complete && $dbCalls === ($needsConnection?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
     check(str_contains($html, 'Run Upgrade'), 'Missing required storage must expose the upgrade control');
 }

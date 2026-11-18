@@ -77,6 +77,8 @@ require_once __DIR__.'/profile-agent-boundary-v390.php';
 // Keep controlled settings/identity adapters above, but execute the canonical
 // event writer unchanged. Historical conversations have real session/event
 // storage; missing browser binding must not be fabricated by this fixture.
+// The extracted function needs the same read-only clock helper as its module.
+require_once __DIR__.'/profile-event-clock-v1.php';
 $eventSource=file_get_contents(__DIR__.'/profile-agent.php');
 $eventStart=strpos($eventSource,'function profile_event_create(');
 $eventEnd=$eventStart===false?false:strpos($eventSource,"\nfunction profile_attention_from_event(",$eventStart);

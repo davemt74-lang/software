@@ -12,6 +12,37 @@
     const value=params.get('agent'),agentId=value==='system'?0:positive(value)||-1;
     return productId&&cid&&agentId===initiativePage.agent?Object.freeze({productId,conversationId:cid,agentId}):null;
   })();
+  const initialProfileAnalyticsDestination=(()=>{
+    const value=cfg.profileAnalyticsDestination;
+    if(!value||value.ownerUserId!==initiativePage.owner||value.chatAgentId!==initiativePage.agent
+      ||!Number.isSafeInteger(value.chatConversationId)||value.chatConversationId<1
+      ||value.workingAttentionBinding!==initiativePage.binding||typeof value.ref!=='string'
+      ||typeof value.href!=='string')return null;
+    return Object.freeze({...value});
+  })();
+  let initialProfileAnalyticsCancelled=false;
+  function profileAnalyticsUrlMatchesV1(url) {
+    const target=initialProfileAnalyticsDestination;
+    return !initialProfileAnalyticsCancelled&&target&&initiativeIdentityMatchesV1()
+      &&target.chatConversationId===conversationId
+      &&['agent','conversation_id','profile_analytics'].every(key=>url.searchParams.getAll(key).length===1)
+      &&url.searchParams.get('agent')===(target.chatAgentId===0?'system':String(target.chatAgentId))
+      &&url.searchParams.get('conversation_id')===String(target.chatConversationId)
+      &&url.searchParams.get('profile_analytics')===target.ref;
+  }
+  function cancelProfileAnalyticsDestinationV1() {
+    initialProfileAnalyticsCancelled=true;
+    try {
+      const url=new URL(location.href);
+      if(!url.searchParams.has('profile_analytics'))return;
+      url.searchParams.delete('profile_analytics');url.searchParams.delete('conversation_id');
+      url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));
+      window.history.replaceState(null,'',url.pathname+url.search+url.hash);
+    } catch {}
+  }
+  window.addEventListener('stonefellow:chat-context-changing',event=>{
+    if(event.detail?.initialRestore!==true)cancelProfileAnalyticsDestinationV1();
+  });
   const thread = document.getElementById('chatThread');
   const welcome = document.getElementById('chatWelcome');
   const form = document.getElementById('chatForm');
@@ -162,7 +193,18 @@
   }
   function rememberConversation() {
     try { localStorage.setItem(selectionKey, JSON.stringify({id:conversationId, at:Date.now()})); } catch (_) {}
-    if(contextReady)try{const url=new URL(location.href);if(url.searchParams.has('conversation_id')){url.searchParams.delete('conversation_id');history.replaceState(null,'',url.pathname+url.search+url.hash);}}catch(_){}
+    if(contextReady)try{
+      const url=new URL(location.href);
+      if(!profileAnalyticsUrlMatchesV1(url)){
+        let changed=false;
+        if(url.searchParams.has('profile_analytics')){
+          url.searchParams.delete('profile_analytics');
+          url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));changed=true;
+        }
+        if(url.searchParams.has('conversation_id')){url.searchParams.delete('conversation_id');changed=true;}
+        if(changed)window.history.replaceState(null,'',url.pathname+url.search+url.hash);
+      }
+    }catch(_){}
   }
   function initialConversation() {
     const requested=Number(new URLSearchParams(location.search).get('conversation_id')||0);
@@ -5782,6 +5824,7 @@
     stageSpecialistPrompt,
     mediaCommandContext,
     mediaCommandIntent:()=>initiativeIdentityMatchesV1()?initialMediaCommandIntent:null,
+    profileAnalyticsDestination:()=>!initialProfileAnalyticsCancelled&&initiativeIdentityMatchesV1()?initialProfileAnalyticsDestination:null,
     showChatView:() => setChatCanvasView('chat'),
     showCodingCanvasView:() => setChatCanvasView('coding'),
     showPlayerView:() => setChatCanvasView('player'),

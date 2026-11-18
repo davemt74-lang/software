@@ -777,7 +777,9 @@ async function verifyBrainLoop(page,writes,responses,errors){
   let plannedData;
   try{plannedData=JSON.parse(plannedText);}catch{throw new Error('Invalid canonical API response: '+plannedText);}
   assert.equal(plannedData.reason,'completed',JSON.stringify({responses,state:await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()))}));
+  const brainPrepared=initiativeTick(page);
   await page.clock.fastForward(16000);
+  assert.equal((await fixtureJson(await brainPrepared)).reason,'completed');
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
   assert.equal(await page.locator('#chatInput').inputValue(),'My unfinished thought');
   assert.equal(brainCalls(state).length,2,'the real private planner and preparation run despite the owner draft');
@@ -863,7 +865,12 @@ async function verifyBrainLoop(page,writes,responses,errors){
     &&response.request().postDataJSON().action==='initiative_tick');
   await status.getByRole('button',{name:'Resume',exact:true}).click();
   assert.equal((await (await checkinPlan).json()).reason,'completed');
+  // Fast-forwarding browser timers does not await the actual PHP request.
+  // Observe the preparation receipt before reading the fixture database; this
+  // retains the exact four-call assertion on slower hosted runners.
+  const checkinPrepared=initiativeTick(page);
   await page.clock.fastForward(16000);
+  assert.equal((await fixtureJson(await checkinPrepared)).reason,'completed');
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
   assert.equal(brainCalls(state).length,4);
   const pendingCheckin=state.actions.map(row=>JSON.parse(row.result_json||'{}'))
