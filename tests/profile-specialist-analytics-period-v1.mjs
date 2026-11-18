@@ -116,9 +116,32 @@ function harness({selected=periodRef(),override=null}={}){
   f.api.dispose();
 }
 {
+  const f=harness();await flush();
+  f.state.override=async()=>({status:503,data:{},message:'Completed-period storage is temporarily unavailable.'});
+  await f.api.refresh();await flush();
+  check(!f.host.querySelector('[data-profile-analytics-period]')&&f.host.textContent.includes('Retry completed period')
+    &&f.host.querySelector('[data-profile-analytics-view="traffic"]')?.isConnected,
+    'period outage clears prior facts while keeping the independent traffic view reachable');
+  f.click('Traffic details');await flush();
+  check(f.state.traffic===1&&f.host.textContent.includes('Retained rolling traffic'),'traffic view opens after completed-period failure');
+  f.click('Completed periods');await flush();f.state.override=null;f.click('Retry completed period');await flush();
+  check(f.host.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===periodRef()
+    &&f.requests.at(-1).ref===periodRef(),'explicit period retry restores the same fixed source');
+  f.api.dispose();
+}
+{
+  const gate=deferred();const f=harness({override:async()=>gate.promise});await flush();
+  f.click('Traffic details');await flush();
+  gate.resolve({status:503,data:{},message:'Obsolete period failure.'});await flush();
+  check(f.state.traffic===1&&f.host.textContent.includes('Retained rolling traffic')&&!f.host.textContent.includes('Obsolete period failure.'),
+    'late failed period request cannot replace the newly selected traffic view');
+  f.api.dispose();
+}
+{
   const f=harness();await flush();f.state.override=async()=>({status:403,data:{},message:'Profile access changed.'});
   await f.api.refresh();await flush();
   check(!f.host.textContent.includes('USD 90,071')&&f.host.textContent.includes('Reload Chat'),'authority loss clears prior period facts');
+  check(!f.host.querySelector('[data-profile-analytics-view="traffic"]'),'authority loss removes both analytics mode controls');
   f.api.dispose();
 }
 

@@ -1127,12 +1127,22 @@
       if(selection.analyticsView==='periods'){
         const requestedRef=selection.analyticsRef;
         target.append(node('p','Checking the completed period…','vp3-profile-empty'));
-        const result=await request('analytics_period',requestedRef?{ref:requestedRef}:{});
-        if(!current(mine))return;
-        const value=analyticsPeriodModel(result.data.analytics_period,requestedRef);
-        if(!value)throw new Error('The completed-period response could not be verified.');
-        selection.analyticsRef=value.ref;analyticsSelection.analyticsRef=value.ref;
-        renderAnalyticsPeriod(target,value,mine);return;
+        try {
+          const result=await request('analytics_period',requestedRef?{ref:requestedRef}:{});
+          if(!current(mine))return;
+          const value=analyticsPeriodModel(result.data.analytics_period,requestedRef);
+          if(!value)throw new Error('The completed-period response could not be verified.');
+          selection.analyticsRef=value.ref;analyticsSelection.analyticsRef=value.ref;
+          renderAnalyticsPeriod(target,value,mine);
+        } catch(error) {
+          if(!current(mine))return;
+          if([401,403,419].includes(error?.status))throw error;
+          // A period outage must leave the independently authorized traffic
+          // view reachable. Authority failures still clear the entire view.
+          target.replaceChildren(node('p',errorMessage(error),'vp3-profile-empty'),
+            button('Retry completed period',()=>void refresh()));
+        }
+        return;
       }
       if (!window.VP3ProfileAnalytics?.mountWorkspace) {target.append(node('p','Traffic details are unavailable.','vp3-profile-empty'));return;}
       analyticsView=window.VP3ProfileAnalytics.mountWorkspace(target,{
