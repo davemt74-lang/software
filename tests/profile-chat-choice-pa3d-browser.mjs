@@ -21,24 +21,30 @@ function renderWidget(preview){
  `],{input:widgetSource,encoding:'utf8'});
 }
 const widgets={visitor:renderWidget(false),owner:renderWidget(true)};
+const evidenceDirectory='artifacts/profile-chat-controls';
+fs.mkdirSync(evidenceDirectory,{recursive:true});
 const assets=new Map(['profile-agent.js','profile.css','profile-calls-pa3c.js','profile-calls-pa3c.css','profile-speech-pa4a.css'].map(name=>['/'+name,read(name)]));
 const server=http.createServer((request,response)=>{
  const path=new URL(request.url,'http://localhost');
  if(assets.has(path.pathname)){response.writeHead(200,{'Content-Type':path.pathname.endsWith('.css')?'text/css':'text/javascript'});response.end(assets.get(path.pathname));return;}
- response.writeHead(200,{'Content-Type':'text/html'});
+ response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
  const preview=path.searchParams.has('preview'),speechEndpoint=path.searchParams.has('speech')?'/api/profile-speech-pa4a.php':undefined;
  const config={username:'fixture-owner',ownerName:'Dave',endpoint:'/api/profile-agent.php',conversationNamespace:namespace,profileToken:'FIXTURE_PROFILE_TOKEN',speechEndpoint,callEndpoint:'/api/profile-calls-pa3c.php'};
  response.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/profile.css"><link rel="stylesheet" href="/profile-calls-pa3c.css"><link rel="stylesheet" href="/profile-speech-pa4a.css"><style>#chatInput{display:none}</style><body class="profile-page">${preview?widgets.owner:widgets.visitor}<textarea id="chatInput">PRIVATE_OWNER_DRAFT</textarea><script>window.STONEFELLOW_PROFILE_AGENT=${JSON.stringify(config)};${launcher}</script><script src="/profile-calls-pa3c.js"></script><script src="/profile-agent.js"></script>`);
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 let browser,checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;console.log('PASS '+label);};
-async function fixture({available=true,ownerName='Dave',loseFirst=false,staleSession=false,preview=false,viewport={width:390,height:740}}={}){
+async function fixture({available=true,ownerName='Dave',loseFirst=false,staleSession=false,preview=false,attachmentMaxBytes=2097152,viewport={width:390,height:740}}={}){
  const context=await browser.newContext({viewport}),page=await context.newPage();
- const requests=[],messages=[],saved=new Map(),errors=[];
+ const requests=[],callRequests=[],fileChoosers=[],messages=[],saved=new Map(),errors=[];
  const state={chat:chatChoice({live_text_available:available,owner_name:ownerName}),handoff:null,conversation:null};let id=100,turn=500;
  page.on('pageerror',e=>errors.push(e.message));
- const snapshot=(after=0)=>({agent:{name:'Profile Guide',greeting:''},chat:state.chat,conversation:state.conversation,handoff:state.handoff&&{...state.handoff,server_now_ms:Date.now()},messages:messages.filter(m=>m.id>Number(after)),attachment_max_bytes:2097152});
- await page.route('**/api/profile-calls-pa3c.php*',route=>route.fulfill({status:200,json:{ok:true,contract:'vp3.profile-call.v1',calls:[],can_offer:available,reason:''}}));
+ page.on('filechooser',chooser=>fileChoosers.push(chooser));
+ const snapshot=(after=0)=>({agent:{name:'Profile Guide',greeting:''},chat:state.chat,conversation:state.conversation,handoff:state.handoff&&{...state.handoff,server_now_ms:Date.now()},messages:messages.filter(m=>m.id>Number(after)),attachment_max_bytes:attachmentMaxBytes});
+ await page.route('**/api/profile-calls-pa3c.php*',route=>{
+  callRequests.push({method:route.request().method(),url:route.request().url()});
+  return route.fulfill({status:200,json:{ok:true,contract:'vp3.profile-call.v1',calls:[],can_offer:available,reason:''}});
+ });
  if(staleSession)await page.route('**/api/profile-speech-pa4a.php*',async route=>{
   const request=route.request(),body=request.method()==='GET'?Object.fromEntries(new URL(request.url()).searchParams):request.postDataJSON();requests.push({method:request.method(),body});
   const current=body.conversation_namespace==='d'.repeat(64);
@@ -88,7 +94,7 @@ async function fixture({available=true,ownerName='Dave',loseFirst=false,staleSes
  const launch=page.getByRole('button',{name:'Ask Profile Guide'}),settings=page.getByRole('button',{name:'Chat settings'}),presence=page.locator('[data-profile-agent-presence]');
  const checkbox=page.locator('[data-profile-live-chat]'),end=page.locator('[data-profile-end-live]'),status=page.locator('[data-profile-agent-status]'),textarea=page.locator('.profile-agent-compose textarea');
  await launch.click();
- return {page,requests,saved,state,launch,settings,presence,checkbox,end,status,textarea,
+ return {page,requests,callRequests,fileChoosers,saved,state,launch,settings,presence,checkbox,end,status,textarea,
   async openSettings(){if(await settings.getAttribute('aria-expanded')==='false')await settings.click();},
   accept(){state.chat={...state.chat,live_status:'accepted',can_end_live_chat:true};state.conversation.status='owner_joined';state.handoff={...state.handoff,state:'owner_claimed',dispatch_state:'owner_claimed',pickup_deadline_ms:null,revision:state.handoff.revision+1};messages.push({id:++id,sender_type:'owner',message:'Direct owner answer'});},
   async send(value){await textarea.fill(value);await page.getByRole('button',{name:/^(Send|Retry message)$/}).click();},
@@ -101,7 +107,18 @@ try{
   const f=await fixture();await f.page.waitForFunction(()=>!document.querySelector('[data-profile-live-chat]').disabled);
   check(!await f.checkbox.isChecked()&&!(await f.checkbox.isVisible())&&(await f.presence.textContent())==='Dave online for live chat','available mobile widget defaults to Agent chat and keeps permissions in Settings');
   const controls=f.page.getByRole('group',{name:'Chat actions'});
-  check(await controls.getByRole('button').count()===5&&await controls.getByRole('button',{name:'Add image'}).isDisabled()&&await controls.getByRole('button',{name:'Add file'}).isDisabled(),'composer shows all five actions and reserves attachments for an authorized human thread');
+  check(await controls.getByRole('button').count()===5&&await controls.getByRole('button',{name:'Add image'}).isEnabled()&&await controls.getByRole('button',{name:'Add file'}).isEnabled(),'all five composer actions remain usable, including attachment availability explanations');
+  await controls.getByRole('button',{name:'Add image'}).click();
+  const help=f.page.locator('[data-profile-attachment-help]');
+  check(await help.isVisible()&&/owner|join/i.test(await help.innerText())&&f.fileChoosers.length===0&&!f.requests.some(r=>r.method==='POST'),'image action explains the owner requirement without choosing, uploading or sending');
+  await f.page.locator('#profileAgentShell').screenshot({path:evidenceDirectory+'/visitor-image-help-compact.png'});
+  await help.locator('[data-profile-attachment-help-options]').click();
+  check(await f.page.locator('[data-profile-chat-settings]').isVisible()&&!await f.checkbox.isChecked()&&!f.requests.some(r=>r.method==='POST'),'attachment next step opens live chat settings without selecting live mode or sending');
+  await f.page.keyboard.press('Escape');
+  await controls.getByRole('button',{name:'Add file'}).click();
+  check(await help.isVisible()&&f.fileChoosers.length===0,'file action also explains availability before opening a file chooser');
+  await help.getByRole('button',{name:'Back to conversation',exact:true}).click();
+  check(await f.page.getByRole('log').isVisible()&&await controls.getByRole('button',{name:'Add file'}).evaluate(node=>document.activeElement===node),'attachment Back returns to messages and the triggering control');
   const chat=f.page.getByRole('button',{name:'Chat options'});
   await chat.click();
   const audio=f.page.getByRole('button',{name:'Request audio call'});
@@ -155,8 +172,11 @@ try{
   await f.openSettings();await f.page.getByRole('button',{name:'Cancel live request'}).waitFor();
   const imageButton=f.page.getByRole('button',{name:'Add image'});
   const fileButton=f.page.getByRole('button',{name:'Add file'});
-  check(await imageButton.isDisabled()&&await fileButton.isDisabled(),'attachments stay unavailable while the owner is deciding');
-  await f.settings.click();f.accept();await f.page.getByText('Direct owner answer',{exact:true}).waitFor();
+  await fileButton.click();
+  const help=f.page.locator('[data-profile-attachment-help]');
+  check(await help.isVisible()&&/wait|join|accept/i.test(await help.innerText())&&f.fileChoosers.length===0&&!f.requests.some(r=>r.attachment),'pending owner acceptance gives visible feedback without admitting an attachment');
+  await help.getByRole('button',{name:'Back to conversation',exact:true}).click();
+  f.accept();await f.page.getByText('Direct owner answer',{exact:true}).waitFor();
   check(await imageButton.isEnabled()&&await fileButton.isEnabled(),'both attachment controls enable in the accepted owner chat');
   const choose=f.page.waitForEvent('filechooser');await imageButton.click();
   await (await choose).setFiles({name:'photo.png',mimeType:'image/png',buffer:photo});
@@ -170,7 +190,24 @@ try{
   const downloaded=f.page.waitForEvent('download');await image.click();
   const filename=(await downloaded).suggestedFilename();
   check(filename==='photo.png'&&f.requests.some(r=>r.body.action==='attachment'&&r.body.preview==='1'&&r.body.conversation_id==='31'),'the image previews and downloads from the conversation-bound endpoint (filename '+filename+')');
+  const chooseFile=f.page.waitForEvent('filechooser');await fileButton.click();
+  await (await chooseFile).setFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('Notes for the profile owner.','utf8')});
+  check(await f.page.getByRole('button',{name:'Remove notes.txt'}).isVisible()&&f.requests.filter(r=>r.attachment).length===1,'file button stages the actual selected document without uploading');
+  await f.send('Here are my notes.');await f.page.getByRole('link',{name:'Download notes.txt'}).waitFor();
+  const documentSend=f.requests.filter(r=>r.attachment).at(-1);
+  check(documentSend.attachment.name==='notes.txt'&&documentSend.body.continue_live===true&&documentSend.body.conversation_id===31&&!f.requests.some(r=>r.body.action==='dispatch'),'Send shares the selected file only with the accepted owner conversation');
+  await f.page.locator('#profileAgentShell').screenshot({path:evidenceDirectory+'/accepted-owner-attachments-compact.png'});
   await f.close();
+ }
+ {
+  const f=await fixture({attachmentMaxBytes:0});await f.page.waitForFunction(()=>!document.querySelector('[data-profile-live-chat]').disabled);
+  await f.page.getByRole('button',{name:'Add file'}).click();
+  const help=f.page.locator('[data-profile-attachment-help]');
+  check(await help.isVisible()&&(await help.innerText()).includes('File sharing is unavailable on this profile')&&f.fileChoosers.length===0&&!f.requests.some(r=>r.method==='POST'),'unavailable attachment storage gives the applicable explanation without requesting an owner or opening a picker');
+  await f.page.locator('#profileAgentShell').screenshot({path:evidenceDirectory+'/sharing-unavailable-compact.png'});
+  await help.getByRole('button',{name:'Back to conversation',exact:true}).click();
+  await f.send('A text message still works.');await f.page.getByText('Browser Agent response',{exact:true}).waitFor();
+  check(f.requests.find(r=>r.body.action==='message')?.body.chat_mode==='agent','unavailable sharing does not disable ordinary Agent text chat');await f.close();
  }
  {
   const f=await fixture({available:false});await f.page.waitForFunction(()=>document.querySelector('[data-profile-agent-presence]').dataset.state==='offline');
@@ -183,11 +220,25 @@ try{
   f.state.chat.live_text_available=false;await f.page.reload();await f.launch.click();await f.openSettings();await f.page.getByRole('button',{name:'Cancel live request'}).waitFor();await f.page.waitForFunction(()=>!document.querySelector('[data-profile-end-live]').disabled);
   const sends=f.requests.filter(r=>r.body.action==='message');check(sends.length===2&&sends[0].body.chat_mode==='live'&&sends[1].body.chat_mode==='live'&&sends[0].body.client_request_id===sends[1].body.client_request_id&&f.saved.size===1,'real reload retries one exact live intent even after availability changes');await f.close();
  }
- {
-  const f=await fixture({preview:true,viewport:{width:1180,height:820}});
+ for(const [label,viewport] of [['desktop',{width:1180,height:820}],['compact',{width:390,height:740}]]){
+  const f=await fixture({preview:true,viewport});
   check((await f.presence.textContent())==='Owner preview'&&await f.page.getByText('Hello from the Profile Agent.').isVisible()&&await f.textarea.isDisabled(),'owner preview shows the greeting with an honest status and no visitor composer');
+  await f.page.getByRole('button',{name:'Chat options',exact:true}).click();
+  const options=f.page.locator('[data-profile-chat-options]');
+  check(await options.isVisible()&&/own profile|owner preview/i.test(await options.innerText()),'owner Chat options opens and explains the owner view');
+  check(await options.getByRole('link',{name:'Open my Chat',exact:true}).getAttribute('href')==='/chat.php'&&await options.getByRole('link',{name:'Manage Profile Agent',exact:true}).getAttribute('href')==='/profile-agent.php','owner Chat options offers working routes to private Chat and Profile settings');
+  await f.page.locator('#profileAgentShell').screenshot({path:evidenceDirectory+'/owner-options-'+label+'.png'});
+  for(const action of ['Add image','Add file']){
+   await f.page.getByRole('button',{name:action,exact:true}).click();
+   const help=f.page.locator('[data-profile-attachment-help]');
+   check(await help.isVisible()&&/own profile|preview/i.test(await help.innerText()),'owner '+action+' explains preview instead of doing nothing');
+   if(action==='Add image')await f.page.locator('#profileAgentShell').screenshot({path:evidenceDirectory+'/owner-attachment-'+label+'.png'});
+   await f.page.keyboard.press('Escape');
+   check(await f.page.getByRole('log').isVisible()&&await f.page.getByRole('button',{name:action,exact:true}).evaluate(node=>document.activeElement===node),'owner attachment Escape restores the conversation and triggering control');
+  }
+  check(await f.page.evaluate(()=>{const shell=document.querySelector('#profileAgentShell');return document.documentElement.scrollWidth<=innerWidth&&shell.scrollWidth<=shell.clientWidth;}),'owner controls fit the '+label+' viewport without horizontal overflow');
   await f.openSettings();
-  check(await f.page.getByRole('link',{name:'Manage Profile Agent'}).getAttribute('href')==='/profile-agent.php'&&f.requests.length===0,'owner preview can open its settings link without initiating visitor requests');
+  check(await f.page.getByRole('link',{name:'Manage Profile Agent'}).getAttribute('href')==='/profile-agent.php'&&f.requests.length===0&&f.callRequests.length===0&&f.fileChoosers.length===0,'owner preview can inspect controls without any visitor API, call request or file picker');
   await f.close();
  }
  console.log(`PROFILE_CHAT_CHOICE_PA3D_BROWSER=PASS ${checks} checks`);

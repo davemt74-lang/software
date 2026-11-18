@@ -67,7 +67,13 @@ async function fixture(surface){
   const ready=async id=>page.waitForFunction(({form,id})=>Number(document.querySelector(form)?.dataset.conversationId)===id,{form:selectors.form,id});
   await page.goto(base+'/'+surface);
   if(surface==='portal')await page.locator('[data-open-conversation="101"]').waitFor();
-  else await page.locator('.chat-profile-activity-button').waitFor();
+  else{
+    await page.waitForFunction(()=>typeof window.STONEFELLOW_PROFILE_ACTIVITY?.open==='function');
+    check(await page.locator('.chat-topbar-actions .chat-profile-activity-button').count()===0,'legacy Profile runtime leaves the main header unchanged');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('profile-activity:open',{detail:{tab:'conversations'}})));
+    await page.locator('#profileActivityCanvas').waitFor();
+    check(await page.locator('[data-profile-activity-tab="conversations"]').getAttribute('class')==='active','legacy Profile event navigation still opens Conversations');
+  }
   return {page,calls,threads,profile,policies,state,selectors,hold,open,ready,input:page.locator(selectors.form+' input[name="message"]'),async close(){check(errors.length===0,surface+' has no runtime errors: '+errors.join('; '));await page.close();}};
 }
 

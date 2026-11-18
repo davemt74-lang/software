@@ -320,6 +320,12 @@ jobs:
           node tests/profile-call-activity-pa3c-browser.mjs
       - name: Public Agent or live owner text choice, consent, recovery and mobile
         run: node tests/profile-chat-choice-pa3d-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-chat-controls-browser-evidence
+          path: artifacts/profile-chat-controls/
+          if-no-files-found: ignore
       - name: Profile visitor announcements, playback and exact dictated reply review
         run: node tests/profile-speech-pa4a-browser.mjs
       - name: Profile attention snooze, explicit handling and current Chat routing

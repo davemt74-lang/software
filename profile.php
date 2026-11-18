@@ -330,14 +330,25 @@ if($webmcpResumeRequested){
     <div class="profile-agent-thread" data-profile-agent-thread role="log" aria-label="Messages">
       <?php if($chatPreview): ?><div class="profile-agent-message agent"><strong class="profile-agent-message-speaker"><?= e((string)$agent['display_name']) ?></strong><span class="profile-agent-message-body"><?= e($agentGreeting) ?></span></div><?php endif; ?>
     </div>
-    <?php if(!$chatPreview): ?>
-      <section class="profile-agent-panel" id="profileChatOptions" data-profile-chat-options aria-labelledby="profileChatOptionsTitle" hidden>
-        <h2 id="profileChatOptionsTitle" tabindex="-1">Chat options</h2>
+    <section class="profile-agent-panel" id="profileChatOptions" data-profile-chat-options aria-labelledby="profileChatOptionsTitle" hidden>
+      <h2 id="profileChatOptionsTitle" tabindex="-1">Chat options</h2>
+      <?php if($chatPreview): ?>
+        <p>You’re viewing your own profile. This preview shows your greeting without starting a visitor conversation.</p>
+        <ul class="profile-agent-preview-options">
+          <li>Visitors can message your Profile Agent.</li>
+          <li>Live text, audio and video requests appear when available.</li>
+          <li>Images and files can be shared after you join the visitor’s conversation.</li>
+        </ul>
+        <div class="profile-agent-panel-actions">
+          <a class="profile-agent-panel-action" href="<?= e(url('/chat.php')) ?>">Open my Chat</a>
+          <a class="profile-agent-panel-action" href="<?= e(url('/profile-agent.php')) ?>">Manage Profile Agent</a>
+        </div>
+      <?php else: ?>
         <p data-profile-chat-contact-status></p>
         <button type="button" class="profile-agent-panel-action" data-profile-chat-settings-jump>Live text chat</button>
         <div data-profile-chat-call-offers></div>
-      </section>
-    <?php endif; ?>
+      <?php endif; ?>
+    </section>
     <section class="profile-agent-panel" id="profileChatSettings" data-profile-chat-settings aria-labelledby="profileChatSettingsTitle" hidden>
       <h2 id="profileChatSettingsTitle" tabindex="-1">Chat settings</h2>
       <?php if($chatPreview): ?>
@@ -353,18 +364,26 @@ if($webmcpResumeRequested){
         <p data-profile-agent-disclosure>Profile Agent replies use information approved for this profile. The owner can accept a request to chat directly.</p>
       <?php endif; ?>
     </section>
+    <section class="profile-agent-panel" id="profileAttachmentHelp" data-profile-attachment-help aria-labelledby="profileAttachmentHelpTitle" hidden>
+      <h2 id="profileAttachmentHelpTitle" data-profile-attachment-help-title tabindex="-1">Sharing images and files</h2>
+      <p data-profile-attachment-help-message role="status"></p>
+      <div class="profile-agent-panel-actions">
+        <button type="button" class="profile-agent-panel-action" data-profile-attachment-help-options hidden>Open chat options</button>
+        <button type="button" class="profile-agent-panel-action" data-profile-attachment-help-close>Back to conversation</button>
+      </div>
+    </section>
     <footer class="profile-agent-footer">
       <form class="profile-agent-compose"<?= $chatPreview ? ' data-profile-chat-preview' : '' ?>>
         <textarea maxlength="2000" rows="2" placeholder="<?= $chatPreview ? 'Visitor message preview' : 'Message…' ?>" aria-label="Message Profile Agent"<?= $chatPreview ? ' disabled' : '' ?>></textarea>
         <div class="profile-agent-attachments" data-profile-chat-attachments></div>
         <div class="profile-agent-toolbar" role="group" aria-label="Chat actions">
-          <button type="button" data-profile-chat-add-image aria-label="Add image" title="Images can be shared in a conversation with the profile owner" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="15.5" cy="8.5" r="1"/></svg></button>
-          <button type="button" data-profile-chat-add-file aria-label="Add file" title="Files can be shared in a conversation with the profile owner" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8 8a5 5 0 0 1-7-7l8-8a3 3 0 0 1 4 4l-8 8a1 1 0 0 1-2-2l7-7"/></svg></button>
-          <button type="button" data-profile-chat-options-toggle aria-label="Chat options" title="Chat options"<?= $chatPreview ? ' disabled' : ' aria-controls="profileChatOptions" aria-expanded="false"' ?>><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l1.7-3.7A8.5 8.5 0 1 1 21 11.5Z"/><path d="M9 12h6"/></svg></button>
+          <button type="button" data-profile-chat-add-image aria-label="Add image" title="Add image" aria-controls="profileAttachmentHelp" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="15.5" cy="8.5" r="1"/></svg></button>
+          <button type="button" data-profile-chat-add-file aria-label="Add file" title="Add file" aria-controls="profileAttachmentHelp" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 11-8 8a5 5 0 0 1-7-7l8-8a3 3 0 0 1 4 4l-8 8a1 1 0 0 1-2-2l7-7"/></svg></button>
+          <button type="button" data-profile-chat-options-toggle aria-label="Chat options" title="Chat options" aria-controls="profileChatOptions" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l1.7-3.7A8.5 8.5 0 1 1 21 11.5Z"/><path d="M9 12h6"/></svg></button>
           <button type="submit" class="profile-agent-send" title="Send"<?= $chatPreview ? ' disabled' : '' ?>><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/></svg><span class="profile-agent-visually-hidden" data-profile-send-label>Send</span></button>
           <button type="button" data-profile-chat-settings-toggle aria-label="Chat settings" title="Chat settings" aria-controls="profileChatSettings" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2.4-2 .9-2-.9-2 3.4 1.6 1.7v2.4L2.5 14l2 3.5 2.1-.7 2 .9.4 2.3h4l.4-2.3 2-.9 2.2.7 2-3.5-1.7-1.1v-2.4l1.6-1.7-2-3.4-2 .9-2-.9L13 3Z"/><circle cx="11" cy="11.5" r="3"/></svg></button>
         </div>
-        <div class="profile-agent-status" data-profile-agent-status role="status"></div>
+        <div class="profile-agent-status" data-profile-agent-status role="status"><?= $chatPreview ? 'You’re viewing your own profile. Visitor sending is off in this preview.' : '' ?></div>
       </form>
     </footer>
   </section>

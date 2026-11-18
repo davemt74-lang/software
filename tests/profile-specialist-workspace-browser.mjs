@@ -82,14 +82,17 @@ try{
   async function control(action){const response=await page.request.post(server.base+'/fixture/control',{data:{action}});assert.equal(response.status(),200,await response.text());}
   await mkdir('artifacts/profile-specialist-workspace',{recursive:true});
   await reload();
+  check(await page.locator('.chat-topbar-actions .chat-profile-activity-button').count()===0,'Profile navigation does not add a specialist icon to the main header');
   await page.locator('[data-chat-specialist="profile"]').click();
   await panel().locator('.vp3-profile-service').waitFor();
   check(JSON.stringify(await panel().getByRole('tab').allTextContents())===JSON.stringify(['Overview','Conversations','Calls','Analytics','Reports']),'production Profile rail opens all five workspace tabs');
   check(await tab('Overview').getAttribute('aria-selected')==='true','normal Profile entry starts with Overview');
   await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/desktop-overview.png',fullPage:true});
-  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();
-  check(await panel().count()===1,'visible Profile launcher reentry keeps the same shell open');
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('profile-activity:open',{detail:{tab:'conversations'}})));
+  await panel().locator('[data-profile-conversation]').first().waitFor();
+  check(await panel().count()===1&&await tab('Conversations').getAttribute('aria-selected')==='true','existing Profile event navigation opens Conversations in the same workspace without a header button');
+  check(await page.locator('.chat-topbar-actions .chat-profile-activity-button').count()===0,'Profile reentry keeps the main header free of a specialist icon');
   await openThread();
   await panel().getByRole('button',{name:'Take over',exact:true}).click();
   await panel().getByRole('button',{name:'Prepare private draft',exact:true}).waitFor({state:'visible'});
@@ -144,9 +147,9 @@ try{
   await openThread();
   check(await reply().inputValue()==='Owner reviewed and edited browser reply.','owner-edited text survives same-scope tab switching');
   await panel().getByRole('button',{name:'Close',exact:true}).click();
-  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();
+  await page.locator('[data-chat-specialist="profile"]').click();
   await panel().locator('.vp3-profile-service').waitFor();await openThread();
-  check(await reply().inputValue()==='Owner reviewed and edited browser reply.','legacy Profile launcher reopens the same scoped edited draft');
+  check(await reply().inputValue()==='Owner reviewed and edited browser reply.','Profile specialist entry reopens the same scoped edited draft');
   mode='lose_reply';await panel().getByRole('button',{name:'Send reply to visitor',exact:true}).click();
   await panel().getByRole('button',{name:'Retry previous action',exact:true}).waitFor();
   const committed=await stored();
@@ -181,7 +184,7 @@ try{
   check(await page.evaluate(()=>nativeCardBefore===document.getElementById('fixtureNativeCall')&&nativeMediaBefore===nativeCardBefore.querySelector('[data-fixture-media]')&&nativeMediaBefore.isConnected),'workspace lifecycle preserves the existing native card/media DOM');
 
   // Current/history navigation uses the real endpoint; terminal sections remain static.
-  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();await tab('Calls').click();
+  await page.locator('[data-chat-specialist="profile"]').click();await tab('Calls').click();
   await panel().getByRole('button',{name:'Call history',exact:true}).click();
   await panel().locator(`[data-profile-workspace-call="${server.seed.outcomes.assisted.call_id}"]`).getByRole('button',{name:'View outcome',exact:true}).click();
   const outcomeSection=key=>panel().locator(`[data-profile-outcome-section="${key}"]`);
@@ -221,7 +224,7 @@ try{
   check((await panel().innerText()).includes('Call ended')&&await panel().locator('[data-profile-transcript-segment],[data-profile-followup]').count()===0,
     'recording denial keeps authorized call state and removes all recording-derived content');
   await control('recording_restore');await reload();
-  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();
+  await page.locator('[data-chat-specialist="profile"]').click();
   await panel().locator('.vp3-profile-service').waitFor();check(await tab('Overview').getAttribute('aria-selected')==='true','normal entry after reload still starts Overview');
   await tab('Calls').click();await outcomeSection('analysis').getByText('The saved call discussed public opening hours and an owner-reviewed follow-up.',{exact:true}).waitFor();
   check(await panel().getByRole('button',{name:'Call history',exact:true}).getAttribute('aria-pressed')==='true',
@@ -234,7 +237,7 @@ try{
   await control('tasks_complete');
   await panel().getByRole('button',{name:'Close',exact:true}).click();
 
-  await page.getByRole('button',{name:'Open Profile workspace',exact:true}).click();await openThread();
+  await page.locator('[data-chat-specialist="profile"]').click();await openThread();
   held={started:defer(),release:defer()};const threadGate=held;mode='delay_thread';
   await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();await started(threadGate);
   await page.evaluate(()=>window.STONEFELLOW_PROFILE_ACTIVITY.open({tab:'conversations',conversationId:fixtureSeed.secondary}));

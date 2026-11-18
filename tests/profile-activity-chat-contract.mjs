@@ -36,6 +36,8 @@ assert.ok(activity.includes("setInterval(()=>{if(document.visibilityState==='vis
 assert.ok(activity.includes("req('conversation_messages'"), 'Profile Activity canvas should open Profile Agent threads');
 assert.ok(activity.includes("req('owner_reply'"), 'owner should be able to reply from the Agent Chat canvas');
 assert.ok(activity.includes('profile-activity:open'), 'Profile Activity should expose an event bridge for proactive attention');
+assert.ok(activity.includes('window.STONEFELLOW_PROFILE_ACTIVITY={open'), 'Profile Activity should preserve its existing programmatic navigation');
+assert.doesNotMatch(activity,/\.chat-topbar-actions|chat-profile-activity-button/,'Profile Activity must not inject a specialist icon into the main header');
 assert.ok(activity.includes("'\"':'&quot;'"), 'Profile Activity must HTML-escape quotation marks correctly');
 assert.ok(!activity.includes('StonefellowPremiumVoiceV122'), 'Profile Activity must not own a duplicate voice/attention runtime');
 assert.ok(!activity.includes('profile-activity-chat-v242.php'), 'Profile Activity must not own a profile-only chat bridge');
