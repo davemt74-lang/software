@@ -769,6 +769,14 @@ try {
       await picker.locator('[data-media-picker-asset="'+generatedIds[2]+'"]').click();
       assert.equal(await input.inputValue(),'');assert.equal(sends().length,beforeSends);
       await page.evaluate(()=>{const input=document.getElementById('chatInput');input.value='A vintage cap, keeping the original person.';input.dispatchEvent(new Event('input'));});
+      for(const action of ['edit','marketing']){
+        const position=await picker.locator('[data-media-picker-action="'+action+'"]').evaluate(element=>{
+          const rect=element.getBoundingClientRect(),dialog=element.closest('dialog').getBoundingClientRect();
+          return {top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right,width:innerWidth,height:innerHeight,dialogBottom:dialog.bottom};
+        });
+        assert.ok(position.top>=0&&position.bottom<=Math.min(position.height,position.dialogBottom)
+          &&position.left>=0&&position.right<=position.width,'Both image actions must be visible in the desktop Chat dialog: '+action);
+      }
       await capture('images-command-selected-desktop');
       await picker.locator('[data-media-picker-action="edit"]').click();
       await picker.waitFor({state:'detached'});await waitForBase(generatedIds[2]);

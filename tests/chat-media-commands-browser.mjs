@@ -187,13 +187,22 @@ try {
     assert.equal(await card(page,101).locator('.vp3-media-picker-name img').count(),0);
     assert.deepEqual((await state(page)).attached,[]);
     await screenshot(page,'commands-images-desktop');
+    assert.equal(await page.evaluate(() => {
+      const dialog = document.querySelector('[data-media-command]').getBoundingClientRect();
+      return ['edit','marketing'].every(action => {
+        const button = document.querySelector(`[data-media-picker-action="${action}"]`);
+        const rect = button.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.top >= Math.max(0,dialog.top)
+          && rect.bottom <= Math.min(innerHeight,dialog.bottom);
+      });
+    }),true,'Both explicit image actions must be visible without scrolling at 1280×800');
     await page.locator('[data-media-picker-cancel]').click();
     await modal(page).waitFor({state:'detached'});
     const saved = await state(page);
     assert.equal(saved.base,77); assert.equal(saved.draft,'Keep this carefully typed draft');
     assert.equal(await page.evaluate(() => document.activeElement.id),'chatInput');
     assert.equal(fx.calls.length,0);
-  });
+  }, {viewport:{width:1280,height:800}});
 
   await test('Edit in Chat attaches exactly the chosen image and returns focus',async (page,fx) => {
     await fx.open('images'); await card(page,102).click(); await action(page,'edit').click();

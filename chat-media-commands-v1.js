@@ -148,7 +148,7 @@
     const dismiss = button('Close', 'close');
     header.append(heading, dismiss);
     const intro = node('p', kind === 'images'
-      ? 'Edit an image in Chat or use it for product marketing. Chat accepts images up to 4 MiB, or verified generated PNG images up to 25 MiB. Marketing accepts JPEG, PNG and WebP up to 4 MiB.'
+      ? 'Choose an image to edit in Chat or use for product marketing.'
       : 'Continue a draft, review an image in progress, or return to an active or paused product promotion.', 'vp3-media-command-intro');
     intro.id = 'vp3MediaCommandsIntro';
     const status = node('p', '', 'vp3-media-command-status');

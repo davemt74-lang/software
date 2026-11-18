@@ -51,6 +51,11 @@
 [data-media-command] .vp3-media-command-empty { display: grid; justify-items: center; gap: .6rem; min-height: 12rem; align-content: center; padding: 1.5rem; border: 1px dashed #ccd6e6; border-radius: .8rem; background: #f8faff; color: #607089; text-align: center; font-size: .86rem; }
 [data-media-command] .vp3-media-command-empty h3 { color: #344760; font-size: 1rem; font-weight: 650; }
 [data-media-command] :is(button, a, input, select):focus-visible { outline: 3px solid #3d5cb3; outline-offset: 3px; }
+@media (min-width: 701px) {
+  #vp3MediaCommands[data-media-command="images"] [data-media-picker] .vp3-media-picker-grid { max-height: min(32dvh, 18rem); }
+  #vp3MediaCommands[data-media-command="images"] [data-media-picker] .vp3-media-picker-picture { aspect-ratio: 4 / 3; max-height: min(24dvh, 11rem); }
+  #vp3MediaCommands[data-media-command="images"] [data-media-picker] .vp3-media-picker-picture img { max-height: min(24dvh, 11rem); }
+}
 @media (max-width: 740px) {
   [data-media-command] .vp3-media-command-plans { grid-template-columns: minmax(0, 1fr); max-height: 64vh; }
   [data-media-command] .vp3-media-command-plan { grid-template-columns: 5.5rem minmax(0, 1fr); }

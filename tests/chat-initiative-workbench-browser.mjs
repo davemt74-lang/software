@@ -1127,8 +1127,10 @@ try {
   await changingCanvas.locator('[data-marketing-copy]').fill('A setting for summer.\nKeep this exact copy.');
   await changingCanvas.locator('[data-marketing-level]').evaluate(input => { input.value = '6'; input.dispatchEvent(new Event('input',{bubbles:true})); });
   await changingCanvas.locator('[data-marketing-prompt]').fill('  Set the bowl on a quiet garden table.  ');
-  await changingCanvas.getByLabel('Layout style',{exact:true}).selectOption('warm');
-  await changingCanvas.getByLabel('Remove a solid background',{exact:true}).check();
+  const layoutStyle = changingCanvas.getByRole('combobox',{name:'Layout style'});
+  await layoutStyle.selectOption('warm');
+  assert.equal(await layoutStyle.inputValue(),'warm');
+  await changingCanvas.getByRole('checkbox',{name:'Remove a solid background',exact:true}).check();
   await changingCanvas.locator('#vp3MarketingCutoutTolerance').evaluate(input => { input.value = '37'; input.dispatchEvent(new Event('input',{bubbles:true})); });
   const preservedSettings = await canvasSettings(changingCanvas);
   const canvasCalls = marketingPicker.calls.length;

@@ -19,7 +19,7 @@ export const profileChatHelpers='let initializingConversationPa3=null;\n'+[
 ].map(chatFunction).join('');
 
 export const continuityExportHelpers=['stageSpecialistPrompt','parkCurrentProactiveReplyV1','showChatTurnNotice',
-  'chatCanvasStatus','proactiveVoiceStatus','refreshGmailUpdatesV1'].map(chatFunction).join('');
+  'chatCanvasStatus','proactiveVoiceStatus','refreshGmailUpdatesV1','mediaCommandContext'].map(chatFunction).join('');
 
 const exportStart=source.indexOf('  const canonicalChatContinuity = {');
 const exportEnd=source.indexOf('  function speakIntroV101(',exportStart);
