@@ -93,20 +93,27 @@ function vp3_activity_situation_notifications_v1(PDO $pdo,array $user,array $pri
         $q=$pdo->prepare('SELECT n.* FROM notifications n WHERE n.user_id=? AND '.$where.' ORDER BY n.created_at DESC,n.id DESC LIMIT 32');
         $q->execute([(int)$user['id']]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);
     }
-    $signals=[];
+    $signals=[];$incomplete=false;
     foreach($rows as $row){
         $id=(int)$row['id'];$source=(string)($row['source_type']??'');$sourceId=(int)($row['source_id']??0);
         $memorySource=in_array($source,['brain_memory','agent_memory_item','agent_memory','agent_task'],true);
         if(!$memorySource&&function_exists('notification_is_agent_brain_activity')&&notification_is_agent_brain_activity($row))continue;
-        $anchor=null;
+        $anchor=null;$attention=null;
         $sourceRevision=[];
         if(function_exists('notification_is_profile_source_pa4b')&&notification_is_profile_source_pa4b($row)){
             if((int)$principal['agent_id']>0||!function_exists('notification_profile_projection_pa4b'))continue;
             $row=notification_profile_projection_pa4b($pdo,$user,$row);
-            if(($row['source_status']??'')!=='verified'||(int)($row['attention_id']??0)<1)continue;
+            if(($row['source_complete']??false)!==true||($row['source_status']??'')!=='verified'||(int)($row['attention_id']??0)<1){$incomplete=true;continue;}
+            $disposition=$row['attention_disposition']??null;$wakeDue=($row['attention_wake_due']??false)===true;
+            if(!in_array($disposition,['pending','snoozed','handled','ignored'],true)){$incomplete=true;continue;}
+            if(in_array($disposition,['handled','ignored'],true)||($disposition==='snoozed'&&!$wakeDue))continue;
+            // A routine visit can become read without needing more action. An
+            // explicit owner question stays open until canonical settlement;
+            // presentation ownership and visible ACK never grant a new notice.
+            $attention=($row['attention_type']??'')==='needs_owner'||$wakeDue||($row['can_read']??false)===true;
             $anchor=['key'=>'profile-attention:'.(int)$row['attention_id'],'title'=>(string)$row['title'],
                 'url'=>(string)$row['target_url'],'object_ref'=>['type'=>'profile_event','id'=>(string)$sourceId,'scope'=>'profile_agent']];
-            $sourceRevision=[(int)$row['attention_id'],(int)$row['state_revision'],(int)$row['wake_generation']];
+            $sourceRevision=[(int)$row['attention_id'],(int)$row['state_revision'],(int)$row['wake_generation'],$disposition,$wakeDue];
         }elseif(in_array($source,['conversation','chat_conversation','agent_chat'],true)){
             $anchor=vp3_activity_situation_conversation_v1($pdo,$user,(int)$principal['agent_id'],$sourceId);
             if(!$anchor)continue;
@@ -123,13 +130,13 @@ function vp3_activity_situation_notifications_v1(PDO $pdo,array $user,array $pri
         }
         $anchor??=['key'=>'notification:'.$id,'title'=>vp3_cognitive_text_v500($row['title']??'Account update',170),
             'url'=>'','object_ref'=>['type'=>'feed_activity','id'=>(string)$id,'scope'=>'personal']];
-        $attention=empty($row['is_read'])&&function_exists('notification_requires_attention')&&notification_requires_attention($row);
+        $attention??=empty($row['is_read'])&&function_exists('notification_requires_attention')&&notification_requires_attention($row);
         if(!$attention&&!vp3_activity_situation_recent_v1((string)$row['created_at'],$now))continue;
         $signals[]=vp3_activity_situation_signal_v1('notifications',(string)$id,$anchor,(string)($row['title']??'Account update'),
             $attention?'An update needs your review.':'An account update is available.',$attention?'needs_attention':'current',
             (string)$row['created_at'],[$id,$row['type']??'',$source,$sourceId,(bool)($row['is_read']??false),$row['title']??'',$row['created_at'],$sourceRevision]);
     }
-    return [!$taskIds&&count($rows)>=32?'limited':'ready',$signals];
+    return [$incomplete||(!$taskIds&&count($rows)>=32)?'limited':'ready',$signals];
 }
 
 function vp3_activity_situation_brain_v1(PDO $pdo,array $user,array $principal,DateTimeImmutable $now,array $taskIds=[]): array

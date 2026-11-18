@@ -13,7 +13,21 @@ if(($argv[1]??'')==='cleanup'){
 }
 putenv('VP3_PA3_CONFIG='.$config);
 require __DIR__.'/profile-handoff-pa3.php';
-if(($argv[1]??'')==='init'){pa3_reset();echo $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);exit;}
+if(($argv[1]??'')==='init'){
+    pa3_reset();
+    // The owner inbox reply returns the real dashboard aggregate as well as its
+    // receipt. Extend this HTTP fixture's agent rows for that existing read.
+    foreach([
+        'agent_key'=>"VARCHAR(80) NOT NULL DEFAULT 'fixture'",
+        'agent_role'=>"VARCHAR(80) NOT NULL DEFAULT 'assistant'",
+        'engine_key'=>"VARCHAR(80) NOT NULL DEFAULT 'default'",
+        'instructions'=>'TEXT', 'is_default'=>'INTEGER NOT NULL DEFAULT 0',
+        'is_profile_agent'=>'INTEGER NOT NULL DEFAULT 0',
+        'voice_enabled'=>'INTEGER NOT NULL DEFAULT 0',
+        'created_at'=>'DATETIME', 'updated_at'=>'DATETIME',
+    ] as $column=>$definition)if(!column_exists('user_agents',$column))$pdo->exec('ALTER TABLE user_agents ADD COLUMN '.$column.' '.$definition);
+    echo $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);exit;
+}
 if(($argv[1]??'')==='state'){
     $out=[];
     foreach(['profile_agent_conversations','profile_agent_messages','agent_attention_items','notifications','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3','agent_workflow_runs','agent_workflow_receipts','chat_messages'] as $table)$out[$table]=$pdo->query('SELECT * FROM '.$table)->fetchAll();

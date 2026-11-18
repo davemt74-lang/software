@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/vp3-analytics.php';
 
 /**
  * VP3 Profile Revenue & Conversion Intelligence v1.80
@@ -113,12 +114,19 @@ function profile_revenue_change_v180(float|int $current,float|int $previous): ar
     return ['current'=>$current,'previous'=>$previous,'delta'=>$delta,'percent'=>$pct];
 }
 
+function profile_revenue_event_time_v180(mixed $value): int|false
+{
+    if(!is_string($value))return false;
+    $date=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$value,new DateTimeZone('UTC'));
+    return $date&&$date->format('Y-m-d H:i:s')===$value?$date->getTimestamp():false;
+}
+
 function profile_revenue_period_snapshot_v180(array $rows,DateTimeImmutable $start,DateTimeImmutable $end): array
 {
     $counts=['views'=>0,'booking_intents'=>0,'product_intents'=>0,'booking_conversions'=>0,'product_conversions'=>0];
     $revenue=[];$bookingRevenue=[];$productRevenue=[];
     foreach($rows as $row){
-        $at=strtotime((string)($row['created_at']??''));
+        $at=profile_revenue_event_time_v180($row['created_at']??null);
         if($at===false||$at<$start->getTimestamp()||$at>=$end->getTimestamp())continue;
         $type=(string)($row['event_type']??'');
         if($type==='profile_view')$counts['views']++;
@@ -175,7 +183,7 @@ function profile_revenue_top_targets_v180(array $rows,DateTimeImmutable $start,D
 {
     $targets=[];
     foreach($rows as $row){
-        $at=strtotime((string)($row['created_at']??''));
+        $at=profile_revenue_event_time_v180($row['created_at']??null);
         if($at===false||$at<$start->getTimestamp()||$at>=$end->getTimestamp())continue;
         $type=(string)($row['event_type']??'');
         if(!in_array($type,['booking_intent','product_intent','booking_converted','product_converted'],true))continue;
@@ -221,7 +229,7 @@ function profile_revenue_sources_v180(array $rows,DateTimeImmutable $start,DateT
 {
     $sources=[];
     foreach($rows as $row){
-        $at=strtotime((string)($row['created_at']??''));
+        $at=profile_revenue_event_time_v180($row['created_at']??null);
         if($at===false||$at<$start->getTimestamp()||$at>=$end->getTimestamp())continue;
         $type=(string)($row['event_type']??'');
         if(!in_array($type,['booking_intent','product_intent','booking_converted','product_converted'],true))continue;
@@ -321,19 +329,14 @@ function profile_revenue_insights_v180(array $periods,array $targets,array $sour
 
 function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
 {
-    $empty=[
-        'version'=>VP3_PROFILE_REVENUE_INTELLIGENCE_V180,
-        'attribution_model'=>'session_first_touch','rate_model'=>'period_event_ratio','periods'=>[],
-        'revenue_all_time'=>[],'booking_revenue_all_time'=>[],'product_revenue_all_time'=>[],
-        'top_targets'=>[],'sources'=>[],'opportunities'=>[],'insights'=>[],
-    ];
-    if($ownerUserId<1)return $empty;
+    if($ownerUserId<1)throw new InvalidArgumentException('Choose an owner for Profile conversion intelligence.');
     try{
-        $nowRow=$pdo->query('SELECT NOW() AS db_now')->fetch();
-        $now=new DateTimeImmutable((string)($nowRow['db_now']??'now'));
+        $window=vp3_analytics_reporting_window_v1($pdo,60);
+        // Treat stored database wall-clock values consistently; the reporting zone is explicit.
+        $now=new DateTimeImmutable($window['to'],new DateTimeZone('UTC'));
         $since=$now->modify('-60 days')->format('Y-m-d H:i:s');
-        $stmt=$pdo->prepare("SELECT id,profile_session_id,event_type,metadata_json,created_at FROM profile_events WHERE owner_user_id=? AND event_type IN ('profile_view','booking_intent','product_intent','booking_converted','product_converted') AND created_at>=? ORDER BY created_at ASC,id ASC");
-        $stmt->execute([$ownerUserId,$since]);
+        $stmt=$pdo->prepare("SELECT id,profile_session_id,event_type,metadata_json,created_at FROM profile_events WHERE owner_user_id=? AND event_type IN ('profile_view','booking_intent','product_intent','booking_converted','product_converted') AND created_at>=? AND created_at<=? ORDER BY created_at ASC,id ASC");
+        $stmt->execute([$ownerUserId,$since,$window['to']]);
         $rows=$stmt->fetchAll()?:[];
         $sessionSources=[];
         foreach($rows as &$row){
@@ -346,10 +349,12 @@ function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
         unset($row);
 
         $todayStart=$now->setTime(0,0,0);$tomorrow=$todayStart->modify('+1 day');
+        // Stored event timestamps have whole-second precision; include the reported as-of second.
+        $asOfExclusive=$now->modify('+1 second');
         $periodSpecs=[
             'today'=>[$todayStart,$tomorrow,$todayStart->modify('-1 day'),$todayStart],
-            '7d'=>[$now->modify('-7 days'),$now,$now->modify('-14 days'),$now->modify('-7 days')],
-            '30d'=>[$now->modify('-30 days'),$now,$now->modify('-60 days'),$now->modify('-30 days')],
+            '7d'=>[$now->modify('-7 days'),$asOfExclusive,$now->modify('-14 days'),$now->modify('-7 days')],
+            '30d'=>[$now->modify('-30 days'),$asOfExclusive,$now->modify('-60 days'),$now->modify('-30 days')],
         ];
         $periods=[];
         foreach($periodSpecs as $key=>[$currentStart,$currentEnd,$previousStart,$previousEnd]){
@@ -359,8 +364,8 @@ function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
         }
 
         $allRevenue=[];$allBookingRevenue=[];$allProductRevenue=[];
-        $revenueStmt=$pdo->prepare("SELECT event_type,metadata_json FROM profile_events WHERE owner_user_id=? AND event_type IN ('booking_converted','product_converted')");
-        $revenueStmt->execute([$ownerUserId]);
+        $revenueStmt=$pdo->prepare("SELECT event_type,metadata_json FROM profile_events WHERE owner_user_id=? AND event_type IN ('booking_converted','product_converted') AND created_at<=?");
+        $revenueStmt->execute([$ownerUserId,$window['to']]);
         while($row=$revenueStmt->fetch()){
             $metadata=profile_revenue_meta_v180((string)($row['metadata_json']??''));
             $currency=profile_revenue_currency_v180($metadata['currency']??'');
@@ -371,14 +376,16 @@ function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
         }
 
         $start30=$now->modify('-30 days');
-        $allTargets=profile_revenue_top_targets_v180($rows,$start30,$now,250);
+        $allTargets=profile_revenue_top_targets_v180($rows,$start30,$asOfExclusive,250);
         $topTargets=array_slice($allTargets,0,12);
-        $sources=profile_revenue_sources_v180($rows,$start30,$now,$sessionSources,10);
+        $sources=profile_revenue_sources_v180($rows,$start30,$asOfExclusive,$sessionSources,10);
         $opportunities=profile_revenue_opportunities_v180($allTargets,$periods['30d']['current']);
         $insights=profile_revenue_insights_v180($periods,$topTargets,$sources,$opportunities);
 
         return [
             'version'=>VP3_PROFILE_REVENUE_INTELLIGENCE_V180,
+            'ready'=>true,'coverage'=>'complete','reporting_window'=>$window,
+            'value_model'=>'recorded_conversion_value',
             'attribution_model'=>'session_first_touch',
             'rate_model'=>'period_event_ratio',
             'periods'=>$periods,
@@ -391,6 +398,6 @@ function profile_revenue_intelligence_v180(PDO $pdo,int $ownerUserId): array
             'insights'=>$insights,
         ];
     }catch(Throwable $e){
-        return $empty;
+        throw new RuntimeException('Profile conversion intelligence could not be loaded.',503,$e);
     }
 }

@@ -19,7 +19,7 @@ let browser,checks=0;
 const check=(value,message)=>{assert.ok(value,message);checks++;console.log('PASS '+message);};
 const copy=value=>JSON.parse(JSON.stringify(value));
 async function fixture(surface){
-  const page=await browser.newPage({viewport:{width:1280,height:1000}}),calls=[],holds=[],errors=[];
+  const page=await browser.newPage({viewport:{width:1280,height:1000}}),calls=[],holds=[],errors=[],savedReplies=new Map();
   page.on('pageerror',error=>errors.push(error.message));
   const threads=new Map([101,202].map(id=>[id,{conversation:{id,visitor_label:`Visitor ${id}`,status:'open',last_message_at:'2026-10-01 12:00:00'},messages:[{id,conversation_id:id,sender_type:'visitor',message:`Private question from ${id}`}]}]));
   const profile={username:'owner',bio:'Saved bio',profile_agent_id:7,profile_agent_enabled:1,profile_agent_greeting:'Saved greeting',profile_agent_instructions:'Saved instructions',is_public:1};
@@ -31,8 +31,14 @@ async function fixture(surface){
     if(input.action==='owner_state')payload.state=state();
     else if(input.action==='conversation_messages')Object.assign(payload,copy(threads.get(input.conversation_id)||{}));
     else if(input.action==='owner_reply'){
-      const thread=threads.get(input.conversation_id);thread.messages.push({id:1000+calls.length,conversation_id:input.conversation_id,sender_type:'owner',message:input.message});thread.conversation.status='owner_joined';
-      Object.assign(payload,{conversation_id:input.conversation_id,state:state(),messages:copy(thread.messages)});
+      assert.match(input.request_id,/^[a-f0-9]{32}$/);
+      const thread=threads.get(input.conversation_id),prior=savedReplies.get(input.request_id),duplicate=!!prior;
+      if(prior)assert.deepEqual(input,prior.input);
+      else{
+        const message={id:1000+calls.length,conversation_id:input.conversation_id,sender_type:'owner',message:input.message};
+        thread.messages.push(message);thread.conversation.status='owner_joined';savedReplies.set(input.request_id,{input:copy(input),message_id:message.id});
+      }
+      Object.assign(payload,{conversation_id:input.conversation_id,request_id:input.request_id,message_id:savedReplies.get(input.request_id).message_id,duplicate,state:state(),messages:copy(thread.messages)});
     }else if(input.action==='conversation_status'){
       threads.get(input.conversation_id).conversation.status=input.status;Object.assign(payload,{conversation_id:input.conversation_id,state:state()});
     }else if(input.action==='save_profile_agent'||input.action==='save_profile'){
@@ -45,6 +51,10 @@ async function fixture(surface){
       const finished=page.waitForEvent('requestfinished',{predicate:r=>r===request});
       await route.fulfill({status,contentType:'application/json',body:JSON.stringify({...payload,...overrides})});await finished;
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>resolve())));
+    },fail:async()=>{
+      const failed=page.waitForEvent('requestfailed',{predicate:r=>r===request});
+      await route.abort('failed');await failed;
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
     }});}
     else await route.fulfill({contentType:'application/json',body:JSON.stringify(payload)});
   });
@@ -98,6 +108,17 @@ try{
     const badAck=f.hold('owner_reply',101);await page.locator(selectors.form+' button[type="submit"]').click();const wrong=await badAck;
     await wrong.release({conversation_id:202});
     check((await f.input.inputValue())==='Draft retained until exact acknowledgment'&&(await page.locator(selectors.notice).innerText()).includes('could not be confirmed'),surface+' mismatched mutation acknowledgment preserves the draft and reports uncertainty');
+    const recoverBadAck=f.hold('owner_reply',101);await page.locator(selectors.form+' button[type="submit"]').click();const recoveredBadAck=await recoverBadAck;
+    check(JSON.stringify(recoveredBadAck.input)===JSON.stringify(wrong.input)&&recoveredBadAck.payload.duplicate,surface+' wrong acknowledgment retry retains the exact request identity');await recoveredBadAck.release();
+    await f.input.fill('Saved reply whose acknowledgment is lost');
+    const lostAck=f.hold('owner_reply',101);await page.locator(selectors.form+' button[type="submit"]').click();const lost=await lostAck;await lost.fail();
+    await page.waitForFunction(selector=>!document.querySelector(selector)?.disabled,selectors.form+' button[type="submit"]');
+    await f.open(202);await f.ready(202);await f.open(101);await f.ready(101);
+    check((await f.input.inputValue())==='Saved reply whose acknowledgment is lost',surface+' network failure and thread switches preserve the uncertain draft');
+    const recoverLost=f.hold('owner_reply',101);await page.locator(selectors.form+' button[type="submit"]').click();const recovered=await recoverLost;
+    check(JSON.stringify(recovered.input)===JSON.stringify(lost.input)&&recovered.payload.message_id===lost.payload.message_id&&recovered.payload.duplicate,surface+' actual failed-fetch retry recovers one stored message');
+    await recovered.release();
+    check(f.threads.get(101).messages.filter(m=>m.sender_type==='owner'&&m.message===lost.input.message).length===1&&(await f.input.inputValue())==='',surface+' confirmed retry clears the draft with no duplicated reply');
     const writes=f.calls.filter(x=>['owner_reply','conversation_status'].includes(x.action)).length;
     await f.input.fill('A focused unsent draft');await f.input.evaluate(node=>{node.focus();node.setSelectionRange(3,9);window.__savedInput=node;});
     f.threads.get(101).conversation.status='resolved';f.threads.get(101).messages.push({id:902,conversation_id:101,sender_type:'visitor',message:'Incoming while owner types'});

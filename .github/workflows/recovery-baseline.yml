@@ -94,6 +94,8 @@ jobs:
           php tests/agent-tracky-read-v1.php
           php tests/agent-radar-read-v1.php
           php tests/agent-analytics-read-v1.php
+          php tests/profile-analytics-reliability-v1.php
+          node tests/profile-analytics-reliability-v1.mjs
           php tests/agent-release-routing-v1.php
           php tests/agent-release-tools-v1.php
           php tests/agent-profile-webmcp-read-v1.php
@@ -105,6 +107,8 @@ jobs:
           node tests/agent-message-api-pa1.mjs
           node tests/profile-owner-api-pa1.mjs
           node tests/profile-owner-threads-pa1.mjs
+          php tests/profile-owner-reply-v1.php
+          php tests/profile-attention-situations-pa4b.php
           php tests/profile-handoff-pa3.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php

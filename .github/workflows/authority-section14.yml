@@ -45,9 +45,20 @@ jobs:
           node tests/permission-architecture-v188.mjs
           node tests/agent-tool-authorization-v400.mjs
           php tests/agent-permissions-v035-contract.php
+      - name: Profile analytics complete windows and unavailable reads
+        run: |
+          php tests/profile-analytics-reliability-v1.php
+          node tests/profile-analytics-reliability-v1.mjs
+      - name: Profile analytics native MySQL aggregates
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: php tests/profile-analytics-reliability-v1.php
       - name: Profile Agent PA1 SQLite and HTTP authority
         run: |
           php tests/profile-public-authority-pa1.php
+          php tests/profile-owner-reply-v1.php
           php tests/agent-message-authority-pa1.php
           node tests/agent-message-api-pa1.mjs
           node tests/profile-owner-api-pa1.mjs
@@ -61,6 +72,7 @@ jobs:
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: |
           php tests/profile-public-authority-pa1.php
+          php tests/profile-owner-reply-v1.php
           php tests/agent-message-authority-pa1.php
           node tests/profile-owner-api-pa1.mjs
       - name: Profile Agent PA3 handoff and recovery on SQLite
@@ -137,6 +149,7 @@ jobs:
         run: |
           php tests/profile-attention-install-pa4b.php
           php tests/profile-attention-pa4b.php
+          php tests/profile-attention-situations-pa4b.php
           php tests/profile-event-projection-pa4b.php
           node tests/profile-attention-api-pa4b.mjs
           node tests/profile-attention-pa4b.mjs
@@ -148,6 +161,7 @@ jobs:
         run: |
           php tests/profile-attention-install-pa4b.php
           php tests/profile-attention-pa4b.php
+          php tests/profile-attention-situations-pa4b.php
           php tests/profile-event-projection-pa4b.php
           php tests/profile-attention-concurrency-pa4b.php
           node tests/profile-attention-api-pa4b.mjs

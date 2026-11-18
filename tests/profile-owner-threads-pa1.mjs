@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
 
 // Controlled DOM for the production IIFEs. The browser companion test executes
 // the same flows in Chromium; this runner needs no downloaded browser or server.
@@ -41,7 +42,7 @@ class FormDataFixture {
 const clone=value=>JSON.parse(JSON.stringify(value)),tick=()=>new Promise(resolve=>setImmediate(resolve));
 let checks=0;const check=(ok,message)=>{assert.ok(ok,message);checks++;};
 function fixture(surface){
-  const document=new Document(),calls=[],pending=[],holds=[],timers=[];
+  const document=new Document(),calls=[],pending=[],holds=[],timers=[],savedReplies=new Map();
   document.body.innerHTML='<div class="chat-topbar-actions"><div id="chatProfileMenu"></div></div><button id="chatNotificationButton"></button>';
   if(surface==='portal'){
     const app=document.createElement('main');app.className='profile-agent-app';document.body.append(app);
@@ -54,20 +55,29 @@ function fixture(surface){
     const input=options.body?JSON.parse(options.body):{action:new URL(url,'http://fixture.test').searchParams.get('action')};calls.push(input);let payload={ok:true};
     if(input.action==='owner_state')payload.state=ownerState();
     else if(input.action==='conversation_messages')Object.assign(payload,clone(threads.get(input.conversation_id)));
-    else if(['owner_reply','conversation_status'].includes(input.action)){payload.conversation_id=input.conversation_id;payload.state=ownerState();}
+    else if(['owner_reply','conversation_status'].includes(input.action)){
+      payload.conversation_id=input.conversation_id;payload.state=ownerState();
+      if(input.action==='owner_reply'){
+        assert.match(input.request_id,/^[a-f0-9]{32}$/);
+        const key=input.conversation_id+':'+input.request_id,prior=savedReplies.get(key);
+        if(prior)assert.deepEqual(input,prior.input,'A retry must preserve its exact prepared reply.');
+        const saved=prior||{input:clone(input),message_id:savedReplies.size+1};savedReplies.set(key,saved);
+        Object.assign(payload,{request_id:input.request_id,message_id:saved.message_id,duplicate:Boolean(prior)});
+      }
+    }
     else if(input.action==='save_profile_agent'){Object.assign(profile,input);payload.state=ownerState();}
     else throw Error('Unexpected request '+input.action);
     const index=holds.findIndex(h=>h.action===input.action&&(h.id===undefined||h.id===input.conversation_id));
-    if(index>=0){holds.splice(index,1);return new Promise(resolve=>pending.push({input,payload,release:extra=>resolve(response({...payload,...extra}))}));}
+    if(index>=0){holds.splice(index,1);return new Promise((resolve,reject)=>pending.push({input,payload,release:extra=>resolve(response({...payload,...extra})),fail:()=>reject(new TypeError('Network acknowledgement lost.'))}));}
     return response(payload);
   };
   const window={location:{origin:'http://fixture.test',search:''},addEventListener(){},STONEFELLOW_AGENT_IDENTITY_V236:{profileAgentEndpoint:'/api/profile-agent.php',csrf:'fixture'},PROFILE_AGENT_PORTAL:{endpoint:'/api/profile-agent.php',csrf:'fixture'}};
-  const sandbox={window,document,fetch,FormData:FormDataFixture,URL,URLSearchParams,console,localStorage:{getItem:()=>'',setItem(){}},requestAnimationFrame:fn=>fn(),setTimeout:()=>1,setInterval:fn=>{timers.push(fn);return timers.length;},clearInterval(){}};
+  const sandbox={window,document,fetch,crypto:webcrypto,FormData:FormDataFixture,URL,URLSearchParams,console,localStorage:{getItem:()=>'',setItem(){}},requestAnimationFrame:fn=>fn(),setTimeout:()=>1,setInterval:fn=>{timers.push(fn);return timers.length;},clearInterval(){}};
   const source=fs.readFileSync(new URL('../'+(surface==='activity'?'profile-activity-chat.js':'profile-agent-portal.js'),import.meta.url),'utf8'),end=source.lastIndexOf('})();');
   const exports=surface==='activity'?'loadConversation,refresh,openCanvas':'openConversation,refresh,activateTab';
   vm.runInNewContext(source.slice(0,end)+`window.test={${exports}};`+source.slice(end),sandbox);
   const selectors=surface==='activity'?{form:'[data-profile-reply]',messages:'[data-profile-thread-messages]',notice:'[data-profile-thread-notice]',status:'[data-profile-resolve]'}:{form:'#paReplyForm',messages:'.profile-agent-thread-messages',notice:'[data-thread-notice]',status:'[data-thread-status="resolved"]'};
-  return {surface,window,document,calls,threads,pending,holds,timers,selectors,load:id=>(window.test.loadConversation||window.test.openConversation)(id),form:()=>document.querySelector(selectors.form),input:()=>document.querySelector(selectors.form)?.elements.message,messages:()=>document.querySelector(selectors.messages)?.textContent,hold:(action,id)=>holds.push({action,id}),setDraft(text){const input=this.input();input.value=text;input.fire('input');},notice:()=>document.querySelector(selectors.notice)?.textContent};
+  return {surface,window,document,calls,threads,pending,holds,timers,selectors,savedReplies,load:id=>(window.test.loadConversation||window.test.openConversation)(id),form:()=>document.querySelector(selectors.form),input:()=>document.querySelector(selectors.form)?.elements.message,messages:()=>document.querySelector(selectors.messages)?.textContent,hold:(action,id)=>holds.push({action,id}),setDraft(text){const input=this.input();input.value=text;input.fire('input');},notice:()=>document.querySelector(selectors.notice)?.textContent};
 }
 for(const surface of ['activity','portal']){
   const f=fixture(surface);await tick();if(surface==='activity')f.window.test.openCanvas({tab:'conversations'});
@@ -85,6 +95,21 @@ for(const surface of ['activity','portal']){
   }
   await f.load(101);f.setDraft('Keep until confirmed');f.hold('owner_reply',101);const uncertain=f.form().fire('submit');f.pending.at(-1).release({conversation_id:202});await uncertain;
   check(f.input().value==='Keep until confirmed'&&f.notice().includes('could not be confirmed'),surface+' foreign mutation acknowledgment cannot clear the draft');
+  const uncertainRequest=f.pending.at(-1).input,storedBeforeRetry=f.savedReplies.size;
+  f.hold('owner_reply',101);const retry=f.form().fire('submit');
+  check(JSON.stringify(f.pending.at(-1).input)===JSON.stringify(uncertainRequest),surface+' uncertain acknowledgement retries the exact original request and body');
+  f.pending.at(-1).release();await retry;
+  check(f.savedReplies.size===storedBeforeRetry&&f.input().value==='',surface+' recovered acknowledgement clears the draft without a second write');
+  f.setDraft('Committed but acknowledgement lost');f.hold('owner_reply',101);const lost=f.form().fire('submit');const lostAttempt=f.pending.at(-1),committedCount=f.savedReplies.size;
+  lostAttempt.fail();await lost;await f.load(202);await f.load(101);
+  check(f.input().value==='Committed but acknowledgement lost',surface+' transport failure preserves its draft across visitor selection');
+  f.hold('owner_reply',101);const recovered=f.form().fire('submit');const recoveredAttempt=f.pending.at(-1);
+  check(JSON.stringify(recoveredAttempt.input)===JSON.stringify(lostAttempt.input)&&f.savedReplies.size===committedCount,surface+' committed-write lost-ACK recovery keeps the same request after reopening its thread');
+  recoveredAttempt.release({request_id:'f'.repeat(32)});await recovered;
+  check(f.input().value==='Committed but acknowledgement lost'&&f.notice().includes('could not be confirmed'),surface+' same-thread acknowledgement for a different request cannot consume the draft');
+  await f.form().fire('submit');check(f.input().value===''&&f.savedReplies.size===committedCount,surface+' exact replay receipt confirms the single stored reply');
+  f.setDraft('Committed but acknowledgement lost');await f.form().fire('submit');
+  check(f.calls.findLast(call=>call.action==='owner_reply').request_id!==lostAttempt.input.request_id&&f.savedReplies.size===committedCount+1,surface+' a deliberate repeated reply after confirmation has a new request identity');
   const input=f.input();input.focus();input.setSelectionRange(2,6);f.setDraft('Unsent poll draft');
   f.threads.get(101).messages.push({sender_type:'visitor',message:'Incoming message'});await f.window.test.refresh();
   check(f.messages().includes('Incoming message')&&f.input()===input&&input.value==='Unsent poll draft'&&f.document.activeElement===input&&input.selectionStart===2,surface+' actual refresh preserves composer while updating transcript');

@@ -19,6 +19,8 @@ if($dsn=getenv('VP3_TEST_MYSQL_DSN')){
 file_put_contents($configPath,json_encode($cfg,JSON_THROW_ON_ERROR));chmod($configPath,0600);
 $pdo=new PDO($cfg['dsn'],$cfg['user']??null,$cfg['password']??null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
 $id=str_starts_with($cfg['dsn'],'mysql:')?'INTEGER PRIMARY KEY AUTO_INCREMENT':'INTEGER PRIMARY KEY AUTOINCREMENT';
+$pdo->exec("CREATE TABLE users (id INTEGER PRIMARY KEY,role VARCHAR(30),is_active INTEGER NOT NULL)");
+$pdo->exec("INSERT INTO users VALUES (1,'member',1),(2,'member',1)");
 $pdo->exec('CREATE TABLE profile_visit_sessions (id INTEGER PRIMARY KEY,owner_user_id INTEGER NOT NULL,visitor_user_id INTEGER,session_key CHAR(64) NOT NULL,identity_disclosed INTEGER NOT NULL DEFAULT 0,view_count INTEGER NOT NULL DEFAULT 0,first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,last_message_at DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(owner_user_id,session_key))');
 $pdo->exec('CREATE TABLE profile_events (id '.$id.',owner_user_id INTEGER NOT NULL,profile_session_id INTEGER,visitor_user_id INTEGER,profile_agent_id INTEGER,event_type VARCHAR(50) NOT NULL,priority INTEGER NOT NULL DEFAULT 10,dedupe_key CHAR(64) UNIQUE,metadata_json TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)');
 $pdo->exec('CREATE TABLE profile_agent_conversations (id INTEGER PRIMARY KEY,owner_user_id INTEGER NOT NULL,profile_agent_id INTEGER NOT NULL,profile_session_id INTEGER NOT NULL,visitor_user_id INTEGER,status VARCHAR(30),last_summary TEXT,last_message_at DATETIME,updated_at DATETIME)');

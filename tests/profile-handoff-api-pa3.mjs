@@ -111,6 +111,19 @@ try{
   r=await profile('POST',{username:'fixture-owner',profile_token:guestBoot.token,conversation_namespace:guestBoot.namespace,action:'message',client_request_id:'d'.repeat(32),message:'A rollback-only test question.'},guest,{'X-Fixture-Fault':'turn'});
   check(r.status===500&&r.data.ok===false&&!/SECRET|SQLSTATE|credential|\.php/.test(r.raw),'admission SQL failure is a safe unsuccessful HTTP response');
   check(JSON.stringify(state())===JSON.stringify(beforeFailure),'actual failed HTTP admission rolls back messages, attention, cards and work together');
+  const legacyReply={action:'owner_reply',csrf_token:csrf,conversation_id:cid,request_id:'9'.repeat(32),message:'Owner inbox retry stays on this visitor.'};
+  r=await profile('POST',legacyReply,owner);
+  check(r.status===200&&r.data.request_id===legacyReply.request_id&&r.data.message_id>0&&r.data.duplicate===false,'legacy inbox HTTP reply acknowledges its exact prepared request ('+r.status+' '+(r.data.error||'')+')');
+  const legacyReceipt=r.data,afterLegacy=JSON.stringify(state());
+  r=await profile('POST',legacyReply,owner);
+  check(r.status===200&&r.data.duplicate===true&&r.data.message_id===legacyReceipt.message_id,'legacy inbox lost-ACK retry recovers its original turn despite advanced revision');
+  check(JSON.stringify(state())===afterLegacy&&modelCalls()===1,'legacy retry publishes no second reply, event or competing Agent action');
+  r=await profile('POST',{...legacyReply,message:'Changed retry body'},owner);
+  check(r.status===409&&r.data.code==='OWNER_REPLY_CONFLICT','legacy operation request cannot be replayed with changed message content');
+  r=await profile('POST',{...legacyReply,conversation_id:automatic.conversation_id},owner);
+  check(r.status===409&&r.data.code==='OWNER_REPLY_CONFLICT','legacy operation request cannot be moved to a different owned visitor thread');
+  r=await profile('POST',legacyReply,otherOwner);
+  check(r.status===404&&JSON.stringify(state())===afterLegacy,'current conversation ownership is still required to recover a saved reply');
   console.log(`PROFILE_HANDOFF_API_PA3=PASS (${checks} checks; ${driver})`);
 }finally{
   child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));invoke('cleanup');fs.rmSync(tmp,{recursive:true,force:true});

@@ -30,7 +30,7 @@ function profile_public_authority_fixture_pa1(PDO $pdo): void
     foreach($schemas as $table=>$columns)$pdo->exec('CREATE TABLE IF NOT EXISTS '.$table.' ('.$columns.')');
     foreach(array_reverse(array_keys($schemas)) as $table)$pdo->exec('DELETE FROM '.$table);
     $pdo->exec("INSERT INTO users(id,display_name,email,role,is_active,avatar_path,password_hash) VALUES(1,'Fixture Owner','owner@example.test','member',1,'','owner-password'),(2,'Visitor A','a@example.test','member',1,'','visitor-a-password'),(3,'Visitor B','b@example.test','member',1,'','visitor-b-password'),(4,'Other Owner','other@example.test','member',1,'','other-password')");
-    $pdo->exec("INSERT INTO user_agents VALUES(7,1,'Fixture Public Guide',1),(8,1,'Other Guide',1),(9,4,'Foreign Guide',1)");
+    $pdo->exec("INSERT INTO user_agents(id,owner_user_id,display_name,is_active) VALUES(7,1,'Fixture Public Guide',1),(8,1,'Other Guide',1),(9,4,'Foreign Guide',1)");
     $pdo->exec("INSERT INTO user_profiles VALUES(1,'fixture-owner','Fixture public biography',1,1,7,'','Use approved facts',1),(2,'visitor-a','',1,0,NULL,'','',1),(3,'visitor-b','',1,0,NULL,'','',1),(4,'other-owner','',1,1,9,'','',1)");
     $pdo->exec("INSERT INTO knowledge_items(id,title,description,content_text,visibility,is_published,created_by_user_id) VALUES(101,'Fixture hours','','Public hours are Monday','public',1,1),(102,'Secret hours','','PRIVATE_KNOWLEDGE_SECRET','private',0,1),(103,'Foreign hours','','FOREIGN_KNOWLEDGE_SECRET','public',1,4)");
     $pdo->exec("INSERT INTO knowledge_chunks VALUES(201,101,0,'Public hours are Monday'),(202,102,0,'PRIVATE_KNOWLEDGE_SECRET'),(203,103,0,'FOREIGN_KNOWLEDGE_SECRET')");
