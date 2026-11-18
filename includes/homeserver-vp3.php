@@ -240,6 +240,12 @@ function homeserver_vp3_relay_request(string $method, string $path, ?array $payl
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
     }
+    if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null){
+        if($remaining<=0.005){curl_close($ch);throw new RuntimeException('HomeServer inference time budget was exhausted.',503);}
+        $milliseconds=max(1,(int)floor(min(8.0,$remaining)*1000));
+        curl_setopt($ch,CURLOPT_TIMEOUT_MS,$milliseconds);
+        curl_setopt($ch,CURLOPT_CONNECTTIMEOUT_MS,min(3000,$milliseconds));
+    }
     $body = curl_exec($ch);
     $error = curl_error($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);

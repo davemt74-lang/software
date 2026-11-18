@@ -31,7 +31,7 @@ function vp3_profile_agent_accepted_snapshot_pa3(array $ctx): array
 }
 
 /** Load the exact durable admission. current_user(), cookies and CRM identity are not authority here. */
-function vp3_profile_agent_accepted_context_pa3(PDO $pdo,array $turn,bool $lock=false): array
+function vp3_profile_agent_accepted_context_pa3(PDO $pdo,array $turn,bool $lock=false,bool $ownerDraft=false): array
 {
     if(!function_exists('vp3_profile_handoff_row_pa3'))require_once __DIR__.'/profile-agent-handoff-pa3.php';
     $fresh=vp3_profile_handoff_row_pa3($pdo,(int)($turn['id']??0),$lock);
@@ -74,7 +74,20 @@ function vp3_profile_agent_accepted_context_pa3(PDO $pdo,array $turn,bool $lock=
     if(!$session)vp3_profile_agent_public_unavailable_v1();
     $authority=['contract'=>'vp3.profile-conversation-authority.v1','transport'=>'native','owner_user_id'=>$owner,'visitor_user_id'=>$visitorId,'credential_hash'=>$fresh['credential_hash']];
     $conversation=vp3_profile_agent_public_conversation_v390($pdo,(int)$fresh['conversation_id'],$owner,$agentId,(int)$fresh['profile_session_id'],$lock,$authority);
-    if(!$conversation||!vp3_profile_agent_agent_may_reply_v390($conversation))vp3_profile_agent_public_unavailable_v1();
+    if(!$conversation)vp3_profile_agent_public_unavailable_v1();
+    if($ownerDraft){
+        // Private preparation uses the same exact admission, without obtaining
+        // or changing the public Agent responder lease. The owner must already
+        // hold this current turn and the normal public authority still applies.
+        $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,(int)$fresh['conversation_id'],$lock);
+        $latest=$pdo->prepare('SELECT id FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND conversation_id=? ORDER BY visitor_message_id DESC,id DESC LIMIT 1'.$suffix);
+        $latest->execute([$owner,(int)$fresh['conversation_id']]);
+        if(!$thread||$thread['mode']!=='owner'||$conversation['status']!=='owner_joined'
+            ||(int)$latest->fetchColumn()!==(int)$fresh['id']||(int)$thread['epoch']!==(int)$fresh['conversation_epoch']
+            ||!in_array($fresh['state'],['owner_claimed','replied'],true))vp3_profile_agent_public_unavailable_v1();
+        require_once __DIR__.'/profile-calls-pa3c.php';
+        vp3_profile_call_block_check_pa3c($pdo,$owner,$visitorId,$lock);
+    }elseif(!vp3_profile_agent_agent_may_reply_v390($conversation))vp3_profile_agent_public_unavailable_v1();
     $q=$pdo->prepare("SELECT id,conversation_id,sender_type,sender_user_id,message,context_json FROM profile_agent_messages WHERE id=? AND conversation_id=? LIMIT 1".$suffix);
     $q->execute([(int)$fresh['visitor_message_id'],(int)$fresh['conversation_id']]);$message=$q->fetch(PDO::FETCH_ASSOC);
     if(!$message||$message['sender_type']!=='visitor'||(int)($message['sender_user_id']??0)!==$visitorId

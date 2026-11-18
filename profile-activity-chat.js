@@ -1,5 +1,35 @@
 (() => {
 'use strict';
+// The private specialist owns this entry when its mounted workspace is installed.
+// Keep existing launchers compatible without starting a second inbox or canvas.
+if(window.VP3_PROFILE_WORKSPACE_V1?.endpoint){
+  let launcher=null,pending=null;
+  const positive=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0;
+  function open(options={}){
+    const tab=['overview','conversations','calls','analytics','reports'].includes(options.tab)?options.tab:'overview';
+    const selection={tab,publicConversationId:positive(options.publicConversationId??options.conversationId),callId:positive(options.callId)};
+    if(typeof window.VP3AgentActivityHub?.openProfile==='function'){
+      pending=null;return window.VP3AgentActivityHub.openProfile(selection,launcher)===true;
+    }
+    pending=selection;return false;
+  }
+  function ensure(){
+    const actions=document.querySelector('.chat-topbar-actions');if(!actions||launcher)return;
+    launcher=document.createElement('button');launcher.type='button';launcher.className='chat-profile-activity-button';
+    launcher.setAttribute('aria-label','Open Profile workspace');launcher.setAttribute('aria-expanded','false');
+    launcher.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 20c.5-4 2.7-6 6.5-6s6 2 6.5 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+    launcher.addEventListener('click',()=>open({tab:'overview'}));actions.append(launcher);
+  }
+  function ready(){ensure();if(pending)open(pending);}
+  window.addEventListener('profile-activity:open',event=>open(event.detail||{}));
+  window.addEventListener('vp3:agent-activity-ready',ready);
+  window.addEventListener('vp3:profile-workspace-ready',ready);
+  window.addEventListener('stonefellow:chat-context-changing',()=>{pending=null;});
+  window.addEventListener('vp3:participant-task-context',()=>{pending=null;});
+  window.addEventListener('vp3:participant-selection-changed',()=>{pending=null;});
+  window.STONEFELLOW_PROFILE_ACTIVITY={open,refresh:()=>window.VP3AgentActivityHub?.refreshProfile?.()};
+  ensure();return;
+}
 const cfg=window.STONEFELLOW_AGENT_IDENTITY_V236||{};
 const endpoint=cfg.profileAgentEndpoint||'';
 if(!endpoint||!cfg.csrf)return;

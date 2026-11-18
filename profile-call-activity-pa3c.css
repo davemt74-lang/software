@@ -115,3 +115,11 @@ body[data-agent-theme=dark] .vp3-call-activity{
 @media(prefers-reduced-motion:reduce){
   .vp3-call-activity[open],#profileCallActivityPa3c .vp3-call-launch::after{animation:none!important}
 }
+
+.vp3-call-activity.vp3-call-activity--embedded{
+  display:block;position:static;inset:auto;width:100%;min-height:0;height:auto;
+  max-height:none;margin:0;padding:0;overflow:visible;box-shadow:none;
+  border:1px solid var(--vp3-call-border);border-radius:12px;
+}
+.vp3-call-activity--embedded .vp3-call-head{grid-template-columns:38px minmax(0,1fr)}
+.vp3-call-activity--embedded .vp3-call-scroll{overflow:visible;overscroll-behavior:auto}

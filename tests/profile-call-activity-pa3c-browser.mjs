@@ -179,6 +179,54 @@ try {
   await mobile.drawer.getByRole('button', {name: 'Close call activity'}).click();
   check(!await mobile.drawer.isVisible(), 'mobile close is operable');
   await mobile.close();
+
+  for (const width of [390, 1200]) {
+    const embedded = await fixture(browser, width);
+    await embedded.page.evaluate(() => {
+      const host = document.createElement('section');
+      host.id = 'embeddedCallActivity';
+      host.style.cssText = 'box-sizing:border-box;width:min(560px,100%);height:640px;overflow:auto;padding:12px';
+      document.body.append(host);
+      const context = {ownerUserId:1,chatAgentId:7,chatConversationId:11,workingAttentionBinding:'browser-workspace-binding',publicConversationId:31,callId:41};
+      window.__embeddedPosts = [];
+      window.__embeddedOptions = {
+        context: () => context,
+        read: async ({context: captured}) => ({call_id:captured.callId,public_conversation_id:captured.publicConversationId,activity:{
+          call_id:'a'.repeat(32),state:'listening',agent:{name:'Longfellow'},assistance_enabled:true,assistance_toggle_available:true,
+          assistance_revision:1,research_available:true,segments:[],research:[],cursor:0,has_more:false,transcript_url:'',
+        }}),
+        mutate: async input => {
+          window.__embeddedPosts.push(JSON.parse(JSON.stringify(input)));
+          if (window.__embeddedPosts.length === 1) throw new Error('Uncertain response');
+          return {call_id:41,public_conversation_id:31,operation:input.operation,result:{research_status:'complete'}};
+        },
+      };
+      window.__embeddedMount = () => {
+        window.__embeddedController = window.VP3ProfileCallActivityPa3c.mount(host,window.__embeddedOptions);
+      };
+      window.__embeddedMount();
+    });
+    const view=embedded.page.locator('#embeddedCallActivity');
+    await view.getByRole('textbox',{name:'Research a question'}).waitFor();
+    check(await view.locator('dialog').count()===0 && await view.locator('.vp3-call-scroll').evaluate(node=>getComputedStyle(node).overflowY)==='visible',
+      `the ${width}px embedded activity view uses the workspace scroll and no nested dialog`);
+    check(await view.evaluate(node=>node.scrollWidth<=node.clientWidth+1),`the ${width}px embedded controls fit their workspace width`);
+    const question=view.getByRole('textbox',{name:'Research a question'});
+    await question.fill('Find the public opening hours');
+    await view.getByRole('button',{name:'Research',exact:true}).last().click();
+    await view.getByRole('button',{name:'Retry research',exact:true}).waitFor();
+    await embedded.page.evaluate(()=>{window.__embeddedController.dispose();window.__embeddedMount();});
+    await view.getByRole('button',{name:'Retry research',exact:true}).waitFor();
+    check(await question.inputValue()==='Find the public opening hours'&&await question.isDisabled()
+      &&await embedded.page.evaluate(()=>window.__embeddedPosts.length===1),
+      `the ${width}px workspace restores an uncertain request without starting another search`);
+    await view.getByRole('button',{name:'Retry research',exact:true}).click();
+    await embedded.page.waitForFunction(()=>document.querySelector('#embeddedCallActivity input[type=text]').value==='');
+    check(await embedded.page.evaluate(()=>JSON.stringify(window.__embeddedPosts[0].input)===JSON.stringify(window.__embeddedPosts[1].input)),
+      `the ${width}px explicit retry preserves the original request identity and question`);
+    await embedded.page.evaluate(()=>window.__embeddedController.dispose());
+    await embedded.close();
+  }
   console.log(`PROFILE_CALL_ACTIVITY_PA3C_BROWSER=PASS ${checks} checks`);
 } finally {
   await browser?.close();

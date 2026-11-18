@@ -462,6 +462,7 @@ $cognitiveCardsRuntime = '<link rel="stylesheet" data-cognitive-cards-v520 href=
     . '<script data-cognitive-cards-v520 src="' . e(url('/chat-cognitive-cards-v520.js?v=' . $cognitiveCardsAssetBuild . '-' . $onboardingActivationAssetBuild)) . '"></script>';
 
 $specialistPresence = [];
+$profileWorkspaceRuntime = '';
 if ($pdoForAgent && has_permission('account.access',$user) && has_permission('chat.access',$user)) {
     $specialistPresence['planning'] = 'unavailable';
     $specialistPresence['gmail'] = 'unavailable';
@@ -473,6 +474,16 @@ if ($pdoForAgent && has_permission('account.access',$user) && has_permission('ch
         && personal_capability_has_v242('profile_agent.access', $user)
         && personal_capability_has_v242('profile_chat.access', $user)) {
         $specialistPresence['profile'] = 'idle';
+        $profileWorkspaceRuntime = '<link rel="stylesheet" href="'.e(url('/profile-agent-analytics.css?v='.substr(hash_file('sha256',__DIR__.'/profile-agent-analytics.css'),0,12))).'">'
+            . '<script src="'.e(url('/profile-agent-analytics.js?v='.substr(hash_file('sha256',__DIR__.'/profile-agent-analytics.js'),0,12))).'"></script>'
+            . '<link rel="stylesheet" href="'.e(url('/profile-specialist-workspace-v1.css?v='.substr(hash_file('sha256',__DIR__.'/profile-specialist-workspace-v1.css'),0,12))).'">'
+            . '<script>window.VP3_PROFILE_WORKSPACE_V1='.json_encode([
+                'endpoint'=>url('/api/profile-specialist-workspace-v1.php'),
+                'csrf'=>csrf_token(),'ownerKey'=>(string)$user['id'],
+                'agentId'=>(int)($activeUserAgent['id']??0),'workingAttentionBinding'=>$workingAttentionBinding,
+                'profileUrl'=>url('/profile-agent.php'),
+            ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR).';</script>'
+            . '<script src="'.e(url('/profile-specialist-workspace-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-specialist-workspace-v1.js'),0,12))).'"></script>';
     }
     if (has_permission('artist_listening.access',$user)) {
         $specialistPresence['transcripts'] = 'idle';
@@ -735,6 +746,7 @@ $runtime = $headerUiRuntime
          . '<script data-agent-context-v142 src="' . e(url('/agent-context-v131.js?v=' . $controlBuild . '&participants=section5-20261004')) . '"></script>'
          . '<script data-chat-voice data-chat-echo-guard="canonical" data-chat-streaming="enabled" data-chat-processed-input="enabled" data-chat-barge="speech-recognition" data-chat-turn-pause="1800" data-chat-lifecycle="canonical" src="' . e(url('/chat-voice.js?v=' . $voiceCacheBuild . '&capture=interactive-listening-section2-20261003')) . '"></script>'
          . $agentIdentityRuntime
+         . $profileWorkspaceRuntime
          . $profileActivityRuntime
          . $profileCallsRuntime
          . $profileDoorbellRuntime

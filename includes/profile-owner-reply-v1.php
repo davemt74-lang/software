@@ -89,3 +89,21 @@ function vp3_profile_owner_reply_recover_v1(PDO $pdo, array $user, int $conversa
         || !is_string($marker['request_hash']??null) || !hash_equals($expected['request_hash'],$marker['request_hash'])) vp3_profile_owner_reply_conflict_v1();
     return ['message_id'=>(int)$row['id'],'duplicate'=>true];
 }
+
+/** The caller holds current owner/conversation authority and checked receipt replay. */
+function vp3_profile_owner_reply_legacy_save_v1(PDO $pdo,array $user,array $conversation,string $request,string $message): array
+{
+    if(!$pdo->inTransaction()||(int)$conversation['owner_user_id']!==(int)$user['id'])throw new RuntimeException('Owner replies require current conversation authority.');
+    $owner=(int)$user['id'];$cid=(int)$conversation['id'];
+    vp3_profile_agent_response_token_v1($pdo,$cid,true);
+    $context=['profile_owner_reply_v1'=>vp3_profile_owner_reply_marker_v1($owner,$cid,$request,$message)];
+    $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'owner',?,?,?)")
+        ->execute([$cid,$owner,$message,json_encode($context,JSON_THROW_ON_ERROR)]);
+    $messageId=(int)$pdo->lastInsertId();
+    $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=?")
+        ->execute([mb_strimwidth($message,0,900,'…'),$cid,$owner]);
+    require_once __DIR__.'/profile-attention-pa4b.php';
+    vp3_profile_attention_message_sent_pa4b($pdo,$conversation,$messageId);
+    vp3_profile_attention_settle_conversation_pa4b($pdo,$owner,$cid);
+    return ['message_id'=>$messageId,'duplicate'=>false];
+}

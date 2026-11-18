@@ -162,6 +162,37 @@ for(const kind of ['connect','microphone','camera'])for(const reject of [false,t
   const own=f.requests.find(r=>r.action==='owner_join');check(own.chat_conversation_id===42&&own.chat_agent_id===7&&own.delivery_id==='d'.repeat(32)&&own.conversation_id===31&&own.csrf_token==='FIXTURE_CSRF','owner join carries captured public call plus exact private Chat, Agent, card and CSRF proof');await f.stop();
 }
 {
+  const f=await fixture({role:'owner'});await f.ready();await f.consent();await f.click('join');
+  const card=f.card(),room=f.stats.rooms[0],tracks=[...f.stats.tracks],parent=card.parentNode;
+  const selection={callId:41,publicConversationId:31,chatConversationId:42,chatAgentId:7};
+  const workspace=f.document.createElement('section');f.document.body.append(workspace);
+  const held=f.hold('owner_state');
+  const handle=f.window.VP3ProfileCallsPa3c.attachOwnerThread(workspace,{binding:()=>({conversation_id:31,chat_conversation_id:42,chat_agent_id:7})});
+  await settle();const detachedButton=workspace.querySelector('button');
+  check(Boolean(handle?.dispose)&&Boolean(held.work),'thread call controls have a disposable handle while capability read is pending');
+  handle.dispose();handle.dispose();held.work.resolve();await settle();
+  const before=f.requests.length;detachedButton.disabled=false;detachedButton.click();await settle();
+  check(!workspace.querySelector('.profile-call-offer-actions')&&f.requests.length===before,'disposed controls ignore late capability reads and detached button events');
+  let closed=0;const focus=f.window.VP3ProfileCallsPa3c.focusOwnerCall;
+  check(!focus({...selection,callId:99},{beforeFocus(){closed++;}})&&closed===0,'missing exact call does not close the workspace or focus another card');
+  check(!focus({...selection,publicConversationId:32},{beforeFocus(){closed++;}})
+    &&!focus({...selection,chatConversationId:99},{beforeFocus(){closed++;}})
+    &&!focus({...selection,chatAgentId:8},{beforeFocus(){closed++;}})&&closed===0,
+    'public conversation, private Chat and named Agent must all match before focus');
+  check(focus(selection,{beforeFocus(){closed++;workspace.remove();}})&&closed===1&&f.document.activeElement===card,
+    'the guarded bridge closes the workspace only after finding its exact existing card');
+  check(f.requests.length===before&&f.stats.rooms[0]===room&&f.stats.connections===1&&f.stats.disconnects===0
+    &&tracks.every(track=>!track.stopped)&&card===f.card()&&card.parentNode===parent&&f.host.dataset.view==='chat',
+    'workspace controls and focus preserve the same media, native DOM and Chat view without delivery, dispatch, join or hangup');
+  const next=f.document.createElement('section');f.document.body.append(next);
+  const one=f.window.VP3ProfileCallsPa3c.attachOwnerThread(next,{binding:()=>null});
+  const firstId=next.querySelector('[data-call-assistance-offer]').id;one.dispose();
+  const two=f.window.VP3ProfileCallsPa3c.attachOwnerThread(next,{binding:()=>null});
+  check(next.querySelector('[data-call-assistance-offer]').id!==firstId,'remounted disposable offer controls keep distinct disclosure identities');two.dispose();
+  check(!focus(selection,{beforeFocus(){f.host.dataset.view='other';}}),'focus rechecks current native context after the shell callback');
+  f.host.dataset.view='chat';await f.stop();
+}
+{
   const f=await fixture();await f.ready();await f.consent();await f.click('join');
   const until=f.cards.get(41).authority_valid_until_ms;
   for(let i=0;i<3;i++){const held=f.hold('visitor_heartbeat');await f.advance(10000);if(held.work)held.work.resolve({ok:false,code:'CALL_PROVIDER_UNAVAILABLE'},503);await settle();}

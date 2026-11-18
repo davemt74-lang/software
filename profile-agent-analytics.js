@@ -1,12 +1,11 @@
 (() => {
 'use strict';
-const cfg=window.PROFILE_AGENT_PORTAL;
-const host=document.getElementById('profileAgentAnalytics');
-const notice=document.getElementById('profileAgentNotice');
-if(!cfg?.analyticsEndpoint||!host)return;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+function mountWorkspace(host,options={}){
+if(!host||typeof options.readAnalytics!=='function'||typeof options.readIntelligence!=='function')throw new TypeError('Analytics needs its current scoped readers.');
 let state=null,analyticsError='',intelligence=null,intelligenceError='',intelligenceLoadedAt=0,propertyId=0,days=30,busy=false,pendingLoad=false,pendingForce=false,timer=null;
-function setNotice(message='',error=false){if(!notice)return;notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;}
+let disposed=false,selectionGeneration=0,selectionLoading=false,analyticsController=null,intelligenceController=null;
+function setNotice(message='',error=false){if(!disposed)options.onNotice?.(message,error);}
 function parseDate(value){if(!value)return null;const d=new Date(String(value).replace(' ','T'));return Number.isNaN(d.getTime())?null:d;}
 function relative(value){const d=parseDate(value);if(!d)return String(value||'');const s=Math.round((Date.now()-d.getTime())/1000);if(s<60)return 'just now';if(s<3600)return `${Math.max(1,Math.round(s/60))}m ago`;if(s<86400)return `${Math.round(s/3600)}h ago`;if(s<604800)return `${Math.round(s/86400)}d ago`;return d.toLocaleDateString();}
 function moneyMinor(cents,currency){const amount=Number(cents||0),code=String(currency||'').toUpperCase();if(amount<1||!/^[A-Z]{3}$/.test(code))return '';try{return new Intl.NumberFormat(undefined,{style:'currency',currency:code}).format(amount/100);}catch(e){return `${(amount/100).toFixed(2)} ${code}`;}}
@@ -17,33 +16,41 @@ function rate(value){return value===null||value===undefined?'—':`${Number(valu
 function signed(value,suffix=''){const n=Number(value||0);return `${n>0?'+':''}${n.toLocaleString()}${suffix}`;}
 function safeLink(url,label='Open'){const raw=String(url||'').trim();if(!/^https?:\/\//i.test(raw))return '';return `<a href="${esc(raw)}" target="_blank" rel="noopener">${esc(label)} ↗</a>`;}
 async function loadIntelligence(force=false){
+  if(disposed)return;
   if(!force&&intelligence&&Date.now()-intelligenceLoadedAt<120000)return;
-  const url=new URL('/api/profile-revenue-intelligence.php',window.location.origin);
+  const controller=new AbortController();intelligenceController=controller;
   try{
-    const r=await fetch(url,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);
-    if(!r.ok||!d?.ok||d.intelligence?.ready!==true||d.intelligence?.coverage!=='complete'||!['today','7d','30d'].every(k=>d.intelligence.periods?.[k]?.current))throw new Error(d?.error||'Profile conversion intelligence is unavailable. No totals were established.');
-    intelligence=d.intelligence||null;intelligenceLoadedAt=Date.now();intelligenceError='';
-  }catch(err){intelligence=null;intelligenceError=String(err?.message||'Profile conversion intelligence is unavailable.');}
+    const data=await options.readIntelligence({signal:controller.signal});
+    if(disposed||controller.signal.aborted)return;
+    if(data?.ready!==true||data?.coverage!=='complete'||!['today','7d','30d'].every(k=>data.periods?.[k]?.current))throw new Error('Profile conversion intelligence is unavailable. No totals were established.');
+    intelligence=data;intelligenceLoadedAt=Date.now();intelligenceError='';
+  }catch(err){if(!disposed&&!controller.signal.aborted){intelligence=null;if([401,403,419].includes(err?.status))throw err;intelligenceError=String(err?.message||'Profile conversion intelligence is unavailable.');}}
+  finally{if(intelligenceController===controller)intelligenceController=null;}
 }
 async function load(silent=true){
+  if(disposed)return;
   if(busy){pendingLoad=true;pendingForce=pendingForce||!silent;return;}
-  busy=true;const selection={propertyId,days},changed=()=>selection.propertyId!==propertyId||selection.days!==days;
+  busy=true;const selection={propertyId,days,generation:selectionGeneration},changed=()=>selection.generation!==selectionGeneration;
+  const controller=new AbortController();analyticsController=controller;
   try{
-    const url=new URL(cfg.analyticsEndpoint,window.location.origin);url.searchParams.set('property_id',String(selection.propertyId));url.searchParams.set('days',String(selection.days));
-    const r=await fetch(url,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);
+    const data=await options.readAnalytics({propertyId:selection.propertyId,days:selection.days,signal:controller.signal});
+    if(disposed)return;
     if(changed()){pendingLoad=true;return;}
-    if(!r.ok||!d?.ok||d.analytics?.ready!==true)throw new Error(d?.error||d?.analytics?.error||'VP3 Analytics is unavailable. No totals were established.');
-    if(Number(d.analytics.property_id)!==selection.propertyId||Number(d.analytics.days)!==selection.days)throw new Error('The Analytics reporting selection changed. Refresh to load this property and period.');
+    if(data?.ready!==true||data?.coverage!=='complete')throw new Error(data?.error||'VP3 Analytics is unavailable. No totals were established.');
+    if(Number(data.property_id)!==selection.propertyId||Number(data.days)!==selection.days)throw new Error('The Analytics reporting selection changed. Refresh to load this property and period.');
     await loadIntelligence(!silent);
+    if(disposed)return;
     if(changed()){pendingLoad=true;return;}
-    state=d.analytics;analyticsError='';render();
+    state=data;analyticsError='';selectionLoading=false;render();
     if(!silent)setNotice(intelligenceError?'VP3 Analytics refreshed; conversion intelligence is temporarily unavailable.':'VP3 Analytics and conversion intelligence refreshed.',!!intelligenceError);
   }catch(err){
+    if(disposed)return;
     if(changed())pendingLoad=true;
-    else{state=null;analyticsError=String(err?.message||'VP3 Analytics is unavailable.');render();setNotice(analyticsError,true);}
+    else{state=null;intelligence=null;selectionLoading=false;analyticsError=String(err?.message||'VP3 Analytics is unavailable.');render();setNotice(analyticsError,true);}
   }finally{
+    if(analyticsController===controller)analyticsController=null;
     busy=false;
-    if(pendingLoad){const force=pendingForce;pendingLoad=false;pendingForce=false;await load(!force);}
+    if(!disposed&&pendingLoad){const force=pendingForce;pendingLoad=false;pendingForce=false;await load(!force);}
   }
 }
 function reportingAsOf(window){return window?.to&&window?.zone?`As of ${window.to}; database timezone ${window.zone}. Period comparisons use the windows shown below.`:'';}
@@ -69,7 +76,40 @@ function sourceRows(){const rows=Array.isArray(intelligence?.sources)?intelligen
 function opportunityRows(){const rows=Array.isArray(intelligence?.opportunities)?intelligence.opportunities:[];if(!rows.length)return '<div class="vp3-analytics-empty">No conversion opportunity has crossed a reliable threshold yet.</div>';return rows.map(r=>`<article class="profile-revenue-opportunity ${esc(r.priority||'medium')}"><span>${esc(r.priority==='positive'?'Winner':r.priority==='high'?'Priority':'Watch')}</span><div><strong>${esc(r.headline||'Conversion opportunity')}</strong><p>${esc(r.summary||'')}</p><small>${esc(r.action_label||'Review this offer')}</small></div>${safeLink(r.target_url,'Review')}</article>`).join('');}
 function insightRows(){const rows=Array.isArray(intelligence?.insights)?intelligence.insights:[];return rows.length?rows.map(r=>`<div class="profile-revenue-insight"><span>${esc(r.type||'insight')}</span><p>${esc(r.message||'')}</p></div>`).join(''):'<div class="vp3-analytics-empty">VP3 is still learning from Profile intent and conversion activity.</div>';}
 function revenueIntelligence(){if(intelligenceError)return `<section class="profile-revenue-shell"><div class="vp3-analytics-empty">${esc(intelligenceError)}</div></section>`;if(!intelligence)return '<section class="profile-revenue-shell"><div class="vp3-analytics-empty">Loading Profile conversion intelligence…</div></section>';const p30=intelligence.periods?.['30d']?.current||{};return `<section class="profile-revenue-shell"><header class="profile-revenue-head"><div><span>Profile Revenue Intelligence · Phase 18</span><h2>From Profile traffic to real business</h2><p>Recorded Profile visits, product and booking destination visits, confirmed outcomes and their recorded values. Sources use stored first-party attribution and values stay separated by currency.</p><small>${esc(reportingAsOf(intelligence.reporting_window))}</small></div><div class="profile-revenue-total"><small>Tracked revenue · all time</small><strong>${esc(moneyRows(intelligence.revenue_all_time))}</strong><span>Booking ${esc(moneyRows(intelligence.booking_revenue_all_time))}</span><span>Products ${esc(moneyRows(intelligence.product_revenue_all_time))}</span><span>${Number(p30.conversions||0).toLocaleString()} conversions in the last 30 days</span></div></header><div class="profile-revenue-periods">${funnelCard('today','Today')}${funnelCard('7d','7 days')}${funnelCard('30d','30 days')}</div><div class="profile-revenue-grid"><section><div class="vp3-analytics-section-head"><span>Offers</span><h3>Top converting products + bookings</h3></div>${targetRows()}</section><section><div class="vp3-analytics-section-head"><span>Acquisition</span><h3>Conversion sources</h3></div>${sourceRows()}</section></div><div class="profile-revenue-grid"><section><div class="vp3-analytics-section-head"><span>Agent Intelligence</span><h3>Opportunities</h3></div>${opportunityRows()}</section><section><div class="vp3-analytics-section-head"><span>What VP3 sees</span><h3>Conversion insights</h3></div>${insightRows()}</section></div><footer class="vp3-analytics-privacy">Profile conversion intelligence uses the existing first-party Profile event ledger. Recorded conversion values are historical snapshots, not net revenue after refunds. Profile visits are deduplicated around a 30-minute boundary; destination visits do not establish purchase intent. Conversion rates compare outcome events with destination events inside the same period; they are not cross-site person-level cohorts. Suggested actions are advisory until you explicitly choose to act.</footer></section>`;}
-function render(){if(!state){host.innerHTML=analyticsError?`<div class="vp3-analytics-empty" role="status">${esc(analyticsError)}</div><button type="button" data-analytics-refresh>Retry analytics</button>`:'<div class="vp3-analytics-empty">Loading VP3 Analytics…</div>';bind();return;}const s=state.stats||{};host.innerHTML=`${revenueIntelligence()}<section class="vp3-analytics-shell"><header class="vp3-analytics-head"><div><span>VP3 Analytics</span><h2>Traffic across your VP3 presence</h2><p>Your VP3 profile and connected websites share one private analytics view. Radar sessions, page-view events and Profile visit events are reported separately. Sessions and recognized browsers are not unique people.</p><small>${esc(reportingWindow(state.reporting_window))}</small></div><div class="vp3-analytics-controls"><select data-analytics-property>${propertyOptions()}</select><select data-analytics-days><option value="7"${days===7?' selected':''}>7 days</option><option value="30"${days===30?' selected':''}>30 days</option><option value="90"${days===90?' selected':''}>90 days</option></select><button type="button" data-analytics-refresh>Refresh</button></div></header><div class="vp3-analytics-metrics">${metric('Radar sessions',s.sessions,`${Number(s.human_sessions||0)} classified human · ${Number(s.agent_sessions||0)} automated · ${Number(s.unclassified_sessions||0)} unclassified; last active in this window`)}${metric('Page-view events',s.page_views,`${Number(s.human_page_views||0)} browser · ${Number(s.agent_page_views||0)} automated`)}${state.native_included?metric('Profile visits',s.native_visit_events,`${Number(s.native_browser_contacts||0)} recognized browser contacts; visits deduplicated around 30 minutes`):''}${metric('Conversion events',s.conversions,'Collected browser events, not verified paid orders')}${metric('WebMCP calls',s.webmcp_tool_calls,`${Number(s.webmcp_completed||0)} complete · ${Number(s.webmcp_failed||0)} failed · ${Number(s.webmcp_denied||0)} denied`)}${metric('Custom events',s.custom_events)}${metric('High-risk events',s.high_risk_events)}</div><div class="vp3-analytics-grid wide"><section><div class="vp3-analytics-section-head"><span>Traffic</span><h3>Recorded traffic events over time</h3></div>${timeline()}</section><section><div class="vp3-analytics-section-head"><span>Properties</span><h3>Performance by property</h3></div><div class="vp3-analytics-properties">${propertyCards()}</div></section></div><div class="vp3-analytics-grid"><section><div class="vp3-analytics-section-head"><span>Content</span><h3>Top pages</h3><small>Page-view events only; Profile visits are shown separately</small></div>${listRows(state.top_pages,'path','events','No page activity yet.')}</section><section><div class="vp3-analytics-section-head"><span>Acquisition</span><h3>Referrers</h3><small>Stored Radar sessions last active in this window</small></div>${listRows(state.referrers,'referrer_host','sessions','No external referrers yet.')}</section><section><div class="vp3-analytics-section-head"><span>Devices</span><h3>Device mix</h3><small>Share of collected browser events</small></div>${distribution(state.devices)}</section><section><div class="vp3-analytics-section-head"><span>Browsers</span><h3>Browser mix</h3><small>Share of collected browser events</small></div>${distribution(state.browsers)}</section></div><section class="vp3-analytics-activity"><div class="vp3-analytics-section-head"><span>Recent</span><h3>Human + Agent + WebMCP activity</h3></div>${activity()}</section><footer class="vp3-analytics-privacy">Strict privacy mode: VP3 Analytics stores no raw visitor IP address, no fingerprint, and no persistent cross-site human identity. Native period page-view totals cannot be recovered from lifetime browser-contact counters; recorded Profile visits are shown instead. Geography is intentionally unavailable until a connected site or trusted edge provides coarse location without exposing raw IP data.</footer></section>`;bind();}
-function bind(){host.querySelector('[data-analytics-property]')?.addEventListener('change',e=>{propertyId=Math.max(0,Number(e.target.value||0));load(true);});host.querySelector('[data-analytics-days]')?.addEventListener('change',e=>{days=[7,30,90].includes(Number(e.target.value))?Number(e.target.value):30;load(true);});host.querySelector('[data-analytics-refresh]')?.addEventListener('click',()=>load(false));}
-render();load(true);timer=setInterval(()=>{if(document.visibilityState==='visible')load(true);},30000);window.addEventListener('beforeunload',()=>clearInterval(timer));
+function render(){if(disposed)return;if(selectionLoading){host.innerHTML=`<section class="vp3-analytics-shell"><div class="vp3-analytics-controls"><select aria-label="Analytics property" data-analytics-property>${propertyOptions()}</select><select aria-label="Reporting period" data-analytics-days>${[7,30,90].map(value=>`<option value="${value}"${days===value?' selected':''}>${value} days</option>`).join('')}</select></div><div class="vp3-analytics-empty" role="status">Loading the selected property and period…</div></section>`;bind();return;}if(!state){host.innerHTML=analyticsError?`<div class="vp3-analytics-empty" role="status">${esc(analyticsError)}</div><button type="button" data-analytics-refresh>Retry analytics</button>`:'<div class="vp3-analytics-empty">Loading VP3 Analytics…</div>';bind();return;}const s=state.stats||{};host.innerHTML=`${revenueIntelligence()}<section class="vp3-analytics-shell"><header class="vp3-analytics-head"><div><span>VP3 Analytics</span><h2>Traffic across your VP3 presence</h2><p>Your VP3 profile and connected websites share one private analytics view. Radar sessions, page-view events and Profile visit events are reported separately. Sessions and recognized browsers are not unique people.</p><small>${esc(reportingWindow(state.reporting_window))}</small></div><div class="vp3-analytics-controls"><select aria-label="Analytics property" data-analytics-property>${propertyOptions()}</select><select aria-label="Reporting period" data-analytics-days><option value="7"${days===7?' selected':''}>7 days</option><option value="30"${days===30?' selected':''}>30 days</option><option value="90"${days===90?' selected':''}>90 days</option></select><button type="button" data-analytics-refresh>Refresh</button></div></header>${state.native_profile_coverage==='unconfigured'?'<div class="vp3-analytics-empty" role="status">Profile visit totals are not available yet. Existing website metrics are shown below.</div>':''}<div class="vp3-analytics-metrics">${metric('Radar sessions',s.sessions,`${Number(s.human_sessions||0)} classified human · ${Number(s.agent_sessions||0)} automated · ${Number(s.unclassified_sessions||0)} unclassified; last active in this window`)}${metric('Page-view events',s.page_views,`${Number(s.human_page_views||0)} browser · ${Number(s.agent_page_views||0)} automated`)}${state.native_included?metric('Profile visits',s.native_visit_events,`${Number(s.native_browser_contacts||0)} recognized browser contacts; visits deduplicated around 30 minutes`):''}${metric('Conversion events',s.conversions,'Collected browser events, not verified paid orders')}${metric('WebMCP calls',s.webmcp_tool_calls,`${Number(s.webmcp_completed||0)} complete · ${Number(s.webmcp_failed||0)} failed · ${Number(s.webmcp_denied||0)} denied`)}${metric('Custom events',s.custom_events)}${metric('High-risk events',s.high_risk_events)}</div><div class="vp3-analytics-grid wide"><section><div class="vp3-analytics-section-head"><span>Traffic</span><h3>Recorded traffic events over time</h3></div>${timeline()}</section><section><div class="vp3-analytics-section-head"><span>Properties</span><h3>Performance by property</h3></div><div class="vp3-analytics-properties">${propertyCards()}</div></section></div><div class="vp3-analytics-grid"><section><div class="vp3-analytics-section-head"><span>Content</span><h3>Top pages</h3><small>Page-view events only; Profile visits are shown separately</small></div>${listRows(state.top_pages,'path','events','No page activity yet.')}</section><section><div class="vp3-analytics-section-head"><span>Acquisition</span><h3>Referrers</h3><small>Stored Radar sessions last active in this window</small></div>${listRows(state.referrers,'referrer_host','sessions','No external referrers yet.')}</section><section><div class="vp3-analytics-section-head"><span>Devices</span><h3>Device mix</h3><small>Share of collected browser events</small></div>${distribution(state.devices)}</section><section><div class="vp3-analytics-section-head"><span>Browsers</span><h3>Browser mix</h3><small>Share of collected browser events</small></div>${distribution(state.browsers)}</section></div><section class="vp3-analytics-activity"><div class="vp3-analytics-section-head"><span>Recent</span><h3>Human + Agent + WebMCP activity</h3></div>${activity()}</section><footer class="vp3-analytics-privacy">Strict privacy mode: VP3 Analytics stores no raw visitor IP address, no fingerprint, and no persistent cross-site human identity. Native period page-view totals cannot be recovered from lifetime browser-contact counters; recorded Profile visits are shown instead. Geography is intentionally unavailable until a connected site or trusted edge provides coarse location without exposing raw IP data.</footer></section>`;bind();}
+function changeSelection(){
+  if(disposed)return;
+  selectionGeneration++;selectionLoading=true;analyticsController?.abort();intelligenceController?.abort();render();load(true);
+}
+function bind(){host.querySelector('[data-analytics-property]')?.addEventListener('change',e=>{propertyId=Math.max(0,Number(e.target.value||0));changeSelection();});host.querySelector('[data-analytics-days]')?.addEventListener('change',e=>{days=[7,30,90].includes(Number(e.target.value))?Number(e.target.value):30;changeSelection();});host.querySelector('[data-analytics-refresh]')?.addEventListener('click',()=>load(false));}
+function dispose(){
+  if(disposed)return;
+  disposed=true;selectionGeneration++;pendingLoad=false;pendingForce=false;
+  analyticsController?.abort();intelligenceController?.abort();clearInterval(timer);
+  if(options.poll===true)window.removeEventListener?.('beforeunload',dispose);
+  state=null;intelligence=null;host.innerHTML='';
+}
+render();load(true);
+if(options.poll===true){timer=setInterval(()=>{if(!disposed&&document.visibilityState==='visible')load(true);},30000);window.addEventListener('beforeunload',dispose);}
+return {refresh:()=>load(false),dispose};
+}
+window.VP3ProfileAnalytics=Object.freeze({mountWorkspace});
+const cfg=window.PROFILE_AGENT_PORTAL,host=document.getElementById('profileAgentAnalytics');
+if(cfg?.analyticsEndpoint&&host){
+  const notice=document.getElementById('profileAgentNotice');
+  const analyticsEndpoint=new URL(cfg.analyticsEndpoint,window.location.origin);
+  const revenueEndpoint=new URL(cfg.revenueEndpoint||'profile-revenue-intelligence.php',analyticsEndpoint);
+  async function read(url,key,signal){
+    const response=await fetch(url,{credentials:'same-origin',cache:'no-store',signal});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.ok!==true)throw Object.assign(new Error(data?.error||'Profile Analytics is unavailable.'),{status:response.status});
+    return data[key];
+  }
+  mountWorkspace(host,{
+    poll:true,
+    readAnalytics:({propertyId,days,signal})=>{const url=new URL(analyticsEndpoint);url.searchParams.set('property_id',String(propertyId));url.searchParams.set('days',String(days));return read(url,'analytics',signal);},
+    readIntelligence:({signal})=>read(revenueEndpoint,'intelligence',signal),
+    onNotice:(message,error)=>{if(notice){notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;}},
+  });
+}
 })();

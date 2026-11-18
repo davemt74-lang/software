@@ -147,7 +147,13 @@ try{
         }
         htnPhase('worker.'.substr($mode,2));
         try{
-            if($mode==='--enqueue')homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$snapshot);
+            if($mode==='--enqueue'){
+                $reserve=!empty($config['private_draft'])?static function()use($pdo):bool{
+                    if(!$pdo->inTransaction())throw new RuntimeException('Private draft reservation requires the queue transaction.');
+                    $q=$pdo->prepare('UPDATE fixture_private_draft SET attempted=1 WHERE id=1 AND attempted=0');$q->execute();return $q->rowCount()===1;
+                }:null;
+                homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$snapshot,$reserve);
+            }
             elseif($mode==='--poll')htnComplete($snapshot,(string)$config['request_id'],['reply'=>$sentinel]);
             else homeserver_https_v1300_wait_transient((string)$config['request_id'],1,$snapshot,1000);
             echo json_encode(['accepted'=>true],JSON_THROW_ON_ERROR).PHP_EOL;
@@ -300,6 +306,32 @@ try{
                 'native '.$workerMode.' rechecks committed '.$change.' authority and leaves no transient prompt or response');
         }
     }
+    // The private draft dispatch fence must serialize actual competing queue
+    // insertions on InnoDB, not merely pass a single-connection mock assertion.
+    $GLOBALS['nativeCase']='private_draft.concurrent';$session=htnReset();
+    $pdo->exec('CREATE TABLE fixture_private_draft(id INTEGER PRIMARY KEY,attempted INTEGER NOT NULL DEFAULT 0) ENGINE=InnoDB');
+    $pdo->exec('INSERT INTO fixture_private_draft(id) VALUES(1)');
+    [$first,$firstReady]=$start('--enqueue',['private_draft'=>true]);[$second,$secondReady]=$start('--enqueue',['private_draft'=>true]);
+    $blocker=(int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn();$pdo->beginTransaction();$pdo->query('SELECT id FROM users WHERE id=1 FOR UPDATE')->fetch();
+    file_put_contents($gate.'/go-'.$first,'go');file_put_contents($gate.'/go-'.$second,'go');
+    foreach([[$first,$firstReady],[$second,$secondReady]] as [$child,$ready])htnWait(
+        static fn()=>htnOwnerLockWaiting($admin,(int)$ready['connection_id'],$blocker,$database),'private_draft.owner_lock',
+        static fn()=>htnChildEvidence($children[$child],$gate.'/phase-'.$child));
+    htnCheck(proc_get_status($children[$first]['process'])['running']&&proc_get_status($children[$second]['process'])['running'],'two native private-draft enqueues wait on the actual common owner row');
+    $pdo->commit();$outcomes=[$finish($first),$finish($second)];
+    htnCheck(count(array_filter($outcomes,static fn(array $row):bool=>$row===['accepted'=>true]))===1
+        &&count(array_filter($outcomes,static fn(array $row):bool=>$row===['accepted'=>false,'public_code'=>403]))===1,
+        'one native dispatch reservation wins while the competing enqueue is denied');
+    htnCheck(htnCount()===1&&(int)$pdo->query('SELECT attempted FROM fixture_private_draft')->fetchColumn()===1,'native concurrent queue stores one prompt and consumes one private attempt');
+    $session=htnReset();$pdo->exec('UPDATE fixture_private_draft SET attempted=0');
+    $pdo->exec("CREATE TRIGGER fixture_refuse_private_queue BEFORE INSERT ON homeserver_https_requests FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Fixture queue insertion blocked'");
+    $failed=false;
+    try{homeserver_https_v1300_queue(1,'agent.infer.local',$payload,true,$session,static function()use($pdo):bool{
+        $q=$pdo->prepare('UPDATE fixture_private_draft SET attempted=1 WHERE id=1 AND attempted=0');$q->execute();return $q->rowCount()===1;
+    });}catch(PDOException){$failed=true;}
+    $pdo->exec('DROP TRIGGER fixture_refuse_private_queue');
+    htnCheck($failed&&!$pdo->inTransaction()&&htnCount()===0&&(int)$pdo->query('SELECT attempted FROM fixture_private_draft')->fetchColumn()===0,
+        'native failed prompt INSERT rolls back its private dispatch reservation');
     echo 'HOMESERVER_HTTPS_TRANSIENT_INFERENCE_MYSQL=PASS ('.$GLOBALS['nativeChecks'].' cases)'.PHP_EOL;
 }finally{
     if($pdo instanceof PDO&&$pdo->inTransaction())$pdo->rollBack();

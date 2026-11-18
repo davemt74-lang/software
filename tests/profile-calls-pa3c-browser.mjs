@@ -69,7 +69,8 @@ async function fixture({role='owner',initial=callCard(role),cid=31,viewport={wid
       }
     }else if(url.pathname==='/api/profile-call-activity-pa3c.php'){
       assert.equal(input.call_id,assistance.id);
-      Object.assign(result,{call_id:assistance.id,state:'listening',agent:assistance.agent,assistance_enabled:true,assistance_revision:1,assistance_toggle_available:true,segments:[{id:'segment-1',speaker:'Visitor',text:'Canonical call transcript.',start_ms:2000}]});
+      Object.assign(result,{call_id:assistance.id,state:'listening',agent:assistance.agent,assistance_enabled:true,assistance_revision:1,assistance_toggle_available:true,
+        research_available:true,research:[],cursor:1,has_more:false,transcript_url:'',segments:[{id:1,speaker:'Visitor',text:'Canonical call transcript.',start_ms:2000}]});
     }else Object.assign(result,{items:[],updates:[],route:'chat',tracks:[]});
     const index=holds.findIndex(h=>h.action===input.action);const send=(payload=result,httpStatus=status)=>route.fulfill({status:httpStatus,contentType:'application/json',body:JSON.stringify(payload)});
     if(index>=0){const hold=holds.splice(index,1)[0];hold.arrived({input,result,release:overrides=>send({...result,...overrides})});}else await send();
@@ -187,6 +188,32 @@ try{
     await drawer.getByText('Canonical call transcript.').waitFor({state:'visible'});
     check(f.requests.some(r=>r.path==='/api/profile-call-activity-pa3c.php'&&r.call_id===assistance.id)&&await drawer.getByRole('switch').isVisible(),
       'canonical authorized owner call opens its own private transcript and assistance switch');
+    await drawer.getByRole('button',{name:'Close call activity'}).click();
+    await f.consent();await f.join();await f.page.waitForFunction(()=>__callMediaFixture.microphones===1);
+    const nativeOperations=f.requests.filter(r=>/_(delivery|dispatch|accept|join|end)$/.test(r.action||'')).length;
+    await f.page.evaluate(id=>{
+      window.__keptCallNode=document.querySelector('.profile-call-card');window.__keptCallRoom=window.__callMediaFixture.rooms[0];
+      const host=document.createElement('section');host.id='callWorkspaceFixture';host.style.cssText='position:fixed;z-index:10050;inset:20px 12px;width:auto;overflow:auto;background:white';document.body.append(host);
+      const context={ownerUserId:1,chatAgentId:7,chatConversationId:42,workingAttentionBinding:'call-browser-workspace',publicConversationId:31,callId:41};
+      const options={context:()=>context,read:async({context:captured,after,signal})=>{
+        const response=await fetch('/api/profile-call-activity-pa3c.php?'+new URLSearchParams({call_id:id,after}),{signal});
+        return {call_id:captured.callId,public_conversation_id:captured.publicConversationId,activity:await response.json()};
+      },mutate:async()=>{throw new Error('No workspace action was selected');}};
+      window.__mountCallWorkspace=()=>window.__callWorkspaceController=window.VP3ProfileCallActivityPa3c.mount(host,options);
+      window.__mountCallWorkspace();
+    },assistance.id);
+    await f.page.locator('#callWorkspaceFixture').getByText('Canonical call transcript.').waitFor();
+    await f.page.evaluate(()=>{window.__callWorkspaceController.dispose();window.__mountCallWorkspace();});
+    await f.page.locator('#callWorkspaceFixture').getByText('Canonical call transcript.').waitFor();
+    check(await f.page.evaluate(()=>document.querySelector('.profile-call-card')===window.__keptCallNode
+      &&window.__callMediaFixture.rooms[0]===window.__keptCallRoom&&window.__callMediaFixture.disconnects===0
+      &&window.__callMediaFixture.tracks.every(track=>!track.stopped)&&document.getElementById('chatThread').dataset.view==='chat'),
+      'opening and reopening embedded call activity preserves the actual native card, media session and capture');
+    check(await f.page.evaluate(()=>window.VP3ProfileCallsPa3c.focusOwnerCall({callId:41,publicConversationId:31,chatConversationId:42,chatAgentId:7},{beforeFocus(){window.__callWorkspaceController.dispose();document.getElementById('callWorkspaceFixture').remove();}})
+      &&document.activeElement===window.__keptCallNode),
+      'the browser focus bridge closes only the workspace and focuses the same live call card');
+    check(f.requests.filter(r=>/_(delivery|dispatch|accept|join|end)$/.test(r.action||'')).length===nativeOperations,
+      'workspace mounting, closing and focusing send no native call mutation or duplicate delivery');
     check(await f.page.evaluate(()=>{window.dispatchEvent(new Event('stonefellow:chat-context-changing'));return document.getElementById('profileCallActivityPa3c').hidden&&!document.getElementById('vp3CallActivityDrawer').open;}),
       'changing Chat context clears the drawer synchronously');
     await f.close();

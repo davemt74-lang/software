@@ -44,7 +44,8 @@ assert.match(api,/Cache-Control: no-store/,'revenue intelligence responses must 
 assert.match(api,/REQUEST_METHOD[\s\S]*GET/,'revenue intelligence API must be GET-only');
 assert.match(api,/profile_revenue_intelligence_v180\(\$pdo,\(int\)\$user\['id'\]\)/,'API must scope intelligence to the signed-in owner ID');
 
-assert.match(ui,/\/api\/profile-revenue-intelligence\.php/,'Analytics UI must load the owner-only Phase 18 endpoint');
+assert.match(ui,/cfg\.revenueEndpoint/,'Analytics UI must use the configured owner-only revenue endpoint');
+assert.ok(read('profile-agent.php').includes("'revenueEndpoint'=>url('/api/profile-revenue-intelligence.php')"),'the portal must supply a canonical base-aware revenue endpoint');
 assert.match(ui,/From Profile traffic to real business/,'Analytics UI must surface the Phase 18 intelligence workspace');
 assert.match(ui,/Tracked revenue · all time/,'Analytics UI must show tracked revenue');
 assert.match(ui,/Booking \$\{esc\(moneyRows\(intelligence\.booking_revenue_all_time\)\)\}/,'Analytics UI must show all-time Booking revenue separately');
