@@ -14,6 +14,12 @@ function vp3_profile_analytics_hash_v1(mixed $value): string
 {
     return hash('sha256',json_encode($value,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
 }
+function vp3_profile_analytics_receipt_id_v1(mixed $value): ?int
+{
+    if(is_int($value))return $value>0?$value:null;
+    if(!is_string($value)||!preg_match('/\A[1-9][0-9]{0,18}\z/D',$value))return null;
+    $id=(int)$value;return $id>0&&(string)$id===$value?$id:null;
+}
 function vp3_profile_analytics_epoch_v1(mixed $value): ?int
 {
     if((!is_int($value)&&!is_string($value))||!preg_match('/\A[1-9][0-9]{0,13}\z/D',(string)$value))return null;
@@ -139,12 +145,13 @@ function vp3_profile_analytics_turn_valid_v1(array $turn,array $history,int $own
         ||(int)$turn['visitor_user_id']!==$b['visitor_user_id']||!hash_equals($b['credential_hash'],(string)$turn['credential_hash']))return false;
     foreach(['profile_fingerprint','agent_fingerprint','session_fingerprint','message_sha256'] as $field)
         if(!is_string($snapshot[$field]??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$snapshot[$field]))return false;
-    $agent=$history['agents'][(int)$turn['profile_agent_id']]??[];
     $session=$history['sessions'][(int)$turn['profile_session_id']]??[];
-    $agentProof=[];foreach(['id','owner_user_id'] as $key)$agentProof[$key]=(string)($agent[$key]??'');
     $sessionProof=[];foreach(['id','owner_user_id','session_key'] as $key)$sessionProof[$key]=(string)($session[$key]??'');
+    // The accepted Agent/profile fingerprints describe the live inference
+    // snapshot, including then-current names, activity and public settings.
+    // Historical counts prove current Agent ownership through native_history,
+    // not equality between mutable settings today and that saved snapshot.
     return hash_equals($snapshot['message_sha256'],hash('sha256',(string)$m['message']))
-        &&hash_equals($snapshot['agent_fingerprint'],vp3_profile_analytics_hash_v1($agentProof))
         &&hash_equals($snapshot['session_fingerprint'],vp3_profile_analytics_hash_v1($sessionProof));
 }
 
@@ -314,8 +321,12 @@ function vp3_profile_analytics_conversations_v1(PDO $pdo,int $owner,array $windo
                 &&(int)$receipt['action_id']===(int)$turn['action_id']&&(int)$action['run_id']===(int)$run['id']
                 &&$run['source_key']==='profile-turn:'.$turn['id']&&$run['workflow_type']==='profile_visitor_reply'
                 &&(int)$run['agent_id']===(int)$turn['profile_agent_id']&&$action['action_key']===$run['source_key']
-                &&is_array($result)&&($result['turn_id']??null)===(int)$turn['id']&&($result['conversation_id']??null)===$cid
-                &&($result['visitor_message_id']??null)===(int)$turn['visitor_message_id']&&($result['answer_message_id']??null)===$mid;
+                // Canonical durable receipts normalize scalar IDs to strings;
+                // older integer JSON is equivalent only when exact and positive.
+                &&is_array($result)&&vp3_profile_analytics_receipt_id_v1($result['turn_id']??null)===(int)$turn['id']
+                &&vp3_profile_analytics_receipt_id_v1($result['conversation_id']??null)===$cid
+                &&vp3_profile_analytics_receipt_id_v1($result['visitor_message_id']??null)===(int)$turn['visitor_message_id']
+                &&vp3_profile_analytics_receipt_id_v1($result['answer_message_id']??null)===$mid;
         }
         if(!$proof){$unverified[$cid][]=$mid;$gaps[$key]=true;continue;}
         $replyIds['agent'][$mid]=true;$replies[$cid][]=['id'=>$mid,'at'=>$stamp,'type'=>'agent'];

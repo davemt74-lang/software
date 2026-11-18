@@ -112,6 +112,11 @@ function profile_analytics_period_fixture_v1(PDO $pdo,int $owner=1,int $privateA
     $date=static fn(int $ms):string=>gmdate('Y-m-d H:i:s',intdiv($ms,1000));$cred=hash('sha256','analytics-native-browser');
     $session=['id'=>990001,'owner_user_id'=>$owner,'session_key'=>'analytics-native-session','visitor_user_id'=>$visitor,'identity_disclosed'=>1];
     profile_analytics_period_fixture_row_v1($pdo,'profile_visit_sessions',$session);
+    require_once dirname(__DIR__,2).'/includes/profile-agent-accepted-turn-pa3.php';
+    $q=$pdo->prepare('SELECT p.*,u.display_name,u.is_active FROM user_profiles p JOIN users u ON u.id=p.user_id WHERE p.user_id=?');
+    $q->execute([$owner]);$acceptedProfile=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+    $q=$pdo->prepare('SELECT * FROM user_agents WHERE id=? AND owner_user_id=?');$q->execute([$publicAgent,$owner]);
+    $acceptedAgent=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
     $ids=['visitor'=>$visitor,'session'=>990001,'current_conversation'=>991001,'previous_conversation'=>991002,'unanswered_conversation'=>991003,'current_turn'=>995001,'previous_turn'=>995002,'unanswered_turn'=>995003];
     foreach([[991001,995001,991101,$current,'owner'],[991002,995002,991201,$previous,'agent'],[991003,995003,991301,$current+18000000,'none']] as [$cid,$tid,$mid,$at,$reply]){
         $binding=['contract'=>'vp3.profile-conversation-authority.v1','transport'=>'native','owner_user_id'=>$owner,'visitor_user_id'=>$visitor,'credential_hash'=>$cred,'profile_agent_id'=>$publicAgent,'profile_session_id'=>990001,'response_token'=>str_repeat('c',32)];
@@ -120,8 +125,10 @@ function profile_analytics_period_fixture_v1(PDO $pdo,int $owner=1,int $privateA
         $statement='Exact historical visitor statement '.$cid;
         profile_analytics_period_fixture_row_v1($pdo,'profile_agent_messages',['id'=>$mid,'conversation_id'=>$cid,'sender_type'=>'visitor','sender_user_id'=>$visitor,'message'=>$statement,'context_json'=>'{}','created_at'=>$date($at)]);
         $run=$tid+1000;$action=$tid+2000;
-        $snapshot=['contract'=>'vp3.profile-accepted-turn.pa3','profile_fingerprint'=>hash('sha256','fixture-profile'),'agent_fingerprint'=>profile_analytics_period_fixture_hash_v1(['id'=>$publicAgent,'owner_user_id'=>$owner],['id','owner_user_id']),
-            'session_fingerprint'=>profile_analytics_period_fixture_hash_v1($session,['id','owner_user_id','session_key']),'visitor_auth_revision'=>hash('sha256',$visitor.'|fixture-visitor-password'),'message_sha256'=>hash('sha256',$statement)];
+        $snapshot=vp3_profile_agent_accepted_snapshot_pa3(['conversation_authority'=>['transport'=>'native'],
+            'profile'=>$acceptedProfile,'agent'=>$acceptedAgent,'session'=>$session,'visitor'=>['id'=>$visitor],
+            'accepted_visitor_auth_revision'=>hash('sha256',$visitor.'|fixture-visitor-password'),
+            'accepted_message_sha256'=>hash('sha256',$statement)]);
         profile_analytics_period_fixture_row_v1($pdo,'agent_workflow_runs',['id'=>$run,'owner_user_id'=>$owner,'agent_id'=>$publicAgent,'workflow_type'=>'profile_visitor_reply','origin'=>'profile','source_kind'=>'profile_visitor_turn','source_key'=>'profile-turn:'.$tid,'source_hash'=>sha1('profile-turn:'.$tid),'dedupe_key'=>hash('sha256','profile-turn:'.$tid),'title'=>'Historical reply','goal'=>'Reply to exact fixture turn','decision_summary'=>'Exact source','status'=>'completed','risk_level'=>'low']);
         profile_analytics_period_fixture_row_v1($pdo,'agent_workflow_actions',['id'=>$action,'run_id'=>$run,'owner_user_id'=>$owner,'sequence_no'=>1,'action_key'=>'profile-turn:'.$tid,'action_type'=>'execute','label'=>'Historical reply','summary'=>'Exact source','status'=>'completed','capability_key'=>'profile.visitor.reply']);
         profile_analytics_period_fixture_row_v1($pdo,'profile_agent_handoff_turns_pa3',['id'=>$tid,'owner_user_id'=>$owner,'profile_agent_id'=>$publicAgent,'profile_session_id'=>990001,'conversation_id'=>$cid,'visitor_message_id'=>$mid,'visitor_user_id'=>$visitor,'transport'=>'native','credential_hash'=>$cred,'client_request_id'=>substr(hash('sha256','fixture-request-'.$tid),0,32),'request_hash'=>hash('sha256',$statement),'chat_mode'=>'agent','accepted_json'=>$jsonEncode($snapshot),'state'=>$reply==='none'?'awaiting_owner':'replied','version'=>2,'conversation_epoch'=>1,'run_id'=>$run,'action_id'=>$action,'created_at'=>$date($at),'updated_at'=>$date($at+30000)]);
@@ -134,7 +141,8 @@ function profile_analytics_period_fixture_v1(PDO $pdo,int $owner=1,int $privateA
             }
         }elseif($reply==='agent'){
             profile_analytics_period_fixture_row_v1($pdo,'profile_agent_messages',['id'=>$mid+1,'conversation_id'=>$cid,'sender_type'=>'agent','sender_user_id'=>null,'message'=>'Historical Agent reply','context_json'=>$jsonEncode(['profile_handoff'=>['contract'=>'vp3.profile-handoff.v1','turn_id'=>$tid,'visitor_message_id'=>$mid]]),'created_at'=>$date($at+30000)]);
-            profile_analytics_period_fixture_row_v1($pdo,'agent_workflow_receipts',['id'=>998001,'run_id'=>$run,'action_id'=>$action,'owner_user_id'=>$owner,'receipt_key'=>hash('sha256',$owner.'|'.$run.'|'.$action.'|profile-turn:'.$tid.':reply'),'executor'=>'cloud','worker_id'=>'fixture','attempt_no'=>1,'status'=>'completed','summary'=>'Saved exact reply','result_json'=>$jsonEncode(['turn_id'=>$tid,'conversation_id'=>$cid,'visitor_message_id'=>$mid,'answer_message_id'=>$mid+1]),'error_class'=>'','created_at'=>$date($at+30000)]);
+            $receiptResult=agent_workflow_public_json_v1400($jsonEncode(['turn_id'=>$tid,'conversation_id'=>$cid,'visitor_message_id'=>$mid,'answer_message_id'=>$mid+1]));
+            profile_analytics_period_fixture_row_v1($pdo,'agent_workflow_receipts',['id'=>998001,'run_id'=>$run,'action_id'=>$action,'owner_user_id'=>$owner,'receipt_key'=>hash('sha256',$owner.'|'.$run.'|'.$action.'|profile-turn:'.$tid.':reply'),'executor'=>'cloud','worker_id'=>'fixture','attempt_no'=>1,'status'=>'completed','summary'=>'Saved exact reply','result_json'=>$jsonEncode($receiptResult),'error_class'=>'','created_at'=>$date($at+30000)]);
         }
     }
 

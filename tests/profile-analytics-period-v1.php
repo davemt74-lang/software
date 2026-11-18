@@ -234,4 +234,72 @@ pap_case(static function(PDO $pdo):void{
 });
 pap_denied(fn()=>pap_read(['ref'=>$fixture['ref'],'period'=>1]),422,'fixed reference requests cannot silently fall back to a newly resolved period');
 
+// Exercise the actual admission, worker publication and durable receipt. The
+// synthetic historical rows above must not define the production fingerprint.
+$GLOBALS['pa3Now']=($fixture['cutoff']-86400+48000)*1000;pfs_clock();
+$admitted=pa3_admit('What are the public hours for this product?',0,null,2,'e');
+$realTurnId=(int)$admitted['handoff']['turn_id'];
+pfs_advance(9000);vp3_profile_handoff_dispatch_pa3(db(),$realTurnId);
+$realTurn=vp3_profile_handoff_row_pa3(db(),$realTurnId);
+pap_ok($realTurn['state']==='replied'&&(int)$realTurn['answer_message_id']>0&&count($GLOBALS['pa3ModelCalls'])===1,
+    'the regression creates a real admitted turn, one worker answer, and its canonical completion receipt');
+$realSnapshot=json_decode($realTurn['accepted_json'],true,64,JSON_THROW_ON_ERROR);
+$q=db()->query('SELECT * FROM user_agents WHERE id=7');$publicAgent=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+pap_ok($realSnapshot['agent_fingerprint']===vp3_profile_agent_accepted_fingerprint_pa3($publicAgent,['id','owner_user_id','display_name','is_active'])
+    &&$realSnapshot['agent_fingerprint']!==vp3_profile_agent_accepted_fingerprint_pa3($publicAgent,['id','owner_user_id']),
+    'real accepted turns use the canonical four-field live Agent snapshot, not the two-field call fingerprint');
+$q=db()->prepare('SELECT * FROM profile_visit_sessions WHERE id=?');$q->execute([$realTurn['profile_session_id']]);$realSession=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+pap_ok($realSnapshot['session_fingerprint']===vp3_profile_agent_accepted_fingerprint_pa3($realSession,['id','owner_user_id','session_key'])
+    &&$realSnapshot['visitor_auth_revision']===hash('sha256','2|visitor-a-password'),
+    'real session and visitor credential snapshots use their canonical immutable proof fields');
+$real=pap_read();
+pap_ok(pap_metric($real,'accepted_visitor_turns')['value']===3&&pap_metric($real,'agent_reply_messages')['value']===1
+    &&$real['first_reply_cohorts']['current']['replied']===2&&$real['first_reply_cohorts']['current']['unanswered']===1,
+    'a canonical admitted-and-receipted answer contributes to complete historical turn and reply measures');
+$viewScope=$fixture['scope'];$viewScope['agent_id']=8;$viewScope['conversation_id']=12;
+$viewScope['principal']=['kind'=>'user_agent','agent_id'=>8,'owner_user_id'=>1,'viewer_user_id'=>1];
+$view=static fn():array=>vp3_profile_analytics_period_v1(db(),$viewScope,['ref'=>$fixture['ref']],$now);
+$viewBaseline=$view();
+pap_case(static function(PDO $pdo)use($view,$viewBaseline):void{
+    $pdo->exec("UPDATE user_agents SET display_name='Renamed retired public guide',is_active=0 WHERE id=7");
+    $pdo->exec('UPDATE user_profiles SET is_public=0,profile_agent_enabled=0 WHERE user_id=1');$r=$view();
+    pap_ok($r['revision']===$viewBaseline['revision']&&pap_metric($r,'accepted_visitor_turns')['value']===3,
+        'renaming or retiring the former public Agent and disabling public visibility preserves authorized historical counts in another current private Chat');
+});
+pap_case(static function(PDO $pdo)use($view):void{
+    $pdo->exec('UPDATE user_agents SET owner_user_id=4 WHERE id=7');$r=$view();
+    pap_ok(pap_metric($r,'accepted_visitor_turns')['coverage']==='partial'&&pap_metric($r,'agent_reply_messages')['coverage']==='partial',
+        'changed ownership of the exact former public Agent cannot certify historical native lineage');
+});
+pap_case(static function(PDO $pdo)use($realTurn):void{
+    $pdo->prepare("UPDATE profile_visit_sessions SET session_key='changed-real-native-session' WHERE id=?")->execute([$realTurn['profile_session_id']]);
+    pap_ok(pap_metric(pap_read(),'accepted_visitor_turns')['coverage']==='partial','changed real admission session credentials invalidate the saved turn proof');
+});
+pap_case(static function(PDO $pdo)use($realTurn):void{
+    $pdo->prepare("UPDATE profile_agent_messages SET message='Changed after real admission' WHERE id=?")->execute([$realTurn['visitor_message_id']]);
+    pap_ok(pap_metric(pap_read(),'accepted_visitor_turns')['coverage']==='partial','a modified real visitor statement cannot retain its accepted body proof');
+});
+pap_case(static function(PDO $pdo)use($realTurn):void{
+    $pdo->prepare('UPDATE profile_agent_handoff_turns_pa3 SET conversation_id=11 WHERE id=?')->execute([$realTurn['id']]);
+    pap_ok(pap_metric(pap_read(),'accepted_visitor_turns')['coverage']==='partial','a public turn cannot be reassigned through a private Chat numeric identifier');
+});
+pap_case(static function(PDO $pdo)use($realTurn):void{
+    $pdo->prepare("UPDATE agent_workflow_receipts SET result_json='{}' WHERE run_id=? AND action_id=? AND status='completed'")
+        ->execute([$realTurn['run_id'],$realTurn['action_id']]);$r=pap_read();
+    pap_ok(pap_metric($r,'agent_reply_messages')['coverage']==='partial'&&$r['first_reply_cohorts']['current']['unverifiable']===1,
+        'tampering with the real completion receipt removes verified reply attribution without guessing an answer');
+});
+foreach(['0'.(string)$realTurnId,'9999999999999999999'] as $invalidId)pap_case(static function(PDO $pdo)use($realTurn,$invalidId):void{
+    $q=$pdo->prepare("SELECT id FROM agent_workflow_receipts WHERE run_id=? AND action_id=? AND status='completed'");
+    $q->execute([$realTurn['run_id'],$realTurn['action_id']]);$receiptId=(int)$q->fetchColumn();$q->closeCursor();
+    pap_json_update($pdo,'agent_workflow_receipts','result_json',$receiptId,static function(array $result)use($invalidId):array{$result['turn_id']=$invalidId;return $result;});
+    pap_ok(pap_metric(pap_read(),'agent_reply_messages')['coverage']==='partial','receipt IDs reject noncanonical or overflowing decimal strings: '.$invalidId);
+});
+pap_case(static function(PDO $pdo)use($realTurn):void{
+    $q=$pdo->prepare("SELECT id FROM agent_workflow_receipts WHERE run_id=? AND action_id=? AND status='completed'");
+    $q->execute([$realTurn['run_id'],$realTurn['action_id']]);$receiptId=(int)$q->fetchColumn();$q->closeCursor();
+    pap_json_update($pdo,'agent_workflow_receipts','result_json',$receiptId,static fn(array $result):array=>array_map('intval',$result));
+    pap_ok(pap_metric(pap_read(),'agent_reply_messages')['value']===1,'historical integer receipt IDs retain the same exact positive identity');
+});
+
 echo 'PROFILE_ANALYTICS_PERIOD_V1=PASS ('.$checks.' checks; driver='.db()->getAttribute(PDO::ATTR_DRIVER_NAME).')'.PHP_EOL;
