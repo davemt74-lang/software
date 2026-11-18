@@ -7,32 +7,48 @@
   const node=(tag,value,className='')=>{const element=document.createElement(tag);if(value!==undefined)element.textContent=value;if(className)element.className=className;return element;};
   const button=(label,handler)=>{const element=node('button',label,'profile-agent-panel-action');element.type='button';element.addEventListener('click',handler);return element;};
 
-  function mount({shell,thread,form,cfg,context,registerPanel,showPanel,onDraft,notice,focusComposer}){
+  function mount({shell,thread,form,cfg,context,registerPanel,showPanel,onDraft,notice,focusComposer,ownerPreview=false,loadCollection=null}){
     let service=null,draft=null,recovery=null,blobUrl='',busy=false,sequence=0,jobs=new Map(),stopped=false;
+    let collectionLoading=false,collectionError='',collectionSequence=0,serviceVersion=0,collectionOpen=false;
     const openButtons=[...shell.querySelectorAll('[data-profile-image-edit-open]')];
+    const collectionButton=shell.querySelector('[data-profile-image-collection-open]');
+    const conversationButton=shell.querySelector('[data-profile-conversation-open]');
     const shareButton=shell.querySelector('[data-profile-image-share-owner]');
     const chip=node('div',undefined,'profile-image-draft');chip.hidden=true;chip.dataset.profileImageDraft='';
     form.querySelector('.profile-agent-toolbar')?.before(chip);
     const panel=node('section',undefined,'profile-agent-panel profile-image-panel');panel.hidden=true;panel.dataset.profileImagePanel='';
     panel.id='profileImageEditPanel';panel.setAttribute('aria-labelledby','profileImageEditTitle');
-    const heading=node('h2','Edit photo with AI');heading.id='profileImageEditTitle';heading.tabIndex=-1;
-    const intro=node('p','Choose a free style and the photo you want to edit. Describe your changes in the chat composer.');
+    const heading=node('h2','Image collection');heading.id='profileImageEditTitle';heading.tabIndex=-1;
+    const intro=node('p','Upload your photo, then choose a collection image as a style or visual reference. Describe what to keep, change, combine, or remix in chat.');
+    intro.className='profile-image-intro';
+    const ownerNote=node('p','You’re previewing the image collection visitors see. Manage your approved images in Profile Agent settings.');ownerNote.hidden=!ownerPreview;
+    const manage=node('a','Manage image collection','profile-agent-panel-action');
+    try{const destination=new URL(cfg.imageSettingsUrl||'/profile-agent.php?tab=agent',window.location.href);if(destination.origin===window.location.origin&&['http:','https:'].includes(destination.protocol))manage.href=destination.href;}catch(_error){}
+    manage.hidden=!ownerPreview||!manage.href;
     const catalogLabel=node('label',undefined,'profile-image-field'),catalogSelect=node('select');
     catalogSelect.setAttribute('aria-label','Style catalog');catalogLabel.append(node('span','Style catalog'),catalogSelect);
     const imageLabel=node('label',undefined,'profile-image-field'),imageSelect=node('select');
     imageSelect.setAttribute('aria-label','Style reference');imageLabel.append(node('span','Style reference'),imageSelect);
+    imageLabel.hidden=true;
+    const collectionState=node('p');collectionState.dataset.profileImageCollectionState='';collectionState.setAttribute('role','status');
+    const gallery=node('div',undefined,'profile-image-reference-grid');gallery.dataset.profileImageCollection='';gallery.setAttribute('role','group');gallery.setAttribute('aria-label','Free collection images');
+    const allStyles=button('Use the whole collection',()=>selectReference(0));allStyles.className='profile-image-collection-style';allStyles.dataset.profileImageCollectionStyle='';
     const preview=node('img');preview.alt='Photo selected for AI editing';preview.hidden=true;
     const sourceLabel=node('p','Choose a JPEG, PNG or WebP photo up to 4 MB.');sourceLabel.dataset.profileImageSource='';
     const feedback=node('p');feedback.setAttribute('role','status');
     const choose=button('Choose photo',()=>choosePhoto());choose.dataset.profileImageChoose='';
+    const subject=node('section',undefined,'profile-image-subject');subject.setAttribute('aria-label','Your photo');
+    const subjectDetails=node('div');subjectDetails.append(node('h3','1. Upload your photo'),sourceLabel,choose);subject.append(preview,subjectDetails);subject.hidden=ownerPreview;
+    const referenceHeading=node('h3',ownerPreview?'Collection images':'2. Choose an image to create with');referenceHeading.className='profile-image-step';
+    const promptHint=node('p','3. Describe your idea in chat, then send your photo edit. Choosing an image does not start processing.');promptHint.className='profile-image-next-step';promptHint.hidden=ownerPreview;
     const done=button('Use photo in chat',()=>{
       if(!draft){feedback.textContent='Choose a photo first.';return;}
-      try{updateSelection();validateDraft();feedback.textContent='';showPanel(null,false);focusComposer();}
+      try{updateSelection();validateDraft();feedback.textContent='';displayPanel(null,false);focusComposer();}
       catch(error){feedback.textContent=error.message;}
     });done.dataset.profileImageUse='';
-    const cancel=button('Back to conversation',()=>showPanel(null));
-    const actions=node('div',undefined,'profile-agent-panel-actions');actions.append(choose,done,cancel);
-    panel.append(heading,intro,catalogLabel,imageLabel,preview,sourceLabel,feedback,actions);
+    const cancel=button('Back to conversation',()=>displayPanel(null));
+    const actions=node('div',undefined,'profile-agent-panel-actions');actions.append(done,manage,cancel);done.hidden=ownerPreview;
+    panel.append(heading,intro,ownerNote,subject,collectionState,catalogLabel,imageLabel,referenceHeading,gallery,allStyles,promptHint,feedback,actions);
     shell.querySelector('.profile-agent-footer').before(panel);
     const entry={panel,button:null};registerPanel(entry);
 
@@ -44,23 +60,45 @@
     viewer.append(viewerTitle,viewerImage,viewerActions);shell.querySelector('.profile-agent-footer').before(viewer);
     const viewerEntry={panel:viewer,button:null};registerPanel(viewerEntry);
 
+    function onPanelChange(next){
+      const shown=next===entry;
+      if(collectionOpen&&!shown){collectionSequence++;collectionLoading=false;}
+      collectionOpen=shown;
+      collectionButton?.setAttribute('aria-pressed',String(shown));
+      conversationButton?.setAttribute('aria-pressed',String(!shown));
+    }
+    function displayPanel(next,focus=true){showPanel(next,focus);onPanelChange(next);}
+
     function active(){const current=context();return !stopped&&current.active&&!current.sessionChanged;}
     function enabled(){return service?.enabled===true&&service.catalogs.length>0;}
     function guard(){
       const current=context();
       if(!active())throw new Error('Reload this profile before editing a photo.');
+      if(ownerPreview)throw new Error('You’re previewing your public image collection. Visitors can upload a photo and create with these images.');
       if(current.loading)throw new Error('Wait for the chat to finish loading.');
       if(current.busy||busy)throw new Error('Finish or retry the current chat action before choosing another photo.');
       if(current.human)throw new Error('Return to Agent chat before requesting an AI photo edit.');
       if(!enabled())throw new Error(service?.reason||'Photo editing is unavailable on this profile.');
       return current;
     }
+    function referenceUrl(value,catalog,image){
+      if(!text(value,2000))return null;
+      try{
+        const url=new URL(value,window.location.href),endpoint=new URL(cfg.endpoint,window.location.href);
+        const expected={action:'reference_image',username:cfg.username,catalog_id:String(catalog.collection_id),image_id:String(image.asset_id),catalog_revision:String(catalog.catalog_revision)};
+        if(url.origin!==window.location.origin||url.pathname!==endpoint.pathname||url.username||url.password||url.hash
+          ||Object.entries(expected).some(([key,value])=>url.searchParams.get(key)!==value)
+          ||[...url.searchParams.keys()].some(key=>!Object.hasOwn(expected,key)||url.searchParams.getAll(key).length!==1))return null;
+        return url.href;
+      }catch(_error){return null;}
+    }
     function validService(value){
       if(value?.contract!==contract||typeof value.enabled!=='boolean'||!Number.isSafeInteger(value.max_input_bytes)
         ||value.max_input_bytes<1||value.max_input_bytes>4194304||!Array.isArray(value.catalogs)||value.catalogs.length>100)return null;
       const catalogs=value.catalogs.filter(item=>positive(item?.collection_id)&&text(item.name,100)&&item.name.trim()
         &&positive(item.catalog_revision)&&Array.isArray(item.references)&&item.references.length>0&&item.references.length<=3
-        &&item.references.every(reference=>positive(reference?.asset_id)&&text(reference.title,500)&&reference.price_cents===0));
+        &&item.references.every(reference=>positive(reference?.asset_id)&&text(reference.title,500)&&reference.price_cents===0
+          &&(reference.preview_url===undefined||referenceUrl(reference.preview_url,item,reference))));
       return {...value,catalogs};
     }
     function selectedCatalog(){return service?.catalogs.find(item=>item.collection_id===Number(catalogSelect.value));}
@@ -70,10 +108,45 @@
       if(service?.catalogs.some(item=>item.collection_id===selected))catalogSelect.value=String(selected);
       renderReferences();
     }
-    function renderReferences(){
-      const selected=Number(imageSelect.value)||draft?.image_id||0,catalog=selectedCatalog();
+    function renderReferences(selectedOverride){
+      const selected=Number.isSafeInteger(selectedOverride)?selectedOverride:Number(imageSelect.value)||draft?.image_id||0,catalog=selectedCatalog();
       imageSelect.replaceChildren(new Option('Match this catalog’s style','0'),...(catalog?.references||[]).map(item=>new Option(item.title||'Style image',String(item.asset_id))));
       imageSelect.value=catalog?.references.some(item=>item.asset_id===selected)?String(selected):'0';
+      renderGallery();
+    }
+    function renderGallery(){
+      const catalog=selectedCatalog(),selected=Number(imageSelect.value)||0;
+      gallery.replaceChildren();
+      for(const reference of catalog?.references||[]){
+        const tile=button('',()=>selectReference(reference.asset_id));tile.className='profile-image-reference';
+        tile.dataset.profileImageReference=String(reference.asset_id);tile.setAttribute('aria-pressed',String(reference.asset_id===selected));
+        tile.setAttribute('aria-label','Use '+(reference.title||'this collection image'));
+        const frame=node('span',undefined,'profile-image-reference-preview'),url=referenceUrl(reference.preview_url,catalog,reference);
+        if(url){const thumbnail=node('img');thumbnail.alt=reference.title||'Collection image';thumbnail.loading='lazy';thumbnail.decoding='async';thumbnail.src=url;
+          thumbnail.addEventListener('error',()=>{thumbnail.remove();frame.append(node('span','Preview unavailable'));},{once:true});frame.append(thumbnail);}
+        else frame.append(node('span','Preview unavailable'));
+        const label=node('span',reference.title||'Collection image','profile-image-reference-title');
+        const state=node('span',reference.asset_id===selected?'Selected · Free':'Free','profile-image-reference-status');
+        tile.append(frame,label,state);gallery.append(tile);
+      }
+      allStyles.setAttribute('aria-pressed',String(selected===0));
+      allStyles.textContent=selected===0?'Whole collection selected · Free':'Use the whole collection';
+      renderCollectionState();sync();
+    }
+    function renderCollectionState(){
+      const available=enabled();
+      collectionState.textContent=collectionLoading?'Loading image collection…':collectionError||(!available
+        ?(ownerPreview?'No free images are available in your public collection yet. Enable free photo edits and approve images priced at 0.00 in Profile Agent settings.':(service?.reason||'This profile has not shared a free image collection yet. You can still chat with the Profile Agent.')):'');
+      collectionState.hidden=!collectionState.textContent;
+      catalogLabel.hidden=referenceHeading.hidden=gallery.hidden=allStyles.hidden=!available;
+      promptHint.hidden=ownerPreview||!available;
+    }
+    function selectReference(id){
+      const catalog=selectedCatalog(),current=context();
+      if(!catalog||(!ownerPreview&&(busy||current.busy||current.loading||current.human||!active())))return;
+      if(id!==0&&!catalog.references.some(reference=>reference.asset_id===id))return;
+      imageSelect.value=String(id);updateSelection();renderGallery();
+      if(!ownerPreview)feedback.textContent=draft?'Image selected. Use your photo in chat and describe your idea.':'Image selected. Upload your photo when you’re ready.';
     }
     function updateSelection(){
       if(!draft)return;
@@ -81,8 +154,8 @@
       if(catalog){draft.catalog_id=catalog.collection_id;draft.catalog_revision=catalog.catalog_revision;draft.image_id=Number(imageSelect.value)||0;}
       renderDraft();onDraft();
     }
-    catalogSelect.addEventListener('change',()=>{imageSelect.value='0';renderReferences();updateSelection();});
-    imageSelect.addEventListener('change',updateSelection);
+    catalogSelect.addEventListener('change',()=>{imageSelect.value='0';renderReferences(0);updateSelection();});
+    imageSelect.addEventListener('change',()=>{updateSelection();renderGallery();});
     function releaseBlob(){if(blobUrl){URL.revokeObjectURL(blobUrl);blobUrl='';}}
     function clearDraft(notify=true){releaseBlob();draft=null;recovery=null;sequence++;renderDraft();if(notify)onDraft();}
     function renderDraft(){
@@ -102,9 +175,23 @@
       const remove=button('Remove',()=>clearDraft());remove.setAttribute('aria-label','Remove AI photo');
       chip.append(label,change,remove);sync();
     }
+    async function refreshCollection(){
+      if(typeof loadCollection!=='function')return;
+      const attempt=++collectionSequence,version=serviceVersion,key=context().key;
+      collectionLoading=true;collectionError='';renderCollectionState();
+      try{
+        const data=await loadCollection();
+        if(attempt!==collectionSequence||!collectionOpen||!active()||context().key!==key)return;
+        if(!data?.ok||!validService(data.image_editing))throw new Error('The image collection could not be loaded. Try opening it again.');
+        if(version===serviceVersion)update(data);
+      }catch(error){
+        if(attempt!==collectionSequence||!collectionOpen||!active()||context().key!==key)return;
+        collectionError='The image collection could not be loaded. Try opening it again.';service=null;renderCatalogs();
+      }finally{if(attempt===collectionSequence){collectionLoading=false;renderCollectionState();sync();}}
+    }
     function open(trigger){
-      try{guard();feedback.textContent='';entry.button=trigger||openButtons[0];renderCatalogs();renderDraft();showPanel(entry);}
-      catch(error){notice(error.message);}
+      if(!active()){notice('Reload this profile before opening its image collection.');return;}
+      feedback.textContent='';entry.button=trigger||collectionButton||openButtons[0];renderCatalogs();renderDraft();displayPanel(entry);void refreshCollection();
     }
     async function fingerprint(file){
       if(typeof crypto!=='object'||!crypto.subtle)throw new Error('Open this profile using HTTPS to verify your photo before editing.');
@@ -192,10 +279,10 @@
       try{
         guard();const job=jobs.get(image.request_id);
         if(job?.catalog_id&&service.catalogs.some(item=>item.collection_id===job.catalog_id))catalogSelect.value=String(job.catalog_id);
-        renderReferences();if(job?.image_id)imageSelect.value=String(job.image_id);
+        renderReferences(job?.image_id);
         const catalog=selectedCatalog();if(!catalog)throw new Error('Choose an available free style catalog.');
         releaseBlob();draft={name:'Previous edited photo',preview:image.url,base_message_id:image.id,catalog_id:catalog.collection_id,catalog_revision:catalog.catalog_revision,image_id:Number(imageSelect.value)||0};
-        entry.button=trigger;renderDraft();onDraft();showPanel(entry);feedback.textContent='This edited photo is the new subject. Add your next instructions in the chat.';
+        entry.button=trigger;renderGallery();renderDraft();onDraft();displayPanel(entry);feedback.textContent='This edited photo is the new subject. Add your next instructions in the chat.';
       }catch(error){notice(error.message);}
     }
     function showImage(image,trigger){
@@ -204,7 +291,7 @@
       const download=node('a','Download photo','profile-agent-panel-action');download.href=image.download_url;download.download=image.filename;
       viewerActions.append(download);
       if(image.kind==='result')viewerActions.append(button('Edit this result',()=>reuse(image,trigger)));
-      viewerActions.append(button('Back to conversation',()=>showPanel(null)));showPanel(viewerEntry);
+      viewerActions.append(button('Back to conversation',()=>displayPanel(null)));displayPanel(viewerEntry);
     }
     function renderMessage(container,value,id,type){
       const image=projection(value,id,type);if(!image)return;
@@ -235,8 +322,10 @@
     }
     function update(data){
       if(Object.prototype.hasOwnProperty.call(data,'image_editing')){
+        serviceVersion++;collectionError='';
         const next=validService(data.image_editing),before=JSON.stringify(service?.catalogs||[]);service=next;
         if(before!==JSON.stringify(service?.catalogs||[]))renderCatalogs();
+        renderCollectionState();
       }
       if(Array.isArray(data.image_edits)){
         jobs=new Map(data.image_edits.filter(item=>requestId(item?.request_id)&&positive(item.input_message_id)
@@ -251,17 +340,25 @@
     }
     function sync(){
       const current=context(),locked=busy||current.busy||!active();
-      openButtons.forEach(open=>{if(!open.closest('[data-profile-attachment-help]'))open.hidden=!enabled();open.disabled=locked;});
-      for(const control of [catalogSelect,imageSelect,choose,done,...chip.querySelectorAll('button')])control.disabled=locked;
+      openButtons.forEach(open=>{if(!open.closest('[data-profile-attachment-help]'))open.hidden=ownerPreview||!enabled();open.disabled=locked||ownerPreview;});
+      if(collectionButton){collectionButton.hidden=false;collectionButton.disabled=!active();}
+      if(conversationButton)conversationButton.disabled=false;
+      catalogSelect.disabled=!enabled()||(!ownerPreview&&(locked||current.loading||current.human));
+      for(const control of [imageSelect,choose,done,...chip.querySelectorAll('button')])control.disabled=locked||ownerPreview;
+      for(const control of [...gallery.querySelectorAll('button'),allStyles])control.disabled=!enabled()||(!ownerPreview&&(locked||current.loading||current.human));
+      choose.disabled=locked||ownerPreview||!enabled()||current.loading||current.human;
       const reattachButton=chip.querySelector('[data-profile-image-reattach]');
       if(reattachButton)reattachButton.disabled=busy||!active()||current.loading||current.sending;
-      done.disabled=locked||!draft;
+      done.disabled=locked||ownerPreview||!draft||!enabled()||current.loading||current.human;
       if(!enabled()&&draft&&!locked)feedback.textContent='This style is no longer available. Choose another free style before sending.';
     }
     openButtons.forEach(openButton=>openButton.addEventListener('click',()=>open(openButton)));
+    collectionButton?.addEventListener('click',()=>open(collectionButton));
+    conversationButton?.addEventListener('click',()=>displayPanel(null));
+    onPanelChange(null);renderCollectionState();sync();
     const timer=window.setInterval(()=>{if(!stopped&&active())renderStatuses();},1000);
     return {
-      enabled,open,prepare,update,sync,attachmentChoice,renderMessage,renderStatuses,
+      enabled,open,prepare,update,sync,attachmentChoice,renderMessage,renderStatuses,onPanelChange,
       hasDraft:()=>draft!==null,
       hasActive:()=>[...jobs.values()].some(job=>['queued','editing'].includes(job.state)),
       accepted:()=>clearDraft(false),clearDraft,
@@ -274,7 +371,7 @@
         renderDraft();
       },
       pending:value=>{busy=value;sync();},
-      reset(stop=false){clearDraft(false);jobs.clear();service=null;viewerImage.removeAttribute('src');viewerActions.replaceChildren();showPanel(null,false);panel.hidden=viewer.hidden=true;openButtons.forEach(openButton=>{openButton.hidden=true;});if(shareButton)shareButton.hidden=true;if(stop){stopped=true;clearInterval(timer);}sync();}
+      reset(stop=false){collectionSequence++;collectionLoading=false;collectionError='';clearDraft(false);jobs.clear();service=null;renderCatalogs();viewerImage.removeAttribute('src');viewerActions.replaceChildren();displayPanel(null,false);panel.hidden=viewer.hidden=true;openButtons.forEach(openButton=>{openButton.hidden=true;});if(shareButton)shareButton.hidden=true;if(stop){stopped=true;clearInterval(timer);}sync();}
     };
   }
   window.VP3ProfileImageEditsV1={mount};

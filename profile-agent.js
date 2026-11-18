@@ -39,7 +39,17 @@
     }
     for(const button of [addImage,addFile])button?.setAttribute('aria-expanded',String(next===attachmentHelp&&button===attachmentHelp.button));
     if(thread){thread.hidden=Boolean(next);if(!next)thread.scrollTop=thread.scrollHeight;}
+    imageSurface?.onPanelChange?.(next);
     if(focus){if(next)next.panel.querySelector('h2')?.focus();else previous?.button?.focus();}
+  }
+  async function loadImageCollection(){
+    const endpoint=new URL(cfg.endpoint,window.location.href);
+    if(endpoint.origin!==window.location.origin)throw new Error('The image collection is unavailable. Reload this profile and try again.');
+    endpoint.search=new URLSearchParams({action:'image_collection',username:cfg.username}).toString();
+    const response=await fetch(endpoint.href,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+    const data=await response.json().catch(()=>null);
+    if(!response.ok||data?.ok!==true)throw new Error(data?.error||'The image collection could not be loaded. Try again.');
+    return data;
   }
   function renderAttachmentHelp(kind,info){
     if(attachmentHelpTitle)attachmentHelpTitle.textContent=kind==='image'?'Share an image':'Share a file';
@@ -82,6 +92,14 @@
     for(const [button,kind] of [[addImage,'image'],[addFile,'file']])button?.addEventListener('click',()=>openAttachmentHelp(button,kind,{
       state:'preview',message:'You’re viewing your own profile. Images and files can be shared after you join a visitor’s conversation. Open your Chat to respond to visitors.',action:'options',actionLabel:'Open chat options'
     }));
+    if(thread&&form&&window.VP3ProfileImageEditsV1){
+      let previewAlive=true;
+      imageSurface=window.VP3ProfileImageEditsV1.mount({shell,thread,form,cfg,ownerPreview:true,loadCollection:loadImageCollection,
+        context:()=>({key:'profile-collection-preview:'+cfg.username,id:0,active:previewAlive,sessionChanged:false,loading:false,busy:false,human:false}),
+        registerPanel:entry=>extraPanels.push(entry),showPanel,onDraft:()=>{},notice:message=>{if(status)status.textContent=message;},focusComposer:()=>{}});
+      window.addEventListener('pagehide',()=>{previewAlive=false;imageSurface?.reset(true);},{once:true});
+      window.addEventListener('pageshow',event=>{if(event.persisted&&!previewAlive)window.location.reload();});
+    }
   }
   if(!thread||!form||!textarea||!submit||!status||ownerPreview)return;
   const conversationStorageKey=()=>`stonefellow-profile-agent:v1:${cfg.username}:${String(cfg.conversationNamespace||'unbound')}`;
@@ -938,7 +956,7 @@
   });
   textarea?.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();form.requestSubmit();}});
   if(window.VP3ProfileImageEditsV1){
-    imageSurface=window.VP3ProfileImageEditsV1.mount({shell,thread,form,cfg,
+    imageSurface=window.VP3ProfileImageEditsV1.mount({shell,thread,form,cfg,loadCollection:loadImageCollection,
       context:()=>({key:[cfg.username,cfg.conversationNamespace,conversationId,callContextEpoch].join('|'),id:conversationId,
         active:alive&&!sessionChanged,sessionChanged,loading:initialStatePending||sessionRefreshing,clockOffset,
         busy:sending||imageRecoveryBusy||Boolean(pendingSend)||endBusy||checkoutCreating,
