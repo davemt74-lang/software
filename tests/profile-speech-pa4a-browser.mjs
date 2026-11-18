@@ -39,14 +39,14 @@ function installBoundaries({gestureRequired=false,playFailure=''}={}){
   HTMLMediaElement.prototype.pause=function(){state(this).paused=true;};HTMLMediaElement.prototype.load=function(){};
   window.__speakFixture=text=>{const result=[{transcript:text,confidence:.98}];result.isFinal=true;window.__recognitions.at(-1).onresult({resultIndex:0,results:[result]});};
 }
-async function fixture({visitor=false,playFailure='',gestureRequired=false,permitMs=30000}={}){
-  const context=await browser.newContext({viewport:{width:390,height:844}}),requests=[],errors=[],holds=[],messages=[],items=new Map([[81,speechItem()]]),turn=ownerCard(101,{state:'owner_claimed',responder:'owner'}),calls=[],attempts=new Map(),claimRequests=new Map(),failures=new Map();
+async function fixture({visitor=false,nativeSpeech=false,playFailure='',gestureRequired=false,permitMs=30000}={}){
+  const context=await browser.newContext({viewport:{width:390,height:844}}),requests=[],errors=[],holds=[],messages=[],items=new Map([[81,speechItem(nativeSpeech?{delivery_kind:'handoff',native_chat_message_id:701,automatic_allowed:true}:{})]]),turn=ownerCard(101,{state:'owner_claimed',responder:'owner'}),calls=[],attempts=new Map(),claimRequests=new Map(),failures=new Map();
   const audioBytes=speechAudio;
   let present=false,sequence=0,attemptId=0,providerCalls=0,style='preset',presetKey='',preferenceRevision=1;
   const projected=item=>{
     const attempt=[...attempts.values()].filter(row=>row.itemId===item.id).at(-1),storedPlayback=attempt?.playback||'none',playback=attempt&&['granted','playing'].includes(storedPlayback)&&attempt.until<=Date.now()?'interrupted':storedPlayback;
     const state=({granted:'granted',playing:'playing',ended:'client_finished',interrupted:'interrupted',blocked:'blocked'})[playback]||(attempt&&!attempt.ready?'pending':'available');
-    return {...copy(item),state,playback_state:playback,can_play:item.can_play!==false&&!['pending','granted','playing'].includes(state),can_retry:false,automatic_allowed:false,latest_attempt_id:attempt?.id||null,latest_attempt_state:attempt?(attempt.ready?'ready':'reserved'):null,latest_attempt_reason:attempt?'':null};
+    return {...copy(item),state,playback_state:playback,can_play:item.can_play!==false&&!['pending','granted','playing'].includes(state),can_retry:false,automatic_allowed:Boolean(item.automatic_allowed&&!attempt),latest_attempt_id:attempt?.id||null,latest_attempt_state:attempt?(attempt.ready?'ready':'reserved'):null,latest_attempt_reason:attempt?'':null};
   };
   await context.addInitScript(installBoundaries,{gestureRequired,playFailure});
   await context.route('**/api/**',async route=>{
@@ -76,12 +76,13 @@ async function fixture({visitor=false,playFailure='',gestureRequired=false,permi
     }else if(url.pathname==='/api/profile-speech-pa4a.php'){
       if(failures.has(input.action)){const failure=failures.get(input.action);await route.fulfill({status:failure.status,contentType:'application/json',body:JSON.stringify({ok:false,contract,code:failure.code})});return;}
       const item=items.get(input.item_id||81);
-      if(['owner_delivery','owner_claim'].includes(input.action)&&(!item||item.can_play===false)){await route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({ok:false,contract,code:'PROFILE_SPEECH_UNAVAILABLE'})});return;}
+      if(['owner_delivery','owner_claim'].includes(input.action)&&(!item||input.action==='owner_claim'&&item.can_play===false)){await route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({ok:false,contract,code:'PROFILE_SPEECH_UNAVAILABLE'})});return;}
       if(input.action==='owner_state')Object.assign(result,{contract,items:[...items.values()].map(projected),ready:true,reason:'',server_now_ms:Date.now()});
       else if(input.action==='owner_delivery'){
-        Object.assign(item,{chat_conversation_id:42,chat_agent_id:7,chat_message_id:981,delivery_id:'e'.repeat(32)});
-        if(!messages.some(message=>message.id===981))messages.push({id:981,role:'assistant',message:'Profile visitor announcement.',context_json:JSON.stringify({profile_speech:{contract,item_id:81,revision:item.revision,kind:item.kind,public_conversation_id:item.public_conversation_id}})});
-        Object.assign(result,{contract,item:projected(item),chat_conversation_id:42,chat_agent_id:7,chat_message_id:981,delivery_id:'e'.repeat(32),server_now_ms:Date.now()});
+        const native=item.delivery_kind==='handoff',messageId=native?item.native_chat_message_id:981;Object.assign(item,{chat_conversation_id:42,chat_agent_id:7,chat_message_id:messageId,delivery_id:'e'.repeat(32)});
+        if(native)assert.ok(messages.some(message=>message.id===messageId&&JSON.parse(message.context_json).profile_handoff?.turn_id===item.turn_id),'native speech requires its exact existing handoff marker');
+        else if(!messages.some(message=>message.id===messageId))messages.push({id:messageId,role:'assistant',message:'Profile visitor announcement.',context_json:JSON.stringify({profile_speech:{contract,item_id:81,revision:item.revision,kind:item.kind,public_conversation_id:item.public_conversation_id}})});
+        Object.assign(result,{contract,item:projected(item),delivery_kind:item.delivery_kind,chat_conversation_id:42,chat_agent_id:7,chat_message_id:messageId,delivery_id:'e'.repeat(32),server_now_ms:Date.now()});
       }else if(input.action==='owner_claim'){
         let attempt=claimRequests.get(input.request_id);if(!attempt){const cached=[...attempts.values()].some(row=>row.itemId===item.id&&row.ready);attempt={id:++attemptId,itemId:item.id,ready:cached,until:0};attempts.set(attempt.id,attempt);claimRequests.set(input.request_id,attempt);}
         Object.assign(result,{contract,item:projected(item),attempt_id:attempt.id,state:attempt.ready?'ready':'reserved',ticket:'t'.repeat(64),voice_revision:item.voice_revision,server_now_ms:Date.now(),lease_until_ms:Date.now()+90000,duplicate:false,retry_may_charge:false});
@@ -101,14 +102,24 @@ async function fixture({visitor=false,playFailure='',gestureRequired=false,permi
   });
   const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(error.message));await page.goto(base+(visitor?'/visitor':'/owner'));
   const f={context,page,requests,items,calls,messages,errors,failures,get providerCalls(){return providerCalls;},setPermitMs:ms=>{permitMs=ms;},hold:action=>new Promise(arrived=>holds.push({action,arrived})),
-    card:()=>page.locator('.profile-doorbell-card'),speech:()=>page.locator('.profile-speech-card'),
+    card:()=>page.locator('.profile-doorbell-card'),speech:()=>page.locator(nativeSpeech?'.profile-speech-embedded':'.profile-speech-card'),
     async arm(){await this.card().locator('[data-speech-action=draft]').scrollIntoViewIfNeeded();await this.card().locator('[data-speech-action=draft]').click();},
     async recognize(text){await page.waitForFunction(()=>window.STONEFELLOW_CHAT_VOICE?.starts>0);await page.evaluate(text=>window.__speakFixture(text),text);},
     async close(){check(errors.length===0,'actual browser scripts have no errors: '+errors.join('; '));await context.close();}};
-  if(visitor)await page.locator('#profileVisitorSpeechPreference:enabled').waitFor();else{await f.card().waitFor();await f.speech().waitFor();}return f;
+  if(visitor)await page.locator('#profileVisitorSpeechPreference:enabled').waitFor();else{await f.card().waitFor();if(nativeSpeech){await f.card().locator('[data-speech-action=visitor-play]').scrollIntoViewIfNeeded();await page.evaluate(()=>VP3ProfileSpeechPa4a.refresh());await f.speech().waitFor({state:'attached'});}else await f.speech().waitFor();}return f;
 }
 try{
   browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
+  {
+    const f=await fixture({nativeSpeech:true});await f.page.waitForFunction(()=>__speechMedia.players.length===1&&__speechMedia.players[0].paused===false);
+    check(f.providerCalls===1&&f.messages.length===1&&f.messages[0].id===701&&await f.page.locator('[data-chat-message-id="701"]').count()===1&&await f.page.locator('[data-chat-message-id="981"]').count()===0,'visible native visitor card autoplays exact speech without a second saved or rendered Chat message');
+    check(await f.card().locator('.profile-speech-embedded').count()===1&&await f.speech().locator('.profile-speech-text').isHidden()&&!f.requests.some(r=>r.action==='doorbell_ack'||r.action==='doorbell_reply'),'embedded speech retains native card ownership and makes no pickup ACK or public reply');
+    await Promise.all([f.page.waitForResponse(response=>response.url().includes('/api/profile-speech-pa4a.php')&&response.request().method()==='POST'&&response.request().postDataJSON()?.action==='owner_report'&&response.request().postDataJSON()?.status==='ended'),f.page.evaluate(()=>document.querySelector('.profile-speech-audio').dispatchEvent(new Event('ended')))]);
+    await f.page.reload();await f.card().waitFor();await f.card().locator('[data-speech-action=visitor-play]').scrollIntoViewIfNeeded();await f.page.evaluate(()=>VP3ProfileSpeechPa4a.refresh());await f.speech().waitFor({state:'attached'});
+    check(f.providerCalls===1&&f.messages.length===1&&await f.page.evaluate(()=>__speechMedia.players.length===0),'native marker reload recovers its speech binding without automatic replay or another saved message');
+    await f.card().locator('[data-speech-action=visitor-play]').click();await f.page.waitForFunction(()=>__speechMedia.players.length===1&&!__speechMedia.players[0].paused);
+    check(f.providerCalls===1&&f.messages.length===1&&f.requests.filter(r=>r.action==='owner_claim').at(-1)?.mode==='manual','explicit native-card Play after reload reuses cached speech on the same exact turn');await f.close();
+  }
   {
     const f=await fixture();check(await f.page.evaluate(()=>STONEFELLOW_CHAT_CONTINUITY!==STONEFELLOW_CHAT_CONTINUITY_V87&&typeof STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit==='function'&&STONEFELLOW_CHAT_VOICE.directOwner===true),'production-order Chat and voice scripts execute before speech controls');
     check(f.requests.filter(r=>r.action==='owner_delivery'&&r.path.includes('speech')).every(r=>r.chat_agent_id===7&&r.chat_conversation_id===42),'browser speech delivery uses exact canonical Agent7 and Chat42');

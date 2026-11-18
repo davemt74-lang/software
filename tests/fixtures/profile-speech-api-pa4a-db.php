@@ -13,7 +13,7 @@ if($action==='init'){
 }
 if(isset($input['now']))$GLOBALS['pa3Now']=(int)$input['now'];
 if($action==='state'){
-    $out=[];foreach(['profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a','profile_agent_conversations','profile_agent_messages','profile_agent_handoff_turns_pa3','profile_calls_pa3c','profile_call_slots_pa3c','chat_messages'] as $table)$out[$table]=db()->query('SELECT * FROM '.$table)->fetchAll();
+    $out=[];foreach(['profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a','profile_agent_conversations','profile_agent_messages','profile_agent_handoff_turns_pa3','profile_agent_handoff_operations_pa3','profile_agent_handoff_deliveries_pa3','profile_calls_pa3c','profile_call_slots_pa3c','chat_messages'] as $table)$out[$table]=db()->query('SELECT * FROM '.$table)->fetchAll();
     echo json_encode($out,JSON_THROW_ON_ERROR);exit;
 }
 if($action==='presence'){
@@ -23,6 +23,12 @@ if($action==='presence'){
 if($action==='message'){
     pa3_age();$out=ps_message((string)($input['text']??'Saved visitor message.'),(string)($input['mode']??'agent'),ps_context((int)($input['visitor']??2),(string)($input['browser']??'b')),(int)($input['conversation_id']??0));
     if(!$out['item'])throw new RuntimeException('Speech admission hook did not persist its source.');echo json_encode(['item_id'=>(int)$out['item']['id'],'conversation_id'=>(int)$out['item']['public_conversation_id']],JSON_THROW_ON_ERROR);exit;
+}
+if($action==='page'){$item=ps_page(ps_context(2,'b'));echo json_encode(['item_id'=>(int)$item['id']],JSON_THROW_ON_ERROR);exit;}
+if($action==='native_card'){$item=vp3_profile_speech_item_pa4a(db(),(int)$input['item_id']);echo json_encode(ps_native_card($item),JSON_THROW_ON_ERROR);exit;}
+if($action==='settings'){
+    $mode=(string)($input['mode']??'');if(!in_array($mode,['online','mute','social_off','offline'],true))throw new RuntimeException('Invalid settings fixture.');
+    db()->exec('DELETE FROM team_user_presence WHERE user_id=1');db()->prepare('INSERT INTO team_user_presence(user_id,presence_mode,social_chat_enabled,sound_enabled,agent_voice_enabled) VALUES(1,?,?,?,?)')->execute([$mode==='offline'?'offline':'online',$mode==='social_off'?0:1,$mode==='mute'?0:1,$mode==='mute'?0:1]);exit;
 }
 if($action==='foreign_thread'){
     pa3_login(3);$_COOKIE=['sf_profile_visitor'=>str_repeat('f',64),'sf_profile_conversation'=>str_repeat('f',64)];$ctx=vp3_profile_agent_public_context_v110(db(),profile_by_username(db(),'other-owner'),current_user());$out=vp3_profile_agent_public_start_v1(db(),$ctx);echo (int)$out['conversation']['conversation_id'];exit;

@@ -20,7 +20,7 @@ const view=(id=1,version=1,legacy=false)=>({public_conversation_id:id,
 const draft=(payload,text='A private answer')=>({draft_id:payload.prepare_request_id,prepare_request_id:payload.prepare_request_id,
   public_conversation_id:payload.public_conversation_id,source:{turn_id:payload.turn_id,revision:payload.revision,visitor_message_id:1,latest_message_id:1,source_revision:payload.source_revision},
   state:'ready',text,current:true,reason:'',can_regenerate:true,prepare:{...payload}});
-function harness({selection={tab:'conversations',publicConversationId:1},override=null}={}){
+function harness({selection={tab:'conversations',publicConversationId:1},override=null,storage=new Map()}={}){
   const document=workspaceDocument(),host=document.createElement('div');document.body.append(host);
   const calls=[],scope={owner:1,agent:7,cid:11,binding:'binding',hasChat:true};
   const state={views:new Map([[1,view(1)],[2,view(2)],[3,view(3,1,true)]]),drafts:new Map(),operations:new Map(),prepares:0,writes:0,version:1,override};
@@ -42,7 +42,7 @@ function harness({selection={tab:'conversations',publicConversationId:1},overrid
         if(!state.operations.has(key)){state.writes++;state.operations.set(key,{...current,request_id:key,operation:payload.operation,duplicate:false,message_id:1000+state.writes});}
         return {...state.operations.get(key),duplicate:state.writes>0};
       }
-      case'calls':return {calls:{coverage:'ready',calls:[],has_more:false}};
+      case'calls':return {calls:{coverage:'ready',calls:[],has_more:false,next_cursor:null,filter:payload.filter||'current',selected:null}};
       default:throw new Error('Unexpected fixture action '+payload.action);
     }
   };
@@ -53,12 +53,12 @@ function harness({selection={tab:'conversations',publicConversationId:1},overrid
     if(data?.httpStatus)return {ok:false,status:data.httpStatus,json:async()=>({ok:false,error:'Fixture permission changed.'})};
     return {ok:true,status:200,json:async()=>data?.envelope||envelope(payload.action,data)};
   };
-  const window={VP3_PROFILE_WORKSPACE_V1:{endpoint:'/vp3/api/profile-specialist-workspace-v1.php',csrf:'csrf',profileUrl:'/vp3/profile-agent.php'},dispatchEvent(){}};
+  const window={sessionStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},VP3_PROFILE_WORKSPACE_V1:{endpoint:'/vp3/api/profile-specialist-workspace-v1.php',csrf:'csrf',profileUrl:'/vp3/profile-agent.php'},dispatchEvent(){}};
   const context=vm.createContext({window,document,crypto:webcrypto,location:{origin:'https://fixture.test',reload(){}},URL,AbortController,fetch,setTimeout,clearTimeout,Event,console});
   vm.runInContext(source,context);
   const options={scope:()=>({...scope}),selection,readReports:async()=>({report:{}}),renderReport(target){target.append(document.createElement('p'));}};
   let controller=window.VP3ProfileWorkspaceV1.mountWorkspace(host,options);
-  return {document,host,window,state,scope,calls,options,get controller(){return controller;},mount(next=selection){controller=window.VP3ProfileWorkspaceV1.mountWorkspace(host,{...options,selection:next});return controller;},
+  return {document,host,window,state,scope,calls,storage,options,get controller(){return controller;},mount(next=selection){controller=window.VP3ProfileWorkspaceV1.mountWorkspace(host,{...options,selection:next});return controller;},
     button(label){return host.querySelectorAll('button').find(item=>item.textContent===label);},
     fill(text){const input=host.querySelector('[data-profile-reply-body]');assert.ok(input,'reply input mounted');input.value=text;input.dispatchEvent({type:'input'});},
     submit(){host.querySelector('[data-profile-reply]').dispatchEvent({type:'submit'});}};
@@ -158,6 +158,115 @@ const pending=h.controller.refresh();await flush();h.controller.select({tab:'con
 check(h.host.textContent.includes('Visitor 2')&&!h.host.textContent.includes('Visitor 1'),'late exact-thread response cannot replace a new selection');
 gate=defer();h.state.override=async(payload,normal)=>{await gate.promise;return normal(payload);};const changed=h.controller.refresh();await flush();h.scope.agent=8;gate.resolve();await changed;await flush();
 check(!h.host.querySelector('[data-profile-reply-body]'),'private Agent change rejects a delayed thread response');h.controller.dispose();
+
+// Exact terminal outcomes are static, scoped and independently pageable.
+const call=(id=91,state='ended')=>({call_id:id,public_conversation_id:id+100,revision:3,mode:'audio',state,state_label:state==='ending'?'Call cleanup pending':'Call '+state,
+  detail_kind:['ended','declined','cancelled','expired','failed'].includes(state)?'outcome':'current',visitor_label:'Visitor for call '+id,agent_name:'Guide',assisted:true,activity_available:true,
+  created_at_ms:1795000000000,accepted_at_ms:1795000001000,ended_at_ms:state==='ended'?1795000010000:null,chat_message_id:500+id});
+const savedSection=(key,items,more=false)=>({availability:items.length?'ready':'empty',coverage:more?'limited':'ready',source_revision:rev('d'),reason:'',items,has_more:more,next_cursor:more?'next-'+key:null});
+const segment=id=>({id,speaker:'Visitor',text:'Saved transcript '+id+' <img src=x>',start_ms:id*1000,text_truncated:false});
+const task=id=>({id,canonical_ref:'office:task:'+id,title:'Reviewed task '+id,task_status:'completed',source_url:'/vp3/artist-listening.php?session=77'});
+const research=id=>({id:'research-'+id,query:'Saved research '+id,stored_status:'running',display_status:'incomplete',summary:'Stored result '+id,
+  sources:[{title:'Source',url:'https://example.test/research'}],started_at_ms:1795000001000});
+function savedOutcome(target,section='all',cursor=''){
+  const sections={analysis:savedSection('analysis',[{kind:'summary',text:'Saved call summary '+target.call_id,reviewed:true}]),
+    transcript:savedSection('transcript',cursor?[segment(3)]:[segment(1),segment(2)],!cursor),
+    research:savedSection('research',cursor?[research(2)]:[research(1)],!cursor),
+    followups:savedSection('followups',cursor?[task(2)]:[task(1)],!cursor)};
+  return {contract:'vp3.profile-call-outcome.v1',call_id:target.call_id,public_conversation_id:target.public_conversation_id,context_revision:rev('c'),call:target,
+    sections:section==='all'?sections:{[section]:sections[section]}};
+}
+function callReader(payload,normal){
+  const target=call(Number(payload.call_id)||91);
+  if(payload.action==='calls')return {calls:{coverage:'ready',calls:[call(99)],selected:payload.call_id?target:null,filter:payload.filter,has_more:false,next_cursor:null}};
+  if(payload.action==='call_outcome')return {call_outcome:savedOutcome(target,payload.section,payload.cursor)};
+  return normal(payload);
+}
+h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:callReader});
+let activityMounts=0;h.window.VP3ProfileCallActivityPa3c={mount(){activityMounts++;return {select(){},dispose(){}};}};await flush();
+check(h.host.textContent.includes('Saved call summary 91')&&h.host.querySelectorAll('[data-profile-outcome-section]').length===4,'exact terminal selection outside the list page renders four static saved sections');
+check(activityMounts===0&&!h.calls.some(row=>row.payload.action==='call_activity'),'terminal outcome never mounts or requests live activity');
+check(h.host.textContent.includes('Saved transcript 1 <img src=x>')&&!h.host.querySelector('img'),'saved transcript text cannot create markup');
+check(h.host.textContent.includes('Incomplete when the call closed'),'interrupted research is not shown as still running');
+h.button('Load more transcript').click();await flush();
+check(h.host.querySelectorAll('[data-profile-transcript-segment]').length===3,'next transcript page appends without losing earlier segments');
+check(h.calls.at(-1).payload.call_id==='91'&&h.calls.at(-1).payload.public_conversation_id==='191'&&h.calls.at(-1).payload.cursor==='next-transcript','section page requests retain exact call and public conversation');
+h.button('Load more research').click();h.button('Load more follow-ups').click();await flush();
+check(h.host.querySelectorAll('[data-profile-research]').length===2&&h.host.querySelectorAll('[data-profile-followup]').length===2,'research and reviewed task pages retain all accepted items');
+check([...h.storage.values()].every(value=>!value.includes('Saved transcript')&&!value.includes('Saved call summary')),'reload navigation stores only call selection IDs and filter');
+const navigation=h.storage;h.controller.dispose();
+h=harness({selection:{tab:'calls'},storage:navigation,override:callReader});await flush();
+check(h.calls[0].payload.call_id==='91'&&h.calls[0].payload.filter==='history'&&h.host.textContent.includes('Saved call summary 91'),'reload restores exact scoped history selection through a fresh read');
+h.controller.dispose();
+h=harness({selection:{tab:'overview'},storage:navigation,override:callReader});await flush();
+check(!h.calls.some(row=>row.payload.action==='calls'),'normal Profile entry still starts Overview despite saved call selection');h.controller.dispose();
+
+h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:callReader});await flush();
+h.state.override=(payload,normal)=>payload.action==='call_outcome'&&payload.cursor?{httpStatus:409}:callReader(payload,normal);
+h.button('Load more transcript').click();await flush();
+check(!h.host.textContent.includes('Saved transcript 1')&&!h.host.textContent.includes('Saved call summary 91')&&h.button('Reload outcome'),'source 409 clears all accumulated outcome facts before explicit reload');
+h.state.override=callReader;h.button('Reload outcome').click();await flush();
+check(h.host.textContent.includes('Saved call summary 91'),'explicit reload obtains the current exact outcome again');
+h.state.override=(payload,normal)=>{const result=callReader(payload,normal);if(payload.action==='call_outcome'&&payload.section==='followups')result.call_outcome.sections.followups={availability:'forbidden',coverage:'ready',source_revision:null,reason:'task_access',items:[],has_more:false,next_cursor:null};return result;};
+h.button('Load more follow-ups').click();await flush();
+check(!h.host.textContent.includes('Reviewed task 1')&&h.host.textContent.includes('Your current access does not include')&&h.host.textContent.includes('Saved call summary 91'),'a denied section clears its saved rows while preserving independently verified sections');
+h.state.override=(payload,normal)=>{const result=callReader(payload,normal);if(payload.action==='call_outcome'&&payload.cursor)result.call_outcome.context_revision=rev('e');return result;};
+h.button('Load more research').click();await flush();
+check(!h.host.textContent.includes('Stored result 1')&&h.button('Reload outcome'),'changed call context withholds every earlier saved section');h.controller.dispose();
+
+h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:(payload,normal)=>{
+  const result=callReader(payload,normal);if(payload.action==='call_outcome')result.call_outcome.sections.analysis={...savedSection('analysis',[
+    {kind:'summary',text:'Generated from accepted source findings.',reviewed:false,based_on_reviewed_sources:true}]),coverage:'limited',reason:'partial_analysis'};return result;
+}});await flush();
+check(h.host.textContent.includes('based on reviewed findings')&&!h.host.textContent.includes('Summary · reviewed'),'derived summary provenance is not mislabeled as owner review');
+check(h.host.textContent.includes('covers part of the verified transcript'),'partial saved analysis cannot imply whole-call coverage');
+h.state.override=(payload,normal)=>{const result=callReader(payload,normal);if(payload.action==='call_outcome')result.call_outcome.sections.analysis.items[0].based_on_reviewed_sources=true;return result;};
+await h.controller.refresh();await flush();check(!h.host.textContent.includes('Saved call summary')&&h.button('Reload outcome'),'inconsistent generated-versus-reviewed provenance is withheld');h.controller.dispose();
+
+// Separate section completions must merge with the newest accepted pages.
+const transcriptGate=defer(),researchGate=defer();let holdTranscript=true,holdResearch=true;
+h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:async(payload,normal)=>{
+  const result=callReader(payload,normal);
+  if(payload.action==='call_outcome'&&payload.section==='transcript'&&payload.cursor&&holdTranscript){holdTranscript=false;await transcriptGate.promise;}
+  if(payload.action==='call_outcome'&&payload.section==='research'&&payload.cursor){
+    if(payload.cursor==='next-research'){
+      result.call_outcome.sections.research={...savedSection('research',[research(2)],true),next_cursor:'last-research'};
+      if(holdResearch){holdResearch=false;await researchGate.promise;}
+    }else result.call_outcome.sections.research=savedSection('research',[research(3)]);
+  }
+  return result;
+}});await flush();
+h.button('Load more transcript').click();h.button('Load more research').click();await flush();researchGate.resolve();await flush();transcriptGate.resolve();await flush();
+check(h.host.querySelectorAll('[data-profile-transcript-segment]').length===3&&h.host.querySelectorAll('[data-profile-research]').length===2,
+  'out-of-order Transcript and Research pages both remain visible');
+h.button('Load more research').click();await flush();
+check(h.host.querySelectorAll('[data-profile-research]').length===3&&!h.button('Load more research'),
+  'later third Research page keeps the second page after another section completed');h.controller.dispose();
+
+h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:(payload,normal)=>{
+  const result=callReader(payload,normal);if(payload.action==='call_outcome')result.call_outcome.sections.transcript={...savedSection('transcript',[segment(1)]),coverage:'limited',source_revision:null,reason:'source_limit',has_more:true,next_cursor:null};return result;
+}});await flush();
+check(h.host.textContent.includes('Saved transcript 1')&&!h.button('Load more transcript')&&h.host.textContent.includes('Further records could not be established'),'bounded source preview is explicit and cannot claim an unverified continuation');h.controller.dispose();
+h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:(payload,normal)=>{const result=callReader(payload,normal);if(payload.action==='call_outcome')result.call_outcome.sections.followups.items[0].source_url='/other/artist-listening.php?session=77';return result;}});await flush();
+check(!h.host.textContent.includes('Reviewed task 1')&&h.button('Reload outcome'),'outcome rejects a source outside the configured application base');h.controller.dispose();
+
+let mounted=0,disposed=0;
+h=harness({selection:{tab:'calls',callView:'current',callId:91,publicConversationId:191},override:(payload,normal)=>payload.action==='calls'?{calls:{coverage:payload.cursor?'ready':'limited',calls:[call(payload.cursor?92:91,'active')],selected:call(91,'active'),filter:'current',has_more:!payload.cursor,next_cursor:payload.cursor?null:'more-calls'}}:normal(payload)});
+h.window.VP3ProfileCallActivityPa3c={mount(){mounted++;return {select(){},dispose(){disposed++;}};}};await flush();
+h.button('Load more calls').click();await flush();
+check(h.host.querySelectorAll('[data-profile-workspace-call]').length===2&&mounted===1&&disposed===0,'list pagination keeps the same current activity controller mounted');h.controller.dispose();
+h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:(payload,normal)=>payload.action==='calls'?{calls:{coverage:'ready',calls:[],selected:call(91,'ending'),filter:'history',has_more:false,next_cursor:null}}:normal(payload)});await flush();
+check(h.host.textContent.includes('still current')&&!h.calls.some(row=>row.payload.action==='call_outcome'),'history navigation hint cannot turn canonical ending into a completed outcome');h.controller.dispose();
+
+gate=defer();h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:async(payload,normal)=>{if(payload.action==='call_outcome'&&Number(payload.call_id)===91)await gate.promise;return callReader(payload,normal);}});await flush();
+h.controller.select({tab:'calls',callView:'history',callId:92,publicConversationId:192});await flush();gate.resolve();await flush();
+check(h.host.textContent.includes('Saved call summary 92')&&!h.host.textContent.includes('Saved call summary 91'),'late outcome cannot replace another exact call selection');
+h.state.override=()=>({httpStatus:403});await h.controller.refresh();await flush();
+check(!h.host.textContent.includes('Saved call summary')&&!h.host.querySelector('[data-profile-outcome-section]'),'private permission revocation clears the full outcome surface');h.controller.dispose();
+
+gate=defer();h=harness({selection:{tab:'calls',callView:'history',callId:91,publicConversationId:191},override:async(payload,normal)=>{if(payload.action==='call_outcome')await gate.promise;return callReader(payload,normal);}});await flush();
+h.scope.cid=12;gate.resolve();await flush();
+check(!h.host.textContent.includes('Saved call summary')&&!h.host.querySelector('[data-profile-transcript-segment]'),'private Chat switch cannot receive a delayed saved call outcome');h.controller.dispose();
 
 new vm.Script(readFileSync(new URL('../agent-activity-hub-v1.js',import.meta.url),'utf8'));
 new vm.Script(readFileSync(new URL('../profile-activity-chat.js',import.meta.url),'utf8'));

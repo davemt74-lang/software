@@ -55,6 +55,7 @@ try{
     $allowed=$visitor?['action','username','conversation_namespace','conversation_id','profile_token','style','preset_key','revision','request_id']
         :['action','csrf_token','item_id','revision','attempt_id','chat_conversation_id','chat_agent_id','chat_message_id','delivery_id','tab_id','client_instance_id','request_id','mode','ticket','retry_of','retry_confirmed','play_token','play_request_id','outcome','status'];
     if($action==='owner_state')$allowed[]='public_conversation_id';
+    if($action==='owner_delivery')array_push($allowed,'public_conversation_id','turn_id','visitor_message_id');
     if($action==='owner_report')$allowed[]='report_sequence';
     if(array_diff(array_keys($input),$allowed))vp3_profile_speech_error_pa4a('PROFILE_SPEECH_INVALID',422);
     $pdo=db();if(!$pdo)vp3_profile_speech_error_pa4a('PROFILE_SPEECH_NOT_READY',503);

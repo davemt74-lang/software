@@ -152,7 +152,8 @@ function vp3_coordination_profile_event_v1(PDO $pdo,array $scope,int $id,DateTim
     $report=vp3_profile_specialist_sections_v1([$body]);
     return vp3_coordination_profile_item_v1('event',$id,$title,$body,$attention['read']?'current':'new','activity','low',
         vp3_profile_specialist_href_v1('/profile-agent.php?tab=visitors&session='.$source['profile_session_id']),
-        [$attention['semantic'],$attention['read'],$source['projection']['speaker_label']],$report,$attention['disposition'],$attention['presentation_owner'],$attention['delivered']);
+        [$attention['semantic'],$attention['read'],$source['projection']['speaker_label']],$report,$attention['disposition'],$attention['presentation_owner'],$attention['delivered'])
+        +['profile_event_type'=>$source['event_type']];
 }
 
 /** Exactly the newest statement must have current saved proof; never fall back to older text. */

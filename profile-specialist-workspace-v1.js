@@ -35,7 +35,44 @@
     const tab=tabs.some(([key])=>key===value.tab)?value.tab:'overview';
     const publicConversationId=positive(value.publicConversationId)?value.publicConversationId:0;
     const callId=positive(value.callId)?value.callId:0;
-    return {tab,publicConversationId,callId};
+    const callView=value.callView==='history'?'history':'current';
+    return {tab,publicConversationId,callId,callView};
+  }
+  const currentCallStates=new Set(['offered','preparing','ready','active','ending']);
+  const terminalCallStates=new Set(['ended','declined','cancelled','expired','failed']);
+  const outcomeSections=[['analysis','Saved analysis'],['followups','Reviewed follow-ups'],['research','Saved research'],['transcript','Saved transcript']];
+  const outcomeAvailability=new Set(['ready','empty','unavailable','forbidden','not_applicable']);
+  const callNavigationKey=context=>context?`vp3.profile.calls.v1:${context.ownerUserId}:${context.chatAgentId}:${context.chatConversationId}`:'';
+  function savedCallSelection(context) {
+    try {
+      const value=JSON.parse(window.sessionStorage?.getItem(callNavigationKey(context))||'null');
+      if (!value || !['current','history'].includes(value.callView) || !nonnegative(value.callId)||!nonnegative(value.publicConversationId)
+        || Boolean(value.callId)!==Boolean(value.publicConversationId)) return null;
+      return {tab:'calls',callView:value.callView,callId:value.callId,publicConversationId:value.publicConversationId};
+    } catch {return null;}
+  }
+  function callModel(value) {
+    if (!value||!positive(value.call_id)||!positive(value.public_conversation_id)||!positive(value.revision)
+      || !['audio','video'].includes(value.mode)||typeof value.assisted!=='boolean'||typeof value.activity_available!=='boolean'
+      || !plain(value.visitor_label,240)||!plain(value.state_label,320)||!positive(value.created_at_ms)
+      || (value.accepted_at_ms!==null&&!positive(value.accepted_at_ms))||(value.ended_at_ms!==null&&!positive(value.ended_at_ms))) return null;
+    if (value.detail_kind==='current'&&!currentCallStates.has(value.state)
+      || value.detail_kind==='outcome'&&(!terminalCallStates.has(value.state)||value.state==='ended'&&!positive(value.ended_at_ms))
+      || !['current','outcome'].includes(value.detail_kind)) return null;
+    return value;
+  }
+  function callListModel(value,filter) {
+    if (!value||value.filter!==filter||!Array.isArray(value.calls)||value.calls.length>20
+      || !['ready','limited','unavailable','unconfigured'].includes(value.coverage)||typeof value.has_more!=='boolean'
+      || value.next_cursor!==null&&(typeof value.next_cursor!=='string'||!value.next_cursor||value.next_cursor.length>2000)
+      || value.has_more!==Boolean(value.next_cursor)) return null;
+    const ids=new Set();
+    for (const call of value.calls) {
+      if (!callModel(call)||ids.has(call.call_id)||call.detail_kind!==(filter==='history'?'outcome':'current')) return null;
+      ids.add(call.call_id);
+    }
+    if (value.selected!==null&&value.selected!==undefined&&!callModel(value.selected)) return null;
+    return value;
   }
   function validEnvelope(value,context,action) {
     return value?.ok===true && value.contract===contract && value.action===action
@@ -104,9 +141,20 @@
     if (!host || !endpoint || !plain(cfg.csrf,512)) return null;
     let alive=true,generation=0,selection=normalizeSelection(initialSelection),analyticsView=null,callActivity=null;
     let selectedData=null,threadData=null,threadEntry=null,conversations=null,callPage=null;
+    let callListHost=null,callListFooter=null,callListNotice=null,callDetailHost=null,callDetailKey='',callOutcome=null,callPageBusy=false,callDetailEpoch=0;
+    const outcomeHosts=new Map(),outcomeBusy=new Set();
     const requests=new Map();
     const initial=captureScope(scope);
     const initialKey=scopeKey(initial);
+    function selected(value) {
+      return normalizeSelection(value.tab==='calls'&&!['callId','publicConversationId','callView'].some(key=>Object.hasOwn(value,key))
+        ? savedCallSelection(initial)||value : value);
+    }
+    selection=selected(initialSelection);
+    function rememberCalls() {
+      if (!currentScope()||selection.tab!=='calls')return;
+      try {window.sessionStorage?.setItem(callNavigationKey(initial),JSON.stringify({callId:selection.callId,publicConversationId:selection.publicConversationId,callView:selection.callView}));}catch {}
+    }
     const drafts=initial?scopeDrafts(initial):new Map();
     const root=node('section','','vp3-profile-workspace');root.dataset.profileWorkspace='';
     const tablist=node('nav','','vp3-profile-tabs');tablist.setAttribute('role','tablist');tablist.setAttribute('aria-label','Profile views');
@@ -141,6 +189,7 @@
     }
     function statusError(error,mine=generation) {
       if (!current(mine)) return;
+      disposeTab();
       selectedData=threadData=null;
       content.replaceChildren(node('p',errorMessage(error),'vp3-profile-empty'));
       if ([401,403,419].includes(error?.status)) content.append(button('Reload Chat',()=>location.reload()));
@@ -496,52 +545,242 @@
       if (!value||value.call_id!==context.callId||value.public_conversation_id!==context.publicConversationId) throw new Error('Call activity did not match the selected call.');
       return value;
     }
-    async function loadCalls(mine) {
-      const result=await request('calls',{...(selection.callId?{call_id:selection.callId}:{}),...(selection.publicConversationId?{public_conversation_id:selection.publicConversationId}:{})});
-      if (!current(mine)) return;
-      const value=result.data.calls;
-      if (!value||!Array.isArray(value.calls)||value.calls.length>20||!['ready','limited','unavailable','unconfigured'].includes(value.coverage)) throw new Error('The call list could not be verified.');
-      if (value.calls.some(call=>!positive(call?.call_id)||!positive(call?.public_conversation_id))) throw new Error('The call targets could not be verified.');
-      callPage=value;content.replaceChildren(heading('Calls','Current calls and calls already delivered to this Chat.'));
-      if (value.coverage==='limited') content.append(node('p','Some call sources could not be checked.','vp3-profile-note'));
-      if (['unavailable','unconfigured'].includes(value.coverage)) {content.append(node('p','Calls are not available in this Chat.','vp3-profile-empty'));return;}
-      const list=node('div','','vp3-profile-calls');
-      for (const call of value.calls) {
-        const row=node('article','','vp3-profile-call');row.dataset.profileWorkspaceCall=String(call.call_id);
-        row.append(node('strong',plain(call.title,240)||plain(call.visitor_label,240)||'Profile call'),node('p',plain(call.label,320)||plain(call.state_label,320)||plain(call.state,40)));
-        const open=button('View call',()=>select({tab:'calls',callId:call.call_id,publicConversationId:call.public_conversation_id}));row.append(open);list.append(row);
+    function callTime(value) {
+      return positive(value)?new Date(value).toLocaleString():'';
+    }
+    function exactTranscriptUrl(value) {
+      const href=localUrl(value);if(!href)return '';
+      const url=new URL(href,location.origin),base=new URL(endpoint,location.origin).pathname.replace(/\/api\/[^/]+$/,'');
+      return url.pathname===base+'/artist-listening.php'&&[...url.searchParams].length===1
+        && /^[1-9][0-9]*$/.test(url.searchParams.get('session')||'')&&positive(Number(url.searchParams.get('session')))?href:'';
+    }
+    function researchUrl(value) {
+      if(typeof value!=='string'||value.length>3000||/[\\\u0000-\u0020\u007f]/.test(value))return '';
+      try {const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:'';}catch{return '';}
+    }
+    function sectionModel(value,key) {
+      const limit={transcript:50,analysis:24,research:6,followups:20}[key];
+      if(!value||!outcomeAvailability.has(value.availability)||!['ready','limited'].includes(value.coverage)
+        || value.source_revision!==null&&!revision(value.source_revision)||typeof value.reason!=='string'||value.reason.length>100
+        || !Array.isArray(value.items)||value.items.length>limit||typeof value.has_more!=='boolean'
+        || value.next_cursor!==null&&(typeof value.next_cursor!=='string'||!value.next_cursor||value.next_cursor.length>2500)
+        || value.next_cursor&&(!value.has_more||!revision(value.source_revision))||value.has_more&&!value.next_cursor&&value.coverage!=='limited'
+        || value.availability!=='ready'&&(value.items.length||value.has_more))return null;
+      const ids=new Set();
+      for(const item of value.items){
+        if(!item||typeof item!=='object')return null;
+        if(key==='transcript'){
+          if(!positive(item.id)||typeof item.text!=='string'||Array.from(item.text).length>8000||typeof item.speaker!=='string'||Array.from(item.speaker).length>100
+            || !nonnegative(item.start_ms)||typeof item.text_truncated!=='boolean')return null;
+        }else if(key==='analysis'){
+          if(!['summary','finding','question','next_step'].includes(item.kind)||!plain(item.text,2000)||typeof item.reviewed!=='boolean')return null;
+          if(item.based_on_reviewed_sources!==undefined&&(typeof item.based_on_reviewed_sources!=='boolean'||item.based_on_reviewed_sources&&item.reviewed))return null;
+        }else if(key==='research'){
+          if(!plain(item.id,100)||!plain(item.query,500)||typeof item.summary!=='string'||Array.from(item.summary).length>4000
+            || !['running','complete','failed'].includes(item.stored_status)||!['complete','failed','incomplete'].includes(item.display_status)
+            || item.stored_status==='running'&&item.display_status!=='incomplete'||!Array.isArray(item.sources)||item.sources.length>12
+            || !nonnegative(item.started_at_ms)||item.sources.some(source=>!plain(source?.title,220)||!researchUrl(source.url)))return null;
+        }else if(!positive(item.id)||item.canonical_ref!=='office:task:'+item.id||!plain(item.title,240)
+          || !['open','in_progress','waiting','completed','cancelled'].includes(item.task_status)||!exactTranscriptUrl(item.source_url))return null;
+        if(key!=='analysis'){if(ids.has(item.id))return null;ids.add(item.id);}
       }
-      if (!value.calls.length) list.append(node('p','No current or previously delivered calls in this view.','vp3-profile-empty'));
-      content.append(list);
-      if (value.has_more) content.append(node('p','This is a bounded view of current and delivered calls.','vp3-profile-note'));
-      if (!selection.callId) return;
-      const call=value.selected||value.calls.find(row=>row.call_id===selection.callId);
-      if (!call||call.call_id!==selection.callId||selection.publicConversationId&&call.public_conversation_id!==selection.publicConversationId) throw new Error('The selected call is not available in this Chat.');
-      if (!selection.publicConversationId) selection.publicConversationId=call.public_conversation_id;
-      const detail=node('section','','vp3-profile-call-detail');detail.append(heading('Selected call'));
+      if(value.url!==undefined&&value.url!==null&&value.url!==''&&!exactTranscriptUrl(value.url))return null;
+      if(value.session_id!==undefined&&value.session_id!==null&&!positive(value.session_id))return null;
+      if(['forbidden','not_applicable'].includes(value.availability)&&(value.url||value.session_id))return null;
+      if(value.url&&value.session_id&&Number(new URL(value.url,location.origin).searchParams.get('session'))!==value.session_id)return null;
+      return value;
+    }
+    function outcomeModel(value,call,section) {
+      const keys=section==='all'?outcomeSections.map(([key])=>key):[section];
+      if(!value||value.contract!=='vp3.profile-call-outcome.v1'||value.call_id!==call.call_id
+        || value.public_conversation_id!==call.public_conversation_id||!revision(value.context_revision)
+        || !callModel(value.call)||value.call.call_id!==call.call_id||value.call.public_conversation_id!==call.public_conversation_id
+        || value.call.detail_kind!=='outcome'||!value.sections||Array.isArray(value.sections)
+        || Object.keys(value.sections).length!==keys.length||keys.some(key=>!sectionModel(value.sections[key],key)))return null;
+      return value;
+    }
+    function sectionMessage(value) {
+      if(value.availability==='empty')return 'No saved records in this section.';
+      if(value.availability==='forbidden')return 'Your current access does not include this saved section.';
+      if(value.availability==='not_applicable')return 'This section does not apply to this call.';
+      if(value.availability==='unavailable')return 'This saved section could not be verified. Refresh to check it again.';
+      if(value.reason==='transcript_changed')return 'The saved analysis no longer matches the current transcript. Open the saved transcript to review it.';
+      if(value.reason==='analysis_not_supported')return 'No supported saved analysis could be verified for the current transcript.';
+      if(value.reason==='partial_analysis')return 'This saved analysis covers part of the verified transcript.';
+      return value.coverage==='limited'?'This is a limited view of the verified saved records.':'';
+    }
+    function appendOutcomeItems(list,key,items) {
+      for(const item of items){
+        const row=node('li','','vp3-profile-outcome-item');
+        if(key==='transcript'){
+          row.dataset.profileTranscriptSegment=String(item.id);
+          const seconds=Math.floor(item.start_ms/1000),stamp=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');
+          row.append(node('strong',item.speaker||'Speaker'),node('small',stamp),node('p',item.text));
+          if(item.text_truncated)row.append(node('small','This segment is shortened. Open the saved transcript for the complete text.'));
+        }else if(key==='analysis'){
+          row.append(node('strong',({summary:'Summary',finding:'Finding',question:'Open question',next_step:'Next step'})[item.kind]
+            +(item.based_on_reviewed_sources?' · based on reviewed findings':item.reviewed?' · reviewed':'')),node('p',item.text));
+        }else if(key==='research'){
+          row.dataset.profileResearch=String(item.id);
+          row.append(node('strong',item.query),node('small',({complete:'Saved result',failed:'Research failed',incomplete:'Incomplete when the call closed'})[item.display_status]));
+          if(item.summary)row.append(node('p',item.summary));
+          if(item.sources.length){const links=node('ul');for(const source of item.sources){const li=node('li'),link=node('a',source.title);link.href=researchUrl(source.url);link.target='_blank';link.rel='noopener noreferrer';li.append(link);links.append(li);}row.append(links);}
+        }else{
+          row.dataset.profileFollowup=item.canonical_ref;
+          const link=node('a',item.title);link.href=exactTranscriptUrl(item.source_url);
+          row.append(link,node('small',({open:'Open',in_progress:'In progress',waiting:'Waiting',completed:'Completed',cancelled:'Cancelled'})[item.task_status]+' · reviewed task'));
+        }
+        list.append(row);
+      }
+    }
+    function renderOutcomeSection(key,value,call,mine) {
+      const host=outcomeHosts.get(key);if(!host)return;
+      host.replaceChildren();
+      const message=sectionMessage(value);if(message)host.append(node('p',message,'vp3-profile-note'));
+      if(value.availability==='ready'){
+        if(key==='analysis'&&value.generated_at)host.append(node('small','Saved analysis: '+plain(value.generated_at,100)));
+        const list=node('ol','','vp3-profile-outcome-items');appendOutcomeItems(list,key,value.items);host.append(list);
+      }
+      if(value.url){const link=node('a','Open saved transcript');link.href=exactTranscriptUrl(value.url);host.append(link);}
+      if(value.has_more&&value.next_cursor){
+        const next=button('Load more '+({transcript:'transcript',analysis:'analysis',research:'research',followups:'follow-ups'})[key],()=>{
+          next.disabled=true;void loadOutcome(call,mine,key,value.next_cursor).finally(()=>{if(next.isConnected)next.disabled=false;});
+        });next.dataset.profileOutcomeMore=key;host.append(next);
+      }else if(value.coverage==='limited'&&value.availability==='ready')host.append(node('p','Further records could not be established in this checked view.','vp3-profile-note'));
+      if(value.availability==='unavailable')host.append(button('Refresh '+({analysis:'analysis',followups:'follow-ups',research:'research',transcript:'transcript'})[key],()=>void loadOutcome(call,mine,key)));
+    }
+    function outcomeChanged(call,mine,key,error) {
+      if(!current(mine)||!callDetailHost?.isConnected)return;
+      if([401,403,419].includes(error?.status)){statusError(error,mine);return;}
+      if(key==='all'||error.contextChanged||error.status===409){
+        callDetailEpoch++;outcomeBusy.clear();callOutcome=null;outcomeHosts.clear();callDetailHost.replaceChildren(heading('Saved call outcome'));
+        callDetailHost.append(node('p',error.status===409?'This call outcome changed. Reload it before reviewing saved records.':errorMessage(error),'vp3-profile-note'),button('Reload outcome',()=>void refresh()));
+        return;
+      }
+      if(callOutcome)delete callOutcome.sections[key];
+      const host=outcomeHosts.get(key);if(!host)return;
+      host.replaceChildren(node('p',error.status===409?'These saved records changed. Refresh this section before continuing.':errorMessage(error),'vp3-profile-note'),
+        button('Refresh '+({analysis:'analysis',followups:'follow-ups',research:'research',transcript:'transcript'})[key],()=>void loadOutcome(call,mine,key)));
+    }
+    async function loadOutcome(call,mine,section='all',cursor='') {
+      if(!current(mine)||outcomeBusy.has(section))return;
+      outcomeBusy.add(section);
+      const prior=callOutcome,priorSection=prior?.sections?.[section],epoch=callDetailEpoch;
+      try{
+        const result=await request('call_outcome',{call_id:call.call_id,public_conversation_id:call.public_conversation_id,section,cursor});
+        if(!current(mine)||epoch!==callDetailEpoch||selection.callId!==call.call_id||!callDetailHost?.isConnected)return;
+        const value=outcomeModel(result.data.call_outcome,call,section);
+        if(!value)throw new Error('The saved call outcome could not be verified.');
+        if(section!=='all'&&(!prior||value.context_revision!==prior.context_revision))throw Object.assign(new Error('The call context changed.'),{status:409,contextChanged:true});
+        const latest=callOutcome;
+        if(section!=='all'&&(!latest||latest.context_revision!==prior.context_revision||latest.sections[section]!==priorSection
+          || cursor&&cursor!==priorSection?.next_cursor))throw Object.assign(new Error('The saved section changed while it was loading.'),{status:409,contextChanged:true});
+        if(cursor){
+          const next=value.sections[section];
+          if(next.availability==='ready'&&(!priorSection||next.source_revision!==priorSection.source_revision))throw Object.assign(new Error('The saved section changed.'),{status:409});
+          if(next.availability==='ready'){
+            const ids=new Set(priorSection.items.map(item=>item.id));
+            if(next.items.some(item=>ids.has(item.id)))throw Object.assign(new Error('The section page no longer matches.'),{status:409});
+            next.items=[...priorSection.items,...next.items];
+          }
+        }
+        if(section==='all'){
+          callOutcome=value;outcomeHosts.clear();
+          for(const [key,title] of outcomeSections){
+            const detail=node('details','','vp3-profile-outcome-section');detail.dataset.profileOutcomeSection=key;detail.open=key!=='transcript';
+            const summary=node('summary',title),host=node('div');detail.append(summary,host);callDetailHost.append(detail);outcomeHosts.set(key,host);
+            renderOutcomeSection(key,value.sections[key],call,mine);
+          }
+        }else{
+          // Different sections may finish out of order. Preserve the current
+          // verified pages, while the requested section keeps its exact proof.
+          callOutcome={...latest,sections:{...latest.sections,...value.sections}};
+          renderOutcomeSection(section,value.sections[section],call,mine);
+        }
+      }catch(error){if(current(mine)&&epoch===callDetailEpoch)outcomeChanged(call,mine,section,error);}
+      finally{if(current(mine)&&epoch===callDetailEpoch)outcomeBusy.delete(section);}
+    }
+    function renderCallRows(mine) {
+      if(!callPage||!callListHost)return;
+      callListHost.replaceChildren();callListFooter.replaceChildren();
+      callListNotice.textContent=callPage.coverage==='limited'?'Some call sources could not be checked. This list may be incomplete.':'';
+      for(const call of callPage.calls){
+        const row=node('article','','vp3-profile-call');row.dataset.profileWorkspaceCall=String(call.call_id);
+        const copy=node('div');copy.append(node('strong',call.visitor_label),node('p',call.state_label),node('small',callTime(call.created_at_ms)));
+        const open=button(call.detail_kind==='outcome'?'View outcome':'View call',()=>select({tab:'calls',callView:selection.callView,callId:call.call_id,publicConversationId:call.public_conversation_id}));
+        if(call.call_id===selection.callId)open.setAttribute('aria-current','true');
+        row.append(copy,open);callListHost.append(row);
+      }
+      if(!callPage.calls.length)callListHost.append(node('p',selection.callView==='history'?'No completed calls in this checked view.':'No current calls in this checked view.','vp3-profile-empty'));
+      if(callPage.has_more){const more=button('Load more calls',()=>{
+        if(callPageBusy)return;more.disabled=true;void loadCalls(mine,callPage.next_cursor).catch(error=>{if(current(mine))statusError(error,mine);});
+      });callListFooter.append(more);}
+    }
+    async function showCallDetail(call,mine) {
+      const key=JSON.stringify([call.call_id,call.public_conversation_id,call.detail_kind,call.state,call.assisted,call.activity_available]);
+      if(callDetailKey===key)return;
+      callActivity?.dispose();callActivity=null;callDetailKey=key;callDetailEpoch++;callOutcome=null;outcomeHosts.clear();outcomeBusy.clear();
+      callDetailHost.replaceChildren(heading(call.detail_kind==='outcome'?'Saved call outcome':'Selected current call',call.visitor_label+' · '+call.state_label));
+      const meta=node('dl','','vp3-profile-call-facts');
+      for(const [label,value] of [['Call',call.mode==='video'?'Video':'Audio'],['Assistance',call.assisted?'Agent assisted':'Direct call'],['Offered',callTime(call.created_at_ms)],['Accepted',callTime(call.accepted_at_ms)],['Ended',callTime(call.ended_at_ms)]]){
+        if(value)meta.append(node('dt',label),node('dd',value));
+      }callDetailHost.append(meta);
+      if(call.detail_kind==='current'&&selection.callView==='history')callDetailHost.append(node('p','This selected call is still current. Its saved outcome is available after it ends.','vp3-profile-note'));
+      if(call.detail_kind==='outcome'&&selection.callView==='current')callDetailHost.append(node('p','This selected call has ended and is available in Call history.','vp3-profile-note'));
+      const actions=node('div','','vp3-profile-actions');
+      actions.append(button('Back to calls',()=>select({tab:'calls',callView:selection.callView,callId:0,publicConversationId:0})));
       const focus=button('Open call in Chat',()=>{
-        const context=callContext(call);
-        if (!context) return;
+        const context=callContext(call);if(!context)return;
         const focused=window.VP3ProfileCallsPa3c?.focusOwnerCall?.({callId:context.callId,publicConversationId:context.publicConversationId,
           chatConversationId:context.chatConversationId,chatAgentId:context.chatAgentId},{beforeFocus:()=>onClose?.(false)});
-        if (!focused) say('That live call card is not available in this Chat. The call has not been restarted.');
-      });detail.append(focus,button('Open conversation',()=>select({tab:'conversations',publicConversationId:call.public_conversation_id})));
-      const activity=node('section');detail.append(activity);content.append(detail);
-      if (call.assisted===false) {
-        activity.append(node('p','This is a direct call. No Agent transcript or research is available.','vp3-profile-note'));
-      } else if (call.activity_available!==true) {
-        activity.append(node('p','Agent call activity is not available for this call and current access.','vp3-profile-note'));
-      } else if (window.VP3ProfileCallActivityPa3c?.mount) {
+        if(!focused)say(call.detail_kind==='current'?'That live call card is not available in this Chat. The call has not been restarted.':'That call card is not available in this Chat. The call has not been restarted.');
+      });actions.append(focus,button('Open conversation',()=>select({tab:'conversations',publicConversationId:call.public_conversation_id})));callDetailHost.append(actions);
+      if(call.detail_kind==='outcome'){await loadOutcome(call,mine);return;}
+      const activity=node('section');callDetailHost.append(activity);
+      if(call.assisted===false)activity.append(node('p','This is a direct call. No Agent transcript or research is available.','vp3-profile-note'));
+      else if(call.activity_available!==true)activity.append(node('p','Agent call activity is not available for this call and current access.','vp3-profile-note'));
+      else if(window.VP3ProfileCallActivityPa3c?.mount){
         callActivity=window.VP3ProfileCallActivityPa3c.mount(activity,{
           context:()=>callContext(call),
           read:async({context,after,signal})=>callResult(await request('call_activity',{call_id:context.callId,public_conversation_id:context.publicConversationId,after},{context,signal}),'call_activity',context),
           mutate:async({context,operation,input,signal})=>{
-            if (!['set_assistance','research'].includes(operation)) throw new Error('Unknown call action.');
+            if(!['set_assistance','research'].includes(operation))throw new Error('Unknown call action.');
             return callResult(await request(operation==='research'?'call_research':'call_set_assistance',
               {call_id:context.callId,public_conversation_id:context.publicConversationId,...input},{context,signal,method:'POST'}),'call_action',context);
           },onUnavailable:message=>{if(current(mine))say(plain(message,500)||'Call activity is unavailable.');}
         });callActivity?.select(call.call_id);
-      } else activity.append(node('p','Call activity is unavailable. The live Chat call card remains in place.','vp3-profile-note'));
+      }else activity.append(node('p','Call activity is unavailable. The live Chat call card remains in place.','vp3-profile-note'));
+    }
+    async function loadCalls(mine,cursor='') {
+      if(callPageBusy)return;callPageBusy=true;
+      const filter=selection.callView;
+      try{
+        const result=await request('calls',{filter,cursor,...(selection.callId?{call_id:selection.callId}:{}),...(!selection.callId&&selection.publicConversationId?{public_conversation_id:selection.publicConversationId}:{})});
+        if(!current(mine))return;
+        const value=callListModel(result.data.calls,filter);if(!value)throw new Error('The call list could not be verified.');
+        if(cursor){
+          const rows=new Map(callPage.calls.map(call=>[call.call_id,call]));for(const call of value.calls)rows.set(call.call_id,call);
+          callPage={...value,calls:[...rows.values()]};
+        }else{
+          callPage=value;content.replaceChildren(heading('Calls','Current calls and saved outcomes in this private Chat.'));
+          const filters=node('div','','vp3-profile-call-filters');filters.setAttribute('role','group');filters.setAttribute('aria-label','Calls view');
+          for(const [key,label] of [['current','Current calls'],['history','Call history']]){
+            const control=button(label,()=>select({tab:'calls',callView:key,callId:0,publicConversationId:0}));control.setAttribute('aria-pressed',String(filter===key));filters.append(control);
+          }content.append(filters);
+          callListNotice=node('p','','vp3-profile-note');callListHost=node('div','','vp3-profile-calls');callListFooter=node('div','','vp3-profile-actions');
+          callDetailHost=node('section','','vp3-profile-call-detail');callDetailHost.dataset.profileCallDetail='';callDetailHost.tabIndex=-1;callDetailKey='';
+          content.append(callDetailHost,callListNotice,callListHost,callListFooter);
+        }
+        if(['unavailable','unconfigured'].includes(value.coverage)){
+          callActivity?.dispose();callActivity=null;callOutcome=null;callListHost.replaceChildren(node('p','Calls are not available in this Chat.','vp3-profile-empty'));callListFooter.replaceChildren();callDetailHost.replaceChildren();return;
+        }
+        renderCallRows(mine);
+        if(!selection.callId){rememberCalls();return;}
+        const call=value.selected||value.calls.find(row=>row.call_id===selection.callId);
+        if(!call||call.call_id!==selection.callId||selection.publicConversationId&&call.public_conversation_id!==selection.publicConversationId)throw new Error('The selected call is not available in this Chat.');
+        selection.publicConversationId=call.public_conversation_id;rememberCalls();await showCallDetail(call,mine);
+        if(!cursor&&current(mine)&&callDetailHost?.isConnected)callDetailHost.focus({preventScroll:true});
+      }finally{if(current(mine))callPageBusy=false;}
     }
     function loadAnalytics(mine) {
       content.replaceChildren(heading('Analytics','Recorded activity and conversion evidence. Reporting windows retain their displayed timezone.'));
@@ -576,7 +815,7 @@
     }
     async function refresh() {
       if (!alive) return;
-      rememberInput();abortReads();disposeTab();
+      rememberInput();abortReads();disposeTab();callPageBusy=false;outcomeBusy.clear();
       const mine=++generation,context=currentScope();threadEntry=null;selectedData=null;
       if (!context) {content.replaceChildren(node('p','This Chat’s Profile access could not be verified.','vp3-profile-empty'));say('');return;}
       say('Loading current Profile activity…');
@@ -594,7 +833,7 @@
     }
     function select(value={}) {
       if (!alive||!currentScope()) return false;
-      rememberInput();const next=normalizeSelection(value);
+      rememberInput();const next=selected(value);
       const unchanged=JSON.stringify(selection)===JSON.stringify(next);
       selection=next;
       for (const [key,control] of controls) {

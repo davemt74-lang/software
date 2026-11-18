@@ -123,6 +123,8 @@ jobs:
           node tests/profile-specialist-analytics-ui-v1.mjs
           node tests/profile-call-workspace-v1.mjs
           node tests/profile-specialist-workspace-http.mjs
+          php tests/profile-arrival-context-v1.php
+          php tests/profile-call-outcomes-v1.php
           php tests/profile-handoff-pa3.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php

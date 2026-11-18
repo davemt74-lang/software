@@ -230,6 +230,8 @@
       record.assistanceNotice.hidden=!live||!call.assistance||TERMINAL.has(call.state)||call.state==='ending';
       record.assistanceNotice.textContent=record.assistanceNotice.hidden?'':assistanceText(call.assistance);
       for(const name of ['accept','decline','cancel','end','return_to_agent']){const button=record.buttons[name];button.hidden=!call['can_'+name];button.disabled=!live||record.pending||(pending&&!['end','return_to_agent'].includes(name))||!call['can_'+name];}
+      record.outcome.hidden=this.role!=='owner'||!TERMINAL.has(call.state)||call.cleanup_pending||call.dispatch_due;
+      record.outcome.disabled=!live||record.pending;
       record.consent.hidden=!call.can_join||Boolean(media)||Boolean(record.localMessage);
       record.description.textContent=call.assistance?'You will speak directly to the other person.':'You will speak directly to the other person. This call does not use the Profile Agent voice, recording or transcription.';
       record.join.disabled=!live||pending||!call.can_join||!record.mic.checked||Boolean(activeMedia&&activeMedia!==media);
@@ -246,17 +248,25 @@
     create(call,host,binding){
       const card=node('section','profile-call-card');card.dataset.profileCallId=String(call.call_id);
       const title=this.role==='owner'?(call.visitor_label||'Profile visitor'):(this.options.peerLabel||'Profile owner');
-      const heading=node('h3','','Live '+call.mode+' call · '+title),status=node('p','profile-call-status'),notice=node('p','profile-call-notice');status.setAttribute('role','status');notice.setAttribute('role','status');
+      const heading=node('h3','',(call.mode==='audio'?'Voice':'Video')+' call · '+title),status=node('p','profile-call-status'),notice=node('p','profile-call-notice');status.setAttribute('role','status');notice.setAttribute('role','status');
       const assistanceNotice=node('p','profile-call-notice');assistanceNotice.dataset.callAssistanceNotice='';assistanceNotice.setAttribute('id',`vp3-call-assistance-${call.call_id}`);
       const actions=node('div','profile-call-actions'),buttons={};for(const [name,label] of [['accept','Accept call'],['decline','Decline'],['cancel','Cancel request'],['end','End call'],['return_to_agent','Return to Profile Agent']]){const button=node('button','',label);button.type='button';button.dataset.callAction=name;buttons[name]=button;actions.appendChild(button);}
       buttons.accept.setAttribute('aria-describedby',`vp3-call-assistance-${call.call_id}`);
+      const outcome=node('button','','View outcome');outcome.type='button';outcome.dataset.callOutcome='';outcome.hidden=true;actions.append(outcome);
       const consent=node('div','profile-call-consent'),micLabel=node('label'),mic=node('input');mic.type='checkbox';micLabel.append(mic,node('span','','I agree to turn on my microphone for this live call.'));
       const cameraLabel=node('label'),camera=node('input');camera.type='checkbox';cameraLabel.append(camera,node('span','','Also turn on my camera (optional).'));
       const description=node('p'),join=node('button','','Join call');join.type='button';join.dataset.callAction='join';consent.append(description,micLabel,cameraLabel,join);
       const stage=node('div','profile-call-stage'),remoteMedia=node('div','profile-call-remote'),localMedia=node('div','profile-call-local');stage.append(remoteMedia,localMedia);
       const mediaControls=node('div','profile-call-actions'),mute=node('button','','Mute microphone'),cameraToggle=node('button','','Turn camera on'),sound=node('button','','Enable sound'),switchButton=node('button','','Switch microphone to this call');
       for(const button of [mute,cameraToggle,sound,switchButton])button.type='button';mediaControls.append(mute,cameraToggle);sound.hidden=switchButton.hidden=true;card.append(heading,status,assistanceNotice,actions,consent,switchButton,stage,mediaControls,sound,notice);host.appendChild(card);
-      const record={surface:this,call,node:card,binding,snapshot:this.capture(),status,notice,assistanceNotice,buttons,consent,description,mic,camera,cameraLabel,join,stage,remoteMedia,localMedia,mediaControls,mute,cameraToggle,sound,switchButton,pending:false,attempt:null,media:null,needsSound:false,localMessage:''};
+      const record={surface:this,call,node:card,binding,snapshot:this.capture(),status,notice,assistanceNotice,buttons,outcome,consent,description,mic,camera,cameraLabel,join,stage,remoteMedia,localMedia,mediaControls,mute,cameraToggle,sound,switchButton,pending:false,attempt:null,media:null,needsSound:false,localMessage:''};
+      outcome.addEventListener('click',()=>{
+        const current=record.call;
+        if(this.role!=='owner'||!this.current(record.snapshot)||!record.node.isConnected||record.node.hidden||record.pending
+          ||!TERMINAL.has(current.state)||current.cleanup_pending||current.dispatch_due)return;
+        const opened=window.VP3AgentActivityHub?.openProfile?.({tab:'calls',callView:'history',callId:current.call_id,publicConversationId:current.conversation_id},outcome);
+        if(opened!==true)record.notice.textContent='Saved call history is not available here.';
+      });
       for(const action of ['accept','decline','cancel','end','return_to_agent'])buttons[action].addEventListener('click',()=>void this.action(record,action));
       mic.addEventListener('change',()=>this.render(record));camera.addEventListener('change',()=>this.render(record));
       join.addEventListener('click',()=>void this.join(record));switchButton.addEventListener('click',()=>{if(record.media?.phase==='capture_busy')void record.media.start(true);});

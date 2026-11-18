@@ -56,6 +56,18 @@ function vp3_profile_specialist_url_v1(string $kind,mixed $url): bool
 
 function vp3_profile_specialist_href_v1(string $path): string{return function_exists('url')?url($path):$path;}
 
+/** Group only explicitly typed informational visits; never infer intent from volume. */
+function vp3_profile_specialist_routine_visit_v1(array $item): bool
+{
+    if(($item['profile_source_kind']??null)!=='event'
+        ||!in_array($item['profile_event_type']??null,['profile_view','return_visitor'],true)
+        ||!is_string($item['presentation_owner']??null)
+        ||($item['trigger']??null)!=='activity'||($item['priority']??null)!=='low')return false;
+    $report=$item['profile_report']??[];
+    return ($report['actions_followups']??null)===[]&&($report['open_questions']??null)===[]
+        &&($report['next_step']??null)===''&&($report['questions_for_you']??null)===[];
+}
+
 /** One source snapshot supports the specialist UI, saved reports and exact source links. */
 function vp3_profile_specialist_report_v1(array $snapshot): array
 {
@@ -66,6 +78,7 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
     if(in_array($coverage,['unavailable','unconfigured'],true))return $out;
     $items=$snapshot['items']??null;
     if(!is_array($items))return array_replace($out,['coverage'=>'unavailable']);
+    $sectionItems=[];$routineVisits=0;
     foreach($items as $item){
         if(is_array($item)&&($item['specialist']??null)!=='profile')continue;
         $kind=is_array($item)?($item['profile_source_kind']??''):'';
@@ -80,9 +93,29 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
         if(count($out['findings'])>=VP3_PROFILE_SPECIALIST_FINDING_LIMIT_V1){$out['coverage']='limited';break;}
         $safe=['ref'=>$item['ref'],'revision'=>$item['revision'],'url'=>$item['url'],'profile_source_kind'=>$kind,
             'profile_presentation_owned'=>$item['profile_presentation_owned'],'legacy_delivered'=>$item['legacy_delivered']];
+        // Older saved source snapshots may omit these additive fields. They
+        // remain readable, but their event kind is not guessed for grouping.
+        if(array_key_exists('presentation_owner',$item)){
+            $owner=$item['presentation_owner'];
+            if(!is_string($owner)||!in_array($owner,['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks'],true)
+                ||$item['profile_presentation_owned']!==($owner!=='')){$out['coverage']='limited';continue;}
+            $safe['presentation_owner']=$owner;
+        }
+        if(array_key_exists('profile_event_type',$item)){
+            if($kind!=='event'||!is_string($item['profile_event_type'])||!preg_match('/\A[a-z][a-z0-9_]{0,63}\z/D',$item['profile_event_type'])){
+                $out['coverage']='limited';continue;
+            }
+            $safe['profile_event_type']=$item['profile_event_type'];
+        }
         foreach(['title'=>190,'summary'=>1200,'status'=>40,'priority'=>20,'trigger'=>40,'disposition'=>30] as $key=>$limit)
             $safe[$key]=vp3_profile_specialist_text_v1($item[$key]??'',$limit);
         $out['findings'][]=$safe;
+        if(vp3_profile_specialist_routine_visit_v1($item)){++$routineVisits;continue;}
+        $sectionItems[]=$item;
+    }
+    // Keep unresolved conversations, calls and reviewed work ahead of routine
+    // visit prose while preserving every original finding and source revision.
+    foreach($sectionItems as $item){
         foreach(['key_findings','actions_followups','open_questions','questions_for_you'] as $key){
             foreach($item['profile_report'][$key] as $text){
                 if(in_array($text,$out[$key],true))continue;
@@ -91,6 +124,10 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
             }
         }
         if($out['next_step']==='')$out['next_step']=$item['profile_report']['next_step'];
+    }
+    if($routineVisits>0){
+        if(count($out['key_findings'])<6)$out['key_findings'][]=$routineVisits.' visit '.($routineVisits===1?'record':'records').' in this checked view.';
+        else $out['coverage']='limited';
     }
     return $out;
 }

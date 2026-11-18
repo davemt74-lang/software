@@ -7,6 +7,10 @@ else unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);reset_cu
 if(isset($_SERVER['HTTP_X_FIXTURE_NOW']))$GLOBALS['pa3Now']=(int)$_SERVER['HTTP_X_FIXTURE_NOW'];
 $GLOBALS['psReady']=($_SERVER['HTTP_X_FIXTURE_READY']??'1')==='1';$GLOBALS['psFingerprint']=hash('sha256','speech-config');$GLOBALS['psVoices']=ps_voices();$GLOBALS['psProviderCalls']=[];
 $GLOBALS['psProviderMode']=match($_SERVER['HTTP_X_FIXTURE_PROVIDER_MODE']??''){'unknown'=>'outcome_unverified','rejected'=>'rejected',default=>'ready'};
+if(($_SERVER['HTTP_X_FIXTURE_DELIVERY_MODE']??'')==='late_social_off')db()->afterSql=static function(string $sql):void{
+    if(!str_starts_with($sql,'INSERT INTO chat_messages'))return;db()->afterSql=null;
+    db()->exec('UPDATE team_user_presence SET social_chat_enabled=0 WHERE user_id=1');
+};
 function ps_http_log(string $operation,array $data=[]): void
 {file_put_contents((string)getenv('VP3_PA4A_PROVIDER_LOG'),json_encode(['operation'=>$operation,'session_active'=>session_status()===PHP_SESSION_ACTIVE]+$data,JSON_THROW_ON_ERROR)."\n",FILE_APPEND|LOCK_EX);}
 function ps_http_session_change(bool $rotate=false): void

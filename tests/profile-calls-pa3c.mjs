@@ -52,7 +52,7 @@ async function fixture({role='visitor',initial=callCard(role),widget=false,cid=3
         else if(operation==='heartbeat')card.authority_valid_until_ms=now+30000;
         else if(!['delivery','cancel','decline'].includes(operation))throw new Error('Unexpected call action '+action);
         Object.assign(result,{contract,call:normalized(card),call_id:card.call_id,revision:card.revision,conversation_id:card.conversation_id,request_id:body.request_id||'',duplicate:false});
-        if(operation==='delivery')Object.assign(result,{delivery_id:'d'.repeat(32),chat_conversation_id:body.chat_conversation_id,chat_agent_id:body.chat_agent_id,chat_message_id:701,message_id:701});
+        if(operation==='delivery')Object.assign(result,{delivery_id:'d'.repeat(32),chat_conversation_id:body.chat_conversation_id,chat_agent_id:body.chat_agent_id,chat_message_id:660+card.call_id,message_id:660+card.call_id});
         if(operation==='join')Object.assign(result,{role,client_instance_id:body.client_instance_id,join_intent_id:'b'.repeat(32),server_url:'wss://fixture.livekit.cloud',participant_token:'FIXTURE_'+role.toUpperCase()+'_TOKEN_'+'x'.repeat(40),participant_identity:role+'-41',peer_identity:(role==='owner'?'visitor':'owner')+'-41',expires_at_ms:now+60000,microphone:true,camera:body.camera});
       }
     }
@@ -190,13 +190,42 @@ for(const kind of ['connect','microphone','camera'])for(const reject of [false,t
   const two=f.window.VP3ProfileCallsPa3c.attachOwnerThread(next,{binding:()=>null});
   check(next.querySelector('[data-call-assistance-offer]').id!==firstId,'remounted disposable offer controls keep distinct disclosure identities');two.dispose();
   check(!focus(selection,{beforeFocus(){f.host.dataset.view='other';}}),'focus rechecks current native context after the shell callback');
-  f.host.dataset.view='chat';await f.stop();
+  f.host.dataset.view='chat';
+  f.cards.set(42,callCard('owner',{call_id:42,conversation_id:32,state:'ended',can_accept:false,can_decline:false,can_cancel:false,can_end:false,can_join:false,cleanup_pending:false,dispatch_due:false}));
+  await f.refresh();const requestsBeforeOutcome=f.requests.length,opened=[];
+  f.window.VP3AgentActivityHub={openProfile:(selection)=>{opened.push(selection);return true;}};
+  const oldCard=[...f.host.querySelectorAll('.profile-call-card')].find(item=>item.dataset.profileCallId==='42');oldCard.querySelector('[data-call-outcome]').click();await settle();
+  check(opened.length===1&&opened[0].callId===42&&opened[0].publicConversationId===32,'an older native card selects its own outcome while another call is active');
+  check(f.requests.length===requestsBeforeOutcome&&f.stats.rooms[0]===room&&f.stats.disconnects===0&&tracks.every(track=>!track.stopped)&&card===f.card(),'opening an old outcome preserves the active native card, media session and tracks');
+  await f.stop();
 }
 {
   const f=await fixture();await f.ready();await f.consent();await f.click('join');
   const until=f.cards.get(41).authority_valid_until_ms;
   for(let i=0;i<3;i++){const held=f.hold('visitor_heartbeat');await f.advance(10000);if(held.work)held.work.resolve({ok:false,code:'CALL_PROVIDER_UNAVAILABLE'},503);await settle();}
   check(f.now>=until&&f.stats.tracks.every(t=>t.stopped)&&!f.card().textContent.includes('Connected ·'),'failed heartbeats never extend the confirmed deadline; local media expires on time');await f.stop();
+}
+{
+  const f=await fixture({role:'owner'}),opened=[];
+  f.window.VP3AgentActivityHub={openProfile:(selection,trigger)=>{opened.push({selection,trigger});return true;}};
+  const card=f.card(),outcome=card.querySelector('[data-call-outcome]');
+  check(outcome.hidden,'an offered call has no completed-outcome launcher');
+  const saved=f.cards.get(41);Object.assign(saved,{state:'ending',revision:saved.revision+1,can_accept:false,can_decline:false,can_join:false,can_end:false,cleanup_pending:true,dispatch_due:false});await f.refresh();
+  outcome.disabled=false;outcome.click();await settle();check(outcome.hidden&&opened.length===0,'cleanup pending cannot launch a completed outcome even through a detached event');
+  Object.assign(saved,{state:'ended',revision:saved.revision+1,cleanup_pending:false});await f.refresh();const before=f.requests.length;
+  outcome.click();await settle();check(!outcome.hidden&&opened.length===1&&JSON.stringify(opened[0].selection)===JSON.stringify({tab:'calls',callView:'history',callId:41,publicConversationId:31})&&opened[0].trigger===outcome,'terminal native card opens the exact saved outcome in the existing workspace');
+  check(f.requests.length===before&&card===f.card()&&f.stats.rooms.length===0&&f.stats.microphones===0,'View outcome performs no native refresh, delivery, dispatch, join or capture');
+  f.window.VP3AgentActivityHub.openProfile=()=>false;outcome.click();await settle();check(f.requests.length===before&&card.textContent.includes('history is not available'),'unavailable workspace does not fall back to call mutation or another source');
+  f.host.dataset.view='other';f.window.VP3AgentActivityHub.openProfile=(selection)=>{opened.push(selection);return true;};outcome.click();await settle();check(opened.length===1,'stale private Chat view prevents the saved outcome launcher');
+  await f.stop();
+}
+{
+  const f=await fixture({role:'owner',initial:callCard('owner',{state:'expired',dispatch_due:true,can_accept:false,can_decline:false})});
+  check(f.card().querySelector('[data-call-outcome]').hidden,'an offer projected as expired while dispatch is due is not presented as canonical closed history');await f.stop();
+}
+{
+  const f=await fixture({initial:callCard('visitor',{state:'ended',can_accept:false,can_decline:false,can_join:false})});
+  check(f.card().querySelector('[data-call-outcome]').hidden,'public visitors do not receive private saved-outcome controls');await f.stop();
 }
 {
   const f=await fixture({widget:true,initial:null,cid:0});const offer=f.document.querySelector('[data-call-offer=audio]');check(offer&&!offer.disabled,'actual native Profile bridge exposes an available call before any message');offer.click();await settle();

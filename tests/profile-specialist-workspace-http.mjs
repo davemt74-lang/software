@@ -45,6 +45,31 @@ try{
   const calls=await read('calls',{call_id:session.seed.call_id,public_conversation_id:session.seed.call_conversation_id});
   check(calls.data.calls.calls.some(row=>row.call_id===session.seed.call_id),'Calls reads the seeded canonical delivered call');
   check(!JSON.stringify(calls).match(/provider_token|room_token|credential_hash|join_token/),'workspace call projection excludes provider credentials');
+  const outcomeTarget={call_id:session.seed.outcomes.assisted.call_id,public_conversation_id:session.seed.outcomes.assisted.public_conversation_id},ordinaryTarget=session.seed.outcomes.ordinary;
+  const history=(await read('calls',{filter:'history',call_id:outcomeTarget.call_id})).data.calls;
+  check(history.filter==='history'&&history.calls.some(row=>row.call_id===outcomeTarget.call_id)&&history.calls.every(row=>row.detail_kind==='outcome'),
+    'history includes terminal calls even without a previously delivered Chat card');
+  check(calls.data.calls.calls.every(row=>row.detail_kind==='current')&&!calls.data.calls.calls.some(row=>row.call_id===outcomeTarget.call_id),
+    'current calls and completed history remain distinct');
+  const outcome=(await read('call_outcome',outcomeTarget)).data.call_outcome;
+  check(outcome.contract==='vp3.profile-call-outcome.v1'&&outcome.call_id===outcomeTarget.call_id&&/^[a-f0-9]{64}$/.test(outcome.context_revision),
+    'saved outcome has exact call identity and current context proof');
+  check(outcome.sections.transcript.items.length===50&&outcome.sections.research.items.length===6&&outcome.sections.followups.items.length===20,
+    'initial saved sections obey actual transcript, research and reviewed-task page bounds');
+  check(outcome.sections.analysis.fresh===true&&outcome.sections.analysis.items.length===3,'only current source-backed saved analysis is exposed');
+  for(const [key,total]of[['transcript',55],['research',7],['followups',23]]){
+    const next=(await read('call_outcome',{call_id:outcomeTarget.call_id,public_conversation_id:outcomeTarget.public_conversation_id,section:key,cursor:outcome.sections[key].next_cursor})).data.call_outcome;
+    check(Object.keys(next.sections).join('|')===key&&next.sections[key].source_revision===outcome.sections[key].source_revision
+      &&next.sections[key].items.length+outcome.sections[key].items.length===total&&!next.sections[key].has_more,key+' exact continuation returns the remaining saved records');
+  }
+  check(outcome.sections.followups.items.some(row=>row.task_status==='completed')&&outcome.sections.followups.items.some(row=>row.task_status==='cancelled'),
+    'reviewed follow-up history retains authorized completed and cancelled task states');
+  check(Object.values((await read('call_outcome',ordinaryTarget)).data.call_outcome.sections).every(section=>section.availability==='not_applicable'),
+    'a direct terminal call has explicit non-applicable recording sections');
+  check((await request('call_outcome',{call_id:outcomeTarget.call_id,public_conversation_id:ordinaryTarget.public_conversation_id})).response.status===404,
+    'an outcome cannot be retargeted to another public thread');
+  check((await request('call_outcome',{call_id:outcomeTarget.call_id,section:'research',cursor:outcome.sections.transcript.next_cursor})).response.status===422,
+    'section continuation cursor cannot cross source sections');
   const analytics=await read('analytics',{property_id:0,days:30});
   check(analytics.data.analytics.ready===true&&analytics.data.analytics.coverage==='complete','Analytics tab reads complete authorized aggregates');
   check((await read('revenue')).data.revenue.ready===true,'conversion intelligence reads through the same private scope');
@@ -86,6 +111,20 @@ try{
   check(afterSend.profile_agent_messages.filter(row=>row.sender_type==='owner'&&Number(row.conversation_id)===session.seed.primary).length===1,'response-loss retry cannot duplicate the public owner reply');
   check((await read('draft_status',{public_conversation_id:session.seed.primary,prepare_request_id:prepare.prepare_request_id})).data.draft.state==='sent','reviewed draft records the resulting public send receipt');
   check((await mutate('conversation_action',{public_conversation_id:session.seed.legacy,turn_id:0,revision:0,operation:'reply',request_id:'d'.repeat(32),message:'Historical manual reply.'})).data.message_id>0,'no-turn historical reply uses the existing stable owner path');
+  await control('transcript_change');
+  check((await request('call_outcome',{call_id:outcomeTarget.call_id,section:'transcript',cursor:outcome.sections.transcript.next_cursor})).response.status===409,
+    'a changed canonical transcript invalidates its old page cursor');
+  const changedOutcome=(await read('call_outcome',{call_id:outcomeTarget.call_id})).data.call_outcome;
+  check(changedOutcome.sections.analysis.fresh===false&&changedOutcome.sections.analysis.items.length===0,
+    'saved analysis with outdated transcript proof is withheld');
+  await control('recording_revoke');
+  const deniedOutcome=(await read('call_outcome',{call_id:outcomeTarget.call_id})).data.call_outcome;
+  check(deniedOutcome.call.call_id===outcomeTarget.call_id&&Object.values(deniedOutcome.sections).every(section=>section.availability==='forbidden'&&!section.items.length&&!section.url&&!section.session_id),
+    'recording revocation preserves safe call metadata and removes all subordinate records and links');
+  await control('recording_restore');
+  await control('tasks_complete');
+  check((await read('overview')).data.report.findings.filter(row=>row.profile_event_type==='profile_view').length===2,
+    'bounded checked-view report retains both exact visit sources when active reviewed work leaves the source cap');
   await control('profile_off');
   check((await read('overview')).data.profile.enabled===false&&(await read('conversations',{filter:'all'})).data.items.length>0,'public Agent disabled does not hide owned historical inventory');
   await control('revoke');
@@ -125,6 +164,17 @@ try{
   const followup=await stored();
   check(followup.profile_owner_drafts_v1.length===2&&followup.profile_owner_drafts_v1.some(row=>row.status==='sent')&&followup.provider_dispatches.length===2,
     'a new explicit preparation after a sent reply preserves its earlier receipt');
+  mounted.select({tab:'calls',callView:'history',callId:freshSeed.outcomes.assisted.call_id,publicConversationId:freshSeed.outcomes.assisted.public_conversation_id});
+  await waitFor(()=>host.querySelectorAll('[data-profile-transcript-segment]').length===50);
+  check(host.textContent.includes('The saved call discussed public opening hours'),'mounted UI accepts the actual canonical saved analysis and section wire fields');
+  uiButton('Load more transcript').click();await waitFor(()=>host.querySelectorAll('[data-profile-transcript-segment]').length===55);
+  uiButton('Load more research').click();await waitFor(()=>host.querySelectorAll('[data-profile-research]').length===7);
+  uiButton('Load more follow-ups').click();await waitFor(()=>host.querySelectorAll('[data-profile-followup]').length===23);
+  check(host.querySelectorAll('[data-profile-transcript-segment]').length===55&&host.querySelectorAll('[data-profile-followup]').length===23,
+    'mounted UI appends every page through the unchanged production API');
+  await control('recording_revoke');await mounted.refresh();await waitFor(()=>host.textContent.includes('Your current access does not include'));
+  check(host.textContent.includes('Call ended')&&!host.querySelector('[data-profile-transcript-segment]')&&!host.querySelector('[data-profile-followup]'),
+    'mounted recording revocation clears old saved facts without losing authorized terminal call state');
   mounted.dispose();
   console.log(`PROFILE_SPECIALIST_WORKSPACE_HTTP=PASS (${checks} checks)`);
 }catch(error){console.error(server.logs());throw error;}

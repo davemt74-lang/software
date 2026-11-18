@@ -96,6 +96,9 @@ pfs_check(!$due['legacy_delivered'],'an older wake receipt cannot claim delivery
 $shown=pfs_present($note);$wake=pfs_one(pfs_read(),$ref);pfs_ack($shown);$afterWake=pfs_one(pfs_read(),$ref);
 pfs_check($due['revision']===$wake['revision']&&$wake['revision']===$afterWake['revision'],'materializing and acknowledging a due wake preserve its semantic revision');
 pfs_reset();$visit=pa4b_note();$eventRef='profile:event:'.$visit['event']['id'];$new=pfs_one(pfs_read(),$eventRef);$shown=pfs_present($visit);pfs_ack($shown);$visible=pfs_one(pfs_read(),$eventRef);
+pfs_check($new['profile_event_type']==='profile_view'&&$new['presentation_owner']==='profile_attention_pa4b'
+    &&vp3_profile_specialist_report_v1(['items'=>[$new],'coverage'=>'ready'])['findings'][0]['profile_event_type']==='profile_view',
+    'routine grouping uses the currently verified native event kind and presentation owner');
 pfs_check($new['revision']===$visible['revision']&&$visible['legacy_delivered'],'routine visit presentation has an actual receipt without a new revision');
 pfs_action($visit,'read');$routine=pfs_one(pfs_read(),$eventRef);
 pfs_check($routine['status']==='current'&&$routine['profile_report']['actions_followups']===[]&&$routine['profile_report']['questions_for_you']===[],'a read routine visit never becomes unresolved owner work');

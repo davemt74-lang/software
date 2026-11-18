@@ -7,7 +7,7 @@ if(window.VP3_PROFILE_WORKSPACE_V1?.endpoint){
   const positive=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0;
   function open(options={}){
     const tab=['overview','conversations','calls','analytics','reports'].includes(options.tab)?options.tab:'overview';
-    const selection={tab,publicConversationId:positive(options.publicConversationId??options.conversationId),callId:positive(options.callId)};
+    const selection={tab,publicConversationId:positive(options.publicConversationId??options.conversationId),callId:positive(options.callId),callView:options.callView==='history'?'history':'current'};
     if(typeof window.VP3AgentActivityHub?.openProfile==='function'){
       pending=null;return window.VP3AgentActivityHub.openProfile(selection,launcher)===true;
     }

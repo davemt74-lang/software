@@ -91,6 +91,18 @@ jobs:
           php tests/profile-owner-drafts-v1.php
           php tests/profile-specialist-analytics-v1.php
           php tests/profile-workspace-calls-v1.php
+      - name: Profile contextual arrivals and saved call outcomes
+        run: |
+          php tests/profile-arrival-context-v1.php
+          php tests/profile-call-outcomes-v1.php
+      - name: Profile contextual arrivals and call outcomes on native MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-arrival-context-v1.php
+          php tests/profile-call-outcomes-v1.php
       - name: Profile Agent PA1 SQLite and HTTP authority
         run: |
           php tests/profile-public-authority-pa1.php
