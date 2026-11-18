@@ -94,6 +94,14 @@ try{
         vp3_profile_promotion_owner_current_v1($pdo,1);
         native_check_v1(true,'current owner fence preserves canonical personal defaults before capability seeding');
     });
+    native_mutate_v1(function()use($pdo,$record,$key){
+        $pdo->exec("DELETE FROM settings WHERE setting_key='personal_capabilities_seed_v242'");
+        $before=native_rows_v1();$unavailable=false;
+        try{vp3_profile_promotion_accept_click_v1($pdo,$record,$key,native_click_fixture_query_v1($key,11,4));}
+        catch(RuntimeException $error){$unavailable=$error->getCode()===503;}
+        native_check_v1($unavailable&&$pdo->inTransaction()&&native_rows_v1()===$before,
+            'a missing capability marker cannot admit a click or end the caller transaction');
+    });
     if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
         $cfg=$GLOBALS['pa3Config'];$other=new PDO($cfg['dsn'],$cfg['user'],$cfg['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
         $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
@@ -115,6 +123,48 @@ try{
         }finally{
             if($pdo->inTransaction())$pdo->rollBack();
             $other->exec("INSERT INTO role_permissions (role,permission_key) VALUES ('member','profile_chat.access')");
+        }
+        $other->exec('SET innodb_lock_wait_timeout=1');
+        $scalar=static function(PDO $connection,string $sql):mixed{
+            $q=$connection->query($sql);$value=$q->fetchColumn();$q->closeCursor();return $value;
+        };
+        $display=$scalar($other,'SELECT display_name FROM users WHERE id=4');
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->exec('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');$pdo->beginTransaction();
+        try{
+            $prior=$scalar($pdo,'SELECT display_name FROM users WHERE id=4');
+            $other->exec("UPDATE users SET display_name='Concurrent isolation sentinel' WHERE id=4");
+            native_check_v1($scalar($pdo,'SELECT @@session.transaction_isolation')==='REPEATABLE-READ'
+                &&$prior!=='Concurrent isolation sentinel'&&$scalar($pdo,'SELECT display_name FROM users WHERE id=4')==='Concurrent isolation sentinel',
+                'ordinary reads prove an active RC transaction despite its RR session default');
+            $before=count(native_rows_v1());
+            $claimed=vp3_profile_promotion_accept_click_v1($pdo,$record,$key,native_click_fixture_query_v1($key,11,4));
+            native_check_v1($claimed!==null&&$pdo->inTransaction()&&count(native_rows_v1())===$before+1,
+                'current positive authority permits exact native acceptance inside the caller RC transaction');
+            $blocked=false;
+            try{$other->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'");}
+            catch(PDOException $error){$blocked=(int)($error->errorInfo[1]??0)===1205;}
+            native_check_v1($blocked&&$pdo->inTransaction(),
+                'accepted native click holds its exact grant against revocation until the caller releases the RC transaction');
+        }finally{
+            if($pdo->inTransaction())$pdo->rollBack();
+            $other->prepare('UPDATE users SET display_name=? WHERE id=4')->execute([$display]);
+        }
+        $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
+        $pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');$pdo->beginTransaction();
+        try{
+            $sql="SELECT COUNT(*) FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'";
+            $prior=$scalar($pdo,$sql);$other->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'");
+            native_check_v1($scalar($pdo,'SELECT @@session.transaction_isolation')==='READ-COMMITTED'
+                &&(int)$prior===1&&$scalar($pdo,$sql)===$prior,
+                'ordinary reads prove an active stale RR snapshot despite its RC session default');
+            native_reject_v1(fn()=>vp3_profile_promotion_accept_click_v1($pdo,$record,$key,native_click_fixture_query_v1($key,11,4)),
+                'current native authority rejects a revoked grant independently of the misleading session isolation label');
+            native_check_v1($pdo->inTransaction(),'isolation mismatch denial preserves the caller transaction');
+        }finally{
+            if($pdo->inTransaction())$pdo->rollBack();
+            $other->exec("INSERT INTO role_permissions (role,permission_key) VALUES ('member','profile_chat.access')");
+            $pdo->exec('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
         }
     }
 

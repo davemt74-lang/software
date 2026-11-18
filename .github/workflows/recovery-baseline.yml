@@ -98,6 +98,7 @@ jobs:
           php tests/profile-analytics-period-ref-v1.php
           php tests/profile-event-clock-v1.php
           php tests/profile-analytics-period-v1.php
+          php tests/profile-analytics-authority-v1.php
           php tests/profile-analytics-briefings-v1.php
           php tests/profile-promotion-native-click-v1.php
           node tests/profile-promotion-native-click-v1.mjs

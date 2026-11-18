@@ -243,11 +243,18 @@ function vp3_product_marketing_outcome_read_v1(PDO $pdo,array $scope,string $pub
     }
     if(array_diff_key($bound,$seen))$attributionGap=true;
     $commerce=vp3_profile_analytics_commerce_v1($pdo,$owner,$window,$history,$subset);
-    $exchanges=[];$exchangeUnavailable=$historyUnavailable;
-    try{vp3_private_analytics_authority_current_v1($pdo,$scope,true);
+    $exchanges=[];$exchangeUnavailable=$historyUnavailable;$exchangeReason=$historyUnavailable?'storage_unavailable':'profile_permission_required';
+    $profileAuthority=true;
+    try{vp3_private_analytics_authority_current_v1($pdo,$scope,true);}
+    catch(RuntimeException $error){
+        if(!in_array($error->getCode(),[403,503],true)||vp3_profile_analytics_retryable_v1($error))throw $error;
+        $profileAuthority=false;$exchangeUnavailable=true;
+        $exchangeReason=$error->getCode()===403?'profile_permission_required':'storage_unavailable';
+    }
+    if($profileAuthority){
         if(!$historyUnavailable){$exchanges=vp3_product_marketing_exchanges_v1($pdo,$owner,$publication,$history,null,$incomplete);$gaps['promotion_associated_exchanges']=$incomplete;}
         $fences[]=static fn()=>vp3_private_analytics_authority_current_v1($pdo,$scope,true);
-    }catch(RuntimeException $error){if($error->getCode()!==403)throw $error;$exchangeUnavailable=true;}
+    }
     $visibleExchanges=[];
     foreach($exchanges as $exchange)if($exchange['reply_at_utc_ms']<$window['to_utc_ms']&&($side=vp3_profile_analytics_window_key_v1($exchange['at_utc_ms'],$window))!==null){
         // Both admission and saved promotion reply must exist by that period's cutoff.
@@ -259,14 +266,14 @@ function vp3_product_marketing_outcome_read_v1(PDO $pdo,array $scope,string $pub
     $catalog=[
         'accepted_promotion_clicks'=>['Accepted promotion clicks','Saved first-party CTA click records for this exact publication; retries of one click identifier count once, not people.'],
         'native_promotion_conversations'=>['Conversations with verified promotion clicks','Distinct native public conversations with a proven accepted click on this publication during this period; not new conversations or people.'],
-        'checkout_started_orders'=>['Orders first opening checkout','Exactly attributed orders whose earliest proven usable provider checkout opened in this period; reservations and retries are not starts.'],
+        'checkout_started_orders'=>['Orders with checkout links ready','Exactly attributed orders whose first provider-confirmed usable checkout link became available in this period. This records link availability, not a buyer opening the provider; reservations and retries do not create another first availability.'],
         'promotion_associated_exchanges'=>['Accepted exchanges showing this promotion','Receipt-bound replies showing this exact publication, linked to an accepted native visitor turn in the period and answered before its cutoff; not inferred purchase intent.'],
     ];
     $metrics=[];$coverage='ready';
     foreach($catalog as $key=>[$label,$definition]){
         $points=[];foreach(['current','previous'] as $side){if($key==='native_promotion_conversations')$counts[$side][$key]=count($native[$side]??[]);
             $partial=$gaps[$key]||($key==='checkout_started_orders'&&$attributionGap);
-            $points[$side]=$key==='promotion_associated_exchanges'&&$exchangeUnavailable?vp3_profile_analytics_point_v1(null,'unavailable','profile_permission_required'):
+            $points[$side]=$key==='promotion_associated_exchanges'&&$exchangeUnavailable?vp3_profile_analytics_point_v1(null,'unavailable',$exchangeReason):
                 vp3_profile_analytics_point_v1($counts[$side][$key],$partial?'partial':'complete',$partial?'source_proof_incomplete':'complete');
             if($points[$side]['coverage']!=='complete')$coverage='limited';}
         $metrics[]=vp3_profile_analytics_metric_v1($key,'commerce',$label,'count',$definition,$points['current'],$points['previous']);

@@ -9,7 +9,7 @@
   const stages=new Set(['listing_review','marketing_review','photo_needed','design_review','image_starting','image_pending',
     'creative_ready','creative_failed','publication_review','published','paused','listing_unavailable','needs_attention']);
   const catalog={accepted_promotion_clicks:'Accepted promotion clicks',native_promotion_conversations:'Conversations with verified promotion clicks',
-    checkout_started_orders:'Orders first opening checkout',verified_paid_orders:'Verified paid orders',
+    checkout_started_orders:'Orders with checkout links ready',verified_paid_orders:'Verified paid orders',
     verified_refunded_orders:'Orders with verified refunds',promotion_associated_exchanges:'Promotion-associated exchanges'};
   const reasons={complete:'',no_observations:'No verified observations in this period.',
     storage_unconfigured:'The required records are not configured.',storage_unavailable:'The required records could not be read.',

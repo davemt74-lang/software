@@ -92,6 +92,15 @@ p6_change(fn($p)=>$p->exec("DELETE FROM role_permissions WHERE role='fan' AND pe
     $v=p6_read();p6_check(p6_metrics($v)['promotion_associated_exchanges']['current']['coverage']==='unavailable'&&p6_metrics($v)['verified_paid_orders']['current']['value']===1,'Profile permission loss withholds excerpts while ordinary Commerce totals remain');
     p6_check(count(p6_review(['marketing:product-plan:992101'])['plans'])===1,'ordinary product plan is not hidden behind Profile permission');
 });
+p6_change(fn($p)=>$p->exec("DELETE FROM settings WHERE setting_key='personal_capabilities_seed_v242'"),function(){
+    p6_check(count(p6_review(['marketing:product-plan:992101'])['plans'])===1,'explicit private Chat grants do not depend on unrelated personal-default provenance');
+    $v=p6_read();p6_check(p6_metrics($v)['promotion_associated_exchanges']['current']['coverage']==='unavailable'
+        &&p6_metrics($v)['verified_paid_orders']['current']['value']===1,'missing personal-default provenance withholds Profile excerpts while preserving verified Commerce totals');
+    p6_check($GLOBALS['pdo']->inTransaction(),'ordinary publication reads preserve the caller transaction when Profile provenance is unavailable');
+    $GLOBALS['pdo']->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='chat.access'");
+    p6_reject(fn()=>p6_read(),403,'missing personal-default provenance cannot bypass current private Chat revocation');
+    p6_check($GLOBALS['pdo']->inTransaction(),'revocation with missing personal provenance preserves caller transaction ownership');
+});
 foreach(['account.access','chat.access'] as $permission)p6_change(fn($p)=>$p->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='$permission'"),fn()=>p6_reject(fn()=>p6_read(),403,'current '.$permission.' revocation blocks publication'));
 p6_change(fn($p)=>$p->exec('UPDATE chat_conversations SET user_agent_id=NULL WHERE id=11'),fn()=>p6_reject(fn()=>p6_read(),403,'original private Chat rebound fails current authority'));
 p6_change(fn($p)=>$p->exec("UPDATE agent_product_launches_v1 SET conversation_id=99 WHERE product_id=992101"),fn()=>p6_reject(fn()=>p6_read(),409,'launch original Chat mismatch is withheld'));

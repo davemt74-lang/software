@@ -71,6 +71,8 @@ function fixture({query=publicationUrl().slice('/chat.php'.length),ready=true,br
   value.money[0].current.value_minor='900719925474099312345';value.money[0].comparison.delta_minor='900719925474099311345';
   api.renderOutcome(host,value,options);
   check(host.textContent.includes('Observed subset')&&host.textContent.includes('USD 9,007,199,254,740,993,123.45'),'partial evidence and exact decimal string amount render');
+  check(host.querySelector('[data-product-marketing-metric="checkout_started_orders"]').textContent.includes('Orders with checkout links ready'),
+    'checkout measure describes usable link availability without claiming the buyer opened the provider');
   check(host.querySelectorAll('img').length===0&&host.textContent.includes('<img onerror=alert(1)>'),'untrusted product title stays text');
   check(host.querySelectorAll('script').length===0&&host.textContent.includes('Does this vase come in blue? <script>alert(1)</script>'),'literal visitor question is bounded text, never executable content or inferred intent');
   check(host.querySelector('[data-product-marketing-exchange="991201"]').querySelector('a').href==='/profile-agent.php?tab=inbox&conversation=991002','visitor exchange opens its exact public conversation, separate from original private Chat');

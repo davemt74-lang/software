@@ -48,7 +48,7 @@ function vp3_profile_specialist_sections_valid_v1(mixed $report): bool
 function vp3_profile_specialist_ref_kind_v1(mixed $ref): ?string
 {
     if(!is_string($ref)||strlen($ref)>180)return null;
-    if(preg_match('/\\Aprofile:(conversation|event|call|followup):[1-9][0-9]{0,17}\\z/D',$ref,$match))return $match[1];
+    if(preg_match('/\Aprofile:(conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',$ref,$match))return $match[1];
     if(!str_starts_with($ref,'profile:analytics:v1:'))return null;
     try{vp3_profile_analytics_period_decode_v1($ref);return 'analytics';}catch(Throwable){return null;}
 }
@@ -67,16 +67,16 @@ function vp3_profile_specialist_url_v1(string $kind,mixed $url,?string $ref=null
     if($kind==='analytics'){
         if($ref===null||vp3_profile_specialist_ref_kind_v1($ref)!=='analytics')return false;
         $chat=preg_quote(vp3_profile_specialist_href_v1('/chat.php'),'~');
-        if(!preg_match('~\\A'.$chat.'\\?agent=(system|[1-9][0-9]{0,15})&conversation_id=([1-9][0-9]{0,15})&profile_analytics=([^&]+)\\z~D',$url,$m))return false;
+        if(!preg_match('~\A'.$chat.'\?agent=(system|[1-9][0-9]{0,15})&conversation_id=([1-9][0-9]{0,15})&profile_analytics=([^&]+)\z~D',$url,$m))return false;
         $agent=$m[1]==='system'?0:(int)$m[1];$conversation=(int)$m[2];
         try{return $url===vp3_profile_analytics_period_href_v1($agent,$conversation,$ref);}catch(Throwable){return false;}
     }
     $profile=preg_quote(vp3_profile_specialist_href_v1('/profile-agent.php'),'~');
     $transcript=preg_quote(vp3_profile_specialist_href_v1('/artist-listening.php'),'~');
     return preg_match(match($kind){
-        'conversation','call'=>'~\\A'.$profile.'\\?tab=inbox&conversation=[1-9][0-9]{0,17}\\z~D',
-        'event'=>'~\\A'.$profile.'\\?tab=visitors&session=[1-9][0-9]{0,17}\\z~D',
-        'followup'=>'~\\A'.$transcript.'\\?session=[1-9][0-9]{0,17}\\z~D',
+        'conversation','call'=>'~\A'.$profile.'\?tab=inbox&conversation=[1-9][0-9]{0,17}\z~D',
+        'event'=>'~\A'.$profile.'\?tab=visitors&session=[1-9][0-9]{0,17}\z~D',
+        'followup'=>'~\A'.$transcript.'\?session=[1-9][0-9]{0,17}\z~D',
         default=>'~(?!)~',
     },$url)===1;
 }

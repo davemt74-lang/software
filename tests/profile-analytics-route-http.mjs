@@ -40,6 +40,8 @@ try{
   check((await read('/system',query('7'))).destination===null,'retired or invalid named Agent cannot inherit system fallback');
   check((await read('/other-chat',query())).destination===null,'wrong requested Chat cannot inherit selected fallback Chat');
   check((await read('/denied',query())).destination===null,'private Profile access denial withholds destination');
+  const havanaGap=periodRef(1,Math.floor(Date.parse('2026-03-08T05:00:00Z')/1000),'America/Havana','e');
+  check((await read('/',query('7','11',havanaGap))).destination?.ref===havanaGap,'actual helper retains canonical first valid day start when midnight is skipped');
   for(const raw of [
     query()+'&agent=7',query()+'&%61gent=7',query()+'&conversation_id=11',query()+'&profile_analytics='+encodeURIComponent(periodRef()),
     query().replace('agent=7','agent[]=7'),query().replace('conversation_id=11','conversation.id=11'),
@@ -48,6 +50,7 @@ try{
     query().replace('&conversation_id=11',''),query().replace('agent=7&',''),
     query('7','11',''),query('7','11',periodRef()+'='),query('7','11',periodRef(1,cutoff+1)),
     query('7','11',periodRef(1,cutoff,'America/New_York','u')),
+    query('7','11',periodRef(1,Math.floor(Date.parse('2026-11-01T05:00:00Z')/1000),'America/Havana','e')),
     query()+'&marketing_plan=87',query()+'&profile_webmcp_return=token',
     query().replace('agent=7','agent=%ZZ'),query().replace('profile_analytics=','profile_analytics=%0A')
   ]){

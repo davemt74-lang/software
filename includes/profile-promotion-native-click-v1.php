@@ -70,10 +70,6 @@ function vp3_profile_promotion_owner_current_v1(PDO $pdo,int $owner): void
         throw new RuntimeException('Native click capability definitions are unavailable.',503);
     $rows=static fn(string $sql,array $params=[]):array=>vp3_profile_promotion_native_click_rows_v1($pdo,$sql,$params,true);
     if(!agent_commerce_sqlite_pa2($pdo)){
-        try{$level=$pdo->query('SELECT @@transaction_isolation')->fetchColumn();}
-        catch(PDOException $error){if((int)($error->errorInfo[1]??0)!==1193)throw $error;$level=$pdo->query('SELECT @@tx_isolation')->fetchColumn();}
-        if(!in_array(strtoupper(str_replace('_','-',(string)$level)),['REPEATABLE-READ','SERIALIZABLE'],true))
-            throw new RuntimeException('Native click capability storage needs a consistent transaction.',503);
         $tables=['users','user_account_types','settings','permissions','role_permissions'];
         $q=$pdo->prepare('SELECT TABLE_NAME,ENGINE FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (?,?,?,?,?)');
         $q->execute($tables);$engines=$q->fetchAll(PDO::FETCH_ASSOC);$q->closeCursor();
@@ -84,6 +80,8 @@ function vp3_profile_promotion_owner_current_v1(PDO $pdo,int $owner): void
     $user=$rows('SELECT id,role,is_active FROM users WHERE id=?',[$owner])[0]??null;
     if(!$user||(int)$user['is_active']!==1)vp3_profile_agent_public_unavailable_v1();
     $primary=(string)$user['role'];$roles=valid_role($primary)?[$primary]:[];
+    // Hold the positive role and grant records used for admission. A session
+    // isolation default does not identify the caller's active transaction.
     foreach($rows('SELECT role,assigned_explicitly_at FROM user_account_types WHERE user_id=? ORDER BY role',[$owner]) as $row)
         if(valid_role((string)$row['role'])&&($row['role']===$primary||$row['assigned_explicitly_at']!==null))$roles[]=(string)$row['role'];
     $roles=array_values(array_unique($roles));sort($roles,SORT_STRING);
@@ -92,6 +90,8 @@ function vp3_profile_promotion_owner_current_v1(PDO $pdo,int $owner): void
     $required=['profile_agent.access','profile_chat.access'];$catalog=personal_capability_catalog_v242();
     foreach($required as $key)if(!isset($catalog[$key]))throw new RuntimeException('Native click capability definitions are unavailable.',503);
     $seed=$rows('SELECT setting_value FROM settings WHERE setting_key=?',[STONEFELLOW_PERSONAL_CAPABILITIES_SEED])[0]??null;
+    // An absent marker is a gap, not a locked default-capability proof.
+    if(!$seed)throw new RuntimeException('Native click capability state is unavailable.',503);
     $value=(string)($seed['setting_value']??'');
     if(!in_array($value,['','0','1'],true))throw new RuntimeException('Native click capability state is unavailable.',503);
     $rows('SELECT permission_key FROM permissions WHERE permission_key IN (?,?) ORDER BY permission_key',$required);

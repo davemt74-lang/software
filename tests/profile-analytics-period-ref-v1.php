@@ -25,6 +25,17 @@ foreach([['2026-03-09',23],['2026-11-02',25]] as [$day,$hours]){
     papr_check(($dst['window']['to_utc_ms']-$dst['window']['from_utc_ms'])===3600000*$hours,'a local day follows the real DST boundary: '.$hours.' hours');
     papr_check($dst['timezone_source']==='schedule'&&str_ends_with($dst['window']['from_local'],$hours===23?'-05:00':'-04:00'),'encoded schedule provenance and historical offsets stay exact');
 }
+$havana=new DateTimeZone('America/Havana');
+$gap=vp3_profile_analytics_day_start_v1('2026-03-08',$havana);
+$gapPeriod=vp3_profile_analytics_period_decode_v1(vp3_profile_analytics_period_ref_v1(1,$gap->getTimestamp(),'America/Havana','explicit'),$now);
+papr_check($gap->format('c')==='2026-03-08T01:00:00-04:00'&&$gapPeriod['window']['from_local']==='2026-03-07T00:00:00-05:00','a skipped midnight uses the first real local-day instant without moving the previous boundary');
+$fold=vp3_profile_analytics_day_start_v1('2026-11-01',$havana);
+$foldPeriod=vp3_profile_analytics_period_decode_v1(vp3_profile_analytics_period_ref_v1(1,$fold->getTimestamp(),'America/Havana','explicit'),$now);
+papr_check($fold->format('c')==='2026-11-01T00:00:00-04:00'&&$foldPeriod['window']['to_utc_ms']===$fold->getTimestamp()*1000,'a repeated midnight chooses its first occurrence');
+papr_invalid(vp3_profile_analytics_period_encode_v1(1,$fold->getTimestamp()+3600,'America/Havana','e'),'the second occurrence of repeated midnight is not another day boundary',$now);
+papr_invalid(vp3_profile_analytics_period_encode_v1(1,$gap->getTimestamp()+1,'America/Havana','e'),'one second after a normalized midnight gap is not a valid cutoff',$now);
+$gapFollowing=vp3_profile_analytics_period_decode_v1(vp3_profile_analytics_period_ref_v1(1,vp3_profile_analytics_day_start_v1('2026-03-09',$havana)->getTimestamp(),'America/Havana','explicit'),$now);
+papr_check($gapFollowing['window']['from_local']==='2026-03-08T01:00:00-04:00'&&$gapFollowing['window']['to_utc_ms']-$gapFollowing['window']['from_utc_ms']===23*3600000,'a skipped-midnight reporting day still spans its exact 23 real hours');
 $k=(new DateTimeImmutable('2026-11-17 00:00:00',new DateTimeZone('Asia/Kathmandu')))->getTimestamp();
 $quarter=vp3_profile_analytics_period_decode_v1(vp3_profile_analytics_period_ref_v1(30,$k,'Asia/Kathmandu','explicit'),$now);
 papr_check($quarter['window']['to_local']==='2026-11-17T00:00:00+05:45'&&$quarter['window']['from_local']==='2026-10-18T00:00:00+05:45','non-hour timezone offsets and 30 calendar days remain exact');

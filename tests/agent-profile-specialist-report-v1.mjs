@@ -197,6 +197,9 @@ const fixedSource={ref:fixedRef,revision:'d'.repeat(64),title:'Completed Profile
   profile_source_kind:'analytics',presentation_owner:'profile_briefing_v1',profile_presentation_owned:true,legacy_delivered:false};
 check(model(report({findings:[fixedSource]}))?.findings[0].href===fixedSource.url,'fixed analytics source retains exact original private Chat destination');
 check(model(report({findings:[fixedSource]}))?.findings[0].legacy_delivered===false,'briefing ownership is not a delivery receipt');
+const gapRef=periodRef(1,Math.floor(Date.parse('2026-03-08T05:00:00Z')/1000),'America/Havana','e');
+check(model(report({findings:[{...fixedSource,ref:gapRef,url:fixedSource.url.replace(encodeURIComponent(fixedRef),encodeURIComponent(gapRef))}]}))!==null,
+  'Hub accepts the same normalized skipped-midnight source boundary as the workspace');
 check(model(report({findings:[{...fixedSource,url:fixedSource.url.replace('agent=7','agent=system')}]}))!==null,'system Agent analytics route is supported');
 check(model(report({findings:[{...fixedSource,url:fixedSource.url.replace('conversation_id=11','conversation_id=12')}]}))!==null,'another original Chat remains an exact link rather than being rewritten');
 for(const url of [fixedSource.url+'&agent=7',fixedSource.url+'&redirect=/elsewhere',fixedSource.url+'#fragment',

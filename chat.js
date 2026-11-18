@@ -67,7 +67,7 @@
       window.history.replaceState(null,'',url.pathname+url.search+url.hash);
     } catch {}
   }
-  window.addEventListener('stonefellow:chat-context-changing',event=>{
+  if(initialProfileAnalyticsDestination||initialMediaCommandIntent?.publicationId)window.addEventListener('stonefellow:chat-context-changing',event=>{
     if(event.detail?.initialRestore!==true){cancelProfileAnalyticsDestinationV1();cancelMarketingPublicationDestinationV1();}
   });
   const thread = document.getElementById('chatThread');
