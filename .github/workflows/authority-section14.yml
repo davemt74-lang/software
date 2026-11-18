@@ -76,6 +76,26 @@ jobs:
           php tests/profile-analytics-period-v1.php
           php tests/profile-analytics-authority-v1.php
           php tests/profile-analytics-briefings-v1.php
+      - name: Exact product promotion evidence, private follow-through and briefings
+        run: |
+          php tests/profile-promotion-native-click-v1.php
+          node tests/profile-promotion-native-click-v1.mjs
+          php tests/product-marketing-followthrough-v1.php
+          php tests/product-marketing-briefings-v1.php
+          php tests/product-marketing-profile-findings-v1.php
+          node tests/product-marketing-report-v1.mjs
+          node tests/product-marketing-publication-http.mjs
+      - name: Product promotion evidence and private follow-through on native MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-promotion-native-click-v1.php
+          node tests/profile-promotion-native-click-v1.mjs
+          php tests/product-marketing-followthrough-v1.php
+          php tests/product-marketing-briefings-v1.php
+          php tests/product-marketing-profile-findings-v1.php
       - name: Shared Profile specialist source, report and delivery
         run: |
           php tests/profile-specialist-sources-v1.php
@@ -297,6 +317,14 @@ jobs:
         run: node tests/profile-specialist-workspace-browser.mjs
       - name: Completed Profile analytics periods, fixed briefing links and compact layout
         run: node tests/profile-analytics-period-browser.mjs
+      - name: Exact product publication reports, original Chat and compact layout
+        run: node tests/product-marketing-followthrough-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: product-marketing-browser-evidence
+          path: artifacts/product-marketing-followthrough/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:

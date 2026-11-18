@@ -45,7 +45,7 @@ if ($method==='GET' && $claim && !str_contains($purpose,'prefetch') && !str_cont
         $viewer = current_user();
         $digest = @hash_file('sha256',$record['path']);
         if ((int)($viewer['id']??0)!==$owner && is_string($digest) && hash_equals($record['sha256'],$digest)
-            && profile_promotion_attribution_record_click_v1($pdo,$owner,$key,$claim['placement'],$claim['click_id'])) {
+            && vp3_profile_promotion_accept_click_v1($pdo,$record,$key,$_GET)) {
             profile_product_promotion_click_remember_v1($claim['click_id'],$owner,(int)$record['card']['product_id'],$claim['conversation_id']);
             $destination .= '?promotion_click='.$claim['click_id'];
         }

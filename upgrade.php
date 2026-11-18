@@ -341,6 +341,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_profile_projection_schema_ready_pa4b($schemaConnection)
         && vp3_profile_event_clock_ready_v1($schemaConnection)
         && vp3_profile_checkout_schema_ready_pa5($schemaConnection)
+        && vp3_profile_promotion_native_click_ready_v1($schemaConnection)
+        && agent_commerce_checkout_open_clock_ready_v1($schemaConnection)
         && vp3_gelato_schema_ready_v1($schemaConnection)
         && vp3_stoneward_schema_ready_v1($schemaConnection)
         && vp3_stoneward_playback_ready_v1($schemaConnection)

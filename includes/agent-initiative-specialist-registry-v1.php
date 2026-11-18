@@ -34,6 +34,11 @@ function vp3_initiative_goal_specialist_v1(array $goal): ?string
     if ($tool === 'work.prepare_private' && is_string($goal['primary'] ?? null)
         && str_starts_with($goal['primary'],'specialist:profile:')
         && vp3_profile_specialist_ref_kind_v1(substr($goal['primary'],11))!==null) return 'profile';
+    if ($tool === 'work.prepare_private' && is_string($goal['primary'] ?? null)
+        && str_starts_with($goal['primary'],'specialist:marketing:product-')) {
+        require_once __DIR__.'/profile-product-marketing-ref-v1.php';
+        if(vp3_product_marketing_ref_parse_v1(substr($goal['primary'],11))!==null)return 'marketing';
+    }
     if ($tool === 'coordination.review') {
         $route = $goal['coordination_route']['specialist'] ?? null;
         if ($route === 'casual' && is_string($goal['primary'] ?? null)) {

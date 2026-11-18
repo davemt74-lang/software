@@ -511,3 +511,6 @@
   .vp3-chat-specialist-activity .vp3-specialist-settings-button { width:44px;min-height:44px; }
 }
 .vp3-email-arrivals time{display:block;color:var(--muted,#46576a);font-size:11px}
+.vp3-profile-product-marketing-links{display:flex;flex-wrap:wrap;gap:8px 12px;margin:8px 0 4px;padding-left:12px;border-left:2px solid #d7dee8}
+.vp3-profile-product-marketing-links>small{flex-basis:100%;font-size:13px;line-height:1.5}
+.vp3-profile-product-marketing-links>a{display:inline-flex;align-items:center;min-height:38px;overflow-wrap:anywhere}

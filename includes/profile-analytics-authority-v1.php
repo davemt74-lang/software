@@ -25,7 +25,7 @@ function vp3_profile_analytics_retryable_v1(Throwable $error): bool
 }
 
 /** Current canonical authority, without ending or changing a caller transaction. */
-function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): array
+function vp3_private_analytics_authority_current_v1(PDO $pdo,array $scope,bool $requireProfile=true): array
 {
     $denied=static function():never{throw new RuntimeException('Current private Profile access is required.',403);};
     if(!$pdo->inTransaction())throw new RuntimeException('Profile analytics needs an active read transaction.',503);
@@ -64,17 +64,21 @@ function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): arra
         }
         $chat=vp3_profile_analytics_rows_v1($pdo,'SELECT id,user_id,user_agent_id FROM chat_conversations WHERE id=?',[$cid],true)[0]??null;
         if(!$chat||(int)$chat['user_id']!==$owner||($aid===0?$chat['user_agent_id']!==null:(int)($chat['user_agent_id']??0)!==$aid))$denied();
-        $permissions=['account.access','chat.access','profile_agent.access','profile_chat.access'];
+        $permissions=$requireProfile?['account.access','chat.access','profile_agent.access','profile_chat.access']:['account.access','chat.access'];
         if(!in_array('admin',$roles,true)){
             $catalog=permission_catalog();$personal=personal_capability_catalog_v242();
             foreach($permissions as $key)if(!isset($catalog[$key])&&!isset($personal[$key]))
                 throw new RuntimeException('Profile analytics permission definitions are unavailable.',503);
-            $seed=vp3_profile_analytics_rows_v1($pdo,'SELECT setting_value FROM settings WHERE setting_key=?',[STONEFELLOW_PERSONAL_CAPABILITIES_SEED],true)[0]??null;
-            // An absent marker cannot be protected by a row lock under every
-            // caller isolation level. Do not certify defaults from a gap.
-            if(!$seed)throw new RuntimeException('Profile analytics permission state is unavailable.',503);
-            $seedValue=(string)($seed['setting_value']??'');
-            if(!in_array($seedValue,['','0','1'],true))throw new RuntimeException('Profile analytics permission state is invalid.',503);
+            $seedValue='1';
+            if(array_intersect($permissions,array_keys($personal))){
+                $seed=vp3_profile_analytics_rows_v1($pdo,'SELECT setting_value FROM settings WHERE setting_key=?',[STONEFELLOW_PERSONAL_CAPABILITIES_SEED],true)[0]??null;
+                // An absent marker cannot be protected by a row lock under every
+                // caller isolation level. Do not certify defaults from a gap.
+                // Ordinary private Chat grants do not use personal defaults.
+                if(!$seed)throw new RuntimeException('Profile analytics permission state is unavailable.',503);
+                $seedValue=(string)($seed['setting_value']??'');
+                if(!in_array($seedValue,['','0','1'],true))throw new RuntimeException('Profile analytics permission state is invalid.',503);
+            }
             $marks=implode(',',array_fill(0,count($permissions),'?'));
             // Parent keys precede grant rows, matching the permission FK.
             vp3_profile_analytics_rows_v1($pdo,"SELECT permission_key FROM permissions WHERE permission_key IN ($marks) ORDER BY permission_key",$permissions,true);
@@ -100,4 +104,10 @@ function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): arra
         if($error instanceof RuntimeException&&in_array($error->getCode(),[403,503],true))throw $error;
         throw new RuntimeException('Profile analytics permissions are temporarily unavailable.',503,$error);
     }
+}
+
+/** Existing Profile readers retain their exact capability requirements. */
+function vp3_profile_analytics_authority_current_v1(PDO $pdo,array $scope): array
+{
+    return vp3_private_analytics_authority_current_v1($pdo,$scope,true);
 }

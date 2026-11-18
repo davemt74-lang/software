@@ -24,6 +24,7 @@ foreach (['stripe','square','paypal'] as $provider) {
         if($method!=='POST')throw new RuntimeException('Unexpected checkout read.');
         $rows=creation_rows_pa2($f);creation_check_pa2(count($rows)===1&&$rows[0]['status']==='creating'&&!db()->inTransaction(),$provider.' saves exactly one attempt before provider I/O');
         $a=$rows[0];creation_check_pa2($a['provider_account_id']===$f['account']&&$a['creation_request_json']!=='',$provider.' saves exact merchant and frozen checkout request');
+        creation_check_pa2($a['opened_at_utc_ms']===null,$provider.' reservation and provider request have no confirmed opening time');
         creation_check_pa2(!str_contains($a['creation_request_json'],'fixture-access-token')&&!str_contains($a['creation_request_json'],'Authorization'),$provider.' persisted request excludes credential headers');
         if(!$nestedChecked){$nestedChecked=true;$n=count($writes);creation_reject_pa2(fn()=>creation_call_pa2($f),$provider.' live lease blocks a concurrent checkout submit');creation_check_pa2(count($writes)===$n,$provider.' concurrent submit performs no provider request');}
         $key=$provider==='square'?($body['idempotency_key']??''):'';
@@ -37,7 +38,9 @@ foreach (['stripe','square','paypal'] as $provider) {
     };
     creation_reject_pa2(fn()=>creation_call_pa2($f),$provider.' uncertain provider response is unsuccessful');
     $a=creation_rows_pa2($f)[0];creation_check_pa2($a['status']==='creating'&&$a['creation_lease_token']===''&&$a['last_error_class']==='checkout_provider_uncertain',$provider.' uncertainty keeps a retryable attempt with safe error state');
-    $fail=false;$created=creation_call_pa2($f,'-changed-caller-url');
+    creation_check_pa2($a['opened_at_utc_ms']===null,$provider.' uncertain provider completion never fabricates checkout opening');
+    $fail=false;$beforeOpen=agent_commerce_checkout_open_now_v1();$created=creation_call_pa2($f,'-changed-caller-url');
+    creation_check_pa2((int)$created['opened_at_utc_ms']>=$beforeOpen&&(int)$created['opened_at_utc_ms']<=agent_commerce_checkout_open_now_v1(),$provider.' records provider-confirmed active opening with application UTC time');
     creation_check_pa2(count($writes)===2&&$writes[0]===$writes[1],$provider.' uncertain retry reuses identical provider body and idempotency key');
     creation_check_pa2(count(creation_rows_pa2($f))===1&&$created['status']==='open'&&$created['external_payment_id']==='',$provider.' successful retry completes the original attempt without inventing a payment');
     creation_check_pa2($created['provider_order_id']!==''&&$created['provider_account_id']===$f['account'],$provider.' keeps immutable provider order and merchant identity');
@@ -48,6 +51,7 @@ foreach (['stripe','square','paypal'] as $provider) {
     }
     if($provider==='square')creation_check_pa2($created['provider_order_id']!==$created['external_session_id']&&$created['provider_location_id']!=='','Square Link, Order and location identities stay distinct');
     $again=creation_call_pa2($f);creation_check_pa2($again['id']===$created['id']&&count($writes)===2,$provider.' repeat submit returns the existing checkout without new provider I/O');
+    creation_check_pa2($again['opened_at_utc_ms']===$created['opened_at_utc_ms'],$provider.' reuse preserves the original immutable opening time');
     db()->prepare('UPDATE agent_commerce_orders_v800 SET amount_due_cents=6000 WHERE id=?')->execute([$f['id']]);
     creation_reject_pa2(fn()=>creation_call_pa2($f),$provider.' changed order terms cannot reuse a stale checkout');
     creation_check_pa2(count($writes)===2,$provider.' changed terms are rejected before provider I/O');
@@ -68,6 +72,7 @@ $GLOBALS['pa2_http']=static function(string $method,string $url,array $headers,m
 };
 creation_reject_pa2(fn()=>creation_call_pa2($f),'completion write failure leaves the provider outcome unconfirmed');$pdo->failSql='';
 creation_check_pa2(count(creation_rows_pa2($f))===1&&creation_rows_pa2($f)[0]['status']==='creating','completion write failure retains the original creating attempt');
+creation_check_pa2(creation_rows_pa2($f)[0]['opened_at_utc_ms']===null,'failed persistence cannot retain a checkout opening without its canonical provider result');
 $failPersistence=false;$saved=creation_call_pa2($f);
 creation_check_pa2($requests[0]===$requests[1]&&$saved['status']==='open'&&count(creation_rows_pa2($f))===1,'completion retry cannot create another operation after lost persistence');
 
@@ -77,6 +82,7 @@ $f=creation_order_pa2();$GLOBALS['pa2_http']=static function()use($f):array {
 };
 creation_reject_pa2(fn()=>creation_call_pa2($f),'stale creation worker cannot publish its checkout result');
 $a=creation_rows_pa2($f)[0];creation_check_pa2($a['status']==='creating'&&$a['creation_lease_token']===str_repeat('b',64)&&str_starts_with($a['external_session_id'],'pending:'),'stale failure cannot clear or overwrite a successor’s lease');
+creation_check_pa2($a['opened_at_utc_ms']===null,'stale creation ownership cannot publish an opening time');
 
 foreach (['amount','currency','provider'] as $change) {
     $f=creation_order_pa2();
@@ -88,6 +94,7 @@ foreach (['amount','currency','provider'] as $change) {
     creation_reject_pa2(fn()=>creation_call_pa2($f),'checkout '.$change.' change during provider I/O requires new review');
     $changed=creation_rows_pa2($f)[0];
     creation_check_pa2($changed['status']!=='open'&&$changed['external_session_id']==='cs_changed_'.$f['id'],'changed '.$change.' retains returned identity for reconciliation without publishing an active checkout');
+    creation_check_pa2($changed['opened_at_utc_ms']===null,'changed '.$change.' does not turn a returned provider identity into an active opening');
 }
 
 $f=creation_order_pa2();$pdo->beginTransaction();$before=count($GLOBALS['pa2_http_calls']);
@@ -114,4 +121,23 @@ creation_check_pa2($saved['provider_order_id']==='square_exact_order'&&$saved['e
 $lookup=agent_commerce_attempt_by_external_v800($pdo,'square','square_exact_order');
 creation_check_pa2($lookup&&(int)$lookup['id']===$square['attempt_id'],'original Square Order lookup survives payment completion');
 creation_check_pa2(!str_contains(implode(' ',$urls),'/v2/payments?'),'Square return verification never searches an account-wide payment list');
+creation_check_pa2($saved['opened_at_utc_ms']===null,'a verified payment does not invent the opening time of a legacy checkout');
+
+// A deployment may run new code before its explicit Database Upgrade. Keep
+// canonical checkout usable and do not backdate legacy starts during upgrade.
+$pdo->exec('ALTER TABLE agent_commerce_checkout_attempts_v800 RENAME COLUMN opened_at_utc_ms TO prior_opened_at_utc_ms');
+creation_check_pa2(!agent_commerce_checkout_open_clock_ready_v1($pdo)&&agent_commerce_schema_ready_v800($pdo),'missing analytics clock does not disable the existing Commerce checkout schema');
+$legacy=creation_order_pa2();
+$GLOBALS['pa2_http']=static fn():array=>['status'=>200,'json'=>['id'=>'cs_before_open_clock','url'=>'https://provider.example.test/legacy']];
+$legacyOpen=creation_call_pa2($legacy);
+creation_check_pa2($legacyOpen['status']==='open'&&!array_key_exists('opened_at_utc_ms',$legacyOpen),'pre-upgrade checkout still saves the validated provider result without read-time DDL');
+$pdo->beginTransaction();creation_reject_pa2(fn()=>agent_commerce_checkout_open_clock_install_v1($pdo),'clock installation refuses a caller-owned transaction');$pdo->rollBack();
+agent_commerce_checkout_open_clock_install_v1($pdo);agent_commerce_checkout_open_clock_install_v1($pdo);
+creation_check_pa2(agent_commerce_checkout_open_clock_ready_v1($pdo)&&creation_rows_pa2($legacy)[0]['opened_at_utc_ms']===null,'explicit idempotent upgrade leaves established legacy checkout times unknown');
+creation_check_pa2(creation_call_pa2($legacy)['opened_at_utc_ms']===null,'reopening a legacy checkout cannot backfill a current timestamp');
+if($fixtureConfig['driver']==='mysql')$pdo->exec("SET SESSION time_zone='+05:30'");
+$fresh=creation_order_pa2();$before=agent_commerce_checkout_open_now_v1();
+$GLOBALS['pa2_http']=static fn():array=>['status'=>200,'json'=>['id'=>'cs_after_open_clock','url'=>'https://provider.example.test/fresh']];
+$freshOpen=creation_call_pa2($fresh);
+creation_check_pa2((int)$freshOpen['opened_at_utc_ms']>=$before&&(int)$freshOpen['opened_at_utc_ms']<=agent_commerce_checkout_open_now_v1(),'new openings after upgrade use epoch time independently of the database session timezone');
 echo 'COMMERCE_CHECKOUT_CREATION_PA2=PASS driver='.$fixtureConfig['driver'].' checks='.$checks."\n";

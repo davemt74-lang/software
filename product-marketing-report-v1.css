@@ -1,0 +1,35 @@
+.vp3-product-marketing { min-width:0; color:#17243a; font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.vp3-product-marketing :is(h3,h4,h5,p,dl) { margin:0 0 .7rem; }
+.vp3-product-marketing h3 { font-size:18px; line-height:1.4; }
+.vp3-product-marketing h4 { margin-top:1rem; font-size:16px; }
+.vp3-product-marketing h5 { font-size:15px; }
+.vp3-product-marketing small { display:block; font-size:13px; line-height:1.45; color:#526681; }
+.vp3-product-marketing-period { margin:.8rem 0; padding:.85rem; background:#f6f8fc; border:1px solid #d8e1ef; border-radius:.6rem; }
+.vp3-product-marketing-period small { margin:.35rem 0; }
+.vp3-product-marketing-coverage { padding:.8rem; background:#f6f8fc; border:1px solid #d8e1ef; border-radius:.6rem; }
+.vp3-product-marketing-plan { padding:.9rem; border:1px solid #d8e1ef; border-radius:.6rem; margin:.7rem 0; }
+.vp3-product-marketing-actions { display:flex; flex-wrap:wrap; gap:.55rem; margin:.7rem 0; }
+.vp3-product-marketing :is(a,button) { max-width:100%; overflow-wrap:anywhere; }
+.vp3-product-marketing-actions a,.vp3-product-marketing button { display:inline-flex; align-items:center; min-height:42px; padding:.45rem .7rem; border:1px solid #bfcee3; border-radius:.5rem; background:white; color:#214c88; font:inherit; line-height:1.4; text-decoration:none; cursor:pointer; }
+.vp3-product-marketing [aria-pressed="true"] { font-weight:700; border-color:#83a5fa; background:#edf3ff; }
+.vp3-product-marketing :is(a,button,summary):focus-visible { outline:3px solid #3d5cb3; outline-offset:2px; }
+.vp3-product-marketing details { margin:.8rem 0; padding:.75rem; border:1px solid #d8e1ef; border-radius:.6rem; }
+.vp3-product-marketing summary { font-size:14px; font-weight:650; cursor:pointer; }
+.vp3-product-marketing details[open]>summary { margin-bottom:.8rem; }
+.vp3-product-marketing dt { font-weight:650; }
+.vp3-product-marketing dd { margin:.25rem 0 .8rem; }
+.vp3-product-marketing-exchanges>section { border-left:2px solid #d8e1ef; padding-left:.8rem; margin:1rem 0; }
+.vp3-product-marketing-exchanges blockquote { margin:.5rem 0; font-size:14px; line-height:1.6; }
+.vp3-product-marketing-table { width:100%; border-collapse:collapse; table-layout:fixed; margin:1rem 0; font-size:14px; }
+.vp3-product-marketing-table :is(th,td) { padding:.6rem .4rem; text-align:left; vertical-align:top; border-bottom:1px solid #d8e1ef; overflow-wrap:anywhere; }
+.vp3-product-marketing-table th:first-child { width:34%; }
+.vp3-product-marketing-table strong { font-size:14px; }
+.vp3-product-marketing-table small { margin-top:.3rem; }
+@media (max-width:640px) {
+  .vp3-product-marketing-table,.vp3-product-marketing-table tbody { display:block; }
+  .vp3-product-marketing-table thead { display:none; }
+  .vp3-product-marketing-table tr { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-bottom:1px solid #d8e1ef; padding:.7rem 0; }
+  .vp3-product-marketing-table th:first-child { display:block; width:auto; grid-column:1/-1; }
+  .vp3-product-marketing-table :is(th,td) { display:block; padding:.25rem .2rem; border:0; }
+  .vp3-product-marketing-table td::before { display:block; content:attr(data-label); color:#526681; font-size:13px; margin-bottom:.35rem; }
+}

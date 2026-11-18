@@ -400,6 +400,16 @@ p5_check(!str_contains($serialized,'fixture_analytics_merchant')&&!str_contains(
 $later=p5_read(null,null,$now->modify('+3 days'));
 p5_check($later['revision']===$baseline['revision']&&$later['window']===$baseline['window']&&$later['backlog']['as_of_utc_ms']!==$baseline['backlog']['as_of_utc_ms'],'time passage preserves fixed source identity while live backlog has its own observation time');
 
+p5_mutation(function(PDO $pdo){
+    $result=json_decode($pdo->query('SELECT result_json FROM agent_workflow_receipts WHERE id=998001')->fetchColumn(),true);
+    foreach(['turn_id','conversation_id','visitor_message_id','answer_message_id'] as $key)$result[$key]=(string)$result[$key];
+    $pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE id=998001')->execute([json_encode($result,JSON_THROW_ON_ERROR)]);
+    $read=p5_read();p5_check(p5_metrics($read)['agent_reply_messages']['previous']['value']===1&&$read['first_reply_cohorts']['previous']['replied']===1,'canonical decimal-string IDs from native dispatcher receipts verify replies and first-reply cohort');
+    $result['answer_message_id']='0'.$result['answer_message_id'];
+    $pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE id=998001')->execute([json_encode($result,JSON_THROW_ON_ERROR)]);
+    p5_check(p5_metrics(p5_read())['agent_reply_messages']['previous']['coverage']==='partial','noncanonical receipt ID cannot be coerced into a verified reply');
+});
+
 p5_mutation(function(PDO $pdo)use($baseline,$fixture){
     $pdo->exec("UPDATE profile_agent_conversations SET status='resolved' WHERE id=991003");
     $pdo->exec("UPDATE profile_agent_handoff_turns_pa3 SET state='cancelled' WHERE id=995003");

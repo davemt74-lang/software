@@ -445,7 +445,7 @@ function vp3_coordination_admit_v1(PDO $pdo,array $user,array $binding,bool $exe
     foreach($candidates as $candidate){
         $primary=$candidate['primary'];
         if(isset($covered[$primary]))continue;
-        if(vp3_coordination_profile_presentation_owned_v1(['primary'=>$primary],$items)){
+        if(vp3_coordination_native_presentation_owned_v1(['primary'=>$primary],$items)){
             vp3_coordination_scan_mark_v1($matches,$primary,'native_presentation');
             continue;
         }
@@ -484,7 +484,7 @@ function vp3_coordination_admit_v1(PDO $pdo,array $user,array $binding,bool $exe
     foreach($candidates as $candidate){
         $primary=$candidate['primary'];$route=$routes[$primary];
         if(isset($covered[$primary])||isset($transcriptHolds[$primary]))continue;
-        if(vp3_coordination_profile_presentation_owned_v1(['primary'=>$primary],$items)){
+        if(vp3_coordination_native_presentation_owned_v1(['primary'=>$primary],$items)){
             vp3_coordination_scan_mark_v1($matches,$primary,'native_presentation');
             continue;
         }

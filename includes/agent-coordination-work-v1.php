@@ -92,6 +92,10 @@ function vp3_coordination_valid_refs_v1(mixed $sources): bool
         if(!is_string($ref)||!preg_match('/\A(?:gmail|office|planning|media|canvas|curiosity|casual|connected-sites|transcript|marketing|profile):[a-zA-Z0-9:@_-]{1,155}\z/D',$ref)
             ||!is_string($revision)||!preg_match('/\A[a-f0-9]{64}\z/D',$revision))return false;
         if(str_starts_with($ref,'profile:')&&vp3_profile_specialist_ref_kind_v1($ref)===null)return false;
+        if(str_starts_with($ref,'marketing:product-')){
+            require_once __DIR__.'/profile-product-marketing-ref-v1.php';
+            if(vp3_product_marketing_ref_parse_v1($ref)===null)return false;
+        }
     }
     return true;
 }
@@ -132,11 +136,26 @@ function vp3_coordination_profile_report_draft_v1(array $report): string
 }
 
 /** A native presenter owns delivery even before any presentation receipt exists. */
-function vp3_coordination_profile_presentation_owned_v1(array $goal,array $evidence): bool
+function vp3_coordination_native_presentation_owned_v1(array $goal,array $evidence): bool
 {
     if(isset($goal['followthrough']))return false;
     $item=$evidence[$goal['primary']??'']??[];
-    return ($item['specialist']??null)==='profile'&&($item['profile_presentation_owned']??false)===true;
+    if(($item['specialist']??null)==='profile'&&($item['profile_presentation_owned']??false)===true)return true;
+    return vp3_coordination_product_marketing_presentation_owned_v1($item);
+}
+
+function vp3_coordination_product_marketing_presentation_owned_v1(array $item): bool
+{
+    if(($item['specialist']??null)!=='marketing'||!is_string($item['ref']??null)||($item['product_marketing_presentation_owned']??false)!==true
+        ||!in_array($item['presentation_owner']??null,['initiative_product_launch_v1','initiative_promotion_outcome_v1'],true))return false;
+    require_once __DIR__.'/profile-product-marketing-ref-v1.php';
+    return vp3_product_marketing_ref_parse_v1($item['ref']??null)!==null;
+}
+
+/** Compatibility for saved Profile callers; new routing uses the shared guard. */
+function vp3_coordination_profile_presentation_owned_v1(array $goal,array $evidence): bool
+{
+    return vp3_coordination_native_presentation_owned_v1($goal,$evidence);
 }
 
 /** The queue and Chat only keep the bounded structured result, not the provider response. */
@@ -679,7 +698,7 @@ function vp3_coordination_other_chat_delivered_v1(PDO $pdo,array $user,array $go
 function vp3_coordination_should_report_v1(PDO $pdo,array $user,array $goal,int $runId,array $work,array $evidence): bool
 {
     $output=$work['output'];
-    if(vp3_coordination_profile_presentation_owned_v1($goal,$evidence))return false;
+    if(vp3_coordination_native_presentation_owned_v1($goal,$evidence))return false;
     if(isset($goal['followthrough']))return true;
     if(isset($goal['coordination_work']))return false;
     $action=$goal['coordination_route']['action']??null;

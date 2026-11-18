@@ -113,7 +113,47 @@ function vp3_coordination_marketing_recommendations_v1(PDO $pdo, array $scope, ?
     return $out;
 }
 
-function vp3_coordination_marketing_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array
+/** Product plans have their own private authority, independent of Campaign availability. */
+function vp3_coordination_marketing_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now,
+    bool $includeCampaigns=true): array
+{
+    $productRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'product-')));
+    $campaignRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'campaign-')));
+    $readers=[];
+    if($productRefs!==[])$readers['products']=static function()use($pdo,$scope,$productRefs,$now):array{
+        // Optional product storage can be absent on an otherwise configured
+        // specialist installation. Do not initialize its runtime on a read.
+        foreach(['agent_product_launches_v1','agent_commerce_products_v800','agent_commerce_marketing_drafts_v1',
+            'agent_commerce_promotions_v1','user_media_assets'] as $table)
+            if(!schema_metadata_table_exists($pdo,$table))return ['items'=>[],'coverage'=>'unconfigured'];
+        require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+        return vp3_coordination_product_marketing_sources_v1($pdo,$scope,$productRefs,$now);
+    };
+    // Preserve the existing Campaign discovery switch. Explicit rereads retain
+    // their original authority even when the current automatic sweep is paused.
+    if($includeCampaigns&&$campaignRefs!==[])$readers['campaigns']=static fn():array=>
+        vp3_coordination_marketing_campaign_sources_v1($pdo,$scope,$campaignRefs,$now);
+    $items=[];$coverage=[];
+    foreach($readers as $domain=>$read){
+        try{$result=$read();}
+        catch(Throwable $error){
+            if(!$pdo->inTransaction()||$error->getCode()===403
+                ||$error instanceof PDOException&&(in_array((int)($error->errorInfo[1]??0),[1020,1205,1213],true)
+                    ||in_array((string)$error->getCode(),['40001','40P01'],true)))throw $error;
+            $result=['items'=>[],'coverage'=>'unavailable'];
+        }
+        $items+=$result['items'];
+        $coverage[$domain]=$result['coverage'];
+    }
+    if(in_array('unavailable',$coverage,true))$state=$items||in_array('ready',$coverage,true)||in_array('limited',$coverage,true)?'limited':'unavailable';
+    elseif(in_array('limited',$coverage,true))$state='limited';
+    elseif(in_array('ready',$coverage,true))$state='ready';
+    else $state='unconfigured';
+    if($refs===null&&count($items)>24){$items=array_slice($items,0,24,true);$state='limited';}
+    return ['items'=>$items,'coverage'=>$state,'coverage_by_domain'=>$coverage];
+}
+
+function vp3_coordination_marketing_campaign_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array
 {
     $recommendationRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'campaign-optimization:')));
     $reportRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>

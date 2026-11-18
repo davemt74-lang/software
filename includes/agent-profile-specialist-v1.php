@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-analytics-period-ref-v1.php';
+require_once __DIR__.'/profile-product-marketing-ref-v1.php';
 
 /** Pure report projection. Loading this file never loads a public responder or reads storage. */
 const VP3_PROFILE_SPECIALIST_REPORT_V1='vp3.profile-report.v1';
@@ -82,6 +83,30 @@ function vp3_profile_specialist_url_v1(string $kind,mixed $url,?string $ref=null
 
 function vp3_profile_specialist_href_v1(string $path): string{return function_exists('url')?url($path):$path;}
 
+/** Pure, exact related-source projection; never infer a destination from prose. */
+function vp3_profile_specialist_marketing_link_v1(mixed $link): ?array
+{
+    if(!is_array($link)||!is_string($link['ref']??null)
+        ||!($parsed=vp3_product_marketing_ref_parse_v1($link['ref']))
+        ||!is_string($link['revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$link['revision'])
+        ||!is_int($link['product_id']??null)||$link['product_id']<1||$link['product_id']>9007199254740991
+        ||!is_string($link['title']??null)||!is_string($link['url']??null))return null;
+    $title=vp3_profile_specialist_text_v1($link['title'],190);if($title==='')return null;
+    $publication=$link['publication_id']??null;
+    if($parsed['kind']==='plan'){
+        if($parsed['product_id']!==$link['product_id']||$publication!==null)return null;
+    }elseif(!is_string($publication)||$publication!==$parsed['publication_id'])return null;
+    $chat=preg_quote(vp3_profile_specialist_href_v1('/chat.php'),'~');
+    if(!preg_match('~\A'.$chat.'\?agent=(system|[1-9][0-9]{0,15})&conversation_id=([1-9][0-9]{0,15})&marketing_plan=([1-9][0-9]{0,15})(?:&marketing_publication=([a-f0-9]{32})&marketing_period=([^&]+))?\z~D',$link['url'],$m))return null;
+    $agent=$m[1]==='system'?0:(int)$m[1];$conversation=(int)$m[2];
+    if($agent>9007199254740991||$conversation>9007199254740991||(int)$m[3]!==$link['product_id'])return null;
+    $expected=vp3_profile_specialist_href_v1('/chat.php?agent='.($agent?:'system').'&conversation_id='.$conversation.'&marketing_plan='.$link['product_id']);
+    if($parsed['kind']==='outcome')$expected.='&marketing_publication='.$publication.'&marketing_period='.rawurlencode($parsed['period_ref']);
+    if($link['url']!==$expected)return null;
+    return ['ref'=>$link['ref'],'revision'=>$link['revision'],'title'=>$title,'url'=>$expected,
+        'product_id'=>$link['product_id'],'publication_id'=>$publication];
+}
+
 /** Group only explicitly typed informational visits; never infer intent from volume. */
 function vp3_profile_specialist_routine_visit_v1(array $item): bool
 {
@@ -134,6 +159,22 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
         }
         foreach(['title'=>190,'summary'=>1200,'status'=>40,'priority'=>20,'trigger'=>40,'disposition'=>30] as $key=>$limit)
             $safe[$key]=vp3_profile_specialist_text_v1($item[$key]??'',$limit);
+        if(array_key_exists('related_product_marketing',$item)){
+            $links=$item['related_product_marketing'];$safe['related_product_marketing']=[];$seen=[];
+            if(!is_array($links)||!array_is_list($links))$out['coverage']='limited';
+            else foreach($links as $link){
+                $link=vp3_profile_specialist_marketing_link_v1($link);
+                if($link===null){$out['coverage']='limited';continue;}
+                if(isset($seen[$link['ref']]))continue;
+                if(count($safe['related_product_marketing'])>=4){$out['coverage']='limited';break;}
+                $seen[$link['ref']]=true;$safe['related_product_marketing'][]=$link;
+            }
+        }
+        if(array_key_exists('product_marketing_coverage',$item)){
+            $relatedCoverage=$item['product_marketing_coverage'];
+            if(in_array($relatedCoverage,['ready','limited','unavailable','unconfigured'],true))$safe['product_marketing_coverage']=$relatedCoverage;
+            else $out['coverage']='limited';
+        }
         $out['findings'][]=$safe;
         if(vp3_profile_specialist_routine_visit_v1($item)){++$routineVisits;continue;}
         $sectionItems[]=$item;

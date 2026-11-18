@@ -41,7 +41,7 @@ Status: complete, 10/10 for this acceptance scope. PR #790 merged as `d5d51cca6b
 
 ## Phase 4 — Contextual engagement and call history
 
-Status: complete, 10/10 for this acceptance scope. PR #791 merged as `d31eb5aa0a8e0f79a9ac7924d3c2df16395bfb5d` after all 12 workflows passed on final source `12adb7e6697d1712e12754ca50b5d8c34ebe930f` (31 successful checks; 4 expected path-filtered skips).
+Status: complete, 10/10 for this acceptance scope. PR #791 merged as `d31eb5aa0a8e0f79a9ac7924d3c2df16395bfb5d` after all 12 workflows passed on final source `12adb7e6697d1712e12754ca50b5d8c34ebe930f` (31 successful checks; 4 expected path-filtered skips). Desktop and compact final-source screenshots were independently reviewed.
 
 - Meaningful first-time and returning visits use observed context; routine traffic can be grouped. No importance rule equates raw visit count with meaningful intent.
 - Existing presentation ownership prevents duplicate doorbell, speech, attention, and specialist interruptions.
@@ -51,7 +51,7 @@ Status: complete, 10/10 for this acceptance scope. PR #791 merged as `d31eb5aa0a
 
 ## Phase 5 — Profile analytics in briefings
 
-Status: base delivery merged in PR #792 as `bbb6f1469d5491169333d9ac231231b8476527bc` while PR #793 was under validation. PR #793 reconciles both implementations and adds current-authority concurrency evidence, canonical native admission/receipt validation and compact period presentation. Its final score requires all hosted gates against the combined source.
+Status: complete, 10/10 for this acceptance scope. PR #792 merged as `bbb6f1469d5491169333d9ac231231b8476527bc` after all 16 workflows passed on final source `0cd21397d3ed17dc5d627779c7b5ac6f28ec06aa` (38 successful checks; 4 expected path-filtered skips). All 14 desktop and compact final-source screenshots were independently reviewed. The concurrent follow-up PR #793 merged as `5b5ceb2a6a8a8090dffca6ab28187fff34c7109d` after all 14 workflows passed on final source `65b8695bd0ed0faaa7dea766e2592b44a586c200` (34 successful checks; 4 expected path-filtered skips). It preserves PR #792 and adds current-row authority evidence, canonical native receipt validation and compact period presentation.
 
 - Existing morning/catch-up/report mechanisms consume current Profile findings, with owner-local reporting boundaries and source availability.
 - Visits, recognized browser contacts, conversations, unanswered turns, call states, and outcome measures use explicit definitions and comparable windows.
@@ -65,11 +65,11 @@ Status: base delivery merged in PR #792 as `bbb6f1469d5491169333d9ac231231b84765
 
 ## Phase 6 — Product marketing follow-through
 
-Status: not started.
+Status: implemented after the verified Phase 5 merge. The Phase 6 pull request records final-source hosted results, screenshot review, release score and merge identity.
 
 - Profile conversation findings and attributable promotion outcomes link to exact existing product/plan/publication identifiers.
 - Draft, active, and paused product marketing work retain their existing lifecycle and original Chat/Agent binding.
-- Promotion clicks, verified checkout-link availability, paid/refunded orders, and relevant product questions can enter specialist reports and briefings with honest windows and availability. A ready checkout link is not proof that a buyer opened the payment provider.
+- Promotion clicks, verified checkout-link availability, verified paid/refunded orders, and relevant product questions can enter specialist reports and briefings with honest windows and availability. A ready checkout link is not proof that a buyer opened the payment provider.
 - The shared planner can choose a supported next action without automatically publishing, sending, or creating duplicate plans from observation alone.
 - Profile and Marketing share evidence and source revisions while each keeps its domain authority.
 
@@ -113,13 +113,32 @@ The Calls workspace separates current calls from paginated history and keeps a s
 
 Routine visit prose is grouped within the checked source view. Each original source reference, revision, disposition, and native presentation owner remains available. Unresolved conversations, calls, and reviewed work retain priority over routine visits, and no count is presented as unique people or purchase intent.
 
-Focused SQL, real endpoint, renderer, and retained native call/speech suites cover these contracts. Both new SQL suites pass on SQLite and native MySQL for PHP 8.1 and PHP 8.3: arrival context 88 checks and saved call outcomes 105 checks per driver/version. The retained projection suite passes 100 checks, including historical separate markers and native-card-first shared presentation. Production speech HTTP passes 95 checks. The final workspace browser passes 87 checks; the shared report, call and speech browser suites pass 42, 50 and 53 respectively. Desktop and compact screenshots were inspected, and every retained workflow invocation remains enabled. All five scoring areas earned 2/2.
+Focused SQL, real endpoint, renderer, and retained native call/speech suites cover these contracts. The release gates add both new SQL suites on SQLite and native MySQL for PHP 8.1 and PHP 8.3, retaining every existing workflow invocation. Final source passed both PHP versions on SQLite and native MySQL: 88 arrival checks, 105 call outcome checks, 100 projection recovery checks, and 95 speech HTTP checks. The browser suites passed 87 workspace, 42 report, 50 native call and 53 speech checks. All five scoring areas earned 2/2.
 
 Phase 3 final-source evidence: [Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44295726514), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44295726100), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44295726252). The merged tree `3cc735aeb5d49383950e00a94a9e9831b960306f` exactly matches the tested source. Browser artifact `14422559545` has verified SHA-256 `520878ace9d37cc1b5d4e1fc42e139e24785bf9446e335b490da158546a5c460`.
 
-Phase 4 final-source evidence: [Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44307932833), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44307933020), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44307932835). The merged tree `36f5ec50b765d2a63098bcf0b13b08761a8580be` exactly matches the tested source. Browser artifact `14429390930` has verified SHA-256 `f858d17ade240f8f9f1cf3da7cd0acff1ebe51d2378e56a75270962f847aebc1`.
+## Phase 4 release evidence
 
-## Phase 5 implementation and verification scope
+[Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44307932833), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44307933020), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44307932835) passed on the final commit. The merged tree `36f5ec50b765d2a63098bcf0b13b08761a8580be` exactly matches the tested source. Browser artifact `14429390930` has SHA-256 `f858d17ade240f8f9f1cf3da7cd0acff1ebe51d2378e56a75270962f847aebc1`. Recovery after the prior connection interruption independently confirmed the merge and reviewed all eight final screenshots.
+
+## Phase 5 implementation scope
+
+Completed one-, seven- and thirty-day calendar periods retain the owner timezone, its provenance, original cutoff and matching previous period in a canonical source reference. Opening a saved briefing reopens that exact period in its original private Agent and Chat. Current backlog is separate and cannot silently rewrite a historical period. The existing morning, catch-up and specialist report paths share the same proof, current authority checks and presentation responsibility. Routine period summaries do not create another worker or independent automatic interruption.
+
+Event times are recorded in a dedicated application UTC field only for future writes. An explicit idempotent upgrade records the activation and marks actual legacy rows without guessing their UTC timestamps. Old unmeasurable windows and newly unclocked rows have explicit partial coverage. Calls and accepted-turn replies use their existing native timestamps and verified receipts. Conversions remain recorded events; verified payments and refunds require canonical ledger and order proof, retain their currency and never pass through floating-point money arithmetic.
+
+The private workspace shows definitions, current and prior coverage, new-conversation reply cohorts, call lifecycle counts and separate current unresolved work. Empty observations, partial observations and unavailable storage remain distinct. Reads do not install schema, acknowledge work, initiate calls, start inference or create commerce actions.
+
+## Phase 5 release evidence
+
+[Section 14 Authority and Security](https://github.com/davemt74-lang/software/actions/runs/44318139878), [Recovery Baseline](https://github.com/davemt74-lang/software/actions/runs/44318139850), and [HomeServer Runtime Journey](https://github.com/davemt74-lang/software/actions/runs/44318140027) passed on the final commit. The merged tree `b6520784be550c20d224b05b31cc87188a4f094b` exactly matches the tested source. Both PHP 8.1 and PHP 8.3 passed the 66 native MySQL clock checks (including 8 native concurrency checks), 90 period checks and 24 real briefing-pipeline checks, with no skips. Retained source, pipeline, authority and recovery suites remain enabled.
+
+Hosted browser results: 42 shared report checks, 87 retained workspace checks and 23 fixed-period checks. All 14 screenshots were reviewed. Artifacts: report `14432598968`, workspace `14432459331`, and periods `14432404518`. The period archive has verified SHA-256 `9cffa6aba510c716c9043c1a03e94faa6b9d1965789917ae89fc6edcb08197d0`.
+
+The hosted review exposed a missing dependency in an extracted-function fixture and a genuine Analytics fallback failure. The fixture now loads the same helper as production while retaining its legacy schema. Completed-period failures retain the independently authorized Traffic details selector, while 401/403/419 responses still clear the full view. An actual endpoint regression checks this fallback. The runtime test waits for its real preparation receipt before checking exact inference-call totals. All five scored areas earned 2/2.
+
+
+## Phase 5 authority and presentation follow-up
 
 The period reader uses bounded current authority reads for the exact owner, private Agent, private Chat, explicit account roles, permission grants and seed state. It evaluates the returned current rows directly rather than following a lock with an ordinary read from an older repeatable-read snapshot. Missing authority storage remains unavailable; a denial withholds the report. Caller transactions remain owned by the caller.
 
@@ -129,8 +148,22 @@ Historical native conversations retain current ownership and exact admission, me
 
 The same pure period formatter feeds the shared Profile source, explicit private Chat catch-up and existing morning brief. A briefing presentation owner prevents a competing automatic standalone report without claiming that delivery already occurred. Exact source revisions exclude current backlog and observation time. Saved briefing history rechecks the original fixed reference; source correction, revoked access or a Watch rule withdraws its text and links. Proof slots for period and curiosity sources are reserved before optional related links reach the existing twelve-source history bound.
 
-New regression gates exercise the real event writers and installer, normalized local-day boundaries and daylight-saving transitions, uncapped aggregates, exact receipt lineage, money arithmetic, current authority under stale snapshots, the shared registry and saved morning proof, and production Chat navigation. The shared workspace keeps completed periods separate from retained Traffic details. Final-source hosted results and screenshot review will be recorded in the Phase 5 pull request before scoring and merge.
+New regression gates exercise the real event writers and installer, normalized local-day boundaries and daylight-saving transitions, uncapped aggregates, exact receipt lineage, money arithmetic, current authority under stale snapshots, the shared registry and saved morning proof, and production Chat navigation. The shared workspace keeps completed periods separate from retained Traffic details. Final-source hosted results and screenshot review are recorded in PR #793.
 
-## Phase 5 concurrent-main reconciliation
+PR #793 preserved both existing period harnesses and every workflow invocation while adding active-transaction authority races and actual Chat restoration coverage. Its final-source [Authority](https://github.com/davemt74-lang/software/actions/runs/44326732978), [Recovery](https://github.com/davemt74-lang/software/actions/runs/44326732905) and [Runtime](https://github.com/davemt74-lang/software/actions/runs/44326732617) workflows passed. Native MySQL passed 66 clock, 170 period, 78 authority and 35 briefing checks per PHP version. Hosted workspace and period browsers passed 146 and 23 checks; the PR records the reviewed final screenshots and artifact hashes. The final runtime test correction waits for the actual playing queue audio element before its unchanged Next/Stop assertions.
 
-PR #792 merged fixed-period analytics and preserves independent Traffic details during period read failures. Its retained workflow invocations, separate period HTTP/browser suites, upgrade readiness regressions, exact day-start checks and payment/refund ledger completeness checks remain in the combined version. PR #793 adds strict current-row authority under old transaction snapshots, real admitted-turn and saved-receipt compatibility, compact date headings and accessible exact metadata. Final validation runs against the combined tree before this follow-up merges.
+## Phase 6 concurrent-main reconciliation
+
+The initial Phase 6 source `3be9831dd641908d30a6af76703a2b4d4ed128dd` passed all 16 workflows (38 successful checks and 4 expected path-filtered skips), with both reviewers inspecting all 22 screenshots. PR #793 then merged between the final base check and the merge request, so that candidate was not merged. Phase 6 preserves the entire new main implementation, including compact period presentation, current authority and both period test harnesses. The reconciled source requires a new complete hosted gate run and screenshot review; its final acceptance and merge identities are recorded in PR #794.
+
+## Phase 6 implementation and verification scope
+
+Product Marketing participates in the existing Marketing report, source registry, private planning evidence, morning brief and explicit catch-up. Ordinary product plans remain independent of Campaign plugin availability. Every plan retains its current native lifecycle and original private Agent/Chat; every publication report binds the exact saved publication, reviewed source image, creative, draft, product and completed period. The original launch and outcome presenters retain automatic delivery responsibility. A report read cannot recover or create a plan, generate an image, publish, unpause, send a visitor message or open checkout. The explicit review action revalidates the saved tuple before opening its existing creative.
+
+Completed one-, seven- and thirty-day publication periods reuse the canonical Profile calendar contract and show their previous period, timezone provenance, coverage and metric definitions. Saved first-party promotion clicks, native conversations with proven clicks, orders whose first usable checkout link became available, verified paid/refunded orders and accepted exchanges showing the publication remain distinct measures. Payments and refunds use canonical Commerce receipts, frozen provider and order proof, full ledger reconciliation and exact decimal minor-unit strings per currency. Unknown earlier checkout dates or missing attribution are partial evidence, not complete zeroes, and no visitor count, purchase intent or conversion funnel is inferred.
+
+The normal Database Upgrade adds nullable native click proof and checkout-link availability time fields. A signed native click records immutable owner/product/publication/public-conversation/Agent/session/browser proof in the click transaction. Current owner role assignments, capability seed and grants are locked and checked through commit. The first provider-confirmed usable active checkout link receives an immutable application UTC timestamp in its completion transaction. This is link availability, not proof of the buyer opening the payment provider. Reservations, uncertain provider results, failed persistence, payment/refund events and legacy reuse do not manufacture a first-availability date. Existing NULL proof and date fields are never backfilled from current state.
+
+Profile conversation findings can add bounded literal visitor excerpts and exact existing product links while keeping their native presenter, current disposition and actual delivery evidence. An association requires the accepted turn, matching saved reply, exact workflow receipt and publication already existing at reply time. Current Profile grants, native conversation binding, visitor authentication, session lineage and block state govern excerpt disclosure. Both admission and reply times participate in the source proof; final current-authority and source fences reject changes after a snapshot. Historical exchanges use their saved reply's completed UTC day when no historical owner timezone was recorded, and never move to today's rolling period. Private and public conversation identifiers cannot substitute for one another.
+
+Focused SQL, the actual native admission/reply worker, production HTTP endpoints, pure report and routing tests exercise these contracts. The existing scheduler, catch-up, command activation and Chat recovery tests remain enabled. The PHP 8.1/8.3 matrix additionally runs native MySQL authority, stale-snapshot and concurrency cases. Hosted browser acceptance covers the existing Marketing report and original-Chat publication view at desktop and compact sizes, selected-period changes, historical publication rotation, payment precision, literal visitor excerpts, late responses, access revocation, preserved drafts and explicit creative review. Release acceptance still requires the complete final-source PHP, MySQL, browser, recovery and runtime gates plus screenshot inspection.

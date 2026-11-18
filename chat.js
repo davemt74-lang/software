@@ -10,8 +10,35 @@
     const positive=value=>/^[1-9]\d*$/.test(value||'')&&Number.isSafeInteger(Number(value))?Number(value):0;
     const productId=positive(params.get('marketing_plan')),cid=positive(params.get('conversation_id'));
     const value=params.get('agent'),agentId=value==='system'?0:positive(value)||-1;
-    return productId&&cid&&agentId===initiativePage.agent?Object.freeze({productId,conversationId:cid,agentId}):null;
+    const publication=params.has('marketing_publication')||params.has('marketing_period');
+    const publicationId=params.get('marketing_publication'),periodRef=params.get('marketing_period');
+    if(publication&&([...params].length!==5||!['marketing_publication','marketing_period'].every(key=>params.getAll(key).length===1)
+      ||!/^[a-f0-9]{32}$/.test(publicationId||'')||typeof periodRef!=='string'||periodRef.length>180
+      ||!/^profile:analytics:v1:(1|7|30):[1-9][0-9]{8,10}:[esu]:[A-Za-z0-9_-]{1,100}$/.test(periodRef)))return null;
+    return productId&&cid&&agentId===initiativePage.agent?Object.freeze({productId,conversationId:cid,agentId,
+      ...(publication?{publicationId,periodRef}:{})}):null;
   })();
+  let initialMediaCommandCancelled=false;
+  function marketingPublicationUrlMatchesV1(url) {
+    const target=initialMediaCommandIntent;
+    return !initialMediaCommandCancelled&&target?.publicationId&&initiativeIdentityMatchesV1()
+      &&target.conversationId===conversationId&&[...url.searchParams].length===5
+      &&['agent','conversation_id','marketing_plan','marketing_publication','marketing_period'].every(key=>url.searchParams.getAll(key).length===1)
+      &&url.searchParams.get('agent')===(target.agentId===0?'system':String(target.agentId))
+      &&url.searchParams.get('conversation_id')===String(target.conversationId)&&url.searchParams.get('marketing_plan')===String(target.productId)
+      &&url.searchParams.get('marketing_publication')===target.publicationId&&url.searchParams.get('marketing_period')===target.periodRef;
+  }
+  function cancelMarketingPublicationDestinationV1() {
+    if(!initialMediaCommandIntent?.publicationId)return;
+    initialMediaCommandCancelled=true;
+    try {
+      const url=new URL(location.href);
+      if(!url.searchParams.has('marketing_publication')&&!url.searchParams.has('marketing_period'))return;
+      for(const key of ['marketing_plan','marketing_publication','marketing_period','conversation_id'])url.searchParams.delete(key);
+      url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));
+      window.history.replaceState(null,'',url.pathname+url.search+url.hash);
+    }catch{}
+  }
   const initialProfileAnalyticsDestination=(()=>{
     const value=cfg.profileAnalyticsDestination;
     if(!value||value.ownerUserId!==initiativePage.owner||value.chatAgentId!==initiativePage.agent
@@ -40,8 +67,8 @@
       window.history.replaceState(null,'',url.pathname+url.search+url.hash);
     } catch {}
   }
-  if(initialProfileAnalyticsDestination)window.addEventListener('stonefellow:chat-context-changing',event=>{
-    if(event.detail?.initialRestore!==true)cancelProfileAnalyticsDestinationV1();
+  if(initialProfileAnalyticsDestination||initialMediaCommandIntent?.publicationId)window.addEventListener('stonefellow:chat-context-changing',event=>{
+    if(event.detail?.initialRestore!==true){cancelProfileAnalyticsDestinationV1();cancelMarketingPublicationDestinationV1();}
   });
   const thread = document.getElementById('chatThread');
   const welcome = document.getElementById('chatWelcome');
@@ -195,8 +222,12 @@
     try { localStorage.setItem(selectionKey, JSON.stringify({id:conversationId, at:Date.now()})); } catch (_) {}
     if(contextReady)try{
       const url=new URL(location.href);
-      if(!profileAnalyticsUrlMatchesV1(url)){
+      if(!profileAnalyticsUrlMatchesV1(url)&&!marketingPublicationUrlMatchesV1(url)){
         let changed=false;
+        if(url.searchParams.has('marketing_publication')||url.searchParams.has('marketing_period')){
+          for(const key of ['marketing_plan','marketing_publication','marketing_period'])url.searchParams.delete(key);
+          url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));changed=true;
+        }
         if(url.searchParams.has('profile_analytics')){
           url.searchParams.delete('profile_analytics');
           url.searchParams.set('agent',initiativePage.agent===0?'system':String(initiativePage.agent));changed=true;
@@ -5823,7 +5854,7 @@
     },
     stageSpecialistPrompt,
     mediaCommandContext,
-    mediaCommandIntent:()=>initiativeIdentityMatchesV1()?initialMediaCommandIntent:null,
+    mediaCommandIntent:()=>initiativeIdentityMatchesV1()&&!initialMediaCommandCancelled?initialMediaCommandIntent:null,
     profileAnalyticsDestination:()=>!initialProfileAnalyticsCancelled&&initiativeIdentityMatchesV1()?initialProfileAnalyticsDestination:null,
     showChatView:() => setChatCanvasView('chat'),
     showCodingCanvasView:() => setChatCanvasView('coding'),

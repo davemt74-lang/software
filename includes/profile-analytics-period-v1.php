@@ -14,11 +14,18 @@ function vp3_profile_analytics_hash_v1(mixed $value): string
 {
     return hash('sha256',json_encode($value,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR));
 }
+/** Native durable receipts accept only exact positive integer identities. */
 function vp3_profile_analytics_receipt_id_v1(mixed $value): ?int
 {
     if(is_int($value))return $value>0?$value:null;
     if(!is_string($value)||!preg_match('/\A[1-9][0-9]{0,18}\z/D',$value))return null;
     $id=(int)$value;return $id>0&&(string)$id===$value?$id:null;
+}
+/** Public report identities additionally fit the browser's exact integer range. */
+function vp3_profile_analytics_id_v1(mixed $value): ?int
+{
+    $id=vp3_profile_analytics_receipt_id_v1($value);
+    return $id!==null&&$id<=9007199254740991?$id:null;
 }
 function vp3_profile_analytics_epoch_v1(mixed $value): ?int
 {
@@ -527,7 +534,7 @@ function vp3_profile_analytics_attempt_v1(array $attempt,array $order,string $am
     return false;
 }
 
-function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,array $history): array
+function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,array $history,?array $orderIds=null): array
 {
     $keys=['verified_paid_orders','verified_refunded_orders'];
     $out=['points'=>vp3_profile_analytics_empty_points_v1($keys),'coverage'=>'unconfigured','reason'=>'storage_unconfigured','evidence'=>[],'money'=>[]];
@@ -538,6 +545,14 @@ function vp3_profile_analytics_commerce_v1(PDO $pdo,int $owner,array $window,arr
     // invented "commerce.access" permission. Every contributing object still
     // needs its exact current owned order/product/merchant lineage below.
     $orders=vp3_profile_analytics_rows_v1($pdo,'SELECT * FROM agent_commerce_orders_v800 WHERE owner_user_id=? ORDER BY id',[$owner],true);
+    // An explicit empty publication subset never expands into all owner orders.
+    // Keep the full receipt identity inventory below, so a duplicated provider
+    // receipt cannot be made unique merely by filtering to one publication.
+    if($orderIds!==null){
+        foreach($orderIds as $id)if(!is_int($id)||$id<1)throw new RuntimeException('Invalid exact order subset.',422);
+        $wanted=array_fill_keys($orderIds,true);$orders=array_values(array_filter($orders,static fn(array $row):bool=>isset($wanted[(int)$row['id']])));
+        if(count($orders)!==count($wanted))throw new RuntimeException('An attributed order is unavailable.',409);
+    }
     $items=vp3_profile_analytics_rows_v1($pdo,'SELECT i.* FROM agent_commerce_order_items_v800 i JOIN agent_commerce_orders_v800 o ON o.id=i.order_id WHERE o.owner_user_id=? ORDER BY i.id',[$owner],true);
     $products=vp3_profile_analytics_rows_v1($pdo,'SELECT id,owner_user_id FROM agent_commerce_products_v800 WHERE owner_user_id=? ORDER BY id',[$owner],true);
     $attempts=vp3_profile_analytics_rows_v1($pdo,'SELECT a.* FROM agent_commerce_checkout_attempts_v800 a JOIN agent_commerce_orders_v800 o ON o.id=a.order_id WHERE o.owner_user_id=? ORDER BY a.id',[$owner],true);

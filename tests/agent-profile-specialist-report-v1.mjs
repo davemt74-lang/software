@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {periodRef} from './fixtures/profile-analytics-period-ui-v1.mjs';
+import {publication,publicationUrl} from './fixtures/product-marketing-ui-v1.mjs';
 
 // Execute the production report projection and DOM renderer. HTML insertion is
 // deliberately unavailable: visitor text must remain text at every boundary.
@@ -22,6 +23,7 @@ class Element {
 }
 const state={owner:1,agent:7,cid:11,binding:'fixture-binding'};
 const context=vm.createContext({URL,Date,Set,Map,console,Intl,atob,btoa,
+  window:{},document:{createElement:tag=>new Element(tag)},
   cfg:{activityEndpoint:'/vp3/api/agent-activity-hub-v1.php'},location:{origin:'https://fixture.test'},
   current:{...state},workspace:true,snapshot:null,sections:new Element('div'),closed:false,
   positive:value=>Number.isSafeInteger(value)&&value>0,
@@ -34,6 +36,8 @@ const context=vm.createContext({URL,Date,Set,Map,console,Intl,atob,btoa,
   scope:()=>context.current,close:()=>{context.closed=true;}
 });
 vm.runInContext(script.slice(begin,end),context,{filename:'agent-activity-hub-v1.js:profile-report'});
+vm.runInContext(fs.readFileSync(new URL('../product-marketing-report-v1.js',import.meta.url),'utf8'),context);
+vm.runInContext(script.slice(script.indexOf('  function productMarketingChatUrl()'),script.indexOf('  function renderProductMarketingReview(current)')),context);
 const source=(kind='conversation',id=71,url='/vp3/profile-agent.php?tab=inbox&conversation=71')=>({
   ref:`profile:${kind}:${id}`,revision:'a'.repeat(64),title:'Visitor <img src=x onerror=alert(1)>',
   summary:'Saved visitor question',url,profile_source_kind:kind
@@ -205,6 +209,27 @@ for(const url of [fixedSource.url+'&agent=7',fixedSource.url+'&redirect=/elsewhe
 check(model(report({findings:[{...fixedSource,profile_presentation_owned:false}]}))===null,'briefing presenter requires the explicit owned-presentation flag');
 const fixedRendered=render(report({findings:[fixedSource]}));
 check(descendants(fixedRendered,'a')[0].dataset.profileSource===fixedRef&&descendants(fixedRendered,'a')[0].dataset.profileSourceRevision==='d'.repeat(64),'exact fixed ref and revision survive rendering');
+
+const productPublication=publication(),related={ref:productPublication.ref,revision:productPublication.revision,title:'Review the exact saved product publication',
+  url:'/vp3'+publicationUrl(),product_id:productPublication.product_id,publication_id:productPublication.publication_id};
+const linkedFinding={...source(),related_product_marketing:[related],product_marketing_coverage:'ready'};
+check(model(report({findings:[linkedFinding]}))?.findings[0].related_product_marketing[0].href===related.url,'Profile finding retains exact related publication and fixed period');
+const linkedRendered=render(report({findings:[linkedFinding]})),relatedAnchor=descendants(linkedRendered,'a').find(link=>link.dataset.productMarketingSource);
+check(relatedAnchor.href===related.url&&relatedAnchor.dataset.productMarketingRevision===related.revision,'related publication source and revision survive rendering');
+const publicationOpens=[];context.window.VP3MediaCommands={openPublication:target=>{publicationOpens.push(target);return true;}};
+let productPrevented=false;relatedAnchor.listeners.click({preventDefault(){productPrevented=true;}});
+check(productPrevented&&publicationOpens.length===1&&publicationOpens[0].conversationId===11,'same original private Chat opens exact publication inline');
+const otherFinding={...linkedFinding,related_product_marketing:[{...related,url:related.url.replace('conversation_id=11','conversation_id=12')}]};
+const otherRendered=render(report({findings:[otherFinding]}));productPrevented=false;
+descendants(otherRendered,'a').find(link=>link.dataset.productMarketingSource).listeners.click({preventDefault(){productPrevented=true;}});
+check(!productPrevented&&publicationOpens.length===1,'another original Chat follows the validated original URL without rewriting its scope');
+context.current={...state,cid:99};productPrevented=false;relatedAnchor.listeners.click({preventDefault(){productPrevented=true;}});
+check(productPrevented&&publicationOpens.length===1,'stale Profile related action cannot open after scope changes');
+for(const changed of [{...related,publication_id:'b'.repeat(32)},{...related,product_id:992102},{...related,url:related.url+'&agent=7'},
+  {...related,url:related.url.replace('marketing_period=','period=')},{...related,revision:'bad'}])
+  check(model(report({findings:[{...linkedFinding,related_product_marketing:[changed]}]}))===null,'invalid related product tuple rejected');
+check(model(report({findings:[{...linkedFinding,related_product_marketing:[related,related]}]}))===null,'duplicate related source is rejected');
+check(model(report({findings:[{...linkedFinding,related_product_marketing:Array(5).fill(related)}]}))===null,'related Product Marketing links remain bounded');
 
 const orb=fs.readFileSync(new URL('../agent-orb.js',import.meta.url),'utf8');
 const catalogBegin=orb.indexOf('  const specialistFamilies={');

@@ -288,9 +288,37 @@ function vp3_coordination_profile_conversation_v1(PDO $pdo,array $scope,int $id,
     if(!$settled&&$presentationOwner==='')$presentationOwner=$attention['presentation_owner']??'profile_attention_pa4b';
     $historicalDelivery=$delivered;
     if($settled&&$presentationOwner==='')$delivered=false;
+    // Association is evidence from the accepted visitor turn and its saved
+    // receipt-bound reply. The native conversation keeps presentation ownership.
+    $related=[];$relatedCoverage='unconfigured';
+    require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+    if(vp3_profile_analytics_tables_v1($pdo,['agent_product_launches_v1','agent_commerce_products_v800','agent_commerce_marketing_drafts_v1',
+        'agent_commerce_promotions_v1','agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1','user_media_assets'])){
+        try{
+            $association=vp3_product_marketing_conversation_associations_v1($pdo,$scope,$id,$now);
+            $relatedCoverage=$association['coverage'];$proofs=[];
+            foreach($association['items'] as $associationItem){
+                $link=vp3_profile_specialist_marketing_link_v1($associationItem['source']+[
+                    'product_id'=>$associationItem['product_id'],
+                    'publication_id'=>str_starts_with($associationItem['source']['ref'],'marketing:product-plan:')?null:$associationItem['publication_id']]);
+                if(!$link){$relatedCoverage='limited';continue;}
+                $related[$link['ref']]=$link;$proofs[]=$associationItem['revision'];
+                $quote=vp3_profile_specialist_text_v1($associationItem['excerpt']??'',150);
+                $product=vp3_profile_specialist_text_v1($associationItem['product_title']??'',80);
+                if($quote!==''&&count($report['key_findings'])<6)$report['key_findings'][]=
+                    vp3_profile_specialist_text_v1('Visitor message: “'.$quote.'” The saved Agent reply showed the promotion for '.$product.'.');
+            }
+            if($proofs)$semantic[]=['product_marketing_associations',$proofs,array_values($related)];
+        }catch(Throwable $error){
+            if(vp3_profile_analytics_retryable_v1($error)||$error->getCode()===403||($error instanceof PDOException&&$pdo->inTransaction()))throw $error;
+            if(!$error instanceof RuntimeException&&!$error instanceof DomainException)throw $error;
+            $relatedCoverage='unavailable';
+        }
+    }
     return vp3_coordination_profile_item_v1('conversation',$id,$title,$statement,$settled?($conversation['status']==='resolved'?'resolved':'updated'):($needsOwner?'needs_attention':'open'),
         $settled?'activity':($needsOwner?'needs_owner':'open_conversation'),$needsOwner?'high':($settled?'low':'normal'),vp3_profile_specialist_href_v1('/profile-agent.php?tab=inbox&conversation='.$id),
-        $semantic,$report,$attention['disposition']??'pending',$presentationOwner,$delivered)+['profile_historical_delivery'=>$historicalDelivery];
+        $semantic,$report,$attention['disposition']??'pending',$presentationOwner,$delivered)+['profile_historical_delivery'=>$historicalDelivery,
+            'related_product_marketing'=>array_values($related),'product_marketing_coverage'=>$relatedCoverage];
 }
 
 function vp3_coordination_profile_call_v1(PDO $pdo,array $scope,int $id,DateTimeImmutable $now): ?array
