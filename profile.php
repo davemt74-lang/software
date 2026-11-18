@@ -327,7 +327,11 @@ if($webmcpResumeRequested){
       <div><strong><?= e((string)$agent['display_name']) ?> <span class="profile-agent-identity-label">Profile Agent</span></strong><small class="profile-agent-presence" data-profile-agent-presence aria-live="polite"><?= $chatPreview ? 'Owner preview' : 'Checking live availability…' ?></small></div>
       <button type="button" class="profile-agent-widget-close" data-close-profile-agent aria-label="Close Profile Agent">×</button>
     </header>
-    <div class="profile-agent-thread" data-profile-agent-thread role="log" aria-label="Messages">
+    <div class="profile-agent-sections" role="group" aria-label="Profile chat sections">
+      <button type="button" data-profile-conversation-open aria-controls="profileAgentMessages" aria-pressed="true">Chat</button>
+      <button type="button" data-profile-image-collection-open aria-controls="profileImageEditPanel" aria-pressed="false">Image collection</button>
+    </div>
+    <div class="profile-agent-thread" id="profileAgentMessages" data-profile-agent-thread role="log" aria-label="Messages">
       <?php if($chatPreview): ?><div class="profile-agent-message agent"><strong class="profile-agent-message-speaker"><?= e((string)$agent['display_name']) ?></strong><span class="profile-agent-message-body"><?= e($agentGreeting) ?></span></div><?php endif; ?>
     </div>
     <section class="profile-agent-panel" id="profileChatOptions" data-profile-chat-options aria-labelledby="profileChatOptionsTitle" hidden>
@@ -400,6 +404,7 @@ window.STONEFELLOW_PROFILE_AGENT={username:<?= json_encode($username,JSON_UNESCA
 window.STONEFELLOW_PROFILE_AGENT.checkoutEndpoint=<?= json_encode(url('/api/profile-conversation-checkout-pa5.php'),JSON_UNESCAPED_SLASHES) ?>;
 window.STONEFELLOW_PROFILE_AGENT.checkoutAvailable=<?= json_encode($checkoutAvailable) ?>;
 <?php endif; ?>
+window.STONEFELLOW_PROFILE_AGENT.imageSettingsUrl=<?= json_encode(url('/profile-agent.php?tab=agent'),JSON_UNESCAPED_SLASHES) ?>;
 for(const tab of document.querySelectorAll('[data-profile-tab]'))tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;document.querySelectorAll('[data-profile-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===tab)));document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
 const promotionAnchor=/^#product-promotion-[a-f0-9]{32}$/.test(window.location.hash)?document.getElementById(window.location.hash.slice(1)):null;
 if(promotionAnchor){

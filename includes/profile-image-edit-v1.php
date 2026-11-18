@@ -276,13 +276,14 @@ function vp3_profile_image_edit_cancel_v1(PDO $pdo,int $owner,int $cid): void
     $pdo->prepare("UPDATE profile_image_edits_v1 SET state='cancelled',error_code='conversation_changed' WHERE owner_user_id=? AND conversation_id=? AND turn_id IS NOT NULL AND state IN ('queued','editing','staged')")->execute([$owner,$cid]);
 }
 
-function vp3_profile_image_edit_availability_v1(PDO $pdo,int $owner): array
+function vp3_profile_image_edit_availability_v1(PDO $pdo,int $owner,?string $publicUsername=null): array
 {
     $out=['contract'=>VP3_PROFILE_IMAGE_EDIT_V1,'enabled'=>false,'max_input_bytes'=>VP3_PROFILE_IMAGE_INPUT_MAX_V1,'catalogs'=>[],'daily_limit'=>0,'visitor_daily_limit'=>0,'reason'=>'Photo editing is unavailable on this profile.'];
     if(!vp3_profile_image_edit_ready_v1($pdo))return $out;
     $settings=vp3_profile_image_catalog_settings_v1($pdo,$owner);$out['daily_limit']=(int)$settings['daily_limit'];$out['visitor_daily_limit']=(int)$settings['visitor_daily_limit'];
-    if(empty($settings['enabled']))return $out;
+    if(empty($settings['enabled'])){$out['reason']='The profile owner has not enabled the public image collection yet.';return $out;}
     $out['catalogs']=vp3_profile_image_catalog_public_v1($pdo,$owner);$out['enabled']=$out['catalogs']!==[];
+    if($publicUsername!==null)$out['catalogs']=vp3_profile_image_catalog_preview_urls_v1($out['catalogs'],$publicUsername);
     $out['reason']=$out['enabled']?'Use an approved free photo style. The profile provides a limited editing allowance.':'There are no approved free photo styles available.';
     return $out;
 }
@@ -337,7 +338,7 @@ function vp3_profile_image_edit_state_v1(array $row): string
 }
 function vp3_profile_image_edit_public_projection_v1(PDO $pdo,array $ctx,int $cid,array $result): array
 {
-    $owner=(int)$ctx['owner_user_id'];$result['image_editing']=vp3_profile_image_edit_availability_v1($pdo,$owner);$result['image_edits']=vp3_profile_image_edit_progress_v1($pdo,$owner,$cid);
+    $owner=(int)$ctx['owner_user_id'];$result['image_editing']=vp3_profile_image_edit_availability_v1($pdo,$owner,(string)$ctx['profile']['username']);$result['image_edits']=vp3_profile_image_edit_progress_v1($pdo,$owner,$cid);
     if(isset($result['messages']))$result['messages']=vp3_profile_image_edit_messages_v1($pdo,$owner,$cid,$result['messages'],false,$ctx);
     if(isset($result['visitor_message_id'])&&vp3_profile_image_edit_ready_v1($pdo)){
         $messages=vp3_profile_image_edit_messages_v1($pdo,$owner,$cid,[['id'=>(int)$result['visitor_message_id'],'sender_type'=>'visitor']],false,$ctx);

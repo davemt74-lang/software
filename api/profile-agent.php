@@ -213,8 +213,39 @@ if(in_array($action,$ownerActions,true)){
     }
 }
 
+if(in_array($action,['image_collection','reference_image'],true)&&!is_string($input['username']??null))profile_agent_json(false,['error'=>'Choose a public image collection.'],422);
 $username=profile_username_normalize((string)($input['username']??''));$profile=profile_by_username($pdo,$username);
 if(!$profile||empty($profile['is_active'])||empty($profile['is_public']))profile_agent_json(false,['error'=>'That profile is not available.'],404);
+// Browsing an approved public collection is independent of visitor messaging. In particular,
+// an owner preview must not establish a visit/conversation or borrow a visitor's authority.
+if(in_array($action,['image_collection','reference_image'],true)){
+    if($method!=='GET')profile_agent_method_required('GET');
+    $allowed=$action==='image_collection'?['action','username']:['action','username','catalog_id','image_id','catalog_revision'];
+    if(array_diff(array_keys($input),$allowed))profile_agent_json(false,['error'=>'Choose a public reference image.'],422);
+    if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
+    try{
+        $authority=vp3_profile_image_catalog_public_profile_v1($pdo,$profile);
+        if($action==='image_collection'){
+            $availability=vp3_profile_image_edit_availability_v1($pdo,(int)$authority['owner']['id'],(string)$authority['profile']['username']);
+            vp3_profile_image_catalog_public_profile_v1($pdo,$authority['profile']);
+            profile_agent_json(true,['image_editing'=>$availability]);
+        }
+        $ids=[];
+        foreach(['catalog_id','image_id','catalog_revision'] as $key){
+            $value=$input[$key]??null;
+            if(!is_string($value)||!preg_match('/^[1-9][0-9]{0,14}$/D',$value))throw new DomainException('Reference image not found.',404);
+            $ids[$key]=(int)$value;
+        }
+        if(!vp3_profile_image_edit_ready_v1($pdo))throw new DomainException('Reference image not found.',404);
+        $image=vp3_profile_image_catalog_public_file_v1($pdo,$authority['profile'],$ids['catalog_id'],$ids['image_id'],$ids['catalog_revision']);
+        header('Content-Type: '.$image['mime_type']);header('Content-Length: '.strlen($image['bytes']));
+        header('Cache-Control: private, no-store');header('X-Content-Type-Options: nosniff');
+        header('Cross-Origin-Resource-Policy: same-origin');header("Content-Security-Policy: default-src 'none'; sandbox");
+        header('Content-Disposition: inline; filename="'.$image['filename'].'"');echo $image['bytes'];exit;
+    }catch(DomainException|InvalidArgumentException $error){
+        profile_agent_json(false,['error'=>'This public image collection or reference is unavailable.','code'=>'PROFILE_IMAGE_NOT_FOUND'],404);
+    }
+}
 if($action==='visitor_session'){
     if($method!=='GET')profile_agent_method_required('GET');
     if(array_diff(array_keys($input),['action','username']))profile_agent_json(false,['error'=>'Choose a profile to refresh its visitor session.','code'=>'VALIDATION_FAILED'],422);

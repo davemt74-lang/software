@@ -150,6 +150,7 @@ function vp3_profile_image_catalog_row_v1(PDO $pdo, int $owner, int $collection)
 function vp3_profile_image_catalog_ref_rows_v1(PDO $pdo, int $owner, int $collection): array
 {
     $query = $pdo->prepare('SELECT r.*,a.title,a.mime_type AS current_mime_type,a.file_size,
+            a.file_path AS current_file_path,a.updated_at AS current_updated_at,
             a.media_type,a.source,m.asset_id AS member_asset_id
         FROM profile_image_catalog_refs_v1 r LEFT JOIN user_media_assets a ON a.user_id=r.owner_user_id AND a.id=r.asset_id
         LEFT JOIN vp3_media_collection_assets_v1 m ON m.owner_user_id=r.owner_user_id AND m.collection_id=r.collection_id AND m.asset_id=r.asset_id
@@ -168,6 +169,16 @@ function vp3_profile_image_catalog_asset_supported_v1(array $row): bool
     return ($row['media_type']??null)==='photo'
         && in_array($row['current_mime_type']??$row['mime_type']??null,['image/jpeg','image/png','image/webp'],true)
         && (int)($row['file_size']??0)>0 && (int)$row['file_size']<=VP3_PROFILE_IMAGE_CATALOG_REFERENCE_BYTES_V1;
+}
+
+/** Reject metadata changes without reading every image on each public chat poll. */
+function vp3_profile_image_catalog_source_current_v1(array $row, int $owner): bool
+{
+    if (!vp3_profile_image_catalog_asset_supported_v1($row)) return false;
+    $revision=hash('sha256',json_encode([$owner,(int)$row['asset_id'],(string)($row['current_file_path']??''),
+        (string)($row['current_mime_type']??''),(int)$row['file_size'],(string)($row['current_updated_at']??''),
+        (string)$row['source_sha256']],JSON_THROW_ON_ERROR));
+    return hash_equals((string)$row['source_revision'],$revision);
 }
 
 function vp3_profile_image_catalog_owner_asset_v1(array $row, ?array $reference, int $default): array
@@ -320,7 +331,7 @@ function vp3_profile_image_catalog_save_v1(PDO $pdo, array $user, array $input):
     return vp3_profile_image_catalog_owner_state_v1($pdo,$user,$selected);
 }
 
-/** Names and exact free source choices only. Pixels and owner preview URLs stay private. */
+/** Names and exact approved free choices only. Private owner preview URLs never cross this boundary. */
 function vp3_profile_image_catalog_public_v1(PDO $pdo, int $owner): array
 {
     $settings=vp3_profile_image_catalog_settings_v1($pdo,$owner);
@@ -333,7 +344,7 @@ function vp3_profile_image_catalog_public_v1(PDO $pdo, int $owner): array
     foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $catalog) {
         $references=[];
         foreach (vp3_profile_image_catalog_ref_rows_v1($pdo,$owner,(int)$catalog['collection_id']) as $reference) {
-            if ((int)$reference['member_asset_id']!==(int)$reference['asset_id'] || !vp3_profile_image_catalog_asset_supported_v1($reference)
+            if ((int)$reference['member_asset_id']!==(int)$reference['asset_id'] || !vp3_profile_image_catalog_source_current_v1($reference,$owner)
                 || vp3_profile_image_catalog_price_v1($reference,(int)$catalog['default_price_cents'])!==0) continue;
             $references[]=['asset_id'=>(int)$reference['asset_id'],'title'=>(string)$reference['title'],'price_cents'=>0];
         }
@@ -341,6 +352,82 @@ function vp3_profile_image_catalog_public_v1(PDO $pdo, int $owner): array
             'catalog_revision'=>(int)$catalog['revision'],'price_cents'=>0,'references'=>$references];
     }
     return $out;
+}
+
+/** Explicit public reference URLs carry no visitor conversation or private file authority. */
+function vp3_profile_image_catalog_preview_urls_v1(array $catalogs, string $username): array
+{
+    foreach ($catalogs as &$catalog) {
+        foreach ($catalog['references'] as &$reference) {
+            $reference['preview_url']=url('/api/profile-agent.php').'?'.http_build_query([
+                'action'=>'reference_image','username'=>$username,'catalog_id'=>$catalog['collection_id'],
+                'image_id'=>$reference['asset_id'],'catalog_revision'=>$catalog['catalog_revision'],
+            ],'','&',PHP_QUERY_RFC3986);
+        }
+        unset($reference);
+    }
+    unset($catalog);
+    return $catalogs;
+}
+
+/** A public gallery read must not establish a visitor session or impersonate its owner. */
+function vp3_profile_image_catalog_public_profile_v1(PDO $pdo, array $profile): array
+{
+    $owner=(int)($profile['user_id']??0);
+    $fresh=$owner>0?profile_for_user($pdo,$owner,false):null;
+    if (!$fresh || !hash_equals((string)($profile['username']??''),(string)($fresh['username']??''))
+        || empty($fresh['is_active']) || empty($fresh['is_public']) || empty($fresh['profile_agent_enabled'])) {
+        throw new DomainException('This public image collection is unavailable.',404);
+    }
+    $user=vp3_profile_image_catalog_live_owner_v1($pdo,$owner);
+    $query=$pdo->prepare('SELECT id,owner_user_id,is_active FROM user_agents WHERE id=? AND owner_user_id=?');
+    $query->execute([(int)($fresh['profile_agent_id']??0),$owner]);$agent=$query->fetch(PDO::FETCH_ASSOC);
+    if (!$agent || empty($agent['is_active'])) throw new DomainException('This public image collection is unavailable.',404);
+    if (!function_exists('vp3_observation_personal_permission_v1')) require_once __DIR__.'/agent-observation-authority-v1.php';
+    if (!vp3_observation_personal_permission_v1($pdo,$user,'profile_agent.access')
+        || !vp3_observation_personal_permission_v1($pdo,$user,'profile_chat.access')) {
+        throw new DomainException('This public image collection is unavailable.',404);
+    }
+    return ['profile'=>$fresh,'owner'=>$user,'agent'=>$agent];
+}
+
+/** Pure reads: do not reuse catalog_resolved_v1, which acquires a writer lock for editing. */
+function vp3_profile_image_catalog_public_reference_v1(PDO $pdo, int $owner, int $collection, int $asset, int $revision): array
+{
+    if ($collection<1 || $asset<1 || $revision<1) throw new DomainException('Reference image not found.',404);
+    $settings=vp3_profile_image_catalog_settings_v1($pdo,$owner);
+    if (!$settings['available'] || !$settings['enabled']) throw new DomainException('Reference image not found.',404);
+    $catalog=vp3_profile_image_catalog_row_v1($pdo,$owner,$collection);
+    if (!$catalog['approved'] || $catalog['revision']!==$revision) throw new DomainException('Reference image not found.',404);
+    foreach (vp3_profile_image_catalog_ref_rows_v1($pdo,$owner,$collection) as $reference) {
+        if ((int)$reference['asset_id']!==$asset) continue;
+        if ((int)$reference['member_asset_id']!==$asset || !vp3_profile_image_catalog_source_current_v1($reference,$owner)
+            || vp3_profile_image_catalog_price_v1($reference,$catalog['default_price_cents'])!==0) break;
+        return $reference;
+    }
+    throw new DomainException('Reference image not found.',404);
+}
+
+/** Return only the exact raster that the owner approved for this live public free catalog. */
+function vp3_profile_image_catalog_public_file_v1(PDO $pdo, array $profile, int $collection, int $asset, int $revision): array
+{
+    $authority=vp3_profile_image_catalog_public_profile_v1($pdo,$profile);$owner=(int)$authority['owner']['id'];
+    $reference=vp3_profile_image_catalog_public_reference_v1($pdo,$owner,$collection,$asset,$revision);
+    $source=vp3_image_reference_source_v1($pdo,$authority['owner'],$asset,false);
+    if (!hash_equals((string)$reference['source_sha256'],$source['sha256'])
+        || !hash_equals((string)$reference['source_revision'],$source['revision'])
+        || (int)$reference['byte_size']!==strlen($source['bytes']) || $reference['mime_type']!==$source['mime_type']
+        || (int)$reference['width']!==$source['width'] || (int)$reference['height']!==$source['height']) {
+        throw new DomainException('Reference image not found.',404);
+    }
+    // Source reads can take time. Recheck current authority and the full grant before emitting pixels.
+    $current=vp3_profile_image_catalog_public_profile_v1($pdo,$profile);
+    if ((int)$current['agent']['id']!==(int)$authority['agent']['id']
+        || vp3_profile_image_catalog_public_reference_v1($pdo,$owner,$collection,$asset,$revision)!==$reference) {
+        throw new DomainException('Reference image not found.',404);
+    }
+    $extension=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'][$source['mime_type']];
+    return ['bytes'=>$source['bytes'],'mime_type'=>$source['mime_type'],'filename'=>'reference-image-'.$asset.'.'.$extension];
 }
 
 /** Freeze explicit public approval, zero pricing and the actual source bytes before admission. */

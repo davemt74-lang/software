@@ -9,7 +9,8 @@ import {spawn,spawnSync} from 'node:child_process';
 const root=process.cwd(),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-profile-image-api-'));
 const php=process.env.VP3_PHP_BINARY||'php',config=path.join(tmp,'fixture.json'),fixture=path.resolve('tests/fixtures/profile-image-edit-api-db-v1.php');
 const invoke=(action,...args)=>{const r=spawnSync(php,[fixture,action,config,...args.map(String)],{encoding:'utf8'});assert.equal(r.status,0,r.stderr||r.stdout);return r.stdout;};
-const catalog=JSON.parse(invoke('init')),png=Buffer.from(invoke('png'),'base64'),otherPNG=Buffer.from(invoke('png',99),'base64');
+let catalog=JSON.parse(invoke('init'));
+const png=Buffer.from(invoke('png'),'base64'),otherPNG=Buffer.from(invoke('png',99),'base64');
 fs.mkdirSync(path.join(tmp,'includes'));fs.mkdirSync(path.join(tmp,'api'));
 for(const name of fs.readdirSync('includes'))if(name!=='bootstrap.php')fs.symlinkSync(path.resolve('includes',name),path.join(tmp,'includes',name));
 fs.copyFileSync('api/profile-agent.php',path.join(tmp,'api/profile-agent.php'));
@@ -20,17 +21,73 @@ const child=spawn(php,['-d','display_errors=0','-d','upload_max_filesize=5M','-d
 let logs='',checks=0;child.stderr.on('data',d=>logs+=d);const base=`http://127.0.0.1:${port}`,key=()=>randomBytes(16).toString('hex');
 const who=(id,cookie)=>({id,cookie:`PHPSESSID=edit${cookie}; sf_profile_visitor=${cookie.repeat(64)}; sf_profile_conversation=${cookie.repeat(64)}`});
 const visitor=who(2,'b'),foreign=who(3,'c'),owner=who(1,'d');
-const headers=actor=>({'X-Fixture-User':String(actor.id),Cookie:actor.cookie});
+const anonymous={id:0,cookie:''},readOnly=actor=>({...actor,readOnly:true});
+const headers=actor=>({'X-Fixture-User':String(actor.id),Cookie:actor.cookie,...(actor.readOnly?{'X-Fixture-Read-Only':'1'}:{})});
 const check=(ok,label)=>{assert.ok(ok,label);checks++;console.log('PASS '+label);};
-async function jsonRequest(method,fields,actor=visitor){const read=method==='GET',r=await fetch(base+'/api/profile-agent.php'+(read?'?'+new URLSearchParams(fields):''),{method,headers:{...headers(actor),'Content-Type':'application/json'},...(!read?{body:JSON.stringify(fields)}:{})});const raw=await r.text();let data;try{data=JSON.parse(raw);}catch{throw Error(raw+'\n'+logs.slice(-4000));}return {status:r.status,data};}
+async function jsonRequest(method,fields,actor=visitor){const read=method==='GET',r=await fetch(base+'/api/profile-agent.php'+(read?'?'+new URLSearchParams(fields):''),{method,headers:{...headers(actor),'Content-Type':'application/json'},...(!read?{body:JSON.stringify(fields)}:{})});const raw=await r.text();let data;try{data=JSON.parse(raw);}catch{throw Error(raw+'\n'+logs.slice(-4000));}return {status:r.status,data,headers:r.headers};}
 async function upload(fields,bytes=png,actor=visitor){const form=new FormData();form.append('image_edit_payload',JSON.stringify(fields));form.append('profile_image',new Blob([bytes],{type:'image/png'}),'visitor.png');const r=await fetch(base+'/api/profile-agent.php',{method:'POST',headers:headers(actor),body:form});const raw=await r.text();let data;try{data=JSON.parse(raw);}catch{throw Error(raw+'\n'+logs.slice(-4000));}return {status:r.status,data};}
 const state=()=>JSON.parse(invoke('state'));
 try{
-    let ready=false;for(let i=0;i<80;i++){try{if((await fetch(base+'/boot.php',{headers:headers(visitor)})).status===200){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,25));}assert.ok(ready,logs);
+    const galleryFields={action:'image_collection',username:'fixture-owner'};
+    let ready=false;for(let i=0;i<80;i++){try{if((await jsonRequest('GET',galleryFields,readOnly(anonymous))).status===200){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,25));}assert.ok(ready,logs);
+    const galleryState=()=>invoke('gallery_state');
+    const referenceFields=(asset=11)=>({action:'reference_image',username:'fixture-owner',catalog_id:catalog.catalog_id,image_id:asset,catalog_revision:catalog.revision});
+    const referenceURL=fields=>base+'/api/profile-agent.php?'+new URLSearchParams(fields);
+    const reference=async(fields=referenceFields(),actor=readOnly(anonymous))=>fetch(referenceURL(fields),{headers:headers(actor)});
+    const extra=JSON.parse(invoke('gallery_extra')),beforeGallery=galleryState();
+    const publicGallery=await jsonRequest('GET',galleryFields,readOnly(anonymous));
+    check(publicGallery.status===200&&publicGallery.data.image_editing.enabled&&publicGallery.data.image_editing.catalogs.length===1,'anonymous gallery read works without creating a visitor conversation or requiring a token');
+    const choices=publicGallery.data.image_editing.catalogs[0].references;
+    check(choices.map(item=>item.asset_id).join(',')==='11,12','gallery lists only the explicitly approved free references, not every Media collection member');
+    const previewURL=new URL(choices[0].preview_url,base);
+    check(previewURL.origin===base&&previewURL.pathname==='/api/profile-agent.php'&&previewURL.searchParams.get('action')==='reference_image'&&previewURL.searchParams.get('username')==='fixture-owner'&&previewURL.searchParams.get('catalog_id')===String(catalog.catalog_id)&&previewURL.searchParams.get('catalog_revision')===String(catalog.revision)&&previewURL.searchParams.get('image_id')==='11'&&Array.from(previewURL.searchParams.keys()).length===5,'reference URL carries only current public catalog identity and revision');
+    check(!JSON.stringify(publicGallery.data).match(/private\/|file_path|source_sha256|profile_token|conversation_namespace|visitor_message_id|media-library-file/),'gallery exposes no private storage, visitor authority, conversation originals or results');
+    let response=await reference();
+    check(response.status===200&&response.headers.get('Content-Type')==='image/png'&&Buffer.from(await response.arrayBuffer()).equals(Buffer.from(invoke('png',11),'base64')),'public reference endpoint returns the exact approved PNG bytes under a database read-only guard');
+    check(response.headers.get('Cache-Control')==='private, no-store'&&response.headers.get('X-Content-Type-Options')==='nosniff'&&response.headers.get('Cross-Origin-Resource-Policy')==='same-origin'&&response.headers.get('Content-Security-Policy')==="default-src 'none'; sandbox"&&response.headers.get('Content-Disposition')==='inline; filename="reference-image-11.png"','public reference delivery prevents caching, MIME sniffing, cross-origin embedding and executable content');
+    for(const actor of [owner,visitor]){
+        const view=await jsonRequest('GET',galleryFields,readOnly(actor));response=await reference(referenceFields(),readOnly(actor));
+        check(view.status===200&&JSON.stringify(view.data)===JSON.stringify(publicGallery.data)&&response.status===200,actor===owner?'owner preview can browse the same public collection without visitor impersonation':'signed-in visitor sees the same explicitly public free collection');
+        await response.arrayBuffer();
+    }
+    check(galleryState()===beforeGallery,'anonymous, owner and signed-in gallery/image reads change no sessions, conversations, work, accounting, usage or catalog rows');
+    let r=await jsonRequest('POST',galleryFields,readOnly(anonymous));check(r.status===405,'gallery browsing accepts only GET');
+    r=await jsonRequest('POST',referenceFields(),readOnly(anonymous));check(r.status===405,'reference image delivery accepts only GET');
+    r=await jsonRequest('GET',{...galleryFields,conversation_id:1},readOnly(anonymous));check(r.status===422,'gallery cannot accept conversation selectors');
+    r=await jsonRequest('GET',{...referenceFields(),file_path:'private/user-media/1/style-11.png'},readOnly(anonymous));check(r.status===422,'reference delivery rejects arbitrary path selectors');
+    for(const image_id of ['0','-1','11junk','1e1','9999999999999999']){
+        response=await reference({...referenceFields(),image_id});check(response.status===404,'invalid reference image ID '+image_id+' fails closed');await response.arrayBuffer();
+    }
+    for(const [fields,label] of [
+        [{...referenceFields(),image_id:13},'unapproved owned member'],
+        [{...referenceFields(),image_id:21},'foreign image'],
+        [{...referenceFields(),catalog_id:extra.foreign_collection_id,image_id:21},'another owner approved collection'],
+        [{...referenceFields(),catalog_revision:catalog.revision+1},'different approval revision'],
+    ]){response=await reference(fields);check(response.status===404,label+' cannot reveal reference bytes');await response.arrayBuffer();}
+    invoke('gallery_change','priced_default');
+    r=await jsonRequest('GET',galleryFields,readOnly(anonymous));
+    check(r.status===200&&r.data.image_editing.catalogs[0].references.map(item=>item.asset_id).join(',')==='12','positive catalog price hides inherited prices while explicit zero remains public');
+    catalog.revision++;
+    response=await reference(referenceFields(11));check(response.status===404,'inherited positive price prevents direct reference delivery');await response.arrayBuffer();
+    response=await reference(referenceFields(12));check(response.status===200,'explicit zero-priced image remains viewable under a priced catalog');await response.arrayBuffer();
+    for(const change of ['priced_image','unapproved','disabled','member_removed','reference_removed','revision','metadata','bytes','private','inactive_owner','agent_disabled','inactive_agent','foreign_agent','profile_permission','chat_permission','private_path','unsupported','schema_missing']){
+        catalog=JSON.parse(invoke('init'));invoke('gallery_change',change);
+        response=await reference();check(response.status===404,'reference delivery rejects '+change.replaceAll('_',' '));await response.arrayBuffer();
+        r=await jsonRequest('GET',galleryFields,readOnly(anonymous));
+        if(['private','inactive_owner','agent_disabled','inactive_agent','foreign_agent','profile_permission','chat_permission'].includes(change)){
+            check(r.status===404,'gallery rechecks current '+change.replaceAll('_',' ')+' authority');
+        }else if(['disabled','unapproved','schema_missing'].includes(change)){
+            check(r.status===200&&!r.data.image_editing.enabled&&r.data.image_editing.catalogs.length===0&&r.data.image_editing.reason.length>0,'gallery explains '+change.replaceAll('_',' ')+' without hiding its section or creating schema');
+        }else if(['priced_image','member_removed','reference_removed','metadata','private_path','unsupported'].includes(change)){
+            check(r.status===200&&r.data.image_editing.catalogs[0].references.every(item=>item.asset_id!==11),'gallery omits '+change.replaceAll('_',' ')+' reference');
+        }
+    }
+    catalog=JSON.parse(invoke('init'));
     const boot=async actor=>(await (await fetch(base+'/boot.php',{headers:headers(actor)})).json());
     const a=await boot(visitor),b=await boot(foreign);const binding={username:'fixture-owner',profile_token:a.token,conversation_namespace:a.namespace};
     const intent={...binding,action:'image_edit',conversation_id:0,client_request_id:key(),catalog_id:catalog.catalog_id,catalog_revision:catalog.revision,message:'Match this style and keep my face.'};
-    let r=await jsonRequest('GET',{...binding,action:'state'});check(r.status===200&&r.data.image_editing.enabled&&r.data.image_editing.catalogs.length===1,'actual public state exposes approved free style choices');
+    r=await jsonRequest('GET',{...binding,action:'state'});check(r.status===200&&r.data.image_editing.enabled&&r.data.image_editing.catalogs.length===1,'actual public state exposes approved free style choices');
+    check(r.data.image_editing.catalogs[0].references.every(item=>new URL(item.preview_url,base).searchParams.get('action')==='reference_image'),'normal chat state retains public reference preview URLs');
     const before=JSON.stringify(state());r=await jsonRequest('GET',intent);check(r.status===405,'GET cannot admit a paid-provider photo operation');
     r=await upload({...intent,profile_token:'wrong'});check(r.status===419,'photo upload requires the current Profile token');
     r=await upload({...intent,conversation_namespace:'f'.repeat(64)});check(r.status===409&&r.data.code==='PROFILE_SESSION_CHANGED','upload cannot cross the current visitor namespace');
@@ -46,7 +103,7 @@ try{
     check(JSON.stringify(state())===beforeRecovery,'receipt recovery creates no messages, work or provider calls');
     r=await upload(intent);check(r.status===200&&r.data.duplicate&&r.data.visitor_message_id===receipt.visitor_message_id,'multipart uncertain-response retry recovers the same exact saved input');
     r=await upload(intent,otherPNG);check(r.status===409&&r.data.code==='HANDOFF_REPLAY_CONFLICT','same multipart request cannot replace the uploaded pixels');
-    let response=await fetch(base+inputUrl,{headers:headers(visitor)});check(response.status===200&&response.headers.get('Content-Type')==='image/png'&&Buffer.from(await response.arrayBuffer()).equals(png),'authorized visitor input URL returns exact photo bytes');
+    response=await fetch(base+inputUrl,{headers:headers(visitor)});check(response.status===200&&response.headers.get('Content-Type')==='image/png'&&Buffer.from(await response.arrayBuffer()).equals(png),'authorized visitor input URL returns exact photo bytes');
     check(response.headers.get('Cache-Control')==='private, no-store'&&response.headers.get('X-Content-Type-Options')==='nosniff','image delivery is private and disallows MIME sniffing');
     const foreignUrl=new URL(base+inputUrl);foreignUrl.searchParams.set('conversation_namespace',b.namespace);response=await fetch(foreignUrl,{headers:headers(foreign)});check(response.status===404,'another authenticated visitor cannot download the input');
     response=await fetch(base+inputUrl,{headers:headers(foreign)});check(response.status===409,'stale copied image URL rejects an account change');
@@ -55,6 +112,7 @@ try{
     response=await fetch(base+'/api/profile-agent.php?'+new URLSearchParams({action:'owner_image',conversation_id:cid,message_id:receipt.visitor_message_id,preview:'1'}),{headers:headers(visitor)});check(response.status===404,'visitor cannot use the owner image endpoint');
     const execution=JSON.parse(invoke('dispatch',receipt.handoff.turn_id));check(execution.result.reason==='completed'&&execution.calls===1,'controlled worker executes the real accepted public turn once');
     r=await jsonRequest('GET',{...binding,action:'poll',conversation_id:cid,after_id:receipt.visitor_message_id});
+    check(r.data.image_editing.catalogs[0].references.every(item=>new URL(item.preview_url,base).searchParams.get('action')==='reference_image'),'subsequent chat polling retains public reference preview URLs');
     const output=r.data.messages.find(m=>m.image_edit?.kind==='result');check(r.status===200&&output&&r.data.image_edits[0].state==='ready','fresh poll publishes a saved Agent image plus real completed status');
     response=await fetch(base+output.image_edit.url,{headers:headers(visitor)});check(response.status===200&&response.headers.get('Content-Type')==='image/png','only the published Agent result receives a working image URL');
     response=await fetch(base+output.image_edit.download_url,{headers:headers(visitor)});check(response.status===200&&response.headers.get('Content-Disposition').startsWith('attachment;'),'published result has a private download action');
