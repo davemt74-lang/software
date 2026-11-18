@@ -98,7 +98,7 @@
     host.innerHTML = `<form data-image-catalog-form data-revision="${Number(draft?.revision ?? catalog.revision ?? 0)}"><fieldset>
       <legend>${esc(catalog.name || 'Reference catalog')}</legend>
       <label class="profile-agent-toggle"><input type="checkbox" name="approved"${(draft ? draft.approved : catalog.approved) ? ' checked' : ''}> Make this catalog available for free photo edits</label>
-      <label class="profile-agent-field"><span>Style instructions</span><textarea name="style_instructions" maxlength="2000" placeholder="Describe the colors, lighting, textures, and treatment visitors can use.">${esc(draft?.instructions ?? catalog.style_instructions ?? '')}</textarea></label>
+      <label class="profile-agent-field"><span id="profileImageStyleInstructionsLabel">Style instructions</span><textarea name="style_instructions" aria-labelledby="profileImageStyleInstructionsLabel" maxlength="2000" placeholder="Describe the colors, lighting, textures, and treatment visitors can use.">${esc(draft?.instructions ?? catalog.style_instructions ?? '')}</textarea></label>
       <label class="profile-agent-field profile-image-catalog-price"><span>Default image price</span><input name="default_price" inputmode="decimal" value="${esc(draft?.price ?? money(catalog.default_price_cents))}" required></label>
       <p>Approve one to three style examples totaling 4 MiB or less. A blank image price inherits the catalog default; <strong>0.00</strong> makes that image free. Only approved images with a final price of 0.00 are available to visitors.</p>
       <div class="profile-image-style-assets">${imageRows || '<p>This collection has no images yet. Add images in your Media Library.</p>'}</div>
@@ -149,7 +149,7 @@
     root.innerHTML = `<div class="profile-agent-card profile-image-settings-card"><div data-image-service-settings>${settingsHtml()}</div>
       <section class="profile-image-catalog-settings"><h3>Reference catalogs</h3><p>Choose a Media Library collection and approve its example images. Free edits are tracked here without a payment step.</p>
       <a href="${esc(cfg.mediaLibraryUrl || '/media-library.php')}">Open Media Library</a>
-      <label class="profile-agent-field"><span>Collection</span><select data-image-catalog-select><option value="0">Choose a collection</option>${(state.collections || []).map(item => `<option value="${positive(item.id)}"${positive(item.id) === selected ? ' selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
+      <label class="profile-agent-field"><span id="profileImageCollectionLabel">Collection</span><select data-image-catalog-select aria-labelledby="profileImageCollectionLabel"><option value="0">Choose a collection</option>${(state.collections || []).map(item => `<option value="${positive(item.id)}"${positive(item.id) === selected ? ' selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
       <div data-image-catalog-editor></div></section><section data-image-use-history></section>
       <p class="profile-agent-notice" data-image-settings-notice role="status" aria-live="polite"></p></div>`;
     renderCatalog(); renderHistory();

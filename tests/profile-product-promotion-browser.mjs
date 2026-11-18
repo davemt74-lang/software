@@ -31,7 +31,7 @@ for (const file of fs.readdirSync('includes')) {
 for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','profile-promotion-click.php','profile-product-photo.php','media-library-file-v86.php']) {
   fs.copyFileSync(file, path.join(tmp, file));
 }
-for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js',
+for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-agent.js','profile-image-edits-v1.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js',
   'chat-notifications-drawer-v240.js','chat-notifications-drawer-v240.css','chat-header-ui.css','member-page-scroll.css','member-agent-voice-menu.css','member-agent-voice-menu.js','vp3-authenticated-runtime-bridge.js','member-shell-v77.js']) {
   fs.symlinkSync(path.resolve(file), path.join(tmp, file));
 }
