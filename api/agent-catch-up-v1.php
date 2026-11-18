@@ -27,8 +27,10 @@ if($pageBinding!==''&&!hash_equals(vp3_catch_up_page_binding_v1($user),$pageBind
 }
 $scope=$_GET['scope']??'all';
 $rawAgent=$_GET['agent_id']??'0';
+$rawConversation=$_GET['conversation_id']??'0';
 if(!in_array($scope,['all','office','commerce'],true)||!is_string($rawAgent)||
-    !preg_match('/^(?:0|[1-9][0-9]{0,17})$/D',$rawAgent)){
+    !preg_match('/^(?:0|[1-9][0-9]{0,17})$/D',$rawAgent)||!is_string($rawConversation)
+    ||!preg_match('/^(?:0|[1-9][0-9]{0,15})$/D',$rawConversation)||(int)$rawConversation>9007199254740991){
     vp3_catch_up_api_json_v1(422,['ok'=>false,'error'=>'invalid_brief_request']);
 }
 $pdo=db();
@@ -42,7 +44,7 @@ try{
     vp3_catch_up_api_json_v1(403,['ok'=>false,'error'=>'agent_unavailable']);
 }
 try{
-    vp3_catch_up_api_json_v1(200,['ok'=>true,'brief'=>vp3_agent_catch_up_v1($pdo,$user,$scope,$agentId,$pageBinding!=='')]);
+    vp3_catch_up_api_json_v1(200,['ok'=>true,'brief'=>vp3_agent_catch_up_v1($pdo,$user,$scope,$agentId,$pageBinding!=='',(int)$rawConversation)]);
 }catch(Throwable $e){
     if($e->getCode()===403)vp3_catch_up_api_json_v1(403,['ok'=>false,'error'=>'forbidden']);
     error_log('VP3 Catch me up: '.$e->getMessage());

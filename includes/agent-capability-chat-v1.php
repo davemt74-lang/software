@@ -356,7 +356,8 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
     if(($briefRequest=vp3_catch_up_chat_request_v1($query))!==null){
         try{
             $live=vp3_capability_live_user_v1($pdo,$user,$principal,$context,$authority);
-            $brief=vp3_agent_catch_up_v1($pdo,$live,$briefRequest['scope'],$context['user_agent_id']);
+            $brief=vp3_agent_catch_up_v1($pdo,$live,$briefRequest['scope'],$context['user_agent_id'],true,(int)($context['conversation_id']??0));
+            vp3_capability_live_user_v1($pdo,$live,$principal,$context,$authority);
             return vp3_catch_up_chat_result_v1($brief,$briefRequest['window']);
         }catch(Throwable $e){
             $blocked=$e->getCode()===403;

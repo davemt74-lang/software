@@ -31,12 +31,168 @@
     try { const url=new URL(value,location.origin);return url.origin===location.origin&&!url.hash ? url.pathname+url.search : ''; }
     catch { return ''; }
   }
+  const analyticsMetricCatalog={
+    visit_records:['events','count','Visit records'],
+    recognized_browser_contacts:['events','count','Recognized browser contacts'],
+    accepted_visitor_turns:['conversations','count','Accepted visitor requests'],
+    active_conversations:['conversations','count','Conversations with an accepted request'],
+    new_conversations:['conversations','count','Verified first conversations'],
+    owner_takeovers:['conversations','count','Owner takeovers'],
+    owner_reply_messages:['conversations','count','Owner reply messages'],
+    agent_reply_messages:['conversations','count','Agent reply messages'],
+    median_first_reply_seconds:['conversations','seconds','Median first-reply delay'],
+    calls_offered:['calls','count','Calls offered'],
+    calls_accepted:['calls','count','Calls accepted'],
+    calls_finished:['calls','count','Recorded call outcomes'],
+    median_call_accept_seconds:['calls','seconds','Median offer-to-accept delay'],
+    recorded_product_conversions:['commerce','count','Recorded product conversions'],
+    recorded_booking_conversions:['commerce','count','Recorded booking conversions'],
+    verified_paid_orders:['commerce','count','Verified paid orders'],
+    verified_refunded_orders:['commerce','count','Verified refund-affected orders']
+  };
+  const analyticsGroups=[['events','Visits'],['conversations','Conversations'],['calls','Calls'],['commerce','Commerce']];
+  const analyticsCoverage=new Set(['ready','limited','unavailable','unconfigured']);
+  const analyticsPointCoverage=new Set(['complete','partial','unavailable']);
+  const analyticsReasons={
+    complete:'',
+    no_observations:'No verified observations in this period.',
+    before_clock_activation:'This period starts before complete event timing was established.',
+    clock_gap:'Some saved events do not have verifiable timing.',
+    identity_proof_unavailable:'Some browser identity or disclosure evidence cannot currently be verified.',
+    source_proof_incomplete:'Only part of the source evidence can be verified.',
+    receipt_proof_incomplete:'Only part of the saved receipt evidence can be verified.',
+    storage_unconfigured:'The required records are not configured.',
+    storage_unavailable:'The required records could not be read.',
+    authority_unavailable:'Access to the required evidence could not be verified.',
+    timezone_unavailable:'The period timezone could not be verified.'
+  };
+  function analyticsRef(value) {
+    if(typeof value!=='string'||value.length>180||value.slice(8).length>155)return null;
+    const match=/^profile:analytics:v1:(1|7|30):([1-9][0-9]{8,10}):(e|s|u):([A-Za-z0-9_-]{1,100})$/.exec(value);
+    if(!match)return null;
+    const cutoff=Number(match[2]);
+    if(!positive(cutoff)||cutoff<946684800||cutoff>=4133980800)return null;
+    let zone;
+    try {
+      zone=atob(match[4].replace(/-/g,'+').replace(/_/g,'/'));
+      if(!zone||zone.length>75||!/^[A-Za-z0-9_+./-]+$/.test(zone)
+        ||btoa(zone).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')!==match[4]
+        ||match[3]==='u'&&zone!=='UTC')return null;
+      const formatter=new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'});
+      const localDate=seconds=>formatter.formatToParts(new Date(seconds*1000)).filter(part=>['year','month','day'].includes(part.type)).map(part=>part.value).join('-');
+      // Some zones skip midnight or repeat it. Only the first valid second of the local date is canonical.
+      if(localDate(cutoff)===localDate(cutoff-1))return null;
+    }catch{return null;}
+    return {ref:value,period:Number(match[1]),cutoff,timezone:zone,timezone_source:{e:'explicit',s:'schedule',u:'utc_fallback'}[match[3]]};
+  }
+  function analyticsSource(source,chatUrl) {
+    const raw=source?.href||source?.url;
+    const ref=analyticsRef(source?.ref),href=localUrl(raw),base=localUrl(chatUrl);
+    if(!ref||!href||!base||typeof raw!=='string'||/[\\\u0000-\u0020\u007f]/.test(raw))return null;
+    const url=new URL(href,location.origin);
+    if(url.hash||url.username||url.password||url.pathname!==new URL(base,location.origin).pathname||[...url.searchParams].length!==3
+      ||!['agent','conversation_id','profile_analytics'].every(key=>url.searchParams.getAll(key).length===1)
+      ||url.searchParams.get('profile_analytics')!==ref.ref)return null;
+    const agentText=url.searchParams.get('agent'),conversationText=url.searchParams.get('conversation_id');
+    const id=value=>/^[1-9][0-9]{0,15}$/.test(value||'')&&positive(Number(value))?Number(value):null;
+    const agent=agentText==='system'?0:id(agentText),conversation=id(conversationText);
+    return agent===null||conversation===null?null:{...ref,chatAgentId:agent,chatConversationId:conversation,href};
+  }
+  function analyticsNumberPoint(value,unit) {
+    const number=n=>n===null||typeof n==='number'&&Number.isFinite(n)&&n>=0&&(unit==='seconds'||Number.isSafeInteger(n));
+    return value&&analyticsPointCoverage.has(value.coverage)&&Object.hasOwn(analyticsReasons,value.reason)
+      &&number(value.value)&&number(value.observed_value)
+      &&(value.coverage==='complete'||value.value===null)
+      &&(unit==='seconds'||value.coverage!=='complete'||nonnegative(value.value));
+  }
+  function analyticsMoneyPoint(value) {
+    const amount=n=>n===null||typeof n==='string'&&/^(?:0|[1-9][0-9]{0,79})$/.test(n);
+    return value&&analyticsPointCoverage.has(value.coverage)&&Object.hasOwn(analyticsReasons,value.reason)
+      &&amount(value.value_minor)&&amount(value.observed_value_minor)
+      &&(value.coverage==='complete'?value.value_minor!==null:value.value_minor===null);
+  }
+  function analyticsPeriodModel(value,requestedRef='') {
+    const ref=analyticsRef(value?.ref),window=value?.window;
+    if(value?.contract!=='vp3.profile-analytics-period.v1'||!ref||requestedRef&&ref.ref!==requestedRef
+      ||!revision(value.revision)||!analyticsCoverage.has(value.coverage)||!positive(value.observed_at_utc_ms)
+      ||!window||window.period!==ref.period||window.timezone!==ref.timezone||window.timezone_source!==ref.timezone_source
+      ||window.as_of_utc_ms!==ref.cutoff*1000||window.to_utc_ms!==window.as_of_utc_ms
+      ||!positive(window.from_utc_ms)||window.from_utc_ms>=window.to_utc_ms
+      ||!plain(window.from_local,120)||!plain(window.to_local,120)||!window.previous
+      ||!positive(window.previous.from_utc_ms)||window.previous.to_utc_ms!==window.from_utc_ms
+      ||window.previous.from_utc_ms>=window.previous.to_utc_ms
+      ||!plain(window.previous.from_local,120)||!plain(window.previous.to_local,120)
+      ||!Array.isArray(value.period_options)||value.period_options.length!==3
+      ||!Array.isArray(value.metrics)||value.metrics.length!==Object.keys(analyticsMetricCatalog).length
+      ||!value.groups)return null;
+    const periods=new Set();
+    for(const option of value.period_options){
+      const other=analyticsRef(option?.ref);
+      if(!other||option.period!==other.period||periods.has(other.period)||other.cutoff!==ref.cutoff
+        ||other.timezone!==ref.timezone||other.timezone_source!==ref.timezone_source)return null;
+      periods.add(other.period);
+    }
+    const keys=new Set();
+    for(const metric of value.metrics){
+      const known=analyticsMetricCatalog[metric?.key];
+      if(!known||keys.has(metric.key)||metric.group!==known[0]||metric.unit!==known[1]
+        ||!plain(metric.definition,600)||!analyticsNumberPoint(metric.current,metric.unit)||!analyticsNumberPoint(metric.previous,metric.unit))return null;
+      keys.add(metric.key);
+      const comparison=metric.comparison;
+      if(comparison!==null){
+        if(!comparison||!['delta','percent'].every(key=>comparison[key]===null||typeof comparison[key]==='number'&&Number.isFinite(comparison[key]))
+          ||(metric.current.coverage!=='complete'||metric.previous.coverage!=='complete')&&(comparison.delta!==null||comparison.percent!==null)
+          ||metric.previous.value===0&&comparison.percent!==null
+          ||(metric.current.value===null||metric.previous.value===null)&&(comparison.delta!==null||comparison.percent!==null))return null;
+      }
+    }
+    for(const [key] of analyticsGroups){
+      if(!analyticsCoverage.has(value.groups[key]?.coverage)||!Object.hasOwn(analyticsReasons,value.groups[key]?.reason))return null;
+    }
+    if(!Array.isArray(value.money)||value.money.length>1000)return null;
+    const currencies=new Set();
+    for(const row of value.money){
+      const key=row?.key+':'+row?.currency;
+      if(!['verified_payments','verified_refunds'].includes(row?.key)||!/^[A-Z]{3}$/.test(row.currency||'')
+        ||currencies.has(key)||row.amount_unit!=='commerce_cent'||row.scale!==2||row.scale_source!=='vp3.commerce.v800'
+        ||!analyticsMoneyPoint(row.current)||!analyticsMoneyPoint(row.previous))return null;
+      currencies.add(key);
+      if(row.comparison!==null&&(!row.comparison||(row.current.coverage!=='complete'||row.previous.coverage!=='complete')&&row.comparison.delta_minor!==null
+        ||row.comparison.delta_minor!==null&&!/^-?(?:0|[1-9][0-9]{0,79})$/.test(row.comparison.delta_minor)))return null;
+    }
+    const optionalCount=n=>n===null||nonnegative(n);
+    if(!value.first_reply_cohorts||!value.call_breakdowns)return null;
+    for(const period of ['current','previous']){
+      const cohort=value.first_reply_cohorts[period],calls=value.call_breakdowns[period];
+      if(!cohort||!analyticsPointCoverage.has(cohort.coverage)||!Object.hasOwn(analyticsReasons,cohort.reason)
+        ||!['eligible','replied','unanswered','unverifiable'].every(key=>optionalCount(cohort[key]))
+        ||!calls||!['direct','assisted'].every(key=>optionalCount(calls.accepted?.[key]))
+        ||!['ended','declined','cancelled','expired','failed'].every(key=>optionalCount(calls.finished?.[key]))
+        ||!['eligible','verified','unverifiable'].every(key=>optionalCount(calls.acceptance_delay?.[key])))return null;
+    }
+    const backlog=value.backlog;
+    if(!backlog||!positive(backlog.as_of_utc_ms)||!revision(backlog.revision)||!analyticsCoverage.has(backlog.coverage)
+      ||!Array.isArray(backlog.metrics)||backlog.metrics.length!==1
+      ||backlog.metrics[0]?.key!=='current_unresolved_conversations'
+      ||!analyticsPointCoverage.has(backlog.metrics[0].coverage)||!optionalCount(backlog.metrics[0].value)
+      ||(backlog.metrics[0].coverage==='complete'?!nonnegative(backlog.metrics[0].value):backlog.metrics[0].value!==null)
+      ||!Object.hasOwn(analyticsReasons,backlog.metrics[0].reason))return null;
+    return value;
+  }
+  function analyticsLedgerAmount(value,currency,withSign=false) {
+    if(typeof value!=='string'||!/^-?(?:0|[1-9][0-9]*)$/.test(value))return 'Unavailable';
+    const negative=value.startsWith('-'),digits=negative?value.slice(1):value;
+    const padded=digits.padStart(3,'0'),whole=padded.slice(0,-2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+    return currency+' '+(negative?'-':withSign&&digits!=='0'?'+':'')+whole+'.'+padded.slice(-2);
+  }
   function normalizeSelection(value={}) {
     const tab=tabs.some(([key])=>key===value.tab)?value.tab:'overview';
     const publicConversationId=positive(value.publicConversationId)?value.publicConversationId:0;
     const callId=positive(value.callId)?value.callId:0;
     const callView=value.callView==='history'?'history':'current';
-    return {tab,publicConversationId,callId,callView};
+    const analyticsView=value.analyticsView==='traffic'?'traffic':'periods';
+    const analyticsPeriodRef=analyticsRef(value.analyticsRef)?.ref||'';
+    return {tab,publicConversationId,callId,callView,analyticsView,analyticsRef:analyticsPeriodRef};
   }
   const currentCallStates=new Set(['offered','preparing','ready','active','ending']);
   const terminalCallStates=new Set(['ended','declined','cancelled','expired','failed']);
@@ -141,12 +297,14 @@
     if (!host || !endpoint || !plain(cfg.csrf,512)) return null;
     let alive=true,generation=0,selection=normalizeSelection(initialSelection),analyticsView=null,callActivity=null;
     let selectedData=null,threadData=null,threadEntry=null,conversations=null,callPage=null;
+    const analyticsSelection={analyticsView:selection.analyticsView,analyticsRef:selection.analyticsRef};
     let callListHost=null,callListFooter=null,callListNotice=null,callDetailHost=null,callDetailKey='',callOutcome=null,callPageBusy=false,callDetailEpoch=0;
     const outcomeHosts=new Map(),outcomeBusy=new Set();
     const requests=new Map();
     const initial=captureScope(scope);
     const initialKey=scopeKey(initial);
     function selected(value) {
+      if(value.tab==='analytics')value={...analyticsSelection,...value};
       return normalizeSelection(value.tab==='calls'&&!['callId','publicConversationId','callView'].some(key=>Object.hasOwn(value,key))
         ? savedCallSelection(initial)||value : value);
     }
@@ -782,10 +940,142 @@
         if(!cursor&&current(mine)&&callDetailHost?.isConnected)callDetailHost.focus({preventScroll:true});
       }finally{if(current(mine))callPageBusy=false;}
     }
-    function loadAnalytics(mine) {
-      content.replaceChildren(heading('Analytics','Recorded activity and conversion evidence. Reporting windows retain their displayed timezone.'));
+    function analyticsPoint(value,unit='count',currency='') {
+      const wrap=node('div','','vp3-profile-period-point');
+      const complete=value.coverage==='complete';
+      const amount=currency?(complete?value.value_minor:value.observed_value_minor):(complete?value.value:value.observed_value);
+      let text=amount===null?(complete?'No observations':'Unavailable'):currency?analyticsLedgerAmount(amount,currency)
+        :new Intl.NumberFormat(undefined,{maximumFractionDigits:unit==='seconds'?1:0}).format(amount)+(unit==='seconds'?' s':'');
+      wrap.append(node('strong',text));
+      if(!complete&&amount!==null)wrap.append(node('small','Observed subset · partial coverage'));
+      else if(!complete)wrap.append(node('small','Verified total unavailable'));
+      const reason=analyticsReasons[value.reason];
+      if(reason&&value.reason!=='no_observations')wrap.append(node('small',reason));
+      return wrap;
+    }
+    function analyticsComparison(metric,currency='') {
+      const comparison=metric.comparison;
+      if(!comparison)return node('span','Not comparable');
+      if(currency)return node('span',comparison.delta_minor===null?'Not comparable':analyticsLedgerAmount(comparison.delta_minor,currency,true));
+      if(comparison.delta===null)return node('span','Not comparable');
+      const format=new Intl.NumberFormat(undefined,{maximumFractionDigits:metric.unit==='seconds'?1:0,signDisplay:'exceptZero'});
+      const text=format.format(comparison.delta)+(metric.unit==='seconds'?' s':'');
+      const wrap=node('div',text);
+      if(comparison.percent!==null)wrap.append(node('small',new Intl.NumberFormat(undefined,{maximumFractionDigits:1,signDisplay:'exceptZero'}).format(comparison.percent)+'%'));
+      else if(metric.previous.value===0)wrap.append(node('small','No percentage from a zero baseline'));
+      return wrap;
+    }
+    function analyticsTable(rows,currencyRows=false) {
+      const table=node('table','','vp3-profile-period-table');
+      const head=node('thead'),headRow=node('tr');
+      for(const label of ['Measure','Selected period','Previous period','Change']){const th=node('th',label);th.setAttribute('scope','col');headRow.append(th);}
+      head.append(headRow);table.append(head);
+      const body=node('tbody');
+      for(const metric of rows){
+        const row=node('tr');row.dataset.profileAnalyticsMetric=metric.key+(currencyRows?':'+metric.currency:'');
+        const title=currencyRows?(metric.key==='verified_payments'?'Verified payments':'Verified refunds')+' · '+metric.currency:analyticsMetricCatalog[metric.key][2];
+        const name=node('th',title);name.setAttribute('scope','row');row.append(name);
+        for(const [key,label] of [['current','Selected period'],['previous','Previous period']]){
+          const cell=node('td');cell.dataset.label=label;cell.append(analyticsPoint(metric[key],metric.unit,currencyRows?metric.currency:''));row.append(cell);
+        }
+        const change=node('td');change.dataset.label='Change';change.append(analyticsComparison(metric,currencyRows?metric.currency:''));row.append(change);body.append(row);
+      }
+      table.append(body);return table;
+    }
+    function analyticsCohortDetail(value) {
+      const detail=node('details','','vp3-profile-period-definitions');detail.append(node('summary','Response and call evidence'));
+      for(const [key,label] of [['current','Selected period'],['previous','Previous period']]){
+        const section=node('section');section.append(node('h4',label));
+        const cohort=value.first_reply_cohorts[key],calls=value.call_breakdowns[key];
+        const display=n=>n===null?'unavailable':String(n);
+        section.append(node('p','First-request cohort: '+display(cohort.eligible)+' eligible; '+display(cohort.replied)
+          +' replied before cutoff; '+display(cohort.unanswered)+' unanswered at cutoff; '+display(cohort.unverifiable)+' unverifiable.'));
+        if(cohort.coverage!=='complete')section.append(node('p',analyticsReasons[cohort.reason]||'First-response evidence is incomplete.'));
+        section.append(node('p','Accepted calls: '+display(calls.accepted.direct)+' direct; '+display(calls.accepted.assisted)+' Agent assisted.'));
+        section.append(node('p','Recorded outcomes: '+['ended','declined','cancelled','expired','failed'].map(name=>display(calls.finished[name])+' '+name).join('; ')+'.'));
+        section.append(node('p','Offer-to-accept evidence: '+display(calls.acceptance_delay.verified)+' verified out of '
+          +display(calls.acceptance_delay.eligible)+' eligible; '+display(calls.acceptance_delay.unverifiable)+' unverifiable.'));
+        detail.append(section);
+      }
+      detail.append(node('p','Reply delays use verified first replies before the fixed cutoff. Call outcomes use the currently verified saved outcome. Offer-to-accept delay does not measure time spent talking.'));
+      return detail;
+    }
+    function renderAnalyticsPeriod(target,value,mine) {
+      const frame=node('section','','vp3-profile-period');frame.dataset.profileAnalyticsPeriod=value.ref;
+      const meta=node('div','','vp3-profile-period-meta');
+      meta.append(node('h4',value.window.period===1?'Completed day':'Completed '+value.window.period+' days'));
+      meta.append(node('p',value.window.from_local+' to '+value.window.to_local));
+      meta.append(node('small','The start is included; the end is excluded.'));
+      meta.append(node('p','Period timezone: '+value.window.timezone));
+      meta.append(node('small','Timezone source in this link: '+{explicit:'account choice',schedule:'schedule choice',utc_fallback:'UTC fallback'}[value.window.timezone_source]+'.'));
+      meta.append(node('p','Previous period: '+value.window.previous.from_local+' to '+value.window.previous.to_local));
+      meta.append(node('small','Fixed cutoff: '+new Date(value.window.as_of_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')));
+      meta.append(node('small','Evidence checked: '+new Date(value.observed_at_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')));
+      frame.append(meta);
+      const choices=node('div','','vp3-profile-period-choices');choices.setAttribute('role','group');choices.setAttribute('aria-label','Completed period length');
+      for(const option of value.period_options){
+        const control=button(option.period===1?'1 day':option.period+' days',()=>select({...selection,tab:'analytics',analyticsView:'periods',analyticsRef:option.ref}));
+        control.setAttribute('aria-pressed',String(option.ref===value.ref));control.dataset.profilePeriod=String(option.period);choices.append(control);
+      }
+      choices.append(button('Latest completed periods',()=>{
+        if(!current(mine))return;
+        selection.analyticsRef='';analyticsSelection.analyticsRef='';void refresh();
+      }));
+      frame.append(choices);
+      if(value.coverage!=='ready')frame.append(node('p',
+        value.coverage==='limited'?'Some measures have incomplete evidence. Observed subsets are labeled below.':'The requested period could not be completely verified.',
+        'vp3-profile-period-coverage'));
+      for(const [group,label] of analyticsGroups){
+        const section=node('section','','vp3-profile-period-group');section.append(node('h4',label));
+        const groupState=value.groups[group];
+        if(groupState.coverage!=='ready')section.append(node('p',analyticsReasons[groupState.reason]||'Coverage is incomplete for this group.'));
+        const metrics=value.metrics.filter(metric=>metric.group===group);
+        section.append(analyticsTable(metrics));
+        const definitions=node('details','','vp3-profile-period-definitions');definitions.append(node('summary','Definitions and coverage'));
+        const list=node('dl');
+        for(const metric of metrics){list.append(node('dt',analyticsMetricCatalog[metric.key][2]),node('dd',metric.definition));}
+        definitions.append(list);section.append(definitions);frame.append(section);
+      }
+      const money=node('section','','vp3-profile-period-group');money.append(node('h4','Commerce ledger amounts'));
+      money.append(node('p','Amounts use the saved commerce ledger scale of two decimal places. Each currency is reported separately.'));
+      if(value.money.length)money.append(analyticsTable(value.money,true));
+      else money.append(node('p',value.groups.commerce.coverage==='ready'?'No verified ledger amounts in these periods.':'Ledger amounts are unavailable or incomplete for these periods.'));
+      frame.append(money,analyticsCohortDetail(value));
+      const backlog=node('section','','vp3-profile-period-backlog'),point=value.backlog.metrics[0];
+      backlog.append(node('h4','Current unresolved conversations'));
+      backlog.append(node('p',point.value===null?'Current total unavailable.':String(point.value)+' current open or owner-joined conversations.'));
+      backlog.append(node('small','Checked '+new Date(value.backlog.as_of_utc_ms).toISOString().replace('T',' ').replace('.000Z',' UTC')+'. This is a current count, separate from the completed periods.'));
+      if(point.coverage!=='complete')backlog.append(node('p',analyticsReasons[point.reason]||'Current conversation coverage is incomplete.'));
+      frame.append(backlog);
+      const context=currentScope(),chatUrl=localUrl(cfg.chatUrl||endpoint.replace(/\/api\/[^/]+$/,'/chat.php'));
+      if(context&&chatUrl){
+        const url=new URL(chatUrl,location.origin);url.searchParams.set('agent',context.chatAgentId===0?'system':String(context.chatAgentId));
+        url.searchParams.set('conversation_id',String(context.chatConversationId));url.searchParams.set('profile_analytics',value.ref);
+        const href=analyticsSource({ref:value.ref,url:url.pathname+url.search},chatUrl)?.href;
+        if(href){const link=node('a','Open this exact period');link.href=href;link.dataset.profilePeriodLink='';frame.append(link);}
+      }
+      target.replaceChildren(frame);
+    }
+    async function loadAnalytics(mine) {
+      content.replaceChildren(heading('Analytics','Completed periods and recorded traffic details.'));
+      const modes=node('div','','vp3-profile-period-choices');modes.setAttribute('role','group');modes.setAttribute('aria-label','Analytics views');
+      for(const [view,label] of [['periods','Completed periods'],['traffic','Traffic details']]){
+        const control=button(label,()=>select({...selection,tab:'analytics',analyticsView:view}));
+        control.setAttribute('aria-pressed',String(selection.analyticsView===view));control.dataset.profileAnalyticsView=view;modes.append(control);
+      }
+      content.append(modes);
       const target=node('section');content.append(target);
-      if (!window.VP3ProfileAnalytics?.mountWorkspace) {target.append(node('p','Analytics is unavailable.','vp3-profile-empty'));return;}
+      if(selection.analyticsView==='periods'){
+        const requestedRef=selection.analyticsRef;
+        target.append(node('p','Checking the completed period…','vp3-profile-empty'));
+        const result=await request('analytics_period',requestedRef?{ref:requestedRef}:{});
+        if(!current(mine))return;
+        const value=analyticsPeriodModel(result.data.analytics_period,requestedRef);
+        if(!value)throw new Error('The completed-period response could not be verified.');
+        selection.analyticsRef=value.ref;analyticsSelection.analyticsRef=value.ref;
+        renderAnalyticsPeriod(target,value,mine);return;
+      }
+      if (!window.VP3ProfileAnalytics?.mountWorkspace) {target.append(node('p','Traffic details are unavailable.','vp3-profile-empty'));return;}
       analyticsView=window.VP3ProfileAnalytics.mountWorkspace(target,{
         readAnalytics:async({propertyId,days,signal})=>{
           const result=await request('analytics',{property_id:propertyId,days},{signal});
@@ -798,6 +1088,12 @@
       });
     }
     function selectSource(source) {
+      if(source?.ref?.startsWith('profile:analytics:')){
+        const context=currentScope(),chatUrl=cfg.chatUrl||endpoint.replace(/\/api\/[^/]+$/,'/chat.php');
+        const destination=analyticsSource(source,chatUrl);
+        if(!context||!destination||destination.chatAgentId!==context.chatAgentId||destination.chatConversationId!==context.chatConversationId)return false;
+        return select({tab:'analytics',analyticsView:'periods',analyticsRef:destination.ref});
+      }
       const match=/^profile:(conversation|call):([1-9][0-9]*)$/.exec(source?.ref||'');
       if (!match) return false;
       const url=new URL(source.href,location.origin),id=Number(match[2]),publicConversationId=Number(url.searchParams.get('conversation'));
@@ -826,7 +1122,7 @@
           if (selection.publicConversationId) await loadConversation(mine,selection.publicConversationId);
           else await loadConversations(mine);
         } else if (selection.tab==='calls') await loadCalls(mine);
-        else if (selection.tab==='analytics') loadAnalytics(mine);
+        else if (selection.tab==='analytics') await loadAnalytics(mine);
         else await loadReports(mine);
         if(current(mine))say('');
       } catch(error) { if(current(mine))statusError(error,mine); }
@@ -836,6 +1132,7 @@
       rememberInput();const next=selected(value);
       const unchanged=JSON.stringify(selection)===JSON.stringify(next);
       selection=next;
+      if(selection.tab==='analytics')Object.assign(analyticsSelection,{analyticsView:selection.analyticsView,analyticsRef:selection.analyticsRef});
       for (const [key,control] of controls) {
         const selected=key===selection.tab;control.setAttribute('aria-selected',String(selected));control.tabIndex=selected?0:-1;
       }
@@ -866,6 +1163,47 @@
       if(!alive)return;rememberInput();alive=false;generation++;attemptListeners.delete(attemptChanged);for(const controller of requests.keys())controller.abort();requests.clear();disposeTab();root.remove();
     }});
   }
-  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace});
+  let pendingAnalyticsDestination=null;
+  function cancelPendingAnalyticsDestination() {
+    pendingAnalyticsDestination=null;
+    for(const event of ['vp3:chat-context-ready','vp3:agent-activity-ready'])window.removeEventListener?.(event,openInitialAnalyticsDestination);
+  }
+  function openInitialAnalyticsDestination() {
+    const target=pendingAnalyticsDestination;
+    if(!target)return;
+    const chat=window.STONEFELLOW_CHAT,continuity=window.STONEFELLOW_CHAT_CONTINUITY;
+    if(!chat||chat.userId!==target.ownerUserId||chat.agentId!==target.chatAgentId
+      ||chat.workingAttentionBinding!==target.workingAttentionBinding||window.VP3ParticipantContinuity?.selectedContext?.()){
+      cancelPendingAnalyticsDestination();return;
+    }
+    if(!continuity||typeof continuity.profileAnalyticsDestination!=='function')return;
+    const original=continuity.profileAnalyticsDestination();
+    if(!original||scopeKey(original)!==scopeKey(target)||original.ref!==target.ref){cancelPendingAnalyticsDestination();return;}
+    if(continuity.isReady?.()!==true||continuity.isRestoring?.())return;
+    if(continuity.agentId?.()!==target.chatAgentId||continuity.conversationId?.()!==target.chatConversationId){
+      cancelPendingAnalyticsDestination();return;
+    }
+    if(!window.VP3AgentActivityHub?.openProfile)return;
+    // Consume before opening: close and repeated readiness events cannot reopen the shell.
+    cancelPendingAnalyticsDestination();
+    window.VP3AgentActivityHub.openProfile({tab:'analytics',analyticsView:'periods',analyticsRef:target.ref});
+  }
+  function initializeAnalyticsDestination() {
+    const cfg=window.VP3_PROFILE_WORKSPACE_V1||{},raw=window.STONEFELLOW_CHAT?.profileAnalyticsDestination;
+    const chatUrl=cfg.chatUrl||String(cfg.endpoint||'').replace(/\/api\/[^/]+$/,'/chat.php');
+    const parsed=analyticsSource({ref:raw?.ref,href:raw?.href},chatUrl);
+    if(!raw||!parsed||!positive(raw.ownerUserId)||raw.ownerUserId!==Number(cfg.ownerKey)
+      ||raw.chatAgentId!==cfg.agentId||raw.chatAgentId!==parsed.chatAgentId||raw.chatConversationId!==parsed.chatConversationId
+      ||raw.workingAttentionBinding!==cfg.workingAttentionBinding||typeof raw.workingAttentionBinding!=='string'||!raw.workingAttentionBinding)return;
+    pendingAnalyticsDestination=Object.freeze({...raw});
+    for(const event of ['vp3:chat-context-ready','vp3:agent-activity-ready'])window.addEventListener(event,openInitialAnalyticsDestination);
+    window.addEventListener('stonefellow:chat-context-changing',event=>{
+      if(event.detail?.initialRestore!==true)cancelPendingAnalyticsDestination();
+    });
+    window.addEventListener('pagehide',cancelPendingAnalyticsDestination,{once:true});
+    openInitialAnalyticsDestination();
+  }
+  window.VP3ProfileWorkspaceV1=Object.freeze({mountWorkspace,cancelPendingAnalyticsDestination});
+  initializeAnalyticsDestination();
   window.dispatchEvent(new Event('vp3:profile-workspace-ready'));
 })();

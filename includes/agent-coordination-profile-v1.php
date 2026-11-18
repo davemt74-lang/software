@@ -24,8 +24,64 @@ function vp3_coordination_profile_query_v1(PDO $pdo,string $sql,array $args=[]):
     $q=$pdo->prepare($sql);$q->execute($args);return $q->fetchAll(PDO::FETCH_ASSOC);
 }
 
-/** Discovery is bounded; selected references are exact and never turn into a scan. */
+/**
+ * Private fixed-period facts remain available independently of public responder
+ * configuration. The existing native adapters retain their own availability.
+ */
 function vp3_coordination_profile_sources_v1(PDO $pdo,array $scope,array $binding,?array $refs,DateTimeImmutable $now): array
+{
+    if($refs!==null){
+        if(!array_is_list($refs)||count($refs)>24)throw new InvalidArgumentException('Invalid Profile source selection.');
+        foreach($refs as $ref)if(!is_string($ref)||vp3_profile_specialist_ref_kind_v1('profile:'.$ref)===null)
+            throw new InvalidArgumentException('Invalid Profile source reference.');
+    }
+    $scope=vp3_coordination_profile_authority_v1($pdo,$scope,$binding);
+    $native=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>!str_starts_with($ref,'analytics:')));
+    $periods=$refs===null?[null]:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'analytics:')));
+    $periodItems=[];$periodCoverage='ready';
+    if($periods){
+        require_once __DIR__.'/profile-analytics-period-v1.php';
+        require_once __DIR__.'/agent-profile-analytics-summary-v1.php';
+        foreach($periods as $ref){
+            try{
+                $data=vp3_profile_analytics_period_v1($pdo,$scope,$ref===null?['period'=>1]:['ref'=>'profile:'.$ref],$now);
+                $state=$data['coverage']??'unavailable';
+                if(!in_array($state,['ready','limited','unconfigured','unavailable'],true))$state='unavailable';
+                if($state!=='ready')$periodCoverage=$state==='unavailable'?'unavailable':($periodCoverage==='ready'?$state:$periodCoverage);
+                if($ref===null&&!vp3_profile_analytics_discoverable_v1($data))continue;
+                $item=vp3_profile_analytics_source_item_v1($data,$scope['agent_id'],$scope['conversation_id']);
+                if($item!==null)$periodItems[$item['ref']]=$item;
+            }catch(PDOException $error){throw $error;}
+            catch(RuntimeException $error){
+                if($error->getCode()===403)throw $error;
+                if(!in_array($error->getCode(),[404,409,422,503],true))throw $error;
+                $periodCoverage='unavailable';
+            }
+        }
+    }
+    // An explicit analytics selection never invokes public Profile discovery.
+    if($native===[]){
+        vp3_coordination_profile_authority_v1($pdo,$scope,$binding);
+        return ['items'=>$periodItems,'coverage'=>$periodItems&&$periodCoverage==='unconfigured'?'limited':$periodCoverage];
+    }
+    $out=vp3_coordination_profile_native_sources_v1($pdo,$scope,$binding,$native,$now);
+    if($periodItems){
+        $out['items']+=$periodItems;
+        $out['coverage']=in_array($out['coverage'],['ready','unconfigured'],true)&&$periodCoverage==='ready'?'ready':'limited';
+    }elseif($refs!==null&&$periods&&$periodCoverage!=='ready'){
+        $out['coverage']=$out['items']?'limited':$periodCoverage;
+    }
+    // Unconfigured or empty optional period facts do not manufacture automatic
+    // chatter. Their full per-metric availability remains in the explicit view.
+    $rank=['high'=>0,'normal'=>1,'low'=>2];
+    uasort($out['items'],static fn(array $a,array $b):int=>[($rank[$a['priority']]??2),$a['ref']]<=>[($rank[$b['priority']]??2),$b['ref']]);
+    if(count($out['items'])>24){$out['items']=array_slice($out['items'],0,24,true);$out['coverage']='limited';}
+    vp3_coordination_profile_authority_v1($pdo,$scope,$binding);
+    return $out;
+}
+
+/** Discovery is bounded; selected references are exact and never turn into a scan. */
+function vp3_coordination_profile_native_sources_v1(PDO $pdo,array $scope,array $binding,?array $refs,DateTimeImmutable $now): array
 {
     $exact=$refs!==null;
     if($refs!==null){

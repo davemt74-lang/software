@@ -42,7 +42,7 @@ function vp3_working_context_chat_v1(PDO $pdo,array $user,array $principal,int $
     $agent=($principal['kind']??'')==='user_agent'?(int)($principal['agent_id']??0):0;
     try{
         $live=vp3_capability_live_user_v1($pdo,$user,$principal,['conversation_id'=>$conversationId],$authority);
-        $brief=vp3_agent_catch_up_v1($pdo,$live,'all',$agent);
+        $brief=vp3_agent_catch_up_v1($pdo,$live,'all',$agent,true,$conversationId);
         foreach($brief['items'] as $item){
             if(hash_equals(vp3_working_context_key_v1((int)$live['id'],$agent,$conversationId,$item),$reference)){
                 return array_replace($base,[

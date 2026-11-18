@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/profile-analytics-period-ref-v1.php';
+
 /** Pure report projection. Loading this file never loads a public responder or reads storage. */
 const VP3_PROFILE_SPECIALIST_REPORT_V1='vp3.profile-report.v1';
 const VP3_PROFILE_SPECIALIST_FINDING_LIMIT_V1=24;
@@ -41,9 +43,33 @@ function vp3_profile_specialist_sections_valid_v1(mixed $report): bool
     return true;
 }
 
-function vp3_profile_specialist_url_v1(string $kind,mixed $url): bool
+/** Pure canonical source validation, including fixed completed-period identities. */
+function vp3_profile_specialist_ref_kind_v1(mixed $ref): ?string
+{
+    if(!is_string($ref)||strlen($ref)>180)return null;
+    if(preg_match('/\Aprofile:(conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',$ref,$match))return $match[1];
+    if(!str_starts_with($ref,'profile:analytics:v1:'))return null;
+    try{vp3_profile_analytics_period_decode_v1($ref);return 'analytics';}catch(Throwable){return null;}
+}
+
+function vp3_profile_analytics_period_href_v1(int $agent,int $chat,string $ref): string
+{
+    if($agent<0||$agent>9007199254740991||$chat<1||$chat>9007199254740991
+        ||vp3_profile_specialist_ref_kind_v1($ref)!=='analytics')throw new InvalidArgumentException('Invalid Profile period destination.');
+    return vp3_profile_specialist_href_v1('/chat.php?agent='.($agent>0?$agent:'system').'&conversation_id='.$chat
+        .'&profile_analytics='.rawurlencode($ref));
+}
+
+function vp3_profile_specialist_url_v1(string $kind,mixed $url,?string $ref=null): bool
 {
     if(!is_string($url))return false;
+    if($kind==='analytics'){
+        if($ref===null||vp3_profile_specialist_ref_kind_v1($ref)!=='analytics')return false;
+        $chat=preg_quote(vp3_profile_specialist_href_v1('/chat.php'),'~');
+        if(!preg_match('~\A'.$chat.'\?agent=(system|[1-9][0-9]{0,15})&conversation_id=([1-9][0-9]{0,15})&profile_analytics=([^&]+)\z~D',$url,$m))return false;
+        $agent=$m[1]==='system'?0:(int)$m[1];$conversation=(int)$m[2];
+        try{return $url===vp3_profile_analytics_period_href_v1($agent,$conversation,$ref);}catch(Throwable){return false;}
+    }
     $profile=preg_quote(vp3_profile_specialist_href_v1('/profile-agent.php'),'~');
     $transcript=preg_quote(vp3_profile_specialist_href_v1('/artist-listening.php'),'~');
     return preg_match(match($kind){
@@ -83,9 +109,8 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
         if(is_array($item)&&($item['specialist']??null)!=='profile')continue;
         $kind=is_array($item)?($item['profile_source_kind']??''):'';
         if(!is_array($item)||!is_string($kind)||!is_string($item['ref']??null)
-            ||!preg_match('/\Aprofile:(conversation|event|call|followup):[1-9][0-9]{0,17}\z/D',$item['ref'],$match)
-            ||$kind!==$match[1]||!is_string($item['revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$item['revision'])
-            ||!vp3_profile_specialist_url_v1($kind,$item['url']??null)
+            ||vp3_profile_specialist_ref_kind_v1($item['ref'])!==$kind||!is_string($item['revision']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$item['revision'])
+            ||!vp3_profile_specialist_url_v1($kind,$item['url']??null,$item['ref'])
             ||!vp3_profile_specialist_sections_valid_v1($item['profile_report']??null)
             ||!is_bool($item['profile_presentation_owned']??null)||!is_bool($item['legacy_delivered']??null)){
             $out['coverage']='limited';continue;
@@ -97,7 +122,7 @@ function vp3_profile_specialist_report_v1(array $snapshot): array
         // remain readable, but their event kind is not guessed for grouping.
         if(array_key_exists('presentation_owner',$item)){
             $owner=$item['presentation_owner'];
-            if(!is_string($owner)||!in_array($owner,['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks'],true)
+            if(!is_string($owner)||!in_array($owner,['','profile_attention_pa4b','profile_handoff_pa3','profile_speech_pa4a','profile_calls_pa3c','office_tasks','profile_briefing_v1'],true)
                 ||$item['profile_presentation_owned']!==($owner!=='')){$out['coverage']='limited';continue;}
             $safe['presentation_owner']=$owner;
         }

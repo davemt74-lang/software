@@ -28,6 +28,8 @@ export async function startProfileWorkspaceServer(){
     require ${quote(join(root,'tests/fixtures/profile-specialist-workspace-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-specialist-analytics-v1.php'))};
     require ${quote(join(root,'tests/fixtures/profile-call-outcomes-data-v1.php'))};
+    require ${quote(join(root,'tests/fixtures/profile-analytics-period-data-v1.php'))};
+    require ${quote(join(root,'includes/profile-analytics-destination-v1.php'))};
     function pws_server_seed():array{
       $seed=pws_reset();
       foreach(['artist_transcript_segments_v172','artist_transcript_master_analysis_v237','artist_transcript_page_analysis_v237'] as $table)if(table_exists($table))db()->exec('DELETE FROM '.$table);
@@ -43,6 +45,11 @@ export async function startProfileWorkspaceServer(){
       $seed['visit_events']=[];
       foreach(['8','9'] as $browser){$visit=pa4b_note(pa4b_context(0,$browser));$seed['visit_events'][]=(int)$visit['event']['id'];}
       pa3_login(1);
+      $seed['analytics']=profile_analytics_period_fixture_v1(db(),1,7,11);
+      $systemChat=db()->query('SELECT * FROM chat_conversations WHERE id=11')->fetch(PDO::FETCH_ASSOC);
+      $systemChat['id']=94001;$systemChat['user_agent_id']=null;
+      profile_analytics_period_fixture_row_v1(db(),'chat_conversations',$systemChat);
+      $seed['system_chat']=94001;
       $seed['clock']=$GLOBALS['pa3Now'];
       file_put_contents(${quote(join(temp,'seed.json'))},json_encode($seed,JSON_THROW_ON_ERROR));
       file_put_contents(${quote(join(temp,'provider-dispatches'))},'');
@@ -69,7 +76,7 @@ export async function startProfileWorkspaceServer(){
       }
       return $out;
     }
-    if(($_SERVER['REQUEST_METHOD']??'')==='GET'&&str_starts_with(parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH),'/api/')){
+    if(($_SERVER['REQUEST_METHOD']??'')==='GET'&&preg_match('~/api/[^/]+$~',parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH))){
       $before=pws_server_fingerprint();$providerBefore=file_get_contents(${quote(join(temp,'provider-dispatches'))});
       db()->afterSql=static function(string $sql):void{
         if(!preg_match('/^\\s*(SELECT|PRAGMA)\\b/i',$sql)){
@@ -99,21 +106,79 @@ export async function startProfileWorkspaceServer(){
     window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:fixtureScope.binding};
     window.STONEFELLOW_CHAT_CONTINUITY=window.STONEFELLOW_CHAT_CONTINUITY_V87={agentId:()=>fixtureScope.agent,conversationId:()=>fixtureScope.cid,isReady:()=>true,isRestoring:()=>false};
     window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:fixtureScope.binding,activityEndpoint:'/api/agent-activity-hub-v1.php',topOfMindEndpoint:'/fixture/work'};
-    window.VP3_PROFILE_WORKSPACE_V1={endpoint:'/api/profile-specialist-workspace-v1.php',csrf:'pa3-fixture-csrf',ownerKey:'1',agentId:7,workingAttentionBinding:fixtureScope.binding,profileUrl:'/profile-agent.php'};
+    window.VP3_PROFILE_WORKSPACE_V1={endpoint:'/api/profile-specialist-workspace-v1.php',csrf:'pa3-fixture-csrf',ownerKey:'1',agentId:7,workingAttentionBinding:fixtureScope.binding,profileUrl:'/profile-agent.php',chatUrl:'/chat.php'};
     window.VP3_CHAT_SPECIALIST_PRESENCE={owner_user_id:1,agent_id:7,states:{profile:'idle'}};
     window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'/chat.php',state:()=>({state:'idle'}),conversationRef:()=>({id:fixtureScope.cid,agent:fixtureScope.agent}),conversationUrl:ref=>'/chat.php?agent='+ref.agent+'&conversation_id='+ref.id,isMainChat:()=>true,focusChat:()=>{},stop:()=>{}};
     window.STONEFELLOW_NOTIFICATION_CENTER={close:()=>{}};
     </script>${assets.filter(file=>file.endsWith('.js')).map(file=>`<script src="/${file}"></script>`).join('')}</body></html>`;
   writeFileSync(join(temp,'page.html'),page);
+  const chatPage=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Profile period destination acceptance</title>
+<link rel="stylesheet" href="__BASE__/chat.css">
+<link rel="stylesheet" href="__BASE__/agent-orb.css">
+<link rel="stylesheet" href="__BASE__/agent-activity-hub-v1.css">
+<link rel="stylesheet" href="__BASE__/agent-top-of-mind-v1.css">
+<link rel="stylesheet" href="__BASE__/chat-specialist-rail-v1.css">
+<link rel="stylesheet" href="__BASE__/profile-agent-analytics.css">
+<link rel="stylesheet" href="__BASE__/profile-specialist-workspace-v1.css">
+<link rel="stylesheet" href="__BASE__/profile-activity-chat.css">
+<link rel="stylesheet" href="__BASE__/profile-calls-pa3c.css">
+<link rel="stylesheet" href="__BASE__/profile-call-activity-pa3c.css">
+<style>body{margin:0;font:15px/1.5 system-ui;background:#f6f8fb;color:#202b3b}main{max-width:760px;padding:24px;margin:auto}button{font:inherit}.chat-topbar-actions{display:flex;gap:8px}#sfOnlineRailV109{position:fixed;right:12px;top:120px}[hidden]{display:none!important}</style>
+</head><body class="chat-page"><main><header><h1>Private Chat</h1><div class="chat-topbar-actions"></div></header>
+<button id="newChatButton" type="button">New Chat</button><div id="chatHistory"></div>
+<section id="chatThread" class="chat-thread" data-view="chat"><div id="chatWelcome" hidden></div></section>
+<form id="chatForm"><textarea id="chatInput" aria-label="Private Chat message"></textarea><button id="sendChatButton">Send</button></form>
+</main><aside id="sfOnlineRailV109"><div id="sfChatSettingsRailSlotV132"></div></aside>
+<script>
+window.fixtureSeed=__SEED__;window.fixtureScope={owner:1,agent:__AGENT__,cid:__CID__,binding:__BINDING__};
+window.STONEFELLOW_CHAT={userId:1,agentId:__AGENT__,initialConversationId:__CID__,initialView:'chat',endpoint:'__BASE__/api/chat-v236.php',csrf:__CSRF__,workingAttentionBinding:__BINDING__,profileAnalyticsDestination:__DESTINATION__,autoGreetEnabled:false};
+window.VP3_ORB_CONFIG={ownerKey:'1',agentId:__AGENT__,workingAttentionBinding:__BINDING__,activityEndpoint:'__BASE__/api/agent-activity-hub-v1.php',topOfMindEndpoint:'__BASE__/fixture/work'};
+window.VP3_PROFILE_WORKSPACE_V1={endpoint:'__BASE__/api/profile-specialist-workspace-v1.php',csrf:__CSRF__,ownerKey:'1',agentId:__AGENT__,workingAttentionBinding:__BINDING__,profileUrl:'__BASE__/profile-agent.php',chatUrl:'__BASE__/chat.php'};
+window.VP3_CHAT_SPECIALIST_PRESENCE={owner_user_id:1,agent_id:__AGENT__,states:{profile:'idle'}};
+window.VP3_ORB_ADAPTER={ownerKey:'1',chatUrl:'__BASE__/chat.php',state:()=>({state:'idle'}),conversationRef:()=>({id:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()||0,agent:__AGENT__}),conversationUrl:ref=>'__BASE__/chat.php?agent='+(__AGENT__||'system')+'&conversation_id='+ref.id,isMainChat:()=>true,focusChat:()=>{},stop:()=>{}};
+window.STONEFELLOW_NOTIFICATION_CENTER={close:()=>{}};
+</script>
+<script src="__BASE__/chat.js"></script>
+<script src="__BASE__/agent-eyes-core.js"></script>
+<script src="__BASE__/agent-orb.js"></script>
+<script src="__BASE__/agent-activity-hub-v1.js"></script>
+<script src="__BASE__/agent-top-of-mind-v1.js"></script>
+<script src="__BASE__/chat-specialist-rail-v1.js"></script>
+<script src="__BASE__/profile-agent-analytics.js"></script>
+<script src="__BASE__/profile-specialist-workspace-v1.js"></script>
+<script src="__BASE__/profile-activity-chat.js"></script>
+<script src="__BASE__/profile-calls-pa3c.js"></script>
+<script src="__BASE__/profile-call-activity-pa3c.js"></script>
+</body></html>`;
+  writeFileSync(join(temp,'chat-page.html'),chatPage);
   writeFileSync(join(temp,'router.php'),`<?php
-    $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
+    $originalQuery=(string)($_SERVER['QUERY_STRING']??'');
+    $originalPath=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
+    $appBase=str_starts_with($originalPath,'/nested/app/')?'/nested/app':'';
+    $path=$appBase!==''?substr($originalPath,strlen($appBase)):$originalPath;
     if($path==='/health'){echo 'ready';return;}
-    $assets=${JSON.stringify(assets)};
+    $assets=${JSON.stringify([...assets,'chat.js','chat.css'])};
     if(in_array(ltrim($path,'/'),$assets,true)){header('Content-Type: '.(str_ends_with($path,'.css')?'text/css':'text/javascript').'; charset=utf-8');readfile(${quote(root)}.ltrim($path,'/'));return;}
     if(in_array($path,['/api/profile-specialist-workspace-v1.php','/api/agent-activity-hub-v1.php'],true)){require __DIR__.$path;return;}
     require __DIR__.'/includes/bootstrap.php';
-    if(in_array($path,['/session','/'],true)&&!current_user())pa3_login(1);
+    if(in_array($path,['/session','/','/chat.php'],true)&&!current_user())pa3_login(1);
     if($path==='/session'){header('Content-Type:application/json');echo json_encode(['binding'=>vp3_catch_up_page_binding_v1(current_user()),'csrf'=>csrf_token(),'seed'=>$seed]);return;}
+    if($path==='/chat.php'){
+      // Production authority proves selection; this fixture has one known owned fallback Chat.
+      $requested=vp3_profile_analytics_destination_request_v1($originalQuery);$selectedAgent=7;$selectedChat=11;$allowed=true;
+      if($requested!==null){
+        try{vp3_profile_workspace_scope_v1(db(),current_user(),$requested['agent_id'],$requested['conversation_id']);
+          $selectedAgent=$requested['agent_id'];$selectedChat=$requested['conversation_id'];}catch(Throwable $e){}
+      }
+      try{vp3_profile_workspace_scope_v1(db(),current_user(),$selectedAgent,$selectedChat);}catch(Throwable $e){$allowed=false;}
+      $binding=vp3_catch_up_page_binding_v1(current_user());
+      $destination=vp3_profile_analytics_destination_bind_v1($requested,(int)current_user()['id'],$selectedAgent,$selectedChat,$binding,$appBase.'/chat.php',$allowed);
+      $jsonFlags=JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR;
+      $replacements=['__BASE__'=>$appBase,'__AGENT__'=>(string)$selectedAgent,'__CID__'=>(string)$selectedChat,
+        '__BINDING__'=>json_encode($binding,$jsonFlags),'__CSRF__'=>json_encode(csrf_token(),$jsonFlags),
+        '__DESTINATION__'=>json_encode($destination,$jsonFlags),'__SEED__'=>json_encode($seed,$jsonFlags)];
+      header('Content-Type:text/html; charset=utf-8');echo str_replace(array_keys($replacements),array_values($replacements),file_get_contents(__DIR__.'/chat-page.html'));return;
+    }
     if($path==='/fixture/reset'&&($_SERVER['REQUEST_METHOD']??'')==='POST'){header('Content-Type:application/json');echo json_encode(pws_server_seed());return;}
     if($path==='/fixture/state'){
       $state=[];foreach(['profile_agent_messages','profile_agent_handoff_operations_pa3','profile_owner_drafts_v1','profile_calls_pa3c','chat_messages'] as $table)$state[$table]=db()->query('SELECT * FROM '.$table)->fetchAll(PDO::FETCH_ASSOC);
@@ -122,12 +187,13 @@ export async function startProfileWorkspaceServer(){
     }
     if($path==='/fixture/control'&&($_SERVER['REQUEST_METHOD']??'')==='POST'){
       $input=json_decode(file_get_contents('php://input'),true);$action=$input['action']??'';
-      if($action==='revoke')db()->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='profile_chat.access'");
-      elseif($action==='restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) VALUES('member','profile_chat.access')");
+      if($action==='revoke')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key='profile_chat.access'");
+      elseif($action==='restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) SELECT role,'profile_chat.access' FROM users WHERE id=1");
+      elseif($action==='timezone_change')db()->exec("UPDATE users SET timezone='Asia/Tokyo' WHERE id=1");
       elseif($action==='profile_off')db()->exec('UPDATE user_profiles SET profile_agent_enabled=0 WHERE user_id=1');
       elseif($action==='profile_missing')db()->exec('DELETE FROM user_profiles WHERE user_id=1');
-      elseif($action==='recording_revoke')db()->exec("DELETE FROM role_permissions WHERE role='member' AND permission_key='artist_listening.access'");
-      elseif($action==='recording_restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) VALUES('member','artist_listening.access')");
+      elseif($action==='recording_revoke')db()->exec("DELETE FROM role_permissions WHERE role=(SELECT role FROM users WHERE id=1) AND permission_key='artist_listening.access'");
+      elseif($action==='recording_restore')db()->exec("INSERT OR IGNORE INTO role_permissions(role,permission_key) SELECT role,'artist_listening.access' FROM users WHERE id=1");
       elseif($action==='transcript_change')db()->prepare("UPDATE artist_transcript_segments_v172 SET transcript_text=transcript_text||' Corrected saved detail.' WHERE id=(SELECT MIN(id) FROM artist_transcript_segments_v172 WHERE session_id=?)")->execute([(int)$seed['outcomes']['assisted']['session_id']]);
       elseif($action==='analysis_refresh')pco_analysis_v1(db(),(int)$seed['outcomes']['assisted']['session_id']);
       elseif($action==='tasks_complete')db()->prepare("UPDATE agent_memory_items SET metadata_json=json_set(metadata_json,'$.task_status','completed') WHERE memory_type='task' AND json_extract(metadata_json,'$.source_session_id')=CAST(? AS INTEGER)")->execute([(int)$seed['outcomes']['assisted']['session_id']]);

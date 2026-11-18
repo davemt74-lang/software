@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {mkdir} from 'node:fs/promises';
 import {chromium} from 'playwright';
 import {startProfileWorkspaceServer} from './fixtures/profile-specialist-workspace-server.mjs';
+import {profileAnalyticsRouteBrowserV1} from './fixtures/profile-analytics-route-browser-v1.mjs';
 
 // Hosted browser acceptance: real API/session/SQL/provider fixture; never a live visitor/provider.
 const server=await startProfileWorkspaceServer();
@@ -71,6 +72,12 @@ try{
       .evaluateAll(nodes=>nodes.map(node=>({text:node.textContent,fontSize:getComputedStyle(node).fontSize})));
     check(totals.length>0&&totals.every(node=>parseFloat(node.fontSize)>=20),'Analytics totals retain a clear visual hierarchy: '+JSON.stringify(totals));
   }
+  async function readablePeriods(){
+    const offenders=await panel().locator('.vp3-profile-period :is(p,span,small,button,th,td,a,strong,h4,dt,dd,summary)')
+      .evaluateAll(nodes=>nodes.filter(node=>node.textContent.trim()&&node.getClientRects().length&&parseFloat(getComputedStyle(node).fontSize)<12)
+        .map(node=>({tag:node.tagName,className:node.className,fontSize:getComputedStyle(node).fontSize,text:node.textContent.trim().slice(0,90)})));
+    check(offenders.length===0,'completed-period values and coverage stay readable: '+JSON.stringify(offenders));
+  }
   async function stored(){const response=await page.request.get(server.base+'/fixture/state');assert.equal(response.status(),200);return response.json();}
   async function control(action){const response=await page.request.post(server.base+'/fixture/control',{data:{action}});assert.equal(response.status(),200,await response.text());}
   await mkdir('artifacts/profile-specialist-workspace',{recursive:true});
@@ -100,6 +107,20 @@ try{
   await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/desktop-conversation.png',fullPage:true});
   await tab('Analytics').click();
+  await panel().locator('.vp3-profile-period').waitFor();
+  await page.evaluate(ref=>VP3AgentActivityHub.openProfile({tab:'analytics',analyticsRef:ref}),server.seed.analytics.ref);
+  await page.waitForFunction(ref=>document.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===ref,server.seed.analytics.ref);
+  check((await panel().innerText()).includes('Period timezone: UTC')&&await panel().locator('[data-profile-analytics-metric="visit_records"]').count()===1,
+    'completed period uses actual native aggregate evidence and its fixed timezone');
+  await readablePeriods();await contained();await panel().evaluate(element=>{element.scrollTop=0;});
+  await page.screenshot({path:'artifacts/profile-specialist-workspace/profile-period-desktop.png',fullPage:true});
+  await panel().getByRole('button',{name:'7 days',exact:true}).click();
+  const seven=server.seed.analytics.period_options.find(option=>option.period===7).ref;
+  await page.waitForFunction(ref=>document.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===ref,seven);
+  await panel().getByRole('button',{name:'Refresh Profile',exact:true}).click();
+  await page.waitForFunction(ref=>document.querySelector('[data-profile-analytics-period]')?.dataset.profileAnalyticsPeriod===ref,seven);
+  check(requests.filter(row=>row.payload.action==='analytics_period').at(-1).payload.ref===seven,'period length and Refresh preserve the same encoded cutoff and timezone');
+  await panel().getByRole('button',{name:'Traffic details',exact:true}).click();
   await panel().locator('.vp3-analytics-shell').waitFor();
   check((await panel().innerText()).includes('Recorded conversion value'),'Analytics uses the mounted renderer with measured conversion labels');
   await readableAnalytics();
@@ -240,7 +261,11 @@ try{
   const outcomeFonts=await panel().locator('.vp3-profile-call-detail :is(p,small,dt,dd,summary,a,strong)').evaluateAll(nodes=>nodes.filter(node=>node.textContent.trim()&&node.getClientRects().length&&parseFloat(getComputedStyle(node).fontSize)<12).map(node=>({tag:node.tagName,text:node.textContent.slice(0,70),font:getComputedStyle(node).fontSize})));
   check(outcomeFonts.length===0,'compact saved outcome text stays readable: '+JSON.stringify(outcomeFonts));
   await contained();await panel().evaluate(element=>{element.scrollTop=0;});await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-call-outcome.png',fullPage:true});
-  await tab('Analytics').click();await panel().locator('.vp3-analytics-shell').waitFor();await readableAnalytics();await contained();
+  await tab('Analytics').click();await panel().getByRole('button',{name:'Completed periods',exact:true}).click();
+  await panel().locator('.vp3-profile-period').waitFor();await readablePeriods();await contained();
+  await panel().evaluate(element=>{element.scrollTop=0;});
+  await page.screenshot({path:'artifacts/profile-specialist-workspace/profile-period-compact.png',fullPage:true});
+  await panel().getByRole('button',{name:'Traffic details',exact:true}).click();await panel().locator('.vp3-analytics-shell').waitFor();await readableAnalytics();await contained();
   await page.screenshot({path:'artifacts/profile-specialist-workspace/compact-analytics.png',fullPage:true});
   await page.keyboard.press('Escape');
   check(await panel().count()===0&&await page.evaluate(()=>document.activeElement?.id==='chatInput'),'Escape closes one shell and restores the Chat composer focus');
@@ -251,6 +276,8 @@ try{
   check(requests.every(row=>!['owner_state','owner_feed','delivery','dispatch','join'].includes(row.payload.action)),'workspace creates no competing inbox, delivery or call worker');
   check(server.readWriteFailure()==='','all browser GETs preserve storage and do not dispatch inference');
   assert.deepEqual(errors,[],'browser runtime has no page errors');
+  await profileAnalyticsRouteBrowserV1(browser,server,check);
+  check(server.readWriteFailure()==='','real Chat destination reads preserve storage and never dispatch inference');
   console.log(`PROFILE_SPECIALIST_WORKSPACE_BROWSER=PASS (${checks} checks)`);
 }catch(error){
   if(page&&!page.isClosed()){

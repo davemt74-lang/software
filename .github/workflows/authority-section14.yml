@@ -55,6 +55,26 @@ jobs:
           VP3_TEST_MYSQL_USER: root
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: php tests/profile-analytics-reliability-v1.php
+      - name: Completed Profile periods, recorded clocks and briefings
+        run: |
+          php tests/profile-analytics-period-ref-v1.php
+          php tests/profile-event-clock-v1.php
+          php tests/profile-analytics-period-v1.php
+          php tests/profile-analytics-authority-v1.php
+          php tests/profile-analytics-briefings-v1.php
+          node tests/profile-specialist-analytics-period-v1.mjs
+          node tests/profile-analytics-route-v1.mjs
+          node tests/profile-analytics-route-http.mjs
+      - name: Completed Profile periods, clocks and briefings on native MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-event-clock-v1.php
+          php tests/profile-analytics-period-v1.php
+          php tests/profile-analytics-authority-v1.php
+          php tests/profile-analytics-briefings-v1.php
       - name: Shared Profile specialist source, report and delivery
         run: |
           php tests/profile-specialist-sources-v1.php

@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-catch-up-missions-v1.php';
 require_once __DIR__.'/agent-catch-up-profile-calls-v1.php';
 require_once __DIR__.'/agent-catch-up-meeting-prep-v1.php';
+require_once __DIR__.'/agent-catch-up-profile-analytics-v1.php';
 
 function vp3_catch_up_page_binding_v1(array $user): string
 {
@@ -225,16 +226,17 @@ function vp3_catch_up_rewards_v1(PDO $pdo,array $user,DateTimeImmutable $now): a
 }
 
 /** Collect authorized current records before each surface applies its presentation budget. */
-function vp3_catch_up_candidates_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true,?DateTimeImmutable $now=null,bool $includeActiveMissions=false): array
+function vp3_catch_up_candidates_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true,?DateTimeImmutable $now=null,bool $includeActiveMissions=false,int $conversationId=0): array
 {
-    if(!in_array($scope,['all','office','commerce'],true)||$agentId<0)throw new InvalidArgumentException('Invalid catch-up scope.');
+    if(!in_array($scope,['all','office','commerce'],true)||$agentId<0||$conversationId<0||$conversationId>9007199254740991)throw new InvalidArgumentException('Invalid catch-up scope.');
     if((int)($user['id']??0)<1||!has_permission('chat.access',$user)||!has_permission('account.access',$user)
         ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)){
         throw new RuntimeException('Catch-up access is unavailable.',403);
     }
     $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);
     $principal=vp3_agent_chat_principal_v380($user,$agent);
-    $user=vp3_capability_live_user_v1($pdo,$user,$principal,[],null);
+    $privateContext=$conversationId>0?['conversation_id'=>$conversationId]:[];
+    $user=vp3_capability_live_user_v1($pdo,$user,$principal,$privateContext,null);
     if(!has_permission('account.access',$user))throw new RuntimeException('Catch-up access is unavailable.',403);
     $now??=new DateTimeImmutable('now',new DateTimeZone('UTC'));
     $office=[
@@ -247,6 +249,7 @@ function vp3_catch_up_candidates_v1(PDO $pdo,array $user,string $scope='all',int
         $office['profile_calls']=fn()=>vp3_catch_up_profile_calls_v1($pdo,$user,$principal,$now);
         $office['meeting_prep']=fn()=>vp3_catch_up_meeting_prep_v1($pdo,$user,$principal,$now);
     }
+    if($conversationId>0)$office['profile_analytics']=fn()=>vp3_catch_up_profile_analytics_v1($pdo,$user,$agentId,$conversationId,$now);
     $commerce=[
         'orders'=>fn()=>vp3_catch_up_orders_v1($pdo,$user),
         'campaigns'=>fn()=>vp3_catch_up_campaigns_v1($pdo,$user),
@@ -280,12 +283,13 @@ function vp3_catch_up_candidates_v1(PDO $pdo,array $user,string $scope='all',int
         $item['source_revision']=$sourceRevisions[$item['id']];
         $selected[$item['id']]=$item;
     }
+    if($conversationId>0)vp3_capability_live_user_v1($pdo,$user,$principal,$privateContext,null);
     return ['items'=>array_values($selected),'source_kinds'=>$sourceKinds,'source_revisions'=>$sourceRevisions,
         'as_of'=>$now->format(DATE_ATOM),'coverage'=>$coverage];
 }
 
-function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true): array
+function vp3_agent_catch_up_v1(PDO $pdo,array $user,string $scope='all',int $agentId=0,bool $includeWorkingSources=true,int $conversationId=0): array
 {
-    $current=vp3_catch_up_candidates_v1($pdo,$user,$scope,$agentId,$includeWorkingSources);
+    $current=vp3_catch_up_candidates_v1($pdo,$user,$scope,$agentId,$includeWorkingSources,conversationId:$conversationId);
     return ['items'=>array_slice($current['items'],0,3),'as_of'=>$current['as_of'],'coverage'=>$current['coverage']];
 }

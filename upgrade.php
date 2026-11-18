@@ -64,6 +64,7 @@ require_once __DIR__ . '/includes/phone-voice-v130.php';
 require_once __DIR__ . '/includes/phone-voice-conversation-v140.php';
 require_once __DIR__ . '/includes/phone-voice-stream-v150.php';
 require_once __DIR__ . '/includes/phone-worker-health-v171.php';
+require_once __DIR__ . '/includes/profile-event-clock-v1.php';
 require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
 require_once __DIR__ . '/includes/profile-owner-drafts-v1.php';
 require_once __DIR__ . '/includes/profile-calls-pa3c.php';
@@ -338,6 +339,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
         && vp3_profile_projection_schema_ready_pa4b($schemaConnection)
+        && vp3_profile_event_clock_ready_v1($schemaConnection)
         && vp3_profile_checkout_schema_ready_pa5($schemaConnection)
         && vp3_gelato_schema_ready_v1($schemaConnection)
         && vp3_stoneward_schema_ready_v1($schemaConnection)
@@ -504,6 +506,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             user_data_usage_ensure_schema_v236();
             shared_knowledge_index_ensure_schema_v236();
             profile_agent_ensure_schema();
+            vp3_profile_event_clock_install_v1($pdo);
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_owner_drafts_ensure_schema_v1($pdo);
             vp3_profile_call_ensure_schema_pa3c($pdo);

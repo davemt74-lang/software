@@ -234,7 +234,7 @@ function vp3_profile_workspace_request_v1(PDO $pdo,array $user,string $method,ar
     ?callable $sessionGuard=null,?callable $model=null): array
 {
     $action=$input['action']??'overview';
-    $reads=['overview','conversations','conversation','current_turn','draft_status','analytics','revenue','calls','call_activity','call_outcome'];
+    $reads=['overview','conversations','conversation','current_turn','draft_status','analytics','analytics_period','revenue','calls','call_activity','call_outcome'];
     $writes=['conversation_action','draft_prepare','call_set_assistance','call_research'];
     if(!is_string($action)||!in_array($action,array_merge($reads,$writes),true))throw new RuntimeException('Choose a valid Profile workspace action.',422);
     if($method!==(in_array($action,$reads,true)?'GET':'POST'))throw new RuntimeException('Use the correct method for this Profile action.',405);
@@ -244,7 +244,7 @@ function vp3_profile_workspace_request_v1(PDO $pdo,array $user,string $method,ar
         'current_turn'=>['public_conversation_id'],'draft_status'=>['public_conversation_id','prepare_request_id','latest'],
         'conversation_action'=>['public_conversation_id','turn_id','revision','operation','request_id','message','prepare_request_id'],
         'draft_prepare'=>['public_conversation_id','turn_id','revision','source_revision','prepare_request_id','instruction','supersedes_request_id'],
-        'analytics'=>['property_id','days'],'calls'=>['public_conversation_id','call_id','filter','cursor'],'call_activity'=>['public_conversation_id','call_id','after'],
+        'analytics'=>['property_id','days'],'analytics_period'=>['ref','period'],'calls'=>['public_conversation_id','call_id','filter','cursor'],'call_activity'=>['public_conversation_id','call_id','after'],
         'call_outcome'=>['public_conversation_id','call_id','section','cursor'],
         'call_set_assistance'=>['public_conversation_id','call_id','enabled','assistance_revision'],
         'call_research'=>['public_conversation_id','call_id','request_id','query'],default=>[],
@@ -257,6 +257,7 @@ function vp3_profile_workspace_request_v1(PDO $pdo,array $user,string $method,ar
     if(in_array($action,['conversation','current_turn','draft_status','conversation_action','draft_prepare'],true)&&$cid===0)throw new RuntimeException('Choose an exact visitor conversation.',422);
     if(in_array($action,['draft_prepare','draft_status'],true))require_once __DIR__.'/profile-owner-drafts-v1.php';
     if(in_array($action,['analytics','revenue'],true))require_once __DIR__.'/profile-specialist-analytics-v1.php';
+    if($action==='analytics_period')require_once __DIR__.'/profile-analytics-period-v1.php';
     if(in_array($action,['calls','call_activity','call_outcome','call_set_assistance','call_research'],true))require_once __DIR__.'/profile-workspace-calls-v1.php';
     $data=match($action){
         'overview'=>vp3_profile_workspace_overview_v1($pdo,$scope),
@@ -267,6 +268,7 @@ function vp3_profile_workspace_request_v1(PDO $pdo,array $user,string $method,ar
         'draft_status'=>['public_conversation_id'=>$cid,'draft'=>vp3_profile_owner_draft_status_v1($pdo,$scope,$cid,$input)],
         'analytics'=>['analytics'=>vp3_profile_specialist_analytics_v1($pdo,$scope,vp3_profile_workspace_id_v1($input['property_id']??0,true),vp3_profile_workspace_id_v1($input['days']??30))],
         'revenue'=>['revenue'=>vp3_profile_specialist_revenue_v1($pdo,$scope)],
+        'analytics_period'=>['analytics_period'=>vp3_profile_analytics_period_v1($pdo,$scope,array_intersect_key($input,array_flip(['ref','period'])))],
         'calls'=>['calls'=>vp3_profile_workspace_calls_v1($pdo,$scope,array_filter(['conversation_id'=>$cid,'call_id'=>isset($input['call_id'])?vp3_profile_workspace_id_v1($input['call_id']):0]),
             vp3_profile_workspace_text_v1($input['filter']??'current',7),vp3_profile_workspace_text_v1($input['cursor']??'',2048,true))],
         'call_activity'=>['call_activity'=>vp3_profile_workspace_call_activity_v1($pdo,$scope,vp3_profile_workspace_id_v1($input['call_id']??null),vp3_profile_workspace_id_v1($input['after']??0,true),$cid)],

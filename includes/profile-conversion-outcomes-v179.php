@@ -9,6 +9,9 @@ declare(strict_types=1);
  * public/private boundary is introduced. Outcome events are deduped by their
  * canonical booking/order identity rather than by a time bucket.
  */
+require_once __DIR__.'/profile-event-clock-v1.php';
+const VP3_PROFILE_CONVERSION_CLOCK_CONTRACT_V1 = 'vp3.profile-event-clock.v1';
+
 const VP3_PROFILE_CONVERSION_OUTCOMES_V179 = 'profile-conversion-outcomes-v179-20260914';
 
 function profile_conversion_order_metadata_v179(array $order): array
@@ -142,15 +145,19 @@ function profile_conversion_outcome_record_v179(
         // ledger already permits a NULL profile_session_id, so preserve the true
         // conversion without manufacturing a new visitor identity.
         try {
-            $stmt = $pdo->prepare('INSERT INTO profile_events (owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json) VALUES (?,NULL,NULL,?,?,?,?,?)');
-            $stmt->execute([
+            $clocked = vp3_profile_event_clock_columns_v1($pdo);
+            $values = [
                 $ownerUserId,
                 $agent ? (int)$agent['id'] : null,
                 $eventType,
                 $priority,
                 $dedupeKey,
                 json_encode($metadata, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            ]);
+            ];
+            if ($clocked) $values[] = vp3_profile_event_clock_now_v1();
+            // One attempt only; uncertainty never falls back to an unclocked INSERT.
+            $stmt = $pdo->prepare('INSERT INTO profile_events (owner_user_id,profile_session_id,visitor_user_id,profile_agent_id,event_type,priority,dedupe_key,metadata_json'.($clocked?',recorded_at_utc_ms':'').') VALUES (?,NULL,NULL,?,?,?,?,?'.($clocked?',?':'').')');
+            $stmt->execute($values);
             $id = (int)$pdo->lastInsertId();
             $get = $pdo->prepare('SELECT * FROM profile_events WHERE id=? LIMIT 1');
             $get->execute([$id]);

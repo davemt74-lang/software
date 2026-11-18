@@ -73,6 +73,35 @@ try{
   const analytics=await read('analytics',{property_id:0,days:30});
   check(analytics.data.analytics.ready===true&&analytics.data.analytics.coverage==='complete','Analytics tab reads complete authorized aggregates');
   check((await read('revenue')).data.revenue.ready===true,'conversion intelligence reads through the same private scope');
+  const fixed=(await read('analytics_period',{ref:session.seed.analytics.ref})).data.analytics_period;
+  check(fixed.contract==='vp3.profile-analytics-period.v1'&&fixed.ref===session.seed.analytics.ref&&fixed.metrics.length===17,
+    'fixed period API returns the complete closed metric contract');
+  check(fixed.window.as_of_utc_ms===session.seed.analytics.cutoff*1000&&fixed.window.timezone==='UTC'
+    &&fixed.period_options.every(option=>option.ref.split(':').slice(4).join(':')===fixed.ref.split(':').slice(4).join(':')),
+    'server sibling refs preserve fixed cutoff, zone and provenance');
+  check(fixed.metrics.find(metric=>metric.key==='visit_records').current.value===3
+    &&fixed.metrics.find(metric=>metric.key==='recognized_browser_contacts').current.value===1,
+    'timed visit records and verified recognized browser contacts remain distinct measures');
+  check(fixed.money.every(row=>row.scale===2&&row.amount_unit==='commerce_cent'
+    &&row.scale_source==='vp3.commerce.v800'&&(row.current.value_minor===null||typeof row.current.value_minor==='string')),
+    'commerce ledger amounts retain explicit scale and integer strings');
+  check((await request('analytics_period',{ref:fixed.ref,period:7})).response.status===422,'fixed reference cannot be silently combined with another period selector');
+  const fixedQuery='agent=7&conversation_id=11&profile_analytics='+encodeURIComponent(fixed.ref);
+  const pageConfig=async(path,query)=>{
+    const response=await fetch(server.base+path+'?'+query,{headers});assert.equal(response.status,200);
+    const html=await response.text(),script=/<script>\s*window\.fixtureSeed=[\s\S]*?<\/script>/.exec(html)?.[0];
+    assert.ok(script,'real Chat route fixture bootstrap is present');
+    const context=vm.createContext({window:{}});vm.runInContext(script.replace(/^<script>/,'').replace(/<\/script>$/,''),context);
+    return {html,config:context.window.STONEFELLOW_CHAT};
+  };
+  const linked=await pageConfig('/nested/app/chat.php',fixedQuery);
+  check(linked.config.profileAnalyticsDestination?.ref===fixed.ref&&linked.config.profileAnalyticsDestination.href.startsWith('/nested/app/chat.php?')
+    &&linked.html.includes('src="/nested/app/chat.js"'),'production query helper and authority bind the real-chat fixture before loading core Chat');
+  check((await pageConfig('/chat.php',fixedQuery+'&agent=7')).config.profileAnalyticsDestination===null,'repeated original query keys cannot inherit fixture fallback scope');
+  check((await pageConfig('/chat.php',fixedQuery.replace('conversation_id=11','conversation_id=999999'))).config.profileAnalyticsDestination===null,
+    'unowned original Chat cannot inherit the authorized fallback destination');
+  check((await pageConfig('/chat.php','agent=system&conversation_id='+session.seed.system_chat+'&profile_analytics='+encodeURIComponent(fixed.ref))).config.profileAnalyticsDestination?.chatAgentId===0,
+    'system private Chat is authorized before exact destination binding');
   const afterReads=await stored();
   check(JSON.stringify(before)===JSON.stringify(afterReads)&&server.readWriteFailure()==='','opening all read surfaces changes no SQL rows and dispatches no inference');
   check((await read('overview',{chat_conversation_id:0})).data.status==='save_chat_required','unsaved Chat gets explicit setup state');
@@ -127,7 +156,9 @@ try{
     'bounded checked-view report retains both exact visit sources when active reviewed work leaves the source cap');
   await control('profile_off');
   check((await read('overview')).data.profile.enabled===false&&(await read('conversations',{filter:'all'})).data.items.length>0,'public Agent disabled does not hide owned historical inventory');
+  check((await read('analytics_period',{ref:fixed.ref})).data.analytics_period.ref===fixed.ref,'public Profile visibility does not change fixed private analytics authority');
   await control('revoke');
+  check((await request('analytics_period',{ref:fixed.ref})).response.status===403,'revoked Profile authority denies fixed-period evidence');
   for(const input of [{public_conversation_id:session.seed.primary},{chat_conversation_id:0}]){
     const denied=await request(input.public_conversation_id?'conversation':'overview',input);
     check(denied.response.status===403&&!denied.body.data,'revoked Profile grant denies both saved-thread and unsaved setup reads');
@@ -141,7 +172,7 @@ try{
   const reset=await fetch(server.base+'/fixture/reset',{method:'POST',headers});const freshSeed=await reset.json();
   const document=workspaceDocument(),host=document.createElement('section');document.body.append(host);
   const uiWindow={VP3_PROFILE_WORKSPACE_V1:{endpoint:'/api/profile-specialist-workspace-v1.php',csrf:session.csrf,profileUrl:'/profile-agent.php'},dispatchEvent(){}};
-  const uiContext=vm.createContext({window:uiWindow,document,crypto:webcrypto,URL,AbortController,Event,setTimeout,clearTimeout,
+  const uiContext=vm.createContext({window:uiWindow,document,crypto:webcrypto,URL,Intl,atob,btoa,AbortController,Event,setTimeout,clearTimeout,
     location:{origin:server.base,reload(){}},fetch:(url,options)=>fetch(url,{...options,headers:{...options.headers,Cookie:headers.Cookie}})});
   vm.runInContext(readFileSync(new URL('../profile-specialist-workspace-v1.js',import.meta.url),'utf8'),uiContext);
   const mounted=uiWindow.VP3ProfileWorkspaceV1.mountWorkspace(host,{scope:()=>({owner:1,agent:7,cid:11,binding:session.binding,hasChat:true}),selection:{tab:'conversations',publicConversationId:freshSeed.primary}});
@@ -175,6 +206,17 @@ try{
   await control('recording_revoke');await mounted.refresh();await waitFor(()=>host.textContent.includes('Your current access does not include'));
   check(host.textContent.includes('Call ended')&&!host.querySelector('[data-profile-transcript-segment]')&&!host.querySelector('[data-profile-followup]'),
     'mounted recording revocation clears old saved facts without losing authorized terminal call state');
+  mounted.select({tab:'analytics',analyticsRef:freshSeed.analytics.ref});
+  await waitFor(()=>host.querySelector('[data-profile-analytics-period]'));
+  check(host.querySelector('[data-profile-analytics-period]').dataset.profileAnalyticsPeriod===freshSeed.analytics.ref
+    &&host.textContent.includes('Period timezone: UTC'),'mounted fixed renderer accepts actual production aggregate wire fields');
+  const originalPeriod=(await read('analytics_period',{ref:freshSeed.analytics.ref})).data.analytics_period;
+  await control('timezone_change');await mounted.refresh();await waitFor(()=>host.querySelector('[data-profile-analytics-period]'));
+  const preservedPeriod=(await read('analytics_period',{ref:freshSeed.analytics.ref})).data.analytics_period;
+  check(preservedPeriod.ref===originalPeriod.ref&&preservedPeriod.window.timezone==='UTC'&&preservedPeriod.revision===originalPeriod.revision,
+    'saved period and semantic proof stay fixed when only the current timezone setting changes');
+  uiButton('Latest completed periods').click();await waitFor(()=>host.textContent.includes('Period timezone: Asia/Tokyo'));
+  check(host.textContent.includes('Timezone source in this link: account choice'),'explicit latest action resolves current timezone settings');
   mounted.dispose();
   console.log(`PROFILE_SPECIALIST_WORKSPACE_HTTP=PASS (${checks} checks)`);
 }catch(error){console.error(server.logs());throw error;}

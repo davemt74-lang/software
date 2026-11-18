@@ -181,7 +181,19 @@ function vp3_morning_brief_assess_v1(array $items,array $coverage,array $setting
     }
     // Give each contributing specialist space, then fill any remaining slots in verified priority order.
     $primary=array_intersect_key($candidates,array_slice(array_fill_keys(array_values($firstBySpecialist),true)+$candidates,0,6,true));
-    $selected=[];$links=[];$lines=[];
+    $curiosityEligible=$curiosity!==null&&isset($checked['curiosity'])
+        &&vp3_coordination_item_route_v1($settings,$curiosity)['action']==='ask';
+    $profilePeriod=null;
+    foreach($candidates as $candidate)if(($candidate['specialist']??null)==='profile'
+        &&($candidate['profile_source_kind']??null)==='analytics'&&($candidate['trigger']??null)==='analytics_period'){
+        $profilePeriod=$candidate;break;
+    }
+    $hasProfile=(bool)array_filter($primary,static fn(array $item):bool=>$item['specialist']==='profile');
+    $attachPeriod=$hasProfile&&$profilePeriod!==null&&!isset($primary[$profilePeriod['ref']]);
+    // Reserve exact proof slots before adding optional prose. History verifies
+    // every selected source and retains its existing twelve-source bound.
+    $relatedBudget=max(0,12-count($primary)-($curiosityEligible?1:0)-($attachPeriod?1:0));
+    $selected=[];$links=[];$lines=[];$periodAttached=false;
     foreach($primary as $ref=>$item){
         $id=$item['specialist'];
         $summary=vp3_top_of_mind_text_v1($item['summary']??'',220);
@@ -192,17 +204,25 @@ function vp3_morning_brief_assess_v1(array $items,array $coverage,array $setting
         if($next!=='')$line.=' Next step: '.$next;
         vp3_morning_brief_add_source_v1($selected,$links,$item,$title);
         foreach($material[$ref]['planning_refs']??[] as $relatedRef){
-            if(!isset($covered[$relatedRef],$eligible[$relatedRef])||isset($selected[$relatedRef]))continue;
+            if($relatedBudget<1||!isset($covered[$relatedRef],$eligible[$relatedRef])||isset($selected[$relatedRef]))continue;
             $related=$eligible[$relatedRef];
             $relatedTitle=vp3_top_of_mind_text_v1($related['title']??'',100);
             if($relatedTitle==='')continue;
             $line.=' Related '.$labels[$related['specialist']].' item — '.$relatedTitle.'.';
             vp3_morning_brief_add_source_v1($selected,$links,$related,$relatedTitle);
+            --$relatedBudget;
             break;
+        }
+        if($id==='profile'&&$attachPeriod&&!$periodAttached){
+            $periodTitle=vp3_top_of_mind_text_v1($profilePeriod['title'],100);
+            $periodSummary=vp3_top_of_mind_text_v1($profilePeriod['summary'],220);
+            $line.=' '.$periodTitle.' — '.$periodSummary;
+            vp3_morning_brief_add_source_v1($selected,$links,$profilePeriod,$periodTitle);
+            $periodAttached=true;
         }
         $lines[]=$line;
     }
-    if($curiosity!==null&&isset($checked['curiosity'])&&vp3_coordination_item_route_v1($settings,$curiosity)['action']==='ask'){
+    if($curiosityEligible){
         ++$checked['curiosity']['considered'];
         ++$checked['curiosity']['chat_matches'];
         $title=vp3_top_of_mind_text_v1($curiosity['title'],100);
