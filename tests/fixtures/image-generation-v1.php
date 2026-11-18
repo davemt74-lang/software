@@ -62,6 +62,12 @@ function image_fixture_turn_v1(): array{$p=db()->prepare("INSERT INTO chat_messa
 function image_fixture_response_v1(string $size='1024x1024',int $count=1): array{
     [$width,$height]=array_map('intval',explode('x',$size));
     $chunk=static fn($type,$data)=>pack('N',strlen($data)).$type.$data.pack('N',crc32($type.$data));
-    $png="\x89PNG\r\n\x1a\n".$chunk('IHDR',pack('NNCCCCC',$width,$height,8,6,0,0,0)).$chunk('IDAT',gzcompress(str_repeat("\0".str_repeat("\x40\x60\x80\xff",$width),$height))).$chunk('IEND','');
-    return ['data'=>array_fill(0,$count,['b64_json'=>base64_encode($png)]),'usage'=>['input_tokens'=>20,'output_tokens'=>200*$count,'total_tokens'=>20+200*$count]];
+    $data=[];
+    for($index=0;$index<$count;$index++){
+        // Batch fixtures need distinct pixels so selecting the wrong output cannot pass a source check.
+        $pixel=chr(0x40+$index)."\x60\x80\xff";
+        $png="\x89PNG\r\n\x1a\n".$chunk('IHDR',pack('NNCCCCC',$width,$height,8,6,0,0,0)).$chunk('IDAT',gzcompress(str_repeat("\0".str_repeat($pixel,$width),$height))).$chunk('IEND','');
+        $data[]=['b64_json'=>base64_encode($png)];
+    }
+    return ['data'=>$data,'usage'=>['input_tokens'=>20,'output_tokens'=>200*$count,'total_tokens'=>20+200*$count]];
 }

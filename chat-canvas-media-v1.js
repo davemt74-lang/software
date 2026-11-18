@@ -28,6 +28,7 @@ function closeImages(restoreFocus=false){
  if(pendingImageView){pendingImageView.host.remove();pendingImageView=null;}
  if(!imageView)return;
  const previous=imageView;imageView=null;
+ window.VP3ImageComposer?.clearImageOffer?.(previous.viewToken);
  previous.panel.remove();previous.gallery.hidden=false;
  previous.s.host.classList.remove('vp3-canvas-media-viewing');
  if(previous.external){states.delete(previous.s.host);previous.s.host.remove();}
@@ -46,13 +47,17 @@ function openGallery(s,gallery,assets,index,focusReturn,external=false){
  const frame=make('figure');frame.className='vp3-image-viewer-frame';
  const picture=make('img');picture.decoding='async';const title=make('figcaption');frame.append(picture,title);
  const thumbnails=make('div');thumbnails.className='vp3-image-viewer-thumbnails';thumbnails.setAttribute('role','group');thumbnails.setAttribute('aria-label','Choose an image');
- const view={s,panel,gallery,assets,index:0,focusReturn,external};
+ const view={s,panel,gallery,assets,index:0,focusReturn,external,viewToken:{}};
  const choose=chosen=>{
   if(imageView!==view||!canViewImages(s))return;
   view.index=Math.max(0,Math.min(assets.length-1,chosen));const asset=assets[view.index];
   picture.src=ownUrl(asset.url,'/media-library-file-v86.php');picture.alt=String(asset.title||'Generated image');title.textContent=String(asset.title||'');
   position.textContent=(view.index+1)+' / '+assets.length;previous.disabled=view.index===0;next.disabled=view.index===assets.length-1;
   for(const [i,button] of Array.from(thumbnails.children).entries())button.setAttribute('aria-pressed',String(i===view.index));
+  const selectedIndex=view.index;
+  window.VP3ImageComposer?.offerImage?.(asset,{conversationId:s.cid,agentId:s.agentId,
+   ownerKey:String(cfg.userId??window.STONEFELLOW_CHAT?.userId??''),viewToken:view.viewToken,index:selectedIndex,count:assets.length,
+   isCurrent:()=>imageView===view&&view.index===selectedIndex&&panel.isConnected&&canViewImages(s)});
  };
  previous.addEventListener('click',()=>choose(view.index-1));next.addEventListener('click',()=>choose(view.index+1));
  for(const [i,asset] of assets.entries()){
@@ -305,6 +310,7 @@ function mount(host,ref){
  }
 }
 function scan(){
+ if(imageView&&(!imageView.panel.isConnected||!canViewImages(imageView.s)))closeImages(false);
  syncOrbJobs();
  for(const job of specialistJobs.values())if(!active(job))clearSpecialist(job);
  for(const host of document.querySelectorAll('.vp3-canvas-media')){
@@ -329,6 +335,7 @@ window.VP3CanvasMedia={mount,openImages,closeImages:()=>closeImages(true)};new M
 setInterval(refreshClocks,1000);
 window.addEventListener('stonefellow:chat-context-changing',()=>closeImages(false));
 window.addEventListener('vp3:participant-task-context',()=>closeImages(false));
+window.addEventListener('vp3:participant-selection-changed',()=>closeImages(false));
 window.addEventListener('vp3:chat-canvas-view-changed',()=>{if(!chatVisible())closeImages(false);});
 window.addEventListener('pagehide',()=>closeImages(false));
 window.addEventListener('stonefellow:chat-context-changing',()=>{clearSpecialists();clearOrbJobs();});

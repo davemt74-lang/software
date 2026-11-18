@@ -146,6 +146,51 @@ try{
     check($again['id']===$g['id']&&array_column($again['assets'],'id')===$batchIds&&count($calls)===$before+1,
         'batch history reload and same-turn recovery preserve every image without another provider attempt');
     reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'count'=>2],$ctx),'a consumed batch turn cannot change its image count');
+    require_once dirname(__DIR__).'/includes/agent-image-reference-v1.php';
+    $originalBatch=[];
+    foreach($batchIds as $id){
+        $saved=media_studio_asset($id,$u);
+        $originalBatch[$id]=['asset'=>$saved,'bytes'=>file_get_contents(STONEFELLOW_ROOT.'/'.$saved['file_path'])];
+    }
+    check(count(array_unique(array_map(static fn(array $item):string=>hash('sha256',$item['bytes']),$originalBatch)))===4,
+        'the generated batch has four distinct saved pixel sources for exact follow-up selection');
+    $third=$batchIds[2];$thirdBytes=$originalBatch[$third]['bytes'];
+    $editContext=image_fixture_turn_v1();$editContext['image_reference_asset_id']=$third;
+    $thirdReference=vp3_image_reference_validate_v1($pdo,$u,$principal,$editContext,$third);
+    check($thirdReference['asset_id']===$third&&$thirdReference['sha256']===hash('sha256',$thirdBytes),
+        'choosing the third generated output validates that exact saved asset and bytes');
+    $followupPlan=[...$plan,'prompt'=>'Make the background blue and keep everything else the same.','title'=>'Blue background','count'=>2];
+    $followup=vp3_image_queue_v1($pdo,$u,$principal,$followupPlan,$editContext);
+    $followupRow=vp3_image_row_v1($pdo,$u,$followup['id']);
+    $frozen=json_decode($followupRow['config_json'],true);
+    check($frozen['reference']['asset_id']===$third&&$frozen['reference']['revision']===$thirdReference['revision']
+        &&$frozen['reference']['sha256']===$thirdReference['sha256'],
+        'a follow-up job freezes the selected batch output identity, revision and content hash');
+    $before=count($calls);$beforeAssets=imageCount();
+    $edited=vp3_image_tick_v1($pdo,$u,$followupRow,'transportImage');$wire=end($calls);
+    check($edited['status']==='completed'&&$edited['reference_asset_id']===$third&&$edited['count']===2
+        &&imageCount()===$beforeAssets+2&&count($calls)===$before+1
+        &&$wire[0]==='https://api.openai.com/v1/images/edits'&&$wire[1]['n']===2
+        &&$wire[1]['images']===[['image_url'=>'data:image/png;base64,'.base64_encode($thirdBytes)]],
+        'editing image three sends only image three pixels and saves the requested new batch');
+    foreach($originalBatch as $id=>$saved){
+        check(file_get_contents(STONEFELLOW_ROOT.'/'.$saved['asset']['file_path'])===$saved['bytes']
+            &&media_studio_asset($id,$u)===$saved['asset'],
+            'a follow-up edit preserves the original batch asset and file '.$id);
+    }
+    $replayed=vp3_image_queue_v1($pdo,$u,$principal,$followupPlan,$editContext);
+    check($replayed['id']===$edited['id']&&array_column($replayed['assets'],'id')===array_column($edited['assets'],'id')
+        &&count($calls)===$before+1,'a completed follow-up edit replays its saved results without generating again');
+    reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,$followupPlan,[...$editContext,'image_reference_asset_id'=>$batchIds[0]]),
+        'replaying the same edit turn cannot silently replace image three with image one');
+    $nextBase=$edited['assets'][1]['id'];$nextSaved=media_studio_asset($nextBase,$u);
+    $nextContext=image_fixture_turn_v1();$nextContext['image_reference_asset_id']=$nextBase;
+    $next=vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'prompt'=>'Remove the background.','background'=>'transparent'],$nextContext);
+    $next=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$next['id']),'transportImage');
+    check($next['status']==='completed'&&$next['reference_asset_id']===$nextBase
+        &&end($calls)[1]['images']===[['image_url'=>'data:image/png;base64,'.base64_encode(file_get_contents(STONEFELLOW_ROOT.'/'.$nextSaved['file_path']))]]
+        &&end($calls)[1]['background']==='transparent',
+        'a newly edited result can itself become the exact base for the next transparent edit');
     foreach(['short_batch','malformed_last'] as $failure){
         $g=queueImage(['count'=>3]);$before=count($calls);$beforeAssets=imageCount();$beforeUsage=count($GLOBALS['imageUsage']);
         $files=glob(media_studio_user_root(1).'/*.png')?:[];
@@ -239,6 +284,108 @@ try{
     $pdo->prepare('UPDATE user_media_assets SET file_path=? WHERE id=?')
         ->execute(['private/user-media/1/uploaded-base.png',$referenceAsset]);
     check(count($calls)===$before,'invalid reference files never reach the paid image provider');
+    $smallSource=vp3_image_reference_source_v1($pdo,$u,$referenceAsset);$smallSaved=media_studio_asset($referenceAsset,$u);
+    check(!isset($smallSource['generated_output'])&&$smallSource['revision']===hash('sha256',json_encode([
+        1,$referenceAsset,$smallSaved['file_path'],$smallSaved['mime_type'],(int)$smallSaved['file_size'],
+        (string)$smallSaved['updated_at'],hash('sha256',$referenceBytes)],JSON_THROW_ON_ERROR)),
+        'ordinary four-MiB references retain the exact pre-existing frozen revision format');
+
+    $largeResponse=image_fixture_response_v1();$largePng=base64_decode($largeResponse['data'][0]['b64_json']);
+    $padding='Fixture'."\0".str_repeat('x',4*1024*1024);
+    $largeChunk=pack('N',strlen($padding)).'tEXt'.$padding.pack('N',crc32('tEXt'.$padding));
+    $largePng=substr($largePng,0,-12).$largeChunk.substr($largePng,-12);
+    $largeResponse['data'][0]['b64_json']=base64_encode($largePng);unset($padding,$largeChunk);
+    $largeGeneration=queueImage();
+    $largeView=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$largeGeneration['id']),
+        static function($url,$body,$key)use($largeResponse):array{$GLOBALS['calls'][]=[$url,$body,$key];return $largeResponse;});
+    $largeAssetId=$largeView['asset']['id'];$largeAsset=media_studio_asset($largeAssetId,$u);
+    $largePath=STONEFELLOW_ROOT.'/'.$largeAsset['file_path'];$largeMetadata=json_decode($largeAsset['metadata_json'],true);
+    $largeContext=image_fixture_turn_v1();$largeContext['image_reference_asset_id']=$largeAssetId;
+    $before=count($calls);$largeSource=vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$largeAssetId);
+    check($largeView['status']==='completed'&&strlen($largePng)>4*1024*1024
+        &&$largeSource['generated_output']===['generation_id'=>$largeGeneration['id'],'sequence_no'=>1]
+        &&$largeSource['sha256']===hash('sha256',$largePng)&&!isset($largeSource['bytes'])&&count($calls)===$before,
+        'a canonical generated PNG over four MiB can become an exact validated base without a provider call');
+    $largeEdit=vp3_image_queue_v1($pdo,$u,$principal,$plan,$largeContext);
+    $largeEditRow=vp3_image_row_v1($pdo,$u,$largeEdit['id']);
+    check(json_decode($largeEditRow['config_json'],true)['reference']['generated_output']===$largeSource['generated_output'],
+        'the extended allowance is frozen from server-side generated-output provenance');
+    $largeEdited=vp3_image_tick_v1($pdo,$u,$largeEditRow,'transportImage');
+    check($largeEdited['status']==='completed'&&$largeEdited['reference_asset_id']===$largeAssetId
+        &&end($calls)[1]['images']===[['image_url'=>'data:image/png;base64,'.base64_encode($largePng)]]
+        &&count($calls)===$before+1&&file_get_contents($largePath)===$largePng,
+        'a verified large generated result is sent byte-for-byte as the next edit base and remains unchanged');
+    $before=count($calls);
+    $updateLarge=static function(array $changes)use($pdo,$largeAssetId):void{
+        foreach($changes as $field=>$value)$pdo->prepare('UPDATE user_media_assets SET '.$field.'=? WHERE id=?')->execute([$value,$largeAssetId]);
+    };
+    foreach([
+        'ordinary upload'=>['source'=>'upload'],
+        'forged source metadata'=>['metadata_json'=>json_encode([...$largeMetadata,'generation_id'=>'11111111-2222-3333-4444-555555555555'])],
+        'incorrect output index'=>['metadata_json'=>json_encode([...$largeMetadata,'generation_index'=>2])],
+        'incorrect dimensions'=>['metadata_json'=>json_encode([...$largeMetadata,'width'=>1536])],
+        'incorrect saved hash'=>['metadata_json'=>json_encode([...$largeMetadata,'sha256'=>str_repeat('0',64)])],
+        'over-ceiling record'=>['file_size'=>vp3_image_output_bytes_limit_v1()+1],
+    ] as $reason=>$changes){
+        $updateLarge($changes);
+        reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$largeAssetId),
+            'the generated-input allowance rejects an '.$reason);
+        $updateLarge(['source'=>$largeAsset['source'],'metadata_json'=>$largeAsset['metadata_json'],'file_size'=>$largeAsset['file_size']]);
+    }
+    $pdo->prepare("INSERT INTO user_media_assets(user_id,media_type,title,mime_type,file_path,file_size,duration_seconds,source,metadata_json,created_at,updated_at) VALUES(1,'photo','Forged generated label','image/png',?,?,0,'openai_image',?,UTC_TIMESTAMP(),UTC_TIMESTAMP())")
+        ->execute([$largeAsset['file_path'],$largeAsset['file_size'],$largeAsset['metadata_json']]);
+    $forgedId=(int)$pdo->lastInsertId();
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$forgedId),
+        'copying generated source metadata to an unbound owner asset cannot raise its input limit');
+    $pdo->prepare('DELETE FROM user_media_assets WHERE id=?')->execute([$forgedId]);
+    $removeLargeBinding=static fn()=> $pdo->prepare('DELETE FROM agent_image_generation_assets_v1 WHERE generation_id=? AND owner_user_id=1 AND asset_id=?')->execute([$largeGeneration['id'],$largeAssetId]);
+    $restoreLargeBinding=static fn()=> $pdo->prepare('INSERT INTO agent_image_generation_assets_v1(generation_id,owner_user_id,sequence_no,asset_id) VALUES(?,1,1,?)')->execute([$largeGeneration['id'],$largeAssetId]);
+    $removeLargeBinding();
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$largeAssetId),
+        'missing authoritative output membership cannot fall back to editable generation metadata');
+    reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,$plan,$largeContext),
+        'a completed edit replay cannot return its old result after the generated-source proof is removed');
+    $restoreLargeBinding();
+    $pdo->prepare("UPDATE agent_workflow_runs SET status='failed' WHERE id=?")->execute([$largeGeneration['job_id']]);
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$largeAssetId),
+        'only a completed authoritative generation grants the larger source allowance');
+    $pdo->prepare("UPDATE agent_workflow_runs SET status='completed' WHERE id=?")->execute([$largeGeneration['job_id']]);
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,['id'=>2,'is_active'=>1],['kind'=>'user_agent','owner_user_id'=>2,'agent_id'=>9],['conversation_id'=>13],$largeAssetId),
+        'large generated sources retain exact owner isolation');
+    $GLOBALS['imageDenied']=true;
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$largeAssetId),
+        'revoked Chat permission blocks large generated-source attachment');$GLOBALS['imageDenied']=false;
+    rename($largePath,$largePath.'.unavailable');
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$largeAssetId),
+        'an unavailable generated file cannot be attached');rename($largePath.'.unavailable',$largePath);
+    $modifiedLarge=str_replace('Fixture'."\0",'Changed'."\0",$largePng);
+    file_put_contents($largePath,$modifiedLarge);
+    reject(fn()=>vp3_image_reference_validate_v1($pdo,$u,$principal,$largeContext,$largeAssetId),
+        'changed generated bytes cannot reuse the stored output proof');file_put_contents($largePath,$largePng);unset($modifiedLarge);
+    check(count($calls)===$before,'all invalid large-source selections and replays make no provider attempt');
+    foreach(['remove_proof','change_proof','remove_binding'] as $race){
+        $editContext=image_fixture_turn_v1();$editContext['image_reference_asset_id']=$largeAssetId;
+        $edit=vp3_image_queue_v1($pdo,$u,$principal,$plan,$editContext);$row=vp3_image_row_v1($pdo,$u,$edit['id']);
+        if($race==='remove_binding')$removeLargeBinding();
+        else{
+            $config=json_decode($row['config_json'],true);
+            if($race==='remove_proof')unset($config['reference']['generated_output']);
+            else $config['reference']['generated_output']['sequence_no']=2;
+            $pdo->prepare('UPDATE agent_image_generations_v1 SET config_json=? WHERE generation_id=?')->execute([json_encode($config),$edit['id']]);
+        }
+        $before=count($calls);$failed=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$edit['id']),'transportImage');
+        if($race==='remove_binding')$restoreLargeBinding();
+        check($failed['status']==='failed'&&count($calls)===$before,
+            'a large-source '.$race.' change fails closed before paid dispatch');
+    }
+    $editContext=image_fixture_turn_v1();$editContext['image_reference_asset_id']=$largeAssetId;
+    $edit=vp3_image_queue_v1($pdo,$u,$principal,$plan,$editContext);$beforeAssets=imageCount();$before=count($calls);
+    $failed=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$edit['id']),static function($url,$body,$key)use($removeLargeBinding):array{
+        $GLOBALS['calls'][]=[$url,$body,$key];$removeLargeBinding();return image_fixture_response_v1($body['size'],$body['n']);
+    });$restoreLargeBinding();
+    check($failed['status']==='failed'&&$failed['assets']===[]&&imageCount()===$beforeAssets&&count($calls)===$before+1,
+        'generated-source provenance is revalidated after the provider and before publishing edited pixels');
+    unset($largePng,$largeResponse,$largeSource,$largeAsset,$largeMetadata,$largeEdited,$largeView);
     $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
     if($mysql)$pdo->exec('ALTER TABLE agent_image_generations_v1 MODIFY user_message_id BIGINT NOT NULL');
     $request=bin2hex(random_bytes(16));$before=count($calls);

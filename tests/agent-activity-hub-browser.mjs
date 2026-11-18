@@ -5,6 +5,21 @@ import { chromium } from 'playwright';
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined});
 const page = await browser.newPage({viewport:{width:1280,height:900}});
 page.setDefaultTimeout(10000);
+const waitForPanelEntrance = async panel => {
+  const element = await panel.elementHandle();
+  assert.ok(element,'Top of Mind panel exists before measuring its viewport bounds');
+  try {
+    // Read the current animation set each frame so cancellation or replacement
+    // cannot leave this check waiting on an obsolete finished promise.
+    await page.waitForFunction(target => target.isConnected && target.getAnimations().every(animation => {
+      const timing = animation.effect?.getComputedTiming();
+      return !timing || !Number.isFinite(timing.endTime)
+        || (!animation.pending && ['finished','idle'].includes(animation.playState));
+    }),element,{polling:'raf'});
+  } finally {
+    await element.dispose();
+  }
+};
 const errors = [];
 const requests = [];
 let gated;
@@ -210,8 +225,9 @@ try {
   await hub.getByText('Prepare workshop',{exact:true}).waitFor();
   assert.equal(await hub.getByRole('button',{name:'Try an image',exact:true}).isVisible(),true);
   assert.equal(await orb.getAttribute('aria-expanded'),'true');
+  await waitForPanelEntrance(worker);
   const desktopBox=await worker.boundingBox();
-  assert.ok(desktopBox.x>=11&&desktopBox.x+desktopBox.width<=1269,'The wider panel keeps its viewport margin beside the Orb.');
+  assert.ok(desktopBox&&desktopBox.x>=11&&desktopBox.x+desktopBox.width<=1269,'The wider panel keeps its viewport margin beside the Orb: '+JSON.stringify(desktopBox));
   assert.equal(await hub.getByRole('heading',{name:'Top of Mind',exact:true}).isVisible(),true);
   assert.equal(await liveWork.count(),0);
   assert.equal(await hub.locator('img').count(),0);
@@ -274,8 +290,9 @@ try {
   await page.setViewportSize({width:390,height:740});
   await open();
   await hub.getByText('Prepare workshop',{exact:true}).waitFor();
+  await waitForPanelEntrance(worker);
   const box=await worker.boundingBox();
-  assert.ok(box.x>=0&&box.y>=0&&box.x+box.width<=391&&box.y+box.height<=741,'Top of Mind fits the mobile viewport');
+  assert.ok(box&&box.x>=0&&box.y>=0&&box.x+box.width<=391&&box.y+box.height<=741,'Top of Mind fits the mobile viewport: '+JSON.stringify(box));
   if (process.env.VP3_HUB_SCREENSHOTS) {
     await hub.locator('details[data-activity-group]').evaluateAll(elements=>elements.forEach((element,index)=>{element.open=index===0;}));
     await page.screenshot({path:'/workspace/scratch/48e2f20316b2/agent-activity-hub-mobile.png'});

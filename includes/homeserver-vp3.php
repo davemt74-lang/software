@@ -12,6 +12,19 @@ function homeserver_vp3_ensure_schema(?PDO $pdo = null): void
         throw new RuntimeException('Database connection is unavailable.');
     }
 
+    // Runtime route rechecks can hold an owner's admission/publication lock.
+    // CREATE IF NOT EXISTS would release it on MySQL. Existing storage must be
+    // readable here; installation remains outside the caller's transaction.
+    if ($pdo->inTransaction()) {
+        $pdo->query('SELECT homeserver_connections.*,user_id,device_id,relay_token_enc,homeserver_token_enc,pending_request_id,
+            pending_claim_token_enc,pending_code,status,installed_version,last_seen_at,last_checked_at,
+            last_error,capabilities_json FROM homeserver_connections LIMIT 0');
+        $pdo->query('SELECT homeserver_releases.*,id,version,channel,release_notes,portable_name,portable_path,portable_sha256,
+            portable_size,installer_name,installer_path,installer_sha256,installer_size,is_published,
+            is_latest,created_by_user_id,published_at FROM homeserver_releases LIMIT 0');
+        return;
+    }
+
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS homeserver_connections (
             user_id INT UNSIGNED NOT NULL PRIMARY KEY,

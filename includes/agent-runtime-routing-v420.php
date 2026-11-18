@@ -15,6 +15,10 @@ const VP3_AGENT_RUNTIME_ROUTING_V420='vp3-agent-runtime-routing-v420-20260910';
 
 function vp3_agent_runtime_preference_v420(PDO $pdo,int $userId,int $agentId): array
 {
+    // Image admission, dispatch and publication recheck this policy while their
+    // owner rows are locked. Legacy preference initialization issues DDL, which
+    // implicitly commits a MySQL transaction even when its table already exists.
+    if($pdo->inTransaction())return vp3_agent_runtime_preference_readonly_v420($pdo,$userId,$agentId);
     $account=agent_compute_v020_preference($pdo,$userId);
     $override=agent_compute_v023_override($pdo,$userId,max(0,$agentId));
     return agent_compute_v023_policy_from_values($account,$override);
@@ -148,6 +152,9 @@ function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $s
     // Explicit VP3 Cloud is a strict transport boundary: do not call
     // HomeServer scope/capability/relay discovery merely to plan this request.
     if($requested!=='vp3_cloud'&&!$observeOnly){
+        // Verify storage before legacy HomeServer readers can catch a schema
+        // error as an unpaired result. The installer only reads inside a lock.
+        if($pdo->inTransaction()&&function_exists('homeserver_vp3_ensure_schema'))homeserver_vp3_ensure_schema($pdo);
         if(function_exists('homeserver_scope_v026_fetch')&&function_exists('homeserver_scope_v026_apply_compute_policy')){
             $scopeState=homeserver_scope_v026_fetch($userId,false);
             $policy=homeserver_scope_v026_apply_compute_policy($policy,$scopeState);

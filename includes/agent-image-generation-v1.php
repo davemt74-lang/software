@@ -368,7 +368,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $q=$pdo->prepare("UPDATE agent_image_generations_v1 SET provider_started_at=? WHERE generation_id=? AND owner_user_id=? AND provider_started_at=''");$q->execute([gmdate('Y-m-d H:i:s'),$row['generation_id'],(int)$user['id']]);if($q->rowCount()!==1)throw new RuntimeException('provider_outcome_unconfirmed');
         $pdo->commit();
         $sent=true;$startedAt=microtime(true);
-        $output=vp3_image_provider_v1($config,$user,$transport,$sourceImage,$route['api_key'],static function(array $usage)use(&$reportedUsage):void{$reportedUsage=$usage;});
+        $output=vp3_image_provider_v1($config,$user,$transport,vp3_image_take_source_v1($sourceImage),$route['api_key'],static function(array $usage)use(&$reportedUsage):void{$reportedUsage=$usage;});
         $confirmedImages=count($output['images']);
         // Record actual paid usage even if the owner cancels while the provider runs.
         $settleUsage('completed');

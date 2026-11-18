@@ -8,7 +8,7 @@
   const csrf=String(cfg.csrf||''),limit=4*1024*1024;
   const runtime=()=>window.STONEFELLOW_CHAT_CONTINUITY_V87;
   const currentId=()=>Number(runtime()?.conversationId?.()||0);
-  let selection=null,operation=null,revision=0,restoreKey='';
+  let selection=null,operation=null,offeredImage=null,revision=0,restoreKey='';
   const make=(tag,text,cls)=>{const el=document.createElement(tag);if(text)el.textContent=text;if(cls)el.className=cls;return el;};
   const section=make('section',null,'vp3-image-upload-tool');
   const upload=make('button','Upload base image','vp3-image-upload-button');upload.type='button';
@@ -18,6 +18,30 @@
   section.append(upload,hint,file,toolStatus);tools.prepend(section);
   const chip=make('section',null,'vp3-image-reference');chip.hidden=true;chip.setAttribute('aria-label','Base image for your next prompt');
   shell.insertBefore(chip,form);
+  const choice=make('section',null,'vp3-image-reference-choice');choice.hidden=true;choice.setAttribute('aria-label','Use the viewed image as an editing base');
+  const referenceStatus=make('p',null,'vp3-image-reference-status');referenceStatus.setAttribute('role','status');referenceStatus.setAttribute('aria-live','polite');
+  shell.insertBefore(choice,chip);shell.insertBefore(referenceStatus,form);
+  let spaceFrame=0;
+  function reserveComposerSpace(){
+    if(spaceFrame)return;
+    spaceFrame=requestAnimationFrame(()=>{
+      spaceFrame=0;
+      const thread=document.getElementById('chatThread');if(!thread)return;
+      // The footer floats over Chat. Reserve its measured height so a base,
+      // replacement choice and growing draft cannot cover the final image.
+      const active=!chip.hidden||!choice.hidden||Boolean(referenceStatus.textContent);
+      if(active&&shell.isConnected&&shell.getClientRects().length){
+        thread.style.setProperty('--vp3-image-composer-space',Math.ceil(shell.getBoundingClientRect().height+16)+'px');
+        thread.setAttribute('data-vp3-image-composer-space','');
+      }else{
+        thread.style.removeProperty('--vp3-image-composer-space');
+        thread.removeAttribute('data-vp3-image-composer-space');
+      }
+    });
+  }
+  if(typeof ResizeObserver==='function')new ResizeObserver(reserveComposerSpace).observe(shell);
+  window.addEventListener('resize',reserveComposerSpace,{passive:true});
+  input.addEventListener('input',reserveComposerSpace);
 
   function identity(){
     const live=window.STONEFELLOW_CHAT;
@@ -36,18 +60,51 @@
     try{sessionStorage.setItem(storageKey(selection.conversationId),JSON.stringify({assetId:selection.asset.id,binding}));}catch{}
   }
   function message(text){toolStatus.textContent=text||'';}
+  function referenceMessage(text){referenceStatus.textContent=text||'';reserveComposerSpace();}
   function safeAsset(asset){
     if(!asset||!Number.isSafeInteger(asset.id)||asset.id<1||asset.media_type!=='photo'||!asset.available)return null;
     try{
       const url=new URL(asset.url,location.href);
       const expected=new URL(cfg.mediaFileEndpoint,location.href);
-      if(url.origin!==location.origin||url.pathname!==expected.pathname||url.searchParams.get('id')!==String(asset.id)
+      if(url.origin!==location.origin||url.username||url.password||url.hash||url.pathname!==expected.pathname||url.searchParams.getAll('id').length!==1||url.searchParams.get('id')!==String(asset.id)
         ||[...url.searchParams.keys()].some(key=>key!=='id'))return null;
       return {...asset,url:url.href};
     }catch{return null;}
   }
+  function currentOffer(offer){
+    try{return offeredImage===offer&&identity()&&offer.conversationId===currentId()
+      &&offer.agentId===agent&&offer.ownerKey===owner&&!window.VP3ParticipantContinuity?.selectedContext?.()
+      &&offer.isCurrent()===true;}catch{return false;}
+  }
+  function retireOffer(viewToken){
+    if(!offeredImage||offeredImage.viewToken!==viewToken)return false;
+    if(operation?.kind==='selection'&&operation.offer===offeredImage){operation.controller.abort();operation=null;}
+    offeredImage=null;referenceMessage('');return true;
+  }
+  function renderChoice(){
+    const focused=choice.contains(document.activeElement);
+    if(offeredImage&&!currentOffer(offeredImage))retireOffer(offeredImage.viewToken);
+    choice.replaceChildren();
+    const offer=offeredImage,pending=Boolean(offer&&operation?.kind==='selection'&&operation.offer===offer);
+    choice.hidden=!offer||!pending&&selection?.asset.id===offer.asset.id;
+    if(choice.hidden)return;
+    const preview=make('img');preview.src=offer.asset.url;preview.alt='Viewed image available as an editing base';preview.width=48;preview.height=48;
+    const text=make('div');text.append(make('strong',pending?'Checking selected image…':offer.count>1?'Image '+(offer.index+1)+' of '+offer.count:'Viewed image'),make('span',offer.asset.title||'Saved image'));
+    const use=make('button',pending?'Cancel':selection?'Replace base image':'Use this image');use.type='button';
+    if(pending)use.setAttribute('aria-label','Cancel image selection');
+    use.disabled=Boolean(operation&&!pending);
+    use.addEventListener('click',event=>{
+      if(!event.isTrusted||!currentOffer(offer))return;
+      if(pending&&operation?.offer===offer){operation.controller.abort();operation=null;render();referenceMessage('Image selection cancelled. Your draft is kept.');}
+      else void attachOfferedImage(offer);
+    });
+    choice.append(preview,text,use);choice.setAttribute('aria-busy',String(pending));
+    if(focused)use.focus({preventScroll:true});
+  }
   function render(){
-    chip.replaceChildren();chip.hidden=!selection&&!operation;
+    reserveComposerSpace();
+    renderChoice();
+    chip.replaceChildren();chip.hidden=!selection&&(!operation||operation.kind==='selection');
     if(chip.hidden)return;
     if(selection){
       const preview=make('img');preview.src=selection.asset.url;preview.alt='Selected base image';preview.width=48;preview.height=48;
@@ -59,14 +116,14 @@
       const progress=make('progress');progress.max=100;progress.value=operation.progress;progress.setAttribute('aria-label','Base image upload progress');
       text.append(progress);chip.append(shimmer,text);
     }
-    const remove=make('button','×');remove.type='button';remove.setAttribute('aria-label',operation?'Cancel base image upload':'Remove base image');
-    remove.addEventListener('click',()=>{clear(true);input.focus();});chip.append(remove);
+    const remove=make('button','×');remove.type='button';remove.setAttribute('aria-label',selection?'Remove base image':'Cancel base image upload');
+    remove.addEventListener('click',()=>{clear(true);referenceMessage('');input.focus();});chip.append(remove);
   }
   function clear(removeSaved=false){
     const cid=selection?.conversationId||operation?.conversationId||currentId();
     revision++;operation?.controller.abort();operation=null;selection=null;
     if(removeSaved&&cid>0)forget(cid);
-    file.value='';render();
+    file.value='';referenceMessage('');render();
   }
   function owned(op){
     return operation===op&&!op.controller.signal.aborted&&identity()&&currentId()===op.conversationId;
@@ -84,8 +141,29 @@
     const data=await jsonRequest(cfg.endpoint,{action:'reference',csrf_token:csrf,agent_id:agent,
       conversation_id:op.conversationId,asset_id:assetId},op);
     const asset=safeAsset(data.asset);
-    if(!asset||data.reference?.asset_id!==asset.id)throw new Error('The base image could not be verified.');
+    if(!asset||asset.id!==assetId||data.reference?.asset_id!==asset.id)throw new Error('The base image could not be verified.');
     return asset;
+  }
+  async function attachOfferedImage(offer){
+    if(!currentOffer(offer))return false;
+    if(!available()||operation){referenceMessage('Finish the current Chat action before attaching this image.');return false;}
+    const op={kind:'selection',offer,conversationId:offer.conversationId,controller:new AbortController()};
+    operation=op;referenceMessage('');render();
+    const timer=setTimeout(()=>{op.timedOut=true;op.controller.abort();},30000);
+    try{
+      const asset=await validate(offer.asset.id,op);
+      if(!owned(op)||!currentOffer(offer)||!available()){
+        if(operation===op){operation=null;render();}return false;
+      }
+      selection={asset,conversationId:offer.conversationId,selectionId:++revision};operation=null;remember();render();
+      referenceMessage('Base image attached. Your draft is kept.');input.focus({preventScroll:true});return true;
+    }catch(error){
+      if(operation===op){
+        operation=null;render();
+        if(currentOffer(offer))referenceMessage(op.timedOut?'The image check timed out. Your current base and draft are kept.':error.name==='AbortError'?'Image selection cancelled. Your draft is kept.':error.message);
+      }
+      return false;
+    }finally{clearTimeout(timer);}
   }
   async function uploadFile(chosen){
     if(!chosen)return;
@@ -99,7 +177,7 @@
     if(!cid){try{cid=await runtime()?.ensureConversation?.();}catch(error){message(error.message);return;}}
     if(!cid||revision!==startRevision||!available()||currentId()!==cid){message('Wait for Chat to finish opening, then choose your image.');return;}
     const op={conversationId:cid,controller:new AbortController(),label:'Uploading base image…',name:chosen.name,progress:0};
-    operation=op;message('');render();
+    operation=op;message('');referenceMessage('');render();
     const timer=setTimeout(()=>op.controller.abort(),90000);
     const post=async(action,fields={})=>{
       const body=new FormData();body.set('action',action);body.set('csrf_token',csrf);
@@ -149,15 +227,29 @@
   }
   upload.addEventListener('click',()=>{if(available()&&!operation)file.click();else message('Finish the current Chat action before attaching an image.');});
   file.addEventListener('change',()=>void uploadFile(file.files?.[0]));
-  window.addEventListener('stonefellow:chat-context-changing',()=>{clear();restoreKey='';message('');});
+  window.addEventListener('stonefellow:chat-context-changing',()=>{if(offeredImage)retireOffer(offeredImage.viewToken);clear();restoreKey='';message('');referenceMessage('');});
   for(const name of ['vp3:participant-selection-changed','vp3:participant-task-context']){
-    window.addEventListener(name,()=>{clear(true);restoreKey='';message('');});
+    window.addEventListener(name,()=>{if(offeredImage)retireOffer(offeredImage.viewToken);clear(true);restoreKey='';message('');referenceMessage('');});
   }
   window.addEventListener('vp3:chat-context-ready',()=>{if(selection&&selection.conversationId!==currentId())clear();void restore();});
   window.addEventListener('pagehide',()=>operation?.controller.abort(),{once:true});
   window.VP3ImageComposer=Object.freeze({
+    offerImage(asset,{conversationId,agentId,ownerKey,viewToken,index=0,count=1,isCurrent}={}){
+      if(!viewToken||typeof isCurrent!=='function'||!identity()||conversationId!==currentId()||agentId!==agent
+        ||String(ownerKey)!==owner||!Number.isInteger(index)||!Number.isInteger(count)||count<1||count>12||index<0||index>=count)return false;
+      const photo=safeAsset(asset);
+      if(!photo||!['image/jpeg','image/png','image/webp'].includes(photo.mime_type)){
+        if(retireOffer(viewToken))render();return false;
+      }
+      try{if(isCurrent()!==true)return false;}catch{return false;}
+      if(offeredImage?.viewToken===viewToken&&offeredImage.asset.id===photo.id&&currentOffer(offeredImage))return true;
+      if(offeredImage)retireOffer(offeredImage.viewToken);
+      offeredImage={asset:photo,conversationId,agentId,ownerKey:String(ownerKey),viewToken,index,count,isCurrent};
+      referenceMessage('');render();return true;
+    },
+    clearImageOffer(viewToken){if(retireOffer(viewToken))render();},
     requestContext(cid){
-      if(operation)throw new Error('Wait for the base image to finish uploading before sending your prompt.');
+      if(operation)throw new Error('Wait for the base image to finish attaching before sending your prompt.');
       if(!selection)return null;
       if(window.VP3ParticipantContinuity?.selectedContext?.()){
         clear(true);throw new Error('Use your private owner Chat for this base image.');
@@ -193,7 +285,7 @@
         operation=null;render();
       }
       if(!available()||currentId()!==conversationId||!runtime()?.stageSpecialistPrompt?.(text,conversationId))return false;
-      if(asset){selection={asset,conversationId,selectionId:++revision};remember();render();}
+      if(asset){selection={asset,conversationId,selectionId:++revision};remember();referenceMessage('');render();}
       return true;
     }
   });

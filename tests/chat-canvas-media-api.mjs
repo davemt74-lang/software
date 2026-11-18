@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
-import {createHmac} from 'node:crypto';
+import {createHmac,createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-image-api-'));fs.cpSync('includes',path.join(tmp,'includes'),{recursive:true});fs.mkdirSync(path.join(tmp,'api'));
 fs.copyFileSync('api/chat-canvas-media-v1.php',path.join(tmp,'api/chat-canvas-media-v1.php'));fs.copyFileSync('media-library-file-v86.php',path.join(tmp,'media-library-file-v86.php'));
@@ -67,9 +67,11 @@ try{
   assert.equal((await post({action:'reference',asset_id:asset},{...headers,'X-VP3-Working-Attention':'stale-page'})).r.status,403);
   assert.equal((await post({action:'reference',asset_id:asset},{...headers,Cookie:'PHPSESSID=another-image-owner'})).r.status,403);
  });
+ let generatedBatch;
  await check('a four-image job reloads all ordered private results after one provider call',async()=>{
   const before=callCount();
   const batch=await(await fetch(base+'/seed.php?mode=complete&count=4')).json();
+  generatedBatch=batch;
   assert.equal(batch.status,'completed');assert.equal(batch.count,4);assert.equal(batch.completed_count,4);
   const ids=batch.assets.map(a=>a.id);assert.equal(new Set(ids).size,4);assert.equal(batch.asset.id,ids[0]);
   for(const action of ['get','tick']){
@@ -77,6 +79,20 @@ try{
    assert.deepEqual(restored.data.generation.assets.map(a=>a.id),ids);
   }
   assert.equal(callCount(),before+1);
+ });
+ await check('the exact third generated image can be attached without regenerating or replacing its siblings',async()=>{
+  const before=callCount(),third=generatedBatch.assets[2],first=generatedBatch.assets[0];
+  const selected=await post({action:'reference',asset_id:third.id});
+  assert.equal(selected.r.status,200);assert.equal(selected.data.asset.id,third.id);
+  assert.equal(selected.data.reference.asset_id,third.id);assert.equal(selected.data.reference.title,third.title);
+  const thirdBytes=Buffer.from(await(await fetch(base+third.url)).arrayBuffer());
+  const firstBytes=Buffer.from(await(await fetch(base+first.url)).arrayBuffer());
+  assert.equal(selected.data.reference.sha256,createHash('sha256').update(thirdBytes).digest('hex'));
+  assert.notEqual(selected.data.reference.sha256,createHash('sha256').update(firstBytes).digest('hex'));
+  assert.equal(selected.data.reference.bytes,undefined);assert.equal(callCount(),before);
+  const reloaded=await post({action:'get',generation_id:generatedBatch.id});
+  assert.deepEqual(reloaded.data.generation.assets.map(a=>a.id),generatedBatch.assets.map(a=>a.id));
+  assert.equal(reloaded.data.generation.count,4);
  });
  await check('the existing authenticated file route serves actual saved PNG bytes',async()=>{const own=await fetch(base+'/media-library-file-v86.php?id='+asset);assert.equal(own.status,200);assert.match(own.headers.get('content-type'),/image\/png/);assert.equal(own.headers.get('x-content-type-options'),'nosniff');const bytes=new Uint8Array(await own.arrayBuffer());assert.deepEqual([...bytes.slice(0,8)],[137,80,78,71,13,10,26,10]);assert.equal((await fetch(base+'/media-library-file-v86.php?id='+asset,{headers:{'X-Fixture-User':'2'}})).status,404);});
  await check('malformed references and oversized batches fail before reading media',async()=>{assert.equal((await post({action:'assets',asset_ids:Array.from({length:13},(_,i)=>i+1)})).r.status,422);assert.equal((await post({action:'assets',asset_ids:['1']})).r.status,422);assert.equal((await post({action:'get',generation_id:'../../secret'})).r.status,422);});

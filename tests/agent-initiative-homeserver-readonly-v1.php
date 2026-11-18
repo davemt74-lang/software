@@ -360,6 +360,11 @@ $defaultHealthy=homeserver_scope_v026_fetch(1,true);
 readonly_hs_assert($defaultHealthy['supported']===true&&$defaultHealthy['available']===true&&$defaultHealthy['scope']['cloud_allowed']===true,'the real default scope chain reaches a healthy HTTPS-only pairing');
 readonly_hs_assert(readonly_hs_calls()[1]===$before[1]+1&&readonly_hs_calls()[2]===$before[2]+1,'default scope reads use the actual owner-aware HTTPS queue and wait route');
 readonly_hs_assert($GLOBALS['readonly_hs_bare_calls']===0,'healthy default HTTPS scope never attempts the bare relay');
+$before=readonly_hs_calls();$pdo->beginTransaction();
+$lockedCached=homeserver_scope_v026_fetch(1,false);
+readonly_hs_assert($lockedCached===$defaultHealthy&&$pdo->inTransaction()&&readonly_hs_calls()===$before,
+    'a foreground scope already resolved before an owner lock is reused without transport or releasing the transaction');
+$pdo->rollBack();
 $meeting=video_meeting_row_v1800($pdo,1);
 $defaultMeeting=video_meeting_homeserver_policy_v1801($pdo,$meeting,true);
 readonly_hs_assert($defaultMeeting['cloud_processing_allowed']===true&&$defaultMeeting['policy_resolved']===true,'the actual default meeting Auto policy accepts healthy authorized HTTPS scope');
