@@ -133,6 +133,8 @@ function vp3_profile_workspace_source_v1(PDO $pdo,array $scope,int $cid,bool $lo
     foreach(['id','display_name','instructions','agent_role','engine_key','is_active'] as $key)$agentProof[$key]=(string)($agent[$key]??'');
     require_once __DIR__.'/profile-chat-attachments-v1.php';
     $projected=vp3_profile_chat_attachment_messages_v1($pdo,$rows);
+    require_once __DIR__.'/profile-image-edit-v1.php';
+    $projected=vp3_profile_image_edit_messages_v1($pdo,$owner,$cid,$projected,true);
     $sourceHash=hash('sha256',json_encode([$owner,$scope['agent_id'],$scope['conversation_id'],$cid,
         array_intersect_key($conversation,array_flip(['profile_agent_id','profile_session_id','visitor_user_id','status'])),
         $thread?array_intersect_key($thread,array_flip(['mode','epoch','requested_mode','live_status'])):null,
@@ -142,6 +144,7 @@ function vp3_profile_workspace_source_v1(PDO $pdo,array $scope,int $cid,bool $lo
     foreach($projected as $row){$item=['message_id'=>(int)$row['id'],'sender_type'=>(string)$row['sender_type'],
         'text'=>mb_substr((string)$row['message'],0,8000),'created_at'=>(string)$row['created_at']];
         if(isset($row['attachment']))$item['attachment']=$row['attachment']+['url'=>url('/api/profile-agent.php?action=owner_attachment&conversation_id='.$cid.'&message_id='.(int)$row['id'])];
+        if(isset($row['image_edit']))$item['image_edit']=$row['image_edit'];
         $messages[]=$item;}
     return ['conversation'=>$conversation,'turn'=>$turn,'thread'=>$thread,'current_turn'=>$card,'messages'=>$messages,
         'history_complete'=>!$more,'source_revision'=>$sourceHash,'latest_message_id'=>$rows?(int)end($rows)['id']:0,
@@ -154,8 +157,10 @@ function vp3_profile_workspace_conversation_v1(PDO $pdo,array $scope,int $cid,in
     if($before>0){
         $rows=vp3_profile_workspace_query_v1($pdo,"SELECT id,sender_type,message,context_json,created_at FROM profile_agent_messages WHERE conversation_id=? AND id<? AND sender_type IN ('visitor','owner','agent') ORDER BY id DESC LIMIT 41",[$cid,$before]);
         $more=count($rows)>40;$rows=vp3_profile_chat_attachment_messages_v1($pdo,array_reverse(array_slice($rows,0,40)));$messages=[];
+        $rows=vp3_profile_image_edit_messages_v1($pdo,(int)$scope['user']['id'],$cid,$rows,true);
         foreach($rows as $message){$item=['message_id'=>(int)$message['id'],'sender_type'=>$message['sender_type'],'text'=>mb_substr($message['message'],0,8000),'created_at'=>$message['created_at']];
-            if(isset($message['attachment']))$item['attachment']=$message['attachment']+['url'=>url('/api/profile-agent.php?action=owner_attachment&conversation_id='.$cid.'&message_id='.(int)$message['id'])];$messages[]=$item;}
+            if(isset($message['attachment']))$item['attachment']=$message['attachment']+['url'=>url('/api/profile-agent.php?action=owner_attachment&conversation_id='.$cid.'&message_id='.(int)$message['id'])];
+            if(isset($message['image_edit']))$item['image_edit']=$message['image_edit'];$messages[]=$item;}
     }
     $agent=vp3_profile_workspace_query_v1($pdo,'SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=?',[(int)$row['profile_agent_id'],(int)$scope['user']['id']]);
     $turn=$source['turn'];

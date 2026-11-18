@@ -492,6 +492,12 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
     $continueLive=array_key_exists('continue_live',$delivery)?$delivery['continue_live']:false;
     if(!is_bool($continueLive)||($continueLive&&$chatMode!=='live'))vp3_profile_handoff_error_pa3('HANDOFF_INVALID',422);
     $attachment=$delivery['attachment']??null;
+    $imageEdit=$delivery['image_edit']??null;
+    if($imageEdit!==null){
+        require_once __DIR__.'/profile-image-edit-v1.php';
+        if($attachment!==null||$chatMode!=='agent'||$continueLive||!is_array($imageEdit))vp3_profile_image_edit_error_v1('Choose the Profile Agent for photo editing.');
+        $ctx['profile_image_edit_fingerprint']=$imageEdit['fingerprint'];$ctx['image_edit_prompt']=$query;
+    }
     if($attachment!==null){
         require_once __DIR__.'/profile-chat-attachments-v1.php';
         if($conversationId<1||$query!==VP3_PROFILE_CHAT_ATTACHMENT_MESSAGE_V1)vp3_profile_chat_attachment_owner_required_v1();
@@ -507,6 +513,9 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
     $cid=max(0,$conversationId);$duplicate=false;
     $pdo->beginTransaction();
     try{
+        // SQLite needs its writer lock before any transaction reads; MySQL uses
+        // the same owner row to serialize allowance and input admission.
+        if($imageEdit!==null)vp3_ai_service_usage_lock_owner_v1($pdo,(int)$ctx['owner_user_id']);
         $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         if($cid>0)$conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);
         $turn=vp3_profile_handoff_retry_pa3($pdo,$ctx,$requestId,$query,$chatMode,$continueLive);
@@ -523,12 +532,14 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
                 ->execute([$cid,(int)($ctx['visitor']['id']??0)?:null,$query,$attachment===null?null:VP3_PROFILE_CHAT_ATTACHMENT_CONTEXT_V1]);
             $visitorMessageId=(int)$pdo->lastInsertId();
             if($attachment!==null)vp3_profile_chat_attachment_save_v1($pdo,$owner,$visitorMessageId,$attachment);
+            if($imageEdit!==null)vp3_profile_image_edit_admit_v1($pdo,$ctx,$conversation,$visitorMessageId,$imageEdit);
             $pdo->prepare('UPDATE profile_visit_sessions SET last_message_at=NOW(),last_seen_at=NOW() WHERE id=? AND owner_user_id=?')->execute([$sessionId,$owner]);
             $pdo->prepare('UPDATE profile_agent_conversations SET last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=? AND profile_agent_id=? AND profile_session_id=?')
                 ->execute([mb_strimwidth($query,0,900,'…'),$cid,$owner,$agentId,$sessionId]);
             profile_agent_message_received_v1341($pdo,$ctx['profile'],$ctx['agent'],vp3_profile_agent_public_event_session_v1($ctx),$conversation,$visitorMessageId,$query);
             $ctx['accepted_message_sha256']=hash('sha256',$query);
             $turn=vp3_profile_handoff_admit_pa3($pdo,$ctx,$conversation,$visitorMessageId,$requestId,vp3_profile_agent_accepted_snapshot_pa3($ctx),$chatMode,$continueLive);
+            if($imageEdit!==null)vp3_profile_image_edit_bind_v1($pdo,$turn);
             if($attachment!==null&&$turn['state']!=='owner_claimed')vp3_profile_chat_attachment_owner_required_v1();
             // Admission supersedes any older synchronous request on this thread.
             vp3_profile_agent_response_token_v1($pdo,$cid,true);

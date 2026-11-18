@@ -338,6 +338,7 @@ if($webmcpResumeRequested){
           <li>Visitors can message your Profile Agent.</li>
           <li>Live text, audio and video requests appear when available.</li>
           <li>Images and files can be shared after you join the visitor’s conversation.</li>
+          <li>You can enable AI photo edits with approved free style catalogs in Profile Agent settings.</li>
         </ul>
         <div class="profile-agent-panel-actions">
           <a class="profile-agent-panel-action" href="<?= e(url('/chat.php')) ?>">Open my Chat</a>
@@ -346,6 +347,7 @@ if($webmcpResumeRequested){
       <?php else: ?>
         <p data-profile-chat-contact-status></p>
         <button type="button" class="profile-agent-panel-action" data-profile-chat-settings-jump>Live text chat</button>
+        <button type="button" class="profile-agent-panel-action" data-profile-image-edit-open aria-controls="profileImageEditPanel" hidden>Edit photo with AI</button>
         <div data-profile-chat-call-offers></div>
       <?php endif; ?>
     </section>
@@ -368,6 +370,8 @@ if($webmcpResumeRequested){
       <h2 id="profileAttachmentHelpTitle" data-profile-attachment-help-title tabindex="-1">Sharing images and files</h2>
       <p data-profile-attachment-help-message role="status"></p>
       <div class="profile-agent-panel-actions">
+        <button type="button" class="profile-agent-panel-action" data-profile-image-edit-open aria-controls="profileImageEditPanel" hidden>Edit photo with AI</button>
+        <button type="button" class="profile-agent-panel-action" data-profile-image-share-owner hidden>Share image with owner</button>
         <button type="button" class="profile-agent-panel-action" data-profile-attachment-help-options hidden>Open chat options</button>
         <button type="button" class="profile-agent-panel-action" data-profile-attachment-help-close>Back to conversation</button>
       </div>
@@ -470,6 +474,7 @@ window.VP3_PROFILE_WEBMCP={
 <script src="<?= e(url('/profile-conversation-checkout-pa5.js?v='.substr(hash_file('sha256',__DIR__.'/profile-conversation-checkout-pa5.js'),0,12))) ?>"></script>
 <?php endif; ?>
 <?php if($agent): ?>
+<script src="<?= e(url('/profile-image-edits-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-image-edits-v1.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-agent.js?v=profile-direct-calls-pa3c-'.substr(hash_file('sha256',__DIR__.'/profile-agent.js'),0,12))) ?>"></script>
 <?php endif; ?>
 </body>

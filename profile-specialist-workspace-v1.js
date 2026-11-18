@@ -594,6 +594,14 @@
           const link=node('a','Download '+attachment.name);link.href=href;
           link.addEventListener('click',event=>{if(!currentScope()||selection.publicConversationId!==id)event.preventDefault();});row.append(link);
         }
+        const edit=message.image_edit;
+        const editUrl=localUrl(edit?.url),downloadUrl=localUrl(edit?.download_url);
+        if (editUrl&&['input','result'].includes(edit?.kind)) {
+          const image=node('img','','vp3-profile-edit-image');image.src=editUrl;image.alt=edit.kind==='result'?'Edited visitor photo':'Original visitor photo';image.loading='lazy';
+          const link=node('a');link.href=editUrl;link.target='_blank';link.rel='noopener';link.append(image);
+          link.addEventListener('click',event=>{if(!currentScope()||selection.publicConversationId!==id)event.preventDefault();});row.append(link);
+          if(downloadUrl){const download=node('a',edit.kind==='result'?'Download edited photo':'Download original photo');download.href=downloadUrl;download.download='';download.addEventListener('click',event=>{if(!currentScope()||selection.publicConversationId!==id)event.preventDefault();});row.append(download);}
+        }
         messages.append(row);
       }
       if (value.messages.has_more&&positive(value.messages.next_before_message_id)) {
