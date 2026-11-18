@@ -22,9 +22,20 @@ const raster=Buffer.alloc(height*(1+width*3));
 for(let y=0;y<height;y++)for(let x=0;x<width;x++){const at=y*(1+width*3)+1+x*3,face=((x-180)/66)**2+((y-151)/88)**2<1,shoulders=((x-180)/125)**2+((y-335)/110)**2<1;raster[at]=face?211:shoulders?55:184+Math.floor(y/10);raster[at+1]=face?163:shoulders?66:125+Math.floor(x/12);raster[at+2]=face?124:shoulders?70:93+Math.floor(y/15);}
 const photo=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(raster)),chunk('IEND',Buffer.alloc(0))]);
 const assets=new Map(['profile.css','profile-agent.js','profile-image-edits-v1.js'].map(name=>['/'+name,read(name)]));
+let imageResponse=()=>null;
 const server=http.createServer((request,response)=>{
  const url=new URL(request.url,'http://localhost');
  if(assets.has(url.pathname)){response.writeHead(200,{'Content-Type':url.pathname.endsWith('.css')?'text/css':'text/javascript'});response.end(assets.get(url.pathname));return;}
+ // Chromium's download-attribute requests can bypass page routing. Serve the
+ // real image URL so the download assertion checks bytes, never fallback HTML.
+ if(url.pathname==='/api/profile-agent.php'&&url.searchParams.get('action')==='image'){
+  const file=imageResponse(url.searchParams);
+  if(!file){response.writeHead(404);response.end('Image not found.');return;}
+  const preview=url.searchParams.get('preview')==='1';
+  response.writeHead(200,{'Content-Type':preview?'image/png':'application/octet-stream','Content-Length':photo.length,
+    'Content-Disposition':`${preview?'inline':'attachment'}; filename="photo.png"; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+    'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});response.end(photo);return;
+ }
  const config={username:'fixture-owner',ownerName:'Dave',agentName:'Profile Guide',greeting:'',endpoint:'/api/profile-agent.php',profileToken:'FIXTURE_PROFILE_TOKEN',conversationNamespace:namespace};
  response.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});
  response.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/profile.css"></head><body class="profile-page"><main><h1>Dave’s photo catalog</h1></main>${widget}<script>window.STONEFELLOW_PROFILE_AGENT=${JSON.stringify(config)};${launcher}</script><script src="/profile-image-edits-v1.js"></script><script src="/profile-agent.js"></script></body></html>`);
@@ -39,6 +50,8 @@ async function fixture({viewport={width:390,height:780},loseAfterCommit=false,lo
  const catalogs=[{collection_id:7,name:'Warm portrait style',catalog_revision:3,price_cents:0,references:[{asset_id:12,title:'Amber portrait',price_cents:paid?100:0},{asset_id:14,title:'Soft window light',price_cents:0}]}];
  const url=(id,preview)=>'/api/profile-agent.php?'+new URLSearchParams({action:'image',username:'fixture-owner',conversation_namespace:namespace,conversation_id:'31',message_id:String(id),...(preview?{preview:'1'}:{})});
  const image=(kind,id,job)=>({kind,request_id:job.request_id,source_message_id:job.input_message_id,root_message_id:job.root_message_id,filename:kind==='result'?'edited-photo.png':'portrait.png',mime:'image/png',bytes:photo.length,url:url(id,true),download_url:url(id,false)});
+ imageResponse=params=>!changed&&params.get('username')==='fixture-owner'&&params.get('conversation_namespace')===namespace&&params.get('conversation_id')==='31'
+   ?messages.find(item=>item.id===Number(params.get('message_id')))?.image_edit:null;
  const snapshot=(after=0)=>({ok:true,agent:{name:'Profile Guide',greeting:''},conversation:state.conversation,chat:state.chat,handoff:state.handoff&&{...state.handoff,server_now_ms:Date.now()},messages:messages.filter(item=>item.id>Number(after)),attachment_max_bytes:2097152,
    image_editing:{contract:'vp3.profile-image-edit.v1',enabled:true,max_input_bytes:4194304,catalogs,daily_limit:10,visitor_daily_limit:3},image_edits:jobs});
  page.on('pageerror',error=>errors.push(error.message));
@@ -51,7 +64,7 @@ async function fixture({viewport={width:390,height:780},loseAfterCommit=false,lo
   requests.push({body,method:request.method(),file:file?{name:file.name,size:file.size,mime:file.type}:null});
   const reply=(value,status=200)=>route.fulfill({status,json:{ok:status<400,...value}});
   if(changed)return reply({code:'PROFILE_SESSION_CHANGED',error:'Visitor session changed.'},409);
-  if(body.action==='image')return route.fulfill({status:200,contentType:body.preview==='1'?'image/png':'application/octet-stream',headers:{'Content-Disposition':body.preview==='1'?'inline':'attachment; filename="edited-photo.png"'},body:photo});
+  if(body.action==='image')return route.continue();
   if(body.action==='state'||body.action==='poll')return reply(snapshot(body.after_id||0));
   if(body.action==='image_edit_receipt'){
    const receipt=records.get(body.client_request_id);
@@ -105,7 +118,9 @@ try{
   check(await f.page.locator('[data-profile-image-viewer]').isVisible()&&!await f.page.getByRole('log').isVisible(),'result viewer shares the conversation canvas');
   await f.page.locator('#profileAgentShell').screenshot({path:evidence+'/result-mobile.png'});
   const downloaded=f.page.waitForEvent('download');await f.page.getByRole('link',{name:'Download photo',exact:true}).click();const download=await downloaded;
-  check(download.suggestedFilename()==='edited-photo.png'&&fs.readFileSync(await download.path()).equals(photo),'download returns the actual saved image bytes');
+  check(download.suggestedFilename()==='edited-photo.png','download keeps the saved image filename (received '+download.suggestedFilename()+')');
+  const downloadedBytes=fs.readFileSync(await download.path());
+  check(downloadedBytes.equals(photo),'download returns the actual saved image bytes ('+downloadedBytes.length+' received; '+photo.length+' expected)');
   await f.page.getByRole('button',{name:'Edit this result',exact:true}).click();await f.send('Keep the subject and make the lighting cooler.');
   await f.page.locator('[data-profile-image-job][data-active="true"]').waitFor();const revision=f.requests.filter(item=>item.body.action==='image_edit').at(-1);
   check(revision.body.base_message_id===job.result_message_id&&revision.body.image_id===14&&revision.file===null,'a conversational revision reuses the exact saved result and style without uploading another subject');
