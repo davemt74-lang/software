@@ -53,6 +53,33 @@ function vp3_profile_promotion_native_click_decode_v1(mixed $json,array $click,a
     return $proof;
 }
 
+/** Pure admission snapshot; later visitor login changes are not its identity. */
+function profile_promotion_native_context_snapshot_v1(array $click,array $publication,array $conversation,array $binding,array $session,string $visitorAuthRevision): ?array
+{
+    $integer=static function(mixed $value,bool $zero=false):?int{
+        if(!is_int($value)&&!is_string($value))return null;
+        $text=(string)$value;
+        if(!preg_match($zero?'/\A(?:0|[1-9][0-9]{0,18})\z/D':'/\A[1-9][0-9]{0,18}\z/D',$text))return null;
+        $number=(int)$text;return (string)$number===$text?$number:null;
+    };
+    $owner=$integer($publication['owner_user_id']??null);$product=$integer($publication['product_id']??null);
+    $cid=$integer($conversation['id']??null);$aid=$integer($conversation['profile_agent_id']??null);
+    $sid=$integer($conversation['profile_session_id']??null);$visitor=$integer($conversation['visitor_user_id']??0,true);
+    if(!$owner||!$product||!$cid||!$aid||!$sid||$visitor===null||$visitor===$owner
+        ||$integer($conversation['owner_user_id']??null)!==$owner
+        ||!vp3_profile_agent_conversation_authority_valid_v1($binding,$owner)||$binding['transport']!=='native'
+        ||$integer($binding['profile_agent_id']??null)!==$aid||$integer($binding['profile_session_id']??null)!==$sid
+        ||$binding['visitor_user_id']!==$visitor||$integer($session['id']??null)!==$sid
+        ||$integer($session['owner_user_id']??null)!==$owner||!is_string($session['session_key']??null)
+        ||!preg_match('/\A[a-f0-9]{64}\z/D',$session['session_key']))return null;
+    $proof=['contract'=>VP3_PROFILE_PROMOTION_NATIVE_CLICK_V1,'click_id'=>$click['click_id']??null,
+        'owner_user_id'=>$owner,'product_id'=>$product,'publication_id'=>$publication['publication_id']??null,
+        'public_conversation_id'=>$cid,'profile_agent_id'=>$aid,'profile_session_id'=>$sid,'visitor_user_id'=>$visitor,
+        'credential_hash'=>$binding['credential_hash'],'session_hash'=>hash('sha256',$session['session_key']),
+        'visitor_auth_revision'=>$visitorAuthRevision];
+    return vp3_profile_promotion_native_click_decode_v1(json_encode($proof,JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR),$click,$publication);
+}
+
 function vp3_profile_promotion_native_click_rows_v1(PDO $pdo,string $sql,array $params,bool $current): array
 {
     if($current&&!$pdo->inTransaction())throw new LogicException('Current click proof requires an active transaction.');
@@ -102,6 +129,27 @@ function vp3_profile_promotion_owner_current_v1(PDO $pdo,int $owner): void
         if($value==='1'?empty($granted[$key]):!array_intersect($roles,$defaults[$key]??[]))vp3_profile_agent_public_unavailable_v1();
 }
 
+/** Live admission is separate from immutable private historical evidence. */
+function vp3_profile_promotion_admission_current_v1(PDO $pdo,array $ctx,int $conversationId): array
+{
+    require_once __DIR__.'/profile-agent-public-service-v110.php';
+    $owner=(int)($ctx['owner_user_id']??0);
+    vp3_profile_promotion_owner_current_v1($pdo,$owner);
+    $acceptedRevision=$ctx['accepted_visitor_auth_revision']??null;
+    $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx,true);
+    if(($ctx['conversation_authority']['transport']??null)!=='native')vp3_profile_agent_public_unavailable_v1();
+    vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId,true);
+    $visitor=(int)$ctx['conversation_authority']['visitor_user_id'];
+    if($visitor>0){
+        if(!is_string($acceptedRevision)||!hash_equals($acceptedRevision,(string)($ctx['accepted_visitor_auth_revision']??'')))
+            vp3_profile_agent_public_unavailable_v1();
+        $blocks=vp3_profile_promotion_native_click_rows_v1($pdo,'SELECT blocker_user_id,blocked_user_id FROM user_blocks
+            WHERE (blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?)',[$owner,$visitor,$visitor,$owner],true);
+        if($blocks)vp3_profile_agent_public_unavailable_v1();
+    }
+    return $ctx;
+}
+
 /**
  * Query-only historical lineage. The caller supplies current private owner/Chat
  * authority. Public visibility and a paused promotion do not erase past facts.
@@ -113,8 +161,8 @@ function vp3_profile_promotion_native_click_proof_v1(PDO $pdo,array $click,array
     if(!$proof)return null;
     $owner=$proof['owner_user_id'];$cid=$proof['public_conversation_id'];
     $rows=static fn(string $sql,array $params):array=>vp3_profile_promotion_native_click_rows_v1($pdo,$sql,$params,$current);
-    $c=$rows('SELECT owner_user_id,profile_agent_id,profile_session_id,visitor_user_id,status FROM profile_agent_conversations WHERE id=?',[$cid])[0]??null;
-    $session=$rows('SELECT owner_user_id,session_key FROM profile_visit_sessions WHERE id=?',[$proof['profile_session_id']])[0]??null;
+    $c=$rows('SELECT id,owner_user_id,profile_agent_id,profile_session_id,visitor_user_id,status FROM profile_agent_conversations WHERE id=?',[$cid])[0]??null;
+    $session=$rows('SELECT id,owner_user_id,session_key FROM profile_visit_sessions WHERE id=?',[$proof['profile_session_id']])[0]??null;
     $agent=$rows('SELECT owner_user_id FROM user_agents WHERE id=?',[$proof['profile_agent_id']])[0]??null;
     $product=$rows('SELECT owner_user_id FROM agent_commerce_products_v800 WHERE id=?',[$proof['product_id']])[0]??null;
     if(!$c||!$session||!$agent||!$product||(int)$c['owner_user_id']!==$owner
@@ -123,22 +171,19 @@ function vp3_profile_promotion_native_click_proof_v1(PDO $pdo,array $click,array
         ||(int)($c['visitor_user_id']??0)!==$proof['visitor_user_id']
         ||!in_array($c['status'],['open','owner_joined','resolved'],true)
         ||!hash_equals($proof['session_hash'],hash('sha256',(string)$session['session_key'])))return null;
-    $bindings=$rows("SELECT context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type='system' ORDER BY id LIMIT 2",[$cid]);
-    if(count($bindings)!==1)return null;
-    $binding=json_decode((string)$bindings[0]['context_json'],true);
+    $bindings=$rows("SELECT SUBSTR(context_json,1,65537) AS context_json FROM profile_agent_messages WHERE conversation_id=? AND sender_type='system' ORDER BY id LIMIT 2",[$cid]);
+    if(count($bindings)!==1||!is_string($bindings[0]['context_json'])||strlen($bindings[0]['context_json'])>65536)return null;
+    try{$binding=json_decode($bindings[0]['context_json'],true,16,JSON_THROW_ON_ERROR);}catch(JsonException){return null;}
     if(!vp3_profile_agent_conversation_authority_valid_v1(is_array($binding)?$binding:null,$owner)
         ||$binding['transport']!=='native'||$binding['visitor_user_id']!==$proof['visitor_user_id']
         ||(int)($binding['profile_agent_id']??0)!==$proof['profile_agent_id']
         ||(int)($binding['profile_session_id']??0)!==$proof['profile_session_id']
         ||!hash_equals($proof['credential_hash'],$binding['credential_hash']))return null;
-    $visitor=$proof['visitor_user_id'];
-    if($visitor>0){
-        $user=$rows('SELECT is_active,password_hash FROM users WHERE id=?',[$visitor])[0]??null;
-        $blocks=$rows('SELECT blocker_user_id,blocked_user_id FROM user_blocks WHERE (blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?)',[$owner,$visitor,$visitor,$owner]);
-        if(!$user||empty($user['is_active'])||$blocks
-            ||!hash_equals($proof['visitor_auth_revision'],hash('sha256',$visitor.'|'.(string)$user['password_hash'])))return null;
-    }
-    return $proof;
+    // visitor_auth_revision records admission evidence. Current password,
+    // active status, blocks and cookies govern NEW admission, not the identity
+    // of a past accepted click in an authorized owner's private report.
+    $expected=profile_promotion_native_context_snapshot_v1($click,$publication,$c,$binding,$session,$proof['visitor_auth_revision']);
+    return $expected!==null&&$expected==$proof?$expected:null;
 }
 
 /** Accept only a signed first-party click; browser credentials are checked now. */
@@ -164,22 +209,17 @@ function vp3_profile_promotion_accept_click_v1(PDO $pdo,array $record,string $ke
             require_once __DIR__.'/profile-agent-public-service-v110.php';
             vp3_profile_promotion_owner_current_v1($pdo,$owner);
             $ctx=vp3_profile_agent_public_context_v110($pdo,$record['profile'],$viewer,true);
-            $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx,true);
-            if(($ctx['conversation_authority']['transport']??null)!=='native')return null;
-            vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$claim['conversation_id'],true);
-            $proof=['contract'=>VP3_PROFILE_PROMOTION_NATIVE_CLICK_V1,'click_id'=>$claim['click_id'],
-                'owner_user_id'=>$owner,'product_id'=>$product,'publication_id'=>$key,
-                'public_conversation_id'=>$claim['conversation_id'],'profile_agent_id'=>(int)$ctx['agent_id'],
-                'profile_session_id'=>(int)$ctx['session_id'],'visitor_user_id'=>(int)$ctx['conversation_authority']['visitor_user_id'],
-                'credential_hash'=>$ctx['conversation_authority']['credential_hash'],
-                'session_hash'=>hash('sha256',(string)$ctx['session']['session_key']),
-                'visitor_auth_revision'=>(string)($ctx['accepted_visitor_auth_revision']??'')];
+            $ctx=vp3_profile_promotion_admission_current_v1($pdo,$ctx,$claim['conversation_id']);
+            $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$claim['conversation_id'],true);
+            $proof=profile_promotion_native_context_snapshot_v1($claim+['publication_id'=>$key],
+                ['publication_id'=>$key,'owner_user_id'=>$owner,'product_id'=>$product],$conversation,
+                $ctx['conversation_authority']+['profile_agent_id'=>(int)$ctx['agent_id'],'profile_session_id'=>(int)$ctx['session_id']],
+                $ctx['session'],(string)($ctx['accepted_visitor_auth_revision']??''));
+            if($proof===null)return null;
         }
         $accepted=profile_promotion_attribution_record_click_v1($pdo,$owner,$key,$claim['placement'],$claim['click_id'],$proof);
         if($proof!==null){
-            vp3_profile_promotion_owner_current_v1($pdo,$owner);
-            vp3_profile_agent_public_live_v1($pdo,$ctx,true);
-            vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$claim['conversation_id'],true);
+            vp3_profile_promotion_admission_current_v1($pdo,$ctx,$claim['conversation_id']);
         }
         return $accepted?$claim:null;
     });

@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-coordination-rules-v1.php';
 require_once __DIR__.'/agent-initiative-errors-v1.php';
 require_once __DIR__.'/agent-coordination-material-v1.php';
 require_once __DIR__.'/agent-profile-specialist-v1.php';
+require_once __DIR__.'/agent-product-marketing-summary-v1.php';
 
 const VP3_COORDINATION_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing','profile'];
 
@@ -92,10 +93,8 @@ function vp3_coordination_valid_refs_v1(mixed $sources): bool
         if(!is_string($ref)||!preg_match('/\A(?:gmail|office|planning|media|canvas|curiosity|casual|connected-sites|transcript|marketing|profile):[a-zA-Z0-9:@_-]{1,155}\z/D',$ref)
             ||!is_string($revision)||!preg_match('/\A[a-f0-9]{64}\z/D',$revision))return false;
         if(str_starts_with($ref,'profile:')&&vp3_profile_specialist_ref_kind_v1($ref)===null)return false;
-        if(str_starts_with($ref,'marketing:product-')){
-            require_once __DIR__.'/profile-product-marketing-ref-v1.php';
-            if(vp3_product_marketing_ref_parse_v1($ref)===null)return false;
-        }
+        if(str_starts_with($ref,'marketing:')&&!str_starts_with($ref,'marketing:campaign-')
+            &&vp3_product_marketing_ref_kind_v1($ref)===null)return false;
     }
     return true;
 }
@@ -136,26 +135,21 @@ function vp3_coordination_profile_report_draft_v1(array $report): string
 }
 
 /** A native presenter owns delivery even before any presentation receipt exists. */
-function vp3_coordination_native_presentation_owned_v1(array $goal,array $evidence): bool
+function vp3_coordination_profile_presentation_owned_v1(array $goal,array $evidence): bool
 {
     if(isset($goal['followthrough']))return false;
     $item=$evidence[$goal['primary']??'']??[];
-    if(($item['specialist']??null)==='profile'&&($item['profile_presentation_owned']??false)===true)return true;
-    return vp3_coordination_product_marketing_presentation_owned_v1($item);
+    return ($item['specialist']??null)==='profile'&&($item['profile_presentation_owned']??false)===true;
 }
 
-function vp3_coordination_product_marketing_presentation_owned_v1(array $item): bool
+/** Native plan updates and period briefings keep one presentation owner. */
+function vp3_coordination_native_presentation_owned_v1(array $goal,array $evidence): bool
 {
-    if(($item['specialist']??null)!=='marketing'||!is_string($item['ref']??null)||($item['product_marketing_presentation_owned']??false)!==true
-        ||!in_array($item['presentation_owner']??null,['initiative_product_launch_v1','initiative_promotion_outcome_v1'],true))return false;
-    require_once __DIR__.'/profile-product-marketing-ref-v1.php';
-    return vp3_product_marketing_ref_parse_v1($item['ref']??null)!==null;
-}
-
-/** Compatibility for saved Profile callers; new routing uses the shared guard. */
-function vp3_coordination_profile_presentation_owned_v1(array $goal,array $evidence): bool
-{
-    return vp3_coordination_native_presentation_owned_v1($goal,$evidence);
+    if(vp3_coordination_profile_presentation_owned_v1($goal,$evidence))return true;
+    $ref=$goal['primary']??null;$item=is_string($ref)?($evidence[$ref]??[]):[];
+    return ($item['specialist']??null)==='marketing'&&($item['marketing_presentation_owned']??false)===true
+        &&vp3_product_marketing_ref_kind_v1($ref)!==null
+        &&in_array($item['presentation_owner']??null,['agent_product_launch','product_marketing_briefing_v1'],true);
 }
 
 /** The queue and Chat only keep the bounded structured result, not the provider response. */
@@ -301,6 +295,11 @@ function vp3_coordination_item_route_v1(array $settings,array $item): array
 {
     $trigger=$item['trigger']??null;
     if($item['specialist']==='casual')return ['specialist'=>'casual','trigger'=>$trigger,'action'=>'ask'];
+    if(($item['specialist']??null)==='profile'&&($item['profile_source_kind']??null)==='commerce'
+        &&vp3_profile_specialist_ref_kind_v1($item['ref']??null)==='commerce'){
+        $canonical=vp3_coordination_route_v1($settings,'marketing',['promotion_period']);
+        if($canonical['action']==='watch')return ['specialist'=>'profile','trigger'=>$trigger,'action'=>'watch'];
+    }
     return vp3_coordination_route_v1($settings,$item['specialist'],is_string($trigger)?[$trigger]:[]);
 }
 

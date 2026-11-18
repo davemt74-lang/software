@@ -424,7 +424,7 @@ try{
     $original=file_get_contents($path);
     $digest=hash('sha256',$original);
     $pdo->prepare('INSERT INTO agent_commerce_marketing_drafts_v1 VALUES (1,71,?,?)')
-        ->execute([str_repeat('d',64),json_encode(['asset_id'=>$assetId,'asset_sha256'=>$digest],JSON_THROW_ON_ERROR)]);
+        ->execute([str_repeat('d',64),json_encode(['product_id'=>71,'asset_id'=>$assetId,'asset_sha256'=>$digest],JSON_THROW_ON_ERROR)]);
     $scope=['agent_id'=>7,'conversation_id'=>11];
     $variant=imageFixtureMarketingVariant(1,$assetId,$digest);
     $before=count($calls);

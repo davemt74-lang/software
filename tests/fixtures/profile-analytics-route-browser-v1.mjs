@@ -131,3 +131,4 @@ export async function profileAnalyticsRouteBrowserV1(browser,server,check){
       &&await f.panel().evaluate(element=>element.scrollWidth<=element.clientWidth+1),'compact exact-link destination stays contained');
   });
 }
+

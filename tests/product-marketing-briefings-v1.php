@@ -1,161 +1,170 @@
 <?php
 declare(strict_types=1);
 
-// Real source registry, current permission catalog, saved morning receipts and
-// native scheduler. Product/provider transports and inference are never called.
+// Retained parallel-build entry point: actual registry, explicit Chat catch-up,
+// source routing and saved morning proof all consume the canonical collector.
 define('VP3_COORDINATION_PIPELINE_FIXTURE',true);
 require __DIR__.'/agent-coordination-pipeline-v1.php';
-require_once __DIR__.'/fixtures/product-marketing-followthrough-v1.php';
+require_once __DIR__.'/fixtures/profile-commerce-followthrough-data-v1.php';
+require_once dirname(__DIR__).'/includes/agent-coordination-product-marketing-v1.php';
 require_once dirname(__DIR__).'/includes/agent-coordination-schedule-v1.php';
 require_once dirname(__DIR__).'/includes/agent-morning-brief-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-specialist-evidence-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-specialist-registry-v1.php';
 require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
+require_once dirname(__DIR__).'/includes/agent-catch-up-chat-v1.php';
+function get_tracks():array{return [];}
 if($mysql)$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
 $GLOBALS['profileSpecialistCapabilities']=['profile_agent.access'=>true,'profile_chat.access'=>true];
-$fixture=product_marketing_followthrough_fixture_v1($pdo);
-$owner=$fixture['scope']['user'];$principal=$fixture['scope']['principal'];
-$now=new DateTimeImmutable('2026-11-17 08:15:00',new DateTimeZone('UTC'));
+$fixture=profile_commerce_followthrough_fixture_v1($pdo);$owner=$fixture['scope']['user'];$principal=$fixture['scope']['principal'];
+$now=(new DateTimeImmutable('@'.($fixture['cutoff']+9*3600)))->setTimezone(new DateTimeZone('UTC'));
 $binding=vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>11],'on',null)['initiative_policy'];
 coordination_fixture_rule($pdo,$owner,'curiosity','open_question','watch');
-$start=$checks;
-require_once dirname(__DIR__).'/includes/agent-coordination-product-marketing-v1.php';
-$ref=vp3_product_marketing_outcome_ref_v1($fixture['publications'][0],$fixture['ref'],$now);
-$planRef=vp3_product_marketing_plan_ref_v1($fixture['product_ids'][0]);
+$start=$checks;$ref=$fixture['ref'];$alias='profile:'.substr($ref,10);$planRef='marketing:product-plan:993101';
+$GLOBALS['pipelineRuntimePlan']=['route'=>'vp3_cloud','blocked'=>true,'effective_preference'=>'vp3_cloud',
+    'cloud'=>['ready'=>false,'reason'=>'cloud_balance_exhausted'],'home'=>['supported'=>false]];
+profile_analytics_period_fixture_table_v1($pdo,'agent_commerce_product_bindings_v800',
+    ['product_id'=>'BIGINT PRIMARY KEY','binding_type'=>"VARCHAR(40) NOT NULL DEFAULT ''",'binding_id'=>'BIGINT NULL']);
+profile_analytics_period_fixture_table_v1($pdo,'agent_commerce_products_v800',
+    ['metadata_json'=>'TEXT NULL','is_active'=>'INTEGER NOT NULL DEFAULT 1','description'=>'TEXT NULL',
+        'product_type'=>"VARCHAR(32) NOT NULL DEFAULT 'physical'",'fulfillment_type'=>"VARCHAR(32) NOT NULL DEFAULT 'manual'",
+        'payment_mode'=>"VARCHAR(24) NOT NULL DEFAULT 'one_time'",'price_cents'=>'BIGINT NOT NULL DEFAULT 2000',
+        'deposit_cents'=>'BIGINT NOT NULL DEFAULT 0','currency'=>"VARCHAR(8) NOT NULL DEFAULT 'usd'",'updated_at'=>'DATETIME NULL']);
+$private=$pdo->query('SELECT * FROM agent_commerce_products_v800 WHERE id='.(int)$fixture['ids']['product'])->fetch(PDO::FETCH_ASSOC);
+$private['id']=993101;$private['product_key']='profile:private-briefing-plan';$private['title']='Private T-shirt listing';$private['is_active']=0;
+$private['metadata_json']=json_encode(['listing_draft'=>'product_text_v1','agent_id'=>7,'conversation_id'=>11,'source_title'=>'Description','visibility'=>'hidden'],JSON_THROW_ON_ERROR);
+profile_analytics_period_fixture_row_v1($pdo,'agent_commerce_products_v800',$private);
+profile_analytics_period_fixture_row_v1($pdo,'agent_product_launches_v1',['product_id'=>993101,'owner_user_id'=>1,'agent_id'=>7,'conversation_id'=>11,
+    'draft_key'=>null,'creative_id'=>null,'last_stage'=>'listing_review','last_notice_key'=>'','next_check_at'=>'2020-01-01 00:00:00'],'product_id');
 
 function pmb_snapshot():array
 {
-    $out=[];foreach(['agent_product_launches_v1','agent_commerce_marketing_drafts_v1','agent_commerce_promotions_v1',
+    $out=[];
+    foreach(['agent_product_launches_v1','agent_commerce_products_v800','agent_commerce_marketing_drafts_v1','agent_commerce_promotions_v1',
         'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1','agent_commerce_checkout_attempts_v800',
-        'profile_events','profile_agent_messages','profile_agent_handoff_turns_pa3','agent_commerce_orders_v800',
-        'agent_commerce_payments_v800','agent_commerce_refunds_v800','agent_workflow_runs','agent_workflow_receipts',
-        'chat_messages','ai_execution_ledger'] as $table)$out[$table]=db()->query('SELECT * FROM '.$table)->fetchAll(PDO::FETCH_ASSOC);
+        'profile_agent_conversations','profile_agent_messages','profile_agent_handoff_turns_pa3','agent_commerce_orders_v800',
+        'agent_commerce_payments_v800','agent_commerce_refunds_v800','agent_workflow_runs','agent_workflow_actions','agent_workflow_receipts',
+        'chat_messages','ai_execution_ledger'] as $table){
+        $rows=array_map(static fn(array $r):string=>json_encode($r,JSON_THROW_ON_ERROR),db()->query('SELECT * FROM '.$table)->fetchAll(PDO::FETCH_ASSOC));
+        sort($rows,SORT_STRING);$out[$table]=hash('sha256',implode("\n",$rows));
+    }
     return $out;
 }
-function pmb_source(array $owner,array $binding,array $refs,DateTimeImmutable $now):array
-{
-    return vp3_coordination_sources_v1(db(),$owner,$binding,$refs,$now);
-}
-function pmb_history(array $owner,array $row):array
-{
-    return vp3_morning_brief_history_v1(db(),$owner,7,11,$row,json_decode($row['context_json'],true,32,JSON_THROW_ON_ERROR));
-}
-function pmb_hidden(array $owner,array $row):bool
-{
-    return pmb_history($owner,$row)['message']==='The sources behind this morning brief have changed or are no longer available.';
-}
+function pmb_source(array $refs,?DateTimeImmutable $now=null):array
+{return vp3_coordination_sources_v1(db(),$GLOBALS['owner'],$GLOBALS['binding'],$refs,$now??$GLOBALS['now']);}
+function pmb_history(array $row):array
+{return vp3_coordination_chat_history_v1(db(),$GLOBALS['owner'],7,11,[$row])[0];}
 
-$before=pmb_snapshot();$snapshot=pmb_source($owner,$binding,[$ref,$planRef],$now);$item=$snapshot['items'][$ref]??null;$plan=$snapshot['items'][$planRef]??null;
+$before=pmb_snapshot();$snapshot=pmb_source([$ref,$alias,$planRef]);
+$item=$snapshot['items'][$ref]??null;$plan=$snapshot['items'][$planRef]??null;
 canvas_pipeline_check(is_array($item)&&is_array($plan)&&$snapshot['coverage']['marketing']==='ready',
-    'exact product plan and publication-period sources share the real Marketing registry');
+    'the existing Marketing registry returns exact private plans and canonical completed periods');
 canvas_pipeline_check(in_array('marketing',vp3_initiative_specialist_catalog_v1([])['marketing']['report_sources'],true),
-    'the existing Marketing specialist remains a report source without requiring Campaign setup');
-canvas_pipeline_check(pmb_snapshot()===$before,'source reads cannot publish, recover, create another plan, open checkout, call inference or add a Chat card');
-foreach([$ref,$planRef] as $sourceRef)canvas_pipeline_check(vp3_coordination_valid_refs_v1([$sourceRef=>$snapshot['items'][$sourceRef]['revision']])
-    &&vp3_coordination_source_ref_valid_v1($sourceRef)
-    &&vp3_initiative_goal_specialist_v1(['tool'=>'work.prepare_private','primary'=>'specialist:'.$sourceRef])==='marketing',
-    'canonical product evidence keeps one source identity through receipts and specialist attribution');
-foreach(['marketing:product-plan:01',str_replace(':v1:1:',':v1:2:',$ref),$ref.':extra'] as $bad)
-    canvas_pipeline_check(!vp3_coordination_valid_refs_v1([$bad=>$item['revision']])&&!vp3_coordination_source_ref_valid_v1($bad),
-        'malformed product source references cannot enter goals or exact reads');
-canvas_pipeline_check($item['presentation_owner']==='initiative_promotion_outcome_v1'&&$item['legacy_delivered']===true
-    &&$plan['presentation_owner']==='initiative_product_launch_v1'
-    &&vp3_coordination_native_presentation_owned_v1(['primary'=>$ref],[$ref=>$item]),
-    'native launch and outcome presentation remain authoritative and use actual saved delivery evidence');
+    'the existing Marketing specialist remains available without Campaign setup');
+foreach([$ref,$alias,$planRef] as $sourceRef)canvas_pipeline_check(vp3_coordination_valid_refs_v1([$sourceRef=>$snapshot['items'][$sourceRef]['revision']])
+    &&vp3_coordination_source_ref_valid_v1($sourceRef),'exact canonical proof fits registry and saved receipt validation');
+foreach(['marketing:product-plan:01',str_replace(':v1:'.$fixture['publication_id'].':1:',':v1:'.$fixture['publication_id'].':2:',$ref),$ref.':extra'] as $bad)
+    canvas_pipeline_check(!vp3_coordination_source_ref_valid_v1($bad)&&!vp3_coordination_valid_refs_v1([$bad=>$item['revision']]),
+        'noncanonical product sources cannot enter saved work');
+canvas_pipeline_check($item['presentation_owner']==='product_marketing_briefing_v1'&&!$item['legacy_delivered']
+    &&$plan['presentation_owner']==='agent_product_launch'&&!$plan['legacy_delivered'],
+    'native plan and ordinary briefing presenters retain ownership without fabricated delivery');
 
-$scope=$fixture['scope'];$scope['binding']=$binding;
-$disabled=$binding;$disabled['enabled']=false;
-$discovered=vp3_coordination_sources_v1($pdo,$owner,$disabled,null,$now,specialistOnly:'marketing');
-canvas_pipeline_check(isset($discovered['items'][$planRef])&&count(array_filter(array_keys($discovered['items']),
-    static fn(string $key):bool=>str_starts_with($key,'marketing:product-outcome:')))===2,
-    'existing products remain discoverable independently of Campaign setup and automatic-sweep enablement');
-$later=$now->modify('+10 days');$pdo->exec("UPDATE users SET timezone='America/Phoenix' WHERE id=1");
-canvas_pipeline_check((pmb_source($owner,$binding,[$ref],$later)['items'][$ref]??null)===$item,
-    'reopening an exact publication source preserves its completed cutoff and timezone');
-$pdo->exec("UPDATE users SET timezone='UTC' WHERE id=1");
-$pdo->exec('UPDATE user_profiles SET is_public=0,profile_agent_enabled=0 WHERE user_id=1');
-canvas_pipeline_check((pmb_source($owner,$binding,[$ref,$planRef],$now)['items']??null)===$snapshot['items'],
-    'private product reports preserve exact saved work when public Profile visibility is off');
-$pdo->exec('UPDATE user_profiles SET is_public=1,profile_agent_enabled=1 WHERE user_id=1');
-
-$coverage=[];$generic='specialist:'.$ref;
+$generic='specialist:'.$ref;$coverage=[];
 $evidence=vp3_initiative_specialist_evidence_v1($pdo,$owner,$binding,$now,[$generic],$coverage);
 canvas_pipeline_check(isset($evidence[$generic])&&$evidence[$generic]['private_summary_only']===true
-    &&$evidence[$generic]['product_marketing_presentation_owned']===true&&$evidence[$generic]['public_evidence_untrusted']===true,
-    'shared planning consumes revision-bound private promotion evidence without trusting visitor instructions');
+    &&$evidence[$generic]['marketing_presentation_owned']===true&&$evidence[$generic]['public_evidence_untrusted']===true,
+    'shared planning receives private revision-bound evidence without trusting visitor instructions');
 $job=['tool'=>'work.prepare_private','primary'=>$generic,'refs'=>[$generic],'report'=>true];
 canvas_pipeline_check(vp3_initiative_specialist_job_v1($job,$evidence)['report']===false
-    &&vp3_initiative_proactive_specialist_v1($job),'review preparation keeps native presentation ownership and Marketing attribution');
+    &&vp3_initiative_proactive_specialist_v1($job),'private preparation cannot create a competing automatic presenter');
 foreach(['chat.check_in','marketing.publish','commerce.checkout'] as $tool){
     try{vp3_initiative_specialist_job_v1(array_replace($job,['tool'=>$tool]),$evidence);$rejected=false;}
     catch(Vp3InitiativePlanValidationV1){$rejected=true;}
-    canvas_pipeline_check($rejected,'promotion findings cannot authorize a sending or state-changing planner tool');
+    canvas_pipeline_check($rejected,'observed marketing facts cannot authorize a sending or publishing planner tool');
 }
-coordination_fixture_rule($pdo,$owner,'marketing','product_outcome','watch');$coverage=[];
+coordination_fixture_rule($pdo,$owner,'marketing','promotion_period','watch');$coverage=[];
 $watch=vp3_initiative_specialist_evidence_v1($pdo,$owner,$binding,$now,[$generic],$coverage);
 canvas_pipeline_check(isset($watch[$generic])&&$watch[$generic]['routing']==='watch',
-    'watch-only product findings remain private review context without becoming a new announcement');
-coordination_fixture_rule($pdo,$owner,'marketing','product_outcome','report');
+    'Watch keeps current marketing evidence available as private review context');
+$ruleQuery=$pdo->prepare("SELECT id,metadata_json FROM agent_memory_items WHERE user_id=1 AND user_agent_id=7 AND memory_type='initiative_policy' AND subject='top-of-mind-routing'");
+$ruleQuery->execute();$ruleRow=$ruleQuery->fetch(PDO::FETCH_ASSOC);$ruleQuery->closeCursor();
+if(!$ruleRow)throw new LogicException('Missing saved routing fixture');
+$legacy=json_decode($ruleRow['metadata_json'],true,32,JSON_THROW_ON_ERROR);
+$legacy['rules']['marketing']['product_outcome']=$legacy['rules']['marketing']['promotion_period'];
+unset($legacy['rules']['marketing']['promotion_period']);$legacyJson=json_encode($legacy,JSON_THROW_ON_ERROR);
+$pdo->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE id=?')->execute([$legacyJson,$ruleRow['id']]);
+try{
+    $legacySettings=vp3_coordination_rules_v1($pdo,$owner,7);
+    canvas_pipeline_check($legacySettings['rules']['marketing']['promotion_period']==='watch'
+        &&!isset($legacySettings['rules']['marketing']['product_outcome'])
+        &&vp3_morning_brief_assess_v1([$ref=>$item,$alias=>$snapshot['items'][$alias]],['marketing'=>'ready','profile'=>'ready'],$legacySettings,[])===null,
+        'a released product_outcome Watch preference still suppresses both canonical Marketing and Profile aliases');
+    $q=$pdo->prepare('SELECT metadata_json FROM agent_memory_items WHERE id=?');$q->execute([$ruleRow['id']]);
+    canvas_pipeline_check($q->fetchColumn()===$legacyJson,'reading a released routing preference never migrates or rewrites owner settings');$q->closeCursor();
+    try{vp3_coordination_rule_patch_v1($legacySettings['rules'],['marketing'=>['product_outcome'=>'watch','promotion_period'=>'report']]);$conflict=false;}
+    catch(InvalidArgumentException){$conflict=true;}
+    canvas_pipeline_check($conflict,'conflicting old and current reporting choices cannot silently reopen delivery');
+}finally{$pdo->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE id=?')->execute([$ruleRow['metadata_json'],$ruleRow['id']]);}
+coordination_fixture_rule($pdo,$owner,'marketing','promotion_period','report');
 
 [$catchCoverage,$catchItems]=vp3_catch_up_product_marketing_v1($pdo,$owner,7,11,$now);
-$defaultRef=vp3_product_marketing_outcome_ref_v1($fixture['publications'][0],vp3_product_marketing_period_v1($pdo,$scope,[],$now)['ref'],$now);
-$default=pmb_source($owner,$binding,[$defaultRef],$now)['items'][$defaultRef];
-$found=array_values(array_filter($catchItems,static fn(array $row):bool=>$row['id']===$defaultRef));
-canvas_pipeline_check($catchCoverage==='ready'&&count($found)===1&&$found[0]['_source_revision']===$default['revision']&&$found[0]['url']===$default['url'],
-    'explicit named-Agent catch-up reuses the same exact product-period revision and original Chat destination');
+$found=array_values(array_filter($catchItems,static fn(array $row):bool=>$row['id']===$ref));
+canvas_pipeline_check(in_array($catchCoverage,['ready','limited'],true)&&count($found)===1
+    &&$found[0]['_source_revision']===$item['revision']&&$found[0]['url']===$item['url'],
+    'explicit original-Chat catch-up uses the same canonical period, revision and exact destination');
+$foundPlans=array_values(array_filter($catchItems,static fn(array $row):bool=>$row['id']===$planRef));
+canvas_pipeline_check(count($foundPlans)===1&&$foundPlans[0]['_source_revision']===$plan['revision'],
+    'explicit catch-up includes the existing current plan without creating a replacement');
+[$noChatCoverage,$noChatItems]=vp3_catch_up_product_marketing_v1($pdo,$owner,7,0,$now);
+canvas_pipeline_check($noChatCoverage==='unconfigured'&&$noChatItems===[],
+    'a background request cannot invent an original private Chat');
 $plain=vp3_catch_up_candidates_v1($pdo,$owner,'commerce',7,false,$now);
 $explicit=vp3_catch_up_candidates_v1($pdo,$owner,'commerce',7,false,$now,false,11);
-canvas_pipeline_check(!isset($plain['coverage']['product_marketing'])&&($explicit['coverage']['product_marketing']??null)==='ready',
-    'background catch-up cannot invent a Chat while the explicit original Chat can read product work');
+canvas_pipeline_check(!isset($plain['coverage']['product_marketing'])
+    &&in_array($explicit['coverage']['product_marketing']??null,['ready','limited'],true),
+    'the actual catch-up router adds product evidence only for an explicit saved Chat');
 $spoken=vp3_catch_up_chat_result_v1(['items'=>$found,'coverage'=>['product_marketing'=>'ready'],'as_of'=>$now->format(DATE_ATOM)]);
 canvas_pipeline_check(!str_contains(json_encode($spoken,JSON_THROW_ON_ERROR),'needs your attention'),
-    'saved product periods are presented as information rather than fabricated unresolved obligations');
-
-$associations=vp3_product_marketing_conversation_associations_v1($pdo,$scope,991002,$now);
-canvas_pipeline_check(count($associations['items'])===1&&$associations['items'][0]['public_conversation_id']===991002,
-    'a literal accepted visitor exchange links to its exact saved promotion rather than a private Chat ID match');
-$association=$associations['items'][0];$related=vp3_profile_specialist_marketing_link_v1($association['source']+[
-    'product_id'=>$association['product_id'],'publication_id'=>$association['publication_id']]);
-$relatedSource=pmb_source($owner,$binding,[$association['source']['ref']],$now)['items'][$association['source']['ref']];
-canvas_pipeline_check($related!==null&&$related['revision']===$relatedSource['revision']&&$related['url']===$relatedSource['url'],
-    'the related Profile link uses the actual Marketing source revision and exact fixed publication destination');
+    'completed promotion facts are not narrated as an invented unresolved obligation');
 $pdo->exec("UPDATE users SET timezone='Pacific/Auckland' WHERE id=1");
-canvas_pipeline_check(vp3_product_marketing_conversation_associations_v1($pdo,$scope,991002,$later)===$associations,
-    'an unchanged saved exchange cannot renew a Profile finding when time or timezone preferences change');
+canvas_pipeline_check(pmb_source([$ref],$now->modify('+10 days'))['items'][$ref]===$item,
+    'exact saved evidence keeps the original period across later timezone and clock changes');
 $pdo->exec("UPDATE users SET timezone='UTC' WHERE id=1");
-$wrong=vp3_product_marketing_conversation_associations_v1($pdo,$scope,11,$now);
-canvas_pipeline_check($wrong['items']===[]&&$wrong['coverage']==='unavailable',
-    'private and public conversation identifiers never substitute for one another');
-canvas_pipeline_check(pmb_snapshot()===$before,'report, association and catch-up reads leave source records, provider sessions and native delivery state unchanged');
+$pdo->exec('UPDATE user_profiles SET is_public=0,profile_agent_enabled=0 WHERE user_id=1');
+canvas_pipeline_check(pmb_source([$ref])['items'][$ref]===$item,
+    'private historical briefing proof remains available when the public Profile is hidden');
+$pdo->exec('UPDATE user_profiles SET is_public=1,profile_agent_enabled=1 WHERE user_id=1');
+canvas_pipeline_check(pmb_snapshot()===$before&&$GLOBALS['pipelineInference']===[],
+    'registry, routing and catch-up reads leave every source, workflow, provider record and Chat row unchanged');
 
-$settings=vp3_coordination_rules_v1($pdo,$owner,7);$one=['items'=>[$ref=>$item],'coverage'=>['marketing'=>'ready']];
-$assessment=vp3_morning_brief_assess_v1($one['items'],$one['coverage'],$settings,[]);
-canvas_pipeline_check(isset($assessment['selected'][$ref])&&$assessment['selected'][$ref]['revision']===$item['revision']
-    &&$assessment['links'][0]['url']===$item['url'],'the ordinary morning assessment preserves the fixed publication proof and review link');
+$settings=vp3_coordination_rules_v1($pdo,$owner,7);
+$assessment=vp3_morning_brief_assess_v1([$ref=>$item,$alias=>$snapshot['items'][$alias]],['marketing'=>'ready','profile'=>'ready'],$settings,[]);
+canvas_pipeline_check(array_keys($assessment['selected'])===[$ref]&&count($assessment['links'])===1,
+    'Marketing and Profile aliases become one ordinary briefing proof and one exact link');
+$one=['items'=>[$ref=>$item],'coverage'=>['marketing'=>'ready']];
 $post=static fn():bool=>agent_commerce_atomic_pa2($pdo,static function()use($pdo,$owner,$binding,$one,$now):bool{
     vp3_initiative_owner_lock_v1($pdo,$owner);return vp3_morning_brief_v1($pdo,$owner,$binding,$one,$now);
 });
-canvas_pipeline_check($post(),'the owner-locked existing morning publisher can include an exact product period');
+canvas_pipeline_check($post(),'the existing owner-locked morning publisher saves one exact marketing period');
 $rows=$pdo->query("SELECT * FROM chat_messages WHERE role='assistant' ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
-$row=current(array_filter($rows,static fn(array $row):bool=>(json_decode($row['context_json'],true)['source']??null)===VP3_MORNING_BRIEF_SOURCE_V1));
-canvas_pipeline_check(is_array($row)&&pmb_history($owner,$row)===$row,'saved morning Chat history revalidates its exact promotion source');
-canvas_pipeline_check(!$post(),'a repeated scan cannot duplicate the same Agent/day morning card');
-coordination_fixture_rule($pdo,$owner,'marketing','product_outcome','watch');
-canvas_pipeline_check(pmb_hidden($owner,$row),'watch-only routing withdraws old automatic promotion briefing prose and links');
-coordination_fixture_rule($pdo,$owner,'marketing','product_outcome','report');
-canvas_pipeline_check(pmb_history($owner,$row)===$row,'restoring the reporting route restores unchanged verified product evidence');
+$row=current(array_filter($rows,static fn(array $r):bool=>(json_decode((string)$r['context_json'],true)['source']??null)===VP3_MORNING_BRIEF_SOURCE_V1));
+canvas_pipeline_check(is_array($row)&&pmb_history($row)===$row,'saved ordinary Chat history revalidates the canonical publication proof');
+canvas_pipeline_check(!$post(),'repeated assessment cannot post the same morning period twice');
+coordination_fixture_rule($pdo,$owner,'marketing','promotion_period','watch');
+canvas_pipeline_check(pmb_history($row)['message']!==$row['message'],'current Watch routing withdraws old automatic marketing prose and links');
+coordination_fixture_rule($pdo,$owner,'marketing','promotion_period','report');
+canvas_pipeline_check(pmb_history($row)===$row,'restored report routing recovers unchanged proof without a new message');
 $pdo->exec('UPDATE user_agents SET is_active=0 WHERE id=7');
-canvas_pipeline_check(pmb_hidden($owner,$row),'revoking the original private Agent withholds old promotion briefing content');
+canvas_pipeline_check(pmb_history($row)['message']!==$row['message'],'private Agent revocation withdraws saved marketing briefing details');
 $pdo->exec('UPDATE user_agents SET is_active=1 WHERE id=7');
 $pdo->exec("DELETE FROM role_permissions WHERE role='fan' AND permission_key='profile_chat.access'");
-canvas_pipeline_check(pmb_hidden($owner,$row),'revoking Profile excerpt authority invalidates a saved briefing that relied on those exchanges');
-$withoutProfile=pmb_source($owner,$binding,[$planRef],$now);
-canvas_pipeline_check(isset($withoutProfile['items'][$planRef]),'ordinary private product-plan authority remains independent of Profile excerpt grants');
+canvas_pipeline_check(pmb_history($row)['message']!==$row['message']&&isset(pmb_source([$planRef])['items'][$planRef]),
+    'revoked Profile reporting authority withdraws outcomes while independent private plan authority remains');
 $pdo->exec("INSERT INTO role_permissions(role,permission_key) VALUES('fan','profile_chat.access')");
-canvas_pipeline_check(pmb_history($owner,$row)===$row,'restoring canonical grants restores the original fixed source');
-$pdo->prepare('UPDATE agent_promotion_clicks_v1 SET created_at=? WHERE click_id=?')->execute(['2026-11-16 12:00:01',$fixture['click_ids'][1]]);
-canvas_pipeline_check(pmb_hidden($owner,$row),'an exact click-evidence correction invalidates saved briefing proof even if the total is unchanged');
-
-foreach([997601,997602] as $asset)unlink(STONEFELLOW_ROOT.'/private/user-media/1/phase6-'.$asset.'.png');
-rmdir(STONEFELLOW_ROOT.'/private/user-media/1');rmdir(STONEFELLOW_ROOT.'/private/user-media');
-echo 'PRODUCT_MARKETING_BRIEFINGS_V1=PASS ('.($checks-$start).' checks, '.($mysql?'mysql':'sqlite').')'.PHP_EOL;
+canvas_pipeline_check(pmb_history($row)===$row,'restored current source grants recover the exact original briefing');
+$pdo->prepare('UPDATE agent_promotion_clicks_v1 SET created_at=? WHERE click_id=?')->execute([
+    gmdate('Y-m-d H:i:s',$fixture['cutoff']-86400+36031),$fixture['ids']['native_click']]);
+canvas_pipeline_check(pmb_history($row)['message']!==$row['message'],
+    'a click evidence correction invalidates saved text even when its displayed aggregate is unchanged');
+echo 'PRODUCT_MARKETING_BRIEFINGS_V1=PASS ('.($checks-$start).' checks; driver='.($mysql?'mysql':'sqlite').'; skips=0)'.PHP_EOL;

@@ -41,6 +41,12 @@ function profile_agent_transcript_brain_context_v255(
     if ($bookingContext) $commerceContext = array_merge($bookingContext, $commerceContext);
 
     if ($ownerId < 1
+        || !function_exists('personal_capability_has_v242')
+        || !function_exists('agent_brain_schema_ready')
+        || !function_exists('table_exists')
+        || !function_exists('column_exists')
+        || !function_exists('user_agent_principal_v236')
+        || !function_exists('user_data_policy_can_use_v236')
         || !personal_capability_has_v242('agent_brain.access', $ownerUser)
         || !agent_brain_schema_ready()
         || !table_exists('agent_memory_items')) {

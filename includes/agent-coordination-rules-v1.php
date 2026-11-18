@@ -62,17 +62,18 @@ function vp3_coordination_rule_definitions_v1(): array
             'daily_sales'=>['label'=>'Daily sales totals are available','default'=>'report','actions'=>['watch','report']],
         ]],
         'marketing'=>['label'=>'Marketing','triggers'=>[
+            'product_plan'=>['label'=>'Product marketing plan status','default'=>'watch','actions'=>['watch','report']],
+            'promotion_period'=>['label'=>'Completed promotion reporting period','default'=>'report','actions'=>['watch','report']],
             'optimization_ready'=>['label'=>'Campaign recommendation ready','default'=>'report','actions'=>['watch','ask','report']],
             'setup_blocker'=>['label'=>'Campaign setup needs attention','default'=>'ask','actions'=>['watch','ask','report']],
             'campaign_outcome'=>['label'=>'Verified campaign outcome available','default'=>'report','actions'=>['watch','report']],
-            'product_plan'=>['label'=>'Existing product marketing plan','default'=>'ask','actions'=>['watch','ask','report']],
-            'product_outcome'=>['label'=>'Verified product promotion period','default'=>'report','actions'=>['watch','report']],
         ]],
         'transcripts'=>['label'=>'Transcriptions','triggers'=>[
             'open_question'=>['label'=>'An open question in a saved analysis','default'=>'ask','actions'=>['watch','ask','report']],
             'open_followup'=>['label'=>'An open follow-up in a saved analysis','default'=>'report','actions'=>['watch','report']],
         ]],
         'profile'=>['label'=>'Profile','triggers'=>[
+            'commerce_followthrough'=>['label'=>'Verified product marketing follow-through','default'=>'report','actions'=>['watch','report']],
             'analytics_period'=>['label'=>'Completed Profile reporting period','default'=>'report','actions'=>['watch','report']],
             'needs_owner'=>['label'=>'A visitor needs your input','default'=>'ask','actions'=>['watch','ask','report']],
             'open_conversation'=>['label'=>'An open visitor conversation','default'=>'watch','actions'=>['watch','ask','report']],
@@ -108,6 +109,13 @@ function vp3_coordination_rule_patch_v1(array $rules, mixed $patch): array
     if (!is_array($patch) || $patch === []) throw new InvalidArgumentException('Choose a Top of Mind rule.');
     $definitions = vp3_coordination_rule_definitions_v1();
     foreach ($patch as $specialist=>$choices) {
+        // Preserve the released Product Marketing control record while the
+        // report's metric/ref contract is consolidated. Reads never rewrite it.
+        if($specialist==='marketing'&&is_array($choices)&&array_key_exists('product_outcome',$choices)){
+            if(array_key_exists('promotion_period',$choices)&&$choices['promotion_period']!==$choices['product_outcome'])
+                throw new InvalidArgumentException('Conflicting product marketing reporting rules.');
+            $choices['promotion_period']=$choices['product_outcome'];unset($choices['product_outcome']);
+        }
         $triggers = $definitions[$specialist]['triggers'] ?? null;
         if ($triggers === null || !is_array($choices) || $choices === []) {
             throw new InvalidArgumentException('Choose a known specialist and filter.');

@@ -23,8 +23,6 @@ try{$participantUpdatesEnabled=db()?vp3_participant_settings_v1(db(),$orbUser)['
 <link rel="stylesheet" href="<?= e(url('/chat-notifications-drawer-v240.css?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/chat-notifications-drawer-v240.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-top-of-mind-v1.css?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-top-of-mind-v1.css'),0,12))) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-activity-hub-v1.css?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-activity-hub-v1.css'),0,12))) ?>">
-<link rel="stylesheet" href="<?= e(url('/product-marketing-report-v1.css?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/product-marketing-report-v1.css'),0,12))) ?>">
-<script src="<?= e(url('/product-marketing-report-v1.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/product-marketing-report-v1.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-activity-hub-v1.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-activity-hub-v1.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-top-of-mind-v1.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-top-of-mind-v1.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-orb-adapter.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-orb-adapter.js'),0,12))) ?>" defer></script>

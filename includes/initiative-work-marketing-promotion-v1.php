@@ -54,12 +54,7 @@ function initiative_work_marketing_promotion_source_v1(PDO $pdo, int $owner, arr
         throw new DomainException('Choose an exact saved marketing draft.', 422);
     }
     $current = initiative_work_marketing_context_v1($pdo, $owner, $scope, $body, $lock);
-    $stmt = $pdo->prepare('SELECT draft_json FROM agent_commerce_marketing_drafts_v1
-        WHERE owner_user_id=? AND product_id=? AND request_key=?'.($lock ? agent_commerce_lock_pa2($pdo) : ''));
-    $stmt->execute([$owner, $productId, $draftId]);
-    $json = $stmt->fetchColumn();
-    if (!is_string($json)) throw new DomainException('The marketing draft is unavailable.', 404);
-    $draft = json_decode($json, true, 8, JSON_THROW_ON_ERROR);
+    $draft = initiative_work_marketing_draft_v1($pdo,$owner,$productId,$draftId,$lock);
     if ((string)($draft['asset_id'] ?? '') !== $current['asset']['id']
         || ($draft['asset_sha256'] ?? '') !== $current['asset']['digest']) {
         throw new DomainException('The original product image changed. Save a new marketing draft.', 409);

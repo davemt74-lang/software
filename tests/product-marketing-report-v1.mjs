@@ -1,122 +1,100 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {workspaceDocument,WorkspaceElement} from './fixtures/profile-workspace-dom-v1.mjs';
-import {publication,publicationId,publicationUrl,periodRef,review,plan} from './fixtures/product-marketing-ui-v1.mjs';
+import {workspaceDocument} from './fixtures/profile-workspace-dom-v1.mjs';
+import {marketingRef,publicationId} from './fixtures/marketing-followthrough-ui-v1.mjs';
 
-const report=readFileSync(new URL('../product-marketing-report-v1.js',import.meta.url),'utf8');
-const media=readFileSync(new URL('../chat-media-commands-v1.js',import.meta.url),'utf8');
-const chat=readFileSync(new URL('../chat.js',import.meta.url),'utf8');
-const prelude=chat.slice(chat.indexOf('\n')+1,chat.indexOf("  const thread = document.getElementById('chatThread');"));
-const identity=chat.slice(chat.indexOf('  function initiativeIdentityMatchesV1()'),chat.indexOf('  function validInitiativeReplyV1('));
-const remember=chat.slice(chat.indexOf('  function rememberConversation()'),chat.indexOf('  function initialConversation()'));
-const getter=chat.split('\n').find(line=>line.trimStart().startsWith('mediaCommandIntent:'));
-let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;};
-const tick=()=>new Promise(resolve=>setImmediate(resolve));
-WorkspaceElement.prototype.showModal=function(){this.open=true;};
-WorkspaceElement.prototype.hasAttribute=function(name){return this.attributes.has(name);};
-WorkspaceElement.prototype.getClientRects=function(){return this.isConnected?[{}]:[];};
-const setAttribute=WorkspaceElement.prototype.setAttribute;
-WorkspaceElement.prototype.setAttribute=function(name,value){setAttribute.call(this,name,value);if(name.startsWith('data-'))this.dataset[name.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase())]=String(value);};
-function fixture({query=publicationUrl().slice('/chat.php'.length),ready=true,bridge=false}={}){
-  const document=workspaceDocument(),events=new Map(),requests=[],launches=[],ticks=new Set();
-  const state={owner:1,agent:7,cid:11,ready,revision:1,valid:true};
-  const location={origin:'https://example.test',href:'https://example.test/chat.php'+query,search:query};
-  const window={STONEFELLOW_CHAT:{userId:1,agentId:7,workingAttentionBinding:'binding',csrf:'csrf',endpoint:'/api/chat-v236.php'},
-    VP3_INITIATIVE_WORKBENCH:{ownerKey:'1',agentId:7,csrf:'csrf',endpoint:'/api/initiative-workbench-v1.php',mediaEndpoint:'/api/media-library-v86.php'},
-    VP3InitiativeWorkbench:{openProductLaunch:marker=>{launches.push(marker);return true;}},
-    addEventListener(name,fn){if(!events.has(name))events.set(name,new Set());events.get(name).add(fn);},
-    dispatchEvent(event){for(const fn of [...(events.get(event.type)||[])])fn(event);},
-    setInterval(fn){ticks.add(fn);return fn;},history:{replaceState(_s,_t,href){const u=new URL(href,location.origin);location.href=u.href;location.search=u.search;}}};
-  const continuity={mediaCommandContext:()=>{
-    if(!state.ready||!state.valid)return null;
-    const bound={ownerKey:String(state.owner),agentId:state.agent,conversationId:state.cid,revision:state.revision};
-    bound.isCurrent=()=>state.ready&&state.valid&&state.owner===Number(bound.ownerKey)&&state.agent===bound.agentId&&state.cid===bound.conversationId&&state.revision===bound.revision;return bound;
-  }};window.STONEFELLOW_CHAT_CONTINUITY_V87=continuity;
-  const context={window,document,location,URL,URLSearchParams,Date,Intl,atob,btoa,AbortController,Event,setTimeout,clearTimeout,clearInterval:fn=>ticks.delete(fn),
-    history:document.createElement('div'),contextReady:true,conversationId:11,selectionKey:'selected',localStorage:{setItem(){}},
-    fetch:async(_url,options)=>{const body=JSON.parse(options.body);let resolve;const response=new Promise(r=>{resolve=r;});requests.push({body,signal:options.signal,resolve});return response;}};
-  vm.createContext(context);vm.runInContext(report,context);
-  if(bridge){vm.runInContext(prelude+identity+remember+'\nwindow.remember=rememberConversation;window.mediaIntent=({'+getter+'}).mediaCommandIntent;',context);continuity.mediaCommandIntent=window.mediaIntent;}
-  const load=()=>vm.runInContext(media,context);
-  const respond=async(index=0,{status=200,value=publication()}={})=>{const request=requests[index];assert.ok(request,'request exists');request.resolve({ok:status===200,status,json:async()=>status===200?{ok:true,owner_key:'1',agent_id:7,conversation_id:11,tool:'marketing',outcome:value,resume:value.resume}:{ok:false,error:'Source unavailable'}});await tick();};
-  return {window,document,context,location,state,requests,launches,load,respond,ticks,renderer:window.VP3ProductMarketingV1,event:(type,detail)=>window.dispatchEvent({type,detail}),host:()=>document.body.querySelector('[data-media-command="publication"]')};
+// Exercise the actual Hub summary/related-source projection and its one detail handoff.
+const script=readFileSync(new URL('../agent-activity-hub-v1.js',import.meta.url),'utf8');
+const start=script.indexOf('  const profileReportSections = ['),end=script.indexOf('  function renderCuriosityWorkspace(current)',start);
+const summaryStart=script.indexOf('  function renderProductMarketingReview(current)'),summaryEnd=script.indexOf('  function renderMarketingReview(current)',summaryStart);
+assert.ok(start>0&&end>start&&summaryStart>0&&summaryEnd>summaryStart);
+let checks=0;const check=(truth,label)=>{assert.ok(truth,label);checks++;};
+const ref=marketingRef(),scope={owner:1,agent:7,cid:11,binding:'binding'};
+const href=(reference=ref,agent=7,chat=11)=>'/sub/chat.php?'+new URLSearchParams({agent:agent===0?'system':String(agent),conversation_id:String(chat),marketing_followthrough:reference});
+const planHref='/sub/chat.php?agent=7&conversation_id=11&marketing_plan=87';
+const summary=()=>({contract:'vp3.product-marketing-summary.v1',coverage:'ready',items:[
+  {ref:'marketing:product-plan:87',revision:'a'.repeat(64),kind:'plan',title:'Current shirt plan',summary:'Review the saved design.',next_step:'Review the original plan.',status:'design_review',url:planHref},
+  {ref,revision:'b'.repeat(64),kind:'followthrough',title:'Saved promotion <script>bad()</script>',summary:'3 recorded clicks; previous: 1.',next_step:'',status:'completed_period',url:href()}
+]});
+const related=()=>({ref,revision:'b'.repeat(64),title:'Related saved promotion <img src=x>',url:href(),publication_id:publicationId,product_id:87,
+  public_conversation_id:51,turn_id:61,visitor_message_id:71,answer_message_id:72,question:'Can I get this in blue?',linked_at_utc_ms:1763337600000,relation:'saved_promotion_reply'});
+const profile=()=>({contract:'vp3.profile-report.v1',coverage:'ready',key_findings:['A saved visitor conversation.'],actions_followups:[],open_questions:[],next_step:'Open its source.',questions_for_you:[],
+  findings:[{ref:'profile:conversation:51',revision:'c'.repeat(64),title:'Visitor question',url:'/sub/profile-agent.php?tab=inbox&conversation=51',profile_source_kind:'conversation',
+    related_product_marketing:[related()],related_product_marketing_coverage:'ready'}]});
+function fixture(){
+  const document=workspaceDocument(),opens=[],closed=[];
+  const window={VP3MarketingFollowthroughV1:{openSource:source=>{opens.push(structuredClone(source));return true;}}};
+  const context=vm.createContext({window,document,URL,Date,Number,Object,Array,Map,Set,Intl,atob,btoa,location:{origin:'https://example.test'},
+    cfg:{activityEndpoint:'/sub/api/agent-activity-hub-v1.php'},workspace:true,snapshot:null,current:{...scope},sections:document.body,
+    positive:value=>Number.isSafeInteger(value)&&value>0,localUrl:value=>{if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.includes('\\'))return '';const url=new URL(value,'https://example.test');return url.pathname+url.search+url.hash;},
+    node:(tag,text='',className='')=>{const node=document.createElement(tag);node.textContent=text;node.className=className;return node;},
+    signature:value=>JSON.stringify([value?.owner,value?.agent,value?.cid,value?.binding]),scope:()=>context.current,close:restore=>closed.push(restore)});
+  vm.runInContext(script.slice(start,end)+script.slice(summaryStart,summaryEnd),context);
+  return {document,context,opens,closed,model(value){context.value=value;return vm.runInContext('productMarketingModel(value,current)',context);},
+    profileModel(value){context.value=value;return vm.runInContext('profileReportModel(value)',context);},
+    render(value){context.snapshot={product_marketing:value};const node=vm.runInContext('renderProductMarketingReview(current)',context);document.body.replaceChildren(node);return node;},
+    renderProfile(value){context.snapshot={profile_report:value,observed_at:'2026-11-18T12:00:00Z'};vm.runInContext('renderProfileWorkspace(current)',context);return document.body;}};
 }
 {
-  const f=fixture(),api=f.renderer,options={chatUrl:'/chat.php',ownerId:1};
-  check(api.outcomeModel(publication(),options),'complete fixed publication DTO accepted');
-  check(api.planModel(plan(),options)&&api.reviewModel(review(),options),'existing plan and Product Marketing projection accepted');
-  for(const days of [1,7,30])check(api.outcomeModel(publication(days),options),'completed period '+days+' preserves prior and sibling bounds');
-  for(const change of [r=>r.product_id++,r=>r.publication_id='b'.repeat(32),r=>r.original_scope.conversation_id=991002,r=>r.resume.owner_user_id=2,
-    r=>r.window.previous.to_utc_ms++,r=>r.window.from_local='2026-11-16T00:00:00+01:00',r=>r.period_options[1].ref=periodRef(1),
-    r=>r.metrics[0].comparison.delta=99,r=>r.metrics.push(r.metrics[0]),r=>r.metrics[0].key='inferred_buyers',r=>r.money[0].scale=0,
-    r=>r.money[0].comparison.delta_minor='999',r=>r.actions[0].href=publicationUrl().replace('conversation_id=11','conversation_id=991002'),
-    r=>r.actions[3].href='/chat.php?agent=7&conversation_id=11&message_id=7',r=>r.creative_id='2'.repeat(32),
-    r=>r.associations.items[0].url='/chat.php?agent=7&conversation_id=991002',r=>r.associations.items[0].public_conversation_id=11,
-    r=>r.associations.items[0].at_utc_ms=r.window.from_utc_ms-1,r=>r.associations.items[0].reply_at_utc_ms=r.window.to_utc_ms,
-    r=>r.associations.coverage='unavailable',r=>r.associations.items.push(r.associations.items[0])]){
-    const value=publication();change(value);check(api.outcomeModel(value,options)===null,'mismatched scope/ref/metric/money/action rejected');
-  }
-  for(const url of [publicationUrl()+'&agent=7',publicationUrl()+'&view=marketing',publicationUrl().replace('marketing_publication=','publication='),
-    publicationUrl().replace('VVRD','VVRD%3D'),'https://outside.test'+publicationUrl(),'//outside.test/chat.php',publicationUrl()+'#other'])
-    check(api.destination(url,'/chat.php')===null,'ambiguous or external destination rejected');
-  check(api.destination('/nested'+publicationUrl(),'/nested/chat.php')?.conversationId===11,'nested deployment preserves exact original private Chat');
-  check(api.source({ref:publication().ref,url:publicationUrl(),product_id:992101,publication_id:'b'.repeat(32)},'/chat.php')===null,'related source cannot substitute another publication id');
-  for(const [zone,stamp,valid] of [['America/Havana','2026-03-08T05:00:00Z',true],['America/Havana','2026-11-01T04:00:00Z',true],['America/Havana','2026-11-01T05:00:00Z',false]]){
-    const ref='profile:analytics:v1:1:'+Date.parse(stamp)/1000+':e:'+btoa(zone).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
-    check(Boolean(api.periodRef(ref))===valid,'canonical skipped/repeated local midnight');
-  }
-  const host=f.document.createElement('div'),value=publication();
-  value.metrics[0].current={value:null,observed_value:1,coverage:'partial',reason:'source_proof_incomplete'};value.metrics[0].comparison={delta:null,percent:null};value.coverage='limited';
-  value.money[0].current.value_minor='900719925474099312345';value.money[0].comparison.delta_minor='900719925474099311345';
-  api.renderOutcome(host,value,options);
-  check(host.textContent.includes('Observed subset')&&host.textContent.includes('USD 9,007,199,254,740,993,123.45'),'partial evidence and exact decimal string amount render');
-  check(host.querySelector('[data-product-marketing-metric="checkout_started_orders"]').textContent.includes('Orders with checkout links ready'),
-    'checkout measure describes usable link availability without claiming the buyer opened the provider');
-  check(host.querySelectorAll('img').length===0&&host.textContent.includes('<img onerror=alert(1)>'),'untrusted product title stays text');
-  check(host.querySelectorAll('script').length===0&&host.textContent.includes('Does this vase come in blue? <script>alert(1)</script>'),'literal visitor question is bounded text, never executable content or inferred intent');
-  check(host.querySelector('[data-product-marketing-exchange="991201"]').querySelector('a').href==='/profile-agent.php?tab=inbox&conversation=991002','visitor exchange opens its exact public conversation, separate from original private Chat');
-  value.metrics[0].current={value:null,observed_value:null,coverage:'unavailable',reason:'storage_unavailable'};api.renderOutcome(host,value,options);
-  check(host.querySelector('[data-product-marketing-metric="accepted_promotion_clicks"]').textContent.includes('Unavailable'),'missing evidence is unavailable rather than a zero');
-  api.renderReview(host,{...review(),coverage:'unavailable'},options);check(!host.textContent.includes('Existing product plan')&&!host.textContent.includes('USD'),'unavailable report removes previously rendered facts');
+  const f=fixture(),value=summary();check(f.model(value)?.items.length===2,'canonical plan and fixed-period sources share one bounded Hub summary');
+  const body=f.render(value);check(body.textContent.includes('Current plans')&&body.textContent.includes('Completed promotion periods'),'Hub exposes separate current plans and completed periods');
+  check(body.textContent.includes('<script>bad()</script>')&&!body.querySelector('script'),'saved summary text remains escaped');
+  check(body.textContent.includes('Completed day: 17 Nov 2026 · UTC'),'summary names the fixed completed date and saved timezone');
+  const links=body.querySelectorAll('[data-product-marketing-link]');
+  links[1].click();check(f.opens.length===1&&f.opens[0].ref===ref&&f.closed.at(-1)===false,'same-scope summary opens the existing detail controller and closes Hub without moving focus back');
+  const modified={type:'click',ctrlKey:true};links[1].dispatchEvent(modified);check(!modified.defaultPrevented&&f.opens.length===1,'modified click keeps its validated original Chat link');
+  const plan={type:'click'};links[0].dispatchEvent(plan);check(!plan.defaultPrevented&&links[0].href===planHref,'current plan remains a separate exact existing-plan route');
+  f.context.snapshot={product_marketing:summary()};const stale={type:'click'};links[1].dispatchEvent(stale);check(stale.defaultPrevented&&f.opens.length===1,'replaced report cannot open stale saved summary evidence');
+  f.context.current={...scope,cid:12};check(f.model(value)===null,'summary cannot inherit a different private Chat');
+}
+for(const mutate of [v=>v.items[0].url=planHref+'&agent=7',v=>v.items[1].url=href(ref,7,12),v=>v.items[1].url=href(marketingRef(7)),
+  v=>v.items[1].url=href()+'#other',v=>v.items[1].url=href().replace('/sub/','/elsewhere/'),v=>v.items[1].kind='plan',
+  v=>v.items[1].revision='x',v=>v.items.push(v.items[1]),v=>v.items[0].ref='marketing:product-plan:9007199254740992',
+  v=>v.items[1].title='x'.repeat(191),v=>{v.coverage='unavailable';}]){
+  const f=fixture(),value=summary();mutate(value);check(f.model(value)===null,'malformed, cross-scope or unavailable populated summary is rejected');
+}
+for(const coverage of ['ready','limited','unavailable','unconfigured']){
+  const f=fixture(),body=f.render({contract:'vp3.product-marketing-summary.v1',coverage,items:[]});
+  check(body.dataset.productMarketingSummary===coverage&&!body.querySelector('[data-product-marketing-link]'),'empty '+coverage+' state cannot retain previous links');
 }
 {
-  const f=fixture({ready:false,bridge:true});f.window.remember();f.load();
-  check(f.requests.length===0&&new URL(f.location.href).searchParams.get('marketing_publication')===publicationId,'original complete tuple survives Chat normalization while restoration is pending');
-  f.event('stonefellow:chat-context-changing',{initialRestore:true});f.state.ready=true;f.event('vp3:chat-context-ready');await f.respond();
-  check(f.requests.length===1&&f.requests[0].body.period_ref===periodRef()&&f.host()?.textContent.includes('USD 20.00'),'exact initial publication opens after restored original Chat');
-  check(f.launches.length===0,'automatic destination reads never open creative, recover or publish');
-  f.event('vp3:chat-context-ready');f.host().querySelector('[data-media-command-close]').click();f.event('vp3:chat-context-ready');
-  check(f.requests.length===1&&!f.host(),'readiness repeats and closing never reopen the consumed selector');
+  const f=fixture(),value=profile();check(f.profileModel(value)?.findings[0].related_product_marketing.length===1,'exact receipt-associated source stays attached to its native conversation finding');
+  const body=f.renderProfile(value),link=body.querySelector('[data-product-marketing-source]');
+  check(body.textContent.includes('Related Product Marketing')&&body.textContent.includes('<img src=x>')&&!body.querySelector('img'),'related source title is literal and has no executable markup');
+  check(body.querySelectorAll('[data-profile-source]').length===1,'related link creates no second native attention finding');
+  link.click();check(f.opens.length===1&&f.opens[0].ref===ref,'related Profile source uses the same Marketing detail runtime');
+  f.context.current={...scope,cid:12};const staleRelated={type:'click'};link.dispatchEvent(staleRelated);
+  check(staleRelated.defaultPrevented&&f.opens.length===1,'previously rendered related link cannot open after the private Chat scope changes');
+  f.context.current={...scope};
+  const foreign=profile();foreign.findings[0].related_product_marketing[0].url=href(ref,7,12);const foreignBody=f.renderProfile(foreign);
+  const event={type:'click'};foreignBody.querySelector('[data-product-marketing-source]').dispatchEvent(event);
+  check(!event.defaultPrevented&&f.opens.length===1,'authorized source from another original Chat keeps its exact link and never retargets current Chat');
+  const current=profile(),entry=current.findings[0].related_product_marketing[0];entry.ref='marketing:product-plan:87';entry.url=planHref;entry.title='Open current plan';
+  check(f.profileModel(current)!==null,'a reply in an unfinished day can point to its current plan without fabricating a completed report');
+  current.findings[0].related_product_marketing.push({...entry,publication_id:'d'.repeat(32),turn_id:62,visitor_message_id:73,answer_message_id:74});
+  check(f.profileModel(current)?.findings[0].related_product_marketing.length===2,'two distinct publications may retain verified associations to the same current product plan');
+  const sharedPlan=f.renderProfile(current);check(sharedPlan.querySelectorAll('[data-product-marketing-source]').length===2
+    &&sharedPlan.querySelectorAll('[data-profile-source]').length===1,'shared current-plan links preserve both publication associations without duplicating the native finding');
+  current.findings[0].related_product_marketing.push({...entry});
+  check(f.profileModel(current)===null,'repeated publication association is rejected even when valid distinct publications share the current plan');
 }
 {
-  const f=fixture({ready:false,bridge:true});f.load();f.event('stonefellow:chat-context-changing',{initialRestore:false});f.state.ready=true;f.event('vp3:chat-context-ready');
-  check(f.requests.length===0&&!new URL(f.location.href).searchParams.has('marketing_publication'),'true Chat change retires pending publication intent and URL');
+  const f=fixture(),value=profile();
+  value.findings[0].related_product_marketing=Array.from({length:4},(_,index)=>{
+    const id=String(index+2).repeat(32),reference=ref.replace(publicationId,id);
+    return {...related(),publication_id:id,ref:reference,url:href(reference),turn_id:61+index,visitor_message_id:71+index*2,answer_message_id:72+index*2};
+  });
+  const bounded=f.profileModel(value)?.findings[0].related_product_marketing.length===4;
+  const id='6'.repeat(32),reference=ref.replace(publicationId,id);
+  value.findings[0].related_product_marketing.push({...related(),publication_id:id,ref:reference,url:href(reference),turn_id:65,visitor_message_id:79,answer_message_id:80});
+  check(bounded&&f.profileModel(value)===null,'four distinct proven related links are accepted but a fifth exceeds the bounded source contract');
 }
-for(const mismatch of [f=>f.state.cid=12,f=>{f.state.agent=8;f.window.STONEFELLOW_CHAT.agentId=8;},f=>{f.state.owner=2;f.window.STONEFELLOW_CHAT.userId=2;},f=>f.window.STONEFELLOW_CHAT.workingAttentionBinding='other']){
-  const f=fixture({ready:false,bridge:true});f.load();mismatch(f);f.state.ready=true;f.event('vp3:chat-context-ready');check(f.requests.length===0,'restored Chat/Agent/owner/binding mismatch cannot read selector');
+for(const mutate of [v=>v.findings[0].related_product_marketing[0].public_conversation_id=52,v=>v.findings[0].related_product_marketing[0].relation='inferred_interest',
+  v=>v.findings[0].related_product_marketing[0].answer_message_id=70,v=>v.findings[0].related_product_marketing[0].revision='bad',
+  v=>v.findings[0].related_product_marketing[0].publication_id='d'.repeat(32),v=>v.findings[0].related_product_marketing[0].question='x'.repeat(601),
+  v=>v.findings[0].related_product_marketing.push(v.findings[0].related_product_marketing[0]),v=>v.findings[0].related_product_marketing_coverage='unavailable',
+  v=>{v.findings[0].ref='profile:call:51';v.findings[0].profile_source_kind='call';}]){
+  const f=fixture(),value=profile();mutate(value);check(f.profileModel(value)===null,'unproven, mismatched or malformed related association is rejected');
 }
-{
-  const f=fixture();f.load();f.state.cid=12;f.event('stonefellow:chat-context-changing');await f.respond();
-  check(!f.host()&&f.requests[0].signal.aborted&&f.launches.length===0,'late response after scope change cannot restore private evidence');
-}
-for(const status of [401,403,419]){
-  const f=fixture();f.load();await f.respond();f.host().querySelector('[data-media-command-publication-refresh]').click();await f.respond(1,{status});
-  check(!f.host()&&f.launches.length===0,'authority '+status+' clears the whole publication view');
-}
-{
-  const f=fixture();f.load();await f.respond();f.host().querySelector('[data-media-command-publication-refresh]').click();await f.respond(1,{status:404});
-  check(!f.host().textContent.includes('USD 20.00')&&f.host().textContent.includes('Source unavailable'),'deleted original source removes previous publication facts');
-  f.host().querySelector('[data-media-command-retry]').click();await f.respond(2);check(f.host().textContent.includes('USD 20.00'),'same exact read can retry after temporary source failure');
-}
-{
-  const f=fixture();f.load();await f.respond();f.host().querySelector('[data-product-marketing-review]').click();
-  check(f.requests.length===2&&f.launches.length===0,'explicit creative review first rechecks the exact publication');
-  await f.respond(1);check(f.launches.length===1&&f.launches[0].publication_id===publicationId&&!f.host(),'fresh review hands the immutable saved tuple to the existing reviewed workbench');
-}
-{
-  const f=fixture();f.load();await f.respond();const controls=f.host().querySelector('[aria-label="Publication reporting period"]').querySelectorAll('button');controls[1].click();await f.respond(1,{value:publication(7)});
-  check(f.requests[1].body.period_ref===periodRef(7)&&f.host().textContent.includes('Completed 7 days'),'explicit period change reads the same publication with a canonical sibling ref');
-}
-check(!media.includes("action: 'creative_publish'")&&!report.includes('fetch('),'report renderer and automatic destination contain no publication mutation dispatch');
-console.log('PRODUCT_MARKETING_REPORT=PASS ('+checks+' checks; DTO, rendering, exact original Chat restore, scope and authority races)');
+console.log('PRODUCT_MARKETING_REPORT=PASS ('+checks+' checks; canonical Hub summaries and exact related links)');

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/initiative-work-product-v1.php';
+require_once __DIR__.'/initiative-work-marketing-v1.php';
 require_once __DIR__.'/agent-image-generation-v1.php';
 
 function initiative_marketing_creative_binding_v1(array $variant): array
@@ -52,12 +53,7 @@ function initiative_marketing_creative_current_v1(PDO $pdo, int $owner, array $s
 function initiative_marketing_creative_source_v1(PDO $pdo, int $owner, array $scope, array $binding, bool $lock): array
 {
     $source = initiative_work_product_source_v1($pdo, $owner, $scope, ['source_id'=>(string)$binding['source_asset_id']], $lock);
-    $stmt = $pdo->prepare('SELECT d.draft_json FROM agent_commerce_marketing_drafts_v1 d
-        INNER JOIN agent_commerce_products_v800 p ON p.id=d.product_id AND p.owner_user_id=d.owner_user_id
-        WHERE d.owner_user_id=? AND d.product_id=? AND d.request_key=?'.($lock ? agent_commerce_lock_pa2($pdo) : ''));
-    $stmt->execute([$owner, $binding['product_id'], $binding['draft_key']]);
-    $json = $stmt->fetchColumn();
-    $draft = is_string($json) ? json_decode($json, true, 16) : null;
+    $draft = initiative_work_marketing_draft_v1($pdo,$owner,$binding['product_id'],$binding['draft_key'],$lock);
     if (($draft['asset_id'] ?? null) !== $binding['source_asset_id']
         || ($draft['asset_sha256'] ?? null) !== $binding['source_sha256']
         || !hash_equals($binding['source_sha256'], $source['digest'])) {

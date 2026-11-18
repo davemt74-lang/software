@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 // Keep the original destination before legacy selection or return-token routing can rewrite GET.
 $profileAnalyticsOriginalQuery = (string)($_SERVER['QUERY_STRING'] ?? '');
+$marketingFollowthroughOriginalQuery = $profileAnalyticsOriginalQuery;
 
 $runtimeBuild = 'conversation-integration-v131-20260826';
 $controlBuild = 'voice-learning-v1-20261101';
@@ -252,6 +253,7 @@ if (!$agentFeatureReady) {
 }
 $workingAttentionBinding = vp3_catch_up_page_binding_v1($user);
 require_once __DIR__.'/includes/profile-analytics-destination-v1.php';
+require_once __DIR__.'/includes/marketing-followthrough-destination-v1.php';
 require_once __DIR__.'/includes/participant-updates-v1.php';
 $profileAnalyticsRequested = vp3_profile_analytics_destination_request_v1($profileAnalyticsOriginalQuery);
 $profileAnalyticsDestination = vp3_profile_analytics_destination_bind_v1(
@@ -262,11 +264,21 @@ $profileAnalyticsDestination = vp3_profile_analytics_destination_bind_v1(
         && personal_capability_has_v242('profile_agent.access',$user)
         && personal_capability_has_v242('profile_chat.access',$user)
 );
+$marketingFollowthroughRequested = vp3_marketing_followthrough_destination_request_v1($marketingFollowthroughOriginalQuery);
+$marketingFollowthroughDestination = vp3_marketing_followthrough_destination_bind_v1(
+    $marketingFollowthroughRequested,(int)$user['id'],(int)($activeUserAgent['id']??0),
+    $agentInitialConversationId,$workingAttentionBinding,url('/chat.php'),
+    $marketingFollowthroughRequested!==null && vp3_participant_scope_v1()===null
+        && has_permission('account.access',$user) && has_permission('chat.access',$user)
+        && personal_capability_has_v242('profile_agent.access',$user)
+        && personal_capability_has_v242('profile_chat.access',$user),$pdoForAgent
+);
 
 $agentChatBootstrap = '<script data-user-agent-chat-v236>(function(){"use strict";var cfg=window.STONEFELLOW_CHAT||{};cfg.endpoint='
     . json_encode($chatApiEndpoint, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
     . ';cfg.workingAttentionBinding=' . json_encode($workingAttentionBinding)
     . ';cfg.profileAnalyticsDestination=' . json_encode($profileAnalyticsDestination,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)
+    . ';cfg.marketingFollowthroughDestination=' . json_encode($marketingFollowthroughDestination,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR)
     . ';cfg.agentId=' . (int)($activeUserAgent['id'] ?? 0)
     . ';cfg.autoGreetEnabled=' . (chat_settings_agent_auto_greet_enabled_v237($pdoForAgent, $user) ? 'true' : 'false')
     . ';cfg.initialConversationId=' . (int)$agentInitialConversationId . ';window.STONEFELLOW_AGENT_IDENTITY_V236={'
@@ -580,20 +592,22 @@ if ($pdoForAgent && agent_brain_schema_ready() && has_permission('account.access
 $cognitiveCardsRuntime .= '<script>window.VP3_CHAT_SPECIALIST_PRESENCE='.json_encode([
     'owner_user_id'=>(int)$user['id'], 'agent_id'=>(int)($activeUserAgent['id']??0), 'states'=>$specialistPresence,
 ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT).';</script>';
-$initiativeWorkbenchRuntime = '<link rel="stylesheet" href="'.e(url('/media-library-picker-v1.css?v='.substr(hash_file('sha256',__DIR__.'/media-library-picker-v1.css'),0,12))).'">'
-    . '<link rel="stylesheet" href="'.e(url('/product-marketing-report-v1.css?v='.substr(hash_file('sha256',__DIR__.'/product-marketing-report-v1.css'),0,12))).'">'
+$initiativeWorkbenchRuntime = ($profileWorkspaceRuntime === ''
+    ? '<script data-vp3-period-tools-only src="'.e(url('/profile-specialist-workspace-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-specialist-workspace-v1.js'),0,12))).'" defer></script>' : '')
+    . '<link rel="stylesheet" href="'.e(url('/media-library-picker-v1.css?v='.substr(hash_file('sha256',__DIR__.'/media-library-picker-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-media-commands-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-media-commands-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-initiative-workbench-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.css'),0,12))).'">'
     . '<script>window.VP3_INITIATIVE_WORKBENCH='.json_encode([
         'endpoint'=>url('/api/initiative-workbench-v1.php'),'csrf'=>csrf_token(),
         'mediaEndpoint'=>url('/api/media-library-v86.php'),
+        'followthroughEndpoint'=>url('/api/marketing-followthrough-v1.php'),
         'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
     ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
-    . '<script src="'.e(url('/product-marketing-report-v1.js?v='.substr(hash_file('sha256',__DIR__.'/product-marketing-report-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/media-library-picker-v1.js?v='.substr(hash_file('sha256',__DIR__.'/media-library-picker-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-marketing-creative-render-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-creative-render-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-marketing-canvas-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-canvas-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-initiative-workbench-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-initiative-workbench-v1.js'),0,12))).'" defer></script>'
+    . '<script src="'.e(url('/chat-marketing-followthrough-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-followthrough-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-media-commands-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-media-commands-v1.js'),0,12))).'" defer></script>';
 $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-email-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.css'),0,12))).'">'
     . '<script>window.VP3_CHAT_EMAIL_V1='.json_encode([

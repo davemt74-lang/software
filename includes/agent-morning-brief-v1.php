@@ -170,9 +170,16 @@ function vp3_morning_brief_assess_v1(array $items,array $coverage,array $setting
     foreach($eligible as $ref=>$item){
         $id=$item['specialist'];
         if(isset($covered[$ref]))continue;
+        $canonical=$item['canonical_ref']??null;
+        $shared=is_string($canonical)&&vp3_product_marketing_ref_kind_v1($canonical)==='followthrough'
+            &&($item['canonical_revision']??null)===($item['revision']??null);
+        // Prefer the canonical Marketing source when both specialists supplied
+        // the same proof. Profile-only views retain their exact alias.
+        if($shared&&$ref!==$canonical&&isset($eligible[$canonical])
+            &&($eligible[$canonical]['revision']??null)===$item['revision']){++$duplicates;continue;}
         // Legacy delivery stays intact, but copies of the same unchanged result only need one line in a brief.
         if(trim((string)($item['title']??''))==='')continue;
-        $digest=hash('sha256',json_encode([$id,$item['title']??null,$item['summary']??null,
+        $digest=hash('sha256',json_encode($shared?[$canonical,$item['revision']]:[$id,$item['title']??null,$item['summary']??null,
             $item['next_step']??null,$item['question']??null],JSON_THROW_ON_ERROR));
         if(isset($seen[$digest])){++$duplicates;continue;}
         $seen[$digest]=true;
@@ -190,10 +197,17 @@ function vp3_morning_brief_assess_v1(array $items,array $coverage,array $setting
     }
     $hasProfile=(bool)array_filter($primary,static fn(array $item):bool=>$item['specialist']==='profile');
     $attachPeriod=$hasProfile&&$profilePeriod!==null&&!isset($primary[$profilePeriod['ref']]);
+    $marketingPeriod=null;
+    foreach($candidates as $candidate)if(($candidate['specialist']??null)==='marketing'
+        &&($candidate['marketing_source_kind']??null)==='followthrough'&&($candidate['trigger']??null)==='promotion_period'){
+        $marketingPeriod=$candidate;break;
+    }
+    $hasMarketing=(bool)array_filter($primary,static fn(array $item):bool=>$item['specialist']==='marketing');
+    $attachMarketing=$hasMarketing&&$marketingPeriod!==null&&!isset($primary[$marketingPeriod['ref']]);
     // Reserve exact proof slots before adding optional prose. History verifies
     // every selected source and retains its existing twelve-source bound.
-    $relatedBudget=max(0,12-count($primary)-($curiosityEligible?1:0)-($attachPeriod?1:0));
-    $selected=[];$links=[];$lines=[];$periodAttached=false;
+    $relatedBudget=max(0,12-count($primary)-($curiosityEligible?1:0)-($attachPeriod?1:0)-($attachMarketing?1:0));
+    $selected=[];$links=[];$lines=[];$periodAttached=false;$marketingAttached=false;
     foreach($primary as $ref=>$item){
         $id=$item['specialist'];
         $summary=vp3_top_of_mind_text_v1($item['summary']??'',220);
@@ -219,6 +233,12 @@ function vp3_morning_brief_assess_v1(array $items,array $coverage,array $setting
             $line.=' '.$periodTitle.' — '.$periodSummary;
             vp3_morning_brief_add_source_v1($selected,$links,$profilePeriod,$periodTitle);
             $periodAttached=true;
+        }
+        if($id==='marketing'&&$attachMarketing&&!$marketingAttached){
+            $periodTitle=vp3_top_of_mind_text_v1($marketingPeriod['title'],100);
+            $line.=' '.$periodTitle.' — '.vp3_top_of_mind_text_v1($marketingPeriod['summary'],220);
+            vp3_morning_brief_add_source_v1($selected,$links,$marketingPeriod,$periodTitle);
+            $marketingAttached=true;
         }
         $lines[]=$line;
     }

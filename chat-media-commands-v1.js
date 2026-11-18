@@ -5,7 +5,7 @@
   const chat = window.STONEFELLOW_CHAT;
   if (!cfg?.endpoint || !cfg.mediaEndpoint || !cfg.csrf || !cfg.ownerKey || !chat) return;
   const account = Object.freeze({owner: String(cfg.ownerKey), agent: Number(cfg.agentId), csrf: String(cfg.csrf),
-    endpoint: String(cfg.endpoint), mediaEndpoint: String(cfg.mediaEndpoint), binding: String(chat.workingAttentionBinding || '')});
+    endpoint: String(cfg.endpoint), mediaEndpoint: String(cfg.mediaEndpoint), followthroughEndpoint:String(cfg.followthroughEndpoint||''), binding: String(chat.workingAttentionBinding || '')});
   const formats = ['image/jpeg', 'image/png', 'image/webp'];
   const ordinaryLimit = 4 * 1024 * 1024;
   const generatedLimit = 25 * 1024 * 1024;
@@ -62,6 +62,7 @@
     return Boolean(current && live && account.binding && String(current.ownerKey) === account.owner
       && Number(current.agentId) === account.agent && String(current.csrf) === account.csrf
       && String(current.endpoint) === account.endpoint && String(current.mediaEndpoint) === account.mediaEndpoint
+      && String(current.followthroughEndpoint||'')===account.followthroughEndpoint
       && String(live.userId) === account.owner && Number(live.agentId) === account.agent
       && String(live.workingAttentionBinding || '') === account.binding);
   }
@@ -120,6 +121,8 @@
     session.pending = null;
     session.picker?.destroy();
     session.picker = null;
+    session.followthrough?.dispose();session.followthrough=null;
+    window.VP3MarketingFollowthroughV1?.cancelPendingDestination?.();
     if (active === session) active = null;
     // Removing our modal avoids the browser restoring an obsolete Chat opener on
     // a stale-context close. Valid cancellation restores focus explicitly below.
@@ -143,13 +146,12 @@
     dialog.setAttribute('aria-labelledby', 'vp3MediaCommandsTitle');
     dialog.setAttribute('aria-describedby', 'vp3MediaCommandsIntro');
     const header = node('header', undefined, 'vp3-media-command-header');
-    const heading = node('h2', kind === 'images' ? 'Your images' : kind === 'publication' ? 'Publication results' : 'Marketing plans');
+    const heading = node('h2', kind === 'images' ? 'Your images' : 'Marketing plans');
     heading.id = 'vp3MediaCommandsTitle';
     const dismiss = button('Close', 'close');
     header.append(heading, dismiss);
     const intro = node('p', kind === 'images'
       ? 'Choose an image to edit in Chat or use for product marketing.'
-      : kind === 'publication' ? 'Review this saved publication and its attributed activity for the selected completed period.'
       : 'Continue a draft, review an image in progress, or return to an active or paused product promotion.', 'vp3-media-command-intro');
     intro.id = 'vp3MediaCommandsIntro';
     const status = node('p', '', 'vp3-media-command-status');
@@ -177,9 +179,9 @@
     more.hidden = true;
     if (kind === 'marketing') content.append(list, empty, more);
     dialog.append(header, intro, status, error, content);
-    const session = {id: ++sequence, kind, bound, dialog, status, error, errorText, retry, content, list, empty, more,
+    const session = {id: ++sequence, kind, bound, dialog, heading, intro, status, error, errorText, retry, content, list, empty, more,
       returnFocus: document.activeElement, closed: false, serial: 0, pending: null, retryAction: null,
-      timer: 0, picker: null, plans: new Map(), nextBefore: null, selectedAction: ''};
+      timer: 0, picker: null, followthrough:null, followthroughHost:null, plans: new Map(), nextBefore: null, selectedAction: ''};
     dismiss.addEventListener('click', () => close(session));
     dialog.addEventListener('cancel', event => { event.preventDefault(); close(session); });
     dialog.addEventListener('close', () => { if (!session.closed) close(session); });
@@ -311,6 +313,12 @@
       }
     }
     detail.append(heading, stage, context, control);
+    if(sameChat&&account.followthroughEndpoint&&window.VP3MarketingFollowthroughV1){
+      const followthrough=button('View follow-through','followthrough');
+      followthrough.dataset.mediaPlanFollowthrough=String(plan.product_id);
+      followthrough.addEventListener('click',()=>showFollowthrough(session,{productId:plan.product_id}));
+      detail.append(followthrough);
+    }
     item.append(picture, detail);
     const previous = session.plans.get(plan.product_id);
     if (previous) previous.item.replaceWith(item);
@@ -343,7 +351,6 @@
         session.nextBefore = null;
         session.more.hidden = true;
         session.empty.hidden = true;
-        if(session.kind==='publication'){session.content.replaceChildren();session.publication=null;}
       }
       const data = await response.json().catch(() => null);
       if (!stillCurrent()) return;
@@ -410,49 +417,10 @@
     }, () => void loadPlan(session, productId), 'Checking the latest saved plan…');
   }
 
-  function loadPublication(session, selection, review=false) {
-    const renderer=window.VP3ProductMarketingV1;
-    if(!renderer||!ensureCurrent(session)||!positive(selection.productId)||!/^[a-f0-9]{32}$/.test(selection.publicationId||'')
-      ||!renderer.periodRef(selection.periodRef))return Promise.resolve();
-    session.publication=null;
-    session.content.replaceChildren();
-    const fields={product_id:selection.productId,publication_id:selection.publicationId,period_ref:selection.periodRef};
-    return request(session,'marketing_publication',fields,data=>{
-      const options={chatUrl:chatPath,ownerId:Number(account.owner),agentId:session.bound.agentId,conversationId:session.bound.conversationId,
-        productId:selection.productId,publicationId:selection.publicationId,periodRef:selection.periodRef};
-      const outcome=renderer.outcomeModel(data.outcome,options);
-      if(!outcome||!data.resume||Object.keys(outcome.resume).some(key=>data.resume[key]!==outcome.resume[key])){
-        throw new Error('This exact publication and reporting period could not be verified.');
-      }
-      if(!ensureCurrent(session))return;
-      session.publication=outcome;
-      if(review){
-        if(window.VP3InitiativeWorkbench?.openProductLaunch?.(outcome.resume)!==true)throw new Error('The saved creative could not be opened in this Chat.');
-        close(session,'handoff');return;
-      }
-      const target=node('section');
-      const refresh=button('Refresh this publication','publication-refresh');
-      refresh.addEventListener('click',()=>{if(ensureCurrent(session)&&!session.pending)void loadPublication(session,selection);});
-      session.content.append(refresh,target);
-      renderer.renderOutcome(target,outcome,{...options,isCurrent:()=>current(session),
-        onPeriod:periodRef=>{if(!session.pending)void loadPublication(session,{...selection,periodRef});},
-        onReview:()=>{if(!session.pending)void loadPublication(session,selection,true);}});
-      session.status.textContent='This exact publication and period are ready to review.';
-    },()=>void loadPublication(session,selection),'Checking the saved publication and selected period…');
-  }
-
-  function openPublication(selection,bound=runtimeContext()) {
-    if(!scopeCurrent(bound)||!window.VP3ProductMarketingV1||selection?.agentId!==bound.agentId
-      ||selection.conversationId!==bound.conversationId||!positive(selection.productId)||!/^[a-f0-9]{32}$/.test(selection.publicationId||'')
-      ||!window.VP3ProductMarketingV1.periodRef(selection.periodRef))return false;
-    const session=createSession('publication',bound);if(!session)return false;
-    void loadPublication(session,{productId:selection.productId,publicationId:selection.publicationId,periodRef:selection.periodRef});
-    return true;
-  }
-
   function open(kind, bound) {
     if (!['images', 'marketing'].includes(kind) || !scopeCurrent(bound)
       || kind === 'images' && !window.VP3MediaLibraryPicker?.open) return false;
+    window.VP3MarketingFollowthroughV1?.cancelPendingDestination?.();
     const session = createSession(kind, bound);
     if (!session) return false;
     if (kind === 'images') {
@@ -463,6 +431,47 @@
     return !session.closed;
   }
 
+  function backToPlans(session){
+    if(!ensureCurrent(session))return;
+    session.followthrough?.dispose();session.followthrough=null;session.followthroughHost?.remove();session.followthroughHost=null;
+    session.heading.textContent='Marketing plans';
+    session.heading.tabIndex=-1;session.heading.focus({preventScroll:true});
+    session.intro.textContent='Continue a draft, review an image in progress, or return to an active or paused product promotion.';
+    session.list.hidden=false;session.list.replaceChildren();session.plans.clear();session.nextBefore=null;session.more.hidden=true;session.empty.hidden=true;
+    clearError(session);void loadPlans(session);
+  }
+
+  function showFollowthrough(session,selection){
+    if(!ensureCurrent(session)||session.kind!=='marketing'||!account.followthroughEndpoint||!window.VP3MarketingFollowthroughV1?.mount)return false;
+    window.VP3MarketingFollowthroughV1.cancelPendingDestination();
+    session.pending?.controller.abort();session.pending=null;session.serial++;session.followthrough?.dispose();session.followthroughHost?.remove();
+    clearError(session);session.status.textContent='';session.list.hidden=true;session.empty.hidden=true;session.more.hidden=true;
+    session.heading.textContent='Marketing follow-through';session.intro.textContent='Inspect a recorded publication, then choose the next step for its original creative or current plan.';
+    session.heading.tabIndex=-1;session.heading.focus({preventScroll:true});
+    const host=node('div');session.followthroughHost=host;session.content.append(host);
+    session.followthrough=window.VP3MarketingFollowthroughV1.mount(host,{selection,
+      context:()=>current(session)?{ownerUserId:Number(account.owner),chatAgentId:session.bound.agentId,chatConversationId:session.bound.conversationId,workingAttentionBinding:account.binding}:null,
+      onBack:()=>backToPlans(session),onAuthorityChanged:()=>{session.plans.clear();session.list.replaceChildren();session.nextBefore=null;},
+      onCreative:marker=>{if(!ensureCurrent(session)||window.VP3InitiativeWorkbench?.openProductLaunch?.(marker)!==true)return false;close(session,'handoff');return true;},
+      onCurrentPlan:productId=>{if(ensureCurrent(session))void loadPlan(session,productId);},
+      onConversation:selection=>{
+        if(!ensureCurrent(session)||selection?.tab!=='conversations'||!positive(selection.publicConversationId))return false;
+        if(window.VP3AgentActivityHub?.openProfile?.(selection)!==true)return false;
+        close(session,'handoff');return true;
+      }
+    });
+    if(!session.followthrough){backToPlans(session);showError(session,'Marketing follow-through is not available in this Chat.');return false;}
+    syncControls(session);return true;
+  }
+
+  function openFollowthrough(selection,bound){
+    if(!scopeCurrent(bound)||!account.followthroughEndpoint||!window.VP3MarketingFollowthroughV1)return false;
+    const parsed=selection?.ref?window.VP3MarketingFollowthroughV1.parseRef(selection.ref):null;
+    if(selection?.ref&&!parsed||!selection?.ref&&!positive(selection?.productId))return false;
+    const session=active&&active.kind==='marketing'&&current(active)?active:createSession('marketing',bound);
+    return Boolean(session&&showFollowthrough(session,parsed?{ref:parsed.ref}:{productId:selection.productId}));
+  }
+
   function initialIntent() {
     const runtime = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     // The runtime captures the original navigation before history restoration can
@@ -470,18 +479,12 @@
     if (typeof runtime?.mediaCommandIntent === 'function') {
       try {
         const intent = runtime.mediaCommandIntent();
-        if(!intent||typeof intent.productId!=='number'||!positive(intent.productId)||typeof intent.conversationId!=='number'
-          ||!positive(intent.conversationId)||agentId(intent.agentId)<0)return null;
-        if(intent.publicationId!==undefined||intent.periodRef!==undefined){
-          if(!/^[a-f0-9]{32}$/.test(intent.publicationId||'')||!window.VP3ProductMarketingV1?.periodRef(intent.periodRef))return null;
-        }
-        return intent;
+        return intent && typeof intent.productId === 'number' && positive(intent.productId)
+          && typeof intent.conversationId === 'number' && positive(intent.conversationId) && agentId(intent.agentId) >= 0 ? intent : null;
       } catch { return null; }
     }
     const url = new URL(location.href);
-    if(url.searchParams.has('marketing_publication')||url.searchParams.has('marketing_period')){
-      return window.VP3ProductMarketingV1?.destination(url.pathname+url.search,chatPath)||null;
-    }
+    if(url.searchParams.has('marketing_publication')||url.searchParams.has('marketing_period'))return null;
     const productId = url.searchParams.getAll('marketing_plan').length === 1 ? positive(url.searchParams.get('marketing_plan')) : 0;
     const conversationId = url.searchParams.getAll('conversation_id').length === 1 ? positive(url.searchParams.get('conversation_id')) : 0;
     const selector = url.searchParams.getAll('agent').length === 1 ? url.searchParams.get('agent') : null;
@@ -497,10 +500,6 @@
     if (intentConsumed || active || !linkedProduct || !linkedConversation || linkedAgent < 0) return;
     const bound = runtimeContext();
     if (!scopeCurrent(bound) || bound.agentId !== linkedAgent || bound.conversationId !== linkedConversation) return;
-    if(intent?.publicationId){
-      if(openPublication(intent,bound))intentConsumed=true;
-      return;
-    }
     const session = createSession('marketing', bound);
     if (!session) return;
     intentConsumed = true;
@@ -513,14 +512,12 @@
     } catch { /* The in-memory consumed flag still prevents duplicate handoffs. */ }
     void loadPlan(session, linkedProduct);
   }
-  const invalidate = event => {
-    if(intent?.publicationId&&event?.detail?.initialRestore!==true)intentConsumed=true;
-    if (active) close(active, 'stale');
-  };
+  const invalidate = () => { if (active) close(active, 'stale'); };
   for (const event of ['stonefellow:chat-context-changing', 'vp3:chat-conversation-changed', 'vp3:participant-selection-changed', 'vp3:participant-task-context', 'pagehide']) {
     window.addEventListener(event, invalidate);
   }
   window.addEventListener('vp3:chat-context-ready', resumeLinkedPlan);
-  window.VP3MediaCommands = Object.freeze({version: 1, open,openPublication});
+  window.VP3MediaCommands = Object.freeze({version: 1, open,openFollowthrough});
+  window.dispatchEvent(new Event('vp3:media-commands-ready'));
   resumeLinkedPlan();
 })();

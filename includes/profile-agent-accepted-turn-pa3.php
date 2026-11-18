@@ -112,7 +112,10 @@ function vp3_profile_agent_accepted_generate_pa3(PDO $pdo,array $turn,array $cla
     $historical=vp3_profile_agent_public_history_v1($pdo,$ctx,$cid,(int)$turn['visitor_message_id']);
     $history=$historical['messages'];$historySources=$historical['source_sets'];
     $context=profile_agent_context($pdo,$profile,$agent,$visitor,$query);
-    if(function_exists('profile_agent_transcript_brain_context_v255'))foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
+    // Background workers use the same supplemental public Commerce/booking
+    // and policy-gated transcript context as API admission entry points.
+    require_once __DIR__.'/profile-agent-transcription-context.php';
+    foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
     if(function_exists('vp3_profile_webmcp_agent_capability_context_v190')){
         $capability=vp3_profile_webmcp_agent_capability_context_v190($pdo,$profile,$visitor);
         if(!empty($capability['capabilities']))$context[]=$capability;
