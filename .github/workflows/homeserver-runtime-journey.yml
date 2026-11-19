@@ -75,6 +75,8 @@ jobs:
       - run: |
           npm install --no-save --ignore-scripts playwright@1.62.1
           bash tools/install-ci-chromium.sh
+      - name: Exact named Media offer acceptance
+        run: php tests/agent-media-offer-named-reply-v1.php
       - name: Initiative media invitations and verified automatic preparation
         run: node tests/initiative-youtube-offer-e2e.mjs
       - run: node tests/transfer-section7.mjs
