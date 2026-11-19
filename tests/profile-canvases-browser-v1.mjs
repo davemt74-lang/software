@@ -106,10 +106,14 @@ try{
     await page.locator('#profileAgentShell').getByText('Your conversation continues across my canvases.',{exact:true}).waitFor();
     check(requests.filter(row=>row.body.action==='message').length===1&&requests.some(row=>row.body.action==='state'&&Number(row.body.conversation_id)===31),'moving between canvases restores the same visitor conversation on '+viewport.width+'px');
     check(requests.filter(row=>row.path==='/api/profile-agent.php'&&row.body.action!=='image_collection').every(row=>row.body.conversation_namespace==='a'.repeat(64)),'all chat requests retain the same owner namespace on '+viewport.width+'px');
-    const before=requests.length;
-    await page.goto(origin+'/fixture-owner/canvas/creative-studio?owner=1');
-    await page.getByRole('button',{name:'Ask Taylor’s Guide',exact:true}).click();
-    check(await page.getByRole('textbox',{name:'Message Profile Agent'}).isDisabled()&&requests.length===before,'owner Canvas preview does not start a visitor conversation on '+viewport.width+'px');
+    await page.close();
+    const ownerPage=await context.newPage(),ownerRequests=[];
+    ownerPage.on('pageerror',error=>errors.push(error.message));
+    await ownerPage.route('**/api/**',route=>{ownerRequests.push(route.request().url());return route.fulfill({json:{ok:false,error:'Owner preview must not start visitor requests.'}});});
+    await ownerPage.goto(origin+'/fixture-owner/canvas/creative-studio?owner=1');
+    await ownerPage.frameLocator('.public-canvas-frame').getByText('Isolated Canvas',{exact:true}).waitFor();
+    await ownerPage.getByRole('button',{name:'Ask Taylor’s Guide',exact:true}).click();
+    check(await ownerPage.getByRole('textbox',{name:'Message Profile Agent'}).isDisabled()&&ownerRequests.length===0,'owner Canvas preview does not start a visitor conversation on '+viewport.width+'px');
     check(errors.length===0,'no page errors on '+viewport.width+'px');
     await context.close();
   }

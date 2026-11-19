@@ -12,6 +12,13 @@ const server=http.createServer((request,response)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base=`http://127.0.0.1:${server.address().port}`;let browser,checks=0;
 const check=(ok,label)=>{assert.ok(ok,label);checks++;console.log('PASS '+label);};
+// The button label changes when a pending intent is stored, before the HTTP
+// attempt finishes. Wait for the settled retry state rather than racing it.
+const waitForUncertainSend=page=>page.waitForFunction(()=>{
+  const button=document.querySelector('button[type="submit"]');
+  return button?.textContent==='Retry message'&&!button.disabled&&
+    document.querySelector('[data-profile-agent-status]')?.textContent.includes('may already be saved');
+});
 async function fixture({loseFirst=false,owner=false}={}){
   const context=await browser.newContext({viewport:{width:390,height:844}}),page=await context.newPage(),requests=[],errors=[],saved=new Map(),messages=[];
   const state={conversation:null,handoff:null,switched:false};let sequence=100;
@@ -47,7 +54,7 @@ async function fixture({loseFirst=false,owner=false}={}){
 try{
   browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
   {
-    const f=await fixture({loseFirst:true});await f.send('Show your public hours');await f.page.getByRole('button',{name:'Retry message'}).waitFor();
+    const f=await fixture({loseFirst:true});await f.send('Show your public hours');await waitForUncertainSend(f.page);
     const id=f.requests.find(request=>request.body.action==='message').body.client_request_id;
     check(f.saved.size===1&&(await f.page.getByRole('status').innerText()).includes('may already be saved'),'actual browser preserves the uncertain saved intent');
     await f.page.reload();await f.page.getByText('Saved public response',{exact:true}).waitFor();
@@ -58,7 +65,7 @@ try{
     check(await f.page.locator('#chatInput').inputValue()==='PRIVATE_OWNER_DRAFT'&&!JSON.stringify(f.requests).includes('PRIVATE_OWNER_DRAFT'),'owner private draft remains local and unchanged');await f.close();
   }
   for(const code of ['PROFILE_SESSION_CHANGED','OWNER_VISITOR_PREVIEW_REQUIRED']){
-    const f=await fixture({loseFirst:true});await f.send('Visitor A pending request');await f.page.getByRole('button',{name:'Retry message'}).waitFor();f.state.switched=code;
+    const f=await fixture({loseFirst:true});await f.send('Visitor A pending request');await waitForUncertainSend(f.page);f.state.switched=code;
     await f.page.getByRole('button',{name:'Retry message'}).click();await f.page.getByRole('button',{name:'Reload chat',exact:true}).waitFor();
     check(await f.page.locator('[data-profile-agent-status] .profile-agent-visually-hidden').textContent()==='Your visitor session changed.','a changed session explains its recovery action to assistive technology');
     check(await f.page.getByRole('textbox',{name:'Visitor message'}).isDisabled()&&await f.page.locator('.profile-agent-message').count()===0,'changed account clears history and disables further sends until refreshed');
