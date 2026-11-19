@@ -345,6 +345,26 @@ function vp3_media_recent_play_finding_v1(array $listening,array $findings=[]): 
         'actions'=>$play['actions']];
 }
 
+/** Match a named Play reply only to the exact track already offered to this owner. */
+function vp3_media_offer_title_key_v1(string $title): string
+{
+    $plain=preg_replace('/[\p{C}\p{P}\p{S}\p{Z}\s]+/u',' ',mb_strtolower($title,'UTF-8'));
+    return trim($plain??'');
+}
+
+function vp3_media_offer_named_reply_v1(string $text,string $offeredTitle): bool
+{
+    if(mb_strlen($text,'UTF-8')>220)return false;
+    if(!preg_match('~\A(?:(?:yes|yeah|yep|sure|ok(?:ay)?)[,\s]+)?(?:please\s+)?(?:play|resume)(?:\s+me)?\s+(.+?)(?:\s+please)?[.!?]*\z~iu',$text,$match))return false;
+    $request=vp3_media_offer_title_key_v1($match[1]);
+    $expected=vp3_media_offer_title_key_v1($offeredTitle);
+    if($request===''||$expected==='')return false;
+    if(hash_equals($expected,$request))return true;
+    // Spoken "play a Vacation Brain" can refer to the title "Vacation Brain".
+    $withoutArticle=preg_replace('/\A(?:a|an|the)\s+/u','',$request,1);
+    return is_string($withoutArticle)&&$withoutArticle!==''&&hash_equals($expected,$withoutArticle);
+}
+
 /** A bare acceptance belongs only to the immediately preceding Media question. */
 function vp3_media_reply_target_v1(PDO $pdo,array $user,int $agent,int $cid,string $text,?array $explicit=null): ?array
 {
@@ -357,7 +377,8 @@ function vp3_media_reply_target_v1(PDO $pdo,array $user,int $agent,int $cid,stri
         preg_match('~\A(?:not (?:right )?now|(?:maybe )?later|another time)[.!?]*\z~iu',$text)===1=>'defer',
         default=>null,
     };
-    if($intent===null)return null;
+    $namedReply=$intent===null&&preg_match('~\A(?:(?:yes|yeah|yep|sure|ok(?:ay)?)[,\s]+)?(?:please\s+)?(?:play|resume)(?:\s+me)?\s+.{1,220}\z~iu',$text)===1;
+    if($intent===null&&!$namedReply)return null;
     $agentWhere=$agent>0?'c.user_agent_id=?':'c.user_agent_id IS NULL';
     $exact=$explicit===null?'':' AND m.id=?';
     $read=$pdo->prepare("SELECT m.id,m.role,m.user_id,m.context_json,m.created_at FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
@@ -372,6 +393,17 @@ function vp3_media_reply_target_v1(PDO $pdo,array $user,int $agent,int $cid,stri
         ||!is_array($output['evidence_revisions']??null)||count($output['evidence_revisions'])!==1
         ||!str_starts_with((string)array_key_first($output['evidence_revisions']),'media:'))return null;
     $sourceRef=(string)array_key_first($output['evidence_revisions']);
+    if($intent===null){
+        // Do not treat an arbitrary named song as acceptance of an unrelated offer.
+        // Only an existing native track/resume offer may authorize this path.
+        if(!preg_match('/\Amedia:(track|resume):([1-9][0-9]*)\z/D',$sourceRef,$namedTrack))return null;
+        require_once __DIR__.'/agent-media-playback-v1.php';
+        $trackId=filter_var($namedTrack[2],FILTER_VALIDATE_INT);
+        if($trackId===false||$trackId<1)return null;
+        $track=vp3_media_playable_track_v1($pdo,$user,$trackId,$namedTrack[1]==='track');
+        if($track===null||!vp3_media_offer_named_reply_v1($text,(string)$track['title']))return null;
+        $intent='play';
+    }
     $mediaType=match(true){
         str_starts_with($sourceRef,'media:stoneward:')=>['stoneward'=>true],
         str_starts_with($sourceRef,'media:resume:'),str_starts_with($sourceRef,'media:track:')=>['native_playback'=>true],

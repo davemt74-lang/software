@@ -650,13 +650,21 @@ try{
   assert.equal(await page.locator('audio').evaluateAll(elements=>elements.some(audio=>!audio.paused)),false);
   assert.equal((await state()).plays.filter(row=>row.user_id===1).length,0);
   await coldOffer.getByRole('button',{name:'Reply',exact:true}).click();
-  const firstPick=await post('Yes.');
+  // The offered title, not a generic model response, owns a named acceptance.
+  const firstPick=await post('Yeah play a First Light');
+  assert.equal(firstPick.media_offer_reply_v1,true,'The exact title routes through the native Media offer handler.');
   assert.equal(firstPick.initiative_followthrough.message_id,Number(coldReceipt.initiative_message_id));
   assert.equal(firstPick.media_playback?.operation,'play');
   assert.equal(firstPick.media_playback.track_id,42);
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('audio')).some(audio=>
     audio.dataset.trackId==='42'&&!audio.paused));
-  console.log('PASS cold VP3 catalog pick saves one scoped text offer during playback, honors cooldown, and plays the exact accepted track');
+  const namedAccepted=await state();
+  assert.equal(namedAccepted.messages.filter(row=>row.conversation_id===16&&row.role==='user'
+    &&row.message==='Yeah play a First Light').length,1,'Named reply must save exactly one owner turn.');
+  assert.equal(namedAccepted.messages.filter(row=>row.conversation_id===16&&row.role==='assistant'
+    &&JSON.parse(row.context_json||'{}').chat_user_message_id===firstPick.user_message_id).length,1,
+  'Named reply must save exactly one verified answer, without a model failure or duplicate.');
+  console.log('PASS cold VP3 catalog pick saves one scoped offer, honors cooldown, and accepts an exact named track without AI reply inference or duplicate turns');
 
   await page.route(presentation,holdAutomaticTick);
   await page.evaluate(async()=>{
