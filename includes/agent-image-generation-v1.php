@@ -5,6 +5,15 @@ require_once __DIR__.'/ai-service-policy-v1.php';
 require_once __DIR__.'/ai-service-usage-v1.php';
 require_once __DIR__.'/user-llm-v1.php';
 
+/** A rejected new request points to existing owner work, never to an accepted generation. */
+final class Vp3ImageActiveRequestExceptionV1 extends RuntimeException
+{
+    public function __construct(public readonly array $conflict)
+    {
+        parent::__construct('An image request is already active. Finish or cancel it before creating another.',409);
+    }
+}
+
 /** Only the exact model and funding are persisted with a job. Credentials are read at execution. */
 function vp3_image_route_v1(PDO $pdo,array $user,?array $config=null): array
 {
@@ -126,6 +135,58 @@ function vp3_image_run_v1(PDO $pdo,array $user,array $row,bool $lock=false): arr
     if(!$run||$run['origin']!==$origin||$run['source_kind']!=='image_generation'||$run['source_key']!==$row['generation_id']||(int)($run['agent_id']??0)!==(int)$row['agent_id']||$run['execution_target']!=='cloud'||$run['capability_key']!=='images.generate')throw new RuntimeException('Image job binding is unavailable.',409);
     return $run;
 }
+
+/** Canonical lease recovery owns its transactions and never starts provider work. */
+function vp3_image_reconcile_expired_v1(PDO $pdo,array $user): void
+{
+    if($pdo->inTransaction())throw new LogicException('Recover image leases before opening the admission transaction.');
+    $q=$pdo->prepare("SELECT g.* FROM agent_image_generations_v1 g
+        JOIN agent_workflow_runs r ON r.id=g.run_id AND r.owner_user_id=g.owner_user_id
+        WHERE g.owner_user_id=? AND r.status='executing' AND r.lease_expires_at IS NOT NULL
+        AND r.lease_expires_at<UTC_TIMESTAMP() ORDER BY r.lease_expires_at,r.id LIMIT 5");
+    $q->execute([(int)$user['id']]);
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){
+        try{
+            $live=vp3_image_authority_v1($pdo,$user,$row);
+            $run=vp3_image_run_v1($pdo,$live,$row);
+        }catch(PDOException $error){throw $error;}
+        catch(RuntimeException $error){continue;} // Changed source authority stays available through owner workflow management.
+        agent_job_recover_expired_v1900($pdo,$live,1,(int)$run['id']);
+    }
+}
+
+/** Minimal owner-wide conflict metadata; source navigation still needs its own current authority. */
+function vp3_image_active_conflict_v1(PDO $pdo,array $user): ?array
+{
+    $q=$pdo->prepare("SELECT g.*,r.status AS active_status FROM agent_image_generations_v1 g
+        JOIN agent_workflow_runs r ON r.id=g.run_id AND r.owner_user_id=g.owner_user_id
+        WHERE g.owner_user_id=? AND r.status IN ('approved','executing','paused') ORDER BY r.id LIMIT 1");
+    $q->execute([(int)$user['id']]);$row=$q->fetch(PDO::FETCH_ASSOC);
+    if(!$row)return null;
+    $run=vp3_image_run_v1($pdo,$user,$row);
+    $workspace=vp3_image_workspace_row_v1($row);$source=null;
+    try{
+        vp3_image_authority_v1($pdo,$user,$row);
+        if($workspace)$source=url('/media-library.php');
+        else{
+            $source=url('/chat.php?agent='.((int)$row['agent_id']>0?(int)$row['agent_id']:'system')
+                .'&conversation_id='.(int)$row['conversation_id']);
+            if($row['user_message_id']!==null){
+                $turn=$pdo->prepare("SELECT id FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
+                $turn->execute([(int)$row['user_message_id'],(int)$row['conversation_id'],(int)$user['id']]);
+                if($turn->fetchColumn())$source.='&message_id='.(int)$row['user_message_id'];
+            }
+        }
+    }catch(PDOException $error){throw $error;}
+    catch(RuntimeException $error){$source=null;}
+    return ['contract'=>'vp3.image-conflict.v1','generation_id'=>$row['generation_id'],'job_id'=>(int)$run['id'],
+        'status'=>match($row['active_status']){'approved'=>'queued','executing'=>'generating',default=>'paused'},
+        'origin'=>$workspace?'media_library':'chat','agent_id'=>(int)$row['agent_id'],
+        'conversation_id'=>(int)$row['conversation_id'],'user_message_id'=>$row['user_message_id']===null?null:(int)$row['user_message_id'],
+        'provider_started'=>$row['provider_started_at']!=='',
+        'manage_url'=>has_permission('account.access',$user)?url('/agent-workflows.php?id='.(int)$run['id']):null,'source_url'=>$source];
+}
+
 function vp3_image_view_v1(PDO $pdo,array $user,array $row): array
 {
     vp3_image_authority_v1($pdo,$user,$row);$run=vp3_image_run_v1($pdo,$user,$row);
@@ -243,7 +304,9 @@ function vp3_image_admit_v1(PDO $pdo,array $user,int $cid,int $aid,?int $turn,st
     $uid=(int)$user['id'];$id=substr($key,0,8).'-'.substr($key,8,4).'-'.substr($key,12,4).'-'.substr($key,16,4).'-'.substr($key,20,12);
     $workspace=$cid===0&&$aid===0&&$turn===null;
     $edit=$turn===null&&!$workspace;
-    vp3_image_schema_v1($pdo,$turn===null);$pdo->beginTransaction();try{
+    vp3_image_schema_v1($pdo,$turn===null);
+    vp3_image_reconcile_expired_v1($pdo,$user);
+    $pdo->beginTransaction();try{
         // One owner lock serializes concurrent admission without a separate queue.
         vp3_image_lock_owner_v1($pdo,$uid);
         if($workspace)vp3_image_workspace_owner_v1($pdo,$user);
@@ -266,10 +329,10 @@ function vp3_image_admit_v1(PDO $pdo,array $user,int $cid,int $aid,?int $turn,st
         $icon=($config['mode']??null)==='canvas_icon';
         $hash=hash('sha256',json_encode([$cid,$aid,$config],JSON_THROW_ON_ERROR));
         if($old){if(!hash_equals($old['request_hash'],$hash))throw new RuntimeException($turn===null?'This approval already has a different image request.':'This user turn already has a different image request.',409);$pdo->commit();return vp3_image_view_v1($pdo,$user,$old);}
-        $q=$pdo->prepare("SELECT COUNT(*) FROM agent_image_generations_v1 g JOIN agent_workflow_runs r ON r.id=g.run_id AND r.owner_user_id=g.owner_user_id WHERE g.owner_user_id=? AND r.status IN ('approved','executing','paused')");$q->execute([$uid]);
-        if((int)$q->fetchColumn()>0){
-            $message='An image request is already active. Finish or cancel it before creating another.';
-            throw $edit?new DomainException($message,409):new RuntimeException($message,409);
+        $conflict=vp3_image_active_conflict_v1($pdo,$user);
+        if($conflict!==null){
+            $error=new Vp3ImageActiveRequestExceptionV1($conflict);
+            throw $edit?new DomainException($error->getMessage(),409,$error):$error;
         }
         $title=mb_substr(($edit&&!$marketing&&!$icon?'Edit capture: ':'Generate image: ').$config['title'],0,190);
         $label=match(true){$icon=>'Create Canvas app icon',$marketing=>'Create marketing image',$edit=>'Edit selected screen capture',default=>'Generate requested image'};

@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-import {Document} from './fixtures/profile-attention-pa4b.mjs';
+import {Document,Element} from './fixtures/profile-attention-pa4b.mjs';
+
+// Chat's canvas-media marker uses this standard DOM insertion primitive.
+Element.prototype.after=function(node){const parent=this.parentElement;if(parent)parent.insertBefore(node,parent.children[parent.children.indexOf(this)+1]||null);};
 
 // Execute the production send owner, Chat message renderer and local status
 // presenter. DOM, transport, clocks and draft storage are fixture boundaries.
@@ -16,7 +19,7 @@ const helpers=['bindStoredMessagePa3','initiativeIdentityMatchesV1','validInitia
  'showParkedReplyAfterSend','bindFoodMonsterResultIcon','bindGmailResultTime','applyInitiativeFollowthroughV1',
  'bindCoordinationReplyV1','bindInitiativeActionV1','bindMeetingActionV1','messageElement','addMessage','addTyping',
  'catchUpSourceLinks','publicResearchSourceLinks','attachAudioTracking'].map(chatFunction).join('');
-const sendOwner=['gmailReviewActionLabel','sendMessage'].map(chatFunction).join('');
+const sendOwner=['gmailReviewActionLabel','activeImageConflictV1','recoverBlockedImageDraftV1','sendMessage'].map(chatFunction).join('');
 const initiativeIdentity=section('  const initiativePage =', '  const thread =');
 const initiativeState=section('  let initiativeReplyTarget =', '  const recoveryKey =');
 function fixture(){
@@ -27,15 +30,17 @@ function fixture(){
  const ctx={console,AbortController,DOMException,Event,URLSearchParams,location:new URL('https://app.test/chat.php'),CustomEvent:class{constructor(type,init={}){this.type=type;this.detail=init.detail;}},
   document,window:{dispatchEvent(){},addEventListener(){},setTimeout(){}},navigator:{onLine:true},input:document.getElementById('chatInput'),
   send:document.getElementById('sendChatButton'),form:document.getElementById('chatForm'),welcome:document.getElementById('chatWelcome'),
-  cfg:{agentId:0},thread,
+  cfg:{userId:1,agentId:0,workingAttentionBinding:'fixture-session',csrf:'fixture',endpoint:'/api/chat.php'},thread,
   busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,lastLoadedMessageId:0,
+  composerDraftRevision:0,composerDraftOrigin:null,historyAuthority:0,historyParticipant:0,
   voiceMode:false,voiceSpeaking:false,
   setTimeout(fn,ms){const id=++sequence;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
   keepDraft(text,id=42){if(text)drafts.set(id,text);else drafts.delete(id);},autoSize(){},showStop(){},setChatCanvasView(){},
   rememberConversation(){},refreshHistory:async()=>{},
   api:async(payload,signal)=>{calls++;return reply(payload,signal);},
  };
- vm.createContext(ctx);vm.runInContext(initiativeIdentity+initiativeState+presenter+helpers+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
+ ctx.window.STONEFELLOW_CHAT=ctx.cfg;
+ vm.createContext(ctx);vm.runInContext(initiativeIdentity+initiativeState+presenter+helpers+chatFunction('composerDraftValue')+sendOwner+'\nglobalThis.submit=sendMessage;',ctx);
  return {ctx,document,drafts,timers,get messageElements(){return messageElements();},
   get messages(){return messageElements().map(element=>({role:element.classList.contains('user')?'user':'assistant',text:element.querySelector('.message-text').textContent}));},
   get notice(){return thread.querySelector('[data-chat-turn-notice]');},get calls(){return calls;},reply:fn=>{reply=fn;}};
@@ -106,6 +111,96 @@ for(const kind of ['server','network','timeout']){
  assert.equal(f.messages.some(message=>message.text==='Stale answer.'),false);
  assert.equal(f.drafts.get(43),'Current draft');assert.equal(f.notice,currentNotice);
  assert.equal(currentNotice.querySelector('.message-text').textContent,'Current Chat status.');checks+=6;
+}
+function imageConflictResponse(overrides={}) {
+ return {ok:true,conversation_id:42,agent_id:0,user_message_id:31,assistant_message_id:32,
+  answer:'An earlier image request is queued. Manage that request, then send your prompt again.',
+  canvas_media:{asset_ids:[],generation_ids:[],image_conflict:{contract:'vp3.image-conflict.v1',
+   generation_id:'11111111-2222-4333-8444-555555555555',job_id:19,status:'queued',origin:'chat',
+   agent_id:7,conversation_id:91,user_message_id:28,provider_started:false,
+   manage_url:'/agent-workflows.php?id=19',source_url:'/chat.php?agent=7&conversation_id=91&message_id=28'}},
+  tool_receipt:{contract:'vp3.tool-receipt.v1',capability:'images.generate',operation:'queue',status:'blocked',
+   reason:'active_request',record_id:0,count:0},...overrides};
+}
+// This is the production send owner with a structured, cross-Chat blocker. The
+// image module's real consume/selection behavior is covered by the browser gate.
+{
+ const f=fixture(),prompt='Generate 2 images: Keep this exact composition.\nUse muted greens and warm paper.',
+  reference={assetId:17,conversationId:42,selectionId:'selected-original'};
+ f.ctx.window.VP3ImageComposer={requestContext:()=>reference,consume(){}};
+ f.reply(async payload=>{assert.equal(payload.image_reference_asset_id,17);return imageConflictResponse();});
+ await f.ctx.submit(prompt);
+ assert.equal(f.ctx.input.value,prompt);assert.equal(f.drafts.get(42),prompt);
+ assert.equal(f.ctx.composerDraftOrigin.text,prompt);assert.equal(f.calls,1);
+ assert.match(f.document.getElementById('chatRecoveryStatus').textContent,/prompt is kept/);
+ assert.equal(f.ctx.window.VP3ImageComposer.requestContext(),reference);checks+=7;
+}
+{
+ const f=fixture(),prompt='Create my first image in this Chat.',events=[];
+ f.ctx.conversationId=0;f.ctx.window.dispatchEvent=event=>events.push({event,cid:f.ctx.conversationId});
+ const response=imageConflictResponse({conversation_id:73});
+ Object.assign(response.canvas_media.image_conflict,{origin:'media_library',agent_id:0,conversation_id:0,user_message_id:null});
+ f.reply(async payload=>{assert.equal(payload.conversation_id,0);return response;});
+ await f.ctx.submit(prompt);
+ assert.equal(f.ctx.conversationId,73);assert.equal(f.ctx.input.value,prompt);
+ assert.equal(f.drafts.has(0),false);assert.equal(f.drafts.get(73),prompt);
+ const bound=events.filter(item=>item.event.type==='vp3:chat-conversation-bound');assert.equal(bound.length,1);
+ assert.equal(bound[0].cid,73);assert.equal(bound[0].event.detail.previous_conversation_id,0);
+ assert.equal(bound[0].event.detail.conversation_id,73);checks+=9;
+}
+for(const newer of ['My newer draft','']){
+ const f=fixture();let release;f.reply(()=>new Promise(resolve=>{release=resolve;}));
+ const pending=f.ctx.submit('Blocked original prompt');await Promise.resolve();
+ // The browser suite dispatches real input events, including replacement then
+ // clearing while the response is held. Here the revision is the DOM boundary.
+ f.ctx.composerDraftRevision+=2;f.ctx.input.value=newer;
+ release(imageConflictResponse());await pending;
+ assert.equal(f.ctx.input.value,newer);assert.equal(f.drafts.get(42),newer||undefined);
+ assert.equal(f.calls,1);checks+=3;
+}
+for(const changed of ['removed','replaced']){
+ const f=fixture();let release,reference={assetId:17,conversationId:42,selectionId:'original'};
+ f.ctx.window.VP3ImageComposer={requestContext:()=>reference,consume(){}};
+ f.reply(()=>new Promise(resolve=>{release=resolve;}));const pending=f.ctx.submit('Original image prompt');await Promise.resolve();
+ reference=changed==='removed'?null:{assetId:18,conversationId:42,selectionId:'new-selection'};
+ release(imageConflictResponse());await pending;
+ assert.equal(f.ctx.input.value,'');assert.equal(f.drafts.has(42),false);assert.equal(f.calls,1);checks+=3;
+}
+for(const change of ['owner','agent','session','csrf','endpoint','participant','authority','response_agent','response_conversation']){
+ const f=fixture();let release;f.reply(()=>new Promise(resolve=>{release=resolve;}));
+ const pending=f.ctx.submit('Private original prompt');await Promise.resolve();
+ const response=imageConflictResponse();
+ if(change==='owner')f.ctx.cfg.userId=2;
+ if(change==='agent')f.ctx.cfg.agentId=7;
+ if(change==='session')f.ctx.cfg.workingAttentionBinding='changed-session';
+ if(change==='csrf')f.ctx.cfg.csrf='changed-csrf';
+ if(change==='endpoint')f.ctx.cfg.endpoint='/different-chat.php';
+ if(change==='participant')f.ctx.window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:22})};
+ if(change==='authority')f.ctx.historyAuthority++;
+ if(change==='response_agent')response.agent_id=7;
+ if(change==='response_conversation')response.conversation_id=91;
+ f.ctx.input.value='Destination draft';f.ctx.keepDraft('Destination draft',43);
+ release(response);await pending;
+ assert.equal(f.ctx.input.value,'Destination draft',change);assert.equal(f.drafts.get(43),'Destination draft',change);
+ assert.equal(f.drafts.get(42),'Private original prompt',change);assert.equal(f.ctx.conversationId,42,change);
+ assert.equal(f.messages.some(message=>message.role==='assistant'),false,change);
+ assert.equal(f.ctx.thread.querySelector('.typing'),null,change);checks+=6;
+}
+for(const kind of ['status_receipt','different_reason','missing_job','invalid_contract','generation_present']){
+ const f=fixture(),response=imageConflictResponse();
+ if(kind==='status_receipt')response.tool_receipt.operation='status';
+ if(kind==='different_reason')response.tool_receipt.reason='provider_unavailable';
+ if(kind==='missing_job')delete response.canvas_media.image_conflict.job_id;
+ if(kind==='invalid_contract')response.canvas_media.image_conflict.contract='unknown';
+ if(kind==='generation_present')response.canvas_media.generation_ids=[response.canvas_media.image_conflict.generation_id];
+ f.reply(async()=>response);await f.ctx.submit('This is not a verified blocked creation.');
+ assert.equal(f.ctx.input.value,'',kind);assert.equal(f.drafts.has(42),false,kind);assert.equal(f.calls,1,kind);checks+=3;
+}
+{
+ const f=fixture();f.ctx.window.STONEFELLOW_CHAT_CONTINUITY={pendingVoiceSubmit:()=>true};
+ f.reply(async()=>imageConflictResponse());await f.ctx.submit('Submitted automatic voice utterance');
+ assert.equal(f.ctx.input.value,'');assert.equal(f.drafts.has(42),false);
+ assert.equal(f.document.getElementById('chatRecoveryStatus'),null);assert.equal(f.calls,1);checks+=4;
 }
 console.log(`CHAT_SEND_RECOVERY=PASS (${checks} assertions; actual send owner; transport mocked)`);
 

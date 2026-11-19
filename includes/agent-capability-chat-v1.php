@@ -320,6 +320,15 @@ function vp3_capability_image_generate_v1(PDO $pdo,array $user,array $principal,
             'canvas_media'=>['asset_ids'=>[],'generation_ids'=>[$job['id']]],
             'tool_receipt'=>vp3_tool_receipt_v1('images.generate','queue','completed','',$job['job_id'],1)];
     }catch(Throwable $error){
+        if($error instanceof Vp3ImageActiveRequestExceptionV1){
+            $conflict=$error->conflict;
+            if($conflict['manage_url']!==null)$result['actions'][]=['label'=>'Manage earlier image request','url'=>$conflict['manage_url']];
+            if($conflict['source_url']!==null)$result['actions'][]=['label'=>$conflict['origin']==='media_library'?'Open Media Library':'Open original conversation','url'=>$conflict['source_url']];
+            $state=match($conflict['status']){'queued'=>'queued','generating'=>'still generating',default=>'paused'};
+            return $result+['answer'=>'An earlier image request is '.$state.'. Manage that request or wait for it to finish, then send your new prompt again.',
+                'canvas_media'=>['asset_ids'=>[],'generation_ids'=>[],'image_conflict'=>$conflict],
+                'tool_receipt'=>vp3_tool_receipt_v1('images.generate','queue','blocked','active_request')];
+        }
         $answer=match(true){
             $error instanceof PDOException=>'Image job storage could not be verified. Check its history before creating another request.',
             $error instanceof RuntimeException=>$error->getMessage(),

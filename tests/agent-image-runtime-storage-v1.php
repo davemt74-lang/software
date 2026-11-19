@@ -154,6 +154,30 @@ try{
     vp3_image_tick_v1($pdo,$owner,vp3_image_row_v1($pdo,$owner,$id),'storage_transport');
     storage_check(count($calls)===1,'reloading a completed real-routing edit cannot charge again');
 
+    foreach(['',gmdate('Y-m-d H:i:s')] as $dispatch){
+        $expiredContext=image_fixture_turn_v1();$expiredContext['image_reference_asset_id']=$asset;
+        $expired=vp3_capability_image_generate_v1($pdo,$owner,$principal,$plan,$expiredContext);
+        $expiredId=$expired['canvas_media']['generation_ids'][0];$expiredRow=vp3_image_row_v1($pdo,$owner,$expiredId);
+        agent_job_claim_run_v1900($pdo,$owner,(int)$expiredRow['run_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);
+        $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')
+            ->execute(['2001-01-01 00:00:00',(int)$expiredRow['run_id']]);
+        $pdo->prepare('UPDATE agent_image_generations_v1 SET provider_started_at=? WHERE generation_id=?')
+            ->execute([$dispatch,$expiredId]);
+        $nextContext=image_fixture_turn_v1();$nextContext['image_reference_asset_id']=$asset;
+        $next=vp3_capability_image_generate_v1($pdo,$owner,$principal,$plan,$nextContext);
+        storage_check($next['tool_receipt']['status']==='completed'
+            &&agent_workflow_row_v1400($pdo,1,(int)$expiredRow['run_id'])['status']==='failed'
+            &&vp3_image_row_v1($pdo,$owner,$expiredId)['provider_started_at']===$dispatch
+            &&count($calls)===1&&$pdo->transactionDdl===0&&$pdo->unprotectedWrites===[]&&!$pdo->inTransaction(),
+            'real routing recovers an expired image '.($dispatch===''?'before':'after').' dispatch outside admission without DDL or provider replay');
+        $nextRow=vp3_image_row_v1($pdo,$owner,$next['canvas_media']['generation_ids'][0]);
+        $nextConfig=json_decode($nextRow['config_json'],true);
+        storage_check($nextConfig['prompt']===$prompt&&$nextConfig['reference']['asset_id']===$asset
+            &&$nextConfig['reference']['sha256']===hash('sha256',$bytes),
+            'recovery admits the new edit with its exact prompt and original source proof');
+        agent_job_cancel_v1900($pdo,$owner,(int)$nextRow['run_id']);
+    }
+
     // A storage failure must roll back every new job row, even after source routing.
     $before=storage_counts($pdo);$context=image_fixture_turn_v1();$context['image_reference_asset_id']=$asset;
     $pdo->failEvent=true;$failed=vp3_capability_image_generate_v1($pdo,$owner,$principal,$plan,$context);$pdo->failEvent=false;
@@ -256,10 +280,15 @@ try{
     $detachedContext=image_fixture_turn_v1(); // The user removed the composer attachment.
     $before=storage_counts($pdo);
     $active=vp3_capability_image_generate_v1($pdo,$owner,$principal,$grizzly,$detachedContext);
-    storage_check($active['answer']==='An image request is already active. Finish or cancel it before creating another.'
+    $activeConflict=$active['canvas_media']['image_conflict'];
+    storage_check($active['tool_receipt']['status']==='blocked'&&$active['tool_receipt']['reason']==='active_request'
+        &&$active['tool_receipt']['record_id']===0&&$active['canvas_media']['generation_ids']===[]
+        &&$activeConflict['generation_id']===$cancelRow['generation_id']&&$activeConflict['job_id']===(int)$cancelRow['run_id']
+        &&$activeConflict['manage_url']==='/agent-workflows.php?id='.(int)$cancelRow['run_id']
+        &&array_column($active['actions'],'url')===[$activeConflict['manage_url'],$activeConflict['source_url']]
         &&storage_counts($pdo)===$before&&count($calls)===3
         &&vp3_image_view_v1($pdo,$owner,$cancelRow)['status']==='queued',
-        'removing the client attachment leaves the prior approved edit active and cannot admit the grizzly request');
+        'the historical orphan is explicitly manageable while the new detached prompt remains unadmitted');
     $cancelled=agent_job_cancel_v1900($pdo,$owner,(int)$cancelRow['run_id']);
     $newRequest=vp3_capability_image_generate_v1($pdo,$owner,$principal,$grizzly,$detachedContext);
     $newId=$newRequest['canvas_media']['generation_ids'][0]??'';
