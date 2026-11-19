@@ -120,7 +120,9 @@ function agent_connection_gmail_inbox_rules_v1(array $input): array
         $rules['content_analysis'] = true;
     }
     foreach (['senders','domains','subjects'] as $kind) {
-        $text = $input['ignore_'.$kind] ?? '';
+        // Keep accepting the previous field names from a cached form; the stored rule keys
+        // are unchanged so existing owner selections become priority watches in place.
+        $text = $input['priority_'.$kind] ?? $input['ignore_'.$kind] ?? '';
         if (!is_string($text) || strlen($text) > 16384 || preg_match('//u',$text) !== 1
             || preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/',$text)) {
             throw new AgentConnectionExceptionV1('Inbox Review rules are invalid.',422);
@@ -176,24 +178,46 @@ function agent_connection_gmail_inbox_mailboxes_v1(mixed $header): array
     return $mailboxes;
 }
 
-/** These filters apply only to Inbox Review, never explicit Gmail searches or watches. */
+/** The independent workflow exclusion is the *only* Inbox Review ignore rule. */
 function agent_connection_gmail_inbox_ignored_v1(array $message, array $rules): bool
 {
     $from = agent_connection_gmail_inbox_mailboxes_v1($message['from'] ?? null);
+    return count($from) === 1 && !empty($rules['github_actions'])
+        && $from[0] === 'notifications@github.com'
+        && in_array('ci_activity@noreply.github.com',agent_connection_gmail_inbox_mailboxes_v1($message['cc'] ?? null),true);
+}
+
+/** Exact owner-selected watches, independent of the automated triage score.
+ * Return a small display-safe explanation; never accept Gmail query expressions.
+ */
+function agent_connection_gmail_inbox_priority_matches_v1(array $message, array $rules): array
+{
+    if (agent_connection_gmail_inbox_ignored_v1($message,$rules)) return [];
+    $matches = [];
+    $from = agent_connection_gmail_inbox_mailboxes_v1($message['from'] ?? null);
     if (count($from) === 1) {
-        $sender = $from[0];
-        $domain = substr(strrchr($sender,'@'),1);
-        if (in_array($sender,(array)($rules['senders'] ?? []),true)
-            || in_array($domain,(array)($rules['domains'] ?? []),true)) return true;
-        if (!empty($rules['github_actions']) && $sender === 'notifications@github.com'
-            && in_array('ci_activity@noreply.github.com',agent_connection_gmail_inbox_mailboxes_v1($message['cc'] ?? null),true)) return true;
+        $address = strtolower($from[0]);
+        $domain = substr(strrchr($address,'@'),1);
+        foreach ((array)($rules['senders'] ?? []) as $value) {
+            if (is_string($value) && strcasecmp($address,$value) === 0) {
+                $matches[] = 'Sender address: '.$address;
+                break;
+            }
+        }
+        foreach ((array)($rules['domains'] ?? []) as $value) {
+            if (is_string($value) && strcasecmp($domain,$value) === 0) {
+                $matches[] = 'Sender domain: '.$domain;
+                break;
+            }
+        }
     }
-    $subject = $message['subject'] ?? '';
-    if (!is_string($subject)) return false;
-    foreach ((array)($rules['subjects'] ?? []) as $phrase) {
-        if (is_string($phrase) && $phrase !== '' && mb_stripos($subject,$phrase,0,'UTF-8') !== false) return true;
+    $subject = $message['subject'] ?? null;
+    if (is_string($subject)) foreach ((array)($rules['subjects'] ?? []) as $phrase) {
+        if (!is_string($phrase) || $phrase === '' || mb_stripos($subject,$phrase,0,'UTF-8') === false) continue;
+        $matches[] = 'Subject phrase: '.mb_substr($phrase,0,160,'UTF-8');
+        if (count($matches) >= 3) break;
     }
-    return false;
+    return array_slice($matches,0,3);
 }
 
 function agent_connection_gmail_inbox_bound_policy_v1(?array $policy, array $connection): ?array

@@ -130,9 +130,9 @@ try {
     $messages = [
         'new_mail'=>inbox_message('new_mail',$arrived,'Customer <customer@example.test>','No action required: Customer update'),
         'reply_mail'=>inbox_message('reply_mail',$arrived,'reply@example.test','Re: Urgent customer update · Action required',['INBOX','IMPORTANT'],'','<original@example.test>'),
-        'blocked_sender'=>inbox_message('blocked_sender',$arrived,'Muted <muted@example.test>','Blocked sender subject'),
-        'blocked_domain'=>inbox_message('blocked_domain',$arrived,'sender@blocked.example.test','Blocked domain subject'),
-        'blocked_subject'=>inbox_message('blocked_subject',$arrived,'newsletter@example.test',str_repeat('x',300).'PRIVATE TOKEN PHRASE'),
+        'blocked_sender'=>inbox_message('blocked_sender',$arrived,'notifications@github.com','Blocked sender subject',['INBOX'],'ci_activity@noreply.github.com'),
+        'blocked_domain'=>inbox_message('blocked_domain',$arrived,'notifications@github.com','Blocked domain subject',['INBOX'],'ci_activity@noreply.github.com'),
+        'blocked_subject'=>inbox_message('blocked_subject',$arrived,'notifications@github.com',str_repeat('x',300).'PRIVATE TOKEN PHRASE',['INBOX'],'ci_activity@noreply.github.com'),
         'github_ci'=>inbox_message('github_ci',$arrived,'notifications@github.com','CI failed',['INBOX'],'"CI, automation" <ci_activity@noreply.github.com>'),
         'github_pr'=>inbox_message('github_pr',$arrived,'notifications@github.com','PR comment',['INBOX'],'"ci_activity@noreply.github.com" <mention@noreply.github.com>'),
         'sent'=>inbox_message('sent',$arrived,$mailbox,'SENT_SENTINEL',['INBOX','SENT']),
@@ -141,7 +141,7 @@ try {
         'epoch'=>inbox_message('epoch',0,'customer@example.test','EPOCH_SENTINEL'),
         'tail'=>inbox_message('tail',$arrived,'sender@sub.blocked.example.test','Exact domain lookalike stays'),
         'next'=>inbox_message('next',$arrived,'muted2@example.test','Exact sender lookalike stays'),
-        'filtered_only'=>inbox_message('filtered_only',$arrived,'muted@example.test','FILTERED_SENTINEL'),
+        'filtered_only'=>inbox_message('filtered_only',$arrived,'notifications@github.com','FILTERED_SENTINEL',['INBOX'],'ci_activity@noreply.github.com'),
     ];
     $initialIds = ['new_mail','reply_mail','blocked_sender','blocked_domain','blocked_subject','github_ci','github_pr','sent','archived','historical','deleted','tail'];
     $reorderedIds = array_merge(['tail','deleted'],array_slice($initialIds,0,10));
@@ -237,8 +237,8 @@ try {
     $raceId = '18446744073709551611';
     $raceHistory = $history([inbox_event($raceId,['raced','raced_second'])],$raceId);
     $arrived = (int)$reviewRow()['enabled_at_ms']+1000;
-    $messages['raced'] = inbox_message('raced',$arrived,'race@example.test','Rules change during provider request');
-    $messages['raced_second'] = inbox_message('raced_second',$arrived,'race@example.test','Lease can stop remaining reads');
+    $messages['raced'] = inbox_message('raced',$arrived,'notifications@github.com','Rules change during provider request',['INBOX'],'ci_activity@noreply.github.com');
+    $messages['raced_second'] = inbox_message('raced_second',$arrived,'notifications@github.com','Lease can stop remaining reads',['INBOX'],'ci_activity@noreply.github.com');
     $afterMetadata = static function() use (&$afterMetadata,$pdo,$owner,$settings,$reviewRow,$http): void {
         $afterMetadata = null;
         agent_connection_gmail_inbox_save_v1($pdo,$owner,array_replace($settings,['inbox_revision'=>$reviewRow()['revision'],

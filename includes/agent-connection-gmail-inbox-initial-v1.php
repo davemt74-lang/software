@@ -161,6 +161,8 @@ function agent_connection_gmail_inbox_review_items_v1(PDO $pdo,array $report, ar
             'category'=>in_array($item['category']??null,['reply','important'],true)?$item['category']:'new'];
         if (($item['important'] ?? false) === true) $view['important'] = true;
         if (!empty($item['priority_signals'])) $view['priority_signals'] = $item['priority_signals'];
+        $priorityMatches = agent_connection_gmail_inbox_priority_matches_v1($item,$scope['policy']['rules']);
+        if ($priorityMatches) $view['priority_matches'] = $priorityMatches;
         if (is_array($item['triage'] ?? null)) {
             $decision = $item['triage'];
             $view['triage'] = ['alert'=>($decision['alert'] ?? false) === true];

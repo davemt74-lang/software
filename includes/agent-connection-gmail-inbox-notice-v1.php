@@ -63,6 +63,10 @@ function agent_connection_gmail_inbox_notify_v1(PDO $pdo, int $owner, array $rev
         $priority = count(array_filter((array)($review['items'] ?? []),static fn($item): bool => !empty($item['priority_signals'])));
         if ($priority > 0) $body .= ' '.$priority.' '.($priority === 1 ? 'message' : 'messages').' with priority keywords in the subject.';
     }
+    if (!$first && (int)($review['priority_count'] ?? 0)>0) {
+        $count = (int)$review['priority_count'];
+        $body .= ' '.$count.' high-priority '.($count===1?'email matches':'emails match').' your watch list.';
+    }
     $utc = new DateTimeZone('UTC');
     $at = (new DateTimeImmutable($review['at'] ?? 'now',$utc))->setTimezone($utc)->format('Y-m-d H:i:s');
     // Each committed review is a separate bell event. Sharing its generation

@@ -78,22 +78,29 @@ try {
     $other = ['id'=>2,'is_active'=>1,'chat_allowed'=>1];
     $saved = static fn(): ?array => agent_connection_gmail_inbox_policy_v1($pdo,1);
     $base = ['connection_id'=>'7','connection_revision'=>hash('sha256',$grant),'inbox_revision'=>'','action'=>'save'];
-    $input = ['ignore_senders'=>"News@Example.com\r\nnews@example.com",'ignore_domains'=>"Example.net\n",'ignore_subjects'=>"Réunion [QA]\nréunion [qa]",
+    $input = ['priority_senders'=>"News@Example.com\r\nnews@example.com",'priority_domains'=>"Example.net\n",'priority_subjects'=>"Réunion [QA]\nréunion [qa]",
         'ignore_github_actions'=>'1'];
     $rules = agent_connection_gmail_inbox_rules_v1($input);
     inbox_settings_check($rules === ['github_actions'=>true,'senders'=>['news@example.com'],'domains'=>['example.net'],'subjects'=>['Réunion [QA]']],
         'exact rules normalize and deduplicate without converting phrases into patterns');
-    foreach ([['ignore_domains'=>'*.example.net'],['ignore_senders'=>'from:(news@example.com)'],['ignore_subjects'=>str_repeat('x',161)],
-        ['ignore_domains'=>array_fill(0,21,'example.net')],['ignore_subjects'=>"a\0b"],['ignore_github_actions'=>['1']]] as $invalid) {
+    foreach ([['priority_domains'=>'*.example.net'],['priority_senders'=>'from:(news@example.com)'],['priority_subjects'=>str_repeat('x',161)],
+        ['priority_domains'=>array_fill(0,21,'example.net')],['priority_subjects'=>"a\0b"],['ignore_github_actions'=>['1']]] as $invalid) {
         inbox_settings_reject(422,static fn()=>agent_connection_gmail_inbox_rules_v1($invalid),'invalid or oversized rule input is rejected');
     }
     $message = static fn(string $from,string $cc='',string $subject=''): array => compact('from','cc','subject');
-    inbox_settings_check(agent_connection_gmail_inbox_ignored_v1($message('News <NEWS@example.com>'),$rules)
-        && agent_connection_gmail_inbox_ignored_v1($message('orders@example.net'),$rules)
-        && !agent_connection_gmail_inbox_ignored_v1($message('orders@sub.example.net'),$rules)
-        && agent_connection_gmail_inbox_ignored_v1($message('someone@other.test','','RE: RÉUNION [qa]'),$rules)
-        && !agent_connection_gmail_inbox_ignored_v1($message('someone@other.test','','réunion Q'),$rules),
-        'sender/domain are exact and subject phrases match literally with Unicode case folding');
+    inbox_settings_check(agent_connection_gmail_inbox_priority_matches_v1($message('News <NEWS@example.com>'),$rules)
+            === ['Sender address: news@example.com']
+        && agent_connection_gmail_inbox_priority_matches_v1($message('orders@example.net'),$rules)
+            === ['Sender domain: example.net']
+        && agent_connection_gmail_inbox_priority_matches_v1($message('orders@sub.example.net'),$rules) === []
+        && agent_connection_gmail_inbox_priority_matches_v1($message('someone@other.test','','RE: RÉUNION [qa]'),$rules)
+            === ['Subject phrase: Réunion [QA]']
+        && agent_connection_gmail_inbox_priority_matches_v1($message('someone@other.test','','réunion Q'),$rules) === [],
+        'owner-selected sender/domain and literal Unicode subject matches produce explicit high-priority reasons');
+    inbox_settings_check(!agent_connection_gmail_inbox_ignored_v1($message('News <NEWS@example.com>'),$rules)
+        && !agent_connection_gmail_inbox_ignored_v1($message('orders@example.net'),$rules)
+        && !agent_connection_gmail_inbox_ignored_v1($message('someone@other.test','','RE: RÉUNION [qa]'),$rules),
+        'priority watched messages are not suppressed by Inbox Review');
     $githubFrom = 'GitHub <notifications@github.com>';
     inbox_settings_check(agent_connection_gmail_inbox_ignored_v1($message($githubFrom,'"Team, Ops" <team@example.net>, "CI \\"Bot\\"" <ci_activity@noreply.github.com>'),$rules)
         && !agent_connection_gmail_inbox_ignored_v1($message($githubFrom,'"ci_activity@noreply.github.com" <other@example.org>'),$rules)
@@ -101,6 +108,9 @@ try {
         && !agent_connection_gmail_inbox_ignored_v1($message('Group: '.$githubFrom.';','ci_activity@noreply.github.com'),$rules)
         && !agent_connection_gmail_inbox_ignored_v1($message('someone@else.test, '.$githubFrom,'ci_activity@noreply.github.com'),$rules),
         'GitHub Actions preset needs exact From and an actual Cc mailbox');
+    inbox_settings_check(agent_connection_gmail_inbox_priority_matches_v1(
+        $message($githubFrom,'ci_activity@noreply.github.com','RE: RÉUNION [qa]'),$rules)===[],
+        'the independent GitHub Actions workflow exclusion overrides a priority subject match');
 
     inbox_settings_check($saved() === null,'a connected mailbox starts with Inbox Review off');
     $requests = 0;

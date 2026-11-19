@@ -179,6 +179,13 @@ function agent_email_triage_classify_v1(array $message,?string $rule=null,bool $
         $attention = $rule;
         if (!$protected) $reason = 'sender_rule';
     }
+    // Explicit owner priority watches outrank saved sender downgrades and
+    // model-led routine classifications; never grant sending authority.
+    if (!empty($message['priority_matches'])) {
+        $attention = 'act_soon';
+        $reason = 'owner_priority_watch';
+        $protected = true;
+    }
     return ['context'=>$context,'purpose'=>$purpose,'sender'=>$sender,'attention'=>$attention,'reason_key'=>$reason,
         'due_date'=>$dueDate,'due_at'=>$dueAt,'protected'=>$protected];
 }
@@ -203,6 +210,7 @@ function agent_email_triage_reason_v1(string $reason): string
         'verified_reply'=>'A verified reply advanced an open email matter.',
         'open_matter_reply'=>'This reply may advance an open email matter.',
         'sender_rule'=>'Your saved sender rule set the attention level.',
+        'owner_priority_watch'=>'This email matches your high-priority sender or subject list.',
         'owner_correction'=>'You changed the attention level for this message.',
         'owner_digest_action'=>'You acted on this message in the Gmail digest.',
         default=>'The available evidence leaves the purpose or priority unclear.',
@@ -282,6 +290,7 @@ function agent_email_triage_record_v1(PDO $pdo,array $policy,array $message,stri
         $alreadyAnnounced = $receipt->fetchColumn() !== false;
     }
     $verifiedTransition = ($message['verified_transition'] ?? false) === true || $alreadyAnnounced;
+    $message['priority_matches'] = agent_connection_gmail_inbox_priority_matches_v1($message,$policy['rules']);
     $classification = agent_email_triage_classify_v1($message,$rule,$activeFollowup,$verifiedTransition);
     $group = agent_email_triage_group_key_v1($classification['attention'],$classification['purpose'],$historical);
     $assessment = $message['assessment'] ?? null;

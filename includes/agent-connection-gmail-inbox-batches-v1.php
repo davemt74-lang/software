@@ -71,7 +71,7 @@ function agent_connection_gmail_inbox_report_needs_alert_v1(array $report): bool
 /** Only triaged arrivals that did not request an alert enter the silent Chat digest. */
 function agent_connection_gmail_inbox_routine_item_v1(array $item): bool
 {
-    return is_array($item['triage'] ?? null)
+    return empty($item['priority_matches']) && is_array($item['triage'] ?? null)
         && ($item['triage']['alert'] ?? null) === false
         && in_array($item['triage']['attention'] ?? null,['read_later','informational','review','unknown'],true);
 }
@@ -91,6 +91,13 @@ function agent_connection_gmail_inbox_digest_sql_v1(): string
 {
     return "COALESCE(CAST(JSON_EXTRACT(CASE WHEN JSON_VALID(report_json) THEN report_json ELSE '{}' END,
         '$.routine_digest') AS CHAR),'0') IN ('true','1')";
+}
+
+/** The current private report must carry an explicit priority decision. */
+function agent_connection_gmail_inbox_priority_sql_v1(): string
+{
+    return "COALESCE(CAST(JSON_EXTRACT(CASE WHEN JSON_VALID(report_json) THEN report_json ELSE '{}' END,
+        '$.priority_count') AS UNSIGNED),0)>0";
 }
 
 /** Called inside the Inbox policy transaction that owns the cursor or delivery. */
