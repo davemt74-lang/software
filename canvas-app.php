@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/coding-canvas-publishing-v1.php';
+require_once __DIR__.'/includes/coding-canvas-public-view-v1.php';
 
 if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 header('Content-Type: text/html; charset=UTF-8');
@@ -16,33 +17,6 @@ $nonce=bin2hex(random_bytes(24));
 header("Content-Security-Policy: default-src 'none'; script-src 'self' 'nonce-$nonce' blob:; style-src 'self' 'nonce-$nonce';"
     ." frame-src 'self'; worker-src blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'");
 
-/** Only the documented public rows reach the guest page and its link broker. */
-function vp3_public_canvas_source_v1(string $command,array $source,string $basePath): array
-{
-    $fields=match($command){
-        'public-products'=>['price_label','price_cents','currency'],
-        'public-events'=>['starts_at','location','status'],
-        'public-booking'=>['duration_minutes','timezone'],
-    };
-    if(($source['status']??null)!=='ready'||!is_array($source['rows']??null))return ['status'=>'unavailable','rows'=>[]];
-    $keys=array_fill_keys(['id','title','description','url',...$fields],true);
-    $suffix=match($command){
-        'public-products'=>'/product/[a-z0-9-]{1,80}',
-        'public-events'=>'',
-        'public-booking'=>'/book/[a-z0-9-]{1,80}',
-    };
-    $route='~\A/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]'.$suffix.'\z~D';
-    $rows=[];
-    foreach(array_slice($source['rows'],0,24) as $record){
-        if(!is_array($record)||!is_string($record['id']??null)||!preg_match('/\A[A-Za-z0-9_-]{1,128}\z/D',$record['id']))continue;
-        $row=array_intersect_key($record,$keys);
-        if(!is_string($row['url']??null)||!str_starts_with($row['url'],$basePath.'/')
-            ||!preg_match($route,substr($row['url'],strlen($basePath))))unset($row['url']);
-        $rows[]=$row;
-    }
-    return ['status'=>'ready','rows'=>$rows];
-}
-
 $error='';
 $payload=null;
 $title='Canvas app';
@@ -56,17 +30,7 @@ try {
         $error='This Canvas app isn’t available.';
     } else {
         $title=trim($release['title'])?:$title;
-        $basePath=rtrim(url('/'),'/');
-        $sources=[];
-        $sourceCommands=['public-products','public-events','public-booking'];
-        if(array_intersect($sourceCommands,$release['commands'])){
-            require_once __DIR__.'/includes/coding-canvas-public-sources-v1.php';
-            foreach(array_intersect($sourceCommands,$release['commands']) as $command){
-                $sources[$command]=vp3_public_canvas_source_v1($command,
-                    vp3_coding_canvas_public_command_data_v1($pdo,$release['owner_user_id'],$command),$basePath);
-            }
-        }
-        $payload=json_encode(['artifact'=>$release['artifact'],'sources'=>$sources,'basePath'=>$basePath],
+        $payload=json_encode(vp3_public_canvas_payload_v1($pdo,$release),
             JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     }
 } catch(Throwable $errorInfo) {

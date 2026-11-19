@@ -449,7 +449,7 @@
       (libraryImage ? '; img-src data:' : '');
     return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
-      '<style nonce="' + nonce + '">:root{color-scheme:light;font:16px system-ui,sans-serif}body{margin:1rem}[hidden]{display:none!important}.vp3-canvas-library-image{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:0 auto 1rem}</style>' +
+      '<style nonce="' + nonce + '">:root{color-scheme:light;font:16px system-ui,sans-serif}body{margin:' + (payload.fullPage === true ? '0' : '1rem') + '}[hidden]{display:none!important}.vp3-canvas-library-image{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:0 auto 1rem}</style>' +
       '</head><body><main id="app"></main><script nonce="' + nonce + '">(' + hostRuntime.toString() + ')(' +
       scriptData({...payload,libraryImage}) + ',' + workerRuntime.toString() + (capture ? ',' + capture.toString() : '') +
       ');<\/script></body></html>';

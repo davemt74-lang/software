@@ -168,6 +168,30 @@
   border-inline-start:2px solid var(--line,#d1d5db);
   padding-inline-start:.7rem;
 }
+.vp3-coding-canvas-profile {
+  display:grid;
+  justify-items:start;
+  gap:.55rem;
+  width:100%;
+  min-width:0;
+  box-sizing:border-box;
+  border-top:1px solid var(--line,#e5e7eb);
+  padding-top:.75rem;
+  margin-top:.35rem;
+}
+.vp3-coding-canvas-profile .vp3-coding-canvas-checkbox {
+  display:flex;
+  align-items:baseline;
+  gap:.4rem;
+}
+.vp3-coding-canvas-profile p {
+  margin:0;
+}
+.vp3-coding-canvas-profile > a,
+.vp3-coding-canvas-profile > button {
+  max-width:100%;
+  overflow-wrap:anywhere;
+}
 .vp3-coding-canvas-delete-public-note {
   flex-basis:100%;
 }

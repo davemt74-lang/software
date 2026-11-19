@@ -9,6 +9,11 @@ require_once __DIR__ . '/includes/agent-scheduling-public-v450.php';
 require_once __DIR__ . '/includes/profile-webmcp-v100.php';
 require_once __DIR__ . '/includes/profile-webmcp-continuity-v194.php';
 
+// Only the dedicated public route selects this mode; a query parameter cannot
+// turn an ordinary Profile into a different rendering surface.
+$profileCanvasMode=defined('VP3_PROFILE_CANVAS_PAGE_V1')&&VP3_PROFILE_CANVAS_PAGE_V1===true;
+$profileCanvasRelease=null;$profileCanvasPayload=null;$profileCanvasNonce='';
+
 if (!function_exists('vp3_profile_optional_failure')) {
     function vp3_profile_optional_failure(string $stage, Throwable $e, string $username = ''): void
     {
@@ -31,9 +36,25 @@ try {
 $isOwner=$profile&&$viewer&&(int)$viewer['id']===(int)$profile['user_id'];
 $preview=$isOwner&&!empty($_GET['preview']);
 $chatPreview=$isOwner;
-if(!$profile||empty($profile['is_active'])||(!$preview&&empty($profile['is_public']))){http_response_code(404);exit('Profile not found.');}
+if(!$profile||empty($profile['is_active'])||(($profileCanvasMode||!$preview)&&empty($profile['is_public']))){http_response_code(404);exit('Profile not found.');}
 header('Cache-Control: private, no-store');
 header('Vary: Cookie');
+if($profileCanvasMode){
+    try {
+        require_once __DIR__.'/includes/profile-canvases-v1.php';
+        $profileCanvasSlug=$_GET['canvas']??null;
+        $profileCanvasRelease=is_string($profileCanvasSlug)?vp3_profile_canvas_release_v1($pdo,$profile,$profileCanvasSlug):null;
+        if($profileCanvasRelease===null){http_response_code(404);exit('This Profile Canvas is not available.');}
+        require_once __DIR__.'/includes/coding-canvas-public-view-v1.php';
+        $profileCanvasData=vp3_public_canvas_payload_v1($pdo,$profileCanvasRelease);
+        $profileCanvasData['fullPage']=true;
+        $profileCanvasPayload=json_encode($profileCanvasData,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $profileCanvasNonce=bin2hex(random_bytes(24));
+    } catch(Throwable $e) {
+        vp3_profile_optional_failure('public-canvas',$e,$username);
+        http_response_code(503);exit('This Profile Canvas is temporarily unavailable.');
+    }
+}
 if(!$preview){
     try { profile_runtime_record_view($pdo,$profile,$viewer); }
     catch (Throwable $e) { vp3_profile_optional_failure('view-telemetry',$e,$username); }
@@ -146,8 +167,19 @@ if($commerceReturn==='return'){
     $commerceNotice=['kind'=>'cancelled','headline'=>'Checkout cancelled.','message'=>'No purchase is reported as paid until the provider verifies it.'];
 }
 
+$profileCanvases=[];$profileCanvasesUnavailable=false;
+if(!$profileCanvasMode){
+    try {
+        require_once __DIR__.'/includes/profile-canvases-v1.php';
+        $profileCanvases=vp3_profile_canvases_list_v1($pdo,$profile);
+    } catch(Throwable $e) {
+        vp3_profile_optional_failure('public-canvases',$e,$username);
+        $profileCanvasesUnavailable=true;
+    }
+}
 $profileTabs=[];
 if($bio!==''||$links)$profileTabs['about']='About';
+if($profileCanvases||($isOwner&&!$preview))$profileTabs['canvases']='Canvases';
 if($shows)$profileTabs['calendar']='Calendar';
 if($bookingTypes)$profileTabs['booking']='Booking';
 if($campaigns)$profileTabs['campaigns']='Campaigns';
@@ -158,7 +190,7 @@ if($posts)$profileTabs['posts']='Posts';
 if($merch)$profileTabs['merch']='Merch';
 $activeTab=(string)(array_key_first($profileTabs)??'');
 $webmcpManifest=[];$webmcpSessionProof='';$webmcpResume=null;$webmcpResumeRequested=false;
-if(!$preview){
+if(!$preview&&!$profileCanvasMode){
     try {
         $webmcpManifest=vp3_profile_webmcp_manifest_v100($pdo,$profile,$viewer,['surface'=>'native_profile']);
         $webmcpSessionProof=vp3_profile_webmcp_session_proof_v100((int)$profile['user_id']);
@@ -181,15 +213,30 @@ if($webmcpResumeRequested){
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="<?= e(mb_strimwidth($bio!==''?$bio:$displayName.' on '.system_agent_name(),0,155,'…')) ?>">
 <meta name="theme-color" content="#f6f5f2">
-<link rel="canonical" href="<?= e(profile_public_url($username)) ?>">
-<title><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
+<link rel="canonical" href="<?= e(profile_public_url($username).($profileCanvasMode?'/canvas/'.rawurlencode((string)$profileCanvasRelease['slug']):'')) ?>">
+<title><?= $profileCanvasMode?e((string)$profileCanvasRelease['title']).' | ':'' ?><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-live-text-pa3d-'.substr(hash_file('sha256',__DIR__.'/profile.css'),0,12))) ?>">
+<?php if(!$profileCanvasMode): ?>
 <link rel="stylesheet" href="<?= e(url('/profile-cleanup-v174.css?v=profile-cleanup-v174-20260913')) ?>">
+<?php endif; ?>
+<link rel="stylesheet" href="<?= e(url('/profile-canvases-v1.css?v='.substr(hash_file('sha256',__DIR__.'/profile-canvases-v1.css'),0,12))) ?>">
+<?php if($profileCanvasMode): ?>
+<script src="<?= e(url('/coding-canvas-runtime-v1.js?v='.substr(hash_file('sha256',__DIR__.'/coding-canvas-runtime-v1.js'),0,12))) ?>" defer></script>
+<script src="<?= e(url('/canvas-app-v1.js?v='.substr(hash_file('sha256',__DIR__.'/canvas-app-v1.js'),0,12))) ?>" nonce="<?= e($profileCanvasNonce) ?>" defer></script>
+<?php endif; ?>
 <?php if($agent): ?>
 <link rel="stylesheet" href="<?= e(url('/agent-orb-particles.css?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.css'),0,12))) ?>">
 <?php endif; ?>
 </head>
-<body class="profile-page">
+<body class="<?= $profileCanvasMode?'profile-canvas-page':'profile-page' ?>">
+<?php if($profileCanvasMode): ?>
+  <a class="profile-canvas-back" href="<?= e(profile_public_url($username).'#canvases') ?>" aria-label="Back to <?= e($displayName) ?>’s profile canvases">← Profile</a>
+  <main class="profile-canvas-main" id="publicCanvas" aria-label="<?= e((string)$profileCanvasRelease['title']) ?>">
+    <p class="public-canvas-status" id="publicCanvasStatus" role="status" hidden></p>
+    <noscript><p class="public-canvas-status">Enable JavaScript to open this Canvas.</p></noscript>
+  </main>
+  <script type="application/json" id="publicCanvasData"><?= $profileCanvasPayload ?></script>
+<?php else: ?>
 <?php if($viewer): ?>
   <?php
     $memberHeaderUser=$viewer;
@@ -228,11 +275,32 @@ if($webmcpResumeRequested){
 
   <?php if($profileTabs): ?>
     <div class="profile-tabs" role="tablist" aria-label="Profile sections">
-      <?php foreach($profileTabs as $key=>$label): ?><button type="button" role="tab" aria-selected="<?= $key===$activeTab?'true':'false' ?>" data-profile-tab="<?= e($key) ?>"><?= e($label) ?></button><?php endforeach; ?>
+      <?php foreach($profileTabs as $key=>$label): ?><button type="button" role="tab" aria-selected="<?= $key===$activeTab?'true':'false' ?>" tabindex="<?= $key===$activeTab?'0':'-1' ?>" data-profile-tab="<?= e($key) ?>"><?= e($label) ?></button><?php endforeach; ?>
     </div>
   <?php endif; ?>
 
   <div class="profile-grid"><div>
+    <?php if(isset($profileTabs['canvases'])): ?>
+      <section class="profile-card profile-panel" data-profile-panel="canvases"<?= $activeTab==='canvases'?'':' hidden' ?> aria-labelledby="profileCanvasesTitle">
+        <div class="profile-panel-heading"><h2 id="profileCanvasesTitle">Canvases</h2><?php if($isOwner&&!$preview): ?><a class="profile-tab-manage" href="<?= e(url('/canvases.php')) ?>">Manage canvases</a><?php endif; ?></div>
+        <?php if($profileCanvases): ?>
+          <p class="profile-canvases-intro">Open a Canvas to explore its full page.<?php if($agent): ?> This profile’s chat is available on every Canvas.<?php endif; ?></p>
+          <div class="profile-canvases-grid">
+            <?php foreach($profileCanvases as $profileCanvas): ?>
+              <article class="profile-canvas-card">
+                <span class="profile-canvas-card-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 9v11"/></svg></span>
+                <h3><?= e((string)$profileCanvas['title']) ?></h3>
+                <a href="<?= e((string)$profileCanvas['url']) ?>" aria-label="Open <?= e((string)$profileCanvas['title']) ?> Canvas">Open canvas <span aria-hidden="true">↗</span></a>
+              </article>
+            <?php endforeach; ?>
+          </div>
+        <?php elseif($profileCanvasesUnavailable): ?>
+          <p role="status">Your published canvases could not be loaded. Refresh to try again.</p>
+        <?php else: ?>
+          <p>Open a published Canvas from your Canvas library, then turn on “Show on my Profile” in Public publishing to add it here.</p>
+        <?php endif; ?>
+      </section>
+    <?php endif; ?>
     <?php if(isset($profileTabs['about'])): ?>
       <section class="profile-card profile-panel" data-profile-panel="about"<?= $activeTab==='about'?'':' hidden' ?>><h2>About</h2><?php if($bio!==''): ?><p><?= nl2br(e($bio)) ?></p><?php endif; ?><?php if($links): ?><div class="profile-links profile-about-links"><?php foreach($links as $label=>$href): ?><a href="<?= e($href) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= e($label) ?> ↗</a><?php endforeach; ?></div><?php endif; ?></section>
     <?php endif; ?>
@@ -319,6 +387,7 @@ if($webmcpResumeRequested){
     <?php if(!$profileTabs): ?><div class="profile-tabs-empty">This user has no additional public profile sections.</div><?php endif; ?>
   </div></div>
 </main>
+<?php endif; ?>
 <?php if($agent): ?>
 <div class="profile-agent-widget-root" data-profile-agent-widget>
   <section class="profile-agent-widget" id="profileAgentShell" hidden aria-label="Chat with <?= e((string)$agent['display_name']) ?>">
@@ -405,7 +474,24 @@ window.STONEFELLOW_PROFILE_AGENT.checkoutEndpoint=<?= json_encode(url('/api/prof
 window.STONEFELLOW_PROFILE_AGENT.checkoutAvailable=<?= json_encode($checkoutAvailable) ?>;
 <?php endif; ?>
 window.STONEFELLOW_PROFILE_AGENT.imageSettingsUrl=<?= json_encode(url('/profile-agent.php?tab=agent'),JSON_UNESCAPED_SLASHES) ?>;
-for(const tab of document.querySelectorAll('[data-profile-tab]'))tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;document.querySelectorAll('[data-profile-tab]').forEach(t=>t.setAttribute('aria-selected',String(t===tab)));document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
+const profileTabButtons=[...document.querySelectorAll('[data-profile-tab]')];
+for(const tab of profileTabButtons){
+  const panel=document.querySelector('[data-profile-panel="'+tab.dataset.profileTab+'"]');
+  tab.id='profileTab-'+tab.dataset.profileTab;
+  if(panel){panel.id='profilePanel-'+tab.dataset.profileTab;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',tab.id);tab.setAttribute('aria-controls',panel.id);}
+  tab.addEventListener('click',()=>{const key=tab.dataset.profileTab;profileTabButtons.forEach(t=>{t.setAttribute('aria-selected',String(t===tab));t.tabIndex=t===tab?0:-1;});document.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==key);});
+  tab.addEventListener('keydown',event=>{
+    const index=profileTabButtons.indexOf(tab);let next=index;
+    if(event.key==='ArrowRight')next=(index+1)%profileTabButtons.length;
+    else if(event.key==='ArrowLeft')next=(index-1+profileTabButtons.length)%profileTabButtons.length;
+    else if(event.key==='Home')next=0;
+    else if(event.key==='End')next=profileTabButtons.length-1;
+    else return;
+    event.preventDefault();profileTabButtons[next].click();profileTabButtons[next].focus();
+  });
+}
+const openProfileHashTab=()=>{if(window.location.hash==='#canvases'){const tab=document.querySelector('[data-profile-tab="canvases"]');tab?.click();if(tab)requestAnimationFrame(()=>tab.scrollIntoView({block:'nearest'}));}};
+openProfileHashTab();window.addEventListener('hashchange',openProfileHashTab);
 const promotionAnchor=/^#product-promotion-[a-f0-9]{32}$/.test(window.location.hash)?document.getElementById(window.location.hash.slice(1)):null;
 if(promotionAnchor){
   document.querySelector('[data-profile-tab="products"]')?.click();
@@ -467,7 +553,7 @@ window.VP3_PROFILE_WEBMCP={
 </script>
 <script type="module" src="<?= e(url('/profile-webmcp-v100.js?v=profile-checkout-pa2-20261103')) ?>"></script>
 <?php endif; ?>
-<?php if($viewer): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
+<?php if($viewer&&!$profileCanvasMode): ?><script src="<?= e(url('/member-shell-v77.js?v=universal-member-header-20260905')) ?>"></script><?php endif; ?>
 <?php if($agent): ?>
 <script src="<?= e(url('/agent-orb-particles.js?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.js'),0,12))) ?>" defer></script>
 <?php endif; ?>
