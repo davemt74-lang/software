@@ -75,6 +75,8 @@ jobs:
       - run: |
           npm install --no-save --ignore-scripts playwright@1.62.1
           bash tools/install-ci-chromium.sh
+      - name: Initiative media invitations and verified automatic preparation
+        run: node tests/initiative-youtube-offer-e2e.mjs
       - run: node tests/transfer-section7.mjs
       - name: Fresh installation Agent core foundations
         run: php tests/agent-core-install-parity-v1.php
@@ -285,7 +287,6 @@ jobs:
           node tests/initiative-chat-loop-e2e.mjs --gmail-no-anchor
           node tests/initiative-chat-loop-e2e.mjs --gmail-fresh
           node tests/initiative-chat-loop-e2e.mjs --gmail-backlog
-          node tests/initiative-youtube-offer-e2e.mjs
           node tests/initiative-chat-loop-e2e.mjs --office=task
           node tests/initiative-chat-loop-e2e.mjs --office=list
           node tests/initiative-chat-loop-e2e.mjs --office=reminder

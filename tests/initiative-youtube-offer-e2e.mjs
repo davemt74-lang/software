@@ -5,6 +5,7 @@ import net from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {isDeepStrictEqual} from 'node:util';
 import {chromium} from 'playwright';
 
 const repo=fileURLToPath(new URL('../',import.meta.url));
@@ -193,6 +194,26 @@ if($path==='/fixture-casual-readiness'){
         'ready'=>$ready,'hold'=>$hold,'activity_watermark'=>$watermark,
         'idle'=>vp3_agent_idle_evidence_v1(db(),$scope['user'],7,17,new DateTimeImmutable('@'.$now)),
     ],JSON_THROW_ON_ERROR);return;
+}
+if($path==='/fixture-casual-prerequisites'){
+    require_once __DIR__.'/includes/agent-casual-checkin-v1.php';
+    $result=vp3_initiative_in_scope_v1(current_user(),7,static function():array{
+        $scope=vp3_agent_activity_scope_v1(db(),current_user(),7,17);
+        $policy=vp3_initiative_policy_v1($scope['user'],7);
+        $delivery=vp3_casual_checkin_delivery_v1(db(),1);
+        $sources=vp3_casual_checkin_sources_v1(db(),$scope,$policy,null,new DateTimeImmutable('now',new DateTimeZone('UTC')),
+            allCandidates:true,allowStartersWithPrivateWork:true);
+        $starters=[];$eligible=[];
+        foreach(VP3_SPECIALIST_STARTERS_V1 as $kind=>$definition){
+            $ref='casual:'.$kind;$starters[$ref]=$definition['question'];
+            if(isset($sources['items'][$ref]))$eligible[$ref]=$sources['items'][$ref]['revision'];
+        }
+        $hold=null;$watermark=null;
+        $mediaReady=vp3_casual_checkin_media_idle_v1(db(),$scope['user'],17,$delivery,time(),$hold,$watermark);
+        return ['policy'=>$policy,'starters'=>$starters,'eligible'=>(object)$eligible,
+            'offered'=>(object)vp3_casual_starter_offers_v1($delivery),'media_ready'=>$mediaReady,'media_hold'=>$hold];
+    });
+    header('Content-Type:application/json');echo json_encode($result,JSON_THROW_ON_ERROR);return;
 }
 if($path==='/fixture-coordination-wake'){
     db()->exec("UPDATE agent_memory_items SET is_active=0 WHERE user_id=1 AND subject='coordination-scan'");
@@ -851,6 +872,123 @@ try{
     await element.waitFor({timeout:45000});
     return {state:snapshot,run,receipt,result,message,context,element};
   };
+  const settleCasualPrerequisites=async(label)=>{
+    // Starters legitimately interleave with regular invitations. Finish their
+    // real current-bound work before the next fresh owner turn, while keeping
+    // automatic ticks held and the already-posted examples unanswered.
+    await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady()
+      &&!window.STONEFELLOW_CHAT_CONTINUITY_V87.isBusy()
+      &&window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===17);
+    await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
+    await activityMatches(17,false);
+    const read=async()=>{
+      const response=await page.request.get(base+'/fixture-casual-prerequisites');
+      assert.ok(response.ok(),await response.text());
+      return response.json();
+    };
+    let prerequisites=await read(),snapshot=await state();
+    const policy=prerequisites.policy,starters=prerequisites.starters;
+    assert.deepEqual([policy.enabled,policy.owner_user_id,policy.agent_id,policy.conversation_id],[true,1,7,17]);
+    assert.equal(policy.revision,await page.evaluate(()=>window.StonefellowAgentActivity.coreContext()?.health.policy_revision));
+    const current=row=>row.owner_user_id===1&&row.agent_id===7&&isDeepStrictEqual(JSON.parse(row.goal).binding,policy);
+    const starter=row=>Object.hasOwn(starters,JSON.parse(row.goal).primary);
+    const regular=state=>state.runs.filter(row=>JSON.parse(row.goal).primary?.startsWith('casual:')&&!starter(row));
+    const originalRegular=regular(snapshot),required=new Set(),completed=new Set();
+    const verifiedReceipt=(state,run)=>{
+      assert.equal(run.status,'completed');
+      const actions=state.actions.filter(row=>row.run_id===run.id);
+      assert.equal(actions.length,1);const action=actions[0];
+      assert.deepEqual([action.owner_user_id,action.sequence_no,action.action_key,action.capability_key,
+        action.execution_target,action.status],[1,1,run.capability_key,run.capability_key,'cloud','completed']);
+      const receipts=state.receipts.filter(row=>row.run_id===run.id&&row.owner_user_id===1&&row.action_id===action.id
+        &&row.attempt_no===action.attempt_count&&row.executor==='cloud'&&row.status==='completed');
+      assert.equal(receipts.length,1);assert.equal(action.result_json,receipts[0].result_json);
+      return JSON.parse(receipts[0].result_json);
+    };
+    const verifiedStarter=(state,run)=>{
+      assert.ok(current(run)&&starter(run));assert.equal(run.capability_key,'initiative.prepare');
+      const goal=JSON.parse(run.goal),result=verifiedReceipt(state,run);
+      assert.equal(goal.tool,'coordination.review');
+      assert.deepEqual(goal.coordination_route,{specialist:'casual',trigger:goal.primary.slice('casual:'.length),action:'ask'});
+      assert.deepEqual(Object.keys(goal.sources),[goal.primary]);
+      assert.equal(result.initiative_delivery,'delivered');
+      assert.equal(result.initiative_tool_result.output.type,'initiative_coordination');
+      assert.equal(result.initiative_tool_result.output.situation_id,goal.coordination_id);
+      assert.deepEqual(result.initiative_tool_result.output.evidence_revisions,goal.sources);
+      const message=state.messages.find(row=>row.id===Number(result.initiative_message_id));
+      assert.deepEqual([message?.conversation_id,message?.role,message?.message],[17,'assistant',starters[goal.primary]]);
+      assert.equal(message.message,result.initiative_draft);
+      const context=JSON.parse(message.context_json);
+      assert.equal(context.source,'agent_initiative');assert.equal(context.initiative_run_id,run.id);
+      assert.deepEqual(context.initiative_output,result.initiative_tool_result.output);
+      assert.deepEqual([context.initiative_work.owner_user_id,context.initiative_work.agent_id,
+        context.initiative_work.conversation_id,context.initiative_work.run_id],[1,7,17,run.id]);
+      return message.id;
+    };
+    const limit=Object.keys(starters).length*2+2;
+    for(let pass=0;pass<=limit;pass++){
+      assert.deepEqual(prerequisites.policy,policy,'Prerequisite work cannot cross a policy or Chat change.');
+      assert.deepEqual(prerequisites.starters,starters);
+      const pending=snapshot.runs.filter(row=>current(row)&&starter(row)&&['approved','executing'].includes(row.status));
+      for(const ref of [...Object.keys(prerequisites.eligible),...pending.map(row=>JSON.parse(row.goal).primary)])required.add(ref);
+      if(Object.keys(prerequisites.eligible).length===0&&pending.length===0){
+        for(const ref of required){
+          const messageId=prerequisites.offered[ref.slice('casual:'.length)];
+          assert.ok(Number.isSafeInteger(messageId)&&messageId>0,'Every prerequisite has a recorded canonical starter post.');
+          const message=snapshot.messages.find(row=>row.id===messageId),context=JSON.parse(message?.context_json||'null');
+          const run=snapshot.runs.find(row=>row.id===context?.initiative_run_id);
+          assert.ok(run&&completed.has(run.id),'Every newly required starter was completed and verified in this phase.');
+          assert.equal(verifiedStarter(snapshot,run),messageId);
+        }
+        traceInitiative({event:'casual_prerequisites_settled',label,passes:pass,run_ids:[...completed]});
+        return;
+      }
+      assert.ok(pass<limit,'Starter prerequisites exceeded their bounded canonical progress limit.');
+      assert.equal(prerequisites.media_ready,false,'Settle starters before fresh activity makes another Media invitation eligible.');
+      assert.ok(['idle_spacing','new_activity_required'].includes(prerequisites.media_hold),JSON.stringify(prerequisites));
+      assert.equal(snapshot.runs.filter(row=>current(row)&&['approved','executing'].includes(row.status)
+        &&row.capability_key!=='initiative.plan'&&!starter(row)).length,0,'Unexpected current-bound work is not a starter prerequisite.');
+      const before=snapshot,eligible=prerequisites.eligible;
+      await fixturePost('/fixture-coordination-wake'); // Preserve actual message and foreground activity times.
+      const {result:tick,revision}=await initiativeTick(17);
+      assert.equal(revision,policy.revision);assert.equal(tick.reason,'completed',JSON.stringify(tick));
+      snapshot=await state();prerequisites=await read();
+      assert.deepEqual(regular(snapshot),originalRegular,'Prerequisite ticks cannot admit or change a regular invitation.');
+      for(const old of before.runs){
+        const saved=snapshot.runs.find(row=>row.id===old.id);assert.ok(saved);
+        assert.equal(saved.goal,old.goal,'Prerequisite goals and source evidence are immutable.');
+        if(!current(old))assert.deepEqual(saved,old,'Another policy, Agent or Chat keeps its stored work unchanged.');
+      }
+      for(const added of snapshot.runs.filter(row=>!before.runs.some(old=>old.id===row.id))){
+        assert.ok(current(added),'New prerequisite work must use the exact current binding.');
+        if(added.capability_key==='initiative.plan')continue;
+        const goal=JSON.parse(added.goal);assert.ok(starter(added));
+        assert.equal(added.capability_key,'initiative.prepare');assert.ok(Object.hasOwn(eligible,goal.primary));
+        assert.deepEqual(goal.sources,{[goal.primary]:eligible[goal.primary]});
+      }
+      const newMessages=snapshot.messages.filter(row=>!before.messages.some(old=>old.id===row.id));
+      if(tick.step==='assessment'){
+        const run=snapshot.runs.find(row=>row.id===tick.run_id);assert.ok(run&&current(run));
+        assert.equal(run.capability_key,'initiative.plan');assert.equal(completed.has(run.id),false);
+        const result=verifiedReceipt(snapshot,run);
+        assert.equal(result.effect_state,'idle');assert.equal(Number(result.jobs),0);
+        assert.equal(result.initiative_tool_result.output.type,'initiative_brainstorm');
+        assert.equal(result.initiative_tool_result.output.status,'assessed');
+        assert.deepEqual(result.initiative_tool_result.output.opportunities,[]);assert.deepEqual(newMessages,[]);
+        completed.add(run.id);
+      }else{
+        assert.ok(['preparation','saved_delivery'].includes(tick.step),JSON.stringify(tick));
+        assert.equal(newMessages.length,1,'Each intervening starter tick must deliver one exact canonical post.');
+        const context=JSON.parse(newMessages[0].context_json),run=snapshot.runs.find(row=>row.id===context.initiative_run_id);
+        assert.ok(run);assert.equal(completed.has(run.id),false);
+        if(tick.step==='preparation')assert.equal(run.id,tick.run_id);
+        else assert.equal(before.runs.find(row=>row.id===run.id)?.status,'completed','Saved delivery must finish an existing exact receipt.');
+        assert.equal(verifiedStarter(snapshot,run),newMessages[0].id);completed.add(run.id);
+      }
+      traceInitiative({event:'casual_prerequisite_progress',label,pass:pass+1,step:tick.step,run_id:tick.run_id,
+        remaining:Object.keys(prerequisites.eligible)});
+    }
+  };
   await fixturePost('/fixture-media-arm-casual');
   await page.goto(base+'/?conversation_id=17',{waitUntil:'domcontentloaded'});
   await activityMatches(17,false);
@@ -1034,6 +1172,7 @@ try{
   await initiativeTick(17);
   assert.equal((await casualRuns()).length,1,'Answering a check-in does not generate a new one right away.');
 
+  await settleCasualPrerequisites('after first music acceptance');
   const beforeSecondMusic=await state();
   await post('Create a VP3 music playlist for energetic.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
@@ -1048,8 +1187,9 @@ try{
   assert.equal(declined.initiative_followthrough?.state,'declined');
   assert.equal(declined.initiative_followthrough.message_id,secondMusic.message.id);
 
-  const beforeCombinedMedia=await state();
   await fixturePost('/fixture-casual-enable-youtube');
+  await settleCasualPrerequisites('after enabling YouTube');
+  const beforeCombinedMedia=await state();
   await post('Create a VP3 music playlist for calm.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
@@ -1112,8 +1252,9 @@ try{
   assert.equal(await page.locator('.vp3-youtube-frame').count(),0);
   console.log('PASS music-only and combined media check-ins share one slot; a vague voice reply clarifies, and the exact video choice asks for a topic');
 
-  const beforeEmailOffer=await state();
   await fixturePost('/fixture-casual-enable-gmail');
+  await settleCasualPrerequisites('after enabling Gmail');
+  const beforeEmailOffer=await state();
   await post('Create a VP3 music playlist for ambient.');
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
@@ -1142,6 +1283,7 @@ try{
   assert.equal(afterDraft.email_sends,0,'A created email draft awaits the existing review step.');
   console.log('PASS casual email offer → recipient and content prompt → existing private draft review with no send');
 
+  await settleCasualPrerequisites('before the later Media invitation');
   const beforeRepeatedMedia=await state();
   await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
   await activityMatches(17,false);
