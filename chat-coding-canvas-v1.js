@@ -230,7 +230,26 @@
   const publicationStatus = node('p','','vp3-coding-canvas-status');
   publicationStatus.setAttribute('role','status');
   const retryPublication = button('Reload publishing status',() => void loadPublication());
-  publishingBody.append(publishingState,publishingLink,publishingNote,publishingFields,publicationStatus,retryPublication);
+  const profileCanvasPanel = node('div','','vp3-coding-canvas-profile');
+  const profileCanvasCheck = node('input');
+  profileCanvasCheck.type = 'checkbox';
+  profileCanvasCheck.disabled = true;
+  const profileCanvasLabel = permissionLabel('Show on my Profile',profileCanvasCheck,true);
+  const profileCanvasDescription = node('p','Visitors open this Canvas as a full page with your Profile Agent chat.','vp3-coding-canvas-description');
+  const profileCanvasState = node('p','','vp3-coding-canvas-description');
+  const profileCanvasLink = node('a','Open full-page Profile Canvas');
+  profileCanvasLink.target = '_blank';
+  profileCanvasLink.rel = 'noopener noreferrer';
+  profileCanvasLink.hidden = true;
+  const saveProfileCanvas = button('Save Profile visibility',() => void commitProfileCanvas());
+  const profileCanvasStatus = node('p','','vp3-coding-canvas-status');
+  profileCanvasStatus.setAttribute('role','status');
+  const retryProfileCanvas = button('Reload Profile visibility',() => void loadProfileCanvas());
+  retryProfileCanvas.hidden = true;
+  profileCanvasCheck.addEventListener('change',updateProfileCanvasControls);
+  profileCanvasPanel.append(profileCanvasLabel,profileCanvasDescription,profileCanvasState,profileCanvasLink,
+    saveProfileCanvas,profileCanvasStatus,retryProfileCanvas);
+  publishingBody.append(publishingState,publishingLink,publishingNote,publishingFields,publicationStatus,retryPublication,profileCanvasPanel);
   publishing.append(publishingSummary,publishingBody);
   publishing.addEventListener('toggle',() => {
     if (publishing.open && !publication && !publicationRequest) void loadPublication();
@@ -324,6 +343,9 @@
   let publication = null;
   let publicationRequest = null;
   let publicationIntent = null;
+  let profileCanvas = null;
+  let profileCanvasPublication = null;
+  let profileCanvasRequest = null;
   let libraryRead = null;
   let libraryWrite = null;
   let libraryCursor = null;
@@ -703,13 +725,16 @@
     publicationActions.hidden = confirming;
     publishingConfirmation.hidden = !confirming;
     confirmPublishing.disabled = locked || Boolean(publicationRequest);
+    updateProfileCanvasControls();
   }
 
-  async function loadPublication(keepMessage = false) {
+  async function loadPublication(keepMessage = false,keepProfileMessage = false) {
     const selected = current;
     const conversation = scope();
     if (!selected?.revision || !editing() || !matches()) return;
     publicationRequest?.abort();
+    profileCanvasRequest?.abort();
+    profileCanvasRequest = null;
     const controller = new AbortController();
     publicationRequest = controller;
     const stillSelected = () => publicationRequest === controller && selected === current && conversation === scope() && editing() && matches();
@@ -717,6 +742,7 @@
     retryPublication.hidden = true;
     updatePublicationControls();
     const timeout = setTimeout(() => controller.abort(),8000);
+    let refreshProfile = false;
     try {
       const result = await api('publication_status',{canvas_id:selected.canvas.id,revision:selected.revision.id},conversation,controller.signal);
       if (!stillSelected()) return;
@@ -724,6 +750,7 @@
       if (!verified) throw new Error('Public publishing status could not be verified.');
       if (publicationIntent && publication?.version !== verified.version) cancelPublication(false);
       publication = verified;
+      refreshProfile = true;
       if (verified.slug) publishingSlug.value = verified.slug;
       if (!keepMessage) publicationStatus.textContent = '';
     } catch (error) {
@@ -739,6 +766,140 @@
         updatePublicationControls();
       }
     }
+    if (refreshProfile && selected === current && conversation === scope() && editing() && matches()) void loadProfileCanvas(keepProfileMessage);
+  }
+
+  function parseProfileCanvas(data) {
+    const record = data?.profile_canvas;
+    const eligibility = data?.eligibility;
+    if (typeof record?.listed !== 'boolean' || typeof record.version !== 'string' || !/^[a-f0-9]{64}$/.test(record.version) ||
+      typeof eligibility?.can_list !== 'boolean' || (record.url !== null && typeof record.url !== 'string')) return null;
+    let url = null;
+    if (record.url !== null) {
+      if (!record.listed || publication?.state !== 'published') return null;
+      try {
+        const parsed = new URL(record.url,location.origin);
+        const path = parsed.pathname.slice(sourceBasePath.length);
+        if (parsed.origin !== location.origin || parsed.username || parsed.password || parsed.search || parsed.hash ||
+          !parsed.pathname.startsWith(sourceBasePath + '/') ||
+          !/^\/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]\/canvas\/[a-z0-9-]{3,64}$/.test(path) ||
+          !path.endsWith('/canvas/' + publication.slug)) return null;
+        url = parsed.href;
+      } catch (_error) { return null; }
+    }
+    return {listed:record.listed,version:record.version,url,canList:eligibility.can_list,
+      reason:typeof eligibility.reason === 'string' ? eligibility.reason : ''};
+  }
+
+  function updateProfileCanvasControls() {
+    const bound = Boolean(profileCanvas && publication && profileCanvasPublication === publication.version);
+    const busy = locked || Boolean(publicationRequest) || Boolean(publicationIntent) || Boolean(profileCanvasRequest);
+    const canAdd = bound && publication.state === 'published' && profileCanvas.canList;
+    profileCanvasCheck.disabled = busy || !bound || (!profileCanvas.listed && !canAdd);
+    saveProfileCanvas.disabled = busy || !bound || profileCanvasCheck.checked === profileCanvas.listed ||
+      (profileCanvasCheck.checked && !canAdd);
+    profileCanvasState.textContent = !bound ? '' : profileCanvas.listed ?
+      (profileCanvas.url ? 'Shown in the Canvases tab on your Profile.' : 'Selected for your Profile. It appears only while the Profile and this Canvas are public.') :
+      canAdd ? 'This Canvas is not shown on your Profile.' : profileCanvas.reason || 'Publish a version before adding this Canvas to your Profile.';
+    profileCanvasLink.hidden = !bound || !profileCanvas.url;
+    if (bound && profileCanvas.url) profileCanvasLink.href = profileCanvas.url;
+    else profileCanvasLink.removeAttribute('href');
+    retryProfileCanvas.disabled = busy || !publication;
+  }
+
+  async function profileCanvasApi(action,payload,conversationId,signal) {
+    if (!matches()) throw new Error('Profile Canvas settings are available in your own Chat.');
+    const endpoint = new URL('profile-canvases-v1.php',new URL(cfg.endpoint,location.href));
+    const response = await fetch(endpoint,{
+      method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},signal,
+      body:JSON.stringify({action,csrf_token:cfg.csrf,agent_id:agent,conversation_id:conversationId,...payload})
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Profile visibility could not be loaded.');
+    return data;
+  }
+
+  async function loadProfileCanvas(keepMessage = false) {
+    const selected = current;
+    const conversation = scope();
+    const publishedVersion = publication?.version;
+    if (!selected?.revision || !publishedVersion || !editing() || !matches()) return;
+    profileCanvasRequest?.abort();
+    const controller = new AbortController();
+    profileCanvasRequest = controller;
+    const stillSelected = () => profileCanvasRequest === controller && selected === current && conversation === scope() &&
+      publishedVersion === publication?.version && editing() && matches();
+    if (!keepMessage) profileCanvasStatus.textContent = 'Checking Profile visibility…';
+    retryProfileCanvas.hidden = true;
+    updateProfileCanvasControls();
+    const timeout = setTimeout(() => controller.abort(),8000);
+    try {
+      const result = await profileCanvasApi('status',{canvas_id:selected.canvas.id},conversation,controller.signal);
+      if (!stillSelected()) return;
+      const verified = parseProfileCanvas(result);
+      if (!verified) throw new Error('Profile visibility could not be verified.');
+      profileCanvas = verified;
+      profileCanvasPublication = publishedVersion;
+      profileCanvasCheck.checked = verified.listed;
+      if (!keepMessage) profileCanvasStatus.textContent = '';
+    } catch (error) {
+      if (!stillSelected()) return;
+      profileCanvas = null;
+      profileCanvasPublication = null;
+      profileCanvasCheck.checked = false;
+      profileCanvasStatus.textContent = controller.signal.aborted ? 'Profile visibility check timed out. Reload to try again.' : error.message;
+      retryProfileCanvas.hidden = false;
+    } finally {
+      clearTimeout(timeout);
+      if (profileCanvasRequest === controller) {
+        profileCanvasRequest = null;
+        updateProfileCanvasControls();
+      }
+    }
+  }
+
+  async function commitProfileCanvas() {
+    const selected = current;
+    const baseline = profileCanvas;
+    const publishedVersion = publication?.version;
+    const conversation = scope();
+    const version = epoch;
+    const listed = profileCanvasCheck.checked;
+    if (saveProfileCanvas.disabled || !baseline || !selected?.revision || !publishedVersion ||
+      profileCanvasPublication !== publishedVersion || !editing() || !matches() || locked || profileCanvasRequest ||
+      publicationRequest || publicationIntent || listed === baseline.listed ||
+      (listed && (publication.state !== 'published' || !baseline.canList))) return;
+    const controller = new AbortController();
+    profileCanvasRequest = controller;
+    const stillSelected = () => profileCanvasRequest === controller && selected === current && version === epoch &&
+      conversation === scope() && publishedVersion === publication?.version && editing() && matches();
+    locked = true;
+    updateControls();
+    profileCanvasStatus.textContent = listed ? 'Adding Canvas to your Profile…' : 'Removing Canvas from your Profile…';
+    const timeout = setTimeout(() => controller.abort(),15000);
+    let reload = false;
+    try {
+      const result = await profileCanvasApi('set',{canvas_id:selected.canvas.id,listed,
+        expected_revision:baseline.version,expected_publication:publishedVersion},conversation,controller.signal);
+      if (!stillSelected()) return;
+      const verified = parseProfileCanvas(result);
+      if (!verified || verified.listed !== listed) throw new Error('Profile visibility change could not be verified.');
+      profileCanvas = verified;
+      profileCanvasCheck.checked = verified.listed;
+      profileCanvasStatus.textContent = listed ? 'Canvas added to your Profile.' : 'Canvas removed from your Profile.';
+    } catch (error) {
+      if (!stillSelected()) return;
+      profileCanvasStatus.textContent = controller.signal.aborted ? 'The save response timed out. Review the current visibility before retrying.' : error.message;
+      reload = true;
+    } finally {
+      clearTimeout(timeout);
+      if (profileCanvasRequest === controller) profileCanvasRequest = null;
+      if (version === epoch) {
+        locked = false;
+        updateControls();
+      }
+    }
+    if (reload && selected === current && conversation === scope() && editing() && matches()) await loadPublication(true,true);
   }
 
   function cancelPublication(focus) {
@@ -793,6 +954,7 @@
       publication = verified;
       publishingSlug.value = verified.slug;
       publicationStatus.textContent = isPublish ? 'Public link ready.' : 'Public link taken offline.';
+      void loadProfileCanvas();
     } catch (error) {
       if (!stillSelected()) return;
       publicationStatus.textContent = error.message;
@@ -1244,6 +1406,13 @@
     publication = null;
     publicationIntent = null;
     publicationStatus.textContent = '';
+    profileCanvasRequest?.abort();
+    profileCanvasRequest = null;
+    profileCanvas = null;
+    profileCanvasPublication = null;
+    profileCanvasCheck.checked = false;
+    profileCanvasStatus.textContent = '';
+    retryProfileCanvas.hidden = true;
     publishingSlug.value = '';
     retryPublication.hidden = true;
     commandSettingsRequest?.abort();
@@ -1816,6 +1985,8 @@
       commandSettingsRequest?.abort();
       publicationRequest?.abort();
       publicationRequest = null;
+      profileCanvasRequest?.abort();
+      profileCanvasRequest = null;
       cancelPublication(false);
       stopSourceRefreshes();
       closePreview();

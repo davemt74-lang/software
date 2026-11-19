@@ -38,7 +38,7 @@
   frame.setAttribute('sandbox','allow-scripts');
   frame.referrerPolicy = 'no-referrer';
   frame.srcdoc = createDocument({channel,nonce,parentOrigin:location.origin,artifact:payload.artifact,
-    state:{},workerKey:token(),maxText,stateLimit,canSaveState:false,sources,
+    state:{},workerKey:token(),maxText,stateLimit,canSaveState:false,sources,fullPage:payload.fullPage === true,
     openableSources:Object.fromEntries([...links].map(([key,records]) => [key,[...records.keys()]]))});
 
   let ready = false;

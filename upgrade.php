@@ -8,6 +8,7 @@ require_once __DIR__ . '/includes/agent-connection-gmail-inbox-activity-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-command-grants-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-publishing-v1.php';
+require_once __DIR__ . '/includes/profile-canvases-v1.php';
 require_once __DIR__ . '/includes/media-collections-v1.php';
 require_once __DIR__ . '/includes/profile-image-catalog-v1.php';
 require_once __DIR__ . '/includes/profile-image-edit-v1.php';
@@ -308,6 +309,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_coding_canvas_command_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_source_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_publishing_ready_v1($schemaConnection)
+        && vp3_profile_canvases_ready_v1($schemaConnection)
         && vp3_media_collections_ready_v1($schemaConnection)
         && vp3_profile_image_catalog_ready_v1($schemaConnection)
         && vp3_profile_image_edit_ready_v1($schemaConnection)
@@ -424,6 +426,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_coding_canvas_schema_v1($pdo);
             vp3_coding_canvas_command_grants_install_v1($pdo);
             vp3_coding_canvas_publishing_install_v1($pdo);
+            vp3_profile_canvases_install_v1($pdo);
             vp3_media_collections_install_v1($pdo);
             vp3_profile_image_catalog_install_v1($pdo);
             artist_listening_v237_ensure_schema();

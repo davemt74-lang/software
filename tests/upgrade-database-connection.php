@@ -12,7 +12,7 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'profile_conversation_checkouts_pa5','agent_product_launches_v1',
     'agent_promotion_publications_v1','agent_promotion_clicks_v1','agent_promotion_orders_v1',
     'vp3_youtube_watch_v1','vp3_youtube_playhead_v1','vp3_youtube_saved_playlists_v1','vp3_youtube_playlist_plays_v1',
-    'vp3_initiative_youtube_playlist_v1'];
+    'vp3_initiative_youtube_playlist_v1','vp3_profile_canvases_v1'];
 $partialSpeech=[
     'partial-auto-greet'=>['team_user_presence','auto_greet_enabled'],
     'partial-conversation-checkout-review'=>['profile_conversation_checkouts_pa5','product_snapshot_hash'],
@@ -50,6 +50,10 @@ $canvasDdl=file_get_contents(dirname(__DIR__).'/includes/coding-canvas-store-v1.
 $canvasStart=strpos($canvasDdl,'function '.'vp3_coding_canvas_schema_v1(');
 $canvasEnd=strpos($canvasDdl,'function '.'vp3_coding_canvas_authority_v1(',$canvasStart);
 eval(substr($canvasDdl,$canvasStart,$canvasEnd-$canvasStart));
+$profileCanvasDdl=file_get_contents(dirname(__DIR__).'/includes/profile-canvases-v1.php');
+$profileCanvasStart=strpos($profileCanvasDdl,'function '.'vp3_profile_canvases_install_v1(');
+$profileCanvasEnd=strpos($profileCanvasDdl,'function '.'vp3_profile_canvas_version_v1(',$profileCanvasStart);
+eval(substr($profileCanvasDdl,$profileCanvasStart,$profileCanvasEnd-$profileCanvasStart));
 require dirname(__DIR__).'/includes/agent-reminders-v1.php';
 require dirname(__DIR__).'/includes/chat-settings-v237.php';
 require dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
@@ -114,7 +118,7 @@ eval(substr($checkoutDdl,$checkoutStart,$checkoutEnd-$checkoutStart));
 if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingYouTube=str_starts_with($mode,'missing-vp3_youtube_')||$mode==='missing-vp3_initiative_youtube_playlist_v1';
-$missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$missingYouTube;
+$missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$missingYouTube||$mode==='missing-vp3_profile_canvases_v1';
 $modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode]);
 $fixture->exec('CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY)');
 if($modern&&$mode!=='missing-ai-service-usage')$fixture->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
@@ -132,6 +136,8 @@ function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);vp3_profile_event_clock_install_v1($fixture);}
 if($modern){
     if ($mode !== 'missing-coding-canvas') vp3_coding_canvas_schema_v1($fixture);
+    vp3_profile_canvases_install_v1($fixture);
+    $fixture->exec("INSERT INTO vp3_profile_canvases_v1(canvas_id,owner_user_id,listed,generation) VALUES('00000000-0000-4000-8000-000000000001',1,1,3)");
     initiative_product_launch_schema_v1($fixture);
     profile_promotion_attribution_schema_v1($fixture);
     profile_promotion_capture_install_v1($fixture,'checkout');
@@ -207,6 +213,9 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
     check(vp3_initiative_youtube_playlist_ready_v1($fixture), 'Upgrade skipped the pending YouTube report cache');
     check(vp3_ai_service_usage_ready_v1($fixture) && in_array('ai_usage_accounting_v032_ensure_schema',$calls,true), 'Upgrade skipped AI service usage storage');
     check(vp3_coding_canvas_ready_v1($fixture), 'Upgrade skipped private Coding Canvas storage');
+    check(vp3_profile_canvases_ready_v1($fixture), 'Upgrade skipped public Profile Canvas listing storage');
+    check((int)$fixture->query('SELECT COUNT(*) FROM vp3_profile_canvases_v1')->fetchColumn() === ($mode === 'post' ? 0 : 1), 'Upgrade opted an app in or discarded a saved Profile Canvas choice');
+    if ($mode === 'already-ready') check((int)$fixture->query('SELECT generation FROM vp3_profile_canvases_v1')->fetchColumn() === 3, 'Upgrade changed a saved Profile Canvas revision');
     check(vp3_profile_event_clock_ready_v1($fixture), 'Upgrade skipped forward Profile event time activation');
     check(profile_promotion_capture_ready_v1($fixture), 'Upgrade skipped immutable promotion and checkout-open evidence');
     check(count($flashes) === 1 && $redirects === ['/admin/users.php'], 'Successful upgrade did not finish normally');
@@ -222,7 +231,7 @@ if (in_array($mode, ['post', 'already-ready'], true)) {
 } elseif ($mode === 'csrf') {
     check($error === 'Session expired. Please try again.' && $dbCalls === 0 && $calls === [], 'CSRF rejection allowed upgrade work');
 } else {
-    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas','missing-profile_event_clock_activation_v1'],true);
+    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas','missing-profile_event_clock_activation_v1','missing-vp3_profile_canvases_v1'],true);
     check(!$complete && $dbCalls === ($needsConnection?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
     check(str_contains($html, 'Run Upgrade'), 'Missing required storage must expose the upgrade control');
 }
