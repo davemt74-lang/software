@@ -169,7 +169,7 @@ try {
     first_review_check($view(1) === ['state'=>'disabled', 'limit'=>50] && agent_connection_gmail_inbox_initial_sweep_v1($pdo) === 0
         && $background() === null, 'a connected mailbox alone leaves both reviews disabled');
     first_review_check($startRejected(1, str_repeat('a', 64)), 'first review requires explicit Inbox Review consent');
-    $rules = ['ignore_senders'=>'muted@example.test', 'ignore_github_actions'=>'1'];
+    $rules = ['priority_senders'=>'muted@example.test', 'ignore_github_actions'=>'1'];
     agent_connection_gmail_inbox_save_v1($pdo, $users[1], $form(1, $rules), $http);
     agent_connection_gmail_inbox_save_v1($pdo, $users[2], $form(2), $http);
     agent_connection_gmail_inbox_save_v1($pdo, $users[3], $form(3), $http);
@@ -253,13 +253,13 @@ try {
         'a second database connection sees the live summary lease and cannot repeat inference or Gmail reads');
     $report = $view(1, true)['report'];
     $rail = $view(1);
-    first_review_check($report['days'] === 14 && $report['scanned'] === 10 && $report['total'] === 3
-        && $report['filtered'] === 2 && $report['important'] === 1 && $report['replies'] === 1
-        && array_column($report['items'], 'subject') === ['PRIVATE_SUBJECT_SENTINEL', 'At start boundary', 'Action required: Just before end boundary']
+    first_review_check($report['days'] === 14 && $report['scanned'] === 10 && $report['total'] === 4
+        && $report['filtered'] === 1 && $report['important'] === 1 && $report['replies'] === 1
+        && array_column($report['items'], 'subject') === ['PRIVATE_SUBJECT_SENTINEL', 'Filtered sender', 'At start boundary', 'Action required: Just before end boundary']
         && $report['summary'] === 'Fixture subject theme.' && $report['summary_status'] === 'ready' && $report['tokens_charged'] === 247,
-        'the saved report applies Inbox membership, exact cutoffs, owner filters, and summary token receipt');
+        'the saved report applies Inbox membership, exact cutoffs, preserves watched senders and summarizes receipts');
     $notices = $noticeRows(1);
-    first_review_check($rail['state'] === 'ready' && $rail['total'] === 3 && !isset($rail['report'])
+    first_review_check($rail['state'] === 'ready' && $rail['total'] === 4 && !isset($rail['report'])
         && !str_contains(json_encode([$rail, $notices], JSON_THROW_ON_ERROR), 'PRIVATE_SUBJECT_SENTINEL')
         && !str_contains(json_encode([$report, $summaries], JSON_THROW_ON_ERROR), 'FIXTURE_BODY_SENTINEL')
         && !str_contains(json_encode([$report, $summaries], JSON_THROW_ON_ERROR), 'FIXTURE_SNIPPET_SENTINEL')
@@ -277,10 +277,12 @@ try {
         && $chatView['chat_result']['items'][0]['item_ref'] === $ref
         && !isset($chatView['chat_result']['items'][0]['message_id'],$chatView['chat_result']['items'][0]['message_id_enc']),
         'the saved ID is encrypted and explicit private views expose only an opaque exact item selector');
-    $replyItem = $report['items'][2];
+    first_review_check(($chatView['chat_result']['items'][1]['priority_matches'] ?? []) === ['Sender address: muted@example.test'],
+        'first-review Chat includes watched sender with an explicit high-priority match rather than ignoring it');
+    $replyItem = $report['items'][3];
     first_review_check($replyItem['category'] === 'reply' && ($replyItem['important'] ?? false) === true
         && ($replyItem['priority_signals'] ?? []) === ['action required']
-        && $chatView['chat_result']['items'][2] === $replyItem,
+        && $chatView['chat_result']['items'][3] === $replyItem,
         'the first review and Chat retain Gmail importance and matching subject words on the same exact reply');
 
     $beforeDeliveryCalls = [$profileCalls,$listCalls,$metadataCalls,count($summaries)];
