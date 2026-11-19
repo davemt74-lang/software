@@ -181,6 +181,7 @@
   let youtubeLocalTurn = null;
   let initialRestorePending = true, contextReady = false;
   let composerDraftOrigin = null;
+  let composerDraftRevision = 0;
   let initiativeReplyTarget = null, initiativeReplyCandidate = null, initiativeReplyFenceTimer = 0;
   let initiativeVisualRetry = null;
   const initiativePosts = new Map(), initiativeOutcomes = new Map();
@@ -365,7 +366,7 @@
   }
   // The displayed conversation owns edits until a history load commits its new
   // selection. Persist them even while loading; Send remains gated separately.
-  input.addEventListener('input', event => { if (!busy && !initialRestorePending) {
+  input.addEventListener('input', event => { composerDraftRevision++; if (!busy && !initialRestorePending) {
     const draft=event.isTrusted ? input.value : composerDraftValue();
     if(event.isTrusted)composerDraftOrigin=draft.trim()?{kind:'typed_draft',text:draft}:null;
     else if(composerDraftOrigin?.text!==draft)composerDraftOrigin=null;
@@ -5229,8 +5230,44 @@
     return match ? (match[1] || match[2]) + ' to selected Gmail message' : '';
   }
 
+  function activeImageConflictV1(data) {
+    const conflict=data.canvas_media?.image_conflict,receipt=data.tool_receipt;
+    return conflict?.contract==='vp3.image-conflict.v1'
+      &&typeof conflict.generation_id==='string'&&/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(conflict.generation_id)
+      &&Number.isSafeInteger(conflict.job_id)&&conflict.job_id>0&&['queued','generating','paused'].includes(conflict.status)
+      &&['chat','media_library'].includes(conflict.origin)&&Number.isSafeInteger(conflict.agent_id)&&conflict.agent_id>=0
+      &&Number.isSafeInteger(conflict.conversation_id)&&conflict.conversation_id>=0
+      &&(conflict.user_message_id===null||Number.isSafeInteger(conflict.user_message_id)&&conflict.user_message_id>0)
+      &&typeof conflict.provider_started==='boolean'
+      &&receipt?.contract==='vp3.tool-receipt.v1'&&receipt.capability==='images.generate'
+      &&receipt.operation==='queue'&&receipt.status==='blocked'&&receipt.reason==='active_request'
+      &&receipt.record_id===0&&receipt.count===0
+      &&Array.isArray(data.canvas_media.generation_ids)&&data.canvas_media.generation_ids.length===0;
+  }
+
+  function recoverBlockedImageDraftV1(request,reference) {
+    if(request.voiceSubmission||request.parkedReply||!initiativeIdentityMatchesV1()||historyParticipant
+      ||request.historyAuthority!==historyAuthority||window.VP3ParticipantContinuity?.selectedContext?.())return;
+    if(request.conversationId===0)keepDraft('',0,null);
+    // A later edit (including clearing a replacement draft) wins over this
+    // response. The attachment is never restored or replaced by response data.
+    if(request.composerDraftRevision!==composerDraftRevision||input.value||composerDraftValue()){
+      keepDraft(composerDraftValue(),conversationId,null);return;
+    }
+    let currentReference;
+    try{currentReference=window.VP3ImageComposer?.requestContext?.(conversationId)||null;}catch(_){keepDraft('',conversationId,null);return;}
+    if(Boolean(reference)!==Boolean(currentReference)||reference&&(reference.selectionId!==currentReference.selectionId
+      ||reference.assetId!==currentReference.assetId||reference.conversationId!==currentReference.conversationId)){
+      keepDraft('',conversationId,null);return;
+    }
+    input.value=request.message;composerDraftOrigin={kind:'restored_draft',text:request.message};autoSize();
+    keepDraft(request.message,conversationId,null);
+    recoveryStatus('Your image prompt is kept. After the earlier request is resolved, press Send to try again.');
+  }
+
   async function sendMessage(message, inputMode = 'text', openGmailDraft = false) {
     if (busy || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
+    const voiceSubmission=inputMode==='voice'||window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.()===true;
     let imageReference=null;
     try{imageReference=window.VP3ImageComposer?.requestContext?.(conversationId)||null;}
     catch(error){recoveryStatus(error.message);return;}
@@ -5289,7 +5326,8 @@
       &&initiativeVisualRetry.message===message.trim()&&initiativeVisualRetry.association===visualAssociation?initiativeVisualRetry:
       {conversationId,message:message.trim(),association:visualAssociation,elements:[]};
     initiativeVisualRetry=null;
-    const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim(),initiativeReply,visualTurn};
+    const request={controller:new AbortController(),revision:++chatRevision,conversationId,message:message.trim(),initiativeReply,visualTurn,
+      composerDraftRevision,historyAuthority,voiceSubmission};
     // A voice failure or reload must never restore a submitted utterance to
     // the active composer. Persist it at the exact post until delivery is confirmed.
     request.parkedReply=voiceReplyId?rememberParkedInitiativeReplyV1(conversationId,initiativeReply,request.message,true)
@@ -5373,6 +5411,14 @@
           .finally(() => request.controller.signal.removeEventListener('abort', abort));
       });
       if(pendingSend!==request||request.revision!==chatRevision||request.controller.signal.aborted)return;
+      const imageConflict=activeImageConflictV1(data);
+      if(imageConflict&&(!initiativeIdentityMatchesV1()||request.historyAuthority!==historyAuthority||historyParticipant
+        ||window.VP3ParticipantContinuity?.selectedContext?.()||conversationId!==request.conversationId
+        ||Number(data.agent_id)!==initiativePage.agent||!Number.isSafeInteger(data.conversation_id)||data.conversation_id<1
+        ||request.conversationId>0&&data.conversation_id!==request.conversationId
+        ||![data.user_message_id,data.assistant_message_id].every(id=>Number.isSafeInteger(id)&&id>0))){
+        request.typing?.remove();return;
+      }
       if((initiativeReply||data.initiative_followthrough)&&!initiativeIdentityMatchesV1()){
         clearInitiativeReplyV1();recoveryStatus('The account or session changed. Refresh Chat before continuing.');return;
       }
@@ -5405,7 +5451,7 @@
       if(voiceReplyId)window.VP3VoiceDiagnostics?.record('reply',detachedImageReply?'closed':returnedFollowthrough?'received':'failed',
         detachedImageReply?'reply_cancelled':returnedFollowthrough?'reply_received':'reply_send_failed',voiceReplyId);
       if(initiativeReply)clearInitiativeReplyV1();
-      keepDraft('',request.conversationId);
+      if(!imageConflict||request.voiceSubmission||request.parkedReply)keepDraft('',request.conversationId);
       if(request.parkedReply)removeParkedInitiativeReplyV1(request.parkedReply);
       window.VP3ProjectKnowledgeR6?.consume(data.project_knowledge_r6);window.VP3KnowledgeRevisionsR11?.consume();
       window.VP3ImageComposer?.consume?.(data,imageReference);
@@ -5418,6 +5464,7 @@
       if(lastParticipantQuestion?.message===request.message){lastParticipantQuestion.conversation_id=Number(data.conversation_id);lastParticipantQuestion.at=Date.now();}
       conversationId = Number(data.conversation_id); rememberConversation();
       if(request.conversationId===0)window.dispatchEvent(new CustomEvent('vp3:chat-conversation-bound',{detail:{previous_conversation_id:0,conversation_id:conversationId}}));
+      if(imageConflict)recoverBlockedImageDraftV1(request,imageReference);
       const storedUserId=Number(data.user_message_id),storedAssistantId=Number(data.assistant_message_id);
       if(transcriptSource?.session_id>0&&Number.isSafeInteger(storedAssistantId)&&storedAssistantId>0
         &&(request.conversationId===0||request.conversationId===conversationId)

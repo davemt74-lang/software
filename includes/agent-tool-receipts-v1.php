@@ -84,10 +84,11 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     $cap=$value['capability']??null;$op=$value['operation']??null;$status=$value['status']??null;
     if(!is_string($cap)||!isset($ops[$cap])||!in_array($op,$ops[$cap],true)||!in_array($status,['read_complete','no_matches','completed','clarification_required','blocked','failed'],true))return null;
     $reason=$value['reason']??'';
-    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user','subscription_required','outcome_unverified','setup_required','scope_restricted','check_failed','not_installed'],true))return null;
+    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user','subscription_required','outcome_unverified','setup_required','scope_restricted','check_failed','not_installed','active_request'],true))return null;
     $at=$value['checked_at']??null;
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
+    if($reason==='active_request'&&($cap!=='images.generate'||$op!=='queue'||$status!=='blocked'||$value['record_id']!==0||$value['count']!==0))return null;
     // A read, clarification or failed operation can never be a successful mutation.
     $write=$cap==='email.followups'
         ||($cap==='email.send'&&$op==='send')||($cap==='music.releases.create'&&$op==='create')||($cap==='tracky.perception.request'&&$op==='request')||($cap==='radar.gateway.manage'&&$op==='set_policy')||($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
@@ -177,6 +178,7 @@ function vp3_tool_diagnosis_v1(?array $last): string
         'scope_restricted'=>'The selected Knowledge scope does not allow that read.',
         'check_failed'=>'Readiness could not be verified.',
         'not_installed'=>'The required executor was not installed.',
+        'active_request'=>'An earlier image request was still active. Manage that request before sending a new image prompt.',
         'outcome_unverified'=>'Effects may already have been saved. Check the current record before repeating the request.',
     ][$r['reason']]??'';
     if($r['reason']==='outcome_unverified')$label='the executor did not verify the final outcome';

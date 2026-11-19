@@ -14,6 +14,12 @@ function reject($fn,$label){try{$fn();}catch(Throwable $e){check(true,$label);re
 function queueImage($extra=[]): array{return vp3_image_queue_v1(db(),$GLOBALS['u'],$GLOBALS['principal'],array_replace($GLOBALS['plan'],$extra),image_fixture_turn_v1());}
 function transportImage($url,$body,$key): array{$GLOBALS['calls'][]=[$url,$body,$key];return image_fixture_response_v1($body['size'],$body['n']);}
 function imageCount(): int{return(int)db()->query('SELECT COUNT(*) FROM user_media_assets')->fetchColumn();}
+function imageTurnFor(int $conversation,int $owner=1): array
+{
+    db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(?,?,'user','Create a private image')")
+        ->execute([$conversation,$owner]);
+    return ['conversation_id'=>$conversation,'chat_user_message_id'=>(int)db()->lastInsertId()];
+}
 function ai_decrypt_secret(string $encrypted): string{return str_starts_with($encrypted,'fixture-cipher:')?substr($encrypted,15):'';}
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $aid,string $surface): array
 {
@@ -50,6 +56,51 @@ try{
     check(vp3_image_queue_v1($pdo,$u,$principal,$plan,$ctx)['id']===$g['id'],'same saved user turn recovers the same image request');
     reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,[...$plan,'prompt'=>'Different image'],$ctx),'a consumed turn cannot silently become a different image');
     reject(fn()=>queueImage(),'one owner cannot accidentally admit a second active image request');
+    $blocked=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,image_fixture_turn_v1());
+    $conflict=$blocked['canvas_media']['image_conflict'];$receipt=$blocked['tool_receipt'];
+    check($receipt['status']==='blocked'&&$receipt['reason']==='active_request'&&$receipt['record_id']===0&&$receipt['count']===0
+        &&!$receipt['changes_applied']&&$blocked['canvas_media']['generation_ids']===[]&&$blocked['canvas_media']['asset_ids']===[],
+        'an active job returns a blocked queue receipt without accepting the requested generation');
+    check($conflict===['contract'=>'vp3.image-conflict.v1','generation_id'=>$g['id'],'job_id'=>$g['job_id'],'status'=>'queued',
+        'origin'=>'chat','agent_id'=>7,'conversation_id'=>11,'user_message_id'=>$ctx['chat_user_message_id'],'provider_started'=>false,
+        'manage_url'=>'/agent-workflows.php?id='.$g['job_id'],
+        'source_url'=>'/chat.php?agent=7&conversation_id=11&message_id='.$ctx['chat_user_message_id']]
+        &&array_column($blocked['actions'],'url')===[$conflict['manage_url'],$conflict['source_url']]
+        &&!str_contains(json_encode($blocked),$plan['prompt'])&&$calls===[],
+        'the blocker exposes exact owner management and source links without its prompt or provider work');
+    check(vp3_tool_receipt_normalize_v1($receipt)===$receipt
+        &&str_contains(vp3_tool_diagnosis_v1(['receipt'=>$receipt]),'earlier image request'),
+        'the active-request receipt survives normalization and reports why the new request was blocked');
+    foreach([['capability'=>'calendar.manage','operation'=>'create'],['operation'=>'status'],['status'=>'failed'],['record_id'=>1],['count'=>1]] as $change){
+        check(vp3_tool_receipt_normalize_v1(array_replace($receipt,$change))===null,
+            'active-request evidence cannot be attached to '.json_encode($change));
+    }
+    $otherPrincipal=['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>8];
+    $otherBlocked=vp3_capability_image_generate_v1($pdo,$u,$otherPrincipal,$plan,imageTurnFor(12));
+    check($otherBlocked['canvas_media']['image_conflict']===$conflict&&$calls===[],
+        'another Agent sees the exact same owner blocker with its original source scope');
+    try{
+        vp3_image_queue_work_v1($pdo,$u,$principal,['conversation_id'=>11],str_repeat('a',64),
+            static fn(string $model):array=>[...vp3_image_text_plan_v1($plan),'model'=>$model]);
+        throw new RuntimeException('Expected a blocked Workbench edit.');
+    }catch(DomainException $error){
+        check($error->getCode()===409&&$error->getPrevious() instanceof Vp3ImageActiveRequestExceptionV1
+            &&$error->getPrevious()->conflict===$conflict,'Workbench edits retain their DomainException contract for an active request');
+    }
+    $pdo->prepare("UPDATE agent_workflow_runs SET status='paused' WHERE id=?")->execute([$g['job_id']]);
+    $paused=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,image_fixture_turn_v1());
+    check($paused['canvas_media']['image_conflict']['status']==='paused'
+        &&agent_workflow_row_v1400($pdo,1,$g['job_id'])['status']==='paused'&&$calls===[],
+        'a paused request stays paused and manageable instead of being cancelled or dispatched');
+    $pdo->prepare("UPDATE agent_workflow_runs SET status='approved' WHERE id=?")->execute([$g['job_id']]);
+    $foreignUser=['id'=>2,'is_active'=>1];$foreignPrincipal=['kind'=>'user_agent','owner_user_id'=>2,'agent_id'=>9];
+    $foreign=vp3_image_queue_v1($pdo,$foreignUser,$foreignPrincipal,$plan,imageTurnFor(13,2));
+    $foreignBlocked=vp3_capability_image_generate_v1($pdo,$foreignUser,$foreignPrincipal,$plan,imageTurnFor(13,2));
+    check($foreignBlocked['canvas_media']['image_conflict']['generation_id']===$foreign['id']
+        &&$foreignBlocked['canvas_media']['image_conflict']['conversation_id']===13
+        &&!str_contains(json_encode($foreignBlocked),$g['id']),
+        'active-image discovery never returns another owner blocker');
+    agent_job_cancel_v1900($pdo,$foreignUser,$foreign['job_id']);
     reject(fn()=>vp3_image_row_v1($pdo,['id'=>2],$g['id']),'another owner cannot read the generation record');
     reject(fn()=>vp3_image_queue_v1($pdo,$u,$principal,$plan,['conversation_id'=>12,'chat_user_message_id'=>$ctx['chat_user_message_id']]),'an Agent cannot queue into another Agent conversation');
     $finished=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');
@@ -102,10 +153,68 @@ try{
     $v=vp3_image_view_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']));
     check($v['status']==='generating'&&$v['active_lease_expires_at']===strtotime($claim['lease_expires_at'].' UTC')*1000
         &&!str_contains(json_encode($v),$claim['lease_token']),'an executing image projects only the active lease expiry');
+    $before=count($calls);$busy=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,image_fixture_turn_v1());
+    check($busy['canvas_media']['image_conflict']['status']==='generating'
+        &&agent_workflow_row_v1400($pdo,1,$g['job_id'])['lease_token']===$claim['lease_token']&&count($calls)===$before
+        &&!str_contains(json_encode($busy),$claim['lease_token']),
+        'admission leaves a valid execution lease intact and returns no private lease token');
     $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')->execute(['2001-01-01 00:00:00',$g['job_id']]);
     $v=vp3_image_view_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']));
     check($v['status']==='generating'&&$v['active_lease_expires_at']===null,'an expired lease clears the private work signal before ordinary recovery');
     $before=count($calls);$v=vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage');check($v['status']==='failed'&&count($calls)===$before,'abandoned single-attempt jobs recover as failed without reissuing a paid POST');
+    foreach(['',gmdate('Y-m-d H:i:s')] as $dispatch){
+        $old=queueImage();agent_job_claim_run_v1900($pdo,$u,$old['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);
+        $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')->execute(['2001-01-01 00:00:00',$old['job_id']]);
+        $pdo->prepare('UPDATE agent_image_generations_v1 SET provider_started_at=? WHERE generation_id=?')->execute([$dispatch,$old['id']]);
+        $before=count($calls);$next=queueImage();$oldRow=vp3_image_row_v1($pdo,$u,$old['id']);
+        check(agent_workflow_row_v1400($pdo,1,$old['job_id'])['status']==='failed'&&$next['status']==='queued'
+            &&$oldRow['provider_started_at']===$dispatch&&count($calls)===$before&&!$pdo->inTransaction(),
+            'new admission recovers the exact expired image '.($dispatch===''?'before':'after').' recorded dispatch without replay');
+        vp3_image_tick_v1($pdo,$u,$oldRow,'transportImage');
+        check(count($calls)===$before,'a recovered expired job remains unable to dispatch through its old card');
+        agent_job_cancel_v1900($pdo,$u,$next['job_id']);
+    }
+    $foreign=vp3_image_queue_v1($pdo,$foreignUser,$foreignPrincipal,$plan,imageTurnFor(13,2));
+    agent_job_claim_run_v1900($pdo,$foreignUser,$foreign['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(2),300);
+    $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')->execute(['2001-01-01 00:00:00',$foreign['job_id']]);
+    $next=queueImage();
+    check(agent_workflow_row_v1400($pdo,2,$foreign['job_id'])['status']==='executing',
+        'new admission never recovers a different owner expired image lease');
+    agent_job_cancel_v1900($pdo,$foreignUser,$foreign['job_id']);agent_job_cancel_v1900($pdo,$u,$next['job_id']);
+    $old=queueImage();agent_job_claim_run_v1900($pdo,$u,$old['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);
+    $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=NULL WHERE id=?')->execute([$old['job_id']]);
+    $missingLease=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,image_fixture_turn_v1());
+    check($missingLease['canvas_media']['image_conflict']['generation_id']===$old['id']
+        &&agent_workflow_row_v1400($pdo,1,$old['job_id'])['status']==='executing',
+        'an executing job without a verifiable expired lease remains explicitly manageable');
+    agent_job_cancel_v1900($pdo,$u,$old['job_id']);
+    $other=vp3_image_queue_v1($pdo,$u,$otherPrincipal,$plan,imageTurnFor(12));
+    agent_job_claim_run_v1900($pdo,$u,$other['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);
+    $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')->execute(['2001-01-01 00:00:00',$other['job_id']]);
+    $pdo->exec('UPDATE user_agents SET is_active=0 WHERE id=8');
+    $unavailable=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,image_fixture_turn_v1());
+    $unavailableConflict=$unavailable['canvas_media']['image_conflict'];
+    check($unavailableConflict['generation_id']===$other['id']&&$unavailableConflict['source_url']===null
+        &&$unavailableConflict['manage_url']==='/agent-workflows.php?id='.$other['job_id']
+        &&count($unavailable['actions'])===1&&agent_workflow_row_v1400($pdo,1,$other['job_id'])['status']==='executing',
+        'changed source authority prevents recovery and navigation while owner workflow management remains available');
+    $pdo->exec('UPDATE user_agents SET is_active=1 WHERE id=8');agent_job_cancel_v1900($pdo,$u,$other['job_id']);
+    $stale=[];$before=count($calls);
+    for($index=0;$index<6;$index++){
+        $old=queueImage();agent_job_claim_run_v1900($pdo,$u,$old['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);
+        $stale[]=$old['job_id'];
+        $pdo->prepare("UPDATE agent_workflow_runs SET status='failed',lease_expires_at=? WHERE id=?")->execute(['2001-01-01 00:00:00',$old['job_id']]);
+    }
+    foreach($stale as $id)$pdo->prepare("UPDATE agent_workflow_runs SET status='executing' WHERE id=?")->execute([$id]);
+    $boundedContext=image_fixture_turn_v1();$bounded=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,$boundedContext);
+    $states=array_map(static fn(int $id):string=>agent_workflow_row_v1400($pdo,1,$id)['status'],$stale);
+    check(count(array_filter($states,static fn(string $state):bool=>$state==='failed'))===5
+        &&$bounded['tool_receipt']['reason']==='active_request'&&count($calls)===$before,
+        'one admission recovers at most five legacy expired image jobs and reports the remaining blocker');
+    $remaining=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,$boundedContext);
+    check($remaining['tool_receipt']['status']==='completed'&&count($calls)===$before,
+        'a later explicit admission can reconcile the remaining expired job without any provider replay');
+    agent_job_cancel_v1900($pdo,$u,$remaining['tool_receipt']['record_id']);
     $g=queueImage();$claim=agent_job_claim_run_v1900($pdo,$u,$g['job_id'],'cloud',agent_worker_cloud_worker_id_v1910(1),300);$pdo->beginTransaction();agent_worker_cloud_result_v1910($pdo,$u,$claim,true,'Nested receipt fixture',['asset_id'=>123],'',false);$pdo->rollBack();check(agent_workflow_row_v1400($pdo,1,$g['job_id'])['status']==='executing','canonical result joins a caller transaction and rolls back with asset persistence');agent_job_cancel_v1900($pdo,$u,$g['job_id']);
     $g=queueImage();$pdo->prepare('UPDATE agent_workflow_runs SET agent_id=8 WHERE id=?')->execute([$g['job_id']]);$before=count($calls);reject(fn()=>vp3_image_tick_v1($pdo,$u,vp3_image_row_v1($pdo,$u,$g['id']),'transportImage'),'a reassigned canonical job cannot execute its old image binding');check(count($calls)===$before,'a mismatched job binding never reaches the provider');$pdo->prepare('UPDATE agent_workflow_runs SET agent_id=7 WHERE id=?')->execute([$g['job_id']]);agent_job_cancel_v1900($pdo,$u,$g['job_id']);
     $snapshot=['capabilities'=>[['id'=>'images.generate'],['id'=>'media.assets.read']]];
@@ -401,6 +510,13 @@ try{
         'a pre-upgrade Media Library plan without count accepts an explicit default without a new job or charge');
     reject(fn()=>vp3_image_queue_workspace_v1($pdo,$u,[...$plan,'prompt'=>'A different subject'],$request),'a Media Library review key cannot become a different request');
     reject(fn()=>queueImage(),'Media Library and Chat share the one-active-image-per-owner limit');
+    $workspaceConflict=vp3_capability_image_generate_v1($pdo,$u,$principal,$plan,image_fixture_turn_v1());
+    $workspaceBlock=$workspaceConflict['canvas_media']['image_conflict'];
+    check($workspaceBlock['generation_id']===$g['id']&&$workspaceBlock['origin']==='media_library'
+        &&$workspaceBlock['agent_id']===0&&$workspaceBlock['conversation_id']===0&&$workspaceBlock['user_message_id']===null
+        &&$workspaceBlock['manage_url']==='/agent-workflows.php?id='.$g['job_id']&&$workspaceBlock['source_url']==='/media-library.php'
+        &&$workspaceConflict['canvas_media']['generation_ids']===[]&&count($calls)===$before,
+        'a Media Library blocker has exact owner management and library navigation without a synthetic Chat');
     reject(fn()=>vp3_image_view_v1($pdo,['id'=>2],$row),'a Media Library record cannot be viewed by another owner');
     $count=imageCount();$v=vp3_image_tick_v1($pdo,$u,$row,'transportImage');
     check($v['status']==='completed'&&$v['asset']['available']&&imageCount()===$count+1&&count($calls)===$before+1&&end($calls)[0]==='https://api.openai.com/v1/images/generations','the Media Library worker saves one private image via text-to-image generation and verified provider usage');

@@ -87,7 +87,14 @@ if(isset($input['delete_asset'])){
     $asset=media_studio_asset((int)$input['delete_asset'],current_user());
     if($asset)@unlink(STONEFELLOW_ROOT.'/'.$asset['file_path']);
 }
-$seeded=null;
+$seeded=null;$blocker=null;
+if(!empty($input['seed_blocker'])){
+    db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(12,1,'user','Earlier image request in another Agent Chat')")->execute();
+    $turn=(int)db()->lastInsertId();
+    $blocker=vp3_image_queue_v1(db(),current_user(),['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>8],
+      image_fixture_plan_v1(),['conversation_id'=>12,'chat_user_message_id'=>$turn]);
+    $blocker+=['conversation_id'=>12,'agent_id'=>8,'user_message_id'=>$turn];
+}
 if(!empty($input['seed_batch'])){
     $plan=image_fixture_plan_v1();$plan['count']=4;$plan['title']='Desert variation';
     $generation=vp3_image_queue_v1(db(),current_user(),['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],$plan,image_fixture_turn_v1());
@@ -101,7 +108,7 @@ $jobs=[];
 if(table_exists('agent_image_generations_v1'))foreach(db()->query('SELECT * FROM agent_image_generations_v1')->fetchAll() as $row){
     $jobs[]=['id'=>$row['generation_id'],'conversation_id'=>(int)$row['conversation_id'],'config'=>json_decode($row['config_json'],true),'run_id'=>(int)$row['run_id']];
 }
-echo json_encode(['ok'=>true,'binding'=>vp3_catch_up_page_binding_v1(current_user()),'assets'=>media_studio_assets(current_user(),250),'jobs'=>$jobs,'seeded'=>$seeded]);
+echo json_encode(['ok'=>true,'binding'=>vp3_catch_up_page_binding_v1(current_user()),'assets'=>media_studio_assets(current_user(),250),'jobs'=>$jobs,'seeded'=>$seeded,'blocker'=>$blocker]);
 `);
 fs.writeFileSync(path.join(tmp, 'fixture-chat.php'), `<?php
 require __DIR__.'/includes/bootstrap.php';
@@ -122,18 +129,27 @@ try {
     if($action==='send'){
         $mode=@file_get_contents(__DIR__.'/mode.txt')?:'ordinary';
         if($mode==='error')throw new RuntimeException('Fixture delivery is unavailable. Your draft is kept.',503);
+        if($cid<1){
+            $cid=(int)db()->query('SELECT MAX(id)+1 FROM chat_conversations')->fetchColumn();
+            db()->prepare('INSERT INTO chat_conversations VALUES(?,1,7)')->execute([$cid]);
+        }
         $message=(string)($input['message']??'');
         db()->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(?,1,'user',?)")->execute([$cid,$message]);
         $userMessage=(int)db()->lastInsertId();$context=[];$answer='Fixture ordinary reply.';
-        if($mode==='queue'){
+        if($mode==='queue'||$mode==='active_request'){
             $plan=image_fixture_plan_v1();$plan['prompt']=$message;
             $plan['count']=preg_match('/^Generate ([1-4]) images?:/i',$message,$match)?(int)$match[1]:1;
             $ctx=['conversation_id'=>$cid,'chat_user_message_id'=>$userMessage];
             if(isset($input['image_reference_asset_id']))$ctx['image_reference_asset_id']=$input['image_reference_asset_id'];
-            $job=vp3_image_queue_v1(db(),current_user(),['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],$plan,$ctx);
-            $context=['canvas_media'=>['asset_ids'=>[],'generation_ids'=>[$job['id']]],
-              'tool_receipt'=>vp3_tool_receipt_v1('images.generate','queue','completed','',$job['job_id'],1)];
-            $answer='Your image request is queued.';
+            if($mode==='active_request'){
+                $context=vp3_capability_image_generate_v1(db(),current_user(),['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],$plan,$ctx);
+                $answer=$context['answer'];unset($context['answer'],$context['handled']);
+            }else{
+                $job=vp3_image_queue_v1(db(),current_user(),['kind'=>'user_agent','owner_user_id'=>1,'agent_id'=>7],$plan,$ctx);
+                $context=['canvas_media'=>['asset_ids'=>[],'generation_ids'=>[$job['id']]],
+                  'tool_receipt'=>vp3_tool_receipt_v1('images.generate','queue','completed','',$job['job_id'],1)];
+                $answer='Your image request is queued.';
+            }
         }elseif($mode==='malformed'){
             $context=['canvas_media'=>['generation_ids'=>['not-a-job']],
               'tool_receipt'=>['capability'=>'images.generate','operation'=>'queue','status'=>'completed']];
@@ -196,7 +212,7 @@ try {
     JSON.stringify({csrf_token:'fixture',agent_id:7,conversation_id:11,action:'reference',asset_id:asset,...extra}),
     {'Content-Type':'application/json','X-VP3-Working-Attention':binding});
   const cancel = async job => {
-    const result=await post('/api/chat-canvas-media-v1.php',JSON.stringify({action:'cancel',csrf_token:'fixture',agent_id:7,
+    const result=await post('/api/chat-canvas-media-v1.php',JSON.stringify({action:'cancel',csrf_token:'fixture',agent_id:job.agent_id??7,
       conversation_id:job.conversation_id,generation_id:job.id,confirmed:true}),{'Content-Type':'application/json'});
     assert.equal(result.data.generation?.status,'cancelled',JSON.stringify(result.data));
   };
@@ -230,8 +246,24 @@ try {
     const verified=await reference(generatedIds[2],(await control()).binding);
     assert.equal(verified.data.reference.asset_id,generatedIds[2]);assert.equal(verified.data.reference.sha256,generatedHashes[2]);
   });
+  await check('the production active-request gate returns the original job and links without queueing another job',async()=>{
+    const state=await control({seed_blocker:true,mode:'active_request'}),blocker=state.blocker;
+    const result=await post('/api/chat-v236.php',JSON.stringify({action:'send',conversation_id:14,
+      message:'Generate 2 images: Rework this reference',image_reference_asset_id:seedAsset}),{'Content-Type':'application/json'});
+    assert.equal(result.response.status,200,JSON.stringify(result.data));
+    assert.equal(result.data.tool_receipt?.reason,'active_request',JSON.stringify(result.data));
+    assert.equal(result.data.tool_receipt.status,'blocked');assert.equal(result.data.tool_receipt.operation,'queue');
+    const conflict=result.data.canvas_media.image_conflict;
+    assert.equal(conflict.contract,'vp3.image-conflict.v1');assert.equal(conflict.generation_id,blocker.id);
+    assert.equal(conflict.agent_id,8);assert.equal(conflict.conversation_id,12);assert.equal(conflict.user_message_id,blocker.user_message_id);
+    assert.deepEqual(result.data.canvas_media.generation_ids,[]);
+    assert.equal(result.data.actions[0].url,'/agent-workflows.php?id='+blocker.job_id);
+    assert.equal(result.data.actions[1].url,'/chat.php?agent=8&conversation_id=12&message_id='+blocker.user_message_id);
+    assert.equal((await control()).jobs.length,state.jobs.length);
+    await cancel(blocker);await control({mode:'ordinary'});
+  });
   if (process.env.VP3_IMAGE_COMPOSER_FIXTURE_ONLY === '1') {
-    console.log('CHAT_IMAGE_COMPOSER_FIXTURE=PASS (real upload/reference/queue and controlled canonical batch; no browser or paid provider launched)');
+    console.log('CHAT_IMAGE_COMPOSER_FIXTURE=PASS (real upload/reference/queue, active-request conflict and controlled canonical batch; no browser or paid provider launched)');
   } else {
     const {chromium} = await import('playwright');
     browser = await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
@@ -282,7 +314,10 @@ try {
           const gate=newChatGate,response=await route.fetch();gate.entered.resolve();await gate.release.promise;
           await route.fulfill({response}).catch(()=>{});gate.completed.resolve();return;
         }
-        if(payload.action==='send'&&sendGate){const gate=sendGate;gate.entered.resolve();await gate.release.promise;}
+        if(payload.action==='send'&&sendGate){
+          const gate=sendGate,response=await route.fetch();gate.entered.resolve();await gate.release.promise;
+          await route.fulfill({response}).catch(()=>{});gate.completed.resolve();return;
+        }
         return route.continue();
       }
       return route.fulfill({json:{ok:true,items:[],updates:[],conversations:[],route:'chat'}});
@@ -363,6 +398,14 @@ try {
       await viewer.waitFor();
     }
     async function releaseReference(gate){gate.release.resolve();referenceGate=null;await gate.completed.promise;await page.evaluate(()=>Promise.resolve());}
+    async function releaseSend(gate){
+      gate.release.resolve();sendGate=null;await gate.completed.promise;
+      await page.waitForFunction(()=>!window.STONEFELLOW_CHAT_CONTINUITY_V87.isBusy());
+    }
+    const drafts=()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('vp3:chat:drafts:1:7')||'{}'));
+    async function replacePendingDraft(text){
+      await input.evaluate((element,text)=>{element.value=text;element.dispatchEvent(new Event('input',{bubbles:true}));},text);
+    }
     await boot({clear:true});
     let currentAsset;
     await check('the Chat tools upload uses begin/chunk/finish and verifies a real private base without replacing a draft',async()=>{
@@ -392,6 +435,84 @@ try {
         await control({mode});const payload=await send('Discuss this cover: '+mode);
         assert.equal(payload.image_reference_asset_id,currentAsset);assert.equal(await selected.count(),1);
       }
+    });
+    let activeBlocker;
+    await check('an active image request preserves the exact typed prompt and original base through reload without retrying the blocker',async()=>{
+      const before=await control({mode:'active_request',seed_blocker:true});activeBlocker=before.blocker;
+      const prompt='Generate 2 images: Keep the exact cover composition.\nUse muted greens, warm paper, and the original lettering.';
+      const payload=await send(prompt);
+      assert.equal(payload.image_reference_asset_id,currentAsset);assert.equal(await input.inputValue(),prompt);
+      assert.equal(await baseId(),currentAsset);assert.equal((await drafts())[11].text,prompt);
+      assert.equal(await page.getByRole('link',{name:'Manage earlier image request',exact:true}).last().getAttribute('href'),'/agent-workflows.php?id='+activeBlocker.job_id);
+      assert.equal(await page.getByRole('link',{name:'Open original conversation',exact:true}).last().getAttribute('href'),
+        '/chat.php?agent=8&conversation_id=12&message_id='+activeBlocker.user_message_id);
+      assert.match(await page.locator('#chatRecoveryStatus').innerText(),/Your image prompt is kept/);
+      assert.equal((await control()).jobs.length,before.jobs.length);
+      assert.equal(calls.filter(call=>call.action==='tick'&&call.generation_id===activeBlocker.id).length,0);
+      assert.equal(await page.locator('[data-generation-id="'+activeBlocker.id+'"]').count(),0);
+      const beforeSends=sends().length;await boot();await waitForBase(currentAsset);
+      assert.equal(await input.inputValue(),prompt);assert.equal(sends().length,beforeSends);
+    });
+    await check('a held active-request response keeps a newer draft or deliberate clearing instead of restoring the submitted text',async()=>{
+      for(const newer of ['A newer direction that must win.','']){
+        sendGate=createGate();const gate=sendGate;
+        await input.fill('This submitted image prompt must not replace newer edits.');
+        await page.getByRole('button',{name:'Send message',exact:true}).click();await reached(gate);
+        await replacePendingDraft('Newer draft written during this response.');await replacePendingDraft(newer);
+        await releaseSend(gate);
+        assert.equal(await input.inputValue(),newer);assert.equal((await drafts())[11]?.text,newer||undefined);
+        assert.equal(await baseId(),currentAsset);
+        await boot();await waitForBase(currentAsset);assert.equal(await input.inputValue(),newer);
+      }
+    });
+    await check('a delayed active-request response cannot restore private text or leave a typing bubble after a conversation or owner change',async()=>{
+      for(const change of ['chat','owner']){
+        await boot({clear:true});
+        const candidate=(await control()).assets.find(asset=>asset.id===currentAsset);
+        assert.equal(await page.evaluate(asset=>window.VP3ImageComposer.attachAsset(asset,
+          window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext()),candidate),true);
+        sendGate=createGate();const gate=sendGate;
+        await input.fill('Original private prompt before '+change);await page.getByRole('button',{name:'Send message',exact:true}).click();await reached(gate);
+        if(change==='chat'){
+          await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.openConversation(14));
+          await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId()===14&&window.STONEFELLOW_CHAT_CONTINUITY_V87.isReady());
+        }else await page.evaluate(()=>{window.STONEFELLOW_CHAT.userId=2;window.dispatchEvent(new Event('stonefellow:chat-context-changing'));});
+        const destination='Destination draft after '+change;await replacePendingDraft(destination);
+        const beforeDrafts=await drafts();await releaseSend(gate);
+        assert.equal(await input.inputValue(),destination);assert.deepEqual(await drafts(),beforeDrafts);
+        assert.equal(await selected.count(),0);assert.equal(await page.locator('#chatThread .typing').count(),0);
+      }
+    });
+    await check('a blocked first send binds the new conversation before saving its prompt and never revives draft zero',async()=>{
+      await boot({cid:0,clear:true});
+      await page.evaluate(()=>{window.recoveryBindings=[];window.addEventListener('vp3:chat-conversation-bound',event=>window.recoveryBindings.push(event.detail));});
+      const prompt='Generate 1 image: A quiet forest in watercolor.';
+      const first=await send(prompt),cid=await page.evaluate(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87.conversationId());
+      assert.equal(first.conversation_id,0);assert.ok(cid>0);assert.equal(await input.inputValue(),prompt);
+      const saved=await drafts();assert.equal(saved[0],undefined);assert.equal(saved[cid].text,prompt);
+      assert.deepEqual(await page.evaluate(()=>window.recoveryBindings),[{previous_conversation_id:0,conversation_id:cid}]);
+      await boot({cid});assert.equal(await input.inputValue(),prompt);
+      const next=await send(prompt);assert.equal(next.conversation_id,cid);assert.equal((await drafts())[0],undefined);
+    });
+    await check('an actual automatic voice conflict keeps the base but cannot restore the submitted utterance or save it as a draft',async()=>{
+      await boot({voice:true,clear:true});const candidate=(await control()).assets.find(asset=>asset.id===currentAsset);
+      assert.equal(await page.evaluate(asset=>window.VP3ImageComposer.attachAsset(asset,
+        window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext()),candidate),true);
+      await input.fill('');const before=sends().length;
+      await page.getByRole('button',{name:'Start voice conversation',exact:true}).click();
+      await page.waitForFunction(()=>window.recognizers.some(item=>item.active));
+      const delivered=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/chat-stream-v121.php'&&response.request().postDataJSON()?.action==='send');
+      await page.evaluate(()=>{
+        const recognition=window.recognizers.findLast(item=>item.active),final=[{transcript:'Generate 1 image: Give the attached image a painted background',confidence:.98}];
+        final.isFinal=true;recognition.onresult({resultIndex:0,results:[final]});
+      });
+      await delivered;await page.waitForFunction(()=>!window.STONEFELLOW_CHAT_CONTINUITY_V87.isBusy()&&!window.STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit());
+      assert.equal(sends().length,before+1);assert.equal(sends().at(-1).input_mode,'voice');
+      assert.equal(await input.inputValue(),'');assert.equal((await drafts())[11],undefined);assert.equal(await baseId(),currentAsset);
+      await page.getByRole('button',{name:'Stop voice conversation',exact:true}).click();
+      await boot();await waitForBase(currentAsset);assert.equal(await input.inputValue(),'');
+      assert.equal(calls.filter(call=>call.action==='tick'&&call.generation_id===activeBlocker.id).length,0);
+      await cancel(activeBlocker);await control({mode:'ordinary'});
     });
     await check('typed submission freezes the exact base into one canonical job and clears it only after a valid queue receipt',async()=>{
       await control({mode:'queue'});sendGate=createGate();
