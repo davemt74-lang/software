@@ -6,6 +6,7 @@ const media=read('chat-media-commands-v1.js'),api=read('api/initiative-workbench
 const actions=read('includes/initiative-marketing-workspace-v1.php');
 assert.match(chat,/showMarketingCanvasView:\(\) => setChatCanvasView\('marketing'\)/);
 assert.match(chat,/kind === 'marketing' && thread.dataset.view === 'marketing'/);
+assert.match(chat,/if\(thread\.dataset\.view==='marketing'\)setChatCanvasView\('chat'\)/);
 assert.match(media,/kind === 'marketing' && typeof window\.VP3MarketingWorkspaceV1\?\.open/);
 assert.match(media,/if \(kind === 'images'\)/);
 assert.match(page,/chat-marketing-workspace-v1\.js/);

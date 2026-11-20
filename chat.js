@@ -5716,6 +5716,9 @@
       void openProductFromComposer(product[1]?.trim() || '');
       return;
     }
+    // Marketing keeps the normal Chat composer available. Return to the conversation
+    // before sending so Longfellow's response is visible instead of landing in a hidden feed.
+    if(thread.dataset.view==='marketing')setChatCanvasView('chat');
     sendMessage(input.value);
   });
 
