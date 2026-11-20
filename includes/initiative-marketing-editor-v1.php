@@ -245,7 +245,7 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
     $catalog=vp3_marketing_editor_catalog_v1($pdo,$owner,$scope,$merchantId);
     if($catalog['merchant_id']!==$merchantId)throw new DomainException('Merchant draft permission changed.',403);
     $fields=vp3_marketing_editor_fields_v1($body['fields']??null,$catalog);
-    if($campaignId>0) {
+    if($campaignId>0 && $action==='marketing_editor_preview') {
         $draft=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId);
         if(!hash_equals($draft['revision'],$revision))throw new DomainException('This Campaign changed. Reload the latest draft before saving.',409);
     }
@@ -255,7 +255,13 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
         $expires=time()+600;
         return ['preview'=>['title'=>$fields['title'],'campaign_type'=>$fields['campaign_type'],
             'description'=>$fields['description'],'subtitle'=>$fields['subtitle'],
+            'objective'=>$fields['objective'],'terms'=>$fields['terms'],'slug'=>$fields['slug'],
             'cta_label'=>$fields['cta_label'],'reward_count'=>count($fields['reward_ids']),
+            'reward_names'=>array_values(array_map(
+                static fn(int $id):string => (string)($catalog['rewards'][array_search($id,array_column($catalog['rewards'],'id'),true)]['name']??'Reward'),
+                $fields['reward_ids'])),
+            'location'=>($fields['location_id']===0?'All locations':(string)(
+                $catalog['locations'][array_search($fields['location_id'],array_column($catalog['locations'],'id'),true)]['name']??'Location')),
             'starts_at'=>$fields['starts_at'],'ends_at'=>$fields['ends_at'],
             'status'=>'draft','will_publish'=>false],
             'review_token'=>initiative_workbench_review_token_v1($reviewKey,$intent,$expires)];
@@ -266,10 +272,8 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
     try {
         vp3_marketing_editor_scope_v1($pdo,$owner,$scope);
         vp3_marketing_editor_merchant_v1($pdo,$owner,$merchantId);
-        if($campaignId>0) {
-            $current=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId,true);
-            if(!hash_equals($current['revision'],$revision))throw new DomainException('This Campaign changed during review. Reload it.',409);
-        }
+        // Check the committed idempotency receipt before demanding the old draft
+        // revision. A network retry must return the first result, not create a second write.
         $key=$owner.':'.$nonce;
         $receipt=campaigns_rewards_idempotency_begin_v100($pdo,$merchantId,'marketing.chat_draft.v2b1',$key,
             ['intent'=>$intent],true);
@@ -280,6 +284,10 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
             $savedId=(int)($receipt['result_ref_id']??0);
             $saved=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$savedId);
         } else {
+            if($campaignId>0) {
+                $current=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId,true);
+                if(!hash_equals($current['revision'],$revision))throw new DomainException('This Campaign changed during review. Reload it.',409);
+            }
             // A draft save must not publish on Profile; release remains a separate review.
             $input=$fields+['profile_visible'=>false,'reward_selection_present'=>1];
             $row=campaigns_rewards_save_campaign_v100($pdo,$merchantId,$owner,$input,$campaignId);

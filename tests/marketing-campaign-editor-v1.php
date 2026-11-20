@@ -92,6 +92,9 @@ $body=['action'=>'marketing_editor_preview','merchant_id'=>7,'campaign_id'=>0,
     'revision'=>'new','request_key'=>str_repeat('a',32),'fields'=>$fields];
 $preview=vp3_marketing_editor_action_v1($pdo,1,$scope,$body,'secret');
 editor_check($preview['preview']['status']==='draft'&&$preview['preview']['will_publish']===false,'preview is private and read-only');
+editor_check($preview['preview']['slug']==='free-coffee-week'
+    &&$preview['preview']['reward_names']===['Free coffee']
+    &&$preview['preview']['location']==='Flagship','review shows exact URL, Reward and Location');
 editor_check($writes===0,'preview has no database write');
 $saveBody=$body; $saveBody['action']='marketing_editor_save';$saveBody['confirmed']=true;
 $saveBody['review_token']=$preview['review_token'];
@@ -110,6 +113,8 @@ $p2=vp3_marketing_editor_action_v1($pdo,1,$scope,$edit,'secret');
 $edit['action']='marketing_editor_save';$edit['confirmed']=true;$edit['review_token']=$p2['review_token'];
 $changed=vp3_marketing_editor_action_v1($pdo,1,$scope,$edit,'secret');
 editor_check($changed['draft']['fields']['title']==='Updated Coffee'&&$writes===2,'explicit edit updates only an owned draft');
+$editRetry=vp3_marketing_editor_action_v1($pdo,1,$scope,$edit,'secret');
+editor_check($editRetry['draft']['id']===$id&&$writes===2,'repeat edited-draft save replays receipt without another write');
 $stale=$edit;$stale['request_key']=str_repeat('c',32);
 editor_denied(409,fn()=>vp3_marketing_editor_action_v1($pdo,1,$scope,$stale,'secret'),'stale revision refused');
 $active=$id;$campaignRows[$active]['status']='active';

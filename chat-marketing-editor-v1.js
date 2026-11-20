@@ -203,10 +203,13 @@
       reviewCopy.replaceChildren();
       const item=data.preview;
       for(const [label,value] of [
-        ['Campaign',item.title],['Type',item.campaign_type],['Description',item.description],
+        ['Campaign',item.title],['Type',item.campaign_type],['Reserved URL',item.slug],
+        ['Description',item.description],['Objective',item.objective],
         ['Subtitle',item.subtitle],['Call to action',item.cta_label],
-        ['Active reward selections',String(item.reward_count)],['Starts (UTC)',item.starts_at||'Unscheduled'],
-        ['Ends (UTC)',item.ends_at||'Unscheduled'],['Publication','Not published']
+        ['Terms',item.terms],['Merchant Location',item.location],
+        ['Active Reward selections',Array.isArray(item.reward_names)?item.reward_names.join(', '):String(item.reward_count)],
+        ['Starts (UTC)',item.starts_at||'Unscheduled'],['Ends (UTC)',item.ends_at||'Unscheduled'],
+        ['Publication','Not published']
       ]){
         const line=el('p');line.append(el('strong',label+': '),document.createTextNode(String(value||'—').slice(0,4000)));
         reviewCopy.append(line);
