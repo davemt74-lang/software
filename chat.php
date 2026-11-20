@@ -612,6 +612,8 @@ $initiativeWorkbenchRuntime = ($profileWorkspaceRuntime === ''
     . '<script src="'.e(url('/chat-marketing-workspace-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-workspace-v1.js'),0,12))).'" defer></script>'
     . '<link rel="stylesheet" href="'.e(url('/chat-marketing-editor-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-editor-v1.css'),0,12))).'">'
     . '<script src="'.e(url('/chat-marketing-editor-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-editor-v1.js'),0,12))).'" defer></script>'
+    . '<link rel="stylesheet" href="'.e(url('/chat-marketing-canvas-link-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-canvas-link-v1.css'),0,12))).'">'
+    . '<script src="'.e(url('/chat-marketing-canvas-link-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-canvas-link-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-media-commands-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-media-commands-v1.js'),0,12))).'" defer></script>';
 $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-email-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.css'),0,12))).'">'
     . '<script>window.VP3_CHAT_EMAIL_V1='.json_encode([

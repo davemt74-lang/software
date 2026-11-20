@@ -38,7 +38,7 @@ try {
     $action = $body['action'] ?? '';
     $creativeAction = $tool === 'marketing' && in_array($action, ['creative_open','creative_prepare','creative_generate',
         'creative_status','creative_tick','creative_cancel','creative_save','creative_publish_preview','creative_publish','creative_pause'],true);
-    $marketingPlanAction = $tool === 'marketing' && in_array($action,['marketing_plans','marketing_plan','marketing_overview'],true);
+    $marketingPlanAction = $tool === 'marketing' && in_array($action,['marketing_plans','marketing_plan','marketing_overview','marketing_canvas_choices'],true);
     $marketingEditorAction = $tool === 'marketing' && in_array($action,[
         'marketing_editor_options','marketing_editor_open','marketing_editor_preview','marketing_editor_save'],true);
     if (!$creativeAction && !$marketingEditorAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
@@ -76,7 +76,10 @@ try {
         $response += vp3_marketing_editor_action_v1($pdo,$owner,$scope,$body,$key);
     } elseif ($marketingPlanAction) {
         require_once dirname(__DIR__).'/includes/initiative-marketing-plans-v1.php';
-        if ($action === 'marketing_overview') {
+        if ($action === 'marketing_canvas_choices') {
+            require_once dirname(__DIR__).'/includes/initiative-marketing-canvas-choices-v1.php';
+            $response += vp3_marketing_workspace_canvas_options_v1($pdo,$owner,$scope,$body);
+        } elseif ($action === 'marketing_overview') {
             require_once dirname(__DIR__).'/includes/initiative-marketing-workspace-v1.php';
             $response += vp3_initiative_marketing_workspace_overview_v1($pdo,$owner,$scope);
         } else {
