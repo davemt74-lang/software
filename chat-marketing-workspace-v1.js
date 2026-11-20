@@ -336,7 +336,7 @@
     if(typeof value!=='string'||value.length>480)return null;
     try {
       const url=new URL(value,location.origin);
-      const expected=new URL('../marketing-canvas-link-v1.php',endpoint);
+      const expected=new URL('./marketing-canvas-link-v1.php',endpoint);
       return url.origin===location.origin&&url.pathname===expected.pathname&&!url.hash&&!url.search
         &&!url.username&&!url.password&&['http:','https:'].includes(url.protocol)?url:null;
     }catch{return null;}
