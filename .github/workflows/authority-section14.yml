@@ -89,6 +89,12 @@ jobs:
           php tests/marketing-canvas-choices-v1.php
           node --check chat-marketing-canvas-link-v1.js
           node tests/marketing-canvas-choices-contract-v1.mjs
+      - name: Marketing Product Media owner-private selections and contracts
+        run: |
+          php -l includes/initiative-marketing-product-media-v1.php
+          php tests/marketing-product-media-v1.php
+          node --check chat-marketing-product-media-v1.js
+          node tests/marketing-product-media-contract-v1.mjs
       - name: Public Profile Canvas attachments on native MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
