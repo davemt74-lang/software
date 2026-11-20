@@ -83,6 +83,12 @@ jobs:
           php tests/marketing-campaign-editor-v1.php
           node --check chat-marketing-editor-v1.js
           node tests/marketing-campaign-editor-contract-v1.mjs
+      - name: Marketing Canvas creative selection and exact authority
+        run: |
+          php -l includes/initiative-marketing-canvas-choices-v1.php
+          php tests/marketing-canvas-choices-v1.php
+          node --check chat-marketing-canvas-link-v1.js
+          node tests/marketing-canvas-choices-contract-v1.mjs
       - name: Public Profile Canvas attachments on native MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
