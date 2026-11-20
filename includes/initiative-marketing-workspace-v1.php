@@ -42,8 +42,8 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             'readiness'=>in_array($item['readiness']['state']??null,['ready','limited','needs_setup'],true)
                 ?$item['readiness']['state']:'unavailable',
             'issues'=>$issues,
-            'window_state'=>in_array($item['outcomes']['window_state']??null,['open','closed','upcoming','not_open'],true)
-                ?$item['outcomes']['window_state']:'unavailable',
+            'window_state'=>in_array($item['window_state']??null,['open','closed','upcoming','not_open'],true)
+                ?$item['window_state']:'unavailable',
             'observations'=>$observations,
         ];
     }
