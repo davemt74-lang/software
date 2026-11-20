@@ -21,6 +21,7 @@ assert.match(workspace,/verifiedLinkEndpoint/);
 assert.match(workspace,/marketing_canvas_choices/);
 assert.match(workspace,/data\.owner_key!==owner/);
 assert.match(workspace,/session\.requests\.has\('canvas-write'\)/);
+assert.match(workspace,/session\.canvasLink\?\.host\?\.isConnected/);
 assert.match(ui,/Confirm private Canvas link/);
 assert.match(ui,/showReview/);
 assert.match(ui,/proofPattern/);

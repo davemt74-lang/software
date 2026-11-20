@@ -144,7 +144,7 @@
     canvasSelect.addEventListener('change',()=>resetReview());
     if(campaignRows.length)void load();
     else message('No editable Campaigns in this review. Create a private Campaign draft first.');
-    return {dispose(){disposed=true;serial++;wrap.remove();}};
+    return {host:wrap,dispose(){disposed=true;serial++;wrap.remove();}};
   }
   window.VP3MarketingCanvasLinkV1=Object.freeze({mount});
 })();

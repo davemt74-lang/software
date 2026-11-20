@@ -376,6 +376,9 @@
   }
   function renderCreative(session) {
     const target=panes.get('creative');
+    // Do not unmount a reviewed creative selection while background Campaign
+    // and Plan reads refresh; that could hide the outcome of a submitted link.
+    if(session.canvasLinkActive&&session.canvasLink?.host?.isConnected)return;
     session.canvasLink?.dispose();session.canvasLink=null;
     target.replaceChildren();
     target.append(n('h3','Creative Studio & Rewards'),n('p','Use the existing editors, protected media library and campaign tools. No outbound promotion or reward is issued from this workspace automatically.'));
