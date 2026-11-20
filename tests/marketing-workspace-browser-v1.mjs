@@ -19,6 +19,12 @@ const plans=[
 ];
 const campaigns=[{id:4,name:'Autumn special',business:'Shop',status:'active',readiness:'needs_setup',
  issues:['Choose an active reward'],window_state:'open',observations:{claims:'observed',redemptions:'unavailable',promotion:'observed'},
+ performance:{sources:{
+   claims:{state:'unobserved',metrics:{},window:{}},
+   redemptions:{state:'unavailable',metrics:{},window:{}},
+   promotion:{state:'observed',metrics:{clicks:18,checkout_starts:3,paid_orders:0,refunded_orders:0},
+     window:{start:'2026-11-10T00:00:00+00:00',end:null}}},
+   decisions:[{id:12,type:'fatigue',status:'proposed'}]},
  href:'/campaigns.php?merchant=2&edit_campaign=4'}];
 async function scenario(width){
   const page=await browser.newPage({viewport:{width,height:850}});page.setDefaultTimeout(10000);
@@ -68,6 +74,23 @@ async function scenario(width){
   check(await page.locator('#vp3MediaCommands').count()===0,'legacy Marketing modal not opened');
   check(await page.getByText('Autumn special').count()>0,'live campaigns rendered from canonical overview');
   check(await page.locator('#chatMarketingWorkspaceV1').innerText().then(s=>!s.includes('customer email')),'private CRM not rendered');
+  await page.getByRole('tab',{name:'Analytics'}).click();
+  check(await page.getByRole('heading',{name:'Campaign performance & next actions'}).count()===1,
+    'analytics tab provides read-only performance briefing');
+  check(await page.getByText('18',{exact:true}).count()>=1&&await page.getByText('3',{exact:true}).count()>=1,
+    'verified promotion counters render as recorded');
+  check(await page.getByText('No verified activity recorded yet; not a measured zero.').count()===1,
+    'unobserved Reward claims never appear as a measured zero');
+  check(await page.getByText('Evidence unavailable. No metric is estimated.').count()===1,
+    'unavailable optimization evidence has no invented metrics');
+  check(await page.getByText(/checkout starts are recorded but no paid orders are attributed/).count()===1,
+    'evidence-backed checkout review opportunity is shown without automatic mutation');
+  check(await page.getByRole('heading',{name:'Human-review recommendations'}).count()===1,
+    'recommendation remains under human review in canonical Campaigns');
+  check(await page.getByRole('link',{name:'Open detailed Campaign analytics'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4',
+    'analytics drills into existing Campaigns page without duplicating the manager');
+  check(!(await page.locator('#chatMarketingWorkspaceV1').innerText()).includes('customer_email'),
+    'private attributes never appear in analytics cards');
   await page.getByRole('tab',{name:'Campaigns'}).click();
   check(await page.getByRole('link',{name:'Manage campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4','safe edit destination');
   await page.getByRole('tab',{name:'Product plans'}).click();
