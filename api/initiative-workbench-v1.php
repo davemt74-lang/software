@@ -13,8 +13,8 @@ try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
         throw new DomainException('Use POST for Initiative work.', 405);
     }
-    $raw = file_get_contents('php://input', false, null, 0, 8193);
-    if ($raw === false || strlen($raw) > 8192) {
+    $raw = file_get_contents('php://input', false, null, 0, 16385);
+    if ($raw === false || strlen($raw) > 16384) {
         throw new DomainException('Initiative request is too large.', 413);
     }
     $body = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
@@ -42,6 +42,7 @@ try {
     $marketingEditorAction = $tool === 'marketing' && in_array($action,[
         'marketing_editor_options','marketing_editor_open','marketing_editor_preview','marketing_editor_save'],true);
     if (!$creativeAction && !$marketingEditorAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
+    if ($creativeAction && strlen($raw) > 8192) throw new DomainException('Creative request is too large.',413);
     if (!is_int($agentId) || $agentId < 0 || !is_int($conversationId) || $conversationId < 1
         || !in_array($tool, ['product', 'screen', 'mission', 'marketing'], true)
         || (!$creativeAction && !$marketingPlanAction && !$marketingEditorAction && !in_array($action, ['sources', 'preview', 'create'], true))) {

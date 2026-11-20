@@ -86,6 +86,7 @@
       if(fresh)requestKey=nonce();
       previewPanel.hidden=true;
     }
+    form.addEventListener('submit',event=>{event.preventDefault();void review();});
     form.addEventListener('input',()=>invalidate());
     form.addEventListener('change',()=>invalidate());
     function busyState(value) {

@@ -427,6 +427,8 @@ jobs:
         run: node tests/profile-analytics-period-browser.mjs
       - name: Unified Marketing workspace Chat Canvas, plans and mobile acceptance
         run: node tests/marketing-workspace-browser-v1.mjs
+      - name: Reviewed Campaign Draft Editor desktop and mobile browser acceptance
+        run: node tests/marketing-campaign-editor-browser-v1.mjs
       - name: Product marketing publications, original Chat restoration and compact layout
         run: node tests/marketing-followthrough-browser.mjs
       - name: Product Marketing Hub, related Profile findings and released publication links
