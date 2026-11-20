@@ -21,8 +21,8 @@ function vp3_public_canvas_source_v1(string $command, array $source, string $bas
         'public-campaigns', 'public-rewards', 'public-media' => '',
     };
     $route = in_array($command,['public-campaigns','public-rewards'],true)
-        ? '~\\A/campaign/[a-z0-9-]{1,80}\\z~D'
-        : '~\\A/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]'.$suffix.'\\z~D';
+        ? '~\A/campaign/[a-z0-9-]{1,80}\z~D'
+        : '~\A/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]'.$suffix.'\z~D';
     $rows = [];
     foreach (array_slice($source['rows'], 0, 24) as $record) {
         if (!is_array($record) || !is_string($record['id'] ?? null) || !preg_match('/\A[A-Za-z0-9_-]{1,128}\z/D', $record['id'])) continue;
