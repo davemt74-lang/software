@@ -42,3 +42,17 @@
   .vp3-marketing-workspace-card { padding:.85rem; }
 }
 @media (max-width:370px) { .vp3-marketing-workspace-summary { grid-template-columns:minmax(0,1fr); } }
+
+/* Phase 2B.5: aggregate observation briefing, distinct from the Campaign manager. */
+.vp3-marketing-workspace-performance-list { display:grid; grid-template-columns:minmax(0,1fr); gap:1rem; margin:1rem 0; }
+.vp3-marketing-performance-campaign { gap:.85rem; }
+.vp3-marketing-performance-sources { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem; }
+.vp3-marketing-performance-source { min-width:0; border:1px solid #dce5f0; border-radius:.7rem; padding:.8rem; background:#f8fbff; }
+.vp3-marketing-performance-source h4,.vp3-marketing-performance-next h4 { margin:0 0 .3rem; font-size:.9rem; color:#24466f; }
+.vp3-marketing-performance-source p,.vp3-marketing-performance-next p { color:#55667c; font-size:.78rem; line-height:1.45; margin:.15rem 0 .5rem; }
+.vp3-marketing-performance-source small { color:#65758a; font-size:.71rem; overflow-wrap:anywhere; }
+.vp3-marketing-performance-metrics { display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:.6rem; row-gap:.35rem; align-items:baseline; margin:.65rem 0; font-variant-numeric:tabular-nums; }
+.vp3-marketing-performance-metrics dt { font-size:.79rem; color:#4d6078; overflow-wrap:anywhere; }
+.vp3-marketing-performance-metrics dd { margin:0; font-size:1rem; font-weight:750; color:#193b6b; }
+.vp3-marketing-performance-next { padding:.7rem .85rem; border-left:3px solid #7b9ac5; background:#f7faff; border-radius:.35rem; }
+@media (max-width:700px) { .vp3-marketing-performance-sources { grid-template-columns:minmax(0,1fr); } }
