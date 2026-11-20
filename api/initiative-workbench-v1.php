@@ -38,7 +38,7 @@ try {
     $action = $body['action'] ?? '';
     $creativeAction = $tool === 'marketing' && in_array($action, ['creative_open','creative_prepare','creative_generate',
         'creative_status','creative_tick','creative_cancel','creative_save','creative_publish_preview','creative_publish','creative_pause'],true);
-    $marketingPlanAction = $tool === 'marketing' && in_array($action,['marketing_plans','marketing_plan'],true);
+    $marketingPlanAction = $tool === 'marketing' && in_array($action,['marketing_plans','marketing_plan','marketing_overview'],true);
     if (!$creativeAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
     if (!is_int($agentId) || $agentId < 0 || !is_int($conversationId) || $conversationId < 1
         || !in_array($tool, ['product', 'screen', 'mission', 'marketing'], true)
@@ -69,9 +69,14 @@ try {
     $handler = 'initiative_work_' . $tool;
     if ($marketingPlanAction) {
         require_once dirname(__DIR__).'/includes/initiative-marketing-plans-v1.php';
-        $response += $action === 'marketing_plans'
-            ? initiative_marketing_plans_list_v1($pdo,$owner,$scope,$body)
-            : initiative_marketing_plan_read_v1($pdo,$owner,$scope,$body);
+        if ($action === 'marketing_overview') {
+            require_once dirname(__DIR__).'/includes/initiative-marketing-workspace-v1.php';
+            $response += vp3_initiative_marketing_workspace_overview_v1($pdo,$owner,$scope);
+        } else {
+            $response += $action === 'marketing_plans'
+                ? initiative_marketing_plans_list_v1($pdo,$owner,$scope,$body)
+                : initiative_marketing_plan_read_v1($pdo,$owner,$scope,$body);
+        }
     } elseif ($creativeAction) {
         require_once dirname(__DIR__).'/includes/initiative-work-marketing-promotion-v1.php';
         $response += initiative_work_marketing_promotion_action_v1($pdo,$owner,$scope,$body,$key);
