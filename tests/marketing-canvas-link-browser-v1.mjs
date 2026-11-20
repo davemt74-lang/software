@@ -100,15 +100,7 @@ async function scenario(width){
    &&(await panel.locator('.vp3-marketing-canvas-link-review').innerText()).includes('Campaign artwork (v4)'),
    'review names exact Campaign and tested Canvas revisions');
  await panel.getByRole('button',{name:'Confirm private Canvas link'}).click();
- await page.waitForTimeout(450);
- const staleStatus=await panel.locator('.vp3-marketing-canvas-link-status').textContent();
- console.log('DIAGNOSTIC link denial',JSON.stringify({
-   width,status:staleStatus,writes:writes.length,errors,
-   panelPresent:await panel.count(),
-   lastRead:reads.at(-1)?.action,
-   approvalVisible:await panel.locator('.vp3-marketing-canvas-link-review').isVisible()
- }));
- await page.waitForFunction(()=>document.querySelector('.vp3-marketing-canvas-link-status')?.textContent.includes('not verified'));
+ await page.waitForFunction(()=>document.querySelector('.vp3-marketing-canvas-link-status')?.textContent.includes('could not be verified'));
  check(writes.length===1&&!linked,'stale write gives no false success');
  check(writes[0].payload.canvas_id===secondId&&writes[0].payload.canvas_version===4
    &&writes[0].payload.campaign_id===5&&writes[0].payload.campaign_version===3
