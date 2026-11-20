@@ -176,7 +176,7 @@ function vp3_coordination_route_v1(array $settings, string $specialist, array $t
 /** A work specialist's explicit delivery rule takes priority over private work and suggestions. */
 function vp3_coordination_chat_route_v1(array $route): bool
 {
-    return in_array($route['specialist']??null,['gmail','planning','tasks','canvas','connected-sites','transcripts','profile'],true)
+    return in_array($route['specialist']??null,['gmail','planning','tasks','canvas','connected-sites','transcripts','marketing','profile'],true)
         && in_array($route['action']??null,['ask','report'],true);
 }
 
