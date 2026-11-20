@@ -31,9 +31,9 @@ $fixture=[
             'readiness'=>['state'=>'needs_setup','checks'=>[
                 'reward'=>['state'=>'missing','detail'=>'Choose an active reward'],
                 'audience'=>['state'=>'ready','detail'=>'Ready']]],
-            'outcomes'=>['window_state'=>'open','observations'=>[
+            'window_state'=>'open','outcomes'=>['observations'=>[
                 'claims'=>['state'=>'observed','metrics'=>['reward_claims'=>42,'customer_email'=>'sensitive']],
-                'redemptions'=>['state'=>'unavailable'],'promotion'=>['state'=>'observed']]],
+                'redemptions'=>['state'=>'unavailable'],'promotion'=>['state'=>'observed']]]],
         ['id'=>6,'name'=>'Paused Offer','business'=>'Shop','status'=>'paused','version'=>1,
             'href'=>'/vp3/campaigns.php?merchant=17&edit_campaign=6','readiness'=>['state'=>'limited','checks'=>[]]],
         ['id'=>7,'name'=>'Unpublished','business'=>'Shop','status'=>'internal_secret',
