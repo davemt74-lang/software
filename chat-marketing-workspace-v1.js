@@ -88,6 +88,7 @@
   }
   function clearSession() {
     if (!active)return;
+    active.editor?.dispose();active.editor=null;
     for(const request of active.requests.values())request.abort();
     active.requests.clear();
     active=null;
@@ -215,11 +216,36 @@
     if(session.coverage!=='ready')target.append(n('p','Campaign coverage: '+session.coverage+'. Unavailable reporting is not counted as zero.','vp3-marketing-workspace-muted'));
     if(session.nextBefore)target.append(n('p','More saved product plans are available in the Product plans tab.','vp3-marketing-workspace-muted'));
   }
+  function openDraftEditor(session,campaignId=0) {
+    if(!current(session)||!window.VP3MarketingEditorV1?.mount)return;
+    const target=panes.get('campaigns');
+    session.editor?.dispose();session.editor=null;session.editorActive=true;
+    selectTab('campaigns');
+    target.replaceChildren();
+    session.editor=window.VP3MarketingEditorV1.mount(target,{
+      current:()=>current(session),
+      request:(action,fields)=>request(session,'editor',action,fields),
+      onClose:()=>{
+        if(!current(session))return;
+        session.editor?.dispose();session.editor=null;session.editorActive=false;renderCampaigns(session);
+      },
+      onSaved:draft=>{
+        if(!current(session))return;
+        session.editor?.dispose();session.editor=null;session.editorActive=false;
+        renderCampaigns(session);
+        display('Private Campaign draft saved. Nothing published or sent.');
+        void loadOverview(session);
+      }
+    },campaignId);
+    if(!session.editor){session.editorActive=false;renderCampaigns(session);}
+  }
   function renderCampaigns(session) {
+    if(session.editorActive)return;
     const target=panes.get('campaigns');target.replaceChildren();
     target.append(n('h3','Campaigns & offers'),n('p','Owner-authorized Campaigns & Rewards records. Creating and publishing stay in their existing approved workflows.'));
     const actions=n('div','','vp3-marketing-workspace-card-actions');
-    if(session.links?.campaigns)actions.append(link('Open Campaign Builder',session.links.campaigns,'campaigns'));
+    actions.append(button('Create private Campaign',()=>openDraftEditor(session)));
+    if(session.links?.campaigns)actions.append(link('Open full Campaign Manager',session.links.campaigns,'campaigns'));
     target.append(actions);
     const grid=n('div','','vp3-marketing-workspace-grid');
     for(const campaign of session.campaigns||[]){
@@ -229,7 +255,8 @@
       if(campaign.issues.length){
         const list=n('ul');for(const issue of campaign.issues)list.append(n('li',issue));item.append(list);
       }
-      rowActions(item,link('Manage campaign',campaign.href,'campaigns'));
+      rowActions(item,...(campaign.status==='draft'?[button('Edit private draft',()=>openDraftEditor(session,campaign.id))]:[]),
+        link('Manage campaign',campaign.href,'campaigns'));
       grid.append(item);
     }
     if(!grid.childElementCount)grid.append(card('No campaigns in this review','Open the Campaign Builder to create a draft or review existing Merchant accounts.'));
@@ -377,7 +404,7 @@
       ||!allowed()||!live?.isReady?.()||live?.isRestoring?.()||typeof live?.showMarketingCanvasView!=='function')return false;
     clearSession();
     const session={id:++sequence,cid:bound.conversationId,tab:'overview',requests:new Map(),
-      campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading'};
+      campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false};
     active=session;
     live.showMarketingCanvasView();
     if(!current(session)){clearSession();return false;}
