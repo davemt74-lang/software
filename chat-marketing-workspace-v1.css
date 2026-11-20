@@ -35,8 +35,8 @@
   #chatMarketingWorkspaceV1 { padding:1rem .8rem 4rem; }
   .vp3-marketing-workspace-header { gap:.7rem; }
   .vp3-marketing-workspace-header .vp3-marketing-workspace-actions { width:100%; }
-  .vp3-marketing-workspace-tabs { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin; }
-  #chatMarketingWorkspaceV1 .vp3-marketing-workspace-tab { white-space:nowrap; flex:0 0 auto; font-size:.77rem; padding:.5rem .65rem; }
+  .vp3-marketing-workspace-tabs { flex-wrap:wrap; overflow:visible; }
+  #chatMarketingWorkspaceV1 .vp3-marketing-workspace-tab { white-space:normal; flex:1 1 auto; font-size:.77rem; padding:.5rem .65rem; }
   .vp3-marketing-workspace-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .vp3-marketing-workspace-grid { grid-template-columns:minmax(0,1fr); }
   .vp3-marketing-workspace-card { padding:.85rem; }
