@@ -20,7 +20,10 @@ for (const [command,key,url] of [
  assert.equal(good.payload.rows.length,1);
  assert.equal(good.links.length,1);
  assert.equal(good.links[0].url,url);
- for (const bad of ['//outside.example/evil','https://outside.example/evil','/vp3/private','/vp3/campaign/autumn-sale?token=foo','/vp3/campaign/autumn-sale#hash','/other/campaign/autumn-sale']) {
+ // A one-segment /vp3/private route has the *shape* of a username. Only the PHP server knows the verified owner.
+ const invalid=['//outside.example/evil','https://outside.example/evil','/vp3/private','/vp3/campaign/autumn-sale?token=foo','/vp3/campaign/autumn-sale#hash','/other/campaign/autumn-sale']
+   .filter(bad => !(command === 'public-media' && bad === '/vp3/private'));
+ for (const bad of invalid) {
   const rejected=host.normalizeSource(command,{status:'ready',rows:[{id:'offer-1',title:'Safe',url:bad}]},'/vp3');
   assert.equal(rejected.links.length,0,command+' '+bad);
  }

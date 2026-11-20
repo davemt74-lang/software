@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /** Only the documented public rows reach a guest Canvas and its link broker. */
-function vp3_public_canvas_source_v1(string $command, array $source, string $basePath): array
+function vp3_public_canvas_source_v1(string $command, array $source, string $basePath, ?string $approvedMediaProfileUrl = null): array
 {
     $fields = match ($command) {
         'public-products' => ['price_label','price_cents','currency'],
@@ -28,7 +28,10 @@ function vp3_public_canvas_source_v1(string $command, array $source, string $bas
         if (!is_array($record) || !is_string($record['id'] ?? null) || !preg_match('/\A[A-Za-z0-9_-]{1,128}\z/D', $record['id'])) continue;
         $row = array_intersect_key($record, $keys);
         if (!is_string($row['url'] ?? null) || !str_starts_with($row['url'], $basePath.'/')
-            || !preg_match($route, substr($row['url'], strlen($basePath)))) unset($row['url']);
+            || !preg_match($route, substr($row['url'], strlen($basePath)))
+            || ($command === 'public-media' && ($approvedMediaProfileUrl === null || $row['url'] !== $approvedMediaProfileUrl))) {
+            unset($row['url']);
+        }
         $rows[] = $row;
     }
     return ['status'=>'ready','rows'=>$rows];
@@ -42,9 +45,16 @@ function vp3_public_canvas_payload_v1(PDO $pdo, array $release): array
     $commands = array_intersect(['public-products','public-events','public-booking','public-campaigns','public-rewards','public-media'], $release['commands']);
     if ($commands) {
         require_once __DIR__.'/coding-canvas-public-sources-v1.php';
+        $approvedMediaProfileUrl = null;
+        if (in_array('public-media', $commands, true)) {
+            require_once __DIR__.'/profile-agent.php';
+            $verifiedProfile = vp3_coding_canvas_public_source_profile_v1($pdo, (int)$release['owner_user_id']);
+            if ($verifiedProfile !== null) $approvedMediaProfileUrl = profile_public_url($verifiedProfile['username']);
+        }
         foreach ($commands as $command) {
             $sources[$command] = vp3_public_canvas_source_v1($command,
-                vp3_coding_canvas_public_command_data_v1($pdo, $release['owner_user_id'], $command), $basePath);
+                vp3_coding_canvas_public_command_data_v1($pdo, $release['owner_user_id'], $command), $basePath,
+                $command === 'public-media' ? $approvedMediaProfileUrl : null);
         }
     }
     return ['artifact'=>$release['artifact'],'sources'=>$sources,'basePath'=>$basePath];
