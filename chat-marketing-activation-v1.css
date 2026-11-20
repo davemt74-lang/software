@@ -1,0 +1,16 @@
+#chatMarketingWorkspaceV1 .vp3-marketing-activation{display:grid;gap:1rem;min-width:0;margin:1rem 0;padding:1.05rem;border:1px solid #d6e2ee;border-radius:.85rem;background:#fff;color:#24364d}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-header h3{margin:0;font-size:1.15rem;color:#1d395d}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-status{margin:0;color:#4b5f79;line-height:1.5;font-size:.87rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-details{display:grid;gap:.85rem;min-width:0}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.55rem;border:1px solid #d8e5f1;border-radius:.7rem;padding:1rem;background:#f8fbff}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-summary p{margin:0;line-height:1.45;overflow-wrap:anywhere;font-size:.86rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-details h4{font-size:.95rem;margin:0;color:#253f64}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-effects{display:grid;gap:.5rem;padding:.9rem;border:1px solid #c3d4e8;border-radius:.7rem;background:#fff}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-effects p{margin:0;font-size:.86rem;line-height:1.5}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-checks,#chatMarketingWorkspaceV1 .vp3-marketing-activation-blockers ul{margin:0;padding-left:1.3rem;font-size:.86rem;line-height:1.6}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-blockers{display:grid;gap:.45rem;border-left:3px solid #a97538;padding:.65rem .9rem;background:#fff}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-approval{display:grid;gap:.75rem;border:1px solid #a7c2e0;border-radius:.75rem;background:#f5f9fe;padding:1rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-approval h4{margin:0;color:#204579}
+#chatMarketingWorkspaceV1 .vp3-marketing-activation-approval p{margin:0;font-size:.88rem;line-height:1.6;overflow-wrap:anywhere}
+@media(max-width:680px){#chatMarketingWorkspaceV1 .vp3-marketing-activation{padding:.8rem}#chatMarketingWorkspaceV1 .vp3-marketing-activation-summary{grid-template-columns:minmax(0,1fr)}}
