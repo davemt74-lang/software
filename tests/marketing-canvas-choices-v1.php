@@ -53,8 +53,8 @@ $scope=['user'=>['id'=>1,'account'=>true],'agent_id'=>7,'conversation_id'=>11];
 $campaignRow=['id'=>6,'merchant_id'=>7,'merchant_owner_user_id'=>1,'merchant_status'=>'active',
     'merchant_sandbox_mode'=>0,'environment'=>'production','status'=>'active',
     'name'=>'Fall promotion','current_version_no'=>2,'private_customer_notes'=>'sensitive'];
-$read=static fn(array $body=['campaign_id'=>6],array $useScope=$scope)=>
-    vp3_marketing_workspace_canvas_options_v1($pdo,1,$useScope,$body);
+$read=static fn(array $body=['campaign_id'=>6],?array $useScope=null):array=>
+    vp3_marketing_workspace_canvas_options_v1($pdo,1,$useScope??$scope,$body);
 $first=$read()['creative'];
 c_check($first['campaign']===['id'=>6,'title'=>'Fall promotion','version'=>2]
     &&count($first['choices'])===1,'only current Campaign and valid tested Canvas versions included');
