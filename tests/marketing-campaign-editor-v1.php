@@ -96,6 +96,10 @@ editor_check($preview['preview']['slug']==='free-coffee-week'
     &&$preview['preview']['reward_names']===['Free coffee']
     &&$preview['preview']['location']==='Flagship','review shows exact URL, Reward and Location');
 editor_check($writes===0,'preview has no database write');
+$blankCta=$body;$blankCta['fields']['cta_label']='';
+$blankPreview=vp3_marketing_editor_action_v1($pdo,1,$scope,$blankCta,'secret');
+editor_check($blankPreview['preview']['cta_label']==='Sign up'
+    &&$writes===0,'unspecified CTA resolves to the exact saved Campaign Type default');
 $saveBody=$body; $saveBody['action']='marketing_editor_save';$saveBody['confirmed']=true;
 $saveBody['review_token']=$preview['review_token'];
 $saved=vp3_marketing_editor_action_v1($pdo,1,$scope,$saveBody,'secret');

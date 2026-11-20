@@ -162,6 +162,12 @@ function vp3_marketing_editor_fields_v1(mixed $raw,array $catalog): array
     $type=$text('campaign_type',80,true);
     $allowedTypes=array_column($catalog['types'],'key');
     if(!in_array($type,$allowedTypes,true))throw new DomainException('This Campaign Type is unavailable.',422);
+    $cta=$text('cta_label',80);
+    if($cta==='') {
+        $matched=array_search($type,$allowedTypes,true);
+        $cta=(string)($catalog['types'][$matched]['default_cta']??'Continue');
+        if($cta==='')$cta='Continue';
+    }
     $slug=$text('slug',120);
     if($slug==='' )$slug=campaigns_rewards_slug_v100($title,120);
     if(!preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D',$slug)||strlen($slug)>120) {
@@ -194,7 +200,7 @@ function vp3_marketing_editor_fields_v1(mixed $raw,array $catalog): array
     sort($rewards,SORT_NUMERIC);
     return [
         'title'=>$title,'campaign_type'=>$type,'slug'=>$slug,
-        'subtitle'=>$text('subtitle',500),'cta_label'=>$text('cta_label',80),
+        'subtitle'=>$text('subtitle',500),'cta_label'=>$cta,
         'objective'=>$text('objective',500),'description'=>$text('description',4000),
         'terms'=>$text('terms',6000),
         'starts_at'=>$starts,'ends_at'=>$ends,
