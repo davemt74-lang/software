@@ -115,12 +115,16 @@ async function scenario(width){
  await page.waitForFunction(()=>document.querySelector('[data-marketing-activation]')?.textContent.includes('Current readiness'));
  check((await panel.innerText()).includes('Public landing on activation: Yes'),
    'activation review prominently discloses eligible public landing exposure');
- check((await panel.innerText()).includes('automations may become eligible'),
-   'review explains downstream automations and separate Profile approval');
+ check((await panel.innerText()).includes('automations may become eligible')
+   &&(await panel.innerText()).includes('previously approved Profile placement'),
+   'review discloses downstream automations and potential reappearance on Profile');
  check(requests.filter(x=>x.action==='marketing_activation_confirm').length===0,
    'opening activation review is read-only');
  await panel.getByRole('button',{name:'Review activation'}).click();
  await panel.getByRole('button',{name:'Confirm & activate Campaign'}).waitFor({state:'visible'});
+ check((await panel.locator('.vp3-marketing-activation-approval').innerText())
+   .includes('Previously approved Profile placements may become visible again'),
+   'confirmation also warns that an existing Profile placement may reappear');
  check(requests.filter(x=>x.action==='marketing_activation_confirm').length===0,
    'signed preview does not change Campaign status');
  await panel.getByRole('button',{name:'Refresh readiness'}).click();

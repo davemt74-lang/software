@@ -106,7 +106,7 @@
         elem('p',evidence.landing_published_on_activation
           ?'Activation can publish the saved Campaign landing page. Its visibility and schedule determine when visitors can reach it.'
           :'The saved landing page remains private at activation.'));
-      effects.append(elem('p','Existing Campaign automations may become eligible to run after activation. Profile placement is a separate approval. This action does not directly send messages or issue Rewards.'));
+      effects.append(elem('p','Existing Campaign automations may become eligible to run after activation. A previously approved Profile placement may become visible again; creating new Profile placement remains a separate approval. This action does not directly send messages or issue Rewards.'));
       details.append(effects);
       const checkTitle=elem('h4','Current setup checks');
       details.append(checkTitle);
@@ -161,7 +161,7 @@
       approved={token:result.review_token,nonce:requestKey,revision:fresh.revision};
       approvalText.textContent=fresh.name+' (version '+fresh.version+'): activate this Campaign now.'
         +(fresh.landing_published_on_activation?' Its saved landing page may become publicly accessible.':' Its landing page will remain private.')
-        +' Existing automations may subsequently run. This does not directly send messages or issue Rewards.';
+        +' Previously approved Profile placements may become visible again, and configured automations may subsequently run. This does not directly send messages or issue Rewards.';
       approval.hidden=false;
       say('Confirm only if the activation and public exposure described here are intended.');
       approval.scrollIntoView({block:'nearest',behavior:'smooth'});
