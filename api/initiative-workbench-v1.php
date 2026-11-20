@@ -13,8 +13,8 @@ try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
         throw new DomainException('Use POST for Initiative work.', 405);
     }
-    $raw = file_get_contents('php://input', false, null, 0, 8193);
-    if ($raw === false || strlen($raw) > 8192) {
+    $raw = file_get_contents('php://input', false, null, 0, 16385);
+    if ($raw === false || strlen($raw) > 16384) {
         throw new DomainException('Initiative request is too large.', 413);
     }
     $body = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
@@ -39,10 +39,13 @@ try {
     $creativeAction = $tool === 'marketing' && in_array($action, ['creative_open','creative_prepare','creative_generate',
         'creative_status','creative_tick','creative_cancel','creative_save','creative_publish_preview','creative_publish','creative_pause'],true);
     $marketingPlanAction = $tool === 'marketing' && in_array($action,['marketing_plans','marketing_plan','marketing_overview'],true);
-    if (!$creativeAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
+    $marketingEditorAction = $tool === 'marketing' && in_array($action,[
+        'marketing_editor_options','marketing_editor_open','marketing_editor_preview','marketing_editor_save'],true);
+    if (!$creativeAction && !$marketingEditorAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
+    if ($creativeAction && strlen($raw) > 8192) throw new DomainException('Creative request is too large.',413);
     if (!is_int($agentId) || $agentId < 0 || !is_int($conversationId) || $conversationId < 1
         || !in_array($tool, ['product', 'screen', 'mission', 'marketing'], true)
-        || (!$creativeAction && !$marketingPlanAction && !in_array($action, ['sources', 'preview', 'create'], true))) {
+        || (!$creativeAction && !$marketingPlanAction && !$marketingEditorAction && !in_array($action, ['sources', 'preview', 'create'], true))) {
         throw new DomainException('Choose a tool in the current saved Agent Chat.', 422);
     }
     $pdo = db();
@@ -60,14 +63,18 @@ try {
     $principal = vp3_agent_chat_principal_v380($user, $agent);
     $user = vp3_image_scope_v1($pdo, $user, $principal, ['conversation_id' => $conversationId]);
     $scope = ['agent_id' => $agentId, 'conversation_id' => $conversationId, 'user' => $user, 'principal' => $principal];
-    $key = $marketingPlanAction ? '' : ($_SESSION['initiative_workbench_review_key_v1'] ??= bin2hex(random_bytes(32)));
+    $key = ($marketingPlanAction||($marketingEditorAction && in_array($action,['marketing_editor_options','marketing_editor_open'],true)))
+        ? '' : ($_SESSION['initiative_workbench_review_key_v1'] ??= bin2hex(random_bytes(32)));
     session_write_close();
 
     require_once dirname(__DIR__) . '/includes/initiative-work-' . $tool . '-v1.php';
     $response = ['ok' => true, 'owner_key' => (string)$owner, 'tool' => $tool,
         'agent_id' => $agentId, 'conversation_id' => $conversationId];
     $handler = 'initiative_work_' . $tool;
-    if ($marketingPlanAction) {
+    if ($marketingEditorAction) {
+        require_once dirname(__DIR__).'/includes/initiative-marketing-editor-v1.php';
+        $response += vp3_marketing_editor_action_v1($pdo,$owner,$scope,$body,$key);
+    } elseif ($marketingPlanAction) {
         require_once dirname(__DIR__).'/includes/initiative-marketing-plans-v1.php';
         if ($action === 'marketing_overview') {
             require_once dirname(__DIR__).'/includes/initiative-marketing-workspace-v1.php';

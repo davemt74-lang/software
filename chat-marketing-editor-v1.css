@@ -1,0 +1,27 @@
+#chatMarketingWorkspaceV1 .vp3-marketing-inline-editor { display:grid; gap:.65rem; min-width:0; margin:1rem 0; padding:1.1rem; border:1px solid #d8e2ef; border-radius:.9rem; background:#fff; }
+#chatMarketingWorkspaceV1 .vp3-marketing-inline-editor h3 { font-size:1.15rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-form { display:grid; gap:1.1rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-fields > label { display:grid; gap:.3rem; min-width:0; font-size:.84rem; font-weight:650; color:#32455f; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-fields :is(input,select,textarea) { min-width:0; width:100%; max-width:100%; padding:.65rem .7rem; border:1px solid #bccce0; border-radius:.6rem; background:#fff; color:#1b2b42; font:inherit; font-size:.91rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-fields :is(input,select,textarea):focus-visible { outline:3px solid #a0bfea; outline-offset:1px; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-fields label:has(textarea) { grid-column:1/-1; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-dates { display:contents; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-dates label { display:grid; gap:.3rem; font-size:.84rem; font-weight:650; color:#32455f; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-dates input { min-height:2.7rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-rewards { min-width:0; border:1px solid #d7e2ef; border-radius:.75rem; padding:.85rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-rewards legend { font-weight:700; font-size:.95rem; padding:0 .35rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-reward-choices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-reward { display:flex; gap:.5rem; align-items:flex-start; padding:.6rem .65rem; border:1px solid #e2e9f2; border-radius:.55rem; font-size:.84rem; color:#253852; background:#fff; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-reward input { width:1rem; height:1rem; flex-shrink:0; accent-color:#2661b0; margin:.2rem 0 0; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-status { color:#435b78; margin:0; font-size:.85rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-preview { border:1px solid #a7bfdc; border-radius:.8rem; padding:1rem; background:#f5f9fe; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-preview h4 { margin:0 0 .7rem; color:#183f71; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-summary { display:grid; gap:.3rem; margin-bottom:.9rem; overflow-wrap:anywhere; }
+#chatMarketingWorkspaceV1 .vp3-marketing-editor-summary p { margin:0; font-size:.86rem; line-height:1.5; }
+@media(max-width:680px) {
+  #chatMarketingWorkspaceV1 .vp3-marketing-editor-fields { grid-template-columns:minmax(0,1fr); }
+  #chatMarketingWorkspaceV1 .vp3-marketing-editor-dates { display:grid; grid-template-columns:minmax(0,1fr); gap:.65rem; }
+  #chatMarketingWorkspaceV1 .vp3-marketing-editor-reward-choices { grid-template-columns:minmax(0,1fr); }
+  #chatMarketingWorkspaceV1 .vp3-marketing-inline-editor { padding:.85rem; }
+}
