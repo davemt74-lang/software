@@ -1,0 +1,45 @@
+name: Public Canvas Marketing Sources
+on:
+  pull_request:
+    paths:
+      - 'includes/coding-canvas-*.php'
+      - 'coding-canvas-runtime-v1.js'
+      - 'chat-coding-canvas-v1.js'
+      - 'canvas-app-v1.js'
+      - 'tests/public-canvas-marketing-*'
+      - '.github/workflows/public-canvas-marketing-sources.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'includes/coding-canvas-*.php'
+      - 'coding-canvas-runtime-v1.js'
+      - 'chat-coding-canvas-v1.js'
+      - 'canvas-app-v1.js'
+      - 'tests/public-canvas-marketing-*'
+      - '.github/workflows/public-canvas-marketing-sources.yml'
+jobs:
+  public-canvas-marketing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          php -l includes/coding-canvas-commands-v1.php
+          php -l includes/coding-canvas-public-sources-v1.php
+          php -l includes/coding-canvas-public-marketing-v1.php
+          php -l includes/coding-canvas-public-view-v1.php
+          php -l includes/coding-canvas-publishing-v1.php
+          php -l includes/coding-canvas-provider-v1.php
+          node --check coding-canvas-runtime-v1.js
+          node --check chat-coding-canvas-v1.js
+      - name: Public sources, privacy, live links and revocation
+        run: |
+          php tests/public-canvas-marketing-v1.php
+          node tests/public-canvas-marketing-runtime-v1.mjs
