@@ -90,6 +90,7 @@
     if (!active)return;
     active.editor?.dispose();active.editor=null;
     active.canvasLink?.dispose();active.canvasLink=null;
+    active.productPicker?.dispose();active.productPicker=null;
     for(const request of active.requests.values())request.abort();
     active.requests.clear();
     active=null;
@@ -328,6 +329,7 @@
   }
   function openCanvasLink(session,campaignId=0) {
     if(!current(session)||!window.VP3MarketingCanvasLinkV1?.mount)return;
+    session.productPicker?.dispose();session.productPicker=null;session.productPickerActive=false;
     session.canvasLink?.dispose();session.canvasLink=null;
     session.canvasLinkActive=true;session.canvasCampaignId=campaignId;
     selectTab('creative');renderCreative(session);
@@ -374,17 +376,37 @@
       if(session.requests.get('canvas-write')===controller)session.requests.delete('canvas-write');
     }
   }
+  function openProductPicker(session) {
+    if(!current(session)||!window.VP3MarketingProductMediaV1?.mount)return;
+    session.canvasLink?.dispose();session.canvasLink=null;session.canvasLinkActive=false;
+    session.productPicker?.dispose();session.productPicker=null;
+    session.productPickerActive=true;
+    selectTab('creative');renderCreative(session);
+  }
+  function continueMarketingProduct(session,productId,photoId){
+    if(!current(session)||!Number.isSafeInteger(productId)||productId<1
+      ||typeof photoId!=='string'||!/^[1-9][0-9]{0,18}$/.test(photoId)
+      ||!window.VP3InitiativeWorkbench?.open)return false;
+    leave();
+    const opened=window.VP3InitiativeWorkbench.open('marketing',photoId,'',{productId})===true;
+    if(!opened)context()?.showTurnNotice?.('The Marketing draft workbench could not be opened. No new draft was saved.');
+    return opened;
+  }
   function renderCreative(session) {
     const target=panes.get('creative');
+    if(session.productPickerActive&&session.productPicker?.host?.isConnected)return;
     // Do not unmount a reviewed creative selection while background Campaign
     // and Plan reads refresh; that could hide the outcome of a submitted link.
     if(session.canvasLinkActive&&session.canvasLink?.host?.isConnected)return;
     session.canvasLink?.dispose();session.canvasLink=null;
+    session.productPicker?.dispose();session.productPicker=null;
     target.replaceChildren();
     target.append(n('h3','Creative Studio & Rewards'),n('p','Use the existing editors, protected media library and campaign tools. No outbound promotion or reward is issued from this workspace automatically.'));
     const grid=n('div','','vp3-marketing-workspace-grid');
     const artwork=card('Marketing creative','Build promotional images and copy from saved product media.');
-    rowActions(artwork,button('Open creative workbench',()=>existing(session,'marketing')),
+    rowActions(artwork,
+      button('Choose product & photo',()=>openProductPicker(session)),
+      button('Open creative workbench',()=>existing(session,'marketing')),
       button('Select an image',()=>existing(session,'images')),
       button('Link saved Canvas to Campaign',()=>openCanvasLink(session)));
     const products=card('Products','Create or edit product listings before promoting them.');
@@ -394,6 +416,20 @@
     rowActions(rewards,link('Manage rewards',session.links?.rewards,'rewards'),
       link('Campaign builder',session.links?.campaigns,'campaigns'));
     grid.append(artwork,products,rewards);target.append(grid);
+    if(session.productPickerActive) {
+      const host=n('div','','vp3-marketing-product-media-host');target.append(host);
+      session.productPicker=window.VP3MarketingProductMediaV1?.mount?.(host,{
+        current:()=>current(session),
+        request:(action)=>request(session,'product-media',action),
+        onContinue:(productId,photoId)=>continueMarketingProduct(session,productId,photoId),
+        onClose:()=>{
+          if(!current(session))return;
+          session.productPicker?.dispose();session.productPicker=null;
+          session.productPickerActive=false;renderCreative(session);
+        }
+      })||null;
+      if(!session.productPicker)session.productPickerActive=false;
+    }
     if(session.canvasLinkActive) {
       const host=n('div','','vp3-marketing-canvas-link-host');target.append(host);
       session.canvasLink=window.VP3MarketingCanvasLinkV1?.mount?.(host,{
@@ -478,7 +514,8 @@
     clearSession();
     const session={id:++sequence,cid:bound.conversationId,tab:'overview',requests:new Map(),
       campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false,
-      canvasLink:null,canvasLinkActive:false,canvasCampaignId:0};
+      canvasLink:null,canvasLinkActive:false,canvasCampaignId:0,
+      productPicker:null,productPickerActive:false};
     active=session;
     live.showMarketingCanvasView();
     if(!current(session)){clearSession();return false;}

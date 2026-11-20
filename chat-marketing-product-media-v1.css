@@ -1,0 +1,11 @@
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-picker{display:grid;gap:.9rem;min-width:0;margin:1rem 0;padding:1.1rem;border:1px solid #d6e1ed;border-radius:.85rem;background:#fff;color:#233750}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-form{display:grid;gap:.85rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-fields label{display:grid;gap:.3rem;font-size:.85rem;font-weight:650;color:#304b69;min-width:0}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-fields select{min-width:0;width:100%;padding:.7rem .75rem;border:1px solid #bacbe0;border-radius:.65rem;background:#fff;color:#203650;font:inherit;font-size:.88rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-review{display:grid;gap:.65rem;min-width:0;border:1px solid #a5bcdb;border-radius:.75rem;background:#f6f9fe;padding:.9rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-review h4{margin:0;color:#21446f;font-size:1rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-review p{margin:0;line-height:1.5;overflow-wrap:anywhere;font-size:.85rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-product-media-status{color:#53647d;margin:0;font-size:.85rem;line-height:1.5}
+@media(max-width:680px){#chatMarketingWorkspaceV1 .vp3-marketing-product-media-picker{padding:.85rem}#chatMarketingWorkspaceV1 .vp3-marketing-product-media-fields{grid-template-columns:minmax(0,1fr)}}
