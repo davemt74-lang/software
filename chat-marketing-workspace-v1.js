@@ -89,6 +89,7 @@
   function clearSession() {
     if (!active)return;
     active.editor?.dispose();active.editor=null;
+    active.canvasLink?.dispose();active.canvasLink=null;
     for(const request of active.requests.values())request.abort();
     active.requests.clear();
     active=null;
@@ -256,6 +257,8 @@
         const list=n('ul');for(const issue of campaign.issues)list.append(n('li',issue));item.append(list);
       }
       rowActions(item,...(campaign.status==='draft'?[button('Edit private draft',()=>openDraftEditor(session,campaign.id))]:[]),
+        ...(['draft','scheduled','active','paused'].includes(campaign.status)
+            ?[button('Link tested Canvas',()=>openCanvasLink(session,campaign.id))]:[]),
         link('Manage campaign',campaign.href,'campaigns'));
       grid.append(item);
     }
@@ -323,12 +326,64 @@
     }else ok=window.VP3InitiativeWorkbench?.open?.(tool,source||'')===true;
     if(!ok)context()?.showTurnNotice?.('That editor is not available in this Chat. Your saved content is unchanged.');
   }
+  function openCanvasLink(session,campaignId=0) {
+    if(!current(session)||!window.VP3MarketingCanvasLinkV1?.mount)return;
+    session.canvasLink?.dispose();session.canvasLink=null;
+    session.canvasLinkActive=true;session.canvasCampaignId=campaignId;
+    selectTab('creative');renderCreative(session);
+  }
+  function verifiedLinkEndpoint(value) {
+    if(typeof value!=='string'||value.length>480)return null;
+    try {
+      const url=new URL(value,location.origin);
+      const expected=new URL('../marketing-canvas-link-v1.php',endpoint);
+      return url.origin===location.origin&&url.pathname===expected.pathname&&!url.hash&&!url.search
+        &&!url.username&&!url.password&&['http:','https:'].includes(url.protocol)?url:null;
+    }catch{return null;}
+  }
+  async function submitCanvasLink(session,details,endpointText) {
+    if(!current(session)||session.requests.has('canvas-write'))return null;
+    const destination=verifiedLinkEndpoint(endpointText);
+    if(!destination)return null;
+    const previous=session.requests.get('canvas-write');
+    if(previous)return null;
+    const controller=new AbortController();
+    session.requests.set('canvas-write',controller);
+    try {
+      const response=await fetch(destination.href,{method:'POST',credentials:'same-origin',cache:'no-store',
+        headers:{'Content-Type':'application/json','Accept':'application/json',
+          'X-VP3-WORKING-ATTENTION':binding},
+        signal:controller.signal,
+        body:JSON.stringify({...details,csrf_token:String(cfg.csrf),
+          agent_id:agent,conversation_id:session.cid})});
+      if(!current(session)||controller.signal.aborted)return null;
+      if([401,403,419].includes(response.status)){leave();return null;}
+      const body=await response.json().catch(()=>null);
+      if(!current(session)||controller.signal.aborted)return null;
+      if(!response.ok||body?.ok!==true||body.state!=='linked')return null;
+      // Do not claim a verified association until the canonical current-Chat read agrees.
+      const reread=await request(session,'canvas-verification','marketing_canvas_choices',
+        {campaign_id:details.campaign_id});
+      if(!current(session)||!reread||reread.creative?.linked?.state!=='linked'
+        ||reread.creative.campaign?.version!==details.campaign_version)return null;
+      return reread;
+    }catch(error){
+      if(current(session)&&error?.name!=='AbortError')display('Private Canvas association was not verified. Reload before retrying.');
+      return null;
+    }finally{
+      if(session.requests.get('canvas-write')===controller)session.requests.delete('canvas-write');
+    }
+  }
   function renderCreative(session) {
-    const target=panes.get('creative');target.replaceChildren();
+    const target=panes.get('creative');
+    session.canvasLink?.dispose();session.canvasLink=null;
+    target.replaceChildren();
     target.append(n('h3','Creative Studio & Rewards'),n('p','Use the existing editors, protected media library and campaign tools. No outbound promotion or reward is issued from this workspace automatically.'));
     const grid=n('div','','vp3-marketing-workspace-grid');
     const artwork=card('Marketing creative','Build promotional images and copy from saved product media.');
-    rowActions(artwork,button('Open creative workbench',()=>existing(session,'marketing')),button('Select an image',()=>existing(session,'images')));
+    rowActions(artwork,button('Open creative workbench',()=>existing(session,'marketing')),
+      button('Select an image',()=>existing(session,'images')),
+      button('Link saved Canvas to Campaign',()=>openCanvasLink(session)));
     const products=card('Products','Create or edit product listings before promoting them.');
     rowActions(products,button('New product draft',()=>existing(session,'product','description')),
       link('Manage products',session.links?.products,'products'));
@@ -336,6 +391,21 @@
     rowActions(rewards,link('Manage rewards',session.links?.rewards,'rewards'),
       link('Campaign builder',session.links?.campaigns,'campaigns'));
     grid.append(artwork,products,rewards);target.append(grid);
+    if(session.canvasLinkActive) {
+      const host=n('div','','vp3-marketing-canvas-link-host');target.append(host);
+      session.canvasLink=window.VP3MarketingCanvasLinkV1?.mount?.(host,{
+        current:()=>current(session),
+        request:(action,fields)=>request(session,'canvas-choices',action,fields),
+        submit:(fields,endpointUrl)=>submitCanvasLink(session,fields,endpointUrl),
+        campaigns:session.campaigns,
+        onClose:()=>{
+          if(!current(session))return;
+          session.canvasLink?.dispose();session.canvasLink=null;
+          session.canvasLinkActive=false;renderCreative(session);
+        }
+      },session.canvasCampaignId)||null;
+      if(!session.canvasLink)session.canvasLinkActive=false;
+    }
   }
   function renderAnalytics(session) {
     const target=panes.get('analytics');target.replaceChildren();
@@ -404,7 +474,8 @@
       ||!allowed()||!live?.isReady?.()||live?.isRestoring?.()||typeof live?.showMarketingCanvasView!=='function')return false;
     clearSession();
     const session={id:++sequence,cid:bound.conversationId,tab:'overview',requests:new Map(),
-      campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false};
+      campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false,
+      canvasLink:null,canvasLinkActive:false,canvasCampaignId:0};
     active=session;
     live.showMarketingCanvasView();
     if(!current(session)){clearSession();return false;}

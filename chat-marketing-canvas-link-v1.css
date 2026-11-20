@@ -1,0 +1,10 @@
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link{display:grid;gap:.8rem;margin:1rem 0;padding:1rem;border:1px solid #d6e1f1;border-radius:.85rem;background:#fff;min-width:0}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-fields label{display:grid;gap:.3rem;color:#344c6a;font-weight:650;font-size:.86rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-fields select{background:#fff;color:#233551;border:1px solid #bccce0;padding:.65rem .75rem;border-radius:.6rem;width:100%;min-width:0;font:inherit;font-size:.86rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-status{margin:0;color:#4e5d71;line-height:1.5;font-size:.84rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-review{display:grid;gap:.75rem;padding:1rem;background:#f5f9ff;border:1px solid #aac0de;border-radius:.8rem}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-review h4{margin:0;font-size:1.02rem;color:#24446e}
+#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-review p{margin:0;color:#34465d;line-height:1.55;overflow-wrap:anywhere}
+@media(max-width:700px){#chatMarketingWorkspaceV1 .vp3-marketing-canvas-link-fields{grid-template-columns:minmax(0,1fr)}}
