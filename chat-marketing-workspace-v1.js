@@ -18,6 +18,41 @@
   const tabs = ['overview','campaigns','plans','creative','analytics'];
   const stageNames = {active:'Active',draft:'Draft',scheduled:'Scheduled',paused:'Paused',
     completed:'Completed',archived:'Archived'};
+  const metricGroups=Object.freeze({
+    promotion:{title:'Profile promotion',subtitle:'Lifetime tracked attribution since first publication',
+      fields:{clicks:'Clicks',checkout_starts:'Checkout starts',paid_orders:'Paid orders',refunded_orders:'Refunded orders'}},
+    claims:{title:'Confirmed reward claims',subtitle:'Accepted, unreversed claims after campaign launch',
+      fields:{reward_redemptions:'Claims'}},
+    redemptions:{title:'Optimization snapshot',subtitle:'Recorded Campaign outcome evidence in the snapshot window',
+      fields:{reward_redemptions:'Reward claims',decisions_sampled:'Decisions sampled'}}
+  });
+  const decisionTypes=Object.freeze({
+    'offer-eligibility':'Reward eligibility','fatigue':'Campaign frequency',
+    'low-observed-conversion':'Observed conversion','conflict-volume':'Campaign overlap'
+  });
+  const observationStates=new Set(['observed','unobserved','unavailable']);
+  const plainDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/.test(value)
+    ?value.slice(0,10):null;
+  function normalizePerformance(raw) {
+    const sources={};
+    for(const [kind,group] of Object.entries(metricGroups)) {
+      const source=raw?.sources?.[kind]||{};
+      let state=observationStates.has(source.state)?source.state:'unavailable';
+      const metrics={};
+      if(state==='observed')for(const field of Object.keys(group.fields)) {
+        const value=source.metrics?.[field];
+        if(!Number.isSafeInteger(value)||value<0) { state='unavailable';break; }
+        metrics[field]=value;
+      }
+      sources[kind]={state,metrics:state==='observed'?metrics:{},window:{
+        start:plainDate(source.window?.start),end:plainDate(source.window?.end)
+      }};
+    }
+    const decisions=Array.isArray(raw?.decisions)?raw.decisions.filter(item=>
+      item&&Number.isSafeInteger(item.id)&&item.id>0&&Object.hasOwn(decisionTypes,item.type)
+      &&['proposed','accepted','dismissed'].includes(item.status)).slice(0,5):[];
+    return {sources,decisions};
+  }
   const context = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const n = (tag,text='',klass='') => {
     const element = document.createElement(tag);
@@ -200,6 +235,7 @@
       [campaigns.filter(c=>c.status==='active').length,'Active campaigns shown'],
       [plans.length,'Saved product plans loaded'],
       [campaigns.filter(c=>c.readiness==='needs_setup'||c.readiness==='limited').length,'Campaigns needing review'],
+      [campaigns.filter(c=>Object.values(c.performance?.sources||{}).some(x=>x.state==='observed')).length,'Campaigns with verified results'],
     ]) {
       const block=n('div','','vp3-marketing-workspace-stat');block.append(n('strong',String(value)),n('span',label));summary.append(block);
     }
@@ -479,18 +515,59 @@
   }
   function renderAnalytics(session) {
     const target=panes.get('analytics');target.replaceChildren();
-    target.append(n('h3','Marketing analysis'),n('p','Live campaign state and observation coverage from the existing Marketing specialist. A missing metric is never shown as zero.'));
-    const grid=n('div','','vp3-marketing-workspace-grid');
+    target.append(n('h3','Campaign performance & next actions'),
+      n('p','A private, read-only briefing from authorized Campaigns & Rewards and Profile promotion evidence. The full Campaigns page retains journeys, detailed analytics and approvals. Sources use different windows and must not be added together.'));
+    const grid=n('div','','vp3-marketing-workspace-performance-list');
     for(const item of session.campaigns||[]){
-      const block=card(item.name||'Campaign', 'Lifecycle: '+(item.window_state||'unavailable').replaceAll('_',' '));
-      const list=n('ul');
-      for(const kind of ['claims','redemptions','promotion']){
-        list.append(n('li',kind[0].toUpperCase()+kind.slice(1)+': '+String(item.observations[kind]||'unavailable').replaceAll('_',' ')));
+      const block=card(item.name||'Campaign',item.business+' · '+(stageNames[item.status]||item.status));
+      block.classList.add('vp3-marketing-performance-campaign');
+      const sources=item.performance?.sources||{};
+      const report=n('div','','vp3-marketing-performance-sources');
+      let verified=false;
+      for(const [kind,group] of Object.entries(metricGroups)) {
+        const source=sources[kind]||{state:'unavailable',metrics:{},window:{}};
+        const sourceBox=n('section','','vp3-marketing-performance-source');
+        sourceBox.append(n('h4',group.title),n('p',group.subtitle));
+        if(source.state==='observed') {
+          verified=true;
+          const metrics=n('dl','','vp3-marketing-performance-metrics');
+          for(const [field,label] of Object.entries(group.fields)) {
+            const value=source.metrics[field];
+            metrics.append(n('dt',label),n('dd',Number(value).toLocaleString()));
+          }
+          sourceBox.append(metrics);
+          const start=source.window.start,end=source.window.end;
+          if(start)sourceBox.append(n('small','Observed '+start+(end?' through '+end:'')));
+          else sourceBox.append(n('small','Recorded attribution · observation dates not supplied'));
+        } else sourceBox.append(n('p',source.state==='unobserved'
+          ?'No verified activity recorded yet; not a measured zero.'
+          :'Evidence unavailable. No metric is estimated.','vp3-marketing-workspace-muted'));
+        report.append(sourceBox);
       }
-      block.append(list);rowActions(block,link('Review analytics',item.href,'campaigns'));grid.append(block);
+      block.append(report);
+      const decisions=item.performance?.decisions||[];
+      const proposals=decisions.filter(x=>x.status==='proposed');
+      if(proposals.length) {
+        const pending=n('div','','vp3-marketing-performance-next');
+        pending.append(n('h4','Human-review recommendations'),n('p',
+          proposals.map(x=>decisionTypes[x.type]).join(' · ')+'. Review in Campaigns before making any changes.'));
+        block.append(pending);
+      }
+      const promotion=sources.promotion;
+      if(promotion?.state==='observed'&&promotion.metrics.checkout_starts>0&&promotion.metrics.paid_orders===0){
+        block.append(n('p','Opportunity: checkout starts are recorded but no paid orders are attributed in this source. Review the checkout path before changing the campaign.','vp3-marketing-workspace-issue'));
+      } else if(promotion?.state==='observed'&&promotion.metrics.paid_orders>0) {
+        block.append(n('p','Observed paid orders are attributed to this promotion. Review refunds and campaign goals before expanding the audience.','vp3-marketing-workspace-issue'));
+      } else if(!verified) {
+        block.append(n('p','Next step: verify publication, tracking, and the Campaigns analytics before making performance claims.','vp3-marketing-workspace-muted'));
+      }
+      rowActions(block,link('Open detailed Campaign analytics',item.href,'campaigns'));
+      grid.append(block);
     }
-    if(!grid.childElementCount)grid.append(card('No verified campaign results yet','Create or open a campaign to review its saved outcomes.'));
-    target.append(grid);
+    if(!grid.childElementCount)grid.append(card('No campaigns in this bounded review',
+      'Open the existing Campaigns page for the complete campaign portfolio.'));
+    target.append(grid,n('p','Specialist follow-ups remain recommendations for human review; this screen does not publish, send, spend, or issue Rewards.','vp3-marketing-workspace-muted'));
+    if(session.coverage==='limited')target.append(n('p','Showing a bounded review; open the Campaigns page for remaining campaigns.','vp3-marketing-workspace-muted'));
   }
   function render(session) {
     if(!current(session))return;
@@ -511,7 +588,8 @@
       session.campaigns.push({...item,issues:item.issues.filter(x=>typeof x==='string').map(x=>x.slice(0,240)),
         readiness:typeof item.readiness==='string'?item.readiness:'unavailable',
         window_state:typeof item.window_state==='string'?item.window_state:'unavailable',
-        observations:item.observations&&typeof item.observations==='object'?item.observations:{}});
+        observations:item.observations&&typeof item.observations==='object'?item.observations:{},
+        performance:normalizePerformance(item.performance)});
     }
     session.links=data.links&&typeof data.links==='object'?data.links:{};
     render(session);display('Marketing review loaded. Only currently authorized records are shown.');

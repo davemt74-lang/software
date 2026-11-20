@@ -45,6 +45,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             'window_state'=>in_array($item['window_state']??null,['open','closed','upcoming','not_open'],true)
                 ?$item['window_state']:'unavailable',
             'observations'=>$observations,
+            'performance'=>vp3_marketing_workspace_performance_v1((array)($item['outcomes']??[])),
         ];
     }
     // Revalidate current owner/plugin authority after the read, including empty or revoked businesses.
@@ -59,4 +60,56 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             'rewards'=>url('/rewards.php'),
         ],
     ];
+}
+
+
+/**
+ * A bounded, aggregate-only projection of existing, independently verified
+ * Campaigns/Rewards and Profile-promotion observation sources. Never total
+ * these sources together: their windows and attributions can overlap.
+ */
+function vp3_marketing_workspace_performance_v1(array $outcomes): array
+{
+    $allowed=[
+        'claims'=>['reward_redemptions'],
+        'redemptions'=>['reward_redemptions','decisions_sampled'],
+        'promotion'=>['clicks','checkout_starts','paid_orders','refunded_orders'],
+    ];
+    $result=[];
+    foreach($allowed as $source=>$keys) {
+        $row=$outcomes['observations'][$source]??null;
+        $state=is_array($row)?($row['state']??null):null;
+        if(!in_array($state,['observed','unobserved','unavailable'],true)) $state='unavailable';
+        $metrics=[];
+        if($state==='observed') {
+            foreach($keys as $key) {
+                $value=$row['metrics'][$key]??null;
+                // Counters must come from the canonical source, not arbitrary
+                // strings or a fallback zero in a missing/invalid response.
+                if(!is_int($value)||$value<0) { $state='unavailable';$metrics=[];break; }
+                $metrics[$key]=$value;
+            }
+        }
+        $window=['start'=>null,'end'=>null];
+        if($state==='observed') {
+            foreach(['window_start'=>'start','window_end'=>'end'] as $key=>$target) {
+                $value=$row[$key]??null;
+                if(is_string($value)&&strlen($value)<=35
+                    &&preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}\z/D',$value)) {
+                    $window[$target]=$value;
+                }
+            }
+        }
+        $result[$source]=['state'=>$state,'metrics'=>$metrics,'window'=>$window];
+    }
+    $types=['offer-eligibility','fatigue','low-observed-conversion','conflict-volume'];
+    $decisions=[];
+    foreach((array)($outcomes['decisions']??[]) as $decision) {
+        if(!is_array($decision)||!is_int($decision['id']??null)||$decision['id']<1
+            ||!in_array($decision['type']??null,$types,true)
+            ||!in_array($decision['status']??null,['proposed','accepted','dismissed'],true))continue;
+        $decisions[]=['id'=>$decision['id'],'type'=>$decision['type'],'status'=>$decision['status']];
+        if(count($decisions)>=5)break;
+    }
+    return ['sources'=>$result,'decisions'=>$decisions];
 }

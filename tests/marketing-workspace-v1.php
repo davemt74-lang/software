@@ -32,8 +32,13 @@ $fixture=[
                 'reward'=>['state'=>'missing','detail'=>'Choose an active reward'],
                 'audience'=>['state'=>'ready','detail'=>'Ready']]],
             'window_state'=>'open','outcomes'=>['observations'=>[
-                'claims'=>['state'=>'observed','metrics'=>['reward_claims'=>42,'customer_email'=>'sensitive']],
-                'redemptions'=>['state'=>'unavailable'],'promotion'=>['state'=>'observed']]]],
+                'claims'=>['state'=>'observed','metrics'=>['reward_redemptions'=>42,'customer_email'=>'sensitive'],
+                    'window_start'=>'2026-11-01T00:00:00+00:00','window_end'=>'2026-11-20T00:00:00+00:00'],
+                'redemptions'=>['state'=>'unavailable'],
+                'promotion'=>['state'=>'observed','metrics'=>['clicks'=>18,'checkout_starts'=>3,'paid_orders'=>0,'refunded_orders'=>0,
+                    'customer_email'=>'sensitive'],'window_start'=>'2026-11-10T00:00:00+00:00']],
+            'decisions'=>[['id'=>12,'type'=>'fatigue','status'=>'proposed','summary'=>'sensitive'],
+                ['id'=>13,'type'=>'unsupported','status'=>'proposed']]]],
         ['id'=>6,'name'=>'Paused Offer','business'=>'Shop','status'=>'paused','version'=>1,
             'href'=>'/vp3/campaigns.php?merchant=17&edit_campaign=6','readiness'=>['state'=>'limited','checks'=>[]]],
         ['id'=>7,'name'=>'Unpublished','business'=>'Shop','status'=>'internal_secret',
@@ -45,11 +50,33 @@ $out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$scope);
 review_check($out['coverage']==='ready'&&count($out['campaigns'])===2,'only allowlisted owner Campaign statuses returned');
 review_check($out['campaigns'][0]['issues']===['Choose an active reward'],'only setup reasons projected');
 review_check($out['campaigns'][0]['window_state']==='open','canonical campaign observation window preserved');
+
+$performance=$out['campaigns'][0]['performance'];
+review_check($performance['sources']['promotion']['metrics']===['clicks'=>18,'checkout_starts'=>3,'paid_orders'=>0,'refunded_orders'=>0],
+    'recorded Profile promotion performance is projected without private fields');
+review_check($performance['sources']['claims']['metrics']===['reward_redemptions'=>42]
+    &&$performance['sources']['redemptions']['state']==='unavailable',
+    'claim receipts and absent snapshots are independently attributed');
+review_check($performance['sources']['claims']['window']['start']==='2026-11-01T00:00:00+00:00',
+    'original verified observation window is preserved');
+review_check($performance['decisions']===[['id'=>12,'type'=>'fatigue','status'=>'proposed']],
+    'only recognized human-review decision metadata is released');
+
 review_check($out['campaigns'][0]['observations']===['claims'=>'observed','redemptions'=>'unavailable','promotion'=>'observed'],
     'analytics coverage is observational rather than invented counts');
 review_check(!str_contains(json_encode($out,JSON_THROW_ON_ERROR),'sensitive')
     &&!str_contains(json_encode($out,JSON_THROW_ON_ERROR),'customer-token')
     &&!str_contains(json_encode($out,JSON_THROW_ON_ERROR),'should-not-leak'),'no CRM or private campaign details');
+$fixture['campaigns'][0]['outcomes']['observations']['promotion']['metrics']['paid_orders']=null;
+$out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$scope);
+review_check($out['campaigns'][0]['performance']['sources']['promotion']['state']==='unavailable'
+    &&$out['campaigns'][0]['performance']['sources']['promotion']['metrics']===[],
+    'incomplete observed metrics fail closed rather than inventing zero');
+$fixture['campaigns'][0]['outcomes']['observations']['promotion']['state']='unobserved';
+$out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$scope);
+review_check($out['campaigns'][0]['performance']['sources']['promotion']['state']==='unobserved'
+    &&$out['campaigns'][0]['performance']['sources']['promotion']['metrics']===[],
+    'unobserved metrics do not masquerade as measured zero');
 review_check($out['campaigns'][1]['readiness']==='limited'&&$out['campaigns'][1]['window_state']==='unavailable',
     'missing readiness and window metrics remain unavailable');
 review_check($out['links']===['campaigns'=>'/vp3/campaigns.php','products'=>'/vp3/profile-commerce-products.php','rewards'=>'/vp3/rewards.php'],
