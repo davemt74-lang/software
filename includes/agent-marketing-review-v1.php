@@ -17,7 +17,7 @@ function vp3_marketing_review_v1(PDO $pdo,array $scope,DateTimeImmutable $now,?a
     }
     $ids=[];
     foreach ($refs??[] as $ref) {
-        if (preg_match('/\Acampaign-(?:readiness|outcome):([1-9][0-9]{0,17})\z/D',$ref,$match)) $ids[(int)$match[1]]=true;
+        if (preg_match('/\Acampaign-(?:readiness|outcome|performance):([1-9][0-9]{0,17})\z/D',$ref,$match)) $ids[(int)$match[1]]=true;
     }
     if ($refs!==null && !$ids) return $result;
     $businesses=$pdo->prepare("SELECT id,name FROM merchant_accounts
@@ -123,7 +123,7 @@ function vp3_marketing_review_artifacts_v1(PDO $pdo,array $scope,array $campaign
 }
 
 /** Work on a confirmed blocker or report a recorded close, with stable evidence. */
-function vp3_marketing_review_findings_v1(array $review,?array $refs=null): array
+function vp3_marketing_review_findings_v1(array $review,?array $refs=null,?DateTimeImmutable $now=null): array
 {
     $findings=[];
     foreach ($review['campaigns'] as $campaign) {
@@ -153,6 +153,61 @@ function vp3_marketing_review_findings_v1(array $review,?array $refs=null): arra
                 $summary,'Review this campaign before preparing the next offer.','',$campaign['href'],'open','normal',
                 [$id,$observed['revision']])+['trigger'=>'campaign_outcome'];
         }
+        // A live performance gap is only a review invitation from verified owner-scoped facts.
+        // The stable semantic revision does not change on every new click.
+        $performanceRef='campaign-performance:'.$id;
+        if(($refs===null||in_array($performanceRef,$refs,true))
+            &&($opportunity=vp3_marketing_performance_signal_v1($campaign,
+                $now??new DateTimeImmutable('now',new DateTimeZone('UTC'))))!==null){
+            $fullRef='marketing:'.$performanceRef;
+            $promo=$campaign['outcomes']['observations']['promotion'];
+            $findings[$fullRef]=vp3_coordination_source_item_v1($fullRef,'marketing',
+                $title.' · '.$opportunity['title'],$opportunity['summary'],$opportunity['next_step'],
+                $opportunity['question'],$campaign['href'],'open','normal',
+                [$id,$campaign['version'],$campaign['status'],$title,$promo['window_start'],$opportunity['kind']])
+                +['trigger'=>'performance_gap'];
+        }
     }
     return $findings;
+}
+
+
+/**
+ * A semantic, aggregate-only opportunity from a live production Campaign.
+ * Never infer demand or revenue from missing/partial data; never create a
+ * new source revision merely because a click counter increments.
+ */
+function vp3_marketing_performance_signal_v1(array $campaign,DateTimeImmutable $now): ?array
+{
+    if(($campaign['status']??null)!=='active'||($campaign['window_state']??null)!=='open'
+        ||($campaign['readiness']['state']??null)!=='ready')return null;
+    foreach((array)($campaign['outcomes']['decisions']??[]) as $decision){
+        if(is_array($decision)&&($decision['type']??null)==='low-observed-conversion'
+            &&($decision['status']??null)==='proposed')return null;
+    }
+    $promotion=$campaign['outcomes']['observations']['promotion']??null;
+    if(!is_array($promotion)||($promotion['state']??null)!=='observed')return null;
+    $rawStart=$promotion['window_start']??null;
+    if(!is_string($rawStart)||strlen($rawStart)>35)return null;
+    $start=DateTimeImmutable::createFromFormat(DATE_ATOM,$rawStart);
+    if(!$start||$start->format(DATE_ATOM)!==$rawStart||$start>$now->modify('-48 hours'))return null;
+    $metrics=$promotion['metrics']??null;
+    if(!is_array($metrics))return null;
+    foreach(['clicks','checkout_starts','paid_orders','refunded_orders'] as $key){
+        if(!is_int($metrics[$key]??null)||$metrics[$key]<0)return null;
+    }
+    if($metrics['paid_orders']>0)return null;
+    if($metrics['checkout_starts']>=10){
+        return ['kind'=>'checkout_order_gap','title'=>'Review tracked checkout conversion',
+            'summary'=>'At least 10 tracked checkout starts have no attributed paid order in this promotion evidence.',
+            'next_step'=>'Review the checkout path and Campaign offer before drafting revised promotion copy.',
+            'question'=>'Would you like to review the Campaign checkout evidence and prepare a private improvement idea?'];
+    }
+    if($metrics['clicks']>=40&&$metrics['checkout_starts']===0){
+        return ['kind'=>'click_checkout_gap','title'=>'Review promotion click-to-checkout path',
+            'summary'=>'At least 40 verified promotion clicks have no attributed checkout start in this tracking source.',
+            'next_step'=>'Review the campaign creative, landing destination and checkout tracking before proposing changes.',
+            'question'=>'Would you like to review the campaign creative and checkout path?'];
+    }
+    return null;
 }
