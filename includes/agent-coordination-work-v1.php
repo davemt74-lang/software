@@ -108,7 +108,7 @@ function vp3_coordination_marketing_report_goal_v1(array $goal): bool
         &&($goal['coordination_route']['specialist']??null)==='marketing'
         &&in_array($goal['coordination_route']['action']??null,['ask','report'],true)
         &&is_string($goal['primary']??null)
-        &&preg_match('/\Amarketing:campaign-(?:optimization|readiness|outcome):[1-9][0-9]{0,17}\z/D',$goal['primary'])===1
+        &&preg_match('/\Amarketing:campaign-(?:optimization|readiness|outcome|performance):[1-9][0-9]{0,17}\z/D',$goal['primary'])===1
         &&!isset($goal['coordination_work'])&&!isset($goal['followthrough']);
 }
 
@@ -243,7 +243,7 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
         $report=vp3_coordination_marketing_report_normalize_v1($out['marketing_report']);
         $ref=array_key_first($output['evidence_revisions']);
         if($report===null||count($output['evidence_revisions'])!==1||!is_string($ref)
-            ||preg_match('/\Amarketing:campaign-(?:optimization|readiness|outcome):[1-9][0-9]{0,17}\z/D',$ref)!==1
+            ||preg_match('/\Amarketing:campaign-(?:optimization|readiness|outcome|performance):[1-9][0-9]{0,17}\z/D',$ref)!==1
             ||!in_array($output['state'],['needs_owner','watching'],true)
             ||$report['key_findings']!==[$output['summary']]
             ||$report['actions_followups']!==($output['next_step']!==''?[$output['next_step']]:[])
