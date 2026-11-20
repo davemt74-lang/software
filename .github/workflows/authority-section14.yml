@@ -443,6 +443,8 @@ jobs:
         run: node tests/marketing-campaign-editor-browser-v1.mjs
       - name: Marketing Canvas tested creative link review and desktop-mobile acceptance
         run: node tests/marketing-canvas-link-browser-v1.mjs
+      - name: Marketing Product and Media current-Chat desktop and mobile browser acceptance
+        run: node tests/marketing-product-media-browser-v1.mjs
       - name: Product marketing publications, original Chat restoration and compact layout
         run: node tests/marketing-followthrough-browser.mjs
       - name: Product Marketing Hub, related Profile findings and released publication links
