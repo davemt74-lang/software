@@ -22,7 +22,8 @@ function has_permission(string $name,array $user):bool {
     return $name==='account.access'&&!empty($user['account']);
 }
 function vp3_coordination_marketing_owner_v1(PDO $pdo,array $scope):?int {
-    return $GLOBALS['authorized']?(int)($scope['user']['id']??0):null;
+    return $GLOBALS['authorized']&&($scope['agent_id']??null)===7&&($scope['conversation_id']??null)===11
+        ?(int)($scope['user']['id']??0):null;
 }
 function campaigns_rewards_platform_schema_ready_v100(PDO $pdo):bool{return $GLOBALS['schemaReady'];}
 function campaigns_rewards_campaign_platform_v100(PDO $pdo,int $id,bool $lock=false):?array{
@@ -70,7 +71,7 @@ function campaigns_rewards_set_campaign_lifecycle_v100(PDO $pdo,int $id,int $own
     if($status!=='active'||$id!==6||$owner!==1)throw new RuntimeException('Wrong lifecycle operation');
     $GLOBALS['activationCalls']++;
     $GLOBALS['campaign']['status']='active';$GLOBALS['campaign']['current_version_no']++;
-    $pdo->prepare("UPDATE campaign_landing_pages SET is_published=IF(visibility='private',0,1) WHERE campaign_id=?")
+    $pdo->prepare("UPDATE campaign_landing_pages SET is_published=CASE WHEN visibility='private' THEN 0 ELSE 1 END WHERE campaign_id=?")
         ->execute([$id]);
     return $GLOBALS['campaign'];
 }
