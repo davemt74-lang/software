@@ -60,7 +60,9 @@ function vp3_marketing_workspace_canvas_options_v1(PDO $pdo,int $owner,array $sc
             }
             $available=true;
         }catch(DomainException|RuntimeException $error) {
-            if($error instanceof PDOException || !in_array((int)$error->getCode(),[403,404,409,422,503],true))throw $error;
+            // Losing Canvas or Chat authority is an access failure, not an empty catalog.
+            if($error instanceof PDOException || (int)$error->getCode()===403
+                || !in_array((int)$error->getCode(),[404,409,422,503],true))throw $error;
             $choices=[];$linked=null;
         }
     }
