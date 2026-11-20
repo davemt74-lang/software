@@ -23,9 +23,9 @@ assert.match(source,/landing_published_on_activation/);
 assert.match(source,/may_enable_configured_automations/);
 assert.match(source,/status'\]!=='active'/);
 assert.match(ui,/Confirm & activate Campaign/);
-assert.match(ui,/Campaign readiness/);
+assert.match(ui,/Current readiness/);
 assert.match(ui,/crypto\.getRandomValues/);
-assert.match(ui,/session/); // source scope is supplied by the active workspace
+assert.match(ui,/const live=()=>!disposed&&root.isConnected&&current()/); // current owner/Chat scope supplied by the workspace
 assert.match(work,/openActivationReview/);
 assert.match(work,/session\.activation\?\.host\?\.isConnected/);
 assert.match(page,/chat-marketing-activation-v1\.js/);

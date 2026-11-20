@@ -122,7 +122,7 @@ activation_denied(409,fn()=>vp3_marketing_activation_action_v1($pdo,1,$scope,$pr
     'active Campaign no longer allows another activation review');
 $campaign['status']='draft';$campaign['current_version_no']=0;
 $campaign['updated_at']='2026-11-20 11:59:00';
-$attempt=$previewBody;$attempt['request_key']=str_repeat('b',32);
+$attempt=$previewBody;$attempt['action']='marketing_activation_confirm';$attempt['request_key']=str_repeat('b',32);
 activation_denied(422,fn()=>vp3_marketing_activation_action_v1($pdo,1,$scope,
     $attempt+['confirmed'=>true,'review_token'=>'bad'],'key-one'),'missing valid confirmation denied');
 $fake=$confirm;$fake['request_key']=str_repeat('b',32);

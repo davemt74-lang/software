@@ -151,7 +151,8 @@ async function scenario(width){
       &&x.csrf_token==='owner-csrf'&&x.revision==='a'.repeat(64)
       &&/^[a-f0-9]{32}$/.test(x.request_key)),
    'confirmation is signed, exact-Campaign and owner/Agent/Chat bound');
- await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1')?.textContent.includes('Active'));
+ await page.waitForFunction(()=>[...document.querySelectorAll('.vp3-marketing-workspace-card')]
+   .some(card=>card.textContent.includes('Coffee Welcome')&&card.textContent.includes('Active')));
  check(await page.getByRole('button',{name:'Review activation'}).count()===1,
    'active Campaign cannot re-enter the activation review');
  check(!requests.some(x=>['publish','send','issue_reward','dispatch'].includes(x.action)),
