@@ -12,10 +12,14 @@ function vp3_coding_canvas_public_command_data_v1(PDO $pdo,int $ownerId,string $
         'public-products'=>'vp3_coding_canvas_public_source_products_v1',
         'public-events'=>'vp3_coding_canvas_public_source_events_v1',
         'public-booking'=>'vp3_coding_canvas_public_source_booking_v1',
+        'public-campaigns'=>'vp3_coding_canvas_public_source_campaigns_v1',
+        'public-rewards'=>'vp3_coding_canvas_public_source_rewards_v1',
+        'public-media'=>'vp3_coding_canvas_public_source_media_v1',
         default=>null,
     };
     if($ownerId<1||$read===null)return $unavailable;
-    require_once __DIR__.'/profile-agent.php';
+    if(!function_exists('profile_agent_schema_ready'))require_once __DIR__.'/profile-agent.php';
+    require_once __DIR__.'/coding-canvas-public-marketing-v1.php';
     try{
         if(!profile_agent_schema_ready($pdo))return $unavailable;
         $profile=vp3_coding_canvas_public_source_profile_v1($pdo,$ownerId);

@@ -69,6 +69,9 @@ PROMPT;
         'public-products'=>['publicProducts','id, title, description, price_label, price_cents, currency'],
         'public-events'=>['publicEvents','id, title, description, starts_at, location, status'],
         'public-booking'=>['publicBooking','id, title, description, duration_minutes, timezone'],
+        'public-campaigns'=>['publicCampaigns','id, title, description, merchant_name, cta_label, starts_at, ends_at'],
+        'public-rewards'=>['publicRewards','id, title, description, value_label, campaign_title'],
+        'public-media'=>['publicMedia','id, title, description, collection'],
     ];
     foreach($commands as $key){
         if(!isset($sourceContracts[$key]))continue;
