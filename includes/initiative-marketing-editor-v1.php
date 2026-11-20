@@ -208,6 +208,16 @@ function vp3_marketing_editor_fields_v1(mixed $raw,array $catalog): array
     ];
 }
 
+/** A URL reviewed for a private draft must stay exact. A committed replay bypasses this new-write check. */
+function vp3_marketing_editor_assert_slug_v1(PDO $pdo,string $slug,int $campaignId): void
+{
+    $query=$pdo->prepare('SELECT id FROM campaigns WHERE slug=? AND id<>? LIMIT 1');
+    $query->execute([$slug,$campaignId]);
+    if($query->fetchColumn()) {
+        throw new DomainException('That Campaign URL slug is already reserved. Choose another.',409);
+    }
+}
+
 function vp3_marketing_editor_intent_v1(int $owner,array $scope,int $merchantId,int $campaignId,
     string $revision,string $nonce,array $fields): string
 {
@@ -251,9 +261,9 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
     $catalog=vp3_marketing_editor_catalog_v1($pdo,$owner,$scope,$merchantId);
     if($catalog['merchant_id']!==$merchantId)throw new DomainException('Merchant draft permission changed.',403);
     $fields=vp3_marketing_editor_fields_v1($body['fields']??null,$catalog);
-    $slugCheck=$pdo->prepare('SELECT id FROM campaigns WHERE slug=? AND id<>? LIMIT 1');
-    $slugCheck->execute([$fields['slug'],$campaignId]);
-    if($slugCheck->fetchColumn())throw new DomainException('That Campaign URL slug is already reserved. Choose another.',409);
+    if($action==='marketing_editor_preview'){
+        vp3_marketing_editor_assert_slug_v1($pdo,$fields['slug'],$campaignId);
+    }
     if($campaignId>0 && $action==='marketing_editor_preview') {
         $draft=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId);
         if(!hash_equals($draft['revision'],$revision))throw new DomainException('This Campaign changed. Reload the latest draft before saving.',409);
@@ -293,6 +303,7 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
             $savedId=(int)($receipt['result_ref_id']??0);
             $saved=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$savedId);
         } else {
+            vp3_marketing_editor_assert_slug_v1($pdo,$fields['slug'],$campaignId);
             if($campaignId>0) {
                 $current=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId,true);
                 if(!hash_equals($current['revision'],$revision))throw new DomainException('This Campaign changed during review. Reload it.',409);
