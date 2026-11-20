@@ -4,8 +4,9 @@
   const stateLimit = 65536;
   const maxText = 32768;
   const sourceKeys = Object.freeze({music:'music',calendar:'calendar',products:'products',
-    'public-products':'publicProducts','public-events':'publicEvents','public-booking':'publicBooking'});
-  const publicSourceKeys = Object.freeze(['publicProducts','publicEvents','publicBooking']);
+    'public-products':'publicProducts','public-events':'publicEvents','public-booking':'publicBooking',
+    'public-campaigns':'publicCampaigns','public-rewards':'publicRewards','public-media':'publicMedia'});
+  const publicSourceKeys = Object.freeze(['publicProducts','publicEvents','publicBooking','publicCampaigns','publicRewards','publicMedia']);
   const unavailableSource = Object.freeze({status:'unavailable',rows:Object.freeze([])});
   const token = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => byte.toString(16).padStart(2,'0')).join('');
   const scriptData = value => JSON.stringify(value).replaceAll('<','\\u003c');
@@ -31,6 +32,9 @@
       'public-products':['title','description','price_label','currency'],
       'public-events':['title','description','starts_at','location','status'],
       'public-booking':['title','description','timezone'],
+      'public-campaigns':['title','description','merchant_name','cta_label','starts_at','ends_at'],
+      'public-rewards':['title','description','value_label','campaign_title'],
+      'public-media':['title','description','collection'],
     }[command];
     const flag = {music:'is_published',calendar:'all_day',products:'is_active'}[command];
     const quantity = {products:'price_cents','public-products':'price_cents','public-booking':'duration_minutes'}[command];
@@ -67,6 +71,9 @@
       'public-products':/^\/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]\/product\/[a-z0-9-]{1,80}$/,
       'public-events':/^\/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]$/,
       'public-booking':/^\/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]\/book\/[a-z0-9-]{1,80}$/,
+      'public-campaigns':/^\/campaign\/[a-z0-9-]{1,80}$/,
+      'public-rewards':/^\/campaign\/[a-z0-9-]{1,80}$/,
+      'public-media':/^\/[a-z0-9][a-z0-9._-]{1,58}[a-z0-9]$/,
     };
     if (!Object.hasOwn(routes,command) || typeof href !== 'string' || href.length > 650 || !href.startsWith('/') ||
       href.startsWith('//') || href.includes('\\') || /[\x00-\x20\x7f]/.test(href)) return null;
@@ -83,7 +90,7 @@
     'use strict';
     const {channel,nonce,parentOrigin,artifact,state,workerKey,maxText,stateLimit,email,emailCheck,gmail,canSaveState,
       sources,openableSources,libraryImage} = payload;
-    const clickable = new Set(['publicProducts','publicEvents','publicBooking']);
+    const clickable = new Set(['publicProducts','publicEvents','publicBooking','publicCampaigns','publicRewards','publicMedia']);
     const root = document.getElementById('app');
     root.inert = true;
     const appImage = libraryImage ? document.createElement('img') : null;
@@ -416,7 +423,7 @@
       });
     }
     if (gmail) sources.gmail = Object.freeze({get:() => clone(gmail)});
-    for (const command of ['music','calendar','products','publicProducts','publicEvents','publicBooking']) {
+    for (const command of ['music','calendar','products','publicProducts','publicEvents','publicBooking','publicCampaigns','publicRewards','publicMedia']) {
       if (!Object.hasOwn(records,command)) continue;
       const source = records[command];
       const api = {get:() => clone(source)};

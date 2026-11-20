@@ -21,7 +21,7 @@
     calendar:'Allow this app to read your upcoming VP3 calendar events',
     products:'Allow this app to read your VP3 products, including drafts'
   };
-  const publicSources = new Set(['public-products','public-events','public-booking']);
+  const publicSources = new Set(['public-products','public-events','public-booking','public-campaigns','public-rewards','public-media']);
   const commandBridges = new Set(['app-data','gmail',...Object.keys(privateSources),...publicSources]);
   const mailboxIdPattern = /^[A-Za-z0-9_-]{1,128}$/;
   const publicSlugPattern = /^(?=.{3,64}$)[a-z\d]+(?:-[a-z\d]+)*$/;
