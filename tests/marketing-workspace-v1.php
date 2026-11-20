@@ -44,6 +44,7 @@ $fixture=[
 $out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$scope);
 review_check($out['coverage']==='ready'&&count($out['campaigns'])===2,'only allowlisted owner Campaign statuses returned');
 review_check($out['campaigns'][0]['issues']===['Choose an active reward'],'only setup reasons projected');
+review_check($out['campaigns'][0]['window_state']==='open','canonical campaign observation window preserved');
 review_check($out['campaigns'][0]['observations']===['claims'=>'observed','redemptions'=>'unavailable','promotion'=>'observed'],
     'analytics coverage is observational rather than invented counts');
 review_check(!str_contains(json_encode($out,JSON_THROW_ON_ERROR),'sensitive')

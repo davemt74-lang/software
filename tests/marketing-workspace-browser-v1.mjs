@@ -8,6 +8,7 @@ const js=readFileSync(new URL('../chat-marketing-workspace-v1.js',import.meta.ur
 const css=readFileSync(new URL('../chat-marketing-workspace-v1.css',import.meta.url),'utf8');
 const media=readFileSync(new URL('../chat-media-commands-v1.js',import.meta.url),'utf8');
 const requests=[],errors=[];
+let deny=false;
 let checks=0;
 const check=(ok,label)=>{assert.ok(ok,label);checks++;console.log('PASS '+label);};
 const plans=[
@@ -26,6 +27,8 @@ async function scenario(width){
     body:'<!doctype html><html><head></head><body><main class="chat-main"><section id="chatThread" data-view="chat"><div class="message">Private conversation</div></section><div id="chatComposerShell"><textarea id="chatInput"></textarea></div></main></body></html>'}));
   await page.route('https://vp3.test/api/initiative-workbench-v1.php',async route=>{
     const body=route.request().postDataJSON();requests.push(body);
+    if(deny) return route.fulfill({status:403,contentType:'application/json',
+      body:JSON.stringify({ok:false,error:'Marketing access revoked'})});
     const data={ok:true,owner_key:'1',agent_id:7,conversation_id:11,tool:'marketing'};
     if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',campaigns,
       links:{campaigns:'/campaigns.php',products:'/profile-commerce-products.php',rewards:'/rewards.php'}});
@@ -76,6 +79,26 @@ async function scenario(width){
   await page.getByRole('button',{name:'Continue plan'}).click();
   await page.waitForFunction(()=>window.fixture.calls.some(x=>x[0]==='resume'));
   check(await page.locator('#chatThread').getAttribute('data-view')==='chat','plan resumes through Chat and existing workbench');
+  const reopen=()=>page.evaluate(()=>window.VP3MediaCommands.open('marketing',
+    window.STONEFELLOW_CHAT_CONTINUITY_V87.mediaCommandContext()));
+  check(await reopen(),'Marketing can reopen after approved plan handoff');
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1')?.textContent.includes('Autumn special'));
+  deny=true;
+  await page.getByRole('button',{name:'Refresh'}).click();
+  await page.waitForFunction(()=>document.getElementById('chatThread').dataset.view==='chat');
+  check(!(await page.locator('#chatMarketingWorkspaceV1').textContent()).includes('Autumn special'),
+    'revoked permission removes previously visible private campaign rows');
+  deny=false;
+  check(await reopen(),'Marketing can reopen when access is restored');
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1')?.textContent.includes('Autumn special'));
+  await page.evaluate(()=>{
+    window.fixture.conversation=77;
+    window.dispatchEvent(new Event('vp3:chat-conversation-changed'));
+  });
+  check(await page.locator('#chatThread').getAttribute('data-view')==='chat',
+    'changing conversation closes the owner-private Marketing view');
+  check(!(await page.locator('#chatMarketingWorkspaceV1').textContent()).includes('Autumn special'),
+    'switching Chat clears the private campaign contents');
   await page.close();
 }
 try {
