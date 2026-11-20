@@ -15,7 +15,7 @@ assert.match(php,/campaigns_rewards_platform_can_v100/);
 assert.match(php,/campaigns\.edit/);
 assert.match(php,/analytics\.view/);
 assert.match(php,/current_version_no/);
-assert.match(php,/vp3_marketing_canvas_link_v1\.php/);
+assert.match(php,/marketing-canvas-link-v1\.php/);
 assert.match(workspace,/X-VP3-WORKING-ATTENTION/);
 assert.match(workspace,/verifiedLinkEndpoint/);
 assert.match(workspace,/marketing_canvas_choices/);
