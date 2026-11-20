@@ -251,6 +251,9 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
     $catalog=vp3_marketing_editor_catalog_v1($pdo,$owner,$scope,$merchantId);
     if($catalog['merchant_id']!==$merchantId)throw new DomainException('Merchant draft permission changed.',403);
     $fields=vp3_marketing_editor_fields_v1($body['fields']??null,$catalog);
+    $slugCheck=$pdo->prepare('SELECT id FROM campaigns WHERE slug=? AND id<>? LIMIT 1');
+    $slugCheck->execute([$fields['slug'],$campaignId]);
+    if($slugCheck->fetchColumn())throw new DomainException('That Campaign URL slug is already reserved. Choose another.',409);
     if($campaignId>0 && $action==='marketing_editor_preview') {
         $draft=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId);
         if(!hash_equals($draft['revision'],$revision))throw new DomainException('This Campaign changed. Reload the latest draft before saving.',409);
@@ -299,6 +302,11 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
             $row=campaigns_rewards_save_campaign_v100($pdo,$merchantId,$owner,$input,$campaignId);
             $savedId=(int)$row['id'];
             $saved=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$savedId);
+            // The legacy create path can auto-suffix a concurrent slug collision.
+            // A signed review must never silently publish a different reserved URL.
+            if(!hash_equals($fields['slug'],$saved['fields']['slug'])){
+                throw new DomainException('The Campaign URL changed before saving. Review a different slug.',409);
+            }
             campaigns_rewards_idempotency_complete_v100($pdo,(int)$receipt['id'],'campaign',$savedId);
         }
         vp3_marketing_editor_scope_v1($pdo,$owner,$scope);

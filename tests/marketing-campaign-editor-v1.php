@@ -57,10 +57,11 @@ function campaigns_rewards_save_campaign_v100(PDO $pdo,int $m,int $o,array $inpu
         ||isset($input['status'])||isset($input['environment']))throw new RuntimeException('Unsafe canonical input');
     $GLOBALS['writes']++;
     if($id===0){
-        $pdo->prepare('INSERT INTO campaigns(merchant_id) VALUES(?)')->execute([$m]);
+        $pdo->prepare('INSERT INTO campaigns(merchant_id,slug) VALUES(?,?)')->execute([$m,$input['slug']]);
         $id=(int)$pdo->lastInsertId();
     }
     $GLOBALS['revision']++;
+    $pdo->prepare('UPDATE campaigns SET slug=? WHERE id=?')->execute([$input['slug'],$id]);
     $GLOBALS['campaignRows'][$id]=[
         'id'=>$id,'merchant_id'=>$m,'merchant_owner_user_id'=>$o,
         'status'=>'draft','environment'=>'production','title'=>$input['title'],
@@ -78,7 +79,8 @@ $pdo->exec('CREATE TABLE merchant_accounts(id INTEGER PRIMARY KEY,owner_user_id 
 $pdo->exec("INSERT INTO merchant_accounts VALUES(7,1,'Owner Coffee','active',0),(8,2,'Foreign merchant','active',0)");
 $pdo->exec('CREATE TABLE campaign_types(type_key TEXT,name TEXT,description TEXT,reward_rules_schema_json TEXT,landing_schema_json TEXT,merchant_id INTEGER,is_active INTEGER,is_system INTEGER)');
 $pdo->exec("INSERT INTO campaign_types VALUES('signup','Signup','Public signup','{\"requires_reward\":0}','{\"cta\":\"Sign up\"}',NULL,1,1)");
-$pdo->exec('CREATE TABLE campaigns(id INTEGER PRIMARY KEY AUTOINCREMENT,merchant_id INTEGER)');
+$pdo->exec('CREATE TABLE campaigns(id INTEGER PRIMARY KEY AUTOINCREMENT,merchant_id INTEGER,slug TEXT)');
+$pdo->exec("INSERT INTO campaigns(id,merchant_id,slug) VALUES(50,7,'already-reserved')");
 $scope=['user'=>['id'=>1,'account'=>true],'agent_id'=>7,'conversation_id'=>11];
 $catalog=vp3_marketing_editor_action_v1($pdo,1,$scope,['action'=>'marketing_editor_options'],'secret');
 editor_check(count($catalog['catalog']['merchants'])===1&&$catalog['catalog']['merchant_id']===7,'merchant catalog excludes foreign business');
@@ -96,6 +98,9 @@ editor_check($preview['preview']['slug']==='free-coffee-week'
     &&$preview['preview']['reward_names']===['Free coffee']
     &&$preview['preview']['location']==='Flagship','review shows exact URL, Reward and Location');
 editor_check($writes===0,'preview has no database write');
+$duplicate=$body;$duplicate['fields']['slug']='already-reserved';
+editor_denied(409,fn()=>vp3_marketing_editor_action_v1($pdo,1,$scope,$duplicate,'secret'),
+    'preview refuses a globally reserved Campaign slug');
 $blankCta=$body;$blankCta['fields']['cta_label']='';
 $blankPreview=vp3_marketing_editor_action_v1($pdo,1,$scope,$blankCta,'secret');
 editor_check($blankPreview['preview']['cta_label']==='Sign up'
