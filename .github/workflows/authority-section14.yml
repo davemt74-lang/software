@@ -67,6 +67,15 @@ jobs:
           node --check chat-coding-canvas-v1.js
           php tests/public-canvas-marketing-v1.php
           node tests/public-canvas-marketing-runtime-v1.mjs
+      - name: Unified Marketing workspace owner data and current Chat contract
+        run: |
+          php -l includes/initiative-marketing-workspace-v1.php
+          php -l api/initiative-workbench-v1.php
+          php tests/marketing-workspace-v1.php
+          node --check chat-marketing-workspace-v1.js
+          node --check chat-media-commands-v1.js
+          node --check chat.js
+          node tests/marketing-workspace-contract-v1.mjs
       - name: Public Profile Canvas attachments on native MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
@@ -409,6 +418,8 @@ jobs:
         run: node tests/profile-specialist-workspace-browser.mjs
       - name: Completed Profile analytics periods, fixed briefing links and compact layout
         run: node tests/profile-analytics-period-browser.mjs
+      - name: Unified Marketing workspace Chat Canvas, plans and mobile acceptance
+        run: node tests/marketing-workspace-browser-v1.mjs
       - name: Product marketing publications, original Chat restoration and compact layout
         run: node tests/marketing-followthrough-browser.mjs
       - name: Product Marketing Hub, related Profile findings and released publication links
