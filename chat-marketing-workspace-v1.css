@@ -1,0 +1,44 @@
+#chatThread[data-view="marketing"] > :not(#chatMarketingWorkspaceV1) { display:none !important; }
+#chatThread[data-view="marketing"] { scroll-padding-bottom:5rem; }
+#chatMarketingWorkspaceV1 { box-sizing:border-box; width:min(100%,1040px); max-width:100%; min-width:0; margin:0 auto; padding:clamp(1rem,2.5vw,2rem); color:#1d2838; background:#fff; font:inherit; }
+#chatMarketingWorkspaceV1[hidden],#chatMarketingWorkspaceV1 [hidden] { display:none !important; }
+#chatMarketingWorkspaceV1 *,#chatMarketingWorkspaceV1 *::before,#chatMarketingWorkspaceV1 *::after { box-sizing:border-box; }
+.vp3-marketing-workspace-header { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:.9rem; padding:0 0 1.2rem; }
+.vp3-marketing-workspace-header h2 { margin:.25rem 0; font-size:clamp(1.3rem,3vw,1.8rem); line-height:1.3; color:#162b48; }
+.vp3-marketing-workspace-header small { font-size:.69rem; letter-spacing:.11em; color:#5174a4; font-weight:750; }
+.vp3-marketing-workspace-header p,.vp3-marketing-workspace-pane > p { color:#53647d; margin:.4rem 0; line-height:1.55; }
+.vp3-marketing-workspace-actions,.vp3-marketing-workspace-card-actions { display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; min-width:0; }
+#chatMarketingWorkspaceV1 button,.vp3-marketing-workspace-link { display:inline-flex; align-items:center; justify-content:center; min-height:2.7rem; max-width:100%; border:1px solid #c5d1e1; border-radius:.6rem; padding:.55rem .8rem; background:#fff; font:inherit; font-size:.86rem; color:#244b7c; font-weight:650; cursor:pointer; text-decoration:none; text-align:center; overflow-wrap:anywhere; }
+#chatMarketingWorkspaceV1 button:hover:not(:disabled),#chatMarketingWorkspaceV1 a:hover { background:#edf4fd; border-color:#8eadd1; }
+#chatMarketingWorkspaceV1 button:focus-visible,#chatMarketingWorkspaceV1 a:focus-visible { outline:3px solid #86b2e9; outline-offset:2px; }
+.vp3-marketing-workspace-status { color:#53647d; font-size:.85rem; min-height:1.25rem; margin:0 0 .9rem; }
+.vp3-marketing-workspace-tabs { display:flex; flex-wrap:wrap; gap:.3rem; border-bottom:1px solid #dce3ec; padding:0 0 .5rem; }
+#chatMarketingWorkspaceV1 .vp3-marketing-workspace-tab { min-height:2.65rem; border-color:transparent; border-bottom:2px solid transparent; border-radius:.5rem .5rem 0 0; color:#50637b; }
+#chatMarketingWorkspaceV1 .vp3-marketing-workspace-tab[aria-selected="true"] { background:#f2f6fc; border-color:transparent; border-bottom-color:#2565b4; color:#183a66; }
+.vp3-marketing-workspace-content { padding:1.2rem 0 4rem; max-width:100%; min-width:0; }
+.vp3-marketing-workspace-pane { min-width:0; }
+.vp3-marketing-workspace-pane h3 { color:#1c304c; font-size:1.04rem; margin:0 0 .35rem; }
+.vp3-marketing-workspace-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; margin-bottom:1rem; }
+.vp3-marketing-workspace-stat { display:grid; gap:.25rem; padding:1rem; border:1px solid #dce5f0; border-radius:.8rem; background:#f8fbff; }
+.vp3-marketing-workspace-stat strong { font-size:1.5rem; color:#183c70; font-variant-numeric:tabular-nums; }
+.vp3-marketing-workspace-stat span { color:#52637b; font-size:.78rem; }
+.vp3-marketing-workspace-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1rem 0; }
+.vp3-marketing-workspace-card { min-width:0; border:1px solid #dce4ee; border-radius:.85rem; padding:1.05rem; background:#fff; display:grid; align-content:start; gap:.55rem; }
+.vp3-marketing-workspace-card > p { margin:0; color:#53647d; font-size:.87rem; line-height:1.55; overflow-wrap:anywhere; }
+.vp3-marketing-workspace-card h3 { overflow-wrap:anywhere; }
+.vp3-marketing-workspace-card ul { margin:.2rem 0; padding-left:1.15rem; font-size:.82rem; color:#405570; line-height:1.5; }
+.vp3-marketing-workspace-card-actions { padding-top:.4rem; }
+.vp3-marketing-workspace-pill { display:inline-flex; justify-self:start; padding:.2rem .55rem; border-radius:1rem; color:#315982; background:#edf3fa; font-size:.74rem; font-weight:700; }
+.vp3-marketing-workspace-muted { color:#65758a; font-size:.82rem; overflow-wrap:anywhere; }
+.vp3-marketing-workspace-issue { border-left:3px solid #ba8243; padding-left:.8rem; }
+@media (max-width:640px) {
+  #chatMarketingWorkspaceV1 { padding:1rem .8rem 4rem; }
+  .vp3-marketing-workspace-header { gap:.7rem; }
+  .vp3-marketing-workspace-header .vp3-marketing-workspace-actions { width:100%; }
+  .vp3-marketing-workspace-tabs { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:thin; }
+  #chatMarketingWorkspaceV1 .vp3-marketing-workspace-tab { white-space:nowrap; flex:0 0 auto; font-size:.77rem; padding:.5rem .65rem; }
+  .vp3-marketing-workspace-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .vp3-marketing-workspace-grid { grid-template-columns:minmax(0,1fr); }
+  .vp3-marketing-workspace-card { padding:.85rem; }
+}
+@media (max-width:370px) { .vp3-marketing-workspace-summary { grid-template-columns:minmax(0,1fr); } }

@@ -421,6 +421,8 @@
     if (!['images', 'marketing'].includes(kind) || !scopeCurrent(bound)
       || kind === 'images' && !window.VP3MediaLibraryPicker?.open) return false;
     window.VP3MarketingFollowthroughV1?.cancelPendingDestination?.();
+    if(kind === 'marketing' && typeof window.VP3MarketingWorkspaceV1?.open === 'function')
+      return window.VP3MarketingWorkspaceV1.open(bound) === true;
     const session = createSession(kind, bound);
     if (!session) return false;
     if (kind === 'images') {

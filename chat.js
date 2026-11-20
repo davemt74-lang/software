@@ -5696,7 +5696,9 @@
       if(!bound||window.VP3MediaCommands.open(kind,bound)!==true){
         showChatTurnNotice('Could not open this tool. Your Chat draft is kept.');return;
       }
-      if(bound.isCurrent()&&input.value===original){
+      if((bound.isCurrent() || (kind === 'marketing' && thread.dataset.view === 'marketing'
+          && conversationId === cid && chatRevision === revision && historyAuthority === authority))
+        && input.value===original){
         input.value='';input.dispatchEvent(new Event('input'));
       }
       showChatTurnNotice();
@@ -5932,6 +5934,7 @@
     marketingFollowthroughDestination:()=>!initialMarketingFollowthroughCancelled&&initiativeIdentityMatchesV1()?initialMarketingFollowthroughDestination:null,
     showChatView:() => setChatCanvasView('chat'),
     showCodingCanvasView:() => setChatCanvasView('coding'),
+    showMarketingCanvasView:() => setChatCanvasView('marketing'),
     showPlayerView:() => setChatCanvasView('player'),
     mountAgentGreeting:text => {
       if (thread.dataset.view !== 'chat' || !contextReady || initialRestorePending || restoringConversation) return null;
