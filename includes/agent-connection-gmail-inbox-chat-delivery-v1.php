@@ -163,7 +163,7 @@ function agent_connection_gmail_inbox_update_pending_v1(PDO $pdo,array $scope): 
     $routineOnly = agent_email_running_report_enabled_v1($scope['policy']);
     $query = $pdo->prepare('SELECT * FROM agent_connection_gmail_inbox_batches_v1
         WHERE owner_user_id=? AND connection_id=? AND generation_id=? AND message_id IS NULL '
-        .($routineOnly ? 'AND '.agent_connection_gmail_inbox_digest_sql_v1().' ' : '').'ORDER BY id LIMIT 10');
+        .($routineOnly ? 'AND ('.agent_connection_gmail_inbox_digest_sql_v1().' OR '.agent_connection_gmail_inbox_priority_sql_v1().') ' : '').'ORDER BY id LIMIT 10');
     $query->execute([$scope['owner'],$scope['policy']['connection_id'],$scope['generation']]);
     return $query->fetchAll(PDO::FETCH_ASSOC);
 }
@@ -179,7 +179,7 @@ function agent_connection_gmail_inbox_update_has_pending_v1(PDO $pdo,array $scop
     }
     $query = $pdo->prepare('SELECT 1 FROM agent_connection_gmail_inbox_batches_v1
         WHERE owner_user_id=? AND connection_id=? AND generation_id=? AND message_id IS NULL '
-        .($routineOnly ? 'AND '.agent_connection_gmail_inbox_digest_sql_v1().' ' : '').'LIMIT 1');
+        .($routineOnly ? 'AND ('.agent_connection_gmail_inbox_digest_sql_v1().' OR '.agent_connection_gmail_inbox_priority_sql_v1().') ' : '').'LIMIT 1');
     $query->execute([$scope['owner'],$scope['policy']['connection_id'],$scope['generation']]);
     return $query->fetchColumn() !== false;
 }
@@ -232,14 +232,81 @@ function agent_connection_gmail_inbox_update_alert_notice_v1(PDO $pdo,array $sco
     if ($batch === null) return 0;
     $binding = agent_connection_gmail_inbox_update_binding_v1($scope,$batch);
     $context = json_decode((string)$row['context_json'],true,12);
-    if ($binding['agent_id'] !== $agent || $binding['conversation_id'] !== $conversation
-        || $binding['message_id'] !== (int)$row['chat_message_id'] || !is_array($context)
+    if ($binding['agent_id'] !== $agent || $binding['conversation_id'] !== $conversation || !is_array($context)) return 0;
+    if (($context['gmail_inbox_priority_v1'] ?? null) !== null) {
+        $priority = agent_connection_gmail_inbox_priority_history_v1($pdo,$scope,$agent,$conversation,$context,(int)$row['chat_message_id']);
+        if ($priority === null) return 0;
+        $sealed = $batch['report_json'];
+        $report = agent_connection_gmail_inbox_batch_report_v1($sealed);
+        $item = $report['items'][$context['gmail_inbox_priority_v1']['item_index']] ?? null;
+        if (!is_array($item) || agent_connection_gmail_id_v1(ai_decrypt_secret($item['message_id_enc'])) !== $providerId) return 0;
+        return (int)$row['chat_message_id'];
+    }
+    if ($binding['message_id'] !== (int)$row['chat_message_id']
         || !agent_connection_gmail_inbox_chat_marker_matches_v1($context,$binding)) return 0;
     $report = agent_connection_gmail_inbox_batch_report_v1($batch['report_json']);
     if ($report === null) return 0;
     $item = agent_connection_gmail_inbox_update_alert_items_v1($scope,$batch['batch_id'],$report)[$providerId] ?? null;
     $suppressed = (array)($context['gmail_inbox_update_v1']['suppressed_item_refs'] ?? []);
     return $item !== null && !in_array($item['item_ref'],$suppressed,true) ? $binding['message_id'] : 0;
+}
+
+/** Only exact current owner priority watches may produce one signed Chat post per email. */
+function agent_connection_gmail_inbox_update_priority_items_v1(array $scope,array $row,array $report): array
+{
+    $results = [];
+    foreach (array_slice((array)($report['items'] ?? []),0,50) as $index=>$item) {
+        if (!is_array($item) || (($report['triage_enabled'] ?? false) === true
+            && ($item['triage']['alert'] ?? false) !== true)) continue;
+        $matches = agent_connection_gmail_inbox_priority_matches_v1($item,$scope['policy']['rules']);
+        if (!$matches) continue;
+        $itemRef = agent_connection_gmail_inbox_item_reference_v1($scope,'batch:'.$row['batch_id'],$index,$item);
+        if ($itemRef === null) continue;
+        $providerId = agent_connection_gmail_id_v1(ai_decrypt_secret($item['message_id_enc']));
+        if ($providerId === '') continue;
+        $results[$index] = ['item_ref'=>$itemRef,'provider_id'=>$providerId,'matches'=>$matches];
+    }
+    return $results;
+}
+
+function agent_connection_gmail_inbox_priority_chat_ref_v1(array $scope,string $batchId,string $itemRef,int $agent,int $conversation): string
+{
+    return agent_connection_gmail_inbox_key_v1($scope['policy'],implode(':',[
+        'priority-inbox-chat-v1',$scope['generation'],$batchId,$itemRef,$agent,$conversation,
+    ]));
+}
+
+/** Resolve the exact saved item under the current Gmail grant, never from the Chat marker itself. */
+function agent_connection_gmail_inbox_priority_history_v1(PDO $pdo,array $scope,int $agent,int $conversation,array $context,int $messageId): ?array
+{
+    $marker = $context['gmail_inbox_priority_v1'] ?? null;
+    $batchId = $marker['run_id'] ?? null;
+    $index = $marker['item_index'] ?? null;
+    $itemRef = $marker['item_ref'] ?? null;
+    $ref = $marker['report_ref'] ?? null;
+    if (($context['source'] ?? null) !== 'agent_connection_gmail_inbox_update'
+        || !is_string($batchId) || !preg_match('/\A[a-f0-9]{32}\z/D',$batchId)
+        || !is_int($index) || $index<0 || $index>=50 || !is_string($itemRef)
+        || !preg_match('/\A[a-f0-9]{64}\z/D',$itemRef) || !is_string($ref)
+        || !hash_equals(agent_connection_gmail_inbox_priority_chat_ref_v1($scope,$batchId,$itemRef,$agent,$conversation),$ref)) return null;
+    $batch = agent_connection_gmail_inbox_batch_v1($pdo,$scope,$batchId);
+    if (!$batch || (int)$batch['agent_id'] !== $agent || (int)$batch['conversation_id'] !== $conversation
+        || $batch['message_id'] === null) return null;
+    $report = agent_connection_gmail_inbox_batch_report_v1((string)$batch['report_json']);
+    $item = $report['items'][$index] ?? null;
+    if (!is_array($item) || !hash_equals($itemRef,(string)agent_connection_gmail_inbox_item_reference_v1($scope,'batch:'.$batchId,$index,$item))) return null;
+    $matches = agent_connection_gmail_inbox_priority_matches_v1($item,$scope['policy']['rules']);
+    if (!$matches) return null;
+    $views = agent_connection_gmail_inbox_review_items_v1($pdo,$report,$scope,'batch:'.$batchId);
+    $selected = null;
+    foreach ($views as $view) if (($view['item_ref'] ?? null) === $itemRef) { $selected=$view; break; }
+    if ($selected === null) return null;
+    return ['kind'=>'batch','priority_item'=>true,'run_id'=>$batchId,'report_ref'=>$ref,
+        'scope_ref'=>agent_connection_gmail_inbox_update_scope_ref_v1($scope),
+        'agent_id'=>$agent,'conversation_id'=>$conversation,'message_id'=>$messageId,
+        'review'=>['state'=>'ready','run_id'=>$batchId,'total'=>1,'at'=>$report['at'],
+            'important'=>!empty($selected['important'])?1:0,
+            'replies'=>$selected['category']==='reply'?1:0,'items'=>[$selected]]];
 }
 
 /** Run inside the same private Inbox transaction that owns these unposted batches. */
@@ -267,23 +334,62 @@ function agent_connection_gmail_inbox_update_post_v1(PDO $pdo,array $scope,int $
             require_once __DIR__.'/agent-connection-email-followup-v1.php';
             $covered = agent_connection_email_followup_posted_v1($pdo,$connection,$agentId,$conversationId,array_keys($alerts));
         }
-        $remaining = $report === null ? 0 : agent_connection_gmail_inbox_report_alert_count_v1($report)-count($covered);
-        if ($covered && $remaining === 0) {
-            // Zero records a finished batch with no separate Chat post. Keep its original report and identity.
+        $priorityRows = $digest || $report===null ? [] : agent_connection_gmail_inbox_update_priority_items_v1($scope,$row,$report);
+        $priorityPosts = [];
+        foreach ($priorityRows as $index=>$item) {
+            if (isset($covered[$item['provider_id']])) continue;
+            $ref = agent_connection_gmail_inbox_priority_chat_ref_v1($scope,$row['batch_id'],$item['item_ref'],$agentId,$conversationId);
+            $context = ['source'=>'agent_connection_gmail_inbox_update','skip_brain_archive'=>true,
+                'tool_receipt'=>vp3_tool_receipt_v1('email.read','review_status','read_complete'),
+                'gmail_inbox_priority_v1'=>['run_id'=>$row['batch_id'],'item_index'=>$index,
+                    'item_ref'=>$item['item_ref'],'report_ref'=>$ref]];
+            $insert->execute([$conversationId,'A high-priority Gmail message needs your attention.',json_encode($context,JSON_THROW_ON_ERROR),$now]);
+            $messageId = (int)$pdo->lastInsertId();
+            if ($messageId<1) throw new RuntimeException('Priority Gmail Chat post could not be verified.',503);
+            $priorityPosts[$index] = $messageId;
+            if ($bound !== null && isset($alerts[$item['provider_id']]) && agent_email_matters_ready_v1($pdo)) {
+                require_once __DIR__.'/agent-email-triage-v1.php';
+                if (agent_email_triage_ready_v1($pdo)) {
+                    $triage = agent_email_triage_find_v1($pdo,$bound,$alerts[$item['provider_id']]['triage_id']);
+                    $matter = $triage['matter_id'] ?? null;
+                    if (is_string($matter) && agent_email_matters_find_v1($pdo,$bound,$matter) !== null) {
+                        agent_email_matters_event_v1($pdo,$matter,agent_connection_gmail_inbox_update_alert_key_v1($scope,$item['provider_id']),
+                            'inbox_alert',$now,$row['batch_id'],$messageId);
+                    }
+                }
+            }
+            $posted++;
+        }
+        $remaining = $report === null ? 0 : agent_connection_gmail_inbox_report_alert_count_v1($report)
+            - count($covered) - count($priorityPosts);
+        // Content-analysis handles ordinary actionable mail independently.
+        // A priority watch always goes to Chat, without duplicating other triage posts.
+        $normalPost = $digest || ($remaining>0 && !agent_email_running_report_enabled_v1($scope['policy']));
+        if (!$normalPost) {
+            // The batch is complete even when only its individual priority posts were emitted.
             $attach->execute([$agentId,$conversationId,0,$row['id'],$scope['owner']]);
             if ($attach->rowCount() !== 1) throw new RuntimeException('Gmail update changed.',409);
             if (!empty($row['notification_id']) && table_exists('notifications')) {
-                $pdo->prepare("DELETE FROM notifications WHERE id=? AND user_id=? AND type='agent_email_inbox_review'
-                    AND source_type='agent_connection_gmail_inbox' AND source_id=?")
-                    ->execute([$row['notification_id'],$scope['owner'],$scope['generation']]);
+                if ($priorityPosts) {
+                    $target = url('/chat.php?agent='.($agentId ?: 'system').'&conversation_id='.$conversationId
+                        .'&message_id='.reset($priorityPosts));
+                    $pdo->prepare("UPDATE notifications SET target_url=? WHERE id=? AND user_id=?
+                        AND type='agent_email_inbox_review' AND source_type='agent_connection_gmail_inbox' AND source_id=?")
+                        ->execute([$target,$row['notification_id'],$scope['owner'],$scope['generation']]);
+                } elseif ($remaining<=0) {
+                    $pdo->prepare("DELETE FROM notifications WHERE id=? AND user_id=? AND type='agent_email_inbox_review'
+                        AND source_type='agent_connection_gmail_inbox' AND source_id=?")
+                        ->execute([$row['notification_id'],$scope['owner'],$scope['generation']]);
+                }
             }
             continue;
         }
         $context = ['source'=>'agent_connection_gmail_inbox_update','skip_brain_archive'=>true,
             'tool_receipt'=>vp3_tool_receipt_v1('email.read','review_status','read_complete'),
             'gmail_inbox_update_v1'=>array_intersect_key($binding,array_flip(['run_id','report_ref']))];
-        if ($covered) $context['gmail_inbox_update_v1']['suppressed_item_refs'] =
-            array_column(array_intersect_key($alerts,$covered),'item_ref');
+        $suppressed = array_column(array_intersect_key($alerts,$covered),'item_ref');
+        if ($priorityPosts) $suppressed = array_merge($suppressed,array_map(static fn(int $index):string=>$priorityRows[$index]['item_ref'],array_keys($priorityPosts)));
+        if ($suppressed) $context['gmail_inbox_update_v1']['suppressed_item_refs'] = array_values(array_unique($suppressed));
         if ($digest) $context['gmail_inbox_update_v1']['routine_digest'] = true;
         $intro = $digest ? 'I imported the latest emails.' : 'Your Gmail inbox update is ready.';
         $insert->execute([$conversationId,$intro,json_encode($context,JSON_THROW_ON_ERROR),$now]);
@@ -294,6 +400,7 @@ function agent_connection_gmail_inbox_update_post_v1(PDO $pdo,array $scope,int $
         if ($alerts && agent_email_matters_ready_v1($pdo)) {
             require_once __DIR__.'/agent-email-triage-v1.php';
             if (agent_email_triage_ready_v1($pdo)) foreach (array_diff_key($alerts,$covered) as $providerId=>$item) {
+                if (in_array($providerId,array_column(array_intersect_key($priorityRows,$priorityPosts),'provider_id'),true)) continue;
                 $triage = agent_email_triage_find_v1($pdo,$bound,$item['triage_id']);
                 $matter = $triage['matter_id'] ?? null;
                 if (is_string($matter) && agent_email_matters_find_v1($pdo,$bound,$matter) !== null) {
@@ -369,9 +476,11 @@ function agent_connection_gmail_inbox_update_history_v1(PDO $pdo,array $scope,in
         $report['total'] = count($items);
         $report['important'] = 0;
         $report['replies'] = count(array_filter($items,static fn(array $item): bool => $item['category'] === 'reply'));
-    } elseif (($report['triage_enabled'] ?? false) === true) {
+    } else {
         $suppressed = (array)($context['gmail_inbox_update_v1']['suppressed_item_refs'] ?? []);
-        $items = array_values(array_filter($items,static fn(array $item): bool => ($item['triage']['alert'] ?? false) === true
+        $triaged = ($report['triage_enabled'] ?? false) === true;
+        $items = array_values(array_filter($items,static fn(array $item): bool =>
+            (!$triaged || ($item['triage']['alert'] ?? false) === true)
             && !in_array($item['item_ref'] ?? null,$suppressed,true)));
         if (!$items) return null;
         $report['total'] = count($items);
@@ -489,6 +598,7 @@ function agent_connection_gmail_inbox_chat_history_v1(PDO $pdo,array $user,int $
     foreach ($messages as $index=>$message) {
         $raw = $message['context_json'] ?? null;
         if (!is_string($raw) || (!str_contains($raw,'gmail_first_review_v1') && !str_contains($raw,'gmail_inbox_update_v1')
+            && !str_contains($raw,'gmail_inbox_priority_v1')
             && !str_contains($raw,'gmail_inbox_review_v1') && !str_contains($raw,'gmail_content_chat_v1'))) continue;
         $context = json_decode($raw,true,24);
         if (!is_array($context)) continue;
@@ -509,6 +619,7 @@ function agent_connection_gmail_inbox_chat_history_v1(PDO $pdo,array $user,int $
             $messages[$index]['context_json'] = json_encode($safeContext,JSON_THROW_ON_ERROR);
         }
         if (isset($context['gmail_first_review_v1']) || isset($context['gmail_inbox_update_v1'])
+            || isset($context['gmail_inbox_priority_v1'])
             || is_array($context['gmail_content_chat_v1'] ?? null)) $candidates[$index] = $context;
     }
     if (!$candidates || $agentId < 0 || $conversationId < 1) return $messages;
@@ -525,6 +636,23 @@ function agent_connection_gmail_inbox_chat_history_v1(PDO $pdo,array $user,int $
                 if ((int)($messages[$index]['conversation_id'] ?? $conversationId) !== $conversationId) continue;
                 $text = agent_connection_gmail_content_chat_text_v1($pdo,$scope,$agentId,$conversationId,$context['gmail_content_chat_v1']);
                 if ($text !== null) $messages[$index]['message'] = $text;
+                continue;
+            }
+            if (isset($context['gmail_inbox_priority_v1'])) {
+                try {
+                    $view = agent_connection_gmail_inbox_priority_history_v1($pdo,$scope,$agentId,$conversationId,$context,$messageId);
+                } catch (Throwable $error) {
+                    if (function_exists('agent_runtime_v125_trace')) agent_runtime_v125_trace('gmail_priority.chat_unavailable',['error_class'=>get_class($error)]);
+                    continue;
+                }
+                if ($view === null) continue;
+                $item = $view['review']['items'][0];
+                $messages[$index]['message'] = 'Priority Gmail: '.mb_substr((string)$item['subject'],0,240,'UTF-8')
+                    ."\nFrom: ".mb_substr((string)$item['from'],0,240,'UTF-8')
+                    ."\nMatched: ".implode('; ',$item['priority_matches'] ?? [])
+                    ."\nNext step: Open the message and review or reply.";
+                $context['gmail_inbox_review_v1'] = $view;
+                $messages[$index]['context_json'] = json_encode($context,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
                 continue;
             }
             if (isset($context['gmail_inbox_update_v1'])) {

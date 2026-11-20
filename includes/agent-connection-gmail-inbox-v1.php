@@ -176,6 +176,7 @@ function agent_connection_gmail_inbox_saved_item_v1(array $message): array
         'message_id_enc'=>ai_encrypt_secret($id)];
     $signals = agent_connection_gmail_subject_priority_signals_v1($message['subject']);
     if ($signals) $item['priority_signals'] = $signals;
+    if (!empty($message['priority_matches'])) $item['priority_matches'] = array_slice($message['priority_matches'],0,3);
     return $item;
 }
 
@@ -350,7 +351,7 @@ function agent_connection_gmail_inbox_review_v1(PDO $pdo,array $policy,array $me
     $owner = (int)$policy['owner_user_id'];
     $insert = $pdo->prepare(agent_commerce_insert_ignore_pa2($pdo)
         .' INTO agent_connection_gmail_inbox_receipts_v1 (owner_user_id,message_key) VALUES (?,?)');
-    $review = ['at'=>$now,'total'=>0,'important'=>0,'replies'=>0,'filtered'=>0,'items'=>[]];
+    $review = ['at'=>$now,'total'=>0,'important'=>0,'replies'=>0,'filtered'=>0,'priority_count'=>0,'items'=>[]];
     $trackMatters = agent_email_matters_ready_v1($pdo);
     $triage = agent_connection_gmail_inbox_triage_enabled_v1($pdo,$policy);
     if ($triage) $review['triage_enabled'] = true;
@@ -365,6 +366,7 @@ function agent_connection_gmail_inbox_review_v1(PDO $pdo,array $policy,array $me
             $review['filtered']++;
             continue;
         }
+        $message['priority_matches'] = agent_connection_gmail_inbox_priority_matches_v1($message,$policy['rules']);
         $received = agent_email_matters_received_ms_v1($message['received_at_ms'] ?? null);
         if ($fresh && $recoverySinceMs !== null && $received >= $recoverySinceMs) {
             $review['recovered'][] = ['item'=>agent_connection_gmail_inbox_saved_item_v1($message),'received'=>$received];
@@ -394,15 +396,20 @@ function agent_connection_gmail_inbox_review_v1(PDO $pdo,array $policy,array $me
         $review['total']++;
         $review['important'] += (int)$message['important'];
         $review['replies'] += (int)$message['reply'];
-        if (!$historical) {
+        // Quiet catch-up stays quiet for routine mail. A priority match found
+        // in an *explicitly scanned, previously unseen* historical message
+        // gets its own alert without replaying old ignored receipts en masse.
+        if (!$historical || ($fresh && !empty($message['priority_matches']))) {
             $item = agent_connection_gmail_inbox_saved_item_v1($message);
             if ($classified !== null) {
                 $item['triage'] = array_intersect_key($classified,array_flip(['id','attention','reason','due_date','due_at','alert']));
+                if ($historical && !empty($message['priority_matches'])) $item['triage']['alert'] = true;
                 if ($analyze && agent_connection_gmail_inbox_routine_item_v1($item)
                     && ($preview = agent_connection_gmail_inbox_preview_v1($message['preview'] ?? null)) !== null) {
                     $item['preview_enc'] = ai_encrypt_secret($preview);
                 }
             }
+            if (!empty($message['priority_matches'])) $review['priority_count']++;
             $review['items'][] = $item;
         }
         if ($trackMatters && $thread !== '' && (!$triage || $matter !== null
@@ -500,7 +507,7 @@ function agent_connection_gmail_inbox_finish_v1(PDO $pdo, array $policy, string 
             }
             $notice = agent_connection_gmail_inbox_notify_v1($pdo,$owner,$review,$live);
             agent_connection_gmail_inbox_batch_save_v1($pdo,$live,$reviewJson,$notice,retainArrivals:true);
-            if ($digest !== null || (!agent_email_running_report_enabled_v1($live)
+            if ($digest !== null || $review['priority_count']>0 || (!agent_email_running_report_enabled_v1($live)
                 && agent_connection_gmail_inbox_report_needs_alert_v1($review))) {
                 require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
                 $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
@@ -508,6 +515,22 @@ function agent_connection_gmail_inbox_finish_v1(PDO $pdo, array $policy, string 
                     $target = agent_connection_gmail_inbox_update_destination_v1($pdo,$scope);
                     if ($target) agent_connection_gmail_inbox_update_post_v1($pdo,$scope,$target['agent_id'],$target['conversation_id']);
                 }
+            }
+        }
+        if ($historical && $review['priority_count']>0) {
+            $priorityItems = $review['items'];
+            $priorityReview = ['at'=>$now,'total'=>count($priorityItems),'important'=>count(array_filter($priorityItems,
+                static fn(array $item):bool=>!empty($item['important']))),
+                'replies'=>count(array_filter($priorityItems,static fn(array $item):bool=>$item['category']==='reply')),
+                'triage_enabled'=>true,'priority_count'=>count($priorityItems),'items'=>$priorityItems];
+            $rawPriority = json_encode($priorityReview,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+            $notice = agent_connection_gmail_inbox_notify_v1($pdo,$owner,$priorityReview,$live);
+            agent_connection_gmail_inbox_batch_save_v1($pdo,$live,$rawPriority,$notice);
+            require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
+            $scope = agent_connection_gmail_inbox_initial_scope_v1($pdo,$user);
+            if ($scope['state'] === 'ready') {
+                $target = agent_connection_gmail_inbox_update_destination_v1($pdo,$scope);
+                if ($target) agent_connection_gmail_inbox_update_post_v1($pdo,$scope,$target['agent_id'],$target['conversation_id']);
             }
         }
         if ($historical && $reviewJson !== null) {

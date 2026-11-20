@@ -626,6 +626,9 @@
             labels.append(node('span',categories.important,'connections-badge'));
           }
           row.append(node('span',item.from.slice(0,500),'connections-muted'),labels);
+          if (Array.isArray(item.priority_matches) && item.priority_matches.length) {
+            row.append(node('small','High priority · ' + item.priority_matches.join(' · '),'gmail-review-item-priority'));
+          }
           if (Array.isArray(item.priority_signals) && item.priority_signals.length) {
             row.append(node('small','Priority keywords in subject · ' + item.priority_signals.join(', '),'gmail-review-item-priority'));
           }
@@ -853,7 +856,8 @@
         }
         const panel = node('div','','vp3-chat-gmail-review');
         panel.dataset.gmailInboxUpdate = marker.run_id;
-        const headline = `${value.total} new Gmail ${value.total === 1 ? 'message' : 'messages'}`;
+        const headline = marker.priority_item === true ? 'High-priority Gmail message'
+          : `${value.total} new Gmail ${value.total === 1 ? 'message' : 'messages'}`;
         panel.append(node('strong',headline));
         const time = resultTime(row.dataset.chatCreatedAt,value.at);
         if (time) panel.append(time);
@@ -873,7 +877,10 @@
         } else {
           const priority = priorityKeywordSummary(value.items);
           if (priority) panel.append(node('small',priority));
-          appendItems(panel,'Messages in inbox update',value.items,new Set(),marker);
+          if (marker.priority_item === true) {
+            const page = itemList(value.items,new Set(),marker);
+            if (page) panel.append(page.list);
+          } else appendItems(panel,'Messages in inbox update',value.items,new Set(),marker);
         }
         parent.append(panel);
         panel._vp3GmailProjection = marker;

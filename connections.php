@@ -513,7 +513,7 @@ header('Cache-Control: private, no-store');
                                         <?php if ($inboxPriorityCount > 0): ?>
                                           <div><dt>Subjects with priority keywords</dt><dd><?= $inboxPriorityCount ?></dd></div>
                                         <?php endif; ?>
-                                        <div><dt>Ignored</dt><dd><?= (int)($inboxReview['filtered'] ?? 0) ?></dd></div>
+                                        <div><dt>GitHub workflow emails ignored</dt><dd><?= (int)($inboxReview['filtered'] ?? 0) ?></dd></div>
                                       </dl>
                                       <?php if (!empty($inboxReview['items'])): ?>
                                         <ul class="connections-inbox-messages" role="list">
@@ -528,6 +528,9 @@ header('Cache-Control: private, no-store');
                                                   <span class="connections-badge"><?= e($inboxCategories['important']) ?></span>
                                                 <?php endif; ?>
                                               </div>
+                                              <?php if (!empty($item['priority_matches'])): ?>
+                                                <small class="gmail-review-item-priority">High priority · <?= e(implode(', ', $item['priority_matches'])) ?></small>
+                                              <?php endif; ?>
                                               <?php if (!empty($item['priority_signals'])): ?>
                                                 <small class="gmail-review-item-priority">Priority keywords in subject · <?= e(implode(', ', $item['priority_signals'])) ?></small>
                                               <?php endif; ?>
@@ -558,16 +561,16 @@ header('Cache-Control: private, no-store');
                                     <label class="connections-permission">
                                       <input type="checkbox" name="catch_up_recent" value="1"<?= is_array($inboxSync)
                                         && ($inboxSync['status'] === 'pending' || ($inboxSync['status'] === 'truncated' && $inboxSync['mode'] === 'recovery')) ? ' disabled' : '' ?>>
-                                      <span><strong>Catch up quietly on recent mail</strong><small>With classification enabled, review up to 200 inbox messages from the past seven days. Results appear in the summary without individual alerts.</small></span>
+                                      <span><strong>Catch up quietly on recent mail</strong><small>With classification enabled, review up to 200 inbox messages from the past seven days. Routine mail stays in summaries; newly discovered priority-list matches are announced in private Chat.</small></span>
                                     </label>
-                                    <fieldset class="connections-permissions" aria-describedby="gmail-inbox-ignore-note">
-                                      <legend>Ignore list</legend>
-                                      <p class="connections-muted" id="gmail-inbox-ignore-note">These rules apply to Inbox review. Enter up to 20 entries in each field, one per line. Sender addresses and domains match exactly. A subject matches if it contains a listed phrase, regardless of case.</p>
+                                    <fieldset class="connections-permissions" aria-describedby="gmail-inbox-priority-note">
+                                      <legend>High-priority email list</legend>
+                                      <p class="connections-muted" id="gmail-inbox-priority-note">Matching new emails are always reviewed and announced individually by your Agent in private Chat, even when normal triage calls them routine. Enter up to 20 entries in each field, one per line. Sender addresses and domains match exactly; subject phrases match regardless of case. This does not automatically send replies.</p>
                                       <div class="connections-inbox-fields">
                                         <?php foreach ($inboxRuleFields as $kind => [$label, $placeholder]): ?>
                                           <label>
                                             <span><?= e($label) ?></span>
-                                            <textarea name="ignore_<?= e($kind) ?>" rows="3" placeholder="<?= e($placeholder) ?>"><?= e(implode("\n", $inboxRules[$kind] ?? [])) ?></textarea>
+                                            <textarea name="priority_<?= e($kind) ?>" rows="3" placeholder="<?= e($placeholder) ?>"><?= e(implode("\n", $inboxRules[$kind] ?? [])) ?></textarea>
                                           </label>
                                         <?php endforeach; ?>
                                       </div>

@@ -958,6 +958,8 @@ try {
   };
   pendingUpdate = batchPost(100,'First saved batch · Past due','7'.repeat(64));
   pendingUpdate.review.items[0].priority_signals = ['past due'];
+  pendingUpdate.priority_item = true;
+  pendingUpdate.review.items[0].priority_matches = ['Sender address: same@example.test'];
   const beforeUpdates = {deliver:count('deliver_updates'),advance:count('advance')};
   await page.goto(origin+'/chat.php');
   const firstList = completion.getByText('Messages in first review (10)',{exact:true});
@@ -969,11 +971,12 @@ try {
   await completion.getByText(privateBody,{exact:true}).waitFor();
   assert.equal(requests.filter(row => row.action === 'open_item').at(-1).item_ref,fullItems[9].item_ref);
   const cards = page.locator('[data-gmail-inbox-update]');
-  await cards.first().getByText('Messages in inbox update (1)',{exact:true}).click();
+  await cards.first().getByText('High-priority Gmail message',{exact:true}).waitFor();
   await cards.first().locator('time[datetime="2026-11-10T15:20:00.000Z"]').getByText(/^Posted /).waitFor();
   await cards.first().getByText('First saved batch · Past due',{exact:true}).waitFor();
   assert.equal(await cards.first().getByText('1 message with priority keywords in the subject.',{exact:true}).isVisible(),true);
   assert.equal(await cards.first().getByText('Priority keywords in subject · past due',{exact:true}).isVisible(),true);
+  assert.equal(await cards.first().getByText('High priority · Sender address: same@example.test',{exact:true}).isVisible(),true);
   batchPosts.push(batchPost(101,'Second saved batch','8'.repeat(64)));
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await cards.nth(1).getByText('Messages in inbox update (1)',{exact:true}).click();
@@ -981,7 +984,7 @@ try {
   assert.equal(await cards.first().getByText('First saved batch · Past due',{exact:true}).count(),1);
   await page.reload();
   await cards.nth(1).waitFor();
-  await cards.first().getByText('Messages in inbox update (1)',{exact:true}).click();
+  await cards.first().getByText('High-priority Gmail message',{exact:true}).waitFor();
   await cards.first().getByRole('button',{name:'Open',exact:true}).click();
   await cards.first().getByText(privateBody,{exact:true}).waitFor();
   assert.equal(requests.filter(row => row.action === 'open_item').at(-1).item_ref,'7'.repeat(64));
