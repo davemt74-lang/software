@@ -76,6 +76,13 @@ jobs:
           node --check chat-media-commands-v1.js
           node --check chat.js
           node tests/marketing-workspace-contract-v1.mjs
+      - name: Private Marketing Campaign Editor signed preview and draft authority
+        run: |
+          php -l includes/initiative-marketing-editor-v1.php
+          php -l tests/marketing-campaign-editor-v1.php
+          php tests/marketing-campaign-editor-v1.php
+          node --check chat-marketing-editor-v1.js
+          node tests/marketing-campaign-editor-contract-v1.mjs
       - name: Public Profile Canvas attachments on native MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
