@@ -91,6 +91,7 @@
     active.editor?.dispose();active.editor=null;
     active.canvasLink?.dispose();active.canvasLink=null;
     active.productPicker?.dispose();active.productPicker=null;
+    active.activation?.dispose();active.activation=null;
     for(const request of active.requests.values())request.abort();
     active.requests.clear();
     active=null;
@@ -220,6 +221,7 @@
   }
   function openDraftEditor(session,campaignId=0) {
     if(!current(session)||!window.VP3MarketingEditorV1?.mount)return;
+    session.activation?.dispose();session.activation=null;session.activationActive=false;
     const target=panes.get('campaigns');
     session.editor?.dispose();session.editor=null;session.editorActive=true;
     selectTab('campaigns');
@@ -241,7 +243,34 @@
     },campaignId);
     if(!session.editor){session.editorActive=false;renderCampaigns(session);}
   }
+  function openActivationReview(session,campaignId=0) {
+    if(!current(session)||!window.VP3MarketingActivationV1?.mount
+      ||!session.campaigns.some(c=>c.id===campaignId&&['draft','scheduled','paused'].includes(c.status)))return;
+    session.editor?.dispose();session.editor=null;session.editorActive=false;
+    session.activation?.dispose();session.activation=null;session.activationActive=true;
+    selectTab('campaigns');
+    const target=panes.get('campaigns');
+    target.replaceChildren();
+    session.activation=window.VP3MarketingActivationV1.mount(target,{
+      current:()=>current(session),
+      request:(action,fields)=>request(session,'activation',action,fields),
+      onClose:()=>{
+        if(!current(session))return;
+        session.activation?.dispose();session.activation=null;session.activationActive=false;
+        renderCampaigns(session);
+      },
+      onActivated:()=>{
+        if(!current(session))return;
+        session.activation?.dispose();session.activation=null;session.activationActive=false;
+        renderCampaigns(session);
+        display('Campaign activation confirmed. Review its live readiness, audience and public landing in Campaigns & Rewards.');
+        void loadOverview(session);
+      }
+    },campaignId);
+    if(!session.activation){session.activationActive=false;renderCampaigns(session);}
+  }
   function renderCampaigns(session) {
+    if(session.activationActive&&session.activation?.host?.isConnected)return;
     if(session.editorActive)return;
     const target=panes.get('campaigns');target.replaceChildren();
     target.append(n('h3','Campaigns & offers'),n('p','Owner-authorized Campaigns & Rewards records. Creating and publishing stay in their existing approved workflows.'));
@@ -258,6 +287,8 @@
         const list=n('ul');for(const issue of campaign.issues)list.append(n('li',issue));item.append(list);
       }
       rowActions(item,...(campaign.status==='draft'?[button('Edit private draft',()=>openDraftEditor(session,campaign.id))]:[]),
+        ...(['draft','scheduled','paused'].includes(campaign.status)
+            ?[button('Review activation',()=>openActivationReview(session,campaign.id))]:[]),
         ...(['draft','scheduled','active','paused'].includes(campaign.status)
             ?[button('Link tested Canvas',()=>openCanvasLink(session,campaign.id))]:[]),
         link('Manage campaign',campaign.href,'campaigns'));
@@ -515,7 +546,8 @@
     const session={id:++sequence,cid:bound.conversationId,tab:'overview',requests:new Map(),
       campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false,
       canvasLink:null,canvasLinkActive:false,canvasCampaignId:0,
-      productPicker:null,productPickerActive:false};
+      productPicker:null,productPickerActive:false,
+      activation:null,activationActive:false};
     active=session;
     live.showMarketingCanvasView();
     if(!current(session)){clearSession();return false;}

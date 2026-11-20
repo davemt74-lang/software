@@ -42,11 +42,14 @@ try {
         'marketing_plans','marketing_plan','marketing_overview','marketing_canvas_choices','marketing_product_media'],true);
     $marketingEditorAction = $tool === 'marketing' && in_array($action,[
         'marketing_editor_options','marketing_editor_open','marketing_editor_preview','marketing_editor_save'],true);
+    $marketingActivationAction = $tool === 'marketing' && in_array($action,[
+        'marketing_activation_open','marketing_activation_preview','marketing_activation_confirm'],true);
     if (!$creativeAction && !$marketingEditorAction && strlen($raw) > 4096) throw new DomainException('Initiative request is too large.',413);
     if ($creativeAction && strlen($raw) > 8192) throw new DomainException('Creative request is too large.',413);
     if (!is_int($agentId) || $agentId < 0 || !is_int($conversationId) || $conversationId < 1
         || !in_array($tool, ['product', 'screen', 'mission', 'marketing'], true)
-        || (!$creativeAction && !$marketingPlanAction && !$marketingEditorAction && !in_array($action, ['sources', 'preview', 'create'], true))) {
+        || (!$creativeAction && !$marketingPlanAction && !$marketingEditorAction
+            && !$marketingActivationAction && !in_array($action, ['sources', 'preview', 'create'], true))) {
         throw new DomainException('Choose a tool in the current saved Agent Chat.', 422);
     }
     $pdo = db();
@@ -64,7 +67,9 @@ try {
     $principal = vp3_agent_chat_principal_v380($user, $agent);
     $user = vp3_image_scope_v1($pdo, $user, $principal, ['conversation_id' => $conversationId]);
     $scope = ['agent_id' => $agentId, 'conversation_id' => $conversationId, 'user' => $user, 'principal' => $principal];
-    $key = ($marketingPlanAction||($marketingEditorAction && in_array($action,['marketing_editor_options','marketing_editor_open'],true)))
+    $key = ($marketingPlanAction
+        || ($marketingEditorAction && in_array($action,['marketing_editor_options','marketing_editor_open'],true))
+        || ($marketingActivationAction && $action==='marketing_activation_open'))
         ? '' : ($_SESSION['initiative_workbench_review_key_v1'] ??= bin2hex(random_bytes(32)));
     session_write_close();
 
@@ -72,7 +77,10 @@ try {
     $response = ['ok' => true, 'owner_key' => (string)$owner, 'tool' => $tool,
         'agent_id' => $agentId, 'conversation_id' => $conversationId];
     $handler = 'initiative_work_' . $tool;
-    if ($marketingEditorAction) {
+    if ($marketingActivationAction) {
+        require_once dirname(__DIR__).'/includes/initiative-marketing-activation-v1.php';
+        $response += vp3_marketing_activation_action_v1($pdo,$owner,$scope,$body,$key);
+    } elseif ($marketingEditorAction) {
         require_once dirname(__DIR__).'/includes/initiative-marketing-editor-v1.php';
         $response += vp3_marketing_editor_action_v1($pdo,$owner,$scope,$body,$key);
     } elseif ($marketingPlanAction) {
