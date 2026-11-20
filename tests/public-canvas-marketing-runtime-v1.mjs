@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const runtime=fs.readFileSync(new URL('../coding-canvas-runtime-v1.js',import.meta.url),'utf8');
 const ui=fs.readFileSync(new URL('../chat-coding-canvas-v1.js',import.meta.url),'utf8');
 const commands=fs.readFileSync(new URL('../includes/coding-canvas-public-view-v1.php',import.meta.url),'utf8');
-const context={window:{},location:{origin:'https://vp3.example'}};
+const context={window:{},URL,location:{origin:'https://vp3.example'}};
 vm.runInNewContext(runtime,context,{filename:'coding-canvas-runtime-v1.js'});
 const host=context.window.VP3CanvasRuntimeV1;
 assert.ok(host);
