@@ -12,6 +12,9 @@ function vp3_coding_canvas_command_library_v1(): array
         'public-products'=>['command'=>'/public-products','label'=>'Public products','description'=>'Show your published catalog and open the existing product page.','visibility'=>'public'],
         'public-events'=>['command'=>'/public-events','label'=>'Public events','description'=>'Show your published events.','visibility'=>'public'],
         'public-booking'=>['command'=>'/public-booking','label'=>'Public booking','description'=>'Show public appointment types and open their booking pages.','visibility'=>'public'],
+        'public-campaigns'=>['command'=>'/public-campaigns','label'=>'Public campaigns','description'=>'Read active Profile-approved campaigns and open public landing pages.','visibility'=>'public'],
+        'public-rewards'=>['command'=>'/public-rewards','label'=>'Public rewards','description'=>'Show active reward offers published in Profile campaigns, never customer wallets.','visibility'=>'public'],
+        'public-media'=>['command'=>'/public-media','label'=>'Approved public media','description'=>'Browse owner-approved free Profile image catalogs without private media access.','visibility'=>'public'],
     ];
 }
 

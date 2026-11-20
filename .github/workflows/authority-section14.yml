@@ -55,6 +55,18 @@ jobs:
           node tests/profile-canvases-api-v1.mjs
           node tests/profile-canvases-owner-v1.mjs
           node tests/profile-canvases-browser-v1.mjs --render-only
+      - name: Public Canvas governed Campaign Reward and Media sources
+        run: |
+          php -l includes/coding-canvas-commands-v1.php
+          php -l includes/coding-canvas-public-sources-v1.php
+          php -l includes/coding-canvas-public-marketing-v1.php
+          php -l includes/coding-canvas-public-view-v1.php
+          php -l includes/coding-canvas-publishing-v1.php
+          php -l includes/coding-canvas-provider-v1.php
+          node --check coding-canvas-runtime-v1.js
+          node --check chat-coding-canvas-v1.js
+          php tests/public-canvas-marketing-v1.php
+          node tests/public-canvas-marketing-runtime-v1.mjs
       - name: Public Profile Canvas attachments on native MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4

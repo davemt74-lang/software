@@ -102,7 +102,7 @@ function vp3_coding_canvas_public_private_origin_v1(PDO $pdo, array $canvas, int
 
 function vp3_coding_canvas_public_commands_v1(array $commands): bool
 {
-    return !array_diff($commands, ['public-products','public-events','public-booking']);
+    return !array_diff($commands, ['public-products','public-events','public-booking','public-campaigns','public-rewards','public-media']);
 }
 
 /** Validate the exact activated source. This does not read or take a snapshot of app data or grants. */
