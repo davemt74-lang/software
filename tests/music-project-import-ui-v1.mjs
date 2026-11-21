@@ -22,7 +22,7 @@ for(const stale of ['directRppFile','directStemFiles','directStemUploadButton','
 assert.match(page,/'successUrl'=>\$studio/,'successful import targets the Stem Editor');
 assert.match(page,/Open in Stem Editor/,'post-import action opens the song in Stem Editor');
 assert.match(page,/musicLibrary'=>true/);
-assert.match(page,/member_agent_voice_enabled\(\$user\)/);
+assert.match(page,/function_exists\('member_agent_voice_enabled'\)/,'voice helper absence does not break REAPER imports');
 assert.match(page,/REAPER project \+ MP3 stems package/);
 assert.match(zip,/chosen\.format!=='MP3'/,'Music Library package must contain MP3 stems');
 assert.match(overlayJs,/STONEFELLOW_NOTIFICATION_CENTER/);
