@@ -17,7 +17,7 @@ for(const id of ['stemZipInput','directRppFile','directStemFiles','musicImportOv
 assert.match(page,/music-import-progress-v1.js/);
 assert.match(page,/direct-stem-upload-v79.js/);
 assert.match(page,/musicLibrary'=>true/);
-assert.match(page,/member_agent_voice_enabled\(\$user\)/);
+assert.match(page,/function_exists\('member_agent_voice_enabled'\)/,'voice helper absence does not break REAPER imports');
 assert.match(page,/\.rpp,\.RPP/);
 assert.match(overlayJs,/STONEFELLOW_NOTIFICATION_CENTER/);
 assert.match(overlayJs,/announceWhen\(message/);
