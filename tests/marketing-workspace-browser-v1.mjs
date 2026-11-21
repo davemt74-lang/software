@@ -17,7 +17,7 @@ const plans=[
  {product_id:11,agent_id:7,conversation_id:33,stage:'published',stage_label:'Active',
   product_title:'Previous promotion',chat_url:'/chat.php?agent=7&conversation_id=33&marketing_plan=11'}
 ];
-const campaigns=[{id:4,name:'Autumn special',business:'Shop',status:'active',readiness:'needs_setup',
+const campaigns=[{id:4,name:'Autumn special',business:'Shop',version:3,status:'active',readiness:'needs_setup',
  issues:['Choose an active reward'],window_state:'open',observations:{claims:'observed',redemptions:'unavailable',promotion:'observed'},
  performance:{sources:{
    claims:{state:'unobserved',metrics:{},window:{}},
@@ -104,7 +104,7 @@ async function scenario(width){
   check(await page.getByRole('button',{name:'Prepare private creative'}).count()===1,
     'an accepted review exposes an explicit private creative handoff');
   await page.getByRole('button',{name:'Prepare private creative'}).click();
-  await page.getByRole('tab',{name:'Creative & Rewards'}).locator('[aria-selected="true"]').waitFor();
+  await page.waitForFunction(()=>document.getElementById('vp3MarketingTab3')?.getAttribute('aria-selected')==='true');
   check(await page.getByText(/No Campaign edit or public creative change is implied/).count()===1,
     'private preparation does not claim a published change or automatic Campaign binding');
   check(await page.getByRole('link',{name:'Review Campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4',
