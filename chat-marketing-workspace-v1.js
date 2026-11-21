@@ -81,7 +81,20 @@
       priorEntries:raw.prior_entries,laterEntries:raw.later_entries,
       lastWindow:plainDate(raw.window_end),nextStep:raw.next_step};
   }
-  function normalizeFollowthrough(raw) {
+  function normalizeExperiment(raw,record,learning,campaignId,version) {
+    if(!raw||raw.contract!=='vp3.marketing-experiment-proposal.v1'||raw.state!=='proposal_only'
+      ||raw.activation!=='not_supported'||raw.causality!=='not_established'
+      ||raw.campaign_id!==campaignId||raw.campaign_version!==version
+      ||raw.recommendation_id!==record.recommendation_id
+      ||raw.observed_direction!==learning?.direction
+      ||plainDate(raw.source_window_end)!==learning?.lastWindow
+      ||typeof raw.source_revision!=='string'||!/^[a-f0-9]{64}$/.test(raw.source_revision)
+      ||raw.primary_metric!=='attributed_conversions_per_admitted_entry')return null;
+    const keys=['hypothesis','control','treatment','design','measurement','owner_next_step'];
+    if(keys.some(key=>typeof raw[key]!=='string'||raw[key].length<1||raw[key].length>400))return null;
+    return Object.fromEntries(keys.map(key=>[key,raw[key]]));
+  }
+  function normalizeFollowthrough(raw,campaignId,version) {
     if(!Array.isArray(raw))return [];
     return raw.slice(0,3).flatMap(item=>{
       if(!item||!Number.isSafeInteger(item.recommendation_id)||item.recommendation_id<1
@@ -97,9 +110,10 @@
         &&Math.abs(candidate.priorRate-Math.round(10000*before.metrics.converted/before.metrics.treatment_entries))<=1
         &&Math.abs(candidate.laterRate-Math.round(10000*after.metrics.converted/after.metrics.treatment_entries))<=1
           ?candidate:null;
+      const experiment=learning?normalizeExperiment(item.experiment,item,learning,campaignId,version):null;
       return [{recommendationId:item.recommendation_id,type:item.type,state:item.state,
         reviewedAt:plainDate(item.reviewed_at),changedAt:plainDate(item.change_at),
-        before,after,learning}];
+        before,after,learning,experiment}];
     });
   }
 
@@ -787,6 +801,18 @@
                 n('p','Suggested next review: '+learning.nextStep));
               row.append(findings);
             }
+            if(record.experiment){
+              const exp=record.experiment;
+              const experiment=n('section','','vp3-marketing-experiment-proposal');
+              experiment.append(n('h5','Controlled experiment · proposal only'),
+                n('p','Not approved or running. No random assignment, activation, exposure or causal effect has been verified.'));
+              for(const [key,label] of [['hypothesis','Hypothesis'],['control','Control'],['treatment','Treatment'],
+                ['design','Proposed design'],['measurement','Measurement'],['owner_next_step','Owner review']]){
+                const detail=n('p');detail.append(n('strong',label+': '),document.createTextNode(exp[key]));
+                experiment.append(detail);
+              }
+              row.append(experiment);
+            }
           }
           evidence.append(row);
         }
@@ -859,7 +885,7 @@
         window_state:typeof item.window_state==='string'?item.window_state:'unavailable',
         observations:item.observations&&typeof item.observations==='object'?item.observations:{},
         performance:normalizePerformance(item.performance),
-        followthrough:normalizeFollowthrough(item.followthrough),
+        followthrough:normalizeFollowthrough(item.followthrough,item.id,item.version),
         linkedCreative:normalizeLinkedCreative(item.linked_creative)});
     }
     session.links=data.links&&typeof data.links==='object'?data.links:{};

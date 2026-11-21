@@ -78,6 +78,9 @@ jobs:
           php tests/marketing-campaign-approved-followthrough-v1.php
           php -l includes/agent-marketing-outcome-learning-v1.php
           php tests/marketing-outcome-learning-v1.php
+          php -l includes/agent-marketing-experiment-proposal-v1.php
+          php tests/marketing-experiment-proposal-v1.php
+          node tests/marketing-experiment-proposal-contract-v1.mjs
           php -l includes/initiative-marketing-recommendation-links-v1.php
           php tests/marketing-recommendation-links-v1.php
           node tests/marketing-recommendation-links-contract-v1.mjs

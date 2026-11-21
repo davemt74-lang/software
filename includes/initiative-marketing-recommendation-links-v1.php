@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-marketing-outcome-learning-v1.php';
+require_once __DIR__.'/agent-marketing-experiment-proposal-v1.php';
 
 /**
  * Phase 2B.6D: owner-approved private recommendation-to-product creative linkage.
@@ -310,10 +311,16 @@ function vp3_marketing_recommendation_sources_v1(PDO $pdo,array $scope,?array $r
                     is_array($checked['accepted']['before']??null)?$checked['accepted']['before']:null,
                     is_array($checked['accepted']['after']??null)?$checked['accepted']['after']:null);
                 $brief=vp3_marketing_outcome_learning_brief_v1($learning);
+                $experiment=vp3_marketing_experiment_proposal_v1($campaign,
+                    (int)$checked['campaign']['current_version_no'],$checked['accepted']);
                 $trigger='creative_results';
                 $summary=$brief['summary']??'A separately audited post-Campaign observation window is available for review. It does not prove the linked creative caused the change.';
                 $next=$brief['next_step']??'Compare current results and review which approved creative was actually used.';
-                $question='';
+                if($experiment!==null){
+                    $next='Review the source-bound, owner-only controlled experiment design in /marketing. '.
+                        'A native, audited assignment path is still required before any test can run.';
+                    $question='Would you like to review the controlled experiment proposal in Marketing Analytics?';
+                }else $question='';
             }elseif($state==='approved_for_use'){
                 $trigger='creative_approved';
                 $summary='The saved product creative was explicitly approved for private use. No Campaign application or publication has been verified.';
@@ -336,6 +343,7 @@ function vp3_marketing_recommendation_sources_v1(PDO $pdo,array $scope,?array $r
                     $trigger,$trigger==='creative_results' ? ($checked['accepted']['after']['window_end']??'none'):'',
                     $brief===null?'no_rate_learning':[$learning['contract'],$learning['direction'],
                         $learning['prior_rate_bps'],$learning['later_rate_bps']],
+                    $trigger==='creative_results' ? ($experiment['source_revision']??'no_experiment') : 'no_experiment',
                 ])+['trigger'=>$trigger];
             $out['items'][$ref]=$title;
         }catch(DomainException $error){
