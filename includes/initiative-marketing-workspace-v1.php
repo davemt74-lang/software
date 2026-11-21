@@ -46,6 +46,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
                 ?$item['window_state']:'unavailable',
             'observations'=>$observations,
             'performance'=>vp3_marketing_workspace_performance_v1((array)($item['outcomes']??[])),
+            'followthrough'=>vp3_marketing_workspace_followthrough_v1((array)($item['outcomes']['followthrough']??[])),
         ];
     }
     // Revalidate current owner/plugin authority after the read, including empty or revoked businesses.
@@ -112,4 +113,51 @@ function vp3_marketing_workspace_performance_v1(array $outcomes): array
         if(count($decisions)>=5)break;
     }
     return ['sources'=>$result,'decisions'=>$decisions];
+}
+
+
+/** Emit only aggregate counts and trusted lifecycle states from canonical Campaigns. */
+function vp3_marketing_workspace_followthrough_window_v1(mixed $value): ?array
+{
+    if(!is_array($value)||!is_int($value['window_days']??null)
+        ||$value['window_days']<7||$value['window_days']>365)return null;
+    foreach(['window_start','window_end'] as $key){
+        if(!is_string($value[$key]??null)||strlen($value[$key])>35
+            ||preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+00:00\z/D',$value[$key])!==1)return null;
+    }
+    $metrics=[];
+    foreach(['treatment_entries','converted','reward_claimed'] as $key){
+        $amount=$value['metrics'][$key]??null;
+        if(!is_int($amount)||$amount<0||$amount>9007199254740991)return null;
+        $metrics[$key]=$amount;
+    }
+    return ['window_start'=>$value['window_start'],'window_end'=>$value['window_end'],
+        'window_days'=>$value['window_days'],'metrics'=>$metrics];
+}
+
+function vp3_marketing_workspace_followthrough_v1(array $rows): array
+{
+    $types=['offer-eligibility','fatigue','low-observed-conversion','conflict-volume'];
+    $states=['awaiting_change','awaiting_window','observed','insufficient_sample','unavailable'];
+    $result=[];
+    foreach(array_slice($rows,0,3) as $row){
+        if(!is_array($row)||($row['scope']??null)!=='observational_not_causal'
+            ||!is_int($row['recommendation_id']??null)||$row['recommendation_id']<1
+            ||!in_array($row['type']??null,$types,true)||!in_array($row['state']??null,$states,true)
+            ||!is_string($row['reviewed_at']??null))continue;
+        $reviewed=$row['reviewed_at'];
+        if(!preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+00:00\z/D',$reviewed))continue;
+        $changed=$row['change_at']??null;
+        if($changed!==null&&(!is_string($changed)
+            ||preg_match('/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\+00:00\z/D',$changed)!==1))continue;
+        $before=vp3_marketing_workspace_followthrough_window_v1($row['before']??null);
+        $after=vp3_marketing_workspace_followthrough_window_v1($row['after']??null);
+        if($before===null||($row['state']==='observed'&&$after===null)
+            ||($changed===null&&$row['state']!=='awaiting_change')
+            ||($changed!==null&&$row['state']==='awaiting_change'))continue;
+        $result[]=['recommendation_id'=>$row['recommendation_id'],'type'=>$row['type'],
+            'state'=>$row['state'],'reviewed_at'=>$reviewed,'change_at'=>$changed,
+            'before'=>$before,'after'=>$after,'scope'=>'observational_not_causal'];
+    }
+    return $result;
 }
