@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-marketing-outcome-learning-v1.php';
+
 /**
  * Phase 2A: one owner-private, read-only projection for the Marketing Chat Canvas.
  * Campaign status and permission always come from canonical Campaigns & Rewards.
@@ -158,7 +160,8 @@ function vp3_marketing_workspace_followthrough_v1(array $rows): array
             ||($changed!==null&&$row['state']==='awaiting_change'))continue;
         $result[]=['recommendation_id'=>$row['recommendation_id'],'type'=>$row['type'],
             'state'=>$row['state'],'reviewed_at'=>$reviewed,'change_at'=>$changed,
-            'before'=>$before,'after'=>$after,'scope'=>'observational_not_causal'];
+            'before'=>$before,'after'=>$after,'scope'=>'observational_not_causal',
+            'learning'=>vp3_marketing_outcome_learning_v1($row['state'],$before,$after)];
     }
     return $result;
 }
