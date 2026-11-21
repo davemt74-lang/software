@@ -53,6 +53,34 @@
       &&['proposed','accepted','dismissed'].includes(item.status)).slice(0,5):[];
     return {sources,decisions};
   }
+
+  const followthroughStates=new Set(['awaiting_change','awaiting_window','insufficient_sample','observed','unavailable']);
+  function normalizedWindow(value) {
+    if(!value||!Number.isSafeInteger(value.window_days)||value.window_days<7||value.window_days>365
+      ||!plainDate(value.window_start)||!plainDate(value.window_end))return null;
+    const metrics={};
+    for(const key of ['treatment_entries','converted','reward_claimed']) {
+      const number=value.metrics?.[key];
+      if(!Number.isSafeInteger(number)||number<0)return null;
+      metrics[key]=number;
+    }
+    return {start:plainDate(value.window_start),end:plainDate(value.window_end),days:value.window_days,metrics};
+  }
+  function normalizeFollowthrough(raw) {
+    if(!Array.isArray(raw))return [];
+    return raw.slice(0,3).flatMap(item=>{
+      if(!item||!Number.isSafeInteger(item.recommendation_id)||item.recommendation_id<1
+        ||!Object.hasOwn(decisionTypes,item.type)||!followthroughStates.has(item.state)
+        ||item.scope!=='observational_not_causal'||!plainDate(item.reviewed_at)
+        ||item.change_at!==null&&item.change_at!==undefined&&!plainDate(item.change_at))return [];
+      const before=normalizedWindow(item.before),after=item.after===null?null:normalizedWindow(item.after);
+      if(!before||(item.state==='observed'&&!after))return [];
+      return [{recommendationId:item.recommendation_id,type:item.type,state:item.state,
+        reviewedAt:plainDate(item.reviewed_at),changedAt:plainDate(item.change_at),
+        before,after}];
+    });
+  }
+
   const context = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const n = (tag,text='',klass='') => {
     const element = document.createElement(tag);
@@ -459,6 +487,25 @@
     if(!opened)context()?.showTurnNotice?.('The Marketing draft workbench could not be opened. No new draft was saved.');
     return opened;
   }
+  /** Owner explicitly starts a private idea, never a Campaign edit or send. */
+  async function prepareApprovedCreative(session,campaign,recommendationId) {
+    if(!current(session)||!Number.isSafeInteger(recommendationId)||session.requests.has('focus'))return;
+    display('Checking current Campaign review and permissions…');
+    const data=await request(session,'focus','marketing_overview');
+    if(!data||!current(session))return;
+    const fresh=Array.isArray(data.campaigns)?data.campaigns.find(row=>row.id===campaign.id):null;
+    const accepted=normalizePerformance(fresh?.performance).decisions.some(row=>
+      row.id===recommendationId&&row.status==='accepted');
+    if(!fresh||!accepted||fresh.version!==campaign.version||fresh.status!==campaign.status
+      ||!localLink(fresh.href,'campaigns')){
+      display('This Campaign review changed. Refresh Marketing and review the current Campaign before preparing creative.');
+      return;
+    }
+    session.campaignFocus={id:fresh.id,version:fresh.version,name:fresh.name,
+      href:fresh.href,recommendationId};
+    selectTab('creative');renderCreative(session);
+    display('Campaign review verified. Choose a product and photo to prepare a private draft; Campaign changes require separate approval.');
+  }
   function renderCreative(session) {
     const target=panes.get('creative');
     if(session.productPickerActive&&session.productPicker?.host?.isConnected)return;
@@ -469,6 +516,15 @@
     session.productPicker?.dispose();session.productPicker=null;
     target.replaceChildren();
     target.append(n('h3','Creative Studio & Rewards'),n('p','Use the existing editors, protected media library and campaign tools. No outbound promotion or reward is issued from this workspace automatically.'));
+    if(session.campaignFocus){
+      const focus=session.campaignFocus;
+      const focusCard=card('Approved review · '+focus.name,
+        'A recommendation was accepted for review. No Campaign edit or public creative change is implied. '+
+        'Choose a product and photo to prepare a separate private Marketing draft; apply any eventual changes through the full Campaign Manager.');
+      rowActions(focusCard,button('Choose product & photo',()=>openProductPicker(session)),
+        link('Review Campaign',focus.href,'campaigns'));
+      target.append(focusCard);
+    }
     const grid=n('div','','vp3-marketing-workspace-grid');
     const artwork=card('Marketing creative','Build promotional images and copy from saved product media.');
     rowActions(artwork,
@@ -561,7 +617,42 @@
       } else if(!verified) {
         block.append(n('p','Next step: verify publication, tracking, and the Campaigns analytics before making performance claims.','vp3-marketing-workspace-muted'));
       }
-      rowActions(block,link('Open detailed Campaign analytics',item.href,'campaigns'));
+      const followthrough=item.followthrough||[];
+      const accepted=item.performance?.decisions?.filter(d=>d.status==='accepted')||[];
+      if(accepted.length){
+        const evidence=n('section','','vp3-marketing-followthrough');
+        evidence.append(n('h4','After the owner review'),
+          n('p','Accepting a recommendation approves its review, not a campaign edit. Later snapshots are observational and cannot prove the effect of a creative change.'));
+        for(const record of followthrough){
+          const row=n('article','','vp3-marketing-followthrough-record');
+          row.append(n('strong',decisionTypes[record.type]));
+          if(record.state==='awaiting_change'){
+            row.append(n('p','Review accepted on '+record.reviewedAt+'. No owner-recorded Campaign edit is verified yet.'));
+          }else if(record.state==='awaiting_window'){
+            row.append(n('p','A Campaign edit was recorded on '+record.changedAt+
+              '. Awaiting a separately audited, nonoverlapping observation window.'));
+          }else if(record.state==='unavailable'){
+            row.append(n('p','Post-review evidence is incomplete or unverified. No comparison is presented.'));
+          }else if(record.state==='insufficient_sample'){
+            row.append(n('p','Post-review evidence was recorded, but fewer than 20 treated entries were available in at least one window. Comparison withheld.'));
+          }else if(record.state==='observed'&&record.after){
+            const before=record.before,after=record.after;
+            row.append(n('p','Two distinct '+before.days+'-day observation windows · before '+
+              before.start+'–'+before.end+' · after '+after.start+'–'+after.end));
+            const metrics=n('dl','','vp3-marketing-followthrough-metrics');
+            for(const [key,label] of [['treatment_entries','Admitted entries'],['converted','Attributed conversions'],['reward_claimed','Reward claims']]){
+              metrics.append(n('dt',label),n('dd',before.metrics[key].toLocaleString()+' before · '+
+                after.metrics[key].toLocaleString()+' after'));
+            }
+            row.append(metrics,n('small','Separate observed counts only; not a causal effect, revenue lift, or verified creative attribution.'));
+          }
+          evidence.append(row);
+        }
+        if(!followthrough.length)evidence.append(n('p','No independently verified post-review comparison is available.'));
+        block.append(evidence);
+      }
+      rowActions(block,link('Open detailed Campaign analytics',item.href,'campaigns'),
+        ...(accepted.length?[button('Prepare private creative',()=>void prepareApprovedCreative(session,item,accepted[0].id))]:[]));
       grid.append(block);
     }
     if(!grid.childElementCount)grid.append(card('No campaigns in this bounded review',
@@ -589,7 +680,8 @@
         readiness:typeof item.readiness==='string'?item.readiness:'unavailable',
         window_state:typeof item.window_state==='string'?item.window_state:'unavailable',
         observations:item.observations&&typeof item.observations==='object'?item.observations:{},
-        performance:normalizePerformance(item.performance)});
+        performance:normalizePerformance(item.performance),
+        followthrough:normalizeFollowthrough(item.followthrough)});
     }
     session.links=data.links&&typeof data.links==='object'?data.links:{};
     render(session);display('Marketing review loaded. Only currently authorized records are shown.');
@@ -611,7 +703,7 @@
     const session=active;if(!current(session))return;
     for(const abort of session.requests.values())abort.abort();
     session.requests.clear();session.campaigns=[];session.plans.clear();session.links={};
-    session.coverage='loading';session.nextBefore=null;render(session);
+    session.coverage='loading';session.nextBefore=null;session.campaignFocus=null;render(session);
     display('Checking current campaigns and saved product plans…');
     void loadOverview(session);void loadPlans(session);
   }
@@ -624,7 +716,7 @@
     const session={id:++sequence,cid:bound.conversationId,tab:'overview',requests:new Map(),
       campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false,
       canvasLink:null,canvasLinkActive:false,canvasCampaignId:0,
-      productPicker:null,productPickerActive:false,
+      productPicker:null,productPickerActive:false,campaignFocus:null,
       activation:null,activationActive:false};
     active=session;
     live.showMarketingCanvasView();
