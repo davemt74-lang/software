@@ -85,3 +85,10 @@
 .vp3-marketing-work-option small { display:block; font-size:.73rem; color:#5e7289; margin:.25rem 0 .65rem; }
 .vp3-marketing-work-option button { max-width:100%; white-space:normal; }
 @media (max-width:640px) { .vp3-marketing-work-option,.vp3-marketing-linked-work { padding:.65rem; } }
+
+
+/* 2B.6E: bounded observational learning nested within existing Campaign analytics. */
+.vp3-marketing-outcome-learning { margin:.65rem 0 .25rem; padding:.7rem .85rem; border-left:3px solid #8a9ebb; background:#f5f8fc; border-radius:.35rem; }
+.vp3-marketing-outcome-learning h5 { margin:0 0 .35rem; color:#254365; font-size:.85rem; }
+.vp3-marketing-outcome-learning p { margin:.25rem 0; font-size:.8rem; line-height:1.5; overflow-wrap:anywhere; }
+@media (max-width:640px) { .vp3-marketing-outcome-learning { padding:.65rem .75rem; } }

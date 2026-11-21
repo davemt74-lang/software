@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-marketing-outcome-learning-v1.php';
+
 /**
  * Verified post-review observation, not causal lift or proof that an accepted
  * recommendation was actually implemented. The Campaign Manager owns edits.
@@ -149,7 +151,8 @@ function vp3_marketing_campaign_followthrough_v1(PDO $pdo,int $owner,int $mercha
         $out[]=['recommendation_id'=>$decision['id'],'type'=>$decision['type'],
             'state'=>$state,'reviewed_at'=>$reviewedAt->format(DATE_ATOM),
             'change_at'=>$changeAt===null?null:vp3_marketing_campaign_time_v1($changeAt)?->format(DATE_ATOM),
-            'before'=>$before,'after'=>$after,'scope'=>'observational_not_causal'];
+            'before'=>$before,'after'=>$after,'scope'=>'observational_not_causal',
+            'learning'=>vp3_marketing_outcome_learning_v1($state,$before,$after)];
         if(count($out)>=3)break;
     }
     return $out;

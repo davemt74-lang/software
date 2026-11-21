@@ -45,6 +45,9 @@ ft_check($read()[0]['state']==='unavailable','an unverified post window is not a
 $event->execute([5,17,77,'campaign.optimization_snapshot_recorded','production','system',null,'2026-10-18 12:02:00',json_encode(['snapshot_id'=>11,'sample_count'=>80,'evidence_hash'=>$afterHash])]);
 $result=$read()[0];
 ft_check($result['state']==='observed'&&$result['before']['metrics']['converted']===2&&$result['after']['metrics']['converted']===5&&$result['scope']==='observational_not_causal','independent audited windows are observed without causal claims');
+ft_check($result['learning']['state']==='descriptive_only'
+    &&$result['learning']['prior_rate_bps']===444&&$result['learning']['later_rate_bps']===833,
+    'audited Campaign follow-through carries only a bounded descriptive learning result');
 ft_check($read(12)===[]&&$read(11,99)===[],'foreign owner and merchant cannot access verified recommendation');
 $permission=false;ft_check($read()===[],'revoked analytics permissions fail closed');$permission=true;
 $pdo->exec('DELETE FROM campaign_activity_events WHERE id=2');ft_check($read()===[],'owner review event is required');

@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-marketing-outcome-learning-v1.php';
+
 /**
  * Phase 2B.6D: owner-approved private recommendation-to-product creative linkage.
  * Reuses Campaigns' existing private campaign_creative_assets store. This role is
@@ -302,10 +304,15 @@ function vp3_marketing_recommendation_sources_v1(PDO $pdo,array $scope,?array $r
                 (int)$checked['campaign']['current_version_no'])continue;
             $state=$link['review_state'];$stage=$link['plan_stage'];
             $followthrough=$link['evidence_state'];
+            $learning=['state'=>'unavailable'];$brief=null;
             if($state==='approved_for_use' && $followthrough==='observed'){
+                $learning=vp3_marketing_outcome_learning_v1($followthrough,
+                    is_array($checked['accepted']['before']??null)?$checked['accepted']['before']:null,
+                    is_array($checked['accepted']['after']??null)?$checked['accepted']['after']:null);
+                $brief=vp3_marketing_outcome_learning_brief_v1($learning);
                 $trigger='creative_results';
-                $summary='A separately audited post-Campaign observation window is available for review. It does not prove the linked creative caused the change.';
-                $next='Compare the current Campaign results and review which approved creative was actually used.';
+                $summary=$brief['summary']??'A separately audited post-Campaign observation window is available for review. It does not prove the linked creative caused the change.';
+                $next=$brief['next_step']??'Compare current results and review which approved creative was actually used.';
                 $question='';
             }elseif($state==='approved_for_use'){
                 $trigger='creative_approved';
@@ -327,6 +334,8 @@ function vp3_marketing_recommendation_sources_v1(PDO $pdo,array $scope,?array $r
                     $row['id'],$campaign,$record['recommendation_id'],$record['draft_key'],
                     $link['review_state'],$stage,(int)$checked['campaign']['current_version_no'],
                     $trigger,$trigger==='creative_results' ? ($checked['accepted']['after']['window_end']??'none'):'',
+                    $brief===null?'no_rate_learning':[$learning['contract'],$learning['direction'],
+                        $learning['prior_rate_bps'],$learning['later_rate_bps']],
                 ])+['trigger'=>$trigger];
             $out['items'][$ref]=$title;
         }catch(DomainException $error){

@@ -30,7 +30,12 @@ const campaigns=[{id:4,name:'Autumn special',business:'Shop',version:3,status:'a
    before:{window_start:'2026-10-01T00:00:00+00:00',window_end:'2026-10-08T00:00:00+00:00',
      window_days:7,metrics:{treatment_entries:45,converted:2,reward_claimed:1}},after:{window_start:'2026-10-11T12:00:00+00:00',window_end:'2026-10-18T12:00:00+00:00',
      window_days:7,metrics:{treatment_entries:60,converted:5,reward_claimed:3}},
-   scope:'observational_not_causal'}],
+   scope:'observational_not_causal',
+   learning:{contract:'vp3.marketing-outcome-learning.v1',state:'descriptive_only',
+     direction:'higher_observed_rate',prior_rate_bps:444,later_rate_bps:833,
+     prior_entries:45,later_entries:60,window_end:'2026-10-18T12:00:00+00:00',
+     next_step:'Review which creative was actually applied, continue tracking, and consider a controlled test before expanding.',
+     scope:'separate_observations_not_causal'}}],
  href:'/campaigns.php?merchant=2&edit_campaign=4'}];
 async function scenario(width){
   let staleVersion=false;
@@ -129,6 +134,14 @@ async function scenario(width){
     'audited nonoverlapping converted counts are presented separately without causality');
   check(await page.getByText(/not a causal effect, revenue lift/).count()===1,
     'post-review evidence prominently denies causal claims');
+  check(await page.getByRole('heading',{name:'Learning from verified observations'}).count()===1
+    &&await page.getByText(/4\.44% before/).count()===1
+    &&await page.getByText(/8\.33% after/).count()===1,
+    'desktop/mobile Marketing Analytics explains independent per-entry conversion rates');
+  check(await page.getByText(/consider a controlled test before expanding/).count()===1,
+    'next step stays an owner-review recommendation, not an automatic campaign change');
+  check(await page.getByText(/do not establish causal impact or creative use/).count()===1,
+    'bounded learning explicitly avoids unsupported creative attribution');
   check(await page.getByRole('button',{name:'Prepare private creative'}).count()===1,
     'an accepted review exposes an explicit private creative handoff');
   await page.getByRole('button',{name:'Prepare private creative'}).click();
