@@ -1,3 +1,4 @@
+.vp3-music-import-overlay,.vp3-music-import-overlay *{box-sizing:border-box}
 /* REAPER import is a real in-flight, server-acknowledged job, not an indeterminate success animation. */
 .vp3-music-import-open{overflow:hidden}
 .vp3-music-import-overlay[hidden]{display:none!important}

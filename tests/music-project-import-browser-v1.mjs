@@ -31,6 +31,9 @@ try{
     });
     assert(sizes.left>=-1 && sizes.right<=sizes.sw+1,`horizontal fit ${viewport.width}`);
     assert(sizes.top>=-1 && sizes.bottom<=sizes.sh+1,`vertical fit ${viewport.width}`);
+    const overflow=await page.evaluate(()=>({scrollWidth:document.documentElement.scrollWidth,scrollTop:document.querySelector('.vp3-music-import-dialog').scrollTop,headerTop:document.getElementById('musicImportTitle').getBoundingClientRect().top}));
+    assert(overflow.scrollWidth<=viewport.width,`no horizontal page overflow ${viewport.width}`);
+    assert(overflow.scrollTop===0 && overflow.headerTop>=-1,`initial focus keeps header in view ${viewport.width}`);
     await page.evaluate(()=>window.VP3MusicImportProgress.pause());
     assert.equal(await page.locator('#musicImportOverlay').isVisible(),false);
     await page.evaluate(()=>window.VP3MusicImportProgress.resume());

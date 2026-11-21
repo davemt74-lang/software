@@ -97,7 +97,10 @@
   function show() {
     overlay.hidden=false;
     document.body.classList.add('vp3-music-import-open');
-    cancelBtn.focus();
+    const panel=overlay.querySelector?.('.vp3-music-import-dialog');
+    if(panel)panel.scrollTop=0;
+    title.setAttribute('tabindex','-1');
+    title.focus({preventScroll:true});
   }
   function pause() {
     if (mode !== 'uploading') return;
