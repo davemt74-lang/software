@@ -19,6 +19,9 @@ function vp3_marketing_outcome_learning_v1(string $state,?array $before,?array $
         foreach(['window_start','window_end'] as $time){
             if(!preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00\z/D',$window[$time]))return $unavailable;
         }
+        $windowStart=strtotime($window['window_start']);$windowEnd=strtotime($window['window_end']);
+        if($windowStart===false||$windowEnd===false||$windowEnd<=$windowStart
+            ||abs(($windowEnd-$windowStart)-$days*86400)>3600)return $unavailable;
         foreach(['treatment_entries','converted','reward_claimed'] as $key){
             $value=$window['metrics'][$key]??null;
             if(!is_int($value)||$value<0||$value>9007199254740991)return $unavailable;
