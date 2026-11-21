@@ -5,7 +5,7 @@ import { chromium } from 'playwright';
 const source=fs.readFileSync('music-project-import.php','utf8');
 const match=source.match(/<div id="musicImportOverlay"[\s\S]*?<\/section><\/div>/);
 assert(match,'Use the real Music Library import overlay markup');
-const html=match[0].replace(/<\?=\s*e\(\$self\)\s*\?>/g,'/music-project-import.php?track=12');
+const html=match[0].replace(/<\?=\s*e\(\$studio\)\s*\?>/g,'/admin/stems.php?track=12');
 const browser=await chromium.launch({headless:true});
 try{
   for (const viewport of [{width:1280,height:800},{width:390,height:780}]){
@@ -39,6 +39,8 @@ try{
     await page.evaluate(()=>window.VP3MusicImportProgress.resume());
     await page.evaluate(()=>window.VP3MusicImportProgress.finish({stemCount:12,url:'/music-project-import.php?track=12'}));
     assert.equal(await page.locator('#musicImportView').isVisible(),true);
+    assert.equal(await page.locator('#musicImportView').getAttribute('href'),'/admin/stems.php?track=12');
+    assert.equal((await page.locator('#musicImportView').innerText()).trim(),'Open in Stem Editor');
     assert.equal(await page.locator('#musicImportTrack').getAttribute('aria-valuenow'),'100');
     await page.close();
     console.log(`PASS Music Library import overlay ${viewport.width}px`);

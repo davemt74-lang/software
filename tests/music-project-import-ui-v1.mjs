@@ -10,15 +10,21 @@ const direct=fs.readFileSync('admin/direct-stem-upload-v79.js','utf8');
 const api=fs.readFileSync('api/stem-direct-v79.php','utf8');
 const workflow=fs.existsSync('.github/workflows/authority-section14.yml') ? fs.readFileSync('.github/workflows/authority-section14.yml','utf8') : '';
 
-for(const id of ['stemZipInput','directRppFile','directStemFiles','musicImportOverlay',
+for(const id of ['stemZipInput','musicImportOverlay',
   'musicImportPhase','musicImportTrack','musicImportItems','musicImportView','musicImportRetry']){
   assert.match(page,new RegExp(`id="${id}"`),`${id} mounted in owner-facing page`);
 }
 assert.match(page,/music-import-progress-v1.js/);
-assert.match(page,/direct-stem-upload-v79.js/);
+assert.doesNotMatch(page,/direct-stem-upload-v79.js/,'only one uploader in Music Library');
+for(const stale of ['directRppFile','directStemFiles','directStemUploadButton','project-direct-title']){
+  assert(!page.includes('id="'+stale+'"'),'no competing direct upload control '+stale);
+}
+assert.match(page,/'successUrl'=>\$studio/,'successful import targets the Stem Editor');
+assert.match(page,/Open in Stem Editor/,'post-import action opens the song in Stem Editor');
 assert.match(page,/musicLibrary'=>true/);
 assert.match(page,/member_agent_voice_enabled\(\$user\)/);
-assert.match(page,/\.rpp,\.RPP/);
+assert.match(page,/REAPER project \+ MP3 stems package/);
+assert.match(zip,/chosen\.format!=='MP3'/,'Music Library package must contain MP3 stems');
 assert.match(overlayJs,/STONEFELLOW_NOTIFICATION_CENTER/);
 assert.match(overlayJs,/announceWhen\(message/);
 assert.match(overlayJs,/stonefellow:agent-voice/);
