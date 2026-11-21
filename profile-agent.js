@@ -100,7 +100,7 @@
         context:()=>({key:'profile-collection-preview:'+cfg.username,id:0,active:previewAlive,sessionChanged:false,loading:false,busy:false,human:false}),
         registerPanel:entry=>extraPanels.push(entry),showPanel,onDraft:()=>{},notice:message=>{if(status)status.textContent=message;},
         focusComposer:()=>textarea?.focus({preventScroll:true}),
-        onOwnerReference:reference=>ownerStudio?.select(reference)});
+        onOwnerReference:ownerStudio ? reference=>ownerStudio.select(reference) : null});
       window.addEventListener('pagehide',()=>{previewAlive=false;imageSurface?.reset(true);},{once:true});
       window.addEventListener('pageshow',event=>{if(event.persisted&&!previewAlive)window.location.reload();});
     }

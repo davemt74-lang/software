@@ -21,7 +21,7 @@ assert.match(profile,/data-profile-send-label>Send/);
 assert.match(agent,/const ownerPreview=Boolean/);
 assert.match(agent,/if\(ownerPreview\)\{/);
 assert.match(agent,/VP3ProfileImageOwnerPreviewV1\?\.mount/);
-assert.match(agent,/onOwnerReference:reference=>ownerStudio\?\.select\(reference\)/);
+assert.match(agent,/onOwnerReference:ownerStudio \? reference=>ownerStudio\.select\(reference\) : null/);
 assert.match(agent,/if\(!thread\|\|!form\|\|!textarea\|\|!submit\|\|!status\|\|ownerPreview\)return/);
 assert.match(collection,/onOwnerReference=null/);
 assert.match(collection,/onOwnerReference\(\{username:cfg\.username/);
