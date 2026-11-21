@@ -79,7 +79,7 @@ function vp3_marketing_review_v1(PDO $pdo,array $scope,DateTimeImmutable $now,?a
         }
         if (!empty($outcomes['campaign'])) {
             $campaign+=array_intersect_key($outcomes['campaign'],['starts_at'=>true,'ends_at'=>true,'window_state'=>true]);
-            $fields=['decisions'=>true,'observations'=>true];
+            $fields=['decisions'=>true,'observations'=>true,'followthrough'=>true];
             if (!$includeArtifacts) $fields['handoff']=true;
             $campaign['outcomes']=array_intersect_key($outcomes,$fields);
         }
