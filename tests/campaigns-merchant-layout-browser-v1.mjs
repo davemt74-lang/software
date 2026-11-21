@@ -19,7 +19,7 @@ const markup='<!doctype html><html lang="en"><head><meta name="viewport" content
 fs.mkdirSync('artifacts/campaigns-merchant-layout',{recursive:true});
 const browser=await chromium.launch({headless:true});
 try{
-  for(const viewport of [{width:1365,height:820},{width:900,height:700},{width:390,height:740},{width:320,height:620}]){
+  for(const viewport of [{width:1365,height:820},{width:900,height:700},{width:810,height:700},{width:390,height:740},{width:320,height:620}]){
     const page=await browser.newPage({viewport});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.route(origins+'/**',route=>route.fulfill({status:200,contentType:'text/html',body:markup}));
