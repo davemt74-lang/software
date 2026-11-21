@@ -87,6 +87,12 @@
 @media (max-width:640px) { .vp3-marketing-work-option,.vp3-marketing-linked-work { padding:.65rem; } }
 
 
+/* 2B.6F: evidence-bound, owner-review experiment plan; no live treatment controls. */
+.vp3-marketing-experiment-proposal { margin:.75rem 0 .35rem; padding:.8rem; border:1px solid #c9d9ea; border-radius:.65rem; background:#fff; overflow-wrap:anywhere; }
+.vp3-marketing-experiment-proposal h5 { margin:0 0 .4rem; color:#274c77; font-size:.87rem; }
+.vp3-marketing-experiment-proposal p { margin:.35rem 0; font-size:.8rem; line-height:1.5; }
+@media (max-width:640px) { .vp3-marketing-experiment-proposal { padding:.65rem; } }
+
 /* 2B.6E: bounded observational learning nested within existing Campaign analytics. */
 .vp3-marketing-outcome-learning { margin:.65rem 0 .25rem; padding:.7rem .85rem; border-left:3px solid #8a9ebb; background:#f5f8fc; border-radius:.35rem; }
 .vp3-marketing-outcome-learning h5 { margin:0 0 .35rem; color:#254365; font-size:.85rem; }

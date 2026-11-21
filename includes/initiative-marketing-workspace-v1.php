@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-marketing-outcome-learning-v1.php';
+require_once __DIR__.'/agent-marketing-experiment-proposal-v1.php';
 
 /**
  * Phase 2A: one owner-private, read-only projection for the Marketing Chat Canvas.
@@ -34,6 +35,12 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             $observations[$key]=in_array($state,['observed','unavailable','unconfigured','limited','not_started'],true)
                 ?$state:'unavailable';
         }
+        $followthrough=vp3_marketing_workspace_followthrough_v1((array)($item['outcomes']['followthrough']??[]));
+        foreach($followthrough as &$record){
+            $record['experiment']=vp3_marketing_experiment_proposal_v1(
+                (int)$item['id'],max(0,(int)($item['version']??0)),$record);
+        }
+        unset($record);
         $campaigns[]=[
             'id'=>(int)$item['id'],
             'name'=>mb_substr((string)($item['name']??''),0,160),
@@ -48,7 +55,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
                 ?$item['window_state']:'unavailable',
             'observations'=>$observations,
             'performance'=>vp3_marketing_workspace_performance_v1((array)($item['outcomes']??[])),
-            'followthrough'=>vp3_marketing_workspace_followthrough_v1((array)($item['outcomes']['followthrough']??[])),
+            'followthrough'=>$followthrough,
             'linked_creative'=>vp3_marketing_workspace_linked_creative_v1($pdo,$owner,$scope,$item),
         ];
     }
