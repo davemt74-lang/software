@@ -96,4 +96,24 @@ $revokeOnRead=0;$authorityReads=0;
 $fixture=['coverage'=>'unavailable','campaigns'=>[]];
 $out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$scope);
 review_check($out['coverage']==='unavailable'&&$out['campaigns']===[],'unavailable reporting is never counted as zero');
+
+$window=['window_start'=>'2026-10-01T00:00:00+00:00','window_end'=>'2026-10-08T00:00:00+00:00',
+    'window_days'=>7,'metrics'=>['treatment_entries'=>45,'converted'=>2,'reward_claimed'=>1,'private_email'=>'SHOULD_NOT_LEAK']];
+$afterWindow=['window_start'=>'2026-10-11T12:00:00+00:00','window_end'=>'2026-10-18T12:00:00+00:00',
+    'window_days'=>7,'metrics'=>['treatment_entries'=>60,'converted'=>5,'reward_claimed'=>3]];
+$follow=[['recommendation_id'=>501,'type'=>'low-observed-conversion','state'=>'observed',
+    'reviewed_at'=>'2026-10-09T12:00:00+00:00','change_at'=>'2026-10-10T12:00:00+00:00',
+    'before'=>$window,'after'=>$afterWindow,'scope'=>'observational_not_causal','secret'=>'PRIVATE_TOKEN']];
+$project=vp3_marketing_workspace_followthrough_v1($follow);
+review_check(count($project)===1&&$project[0]['after']['metrics']['converted']===5
+    &&$project[0]['scope']==='observational_not_causal','only accepted aggregate performance comparison projected');
+review_check(!str_contains(json_encode($project,JSON_THROW_ON_ERROR),'SHOULD_NOT_LEAK')
+    &&!str_contains(json_encode($project,JSON_THROW_ON_ERROR),'PRIVATE_TOKEN'),
+    'no CRM attributes or private source tokens escape the workspace projection');
+$invalid=$follow;$invalid[0]['after']['metrics']['converted']=null;
+review_check(vp3_marketing_workspace_followthrough_v1($invalid)===[],
+    'unknown conversion counts are never rewritten into measured zero');
+$invalid=$follow;$invalid[0]['scope']='causal_lift';
+review_check(vp3_marketing_workspace_followthrough_v1($invalid)===[],
+    'an unsupported causal claim cannot be accepted as review evidence');
 echo "Marketing workspace owner-private read: $checks checks passed".PHP_EOL;

@@ -58,3 +58,20 @@
 @media (max-width:700px) { .vp3-marketing-performance-sources { grid-template-columns:minmax(0,1fr); } }
 
 @media (min-width:641px) and (max-width:900px) { .vp3-marketing-workspace-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+
+/* Phase 2B.6C: private, observational review evidence. The Campaigns page owns changes. */
+.vp3-marketing-followthrough { margin:.8rem 0; padding:.85rem; border:1px solid #d9e4f3; border-radius:.75rem; background:#fbfdff; }
+.vp3-marketing-followthrough h4 { margin:0 0 .4rem; font-size:.95rem; color:#24466f; }
+.vp3-marketing-followthrough p { margin:.3rem 0 .7rem; font-size:.8rem; line-height:1.5; color:#52677f; }
+.vp3-marketing-followthrough-record { padding:.75rem 0; border-top:1px solid #e1e9f4; overflow-wrap:anywhere; }
+.vp3-marketing-followthrough-record strong { display:block; color:#243d60; font-size:.88rem; }
+.vp3-marketing-followthrough-record small { display:block; line-height:1.45; color:#64758c; font-size:.72rem; margin-top:.5rem; }
+.vp3-marketing-followthrough-metrics { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.25fr); gap:.45rem .9rem; margin:.7rem 0; font-variant-numeric:tabular-nums; }
+.vp3-marketing-followthrough-metrics dt { font-size:.78rem; color:#4d6078; }
+.vp3-marketing-followthrough-metrics dd { margin:0; font-size:.79rem; font-weight:700; color:#18385c; overflow-wrap:anywhere; }
+@media (max-width:640px) {
+  .vp3-marketing-followthrough { padding:.7rem; }
+  .vp3-marketing-followthrough-metrics { grid-template-columns:minmax(0,1fr); }
+  .vp3-marketing-followthrough-metrics dd { margin:0 0 .4rem; }
+}

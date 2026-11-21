@@ -17,16 +17,23 @@ const plans=[
  {product_id:11,agent_id:7,conversation_id:33,stage:'published',stage_label:'Active',
   product_title:'Previous promotion',chat_url:'/chat.php?agent=7&conversation_id=33&marketing_plan=11'}
 ];
-const campaigns=[{id:4,name:'Autumn special',business:'Shop',status:'active',readiness:'needs_setup',
+const campaigns=[{id:4,name:'Autumn special',business:'Shop',version:3,status:'active',readiness:'needs_setup',
  issues:['Choose an active reward'],window_state:'open',observations:{claims:'observed',redemptions:'unavailable',promotion:'observed'},
  performance:{sources:{
    claims:{state:'unobserved',metrics:{},window:{}},
    redemptions:{state:'unavailable',metrics:{},window:{}},
    promotion:{state:'observed',metrics:{clicks:18,checkout_starts:3,paid_orders:0,refunded_orders:0},
      window:{start:'2026-11-10T00:00:00+00:00',end:null}}},
-   decisions:[{id:12,type:'fatigue',status:'proposed'}]},
+   decisions:[{id:12,type:'fatigue',status:'proposed'},{id:13,type:'low-observed-conversion',status:'accepted'}]},
+ followthrough:[{recommendation_id:13,type:'low-observed-conversion',state:'observed',
+   reviewed_at:'2026-10-09T12:00:00+00:00',change_at:'2026-10-10T12:00:00+00:00',
+   before:{window_start:'2026-10-01T00:00:00+00:00',window_end:'2026-10-08T00:00:00+00:00',
+     window_days:7,metrics:{treatment_entries:45,converted:2,reward_claimed:1}},after:{window_start:'2026-10-11T12:00:00+00:00',window_end:'2026-10-18T12:00:00+00:00',
+     window_days:7,metrics:{treatment_entries:60,converted:5,reward_claimed:3}},
+   scope:'observational_not_causal'}],
  href:'/campaigns.php?merchant=2&edit_campaign=4'}];
 async function scenario(width){
+  let staleVersion=false;
   const page=await browser.newPage({viewport:{width,height:850}});page.setDefaultTimeout(10000);
   page.on('pageerror',err=>errors.push(err.message));
   await page.route('https://vp3.test/chat.php',route=>route.fulfill({status:200,contentType:'text/html',
@@ -36,7 +43,7 @@ async function scenario(width){
     if(deny) return route.fulfill({status:403,contentType:'application/json',
       body:JSON.stringify({ok:false,error:'Marketing access revoked'})});
     const data={ok:true,owner_key:'1',agent_id:7,conversation_id:11,tool:'marketing'};
-    if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',campaigns,
+    if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',campaigns:staleVersion?campaigns.map(row=>({...row,version:row.version+1})):campaigns,
       links:{campaigns:'/campaigns.php',products:'/profile-commerce-products.php',rewards:'/rewards.php'}});
     else if(body.action==='marketing_plans')Object.assign(data,{plans,next_before:null});
     else if(body.action==='marketing_plan')Object.assign(data,{plan:plans[0]});
@@ -91,6 +98,27 @@ async function scenario(width){
     'analytics drills into existing Campaigns page without duplicating the manager');
   check(!(await page.locator('#chatMarketingWorkspaceV1').innerText()).includes('customer_email'),
     'private attributes never appear in analytics cards');
+  check(await page.getByText('2 before · 5 after').count()===1,
+    'audited nonoverlapping converted counts are presented separately without causality');
+  check(await page.getByText(/not a causal effect, revenue lift/).count()===1,
+    'post-review evidence prominently denies causal claims');
+  check(await page.getByRole('button',{name:'Prepare private creative'}).count()===1,
+    'an accepted review exposes an explicit private creative handoff');
+  await page.getByRole('button',{name:'Prepare private creative'}).click();
+  await page.waitForFunction(()=>document.getElementById('vp3MarketingTab3')?.getAttribute('aria-selected')==='true');
+  check(await page.getByText(/No Campaign edit or public creative change is implied/).count()===1,
+    'private preparation does not claim a published change or automatic Campaign binding');
+  check(await page.getByRole('link',{name:'Review Campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4',
+    'approved creative focus keeps the exact canonical Campaign edit destination');
+  await page.getByRole('tab',{name:'Analytics'}).click();
+  staleVersion=true;
+  await page.getByRole('button',{name:'Prepare private creative'}).click();
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1 .vp3-marketing-workspace-status')
+    ?.textContent.includes('This Campaign review changed.'));
+  check(await page.getByRole('tab',{name:'Analytics'}).getAttribute('aria-selected')==='true',
+    'a changed Campaign revision cannot reopen its previous approved creative handoff');
+  staleVersion=false;
+
   await page.getByRole('tab',{name:'Campaigns'}).click();
   check(await page.getByRole('link',{name:'Manage campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4','safe edit destination');
   await page.getByRole('tab',{name:'Product plans'}).click();
