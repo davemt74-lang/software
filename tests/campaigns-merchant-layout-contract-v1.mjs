@@ -9,7 +9,7 @@ const header=fs.readFileSync('includes/member-header.php','utf8');
 const shell=fs.readFileSync('member-shell-v77.js','utf8');
 
 assert.match(page,/class="chat-main cr-main"/,'Campaigns keeps canonical member shell');
-assert.match(page,/class="cr-wrap"/,'merchant body shares one scroll owner');
+assert.match(page,/class="cr-wrap" role="region" aria-label="Campaigns content" tabindex="0"/,'merchant body has keyboard-accessible, labeled scroll owner');
 assert.match(page,/id="new-merchant"/,'existing merchant creation form remains available');
 assert.match(page,/name="action" value="merchant_create"/,'creation action remains unchanged');
 assert.match(page,/require __DIR__\.'\/includes\/workspace-sidebar-v82\.php'/,'canonical sidebar is retained');

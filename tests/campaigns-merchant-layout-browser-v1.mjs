@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 
 const pageMarkup=fs.readFileSync('campaigns.php','utf8');
 assert.match(pageMarkup,/<main class="chat-main cr-main">/);
-assert.match(pageMarkup,/<div class="cr-wrap">/);
+assert.match(pageMarkup,/<div class="cr-wrap" role="region" aria-label="Campaigns content" tabindex="0">/);
 assert.match(pageMarkup,/id="new-merchant"/);
 const origins='https://merchant-layout.vp3.test';
 const nav=Array.from({length:28},(_,i)=>'<a class="chat-sidebar-nav-link" href="#menu-'+i+'"><span>◇</span><strong>Menu item '+(i+1)+'</strong></a>').join('');
@@ -15,7 +15,7 @@ const markup='<!doctype html><html lang="en"><head><meta name="viewport" content
  '<footer class="agent-sidebar-footer"><button class="agent-sidebar-user-button" type="button">Owner menu</button></footer></aside>'+
  '<div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>'+
  '<main class="chat-main cr-main"><header class="chat-topbar"><button id="openChatSidebar" type="button" class="chat-icon-button mobile-only">Menu</button><strong>Campaigns</strong></header>'+
- '<div class="cr-wrap"><section class="cr-toolbar"><strong>Merchant workspace</strong></section><section class="cr-empty" id="new-merchant"><h2>Create your first Merchant</h2><p>Business identity stays separate from your login.</p><form class="cr-form">'+fields+'<button type="submit" class="cr-btn primary" id="merchantSubmit">Create Merchant</button></form></section></div></main></div></body></html>';
+ '<div class="cr-wrap" role="region" aria-label="Campaigns content" tabindex="0"><section class="cr-toolbar"><strong>Merchant workspace</strong></section><section class="cr-empty" id="new-merchant"><h2>Create your first Merchant</h2><p>Business identity stays separate from your login.</p><form class="cr-form">'+fields+'<button type="submit" class="cr-btn primary" id="merchantSubmit">Create Merchant</button></form></section></div></main></div></body></html>';
 fs.mkdirSync('artifacts/campaigns-merchant-layout',{recursive:true});
 const browser=await chromium.launch({headless:true});
 try{
@@ -39,6 +39,9 @@ try{
     assert(state.content.overflow==='auto','merchant form owns vertical scrolling at '+viewport.width);
     assert(state.navigation.scrollHeight>state.navigation.clientHeight,'sidebar navigation can scroll at '+viewport.width);
     const firstHeaderTop=state.topbar.top;
+    await page.locator('.cr-wrap').focus();
+    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Campaigns content',
+      'keyboard focus can enter scrollable Campaigns content at '+viewport.width);
     await page.locator('.cr-wrap').evaluate(el=>{el.scrollTop=el.scrollHeight;});
     state=await measure();
     assert(state.content.scrollTop>0,'merchant content scrolls to the form footer at '+viewport.width);
