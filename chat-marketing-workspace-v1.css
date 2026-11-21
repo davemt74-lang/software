@@ -87,6 +87,14 @@
 @media (max-width:640px) { .vp3-marketing-work-option,.vp3-marketing-linked-work { padding:.65rem; } }
 
 
+/* 2B.6G: native, descriptive journey A/B message receipts. */
+.vp3-marketing-native-ab { padding:.85rem; border:1px solid #d5e2ef; border-radius:.75rem; background:#fbfcff; }
+.vp3-marketing-native-ab h4 { margin:0 0 .35rem; font-size:.93rem; color:#274468; }
+.vp3-marketing-native-ab p { font-size:.78rem; line-height:1.5; margin:.35rem 0 .7rem; }
+.vp3-marketing-native-ab-group { padding:.65rem 0; border-top:1px solid #d9e4f1; }
+.vp3-marketing-native-ab-group strong { overflow-wrap:anywhere; }
+@media (max-width:640px) { .vp3-marketing-native-ab {padding:.65rem;} }
+
 /* 2B.6F: evidence-bound, owner-review experiment plan; no live treatment controls. */
 .vp3-marketing-experiment-proposal { margin:.75rem 0 .35rem; padding:.8rem; border:1px solid #c9d9ea; border-radius:.65rem; background:#fff; overflow-wrap:anywhere; }
 .vp3-marketing-experiment-proposal h5 { margin:0 0 .4rem; color:#274c77; font-size:.87rem; }
