@@ -499,6 +499,7 @@
       row.id===recommendationId&&row.status==='accepted');
     if(!fresh||!accepted||!Number.isSafeInteger(fresh.version)||fresh.version!==campaign.version||fresh.status!==campaign.status
       ||!localLink(fresh.href,'campaigns')){
+      session.campaignFocus=null;
       display('This Campaign review changed. Refresh Marketing and review the current Campaign before preparing creative.');
       return;
     }
