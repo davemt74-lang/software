@@ -24,6 +24,12 @@ $event->execute([2,17,77,'campaign.optimization_recommendation_reviewed','produc
 $now=new DateTimeImmutable('2026-11-20T22:00:00+00:00');
 $decision=[['id'=>501,'status'=>'accepted','type'=>'low-observed-conversion']];
 $read=static fn(int $owner=11,int $merchant=17):array=>vp3_marketing_campaign_followthrough_v1($pdo,$owner,$merchant,77,$now,$decision);
+$baseline=$pdo->query('SELECT s.* FROM campaign_optimization_snapshots s WHERE s.id=10')->fetch(PDO::FETCH_ASSOC);
+ft_check(vp3_marketing_followthrough_snapshot_v1($baseline)!==null,'baseline snapshot metrics and window are valid');
+ft_check(vp3_marketing_followthrough_event_v1($pdo,17,77,'campaign.optimization_snapshot_recorded',null,
+    '2026-10-08 01:00:00','2026-10-09 12:00:00',10,$beforeHash,55)!==null,
+    'native baseline snapshot activity proof is valid');
+ft_check(schema_metadata_table_exists($pdo,'campaign_activity_events'),'fixture event ledger is present');
 ft_check($read()[0]['state']==='awaiting_change','review without a recorded Campaign edit is awaiting_change');
 ft_check(!str_contains(json_encode($read(),JSON_THROW_ON_ERROR),'PRIVATE_CUSTOMER'),'private snapshot metrics are stripped');
 $event->execute([3,17,77,'campaign.updated','production','user',12,'2026-10-10 08:00:00','{}']);
