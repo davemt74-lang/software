@@ -47,6 +47,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             'observations'=>$observations,
             'performance'=>vp3_marketing_workspace_performance_v1((array)($item['outcomes']??[])),
             'followthrough'=>vp3_marketing_workspace_followthrough_v1((array)($item['outcomes']['followthrough']??[])),
+            'linked_creative'=>vp3_marketing_workspace_linked_creative_v1($pdo,$owner,$scope,$item),
         ];
     }
     // Revalidate current owner/plugin authority after the read, including empty or revoked businesses.
@@ -160,4 +161,21 @@ function vp3_marketing_workspace_followthrough_v1(array $rows): array
             'before'=>$before,'after'=>$after,'scope'=>'observational_not_causal'];
     }
     return $result;
+}
+
+
+/** Saved private associations use canonical owner & Agent/Chat source reads. */
+function vp3_marketing_workspace_linked_creative_v1(PDO $pdo,int $owner,array $scope,array $campaign): array
+{
+    if(empty($campaign['outcomes']['followthrough']) || !function_exists('schema_metadata_table_exists'))return [];
+    if(!schema_metadata_table_exists($pdo,'campaign_creative_assets')
+        ||!schema_metadata_table_exists($pdo,'agent_product_launches_v1')
+        ||!schema_metadata_table_exists($pdo,'agent_commerce_marketing_drafts_v1'))return [];
+    if(!function_exists('vp3_marketing_recommendation_links_v1'))require_once __DIR__.'/initiative-marketing-recommendation-links-v1.php';
+    try{return vp3_marketing_recommendation_links_v1($pdo,$owner,$scope,(int)$campaign['id'],
+        (array)($campaign['outcomes']??[]));}
+    catch(DomainException $error){
+        if(in_array($error->getCode(),[403,404,409,503],true))return [];
+        throw $error;
+    }
 }

@@ -76,6 +76,9 @@ jobs:
           php tests/marketing-performance-opportunities-v1.php
           php -l includes/agent-marketing-followthrough-v1.php
           php tests/marketing-campaign-approved-followthrough-v1.php
+          php -l includes/initiative-marketing-recommendation-links-v1.php
+          php tests/marketing-recommendation-links-v1.php
+          node tests/marketing-recommendation-links-contract-v1.mjs
           node --check chat-marketing-workspace-v1.js
           node --check chat-media-commands-v1.js
           node --check chat.js

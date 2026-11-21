@@ -78,7 +78,7 @@ function vp3_coordination_source_registry_v1(): array
         'marketing'=>[
             'specialist'=>'marketing',
             'sweep'=>'enabled',
-            'native_ref'=>'(?:campaign-(?:optimization|readiness|outcome|performance):[1-9][0-9]{0,17}|product-plan:[1-9][0-9]{0,15}|ft:v1:[a-f0-9]{32}:(?:1|7|30):[1-9][0-9]{8,9}:[esu]:[A-Za-z0-9_-]{2,100})',
+            'native_ref'=>'(?:campaign-(?:optimization|readiness|outcome|performance|work):[1-9][0-9]{0,17}|product-plan:[1-9][0-9]{0,15}|ft:v1:[a-f0-9]{32}:(?:1|7|30):[1-9][0-9]{8,9}:[esu]:[A-Za-z0-9_-]{2,100})',
             'read'=>static function(PDO $pdo,array $scope,array $binding,?array $refs,DateTimeImmutable $now): array {
                 require_once __DIR__.'/agent-coordination-marketing-v1.php';
                 return vp3_coordination_marketing_sources_v1($pdo,$scope,$refs,$now);

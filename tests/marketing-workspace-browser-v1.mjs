@@ -34,6 +34,7 @@ const campaigns=[{id:4,name:'Autumn special',business:'Shop',version:3,status:'a
  href:'/campaigns.php?merchant=2&edit_campaign=4'}];
 async function scenario(width){
   let staleVersion=false;
+  let workLink=null;
   const page=await browser.newPage({viewport:{width,height:850}});page.setDefaultTimeout(10000);
   page.on('pageerror',err=>errors.push(err.message));
   await page.route('https://vp3.test/chat.php',route=>route.fulfill({status:200,contentType:'text/html',
@@ -43,10 +44,36 @@ async function scenario(width){
     if(deny) return route.fulfill({status:403,contentType:'application/json',
       body:JSON.stringify({ok:false,error:'Marketing access revoked'})});
     const data={ok:true,owner_key:'1',agent_id:7,conversation_id:11,tool:'marketing'};
-    if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',campaigns:staleVersion?campaigns.map(row=>({...row,version:row.version+1})):campaigns,
+    if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',
+      campaigns:(staleVersion?campaigns.map(row=>({...row,version:row.version+1})):campaigns)
+        .map(row=>({...row,linked_creative:workLink?[workLink]:[]})),
       links:{campaigns:'/campaigns.php',products:'/profile-commerce-products.php',rewards:'/rewards.php'}});
     else if(body.action==='marketing_plans')Object.assign(data,{plans,next_before:null});
     else if(body.action==='marketing_plan')Object.assign(data,{plan:plans[0]});
+    else if(body.action==='marketing_work_choices')Object.assign(data,{work_choices:{
+      campaign_id:4,recommendation_id:13,campaign_version:staleVersion?4:3,
+      plans:[{product_id:10,title:'Autumn shirts',stage:'creative_ready',revision:'a'.repeat(64)}],
+      limited:false,disclaimer:'Private association only'
+    }});
+    else if(body.action==='marketing_work_link'){
+      if(body.campaign_id!==4||body.recommendation_id!==13||body.expected_campaign_version!==3
+        ||body.product_id!==10||body.expected_plan_revision!=='a'.repeat(64))data.ok=false;
+      else {
+        workLink={id:44,recommendation_id:13,product_id:10,product_title:'Autumn shirts',
+          plan_stage:'creative_ready',review_state:'linked',campaign_version:3,
+          evidence_state:'awaiting_change',implementation:'not_verified'};
+        data.work_saved={id:44,state:'linked',published:false,campaign_mutated:false};
+      }
+    }else if(body.action==='marketing_work_approve'){
+      if(!workLink||body.link_id!==44||body.expected_campaign_version!==3)data.ok=false;
+      else {
+        workLink={...workLink,review_state:'approved_for_use'};
+        data.work_saved={id:44,state:'approved_for_use',published:false,campaign_mutated:false};
+      }
+    }else if(body.action==='marketing_work_unlink'){
+      if(!workLink||body.link_id!==44)data.ok=false;
+      else {workLink=null;data.work_saved={id:44,state:'unlinked',published:false,campaign_mutated:false};}
+    }
     else Object.assign(data,{ok:false,error:'Wrong action'});
     await route.fulfill({status:data.ok?200:422,contentType:'application/json',body:JSON.stringify(data)});
   });
@@ -118,6 +145,31 @@ async function scenario(width){
   check(await page.getByRole('tab',{name:'Analytics'}).getAttribute('aria-selected')==='true',
     'a changed Campaign revision cannot reopen its previous approved creative handoff');
   staleVersion=false;
+  await page.getByRole('button',{name:'Link saved creative'}).click();
+  await page.waitForFunction(()=>document.getElementById('vp3MarketingTab3')?.getAttribute('aria-selected')==='true');
+  check(await page.getByRole('button',{name:'Link this saved draft'}).count()===1,
+    'owner can explicitly associate an existing private product creative plan');
+  await page.getByRole('button',{name:'Link this saved draft'}).click();
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1 .vp3-marketing-workspace-status')
+    ?.textContent.includes('Saved draft linked'));
+  await page.getByRole('tab',{name:'Analytics'}).click();
+  check(await page.getByRole('heading',{name:'Linked private creative'}).count()===1
+    &&await page.getByRole('button',{name:'Review creative approval'}).count()===1,
+    'linked creative survives a workspace reload without claiming Campaign implementation');
+  await page.getByRole('button',{name:'Review creative approval'}).click();
+  check(await page.getByText(/does not publish, send, or apply a Campaign edit/).count()===1,
+    'creative approval requires a separate explicit confirmation');
+  await page.getByRole('button',{name:'Confirm private creative approval'}).click();
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1 .vp3-marketing-workspace-status')
+    ?.textContent.includes('Private creative approved'));
+  check(await page.getByText('Approved for use (private only)').count()===1,
+    'verified approval appears without pretending the Campaign was edited');
+  await page.getByRole('button',{name:'Unlink'}).click();
+  await page.getByRole('button',{name:'Confirm unlink'}).click();
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1 .vp3-marketing-workspace-status')
+    ?.textContent.includes('association unlinked'));
+  check(await page.getByText('No saved creative is linked to an accepted recommendation yet.').count()===1,
+    'unlink preserves original work and removes only its private association');
 
   await page.getByRole('tab',{name:'Campaigns'}).click();
   check(await page.getByRole('link',{name:'Manage campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4','safe edit destination');
@@ -155,7 +207,11 @@ async function scenario(width){
 try {
   await scenario(1200);await scenario(390);
   check(requests.every(x=>x.owner_key==='1'&&x.csrf_token==='csrf'&&x.agent_id===7&&x.conversation_id===11),'all reads bound to owner Agent and current Chat');
-  check(requests.every(x=>['marketing_overview','marketing_plans','marketing_plan'].includes(x.action)),'no publication or sending mutations');
+  check(requests.every(x=>['marketing_overview','marketing_plans','marketing_plan',
+    'marketing_work_choices','marketing_work_link','marketing_work_approve','marketing_work_unlink'].includes(x.action)),
+    'only private review and association mutations; no publication or sending');
+  check(['marketing_work_link','marketing_work_approve','marketing_work_unlink'].every(action=>
+    requests.some(x=>x.action===action)),'all three explicit private creative decisions were exercised');
   check(errors.length===0,'no browser JavaScript exceptions: '+errors.join('; '));
   console.log('Marketing workspace browser '+checks+' checks passed');
 }finally{await browser.close();}
