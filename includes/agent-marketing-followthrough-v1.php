@@ -54,7 +54,7 @@ function vp3_marketing_followthrough_event_v1(PDO $pdo,int $merchant,int $campai
     $eventSample=vp3_marketing_campaign_json_v1($pdo,'e.details_json','$.sample_count');
     $actorWhere=$actor===null?"e.actor_type='system'":"e.actor_type='user' AND e.actor_user_id=?";
     $since=$event==='campaign.updated'?'>':'>=';
-    $suffix=$snapshot===null?'':" AND $snapshotId=? AND $eventHash=? AND $eventSample=?";
+    $suffix=$snapshot===null?'':" AND $snapshotId=CAST(? AS UNSIGNED) AND $eventHash=? AND $eventSample=CAST(? AS UNSIGNED)";
     $q=$pdo->prepare("SELECT e.occurred_at FROM campaign_activity_events e
         WHERE e.merchant_id=? AND e.campaign_id=? AND e.event_type=? AND e.environment='production'
           AND $actorWhere AND e.occurred_at$since? AND e.occurred_at<=? $suffix
@@ -113,7 +113,7 @@ function vp3_marketing_campaign_followthrough_v1(PDO $pdo,int $owner,int $mercha
         $q=$pdo->prepare("SELECT 1 FROM campaign_activity_events e
             WHERE e.merchant_id=? AND e.campaign_id=? AND e.event_type='campaign.optimization_recommendation_reviewed'
               AND e.environment='production' AND e.actor_type='user' AND e.actor_user_id=?
-              AND e.occurred_at>=? AND e.occurred_at<=? AND $reviewId=? AND $reviewDecision='accepted' LIMIT 1");
+              AND e.occurred_at>=? AND e.occurred_at<=? AND $reviewId=CAST(? AS UNSIGNED) AND $reviewDecision='accepted' LIMIT 1");
         $q->execute([$merchant,$campaign,$owner,$row['resolved_at'],$at,$decision['id']]);
         if(!$q->fetchColumn())continue;
         $proof=vp3_marketing_followthrough_event_v1($pdo,$merchant,$campaign,'campaign.optimization_snapshot_recorded',
