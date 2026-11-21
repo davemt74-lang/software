@@ -37,7 +37,7 @@ try{
     await page.evaluate(()=>window.VP3MusicImportProgress.pause());
     assert.equal(await page.locator('#musicImportOverlay').isVisible(),false);
     await page.evaluate(()=>window.VP3MusicImportProgress.resume());
-    await page.evaluate(()=>window.VP3MusicImportProgress.finish({stemCount:12,url:'/music-project-import.php?track=12'}));
+    await page.evaluate(()=>window.VP3MusicImportProgress.finish({stemCount:12,url:'/admin/stems.php?track=12'}));
     assert.equal(await page.locator('#musicImportView').isVisible(),true);
     assert.equal(await page.locator('#musicImportView').getAttribute('href'),'/admin/stems.php?track=12');
     assert.equal((await page.locator('#musicImportView').innerText()).trim(),'Open in Stem Editor');

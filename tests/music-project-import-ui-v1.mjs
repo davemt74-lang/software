@@ -100,10 +100,10 @@ ui.pause();assert.equal(nodes.get('musicImportOverlay').hidden,true,'review dial
 ui.resume();assert.equal(nodes.get('musicImportOverlay').hidden,false);
 ui.importing();ui.file('stem-0','importing',100);ui.file('stem-0','complete',100);
 ui.file('stem-1','uploaded',100);ui.file('stem-1','complete',100);
-ui.finish({stemCount:2,url:'/music-project-import.php?track=12'});
+ui.finish({stemCount:2,url:'/admin/stems.php?track=12'});
 assert.equal(nodes.get('musicImportTrack').attrs['aria-valuenow'],'100');
 assert.equal(nodes.get('musicImportView').hidden,false);
-assert.equal(nodes.get('musicImportView').href,'/music-project-import.php?track=12');
+assert.equal(nodes.get('musicImportView').href,'/admin/stems.php?track=12');
 assert.equal(nodes.get('musicImportItems').children.length,3);
 assert.match(nodes.get('musicImportCounts').textContent,/2 of 2 stems imported/);
 assert.match(speech.at(-1),/stems are imported/);
