@@ -33,6 +33,7 @@ const campaigns=[{id:4,name:'Autumn special',business:'Shop',version:3,status:'a
    scope:'observational_not_causal'}],
  href:'/campaigns.php?merchant=2&edit_campaign=4'}];
 async function scenario(width){
+  let staleVersion=false;
   const page=await browser.newPage({viewport:{width,height:850}});page.setDefaultTimeout(10000);
   page.on('pageerror',err=>errors.push(err.message));
   await page.route('https://vp3.test/chat.php',route=>route.fulfill({status:200,contentType:'text/html',
@@ -42,7 +43,7 @@ async function scenario(width){
     if(deny) return route.fulfill({status:403,contentType:'application/json',
       body:JSON.stringify({ok:false,error:'Marketing access revoked'})});
     const data={ok:true,owner_key:'1',agent_id:7,conversation_id:11,tool:'marketing'};
-    if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',campaigns,
+    if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',campaigns:staleVersion?campaigns.map(row=>({...row,version:row.version+1})):campaigns,
       links:{campaigns:'/campaigns.php',products:'/profile-commerce-products.php',rewards:'/rewards.php'}});
     else if(body.action==='marketing_plans')Object.assign(data,{plans,next_before:null});
     else if(body.action==='marketing_plan')Object.assign(data,{plan:plans[0]});
@@ -109,6 +110,14 @@ async function scenario(width){
     'private preparation does not claim a published change or automatic Campaign binding');
   check(await page.getByRole('link',{name:'Review Campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4',
     'approved creative focus keeps the exact canonical Campaign edit destination');
+  await page.getByRole('tab',{name:'Analytics'}).click();
+  staleVersion=true;
+  await page.getByRole('button',{name:'Prepare private creative'}).click();
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1 .vp3-marketing-workspace-status')
+    ?.textContent.includes('This Campaign review changed.'));
+  check(await page.getByRole('tab',{name:'Analytics'}).getAttribute('aria-selected')==='true',
+    'a changed Campaign revision cannot reopen its previous approved creative handoff');
+  staleVersion=false;
 
   await page.getByRole('tab',{name:'Campaigns'}).click();
   check(await page.getByRole('link',{name:'Manage campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4','safe edit destination');
