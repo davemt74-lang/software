@@ -8,6 +8,7 @@
 .music-main,
 .ml-main,
 .mr-main,
+.cr-main,
 .messages-main{
   min-height:0;
   grid-template-rows:58px minmax(0,1fr);
@@ -19,7 +20,8 @@
 .team-canvas,
 .music-wrap,
 .ml-wrap,
-.mr-wrap{
+.mr-wrap,
+.cr-wrap{
   height:100%;
   min-height:0;
   overflow-x:hidden;

@@ -22,3 +22,11 @@
 .cr-automation-sentence{padding:11px 12px;border-radius:10px;background:#f3f4f6;font-size:13px;line-height:1.45}.cr-automation-list article{align-items:flex-start}.cr-automation-event button{white-space:normal}
 @media(max-width:980px){.cr-funnel{grid-template-columns:repeat(4,minmax(100px,1fr))}}
 @media(max-width:640px){.cr-funnel{grid-template-columns:repeat(2,minmax(0,1fr))}.cr-ops-strip{display:grid;gap:6px}.cr-mini-funnel{display:grid;grid-template-columns:repeat(2,1fr)}}
+
+/* Campaigns and Merchant creation: fixed application shell with a single content scroll owner. */
+.cr-page .workspace-main-sidebar{height:100%;min-height:0;max-height:100%;overflow:hidden}
+.cr-page .workspace-main-sidebar .chat-sidebar-sections{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+.cr-page .workspace-main-sidebar .agent-sidebar-footer{flex:0 0 auto;min-width:0}
+.cr-page .cr-main{min-width:0;min-height:0}
+.cr-page .cr-main>.cr-wrap{width:100%;max-width:1180px;min-height:0;scrollbar-gutter:stable}
+@media(max-width:800px){.cr-page .cr-main>.cr-wrap{scrollbar-gutter:auto}.cr-page .workspace-main-sidebar{height:100dvh;max-height:100dvh}}
