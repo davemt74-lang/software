@@ -23,7 +23,7 @@ assert.match(scroll,/overflow-y:auto/,'long form remains scrollable');
 assert.match(theme,/\.cr-page \.workspace-main-sidebar\{/,'sidebar stays height bounded on merchant page');
 assert.match(theme,/\.cr-page \.workspace-main-sidebar \.chat-sidebar-sections\{/,'sidebar navigation may scroll independently');
 assert.match(theme,/\.chat-sidebar-sections\{display:block/,'Merchant sidebar does not split navigation and Chats into equal-height panes');
-assert.match(theme,/\.chat-sidebar-nav\{max-height:none;overflow:visible/,'sidebar menu has one scroll owner rather than nested navigation scrolling');
+assert.match(theme,/\.chat-sidebar-nav,\.cr-page \.workspace-main-sidebar \.chat-sidebar-history-section \.chat-history\{max-height:none;overflow:visible/,'sidebar menu has one scroll owner rather than nested navigation scrolling');
 assert.match(theme,/\.cr-page \.workspace-main-sidebar \.agent-sidebar-footer\{/,'sidebar user footer stays visible');
 assert.match(theme,/\.cr-page \.cr-main>\.cr-wrap\{/,'merchant body fills available content width');
 assert.match(sidebar,/class="chat-sidebar workspace-main-sidebar"/,'no replacement sidebar');
