@@ -37,6 +37,9 @@ function vp3_profile_owner_image_frozen_source_v1(PDO $pdo,array $owner,array $s
        !hash_equals((string)$grant['source_revision'],$source['revision']) ||
        $grant['mime_type']!==$source['mime_type'])
         throw new DomainException('This reference image changed. Refresh the collection and select it again.',409);
+    // The canonical image-edit provider requires an explicit byte_size to
+    // verify the exact raster before sending an image-edit request.
+    $source['byte_size']=strlen($source['bytes']);
     unset($source['bytes']);
     return $source;
 }
@@ -55,7 +58,9 @@ function vp3_profile_owner_image_job_source_v1(PDO $pdo,array $user,array $row,a
         if(($saved['asset_id']??null)!==($fresh['asset_id']??null) ||
            !hash_equals((string)($saved['sha256']??''),(string)$fresh['sha256']) ||
            !hash_equals((string)($saved['revision']??''),(string)$fresh['revision']) ||
-           ($saved['generated_output']??null)!==($fresh['generated_output']??null))
+           ($saved['generated_output']??null)!==($fresh['generated_output']??null) ||
+           ($saved['byte_size']??null)!==($fresh['byte_size']??null) ||
+           ($saved['mime_type']??null)!==($fresh['mime_type']??null))
             throw new RuntimeException('image_reference_changed');
         if(!$pixels)return null;
         $source=vp3_image_reference_source_v1($pdo,$user,(int)$fresh['asset_id'],$lock);

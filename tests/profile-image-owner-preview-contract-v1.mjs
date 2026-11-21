@@ -43,5 +43,7 @@ assert.match(service,/vp3_profile_owner_image_frozen_source_v1\(\$pdo,\$user,\$s
 assert.match(service,/vp3_image_queue_workspace_v1\(\$pdo, \$user, \$plan, \$request, \$selection\)/);
 assert.match(authority,/vp3_profile_image_catalog_public_reference_v1/);
 assert.match(authority,/vp3_image_reference_source_v1/);
+assert.match(authority,/\$source\['byte_size'\]=strlen\(\$source\['bytes'\]\)/);
+assert.match(authority,/\$saved\['byte_size'\]/);
 assert.match(authority,/profile_by_username/);
 console.log('PASS owner-only Profile composer, approved source recheck, canonical worker, progress and non-visitor routing contracts');

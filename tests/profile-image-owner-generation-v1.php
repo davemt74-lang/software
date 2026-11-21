@@ -38,6 +38,7 @@ must_reject(fn()=>vp3_profile_owner_image_selection_v1(['username'=>'../private'
 must_reject(fn()=>vp3_profile_owner_image_selection_v1(['username'=>'dave','catalog_id'=>11,'catalog_revision'=>4]),'missing image rejected');
 $source=vp3_profile_owner_image_frozen_source_v1($pdo,$owner,$good);
 owner_test($source['asset_id']===201&&!array_key_exists('bytes',$source),'private pixels omitted from job config');
+owner_test(($source['byte_size']??null)===7,'frozen image metadata carries exact byte size required by provider');
 $GLOBALS['profileOwner']=18;
 must_reject(fn()=>vp3_profile_owner_image_frozen_source_v1($pdo,$owner,$good),'different profile owner cannot borrow image');
 $GLOBALS['profileOwner']=17;$GLOBALS['grantEnabled']=false;
@@ -55,4 +56,13 @@ $stale=$config;$stale['reference']['sha256']=str_repeat('a',64);
 must_reject(fn()=>vp3_profile_owner_image_job_source_v1($pdo,$owner,$row,$stale),'stale frozen image denied before worker');
 $GLOBALS['grantEnabled']=false;
 must_reject(fn()=>vp3_profile_owner_image_job_source_v1($pdo,$owner,$row,$config,false,true),'revoked grant denied before provider call');
+require_once dirname(__DIR__).'/includes/agent-image-provider-v1.php';
+$jpeg=base64_decode('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAYFBQUGBgYHCQ4JCQgICRINDQoOFRIWFhUSFBQXGiEcFxgfGRQUHScdHyIjJSUlFhwpLCgkKyEkJST/2wBDAQYGBgkICREJCREkGBQYJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCT/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAIRAxEAPwDzqiiivhj+qT//2Q==',true);
+owner_test(is_string($jpeg)&&getimagesizefromstring($jpeg)['mime']==='image/jpeg','fixture is a real image, not fake bytes');
+$reference=['mime_type'=>'image/jpeg','byte_size'=>strlen($jpeg),'sha256'=>hash('sha256',$jpeg)];
+vp3_image_profile_reference_check_v1('data:image/jpeg;base64,'.base64_encode($jpeg),$reference,true);
+owner_test(true,'provider accepts real image with complete frozen reference metadata');
+$withoutSize=$reference;unset($withoutSize['byte_size']);
+must_reject(fn()=>vp3_image_profile_reference_check_v1('data:image/jpeg;base64,'.base64_encode($jpeg),$withoutSize,true),
+    'provider rejects frozen image metadata without byte size');
 echo "Profile owner image reference authority: all checks passed".PHP_EOL;
