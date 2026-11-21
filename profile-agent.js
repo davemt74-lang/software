@@ -89,6 +89,8 @@
     window.addEventListener('vp3:profile-agent-visibility',event=>{if(!event.detail?.open)showPanel(null,false);});
   }
   if(ownerPreview){
+    const ownerStudio=window.VP3ProfileImageOwnerPreviewV1?.mount?.({shell,thread,form,cfg,showPanel,
+      notice:message=>{if(status)status.textContent=message;}});
     for(const [button,kind] of [[addImage,'image'],[addFile,'file']])button?.addEventListener('click',()=>openAttachmentHelp(button,kind,{
       state:'preview',message:'You’re viewing your own profile. Images and files can be shared after you join a visitor’s conversation. Open your Chat to respond to visitors.',action:'options',actionLabel:'Open chat options'
     }));
@@ -96,7 +98,9 @@
       let previewAlive=true;
       imageSurface=window.VP3ProfileImageEditsV1.mount({shell,thread,form,cfg,ownerPreview:true,loadCollection:loadImageCollection,
         context:()=>({key:'profile-collection-preview:'+cfg.username,id:0,active:previewAlive,sessionChanged:false,loading:false,busy:false,human:false}),
-        registerPanel:entry=>extraPanels.push(entry),showPanel,onDraft:()=>{},notice:message=>{if(status)status.textContent=message;},focusComposer:()=>{}});
+        registerPanel:entry=>extraPanels.push(entry),showPanel,onDraft:()=>{},notice:message=>{if(status)status.textContent=message;},
+        focusComposer:()=>textarea?.focus({preventScroll:true}),
+        onOwnerReference:reference=>ownerStudio?.select(reference)});
       window.addEventListener('pagehide',()=>{previewAlive=false;imageSurface?.reset(true);},{once:true});
       window.addEventListener('pageshow',event=>{if(event.persisted&&!previewAlive)window.location.reload();});
     }

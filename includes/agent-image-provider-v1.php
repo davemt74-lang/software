@@ -148,7 +148,7 @@ function vp3_image_provider_v1(array $config,array $user,?callable $transport=nu
         $endpoint='https://api.openai.com/v1/images/edits';
     }elseif($sourceImage!==null){
         $marketing=($config['mode']??'')==='marketing_reference';
-        $reference=($config['mode']??'')==='chat_reference';
+        $reference=in_array($config['mode']??'', ['chat_reference','profile_owner_reference'],true);
         // Ordinary photos retain the four-MiB limit. An extended input is a frozen,
         // server-verified generated output, revalidated by the worker before this call.
         $max=$marketing||$reference?5_600_000:420_000;
