@@ -107,6 +107,11 @@ $follow=[['recommendation_id'=>501,'type'=>'low-observed-conversion','state'=>'o
 $project=vp3_marketing_workspace_followthrough_v1($follow);
 review_check(count($project)===1&&$project[0]['after']['metrics']['converted']===5
     &&$project[0]['scope']==='observational_not_causal','only accepted aggregate performance comparison projected');
+review_check(($project[0]['learning']['state']??null)==='descriptive_only'
+    &&($project[0]['learning']['direction']??null)==='higher_observed_rate'
+    &&($project[0]['learning']['prior_rate_bps']??null)===444
+    &&($project[0]['learning']['later_rate_bps']??null)===833,
+    'owner-private view derives exact descriptive rates only from independently verified evidence');
 review_check(!str_contains(json_encode($project,JSON_THROW_ON_ERROR),'SHOULD_NOT_LEAK')
     &&!str_contains(json_encode($project,JSON_THROW_ON_ERROR),'PRIVATE_TOKEN'),
     'no CRM attributes or private source tokens escape the workspace projection');
