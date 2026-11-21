@@ -489,14 +489,15 @@
   }
   /** Owner explicitly starts a private idea, never a Campaign edit or send. */
   async function prepareApprovedCreative(session,campaign,recommendationId) {
-    if(!current(session)||!Number.isSafeInteger(recommendationId)||session.requests.has('focus'))return;
+    if(!current(session)||!Number.isSafeInteger(recommendationId)||!Number.isSafeInteger(campaign.version)
+      ||campaign.version<1||session.requests.has('focus'))return;
     display('Checking current Campaign review and permissions…');
     const data=await request(session,'focus','marketing_overview');
     if(!data||!current(session))return;
     const fresh=Array.isArray(data.campaigns)?data.campaigns.find(row=>row.id===campaign.id):null;
     const accepted=normalizePerformance(fresh?.performance).decisions.some(row=>
       row.id===recommendationId&&row.status==='accepted');
-    if(!fresh||!accepted||fresh.version!==campaign.version||fresh.status!==campaign.status
+    if(!fresh||!accepted||!Number.isSafeInteger(fresh.version)||fresh.version!==campaign.version||fresh.status!==campaign.status
       ||!localLink(fresh.href,'campaigns')){
       display('This Campaign review changed. Refresh Marketing and review the current Campaign before preparing creative.');
       return;
