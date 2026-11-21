@@ -33,8 +33,12 @@ ft_check(schema_metadata_table_exists($pdo,'campaign_activity_events'),'fixture 
 ft_check($read()[0]['state']==='awaiting_change','review without a recorded Campaign edit is awaiting_change');
 ft_check(!str_contains(json_encode($read(),JSON_THROW_ON_ERROR),'PRIVATE_CUSTOMER'),'private snapshot metrics are stripped');
 $event->execute([3,17,77,'campaign.updated','production','user',12,'2026-10-10 08:00:00','{}']);
+$event->execute([30,17,77,'campaign.updated','production','user',11,'2026-10-10 09:00:00',
+    json_encode(['summary'=>'Campaign status changed to scheduled'])]);
+ft_check($read()[0]['state']==='awaiting_change',
+    'owner lifecycle status change is not a verified Campaign creative/content edit');
 ft_check($read()[0]['state']==='awaiting_change','foreign user change does not establish owner evidence');
-$event->execute([4,17,77,'campaign.updated','production','user',11,'2026-10-10 12:00:00','{}']);
+$event->execute([4,17,77,'campaign.updated','production','user',11,'2026-10-10 12:00:00',json_encode(['summary'=>'Campaign updated'])]);
 ft_check($read()[0]['state']==='awaiting_window','a reviewed Campaign edit alone does not invent results');
 $insert->execute([11,17,77,'observed',7,'2026-10-11 12:00:00','2026-10-18 12:00:00',80,$metrics(60,5,3),$afterHash,'2026-10-18 12:01:00']);
 ft_check($read()[0]['state']==='unavailable','an unverified post window is not accepted');
