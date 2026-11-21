@@ -16,6 +16,7 @@ const markup='<!doctype html><html lang="en"><head><meta name="viewport" content
  '<div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>'+
  '<main class="chat-main cr-main"><header class="chat-topbar"><button id="openChatSidebar" type="button" class="chat-icon-button mobile-only">Menu</button><strong>Campaigns</strong></header>'+
  '<div class="cr-wrap"><section class="cr-toolbar"><strong>Merchant workspace</strong></section><section class="cr-empty" id="new-merchant"><h2>Create your first Merchant</h2><p>Business identity stays separate from your login.</p><form class="cr-form">'+fields+'<button type="submit" class="cr-btn primary" id="merchantSubmit">Create Merchant</button></form></section></div></main></div></body></html>';
+fs.mkdirSync('artifacts/campaigns-merchant-layout',{recursive:true});
 const browser=await chromium.launch({headless:true});
 try{
   for(const viewport of [{width:1365,height:820},{width:900,height:700},{width:390,height:740},{width:320,height:620}]){
@@ -64,6 +65,7 @@ try{
       assert(!await page.evaluate(()=>document.body.classList.contains('chat-nav-open')),'mobile navigation closes');
     }
     assert.deepEqual(errors,[],'no shell JavaScript errors at '+viewport.width);
+    await page.screenshot({path:'artifacts/campaigns-merchant-layout/merchant-'+viewport.width+'.png'});
     console.log('PASS create merchant content scroll, sidebar, footer, and responsive geometry '+viewport.width+'px');
     await page.close();
   }
