@@ -30,3 +30,8 @@
 .cr-page .cr-main{min-width:0;min-height:0}
 .cr-page .cr-main>.cr-wrap{width:100%;max-width:1180px;min-height:0;scrollbar-gutter:stable}
 @media(max-width:800px){.cr-page .cr-main>.cr-wrap{scrollbar-gutter:auto}.cr-page .workspace-main-sidebar{height:100dvh;max-height:100dvh}}
+
+/* Campaigns uses one scroll owner for its navigation and Chats, not the equal-height Chat panes. */
+.cr-page .workspace-main-sidebar .chat-sidebar-sections{display:block;flex:1 1 0;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+.cr-page .workspace-main-sidebar .chat-sidebar-nav-section,.cr-page .workspace-main-sidebar .chat-sidebar-history-section{display:block;min-height:0;overflow:visible}
+.cr-page .workspace-main-sidebar .chat-sidebar-nav,.cr-page .workspace-main-sidebar .chat-sidebar-history-section .chat-history{max-height:none;overflow:visible}
