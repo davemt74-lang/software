@@ -50,7 +50,8 @@ ft_check($parsed!==null&&array_keys($parsed['metrics'])===['treatment_entries','
 $bad=$raw;$bad['window_end']=$bad['window_start'];ft_check(vp3_marketing_followthrough_snapshot_v1($bad)===null,'invalid observation windows are rejected');
 $bad=$raw;$bad['metrics_json']='{"campaign":{"treatment_entries":null,"outcomes":{"converted":0,"reward_claimed":0}}}';ft_check(vp3_marketing_followthrough_snapshot_v1($bad)===null,'missing counts cannot become zero');
 $low=$parsed;$low['metrics']['treatment_entries']=2;
-ft_check(vp3_marketing_followthrough_compare_v1($parsed,$low,'2026-10-11 12:00:00')==='insufficient_sample','low samples are flagged, not shown as evidence of improvement');
+$low['window_start']='2026-10-19T12:00:00+00:00';$low['window_end']='2026-10-26T12:00:00+00:00';
+ft_check(vp3_marketing_followthrough_compare_v1($parsed,$low,'2026-10-19 00:00:00')==='insufficient_sample','low samples are flagged, not shown as evidence of improvement');
 $overlap=$parsed;$overlap['window_start']='2026-10-09T00:00:00+00:00';
 ft_check(vp3_marketing_followthrough_compare_v1($parsed,$overlap,'2026-10-10 12:00:00')==='unavailable','overlapping or pre-change periods cannot be compared');
 echo 'MARKETING_APPROVED_FOLLOWTHROUGH=PASS ('.$checks.' assertions)'.PHP_EOL;
