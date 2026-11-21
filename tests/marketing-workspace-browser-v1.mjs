@@ -24,7 +24,13 @@ const campaigns=[{id:4,name:'Autumn special',business:'Shop',status:'active',rea
    redemptions:{state:'unavailable',metrics:{},window:{}},
    promotion:{state:'observed',metrics:{clicks:18,checkout_starts:3,paid_orders:0,refunded_orders:0},
      window:{start:'2026-11-10T00:00:00+00:00',end:null}}},
-   decisions:[{id:12,type:'fatigue',status:'proposed'}]},
+   decisions:[{id:12,type:'fatigue',status:'proposed'},{id:13,type:'low-observed-conversion',status:'accepted'}]},
+ followthrough:[{recommendation_id:13,type:'low-observed-conversion',state:'observed',
+   reviewed_at:'2026-10-09T12:00:00+00:00',change_at:'2026-10-10T12:00:00+00:00',
+   before:{window_start:'2026-10-01T00:00:00+00:00',window_end:'2026-10-08T00:00:00+00:00',
+     window_days:7,metrics:{treatment_entries:45,converted:2,reward_claimed:1}},after:{window_start:'2026-10-11T12:00:00+00:00',window_end:'2026-10-18T12:00:00+00:00',
+     window_days:7,metrics:{treatment_entries:60,converted:5,reward_claimed:3}},
+   scope:'observational_not_causal'}],
  href:'/campaigns.php?merchant=2&edit_campaign=4'}];
 async function scenario(width){
   const page=await browser.newPage({viewport:{width,height:850}});page.setDefaultTimeout(10000);
@@ -91,6 +97,19 @@ async function scenario(width){
     'analytics drills into existing Campaigns page without duplicating the manager');
   check(!(await page.locator('#chatMarketingWorkspaceV1').innerText()).includes('customer_email'),
     'private attributes never appear in analytics cards');
+  check(await page.getByText('2 before · 5 after').count()===1,
+    'audited nonoverlapping converted counts are presented separately without causality');
+  check(await page.getByText(/not a causal effect, revenue lift/).count()===1,
+    'post-review evidence prominently denies causal claims');
+  check(await page.getByRole('button',{name:'Prepare private creative'}).count()===1,
+    'an accepted review exposes an explicit private creative handoff');
+  await page.getByRole('button',{name:'Prepare private creative'}).click();
+  await page.getByRole('tab',{name:'Creative & Rewards'}).locator('[aria-selected="true"]').waitFor();
+  check(await page.getByText(/No Campaign edit or public creative change is implied/).count()===1,
+    'private preparation does not claim a published change or automatic Campaign binding');
+  check(await page.getByRole('link',{name:'Review Campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4',
+    'approved creative focus keeps the exact canonical Campaign edit destination');
+
   await page.getByRole('tab',{name:'Campaigns'}).click();
   check(await page.getByRole('link',{name:'Manage campaign'}).getAttribute('href')==='/campaigns.php?merchant=2&edit_campaign=4','safe edit destination');
   await page.getByRole('tab',{name:'Product plans'}).click();
