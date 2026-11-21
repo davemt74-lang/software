@@ -3,6 +3,7 @@
   const cfg = window.STONEFELLOW_BROWSER_ZIP;
   if (!cfg) return;
 
+  const musicUI = cfg.musicLibrary ? window.VP3MusicImportProgress : null;
   const metaHelper = window.STONEFELLOW_STEM_IMPORT_META;
   if (!metaHelper) return;
 
@@ -18,6 +19,9 @@
 
   let controller = null;
   let uploadId = '';
+  let safeChunkBytes = 0;
+  let committed = false;
+  let activeItem = '';
 
   const decoder = new TextDecoder('utf-8');
 
@@ -31,6 +35,7 @@
     progress.hidden = false;
     bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
     progressText.textContent = text;
+    musicUI?.phase(text,percent);
   }
 
   function setStatus(message, error = false) {
@@ -63,7 +68,8 @@
       method: 'POST',
       credentials: 'same-origin',
       body: form,
-      signal: controller?.signal
+      signal: controller?.signal,
+      cache: 'no-store'
     });
 
     const raw = await response.text();
@@ -135,9 +141,15 @@
       throw new Error('This ZIP contains too many files.');
     }
 
+    if (centralOffset + centralSize > file.size || centralOffset < 0) {
+      throw new Error('ZIP directory extends beyond the archive. Please export it again.');
+    }
     const centralBuffer = await file
       .slice(centralOffset, centralOffset + centralSize)
       .arrayBuffer();
+    if (centralBuffer.byteLength !== centralSize) {
+      throw new Error('The ZIP directory is incomplete.');
+    }
 
     const view = new DataView(centralBuffer);
     const bytes = new Uint8Array(centralBuffer);
@@ -217,6 +229,8 @@
       dataStart + entry.compressedSize
     );
 
+    if (entry.flags & 1) throw new Error(`${entry.name} is encrypted. Re-export an unencrypted ZIP or upload the files separately.`);
+    if (entry.size > Number(cfg.maxBytes||0)) throw new Error(`${entry.name} exceeds the project-size limit.`);
     if (entry.method === 0) {
       return compressed.slice(0, compressed.size, mime);
     }
@@ -229,7 +243,7 @@
 
     if (typeof DecompressionStream !== 'function') {
       throw new Error(
-        'This browser cannot decompress ZIP files locally. Use current Chrome/Edge or the direct file uploader.'
+        'This browser cannot expand this ZIP. Use the separate REAPER project and stem file inputs below.'
       );
     }
 
@@ -240,11 +254,13 @@
         .pipeThrough(new DecompressionStream('deflate-raw'));
     } catch (error) {
       throw new Error(
-        'The browser could not initialize ZIP decompression. Use current Chrome/Edge.'
+        'The browser could not decompress this ZIP. Use the separate REAPER project and stem file inputs below.'
       );
     }
 
-    const buffer = await new Response(stream).arrayBuffer();
+    let buffer;
+    try { buffer = await new Response(stream).arrayBuffer(); }
+    catch (_) { throw new Error(`Could not decompress ${entry.name}. Please retry with a new ZIP or upload files separately.`); }
 
     if (entry.size > 0 && buffer.byteLength !== entry.size) {
       throw new Error(
@@ -420,17 +436,34 @@
   }
 
   async function abortUpload() {
-    if (!uploadId) return;
+    if (!uploadId || committed) return;
     try {
-      await request(base('abort'));
-    } catch (error) {}
+      // Cancellation aborts the primary signal. Cleanup MUST use its own request.
+      await fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',body:base('abort')});
+    } catch (_) {}
+  }
+
+  async function uploadProject(blob,name) {
+    if(!blob.size || blob.size>64*1024*1024) throw new Error('REAPER project must be between 1 byte and 64 MB.');
+    const chunkBytes=safeChunkBytes;
+    const chunks=Math.ceil(blob.size/chunkBytes);
+    for(let i=0;i<chunks;i++){
+      const part=blob.slice(i*chunkBytes,Math.min(blob.size,(i+1)*chunkBytes));
+      const form=base('rpp_chunk');
+      form.append('chunk_index',String(i));form.append('total_chunks',String(chunks));
+      form.append('chunk_bytes',String(chunkBytes));
+      form.append('chunk',part,`${name}.part`);
+      activeItem='rpp';musicUI?.file('rpp','uploading',Math.round(i/chunks*100));
+      const ack=await request(form);
+      if(ack.phase!=='uploading_rpp'||(i===chunks-1&&!ack.complete))throw new Error('REAPER upload was not acknowledged by the server.');
+      musicUI?.file('rpp',i===chunks-1?'uploaded':'uploading',Math.round((i+1)/chunks*100));
+      setProgress(9+((i+1)/chunks)*2,`Uploading REAPER file · ${i+1}/${chunks} chunks`);
+    }
+    musicUI?.rppUploaded();activeItem='';
   }
 
   async function uploadBlob(blob, name, fileIndex, totalBytesState) {
-    const chunkBytes = Math.max(
-      1024 * 1024,
-      Number(cfg.chunkBytes || 8 * 1024 * 1024)
-    );
+    const chunkBytes = safeChunkBytes;
     const chunks = Math.ceil(blob.size / chunkBytes);
 
     for (let chunkIndex = 0; chunkIndex < chunks; chunkIndex++) {
@@ -444,8 +477,14 @@
       form.append('total_chunks', String(chunks));
       form.append('chunk', part, `${name}.part`);
 
-      await request(form);
-
+      activeItem=`stem-${fileIndex}`;
+      musicUI?.file(activeItem,'uploading',Math.round(start/blob.size*100));
+      const ack=await request(form);
+      if(ack.file_index!==fileIndex || (chunkIndex===chunks-1 && !ack.complete)){
+        throw new Error(`The server did not confirm uploading ${name}.`);
+      }
+      musicUI?.file(activeItem,chunkIndex===chunks-1?'uploaded':'uploading',Math.round(end/blob.size*100));
+      if(chunkIndex===chunks-1)activeItem='';
       totalBytesState.uploaded += part.size;
       const fraction = totalBytesState.total > 0
         ? totalBytesState.uploaded / totalBytesState.total
@@ -476,6 +515,9 @@
 
     controller = new AbortController();
     uploadId = randomId();
+    committed = false;
+    activeItem = '';
+    musicUI?.begin({name:cfg.track?.title||file.name,files:[],onCancel:()=>cancel.click(),onRetry:()=>button.click()});
 
     button.disabled = true;
     input.disabled = true;
@@ -485,6 +527,8 @@
     setProgress(1, 'Checking direct-upload endpoint…');
 
     const probe = await request(base('probe'));
+    safeChunkBytes=Math.min(Number(cfg.chunkBytes)||8*1024*1024,Number(probe.max_chunk_bytes)||0);
+    if(safeChunkBytes<65536)throw new Error('The server PHP upload limits are too small for safe chunk uploads. Contact the site administrator.');
     if (probe.importer_build !== BUILD) {
       throw new Error(
         `Deployment mismatch: browser ${BUILD}, server ${probe.importer_build || 'unknown'}.`
@@ -494,7 +538,10 @@
     setProgress(4, 'Reading ZIP directory in your browser…');
     const entries = await listZip(file);
     const chosen = chooseFiles(entries);
-
+    musicUI?.setFiles([
+      ...(chosen.rpp?[{key:'rpp',name:baseName(chosen.rpp.name),kind:'project'}]:[]),
+      ...chosen.audio.map((entry,index)=>({key:`stem-${index}`,name:baseName(entry.name),kind:'stem'}))
+    ]);
     setStatus(
       `${entries.length} files found · ${chosen.audio.length} ${chosen.format} stems` +
       (chosen.rpp ? ' · REAPER project found' : ' · no RPP found')
@@ -515,6 +562,9 @@
     const init = base('init');
     init.append('files_json', JSON.stringify(metadata));
     init.append('has_rpp', chosen.rpp ? '1' : '0');
+    init.append('require_rpp',cfg.requireProject?'1':'0');
+    init.append('rpp_size',String(chosen.rpp?.size||0));
+    init.append('rpp_name',chosen.rpp?baseName(chosen.rpp.name):'');
     await request(init);
 
     let rppMeta = null;
@@ -541,9 +591,7 @@
         missingReferences=Object.keys(rppMeta.file_map||{}).filter(name=>!available.has(key(name)));
       }
 
-      const rppForm = base('rpp');
-      rppForm.append('rpp', rppBlob, rppName);
-      await request(rppForm);
+      await uploadProject(rppBlob,rppName);
     }
 
     const metaForm = base('meta');
@@ -582,11 +630,16 @@
     const preparedReview = await request(base('review_prepare'));
 
     if(cfg.reviewBeforeSave){
-      const reviewed=await metaHelper.review(preparedReview.review||{},{beforeSave:true,warning:missingReferences.length?'RPP media references without a matching selected stem: '+missingReferences.slice(0,12).join(', ')+'. Check your consolidated exports before saving.':''});
+      let reviewed;
+      musicUI?.pause();
+      try { reviewed=await metaHelper.review(preparedReview.review||{},{beforeSave:true,warning:missingReferences.length?'RPP media references without a matching selected stem: '+missingReferences.slice(0,12).join(', ')+'. Check your consolidated exports before saving.':''}); }
+      finally {musicUI?.resume();}
       if(!reviewed)throw new Error('Import cancelled. The existing project is unchanged.');
       const reviewForm=base('review');reviewForm.append('review_json',JSON.stringify(reviewed));await request(reviewForm);
     }
 
+    musicUI?.importing();
+    for(let i=0;i<chosen.audio.length;i++)musicUI?.file(`stem-${i}`,'importing',100);
     setProgress(93.5, 'Opening stem save session…');
     await request(base('save_open'));
 
@@ -616,11 +669,17 @@
       );
 
       const placed = await request(base('file_place'));
+      if(placed.phase!=='file_place' || Number(placed.completed)!==saved+1)throw new Error('Stem import placement was not confirmed.');
+      musicUI?.file(`stem-${saved}`,'complete',100);
       saved = Number(placed.completed || 0);
     }
 
     setProgress(99.4, 'Activating parsed stem library…');
     const done = await request(base('save_finish'));
+    if(done.phase!=='complete'||Number(done.stem_count)!==chosen.audio.length)throw new Error('The server did not confirm completing all imported stems.');
+    committed=true;
+    musicUI?.file('rpp','complete',100);
+    musicUI?.finish({stemCount:chosen.audio.length,url:cfg.successUrl||done.studio_url});
 
     setProgress(100, cfg.reviewBeforeSave?'REAPER project saved.':'REAPER package imported. Review saved metadata…');
     setStatus(
@@ -642,6 +701,7 @@
 
     uploadId = '';
 
+    if(cfg.musicLibrary)return;
     window.setTimeout(() => {
       if (cfg.successUrl || done.studio_url) {
         window.location.href = cfg.successUrl || done.studio_url;
@@ -664,8 +724,10 @@
     } catch (error) {
       if (error.name === 'AbortError') {
         setStatus('Upload cancelled.', true);
+        musicUI?.cancelled();
       } else {
         setStatus(error.message || 'Browser ZIP import failed.', true);
+        musicUI?.failed(error.message||'Browser ZIP import failed.',activeItem);
       }
 
       await abortUpload();
@@ -678,6 +740,7 @@
 
   cancel.addEventListener('click', async () => {
     controller?.abort();
+    musicUI?.cancelled();
     await abortUpload();
 
     controller = null;

@@ -91,6 +91,16 @@ jobs:
           node --check chat-media-commands-v1.js
           node --check chat.js
           node tests/marketing-workspace-contract-v1.mjs
+      - name: Music Library REAPER project, chunk safety and Agent Voice regressions
+        run: |
+          php -l music-project-import.php
+          php -l includes/music-import-upload-limits-v1.php
+          php -l api/stem-direct-v79.php
+          node --check music-import-progress-v1.js
+          node --check admin/stem-browser-zip-v79.js
+          node --check admin/direct-stem-upload-v79.js
+          php tests/music-import-upload-limits-v1.php
+          node tests/music-project-import-ui-v1.mjs
       - name: Private Marketing Campaign Editor signed preview and draft authority
         run: |
           php -l includes/initiative-marketing-editor-v1.php
@@ -461,6 +471,8 @@ jobs:
         run: node tests/profile-analytics-period-browser.mjs
       - name: Unified Marketing workspace Chat Canvas, plans and mobile acceptance
         run: node tests/marketing-workspace-browser-v1.mjs
+      - name: Music Library REAPER progress desktop and mobile browser acceptance
+        run: node tests/music-project-import-browser-v1.mjs
       - name: Reviewed Campaign Draft Editor desktop and mobile browser acceptance
         run: node tests/marketing-campaign-editor-browser-v1.mjs
       - name: Marketing Canvas tested creative link review and desktop-mobile acceptance
