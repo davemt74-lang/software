@@ -113,7 +113,12 @@ try{
     await ownerPage.goto(origin+'/fixture-owner/canvas/creative-studio?owner=1');
     await ownerPage.frameLocator('.public-canvas-frame').getByText('Isolated Canvas',{exact:true}).waitFor();
     await ownerPage.getByRole('button',{name:'Ask Taylor’s Guide',exact:true}).click();
-    check(await ownerPage.getByRole('textbox',{name:'Message Profile Agent'}).isDisabled()&&ownerRequests.length===0,'owner Canvas preview does not start a visitor conversation on '+viewport.width+'px');
+    const ownerComposer=ownerPage.getByRole('textbox',{name:'Describe an image to generate privately'});
+    check(await ownerComposer.isEnabled()&&await ownerPage.locator('form[data-profile-chat-preview] button[type="submit"]').isDisabled()&&ownerRequests.length===0,
+      'owner Canvas preview accepts a private image prompt but cannot send visitor messages without a selected reference on '+viewport.width+'px');
+    await ownerComposer.fill('A private image request draft');
+    check(await ownerComposer.inputValue()==='A private image request draft'&&ownerRequests.length===0,
+      'owner preview image draft remains editable without creating a visitor turn on '+viewport.width+'px');
     check(errors.length===0,'no page errors on '+viewport.width+'px');
     await context.close();
   }

@@ -222,7 +222,12 @@ try{
  }
  for(const [label,viewport] of [['desktop',{width:1180,height:820}],['compact',{width:390,height:740}]]){
   const f=await fixture({preview:true,viewport});
-  check((await f.presence.textContent())==='Owner preview'&&await f.page.getByText('Hello from the Profile Agent.').isVisible()&&await f.textarea.isDisabled(),'owner preview shows the greeting with an honest status and no visitor composer');
+  check((await f.presence.textContent())==='Owner preview'&&await f.page.getByText('Hello from the Profile Agent.').isVisible()
+      &&await f.textarea.isEnabled()&&await f.page.locator('form[data-profile-chat-preview] button[type="submit"]').isDisabled(),
+      'owner preview shows the greeting and enables private image prompts without visitor sending');
+  await f.textarea.fill('Use a selected image as an album-cover reference.');
+  check(await f.textarea.inputValue()==='Use a selected image as an album-cover reference.'&&!f.requests.some(r=>r.body.action==='message'),
+      'owner can type a private image draft without starting a visitor conversation');
   await f.page.getByRole('button',{name:'Chat options',exact:true}).click();
   const options=f.page.locator('[data-profile-chat-options]');
   check(await options.isVisible()&&/own profile|owner preview/i.test(await options.innerText()),'owner Chat options opens and explains the owner view');

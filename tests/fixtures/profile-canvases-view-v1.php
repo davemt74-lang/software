@@ -45,6 +45,7 @@ $profileCanvasPayload = json_encode(['artifact'=>$artifact,'sources'=>[],'basePa
 function e(mixed $value): string { return htmlspecialchars((string)$value, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8'); }
 function url(string $path): string { return $path; }
 function system_agent_name(): string { return 'VP3'; }
+function csrf_token(): string { return 'FIXTURE_CSRF_TOKEN'; }
 function profile_public_url(string $username): string { return '/'.$username; }
 
 $source = file_get_contents($root.'/profile.php');
