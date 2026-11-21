@@ -250,12 +250,14 @@ try {
       assert.equal(await member.locator('.vp3-orb-root,.vp3-orb-bar,script[src^="/agent-orb.js"]').count(),0);
       assert.equal(await member.evaluate(()=>Boolean(window.VP3_ORB_CONFIG)),false);
       await member.getByRole('button',{name:'Ask Fixture Public Guide'}).click();
-      const composer=member.getByRole('textbox',{name:'Message Profile Agent'});
+      const composer=member.getByRole('textbox',{name:memberId==='1'?'Describe an image to generate privately':'Message Profile Agent'});
       await composer.waitFor();
       if(memberId==='1'){
         assert.equal(await member.locator('[data-profile-agent-presence]').textContent(),'Owner preview');
-        assert.equal(await composer.isDisabled(),true);
+        assert.equal(await composer.isEnabled(),true);
         assert.equal(await member.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
+        await composer.fill('Prepare a private album-art variation.');
+        assert.equal(await composer.inputValue(),'Prepare a private album-art variation.');
         await member.getByRole('button',{name:'Chat settings'}).click();
         assert.equal(await member.getByRole('link',{name:'Manage Profile Agent'}).getAttribute('href'),'/profile-agent.php');
         assert.equal(await member.locator('.profile-product-promotions a[href*="profile-promotion-click.php"]').count(),0);
