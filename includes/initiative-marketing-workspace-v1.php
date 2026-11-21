@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-marketing-outcome-learning-v1.php';
 require_once __DIR__.'/agent-marketing-experiment-proposal-v1.php';
+require_once __DIR__.'/agent-marketing-native-ab-v1.php';
 
 /**
  * Phase 2A: one owner-private, read-only projection for the Marketing Chat Canvas.
@@ -57,6 +58,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             'performance'=>vp3_marketing_workspace_performance_v1((array)($item['outcomes']??[])),
             'followthrough'=>$followthrough,
             'linked_creative'=>vp3_marketing_workspace_linked_creative_v1($pdo,$owner,$scope,$item),
+            'native_ab'=>vp3_marketing_native_ab_read_v1($pdo,$owner,(int)$item['id']),
         ];
     }
     // Revalidate current owner/plugin authority after the read, including empty or revoked businesses.

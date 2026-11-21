@@ -117,6 +117,33 @@
     });
   }
 
+  function normalizeNativeAB(raw) {
+    if(!raw||raw.contract!=='vp3.marketing-native-ab-observation.v1'
+      ||raw.scope!=='lifetime_message_level_descriptive_not_causal'
+      ||!['observed','no_comparable_variants','unavailable'].includes(raw.state)
+      ||!Array.isArray(raw.groups)||raw.groups.length>3)return null;
+    if(raw.state!=='observed'&&raw.groups.length)return null;
+    const groups=[];
+    for(const group of raw.groups){
+      if(!group||!['observed','insufficient_sample'].includes(group.state)
+        ||group.scope!=='lifetime_message_level_descriptive_not_causal'
+        ||group.unit!=='journey_message_deliveries'
+        ||typeof group.journey_key!=='string'||!/^[a-z0-9][a-z0-9_-]{0,49}$/.test(group.journey_key)
+        ||typeof group.step_key!=='string'||!/^[a-z0-9][a-z0-9_-]{0,49}$/.test(group.step_key)
+        ||!Array.isArray(group.variants)||group.variants.length<2||group.variants.length>4)return null;
+      const variants=[],seen=new Set();
+      for(const variant of group.variants){
+        const key=variant?.variant_key;
+        if(typeof key!=='string'||!/^[a-z0-9][a-z0-9_-]{0,29}$/.test(key)||seen.has(key)
+          ||['sent','viewed','converted'].some(k=>!Number.isSafeInteger(variant[k])||variant[k]<0)
+          ||variant.viewed>variant.sent||variant.converted>variant.sent)return null;
+        seen.add(key);variants.push({key,sent:variant.sent,viewed:variant.viewed,converted:variant.converted});
+      }
+      if((group.state==='observed')!==variants.every(v=>v.sent>=20))return null;
+      groups.push({journey:group.journey_key,step:group.step_key,state:group.state,variants});
+    }
+    return {state:raw.state,groups};
+  }
   const linkedStates=new Set(['linked','approved_for_use','source_changed']);
   function normalizeLinkedCreative(input) {
     if(!Array.isArray(input))return [];
@@ -760,6 +787,28 @@
       } else if(!verified) {
         block.append(n('p','Next step: verify publication, tracking, and the Campaigns analytics before making performance claims.','vp3-marketing-workspace-muted'));
       }
+      const nativeAB=item.nativeAB;
+      if(nativeAB?.state==='observed'){
+        const ab=n('section','','vp3-marketing-native-ab');
+        ab.append(n('h4','Native Journey A/B observations'),
+          n('p','Lifetime message-delivery counts from the existing Campaigns journey engine, not unique audiences or a verified causal experiment.'));
+        for(const group of nativeAB.groups){
+          const entry=n('article','','vp3-marketing-native-ab-group');
+          entry.append(n('strong',group.journey+' / '+group.step));
+          if(group.state==='insufficient_sample'){
+            entry.append(n('p','Fewer than 20 sent messages in at least one variant. Conversion-rate comparison withheld.'));
+          }else{
+            const values=n('dl','','vp3-marketing-followthrough-metrics');
+            for(const v of group.variants){
+              values.append(n('dt',v.key),n('dd',v.converted.toLocaleString()+' attributed / '+v.sent.toLocaleString()+
+                ' sent · '+(100*v.converted/v.sent).toFixed(2)+'% observed'));
+            }
+            entry.append(values);
+          }
+          ab.append(entry);
+        }
+        block.append(ab);
+      }
       const followthrough=item.followthrough||[];
       const accepted=item.performance?.decisions?.filter(d=>d.status==='accepted')||[];
       if(accepted.length){
@@ -886,7 +935,8 @@
         observations:item.observations&&typeof item.observations==='object'?item.observations:{},
         performance:normalizePerformance(item.performance),
         followthrough:normalizeFollowthrough(item.followthrough,item.id,item.version),
-        linkedCreative:normalizeLinkedCreative(item.linked_creative)});
+        linkedCreative:normalizeLinkedCreative(item.linked_creative),
+        nativeAB:normalizeNativeAB(item.native_ab)});
     }
     session.links=data.links&&typeof data.links==='object'?data.links:{};
     render(session);display('Marketing review loaded. Only currently authorized records are shown.');
