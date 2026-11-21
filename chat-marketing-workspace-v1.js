@@ -90,9 +90,16 @@
         ||item.change_at!==null&&item.change_at!==undefined&&!plainDate(item.change_at))return [];
       const before=normalizedWindow(item.before),after=item.after===null?null:normalizedWindow(item.after);
       if(!before||(item.state==='observed'&&!after))return [];
+      const candidate=item.state==='observed'?normalizeLearning(item.learning):null;
+      const learning=candidate&&after&&before.metrics.treatment_entries===candidate.priorEntries
+        &&after.metrics.treatment_entries===candidate.laterEntries
+        &&candidate.lastWindow===after.end
+        &&Math.abs(candidate.priorRate-Math.round(10000*before.metrics.converted/before.metrics.treatment_entries))<=1
+        &&Math.abs(candidate.laterRate-Math.round(10000*after.metrics.converted/after.metrics.treatment_entries))<=1
+          ?candidate:null;
       return [{recommendationId:item.recommendation_id,type:item.type,state:item.state,
         reviewedAt:plainDate(item.reviewed_at),changedAt:plainDate(item.change_at),
-        before,after,learning:item.state==='observed'?normalizeLearning(item.learning):null}];
+        before,after,learning}];
     });
   }
 
