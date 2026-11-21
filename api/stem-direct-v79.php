@@ -10,6 +10,7 @@ require dirname(__DIR__) . '/includes/bootstrap.php';
 require_login();
 require_once dirname(__DIR__).'/includes/stem-import-media.php';
 require_once dirname(__DIR__).'/includes/music-project-import.php';
+require_once dirname(__DIR__).'/includes/music-import-upload-limits-v1.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -546,6 +547,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     direct_stem_json(['ok'=>false,'error'=>'POST required.'], 405);
 }
 
+// When the entire multipart body exceeds post_max_size PHP silently empties
+// $_POST and $_FILES. Report the actual hosting limit, not an expired session.
+$receivedLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+$postCeiling = vp3_music_import_ini_bytes_v1((string)ini_get('post_max_size'));
+if ($receivedLength > 0 && $postCeiling !== PHP_INT_MAX && $receivedLength > $postCeiling && !$_POST) {
+    direct_stem_json(['ok'=>false,'error'=>'Upload exceeded the server post_max_size (' . ini_get('post_max_size') . '). Please use the updated chunk uploader.'],413);
+}
+
 if (!verify_csrf()) {
     direct_stem_json(['ok'=>false,'error'=>'Session expired.'], 419);
 }
@@ -587,6 +596,9 @@ try {
             'phase'=>'probe',
             'php_version'=>PHP_VERSION,
             'memory_limit'=>(string)ini_get('memory_limit'),
+            'upload_max_filesize'=>(string)ini_get('upload_max_filesize'),
+            'post_max_size'=>(string)ini_get('post_max_size'),
+            'max_chunk_bytes'=>vp3_music_import_safe_chunk_v1(stem_chunk_bytes(),(string)ini_get('upload_max_filesize'),(string)ini_get('post_max_size')),
         ]);
     }
 
@@ -731,6 +743,12 @@ try {
         $files = json_decode($filesJson, true);
 
         $hasRpp = (int)($_POST['has_rpp'] ?? 0) === 1;
+        $requiresRpp = (int)($_POST['require_rpp'] ?? 0) === 1;
+        $rppSize = $hasRpp ? (int)($_POST['rpp_size'] ?? 0) : 0;
+        $rppName = $hasRpp ? stem_clean_filename((string)($_POST['rpp_name'] ?? 'project.rpp')) : '';
+        if ($requiresRpp && !$hasRpp) throw new RuntimeException('A REAPER .rpp project is required for this Music Library import.');
+        if ($rppSize < 0 || $rppSize > 64*1024*1024) throw new RuntimeException('REAPER project exceeds the 64 MB safety limit.');
+        if ($rppSize > 0 && !preg_match('/\.rpp(?:-bak)?$/i',$rppName)) throw new RuntimeException('Select a .rpp REAPER project (or .rpp-bak backup).');
 
         if (!is_array($files) || count($files) > 96) {
             throw new RuntimeException('Select up to 96 MP3 or WAV stem files.');
@@ -774,12 +792,12 @@ try {
             ];
         }
 
-        if ($totalBytes > stem_max_package_bytes()) {
+        if ($totalBytes + $rppSize > stem_max_package_bytes()) {
             throw new RuntimeException('The selected stems exceed the configured upload limit.');
         }
 
         $free = @disk_free_space(STONEFELLOW_ROOT);
-        $required = $totalBytes + (48 * 1024 * 1024);
+        $required = $totalBytes + $rppSize + (48 * 1024 * 1024);
 
         if (is_numeric($free) && (float)$free < $required) {
             throw new RuntimeException(
@@ -803,6 +821,13 @@ try {
             'files'=>$cleanFiles,
             'total_bytes'=>$totalBytes,
             'expects_rpp'=>$hasRpp,
+            'requires_rpp'=>$requiresRpp,
+            'rpp_expected_size'=>$rppSize,
+            'rpp_expected_name'=>$rppName,
+            'rpp_next_chunk'=>0,
+            'rpp_total_chunks'=>0,
+            'rpp_chunk_bytes'=>0,
+            'rpp_written'=>0,
             'rpp_name'=>'',
             'rpp_path'=>'',
             'created_at'=>time(),
@@ -859,7 +884,8 @@ try {
         }
 
         $chunkSize = (int)($chunk['size'] ?? 0);
-        if ($chunkSize < 1 || $chunkSize > stem_chunk_bytes() + 1024) {
+        $safeChunk=vp3_music_import_safe_chunk_v1(stem_chunk_bytes(),(string)ini_get('upload_max_filesize'),(string)ini_get('post_max_size'));
+        if ($chunkSize < 1 || $safeChunk<65536 || $chunkSize > $safeChunk) {
             throw new RuntimeException('Invalid direct stem chunk size.');
         }
 
@@ -917,6 +943,66 @@ try {
             'chunk_index'=>$chunkIndex,
             'complete'=>(bool)$fileState['complete'],
         ]);
+    }
+
+    if ($action === 'rpp_chunk') {
+        $state = direct_stem_load_state($dir);
+        if (empty($state['expects_rpp']) || (int)($state['rpp_expected_size'] ?? 0) < 1) {
+            throw new RuntimeException('The REAPER project file was not declared when import started.');
+        }
+        if (!empty($state['save'])) throw new RuntimeException('REAPER project upload cannot change after save begins.');
+        $limit=vp3_music_import_safe_chunk_v1(stem_chunk_bytes(),(string)ini_get('upload_max_filesize'),(string)ini_get('post_max_size'));
+        if ($limit<65536) throw new RuntimeException('PHP upload limits are too small for chunk uploads.');
+        $index=(int)($_POST['chunk_index']??-1);
+        $total=(int)($_POST['total_chunks']??0);
+        $chunkBytes=(int)($_POST['chunk_bytes']??0);
+        $expected=(int)$state['rpp_expected_size'];
+        if($index<0||$total<1||$total>1024||$index>=$total||$chunkBytes<65536||$chunkBytes>$limit
+            ||(int)ceil($expected/$chunkBytes)!==$total)
+            throw new RuntimeException('Invalid REAPER upload chunk or hosting limit.');
+        $prior=(int)($state['rpp_next_chunk']??0);
+        if($index<$prior){
+            direct_stem_json(['ok'=>true,'phase'=>'uploading_rpp','chunk_index'=>$index,
+                'complete'=>!empty($state['rpp_path']),'acknowledged_bytes'=>(int)($state['rpp_written']??0)]);
+        }
+        if($index!==$prior||(int)($state['rpp_chunk_bytes']??0)!==0&&(int)$state['rpp_chunk_bytes']!==$chunkBytes)
+            throw new RuntimeException('REAPER chunks arrived out of order. Restart the import.');
+        $chunk=$_FILES['chunk']??[];
+        if(($chunk['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK)
+            throw new RuntimeException('The REAPER project chunk was rejected by PHP (upload_max_filesize=' . ini_get('upload_max_filesize') . ').');
+        $size=(int)($chunk['size']??0);
+        $offset=$index*$chunkBytes;
+        $required=min($chunkBytes,$expected-$offset);
+        if($size!==$required || $size<1 || $size>$limit)
+            throw new RuntimeException('REAPER chunk size mismatch. Please retry the upload.');
+        $source=@fopen((string)$chunk['tmp_name'],'rb');
+        $dest=$dir.'/project.rpp.part';
+        $target=@fopen($dest,'c+b');
+        if(!$source||!$target){if(is_resource($source))fclose($source);if(is_resource($target))fclose($target);throw new RuntimeException('Cannot write REAPER upload chunk.');}
+        try {
+            if(fseek($target,$offset)!==0)throw new RuntimeException('Cannot position REAPER upload chunk.');
+            $written=stream_copy_to_stream($source,$target,$size);
+            if($written!==$size||!fflush($target))throw new RuntimeException('REAPER upload chunk could not be saved.');
+        }finally{fclose($source);fclose($target);}
+        $next=$index+1;
+        $state['rpp_next_chunk']=$next;
+        $state['rpp_total_chunks']=$total;
+        $state['rpp_chunk_bytes']=$chunkBytes;
+        $state['rpp_written']=$offset+$written;
+        if($next===$total){
+            clearstatcache(true,$dest);
+            if(!is_file($dest)||filesize($dest)!==$expected)throw new RuntimeException('REAPER project upload is incomplete.');
+            $header=(string)file_get_contents($dest,false,null,0,512);
+            $name=(string)$state['rpp_expected_name'];
+            if(!vp3_music_import_rpp_valid_v1($name,$header,$expected))
+                throw new RuntimeException('This is not a valid .rpp REAPER project. Export the project itself, not a ZIP or .reapeaks file.');
+            if(!@rename($dest,$dir.'/project.rpp'))throw new RuntimeException('Could not finalize REAPER project upload.');
+            $state['rpp_path']=$dir.'/project.rpp';
+            $state['rpp_name']=preg_replace('/\.rpp-bak$/i','.rpp',$name) ?: $name;
+        }
+        direct_stem_save_state($dir,$state);
+        direct_stem_json(['ok'=>true,'phase'=>'uploading_rpp','chunk_index'=>$index,
+            'complete'=>$next===$total,'acknowledged_bytes'=>$state['rpp_written']]);
     }
 
     if ($action === 'rpp') {
@@ -1159,6 +1245,9 @@ try {
     if ($action === 'save_open') {
         $state = direct_stem_load_state($dir);
 
+        if (!empty($state['requires_rpp']) && (empty($state['rpp_path']) || !is_file((string)$state['rpp_path']))) {
+            throw new RuntimeException('The REAPER project file has not finished uploading.');
+        }
         foreach ($state['files'] as $file) {
             if (empty($file['complete'])) {
                 throw new RuntimeException(
@@ -1710,7 +1799,16 @@ try {
         $rppInfo = $state['rpp_info'] ?? [];
         $projectId = (int)$save['project_id'];
 
-        stem_import_validate_staged_media($pdo,$trackId,$projectId,$save['new_stem_ids']??[],$total);
+        if ($total > 0) {
+            stem_import_validate_staged_media($pdo,$trackId,$projectId,$save['new_stem_ids']??[],$total);
+        } else {
+            // A REAPER-only project has no audio rows to validate. Ensure the
+            // uploaded project itself was staged before allowing metadata save.
+            $savedRpp=STONEFELLOW_ROOT.'/'.ltrim((string)($save['project_path']??''),'/');
+            if(empty($state['expects_rpp']) || (string)($save['project_path']??'')==='' ||
+               !is_file($savedRpp) || !is_readable($savedRpp) || filesize($savedRpp)<1)
+                throw new RuntimeException('REAPER project file is missing; import was not activated.');
+        }
         $pdo->beginTransaction();
 
         try {
