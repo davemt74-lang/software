@@ -52,12 +52,17 @@ function vp3_marketing_followthrough_event_v1(PDO $pdo,int $merchant,int $campai
     $snapshotId=vp3_marketing_campaign_json_v1($pdo,'e.details_json','$.snapshot_id');
     $eventHash=vp3_marketing_campaign_json_v1($pdo,'e.details_json','$.evidence_hash',true);
     $eventSample=vp3_marketing_campaign_json_v1($pdo,'e.details_json','$.sample_count');
+    // The canonical lifecycle service also emits campaign.updated when a status
+    // changes to draft or scheduled. Only the editor's saved content event
+    // proves that a Campaign was edited following owner review.
+    $eventSummary=vp3_marketing_campaign_json_v1($pdo,'e.details_json','$.summary',true);
+    $contentEdit=$event==='campaign.updated'?" AND $eventSummary='Campaign updated'":'';
     $actorWhere=$actor===null?"e.actor_type='system'":"e.actor_type='user' AND e.actor_user_id=?";
     $since=$event==='campaign.updated'?'>':'>=';
     $suffix=$snapshot===null?'':" AND $snapshotId=CAST(? AS UNSIGNED) AND $eventHash=? AND $eventSample=CAST(? AS UNSIGNED)";
     $q=$pdo->prepare("SELECT e.occurred_at FROM campaign_activity_events e
         WHERE e.merchant_id=? AND e.campaign_id=? AND e.event_type=? AND e.environment='production'
-          AND $actorWhere AND e.occurred_at$since? AND e.occurred_at<=? $suffix
+          AND $actorWhere AND e.occurred_at$since? AND e.occurred_at<=? $suffix $contentEdit
         ORDER BY e.occurred_at ASC,e.id ASC LIMIT 1");
     $args=[$merchant,$campaign,$event];
     if($actor!==null)$args[]=$actor;
