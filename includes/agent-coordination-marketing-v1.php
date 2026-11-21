@@ -118,16 +118,29 @@ function vp3_coordination_campaign_marketing_sources_v1(PDO $pdo,array $scope,?a
     $recommendationRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>str_starts_with($ref,'campaign-optimization:')));
     $reportRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>
         preg_match('/\Acampaign-(?:readiness|outcome|performance):[1-9][0-9]{0,17}\z/D',$ref)===1));
+    $workRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>
+        preg_match('/\Acampaign-work:[1-9][0-9]{0,17}\z/D',$ref)===1));
     $recommendations=$recommendationRefs===[]?null:vp3_coordination_marketing_recommendations_v1($pdo,$scope,$recommendationRefs,$now);
-    if ($reportRefs===[]) return $recommendations ?? ['items'=>[],'coverage'=>'unconfigured'];
-    require_once __DIR__.'/agent-marketing-review-v1.php';
-    $review=vp3_marketing_review_v1($pdo,$scope,$now,$reportRefs);
-    $findings=vp3_marketing_review_findings_v1($review,$reportRefs,$now);
-    if ($recommendations===null) return ['items'=>$findings,'coverage'=>$review['coverage']];
-    $states=[$recommendations['coverage'],$review['coverage']];
-    $coverage=in_array('ready',$states,true)?'ready':$recommendations['coverage'];
-    if (in_array('limited',$states,true) || in_array('unavailable',$states,true) && $states[0]!==$states[1]) $coverage='limited';
-    return ['items'=>$findings+$recommendations['items'],'coverage'=>$coverage];
+    $review=null;
+    if($reportRefs!==[]){
+        require_once __DIR__.'/agent-marketing-review-v1.php';
+        $report=vp3_marketing_review_v1($pdo,$scope,$now,$reportRefs);
+        $review=['items'=>vp3_marketing_review_findings_v1($report,$reportRefs,$now),
+            'coverage'=>$report['coverage']];
+    }
+    $work=null;
+    if($workRefs!==[]){
+        require_once __DIR__.'/initiative-marketing-recommendation-links-v1.php';
+        $work=vp3_marketing_recommendation_sources_v1($pdo,$scope,$workRefs,$now);
+    }
+    $sources=array_filter([$review,$recommendations,$work],static fn($value):bool=>$value!==null);
+    if(!$sources)return ['items'=>[],'coverage'=>'unconfigured'];
+    $items=[];$states=[];
+    foreach($sources as $source){$items+=$source['items'];$states[]=$source['coverage'];}
+    require_once __DIR__.'/agent-coordination-product-marketing-v1.php';
+    $coverage=vp3_product_marketing_coverage_v1($states);
+    if($refs===null&&count($items)>24){$items=array_slice($items,0,24,true);$coverage='limited';}
+    return ['items'=>$items,'coverage'=>$coverage];
 }
 
 /** Product plans are independent of the optional Campaigns plugin. */

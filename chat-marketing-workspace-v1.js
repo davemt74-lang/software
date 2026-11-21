@@ -81,6 +81,24 @@
     });
   }
 
+  const linkedStates=new Set(['linked','approved_for_use','source_changed']);
+  function normalizeLinkedCreative(input) {
+    if(!Array.isArray(input))return [];
+    return input.slice(0,8).flatMap(item=>{
+      if(!item||!Number.isSafeInteger(item.id)||item.id<1
+        ||!Number.isSafeInteger(item.recommendation_id)||item.recommendation_id<1
+        ||!Number.isSafeInteger(item.product_id)||item.product_id<1
+        ||!Number.isSafeInteger(item.campaign_version)||item.campaign_version<0
+        ||!linkedStates.has(item.review_state)||typeof item.product_title!=='string'
+        ||item.product_title.length>150||typeof item.plan_stage!=='string'
+        ||item.plan_stage.length>40||item.implementation!=='not_verified')return [];
+      return [{id:item.id,recommendationId:item.recommendation_id,productId:item.product_id,
+        productTitle:item.product_title,planStage:item.plan_stage,reviewState:item.review_state,
+        campaignVersion:item.campaign_version,evidenceState:typeof item.evidence_state==='string'
+          ?item.evidence_state.slice(0,30):'unavailable'}];
+    });
+  }
+
   const context = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
   const n = (tag,text='',klass='') => {
     const element = document.createElement(tag);
@@ -508,6 +526,80 @@
     selectTab('creative');renderCreative(session);
     display('Campaign review verified. Choose a product and photo to prepare a private draft; Campaign changes require separate approval.');
   }
+  /** A deliberate link is stored only after an exact Campaign + plan reread. */
+  async function beginSavedWork(session,campaign,recommendationId) {
+    if(!current(session)||session.workBusy||!Number.isSafeInteger(recommendationId))return;
+    session.workBusy=true;
+    try {
+      display('Reviewing saved private Marketing drafts for this accepted Campaign recommendation…');
+      const data=await request(session,'work-choices','marketing_work_choices',
+        {campaign_id:campaign.id,recommendation_id:recommendationId});
+      if(!data||!current(session))return;
+      const choices=data.work_choices;
+      if(choices?.campaign_id!==campaign.id||choices.recommendation_id!==recommendationId
+        ||choices.campaign_version!==campaign.version||!Array.isArray(choices.plans)
+        ||choices.plans.length>12){
+        display('The Campaign or saved creative choices changed. Refresh Marketing.');return;
+      }
+      const plans=choices.plans.filter(plan=>plan&&Number.isSafeInteger(plan.product_id)&&plan.product_id>0
+        &&typeof plan.title==='string'&&plan.title.length<=140
+        &&typeof plan.stage==='string'&&stages.has(plan.stage)
+        &&typeof plan.revision==='string'&&/^[a-f0-9]{64}$/.test(plan.revision));
+      session.campaignFocus={id:campaign.id,name:campaign.name,version:campaign.version,
+        href:campaign.href,recommendationId};
+      session.workChoices={...choices,plans};
+      selectTab('creative');renderCreative(session);
+      display(plans.length?'Choose a saved draft to link privately. No Campaign changes are made.'
+        :'No eligible saved Marketing drafts yet. Prepare a private product/image draft first.');
+    }finally{session.workBusy=false;}
+  }
+  async function saveSavedWork(session,plan) {
+    const choices=session.workChoices;
+    if(!current(session)||session.workBusy||!choices||!choices.plans.includes(plan))return;
+    session.workBusy=true;
+    try {
+      const data=await request(session,'work-write','marketing_work_link',{
+        campaign_id:choices.campaign_id,recommendation_id:choices.recommendation_id,
+        expected_campaign_version:choices.campaign_version,product_id:plan.product_id,
+        expected_plan_revision:plan.revision});
+      if(!data||!current(session))return;
+      if(data.work_saved?.state!=='linked'||!Number.isSafeInteger(data.work_saved?.id)){
+        display('The private association could not be verified. Refresh Marketing.');return;
+      }
+      session.workChoices=null;
+      await loadOverview(session);
+      if(!current(session))return;
+      const match=session.campaigns.find(c=>c.id===choices.campaign_id)?.linkedCreative
+        ?.some(l=>l.id===data.work_saved.id&&l.recommendationId===choices.recommendation_id);
+      display(match?'Saved draft linked to the Campaign recommendation. Nothing published or sent.'
+        :'The association could not be verified on reread. Refresh before further action.');
+    }finally{session.workBusy=false;}
+  }
+  async function changeSavedWork(session,campaign,link,action) {
+    if(!current(session)||session.workBusy||!['marketing_work_approve','marketing_work_unlink'].includes(action)
+      ||(action==='marketing_work_approve' && (link.campaignVersion!==campaign.version
+        ||link.reviewState==='source_changed')))return;
+    session.workBusy=true;
+    try {
+      const data=await request(session,'work-write',action,{
+        campaign_id:campaign.id,recommendation_id:link.recommendationId,
+        link_id:link.id,expected_campaign_version:campaign.version});
+      if(!data||!current(session))return;
+      const expected=action==='marketing_work_approve'?'approved_for_use':'unlinked';
+      if(data.work_saved?.id!==link.id||data.work_saved?.state!==expected){
+        display('The owner decision could not be verified. Reload the current Campaign.');return;
+      }
+      session.approvalLinkId=null;session.unlinkLinkId=null;
+      await loadOverview(session);
+      if(!current(session))return;
+      const exists=session.campaigns.find(c=>c.id===campaign.id)?.linkedCreative?.find(x=>x.id===link.id);
+      const verified=action==='marketing_work_unlink'?!exists:exists?.reviewState==='approved_for_use';
+      display(verified?(action==='marketing_work_approve'
+        ?'Private creative approved for use. Apply it separately through the Campaign Manager.'
+        :'Private creative association unlinked. No published Campaign content changed.')
+        :'The current source changed. Review the Campaign before continuing.');
+    }finally{session.workBusy=false;}
+  }
   function renderCreative(session) {
     const target=panes.get('creative');
     if(session.productPickerActive&&session.productPicker?.host?.isConnected)return;
@@ -524,8 +616,21 @@
         'A recommendation was accepted for review. No Campaign edit or public creative change is implied. '+
         'Choose a product and photo to prepare a separate private Marketing draft; apply any eventual changes through the full Campaign Manager.');
       rowActions(focusCard,button('Choose product & photo',()=>openProductPicker(session)),
+        button('Link existing saved draft',()=>void beginSavedWork(session,focus,focus.recommendationId)),
         link('Review Campaign',focus.href,'campaigns'));
       target.append(focusCard);
+      if(session.workChoices?.campaign_id===focus.id&&session.workChoices?.recommendation_id===focus.recommendationId){
+        const choices=card('Associate an existing private Marketing draft',
+          'This only records a private link to the accepted Campaign recommendation. It does not approve the artwork or change the Campaign.');
+        for(const plan of session.workChoices.plans){
+          const item=n('div','','vp3-marketing-work-option');
+          item.append(n('strong',plan.title),n('small',plan.stage.replaceAll('_',' ')));
+          item.append(button('Link this saved draft',()=>void saveSavedWork(session,plan)));
+          choices.append(item);
+        }
+        if(!session.workChoices.plans.length)choices.append(n('p','No eligible drafts yet. Use the product/photo picker to prepare one.'));
+        target.append(choices);
+      }
     }
     const grid=n('div','','vp3-marketing-workspace-grid');
     const artwork=card('Marketing creative','Build promotional images and copy from saved product media.');
@@ -653,8 +758,44 @@
         if(!followthrough.length)evidence.append(n('p','No independently verified post-review comparison is available.'));
         block.append(evidence);
       }
+      if(accepted.length){
+        const work=n('section','','vp3-marketing-linked-work');
+        work.append(n('h4','Linked private creative'),
+          n('p','An accepted recommendation is not proof of implementation. Linked drafts stay private until separately approved and applied.'));
+        for(const linkItem of item.linkedCreative||[]){
+          const element=n('article','','vp3-marketing-work-option');
+          element.append(n('strong',linkItem.productTitle),
+            n('small','Plan: '+linkItem.planStage.replaceAll('_',' ')+' · '+
+              (linkItem.reviewState==='approved_for_use'?'Approved for use (private only)'
+                :linkItem.reviewState==='source_changed'?'Original draft changed — relink required':'Saved private association')));
+          if(linkItem.reviewState!=='source_changed'&&linkItem.campaignVersion===item.version){
+            if(linkItem.reviewState==='linked'){
+              if(session.approvalLinkId===linkItem.id){
+                element.append(n('p','Confirm approval for private use only. This does not publish, send, or apply a Campaign edit.'));
+                rowActions(element,button('Confirm private creative approval',()=>void changeSavedWork(session,item,linkItem,'marketing_work_approve')),
+                  button('Cancel',()=>{session.approvalLinkId=null;renderAnalytics(session);}));
+              }else element.append(button('Review creative approval',()=>{
+                session.approvalLinkId=linkItem.id;session.unlinkLinkId=null;renderAnalytics(session);
+              }));
+            }
+          }
+          if(session.unlinkLinkId===linkItem.id){
+              element.append(n('p','Remove this private association? Existing drafts and public Campaigns remain unchanged.'));
+              rowActions(element,button('Confirm unlink',()=>void changeSavedWork(session,item,linkItem,'marketing_work_unlink')),
+                button('Cancel',()=>{session.unlinkLinkId=null;renderAnalytics(session);}));
+          }else element.append(button('Unlink',()=>{session.unlinkLinkId=linkItem.id;
+              session.approvalLinkId=null;renderAnalytics(session);}));
+          if(linkItem.reviewState==='source_changed'||linkItem.campaignVersion!==item.version)
+            element.append(n('p','The saved draft or Campaign revision changed. A new approval requires a current, verified source.'));
+          work.append(element);
+        }
+        if(!item.linkedCreative?.length)work.append(n('p','No saved creative is linked to an accepted recommendation yet.'));
+        block.append(work);
+      }
+      const linkEligible=accepted.filter(d=>followthrough.some(f=>f.recommendationId===d.id));
       rowActions(block,link('Open detailed Campaign analytics',item.href,'campaigns'),
-        ...(accepted.length?[button('Prepare private creative',()=>void prepareApprovedCreative(session,item,accepted[0].id))]:[]));
+        ...(accepted.length?[button('Prepare private creative',()=>void prepareApprovedCreative(session,item,accepted[0].id)),
+          ...(linkEligible.length?[button('Link saved creative',()=>void beginSavedWork(session,item,linkEligible[0].id))]:[])]:[]));
       grid.append(block);
     }
     if(!grid.childElementCount)grid.append(card('No campaigns in this bounded review',
@@ -683,7 +824,8 @@
         window_state:typeof item.window_state==='string'?item.window_state:'unavailable',
         observations:item.observations&&typeof item.observations==='object'?item.observations:{},
         performance:normalizePerformance(item.performance),
-        followthrough:normalizeFollowthrough(item.followthrough)});
+        followthrough:normalizeFollowthrough(item.followthrough),
+        linkedCreative:normalizeLinkedCreative(item.linked_creative)});
     }
     session.links=data.links&&typeof data.links==='object'?data.links:{};
     render(session);display('Marketing review loaded. Only currently authorized records are shown.');
@@ -705,7 +847,8 @@
     const session=active;if(!current(session))return;
     for(const abort of session.requests.values())abort.abort();
     session.requests.clear();session.campaigns=[];session.plans.clear();session.links={};
-    session.coverage='loading';session.nextBefore=null;session.campaignFocus=null;render(session);
+    session.coverage='loading';session.nextBefore=null;session.campaignFocus=null;
+    session.workChoices=null;session.approvalLinkId=null;session.unlinkLinkId=null;render(session);
     display('Checking current campaigns and saved product plans…');
     void loadOverview(session);void loadPlans(session);
   }
@@ -718,7 +861,8 @@
     const session={id:++sequence,cid:bound.conversationId,tab:'overview',requests:new Map(),
       campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false,
       canvasLink:null,canvasLinkActive:false,canvasCampaignId:0,
-      productPicker:null,productPickerActive:false,campaignFocus:null,
+      productPicker:null,productPickerActive:false,campaignFocus:null,workChoices:null,
+      workBusy:false,approvalLinkId:null,unlinkLinkId:null,
       activation:null,activationActive:false};
     active=session;
     live.showMarketingCanvasView();
