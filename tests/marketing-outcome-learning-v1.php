@@ -60,6 +60,9 @@ learning_check(vp3_marketing_outcome_learning_v1('observed',$before,$invalid)['s
 $invalid=$after;$invalid['window_start']='not-a-date';
 learning_check(vp3_marketing_outcome_learning_v1('observed',$before,$invalid)['state']==='unavailable',
     'malformed snapshot timestamps do not become learning');
+$invalid=$after;$invalid['window_end']='2026-10-17T12:00:00+00:00';
+learning_check(vp3_marketing_outcome_learning_v1('observed',$before,$invalid)['state']==='unavailable',
+    'a truncated observation period cannot be treated as an equal-duration comparison');
 $invalid=$after;$invalid['metrics']['treatment_entries']=9007199254740991;
 learning_check(vp3_marketing_outcome_learning_v1('observed',$before,$invalid)['state']==='descriptive_only',
     'very large verified denominators use bounded division without integer multiplication overflow');
