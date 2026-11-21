@@ -66,6 +66,21 @@
     }
     return {start:plainDate(value.window_start),end:plainDate(value.window_end),days:value.window_days,metrics};
   }
+  const learningDirections=new Set(['higher_observed_rate','lower_observed_rate','same_observed_rate']);
+  function normalizeLearning(raw) {
+    if(!raw||raw.contract!=='vp3.marketing-outcome-learning.v1'||raw.state!=='descriptive_only'
+      ||raw.scope!=='separate_observations_not_causal'||!learningDirections.has(raw.direction)
+      ||!plainDate(raw.window_end)||typeof raw.next_step!=='string'||raw.next_step.length>400)return null;
+    for(const key of ['prior_rate_bps','later_rate_bps']){
+      if(!Number.isSafeInteger(raw[key])||raw[key]<0||raw[key]>10000)return null;
+    }
+    for(const key of ['prior_entries','later_entries']){
+      if(!Number.isSafeInteger(raw[key])||raw[key]<20)return null;
+    }
+    return {direction:raw.direction,priorRate:raw.prior_rate_bps,laterRate:raw.later_rate_bps,
+      priorEntries:raw.prior_entries,laterEntries:raw.later_entries,
+      lastWindow:plainDate(raw.window_end),nextStep:raw.next_step};
+  }
   function normalizeFollowthrough(raw) {
     if(!Array.isArray(raw))return [];
     return raw.slice(0,3).flatMap(item=>{
@@ -77,7 +92,7 @@
       if(!before||(item.state==='observed'&&!after))return [];
       return [{recommendationId:item.recommendation_id,type:item.type,state:item.state,
         reviewedAt:plainDate(item.reviewed_at),changedAt:plainDate(item.change_at),
-        before,after}];
+        before,after,learning:item.state==='observed'?normalizeLearning(item.learning):null}];
     });
   }
 
@@ -752,6 +767,19 @@
                 after.metrics[key].toLocaleString()+' after'));
             }
             row.append(metrics,n('small','Separate observed counts only; not a causal effect, revenue lift, or verified creative attribution.'));
+            if(record.learning){
+              const learning=record.learning;
+              const direction=learning.direction==='higher_observed_rate'?'higher'
+                :learning.direction==='lower_observed_rate'?'lower':'the same when rounded';
+              const findings=n('div','','vp3-marketing-outcome-learning');
+              findings.append(n('h5','Learning from verified observations'),
+                n('p','Attributed conversion rates: '+(learning.priorRate/100).toFixed(2)+'% before ('+
+                  learning.priorEntries.toLocaleString()+' entries) · '+(learning.laterRate/100).toFixed(2)+
+                  '% after ('+learning.laterEntries.toLocaleString()+' entries). The later observed rate was '+
+                  direction+'. These observations do not establish causal impact or creative use.'),
+                n('p','Suggested next review: '+learning.nextStep));
+              row.append(findings);
+            }
           }
           evidence.append(row);
         }
