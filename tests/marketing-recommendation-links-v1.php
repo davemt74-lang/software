@@ -29,8 +29,12 @@ function campaigns_rewards_platform_can_v100(PDO $pdo,int $merchant,int $owner,s
 }
 function vp3_marketing_campaign_outcomes_v1(PDO $pdo,int $owner,int $merchant,int $campaign,DateTimeImmutable $now):array {
     if(!$GLOBALS['accepted']||$owner!==11||$merchant!==17||$campaign!==77)return ['followthrough'=>[]];
+    $before=['window_start'=>'2026-10-01T00:00:00+00:00','window_end'=>'2026-10-08T00:00:00+00:00',
+        'window_days'=>7,'metrics'=>['treatment_entries'=>45,'converted'=>2,'reward_claimed'=>1]];
+    $after=['window_start'=>'2026-11-11T00:00:00+00:00','window_end'=>'2026-11-18T00:00:00+00:00',
+        'window_days'=>7,'metrics'=>['treatment_entries'=>60,'converted'=>5,'reward_claimed'=>3]];
     return ['followthrough'=>[['recommendation_id'=>501,'state'=>$GLOBALS['observation'],
-        'after'=>['window_end'=>'2026-11-18T00:00:00+00:00']]]];
+        'before'=>$before,'after'=>$after]]];
 }
 function initiative_marketing_plans_query_v1():string {
     return 'SELECT l.product_id,l.owner_user_id,l.agent_id,l.conversation_id,l.draft_key,l.creative_id
@@ -111,6 +115,15 @@ $outcomes=vp3_marketing_campaign_outcomes_v1($pdo,11,17,77,new DateTimeImmutable
 $scan=vp3_marketing_recommendation_sources_v1($pdo,$scope,null,new DateTimeImmutable('now'));
 link_check($scan['items'][$linkRef]['trigger']==='creative_results',
     'separate audited results produce a measured-observation review, without causal claims');
+link_check(str_contains($scan['items'][$linkRef]['summary'],'4.44%')
+    &&str_contains($scan['items'][$linkRef]['summary'],'8.33%')
+    &&str_contains($scan['items'][$linkRef]['summary'],'no causal improvement')
+    &&str_contains($scan['items'][$linkRef]['next_step'],'which creative was actually applied'),
+    'the Marketing specialist reuses audited rate learning and offers a human review instead of asserting creative impact');
+$finalRevision=$scan['items'][$linkRef]['revision'];
+link_check(vp3_marketing_recommendation_sources_v1($pdo,$scope,['campaign-work:501'],
+    new DateTimeImmutable('now'))['items'][$linkRef]['revision']===$finalRevision,
+    'same observed window and owner decision do not trigger a duplicate Marketing Chat finding');
 $allowed=false;
 link_reject(fn()=>vp3_marketing_recommendation_action_v1($pdo,12,
     ['user'=>['id'=>12,'account'=>true],'principal'=>['viewer_user_id'=>12],'agent_id'=>7,'conversation_id'=>42],$write),403,
