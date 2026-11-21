@@ -71,7 +71,7 @@ if (!$memberHeaderRuntimeRendered):
     $GLOBALS['VP3_MEMBER_HEADER_RUNTIME_RENDERED'] = true;
     $GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED'] = true; // legacy compatibility
     $memberHeaderUiBuild = 'universal-member-header-layout-20260906';
-    $memberHeaderScrollBuild = 'member-page-scroll-20260912-calendar-flex';
+    $memberHeaderScrollBuild = 'member-page-scroll-20261121-merchant-scroll';
     $memberHeaderNotificationBuild = 'voice-v1349-activity-center-proactive-v244-20260922-a5c8-20261011-eyes-v1342';
     $memberHeaderNotificationBuild .= '-'.substr(hash('sha256',hash_file('sha256',dirname(__DIR__).'/chat-notifications-drawer-v240.js')
         .hash_file('sha256',dirname(__DIR__).'/chat-notifications-drawer-v240.css')),0,12);

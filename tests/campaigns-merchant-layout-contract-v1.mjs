@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const page=fs.readFileSync('campaigns.php','utf8');
+const scroll=fs.readFileSync('member-page-scroll.css','utf8');
+const theme=fs.readFileSync('campaigns-v100.css','utf8');
+const sidebar=fs.readFileSync('includes/main-sidebar.php','utf8');
+const header=fs.readFileSync('includes/member-header.php','utf8');
+const shell=fs.readFileSync('member-shell-v77.js','utf8');
+
+assert.match(page,/class="chat-main cr-main"/,'Campaigns keeps canonical member shell');
+assert.match(page,/class="cr-wrap" role="region" aria-label="Campaigns content" tabindex="0"/,'merchant body has keyboard-accessible, labeled scroll owner');
+assert.match(page,/id="new-merchant"/,'existing merchant creation form remains available');
+assert.match(page,/name="action" value="merchant_create"/,'creation action remains unchanged');
+assert.match(page,/require __DIR__\.'\/includes\/workspace-sidebar-v82\.php'/,'canonical sidebar is retained');
+assert.match(page,/require __DIR__\.'\/includes\/member-header\.php'/,'canonical header is retained');
+assert.doesNotMatch(page,/workspace-shell-v82\.js/,'no reference to absent legacy workspace shell');
+assert.match(page,/campaigns-v100\.css\?v=merchant-scroll-20261121/,'Campaigns CSS cache is refreshed');
+assert.match(header,/member-page-scroll-20261121-merchant-scroll/,'shared member scrolling CSS cache is refreshed');
+assert.match(scroll,/\.cr-main,/,'Campaigns gets deterministic fixed member rows');
+assert.match(scroll,/\.cr-wrap\{/,'Campaigns body gets vertical scrolling');
+assert.match(scroll,/overflow-y:auto/,'long form remains scrollable');
+assert.match(theme,/\.cr-page \.workspace-main-sidebar\{/,'sidebar stays height bounded on merchant page');
+assert.match(theme,/\.cr-page \.workspace-main-sidebar \.chat-sidebar-sections\{/,'sidebar navigation may scroll independently');
+assert.match(theme,/\.chat-sidebar-sections\{display:block/,'Merchant sidebar does not split navigation and Chats into equal-height panes');
+assert.match(theme,/\.chat-sidebar-nav,\.cr-page \.workspace-main-sidebar \.chat-sidebar-history-section \.chat-history\{max-height:none;overflow:visible/,'sidebar menu has one scroll owner rather than nested navigation scrolling');
+assert.match(theme,/\.cr-page \.workspace-main-sidebar \.agent-sidebar-footer\{/,'sidebar user footer stays visible');
+assert.match(theme,/\.cr-page \.cr-main>\.cr-wrap\{/,'merchant body fills available content width');
+assert.match(sidebar,/class="chat-sidebar workspace-main-sidebar"/,'no replacement sidebar');
+assert.match(shell,/openSidebar\?\.addEventListener\('click',openNav\)/,'shared menu controls remain active');
+console.log('PASS Merchant create scroll and canonical sidebar source contracts');
