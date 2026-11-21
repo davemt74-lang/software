@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-coordination-sources-v1.php';
 require_once __DIR__.'/agent-coordination-marketing-v1.php';
 require_once __DIR__.'/profile-promotion-attribution-v1.php';
+require_once __DIR__.'/agent-marketing-followthrough-v1.php';
 
 /** Read an exact owner-authorized Campaign and its recorded, attributable results. */
 function vp3_marketing_campaign_outcomes_v1(PDO $pdo,int $owner,int $merchant,int $campaign,DateTimeImmutable $now): array
@@ -53,6 +54,7 @@ function vp3_marketing_campaign_outcomes_v1(PDO $pdo,int $owner,int $merchant,in
         ],
         'handoff'=>null,
     ];
+    $report['followthrough']=vp3_marketing_campaign_followthrough_v1($pdo,$owner,$merchant,$campaign,$now,$report['decisions']);
     if ($closure!==null) {
         $closed=$report['observations']['claims'];
         if ($closed['state']!=='observed') {
