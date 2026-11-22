@@ -53,6 +53,7 @@ try{
  await repair.click();
  await page.waitForFunction(()=>!!window.VP3AgentOrb,{timeout:10000});
  assert.equal(await page.evaluate(()=>window.VP3_ORB_CONFIG.agentId),7,'the editor conversation overrides another default Agent consistently');
+ const recordingGuard=await page.evaluate(()=>{const r=window.STONEFELLOW_STUDIO_RUNTIME_V87,original=r.isCoreRecording;try{r.isCoreRecording=()=>true;return {recording:window.VP3_ORB_ADAPTER.state().recording,busy:window.VP3_ORB_ADAPTER.busy()};}finally{r.isCoreRecording=original;}});assert.deepEqual(recordingGuard,{recording:true,busy:true},'the shared orb honors the canonical recording state');
  await page.locator('.studio-agent-trigger').click();await page.locator('.studio-agent-orb-mounted').waitFor({state:'visible'});
  assert.equal(await page.locator('iframe').count(),0,'the editor mounts its one verified conversation');
  assert.equal(await page.locator('.studio-agent-panel').count(),1);

@@ -223,7 +223,7 @@
   let qTimes=[];document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){if(window.VP3_ORB_ADAPTER?.hideBar)window.VP3AgentOrb?.close();else closePanel();return;}if(e.target.matches?.('input,textarea,select')||e.target.isContentEditable)return;if(e.key.toLowerCase()!=='q'){qTimes=[];return;}const now=Date.now();qTimes=qTimes.filter(t=>now-t<900);qTimes.push(now);if(qTimes.length>=3){qTimes=[];e.preventDefault();togglePanel();}});
   Object.assign(proof,{
     conversationRef:()=>({id:continuity.conversationId(),agent:Number(cfg.agentId||0)}),
-    state:()=>({state:busy?'thinking':voice?.isSpeaking()?'speaking':voice?.isListening()?'listening':'idle',recording:Boolean(runtime()?.recordingActive)}),
+    state:()=>({state:busy?'thinking':voice?.isSpeaking()?'speaking':voice?.isListening()?'listening':'idle',recording:Boolean(runtime()?.isCoreRecording?.()||document.querySelector('[data-recording="true"],.is-recording,[data-agent-state="recording"]'))}),
     focus:()=>input.focus(),
     listen:()=>{if(!voice?.isEnabled())voice?.toggle();else voice.resume(40);},
     stop:()=>{voice?.setEnabled(false);voice?.stopOutput();},
