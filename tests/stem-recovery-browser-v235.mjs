@@ -67,5 +67,8 @@ try{
  const composer=await page.locator('.studio-agent-panel textarea').boundingBox();assert.ok(composer.height<90&&composer.y+composer.height<=844,'mobile composer is visible within the viewport');
  if(process.env.STEM_RECOVERY_SCREENSHOT)await page.screenshot({path:process.env.STEM_RECOVERY_SCREENSHOT.replace('.png','-mobile.png'),fullPage:true});
  assert.deepEqual(errors,[],'canonical editor and one Agent UI have no uncaught browser errors');
+ await Promise.all([page.waitForNavigation(),page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})))]);
+ await page.waitForFunction(()=>window.StonefellowStemProjectLoaderV232?.isPlaybackReady(),{timeout:15000});
+ assert.equal(await page.evaluate(()=>window.STONEFELLOW_STUDIO_RUNTIME_V87.isPlaying()),false,'restoring a disposed history entry reloads audio without starting playback');
  console.log('STEM_RECOVERY_BROWSER_V235=PASS 19 real imported MP3s, 503 recovery, missing/retry gate, shared loading, playback/Stop, desktop/mobile single-Agent UI');
 }finally{await browser?.close();f.close();}

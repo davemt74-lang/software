@@ -163,6 +163,9 @@
       rows.forEach((_,id)=>generations.set(id,(generations.get(id)||0)+1));pool.dispose();
       readyTimers.forEach(clearTimeout);readyTimers.clear();
     },{once:true});
+    // A restored history entry contains disposed audio/Agent runtimes and
+    // revoked Blob URLs. Reload it from the preserved local mix, never play it.
+    host.addEventListener('pageshow',event=>{if(event.persisted)host.location.reload();});
     return true;
   }
   return Object.freeze({createPool,install});
