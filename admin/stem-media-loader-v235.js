@@ -114,6 +114,7 @@
       if(!row||!source||!audio)return false;
       clearTimeout(readyTimers.get(id));readyTimers.delete(id);
       const generation=(generations.get(id)||0)+1;generations.set(id,generation);
+      audio.dataset.stemMediaGenerationV235=String(generation);
       audio.dataset.stemMediaSource=source;
       audio.dataset.stemMediaRetryingV235='1';
       observations.set(id,{id,name:String(row.name||`Track ${id}`),state:'loading'});

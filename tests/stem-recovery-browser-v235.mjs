@@ -51,6 +51,14 @@ try{
  await page.keyboard.press('Control+z');await repair.waitFor({state:'visible'});
  const undone=await page.evaluate(id=>window.StonefellowStemStudioV91.getMixState().stems[String(id)],legacyId);assert.equal(undone.clips[0].sourceEnd,.05);assert.equal(undone.volume,.42,'Undo restores only the source-length edit');
  await repair.click();
+ const late=f.stems[1],latePath=path.join(f.root,late.file_path.replace(/^\//,''));
+ await page.waitForFunction(id=>!!window.STONEFELLOW_STUDIO_RUNTIME_V87.getStem(id).waveformData,late.id);
+ fs.unlinkSync(latePath);
+ await page.evaluate(id=>{const s=window.STONEFELLOW_STUDIO_RUNTIME_V87.getStem(id);s.waveformData=null;s.waveformError=true;return window.StonefellowStemMediaHealthV235.retry(id);},late.id);
+ await page.waitForFunction(id=>window.StonefellowStemMediaHealthV235.snapshot().some(x=>x.id===id),late.id);
+ assert.equal(await page.evaluate(()=>window.StonefellowStemProjectLoaderV232.isPlaybackReady()),true,'late failures do not close the editor');
+ fs.writeFileSync(latePath,f.mp3);await page.getByRole('button',{name:`Retry loading track ${late.id}`,exact:true}).click();
+ await page.waitForFunction(id=>{const s=window.STONEFELLOW_STUDIO_RUNTIME_V87.getStem(id);return !s.mediaUnavailable&&!!s.waveformData&&!s.waveformError;},late.id,{timeout:15000});
  await page.waitForFunction(()=>!!window.VP3AgentOrb,{timeout:10000});
  assert.equal(await page.evaluate(()=>window.VP3_ORB_CONFIG.agentId),7,'the editor conversation overrides another default Agent consistently');
  const recordingGuard=await page.evaluate(()=>{const r=window.STONEFELLOW_STUDIO_RUNTIME_V87,original=r.isCoreRecording;try{r.isCoreRecording=()=>true;return {recording:window.VP3_ORB_ADAPTER.state().recording,busy:window.VP3_ORB_ADAPTER.busy()};}finally{r.isCoreRecording=original;}});assert.deepEqual(recordingGuard,{recording:true,busy:true},'the shared orb honors the canonical recording state');

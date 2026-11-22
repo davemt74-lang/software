@@ -6973,6 +6973,17 @@
     runWaveformQueue().catch(() => {});
   }
 
+  function retryRecoveredWaveform(event) {
+    if(waveformDisposed)return;
+    const stem=stemById(Number(event.detail?.stemId||0));
+    if(!stem||stem.waveformData||stem.waveformLoading||stem.mediaUnavailable)return;
+    const source=String(stem.audio?.currentSrc||stem.audio?.src||'')+'@'+String(stem.audio?.dataset?.stemMediaGenerationV235||0);
+    if(event.type!=='stonefellow:stem-waveform-retry'&&stem.waveformRecoverySource===source)return;
+    stem.waveformRecoverySource=source;stem.waveformError=false;queueStemWaveform(stem);
+  }
+  window.addEventListener('stonefellow:stem-media-online',retryRecoveredWaveform);
+  window.addEventListener('stonefellow:stem-waveform-retry',retryRecoveredWaveform);
+
   function drawStemClipWaveform(
     stem,
     clip,

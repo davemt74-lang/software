@@ -23,7 +23,7 @@ $html = str_replace('</head>', '<link rel="stylesheet" href="' . e(url('/admin/s
 $token = 'stem-recovery-v235-20261122';
 $transportToken = 'fd32ec14';
 $projectLoaderToken = 'b4848d84';
-$coreToken = 'e46bef1c';
+$coreToken = '2f2e0659';
 $editingToken = 'stem-editing-foundation-v209-20260901';
 $professionalEditingToken = 'stem-professional-editing-v210-20260901';
 $automationMixerToken = 'stem-automation-mixer-v211-20260901';
