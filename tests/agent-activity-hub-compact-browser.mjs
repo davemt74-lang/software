@@ -174,8 +174,9 @@ await page.route('https://activity.test/api/hub**',route => {
           actions_followups:['Proposed playback; not yet executed'],open_questions:['Which track next?'],
           next_step:'Review the saved track',questions_for_you:['Play this track?']}},
       {specialist_id:'marketing',title:'Campaign needs review',source_coverage:'limited',source_url:'https://outside.test/phishing',
-        engagement:{state:'owner_marked_resolved',conversation_id:42,message_id:445,run_id:553,
-          receipt_run_id:0,chat_url:'/chat.php?agent=7&conversation_id=42&message_id=445'},sections:{key_findings:['A campaign has a verified follow-up.'],actions_followups:['Review draft'],
+        engagement:{state:revisedPlanningSummary?'approved_action_verified':'owner_marked_resolved',
+          conversation_id:42,message_id:445,run_id:553,receipt_run_id:revisedPlanningSummary?727:0,
+          chat_url:'/chat.php?agent=7&conversation_id=42&message_id=445'},sections:{key_findings:['A campaign has a verified follow-up.'],actions_followups:['Review draft'],
           open_questions:['Is the date final?'],next_step:'Review campaign',
           questions_for_you:['Approve a draft for review?']}},
     ]};
@@ -452,6 +453,12 @@ try {
   revisedPlanningSummary = true;
   await summary.getByText('Workshop setup moved to Monday',{exact:true}).waitFor({timeout:16000});
   assert.equal(await summary.getByText('Workshop setup is on Friday',{exact:true}).count(),0,'An automatic poll replaces the old report');
+  assert.equal(await briefs.getByText('You marked this resolved · not an executor completion',{exact:true}).count(),0,
+    'A newly verified approved action replaces the earlier owner-only resolution');
+  assert.equal(await briefs.getByText('Approved private action completed with receipt',{exact:true}).count(),1,
+    'The Brain refreshes the same specialist report after the executor receipt appears');
+  assert.equal(await briefs.locator('a[data-vp3-specialist-message-id="445"]').count(),1,
+    'Receipt status changes must retain the original owner decision link');
   assert.equal(await summary.getByText('Catering needs a reply',{exact:true}).count(),1);
   assert.equal(await summary.getByText('Changed → Keep in Top of Mind',{exact:true}).count(),1);
   assert.equal(await agentWork.getByText('Which local suppliers rent equipment?',{exact:true}).count(),0,'Raw Gmail handoffs stay in the specialist report');
