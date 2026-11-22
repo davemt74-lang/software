@@ -5990,7 +5990,7 @@
     hasInitiativeReply:() => Boolean(initiativeReplyTarget),
     parkFailedProactiveReply:parkCurrentProactiveReplyV1,
     showTurnNotice:showChatTurnNotice,
-    phoneReplyCurrent:phoneReplyCurrentV1,
+    phoneReplyCurrent:data => phoneReplyCurrentV1(data),
     conversationId:() => Number(conversationId || 0),
     agentId:() => Number(cfg.agentId || 0),
     ensureConversation:ensureConversationPa3,

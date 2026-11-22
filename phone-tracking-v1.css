@@ -1,4 +1,21 @@
 .chat-main.phone-tracking-main { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:auto; background:#f7f8f8; }
+/* The fixed Agent composer gets its own space below the map's scrollport. */
+body.phone-tracking-page.vp3-orb-has-bar {
+  --phone-composer-height:max(60px,3.75rem);
+  --phone-composer-bottom:calc(12px + env(safe-area-inset-bottom,0px));
+  padding-bottom:0;
+}
+.phone-tracking-page.vp3-orb-has-bar > .vp3-orb-bar {
+  height:var(--phone-composer-height);
+  bottom:var(--phone-composer-bottom);
+}
+.phone-tracking-page.vp3-orb-has-bar .phone-tracking-main {
+  height:calc(100dvh - var(--phone-composer-height) - var(--phone-composer-bottom) - 8px);
+  scroll-padding-block:12px;
+}
+.phone-tracking-page.vp3-orb-has-bar .phone-devices-section:has(#phone-detail:not([hidden])) {
+  padding-bottom:96px;
+}
 .phone-tracking-main > .member-header { flex:none; }
 .phone-workspace { --ink:#192924; --teal:#166454; --line:#cdd8d3; --muted:#4e635b; width:100%; max-width:1600px; margin:0 auto; padding:clamp(14px,2.6vw,36px); color:var(--ink); }
 .phone-workspace [hidden] { display:none !important; }

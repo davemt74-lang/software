@@ -34,7 +34,7 @@ $asset = static function (string $path): string {
 <script defer src="<?= e($asset('assets/phone-map/qr.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
-<body>
+<body class="phone-tracking-page">
 <div class="chat-app">
 <?php $mainSidebarUser=$user; $mainSidebarActive='phone_tracking'; require __DIR__.'/includes/main-sidebar.php'; ?>
 <div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div>
