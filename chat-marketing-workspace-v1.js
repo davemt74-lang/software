@@ -336,6 +336,41 @@
     const row=n('div','','vp3-marketing-workspace-card-actions');
     row.append(...actions);host.append(row);
   };
+  function normalizePrivateBrief(raw,candidate,coverage) {
+    if(!raw||raw.contract!=='vp3.marketing.private-brief.v1'
+      ||raw.state!=='private_proposal_only'||raw.source_ref!==candidate.source_ref
+      ||raw.source_revision!==candidate.source_revision||raw.source_coverage!==coverage
+      ||!Array.isArray(raw.deliverables)||raw.deliverables.length!==2
+      ||['creative_generated','campaign_created','activated','sent'].some(flag=>raw[flag]!==false)
+      ||raw.next_step!==candidate.next_step)return null;
+    const fields=['objective','audience_decision','budget_decision','channel_decision',
+      'measurement','approval_gate','evidence_note','chat_prompt'];
+    if(fields.some(key=>typeof raw[key]!=='string'||!raw[key].trim()
+      ||raw[key].length>2100||/[<>]/.test(raw[key]))
+      ||raw.deliverables.some(value=>typeof value!=='string'||!value.trim()
+        ||value.length>240||/[<>]/.test(value))
+      ||!raw.chat_prompt.includes(candidate.source_ref)
+      ||!raw.chat_prompt.includes(candidate.source_revision)
+      ||!/do not send, publish, launch/i.test(raw.chat_prompt))return null;
+    return {objective:raw.objective,deliverables:[...raw.deliverables],
+      audience:raw.audience_decision,budget:raw.budget_decision,
+      channel:raw.channel_decision,measurement:raw.measurement,
+      approval:raw.approval_gate,evidence:raw.evidence_note,prompt:raw.chat_prompt};
+  }
+  function discussPrivateBrief(session,candidate) {
+    if(!current(session)||!candidate?.brief||!candidate.brief.prompt)return;
+    const compose=document.getElementById('chatInput');
+    if(!(compose instanceof HTMLTextAreaElement)||compose.value.trim()){
+      display('Finish the existing Chat draft before using this Marketing brief.');return;
+    }
+    const draft=candidate.brief.prompt;
+    context()?.showChatView?.();
+    if(thread.dataset.view!=='chat')return;
+    compose.value=draft;
+    compose.dispatchEvent(new Event('input',{bubbles:true}));
+    compose.focus({preventScroll:true});
+    // No form submit, provider call, approval or Campaign write.
+  }
   const portfolioKinds=new Set(['campaign-readiness','campaign-performance','campaign-optimization',
     'campaign-work','campaign-outcome','product-plan']);
   function normalizeOpportunityPortfolio(raw,session) {
@@ -369,7 +404,7 @@
         title:candidate.title.slice(0,160),label:candidate.label.slice(0,70),
         finding:candidate.finding.slice(0,420),next:candidate.next_step.slice(0,260),
         question:candidate.question.slice(0,260),priority:candidate.priority,href,
-        nativeOwner:product});
+        nativeOwner:product,brief:normalizePrivateBrief(candidate.private_brief,candidate,raw.coverage)});
     }
     return {coverage:raw.coverage,items:output};
   }
@@ -401,6 +436,21 @@
         item.append(n('p','Next step: '+candidate.next));
         if(candidate.question)item.append(n('p',candidate.question,'vp3-marketing-workspace-muted'));
         if(candidate.nativeOwner)item.append(n('small','The Product Launch specialist owns its existing Chat announcement.'));
+        if(candidate.brief){
+          const details=n('details','','vp3-marketing-private-brief');
+          details.append(n('summary','Develop private creative brief'));
+          details.append(n('h4','Objective'),n('p',candidate.brief.objective));
+          details.append(n('h4','Proposed deliverables'));
+          const deliverables=n('ul');
+          for(const deliverable of candidate.brief.deliverables)deliverables.append(n('li',deliverable));
+          details.append(deliverables);
+          details.append(n('h4','Decisions required'),n('p',candidate.brief.audience),
+            n('p',candidate.brief.budget),n('p',candidate.brief.channel));
+          details.append(n('h4','Measurement & approval'),n('p',candidate.brief.measurement),
+            n('p',candidate.brief.approval),n('small',candidate.brief.evidence));
+          details.append(button('Use this private brief in Chat',()=>discussPrivateBrief(session,candidate)));
+          item.append(details);
+        }
         rowActions(item,link('Review verified source',candidate.href,
           candidate.nativeOwner?'plan':'campaigns',
           candidate.nativeOwner?{product_id:Number(candidate.ref.split(':').at(-1)),conversation_id:session.cid}:null));

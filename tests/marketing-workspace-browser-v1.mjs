@@ -59,7 +59,21 @@ async function scenario(width){
            finding:'The saved Campaign needs a reward.',next_step:'Choose the permitted reward.',
            question:'Review this issue?',priority:'high',source_status:'open',
            source_href:'/campaigns.php?merchant=2&edit_campaign=4',coverage:'limited',
-           notification_owner:'coordination'},
+           notification_owner:'coordination',
+           private_brief:{contract:'vp3.marketing.private-brief.v1',state:'private_proposal_only',
+             source_ref:'marketing:campaign-readiness:4',source_revision:'a'.repeat(64),source_coverage:'limited',
+             objective:'Resolve verified campaign setup blocker before launch.',
+             deliverables:['Review current eligibility','Draft private revised offer message'],
+             audience_decision:'Confirm the intended audience and eligibility.',
+             budget_decision:'Obtain an explicit budget approval.',
+             channel_decision:'Choose a channel only after owner approval.',
+             measurement:'Measure source-specific events, not causal lift.',
+             approval_gate:'Owner review required. Never publish, message or spend.',
+             evidence_note:'Source coverage is partial; verify before activation.',
+             next_step:'Choose the permitted reward.',
+             chat_prompt:'Help me plan PRIVATE Marketing creative for marketing:campaign-readiness:4 source '
+               +'a'.repeat(64)+'. Do not send, publish, launch, or spend.',
+             creative_generated:false,campaign_created:false,activated:false,sent:false}},
           {source_ref:'marketing:product-plan:10',source_revision:'b'.repeat(64),
            source_id:10,kind:'product-plan',label:'Product marketing',title:'Autumn shirts · product plan',
            finding:'Verified private design review needed.',next_step:'Review existing artwork.',
@@ -147,6 +161,14 @@ async function scenario(width){
   check(await portfolio.locator('a[href*="attacker.invalid"]').count()===0
     &&await portfolio.getByText('Forged external destination').count()===0,
     'untrusted external recommendation links fail closed');
+  check(await portfolio.locator('.vp3-marketing-private-brief').count()===1,
+    'only the exact source-matched opportunity exposes private creative development');
+  await portfolio.getByText('Develop private creative brief',{exact:true}).click();
+  check(await portfolio.getByText('Resolve verified campaign setup blocker before launch.',{exact:true}).count()===1
+    &&await portfolio.getByText('Obtain an explicit budget approval.',{exact:true}).count()===1,
+    'private objective and owner budget gate are visible without inventing spend');
+  check(await portfolio.getByText(/Never publish, message or spend/).count()===1,
+    'creative proposal cannot silently become a public Campaign');
   check(await page.locator('#chatMarketingWorkspaceV1').innerText().then(s=>!s.includes('customer email')),'private CRM not rendered');
   await page.getByRole('tab',{name:'Analytics'}).click();
   check(await page.getByRole('heading',{name:'Campaign performance & next actions'}).count()===1,
@@ -241,6 +263,17 @@ async function scenario(width){
     'revoked permission removes previously visible private campaign rows');
   deny=false;
   check(await reopen(),'Marketing can reopen when access is restored');
+  await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1')?.textContent.includes('Autumn special'));
+  const privateBrief=page.locator('.vp3-marketing-private-brief').first();
+  await privateBrief.getByText('Develop private creative brief',{exact:true}).click();
+  check((await page.locator('#chatInput').inputValue()).trim()==='',
+    'existing Chat remains unchanged until explicit owner action');
+  await privateBrief.getByRole('button',{name:'Use this private brief in Chat'}).click();
+  check(await page.locator('#chatThread').getAttribute('data-view')==='chat'
+    &&(await page.locator('#chatInput').inputValue()).includes('marketing:campaign-readiness:4')
+    &&(await page.locator('#chatInput').inputValue()).includes('Do not send, publish, launch'),
+    'owner explicitly transfers source-bound draft to Chat composer without sending');
+  check(await reopen(),'Marketing can reopen after putting a private brief into Chat');
   await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1')?.textContent.includes('Autumn special'));
   await page.evaluate(()=>{
     window.fixture.conversation=77;
