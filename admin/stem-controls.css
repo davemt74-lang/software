@@ -17,7 +17,7 @@ body.admin-canvas-mode .stem-project-loader-v232-card{max-height:calc(100dvh - 3
 body.admin-canvas-mode .stem-project-loader-v232{padding:16px;box-sizing:border-box}
 
 /* The existing Studio conversation is mounted in the canonical orb popup. */
-.studio-agent-panel.studio-agent-orb-mounted{position:static!important;inset:auto!important;width:100%!important;max-width:none!important;height:100%!important;max-height:none!important;box-shadow:none!important;border:0!important;border-radius:0!important;display:flex;flex-direction:column;min-height:0}
+.studio-agent-panel.studio-agent-orb-mounted{position:static!important;inset:auto!important;transform:none!important;width:100%!important;max-width:none!important;height:100%!important;max-height:none!important;box-shadow:none!important;border:0!important;border-radius:0!important;display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;overflow:hidden;pointer-events:auto;box-sizing:border-box}
 .studio-agent-panel.studio-agent-orb-mounted[hidden]{display:none!important}
 .studio-agent-orb-mounted .editor-agent-history{flex:1;min-height:0;overflow:auto}
 .studio-agent-orb-mounted .editor-agent-footer{flex:none}

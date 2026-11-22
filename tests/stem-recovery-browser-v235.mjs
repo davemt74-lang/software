@@ -7,7 +7,7 @@ import {recoveryFixture} from './stem-recovery-fixture-v235.mjs';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
 const f=await recoveryFixture();let browser;
 try{
- const assets=['admin/admin.css','admin/stems-v107.css','admin/stems-extra-v107.css','admin/stem-controls.css','admin/stem-editor.js','admin/stem-master-clock-v201.js','admin/stem-buffer-scheduler-v202.js','admin/stem-project-loader.js','admin/stem-media-loader-v235.js','admin/stem-media-health-v235.js','admin/stem-transport-v200.js','admin/stem-agent-v131.js','editor-agent.js','agent-eyes-core.js','agent-orb-adapter.js','agent-orb.js','agent-orb.css','agent-orb-particles.css'];
+ const assets=['admin/admin.css','admin/stems-v107.css','admin/stems-extra-v107.css','admin/stem-controls.css','admin/stem-editor.js','admin/stem-master-clock-v201.js','admin/stem-buffer-scheduler-v202.js','admin/stem-project-loader.js','admin/stem-media-loader-v235.js','admin/stem-media-health-v235.js','admin/stem-transport-v200.js','admin/stem-agent-v131.js','editor-agent.js','agent-eyes-core.js','agent-orb-adapter.js','agent-orb.js','agent-orb.css','agent-orb-particles.css','editor-agent-v87.css','editor-agent-v107.css'];
  for(const asset of assets){fs.mkdirSync(path.dirname(path.join(f.root,asset)),{recursive:true});fs.copyFileSync(asset,path.join(f.root,asset));}
  const layout=execFileSync(process.env.PHP_BINARY||'php',['-r',`
  function e($v){return htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}function url($p){return $p;}function stem_format_duration($v){return '0:02';}
@@ -18,7 +18,7 @@ try{
  const stems=f.stems.map(row=>({id:row.id,name:row.stem_name,role:row.stem_role,duration:row.duration_seconds,offset:0,volume:1,pan:0,channels:1,sampleRate:48000,sourceTempo:170,initialSourceStart:0,initialSourceEnd:row.duration_seconds,url:'/stem-media-v34.php?id='+row.id}));
  const cfg={userId:11,trackId:1,stems,duration:1.296,sourceTempo:170,projectTitle:'Recovery fixture',csrf:f.formData.csrf};
  const missing=f.stems.at(-1),missingPath=path.join(f.root,missing.file_path.replace(/^\//,''));fs.unlinkSync(missingPath);
- const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${assets.filter(x=>x.endsWith('.css')).map(x=>`<link rel="stylesheet" href="/${x}">`).join('')}</head><body class="admin-canvas-mode"><main class="admin-content admin-content-canvas"><header class="daw-canvas-header"><div class="daw-canvas-actions"></div></header>${layout}</main>
+ const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${assets.filter(x=>x.endsWith('.css')).map(x=>`<link rel="stylesheet" href="/${x}">`).join('')}</head><body class="admin-canvas-mode"><div class="admin-layout admin-layout-canvas"><main class="admin-content admin-content-canvas"><header class="daw-canvas-header"><div class="daw-canvas-actions"></div></header>${layout}</main></div>
  <script>window.STONEFELLOW_STEM_STUDIO=${JSON.stringify(cfg)};window.STONEFELLOW_STUDIO_AGENT={endpoint:'/studio-test.php',userId:11,trackId:1,agentId:7,conversationId:101,csrf:'fixture'};window.STONEFELLOW_AGENT_CONTEXT={surface:'stem'};
  window.calls=[];window.StonefellowEditorAgent={build:'fixture',hasSurface:()=>true};
  window.STONEFELLOW_NOTIFICATION_CENTER={};window.StonefellowPremiumVoiceV122={};
@@ -46,6 +46,7 @@ try{
  await page.locator('.studio-agent-trigger').click();await page.locator('.studio-agent-orb-mounted').waitFor({state:'visible'});
  assert.equal(await page.locator('iframe').count(),0,'the editor mounts its one verified conversation');
  assert.equal(await page.locator('.studio-agent-panel').count(),1);
+ const mounted=await page.locator('.studio-agent-panel').boundingBox();assert.ok(mounted.x>=0&&mounted.x+mounted.width<=1441,'legacy panel transforms cannot displace the orb conversation');
  await page.locator('.studio-agent-panel textarea').fill('What needs attention in this production?');
  const request=page.waitForRequest(r=>r.url().endsWith('/studio-test.php')&&r.postDataJSON()?.action==='send');
  await page.locator('.studio-agent-panel button[type=submit]').click();const posted=(await request).postDataJSON();assert.equal(posted.agent_id,7);assert.equal(posted.conversation_id,101);
@@ -62,6 +63,8 @@ try{
  if(process.env.STEM_RECOVERY_SCREENSHOT){await page.screenshot({path:process.env.STEM_RECOVERY_SCREENSHOT,fullPage:true});}
  await page.setViewportSize({width:390,height:844});await page.locator('.studio-agent-trigger').click();
  await page.locator('.studio-agent-orb-mounted').waitFor({state:'visible'});assert.equal(await page.locator('.vp3-orb-bar').count(),0);
+ const mobilePanel=await page.locator('.studio-agent-panel').boundingBox();assert.ok(mobilePanel.x>=0&&mobilePanel.x+mobilePanel.width<=391,'one composer fits the mobile popup');
+ const composer=await page.locator('.studio-agent-panel textarea').boundingBox();assert.ok(composer.height<90&&composer.y+composer.height<=844,'mobile composer is visible within the viewport');
  if(process.env.STEM_RECOVERY_SCREENSHOT)await page.screenshot({path:process.env.STEM_RECOVERY_SCREENSHOT.replace('.png','-mobile.png'),fullPage:true});
  assert.deepEqual(errors,[],'canonical editor and one Agent UI have no uncaught browser errors');
  console.log('STEM_RECOVERY_BROWSER_V235=PASS 19 real imported MP3s, 503 recovery, missing/retry gate, shared loading, playback/Stop, desktop/mobile single-Agent UI');
