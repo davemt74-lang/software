@@ -18,7 +18,20 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
     if(!function_exists('vp3_coordination_marketing_owner_v1'))require_once __DIR__.'/agent-coordination-marketing-v1.php';
     if(vp3_coordination_marketing_owner_v1($pdo,$scope)!==$owner)return $empty;
     if(!function_exists('vp3_marketing_review_v1'))require_once __DIR__.'/agent-marketing-review-v1.php';
-    $report=vp3_marketing_review_v1($pdo,$scope,new DateTimeImmutable('now',new DateTimeZone('UTC')),null,false,true);
+    $now=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+    $report=vp3_marketing_review_v1($pdo,$scope,$now,null,false,true);
+    require_once __DIR__.'/agent-marketing-opportunity-portfolio-v1.php';
+    $portfolio=vp3_marketing_opportunity_portfolio_v1(['coverage'=>'unavailable','items'=>[]]);
+    // A second bounded read includes product-plan, optimization and follow-through
+    // evidence that is not part of the Campaigns-only dashboard. Each source
+    // retains the canonical owner, Agent, Chat and permission checks.
+    try {
+        if(!function_exists('vp3_coordination_marketing_sources_v1'))require_once __DIR__.'/agent-coordination-marketing-v1.php';
+        $sources=vp3_coordination_marketing_sources_v1($pdo,$scope,null,$now);
+        $portfolio=vp3_marketing_opportunity_portfolio_v1($sources);
+    } catch(DomainException|RuntimeException $error) {
+        if(!in_array((int)$error->getCode(),[403,404,409,503],true))throw $error;
+    }
     $campaigns=[];
     foreach(array_slice((array)($report['campaigns']??[]),0,5) as $item) {
         if(!is_array($item)||(int)($item['id']??0)<1
@@ -67,6 +80,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
         'coverage'=>in_array($report['coverage']??null,['ready','limited','unavailable','unconfigured'],true)
             ?$report['coverage']:'unavailable',
         'campaigns'=>$campaigns,
+        'opportunity_portfolio'=>$portfolio,
         'links'=>[
             'campaigns'=>url('/campaigns.php'),
             'products'=>url('/profile-commerce-products.php'),

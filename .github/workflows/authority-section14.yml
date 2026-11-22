@@ -524,6 +524,14 @@ jobs:
           name: campaigns-merchant-layout-evidence
           path: artifacts/campaigns-merchant-layout/
           if-no-files-found: ignore
+      - name: Marketing Specialist verified opportunity queue and owner-private planning surface
+        run: |
+          php -l includes/agent-marketing-opportunity-portfolio-v1.php
+          php -l includes/initiative-marketing-workspace-v1.php
+          php tests/marketing-opportunity-portfolio-v1.php
+          php tests/marketing-workspace-v1.php
+          node --check chat-marketing-workspace-v1.js
+          node --check tests/marketing-workspace-browser-v1.mjs
       - name: Unified Marketing workspace Chat Canvas, plans and mobile acceptance
         run: node tests/marketing-workspace-browser-v1.mjs
       - name: Music Library REAPER progress desktop and mobile browser acceptance
