@@ -15,10 +15,13 @@ function initialDevice(status = 'pending',g = 1,loc = 'off') {
   return {id,name:'Test phone',role:'owner',status,generation:g,allow_location:status === 'approved',
     location_state:loc,fix_at:null,accuracy:null};
 }
-async function scenario({initial = null, geolocation = true, lostClaimAck = false} = {}) {
+async function scenario({initial = null, geolocation = true, lostClaimAck = false, holdFirstFix = false} = {}) {
   const context = await browser.newContext({viewport:{width:375,height:667},isMobile:true,hasTouch:true});
   let device = initial && {...initial}, revoked = false, drop = lostClaimAck;
   let requests = [], routes = [], errors = [];
+  let firstFixSeen, rejectFirstFix;
+  const firstFix = new Promise(resolve => { firstFixSeen = resolve; });
+  const releaseFix = new Promise(resolve => { rejectFirstFix = resolve; });
   const page = await context.newPage();
   page.on('pageerror',e=>errors.push(String(e)));
   page.setDefaultTimeout(4500);
@@ -61,13 +64,19 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
         if (device.location_state !== 'requested') device.generation++;
         device.location_state='waiting';
       } else if (req.action === 'fix') {
+        if (holdFirstFix) {
+          holdFirstFix = false;
+          firstFixSeen();
+          await releaseFix;
+          return send(422,{ok:false});
+        }
         device.location_state='live'; device.fix_at=req.fix_at; device.accuracy=req.accuracy;
       } else if (req.action === 'disconnect') {device.status='revoked';revoked=true;}
       else {device.generation++;device.location_state=req.action==='denied'?'denied':'off';device.fix_at=null;}
     }
     return send(200,{ok:true,device,owner_name:'David Evans'});
   });
-  return {page,requests,routes,errors, get device(){return device;}, revoke(){revoked=true;},
+  return {page,requests,routes,errors,firstFix,rejectFirstFix, get device(){return device;}, revoke(){revoked=true;},
     visit:frag=>page.goto(origin+pathname+(frag||'')), close:()=>context.close()};
 }
 const waitText = (p,re) => p.waitForFunction(s=>new RegExp(s,'i').test(document.querySelector('#phone-status').textContent),re);
@@ -149,5 +158,36 @@ try {
     assert.equal(await t.page.evaluate(()=>window.phoneFixture.watches),0,'a reloaded phone cannot auto-start a new watch');
     assert.deepEqual(t.errors,[]);await t.close();
   }
-  console.log('PASS phone holder browser: claim/retry, local consent, stale fix, denial, offline stop, cookie session, supersession, revocation and unavailable GPS');
+  for (const interruption of ['none','stop','offline']) {
+    const t=await scenario({initial:initialDevice('approved',1),holdFirstFix:true});
+    await t.visit(); await t.page.locator('#phone-start').click(); await waitText(t.page,'Waiting for a fresh');
+    await t.page.evaluate(()=>window.phoneFixture.position(Date.now()-15000));
+    await t.firstFix;
+    const latest = await t.page.evaluate(()=>{
+      const stamp = Date.now();
+      window.phoneFixture.position(stamp-5000);
+      window.phoneFixture.position(stamp);
+      window.phoneFixture.position(stamp-1000); // A late, older callback must not replace the latest.
+      return Math.floor(stamp/1000);
+    });
+    if (interruption === 'stop') await t.page.locator('#phone-stop').click();
+    if (interruption === 'offline') await t.page.evaluate(()=>window.phoneFixture.network(false));
+    t.rejectFirstFix();
+    if (interruption === 'none') {
+      await waitText(t.page,'received this phone');
+      assert.deepEqual(t.requests.filter(r=>r.action==='fix').map(r=>r.fix_at).slice(1),[latest],
+        'the latest native callback survives an older rejected in-flight upload');
+    } else {
+      if (interruption === 'stop') await waitText(t.page,'choose when');
+      else {
+        await t.page.evaluate(()=>window.phoneFixture.network(true));
+        await waitText(t.page,'Waiting for a fresh');
+      }
+      await pause(t.page);
+      assert.equal(t.requests.filter(r=>r.action==='fix').length,1,
+        'buffered coordinates cannot survive ' + interruption);
+    }
+    assert.deepEqual(t.errors,[]); await t.close();
+  }
+  console.log('PASS phone holder browser: claim/retry, local consent, stale fix, denial, offline stop, cookie session, supersession, revocation, unavailable GPS and in-flight sample recovery');
 } finally {await browser.close();}

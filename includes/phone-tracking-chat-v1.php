@@ -52,9 +52,12 @@ function vp3_phone_chat_plan_v1(mixed $text): ?array
         return ['action'=>'list','target'=>''];
     }
     if (preg_match('/^(?:(?:check|show)(?: me)? )?(?:(?:my |the )?(?:phone|gps|location sharing|phone tracking) status|tracking status)(?:(?: for| on| of)? (.+))?$/iu', $text, $m)
-        || preg_match('/^(?:where is|where’s|where\x27s) ((?:my |the )?(?:phone|iphone|android)(?: .+)?)$/iu', $text, $m)
-        || preg_match('/^(?:is (.+?) (?:sharing (?:its |my )?location|tracking|connected))$/iu', $text, $m)) {
+        || preg_match('/^(?:where is|where’s|where\x27s) ((?:my |the )?(?:phone|iphone|android)(?: .+)?)$/iu', $text, $m)) {
         return ['action'=>'status','target'=>trim($m[1] ?? '')];
+    }
+    if (preg_match('/^is (.+?) (?:sharing (?:its |my )?location|tracking|connected)$/iu', $text, $m)) {
+        $target=trim($m[1]);
+        return ['action'=>'status','target'=>$target,'implicit'=>!preg_match('/\b(?:phone|iphone|android|device)\b/iu',$target)];
     }
     if (preg_match('/^(start|stop) sharing (.+?)(?:’s|\x27s) (?:gps|location)$/iu',$text,$m)) {
         return ['action'=>mb_strtolower($m[1])==='start'?'request_start':'stop','target'=>$m[2]];

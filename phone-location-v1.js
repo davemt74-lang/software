@@ -251,38 +251,60 @@
       } finally { actionBusy = false; render(); }
     });
   }
-  function submitFix(session, position) {
-    if (run !== session || !session.confirmed || !available || dead || navigator.onLine === false) return;
-    const time = Math.floor(position.timestamp / 1000);
-    const {latitude,longitude,accuracy} = position.coords;
-    if (!Number.isFinite(time) || time < now() - 55 || time > now() + 5 ||
-        ![latitude,longitude,accuracy].every(Number.isFinite) || Math.abs(latitude)>90 || Math.abs(longitude)>180 || accuracy<0) return;
-    if (session.sending || time <= session.lastTime || (session.lastTime > 0 && time - session.lastTime < 5)) return;
+  function canCollect(session) {
+    return run === session && available && !dead && navigator.onLine !== false;
+  }
+  function fresh(time) {
+    return Number.isFinite(time) && time >= now() - 55 && time <= now() + 5;
+  }
+  function sendLatestFix(session) {
+    if (!canCollect(session) || !session.confirmed || session.sending || !session.next) return;
     session.sending = true;
     queue(async () => {
+      const sample = session.next;
+      session.next = null;
       try {
-        if (run !== session || dead || navigator.onLine === false || !available || time < now()-55) return;
+        if (!sample || !canCollect(session)) return;
+        const time = Math.floor(sample.timestamp / 1000);
+        if (!fresh(time) || (session.lastTime && time - session.lastTime < 5)) return;
+        const {latitude,longitude,accuracy} = sample.coords;
         const result = await request('fix',{device_id:session.id,generation:session.generation,latitude,longitude,accuracy,fix_at:time});
         if (run !== session) return;
-        accept(result); session.lastTime = time; info = '';
+        accept(result); session.lastTime = time; session.needsFresh = false; info = '';
       } catch (error) {
         if (run !== session) return;
         if ([401,403,404,409].includes(error.status)) cancelWatch();
-        if (error.status === 422) info = 'Waiting for a fresh GPS reading.';
-        else reportFailure(error);
-      } finally { session.sending = false; render(); }
+        if (error.status === 422) {
+          session.needsFresh = true;
+          info = 'Waiting for a fresh GPS reading.';
+        } else reportFailure(error);
+      } finally {
+        session.sending = false;
+        // Only the newest unsent sample survives an in-flight upload, within this grant.
+        if (canCollect(session)) sendLatestFix(session);
+        else session.next = null;
+        render();
+      }
     });
   }
   function monitor(session) {
+    // Ignore a late callback from a watch replaced during the same sharing session.
+    const reader = {};
+    session.reader = reader;
+    session.needsFresh = false;
     if (session.watch !== null) navigator.geolocation.clearWatch(session.watch);
     session.refreshedAt = Date.now();
     try {
       session.watch = navigator.geolocation.watchPosition(position => {
-        if (run !== session) return;
-        if (session.confirmed) submitFix(session,position);
-        else session.next = position;
+        if (!canCollect(session) || session.reader !== reader) return;
+        const {latitude,longitude,accuracy} = position.coords;
+        if (!fresh(Math.floor(position.timestamp / 1000)) ||
+            ![latitude,longitude,accuracy].every(Number.isFinite) || Math.abs(latitude)>90 ||
+            Math.abs(longitude)>180 || accuracy<0 || accuracy>40075000) return;
+        if (!session.next || position.timestamp >= session.next.timestamp) session.next = position;
+        sendLatestFix(session);
       }, error => {
-        if (run !== session) return;
+        if (run !== session || session.reader !== reader) return;
         if (error.code === 1) finish('denied','Location permission denied. Sending the update to VP3.');
         else { info = 'GPS is temporarily unavailable. Waiting for a fresh position.'; render(); }
       }, {enableHighAccuracy:true,maximumAge:0,timeout:20000});
@@ -293,7 +315,7 @@
         device?.status !== 'approved' || !device.allow_location || mobileActive(device)) return;
     const initialGeneration = device.generation;
     const session = {id:device.id,baseGeneration:initialGeneration,startSent:false,generation:initialGeneration + (device.location_state === 'requested' ? 0 : 1),
-      watch:null,confirmed:false,next:null,lastTime:0,sending:false};
+      watch:null,confirmed:false,next:null,lastTime:0,sending:false,needsFresh:false};
     run = session; actionBusy = true; info = '';
     write('sessionStorage','watch',{id:session.id,generation:session.generation}); render();
     // Ask for browser permission directly in the holder's tap. Send no sample until the matching server grant is confirmed.
@@ -308,12 +330,7 @@
         if (run !== session) return;
         session.confirmed = true;
         write('sessionStorage','watch',{id:session.id,generation:session.generation});
-        if (session.next) {
-          const pos = session.next; session.next = null;
-          submitFix(session,pos);
-          // The first sample may predate the server grant. Ask for a new uncached reading as well.
-          monitor(session);
-        }
+        sendLatestFix(session);
       } catch (error) {
         if (run !== session) return;
         cancelWatch();
@@ -329,7 +346,10 @@
   el('disconnect').addEventListener('click',() => finish('disconnect'));
   el('retry').addEventListener('click',schedulePoll);
   window.addEventListener('online',schedulePoll);
-  window.addEventListener('offline',() => { available = false; info = ''; render(); });
+  window.addEventListener('offline',() => {
+    if (run) run.next = null;
+    available = false; info = ''; render();
+  });
   window.addEventListener('storage',event => {
     if (event.key !== prefix+'pending') return;
     pending = storedEnd();
@@ -351,8 +371,10 @@
     if (document.hidden || dead) return;
     if (device || !available) schedulePoll();
     // A stationary device may receive no watch events. A fresh sensor read is required to keep a marker live.
-    if (run?.confirmed && available && navigator.onLine !== false &&
-        Date.now() - Math.max(run.refreshedAt, run.lastTime * 1000) > 40000) monitor(run);
+    if (run?.confirmed && canCollect(run) && !run.sending && !run.next) {
+      const interval = run.needsFresh ? 6000 : 40000;
+      if (Date.now() - Math.max(run.refreshedAt, run.lastTime * 1000) > interval) monitor(run);
+    }
   }, 3000);
   render();
   schedulePoll();

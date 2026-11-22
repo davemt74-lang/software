@@ -188,7 +188,7 @@ async function browserJourney(baseURL, owner, other) {
   const outsider = await browser.newContext({ baseURL });
   mobileBrowser = process.env.VP3_PHONE_WEBKIT ? await webkit.launch() : browser;
   const handset = await mobileBrowser.newContext({ ...devices['iPhone 13'], baseURL,
-    geolocation: gps, permissions: ['geolocation'], deviceScaleFactor: 1 });
+    geolocation: { ...gps, latitude: gps.latitude - 0.01 }, permissions: ['geolocation'], deviceScaleFactor: 1 });
   const newcomer = await browser.newContext({ baseURL });
   for (const [context, user] of [[desktop, owner], [outsider, other]]) {
     await context.addCookies([{ name: 'PHPSESSID', value: user.session, url: baseURL }]);
@@ -197,23 +197,66 @@ async function browserJourney(baseURL, owner, other) {
   const phone = await handset.newPage();
   const errors = [];
   for (const page of [map, phone]) page.on('pageerror', error => errors.push(error.message));
-  async function startWithFreshSensorReading() {
+  async function startWithFreshSensorReading(reading) {
     const started = phone.waitForResponse(response =>
       new URL(response.url()).pathname === phoneEndpoint && response.request().postDataJSON()?.action === 'start');
     await phone.locator('#phone-start').click();
     check(await read(await started), 'start from the handset');
-    // WebKit timestamps each simulated reading when its fixture sends the update.
-    await handset.setGeolocation(gps);
+    // A moving phone supplies a different position after the server accepts the grant.
+    // WebKit may suppress repeated readings at identical coordinates.
+    await handset.setGeolocation(reading);
   }
   let gpsRequests = 0;
+  const observations = [];
+  const apiEvents = [];
+  phone.on('response', response => {
+    if (new URL(response.url()).pathname !== phoneEndpoint) return;
+    const action = response.request().postDataJSON()?.action;
+    apiEvents.push([action, response.status()]);
+    if (apiEvents.length > 25) apiEvents.shift();
+  });
   await handset.exposeBinding('countLocationRequest', () => { gpsRequests++; });
+  await handset.exposeBinding('observeSensor', (_, observation) => {
+    observations.push(observation);
+    if (observations.length > 12) observations.shift();
+  });
+  async function requireLiveFix(label) {
+    let latest;
+    try {
+      await eventually(label, async () => {
+        [latest] = check(await ownerApi(desktop, owner), 'live read').devices;
+        return latest?.location_state === 'live';
+      });
+      return latest;
+    } catch (error) {
+      // Diagnostics contain no coordinates, tokens, cookies, or user-entered names.
+      const client = await phone.evaluate(async () => ({
+        secure: window.isSecureContext,
+        visible: document.visibilityState,
+        permission: await navigator.permissions?.query({ name:'geolocation' }).then(r => r.state).catch(() => 'unknown'),
+        gps: document.querySelector('#phone-gps')?.textContent,
+        status: document.querySelector('#phone-status')?.textContent
+      }));
+      console.error('Handset diagnostics', JSON.stringify({ client, gpsRequests, observations, apiEvents,
+        state: latest?.location_state, generation: latest?.generation }));
+      throw error;
+    }
+  }
   await handset.addInitScript(() => {
     for (const method of ['getCurrentPosition', 'watchPosition']) {
       const prototype = Object.getPrototypeOf(navigator.geolocation);
       const original = prototype[method];
       prototype[method] = function (...args) {
         window.countLocationRequest();
-        return original.apply(this, args);
+        const [success, failure, options] = args;
+        return original.call(this, position => {
+          window.observeSensor({ kind: 'position', ageMs: Math.round(Date.now() - position.timestamp),
+            valid: [position.coords.latitude, position.coords.longitude, position.coords.accuracy].every(Number.isFinite) });
+          success(position);
+        }, error => {
+          window.observeSensor({ kind: 'error', code: error.code });
+          if (failure) failure(error);
+        }, options);
       };
     }
   });
@@ -270,11 +313,8 @@ async function browserJourney(baseURL, owner, other) {
   assert.match(await phone.locator('#phone-owner').innerText(), /Map Operator/);
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
   await screenshot(phone, 'phone-before-consent');
-  await startWithFreshSensorReading();
-  await eventually('No real browser geolocation fix reached the owner', async () => {
-    [device] = check(await ownerApi(desktop, owner), 'live read').devices;
-    return device?.location_state === 'live';
-  });
+  await startWithFreshSensorReading(gps);
+  device = await requireLiveFix('No real browser geolocation fix reached the owner');
   assert.deepEqual([device.latitude, device.longitude, device.accuracy], [gps.latitude, gps.longitude, gps.accuracy]);
   assert.ok(device.first_fix_at && device.fix_at >= device.first_fix_at && Math.abs(Date.now()/1000 - device.fix_at) < 60);
   assert.ok(gpsRequests > 0);
@@ -298,9 +338,8 @@ async function browserJourney(baseURL, owner, other) {
   assert.equal(late.status, 409);
   await map.locator('#phone-map .phone-map-marker').first().waitFor({ state: 'hidden' });
   await phone.reload();
-  await startWithFreshSensorReading();
-  await eventually('Phone did not resume after deliberate local restart', async () =>
-    check(await ownerApi(desktop, owner), 'restart read').devices[0]?.location_state === 'live');
+  await startWithFreshSensorReading({ ...gps, longitude: gps.longitude + 0.001 });
+  await requireLiveFix('Phone did not resume after deliberate local restart');
   await phone.locator('#phone-stop').click();
   await eventually('Phone stop did not reach owner', async () =>
     check(await ownerApi(desktop, owner), 'phone stop read').devices[0]?.location_state === 'off');

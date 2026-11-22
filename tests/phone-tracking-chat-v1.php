@@ -53,6 +53,10 @@ $connect=$send('Connect my phone.',$key); $replay=$send('Connect my phone.',$key
 phone_chat_test($connect['assistant_message_id']===$replay['assistant_message_id'] && str_contains($connect['actions'][0]['url'],'connect=1')
     && str_contains($connect['actions'][0]['url'],'conversation_id='.$connect['conversation_id']),'connect opens scoped QR and new-chat retries reuse the same turn');
 $phone=$pair('iPhone'); $other=$pair('Pixel');
+phone_chat_test(vp3_phone_chat_route_v1($pdo,$user,$principal,['message'=>'Is HomeServer connected?','conversation_id'=>1])===null,
+    'unrelated connection questions stay with their ordinary Chat handler');
+phone_chat_test(str_contains($send('Is Pixel connected?')['answer'],'awaiting connection approval'),
+    'a connection question naming an actual phone reads its current status');
 $ambiguous=$send('Approve my phone.');
 phone_chat_test(str_contains($ambiguous['answer'],'Which phone?') && count(array_filter(vp3_phone_owner_v1($pdo,1,'state',[])['devices'],
     fn($d)=>$d['status']==='pending'))===2,'unqualified approval cannot choose among pending devices');
