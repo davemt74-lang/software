@@ -111,6 +111,47 @@ async function scenario(width){
     check(layout.document<=layout.viewport+2,'390px view has no horizontal overflow');
   }
   await page.getByRole('button',{name:'Back to campaigns'}).click();
+  const proposal={source_ref:'marketing:product-plan:10',source_revision:'a'.repeat(64),
+    title:'New private product campaign',objective:'Review an approved creative concept.',
+    description:'Owner must approve audience, budget, channel and final private campaign copy.'};
+  await page.evaluate(({proposal,catalog,campaign})=>{
+    const host=document.createElement('div');host.id='vp3TestBriefPrefill';document.body.append(host);
+    window.fixture.directEditor=window.VP3MarketingEditorV1.mount(host,{
+      current:()=>document.querySelector('#chatThread')?.dataset.view==='marketing',
+      request:async action=>action==='marketing_editor_options'?{catalog}
+        :action==='marketing_editor_open'?{catalog,draft:campaign}:null,
+      onClose:()=>{},onSaved:()=>{}
+    },0,proposal);
+  },{proposal,catalog,campaign});
+  const suggested=page.locator('#vp3TestBriefPrefill');
+  await suggested.locator('[name="title"]').waitFor();
+  await page.waitForFunction(()=>document.querySelector('#vp3TestBriefPrefill [name="title"]')?.value==='New private product campaign');
+  check(await suggested.locator('[name="objective"]').inputValue()===proposal.objective
+    &&await suggested.locator('[name="description"]').inputValue()===proposal.description,
+    'owner-selected source brief pre-fills only NEW private campaign text');
+  check(await suggested.locator('[name="slug"]').inputValue()===''
+    &&await suggested.locator('[name="starts_at"]').inputValue()===''
+    &&await suggested.locator('.vp3-marketing-editor-reward input:checked').count()===0,
+    'private brief does not invent public URLs, schedules, active reward choices or spend');
+  check(await suggested.getByText(/Confirm Merchant, location, type, reward and every field before saving/).count()===1,
+    'source prefill explicitly requires Merchant and Campaign review');
+  await page.evaluate(({proposal,catalog,campaign})=>{
+    window.fixture.directEditor.dispose();
+    const host=document.querySelector('#vp3TestBriefPrefill');
+    window.fixture.directEditor=window.VP3MarketingEditorV1.mount(host,{
+      current:()=>document.querySelector('#chatThread')?.dataset.view==='marketing',
+      request:async action=>action==='marketing_editor_open'?{catalog,draft:campaign}:{catalog},
+      onClose:()=>{},onSaved:()=>{}
+    },5,proposal);
+  },{proposal,catalog,campaign});
+  await page.waitForFunction(()=>document.querySelector('#vp3TestBriefPrefill [name="title"]')?.value==='Existing draft');
+  check(await suggested.locator('[name="objective"]').inputValue()==='Welcome'
+    &&await suggested.locator('[name="description"]').inputValue()==='Original copy',
+    'source hints cannot overwrite a previously saved private campaign');
+  await page.evaluate(()=>{
+    window.fixture.directEditor.dispose();
+    document.querySelector('#vp3TestBriefPrefill')?.remove();
+  });
   block=true;
   await page.getByRole('button',{name:'Create private Campaign'}).click();
   await page.waitForFunction(()=>document.getElementById('chatThread').dataset.view==='chat');
