@@ -106,3 +106,13 @@
 .vp3-marketing-outcome-learning h5 { margin:0 0 .35rem; color:#254365; font-size:.85rem; }
 .vp3-marketing-outcome-learning p { margin:.25rem 0; font-size:.8rem; line-height:1.5; overflow-wrap:anywhere; }
 @media (max-width:640px) { .vp3-marketing-outcome-learning { padding:.65rem .75rem; } }
+
+/* Phase 3A: one naturally scrolling, source-bound priority queue in /marketing. */
+#chatThread[data-view="marketing"] .vp3-marketing-opportunity-queue{min-width:0}
+#chatThread[data-view="marketing"] .vp3-marketing-opportunity-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px;margin:12px 0 0}
+#chatThread[data-view="marketing"] .vp3-marketing-opportunity{min-width:0;border:1px solid var(--vp3-marketing-border,#d8dde5);border-radius:12px;padding:12px;background:var(--vp3-marketing-surface,#fff);overflow-wrap:anywhere}
+#chatThread[data-view="marketing"] .vp3-marketing-opportunity-heading{display:flex;align-items:start;justify-content:space-between;gap:8px;flex-wrap:wrap}
+#chatThread[data-view="marketing"] .vp3-marketing-opportunity-heading strong{font-size:13px;line-height:1.35}
+#chatThread[data-view="marketing"] .vp3-marketing-opportunity p{margin:8px 0;font-size:12px;line-height:1.5}
+#chatThread[data-view="marketing"] .vp3-marketing-opportunity small{display:block;font-size:11px;line-height:1.4}
+@media (max-width:640px){#chatThread[data-view="marketing"] .vp3-marketing-opportunity-list{grid-template-columns:1fr}}
