@@ -183,7 +183,7 @@ async function scenario(width){
     'untrusted external recommendation links fail closed');
   check(await portfolio.locator('.vp3-marketing-private-brief').count()===2,
     'only exact source-matched opportunities expose private creative development');
-  await portfolio.getByText('Develop private creative brief',{exact:true}).click();
+  await portfolio.locator('.vp3-marketing-private-brief').first().getByText('Develop private creative brief',{exact:true}).click();
   check(await portfolio.getByText('Resolve verified campaign setup blocker before launch.',{exact:true}).count()===1
     &&await portfolio.getByText('Obtain an explicit budget approval.',{exact:true}).count()===1,
     'private objective and owner budget gate are visible without inventing spend');
