@@ -28,12 +28,12 @@ function vp3_marketing_portfolio_href_v1(mixed $url,string $kind,int $id): ?stri
     $base='(?:[a-zA-Z0-9_-]+/)*';
     if($kind==='product-plan'){
         return preg_match('~\A/'.$base.'chat\.php\?agent=(?:system|[1-9][0-9]*)'
-            .'&conversation_id=[1-9][0-9]*&marketing_plan='.$id.'\z/D',$url)===1?$url:null;
+            .'&conversation_id=[1-9][0-9]*&marketing_plan='.$id.'\z~D',$url)===1?$url:null;
     }
     if(!str_starts_with($kind,'campaign-'))return null;
     return preg_match('~\A/'.$base.'campaigns\.php\?merchant=[1-9][0-9]*'
         .'&edit_campaign=[1-9][0-9]*'
-        .'(?:#campaign-optimization-v126|#campaign-editor|#marketing-offer-draft)?\z/D',$url)===1?$url:null;
+        .'(?:#campaign-optimization-v126|#campaign-editor|#marketing-offer-draft)?\z~D',$url)===1?$url:null;
 }
 
 /** Strictly bound, ranked recommendations. A limited snapshot stays limited. */
