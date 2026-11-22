@@ -1504,6 +1504,36 @@
         article.append(title);
         if (report.source_coverage === 'limited') article.append(node('small','Some sources could not be verified.'));
         if (report.presentation_owner === 'profile_native') article.append(node('small','Existing Profile notifications own this visitor update.'));
+        // A report is only a proposal until its exact Chat/reply/executor
+        // receipts have been checked. This surface never executes approval.
+        const lifecycleLabels = {
+          posted:'Report posted in Chat',
+          awaiting_owner:'Waiting for your reply in Chat',
+          owner_replied:'You replied · follow-through is not yet verified',
+          preparation_queued:'Private preparation queued · completion not verified',
+          preparation_verified:'Private preparation verified · not sent or published',
+          approved_action_verified:'Approved private action completed with receipt',
+          preparation_failed:'Private preparation failed · review in Chat',
+          deferred:'Deferred at your request',
+          declined:'You declined this suggestion',
+          owner_marked_resolved:'You marked this resolved · not an executor completion'
+        };
+        const receipt = report.engagement;
+        const activeScope = scope();
+        const receiptHref = typeof receipt?.chat_url === 'string' && Object.hasOwn(lifecycleLabels,receipt?.state)
+          && Number.isSafeInteger(receipt?.message_id) && receipt.message_id > 0
+          && Number.isSafeInteger(receipt?.conversation_id) && receipt.conversation_id === activeScope?.cid
+          && Number.isSafeInteger(receipt?.run_id) && receipt.run_id > 0
+          ? localUrl(receipt.chat_url) : null;
+        if (receiptHref) {
+          const status = node('div','','vp3-agent-specialist-engagement');
+          status.append(node('small',lifecycleLabels[receipt.state]));
+          const link = node('a',receipt.state === 'awaiting_owner'?'Reply in Chat':'View Chat and outcome');
+          link.href = receiptHref;
+          link.setAttribute('data-vp3-specialist-message-id',String(receipt.message_id));
+          status.append(link);
+          article.append(status);
+        }
         for (const [field,label] of Object.entries(sections)) {
           const raw = report.sections[field];
           const lines = (Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [])
