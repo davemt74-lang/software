@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const cfg=window.VP3_ORB_CONFIG;if(!cfg)return;
+  if(window.STONEFELLOW_AGENT_CONTEXT?.surface==='stem')cfg.agentId=Number(window.STONEFELLOW_STUDIO_AGENT?.agentId||0);
   const sensoryPageOwner=Number(cfg.ownerKey),sensoryPageAgent=window.STONEFELLOW_CHAT?Number(window.STONEFELLOW_CHAT.agentId||0):null;
   const $=id=>document.getElementById(id);let audible=false,preparing=false,voiceEpoch=0;
   window.addEventListener('stonefellow:agent-proactive-speech',event=>{audible=event.detail?.state==='start';});

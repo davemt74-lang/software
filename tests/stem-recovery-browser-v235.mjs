@@ -7,7 +7,7 @@ import {recoveryFixture} from './stem-recovery-fixture-v235.mjs';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
 const f=await recoveryFixture();let browser;
 try{
- const assets=['admin/admin.css','admin/stems-v107.css','admin/stems-extra-v107.css','admin/stem-controls.css','admin/stem-editor.js','admin/stem-master-clock-v201.js','admin/stem-buffer-scheduler-v202.js','admin/stem-project-loader.js','admin/stem-media-loader-v235.js','admin/stem-media-health-v235.js','admin/stem-transport-v200.js','admin/stem-agent-v131.js','editor-agent.js','agent-orb-adapter.js','agent-orb.js','agent-orb.css','agent-orb-particles.css'];
+ const assets=['admin/admin.css','admin/stems-v107.css','admin/stems-extra-v107.css','admin/stem-controls.css','admin/stem-editor.js','admin/stem-master-clock-v201.js','admin/stem-buffer-scheduler-v202.js','admin/stem-project-loader.js','admin/stem-media-loader-v235.js','admin/stem-media-health-v235.js','admin/stem-transport-v200.js','admin/stem-agent-v131.js','editor-agent.js','agent-eyes-core.js','agent-orb-adapter.js','agent-orb.js','agent-orb.css','agent-orb-particles.css'];
  for(const asset of assets){fs.mkdirSync(path.dirname(path.join(f.root,asset)),{recursive:true});fs.copyFileSync(asset,path.join(f.root,asset));}
  const layout=execFileSync(process.env.PHP_BINARY||'php',['-r',`
  function e($v){return htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}function url($p){return $p;}function stem_format_duration($v){return '0:02';}
@@ -22,9 +22,9 @@ try{
  <script>window.STONEFELLOW_STEM_STUDIO=${JSON.stringify(cfg)};window.STONEFELLOW_STUDIO_AGENT={endpoint:'/studio-test.php',userId:11,trackId:1,agentId:7,conversationId:101,csrf:'fixture'};window.STONEFELLOW_AGENT_CONTEXT={surface:'stem'};
  window.calls=[];window.StonefellowEditorAgent={build:'fixture',hasSurface:()=>true};
  window.STONEFELLOW_NOTIFICATION_CENTER={};window.StonefellowPremiumVoiceV122={};
- window.VP3_ORB_CONFIG={ownerKey:'11',agentId:7,chatUrl:'/chat.php',voiceScript:'',drawerScript:''};
+ window.VP3_ORB_CONFIG={ownerKey:'11',agentId:99,chatUrl:'/chat.php',voiceScript:'',drawerScript:''};
  </script>${['stem-master-clock-v201','stem-buffer-scheduler-v202','stem-transport-v200','stem-media-loader-v235','stem-project-loader','stem-editor','stem-media-health-v235','stem-agent-v131'].map(x=>`<script src="/admin/${x}.js"></script>`).join('')}
- <script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script></body></html>`;
+ <script src="/agent-eyes-core.js"></script><script src="/agent-orb-adapter.js"></script><script src="/agent-orb.js"></script></body></html>`;
  fs.writeFileSync(path.join(f.root,'fixture.html'),html);
  fs.writeFileSync(path.join(f.root,'studio-test.php'),`<?php header('Content-Type: application/json');$p=json_decode(file_get_contents('php://input'),true);echo json_encode(['ok'=>true,'session_id'=>1,'conversation_id'=>101,'history'=>[],'history_id'=>1,'assistant_message_id'=>55,'answer'=>'Your production is private.','commands'=>[]]);`);
  browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_EXECUTABLE_PATH,args:['--no-sandbox','--autoplay-policy=no-user-gesture-required']});
@@ -42,6 +42,7 @@ try{
  assert.equal(await page.evaluate(()=>window.StonefellowStemMediaHealthV235.snapshot().length),0);
  const pool=await page.evaluate(()=>window.StonefellowStemMediaV235.snapshot());assert.equal(pool.stems.length,19);assert.ok(pool.stems.every(x=>x.state==='ready'));assert.ok(pool.maxActive<=2);assert.ok(sourceCalls<=22,'source loading shares bytes and retries only failed sources');
  await page.waitForFunction(()=>!!window.VP3AgentOrb,{timeout:10000});
+ assert.equal(await page.evaluate(()=>window.VP3_ORB_CONFIG.agentId),7,'the editor conversation overrides another default Agent consistently');
  await page.locator('.studio-agent-trigger').click();await page.locator('.studio-agent-orb-mounted').waitFor({state:'visible'});
  assert.equal(await page.locator('iframe').count(),0,'the editor mounts its one verified conversation');
  assert.equal(await page.locator('.studio-agent-panel').count(),1);
