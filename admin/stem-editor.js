@@ -8382,7 +8382,36 @@
     );
   }
 
+  function refreshSourceLengthRecovery(stem) {
+    const old=stem?.leftRow?.querySelector('[data-source-length-repair]');
+    const clip=stem?.clips?.length===1?stem.clips[0]:null;
+    const eligible=Boolean(stem?.durationMetadataRecovered&&Number(stem.storedSourceDuration)<=0
+      &&Number(stem.duration)>.1&&clip&&Number(clip.sourceStart)<=.001&&Number(clip.sourceEnd)<=.051);
+    if(!eligible){old?.remove();return;}
+    if(old||!stem.leftRow)return;
+    const button=document.createElement('button');button.type='button';
+    button.className='daw-source-length-repair';button.dataset.sourceLengthRepair=String(stem.id);
+    button.textContent='Restore source length';
+    button.setAttribute('aria-label',`Restore source length for ${stem.name||stem.label}`);
+    button.title='Pause playback to restore this clip’s full recovered audio length. Undo is available.';
+    button.addEventListener('click',event=>{
+      event.stopPropagation();
+      if(playing||playbackStarting||recordingActive||recordingStopping||recordingPendingSave||recordingCountInActive||undoGroupHold>0)return;
+      // Start an independent undo step; preserve the owner's earlier mix edits.
+      setUndoBaseline();if(!beginUndoGroup())return;
+      try{
+        const current=stem.clips?.length===1?stem.clips[0]:null;
+        if(!current||Number(current.sourceStart)>.001||Number(current.sourceEnd)>.051)return;
+        current.sourceEnd=Number(stem.duration);
+        current.timelineLength=(current.sourceEnd-Number(current.sourceStart||0))*Math.max(.01,Number(stem.timelineRatio||1));
+        stem.activeClipId='';renderStemClips(stem);scheduleLocalSave(0);
+      }finally{endUndoGroup();}
+    });
+    stem.leftRow.append(button);
+  }
+
   function renderStemClips(stem) {
+    refreshSourceLengthRecovery(stem);
     if (!stem?.mainClipLayer) {
       return;
     }

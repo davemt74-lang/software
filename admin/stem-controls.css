@@ -22,3 +22,5 @@ body.admin-canvas-mode .stem-project-loader-v232{padding:16px;box-sizing:border-
 .studio-agent-orb-mounted .editor-agent-history{flex:1;min-height:0;overflow:auto}
 .studio-agent-orb-mounted .editor-agent-footer{flex:none}
 [data-stem-media-offline-v229] button{font-size:10px;padding:2px 5px;margin-left:4px}
+.daw-track-row:has(>.daw-source-length-repair){position:relative}
+.daw-track-row>.daw-source-length-repair{position:absolute;left:24px;bottom:2px;z-index:2;max-width:calc(100% - 48px);padding:2px 5px;border:1px solid #8b9b77;border-radius:4px;background:#20291d;color:#e4ebde;font:600 9px/1.1 system-ui;cursor:pointer}

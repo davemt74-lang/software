@@ -15,7 +15,7 @@ try{
  $maxDuration=1.296;$sourceTempo=170;$durationMeasures=0;$project=['project_name'=>'Recovery fixture','project_sample_rate'=>48000,'time_signature'=>'4/4'];
  $stems=json_decode($argv[1],true);eval('?>'.substr($source,$a,$b-$a).'</div>');
  `,JSON.stringify(f.stems)],{encoding:'utf8'}).replace(/(<audio\b[^>]*class="stem-audio"[^>]*)(>)/g,(_,attrs,end)=>attrs.replace(/preload="[^"]*"/g,'preload="none"').replace(/\bsrc=/g,'data-stem-media-source=')+end);
- const stems=f.stems.map(row=>({id:row.id,name:row.stem_name,role:row.stem_role,duration:row.duration_seconds,offset:0,volume:1,pan:0,channels:1,sampleRate:48000,sourceTempo:170,initialSourceStart:0,initialSourceEnd:row.duration_seconds,url:'/stem-media-v34.php?id='+row.id}));
+ const stems=f.stems.map((row,index)=>({id:row.id,name:row.stem_name,role:row.stem_role,duration:row.duration_seconds,durationMetadataRecovered:index===0,storedSourceDuration:index===0?0:row.duration_seconds,offset:0,volume:1,pan:0,channels:1,sampleRate:48000,sourceTempo:170,initialSourceStart:0,initialSourceEnd:row.duration_seconds,url:'/stem-media-v34.php?id='+row.id}));
  const cfg={userId:11,trackId:1,stems,duration:1.296,sourceTempo:170,projectTitle:'Recovery fixture',csrf:f.formData.csrf};
  const missing=f.stems.at(-1),missingPath=path.join(f.root,missing.file_path.replace(/^\//,''));fs.unlinkSync(missingPath);
  const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${assets.filter(x=>x.endsWith('.css')).map(x=>`<link rel="stylesheet" href="/${x}">`).join('')}</head><body class="admin-canvas-mode"><div class="admin-layout admin-layout-canvas"><main class="admin-content admin-content-canvas"><header class="daw-canvas-header"><div class="daw-canvas-actions"></div></header>${layout}</main></div>
@@ -41,6 +41,16 @@ try{
  await page.waitForFunction(()=>window.StonefellowStemProjectLoaderV232.isPlaybackReady(),{timeout:15000});
  assert.equal(await page.evaluate(()=>window.StonefellowStemMediaHealthV235.snapshot().length),0);
  const pool=await page.evaluate(()=>window.StonefellowStemMediaV235.snapshot());assert.equal(pool.stems.length,19);assert.ok(pool.stems.every(x=>x.state==='ready'));assert.ok(pool.maxActive<=2);assert.ok(sourceCalls<=22,'source loading shares bytes and retries only failed sources');
+ const legacyId=f.stems[0].id;
+ await page.evaluate(id=>{const bridge=window.StonefellowStemStudioV91,mix=bridge.getMixState();mix.stems[String(id)].volume=.42;mix.stems[String(id)].clips[0].sourceEnd=.05;mix.stems[String(id)].clips[0].timelineLength=.05;bridge.applyMixState(mix);},legacyId);
+ const repair=page.locator(`[data-source-length-repair="${legacyId}"]`);await repair.waitFor({state:'visible'});
+ assert.equal(await page.evaluate(id=>window.StonefellowStemStudioV91.getMixState().stems[String(id)].clips[0].sourceEnd,legacyId),.05,'metadata recovery preserves saved clips until the owner acts');
+ await repair.click();
+ const repaired=await page.evaluate(id=>window.StonefellowStemStudioV91.getMixState().stems[String(id)],legacyId);
+ assert.ok(repaired.clips[0].sourceEnd>1);assert.equal(repaired.volume,.42,'source recovery preserves the mix level');
+ await page.keyboard.press('Control+z');await repair.waitFor({state:'visible'});
+ const undone=await page.evaluate(id=>window.StonefellowStemStudioV91.getMixState().stems[String(id)],legacyId);assert.equal(undone.clips[0].sourceEnd,.05);assert.equal(undone.volume,.42,'Undo restores only the source-length edit');
+ await repair.click();
  await page.waitForFunction(()=>!!window.VP3AgentOrb,{timeout:10000});
  assert.equal(await page.evaluate(()=>window.VP3_ORB_CONFIG.agentId),7,'the editor conversation overrides another default Agent consistently');
  await page.locator('.studio-agent-trigger').click();await page.locator('.studio-agent-orb-mounted').waitFor({state:'visible'});

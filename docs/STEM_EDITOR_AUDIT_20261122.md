@@ -99,7 +99,9 @@ Import still validates staged source bytes before transactional activation, and
 media serving retains owner checks, session-lock release and exact byte ranges.
 No schema migration is introduced. Metadata correction does not rewrite files,
 source timing or saved mixes. An intentional or previously saved short clip is
-preserved; its owner can extend it through the editor rather than losing edits.
+preserved. When recovered zero-duration metadata accompanies a single 0.05-second
+clip, an explicit Restore source length action extends it in its own Undo step
+without resetting levels, plugins, fades or other mix state.
 The old archived JavaScript/PHP copies are not promoted to the canonical runtime.
 
 Synthetic audio fixtures and a 19-file compressed ZIP exercise real PHP import,
