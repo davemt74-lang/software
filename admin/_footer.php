@@ -7,7 +7,7 @@
 <style data-stem-media-health-v229>
 .daw-track-row[data-stem-media-status="offline"] .daw-track-select{opacity:.72}
 .daw-track-row[data-stem-media-status="offline"] .daw-track-dot{background:#b76f56!important;box-shadow:0 0 0 2px rgba(183,111,86,.18)}
-[data-stem-media-offline-v229]{display:inline-flex;align-items:center;width:max-content;margin-top:3px;padding:2px 5px;border:1px solid rgba(183,111,86,.55);border-radius:999px;font:700 9px/1 system-ui,sans-serif;letter-spacing:.06em;color:#9d5038;background:rgba(183,111,86,.08)}
+span[data-stem-media-offline-v229]{display:inline-flex;align-items:center;width:max-content;margin-top:3px;padding:2px 5px;border:1px solid rgba(183,111,86,.55);border-radius:999px;font:700 9px/1 system-ui,sans-serif;letter-spacing:.06em;color:#9d5038;background:rgba(183,111,86,.08)}
 .daw-arrange-row[data-stem-media-status="offline"] .daw-arrange-track{position:relative;opacity:.68}
 .daw-arrange-row[data-stem-media-status="offline"] .daw-arrange-track::after{content:attr(data-stem-media-label);position:absolute;inset:5px auto auto 8px;z-index:5;padding:2px 6px;border-radius:999px;background:rgba(48,35,31,.82);color:#fff;font:700 9px/1.2 system-ui,sans-serif;letter-spacing:.05em;pointer-events:none}
 .daw-stem-channel[data-stem-media-status="offline"]{opacity:.72}
