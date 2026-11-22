@@ -15,13 +15,13 @@
     if(!host||typeof current!=='function'||typeof request!=='function'||!current())return null;
     // Only a source-revision-bound owner-selected brief may initialize NEW
     // draft fields. Existing saved drafts are never overwritten by this hint.
-    const textSafe=(v,max)=>typeof v==='string'&&v.trim()&&v.length<=max
-      &&!/[<>\x00-\x1f\x7f]/.test(v);
+    const textSafe=(v,max,multiline=false)=>typeof v==='string'&&v.trim()&&v.length<=max
+      &&!(multiline?/[<>\x00-\x08\x0b-\x1f\x7f]/:/[<>\x00-\x1f\x7f]/).test(v);
     const initialBrief=!positive(campaignId)&&briefPrefill
       &&/^marketing:(?:campaign-outcome|product-plan):[1-9]\d{0,15}$/.test(briefPrefill.source_ref||'')
       &&/^[a-f0-9]{64}$/.test(briefPrefill.source_revision||'')
       &&textSafe(briefPrefill.title,190)&&textSafe(briefPrefill.objective,500)
-      &&textSafe(briefPrefill.description,4000)
+      &&textSafe(briefPrefill.description,4000,true)
       ?{title:briefPrefill.title,objective:briefPrefill.objective,
         description:briefPrefill.description,source:briefPrefill.source_ref}:null;
     const editor=el('section','','vp3-marketing-inline-editor');
