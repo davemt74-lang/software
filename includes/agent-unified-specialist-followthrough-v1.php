@@ -26,7 +26,7 @@ function vp3_unified_specialist_followthrough_receipt_v1(
         ||($finding['source_ref']??null)!==$ref||($finding['source_revision']??null)!==$revision
         ||($finding['conversation_id']??null)!==$conversation
         ||($finding['url']??null)!==$chatUrl||!is_string($chatUrl)||$chatUrl==='' 
-        ||($origin['user']['id']??null)!==$owner
+        ||(int)($origin['user']['id']??0)!==$owner
         ||(int)($origin['run']['id']??0)!==$run
         ||(int)($origin['message']['id']??0)!==$mid
         ||($origin['agent_id']??null)!==$agent
