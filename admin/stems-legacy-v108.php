@@ -253,6 +253,8 @@ $project = stem_project_for_track($trackId);
 $stems = stems_for_track($trackId);
 
 $sourceTempo = 120.0;
+require_once dirname(__DIR__).'/includes/stem-project-health-v1.php';
+$stems = stem_project_resolve_metadata_v1($stems);
 
 if (
     $project &&
@@ -506,6 +508,8 @@ foreach ($stems as $stem) {
         'name'=>(string)$stem['stem_name'],
         'role'=>(string)$stem['stem_role'],
         'duration'=>(float)$stem['duration_seconds'],
+        'durationMetadataRecovered'=>!empty($stem['duration_metadata_recovered']),
+        'storedSourceDuration'=>(float)($stem['stored_source_duration']??$stem['duration_seconds']),
         'offset'=>(float)$stem['start_offset_seconds'],
         'sourceTempo'=>$stemSourceTempo,
         'initialSourceStart'=>$initialSourceStart,

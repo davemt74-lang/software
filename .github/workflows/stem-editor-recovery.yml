@@ -1,0 +1,52 @@
+name: Stem Editor Recovery
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: stem-recovery-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, pdo_sqlite
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Native import, bounded media, recovery and private production
+        run: |
+          node tests/stem-mp3-metadata-v1.mjs
+          node tests/stem-media-loader-v235.mjs
+          node tests/stem-reaper-recovery-v235.mjs
+          php tests/stem-media-production-v235.php
+          node tests/stem-media-failure-v228.mjs
+          node tests/stem-project-loader.mjs
+          node tests/stem-transport-v200.mjs
+          node tests/stem-feature-audit.mjs
+          node tests/stem-agent-v131-integration.mjs
+      - name: Install browser
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Imported multitrack playback and shared Agent browser acceptance
+        env:
+          STEM_RECOVERY_SCREENSHOT: stem-recovery-desktop.png
+        run: node tests/stem-recovery-browser-v235.mjs
+      - name: Browser review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stem-recovery-php-${{ matrix.php }}
+          path: stem-recovery-*.png
+          if-no-files-found: ignore

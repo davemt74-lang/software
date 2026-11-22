@@ -74,6 +74,7 @@ function vp3_media_record_offer_v1(PDO $pdo,int $owner): void
 function vp3_media_chat_ready_v1(PDO $pdo,array $user,array $goal,?string &$hold=null): bool
 {
     if(($goal['coordination_route']['specialist']??null)!=='media')return true;
+    if(in_array($goal['coordination_route']['trigger']??null,['production_project','production_attention'],true))return true;
     $hold=vp3_media_offer_gate_v1($pdo,$user,$goal['binding']['conversation_id']);
     if($hold!=='ready')return false;
     $trigger=$goal['coordination_route']['trigger']??null;
@@ -91,6 +92,7 @@ function vp3_media_chat_ready_v1(PDO $pdo,array $user,array $goal,?string &$hold
 function vp3_media_chat_record_v1(PDO $pdo,array $user,array $goal): void
 {
     if(($goal['coordination_route']['specialist']??null)!=='media')return;
+    if(in_array($goal['coordination_route']['trigger']??null,['production_project','production_attention'],true))return;
     if(($goal['coordination_route']['trigger']??null)==='recent_search'
         &&!vp3_youtube_reserve_offer_v1($pdo,(int)$user['id'],time())){
         throw new RuntimeException('Media offer timing changed.',409);
@@ -262,6 +264,11 @@ function vp3_media_sources_v1(PDO $pdo,array $scope,array $binding,?array $refs,
         }
     }
     $items+=$youtube['items'];
+    if($wants('studio')){
+        require_once __DIR__.'/agent-media-production-v1.php';
+        try{$items=vp3_media_production_sources_v1($pdo,$scope,$refs)+$items;}
+        catch(PDOException){$coverage='limited';}
+    }
     if($refs!==null)$items=array_intersect_key($items,array_fill_keys($refs,true));
     if($coverage==='ready'&&in_array($youtube['coverage'],['limited','unavailable'],true))$coverage='limited';
     $result=['items'=>$items,'coverage'=>$coverage];

@@ -598,12 +598,13 @@
     let bar=null,conversationRef=null;const fullLink=panel.querySelector('a'),handoffKey=`${key}:conversation`;
     function rememberRef(ref){if(!adapter.conversationUrl||!ref||typeof ref!=='object')return;const url=adapter.conversationUrl(ref);if(!url)return;if(conversationRef&&(String(conversationRef.id)!==String(ref.id)||String(conversationRef.agent)!==String(ref.agent)))window.VP3ParticipantContinuity?.clearSelection();const changed=conversationRef&&(String(conversationRef.id)!==String(ref.id)||String(conversationRef.agent)!==String(ref.agent));conversationRef={id:ref.id,agent:ref.agent};if(changed){frameSpecialists=[];window.dispatchEvent(new Event('vp3:orb-conversation-changed'));}fullLink.href=url;try{sessionStorage.setItem(handoffKey,JSON.stringify({ref:conversationRef,at:Date.now()}));}catch(_){}}
     try{const saved=JSON.parse(sessionStorage.getItem(handoffKey)||'null');if(saved&&Number.isFinite(saved.at)&&saved.at<=Date.now()&&Date.now()-saved.at<1800000)rememberRef(saved.ref);}catch(_){}
-    fullLink.addEventListener('click',event=>{if(adapter.attachChat){event.preventDefault();close();adapter.focusChat?.();}});
+    fullLink.addEventListener('click',event=>{if(adapter.attachChat&&adapter.isMainChat?.()){event.preventDefault();close();adapter.focusChat?.();}});
     function command(kind){if(frame?.contentWindow)frame.contentWindow.postMessage({channel:'vp3-orb',kind},origin);else adapter[kind]?.();}
     function syncOrbExpanded(){ball.setAttribute('aria-expanded',String(!panel.hidden||root.dataset.activityOpen==='true'));}
     function close(){panel.hidden=true;root.dataset.popupOpen='false';syncOrbExpanded();footerObserver?.disconnect();restorePanel?.();restorePanel=null;document.querySelectorAll('[data-orb-chat]').forEach(b=>b.setAttribute('aria-expanded','false'));if(frame)setInitiativeStatus(null);resize();returnFocus?.focus?.();}
     function open(){
       returnFocus=document.activeElement;
+      if(adapter.attachChat)rememberRef(adapter.conversationRef?.());
       if(adapter.isMainChat?.()&&!adapter.attachChat){adapter.focusChat?.();return;}
       if(adapter.attachChat)restorePanel=restorePanel||adapter.attachChat(host);
       else if(!frame){
@@ -650,7 +651,7 @@
     root.querySelector('[data-orb-stop]').addEventListener('click',()=>{pendingReplyWindow=false;command('response-window-cancel');command('stop');});
     root.querySelector('[data-orb-eyes]').addEventListener('click',()=>window.VP3AgentEyes?.toggle());
     const composer=$('chatForm');
-    if(!composer||adapter.alwaysBar){
+    if(adapter.hideBar!==true&&(!composer||adapter.alwaysBar)){
       bar=document.createElement('form');bar.className='vp3-orb-bar';bar.setAttribute('aria-label','Agent chatbar');
       const input=document.createElement('input');input.type='text';input.maxLength=6000;input.placeholder='Message your agent…';input.setAttribute('aria-label','Message your agent');try{input.value=sessionStorage.getItem(draftKey)||'';}catch(_){}bar.append(input);
       const listen=document.createElement('button');listen.type='button';listen.textContent='Listen';listen.addEventListener('click',()=>{open();if(!frame||ready)command('listen');else pendingListen=true;});bar.append(listen);

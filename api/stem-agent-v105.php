@@ -141,13 +141,7 @@ function stem_agent_v105_fallback(string $text,array $stems): array{
     return $commands;
 }
 
-function stem_agent_v131_conversation(PDO $pdo,int $userId,int $requested,bool $create=false,string $title='Stem Studio'): int{
-    if(!table_exists('chat_conversations')||!table_exists('chat_messages'))return 0;
-    if($requested>0){$s=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? LIMIT 1');$s->execute([$requested,$userId]);$found=(int)($s->fetchColumn()?:0);if($found>0)return $found;}
-    if(function_exists('agent_chat_v101_latest_conversation_id')){$latest=agent_chat_v101_latest_conversation_id($pdo,$userId);if($latest>0)return $latest;}
-    if(!$create)return 0;
-    $s=$pdo->prepare('INSERT INTO chat_conversations (user_id,title,created_at,updated_at) VALUES (?,?,NOW(),NOW())');$s->execute([$userId,mb_strimwidth($title,0,190,'…')]);return (int)$pdo->lastInsertId();
-}
+require_once dirname(__DIR__).'/includes/stem-agent-continuity-v235.php';
 function stem_agent_v131_chat_history(PDO $pdo,int $conversationId): array{
     if($conversationId<1)return [];$s=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$s->execute([$conversationId]);return array_reverse($s->fetchAll());
 }
@@ -162,15 +156,18 @@ function stem_agent_v131_reconcile_brain(array $user,int $conversationId,int $me
 
 try{
     if(!function_exists('agent_v91_plan_stem'))throw new RuntimeException('The v91 Agent Brain tools are not loaded.');
-    $action=(string)($input['action']??'send');$userId=(int)$user['id'];$sessionId=(int)($input['session_id']??0);$requestedConversation=max(0,(int)($input['conversation_id']??0));
+    $action=(string)($input['action']??'send');$userId=(int)$user['id'];
+    $agentId=max(0,(int)($input['agent_id']??0));$agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agentId);$sessionId=(int)($input['session_id']??0);$requestedConversation=max(0,(int)($input['conversation_id']??0));
     if($sessionId>0){$s=$pdo->prepare('SELECT id FROM agent_studio_sessions WHERE id=? AND user_id=? AND track_id=?');$s->execute([$sessionId,$userId,$trackId]);if(!$s->fetchColumn())$sessionId=0;}
+    if($sessionId<1&&$action==='result')throw new RuntimeException('Studio session access changed.',403);
     if($sessionId<1){$s=$pdo->prepare("INSERT INTO agent_studio_sessions (user_id,track_id,status,started_at,last_activity_at) VALUES (?,?,'active',NOW(),NOW())");$s->execute([$userId,$trackId]);$sessionId=(int)$pdo->lastInsertId();}
-    $conversationId=stem_agent_v131_conversation($pdo,$userId,$requestedConversation,false,'Stem Studio · '.(string)$track['title']);
-    if($action==='history'){$s=$pdo->prepare('SELECT id,role,message_text,command_json,status,result_text,created_at FROM agent_studio_history WHERE session_id=? ORDER BY id ASC LIMIT 400');$s->execute([$sessionId]);stem_agent_v105_json(true,['session_id'=>$sessionId,'conversation_id'=>$conversationId,'history'=>$s->fetchAll()]);}
+    $conversationId=stem_agent_v131_conversation($pdo,$userId,$requestedConversation,false,'Stem Studio · '.(string)$track['title'],$agent);
+    if($action==='history'){$s=$pdo->prepare('SELECT id,role,message_text,command_json,status,result_text,created_at FROM agent_studio_history WHERE session_id=? ORDER BY id ASC LIMIT 400');$s->execute([$sessionId]);stem_agent_v105_json(true,['session_id'=>$sessionId,'conversation_id'=>$conversationId,'history'=>array_values(array_filter($s->fetchAll(),static fn(array $row):bool=>(int)(json_decode((string)($row['command_json']??''),true)['agent_id']??-1)===$agentId))]);}
     if($action==='result'){
         $historyId=(int)($input['history_id']??0);$status=in_array((string)($input['status']??''),['success','failed','cancelled'],true)?(string)$input['status']:'success';
         $resultText=mb_strimwidth(trim((string)($input['result']??'')),0,8000,'…');$sharedReply=mb_strimwidth(trim((string)($input['result_text']??'')),0,8000,'…');$assistantMessageId=max(0,(int)($input['assistant_message_id']??0));
         $resultMode=(string)($input['input_mode']??'text');$resultMode=$resultMode==='voice'?'voice':'text';
+        stem_agent_result_binding_v235($pdo,$userId,$sessionId,$historyId,$conversationId,$assistantMessageId,$agentId);
         $s=$pdo->prepare('UPDATE agent_studio_history SET status=?,result_text=? WHERE id=? AND session_id=?');$s->execute([$status,$resultText,$historyId,$sessionId]);
         if($conversationId>0&&$assistantMessageId>0&&$sharedReply!==''){
             $owned=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? LIMIT 1');$owned->execute([$conversationId,$userId]);
@@ -181,12 +178,14 @@ try{
     if($action!=='send')throw new RuntimeException('Unknown Studio Agent action.');
     $message=trim((string)($input['message']??''));if($message==='')throw new RuntimeException('Enter a Studio request.');if(mb_strlen($message)>8000)throw new RuntimeException('That request is too long.');
     $inputMode=(string)($input['input_mode']??'text');$inputMode=$inputMode==='voice'?'voice':'text';
-    $conversationId=stem_agent_v131_conversation($pdo,$userId,$requestedConversation,true,'Stem Studio · '.(string)$track['title']);
+    $conversationId=stem_agent_v131_conversation($pdo,$userId,$requestedConversation,true,'Stem Studio · '.(string)$track['title'],$agent);
     $recentHistory=stem_agent_v131_chat_history($pdo,$conversationId);
     $rawAgentContext=is_array($input['agent_context']??null)?$input['agent_context']:[];
     $rawAgentContext['conversation_id']=$conversationId;$rawAgentContext['track_id']=$trackId;
-    $agentContext=agent_surface_v131_enrich($user,'stem',$rawAgentContext);
-    $pdo->prepare("INSERT INTO agent_studio_history (session_id,user_id,role,message_text,status,created_at) VALUES (?,?,'user',?,'complete',NOW())")->execute([$sessionId,$userId,$message]);
+    $principal=vp3_agent_chat_principal_v380($user,$agent);
+    $agentContext=(!$agent||user_data_policy_can_use_v236($pdo,$principal,$userId,'knowledge','music-production',false))
+        ?agent_surface_v131_enrich($user,'stem',$rawAgentContext):agent_surface_v131_sanitize(['surface'=>'stem','conversation_id'=>$conversationId,'track_id'=>$trackId]);
+    $pdo->prepare("INSERT INTO agent_studio_history (session_id,user_id,role,message_text,command_json,status,created_at) VALUES (?,?,'user',?,?,'complete',NOW())")->execute([$sessionId,$userId,$message,json_encode(['agent_id'=>$agentId])]);
     stem_agent_v131_append_chat($pdo,$user,$conversationId,'user',$message,$inputMode,['editor'=>'stem','track_id'=>$trackId,'session_id'=>$sessionId,'agent_context'=>$agentContext]);
 
     $studioStems=stem_agent_v105_stems($trackId);
@@ -196,6 +195,8 @@ try{
 
     $s=$pdo->prepare("INSERT INTO agent_studio_history (session_id,user_id,role,message_text,command_json,status,created_at) VALUES (?,?,'assistant',?,?,'pending',NOW())");$s->execute([$sessionId,$userId,$answer,json_encode(['commands'=>$commands,'model'=>$model,'provider'=>$provider,'complexity'=>$complexity],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)]);$historyId=(int)$pdo->lastInsertId();
     $assistantMessageId=stem_agent_v131_append_chat($pdo,$user,$conversationId,'assistant',$answer,$inputMode,['editor'=>'stem','track_id'=>$trackId,'session_id'=>$sessionId,'commands'=>$commands,'model'=>$model,'provider'=>$provider,'complexity'=>$complexity,'agent_context'=>$agentContext]);
+    $proposal=['conversation_id'=>$conversationId,'assistant_message_id'=>$assistantMessageId,'agent_id'=>$agentId,'commands'=>$commands,'model'=>$model,'provider'=>$provider,'complexity'=>$complexity];
+    $pdo->prepare('UPDATE agent_studio_history SET command_json=? WHERE id=? AND session_id=?')->execute([json_encode($proposal,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),$historyId,$sessionId]);
     agent_tool_log($user,'stem_studio.v105.agent_plan',$message,'queued',['track_id'=>$trackId,'commands'=>$commands,'model'=>$model,'provider'=>$provider,'complexity'=>$complexity,'agent_context'=>$agentContext],$conversationId);
     $pdo->prepare('UPDATE agent_studio_sessions SET last_activity_at=NOW() WHERE id=?')->execute([$sessionId]);
     stem_agent_v105_json(true,['session_id'=>$sessionId,'conversation_id'=>$conversationId,'history_id'=>$historyId,'assistant_message_id'=>$assistantMessageId,'answer'=>$answer,'commands'=>$commands,'model'=>$model,'provider'=>$provider,'complexity'=>$complexity]);

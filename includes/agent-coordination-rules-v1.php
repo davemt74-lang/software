@@ -38,6 +38,8 @@ function vp3_coordination_rule_definitions_v1(): array
             'start_plan'=>['label'=>'Start a plan when the calendar is empty','default'=>'ask'],
         ]],
         'media'=>['label'=>'Media & Entertainment','triggers'=>[
+            'production_project'=>['label'=>'Private music production','default'=>'watch','actions'=>['watch','ask','report']],
+            'production_attention'=>['label'=>'Production sources need attention','default'=>'ask','actions'=>['watch','ask','report']],
             'resume'=>['label'=>'Continue listening','default'=>'ask'],
             'catalog_pick'=>['label'=>'VP3 Music discovery','default'=>'ask'],
             'recent_search'=>['label'=>'Relevant YouTube pick','default'=>'ask'],

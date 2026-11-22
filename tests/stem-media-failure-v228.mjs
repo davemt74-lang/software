@@ -8,6 +8,7 @@ const studio=fs.readFileSync('admin/stem-editor.js','utf8');
 const transport=fs.readFileSync('admin/stem-transport-v200.js','utf8');
 const media=fs.readFileSync('stem-media-v34.php','utf8');
 const footer=fs.readFileSync('admin/_footer.php','utf8');
+const health=fs.readFileSync('admin/stem-media-health-v235.js','utf8');
 
 execFileSync(process.execPath,['--check','admin/stem-editor.js'],{stdio:'pipe'});
 execFileSync('php',['-l','stem-media-v34.php'],{stdio:'pipe'});
@@ -39,16 +40,16 @@ assert.doesNotMatch(studio,/stem\.waveformError = true;\s*stem\.mediaUnavailable
 assert.match(studio,/stem\.waveformError = true;\s*console\.warn\(\s*'Waveform extraction failed'/,'waveform extraction failure must be recorded without changing media availability');
 assert.doesNotMatch(studio,/stonefellow:stem-media-offline/,'canonical editor must not duplicate transport-owned offline handling');
 assert.match(transport,/stonefellow:stem-media-offline[\s\S]*?stem\.mediaUnavailable\s*=\s*true/,'canonical transport must mark the matching stem unavailable');
-assert.match(footer,/stonefellow:stem-media-offline/,'verified media failures must publish the canonical offline event');
+assert.match(health,/stonefellow:stem-media-offline/,'verified media failures must publish the canonical offline event');
 assert.match(studio,/if \(stem\.mediaUnavailable\) \{[\s\S]*?return;/,'offline stems must not block the seek barrier');
 assert.match(studio,/stem\.mediaUnavailable \|\|\s*!stem\.trimNode/,'offline stems must be excluded from advanced transport preparation');
 
 assert.match(footer,/\$stemMediaHealthV229\s*=\s*basename\([\s\S]*?=== 'stems\.php'/,'offline UI must be scoped to Stem Studio only');
 assert.match(footer,/data-stem-media-health-v229/);
 assert.match(footer,/data-stem-media-status/,'offline UI must label the matching track, arrange lane, and mixer channel');
-assert.match(footer,/method:'HEAD'/,'a failed media element may diagnose status with a bodyless request only');
-assert.match(footer,/MISSING MEDIA/);
-assert.match(footer,/INVALID MEDIA/);
+assert.match(health,/method:'HEAD'/,'a failed media element may diagnose status with a bodyless request only');
+assert.match(health,/MISSING MEDIA/);
+assert.match(health,/INVALID MEDIA/);
 
 function riffWav(dataBytes=2048){
   const data=Buffer.alloc(dataBytes);
@@ -83,10 +84,9 @@ function mpeg1Layer3Frame(fill=0x2a){
 
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'stonefellow-media-v229-'));
 try {
-  const healthScriptMatch=footer.match(/<script data-stem-media-health-v229>([\s\S]*?)<\/script>/);
-  assert.ok(healthScriptMatch?.[1],'Stem-only offline UI script must be present');
+  assert.match(footer,/data-stem-media-health-v229 src=.*stem-media-health-v235/,'Stem-only health module must be loaded');
   const healthScriptPath=path.join(tmp,'stem-media-health-v229.js');
-  fs.writeFileSync(healthScriptPath,healthScriptMatch[1]);
+  fs.writeFileSync(healthScriptPath,health);
   execFileSync(process.execPath,['--check',healthScriptPath],{stdio:'pipe'});
 
   const wavPath=path.join(tmp,'valid.wav');

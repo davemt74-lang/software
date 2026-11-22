@@ -267,6 +267,8 @@
   const waveformQueue = [];
   let waveformWorkerRunning = false;
   let waveformDecodeContext = null;
+  let waveformDisposed = false;
+  let lastMeterPaint = 0;
 
   let touchPinchStartDistance = 0;
   let touchPinchStartZoom = 1;
@@ -5764,13 +5766,14 @@
         stem.crossfadeAudio =
           new Audio(
             String(
-              stem.url ||
+              stem.audio?.currentSrc ||
               stem.audio?.src ||
+              stem.url ||
               ''
             )
           );
         stem.crossfadeAudio.preload =
-          'metadata';
+          'none';
         stem.crossfadeAudio.muted = false;
         stem.crossfadeAudio.volume = 1;
 
@@ -6752,24 +6755,35 @@
     };
   }
 
+  async function waitForWaveformIdle() {
+    while (playing || playbackStarting || recordingActive || recordingCountInActive || document.hidden) {
+      if (waveformDisposed) throw new DOMException('Studio closed.', 'AbortError');
+      await new Promise(resolve => window.setTimeout(resolve,150));
+    }
+    if (waveformDisposed) throw new DOMException('Studio closed.', 'AbortError');
+    await new Promise(resolve => {
+      if (window.requestIdleCallback) window.requestIdleCallback(() => resolve(),{timeout:150});
+      else window.setTimeout(resolve,8);
+    });
+  }
+
   async function browserDecodeStemWaveform(stem) {
     if (!stem?.url || !AudioContextClass) {
       return null;
     }
 
     await window.StonefellowStemProjectLoaderV232?.whenMediaReady?.();
+    await waitForWaveformIdle();
     const seconds = Math.max(0,Number(stem.audio?.duration || stem.duration || 0));
     if (!Number.isFinite(seconds) || seconds * 48000 * 2 * 4 > 128 * 1024 * 1024) {
       throw new Error('This waveform exceeds the safe browser decode budget. Continue without this waveform or use a shorter source.');
     }
-    if (bufferSchedulerFactory) {
-      ensureAudioGraph();
-      bufferScheduler ||= bufferSchedulerFactory.createScheduler(context);
-      return waveformFromAudioBuffer(await bufferScheduler.getBuffer(stem.url),2400);
-    }
+    // Preview extraction decodes one source and drops its PCM after peak capture.
+    // Retaining every preview in the transport scheduler exhausts its project
+    // budget before the owner ever presses Play on a long multitrack song.
     waveformDecodeContext ||= new AudioContextClass();
 
-    const response = await fetch(
+    const response = await (window.StonefellowStemMediaV235?.fetchAudio || fetch)(
       stem.url,
       {
         credentials:'same-origin',
@@ -6802,12 +6816,14 @@
     const bytes =
       await response.arrayBuffer();
 
+    await waitForWaveformIdle();
     const buffer =
       await waveformDecodeContext
         .decodeAudioData(
           bytes
         );
 
+    await waitForWaveformIdle();
     return waveformFromAudioBuffer(
       buffer,
       2400
@@ -6823,6 +6839,8 @@
       return;
     }
 
+    await window.StonefellowStemProjectLoaderV232?.whenMediaReady?.();
+    await waitForWaveformIdle();
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(),90000);
     stem.waveformLoading = true;
@@ -6891,6 +6909,7 @@
 
       if (waveform) {
         stem.waveformData = waveform;
+        window.StonefellowStemProjectLoaderV232?.cacheWrite?.(stem.id,waveform);
       } else {
         stem.waveformError = true;
       }
@@ -6917,6 +6936,7 @@
 
     try {
       while (waveformQueue.length) {
+        await waitForWaveformIdle();
         const stem = waveformQueue.shift();
 
         if (!stem) {
@@ -10056,7 +10076,7 @@
       bufferTransportFallbackReason = eligibility.reason;
       return false;
     }
-    bufferScheduler ||= bufferSchedulerFactory.createScheduler(context);
+    bufferScheduler ||= bufferSchedulerFactory.createScheduler(context,{fetcher:window.StonefellowStemMediaV235?.fetchAudio});
     if (bufferTransportPrepared) return true;
     if (bufferTransportPreparing) return bufferTransportPreparing;
     bufferTransportPreparing = bufferScheduler
@@ -10157,7 +10177,7 @@
       return false;
     }
     try {
-      bufferScheduler ||= bufferSchedulerFactory.createScheduler(context);
+      bufferScheduler ||= bufferSchedulerFactory.createScheduler(context,{fetcher:window.StonefellowStemMediaV235?.fetchAudio});
       await bufferScheduler.prepare([
         ...stems.map(stem => stem.url),
         ...libraryClips.map(clip => clip.url)
@@ -10842,9 +10862,15 @@
       now,
       false
     );
-    updateEqDisplays(false);
-    updateGroupMeters(false);
-    updateMasterMeter(false);
+    // Audio automation and the playhead retain their transport cadence;
+    // spectrum canvases/meters do not need 60 full paints per second per track.
+    const meterStamp = performance.now();
+    if (meterStamp-lastMeterPaint >= 50) {
+      lastMeterPaint = meterStamp;
+      updateEqDisplays(false);
+      updateGroupMeters(false);
+      updateMasterMeter(false);
+    }
 
     if (!playing) {
       return;
@@ -22767,6 +22793,7 @@
   );
 
   window.addEventListener('pagehide', () => {
+    waveformDisposed = true;
     if (localPersistenceReady) {
       window.clearTimeout(localSaveTimer);
       saveLocalStateNow();
@@ -23052,6 +23079,7 @@
   function v91GetAgentState() {
     const base=v90GetAgentState();
     return {...base,
+      media_health:{evidence:'browser_observation',loader:window.StonefellowStemMediaV235?.snapshot?.()||null,failures:window.StonefellowStemMediaHealthV235?.snapshot?.()||[]},
       clips:v91ClipRecords(),selected_clip_id:v91SelectedClipId(),controls:v91ControlManifest(),
       buses:[...Object.entries(groupState).map(([key,bus])=>({key,name:key,volume:Number(bus.volume||1),muted:Boolean(bus.muted)})),...customBuses.map(bus=>({key:String(bus.key||''),name:String(bus.name||bus.label||bus.key||''),volume:Number(bus.volume||1),muted:Boolean(bus.muted)}))],
       master:{volume:Number(masterVolume?.value||1),aux_a:Number(auxReturnA?.value||0),aux_b:Number(auxReturnB?.value||0),plugins:(fixedPluginTargets.master.plugins||[]).map((p,index)=>({index,type:p.type,enabled:p.enabled!==false,params:{...p.params}}))},

@@ -9,7 +9,7 @@
   if(!Number(cfg.conversationId||0)){const restored=Math.max(0,Number(AgentContext?.conversationId?.()||0));if(restored>0)cfg.conversationId=restored;}
   const VALID_STATUS=new Set(['success','failed','unsupported','no_change','cancelled','unverified']);
   const trigger=document.querySelector('.studio-agent-trigger')||(()=>{const b=document.createElement('button');b.type='button';b.className='daw-header-button studio-agent-trigger';b.textContent='AI';b.title='Open Stonefellow · QQQ';(document.querySelector('.daw-canvas-actions')||document.body).appendChild(b);return b;})();
-  const key=`stonefellow:studio-agent:v91:${cfg.userId}:${cfg.trackId}`;
+  const key=`stonefellow:studio-agent:v235:${cfg.userId}:${Number(cfg.agentId||0)}:${cfg.trackId}`;
   const initialVoice=!!cfg.voiceMode||!!Voice?.readShared?.(cfg.userId);
   let sessionId=Number(localStorage.getItem(key)||0),busy=false;
   trigger.setAttribute('aria-expanded','false');
@@ -38,7 +38,7 @@
   async function context(){try{return AgentContext?await AgentContext.refresh(false):{};}catch(error){return AgentContext?.snapshot?.()||{};}}
   async function api(payload){
     const agentContext=await context();
-    const r=await fetch(cfg.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({csrf_token:cfg.csrf,track_id:Number(cfg.trackId),session_id:sessionId,conversation_id:Number(cfg.conversationId||0),agent_context:agentContext,...payload})});
+    const r=await fetch(cfg.endpoint,{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({csrf_token:cfg.csrf,track_id:Number(cfg.trackId),session_id:sessionId,conversation_id:Number(cfg.conversationId||0),agent_id:Number(cfg.agentId||0),agent_context:agentContext,...payload})});
     const raw=await r.text();let d=null;try{d=JSON.parse(raw);}catch(e){throw new Error(`Studio Agent returned an invalid response (${r.status}).`);}if(!r.ok||!d?.ok)throw new Error(d?.error||'Studio Agent request failed.');
     if(d.session_id){sessionId=Number(d.session_id);localStorage.setItem(key,String(sessionId));}
     if(d.conversation_id){cfg.conversationId=Number(d.conversation_id);AgentContext?.setConversationId?.(cfg.conversationId);}
@@ -197,9 +197,9 @@
     onState:setAgentState,onVoiceChange:syncVoiceButton,onError:error=>{if(error?.message)line('assistant',error.message,'error');}
   })||null;
 
-  const continuity={isVoice:()=>Boolean(voice?.isEnabled?.()),conversationId:()=>Number(cfg.conversationId||AgentContext?.conversationId?.()||0),sessionId:()=>String(voice?.sessionId||''),source:'stem-studio'};
+  const continuity={isVoice:()=>Boolean(voice?.isEnabled?.()),conversationId:()=>Number(cfg.conversationId||AgentContext?.conversationId?.()||0),sessionId:()=>String(voice?.sessionId||''),agentId:()=>Number(cfg.agentId||0),isReady:()=>true,isRestoring:()=>false,source:'stem-studio'};
   window.STONEFELLOW_CHAT_CONTINUITY=continuity;
-  document.addEventListener('click',event=>{const link=event.target.closest?.('a[href*="/chat.php"],a[href*="/admin/stems.php"],a[href*="/video-editor.php"]');if(!link)return;try{const target=new URL(link.href,location.href);if(target.origin!==location.origin)return;const cid=continuity.conversationId();if(cid>0)target.searchParams.set('conversation_id',String(cid));if(continuity.isVoice())target.searchParams.set('voice','1');link.href=target.toString();}catch(error){}},true);
+  document.addEventListener('click',event=>{const link=event.target.closest?.('a[href*="/chat.php"],a[href*="/admin/stems.php"],a[href*="/video-editor.php"]');if(!link)return;try{const target=new URL(link.href,location.href);if(target.origin!==location.origin)return;const cid=continuity.conversationId();if(cid>0)target.searchParams.set('conversation_id',String(cid));target.searchParams.set('agent',Number(cfg.agentId)>0?String(cfg.agentId):'system');if(continuity.isVoice())target.searchParams.set('voice','1');link.href=target.toString();}catch(error){}},true);
 
   async function load(){
     try{
@@ -213,9 +213,22 @@
   }
   function openPanel(){panel.hidden=false;trigger.setAttribute('aria-expanded','true');load();setTimeout(()=>{input.focus();voice?.resume(40);},25);}
   function closePanel(){panel.hidden=true;trigger.setAttribute('aria-expanded','false');if(!voice?.isEnabled())setAgentState('idle');else if(busy||voice.isPreparing())setAgentState('processing');else if(voice.isSpeaking())setAgentState('speaking');else if(voice.isListening())setAgentState('listening');else voice.resume(40);}
-  function togglePanel(){panel.hidden?openPanel():closePanel();}
+  function togglePanel(){if(window.VP3AgentOrb&&window.VP3_ORB_ADAPTER?.hideBar===true){window.VP3AgentOrb.toggle();return;}panel.hidden?openPanel():closePanel();}
   trigger.addEventListener('click',togglePanel);voiceButton.addEventListener('click',()=>voice?.toggle());
   form.addEventListener('submit',e=>{e.preventDefault();const msg=input.value.trim();input.value='';sendMessage(msg,'text');});
-  let qTimes=[];document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){closePanel();return;}if(e.target.matches?.('input,textarea,select')||e.target.isContentEditable)return;if(e.key.toLowerCase()!=='q'){qTimes=[];return;}const now=Date.now();qTimes=qTimes.filter(t=>now-t<900);qTimes.push(now);if(qTimes.length>=3){qTimes=[];e.preventDefault();togglePanel();}});
+  let qTimes=[];document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){if(window.VP3_ORB_ADAPTER?.hideBar)window.VP3AgentOrb?.close();else closePanel();return;}if(e.target.matches?.('input,textarea,select')||e.target.isContentEditable)return;if(e.key.toLowerCase()!=='q'){qTimes=[];return;}const now=Date.now();qTimes=qTimes.filter(t=>now-t<900);qTimes.push(now);if(qTimes.length>=3){qTimes=[];e.preventDefault();togglePanel();}});
+  Object.assign(proof,{
+    conversationRef:()=>({id:continuity.conversationId(),agent:Number(cfg.agentId||0)}),
+    state:()=>({state:busy?'thinking':voice?.isSpeaking()?'speaking':voice?.isListening()?'listening':'idle',recording:Boolean(runtime()?.recordingActive)}),
+    focus:()=>input.focus(),
+    listen:()=>{if(!voice?.isEnabled())voice?.toggle();else voice.resume(40);},
+    stop:()=>{voice?.setEnabled(false);voice?.stopOutput();},
+    submitDraft:text=>{if(busy||input.value.trim())return false;input.value=String(text||'');input.focus();return true;},
+    mount:host=>{
+      const marker=document.createComment('studio-agent-home');panel.before(marker);
+      panel.classList.add('studio-agent-orb-mounted');host.append(panel);openPanel();
+      return ()=>{marker.replaceWith(panel);panel.classList.remove('studio-agent-orb-mounted');closePanel();};
+    }
+  });
   syncVoiceButton(initialVoice);AgentContext?.setConversationId?.(Number(cfg.conversationId||0));if(voice)voice.start();else setAgentState('idle','Voice conversation is unavailable.');
 })();

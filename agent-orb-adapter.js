@@ -154,5 +154,20 @@
       if(view&&view!=='chat')thread.scrollTop=scroll;
     };
   };
+  // The Studio surface retains the same verified tool/runtime and one composer.
+  // Both the header AI button and the floating orb mount this existing panel.
+  if(window.STONEFELLOW_AGENT_CONTEXT?.surface==='stem'&&window.STONEFELLOW_STEM_AGENT_V131?.mount){
+    const studio=window.STONEFELLOW_STEM_AGENT_V131;
+    adapter.hideBar=true;
+    adapter.attachChat=host=>studio.mount(host);
+    adapter.conversationRef=()=>studio.conversationRef();
+    adapter.focusChat=()=>studio.focus();
+    adapter.submitDraft=text=>studio.submitDraft(text);
+    adapter.listen=()=>studio.listen();
+    adapter.stop=()=>studio.stop();
+    adapter.state=()=>studio.state();
+    adapter.busy=()=>['thinking','speaking','listening'].includes(studio.state().state)||studio.state().recording;
+    cfg.agentId=studio.conversationRef().agent;
+  }
   window.VP3_ORB_ADAPTER=adapter;
 })();

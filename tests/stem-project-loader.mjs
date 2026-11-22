@@ -12,7 +12,7 @@ assert.equal(typeof api.install,'function');
 assert.equal(typeof api.installProjectLoadingOverlay,'function');
 assert.equal(api.install({document:{}}),false);
 assert.match(source,/function installProjectLoadingOverlay\(host\)/);
-assert.match(source,/Number\(audio\.readyState\|\|0\)>=4/,'loader must require HAVE_ENOUGH_DATA');
+assert.match(source,/Number\(audio\.readyState\|\|0\)>=3/,'loader requires playable audio; previews stay in the background');
 assert.match(source,/const projectReady=runtimeReady&&expectedIds\.every/);
 assert.match(source,/browserWaveformMedia&&!mediaPhaseReady/);
 assert.match(source,/await mediaReadyPromise/);
