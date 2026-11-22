@@ -665,6 +665,11 @@ function vp3_coordination_admit_v1(PDO $pdo,array $user,array $binding,bool $exe
             'primary'=>$primary,'sources'=>$sources,'focus'=>'Synthesize the current specialist reports.',
             'report'=>true,'coordination_coverage'=>$coverage,'coordination_priority'=>$curiosity?'low':$candidate['priority'],
             'coordination_route'=>$route,'coordination_routes'=>array_intersect_key($routes,$sources),'coordination_saved'=>$saved];
+        if(($route['specialist']??null)==='media'
+            &&in_array($route['action']??null,['ask','report'],true)
+            &&str_starts_with($primary,'media:')){
+            $work['coordination_media_report_v1']=true;
+        }
         if(($route['specialist']??null)==='marketing'
             &&in_array($route['action']??null,['ask','report'],true)
             &&preg_match('/\Amarketing:campaign-(?:optimization|readiness|outcome|performance|work):[1-9][0-9]{0,17}\z/D',$primary)===1){
