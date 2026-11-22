@@ -78,6 +78,7 @@ try {
         $activityScope = array_key_exists('conversation_id',$input) ? vp3_agent_chat_stream_scope_v380($pdo,$user,$input) : null;
         $activeConversationId = $activityScope['conversation_id'] ?? agent_chat_v101_latest_conversation_id($pdo,$userId);
         if ($activityScope) initiative_product_launch_chat_v1($pdo,$userId,$activityScope['agent_id'],$activeConversationId);
+        $phoneUpdates=$activityScope?vp3_phone_chat_updates_v1($pdo,$user,$activityScope['principal'],$input):[];
         $initiativeUpdates=[];
         if(array_key_exists('initiative_message_ids',$input)){
             $activityScope??=vp3_agent_chat_stream_scope_v380($pdo,$user,$input);
@@ -98,7 +99,7 @@ try {
                 'unread_count'=>0,
                 'conversation_id'=>$activeConversationId,
                 'latest_message_id'=>$activeMessageId,
-                'initiative_updates'=>$initiativeUpdates,
+                'phone_updates'=>$phoneUpdates,'initiative_updates'=>$initiativeUpdates,
             ]);
             exit;
         }
@@ -141,7 +142,7 @@ try {
             'ok'=>true,'updates'=>$updates,'latest_id'=>$latestId,
             'unread_count'=>notification_unread_count($user),
             'conversation_id'=>$activeConversationId,'latest_message_id'=>$activeMessageId,
-            'initiative_updates'=>$initiativeUpdates,
+            'phone_updates'=>$phoneUpdates,'initiative_updates'=>$initiativeUpdates,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -167,7 +168,7 @@ try {
         $stmt->execute([$conversationId]);
         $agentId=(int)($conversation['user_agent_id']??0);
         $rows=vp3_agent_chat_include_source_v380($pdo,$user,$agentId>0?['id'=>$agentId]:null,$conversationId,array_reverse($stmt->fetchAll()),$input['source_message_id']??null);
-        $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$agentId,$conversationId,$rows);
+        $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$agentId,$conversationId,$rows,$input);
         echo json_encode(['ok'=>true,'conversation'=>$conversation,'messages'=>$messages]);
         exit;
     }
@@ -184,7 +185,7 @@ try {
         $retry=$pending?' OR id IN ('.implode(',',array_fill(0,count($pending),'?')).')':'';
         $stmt=$pdo->prepare('SELECT id,role,message,context_json,created_at FROM chat_messages WHERE conversation_id=? AND (id>?'.$retry.') ORDER BY id ASC LIMIT '.(80+count($pending)));
         $stmt->execute([$conversationId,$afterId,...$pending]);
-        $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$scope['agent_id'],$conversationId,$stmt->fetchAll());
+        $messages=vp3_agent_chat_history_content_v2160($pdo,$user,$scope['agent_id'],$conversationId,$stmt->fetchAll(),$input);
         echo json_encode(['ok'=>true,'conversation_id'=>$conversationId,'messages'=>$messages],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
         exit;
     }

@@ -1,0 +1,405 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__.'/extension-device-auth-v2000.php';
+
+const VP3_PHONE_INVITE_SECONDS_V1 = 300;
+const VP3_PHONE_FRESH_SECONDS_V1 = 60;
+const VP3_PHONE_IDLE_DAYS_V1 = 30;
+const VP3_PHONE_MAX_DAYS_V1 = 90;
+
+/** Explicit installation only. Live requests do not create or alter tables. */
+function vp3_phone_schema_v1(PDO $pdo): void
+{
+    if ($pdo->inTransaction()) throw new LogicException('Install Phone Tracking outside a transaction.');
+    $options = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
+        ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : '';
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_invites_v1 (
+        invite_hash CHAR(64) NOT NULL PRIMARY KEY, owner_user_id INT UNSIGNED NOT NULL,
+        expires_at BIGINT NOT NULL, claimed_device_id CHAR(32) NULL,
+        UNIQUE (owner_user_id, invite_hash),
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    )".$options);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_devices_v1 (
+        id CHAR(32) NOT NULL PRIMARY KEY, owner_user_id INT UNSIGNED NOT NULL,
+        token_hash CHAR(64) NOT NULL UNIQUE, device_name VARCHAR(48) NOT NULL,
+        device_role VARCHAR(12) NOT NULL, device_status VARCHAR(12) NOT NULL,
+        allow_location SMALLINT NOT NULL DEFAULT 0, generation BIGINT NOT NULL,
+        location_state VARCHAR(12) NOT NULL, latitude DOUBLE NULL, longitude DOUBLE NULL,
+        accuracy DOUBLE NULL, fix_at BIGINT NULL, first_fix_at BIGINT NULL,
+        started_at BIGINT NULL, created_at BIGINT NOT NULL, expires_at BIGINT NOT NULL,
+        last_seen_at BIGINT NOT NULL, UNIQUE (owner_user_id, id),
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    )".$options);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_requests_v1 (
+        owner_user_id INT UNSIGNED NOT NULL, request_hash CHAR(64) NOT NULL,
+        signature CHAR(64) NOT NULL, device_id CHAR(32) NULL, expires_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL, PRIMARY KEY (owner_user_id, request_hash),
+        FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    )".$options);
+}
+
+function vp3_phone_schema_ready_v1(PDO $pdo): bool
+{
+    try {
+        $pdo->query('SELECT i.invite_hash,i.claimed_device_id,d.token_hash,d.started_at,d.first_fix_at,
+            r.request_hash,r.signature FROM vp3_phone_invites_v1 i, vp3_phone_devices_v1 d,
+            vp3_phone_requests_v1 r WHERE 1=0');
+        return true;
+    } catch (PDOException) {
+        return false;
+    }
+}
+
+function vp3_phone_sql_v1(PDO $pdo, string $sql, array $params): PDOStatement
+{
+    $query = $pdo->prepare($sql);
+    $query->execute($params);
+    return $query;
+}
+
+function vp3_phone_lock_v1(PDO $pdo): string
+{
+    return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
+}
+
+/** All mutations lock in the same order: account, then invite/device/receipt. */
+function vp3_phone_transaction_v1(PDO $pdo, callable $work): array
+{
+    // The Chat coordinator can own the transaction so the command and its receipt commit together.
+    if ($pdo->inTransaction()) return $work();
+    $sqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
+    if ($sqlite) $pdo->exec('BEGIN IMMEDIATE');
+    else $pdo->beginTransaction();
+    try {
+        $result = $work();
+        if ($sqlite) $pdo->exec('COMMIT');
+        else $pdo->commit();
+        return $result;
+    } catch (Throwable $e) {
+        if ($sqlite) $pdo->exec('ROLLBACK');
+        elseif ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+function vp3_phone_authorized_owner_v1(PDO $pdo, int $owner, bool $lock): ?string
+{
+    $row = vp3_phone_sql_v1($pdo, 'SELECT id,display_name,is_active FROM users WHERE id=?'
+        .($lock ? vp3_phone_lock_v1($pdo) : ''), [$owner])->fetch(PDO::FETCH_ASSOC);
+    if (!$row || (int)$row['is_active'] !== 1 || !function_exists('has_permission')
+        || !has_permission('account.access',$row) || !has_permission('chat.access',$row)) return null;
+    return trim((string)$row['display_name']) ?: 'VP3 account owner';
+}
+
+function vp3_phone_account_v1(PDO $pdo, int $owner, bool $lock): string
+{
+    return vp3_phone_authorized_owner_v1($pdo,$owner,$lock) ?? throw new RuntimeException('Phone connection unavailable.',403);
+}
+
+function vp3_phone_token_v1(string $bytes): string
+{
+    return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+}
+
+function vp3_phone_secret_valid_v1(mixed $value): bool
+{
+    return is_string($value) && preg_match('/^[A-Za-z0-9_-]{43}$/D', $value) === 1;
+}
+
+function vp3_phone_row_v1(PDO $pdo, int $owner, string $id): array
+{
+    $row = vp3_phone_sql_v1($pdo, 'SELECT * FROM vp3_phone_devices_v1
+        WHERE owner_user_id=? AND id=?'.vp3_phone_lock_v1($pdo), [$owner,$id])->fetch(PDO::FETCH_ASSOC);
+    if (!$row) throw new RuntimeException('This phone is unavailable.', 404);
+    return $row;
+}
+
+function vp3_phone_public_v1(array $row, int $now): array
+{
+    $state = (string)$row['location_state'];
+    $status = (string)$row['device_status'];
+    if ((int)$row['expires_at'] <= $now && in_array($status, ['pending','approved'], true)) $status = 'expired';
+    $canRead = $status === 'approved' && (bool)$row['allow_location'];
+    if (!$canRead) $state = 'off';
+    $hasFix = $canRead && $state === 'live' && $row['fix_at'] !== null;
+    if ($hasFix && (int)$row['fix_at'] <= $now - VP3_PHONE_FRESH_SECONDS_V1) $state = 'stale';
+    return [
+        'id'=>(string)$row['id'], 'name'=>(string)$row['device_name'], 'role'=>(string)$row['device_role'],
+        'status'=>$status, 'allow_location'=>$canRead, 'location_state'=>$state, 'generation'=>(int)$row['generation'],
+        'latitude'=>$hasFix ? (float)$row['latitude'] : null, 'longitude'=>$hasFix ? (float)$row['longitude'] : null,
+        'accuracy'=>$hasFix ? (float)$row['accuracy'] : null, 'fix_at'=>$hasFix ? (int)$row['fix_at'] : null,
+        'first_fix_at'=>$hasFix ? (int)$row['first_fix_at'] : null,
+        'last_seen_at'=>(int)$row['last_seen_at'], 'expires_at'=>(int)$row['expires_at'],
+        'connected'=>in_array($status, ['pending','approved'], true) && (int)$row['last_seen_at'] > $now - VP3_PHONE_FRESH_SECONDS_V1,
+    ];
+}
+
+function vp3_phone_generation_v1(array $row, array $input, bool $allowEarlier=false): void
+{
+    $observed = $input['generation'] ?? null;
+    if (!is_int($observed) || $observed < 1) throw new RuntimeException('A positive phone generation is required.', 422);
+    $current = (int)$row['generation'];
+    if ($observed > $current || (!$allowEarlier && $observed !== $current)) {
+        throw new RuntimeException('Phone state changed. Refresh its status.', 409);
+    }
+}
+
+function vp3_phone_save_row_v1(PDO $pdo, array $row): void
+{
+    vp3_phone_sql_v1($pdo, 'UPDATE vp3_phone_devices_v1 SET device_role=?, device_status=?,allow_location=?,
+        generation=?,location_state=?,latitude=?,longitude=?,accuracy=?,fix_at=?,first_fix_at=?,started_at=?,
+        expires_at=?,last_seen_at=? WHERE owner_user_id=? AND id=?', [
+        $row['device_role'],$row['device_status'],(int)$row['allow_location'],$row['generation'],$row['location_state'],
+        $row['latitude'],$row['longitude'],$row['accuracy'],$row['fix_at'],$row['first_fix_at'],$row['started_at'],
+        $row['expires_at'],$row['last_seen_at'],$row['owner_user_id'],$row['id'],
+    ]);
+}
+
+function vp3_phone_end_location_v1(array &$row, string $state): void
+{
+    $row['location_state'] = $state;
+    $row['generation'] = (int)$row['generation'] + 1;
+    foreach (['latitude','longitude','accuracy','fix_at','first_fix_at','started_at'] as $key) $row[$key] = null;
+}
+
+function vp3_phone_owner_transition_v1(array &$row, string $action, array $input, int $now): void
+{
+    // Revocation ends this immutable pairing even if its holder just stopped GPS.
+    vp3_phone_generation_v1($row,$input,allowEarlier: $action === 'revoke');
+    if ((int)$row['expires_at'] <= $now) throw new RuntimeException('This phone connection expired.', 409);
+    $status = $row['device_status'];
+    if ($action === 'approve' || $action === 'deny') {
+        if ($status !== 'pending') throw new RuntimeException('This request is no longer pending.', 409);
+        if ($action === 'approve') {
+            $role = $input['role'] ?? 'guest';
+            $allow = $input['allow_location'] ?? true;
+            if (!in_array($role,['owner','guest','device'],true) || !is_bool($allow)) {
+                throw new RuntimeException('Choose a valid role and location permission.', 422);
+            }
+            $row['device_status'] = 'approved';
+            $row['device_role'] = $role;
+            $row['allow_location'] = $allow;
+            $row['expires_at'] = $now + 86400 * VP3_PHONE_IDLE_DAYS_V1;
+        } else {
+            $row['device_status'] = 'denied';
+            $row['expires_at'] = $now;
+        }
+        $row['generation']++;
+        return;
+    }
+    if ($status !== 'approved') throw new RuntimeException('This phone is unavailable.', 409);
+    if ($action === 'revoke') {
+        vp3_phone_end_location_v1($row,'off');
+        $row['device_status'] = 'revoked';
+        $row['allow_location'] = false;
+        $row['expires_at'] = $now;
+    } elseif ($action === 'stop') {
+        vp3_phone_end_location_v1($row,'off');
+    } elseif ($action === 'request_start') {
+        if (!$row['allow_location']) throw new RuntimeException('Location is not permitted for this phone.', 403);
+        if (in_array($row['location_state'], ['off','denied'], true)) vp3_phone_end_location_v1($row,'requested');
+    } else {
+        throw new RuntimeException('Unknown phone action.', 422);
+    }
+}
+
+function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input): array
+{
+    if ($owner < 1) throw new RuntimeException('Sign in to manage phones.', 401);
+    if ($action === 'state') {
+        vp3_phone_account_v1($pdo,$owner,false);
+        $now = time();
+        $rows = vp3_phone_sql_v1($pdo, "SELECT d.* FROM vp3_phone_devices_v1 d JOIN users u ON u.id=d.owner_user_id
+            WHERE u.is_active=1 AND d.owner_user_id=? AND d.device_status IN ('pending','approved')
+            AND d.expires_at>? ORDER BY d.created_at DESC,d.id LIMIT 32",
+            [$owner,$now])->fetchAll(PDO::FETCH_ASSOC);
+        return ['devices'=>array_map(static fn(array $row): array => vp3_phone_public_v1($row,$now), $rows),
+            'server_time'=>$now,'stale_seconds'=>VP3_PHONE_FRESH_SECONDS_V1];
+    }
+    if (!in_array($action,['invite','approve','deny','request_start','stop','revoke'],true)) throw new RuntimeException('Unknown phone action.', 422);
+    $requestId = $input['request_id'] ?? null;
+    $id = $action === 'invite' ? null : ($input['device_id'] ?? null);
+    if (!is_string($requestId) || !preg_match('/^[A-Za-z0-9_.:-]{12,100}$/D',$requestId)) {
+        throw new RuntimeException('An operation identifier is required.', 422);
+    }
+    if ($action !== 'invite' && (!is_string($id) || !preg_match('/^[a-f0-9]{32}$/D',$id))) throw new RuntimeException('Invalid phone selection.', 422);
+    $hash = hash('sha256',$requestId);
+    $signature = hash('sha256', json_encode([$action,$id,$input['generation'] ?? null,$input['role'] ?? null,
+        $input['allow_location'] ?? null], JSON_THROW_ON_ERROR));
+    return vp3_phone_transaction_v1($pdo, static function() use ($pdo,$owner,$action,$input,$id,$hash,$signature): array {
+        vp3_phone_account_v1($pdo,$owner,true);
+        $now = time();
+        $receipt = vp3_phone_sql_v1($pdo, 'SELECT * FROM vp3_phone_requests_v1 WHERE owner_user_id=? AND request_hash=?'.vp3_phone_lock_v1($pdo),
+            [$owner,$hash])->fetch(PDO::FETCH_ASSOC);
+        if ($receipt) {
+            if (!hash_equals($receipt['signature'],$signature)) throw new RuntimeException('Operation identifier has already been used.',409);
+            if ($action === 'invite') return ['duplicate'=>true,'expires_at'=>(int)$receipt['expires_at']];
+            return ['device'=>vp3_phone_public_v1(vp3_phone_row_v1($pdo,$owner,$id),$now),'duplicate'=>true];
+        }
+        if ($action === 'invite') {
+            vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_invites_v1 WHERE owner_user_id=? AND expires_at<=?',[$owner,$now]);
+            vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_devices_v1 WHERE owner_user_id=? AND expires_at<=?',[$owner,$now]);
+            vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_requests_v1 WHERE owner_user_id=? AND created_at<?',[$owner,$now-86400*90]);
+            $open = vp3_phone_sql_v1($pdo,'SELECT invite_hash FROM vp3_phone_invites_v1 WHERE owner_user_id=?
+                AND claimed_device_id IS NULL LIMIT 4'.vp3_phone_lock_v1($pdo),[$owner])->fetchAll(PDO::FETCH_COLUMN);
+            if (count($open) >= 4) throw new RuntimeException('Four invitations are already pending.',429);
+            $secret = vp3_phone_token_v1(random_bytes(32));
+            $expiry = $now + VP3_PHONE_INVITE_SECONDS_V1;
+            vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_invites_v1(invite_hash,owner_user_id,expires_at) VALUES(?,?,?)',
+                [vp3_extension_hash_v2000($secret),$owner,$expiry]);
+            $result = ['invite'=>$secret,'expires_at'=>$expiry,'duplicate'=>false];
+        } else {
+            $row = vp3_phone_row_v1($pdo,$owner,$id);
+            vp3_phone_owner_transition_v1($row,$action,$input,$now);
+            vp3_phone_save_row_v1($pdo,$row);
+            $expiry = $row['expires_at'];
+            $result = ['device'=>vp3_phone_public_v1($row,$now),'duplicate'=>false];
+        }
+        vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_requests_v1(owner_user_id,request_hash,signature,device_id,expires_at,created_at)
+            VALUES(?,?,?,?,?,?)',[$owner,$hash,$signature,$id,$expiry,$now]);
+        return $result;
+    });
+}
+
+function vp3_phone_claim_v1(PDO $pdo, array $input): array
+{
+    $invite = $input['invite'] ?? null;
+    $name = is_string($input['name'] ?? null) ? trim($input['name']) : '';
+    $key = $input['claim_key'] ?? null;
+    if (!vp3_phone_secret_valid_v1($invite)) throw new RuntimeException('Invitation unavailable.',403);
+    if ($name === '' || !mb_check_encoding($name,'UTF-8') || mb_strlen($name)>48 || preg_match('/[\p{Cc}\p{Cf}]/u',$name)) {
+        throw new RuntimeException('Name your phone using up to 48 characters.',422);
+    }
+    if ($key !== null && (!is_string($key) || !preg_match('/^[a-f0-9]{64}$/D',$key))) throw new RuntimeException('Invalid claim.',422);
+    $hash = vp3_extension_hash_v2000($invite);
+    // The hint only establishes lock order. Re-check the entire row under lock.
+    $owner = (int)vp3_phone_sql_v1($pdo,'SELECT owner_user_id FROM vp3_phone_invites_v1 WHERE invite_hash=?',[$hash])->fetchColumn();
+    if (!$owner) throw new RuntimeException('Invitation unavailable.',403);
+    return vp3_phone_transaction_v1($pdo,static function() use ($pdo,$owner,$hash,$invite,$key,$name): array {
+        $ownerName = vp3_phone_account_v1($pdo,$owner,true);
+        $now = time();
+        $inv = vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_invites_v1 WHERE invite_hash=? AND owner_user_id=?'
+            .vp3_phone_lock_v1($pdo),[$hash,$owner])->fetch(PDO::FETCH_ASSOC);
+        if (!$inv || (int)$inv['expires_at'] <= $now) throw new RuntimeException('Invitation unavailable.',403);
+        // Only the original claimant holding both secrets can recover a lost acknowledgement.
+        $token = vp3_phone_token_v1($key === null ? random_bytes(32) : hash_hmac('sha256','vp3/phone/claim/'.$key,$invite,true));
+        $tokenHash = vp3_extension_hash_v2000($token);
+        if ($inv['claimed_device_id'] !== null) {
+            $row = vp3_phone_row_v1($pdo,$owner,$inv['claimed_device_id']);
+            if ($key === null || !hash_equals($row['token_hash'],$tokenHash) || $row['device_name'] !== $name ||
+                !in_array($row['device_status'],['pending','approved'],true) || (int)$row['expires_at'] <= $now) {
+                throw new RuntimeException('Invitation unavailable.',403);
+            }
+            return ['token'=>$token,'owner_name'=>$ownerName,'device'=>vp3_phone_public_v1($row,$now)];
+        }
+        $active = vp3_phone_sql_v1($pdo,"SELECT id FROM vp3_phone_devices_v1 WHERE owner_user_id=?
+            AND device_status IN ('pending','approved') AND expires_at>? LIMIT 32".vp3_phone_lock_v1($pdo),[$owner,$now])->fetchAll(PDO::FETCH_COLUMN);
+        if (count($active) >= 32) throw new RuntimeException('Disconnect an unused phone before pairing another.',429);
+        $id = str_replace('-','',vp3_extension_uuid_v2000());
+        vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_devices_v1
+            (id,owner_user_id,token_hash,device_name,device_role,device_status,allow_location,generation,location_state,created_at,expires_at,last_seen_at)
+            VALUES(?,?,?,?,'guest','pending',0,1,'off',?,?,?)",[$id,$owner,$tokenHash,$name,$now,$now+VP3_PHONE_INVITE_SECONDS_V1,$now]);
+        vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_invites_v1 SET claimed_device_id=? WHERE invite_hash=?',[$id,$hash]);
+        return ['token'=>$token,'owner_name'=>$ownerName,'device'=>vp3_phone_public_v1(vp3_phone_row_v1($pdo,$owner,$id),$now)];
+    });
+}
+
+function vp3_phone_number_v1(mixed $value, float $min, float $max): float
+{
+    if ((!is_int($value) && !is_float($value)) || !is_finite((float)$value) || $value < $min || $value > $max) {
+        throw new RuntimeException('Invalid GPS reading.',422);
+    }
+    return (float)$value;
+}
+
+function vp3_phone_fix_v1(array &$row, array $input, int $now): void
+{
+    if (!in_array($row['location_state'],['waiting','live'],true) || $row['started_at'] === null) {
+        throw new RuntimeException('Start sharing on this phone first.',409);
+    }
+    $at = $input['fix_at'] ?? null;
+    if (!is_int($at) || $at <= $now - VP3_PHONE_FRESH_SECONDS_V1 || $at > $now + 5 ||
+        $at < (int)$row['started_at']) throw new RuntimeException('Waiting for a fresh location.',422);
+    if ($row['fix_at'] !== null && $at < (int)$row['fix_at']) throw new RuntimeException('A more recent location is already available.',409);
+    $lat = vp3_phone_number_v1($input['latitude'] ?? null,-90,90);
+    $lon = vp3_phone_number_v1($input['longitude'] ?? null,-180,180);
+    $acc = vp3_phone_number_v1($input['accuracy'] ?? null,0,40075000);
+    if ($row['fix_at'] !== null && $at === (int)$row['fix_at']) return;
+    $row['latitude']=$lat;
+    $row['longitude']=$lon;
+    $row['accuracy']=$acc;
+    $row['fix_at']=$at;
+    $row['first_fix_at'] ??= $at;
+    $row['location_state']='live';
+}
+
+function vp3_phone_device_transition_v1(array &$row, string $action, array $input, int $now): void
+{
+    if (!is_string($input['device_id'] ?? null) || !hash_equals($row['id'],$input['device_id'])) {
+        throw new RuntimeException('Phone identity changed. Refresh this page.',403);
+    }
+    vp3_phone_generation_v1($row,$input);
+    if ($action === 'disconnect') {
+        vp3_phone_end_location_v1($row,'off');
+        $row['device_status']='revoked';
+        $row['allow_location']=false;
+        $row['expires_at']=$now;
+        return;
+    }
+    if ($row['device_status'] !== 'approved' || !$row['allow_location']) throw new RuntimeException('Location is not authorized for this phone.',403);
+    if ($action === 'start') {
+        if (in_array($row['location_state'],['waiting','live'],true)) return;
+        if ($row['location_state'] !== 'requested') $row['generation']++;
+        $row['location_state']='waiting';
+        $row['started_at']=$now;
+    } elseif ($action === 'stop' || $action === 'denied') {
+        vp3_phone_end_location_v1($row,$action === 'denied' ? 'denied' : 'off');
+    } elseif ($action === 'fix') {
+        vp3_phone_fix_v1($row,$input,$now);
+    } else {
+        throw new RuntimeException('Unknown phone action.',422);
+    }
+}
+
+function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $input): array
+{
+    if ($action === 'claim') return vp3_phone_claim_v1($pdo,$input);
+    if (!vp3_phone_secret_valid_v1($token)) throw new RuntimeException('Phone connection unavailable.',403);
+    $hash = vp3_extension_hash_v2000($token);
+    $hint = vp3_phone_sql_v1($pdo,'SELECT id,owner_user_id FROM vp3_phone_devices_v1 WHERE token_hash=?',[$hash])->fetch(PDO::FETCH_ASSOC);
+    if (!$hint) throw new RuntimeException('Phone connection unavailable.',403);
+    $result = vp3_phone_transaction_v1($pdo,static function() use ($pdo,$action,$input,$hint,$hash): array {
+        $owner = (int)$hint['owner_user_id'];
+        $ownerName = vp3_phone_authorized_owner_v1($pdo,$owner,true);
+        $now = time();
+        $row = vp3_phone_row_v1($pdo,$owner,$hint['id']);
+        if (!hash_equals($row['token_hash'],$hash) || !in_array($row['device_status'],['approved','pending'],true)
+            || (int)$row['expires_at'] <= $now) throw new RuntimeException('Phone connection unavailable.',403);
+        if ($ownerName === null) {
+            // The holder may have pressed Stop while offline. A lost account grant
+            // must not leave coordinates or consent that reappear after restoration.
+            if ($action === 'disconnect' && ($input['device_id'] ?? null) === $row['id']
+                && ($input['generation'] ?? null) === (int)$row['generation']) {
+                vp3_phone_device_transition_v1($row,$action,$input,$now);
+                vp3_phone_save_row_v1($pdo,$row);
+            } elseif ($row['location_state'] !== 'off') {
+                vp3_phone_end_location_v1($row,'off');
+                vp3_phone_save_row_v1($pdo,$row);
+            }
+            return [];
+        }
+        $touch = (int)$row['last_seen_at'] < $now - 10;
+        if ($action !== 'status') vp3_phone_device_transition_v1($row,$action,$input,$now);
+        if ($action !== 'status' || $touch) {
+            if ($row['device_status'] === 'approved') {
+                $row['expires_at'] = min($now + VP3_PHONE_IDLE_DAYS_V1*86400,(int)$row['created_at'] + VP3_PHONE_MAX_DAYS_V1*86400);
+            }
+            $row['last_seen_at']=$now;
+            vp3_phone_save_row_v1($pdo,$row);
+        }
+        return ['device'=>vp3_phone_public_v1($row,$now),'owner_name'=>$ownerName];
+    });
+    // Return no owner or device data, after committing the withdrawal.
+    return $result ?: throw new RuntimeException('Phone connection unavailable.',403);
+}

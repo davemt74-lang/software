@@ -3,6 +3,10 @@ name: Cloud Hosting V1
 on:
   pull_request:
     paths:
+      - "includes/phone-tracking*.php"
+      - "api/phone-tracking-v1.php"
+      - "api/phone-location-v1.php"
+      - "tests/phone-tracking-mysql-v1.php"
       - "includes/system-apps-v100.php"
       - "includes/system-apps-v110.php"
       - "includes/system-apps-v120.php"
@@ -134,6 +138,10 @@ on:
     branches:
       - main
     paths:
+      - "includes/phone-tracking*.php"
+      - "api/phone-tracking-v1.php"
+      - "api/phone-location-v1.php"
+      - "tests/phone-tracking-mysql-v1.php"
       - "includes/system-apps-v100.php"
       - "includes/system-apps-v110.php"
       - "includes/system-apps-v120.php"
@@ -484,6 +492,7 @@ jobs:
           VP3_TEST_MYSQL_USER: root
           VP3_TEST_MYSQL_PASS: root
         run: |
+          php tests/phone-tracking-mysql-v1.php
           php tests/system-apps-v100-mysql.php
           php tests/system-apps-v110-mysql.php
           php tests/system-apps-v120-mysql.php

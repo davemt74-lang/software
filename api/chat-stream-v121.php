@@ -46,12 +46,12 @@ $imageReferenceId=vp3_chat_image_reference_input_v1($input);
 $initiativeReply=vp3_agent_chat_initiative_reply_v2160($input);
 if($initiativeReply!==null&&$conversationId<1)throw new RuntimeException('A saved owner Chat is required for this reply.',422);
 $input['input_mode']='voice';$participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);if($initiativeReply!==null&&($participantActor!==null||vp3_participant_scope_v1()!==null))throw new RuntimeException('Use the private owner Chat for this reply.',403);
-if(vp3_agent_chat_auto_voice_image_v2160($input)){
+if(vp3_agent_chat_auto_voice_image_v2160($input)||vp3_phone_chat_route_v1($pdo,$user,$principal,$input)!==null){
     $done=vp3_agent_chat_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,null,true);
     if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
     chat_v121_emit(['type'=>'start','conversation_id'=>$done['conversation_id'],'user_message_id'=>$done['user_message_id'],
         'assistant_message_id'=>$done['assistant_message_id'],'agent_id'=>$agentScopeId]);
-    chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);
+    if (empty($done['phone_tracking_context'])) chat_v121_emit(['type'=>'delta','delta'=>$done['answer']]);
     chat_v121_emit(['type'=>'done','data'=>$done]);exit;
 }
 $newImageTurn=$imageReferenceId>0||vp3_agent_chat_reply_image_plan_v1($query)!==null||vp3_agent_chat_image_needs_scene_v1($query);

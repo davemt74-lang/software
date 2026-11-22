@@ -331,10 +331,35 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Install Chromium for the shipped Chat tools
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, curl, sodium
+          coverage: none
+      - name: Install browsers for the shipped Chat tools
         run: |
-          npm install --no-save --ignore-scripts playwright@1.62.1
+          npm install --no-save --ignore-scripts playwright@1.62.1 jsqr@1.4.0 pngjs@7.0.0
           bash tools/install-ci-chromium.sh
+          ./node_modules/.bin/playwright install --with-deps webkit
       - name: Test pairing, the installed agent name and disconnect in Chat
         run: node tests/connected-sites-browser.mjs
 
+      - name: Test account-bound Phone Tracking and phone consent
+        run: |
+          php tests/phone-tracking-domain-v1.php
+          php tests/phone-tracking-chat-v1.php
+          node tests/phone-tracking-announcement-v1.mjs
+          node tests/phone-location-holder-browser-v1.mjs
+      - name: Exercise the tracking map and iPhone sharing page together
+        env:
+          VP3_PHONE_WEBKIT: '1'
+          VP3_PHONE_SCREENSHOTS: ${{ runner.temp }}/phone-tracking-screenshots
+        run: node tests/phone-tracking-e2e.mjs
+      - name: Save tracking acceptance screenshots
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-tracking-acceptance
+          path: ${{ runner.temp }}/phone-tracking-screenshots
+          if-no-files-found: error
+          retention-days: 7
