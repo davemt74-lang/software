@@ -234,6 +234,18 @@ async function verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other) {
   }
 }
 
+async function startWithFreshSensorReading(page, context, reading) {
+  const started = page.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
+    response.request().postDataJSON()?.action === 'start');
+  await page.locator('#phone-start').click();
+  check(await read(await started), 'start from the handset');
+  // An OS can deliver the initial position during the tap. Give the subsequent movement
+  // a distinct GPS second so the server can distinguish it from that first sample.
+  const grantSecond = Math.floor(Date.now()/1000);
+  await eventually('GPS clock did not advance', () => Math.floor(Date.now()/1000) > grantSecond);
+  await context.setGeolocation(reading);
+}
+
 async function browserJourney(baseURL, owner, other) {
   browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   const desktop = await browser.newContext({ baseURL, viewport: { width: 1400, height: 960 } });
@@ -249,15 +261,6 @@ async function browserJourney(baseURL, owner, other) {
   const phone = await handset.newPage();
   const errors = [];
   for (const page of [map, phone]) page.on('pageerror', error => errors.push(error.message));
-  async function startWithFreshSensorReading(reading) {
-    const started = phone.waitForResponse(response =>
-      new URL(response.url()).pathname === phoneEndpoint && response.request().postDataJSON()?.action === 'start');
-    await phone.locator('#phone-start').click();
-    check(await read(await started), 'start from the handset');
-    // A moving phone supplies a different position after the server accepts the grant.
-    // WebKit may suppress repeated readings at identical coordinates.
-    await handset.setGeolocation(reading);
-  }
   let gpsRequests = 0;
   let highAccuracyWatch;
   const observations = [];
@@ -274,12 +277,12 @@ async function browserJourney(baseURL, owner, other) {
     observations.push(observation);
     if (observations.length > 12) observations.shift();
   });
-  async function requireLiveFix(label) {
+  async function requireLiveFix(label, expected) {
     let latest;
     try {
       await eventually(label, async () => {
         [latest] = check(await ownerApi(desktop, owner), 'live read').devices;
-        return latest?.location_state === 'live';
+        return latest?.location_state === 'live' && latest.latitude === expected.latitude && latest.longitude === expected.longitude;
       });
       return latest;
     } catch (error) {
@@ -368,6 +371,7 @@ async function browserJourney(baseURL, owner, other) {
   assert.equal((await ownerApi(outsider, other, 'approve', { device_id: deviceId, generation: device.generation })).ok, false);
   const cookie = (await handset.cookies()).find(c => c.name === 'vp3_phone_device_v1');
   assert.ok(cookie?.httpOnly && cookie.sameSite === 'Strict' && cookie.path === phoneEndpoint);
+  await map.locator('#phone-pending select[name=role]').selectOption('owner');
   await map.locator('#phone-pending [data-action=approve]').click();
   await map.locator('#phone-devices [data-device-id] button[data-focus]').first().click();
   await map.locator('#phone-detail [data-action=request_start]').click();
@@ -379,8 +383,8 @@ async function browserJourney(baseURL, owner, other) {
   assert.match(await phone.locator('#phone-owner').innerText(), /Map Operator/);
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
   await screenshot(phone, 'phone-before-consent');
-  await startWithFreshSensorReading(gps);
-  device = await requireLiveFix('No real browser geolocation fix reached the owner');
+  await startWithFreshSensorReading(phone, handset, gps);
+  device = await requireLiveFix('No real browser geolocation fix reached the owner', gps);
   assert.deepEqual([device.latitude, device.longitude, device.accuracy], [gps.latitude, gps.longitude, gps.accuracy]);
   assert.ok(device.first_fix_at && device.fix_at >= device.first_fix_at && Math.abs(Date.now()/1000 - device.fix_at) < 60);
   assert.ok(gpsRequests > 0);
@@ -405,15 +409,16 @@ async function browserJourney(baseURL, owner, other) {
   assert.equal(late.status, 409);
   await map.locator('#phone-map .phone-map-marker').first().waitFor({ state: 'hidden' });
   await phone.reload();
-  await startWithFreshSensorReading({ ...gps, longitude: gps.longitude + 0.001 });
-  await requireLiveFix('Phone did not resume after deliberate local restart');
+  const restartPoint = { ...gps, longitude: -112.07304 };
+  await startWithFreshSensorReading(phone, handset, restartPoint);
+  await requireLiveFix('Phone did not resume after deliberate local restart', restartPoint);
   await map.locator('#phone-map .phone-map-marker').first().waitFor({ state: 'visible' });
   await map.locator('#phone-detail [data-action=stop]').waitFor();
   await phone.locator('#phone-stop').click();
   await eventually('Phone stop did not reach owner', async () =>
     check(await ownerApi(desktop, owner), 'phone stop read').devices[0]?.location_state === 'off');
   await multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map, handset, phone, deviceId,
-    startWithFreshSensorReading, errors, currentWatchAccuracy: () => highAccuracyWatch });
+    errors, currentWatchAccuracy: () => highAccuracyWatch });
   // Disconnect the pairing immediately, even if the map last showed its previous GPS generation.
   await map.locator('#phone-detail [data-action=revoke]').click();
   const revoked = map.waitForResponse(response => new URL(response.url()).pathname === ownerEndpoint &&
@@ -427,7 +432,7 @@ async function browserJourney(baseURL, owner, other) {
 }
 
 async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map, handset, phone, deviceId,
-    startWithFreshSensorReading, errors, currentWatchAccuracy }) {
+    errors, currentWatchAccuracy }) {
   const pixelPoint = { latitude: gps.latitude + 0.18, longitude: gps.longitude - 0.09, accuracy: 18 };
   const android = await browser.newContext({ ...devices['Pixel 7'], baseURL, permissions: ['geolocation'],
     geolocation: { ...pixelPoint, latitude: pixelPoint.latitude - 0.01 }, deviceScaleFactor: 1 });
@@ -458,16 +463,14 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
     await eventually('Holder missed its named start request', async () =>
       /requested your location/i.test(await page.locator('#phone-status').innerText()));
   }
-  await startWithFreshSensorReading({ ...gps, latitude: gps.latitude + 0.001 });
-  const pixelStart = pixel.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
-    response.request().postDataJSON()?.action === 'start');
-  await pixel.locator('#phone-start').click();
-  check(await read(await pixelStart), 'second phone consent');
-  await android.setGeolocation(pixelPoint);
+  const firstPoint = { ...gps, latitude: 33.44938 };
+  await startWithFreshSensorReading(phone, handset, firstPoint);
+  await startWithFreshSensorReading(pixel, android, pixelPoint);
   await eventually('Both independently granted phones must be live', async () => {
     const devices = await state();
     return devices.length === 2 && devices.every(d => d.location_state === 'live') &&
-      devices.find(d => d.id === second.id)?.latitude === pixelPoint.latitude;
+      devices.some(d => d.id === deviceId && d.role === 'owner' && d.latitude === firstPoint.latitude) &&
+      devices.some(d => d.id === second.id && d.role === 'guest' && d.latitude === pixelPoint.latitude);
   });
   await eventually('Two live markers should be visible together', async () => await markers.count() === 2);
   await map.locator('#phone-fit').click();
@@ -551,7 +554,10 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
   await pixel.locator('#phone-stop').click();
   await eventually('Offline stop was not applied on the phone', async () =>
     /stopped/i.test(await pixel.locator('#phone-gps').innerText()));
+  const reconnectStop = pixel.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
+    response.request().postDataJSON()?.action === 'stop');
   await android.setOffline(false);
+  check(await read(await reconnectStop), 'deliver the Android stop after reconnect');
   await eventually('Reconnected Android did not deliver its pending stop', async () =>
     (await state()).every(d => d.status === 'approved' && d.location_state === 'off' && d.latitude === null));
   await eventually('Both stopped markers should clear', async () => await markers.count() === 0);

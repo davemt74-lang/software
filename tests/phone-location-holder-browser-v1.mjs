@@ -19,6 +19,7 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
   const context = await browser.newContext({viewport:{width:375,height:667},isMobile:true,hasTouch:true});
   let device = initial && {...initial}, revoked = false, drop = lostClaimAck;
   let requests = [], routes = [], errors = [];
+  const fixTimes=[];
   let firstFixSeen, rejectFirstFix;
   const firstFix = new Promise(resolve => { firstFixSeen = resolve; });
   const releaseFix = new Promise(resolve => { rejectFirstFix = resolve; });
@@ -57,6 +58,7 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
     if (!u.pathname.endsWith('/api/phone-location-v1.php')) return route.fulfill({status:404});
     const req = route.request().postDataJSON();
     requests.push(req);
+    if (req.action === 'fix') fixTimes.push(performance.now());
     assert.equal(route.request().headers()['x-vp3-phone'],'1');
     assert.equal(route.request().headers().authorization,undefined);
     const send = (status,b) => route.fulfill({status,json:b});
@@ -83,18 +85,19 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
     }
     return send(200,{ok:true,device,owner_name:'David Evans'});
   });
-  return {page,requests,routes,errors,firstFix,rejectFirstFix, get device(){return device;}, revoke(){revoked=true;},
+  return {page,requests,fixTimes,routes,errors,firstFix,rejectFirstFix, get device(){return device;}, revoke(){revoked=true;},
     visit:frag=>page.goto(origin+pathname+(frag||'')), close:()=>context.close()};
 }
 const waitText = (p,re) => p.waitForFunction(s=>new RegExp(s,'i').test(document.querySelector('#phone-status').textContent),re);
 const pause = page => page.evaluate(()=>new Promise(r=>setTimeout(r,60)));
-// Poll from the test process while the page clock is paused.
-async function waitUntil(condition) {
-  for (let attempt=0; attempt<300; attempt++) {
+const delay = ms => new Promise(resolve=>setTimeout(resolve,ms));
+async function waitUntil(description,condition,timeout=4500) {
+  const deadline=performance.now()+timeout;
+  do {
     if (await condition()) return;
-    await new Promise(resolve=>setTimeout(resolve,10));
-  }
-  throw new Error('Timed out waiting for phone state');
+    await delay(20);
+  } while (performance.now()<deadline);
+  throw new Error('Timed out waiting for '+description);
 }
 try {
   {
@@ -208,58 +211,60 @@ try {
     const t=await scenario({initial:{...initialDevice('approved',3),update_interval_seconds:30,accuracy_mode:'balanced'}});
     const page=t.page;
     const fixes=()=>t.requests.filter(r=>r.action==='fix');
-    await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});
-    await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
     await t.visit();
     const settings=()=>page.locator('#phone-preferences').textContent();
-    await waitUntil(async()=>await settings()==='Every 30 seconds · Balanced accuracy');
+    const gps=()=>page.locator('#phone-gps').textContent();
+    async function changeSettings(interval,mode) {
+      Object.assign(t.device,{update_interval_seconds:interval,accuracy_mode:mode});
+      await page.evaluate(()=>window.phoneFixture.wake());
+      const expected='Every '+interval+' seconds · '+(mode==='high'?'High':'Balanced')+' accuracy';
+      await waitUntil('phone preferences '+expected,async()=>await settings()===expected);
+    }
+    async function freshPosition() {
+      return page.evaluate(()=>{const time=Date.now(); window.phoneFixture.position(time); return Math.floor(time/1000);});
+    }
+    await waitUntil('initial holder preferences',async()=>await settings()==='Every 30 seconds · Balanced accuracy');
     assert.equal(await page.evaluate(()=>window.phoneFixture.watches),0,'preferences cannot activate the phone');
-    await page.evaluate(()=>document.getElementById('phone-start').click());
-    await waitUntil(async()=>(await page.locator('#phone-status').textContent()).includes('Waiting for a fresh'));
+    await page.locator('#phone-start').click();
+    await waitText(page,'Waiting for a fresh');
     assert.equal(await page.evaluate(()=>window.phoneFixture.options.at(-1).enableHighAccuracy),false);
-    await page.evaluate(()=>window.phoneFixture.position());
-    await waitUntil(async()=>(await page.locator('#phone-status').textContent()).includes('received this phone'));
-    const firstGpsLabel=await page.locator('#phone-gps').textContent();
-    await page.clock.runFor(5000);
-    await page.evaluate(()=>window.phoneFixture.position());
-    await page.clock.runFor(5000);
-    const newest=await page.evaluate(()=>{window.phoneFixture.position(); return Math.floor(Date.now()/1000);});
+    await freshPosition();
+    await waitText(page,'received this phone');
+    const firstGpsLabel=await gps();
+    // Exercise the real fetch pipeline. Advancing a synthetic page clock also expires live network requests.
+    await delay(1050);
+    await freshPosition();
+    await delay(1050);
+    const newest=await freshPosition();
     assert.equal(fixes().length,1,'first fix is immediate and burst callbacks are coalesced');
-    t.device.update_interval_seconds=15;
-    await page.evaluate(()=>window.phoneFixture.wake());
-    await waitUntil(async()=>await settings()==='Every 15 seconds · Balanced accuracy');
-    await page.clock.runFor(4900);
-    assert.equal(fixes().length,1,'changing interval does not cause an early upload');
-    await page.clock.runFor(100);
-    await waitUntil(()=>fixes().length===2);
-    assert.equal(fixes()[1].fix_at,newest,'shortened interval sends the newest queued reading at its new deadline');
-    await waitUntil(async()=>await page.locator('#phone-gps').textContent()!==firstGpsLabel);
+    await changeSettings(5,'balanced');
+    await waitUntil('second GPS acknowledgment',async()=>await gps()!==firstGpsLabel && (await gps()).startsWith('Shared at'),8000);
+    assert.equal(fixes().length,2);
+    assert.equal(fixes()[1].fix_at,newest,'shortened interval sends the newest queued reading');
+    assert.ok(t.fixTimes[1]-t.fixTimes[0]>=5000,'second request respects the new five-second minimum');
 
-    await page.clock.runFor(1000);
-    t.device.accuracy_mode='high';
-    await page.evaluate(()=>window.phoneFixture.wake());
-    await waitUntil(async()=>await settings()==='Every 15 seconds · High accuracy');
+    await changeSettings(5,'high');
     assert.equal(await page.evaluate(()=>window.phoneFixture.options.at(-1).enableHighAccuracy),true);
     assert.equal(await page.evaluate(()=>window.phoneFixture.peak),1,'replacement never overlaps native watches');
+    const secondGpsLabel=await gps();
+    await delay(5100);
     await page.evaluate(()=>window.phoneFixture.previous());
-    await page.clock.runFor(15000);
-    assert.equal(fixes().length,2,'late callbacks from replaced reader are ignored');
-    await page.evaluate(()=>window.phoneFixture.position());
-    await waitUntil(()=>fixes().length===3);
-    await page.clock.runFor(1000);
-    await page.evaluate(()=>window.phoneFixture.position());
-    t.device.update_interval_seconds=30;
-    await page.evaluate(()=>window.phoneFixture.wake());
-    await waitUntil(async()=>await settings()==='Every 30 seconds · High accuracy');
-    await page.clock.runFor(16000);
+    await freshPosition();
+    await waitUntil('high-accuracy GPS acknowledgment',async()=>await gps()!==secondGpsLabel && (await gps()).startsWith('Shared at'));
+    assert.equal(fixes().length,3);
+    assert.equal(fixes()[2].latitude,33.4,'late callbacks from the replaced reader cannot supply the accepted fix');
+
+    await delay(1050);
+    await freshPosition();
+    await changeSettings(15,'high');
+    await delay(5100);
     assert.equal(fixes().length,3,'lengthening interval cancels the previous, earlier deadline');
-    await page.evaluate(()=>document.getElementById('phone-stop').click());
-    await waitUntil(()=>t.device.location_state==='off');
-    await page.clock.runFor(35000);
+    await page.locator('#phone-stop').click();
+    await waitText(page,'choose when');
+    // Stay beyond the longest outstanding 15-second timer to catch resurrected callbacks.
+    await delay(Math.max(0,t.fixTimes[2]+16000-performance.now()));
     assert.equal(fixes().length,3,'stop discards the deferred sample and timer');
-    t.device.accuracy_mode='balanced';
-    await page.evaluate(()=>window.phoneFixture.wake());
-    await waitUntil(async()=>await settings()==='Every 30 seconds · Balanced accuracy');
+    await changeSettings(30,'balanced');
     assert.equal(await page.evaluate(()=>window.phoneFixture.active),false,'a settings change cannot reopen a stopped watch');
     assert.equal(t.requests.filter(r=>r.action==='start').length,1);
     assert.deepEqual(t.errors,[]); await t.close();
