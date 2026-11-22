@@ -216,6 +216,10 @@ if($webmcpResumeRequested){
 <link rel="canonical" href="<?= e(profile_public_url($username).($profileCanvasMode?'/canvas/'.rawurlencode((string)$profileCanvasRelease['slug']):'')) ?>">
 <title><?= $profileCanvasMode?e((string)$profileCanvasRelease['title']).' | ':'' ?><?= e($displayName) ?> | <?= e(system_agent_name()) ?></title>
 <link rel="stylesheet" href="<?= e(url('/profile.css?v=profile-live-text-pa3d-'.substr(hash_file('sha256',__DIR__.'/profile.css'),0,12))) ?>">
+<?php if($chatPreview&&$agent): ?>
+<link rel="stylesheet" href="<?= e(url('/chat-canvas-media-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-canvas-media-v1.css'),0,12))) ?>">
+<link rel="stylesheet" href="<?= e(url('/profile-image-owner-preview-v1.css?v='.substr(hash_file('sha256',__DIR__.'/profile-image-owner-preview-v1.css'),0,12))) ?>">
+<?php endif; ?>
 <?php if(!$profileCanvasMode): ?>
 <link rel="stylesheet" href="<?= e(url('/profile-cleanup-v174.css?v=profile-cleanup-v174-20260913')) ?>">
 <?php endif; ?>
@@ -451,7 +455,7 @@ if($webmcpResumeRequested){
     </section>
     <footer class="profile-agent-footer">
       <form class="profile-agent-compose"<?= $chatPreview ? ' data-profile-chat-preview' : '' ?>>
-        <textarea maxlength="2000" rows="2" placeholder="<?= $chatPreview ? 'Visitor message preview' : 'Message…' ?>" aria-label="Message Profile Agent"<?= $chatPreview ? ' disabled' : '' ?>></textarea>
+        <textarea maxlength="2000" rows="2" placeholder="<?= $chatPreview ? 'Select a reference image to generate privately…' : 'Message…' ?>" aria-label="<?= $chatPreview ? 'Describe an image to generate privately' : 'Message Profile Agent' ?>"></textarea>
         <div class="profile-agent-attachments" data-profile-chat-attachments></div>
         <div class="profile-agent-toolbar" role="group" aria-label="Chat actions">
           <button type="button" data-profile-chat-add-image aria-label="Add image" title="Add image" aria-controls="profileAttachmentHelp" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="15.5" cy="8.5" r="1"/></svg></button>
@@ -460,7 +464,7 @@ if($webmcpResumeRequested){
           <button type="submit" class="profile-agent-send" title="Send"<?= $chatPreview ? ' disabled' : '' ?>><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/></svg><span class="profile-agent-visually-hidden" data-profile-send-label>Send</span></button>
           <button type="button" data-profile-chat-settings-toggle aria-label="Chat settings" title="Chat settings" aria-controls="profileChatSettings" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-.5 2.4-2 .9-2-.9-2 3.4 1.6 1.7v2.4L2.5 14l2 3.5 2.1-.7 2 .9.4 2.3h4l.4-2.3 2-.9 2.2.7 2-3.5-1.7-1.1v-2.4l1.6-1.7-2-3.4-2 .9-2-.9L13 3Z"/><circle cx="11" cy="11.5" r="3"/></svg></button>
         </div>
-        <div class="profile-agent-status" data-profile-agent-status role="status"><?= $chatPreview ? 'You’re viewing your own profile. Visitor sending is off in this preview.' : '' ?></div>
+        <div class="profile-agent-status" data-profile-agent-status role="status"><?= $chatPreview ? 'Owner preview · Select a reference image to generate privately. Visitor messaging is off.' : '' ?></div>
       </form>
     </footer>
   </section>
@@ -474,6 +478,14 @@ window.STONEFELLOW_PROFILE_AGENT.checkoutEndpoint=<?= json_encode(url('/api/prof
 window.STONEFELLOW_PROFILE_AGENT.checkoutAvailable=<?= json_encode($checkoutAvailable) ?>;
 <?php endif; ?>
 window.STONEFELLOW_PROFILE_AGENT.imageSettingsUrl=<?= json_encode(url('/profile-agent.php?tab=agent'),JSON_UNESCAPED_SLASHES) ?>;
+<?php if($chatPreview&&$agent): ?>
+window.STONEFELLOW_PROFILE_AGENT.ownerImage={
+  endpoint:<?= json_encode(url('/api/media-library-image-v1.php'),JSON_UNESCAPED_SLASHES) ?>,
+  csrf_token:<?= json_encode(csrf_token(),JSON_UNESCAPED_SLASHES) ?>,
+  owner_key:<?= json_encode((string)(int)$viewer['id'],JSON_UNESCAPED_SLASHES) ?>,
+  library_url:<?= json_encode(url('/media-library.php'),JSON_UNESCAPED_SLASHES) ?>
+};
+<?php endif; ?>
 const profileTabButtons=[...document.querySelectorAll('[data-profile-tab]')];
 for(const tab of profileTabButtons){
   const panel=document.querySelector('[data-profile-panel="'+tab.dataset.profileTab+'"]');
@@ -565,6 +577,9 @@ window.VP3_PROFILE_WEBMCP={
 <script src="<?= e(url('/profile-conversation-checkout-pa5.js?v='.substr(hash_file('sha256',__DIR__.'/profile-conversation-checkout-pa5.js'),0,12))) ?>"></script>
 <?php endif; ?>
 <?php if($agent): ?>
+<?php if($chatPreview): ?>
+<script src="<?= e(url('/profile-image-owner-preview-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-image-owner-preview-v1.js'),0,12))) ?>"></script>
+<?php endif; ?>
 <script src="<?= e(url('/profile-image-edits-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-image-edits-v1.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-agent.js?v=profile-direct-calls-pa3c-'.substr(hash_file('sha256',__DIR__.'/profile-agent.js'),0,12))) ?>"></script>
 <?php endif; ?>

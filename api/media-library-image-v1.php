@@ -41,7 +41,7 @@ try {
         throw new DomainException('The signed-in account changed. Reopen Media Library.', 409);
     }
     $action = $body['action'] ?? '';
-    $planFields = ['prompt', 'title', 'size', 'quality', 'background'];
+    $planFields = ['prompt', 'title', 'size', 'quality', 'background', 'profile_reference'];
     $fields = match ($action) {
         'status' => [],
         'preview' => $planFields,
@@ -93,6 +93,15 @@ try {
         $result = ['can_generate' => $message === '', 'message' => $message, 'generations' => $history];
     } elseif ($action === 'preview' || $action === 'submit') {
         $plan = vp3_image_text_plan_v1($body);
+        $selection = null;
+        if (array_key_exists('profile_reference', $body)) {
+            require_once dirname(__DIR__).'/includes/profile-image-owner-generation-v1.php';
+            $selection = vp3_profile_owner_image_selection_v1($body['profile_reference']);
+            // The owner, collection grant, free approval, frozen revision and
+            // private pixels are verified BEFORE review tokens are minted.
+            vp3_profile_owner_image_frozen_source_v1($pdo,$user,$selection);
+            $plan['profile_reference'] = $selection;
+        }
         if ($action === 'preview') {
             vp3_image_queue_ready_v1($pdo, $user);
             $request = bin2hex(random_bytes(16));
@@ -111,7 +120,7 @@ try {
                 || !hash_equals(vp3_media_library_image_review_v1($secret, $owner, $request, $plan, $expires), $token)) {
                 throw new DomainException('The prompt changed or the review expired. Review the image request again.', 409);
             }
-            $result = ['generation' => vp3_image_queue_workspace_v1($pdo, $user, $plan, $request)];
+            $result = ['generation' => vp3_image_queue_workspace_v1($pdo, $user, $plan, $request, $selection)];
         }
     } else {
         $id = $body['generation_id'] ?? null;

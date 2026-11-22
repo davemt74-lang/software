@@ -31,7 +31,7 @@ for (const file of fs.readdirSync('includes')) {
 for (const file of ['profile.php','profile-commerce-product.php','profile-promotion-image.php','profile-promotion-click.php','profile-product-photo.php','media-library-file-v86.php']) {
   fs.copyFileSync(file, path.join(tmp, file));
 }
-for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-canvases-v1.css','profile-agent.js','profile-image-edits-v1.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js',
+for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-canvases-v1.css','chat-canvas-media-v1.css','profile-image-owner-preview-v1.css','profile-image-owner-preview-v1.js','profile-agent.js','profile-image-edits-v1.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js',
   'chat-notifications-drawer-v240.js','chat-notifications-drawer-v240.css','chat-header-ui.css','member-page-scroll.css','member-agent-voice-menu.css','member-agent-voice-menu.js','vp3-authenticated-runtime-bridge.js','member-shell-v77.js']) {
   fs.symlinkSync(path.resolve(file), path.join(tmp, file));
 }
@@ -250,12 +250,14 @@ try {
       assert.equal(await member.locator('.vp3-orb-root,.vp3-orb-bar,script[src^="/agent-orb.js"]').count(),0);
       assert.equal(await member.evaluate(()=>Boolean(window.VP3_ORB_CONFIG)),false);
       await member.getByRole('button',{name:'Ask Fixture Public Guide'}).click();
-      const composer=member.getByRole('textbox',{name:'Message Profile Agent'});
+      const composer=member.getByRole('textbox',{name:memberId==='1'?'Describe an image to generate privately':'Message Profile Agent'});
       await composer.waitFor();
       if(memberId==='1'){
         assert.equal(await member.locator('[data-profile-agent-presence]').textContent(),'Owner preview');
-        assert.equal(await composer.isDisabled(),true);
+        assert.equal(await composer.isEnabled(),true);
         assert.equal(await member.getByRole('button',{name:'Send',exact:true}).isDisabled(),true);
+        await composer.fill('Prepare a private album-art variation.');
+        assert.equal(await composer.inputValue(),'Prepare a private album-art variation.');
         await member.getByRole('button',{name:'Chat settings'}).click();
         assert.equal(await member.getByRole('link',{name:'Manage Profile Agent'}).getAttribute('href'),'/profile-agent.php');
         assert.equal(await member.locator('.profile-product-promotions a[href*="profile-promotion-click.php"]').count(),0);

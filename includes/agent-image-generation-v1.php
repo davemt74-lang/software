@@ -288,15 +288,25 @@ function vp3_image_queue_work_v1(PDO $pdo,array $user,array $principal,array $co
         vp3_image_workbench_key_v1((int)$user['id'],$request),$configure);
 }
 
-function vp3_image_queue_workspace_v1(PDO $pdo,array $user,array $plan,string $request): array
+function vp3_image_queue_workspace_v1(PDO $pdo,array $user,array $plan,string $request,?array $profileReference=null): array
 {
     if(!preg_match('/\A[a-f0-9]{32}\z/',$request))throw new InvalidArgumentException('Review this image request again.');
     $user=vp3_image_workspace_owner_v1($pdo,$user);
     vp3_image_queue_ready_v1($pdo,$user,false);
     $plan=vp3_image_text_plan_v1($plan);
     $plan['title']=mb_substr($plan['title']!==''?$plan['title']:$plan['prompt'],0,190);
+    if($profileReference===null){
+        return vp3_image_admit_v1($pdo,$user,0,0,null,hash('sha256','image:media-library:'.$user['id'].':'.$request),
+            static fn(string $model):array=>[...$plan,'model'=>$model,'mode'=>'workspace']);
+    }
+    require_once __DIR__.'/profile-image-owner-generation-v1.php';
+    $selection=vp3_profile_owner_image_selection_v1($profileReference);
     return vp3_image_admit_v1($pdo,$user,0,0,null,hash('sha256','image:media-library:'.$user['id'].':'.$request),
-        static fn(string $model):array=>[...$plan,'model'=>$model,'mode'=>'workspace']);
+        static function(string $model)use($pdo,$user,$plan,$selection):array{
+            $source=vp3_profile_owner_image_frozen_source_v1($pdo,$user,$selection,$pdo->inTransaction());
+            return [...$plan,'model'=>$model,'mode'=>'profile_owner_reference',
+                'profile_reference'=>$selection,'reference'=>$source];
+        });
 }
 
 function vp3_image_admit_v1(PDO $pdo,array $user,int $cid,int $aid,?int $turn,string $key,callable $configure): array
@@ -374,7 +384,8 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $config=json_decode($row['config_json'],true,16,JSON_THROW_ON_ERROR);
         $count=vp3_image_count_v1($config);$maxOutput=16000*$count;
         if(!table_exists('agent_image_generation_assets_v1'))vp3_image_schema_v1($pdo);
-        $reference=($config['mode']??null)==='chat_reference';
+        $ownerProfileReference=($config['mode']??null)==='profile_owner_reference';
+        $reference=($config['mode']??null)==='chat_reference'||$ownerProfileReference;
         if($reference)$edit=true;
         $icon=($config['mode']??null)==='canvas_icon';
         if($icon){
@@ -385,7 +396,10 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         $route=vp3_image_route_v1($pdo,$user,$config);$target=$route['target'];$funding=$route['funding'];$policy=$route['policy'];
         if($edit){
             $marketing=in_array($config['mode']??null,['marketing_scene','marketing_reference'],true);
-            if($reference){
+            if($ownerProfileReference){
+                require_once __DIR__.'/profile-image-owner-generation-v1.php';
+                $resolveSource='vp3_profile_owner_image_job_source_v1';
+            }elseif($reference){
                 require_once __DIR__.'/agent-image-reference-v1.php';
                 $resolveSource='vp3_image_reference_job_source_v1';
             }elseif($marketing){
@@ -422,7 +436,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         vp3_ai_service_usage_lock_owner_v1($pdo,(int)$user['id']);
         if($edit){
             vp3_image_run_v1($pdo,$user,$row,true);
-            vp3_image_lock_conversation_v1($pdo,(int)$user['id'],(int)$row['conversation_id'],(int)$row['agent_id']);
+            if(!$ownerProfileReference)vp3_image_lock_conversation_v1($pdo,(int)$user['id'],(int)$row['conversation_id'],(int)$row['agent_id']);
             $sourceImage=$resolveSource($pdo,$user,$row,$config,true,true);
         }
         if($icon)vp3_coding_canvas_icon_job_source_v1($pdo,$user,$row,$config);
@@ -448,7 +462,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         vp3_image_run_v1($pdo,$user,$row,true);$user=vp3_image_authority_v1($pdo,$user,$row);if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim,$edit||$icon))throw new RuntimeException('execution_cancelled');
         if($icon)vp3_coding_canvas_icon_job_source_v1($pdo,$user,$row,$config);
         if($edit){
-            vp3_image_lock_conversation_v1($pdo,(int)$user['id'],(int)$row['conversation_id'],(int)$row['agent_id']);
+            if(!$ownerProfileReference)vp3_image_lock_conversation_v1($pdo,(int)$user['id'],(int)$row['conversation_id'],(int)$row['agent_id']);
             $resolveSource($pdo,$user,$row,$config,true);
         }
         $assets=[];

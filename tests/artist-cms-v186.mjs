@@ -32,7 +32,10 @@ assert.match(canonicalProfile,/Profile Agent/);
 assert.match(canonicalProfile,/profile-agent\.js/);
 assert.match(canonicalProfile,/\$catalogViewer=\$preview\?null:\$viewer/);
 assert.match(canonicalProfile,/\$chatPreview=\$isOwner/);
-assert.match(canonicalProfile,/<textarea[^\n]+\$chatPreview \? ' disabled'/);
+assert.match(canonicalProfile,/Describe an image to generate privately/);
+assert.match(canonicalProfile,/data-profile-chat-preview/);
+assert.doesNotMatch(canonicalProfile,/<textarea[^\n]+\$chatPreview \? ' disabled'/);
+assert.match(canonicalProfile,/<button type="submit"[^\n]+\$chatPreview \? ' disabled'/);
 
 assert.match(header,/Artist Admin/);assert.match(header,/View Artist Profile/);assert.match(header,/artist_workspace_v181_profile_url/);
 for(const runtime of ['artist-media-v182.php','artist-posts-v183.php','artist-shows-v184.php','artist-music-v185.php','profile-agent.php'])assert.match(bootstrap,new RegExp(runtime.replaceAll('.','\\.')));

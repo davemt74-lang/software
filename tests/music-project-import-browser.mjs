@@ -19,10 +19,15 @@ await page.route('**/api/import',async r=>{
  if(action==='review')savedReview=JSON.parse(body.match(/name="review_json"\r\n\r\n([^\r]+)/)[1]);
  if(action==='file_place'&&failPlace)return r.fulfill({status:500,json:{ok:false,error:'Storage unavailable'}});
  const out={ok:true,importer_build:'v79'};
+ // Mirror the canonical V79 receipt contract. The browser must not proceed
+ // unless PHP confirms the safe multipart size and each uploaded file.
+ if(action==='probe')out.max_chunk_bytes=1048576;
+ if(action==='rpp_chunk')Object.assign(out,{phase:'uploading_rpp',complete:true});
+ if(action==='file_chunk')Object.assign(out,{file_index:Number(body.match(/name="file_index"\r\n\r\n([^\r]+)/)?.[1]),complete:true});
  if(action==='review_prepare')out.review=review;
  if(action==='save_db')out.total_stems=1;
- if(action==='file_place')out.completed=1;
- if(action==='save_finish')Object.assign(out,{stem_count:1,studio_url:'http://project.test/done'});
+ if(action==='file_place')Object.assign(out,{phase:'file_place',completed:1});
+ if(action==='save_finish')Object.assign(out,{phase:'complete',stem_count:1,studio_url:'http://project.test/done'});
  await r.fulfill({json:out});
 });
 await page.route('http://project.test/done',r=>r.fulfill({body:'Import complete'}));
@@ -31,6 +36,7 @@ async function upload(names){await page.locator('#stemZipInput').setInputFiles({
 try{
  await boot();await upload();await page.getByRole('button',{name:'Save Import',exact:true}).waitFor();
  assert.equal(parsedMeta.tempo_bpm,86,'Actual RPP parser lost the tempo');
+ assert.ok(calls.includes('rpp_chunk')&&calls.includes('file_chunk'),'Each REAPER project and stem upload was confirmed by the server');
  assert.ok(calls.includes('review_prepare'));assert.ok(!calls.includes('save_open'),'Active save began before review');assert.equal(await page.locator('.stem-import-review img').count(),0,'Untrusted title became markup');
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Mobile review overflowed');
  await page.getByRole('button',{name:'Cancel Import',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('#stemUploadButton').disabled);assert.ok(calls.includes('abort'));assert.ok(!calls.includes('save_finish'),'Cancel activated the new project');

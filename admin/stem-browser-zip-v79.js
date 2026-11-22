@@ -243,7 +243,7 @@
 
     if (typeof DecompressionStream !== 'function') {
       throw new Error(
-        'This browser cannot expand this ZIP. Use the separate REAPER project and stem file inputs below.'
+        'This browser cannot expand this ZIP. Please re-export the REAPER package with its MP3 stems and try again.'
       );
     }
 
@@ -538,6 +538,7 @@
     setProgress(4, 'Reading ZIP directory in your browser…');
     const entries = await listZip(file);
     const chosen = chooseFiles(entries);
+    if(cfg.musicLibrary && chosen.format!=='MP3')throw new Error('This REAPER package must contain the exported MP3 stems alongside the .rpp project.');
     musicUI?.setFiles([
       ...(chosen.rpp?[{key:'rpp',name:baseName(chosen.rpp.name),kind:'project'}]:[]),
       ...chosen.audio.map((entry,index)=>({key:`stem-${index}`,name:baseName(entry.name),kind:'stem'}))

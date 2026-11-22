@@ -23,7 +23,7 @@
     section.append(references,node('p','Free use · $0.00'));return section;
   }
 
-  function mount({shell,thread,form,cfg,context,registerPanel,showPanel,onDraft,notice,focusComposer,ownerPreview=false,loadCollection=null}){
+  function mount({shell,thread,form,cfg,context,registerPanel,showPanel,onDraft,notice,focusComposer,ownerPreview=false,loadCollection=null,onOwnerReference=null}){
     let service=null,draft=null,recovery=null,blobUrl='',busy=false,sequence=0,jobs=new Map(),stopped=false;
     let collectionLoading=false,collectionError='',collectionSequence=0,serviceVersion=0,collectionOpen=false;
     const openButtons=[...shell.querySelectorAll('[data-profile-image-edit-open]')];
@@ -37,7 +37,7 @@
     const heading=node('h2','Image collection');heading.id='profileImageEditTitle';heading.tabIndex=-1;
     const intro=node('p','Upload your photo, then choose a collection image as a style or visual reference. Describe what to keep, change, combine, or remix in chat.');
     intro.className='profile-image-intro';
-    const ownerNote=node('p','You’re previewing the image collection visitors see. Manage your approved images in Profile Agent settings.');ownerNote.hidden=!ownerPreview;
+    const ownerNote=node('p','Choose an image to use as a reference in your private image generator. Visitors cannot send messages from this preview. Manage approved images in Profile Agent settings.');ownerNote.hidden=!ownerPreview;
     const manage=node('a','Manage image collection','profile-agent-panel-action');
     try{const destination=new URL(cfg.imageSettingsUrl||'/profile-agent.php?tab=agent',window.location.href);if(destination.origin===window.location.origin&&['http:','https:'].includes(destination.protocol))manage.href=destination.href;}catch(_error){}
     manage.hidden=!ownerPreview||!manage.href;
@@ -56,7 +56,7 @@
     const subject=node('section',undefined,'profile-image-subject');subject.setAttribute('aria-label','Your photo');
     const subjectDetails=node('div');subjectDetails.append(node('h3','1. Upload your photo'),sourceLabel,choose);subject.append(preview,subjectDetails);subject.hidden=ownerPreview;
     const referenceHeading=node('h3',ownerPreview?'Collection images':'2. Choose an image to create with');referenceHeading.className='profile-image-step';
-    const promptHint=node('p','3. Describe your idea in chat, then send your photo edit. Choosing an image does not start processing.');promptHint.className='profile-image-next-step';promptHint.hidden=ownerPreview;
+    const promptHint=node('p',ownerPreview?'Select a single image to return to the composer. Describe the new image and press Send to generate it privately.':'3. Describe your idea in chat, then send your photo edit. Choosing an image does not start processing.');promptHint.className='profile-image-next-step';promptHint.hidden=false;
     const done=button('Use photo in chat',()=>{
       if(!draft){feedback.textContent='Choose a photo first.';return;}
       try{updateSelection();validateDraft();feedback.textContent='';displayPanel(null,false);focusComposer();}
@@ -148,6 +148,7 @@
       }
       allStyles.setAttribute('aria-pressed',String(selected===0));
       allStyles.textContent=selected===0?'Whole collection selected · Free':'Use the whole collection';
+      allStyles.hidden=ownerPreview;
       renderCollectionState();sync();
     }
     function renderCollectionState(){
@@ -156,14 +157,21 @@
         ?(ownerPreview?'No free images are available in your public collection yet. Enable free photo edits and approve images priced at 0.00 in Profile Agent settings.':(service?.reason||'This profile has not shared a free image collection yet. You can still chat with the Profile Agent.')):'');
       collectionState.hidden=!collectionState.textContent;
       catalogLabel.hidden=referenceHeading.hidden=gallery.hidden=allStyles.hidden=!available;
-      promptHint.hidden=ownerPreview||!available;
+      promptHint.hidden=!available;
     }
     function selectReference(id){
       const catalog=selectedCatalog(),current=context();
       if(!catalog||(!ownerPreview&&(busy||current.busy||current.loading||current.human||!active())))return;
       if(id!==0&&!catalog.references.some(reference=>reference.asset_id===id))return;
       imageSelect.value=String(id);updateSelection();renderGallery();
-      if(!ownerPreview)feedback.textContent=draft?'Image selected. Use your photo in chat and describe your idea.':'Image selected. Upload your photo when you’re ready.';
+      if(ownerPreview&&id>0&&typeof onOwnerReference==='function'){
+        const selected=catalog.references.find(reference=>reference.asset_id===id);
+        const source=referenceUrl(selected?.preview_url,catalog,selected);
+        if(!source){feedback.textContent='This reference preview is unavailable. Refresh the collection.';return;}
+        const accepted=onOwnerReference({username:cfg.username,catalog_id:catalog.collection_id,
+          catalog_revision:catalog.catalog_revision,image_id:id,title:selected.title,preview_url:source});
+        if(accepted!==false){feedback.textContent='';displayPanel(null,false);}
+      }else if(!ownerPreview)feedback.textContent=draft?'Image selected. Use your photo in chat and describe your idea.':'Image selected. Upload your photo when you’re ready.';
     }
     function updateSelection(){
       if(!draft)return;
