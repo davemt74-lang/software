@@ -98,6 +98,8 @@ function vp3_marketing_opportunity_portfolio_v1(array $snapshot,int $maximum=6):
             $perCampaign[$campaign]=($perCampaign[$campaign]??0)+1;
         }
         unset($candidate['score'],$candidate['group']);
+        require_once __DIR__.'/agent-marketing-private-brief-v1.php';
+        $candidate['private_brief']=vp3_marketing_private_brief_v1($candidate);
         $chosen[]=$candidate;
         if(count($chosen)>=$maximum)break;
     }
