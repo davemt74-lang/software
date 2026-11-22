@@ -481,6 +481,7 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
     update_interval_seconds: 15, accuracy_mode: 'balanced' };
   assert.equal((await ownerApi(outsider, other, 'set_preferences', proposed)).ok, false);
   await choosePhone(deviceId);
+  assert.match(await map.locator('#phone-detail-summary').innerText(), /Accepted on phone/);
   await interval.selectOption('15');
   await accuracy.selectOption('balanced');
   await accuracy.focus();

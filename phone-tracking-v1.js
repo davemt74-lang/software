@@ -256,7 +256,11 @@
       field('Accuracy',Number.isFinite(d.accuracy) ? '± '+Math.round(d.accuracy)+' m' : 'Unavailable');
       field('Location updated',timestamp(d.fix_at));
     }
-    field('Location access',d.allow_location ? 'Phone consent required' : 'Disabled');
+    const accessLabels = {
+      off:'Phone approval required', requested:'Awaiting phone approval', denied:'Denied on phone',
+      waiting:'Accepted on phone', live:'Accepted on phone', stale:'Accepted on phone'
+    };
+    field('Location access',d.allow_location ? accessLabels[effectiveState(d)] : 'Disabled');
     field('Session expires',timestamp(d.expires_at));
     summary.append(fields);
     const actions = element('div',undefined,'phone-command-row');
