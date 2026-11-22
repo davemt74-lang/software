@@ -126,6 +126,14 @@
     headerCopy.append(node('small', 'Agent Chat Canvas'), heading,
       node('p', 'Create and review a marketing graphic for this product.'));
     header.append(headerCopy, action('Close promotion', () => close()));
+    const campaignReturn=action('Return to Campaign',()=>{
+      const id=state.draft?.campaign_brief?.campaign_id;
+      const cid=state.connection.scope.conversation_id;
+      if(!active(state)||!Number.isSafeInteger(id)||id<1)return;
+      close(false);
+      window.VP3MarketingWorkspaceV1?.openCampaignBrief?.(id,cid);
+    });
+    campaignReturn.hidden=true;header.append(campaignReturn);
 
     const status = node('p');
     status.setAttribute('role', 'status');
@@ -253,7 +261,7 @@
     const pause = action('Pause promotion', () => void pausePromotion(state));
     live.append(liveStatus, publicLink, pause);
     panel.append(header, status, draftsLabel, settings, comparison, pickerHost, sourceChoice, controls, confirmation, live);
-    return {panel, heading, status, drafts, draftsLabel, settings, level, levelHelp, headline, copy, prompt,
+    return {panel, heading, status, drafts, draftsLabel, settings, level, levelHelp, headline, copy, prompt,campaignReturn,
       promptLabel, style, removeBackground, cutout, tolerance, toleranceLabel, sourceImage, visitorImage,
       chooseImage, pickerHost, sourceChoice, choiceImage, choiceTitle, reviewImage, keepImage,
       productLink, placeholder, listingHint, confirmation, confirmationText, generate,
@@ -358,7 +366,7 @@
     ui.settings.disabled = !draft || disabled;
     ui.draftsLabel.hidden = !state.variants.size;
     ui.drafts.disabled = busy || inProgress;
-    ui.chooseImage.disabled = !draft || busy || inProgress || !state.connection.validateImage || !window.VP3MediaLibraryPicker?.open;
+    ui.chooseImage.disabled = !draft || busy || inProgress || Boolean(draft?.campaign_brief) || !state.connection.validateImage || !window.VP3MediaLibraryPicker?.open;
     ui.sourceChoice.hidden = !state.stagedImage;
     ui.reviewImage.disabled = ui.keepImage.disabled = busy || inProgress;
     if (state.stagedImage) {
@@ -383,7 +391,9 @@
     ui.campaignLabel.hidden = !stored || (!state.campaigns.size && !variant?.campaign_id) || Boolean(approval);
     ui.campaign.disabled = busy;
     ui.publishReview.hidden = !stored || Boolean(approval)
+      || Boolean(draft?.campaign_brief)
       || (variant?.status === 'published' && campaignId === (variant.campaign_id ?? null));
+    if(draft?.campaign_brief)ui.campaignLabel.hidden=true;
     ui.publishReview.disabled = busy;
     ui.mediaLibrary.hidden = !stored;
     ui.confirmation.hidden = !approval;
@@ -501,6 +511,8 @@
         throw new Error('The selected promotion design could not be verified.');
       }
       state.draft = draft;
+      state.elements.campaignReturn.hidden=!Number.isSafeInteger(draft.campaign_brief?.campaign_id)
+        ||typeof window.VP3MarketingWorkspaceV1?.openCampaignBrief!=='function';
       state.campaigns.clear();
       state.campaignVariant = null;
       state.elements.campaign.replaceChildren(new Option('No campaign', ''));

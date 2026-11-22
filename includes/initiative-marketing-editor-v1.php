@@ -219,12 +219,14 @@ function vp3_marketing_editor_assert_slug_v1(PDO $pdo,string $slug,int $campaign
 }
 
 function vp3_marketing_editor_intent_v1(int $owner,array $scope,int $merchantId,int $campaignId,
-    string $revision,string $nonce,array $fields): string
+    string $revision,string $nonce,array $fields,?array $brief=null): string
 {
-    return hash('sha256',json_encode([
+    $intent=[
         'vp3.marketing-editor.v2b1',$owner,(int)$scope['agent_id'],(int)$scope['conversation_id'],
         $merchantId,$campaignId,$revision,$nonce,$fields,
-    ],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
+    ];
+    if($brief!==null)$intent[]=$brief;
+    return hash('sha256',json_encode($intent,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE));
 }
 
 /**
@@ -234,6 +236,7 @@ function vp3_marketing_editor_intent_v1(int $owner,array $scope,int $merchantId,
 function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $body,string $reviewKey): array
 {
     vp3_marketing_editor_scope_v1($pdo,$owner,$scope);
+    require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
     $action=(string)($body['action']??'');
     if($action==='marketing_editor_options') {
         $merchantId=vp3_marketing_editor_id_v1($body['merchant_id']??null,true);
@@ -261,14 +264,18 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
     $catalog=vp3_marketing_editor_catalog_v1($pdo,$owner,$scope,$merchantId);
     if($catalog['merchant_id']!==$merchantId)throw new DomainException('Merchant draft permission changed.',403);
     $fields=vp3_marketing_editor_fields_v1($body['fields']??null,$catalog);
+    $brief=vp3_marketing_brief_binding_v1($body['brief_source']??null);
+    if($brief!==null&&$campaignId!==0)throw new DomainException('A saved Campaign keeps its original source brief.',422);
+    $source=null;
     if($action==='marketing_editor_preview'){
         vp3_marketing_editor_assert_slug_v1($pdo,$fields['slug'],$campaignId);
+        if($brief!==null)$source=vp3_marketing_brief_source_v1($pdo,$owner,$scope,$brief);
     }
     if($campaignId>0 && $action==='marketing_editor_preview') {
         $draft=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId);
         if(!hash_equals($draft['revision'],$revision))throw new DomainException('This Campaign changed. Reload the latest draft before saving.',409);
     }
-    $intent=vp3_marketing_editor_intent_v1($owner,$scope,$merchantId,$campaignId,$revision,$nonce,$fields);
+    $intent=vp3_marketing_editor_intent_v1($owner,$scope,$merchantId,$campaignId,$revision,$nonce,$fields,$brief);
     if($action==='marketing_editor_preview') {
         if($reviewKey==='')throw new RuntimeException('Review token unavailable.',503);
         $expires=time()+600;
@@ -282,6 +289,7 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
             'location'=>($fields['location_id']===0?'All locations':(string)(
                 $catalog['locations'][array_search($fields['location_id'],array_column($catalog['locations'],'id'),true)]['name']??'Location')),
             'starts_at'=>$fields['starts_at'],'ends_at'=>$fields['ends_at'],
+            'source_brief'=>$source===null?null:$source['title'],
             'status'=>'draft','will_publish'=>false],
             'review_token'=>initiative_workbench_review_token_v1($reviewKey,$intent,$expires)];
     }
@@ -303,6 +311,7 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
             $savedId=(int)($receipt['result_ref_id']??0);
             $saved=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$savedId);
         } else {
+            if($brief!==null)$source=vp3_marketing_brief_source_v1($pdo,$owner,$scope,$brief);
             vp3_marketing_editor_assert_slug_v1($pdo,$fields['slug'],$campaignId);
             if($campaignId>0) {
                 $current=vp3_marketing_editor_draft_v1($pdo,$owner,$merchantId,$campaignId,true);
@@ -318,6 +327,7 @@ function vp3_marketing_editor_action_v1(PDO $pdo,int $owner,array $scope,array $
             if(!hash_equals($fields['slug'],$saved['fields']['slug'])){
                 throw new DomainException('The Campaign URL changed before saving. Review a different slug.',409);
             }
+            if($source!==null)vp3_marketing_brief_save_v1($pdo,$owner,$scope,$savedId,$source);
             campaigns_rewards_idempotency_complete_v100($pdo,(int)$receipt['id'],'campaign',$savedId);
         }
         vp3_marketing_editor_scope_v1($pdo,$owner,$scope);

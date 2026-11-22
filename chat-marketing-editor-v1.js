@@ -23,7 +23,7 @@
       &&textSafe(briefPrefill.title,190)&&textSafe(briefPrefill.objective,500)
       &&textSafe(briefPrefill.description,4000,true)
       ?{title:briefPrefill.title,objective:briefPrefill.objective,
-        description:briefPrefill.description,source:briefPrefill.source_ref}:null;
+        description:briefPrefill.description,source:briefPrefill.source_ref,sourceRevision:briefPrefill.source_revision}:null;
     const editor=el('section','','vp3-marketing-inline-editor');
     editor.dataset.marketingEditor='';
     const title=el('h3',campaignId?'Edit private Campaign draft':'Create a private Campaign');
@@ -204,7 +204,8 @@
       };
     }
     function parameters(){
-      return {merchant_id:selectedMerchant,campaign_id:savedCampaign,revision,request_key:requestKey,fields:values()};
+      return {merchant_id:selectedMerchant,campaign_id:savedCampaign,revision,request_key:requestKey,fields:values(),
+        ...(initialBrief?{brief_source:{source_ref:initialBrief.source,source_revision:initialBrief.sourceRevision}}:{})};
     }
     async function review() {
       if(!live()||busy||!selectedMerchant)return;
@@ -223,6 +224,7 @@
       const item=data.preview;
       for(const [label,value] of [
         ['Campaign',item.title],['Type',item.campaign_type],['Reserved URL',item.slug],
+        ['Saved source brief',item.source_brief],
         ['Description',item.description],['Objective',item.objective],
         ['Subtitle',item.subtitle],['Call to action',item.cta_label],
         ['Terms',item.terms],['Merchant Location',item.location],

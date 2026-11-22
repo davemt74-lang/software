@@ -79,4 +79,17 @@ marketing_brief_check(!vp3_coordination_marketing_report_goal_v1($productGoal)
         ['marketing:product-plan:42'=>['specialist'=>'marketing',
             'marketing_presentation_owned'=>true,'presentation_owner'=>'agent_product_launch']]),
     'product plans preserve native notification ownership instead of duplicating Chat messages');
+$creativeRef='marketing:campaign-brief:77';
+marketing_brief_check(vp3_coordination_route_v1(vp3_coordination_rule_defaults_v1(),'marketing',
+    ['campaign_creative_progress'])['action']==='watch',
+    'routine private Campaign progress uses existing Watch policy instead of duplicate Chat notifications');
+$creativeGoal=array_replace($goal,['primary'=>$creativeRef,'sources'=>[$creativeRef=>$revision]]);
+$creativeItem=array_replace($item,['ref'=>$creativeRef,'summary'=>'Saved Campaign-linked creative is ready for owner review.',
+    'next_step'=>'Review the private graphic and current Campaign before approving public use.']);
+$creativeResult=vp3_coordination_saved_result_v1($creativeGoal,[$creativeRef=>$creativeItem],$route);
+marketing_brief_check(vp3_coordination_marketing_report_goal_v1($creativeGoal)
+    &&vp3_coordination_result_normalize_v1($creativeResult)===$creativeResult
+    &&vp3_coordination_saved_revisions_v1($creativeGoal,$creativeResult)===[$creativeRef=>$revision]
+    &&$creativeResult['output']['marketing_report']['key_findings']===[$creativeItem['summary']],
+    'Campaign brief milestones use the canonical Chat report and exact Brain receipt evidence');
 echo 'MARKETING_CHAT_BRIEFING=PASS ('.$GLOBALS['marketingBriefChecks'].' assertions)'.PHP_EOL;

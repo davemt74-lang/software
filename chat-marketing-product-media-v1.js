@@ -34,7 +34,7 @@
     }
     return {products,media};
   }
-  function mount(host,{current,request,onClose,onContinue}) {
+  function mount(host,{current,request,onClose,onContinue,initialProductId=0}) {
     if(!host||typeof current!=='function'||!current()
       ||typeof request!=='function'||typeof onContinue!=='function')return null;
     const root=node('section','','vp3-marketing-product-media-picker');
@@ -116,6 +116,7 @@
       addOption(product,'','Choose a product');
       addOption(media,'','Choose a saved photo');
       for(const item of data.products)addOption(product,item.id,item.title);
+      if(validId(initialProductId)&&data.products.some(item=>item.id===initialProductId))product.value=String(initialProductId);
       for(const item of data.media)addOption(media,item.id,item.title);
       const possible=data.products.length>0&&data.media.length>0;
       review.disabled=!possible;

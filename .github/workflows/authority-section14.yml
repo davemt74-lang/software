@@ -113,6 +113,19 @@ jobs:
           php tests/marketing-campaign-editor-v1.php
           node --check chat-marketing-editor-v1.js
           node tests/marketing-campaign-editor-contract-v1.mjs
+      - name: Marketing Phase 3D saved brief, current Campaign and private creative pipeline
+        run: |
+          php -l includes/initiative-marketing-brief-campaign-v1.php
+          php tests/marketing-brief-campaign-v1.php
+          php tests/marketing-brief-creative-v1.php
+          php tests/marketing-specialist-briefing-v1.php
+          node --check tests/marketing-brief-creative-browser-v1.mjs
+      - name: Marketing Phase 3D private creative on native MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: php tests/marketing-brief-creative-v1.php
       - name: Marketing Canvas creative selection and exact authority
         run: |
           php -l includes/initiative-marketing-canvas-choices-v1.php
@@ -551,6 +564,14 @@ jobs:
         run: node tests/music-project-import-browser-v1.mjs
       - name: Reviewed Campaign Draft Editor desktop and mobile browser acceptance
         run: node tests/marketing-campaign-editor-browser-v1.mjs
+      - name: Marketing Phase 3D real Campaign editor, private workbench and Canvas return
+        run: node tests/marketing-brief-creative-browser-v1.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: marketing-brief-creative-evidence
+          path: artifacts/marketing-brief-creative/
+          if-no-files-found: ignore
       - name: Marketing Canvas tested creative link review and desktop-mobile acceptance
         run: node tests/marketing-canvas-link-browser-v1.mjs
       - name: Marketing Product and Media current-Chat desktop and mobile browser acceptance

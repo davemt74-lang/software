@@ -50,6 +50,7 @@ function vp3_marketing_opportunity_portfolio_v1(array $snapshot,int $maximum=6):
         'campaign-performance'=>['rank'=>92,'group'=>'campaign','label'=>'Performance review'],
         'campaign-optimization'=>['rank'=>86,'group'=>'campaign','label'=>'Campaign optimization'],
         'campaign-work'=>['rank'=>80,'group'=>'campaign','label'=>'Creative follow-through'],
+        'campaign-brief'=>['rank'=>78,'group'=>'campaign','label'=>'Campaign creative'],
         'product-plan'=>['rank'=>72,'group'=>'product','label'=>'Product marketing'],
         'campaign-outcome'=>['rank'=>62,'group'=>'campaign','label'=>'Outcome review'],
     ];
@@ -57,7 +58,7 @@ function vp3_marketing_opportunity_portfolio_v1(array $snapshot,int $maximum=6):
     foreach(array_slice($snapshot['items'],0,36,true) as $key=>$source){
         if(!is_array($source)||!is_string($key)||($source['ref']??null)!==$key
             ||($source['specialist']??null)!=='marketing')continue;
-        if(!preg_match('/\Amarketing:(campaign-(?:readiness|performance|optimization|work|outcome)|product-plan):([1-9][0-9]{0,15})\z/D',$key,$matches))continue;
+        if(!preg_match('/\Amarketing:(campaign-(?:readiness|performance|optimization|work|outcome|brief)|product-plan):([1-9][0-9]{0,15})\z/D',$key,$matches))continue;
         $kind=$matches[1];$id=(int)$matches[2];
         $data=$types[$kind]??null;
         $revision=$source['revision']??null;

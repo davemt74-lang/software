@@ -22,7 +22,8 @@ assert.match(ui,/form\.addEventListener\('submit',event=>\{event\.preventDefault
 assert.match(workspace,/openProductPicker/);
 assert.match(workspace,/productPicker\?\.dispose/);
 assert.match(workspace,/session\.productPicker\?\.host\?\.isConnected/);
-assert.match(workspace,/VP3InitiativeWorkbench\.open\('marketing',photoId,'',\{productId\}\)/);
+assert.match(workspace,/const options=\{productId,/);
+assert.match(workspace,/VP3InitiativeWorkbench\.open\('marketing',photoId,'',options\)/);
 assert.match(chat,/chat-marketing-product-media-v1\.css/);
 assert.match(chat,/chat-marketing-product-media-v1\.js/);
 assert.match(css,/@media\(max-width:680px\)/);

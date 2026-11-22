@@ -72,6 +72,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             'followthrough'=>$followthrough,
             'linked_creative'=>vp3_marketing_workspace_linked_creative_v1($pdo,$owner,$scope,$item),
             'native_ab'=>vp3_marketing_native_ab_read_v1($pdo,$owner,(int)$item['id']),
+            'has_saved_brief'=>$item['status']==='draft'&&vp3_marketing_workspace_has_brief_v1($pdo,$owner,$scope,(int)$item['id']),
         ];
     }
     // Revalidate current owner/plugin authority after the read, including empty or revoked businesses.
@@ -87,6 +88,12 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
             'rewards'=>url('/rewards.php'),
         ],
     ];
+}
+
+function vp3_marketing_workspace_has_brief_v1(PDO $pdo,int $owner,array $scope,int $id): bool
+{
+    require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
+    return vp3_marketing_brief_row_v1($pdo,$owner,$scope,$id)!==null;
 }
 
 
