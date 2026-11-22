@@ -154,7 +154,8 @@ try {
   const stopped = check(await phoneApi(firstGuest, 'status'), 'read after spoken stop').device;
   assert.equal(stopped.latitude, null);
   assert.equal((await phoneApi(firstGuest, 'fix', fix)).status, 409);
-  check(await ownerApi(apiOwner, owner, 'revoke', command(stopped)), 'revoke');
+  assert.equal((await ownerApi(apiOwner, owner, 'request_start', command(live))).status, 409);
+  check(await ownerApi(apiOwner, owner, 'revoke', command(live)), 'revoke the same pairing after its location generation changes');
   assert.equal((await phoneApi(firstGuest, 'status')).status, 403);
   assert.deepEqual(check(await ownerApi(apiOwner, owner), 'final read').devices, []);
   const mapRoute = await apiOwner.request.get('/phone-tracking.php?agent=system&conversation_id=8');
@@ -345,11 +346,17 @@ async function browserJourney(baseURL, owner, other) {
   await phone.reload();
   await startWithFreshSensorReading({ ...gps, longitude: gps.longitude + 0.001 });
   await requireLiveFix('Phone did not resume after deliberate local restart');
+  await map.locator('#phone-map .phone-map-marker').first().waitFor({ state: 'visible' });
+  await map.locator('#phone-detail [data-action=stop]').waitFor();
   await phone.locator('#phone-stop').click();
   await eventually('Phone stop did not reach owner', async () =>
     check(await ownerApi(desktop, owner), 'phone stop read').devices[0]?.location_state === 'off');
+  // Disconnect the pairing immediately, even if the map last showed its previous GPS generation.
   await map.locator('#phone-detail [data-action=revoke]').click();
+  const revoked = map.waitForResponse(response => new URL(response.url()).pathname === ownerEndpoint &&
+    response.request().method() === 'POST' && response.request().postDataJSON()?.action === 'revoke');
   await map.locator('#phone-revoke-accept').click();
+  check(await read(await revoked), 'revoke from the map');
   await eventually('Revoked phone still has authority', async () => (await phoneApi(handset, 'status')).status === 403);
   assert.deepEqual(check(await ownerApi(desktop, owner), 'revocation read').devices, []);
   assert.deepEqual(errors, []);

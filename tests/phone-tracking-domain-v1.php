@@ -128,8 +128,23 @@ $db->beginTransaction();
 $owner('revoke',$newCommand($stopped['generation']));
 $db->rollBack();
 pt_assert($deviceState()['status']==='approved','Chat can roll back owner mutation and receipt atomically');
-$revoke=$owner('revoke',$newCommand($stopped['generation']))['device'];
-pt_assert($revoke['status']==='revoked' && $owner('state')['devices']===[],'owner revocation removes phone');
+$ownerSaw=$waiting['generation'];
+pt_assert($ownerSaw < $stopped['generation'],'phone stopped after owner last viewed the pairing');
+pt_reject(422,fn()=>$owner('revoke',$newCommand(0)),'revocation must reference a positive generation');
+pt_reject(409,fn()=>$owner('revoke',$newCommand($stopped['generation']+1)),'revocation rejects a future generation');
+pt_reject(409,fn()=>$owner('stop',$newCommand($ownerSaw)),'owner location controls still require the exact generation');
+$revokeCommand=$newCommand($ownerSaw);
+$revoke=$owner('revoke',$revokeCommand)['device'];
+pt_assert($revoke['status']==='revoked' && $revoke['generation']>$stopped['generation'] && $owner('state')['devices']===[],
+    'owner disconnect still removes the same pairing after the holder stops GPS');
+pt_assert($owner('revoke',$revokeCommand)['duplicate'],'repeated disconnect is acknowledged once');
 pt_reject(403,fn()=>$deviceState(),'revoked credential cannot return to map or upload');
+pt_reject(403,fn()=>$deviceOp('fix',$ownerSaw,$fix),'GPS callback from disconnected phone is fenced');
+$replacement=vp3_phone_device_v1($db,'','claim',['invite'=>$issue(),'name'=>$claim['name']]);
+$otherId=$replacement['device']['id'];
+$owner('approve',['device_id'=>$otherId,'request_id'=>bin2hex(random_bytes(16)),'generation'=>1]);
+pt_reject(404,fn()=>$owner('revoke',$newCommand($ownerSaw)),'old pairing ID cannot revoke a new pairing with the same device name');
+pt_reject(409,fn()=>$owner('revoke',array_replace($revokeCommand,['device_id'=>$otherId])),'a disconnect receipt cannot be redirected to the replacement pairing');
+pt_assert($otherId!==$id && $owner('state')['devices'][0]['id']===$otherId,'replacement pairing remains connected');
 
 echo "PASS Phone Tracking Phase 1 domain.\n";

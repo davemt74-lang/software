@@ -182,11 +182,18 @@ try {
         'stop erases the live position and rejects delayed callbacks from the previous grant');
     $asked = $owner('request_start',$input($after['generation']))['device'];
     $gen = vp3_phone_device_v1($db, $token, 'start', ['generation'=>$asked['generation'],'device_id'=>$deviceId])['device']['generation'];
-    $results = phone_test_race(['device',$token,'fix',$makeFix($gen)], ['owner',1,'revoke',$input($gen)]);
+    $future = phone_test_dispatch($db, ['owner',1,'revoke',$input($gen + 1)]);
+    phone_test_check($future['status'] === 409 && $state()[0]['generation'] === $gen,
+        'a future generation cannot revoke a pairing');
+    $observed = $after['generation'];
+    $results = phone_test_race(['device',$token,'fix',$makeFix($gen)],
+        ['device',$token,'stop',['device_id'=>$deviceId,'generation'=>$gen]],
+        ['owner',1,'revoke',$input($observed)]);
     $afterRevoke = phone_test_dispatch($db, ['device',$token,'status',[]]);
-    phone_test_check($results[1]['status'] === 200 && in_array($results[0]['status'], [200,403,409], true)
+    phone_test_check($observed < $gen && $results[2]['status'] === 200 && $results[2]['data']['device']['status'] === 'revoked'
+        && in_array($results[0]['status'], [200,403,409], true) && in_array($results[1]['status'], [200,403,409], true)
         && $afterRevoke['status'] === 403 && $state() === [],
-        'revocation excludes the phone from all later location reads and rejects its credential');
+        'revoking the same pairing from an older owner view wins over a concurrent holder fix and stop');
     $invite = $owner('invite', ['request_id'=>$request()])['invite'];
     $phone = vp3_phone_device_v1($db, '', 'claim', ['invite'=>$invite, 'name'=>'Temporary phone']);
     $terminal = ['device_id'=>$phone['device']['id'], 'generation'=>$phone['device']['generation']];

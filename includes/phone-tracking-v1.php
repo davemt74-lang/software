@@ -135,10 +135,14 @@ function vp3_phone_public_v1(array $row, int $now): array
     ];
 }
 
-function vp3_phone_generation_v1(array $row, array $input): void
+function vp3_phone_generation_v1(array $row, array $input, bool $allowEarlier=false): void
 {
-    if (!is_int($input['generation'] ?? null)) throw new RuntimeException('A phone generation is required.', 422);
-    if ($input['generation'] !== (int)$row['generation']) throw new RuntimeException('Phone state changed. Refresh its status.', 409);
+    $observed = $input['generation'] ?? null;
+    if (!is_int($observed) || $observed < 1) throw new RuntimeException('A positive phone generation is required.', 422);
+    $current = (int)$row['generation'];
+    if ($observed > $current || (!$allowEarlier && $observed !== $current)) {
+        throw new RuntimeException('Phone state changed. Refresh its status.', 409);
+    }
 }
 
 function vp3_phone_save_row_v1(PDO $pdo, array $row): void
@@ -161,7 +165,8 @@ function vp3_phone_end_location_v1(array &$row, string $state): void
 
 function vp3_phone_owner_transition_v1(array &$row, string $action, array $input, int $now): void
 {
-    vp3_phone_generation_v1($row,$input);
+    // Revocation ends this immutable pairing even if its holder just stopped GPS.
+    vp3_phone_generation_v1($row,$input,allowEarlier: $action === 'revoke');
     if ((int)$row['expires_at'] <= $now) throw new RuntimeException('This phone connection expired.', 409);
     $status = $row['device_status'];
     if ($action === 'approve' || $action === 'deny') {
