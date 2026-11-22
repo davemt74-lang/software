@@ -26,6 +26,7 @@ function vp3_initiative_marketing_workspace_overview_v1(PDO $pdo,int $owner,arra
     // evidence that is not part of the Campaigns-only dashboard. Each source
     // retains the canonical owner, Agent, Chat and permission checks.
     try {
+        if(!function_exists('vp3_coordination_marketing_sources_v1'))require_once __DIR__.'/agent-coordination-marketing-v1.php';
         $sources=vp3_coordination_marketing_sources_v1($pdo,$scope,null,$now);
         $portfolio=vp3_marketing_opportunity_portfolio_v1($sources);
     } catch(DomainException|RuntimeException $error) {
