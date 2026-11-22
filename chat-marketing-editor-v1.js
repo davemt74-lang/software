@@ -11,12 +11,25 @@
   }
   const positive=value=>Number.isSafeInteger(Number(value))&&Number(value)>0&&/^[1-9]\d*$/.test(String(value))?Number(value):0;
   const nonce=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
-  function mount(host,{current,request,onClose,onSaved},campaignId=0) {
+  function mount(host,{current,request,onClose,onSaved},campaignId=0,briefPrefill=null) {
     if(!host||typeof current!=='function'||typeof request!=='function'||!current())return null;
+    // Only a source-revision-bound owner-selected brief may initialize NEW
+    // draft fields. Existing saved drafts are never overwritten by this hint.
+    const textSafe=(v,max)=>typeof v==='string'&&v.trim()&&v.length<=max
+      &&!/[<>\x00-\x1f\x7f]/.test(v);
+    const initialBrief=!positive(campaignId)&&briefPrefill
+      &&/^marketing:(?:campaign-outcome|product-plan):[1-9]\d{0,15}$/.test(briefPrefill.source_ref||'')
+      &&/^[a-f0-9]{64}$/.test(briefPrefill.source_revision||'')
+      &&textSafe(briefPrefill.title,190)&&textSafe(briefPrefill.objective,500)
+      &&textSafe(briefPrefill.description,4000)
+      ?{title:briefPrefill.title,objective:briefPrefill.objective,
+        description:briefPrefill.description,source:briefPrefill.source_ref}:null;
     const editor=el('section','','vp3-marketing-inline-editor');
     editor.dataset.marketingEditor='';
     const title=el('h3',campaignId?'Edit private Campaign draft':'Create a private Campaign');
     const help=el('p','Draft only. Nothing is published, messaged or issued from this editor. Publication stays in Campaigns & Rewards.','vp3-marketing-workspace-muted');
+    if(initialBrief)help.append(document.createTextNode(
+      ' Suggested text is drawn from your chosen Marketing opportunity. Confirm Merchant, location, type, reward and every field before saving.'));
     const message=el('p','','vp3-marketing-editor-status');message.setAttribute('role','status');message.setAttribute('aria-live','polite');
     const toolbar=el('div','','vp3-marketing-workspace-card-actions');
     const back=button('Back to campaigns',()=>onClose());toolbar.append(back);
@@ -157,6 +170,12 @@
           clearInputValues();
           revision='new';savedCampaign=0;merchant.disabled=false;
           type.value=dataFirstType();
+          if(initialBrief){
+            inputs.title.value=initialBrief.title;
+            inputs.objective.value=initialBrief.objective;
+            inputs.description.value=initialBrief.description;
+            say('Private proposal loaded from '+initialBrief.source+'. Choose Merchant details and review before saving.');
+          }
         }
         invalidate();requestKey=nonce();
       }catch(error){say(error.message);}
