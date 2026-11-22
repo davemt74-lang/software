@@ -52,6 +52,27 @@ async function scenario(width){
     if(body.action==='marketing_overview')Object.assign(data,{coverage:'ready',
       campaigns:(staleVersion?campaigns.map(row=>({...row,version:row.version+1})):campaigns)
         .map(row=>({...row,linked_creative:workLink?[workLink]:[]})),
+      opportunity_portfolio:{contract:'vp3.marketing.opportunity-portfolio.v1',
+        review_scope:'current_authorized_sources_only',coverage:'limited',opportunities:[
+          {source_ref:'marketing:campaign-readiness:4',source_revision:'a'.repeat(64),
+           source_id:4,kind:'campaign-readiness',label:'Campaign readiness',title:'Autumn special setup',
+           finding:'The saved Campaign needs a reward.',next_step:'Choose the permitted reward.',
+           question:'Review this issue?',priority:'high',source_status:'open',
+           source_href:'/campaigns.php?merchant=2&edit_campaign=4',coverage:'limited',
+           notification_owner:'coordination'},
+          {source_ref:'marketing:product-plan:10',source_revision:'b'.repeat(64),
+           source_id:10,kind:'product-plan',label:'Product marketing',title:'Autumn shirts · product plan',
+           finding:'Verified private design review needed.',next_step:'Review existing artwork.',
+           question:'',priority:'low',source_status:'photo_needed',
+           source_href:'/chat.php?agent=7&conversation_id=11&marketing_plan=10',coverage:'limited',
+           notification_owner:'product_launch'},
+          {source_ref:'marketing:campaign-performance:4',source_revision:'a'.repeat(64),
+           source_id:4,kind:'campaign-performance',label:'Performance review',title:'Forged external destination',
+           finding:'Private text must not become a link.',next_step:'Review in Campaigns.',
+           question:'',priority:'normal',source_status:'open',
+           source_href:'https://attacker.invalid/steal',coverage:'limited',
+           notification_owner:'coordination'},
+        ]},
       links:{campaigns:'/campaigns.php',products:'/profile-commerce-products.php',rewards:'/rewards.php'}});
     else if(body.action==='marketing_plans')Object.assign(data,{plans,next_before:null});
     else if(body.action==='marketing_plan')Object.assign(data,{plan:plans[0]});
@@ -112,6 +133,20 @@ async function scenario(width){
   check(await page.locator('#chatThread').getAttribute('data-view')==='marketing','main Chat Canvas view switched');
   check(await page.locator('#vp3MediaCommands').count()===0,'legacy Marketing modal not opened');
   check(await page.getByText('Autumn special').count()>0,'live campaigns rendered from canonical overview');
+  const portfolio=page.locator('.vp3-marketing-opportunity-queue');
+  check(await portfolio.count()===1,'existing Marketing overview shows prioritized opportunities');
+  check(await portfolio.locator('.vp3-marketing-opportunity').count()===2,'only two source-validated marketing opportunities render');
+  check(await portfolio.getByText('Autumn special setup').count()===1
+    &&await portfolio.getByText('Autumn shirts · product plan').count()===1,
+    'Campaign and product sources use the same opportunity queue');
+  check(await portfolio.getByText('Opportunity coverage: limited.',{exact:false}).count()===1,
+    'partial source coverage never becomes a misleading complete audit');
+  check(await portfolio.locator('a[href="/campaigns.php?merchant=2&edit_campaign=4"]').count()===1
+    &&await portfolio.locator('a[href="/chat.php?agent=7&conversation_id=11&marketing_plan=10"]').count()===1,
+    'only authorized Campaign and exact Chat product-plan links are actionable');
+  check(await portfolio.locator('a[href*="attacker.invalid"]').count()===0
+    &&await portfolio.getByText('Forged external destination').count()===0,
+    'untrusted external recommendation links fail closed');
   check(await page.locator('#chatMarketingWorkspaceV1').innerText().then(s=>!s.includes('customer email')),'private CRM not rendered');
   await page.getByRole('tab',{name:'Analytics'}).click();
   check(await page.getByRole('heading',{name:'Campaign performance & next actions'}).count()===1,
