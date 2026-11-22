@@ -160,7 +160,9 @@ try {
   assert.deepEqual(check(await ownerApi(apiOwner, owner), 'final read').devices, []);
   const mapRoute = await apiOwner.request.get('/phone-tracking.php?agent=system&conversation_id=8');
   assert.equal(mapRoute.status(), 200, 'Map route must render for a signed-in account with chat access');
-  assert.match(await mapRoute.text(), /id="phone-connect"/);
+  const mapHtml = await mapRoute.text();
+  assert.match(mapHtml, /id="phone-connect"/);
+  assert.match(mapHtml, /<a[^>]*data-vp3-nav-key="phone_tracking"[^>]*aria-current="page"/);
   const mobileRoute = await firstGuest.request.get('/phone-location.php');
   assert.equal(mobileRoute.status(), 200);
   assert.match(await mobileRoute.text(), /id="phone-claim"/);
@@ -273,6 +275,12 @@ async function browserJourney(baseURL, owner, other) {
   assert.equal((await ownerApi(desktop, owner, 'invite', { csrf_token: 'stale-session' })).status, 419);
   assert.equal((await phoneApi(newcomer, 'status')).status, 401);
   await map.goto('/phone-tracking.php?agent=system&conversation_id=8');
+  const trackingLink = map.locator('[data-vp3-nav-key="phone_tracking"]');
+  await trackingLink.waitFor({ state: 'visible' });
+  assert.equal(await trackingLink.getAttribute('aria-current'), 'page');
+  assert.equal(await trackingLink.innerText().then(text => text.includes('Phone Tracking')), true);
+  assert.equal(new URL(await trackingLink.getAttribute('href'), baseURL).pathname, '/phone-tracking.php');
+  await trackingLink.scrollIntoViewIfNeeded();
   await map.locator('#phone-connect').click();
   await map.locator('#phone-qr svg').waitFor();
   const join = new URL(await map.locator('#phone-join').getAttribute('href'), baseURL);
@@ -325,6 +333,7 @@ async function browserJourney(baseURL, owner, other) {
   assert.ok(device.first_fix_at && device.fix_at >= device.first_fix_at && Math.abs(Date.now()/1000 - device.fix_at) < 60);
   assert.ok(gpsRequests > 0);
   await map.locator('#phone-map .phone-map-marker').first().waitFor({ state: 'visible', timeout: 25000 });
+  assert.doesNotMatch(await map.locator('#phone-status').innerText(), /waiting for the phone|sharing requested/i);
   const detail = await map.locator('#phone-detail').innerText();
   assert.ok(detail.includes(gps.latitude.toFixed(5)) && detail.includes(gps.longitude.toFixed(5)));
   assert.match(detail, /±\s*12\s*m/);

@@ -17,6 +17,7 @@
   let selectedId = '';
   let followId = '';
   let choiceToRevoke = null;
+  let requestNotice = null;
   let expires = 0;
   let clockDelta = 0;
   let staleAfter = 60;
@@ -292,6 +293,16 @@
   }
   function render() {
     const approved = devices.filter(d => d.status === 'approved');
+    if (requestNotice && !status.dataset.failure) {
+      const phone = approved.find(d => d.id === requestNotice.id && d.generation === requestNotice.generation);
+      if (phone && ['requested','waiting'].includes(phone.location_state)) {
+        const notice = phone.location_state === 'requested' ? 'Sharing requested. Waiting for the phone.' : 'Phone accepted. Waiting for a location update.';
+        if (status.textContent !== notice) status.textContent = notice;
+      } else {
+        requestNotice = null;
+        status.textContent = '';
+      }
+    }
     if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
     if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
     renderList(approved);
@@ -432,6 +443,7 @@
     if (!device || writing || document.hidden) return;
     writing = true;
     const version = ++revision;
+    requestNotice = null;
     const message = pairing.open ? byId('phone-pair-status') : status;
     message.textContent = 'Saving…';
     try {
@@ -445,7 +457,8 @@
       devices = devices.filter(d => d.id !== device.id);
       if (result.device && ['approved','pending'].includes(result.device.status)) devices.push(result.device);
       if (action === 'approve') selectedId = device.id;
-      const messages = {approve:'Phone approved.',deny:'Connection request denied.',request_start:'Sharing requested. Waiting for the phone.',stop:'Sharing stopped.',revoke:'Phone disconnected.'};
+      if (action === 'request_start' && result.device) requestNotice = {id:result.device.id,generation:result.device.generation};
+      const messages = {approve:'Phone approved.',deny:'Connection request denied.',request_start:'',stop:'Sharing stopped.',revoke:'Phone disconnected.'};
       message.textContent = status.textContent = messages[action];
       delete status.dataset.failure;
       render();

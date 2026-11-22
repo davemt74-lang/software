@@ -17,7 +17,8 @@ $mainSidebarCurrentSection = function_exists('member_navigation_section_label') 
 
 $mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','canvases','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
 if ($mainSidebarCanChat && has_permission('account.access', $mainSidebarUser)) {
-    $mainSidebarPrimaryOrder[] = 'phone_tracking';
+    $afterConnections = array_search('connections', $mainSidebarPrimaryOrder, true) + 1;
+    array_splice($mainSidebarPrimaryOrder, $afterConnections, 0, ['phone_tracking']);
 }
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryKeys['hosting']=true;
