@@ -21,15 +21,15 @@ $items=[$read['ref']=>$read,$perf['ref']=>$perf,$opt['ref']=>$opt,$outcome['ref'
     $other['ref']=>$other,$plan['ref']=>$plan];
 $portfolio=vp3_marketing_opportunity_portfolio_v1(['coverage'=>'ready','items'=>$items]);
 portfolio_check($portfolio['contract']===VP3_MARKETING_OPPORTUNITY_PORTFOLIO_V1
-    &&$portfolio['coverage']==='ready'&&count($portfolio['opportunities'])===5,
+    &&$portfolio['coverage']==='ready'&&count($portfolio['opportunities'])===4,
     'Ranked portfolio must preserve distinct campaigns and bounded source count');
 $refs=array_column($portfolio['opportunities'],'source_ref');
 portfolio_check($refs[0]===$other['ref'] && $refs[1]===$read['ref'] && $refs[2]===$perf['ref'],
     'Verified Campaign blockers outrank mature performance review without inventing ROI');
 portfolio_check(!in_array($opt['ref'],$refs,true)&&!in_array($outcome['ref'],$refs,true)
     &&in_array($plan['ref'],$refs,true),'Do not repeat three findings from one Campaign');
-portfolio_check($portfolio['opportunities'][4]['notification_owner']==='product_launch'
-    &&$portfolio['opportunities'][4]['source_href']===$plan['url'],
+portfolio_check($portfolio['opportunities'][3]['notification_owner']==='product_launch'
+    &&$portfolio['opportunities'][3]['source_href']===$plan['url'],
     'Native product specialist retains Chat notification ownership');
 portfolio_check(count(vp3_marketing_opportunity_portfolio_v1(
     ['coverage'=>'limited','items'=>$items],2)['opportunities'])===2,
