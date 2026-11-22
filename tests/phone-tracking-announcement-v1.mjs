@@ -3,9 +3,11 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 
 const source=readFileSync(new URL('../chat.js',import.meta.url),'utf8');
-const start=source.indexOf('  function presentPhoneUpdatesV1(');
+const start=source.indexOf('  function phoneChatForegroundV1(');
 const end=source.indexOf('  async function pollAgentActivity',start);
 assert.ok(start>=0 && end>start && source.indexOf('presentPhoneUpdatesV1(data,activeConversationId,activityChatRevision)',end)>end);
+assert.match(source.slice(end),/phoneChatForegroundV1\(activeConversationId\) \? \{phone_updates:true\}/);
+assert.match(source.slice(end),/data\.phone_tracking_context && !request\.voiceSubmission && !existingReply && data\.phone_updates\) \{\s*presentPhoneUpdatesV1\(data,conversationId,request.revision\)/);
 let enabled=true, participant=false, focused=true, authenticated=true;
 const spoken=[];
 const ctx={chatRevision:5,conversationId:3,historyParticipant:0,initiativePage:{owner:1,agent:7},thread:{dataset:{view:'chat'}},
@@ -20,8 +22,10 @@ const show=(change={})=>ctx.presentPhoneUpdatesV1({conversation_id:3,phone_updat
 enabled=false;show();
 enabled=true;participant=true;show();
 participant=false;focused=false;show();
+assert.equal(ctx.phoneChatForegroundV1(3),false,'an unfocused private Chat cannot consume first-fix announcements');
 focused=true;authenticated=false;show();
 authenticated=true;
+assert.equal(ctx.phoneChatForegroundV1(3),true);
 for(const change of [{owner_user_id:2},{agent_id:8},{conversation_id:8},{message_id:0}]) show(change);
 assert.equal(spoken.length,0);
 show();

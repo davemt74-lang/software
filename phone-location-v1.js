@@ -19,6 +19,8 @@
   const now = () => Math.floor(Date.now() / 1000);
   const mobileActive = d => ['waiting', 'live', 'stale'].includes(d?.location_state);
   const stoppable = d => mobileActive(d) || d?.location_state === 'requested';
+  const updateInterval = d => [5,15,30].includes(d?.update_interval_seconds) ? d.update_interval_seconds : 5;
+  const highAccuracy = d => d?.accuracy_mode !== 'balanced';
   const secure = window.isSecureContext;
   const secretPattern = /^[A-Za-z0-9_-]{43}$/;
   const hash = location.hash.slice(1);
@@ -67,12 +69,17 @@
       return result;
     } finally { clearTimeout(timer); }
   }
+  function discardDeferred(session) {
+    clearTimeout(session.timer);
+    session.timer = null;
+    session.next = null;
+  }
   function cancelWatch() {
     const previous = run;
     run = null;
     if (previous) {
       if (previous.watch !== null) navigator.geolocation.clearWatch(previous.watch);
-      previous.next = null;
+      discardDeferred(previous);
     }
     write('sessionStorage', 'watch', null);
     return previous;
@@ -108,6 +115,18 @@
     owner = typeof result.owner_name === 'string' ? result.owner_name : '';
     initial = false;
     available = true;
+    if (run && (run.interval !== updateInterval(next) || run.highAccuracy !== highAccuracy(next))) {
+      const replaceWatch = run.highAccuracy !== highAccuracy(next);
+      run.interval = updateInterval(next);
+      run.highAccuracy = highAccuracy(next);
+      clearTimeout(run.timer);
+      run.timer = null;
+      if (replaceWatch) {
+        run.next = null;
+        monitor(run);
+      }
+      if (run) sendLatestFix(run);
+    }
   }
   function render() {
     const connected = device?.status === 'approved';
@@ -117,6 +136,9 @@
     el('badge').textContent = device ? (connected ? 'Connected phone' : 'Pending approval') : 'Phone Tracking';
     el('details').hidden = !device;
     el('owner').textContent = owner || 'Checking account…';
+    el('preference-row').hidden = !connected || !device.allow_location;
+    el('preferences').textContent = 'Every ' + updateInterval(device) + ' seconds · ' +
+      (highAccuracy(device) ? 'High accuracy' : 'Balanced accuracy');
     el('controls').hidden = !device && (initial || Boolean(claim));
     el('join').hidden = !secure || Boolean(device) || !claim || initial;
     if (claim?.name && el('name').value === '') el('name').value = claim.name;
@@ -167,6 +189,7 @@
       info = 'The phone’s permissions changed. Checking the current state.';
       schedulePoll();
     } else {
+      if (run) discardDeferred(run);
       available = false;
       info = pending ? '' : 'Cannot reach VP3. Check your connection and try again.';
     }
@@ -257,20 +280,37 @@
   function fresh(time) {
     return Number.isFinite(time) && time >= now() - 55 && time <= now() + 5;
   }
+  function reportDelay(session) {
+    return session.lastSent === null ? 0 : Math.max(0, session.lastSent + session.interval * 1000 - performance.now());
+  }
   function sendLatestFix(session) {
-    if (!canCollect(session) || !session.confirmed || session.sending || !session.next) return;
+    if (!canCollect(session) || !session.confirmed || session.sending || !session.next || session.timer !== null) return;
+    const delay = reportDelay(session);
+    if (delay > 0) {
+      session.timer = setTimeout(() => {
+        session.timer = null;
+        sendLatestFix(session);
+      }, Math.ceil(delay));
+      return;
+    }
     session.sending = true;
     queue(async () => {
-      const sample = session.next;
-      session.next = null;
       try {
+        // A preceding status response may have lengthened the interval while this upload was queued.
+        if (reportDelay(session) > 0) return;
+        const sample = session.next;
+        session.next = null;
         if (!sample || !canCollect(session)) return;
         const time = Math.floor(sample.timestamp / 1000);
-        if (!fresh(time) || (session.lastTime && time - session.lastTime < 5)) return;
+        if (!fresh(time) || time <= session.lastTime) return;
         const {latitude,longitude,accuracy} = sample.coords;
         const result = await request('fix',{device_id:session.id,generation:session.generation,latitude,longitude,accuracy,fix_at:time});
         if (run !== session) return;
-        accept(result); session.lastTime = time; session.needsFresh = false; info = '';
+        session.lastTime = time;
+        session.lastSent = performance.now();
+        session.needsFresh = false;
+        accept(result);
+        info = '';
       } catch (error) {
         if (run !== session) return;
         if ([401,403,404,409].includes(error.status)) cancelWatch();
@@ -292,6 +332,7 @@
     const reader = {};
     session.reader = reader;
     session.needsFresh = false;
+    session.hasReading = false;
     if (session.watch !== null) navigator.geolocation.clearWatch(session.watch);
     session.refreshedAt = Date.now();
     try {
@@ -301,13 +342,15 @@
         if (!fresh(Math.floor(position.timestamp / 1000)) ||
             ![latitude,longitude,accuracy].every(Number.isFinite) || Math.abs(latitude)>90 ||
             Math.abs(longitude)>180 || accuracy<0 || accuracy>40075000) return;
+        session.hasReading = true;
+        if (Math.floor(position.timestamp / 1000) <= session.lastTime) return;
         if (!session.next || position.timestamp >= session.next.timestamp) session.next = position;
         sendLatestFix(session);
       }, error => {
         if (run !== session || session.reader !== reader) return;
         if (error.code === 1) finish('denied','Location permission denied. Sending the update to VP3.');
-        else { info = 'GPS is temporarily unavailable. Waiting for a fresh position.'; render(); }
-      }, {enableHighAccuracy:true,maximumAge:0,timeout:20000});
+        else { session.needsFresh = true; info = 'GPS is temporarily unavailable. Waiting for a fresh position.'; render(); }
+      }, {enableHighAccuracy:session.highAccuracy,maximumAge:0,timeout:20000});
     } catch { finish('denied','Location is unavailable in this browser.'); }
   }
   function start() {
@@ -315,7 +358,8 @@
         device?.status !== 'approved' || !device.allow_location || mobileActive(device)) return;
     const initialGeneration = device.generation;
     const session = {id:device.id,baseGeneration:initialGeneration,startSent:false,generation:initialGeneration + (device.location_state === 'requested' ? 0 : 1),
-      watch:null,confirmed:false,next:null,lastTime:0,sending:false,needsFresh:false};
+      watch:null,confirmed:false,next:null,lastTime:0,lastSent:null,timer:null,sending:false,needsFresh:false,
+      interval:updateInterval(device),highAccuracy:highAccuracy(device)};
     run = session; actionBusy = true; info = '';
     write('sessionStorage','watch',{id:session.id,generation:session.generation}); render();
     // Ask for browser permission directly in the holder's tap. Send no sample until the matching server grant is confirmed.
@@ -347,7 +391,7 @@
   el('retry').addEventListener('click',schedulePoll);
   window.addEventListener('online',schedulePoll);
   window.addEventListener('offline',() => {
-    if (run) run.next = null;
+    if (run) discardDeferred(run);
     available = false; info = ''; render();
   });
   window.addEventListener('storage',event => {
@@ -372,8 +416,9 @@
     if (device || !available) schedulePoll();
     // A stationary device may receive no watch events. A fresh sensor read is required to keep a marker live.
     if (run?.confirmed && canCollect(run) && !run.sending && !run.next) {
-      const interval = run.needsFresh ? 6000 : 40000;
-      if (Date.now() - Math.max(run.refreshedAt, run.lastTime * 1000) > interval) monitor(run);
+      // Allow the native reader to finish its first acquisition before replacing it.
+      const interval = run.needsFresh ? 6000 : Math.max(run.interval * 1000, run.hasReading ? 0 : 25000);
+      if (Date.now() - Math.max(run.refreshedAt, run.lastTime * 1000) >= interval) monitor(run);
     }
   }, 3000);
   render();

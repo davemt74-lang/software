@@ -31,6 +31,10 @@ function phone_test_dispatch(PDO $db, array $job): array
 {
     [$principal, $identity, $action, $input] = $job;
     try {
+        if ($principal === 'installer') {
+            vp3_phone_schema_v1($db);
+            return ['status'=>200,'ready'=>vp3_phone_schema_ready_v1($db)];
+        }
         $result = $principal === 'owner'
             ? vp3_phone_owner_v1($db, $identity, $action, $input)
             : vp3_phone_device_v1($db, $identity, $action, $input);
@@ -134,6 +138,29 @@ try {
     $device = $state()[0];
     phone_test_check(count($state()) === 1 && $device['status'] === 'approved'
         && !vp3_phone_owner_v1($db, 2, 'state', [])['devices'], 'paired phone belongs only to its approving account');
+    // Restore the Phase 1 layout around a real approved phone and its existing approval receipt.
+    $db->exec('ALTER TABLE vp3_phone_devices_v1 DROP COLUMN update_interval_seconds, DROP COLUMN accuracy_mode, DROP COLUMN preferences_version');
+    $upgradeConnection = phone_test_db($isolatedDsn);
+    phone_test_check(!vp3_phone_schema_ready_v1($upgradeConnection), 'Phase 1 schema reports that a settings upgrade is needed');
+    $installer = ['installer',null,'upgrade',[]];
+    $upgrades = phone_test_race($installer,$installer);
+    phone_test_check(array_column($upgrades,'ready') === [true,true],
+        'two administrators can upgrade the populated Phase 1 schema concurrently');
+    vp3_phone_schema_v1($upgradeConnection);
+    $migrated = vp3_phone_device_v1($db,$token,'status',[])['device'];
+    phone_test_check(vp3_phone_schema_ready_v1($upgradeConnection) && $owner('approve',$approval)['duplicate']
+        && $migrated['id'] === $deviceId && $migrated['generation'] === $device['generation'] && $migrated['status'] === 'approved'
+        && $migrated['preferences_version'] === 1 && $migrated['update_interval_seconds'] === 5 && $migrated['accuracy_mode'] === 'high',
+        'upgrading preserves the paired phone, holder credential, approval receipt and original reporting defaults');
+    $setPreferences = fn(int $interval) => ['owner',1,'set_preferences',$input($device['generation'])
+        + ['preferences_version'=>1,'update_interval_seconds'=>$interval,'accuracy_mode'=>'balanced']];
+    $writes = phone_test_race($setPreferences(15),$setPreferences(30));
+    $statuses = array_column($writes,'status');
+    sort($statuses);
+    $settings = $state()[0];
+    phone_test_check($statuses === [200,409] && $settings['preferences_version'] === 2
+        && $settings['generation'] === $device['generation'] && $settings['location_state'] === 'off',
+        'competing settings saves produce exactly one edit and leave sharing off');
     $asked = $owner('request_start',$input($device['generation']))['device'];
     $results = phone_test_race(['device',$token,'start',['generation'=>$asked['generation'],'device_id'=>$deviceId]],
         ['owner',1,'stop',$input($asked['generation'])]);

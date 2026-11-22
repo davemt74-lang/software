@@ -26,7 +26,7 @@ try {
             throw new RuntimeException('Session expired.', 419);
         }
         $action = $input['action'] ?? null;
-        if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke'], true)) {
+        if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);

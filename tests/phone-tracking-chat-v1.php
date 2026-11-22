@@ -42,8 +42,8 @@ $send=static function(string $text,array $extra=[],bool $private=true)use($pdo,$
     return vp3_agent_chat_send_v2160($pdo,$user,$agent,$principal,$extra+['message'=>$text,'conversation_id'=>1,
         'agent_context'=>['user_agent_id'=>7],'reminder_request_id'=>bin2hex(random_bytes(16))],false,null,$private);
 };
-$pair=static function(string $name)use($pdo):array{
-    $i=vp3_phone_owner_v1($pdo,1,'invite',['request_id'=>bin2hex(random_bytes(16))]);
+$pair=static function(string $name,int $ownerId=1)use($pdo):array{
+    $i=vp3_phone_owner_v1($pdo,$ownerId,'invite',['request_id'=>bin2hex(random_bytes(16))]);
     return vp3_phone_device_v1($pdo,'','claim',['name'=>$name,'invite'=>$i['invite'],'claim_key'=>bin2hex(random_bytes(32))]);
 };
 $activity=static fn(int $cid=1)=>vp3_phone_chat_updates_v1($pdo,$user,$principal,['conversation_id'=>$cid,
@@ -108,3 +108,59 @@ $mobile('fix',['generation'=>$mapStart['generation'],'fix_at'=>time()]+$fix);
 phone_chat_test($activity()===[] && count($activity(2))===1 && $activity(2)===[],'map with exact Chat origin confirms once in that Chat');
 $send('Disconnect my iPhone.');
 phone_chat_test(!vp3_phone_owner_v1($pdo,1,'state',[])['devices'],'disconnect closes the selected pairing');
+
+// Drive two independent grants through the private dispatcher with an identically named phone in another account.
+$approvedPhone=static function(string $name,string $role,int $ownerId=1)use($pdo,$pair):array{
+    $phone=$pair($name,$ownerId); $device=$phone['device'];
+    vp3_phone_owner_v1($pdo,$ownerId,'approve',['device_id'=>$device['id'],'generation'=>$device['generation'],
+        'role'=>$role,'request_id'=>bin2hex(random_bytes(16))]);
+    return $phone;
+};
+$holder=static fn(array $phone,string $action='status',array $input=[])=>vp3_phone_device_v1($pdo,$phone['token'],$action,
+    ['device_id'=>$phone['device']['id']]+$input)['device'];
+$iphone=$approvedPhone('iPhone','owner');
+$pixel=$approvedPhone('Pixel','guest');
+$otherAccount=$approvedPhone('iPhone','owner',2);
+$send('Start sharing my iPhone’s location.');
+$send('Start sharing location from the guest phone.');
+$grants=[];
+foreach ([$iphone,$pixel] as $p) {
+    $state=$holder($p);
+    phone_chat_test($state['location_state']==='requested','requested sharing for '.$state['name']);
+    $grants[$state['name']]=$state['generation'];
+    $holder($p,'start',['generation'=>$state['generation']]);
+    $holder($p,'fix',['generation'=>$state['generation'],'fix_at'=>time()]+$fix);
+}
+$announcements=$activity();
+$speeches=array_column($announcements,'speech');
+phone_chat_test(count($speeches)===2 && count(array_unique(array_column($announcements,'message_id')))===2
+    && count(array_filter($speeches,fn($s)=>str_starts_with($s,'iPhone is now sharing GPS')))===1
+    && count(array_filter($speeches,fn($s)=>str_starts_with($s,'Pixel is now sharing GPS')))===1
+    && $activity()===[],'each simultaneous first fix posts exactly once for its own named phone');
+
+$stopKey=['idempotency_key'=>'two-phones-stop-once'];
+$stop=$send('Stop sharing from my iPhone.',$stopKey);
+$stopAgain=$send('Stop sharing from my iPhone.',$stopKey);
+$notice=$stop['phone_updates'][0]??[];
+phone_chat_test(str_contains($stop['answer'],'iPhone') && $notice['message_id']===$stop['assistant_message_id']
+    && $notice['speech']===$stop['answer'] && $notice['owner_user_id']===1 && $notice['conversation_id']===1 && $notice['agent_id']===7
+    && $stopAgain['assistant_message_id']===$stop['assistant_message_id'] && empty($stopAgain['phone_updates']),
+    'a typed stop offers a single scoped spoken confirmation and replay reuses the same Chat turn');
+phone_chat_test($holder($iphone)['location_state']==='off' && $holder($pixel)['location_state']==='live'
+    && $holder($pixel)['generation']===$grants['Pixel'] && $holder($otherAccount)['location_state']==='off'
+    && $holder($otherAccount)['generation']===2,'named stop leaves the peer phone live and another account untouched');
+phone_chat_reject(fn()=>$holder($iphone,'fix',['generation'=>$grants['iPhone'],'fix_at'=>time()]+$fix),409,'late fix cannot revive the phone stopped in Chat');
+
+$alike=$approvedPhone('pIXel','device');
+$ambiguous=$send('Stop sharing from Pixel.');
+phone_chat_test(str_contains($ambiguous['answer'],'same name') && empty($ambiguous['phone_updates'])
+    && $holder($pixel)['location_state']==='live' && $holder($alike)['generation']===2,
+    'case-equivalent device names require an explicit selection and neither phone changes');
+$collision=$approvedPhone('Guest Phone','device');
+$ambiguous=$send('Stop sharing from the guest phone.');
+phone_chat_test(str_contains($ambiguous['answer'],'Which phone?') && $holder($pixel)['location_state']==='live'
+    && $holder($collision)['generation']===2,'a nickname that matches a different phone’s role cannot stop either by mistake');
+$explicit=$send('Stop sharing from phone named Guest Phone.',['input_mode'=>'voice']);
+phone_chat_test(str_contains($explicit['answer'],'stopped for Guest Phone') && empty($explicit['phone_updates'])
+    && $holder($pixel)['location_state']==='live' && $holder($collision)['generation']===3,
+    'explicit nickname targets only that device and a voice reply never queues a second spoken stop');

@@ -26,16 +26,23 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
   page.on('pageerror',e=>errors.push(String(e)));
   page.setDefaultTimeout(4500);
   await page.addInitScript(enabled=>{
-    let pos,err,watch=0,active=false,online=true;
+    let pos,err,previousPos,online=true,peak=0;
+    const options=[], active=new Set();
     Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>online});
     Object.defineProperty(navigator,'geolocation',{configurable:true,value:enabled ? {
-      watchPosition(ok,bad) { pos=ok; err=bad; active=true; return ++watch; },
-      clearWatch() { active=false; },
+      watchPosition(ok,bad,opts) {
+        previousPos=pos; pos=ok; err=bad;
+        options.push(opts); active.add(options.length); peak=Math.max(peak,active.size);
+        return options.length;
+      },
+      clearWatch(id) { active.delete(id); },
     } : undefined});
     window.phoneFixture = {
-      get watches() { return watch; }, get active() { return active; },
-      position(timestamp=Date.now()) { if (active) pos({timestamp,coords:{latitude:33.4,longitude:-112.1,accuracy:9}}); },
-      denial() { if (active) err({code:1}); },
+      get watches() { return options.length; }, get active() { return active.size > 0; },
+      get peak() { return peak; }, get options() { return options; },
+      position(timestamp=Date.now()) { if (active.size) pos({timestamp,coords:{latitude:33.4,longitude:-112.1,accuracy:9}}); },
+      previous() { previousPos?.({timestamp:Date.now(),coords:{latitude:0,longitude:0,accuracy:123}}); },
+      denial() { if (active.size) err({code:1}); },
       network(value) { online=value; window.dispatchEvent(new Event(value?'online':'offline')); },
       wake() { window.dispatchEvent(new Event('online')); },
       late() { pos?.({timestamp:Date.now()+1000,coords:{latitude:1,longitude:1,accuracy:9}}); }
@@ -81,6 +88,14 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
 }
 const waitText = (p,re) => p.waitForFunction(s=>new RegExp(s,'i').test(document.querySelector('#phone-status').textContent),re);
 const pause = page => page.evaluate(()=>new Promise(r=>setTimeout(r,60)));
+// Poll from the test process while the page clock is paused.
+async function waitUntil(condition) {
+  for (let attempt=0; attempt<300; attempt++) {
+    if (await condition()) return;
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  throw new Error('Timed out waiting for phone state');
+}
 try {
   {
     const t=await scenario();
@@ -189,5 +204,65 @@ try {
     }
     assert.deepEqual(t.errors,[]); await t.close();
   }
-  console.log('PASS phone holder browser: claim/retry, local consent, stale fix, denial, offline stop, cookie session, supersession, revocation, unavailable GPS and in-flight sample recovery');
+  {
+    const t=await scenario({initial:{...initialDevice('approved',3),update_interval_seconds:30,accuracy_mode:'balanced'}});
+    const page=t.page;
+    const fixes=()=>t.requests.filter(r=>r.action==='fix');
+    await page.clock.install({time:new Date('2026-01-01T00:00:00Z')});
+    await page.clock.pauseAt(new Date('2026-01-01T00:00:01Z'));
+    await t.visit();
+    const settings=()=>page.locator('#phone-preferences').textContent();
+    await waitUntil(async()=>await settings()==='Every 30 seconds · Balanced accuracy');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.watches),0,'preferences cannot activate the phone');
+    await page.evaluate(()=>document.getElementById('phone-start').click());
+    await waitUntil(async()=>(await page.locator('#phone-status').textContent()).includes('Waiting for a fresh'));
+    assert.equal(await page.evaluate(()=>window.phoneFixture.options.at(-1).enableHighAccuracy),false);
+    await page.evaluate(()=>window.phoneFixture.position());
+    await waitUntil(async()=>(await page.locator('#phone-status').textContent()).includes('received this phone'));
+    const firstGpsLabel=await page.locator('#phone-gps').textContent();
+    await page.clock.runFor(5000);
+    await page.evaluate(()=>window.phoneFixture.position());
+    await page.clock.runFor(5000);
+    const newest=await page.evaluate(()=>{window.phoneFixture.position(); return Math.floor(Date.now()/1000);});
+    assert.equal(fixes().length,1,'first fix is immediate and burst callbacks are coalesced');
+    t.device.update_interval_seconds=15;
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await waitUntil(async()=>await settings()==='Every 15 seconds · Balanced accuracy');
+    await page.clock.runFor(4900);
+    assert.equal(fixes().length,1,'changing interval does not cause an early upload');
+    await page.clock.runFor(100);
+    await waitUntil(()=>fixes().length===2);
+    assert.equal(fixes()[1].fix_at,newest,'shortened interval sends the newest queued reading at its new deadline');
+    await waitUntil(async()=>await page.locator('#phone-gps').textContent()!==firstGpsLabel);
+
+    await page.clock.runFor(1000);
+    t.device.accuracy_mode='high';
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await waitUntil(async()=>await settings()==='Every 15 seconds · High accuracy');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.options.at(-1).enableHighAccuracy),true);
+    assert.equal(await page.evaluate(()=>window.phoneFixture.peak),1,'replacement never overlaps native watches');
+    await page.evaluate(()=>window.phoneFixture.previous());
+    await page.clock.runFor(15000);
+    assert.equal(fixes().length,2,'late callbacks from replaced reader are ignored');
+    await page.evaluate(()=>window.phoneFixture.position());
+    await waitUntil(()=>fixes().length===3);
+    await page.clock.runFor(1000);
+    await page.evaluate(()=>window.phoneFixture.position());
+    t.device.update_interval_seconds=30;
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await waitUntil(async()=>await settings()==='Every 30 seconds · High accuracy');
+    await page.clock.runFor(16000);
+    assert.equal(fixes().length,3,'lengthening interval cancels the previous, earlier deadline');
+    await page.evaluate(()=>document.getElementById('phone-stop').click());
+    await waitUntil(()=>t.device.location_state==='off');
+    await page.clock.runFor(35000);
+    assert.equal(fixes().length,3,'stop discards the deferred sample and timer');
+    t.device.accuracy_mode='balanced';
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await waitUntil(async()=>await settings()==='Every 30 seconds · Balanced accuracy');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.active),false,'a settings change cannot reopen a stopped watch');
+    assert.equal(t.requests.filter(r=>r.action==='start').length,1);
+    assert.deepEqual(t.errors,[]); await t.close();
+  }
+  console.log('PASS phone holder browser: consent, retry, denial, offline stop, supersession, revocation, unavailable GPS, in-flight recovery, per-device cadence and live accuracy changes');
 } finally {await browser.close();}

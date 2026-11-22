@@ -16,7 +16,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
   <link rel="stylesheet" href="phone-location-v1.css">
-  <script src="phone-location-v1.js" defer></script>
+  <script src="phone-location-v1.js?v=2" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -28,6 +28,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
     <dl id="phone-details" hidden>
       <div><dt>Shares with</dt><dd id="phone-owner"></dd></div>
       <div><dt>Location</dt><dd id="phone-gps"></dd></div>
+      <div id="phone-preference-row" hidden><dt>Updates</dt><dd id="phone-preferences"></dd></div>
     </dl>
     <form id="phone-join" hidden>
       <label for="phone-name">Phone name</label>

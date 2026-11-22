@@ -85,17 +85,26 @@ function vp3_phone_chat_label_v1(array $device): string
     return mb_substr($name,0,48);
 }
 
+function vp3_phone_chat_name_key_v1(string $name): string
+{
+    return mb_strtolower(trim(str_replace('’', "'", $name), " \"'“”"));
+}
+
 function vp3_phone_chat_matches_v1(array $devices, string $target): array
 {
-    $normalize = static fn(string $s): string => mb_strtolower(trim(str_replace('’', "'", $s), " \"'“”"));
-    $raw = $normalize($target);
-    if ($raw === '' || preg_match('/^(?:(?:the|a|my|this|that|pending|guest|new) )*(?:phone|device|pairing request|connection request)$/u',$raw)) return $devices;
+    $raw = vp3_phone_chat_name_key_v1($target);
+    if (preg_match('/^(?:(?:the|a|my|this|that) )?((owner|guest)(?:\x27s)? (?:phone|device|pairing request|connection request))$/u',$raw,$role)) {
+        // A phone can also be named "Guest phone". Neither interpretation may silently win.
+        return array_values(array_filter($devices,static fn(array $d): bool => $d['role']===$role[2]
+            || in_array(vp3_phone_chat_name_key_v1((string)$d['name']),[$raw,$role[1]],true)));
+    }
+    if ($raw === '' || preg_match('/^(?:(?:the|a|my|this|that|pending|new) )*(?:phone|device|pairing request|connection request)$/u',$raw)) return $devices;
     $keys = [$raw,preg_replace('/^(?:the|my) /u','',$raw)];
     $clean = preg_replace('/^(?:(?:the|my|this|that|pending|guest|new) )*(?:(?:phone|device|pairing request|connection request)(?: (?:from|for|named|called))? )/u','',$raw);
-    $keys[] = $normalize($clean);
+    $keys[] = vp3_phone_chat_name_key_v1($clean);
     $keys[] = preg_replace('/(?:\x27s)? (?:phone|device)$/u','',$clean);
     return array_values(array_filter($devices, static fn(array $d): bool =>
-        in_array($normalize((string)$d['name']),$keys,true) || $raw === '#'.$d['id']));
+        in_array(vp3_phone_chat_name_key_v1((string)$d['name']),$keys,true) || $raw === '#'.$d['id']));
 }
 
 function vp3_phone_chat_status_v1(array $device): string
@@ -149,6 +158,12 @@ function vp3_phone_chat_result_v1(array $row,string $mode): array
         'phone_tracking_context'=>['owner_user_id'=>(int)$row['owner_user_id'],'agent_id'=>$aid,'conversation_id'=>$cid],
         'sources'=>[],'actions'=>vp3_phone_chat_actions_v1($row['map_link'],$aid,$cid),'media'=>[],
         'input_mode'=>$mode,'execution'=>['mode'=>'cloud','status'=>'completed']];
+}
+
+function vp3_phone_chat_announcement_v1(array $turn): array
+{
+    return ['message_id'=>$turn['assistant_message_id'],'owner_user_id'=>$turn['owner_user_id'],
+        'agent_id'=>$turn['agent_id'],'conversation_id'=>$turn['conversation_id'],'speech'=>$turn['answer']];
 }
 
 function vp3_phone_chat_store_v1(PDO $pdo,int $uid,int $aid,int $cid,string $prompt,string $answer,string $link,
@@ -231,7 +246,7 @@ function vp3_phone_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,array $pl
         if (!$eligible) return [in_array($action,['approve','deny'],true)?'There are no pending phone requests.':'There are no phones available for that action.','map'];
         if (!$matches) return ['I could not find that phone. Ask me to list your phones or open the tracking map.','map'];
         $names=array_map('vp3_phone_chat_label_v1',$matches);
-        return [count(array_unique($names))===count($names)?'Which phone? Use its name: '.implode(', ',$names).'.'
+        return [count(array_unique(array_map('vp3_phone_chat_name_key_v1',$names)))===count($names)?'Which phone? Say “phone named” followed by one of these names: '.implode(', ',$names).'.'
             :'Several phones have the same name. Choose the exact device on the tracking map.','map'];
     }
     $device=$matches[0]; $name=vp3_phone_chat_label_v1($device);
@@ -241,7 +256,7 @@ function vp3_phone_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,array $pl
     $answer=match ($action) {
         'approve'=>$name.' is connected. GPS sharing is off.',
         'deny'=>'Connection request denied for '.$name.'.',
-        'stop'=>'GPS sharing stopped for '.$name.'.',
+        'stop'=>$device['connected']?'GPS sharing stopped for '.$name.'.':'VP3 stopped accepting location from '.$name.'. The phone is offline.',
         'revoke'=>$name.' was disconnected.',
         'request_start'=>match ($device['location_state']) {
             'live','stale'=>$name.' is already in a sharing session. Open the tracking map to see its current status.',
@@ -252,7 +267,7 @@ function vp3_phone_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,array $pl
     if ($action==='request_start' && in_array($device['location_state'],['requested','waiting'],true)) {
         vp3_phone_chat_watch_v1($pdo,$uid,$aid,$cid,$device);
     }
-    return [$answer,'map'];
+    return [$answer,'map','announce_stop'=>$action==='stop'];
 }
 
 /** Short commands like "approve Pixel" are only phone intents for an exact device in this owner's account. */
@@ -316,13 +331,19 @@ function vp3_phone_chat_send_v1(PDO $pdo,array $user,?array $agent,array $princi
             $cid=(int)$conversation['id'];
         }
         vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid,$authority);
-        [$answer,$mapLink]=vp3_phone_chat_execute_v1($pdo,$uid,$aid,$cid,$plan,$requestHash);
+        $turn=vp3_phone_chat_execute_v1($pdo,$uid,$aid,$cid,$plan,$requestHash);
+        [$answer,$mapLink]=$turn;
         // A private phone label or a quoted coordinate must never become shared Chat history.
         $prompt=preg_match('/[-+]?\d{1,3}\.\d+\s*[,; ]\s*[-+]?\d{1,3}\.\d+/u',$query)?'Phone tracking request.':$query;
         $saved=vp3_phone_chat_store_v1($pdo,$uid,$aid,$cid,$prompt,$answer,$mapLink,$requestHash,$queryHash);
         vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid,$authority);
         $pdo->commit();
-        return vp3_phone_chat_result_v1($saved,$mode);
+        $result=vp3_phone_chat_result_v1($saved,$mode);
+        // Voice already reads its direct reply. Only a new, successful typed stop needs announcement playback.
+        if ($mode==='text' && !empty($turn['announce_stop'])) {
+            $result['phone_updates']=[vp3_phone_chat_announcement_v1($saved)];
+        }
+        return $result;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
@@ -356,7 +377,7 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
             if ($current && $device['location_state']==='live' && !empty($device['first_fix_at']) && !empty($device['fix_at'])) {
                 $answer=vp3_phone_chat_label_v1($device).' is now sharing GPS. A current location is available on the tracking map.';
                 $row=vp3_phone_chat_store_v1($pdo,$uid,$aid,$cid,'',$answer,'map');
-                $updates[]=['message_id'=>$row['assistant_message_id'],'owner_user_id'=>$uid,'agent_id'=>$aid,'conversation_id'=>$cid,'speech'=>$answer];
+                $updates[]=vp3_phone_chat_announcement_v1($row);
             }
         }
         vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);

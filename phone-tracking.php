@@ -61,7 +61,34 @@ require __DIR__.'/includes/member-header.php';
   </section>
   <section class="phone-devices-section" aria-labelledby="phone-devices-title">
     <div class="phone-list-title"><h2 id="phone-devices-title">Connected phones</h2><button type="button" id="phone-review" hidden>Review requests</button></div>
-    <div class="phone-devices-layout"><div id="phone-devices"></div><article id="phone-detail" aria-label="Phone details" hidden></article></div>
+    <div class="phone-devices-layout">
+      <div id="phone-devices"></div>
+      <article id="phone-detail" aria-label="Phone details" hidden>
+        <div id="phone-detail-summary"></div>
+        <form id="phone-preferences" hidden>
+          <fieldset>
+            <legend>Location settings</legend>
+            <div class="phone-preference-controls">
+              <label>Update interval
+                <select name="update_interval_seconds">
+                  <option value="5">5 seconds</option>
+                  <option value="15">15 seconds</option>
+                  <option value="30">30 seconds</option>
+                </select>
+              </label>
+              <label>GPS accuracy
+                <select name="accuracy_mode">
+                  <option value="high">High accuracy</option>
+                  <option value="balanced">Balanced</option>
+                </select>
+              </label>
+              <button type="submit" disabled>Save settings</button>
+            </div>
+          </fieldset>
+          <p class="phone-preferences-status" role="status"></p>
+        </form>
+      </article>
+    </div>
   </section>
   <noscript><p>Enable JavaScript to pair phones and display their locations.</p></noscript>
   <dialog id="phone-pairing" aria-labelledby="phone-pair-title" class="phone-dialog">
