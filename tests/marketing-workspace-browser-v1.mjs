@@ -79,7 +79,21 @@ async function scenario(width){
            finding:'Verified private design review needed.',next_step:'Review existing artwork.',
            question:'',priority:'low',source_status:'photo_needed',
            source_href:'/chat.php?agent=7&conversation_id=11&marketing_plan=10',coverage:'limited',
-           notification_owner:'product_launch'},
+           notification_owner:'product_launch',
+           private_brief:{contract:'vp3.marketing.private-brief.v1',state:'private_proposal_only',
+             source_ref:'marketing:product-plan:10',source_revision:'b'.repeat(64),source_coverage:'limited',
+             objective:'Review the existing private product and creative.',
+             deliverables:['Review product listing','Prepare a new optional offer concept'],
+             audience_decision:'Confirm Merchant and eligible audience.',
+             budget_decision:'Get explicit budget approval.',
+             channel_decision:'Select approved distribution.',
+             measurement:'Verify observed attributed events, never causal lift.',
+             approval_gate:'Owner approval required for any publishing or spend.',
+             evidence_note:'Partial sources need review.',
+             next_step:'Review existing artwork.',
+             chat_prompt:'Plan PRIVATE marketing draft marketing:product-plan:10 revision '
+               +'b'.repeat(64)+'. Do not send, publish, launch.',
+             creative_generated:false,campaign_created:false,activated:false,sent:false}},
           {source_ref:'marketing:campaign-performance:4',source_revision:'a'.repeat(64),
            source_id:4,kind:'campaign-performance',label:'Performance review',title:'Forged external destination',
            finding:'Private text must not become a link.',next_step:'Review in Campaigns.',
@@ -123,7 +137,13 @@ async function scenario(width){
     window.VP3_INITIATIVE_WORKBENCH={endpoint:'/api/initiative-workbench-v1.php',mediaEndpoint:'/api/media-library-v86.php',
       followthroughEndpoint:'/api/marketing-followthrough-v1.php',csrf:'csrf',ownerKey:'1',agentId:7};
     const thread=document.getElementById('chatThread');
-    window.fixture={calls:[],conversation:11,participant:false};
+    window.fixture={calls:[],conversation:11,participant:false,editorPrefill:null};
+    // Existing governed editor mount is tested separately. This fixture proves
+    // the opportunity-to-editor handoff without making any API writes.
+    window.VP3MarketingEditorV1={mount:(host,callbacks,id,prefill)=>{
+      window.fixture.editorPrefill={id,prefill};
+      return {dispose(){}};
+    }};
     window.VP3ParticipantContinuity={selectedContext:()=>window.fixture.participant};
     window.STONEFELLOW_CHAT_CONTINUITY_V87={
       conversationId:()=>window.fixture.conversation,agentId:()=>7,isReady:()=>true,isRestoring:()=>false,
@@ -161,8 +181,8 @@ async function scenario(width){
   check(await portfolio.locator('a[href*="attacker.invalid"]').count()===0
     &&await portfolio.getByText('Forged external destination').count()===0,
     'untrusted external recommendation links fail closed');
-  check(await portfolio.locator('.vp3-marketing-private-brief').count()===1,
-    'only the exact source-matched opportunity exposes private creative development');
+  check(await portfolio.locator('.vp3-marketing-private-brief').count()===2,
+    'only exact source-matched opportunities expose private creative development');
   await portfolio.getByText('Develop private creative brief',{exact:true}).click();
   check(await portfolio.getByText('Resolve verified campaign setup blocker before launch.',{exact:true}).count()===1
     &&await portfolio.getByText('Obtain an explicit budget approval.',{exact:true}).count()===1,
@@ -275,6 +295,21 @@ async function scenario(width){
     'owner explicitly transfers source-bound draft to Chat composer without sending');
   check(await reopen(),'Marketing can reopen after putting a private brief into Chat');
   await page.waitForFunction(()=>document.querySelector('#chatMarketingWorkspaceV1')?.textContent.includes('Autumn special'));
+  await page.getByRole('tab',{name:'Overview'}).click();
+  const productBrief=page.locator('.vp3-marketing-private-brief').nth(1);
+  await productBrief.getByText('Develop private creative brief',{exact:true}).click();
+  check(await productBrief.getByRole('button',{name:'Start private Campaign draft from brief'}).count()===1
+    &&await portfolio.getByRole('button',{name:'Start private Campaign draft from brief'}).count()===1,
+    'new Campaign drafts are offered for verified product plans, not active Campaign blockers');
+  await productBrief.getByRole('button',{name:'Start private Campaign draft from brief'}).click();
+  const handoff=await page.evaluate(()=>window.fixture.editorPrefill);
+  check(handoff?.id===0&&handoff.prefill?.source_ref==='marketing:product-plan:10'
+    &&handoff.prefill.source_revision==='b'.repeat(64)
+    &&handoff.prefill.objective.includes('private product')
+    &&handoff.prefill.description.includes('Nothing is approved, created or published'),
+    'owner-initiated handoff preloads only source-verified fields into the new private Campaign editor');
+  check(!requests.some(x=>x.action==='marketing_editor_save'||x.action==='marketing_editor_preview'),
+    'opening a recommended private draft performs no publication or server mutation');
   await page.evaluate(()=>{
     window.fixture.conversation=77;
     window.dispatchEvent(new Event('vp3:chat-conversation-changed'));
