@@ -519,3 +519,14 @@
 :is(#vp3ChatSpecialistActivity,#vp3AgentActivityHub) .vp3-product-marketing-summary h5{margin:0;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
 :is(#vp3ChatSpecialistActivity,#vp3AgentActivityHub) :is(.vp3-product-marketing-summary,.vp3-profile-related-marketing) small{font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 :is(#vp3ChatSpecialistActivity,#vp3AgentActivityHub) .vp3-profile-related-marketing{display:grid;gap:5px;margin:8px 0 4px;min-width:0}
+
+/* Phase 2B: source-bound specialist reports stay in the existing Brain panel. */
+.vp3-agent-specialist-briefings { min-width:0; border-top:1px solid var(--vp3-activity-line,#e0e6ef); padding-top:7px; }
+.vp3-agent-specialist-briefings > summary { cursor:pointer; font-weight:650; font-size:12px; }
+.vp3-agent-specialist-briefing { margin-top:9px; padding-top:8px; border-top:1px solid var(--vp3-activity-line,#e0e6ef); min-width:0; overflow-wrap:anywhere; }
+.vp3-agent-specialist-briefing > strong { display:block; font-size:13px; }
+.vp3-agent-specialist-briefing > small { display:block; color:var(--vp3-activity-muted,#4c5d74); }
+.vp3-agent-specialist-briefing-section { margin-top:6px; font-size:12px; }
+.vp3-agent-specialist-briefing-section b { display:block; }
+.vp3-agent-specialist-briefing-section p { margin:2px 0 0; line-height:1.4; }
+.vp3-agent-specialist-briefing > a { display:inline-block; margin-top:7px; font-size:12px; }
