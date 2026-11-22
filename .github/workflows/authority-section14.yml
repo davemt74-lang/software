@@ -167,6 +167,14 @@ jobs:
           php -l includes/agent-top-of-mind-specialists-v1.php
           php -l includes/agent-activity-hub-v1.php
           php tests/agent-image-brain-unified-v1.php
+      - name: Source-bound Profile Media Marketing Chat decisions and canonical action receipts
+        run: |
+          php -l includes/agent-unified-specialist-followthrough-v1.php
+          php -l includes/agent-coordination-work-v1.php
+          php -l includes/agent-activity-hub-v1.php
+          node --check agent-activity-hub-v1.js
+          node --check tests/agent-activity-hub-compact-browser.mjs
+          php tests/agent-unified-specialist-followthrough-v1.php
       - name: Shared Profile Media and Marketing Brain + Chat report contracts
         run: |
           php -l includes/agent-unified-specialist-briefings-v1.php
