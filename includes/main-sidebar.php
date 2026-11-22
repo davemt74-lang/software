@@ -16,10 +16,6 @@ $mainSidebarCodingCanvas = $mainSidebarIsChat && $mainSidebarCanChat && personal
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
 $mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','canvases','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
-if ($mainSidebarCanChat && has_permission('account.access', $mainSidebarUser)) {
-    $afterConnections = array_search('connections', $mainSidebarPrimaryOrder, true) + 1;
-    array_splice($mainSidebarPrimaryOrder, $afterConnections, 0, ['phone_tracking']);
-}
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryKeys['hosting']=true;
 $mainSidebarPrimaryKeys['apps']=true;
@@ -95,6 +91,11 @@ $mainSidebarLinkIndex = [];
 foreach ($mainSidebarMenuLinks as $link) {
     $key = (string)($link['key'] ?? '');
     if ($key !== '') $mainSidebarLinkIndex[$key] = $link;
+}
+if (isset($mainSidebarLinkIndex['phone_tracking'])) {
+    $afterConnections = array_search('connections', $mainSidebarPrimaryOrder, true) + 1;
+    array_splice($mainSidebarPrimaryOrder, $afterConnections, 0, ['phone_tracking']);
+    $mainSidebarPrimaryKeys['phone_tracking'] = true;
 }
 if ($mainSidebarActive === 'phone_tracking' && isset($phoneChatUrl, $mainSidebarLinkIndex['chat'])) {
     $mainSidebarLinkIndex['chat']['url'] = $phoneChatUrl;
