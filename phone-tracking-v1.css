@@ -1,0 +1,67 @@
+.chat-main.phone-tracking-main { display:flex; flex-direction:column; min-width:0; min-height:0; overflow:auto; background:#f7f8f8; }
+.phone-tracking-main > .member-header { flex:none; }
+.phone-workspace { --ink:#192924; --teal:#166454; --line:#cdd8d3; --muted:#4e635b; width:100%; max-width:1600px; margin:0 auto; padding:clamp(14px,2.6vw,36px); color:var(--ink); }
+.phone-workspace [hidden] { display:none !important; }
+.phone-workspace h1,.phone-workspace h2,.phone-workspace h3,.phone-workspace p { margin:0; }
+.phone-heading,.phone-list-title,.phone-dialog header,.phone-map-tools,.phone-dialog-actions,.phone-invite-actions { display:flex; align-items:center; gap:12px; }
+.phone-heading,.phone-list-title,.phone-dialog header { justify-content:space-between; }
+.phone-heading { margin-bottom:18px; }
+.phone-heading h1 { font-size:clamp(1.55rem,2.4vw,2.5rem); letter-spacing:-.045em; line-height:1.15; }
+.phone-back { display:inline-block; margin:0 0 6px; color:var(--muted); text-decoration:none; font-size:.82rem; }
+.phone-back:hover,.phone-invite-actions a:hover { text-decoration:underline; }
+.phone-workspace :is(button:not(.leaflet-control), select) { font:inherit; }
+.phone-workspace button:not(.leaflet-control) { background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 12px; cursor:pointer; font-size:.85rem; font-weight:600; }
+.phone-workspace button:not(.leaflet-control):hover { border-color:#869d93; background:#f1f5f2; }
+.phone-workspace button.phone-primary { background:var(--teal); border-color:var(--teal); color:white; }
+.phone-workspace button.phone-primary:hover { background:#104e42; }
+.phone-workspace button:disabled { opacity:.55; cursor:default; }
+.phone-workspace :focus-visible { outline:3px solid #007c86; outline-offset:3px; }
+.phone-workspace #phone-connect { position:absolute; right:12px; top:12px; z-index:1; min-height:40px; box-shadow:0 2px 8px #24392d33; }
+.phone-message:not(:empty),#phone-pair-status:not(:empty) { margin:0 0 12px; padding:9px 12px; border:1px solid #d5dedb; background:#fff; border-radius:8px; font-size:.9rem; }
+.phone-map-card { position:relative; isolation:isolate; overflow:hidden; border-radius:14px; background:#fff; border:1px solid #bdcfc7; }
+#phone-map { position:relative; height:clamp(270px,52dvh,640px); background-color:#dfecee; z-index:0; }
+#phone-map .leaflet-control-attribution { background:#ffffffe0; color:#354740; font-size:10px; }
+#phone-map .leaflet-control-attribution a { color:#185951; }
+#phone-map .leaflet-control-scale-line { color:#294a40; border-color:#557568; background:#ffffffbd; }
+#phone-map .leaflet-control-zoom { border:1px solid #a6bdb2; box-shadow:0 2px 8px #253d3212; }
+#phone-map .leaflet-control-zoom a { color:#21463b; }
+.phone-country { white-space:nowrap; pointer-events:none; color:#5a6c62; text-align:center; font:600 11px/1.2 system-ui,sans-serif; letter-spacing:.03em; text-shadow:0 1px 2px #fff,1px 0 2px #fff; }
+.phone-map-marker { background:#14725c; border-radius:50%; border:3px solid white; box-shadow:0 0 0 2px #226853,0 2px 8px #12362d58; }
+.phone-map-marker.is-stale { background:#927037; box-shadow:0 0 0 2px #927037; }
+.phone-map-marker.is-selected::after { content:''; position:absolute; inset:-7px; border:1px solid #1c5143; border-radius:50%; }
+.phone-map-tools { flex-wrap:wrap; min-height:48px; padding:7px 12px; gap:6px; border-top:1px solid #bbcec5; }
+.phone-map-tools > span { margin-right:auto; color:var(--muted); font-size:.82rem; }
+.phone-workspace .phone-map-tools button { padding:6px 10px; }
+.phone-devices-section { padding-top:22px; }
+.phone-list-title { margin-bottom:12px; }
+.phone-list-title h2,.phone-dialog h2 { font-size:1.18rem; letter-spacing:-.025em; }
+.phone-devices-layout { display:grid; grid-template-columns:minmax(200px,.7fr) minmax(270px,1.3fr); gap:13px; }
+#phone-devices { display:grid; gap:8px; align-content:start; }
+#phone-devices:only-child,#phone-devices:has(+ [hidden]) { grid-column:1/-1; }
+.phone-empty,#phone-detail,.phone-pending-card { border:1px solid var(--line); border-radius:12px; background:#fff; padding:16px; }
+.phone-empty { color:var(--muted); font-size:.9rem; line-height:1.5; }
+.phone-workspace button.phone-device { width:100%; display:grid; gap:5px; padding:13px 15px; text-align:left; font-size:.95rem; border-radius:10px; overflow-wrap:anywhere; }
+.phone-workspace button.phone-device[aria-pressed="true"] { background:#ecf4ef; border-color:#7eaa97; }
+.phone-device small,.phone-detail-meta,.phone-pending-card p,.phone-dialog p { font-weight:400; color:var(--muted); font-size:.86rem; line-height:1.5; }
+#phone-detail h3,.phone-pending-card h3 { font-size:1.02rem; overflow-wrap:anywhere; }
+.phone-detail-meta { margin-top:4px !important; }
+.phone-info { display:grid; grid-template-columns:auto 1fr; gap:5px 14px; margin:12px 0; font-size:.85rem; }
+.phone-info dt { color:var(--muted); }
+.phone-info dd { margin:0; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.phone-command-row,.phone-grant-fields { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:10px 0 0; }
+.phone-workspace .phone-destructive { color:#934133; }
+.phone-dialog { color:var(--ink); border:1px solid var(--line); border-radius:14px; padding:20px; max-width:min(420px,calc(100vw - 24px)); width:100%; max-height:calc(100dvh - 36px); box-shadow:0 12px 60px #1d312f3d; }
+.phone-dialog::backdrop { background:#12252273; }
+.phone-dialog header { margin-bottom:10px; }
+.phone-workspace .phone-close { font-size:1.25rem; padding:2px 10px; }
+.phone-dialog-actions { justify-content:flex-end; flex-wrap:wrap; margin-top:14px; }
+#phone-qr svg { width:min(100%,224px); max-height:32dvh; display:block; margin:8px auto; }
+.phone-dialog .phone-expiry,.phone-invite-actions { text-align:center; justify-content:center; }
+.phone-invite-actions { margin:6px 0 10px; color:var(--teal); font-size:.85rem; }
+.phone-pending-card + .phone-pending-card { margin-top:9px; }
+.phone-grant-fields label { display:flex; align-items:center; gap:5px; font-size:.85rem; }
+.phone-grant-fields select { padding:5px; border-radius:5px; color:var(--ink); background:#fff; border:1px solid var(--line); }
+@media(max-width:850px) { .phone-devices-layout { grid-template-columns:1fr; } }
+@media(max-width:520px) { .phone-heading { gap:6px; margin-bottom:12px; } .phone-workspace { padding:13px; } #phone-map { height:clamp(245px,48dvh,470px); } .phone-map-tools { gap:5px; padding:6px; } .phone-map-tools > span { font-size:.76rem; } .phone-workspace .phone-map-tools button { font-size:.78rem; padding:7px; } }
+.phone-city { white-space:nowrap; pointer-events:none; color:#455c4e; font:500 11px/1.2 system-ui,sans-serif; text-shadow:0 1px 2px #fff,1px 0 2px #fff,-1px 0 2px #fff; }
+.phone-city::before { content:''; display:inline-block; width:4px; height:4px; border-radius:50%; margin:0 4px 2px 0; background:#718675; }

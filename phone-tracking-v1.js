@@ -1,0 +1,509 @@
+(() => {
+  'use strict';
+  const root = document.querySelector('#phone-workspace');
+  if (!root) return;
+  const byId = id => document.getElementById(id);
+  const status = byId('phone-status');
+  const pairing = byId('phone-pairing');
+  const streetDialog = byId('phone-street-consent');
+  const revokeDialog = byId('phone-revoke-confirm');
+  const pendingHost = byId('phone-pending');
+  const list = byId('phone-devices');
+  const detail = byId('phone-detail');
+  const followStates = new Set(['requested', 'waiting', 'live', 'stale']);
+  const stateLabels = {off:'Location off', requested:'Sharing requested', waiting:'Waiting for location', live:'Sharing live', stale:'Last known location', denied:'Location denied'};
+  const roleLabels = {owner:'Owner', guest:'Guest', device:'Device'};
+  let devices = [];
+  let selectedId = '';
+  let followId = '';
+  let choiceToRevoke = null;
+  let expires = 0;
+  let clockDelta = 0;
+  let staleAfter = 60;
+  let revision = 0;
+  let reading = false;
+  let writing = false;
+  let available = false;
+  let inviteVersion = 0;
+  let listSignature = '';
+  let detailSignature = '';
+  let markerSignature = '';
+  let lastFollowPoint = '';
+  const seconds = () => Math.floor(Date.now() / 1000) + clockDelta;
+  const selected = () => devices.find(d => d.id === selectedId && d.status === 'approved');
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+  }
+  function actionButton(action, label, className) {
+    const button = element('button', label, className);
+    button.type = 'button';
+    button.dataset.action = action;
+    return button;
+  }
+  function effectiveState(d) {
+    if (d.location_state === 'live' && (!d.fix_at || seconds() - d.fix_at >= staleAfter)) return 'stale';
+    return d.location_state;
+  }
+  function hasPoint(d) {
+    return d.status === 'approved' && d.allow_location && ['live','stale'].includes(effectiveState(d))
+      && Number.isFinite(d.latitude) && Number.isFinite(d.longitude) && d.fix_at > 0;
+  }
+  function connection(d) {
+    return d.connected && seconds() - d.last_seen_at < staleAfter ? 'Connected' : 'Offline';
+  }
+  function timestamp(time) {
+    return time ? new Date(time * 1000).toLocaleString(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit', second:'2-digit'}) : '—';
+  }
+  const leaflet = window.L;
+  const map = leaflet?.map('phone-map', {
+    minZoom:1, maxZoom:19, maxBounds:[[-86,-210],[86,210]], maxBoundsViscosity:.85,
+    scrollWheelZoom:false, preferCanvas:true, attributionControl:true, zoomSnap:.25
+  }).setView([22,0], 1.75);
+  let countries, regions, labels, streets;
+  const grid = map && leaflet.layerGroup().addTo(map);
+  const cityPositions = [];
+  const labelPositions = [];
+  const markers = map && leaflet.layerGroup().addTo(map);
+  function drawCountryNames() {
+    if (!labels) return;
+    labels.clearLayers();
+    grid.clearLayers();
+    if (streets) return;
+    const zoom = map.getZoom();
+    const rank = zoom < 2 ? 1 : zoom < 3 ? 2 : zoom < 4 ? 3 : 6;
+    const box = map.getBounds().pad(.1);
+    const occupied = [];
+    if (zoom >= 4 && regions && !map.hasLayer(regions)) regions.addTo(map);
+    if (zoom < 4 && regions) regions.remove();
+    // A local reference grid stays visible even when zoomed inside a single city.
+    const span = Math.max(.0001, box.getEast()-box.getWest());
+    const step = [0.0005,.001,.002,.005,.01,.02,.05,.1,.2,.5,1,2,5,10,20,30,60,90].find(x => x >= span/10) || 90;
+    const style = {color:'#92aaa0',weight:1,opacity:.28,interactive:false,dashArray:'2 5'};
+    for (let lng=Math.ceil(box.getWest()/step)*step; lng<=box.getEast(); lng+=step) {
+      leaflet.polyline([[box.getSouth(),lng],[box.getNorth(),lng]],style).addTo(grid);
+    }
+    for (let lat=Math.ceil(box.getSouth()/step)*step; lat<=box.getNorth(); lat+=step) {
+      leaflet.polyline([[lat,box.getWest()],[lat,box.getEast()]],style).addTo(grid);
+    }
+    const names = zoom > 4 ? cityPositions.filter(p => p.minZoom <= zoom+1).concat(labelPositions) : labelPositions;
+    for (const pos of names) {
+      if (pos.rank > rank || !box.contains([pos.y,pos.x])) continue;
+      const point = map.latLngToContainerPoint([pos.y,pos.x]);
+      const width = pos.name.length * 6.2 + 10;
+      if (occupied.some(other => Math.abs(other.x - point.x) < (other.width + width) / 2 && Math.abs(other.y - point.y) < 18)) continue;
+      occupied.push({x:point.x, y:point.y, width});
+      leaflet.marker([pos.y,pos.x], {
+        keyboard:false, interactive:false, pane:'shadowPane', icon:leaflet.divIcon({
+          className:pos.city ? 'phone-city' : 'phone-country', html:element('span', pos.name), iconSize:[width,15], iconAnchor:[pos.city ? 2 : width/2,7.5]
+        })
+      }).addTo(labels);
+    }
+  }
+  if (map) {
+    map.attributionControl.setPrefix(false);
+    map.attributionControl.addAttribution('Natural Earth');
+    leaflet.control.scale({imperial:false}).addTo(map);
+    map.on('dragstart', () => { if (followId) { followId = ''; render(); } });
+    map.on('moveend', drawCountryNames);
+    fetch(root.dataset.basemap, {credentials:'same-origin'}).then(r => {
+      if (!r.ok) throw new Error();
+      return r.json();
+    }).then(data => {
+      countries = leaflet.geoJSON(data, {interactive:false, style:{color:'#a5bcae',weight:1,opacity:.85,fillColor:'#edf0e6',fillOpacity:1}});
+      if (!streets) countries.addTo(map).bringToBack();
+      regions = leaflet.geoJSON(data.regions, {interactive:false,style:{color:'#a9bbac',weight:1,opacity:.8}});
+      cityPositions.push(...data.cities.map(([y,x,name,minZoom]) => ({x,y,name,minZoom,city:true,rank:0})));
+      labels = leaflet.layerGroup().addTo(map);
+      labelPositions.push(...data.features.map(f => f.properties).sort((a,b) => a.rank-b.rank));
+      drawCountryNames();
+    }).catch(() => { byId('phone-map').setAttribute('aria-label','Country outlines could not load. Phone locations are also listed below.'); });
+  } else {
+    byId('phone-map').textContent = 'Map unavailable. Location details appear below.';
+    byId('phone-streets').disabled = true;
+  }
+  function removeStreets() {
+    if (streets) {
+      map.removeLayer(streets);
+      streets = null;
+      if (countries) countries.addTo(map).bringToBack();
+      drawCountryNames();
+      byId('phone-streets').textContent = 'Street detail';
+    }
+  }
+  byId('phone-streets').addEventListener('click', () => streets ? removeStreets() : streetDialog.showModal());
+  byId('phone-street-accept').addEventListener('click', () => {
+    streetDialog.close();
+    if (streets || !map) return;
+    if (countries) countries.remove();
+    regions?.remove();
+    grid.clearLayers();
+    labels?.clearLayers();
+    streets = leaflet.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom:19, keepBuffer:0, updateWhenIdle:true, referrerPolicy:'origin',
+      attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
+    }).addTo(map);
+    byId('phone-streets').textContent = 'Use local map';
+    if (selected() && hasPoint(selected())) focusPoint(selected());
+  });
+  for (const id of ['phone-street-cancel','phone-street-close']) byId(id).addEventListener('click', () => streetDialog.close());
+  function focusPoint(d) {
+    if (!map || !hasPoint(d)) return;
+    map.setView([d.latitude,d.longitude], streets ? 16 : 7, {animate:false});
+  }
+  function fitPhones() {
+    if (!map) return;
+    const points = devices.filter(hasPoint).map(d => [d.latitude,d.longitude]);
+    if (points.length) {
+      map.fitBounds(points, {padding:[38,38], maxZoom:streets ? 16 : 7, animate:false});
+    }
+  }
+  byId('phone-fit').addEventListener('click', () => { followId = ''; fitPhones(); render(); });
+  function renderMarkers() {
+    const withPoint = devices.filter(hasPoint);
+    const liveCount = withPoint.filter(d => effectiveState(d) === 'live').length;
+    const staleCount = withPoint.length - liveCount;
+    byId('phone-map-count').textContent = !available ? 'Location unavailable' :
+      (staleCount ? liveCount+' live · '+staleCount+' last known' : liveCount ? liveCount+' sharing live' : 'No live locations');
+    byId('phone-fit').disabled = !map || !withPoint.length;
+    const signature = JSON.stringify([selectedId, withPoint.map(d => [d.id,d.name,d.latitude,d.longitude,d.accuracy,effectiveState(d)])]);
+    if (!map || signature === markerSignature) return;
+    const wasEmpty = markers.getLayers().length === 0;
+    markerSignature = signature;
+    markers.clearLayers();
+    for (const d of withPoint) {
+      const stale = effectiveState(d) === 'stale';
+      const coordinate = [d.latitude,d.longitude];
+      if (Number.isFinite(d.accuracy) && d.accuracy > 0) {
+        leaflet.circle(coordinate, {radius:d.accuracy, interactive:false, color:stale ? '#966d36' : '#14725c', weight:1.25, fillOpacity:.16}).addTo(markers);
+      }
+      const title = d.name+' · '+stateLabels[effectiveState(d)];
+      leaflet.marker(coordinate, {
+        title, alt:title, zIndexOffset:d.id === selectedId ? 1000 : 0,
+        icon:leaflet.divIcon({className:'phone-map-marker'+(stale ? ' is-stale' : '')+(d.id === selectedId ? ' is-selected' : ''),iconSize:[18,18],iconAnchor:[9,9]})
+      }).bindTooltip(element('span',title),{direction:'top',offset:[0,-11]}).on('click', () => selectDevice(d.id)).addTo(markers);
+    }
+    const followed = withPoint.find(d => d.id === followId);
+    if (followed) {
+      const position = [followed.latitude,followed.longitude].join(',');
+      if (lastFollowPoint !== position) map.panTo([followed.latitude,followed.longitude], {animate:false});
+      lastFollowPoint = position;
+    } else if (wasEmpty && withPoint.length) fitPhones();
+    if (!withPoint.length && !wasEmpty) {
+      removeStreets();
+      map.setView([22,0],1.75,{animate:false});
+    }
+  }
+  function selectDevice(id) {
+    if (id !== selectedId) followId = '';
+    selectedId = id;
+    if (selected()) focusPoint(selected());
+    render();
+  }
+  function renderList(approved) {
+    const signature = JSON.stringify([available, selectedId, approved.map(d => [d.id,d.name,connection(d),effectiveState(d)])]);
+    if (listSignature === signature) return;
+    const focusedId = list.contains(document.activeElement) ? document.activeElement.closest('[data-device-id]')?.dataset.deviceId : '';
+    listSignature = signature;
+    list.replaceChildren();
+    if (!approved.length) {
+      list.append(element('p', available ? 'No phones connected. Use + Connect Phone to pair your first phone.' : 'Phone information is unavailable.', 'phone-empty'));
+    }
+    for (const d of approved) {
+      const wrapper = element('div');
+      wrapper.dataset.deviceId = d.id;
+      const button = element('button', undefined, 'phone-device');
+      button.type = 'button';
+      button.dataset.focus = d.id;
+      button.setAttribute('aria-pressed', String(d.id === selectedId));
+      button.append(element('strong',d.name), element('small', connection(d)+' · '+stateLabels[effectiveState(d)]));
+      button.addEventListener('click', () => selectDevice(d.id));
+      wrapper.append(button);
+      list.append(wrapper);
+      if (focusedId === d.id) button.focus({preventScroll:true});
+    }
+  }
+  function renderDetail(d) {
+    detail.hidden = !d;
+    const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.allow_location,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId] : []);
+    if (signature === detailSignature) return;
+    detailSignature = signature;
+    const focused = detail.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+    detail.replaceChildren();
+    delete detail.dataset.deviceId;
+    if (!d) return;
+    detail.dataset.deviceId = d.id;
+    detail.append(element('h3',d.name),element('p',(roleLabels[d.role] || 'Device')+' · '+connection(d)+' · '+stateLabels[effectiveState(d)],'phone-detail-meta'));
+    const fields = element('dl',undefined,'phone-info');
+    function field(label,value) { fields.append(element('dt',label),element('dd',value)); }
+    if (hasPoint(d)) {
+      field(effectiveState(d) === 'stale' ? 'Last known position' : 'Position',d.latitude.toFixed(5)+', '+d.longitude.toFixed(5));
+      field('Accuracy',Number.isFinite(d.accuracy) ? '± '+Math.round(d.accuracy)+' m' : 'Unavailable');
+      field('Location updated',timestamp(d.fix_at));
+    }
+    field('Location access',d.allow_location ? 'Phone consent required' : 'Disabled');
+    field('Session expires',timestamp(d.expires_at));
+    detail.append(fields);
+    const actions = element('div',undefined,'phone-command-row');
+    if (d.allow_location && !followStates.has(d.location_state)) actions.append(actionButton('request_start','Request sharing','phone-primary'));
+    if (followStates.has(d.location_state)) actions.append(actionButton('stop','Stop sharing','phone-primary'));
+    if (hasPoint(d)) {
+      const follow = actionButton('follow',followId === d.id ? 'Following phone' : 'Follow phone');
+      follow.setAttribute('aria-pressed',String(followId === d.id));
+      actions.append(follow);
+    }
+    actions.append(actionButton('revoke','Disconnect','phone-destructive'));
+    detail.append(actions);
+    if (focused) (Array.from(actions.children).find(b => b.dataset.action === focused) || actions.firstElementChild)?.focus({preventScroll:true});
+  }
+  function renderPending(pending) {
+    const review = byId('phone-review');
+    review.hidden = !pending.length;
+    review.textContent = 'Review requests ('+pending.length+')';
+    for (const card of Array.from(pendingHost.children)) {
+      if (!pending.some(d => d.id === card.dataset.deviceId)) card.remove();
+    }
+    for (const d of pending) {
+      if (Array.from(pendingHost.children).some(card => card.dataset.deviceId === d.id)) continue;
+      const card = element('section',undefined,'phone-pending-card');
+      card.dataset.deviceId = d.id;
+      card.append(element('h3',d.name),element('p','Wants to connect to your account.'));
+      const fields = element('div',undefined,'phone-grant-fields');
+      const roleLabel = element('label','Role');
+      const role = element('select');
+      role.name = 'role';
+      for (const [value,label] of Object.entries(roleLabels)) role.add(new Option(label,value));
+      role.value = Object.hasOwn(roleLabels,d.role) ? d.role : 'device';
+      roleLabel.append(role);
+      const locationLabel = element('label','Allow location requests');
+      const location = element('input');
+      location.type = 'checkbox';
+      location.name = 'allow_location';
+      location.checked = true;
+      locationLabel.prepend(location);
+      fields.append(roleLabel, locationLabel);
+      const actions = element('div',undefined,'phone-command-row');
+      actions.append(actionButton('approve','Approve','phone-primary'),actionButton('deny','Deny'));
+      card.append(fields,actions);
+      pendingHost.append(card);
+    }
+  }
+  function render() {
+    const approved = devices.filter(d => d.status === 'approved');
+    if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
+    if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
+    renderList(approved);
+    renderDetail(selected());
+    renderPending(devices.filter(d => d.status === 'pending'));
+    renderMarkers();
+  }
+  function eraseInvite() {
+    inviteVersion++;
+    expires = 0;
+    byId('phone-qr').replaceChildren();
+    byId('phone-join').removeAttribute('href');
+    byId('phone-join').hidden = true;
+    byId('phone-expiry').textContent = '';
+    byId('phone-invite-box').hidden = true;
+  }
+  function updateExpiry() {
+    if (!expires) return;
+    const remaining = expires - seconds();
+    if (remaining <= 0) {
+      eraseInvite();
+      byId('phone-invite-box').hidden = false;
+      byId('phone-expiry').textContent = 'This code has expired.';
+      byId('phone-refresh-invite').hidden = false;
+    } else {
+      byId('phone-expiry').textContent = 'Code expires in '+Math.floor(remaining/60)+':'+String(remaining%60).padStart(2,'0');
+    }
+  }
+  function clearView() {
+    revision++;
+    devices = [];
+    selectedId = followId = '';
+    lastFollowPoint = '';
+    available = false;
+    choiceToRevoke = null;
+    if (revokeDialog.open) revokeDialog.close();
+    byId('phone-revoke-message').textContent = '';
+    eraseInvite();
+    removeStreets();
+    map?.setView([22,0],1.75,{animate:false});
+    render();
+  }
+  async function request(action, fields) {
+    const url = new URL(root.dataset.endpoint, location.href);
+    const opts = {credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'X-VP3-Working-Attention':root.dataset.binding, Accept:'application/json'}};
+    if (action === 'state') url.searchParams.set('action','state');
+    else {
+      opts.method = 'POST';
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify({...fields, action, csrf_token:root.dataset.csrf, request_id:crypto.randomUUID()});
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(),10000);
+    try {
+      const response = await fetch(url,{...opts, signal:controller.signal});
+      const data = await response.json();
+      if (!response.ok || data.ok !== true) {
+        const error = new Error(typeof data.error === 'string' ? data.error : 'Phone Tracking is unavailable.');
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    } finally { clearTimeout(timer); }
+  }
+  function userError(error) {
+    return error.status ? error.message : 'Connection unavailable. Phone information will refresh when the connection returns.';
+  }
+  function reportFailure(error) {
+    clearView();
+    status.textContent = userError(error);
+    status.dataset.failure = '1';
+    if (pairing.open) {
+      byId('phone-pair-status').textContent = status.textContent;
+      byId('phone-invite-box').hidden = false;
+      byId('phone-refresh-invite').hidden = false;
+    }
+  }
+  async function refresh() {
+    if (document.hidden || reading || writing) return;
+    reading = true;
+    const version = revision;
+    try {
+      const value = await request('state');
+      if (revision !== version || document.hidden) return;
+      if (!Array.isArray(value.devices) || !Number.isFinite(value.server_time)) throw new Error();
+      clockDelta = value.server_time - Math.floor(Date.now()/1000);
+      staleAfter = Number(value.stale_seconds) || 60;
+      available = true;
+      if (status.dataset.failure) { status.textContent = ''; delete status.dataset.failure; }
+      devices = value.devices;
+      render();
+    } catch (error) {
+      if (revision === version && !document.hidden) reportFailure(error);
+    } finally { reading = false; }
+  }
+  async function newInvite() {
+    if (writing || document.hidden || !pairing.open) return;
+    writing = true;
+    revision++;
+    eraseInvite();
+    const version = inviteVersion;
+    byId('phone-pair-status').textContent = 'Creating pairing code…';
+    byId('phone-refresh-invite').hidden = true;
+    try {
+      const result = await request('invite');
+      if (version !== inviteVersion || !pairing.open || document.hidden) return;
+      const url = new URL(result.phone_url, location.origin);
+      if (url.origin !== location.origin || !/^#invite=[\w-]{43}$/.test(url.hash) || !result.expires_at) throw new Error();
+      expires = result.expires_at;
+      byId('phone-invite-box').hidden = false;
+      const join = byId('phone-join');
+      join.href = url.href;
+      join.hidden = false;
+      // The local encoder returns rectangles derived from its boolean matrix only.
+      try {
+        byId('phone-qr').innerHTML = window.LuckyQR.svg(url.href);
+        byId('phone-pair-status').textContent = 'Waiting for a phone to scan.';
+      } catch {
+        byId('phone-pair-status').textContent = 'QR unavailable. Open the pairing link on your phone.';
+      }
+      updateExpiry();
+    } catch (error) {
+      if (version === inviteVersion && pairing.open) reportFailure(error);
+    } finally { writing = false; void refresh(); }
+  }
+  function openPairing(createInvite) {
+    if (!pairing.open) pairing.showModal();
+    byId('phone-pair-status').textContent = '';
+    if (createInvite) void newInvite();
+    else void refresh();
+  }
+  byId('phone-connect').addEventListener('click', () => openPairing(true));
+  byId('phone-review').addEventListener('click', () => openPairing(false));
+  byId('phone-pair-close').addEventListener('click', () => pairing.close());
+  pairing.addEventListener('close', () => { eraseInvite(); byId('phone-pair-status').textContent = ''; });
+  byId('phone-refresh-invite').addEventListener('click',newInvite);
+  async function mutate(action, device, fields = {}) {
+    if (!device || writing || document.hidden) return;
+    writing = true;
+    const version = ++revision;
+    const message = pairing.open ? byId('phone-pair-status') : status;
+    message.textContent = 'Saving…';
+    try {
+      const agent = Number(root.dataset.chatAgent);
+      const conversation = Number(root.dataset.chatConversation);
+      if (action === 'request_start' && Number.isSafeInteger(agent) && agent >= 0 && Number.isSafeInteger(conversation) && conversation > 0) {
+        fields.chat_origin = {agent_id:agent,conversation_id:conversation};
+      }
+      const result = await request(action, {device_id:device.id,generation:device.generation,...fields});
+      if (version !== revision || document.hidden) return;
+      devices = devices.filter(d => d.id !== device.id);
+      if (result.device && ['approved','pending'].includes(result.device.status)) devices.push(result.device);
+      if (action === 'approve') selectedId = device.id;
+      const messages = {approve:'Phone approved.',deny:'Connection request denied.',request_start:'Sharing requested. Waiting for the phone.',stop:'Sharing stopped.',revoke:'Phone disconnected.'};
+      message.textContent = status.textContent = messages[action];
+      delete status.dataset.failure;
+      render();
+      if (pairing.open && !devices.some(d => d.status === 'pending')) pairing.close();
+    } catch (error) {
+      if (version === revision) reportFailure(error);
+    } finally { writing = false; void refresh(); }
+  }
+  pendingHost.addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    const card = button.closest('[data-device-id]');
+    const device = devices.find(d => d.id === card.dataset.deviceId && d.status === 'pending');
+    const fields = button.dataset.action === 'approve' ? {role:card.querySelector('select').value,allow_location:card.querySelector('input').checked} : {};
+    void mutate(button.dataset.action, device, fields);
+  });
+  detail.addEventListener('click', event => {
+    const action = event.target.closest('button[data-action]')?.dataset.action;
+    const d = selected();
+    if (!d || !action || writing) return;
+    if (action === 'follow') {
+      followId = followId === d.id ? '' : d.id;
+      if (followId) focusPoint(d);
+      render();
+    } else if (action === 'revoke') {
+      choiceToRevoke = {id:d.id,generation:d.generation};
+      byId('phone-revoke-message').textContent = d.name+' will stop sharing and will need a new pairing code to reconnect.';
+      revokeDialog.showModal();
+    } else {
+      void mutate(action,d);
+    }
+  });
+  byId('phone-revoke-cancel').addEventListener('click', () => revokeDialog.close());
+  byId('phone-revoke-accept').addEventListener('click', () => {
+    const target = choiceToRevoke;
+    revokeDialog.close();
+    if (target) void mutate('revoke', target);
+  });
+  revokeDialog.addEventListener('close', () => { choiceToRevoke = null; });
+  function resetAndRefresh() {
+    clearView();
+    status.textContent = '';
+    byId('phone-pair-status').textContent = '';
+    if (pairing.open) pairing.close();
+    if (streetDialog.open) streetDialog.close();
+    if (!document.hidden) void refresh();
+  }
+  window.addEventListener('pagehide',clearView);
+  window.addEventListener('pageshow', event => { if (event.persisted) resetAndRefresh(); });
+  document.addEventListener('visibilitychange', resetAndRefresh);
+  window.addEventListener('offline', () => reportFailure(new Error()));
+  window.addEventListener('online',refresh);
+  setInterval(refresh,4000);
+  setInterval(() => { if (!document.hidden) { updateExpiry(); if (available) render(); } },1000);
+  if (root.dataset.connect === '1') {
+    const clean = new URL(location.href);
+    clean.searchParams.delete('connect');
+    history.replaceState(history.state,'',clean);
+    openPairing(true);
+  } else void refresh();
+})();

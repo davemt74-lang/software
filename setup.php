@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/phone-tracking-v1.php';
+require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
 require_once __DIR__ . '/includes/homeserver-scheduling-connector-v620.php';
 require_once __DIR__ . '/includes/homeserver-commerce-agent-v1000.php';
@@ -90,6 +92,8 @@ try {
     vp3_profile_image_catalog_install_v1($pdo);
     vp3_profile_image_edit_install_v1($pdo);
     vp3_profile_owner_drafts_ensure_schema_v1($pdo);
+    vp3_phone_schema_v1($pdo);
+    vp3_phone_chat_schema_v1($pdo);
     vp3_profile_call_ensure_schema_pa3c($pdo);
     vp3_profile_call_activity_ensure_schema_pa3c($pdo);
     vp3_profile_speech_ensure_schema_pa4a($pdo);

@@ -903,6 +903,11 @@
       Promise.resolve(promise).then(resolve,reject).finally(()=>signal.removeEventListener('abort',aborted));
     });
   }
+  function checkPhoneReply(data){
+    if(data?.phone_tracking_context && !window.STONEFELLOW_CHAT_CONTINUITY?.phoneReplyCurrent?.(data)){
+      throw new Error('The private Chat changed before the phone reply arrived.');
+    }
+  }
   function voiceAnswer(data,fallback=''){
     if(data?.private_email_read)return 'I put the private Gmail result in Chat.';
     if(data?.private_meeting_prep)return 'I put the private meeting prep in Chat.';
@@ -938,7 +943,7 @@
     init.signal?.addEventListener('abort',ownerAbort,{once:true});
     const useFastStream=!localOnly&&!!(chatStreamUrl&&premium?.createStream&&typeof premium?.warm==='function');
     if(!useFastStream){
-      try{const response=await awaitTurn(nativeFetch(inputArg,nextInit),request);const copy=response.clone();let data=null;try{data=await awaitTurn(copy.json(),request);}catch(error){}if(!ownsTurn())throw new DOMException("Voice turn cancelled.","AbortError");activeRequest=null;processing=false;if(!response.ok||!data?.ok){const message=String(data?.error||data?.message||`Chat HTTP ${response.status}`);proof.apiErrors+=1;proof.lastError=message;setAgentState('idle');log('VOICE_API_ERROR',{status:response.status,message});if(voiceOn){recognition=null;scheduleListening(320,'voice-api-error');}return response;}proof.apiSuccess+=1;syncConversation(data.conversation_id);log('VOICE_API_SUCCESS',{conversationId:Number(data.conversation_id||0),assistantMessageId:Number(data.assistant_message_id||0),fast:false});if(!speakPrivateEmail(data))speakAnswer(voiceAnswer(data),{localOnly});return response;}
+      try{const response=await awaitTurn(nativeFetch(inputArg,nextInit),request);const copy=response.clone();let data=null;try{data=await awaitTurn(copy.json(),request);}catch(error){}if(!ownsTurn())throw new DOMException("Voice turn cancelled.","AbortError");activeRequest=null;processing=false;if(!response.ok||!data?.ok){const message=String(data?.error||data?.message||`Chat HTTP ${response.status}`);proof.apiErrors+=1;proof.lastError=message;setAgentState('idle');log('VOICE_API_ERROR',{status:response.status,message});if(voiceOn){recognition=null;scheduleListening(320,'voice-api-error');}return response;}checkPhoneReply(data);proof.apiSuccess+=1;syncConversation(data.conversation_id);log('VOICE_API_SUCCESS',{conversationId:Number(data.conversation_id||0),assistantMessageId:Number(data.assistant_message_id||0),fast:false});if(!speakPrivateEmail(data))speakAnswer(voiceAnswer(data),{localOnly});return response;}
       catch(error){if(activeRequest!==request||request.interrupted)return interruptedVoiceResponse();activeRequest=null;processing=false;const message=String(error?.message||error||'Voice conversation failed.');proof.apiErrors+=1;proof.lastError=message;setAgentState('idle');log('VOICE_API_FETCH_ERROR',{message});if(voiceOn){recognition=null;scheduleListening(320,'voice-api-fetch-error');}return new Response(JSON.stringify({ok:false,error:message}),{status:502,headers:{'Content-Type':'application/json; charset=UTF-8','Cache-Control':'no-store'}});}
       finally{clearTimeout(timeout);init.signal?.removeEventListener('abort',ownerAbort);if(activeRequest===null&&voiceOn&&!request.interrupted&&queuedTranscript&&!processing&&!speaking){const next=queuedTranscript;queuedTranscript='';setTimeout(()=>submitVoiceTranscript(next),0);}}
     }
@@ -953,7 +958,7 @@
       const consume=line=>{if(!ownsTurn())return;const clean=String(line||'').trim();if(!clean)return;let event=null;try{event=JSON.parse(clean);}catch(error){return;}if(event?.type==='start'){syncConversation(event.conversation_id);return;}if(event?.type==='delta'){const delta=String(event.delta||'');if(!delta)return;streamedAnswer+=delta;proof.fastStreamDeltas+=1;if(premiumStream){currentSpokenText+=delta;lastSpokenText=currentSpokenText;premiumStream.push(delta);}return;}if(event?.type==='done'){completedData=event.data&&typeof event.data==='object'?event.data:null;if(completedData?.conversation_id)syncConversation(completedData.conversation_id);return;}if(event?.type==='error'){streamError=String(event.error||'Voice conversation failed.');followthroughReason=event.followthrough_reason;const status=Number(event.status||event.code||0);if([400,401,403,409,419,422,429,503].includes(status))streamErrorStatus=status;}};
       while(true){const {value,done}=await awaitTurn(reader.read(),request);if(!ownsTurn()){void reader.cancel().catch(()=>{});throw new DOMException('Voice turn cancelled.','AbortError');}if(done)break;pending+=decoder.decode(value,{stream:true});let newline=-1;while((newline=pending.indexOf('\n'))>=0){consume(pending.slice(0,newline));pending=pending.slice(newline+1);}}pending+=decoder.decode();if(pending.trim())consume(pending);if(!ownsTurn())throw new DOMException("Voice turn cancelled.","AbortError");if(streamError){const error=new Error(streamError);if(streamErrorStatus)error.status=streamErrorStatus;error.followthroughReason=followthroughReason;throw error;}
       if(!completedData||completedData.ok!==true)throw new Error(String(completedData?.error||'Voice stream ended before a completed answer was confirmed.'));
-      const data=completedData;if(!data.answer)data.answer=streamedAnswer;
+      const data=completedData;checkPhoneReply(data);if(!data.answer)data.answer=streamedAnswer;
       if(data?.private_email_read===true&&data?.gmail_local_read_aloud===true){
         try{premiumStream?.stop?.();}catch(error){}
         speakPrivateEmail(data);

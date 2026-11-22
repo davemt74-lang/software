@@ -4,6 +4,7 @@ declare(strict_types=1);
 const VP3_AGENT_CHAT_RUNTIME_V2160='agent-chat-runtime-v2160-20260920';
 
 require_once __DIR__.'/chat-execution-v019.php';
+require_once __DIR__.'/phone-tracking-chat-v1.php';
 require_once __DIR__.'/homeserver-agent-v025.php';
 require_once __DIR__.'/agent-chat-boundary-v380.php';
 require_once __DIR__.'/agent-tool-authorization-v400.php';
@@ -617,8 +618,9 @@ function vp3_agent_chat_transcript_model_history_v2160(PDO $pdo,array $user,arra
     return $rows;
 }
 
-function vp3_agent_chat_history_content_v2160(PDO $pdo,array $user,int $agentId,int $conversationId,array $rows): array
+function vp3_agent_chat_history_content_v2160(PDO $pdo,array $user,int $agentId,int $conversationId,array $rows,array $input=[]): array
 {
+    $rows=vp3_phone_chat_history_v1($pdo,$user,$agentId,$conversationId,$rows,$input);
     $ownerId=(int)$user['id'];
     $rows=agent_connection_youtube_history_v1($pdo,$ownerId,$agentId,$conversationId,$rows);
     $rows=vp3_initiative_research_canvas_history_v1($pdo,$ownerId,$agentId,$conversationId,$rows);
@@ -747,6 +749,11 @@ function vp3_agent_chat_auto_voice_image_send_v2160(PDO $pdo,array $user,?array 
 
 function vp3_agent_chat_send_v2160(PDO $pdo,array $user,?array $activeAgent,array $principal,array $input,bool $brainAllowed,?callable $currentAuthority=null,bool $allowConnectedSites=false): array
 {
+    $phonePlan=vp3_phone_chat_route_v1($pdo,$user,$principal,$input);
+    if ($phonePlan!==null) {
+        if (!$allowConnectedSites) throw new RuntimeException('Open your private Agent Chat to manage phones.',403);
+        return vp3_phone_chat_send_v1($pdo,$user,$activeAgent,$principal,$input,$phonePlan,$currentAuthority);
+    }
     $imageReferenceId=vp3_chat_image_reference_input_v1($input);
     if(vp3_agent_chat_auto_voice_image_v2160($input)){
         return vp3_agent_chat_auto_voice_image_send_v2160($pdo,$user,$activeAgent,$principal,$input,$brainAllowed,$currentAuthority,$allowConnectedSites);

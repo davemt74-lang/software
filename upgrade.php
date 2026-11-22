@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/phone-tracking-v1.php';
+require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
 require_once __DIR__ . '/includes/agent-email-triage-v1.php';
@@ -341,6 +343,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && agent_connection_youtube_results_ready_v1($schemaConnection)
         && vp3_initiative_youtube_playlist_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
+        && vp3_phone_schema_ready_v1($schemaConnection)
+        && vp3_phone_chat_schema_ready_v1($schemaConnection)
         && vp3_profile_owner_drafts_ready_v1($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)
@@ -519,6 +523,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_image_edit_install_v1($pdo);
             vp3_profile_owner_drafts_ensure_schema_v1($pdo);
+            vp3_phone_schema_v1($pdo);
+            vp3_phone_chat_schema_v1($pdo);
             vp3_profile_call_ensure_schema_pa3c($pdo);
             vp3_profile_call_activity_ensure_schema_pa3c($pdo);
             vp3_profile_speech_ensure_schema_pa4a($pdo);

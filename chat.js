@@ -1115,6 +1115,29 @@
     return 'Update';
   }
 
+  function phoneReplyCurrentV1(data) {
+    const scope=data?.phone_tracking_context;
+    return scope && pendingSend && pendingSend.revision===chatRevision && pendingSend.historyAuthority===historyAuthority
+      && pendingSend.conversationId===conversationId && initiativeIdentityMatchesV1()
+      && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()
+      && scope.owner_user_id===initiativePage.owner && scope.agent_id===initiativePage.agent
+      && scope.conversation_id===data.conversation_id && (conversationId===0 || conversationId===scope.conversation_id);
+  }
+
+  function presentPhoneUpdatesV1(data, cid, revision) {
+    const current=()=>cid>0 && revision===chatRevision && cid===conversationId && data.conversation_id===cid
+      && initiativeIdentityMatchesV1() && thread.dataset.view==='chat' && !historyParticipant
+      && !window.VP3ParticipantContinuity?.selectedContext?.() && document.visibilityState==='visible' && document.hasFocus()
+      && window.VP3ConversationControls?.acceptsProactivePosts?.()===true;
+    if (!current() || !Array.isArray(data.phone_updates)) return;
+    for (const update of data.phone_updates) {
+      if (update?.owner_user_id!==initiativePage.owner || update.agent_id!==initiativePage.agent
+        || update.conversation_id!==cid || !Number.isSafeInteger(update.message_id) || update.message_id<1
+        || typeof update.speech!=='string') continue;
+      window.STONEFELLOW_NOTIFICATION_CENTER?.announceWhen?.(update.speech,current,{autoReply:false});
+    }
+  }
+
   async function pollAgentActivity(force = false) {
     if (navigator.onLine === false || (document.hidden && !force)) return;
     if (activityRequest) {
@@ -1140,12 +1163,15 @@
           .filter(id=>Number.isSafeInteger(id)&&id>0).slice(0,12) : [];
       const data = await readChat({
         action:'activity',
+        phone_updates:Boolean(activeConversationId>0 && document.visibilityState==='visible' && initiativeIdentityMatchesV1()
+          && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()),
         after_id:activityCursor,
         conversation_id:activeConversationId,
         ...(initiativeMessageIds.length?{initiative_message_ids:initiativeMessageIds}:{}),
         agent_context:{user_agent_id:Number(cfg.agentId || 0)}
       }, controller.signal);
       activityRead=true;
+      presentPhoneUpdatesV1(data,activeConversationId,activityChatRevision);
       if(activityChatRevision===chatRevision&&activeConversationId>0&&activeConversationId===conversationId
         &&Number(data.conversation_id||0)===conversationId&&Number.isSafeInteger(data.latest_message_id)&&data.latest_message_id>=0){
         const changed=canvasActivityStatus?.revision!==chatRevision||canvasActivityStatus.knownLatestMessageId!==data.latest_message_id;
@@ -5411,6 +5437,7 @@
           .finally(() => request.controller.signal.removeEventListener('abort', abort));
       });
       if(pendingSend!==request||request.revision!==chatRevision||request.controller.signal.aborted)return;
+      if (data.phone_tracking_context && !phoneReplyCurrentV1(data)) { request.typing?.remove(); return; }
       const imageConflict=activeImageConflictV1(data);
       if(imageConflict&&(!initiativeIdentityMatchesV1()||request.historyAuthority!==historyAuthority||historyParticipant
         ||window.VP3ParticipantContinuity?.selectedContext?.()||conversationId!==request.conversationId
@@ -5963,6 +5990,7 @@
     hasInitiativeReply:() => Boolean(initiativeReplyTarget),
     parkFailedProactiveReply:parkCurrentProactiveReplyV1,
     showTurnNotice:showChatTurnNotice,
+    phoneReplyCurrent:phoneReplyCurrentV1,
     conversationId:() => Number(conversationId || 0),
     agentId:() => Number(cfg.agentId || 0),
     ensureConversation:ensureConversationPa3,

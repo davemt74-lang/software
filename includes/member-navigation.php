@@ -64,6 +64,7 @@ function member_navigation_active_key(?string $scriptName = null): string
         'messages.php'=>'messages',
         'knowledge.php'=>'knowledge',
         'media-library.php'=>'media_library',
+        'phone-tracking.php'=>'phone_tracking',
         'canvases.php'=>'canvases',
         'local-knowledge.php'=>'local_knowledge',
         'memory.php'=>'memory',
@@ -110,7 +111,7 @@ function member_navigation_section_label(string $key): string
 {
     return match($key){
         'home','chat','profile_agent','voice_profile'=>'Agent',
-        'messages','contacts','connections','knowledge','media_library','canvases','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
+        'messages','contacts','connections','knowledge','media_library','phone_tracking','canvases','local_knowledge','memory','transcriptions','calendar'=>'Workspace',
         'meetings','scheduling','appointment_lifecycle','commerce','campaigns','rewards','claim_terminal','profile_commerce','profile_commerce_delivery','profile_commerce_refunds'=>'Business',
         'team','team_scheduling','team_workspaces'=>'Team',
         'music_workspace','music_library','music_releases','music_player'=>'Music',
@@ -171,6 +172,7 @@ function member_navigation_menu_links(?array $user = null): array
         if(function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800())$add($links,'meetings','Meetings',url('/meetings.php'),'agent');
     }
     if(member_navigation_entitled($user,'knowledge.access',personal_capability_has_v242('personal_knowledge.access',$user)))$add($links,'knowledge','My Knowledge',url('/knowledge.php'),'identity');
+    if(has_permission('chat.access',$user)&&has_permission('account.access',$user))$add($links,'phone_tracking','Phone Tracking',url('/phone-tracking.php'),'identity');
     if(has_permission('chat.access',$user))$add($links,'media_library','Media Library',url('/media-library.php'),'identity');
     if($accountAllowed&&$chatAllowed&&personal_capability_has_v242('personal_knowledge.access',$user)){
         $add($links,'canvases','Canvases',url('/canvases.php'),'identity');

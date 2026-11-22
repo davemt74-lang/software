@@ -15,7 +15,7 @@ $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSid
 $mainSidebarCodingCanvas = $mainSidebarIsChat && $mainSidebarCanChat && personal_knowledge_available($mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
-$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','canvases','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
+$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','phone_tracking','canvases','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryKeys['hosting']=true;
 $mainSidebarPrimaryKeys['apps']=true;
@@ -30,6 +30,7 @@ $mainSidebarPrimaryLabels = [
     'connections'=>'Connections',
     'knowledge'=>'Knowledge',
     'media_library'=>'Media Library',
+    'phone_tracking'=>'Phone Tracking',
     'canvases'=>'Canvases',
     'transcriptions'=>'Transcriptions',
     'calendar'=>'Calendar',
@@ -51,6 +52,7 @@ $mainSidebarPrimaryIcons = [
     'connections'=>'⇄',
     'knowledge'=>'◇',
     'media_library'=>'▧',
+    'phone_tracking'=>'⌖',
     'canvases'=>'▣',
     'transcriptions'=>'▤',
     'calendar'=>'▣',
@@ -72,6 +74,7 @@ $mainSidebarPrimarySections = [
     'connections'=>'Workspace',
     'knowledge'=>'Workspace',
     'media_library'=>'Workspace',
+    'phone_tracking'=>'Workspace',
     'canvases'=>'Workspace',
     'transcriptions'=>'Workspace',
     'calendar'=>'Plan & Sell',
@@ -88,6 +91,9 @@ $mainSidebarLinkIndex = [];
 foreach ($mainSidebarMenuLinks as $link) {
     $key = (string)($link['key'] ?? '');
     if ($key !== '') $mainSidebarLinkIndex[$key] = $link;
+}
+if ($mainSidebarActive === 'phone_tracking' && isset($phoneChatUrl, $mainSidebarLinkIndex['chat'])) {
+    $mainSidebarLinkIndex['chat']['url'] = $phoneChatUrl;
 }
 if (($mainSidebarIsChat || $mainSidebarActive === 'canvases') && isset($mainSidebarLinkIndex['canvases'])) {
     $mainSidebarCanvasAgent = $_GET['agent'] ?? null;
@@ -143,7 +149,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 <?php if ($mainSidebarCodingCanvas): ?>
 <link rel="stylesheet" href="<?= e(url('/chat-coding-canvas-v1.css?v='.substr(hash_file('sha256', __DIR__.'/../chat-coding-canvas-v1.css'), 0, 12))) ?>">
 <?php endif; ?>
-<?php if ($mainSidebarIsChat): ?><link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>"><?php endif; ?>
+<?php if ($mainSidebarIsChat): ?><script defer src="<?= e(url('/phone-tracking-nav-v1.js?v=1')) ?>"></script><link rel="stylesheet" data-chat-rail-controls-v132 href="<?= e(url('/chat-rail-controls-v132.css?v=20260911-1')) ?>"><?php endif; ?>
 <link rel="stylesheet" href="<?= e(url('/profile-commerce-products-shell-v1310.css?v=1310')) ?>">
 <?php if ($mainSidebarRenderAgentVoiceAssets): ?><link rel="stylesheet" data-member-agent-voice-menu href="<?= e(url('/member-agent-voice-menu.css?v=' . $mainSidebarAgentVoiceMenuBuild)) ?>"><?php endif; ?>
 <aside

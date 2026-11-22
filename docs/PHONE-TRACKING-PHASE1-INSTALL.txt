@@ -1,0 +1,15 @@
+VP3 Cloud Phone Tracking / Phase 1
+
+Install
+1. Back up the VP3 files and database. Extract the complete Cloud deployment into the existing VP3 root. Preserve config.php, private/, uploads/ and local environment settings.
+2. Sign in as an administrator, visit upgrade.php, run the database upgrade, and wait for the current schema confirmation. New installations use setup.php. Normal tracking requests never run schema changes.
+3. Open VP3 over HTTPS. Sign in to the owner account and select Phone Tracking in the main sidebar. Use an ordinary mobile browser with location services available.
+
+First iPhone check
+1. Select + Connect Phone. Scan the QR on the iPhone before it expires, enter a device name and submit. Owner approval can be given in the map or private Agent Chat.
+2. Confirm that the approved device appears with location off. Say or type "Start sharing my iPhone's location." On the iPhone, check whose account will receive it, tap Start Sharing and grant browser location access.
+3. Verify the map shows the first fresh fix, accuracy and time before the Agent confirms live sharing. Lock or suspend the phone long enough for the displayed fix to become stale. An old fix cannot prove current presence.
+4. Stop sharing from Chat or the holder page. A server-acknowledged stop clears the live marker and blocks late uploads. The device stays paired. A holder stopping offline clears the local watch first and retries the stop when connected.
+5. Revoke the device. Confirm it can no longer send a fix or restart location sharing with its old credential.
+
+The map owner is the account that approved the phone. Phase 1 stores the current fix only. GPS can stop when a mobile browser is suspended, closed, or denied permission. A separate browser context or expired connection may need to pair again.
