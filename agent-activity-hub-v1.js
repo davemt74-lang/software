@@ -1456,7 +1456,12 @@
       if (!Object.hasOwn(names,id) || updates.has(id) || checks.has(id) || !Object.hasOwn(labels,row?.state)) continue;
       checks.set(id,{state:labels[row.state],detail:typeof row.detail === 'string' ? row.detail.slice(0,240) : ''});
     }
-    const version = JSON.stringify([focus,overview,next,[...updates],[...checks],Boolean(snapshot)]);
+    const briefings = Array.isArray(summary?.briefings) ? summary.briefings.filter(report =>
+      ['profile','media','marketing'].includes(report?.specialist_id) &&
+      typeof report.title === 'string' && report.title.length <= 160 &&
+      report.sections && typeof report.sections === 'object' &&
+      typeof report.sections.next_step === 'string').slice(0,3) : [];
+    const version = JSON.stringify([focus,overview,next,[...updates],[...checks],briefings,Boolean(snapshot)]);
     if (version === renderedSummary) return;
     renderedSummary = version;
     const content = [];
@@ -1484,6 +1489,36 @@
         list.append(item);
       }
       content.push(list);
+    }
+    if (briefings.length) {
+      const details = node('details','','vp3-agent-specialist-briefings');
+      const key = 'ob1-specialist-briefings';
+      details.open = detailOpen.get(key) === true;
+      details.addEventListener('toggle',() => detailOpen.set(key,details.open));
+      details.append(node('summary','Verified specialist briefings (' + briefings.length + ')'));
+      const sections = {key_findings:'Key findings',actions_followups:'Actions & follow-ups',
+        open_questions:'Open questions',next_step:'Next step',questions_for_you:'Questions for you'};
+      for (const report of briefings) {
+        const article = node('article','','vp3-agent-specialist-briefing');
+        const title = node('strong',(names[report.specialist_id] || report.specialist_id) + ' · ' + report.title);
+        article.append(title);
+        if (report.source_coverage === 'limited') article.append(node('small','Some sources could not be verified.'));
+        if (report.presentation_owner === 'profile_native') article.append(node('small','Existing Profile notifications own this visitor update.'));
+        for (const [field,label] of Object.entries(sections)) {
+          const raw = report.sections[field];
+          const lines = (Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [])
+            .filter(text => typeof text === 'string' && text.trim()).slice(0,4);
+          if (!lines.length) continue;
+          const group = node('div','','vp3-agent-specialist-briefing-section');
+          group.append(node('b',label));
+          for (const line of lines) group.append(node('p',line.slice(0,500)));
+          article.append(group);
+        }
+        const href = localUrl(report.source_url);
+        if (href) { const a = node('a','Review verified source'); a.href = href; article.append(a); }
+        details.append(article);
+      }
+      content.push(details);
     }
     if (!content.length && snapshot) content.push(node('p','No new specialist findings to summarize.','vp3-agent-activity-summary-empty'));
     if (checks.size) {
