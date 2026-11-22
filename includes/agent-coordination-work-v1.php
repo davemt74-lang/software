@@ -9,6 +9,7 @@ require_once __DIR__.'/agent-product-marketing-summary-v1.php';
 
 const VP3_COORDINATION_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing','profile'];
 const VP3_COORDINATION_MARKETING_REPORT_V1='vp3.marketing-report.v1';
+const VP3_COORDINATION_MEDIA_REPORT_V1='vp3.media-report.v1';
 
 /** The initial anchor stays stable even as other specialists update the linked evidence. */
 function vp3_coordination_scan_id_v1(array $user,array $binding,string $ref): string
@@ -151,6 +152,34 @@ function vp3_coordination_marketing_report_draft_v1(array $report): string
     return implode("\n\n",$parts);
 }
 
+/** Media uses the same five-section Chat contract as Profile and Marketing. The
+ * text comes from an exact current source rather than an unverified model. */
+function vp3_coordination_media_report_goal_v1(array $goal): bool
+{
+    return ($goal['coordination_media_report_v1']??false)===true
+        &&($goal['coordination_route']['specialist']??null)==='media'
+        &&in_array($goal['coordination_route']['action']??null,['ask','report'],true)
+        &&is_string($goal['primary']??null)
+        &&preg_match('/\Amedia:[a-zA-Z0-9:@_-]{1,155}\z/D',$goal['primary'])===1
+        &&!isset($goal['coordination_work'])&&!isset($goal['followthrough']);
+}
+
+function vp3_coordination_media_report_normalize_v1(mixed $value): ?array
+{
+    if(!is_array($value)||($value['contract']??null)!==VP3_COORDINATION_MEDIA_REPORT_V1)return null;
+    $compatible=$value;
+    $compatible['contract']=VP3_COORDINATION_MARKETING_REPORT_V1;
+    $normalized=vp3_coordination_marketing_report_normalize_v1($compatible);
+    if($normalized===null)return null;
+    $normalized['contract']=VP3_COORDINATION_MEDIA_REPORT_V1;
+    return $normalized;
+}
+
+function vp3_coordination_media_report_draft_v1(array $report): string
+{
+    return vp3_coordination_marketing_report_draft_v1($report);
+}
+
 /** Versioned Profile sections are saved as bounded facts, never as instructions or authority. */
 function vp3_coordination_profile_report_normalize_v1(mixed $value): ?array
 {
@@ -239,6 +268,18 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
             ||($output['state']==='needs_owner'&&$report['questions_for_you']!==[$output['question']]))return null;
         $output['profile_report']=$report;
     }
+    if(array_key_exists('media_report',$out)){
+        $report=vp3_coordination_media_report_normalize_v1($out['media_report']);
+        $ref=array_key_first($output['evidence_revisions']);
+        if($report===null||count($output['evidence_revisions'])!==1||!is_string($ref)
+            ||preg_match('/\Amedia:[a-zA-Z0-9:@_-]{1,155}\z/D',$ref)!==1
+            ||!in_array($output['state'],['needs_owner','watching'],true)
+            ||$report['key_findings']!==[$output['summary']]
+            ||$report['actions_followups']!==($output['next_step']!==''?[$output['next_step']]:[])
+            ||$report['next_step']!==$output['next_step']
+            ||$report['questions_for_you']!==($output['question']!==''?[$output['question']]:[]))return null;
+        $output['media_report']=$report;
+    }
     if(array_key_exists('marketing_report',$out)){
         $report=vp3_coordination_marketing_report_normalize_v1($out['marketing_report']);
         $ref=array_key_first($output['evidence_revisions']);
@@ -263,6 +304,7 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
 function vp3_coordination_draft_v1(array $output): string
 {
     if(isset($output['profile_report']))return vp3_coordination_profile_report_draft_v1($output['profile_report']);
+    if(isset($output['media_report']))return vp3_coordination_media_report_draft_v1($output['media_report']);
     if(isset($output['marketing_report']))return vp3_coordination_marketing_report_draft_v1($output['marketing_report']);
     $ref=array_key_first($output['evidence_revisions']);
     if(count($output['evidence_revisions'])===1&&(str_starts_with($ref,'casual:')||str_starts_with($ref,'curiosity:'))
@@ -285,6 +327,8 @@ function vp3_coordination_saved_revisions_v1(array $goal,array $work): array
         ||!isset($out['evidence_revisions'][$primary]))throw new RuntimeException('Top of Mind evidence changed.',409);
     $profileReport=str_starts_with($primary,'profile:')&&!isset($goal['followthrough'])&&!isset($goal['coordination_work']);
     if($profileReport!==isset($out['profile_report']))throw new RuntimeException('Profile report evidence changed.',409);
+    if(vp3_coordination_media_report_goal_v1($goal)!==isset($out['media_report']))
+        throw new RuntimeException('Media report evidence changed.',409);
     if(vp3_coordination_marketing_report_goal_v1($goal)!==isset($out['marketing_report']))
         throw new RuntimeException('Marketing report evidence changed.',409);
     foreach($out['evidence_revisions'] as $ref=>$revision){
@@ -332,7 +376,8 @@ function vp3_coordination_read_v1(PDO $pdo,array $user,array $binding,array $rev
 function vp3_coordination_result_evidence_v1(PDO $pdo,array $user,array $binding,array $goal,array $toolResult): array
 {
     $items=vp3_coordination_read_v1($pdo,$user,$binding,vp3_coordination_saved_revisions_v1($goal,$toolResult));
-    if(isset($toolResult['output']['profile_report'])||isset($toolResult['output']['marketing_report'])){
+    if(isset($toolResult['output']['profile_report'])||isset($toolResult['output']['marketing_report'])
+        ||isset($toolResult['output']['media_report'])){
         $expected=vp3_coordination_saved_result_v1($goal,$items,$goal['coordination_route']??[]);
         if($expected['output']!==$toolResult['output'])throw new Vp3InitiativeSourcesChangedV1();
     }
@@ -521,6 +566,16 @@ function vp3_coordination_saved_result_v1(array $goal,array $evidence,array $rou
     $result=['output'=>['type'=>'initiative_coordination','situation_id'=>$goal['coordination_id'],
         'state'=>$question!==''?'needs_owner':'watching','title'=>$title,'summary'=>$summary,'next_step'=>$next,
         'question'=>$question,'evidence_revisions'=>$revisions]];
+    if(vp3_coordination_media_report_goal_v1($goal)){
+        $report=['contract'=>VP3_COORDINATION_MEDIA_REPORT_V1,
+            'key_findings'=>[$summary],
+            'actions_followups'=>$next!==''?[$next]:[],
+            'open_questions'=>[], 'next_step'=>$next,
+            'questions_for_you'=>$question!==''?[$question]:[]];
+        $report=vp3_coordination_media_report_normalize_v1($report);
+        if($report===null)throw new InvalidArgumentException('The saved Media report could not be verified.');
+        $result['output']['media_report']=$report;
+    }
     if(vp3_coordination_marketing_report_goal_v1($goal)){
         $report=['contract'=>VP3_COORDINATION_MARKETING_REPORT_V1,
             'key_findings'=>[$summary],
