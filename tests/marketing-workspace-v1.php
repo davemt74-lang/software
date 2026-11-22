@@ -16,11 +16,23 @@ function vp3_marketing_review_v1(PDO $pdo,array $scope,DateTimeImmutable $now,?a
     if($includeArtifacts||!$includeChoices)throw new RuntimeException('Review must not include private artifacts or disable create capability lookup.');
     return $GLOBALS['fixture'];
 }
+function vp3_coordination_marketing_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array {
+    $GLOBALS['opportunityReads']++;
+    return $GLOBALS['portfolioFixture']??['coverage'=>'unconfigured','items'=>[]];
+}
 function review_check(bool $ok,string $label): void {
     if(!$ok)throw new RuntimeException($label);
     $GLOBALS['checks']++;echo "PASS ".$label.PHP_EOL;
 }
-$checks=0;$authorityReads=0;$reportReads=0;$authorized=true;$revokeOnRead=0;
+$checks=0;$authorityReads=0;$reportReads=0;$opportunityReads=0;$authorized=true;$revokeOnRead=0;
+$ref='marketing:campaign-readiness:5';
+$portfolioFixture=['coverage'=>'ready','items'=>[
+    $ref=>['ref'=>$ref,'revision'=>str_repeat('c',64),'specialist'=>'marketing',
+      'title'=>'Autumn Launch needs a reward','summary'=>'Verified missing active reward.',
+      'next_step'=>'Review an active reward for this campaign.','question'=>'Would you like to review it?',
+      'url'=>'/vp3/campaigns.php?merchant=17&edit_campaign=5',
+      'priority'=>'high','status'=>'open'],
+]];
 $pdo=new PDO('sqlite::memory:');
 $scope=['user'=>['id'=>11,'account'=>true],'agent_id'=>7,'conversation_id'=>42];
 $fixture=[
@@ -48,6 +60,10 @@ $fixture=[
 ];
 $out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$scope);
 review_check($out['coverage']==='ready'&&count($out['campaigns'])===2,'only allowlisted owner Campaign statuses returned');
+review_check(($out['opportunity_portfolio']['contract']??null)===VP3_MARKETING_OPPORTUNITY_PORTFOLIO_V1
+    &&count($out['opportunity_portfolio']['opportunities'])===1
+    &&$out['opportunity_portfolio']['opportunities'][0]['source_ref']===$ref
+    &&$opportunityReads===1,'authorized Campaign facts become one evidence-bound marketing opportunity');
 review_check($out['campaigns'][0]['issues']===['Choose an active reward'],'only setup reasons projected');
 review_check($out['campaigns'][0]['window_state']==='open','canonical campaign observation window preserved');
 
@@ -82,7 +98,7 @@ review_check($out['campaigns'][1]['readiness']==='limited'&&$out['campaigns'][1]
 review_check($out['links']===['campaigns'=>'/vp3/campaigns.php','products'=>'/vp3/profile-commerce-products.php','rewards'=>'/vp3/rewards.php'],
     'canonical existing editor routes reused');
 $reportReads=0;$out=vp3_initiative_marketing_workspace_overview_v1($pdo,12,$scope);
-review_check($out['campaigns']===[]&&$out['links']['campaigns']===null&&$reportReads===0,'owner mismatch denies all data before review');
+review_check($out['campaigns']===[]&&$out['links']['campaigns']===null&&$reportReads===0&&$opportunityReads===1,'owner mismatch denies all data before review');
 $reportReads=0;$denied=$scope;$denied['user']['account']=false;
 $out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$denied);
 review_check($out['campaigns']===[]&&$out['links']['products']===null&&$reportReads===0,'account permission denies all links and review');
