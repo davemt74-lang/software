@@ -36,6 +36,7 @@ INSERT INTO track_stems VALUES(6,1,10,'Bass','Bass','/uploads/stems/tone.mp3',0,
 try{
  $fixtures=json_decode(file_get_contents(__DIR__.'/fixtures/stem-mp3-metadata-v1.json'),true);file_put_contents($temp.'/uploads/stems/tone.mp3',base64_decode($fixtures['fixtures'][0]['base64']));
  $scope=['user'=>['id'=>1,'is_active'=>1],'agent_id'=>7,'conversation_id'=>101];
+ check(stem_agent_authorized_track_v235($pdo,1,$scope['user'])!==null&&stem_agent_authorized_track_v235($pdo,2,$scope['user'])===null,'private draft access follows exact production authority, without a publication requirement');
  $read=fn($refs=null)=>vp3_media_production_sources_v1($pdo,$scope,$refs);
  $items=$read();$item=$items['media:studio:1']??[];
  check(count($items)===1&&!str_contains(json_encode($items),'SECRET'),'private production discovery cannot include another owner');
@@ -49,6 +50,14 @@ try{
  $pdo->exec('UPDATE users SET is_active=0 WHERE id=1');check(blocked($read),'disabled owner is rejected');$pdo->exec('UPDATE users SET is_active=1 WHERE id=1');
  unlink($temp.'/uploads/stems/tone.mp3');$missing=$read()['media:studio:1'];
  check($missing['trigger']==='production_attention'&&$missing['revision']!==$item['revision']&&str_contains($missing['summary'],'Bass (missing)'),'missing saved bytes create an exact named attention finding');
+ $route=['specialist'=>'media','trigger'=>'production_attention','action'=>'ask'];
+ $goal=['primary'=>'media:studio:1','sources'=>['media:studio:1'=>$missing['revision']],'coordination_id'=>str_repeat('a',64),'coordination_route'=>$route,'coordination_media_report_v1'=>true];
+ $before=$pdo->query('SELECT total_changes()')->fetchColumn();
+ $prepared=vp3_coordination_saved_result_v1($goal,['media:studio:1'=>$missing],$route);
+ $draft=vp3_coordination_draft_v1($prepared['output']);
+ foreach(['Key findings','Actions & follow-ups','Open questions','Next step','Questions for you'] as $heading)check(str_contains($draft,$heading),'production uses the shared '.$heading.' report section');
+ check(str_contains($draft,'Bass (missing)')&&$prepared['output']['evidence_revisions']===$goal['sources'],'the prepared report retains exact production facts and source revision');
+ check($pdo->query('SELECT total_changes()')->fetchColumn()===$before,'production report preparation does not mutate audio, mix, publication or Chat records');
  check(vp3_coordination_source_ref_valid_v1('media:studio:1')&&!vp3_coordination_source_ref_valid_v1('media:studio:../1'),'production refs use canonical validation');
  $rules=vp3_coordination_rule_definitions_v1();
  check(($rules['media']['triggers']['production_project']['default']??null)==='watch','normal production uses Watch by default');

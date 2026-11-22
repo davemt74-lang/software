@@ -8,8 +8,9 @@ $user=current_user();$pdo=db();
 if(!$user||!$pdo){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'Sign in required.']);exit;}
 $input=json_decode((string)file_get_contents('php://input'),true);if(!is_array($input))$input=$_POST;
 if(!hash_equals(csrf_token(),(string)($input['csrf_token']??''))){http_response_code(419);echo json_encode(['ok'=>false,'error'=>'Session expired.']);exit;}
-$trackId=(int)($input['track_id']??0);$track=get_track_by_id($trackId);
-if(!$track||!can_view_track($track,$user)||!agent_tool_can_studio($track,$user)){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'This Stem Studio project is not available to your account.']);exit;}
+require_once dirname(__DIR__).'/includes/stem-agent-continuity-v235.php';
+$trackId=(int)($input['track_id']??0);$track=stem_agent_authorized_track_v235($pdo,$trackId,$user);
+if(!$track){http_response_code(403);echo json_encode(['ok'=>false,'error'=>'This Stem Studio project is not available to your account.']);exit;}
 if(!table_exists('agent_studio_sessions')||!table_exists('agent_studio_history')){http_response_code(503);echo json_encode(['ok'=>false,'error'=>'Run the v84 database upgrade first.']);exit;}
 
 function stem_agent_v105_json(bool $ok,array $extra=[],int $status=200): never{http_response_code($status);echo json_encode(['ok'=>$ok]+$extra,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);exit;}
@@ -141,7 +142,6 @@ function stem_agent_v105_fallback(string $text,array $stems): array{
     return $commands;
 }
 
-require_once dirname(__DIR__).'/includes/stem-agent-continuity-v235.php';
 function stem_agent_v131_chat_history(PDO $pdo,int $conversationId): array{
     if($conversationId<1)return [];$s=$pdo->prepare('SELECT role,message FROM chat_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 12');$s->execute([$conversationId]);return array_reverse($s->fetchAll());
 }
@@ -168,7 +168,7 @@ try{
         $resultText=mb_strimwidth(trim((string)($input['result']??'')),0,8000,'…');$sharedReply=mb_strimwidth(trim((string)($input['result_text']??'')),0,8000,'…');$assistantMessageId=max(0,(int)($input['assistant_message_id']??0));
         $resultMode=(string)($input['input_mode']??'text');$resultMode=$resultMode==='voice'?'voice':'text';
         stem_agent_result_binding_v235($pdo,$userId,$sessionId,$historyId,$conversationId,$assistantMessageId,$agentId);
-        $s=$pdo->prepare('UPDATE agent_studio_history SET status=?,result_text=? WHERE id=? AND session_id=?');$s->execute([$status,$resultText,$historyId,$sessionId]);
+        $s=$pdo->prepare("UPDATE agent_studio_history SET status=?,result_text=?,message_text=COALESCE(NULLIF(?,''),message_text) WHERE id=? AND session_id=?");$s->execute([$status,$resultText,$sharedReply,$historyId,$sessionId]);
         if($conversationId>0&&$assistantMessageId>0&&$sharedReply!==''){
             $owned=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? LIMIT 1');$owned->execute([$conversationId,$userId]);
             if($owned->fetchColumn()){$u=$pdo->prepare("UPDATE chat_messages SET message=? WHERE id=? AND conversation_id=? AND role='assistant'");$u->execute([$sharedReply,$assistantMessageId,$conversationId]);if($u->rowCount()>0)stem_agent_v131_reconcile_brain($user,$conversationId,$assistantMessageId,$sharedReply,$resultMode);$pdo->prepare('UPDATE chat_conversations SET updated_at=NOW() WHERE id=? AND user_id=?')->execute([$conversationId,$userId]);}

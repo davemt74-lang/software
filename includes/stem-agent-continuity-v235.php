@@ -1,6 +1,14 @@
 <?php
 declare(strict_types=1);
 
+/** Private drafts use the same current production authority as the editor. */
+function stem_agent_authorized_track_v235(PDO $pdo,int $trackId,array $user): ?array
+{
+    if($trackId<1)return null;
+    $s=$pdo->prepare('SELECT * FROM tracks WHERE id=? LIMIT 1');$s->execute([$trackId]);$track=$s->fetch();
+    return $track&&can_manage_track_production($track,$user)?$track:null;
+}
+
 /** Resolve only this owner's live Agent conversation; never fall across Agents. */
 function stem_agent_v131_conversation(PDO $pdo,int $userId,int $requested,bool $create=false,string $title='Stem Studio',?array $agent=null): int
 {

@@ -54,6 +54,7 @@ try{
  await page.locator('.studio-agent-trigger').click();await page.locator('.studio-agent-orb-mounted').waitFor({state:'detached'});
  await page.evaluate(()=>window.VP3AgentOrb.open());await page.locator('.studio-agent-orb-mounted').waitFor({state:'visible'});
  assert.equal(await page.locator('.studio-agent-panel').count(),1);
+ await page.locator('.editor-agent-line.user').filter({hasText:'What needs attention in this production?'}).waitFor();
  const fullLink=page.locator('#vp3AgentChatPopup a').first();assert.match(await fullLink.getAttribute('href'),/conversation_id=101/);
  await page.evaluate(()=>window.VP3AgentOrb.close());
  await page.locator('#stemPlayButton').click();

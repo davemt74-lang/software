@@ -63,6 +63,13 @@ acceptance checks; test fixtures do not establish that those have passed.
 
 ## Authority and integration findings
 
+The Studio Agent API also used a public-catalog lookup that rejected unpublished
+private drafts even when the editor authorized their producer. It now resolves
+the exact private track through the same current production authority as the
+editor; real HTTP acceptance covers owner success, foreign-account rejection
+and CSRF rejection. Reopening the orb preserves its in-progress conversation,
+and native history stores the same verified reply reconciled to main Chat.
+
 The Studio conversation bridge previously accepted any owned conversation and
 could fall back across Agent namespaces. Client results could name an unrelated
 assistant row in an owned conversation. The repair resolves only the exact live

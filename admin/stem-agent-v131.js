@@ -11,7 +11,7 @@
   const trigger=document.querySelector('.studio-agent-trigger')||(()=>{const b=document.createElement('button');b.type='button';b.className='daw-header-button studio-agent-trigger';b.textContent='AI';b.title='Open Stonefellow · QQQ';(document.querySelector('.daw-canvas-actions')||document.body).appendChild(b);return b;})();
   const key=`stonefellow:studio-agent:v235:${cfg.userId}:${Number(cfg.agentId||0)}:${cfg.trackId}`;
   const initialVoice=!!cfg.voiceMode||!!Voice?.readShared?.(cfg.userId);
-  let sessionId=Number(localStorage.getItem(key)||0),busy=false;
+  let sessionId=Number(localStorage.getItem(key)||0),busy=false,historyLoaded=false,historyEpoch=0;
   trigger.setAttribute('aria-expanded','false');
   const panel=document.createElement('aside');panel.className='editor-agent-panel studio-agent-panel';panel.hidden=true;panel.innerHTML=`<div class="editor-agent-history" data-agent-history></div><footer class="editor-agent-footer"><form class="editor-agent-composer" data-agent-form><textarea rows="1" maxlength="8000" placeholder="Message Stonefellow…" aria-label="Message Stonefellow"></textarea><button class="editor-agent-voice${initialVoice?' active':''}" type="button" data-agent-voice aria-label="${initialVoice?'Stop':'Start'} voice conversation" aria-pressed="${initialVoice?'true':'false'}">◉</button><button class="editor-agent-send" type="submit" aria-label="Send message">↑</button></form><small class="editor-agent-status" data-agent-status>${initialVoice?'Listening…':'Every Studio edit is archived to Agent Brain'}</small></footer>`;document.body.appendChild(panel);
   const history=panel.querySelector('[data-agent-history]'),form=panel.querySelector('[data-agent-form]'),input=form.querySelector('textarea'),voiceButton=panel.querySelector('[data-agent-voice]'),status=panel.querySelector('[data-agent-status]');
@@ -157,6 +157,7 @@
 
   async function sendMessage(message,inputMode='text'){
     const msg=String(message||'').trim();if(!msg||busy)return;
+    historyEpoch+=1;
     voice?.stopListening(false);line('user',msg);busy=true;setAgentState('processing','Thinking…');const b=bridge();
     try{
       const state=b?.getAgentState?.()||{};
@@ -202,14 +203,17 @@
   document.addEventListener('click',event=>{const link=event.target.closest?.('a[href*="/chat.php"],a[href*="/admin/stems.php"],a[href*="/video-editor.php"]');if(!link)return;try{const target=new URL(link.href,location.href);if(target.origin!==location.origin)return;const cid=continuity.conversationId();if(cid>0)target.searchParams.set('conversation_id',String(cid));target.searchParams.set('agent',Number(cfg.agentId)>0?String(cfg.agentId):'system');if(continuity.isVoice())target.searchParams.set('voice','1');link.href=target.toString();}catch(error){}},true);
 
   async function load(){
+    if(historyLoaded||busy)return;
+    historyLoaded=true;const epoch=historyEpoch;
     try{
-      const d=await api({action:'history'});history.innerHTML='';(d.history||[]).forEach(h=>line(h.role==='user'?'user':'assistant',h.message_text||'',h.status||''));
+      const d=await api({action:'history'});if(epoch!==historyEpoch)return;
+      history.innerHTML='';(d.history||[]).forEach(h=>line(h.role==='user'?'user':'assistant',h.message_text||'',h.status||''));
       if(!d.history?.length){
         const ctx=AgentContext?await AgentContext.refresh(false):null;
         const count=Array.isArray(ctx?.proactive)?ctx.proactive.length:0;
         line('assistant',count?`I’m connected to this Stem Studio, your Agent Brain, and ${count} current proactive ${count===1?'opportunity':'opportunities'}. I’ll only say a Studio action worked after I verify the resulting state.`:'I’m connected to this Stem Studio and your Agent Brain. I’ll only say a Studio action worked after I verify the resulting state.');
       }
-    }catch(e){line('assistant',e.message,'error');}
+    }catch(e){historyLoaded=false;line('assistant',e.message,'error');}
   }
   function openPanel(){panel.hidden=false;trigger.setAttribute('aria-expanded','true');load();setTimeout(()=>{input.focus();voice?.resume(40);},25);}
   function closePanel(){panel.hidden=true;trigger.setAttribute('aria-expanded','false');if(!voice?.isEnabled())setAgentState('idle');else if(busy||voice.isPreparing())setAgentState('processing');else if(voice.isSpeaking())setAgentState('speaking');else if(voice.isListening())setAgentState('listening');else voice.resume(40);}
