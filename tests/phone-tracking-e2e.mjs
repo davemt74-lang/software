@@ -242,7 +242,7 @@ async function browserJourney(baseURL, owner, other) {
       throw error;
     }
   }
-  await handset.addInitScript(() => {
+  await handset.addInitScript(usesWebKitFixture => {
     for (const method of ['getCurrentPosition', 'watchPosition']) {
       const prototype = Object.getPrototypeOf(navigator.geolocation);
       const original = prototype[method];
@@ -250,16 +250,21 @@ async function browserJourney(baseURL, owner, other) {
         window.countLocationRequest();
         const [success, failure, options] = args;
         return original.call(this, position => {
-          window.observeSensor({ kind: 'position', ageMs: Math.round(Date.now() - position.timestamp),
+          // Playwright's WebKit driver sends epoch milliseconds to a simulator that
+          // interprets them as seconds. Convert only its microsecond-sized samples.
+          // Retain the captured instant so cached and future readings stay rejectable.
+          const timestamp = usesWebKitFixture && position.timestamp >= 1e15
+            ? position.timestamp / 1000 : position.timestamp;
+          window.observeSensor({ kind: 'position', ageMs: Math.round(Date.now() - timestamp),
             valid: [position.coords.latitude, position.coords.longitude, position.coords.accuracy].every(Number.isFinite) });
-          success(position);
+          success(timestamp === position.timestamp ? position : { coords: position.coords, timestamp });
         }, error => {
           window.observeSensor({ kind: 'error', code: error.code });
           if (failure) failure(error);
         }, options);
       };
     }
-  });
+  }, Boolean(process.env.VP3_PHONE_WEBKIT));
   const initial = check(await ownerApi(desktop, owner), 'owner read');
   assert.deepEqual(initial.devices, []);
   assert.equal((await newcomer.request.get(ownerEndpoint)).status(), 401);
