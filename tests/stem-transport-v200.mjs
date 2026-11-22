@@ -182,6 +182,16 @@ delayedHost.STONEFELLOW_STUDIO_RUNTIME_V87={getStem:id=>Number(id)===88?delayedS
 delayedListeners['stonefellow:stem-runtime-ready']({detail:{}});
 assert.equal(delayedStem.mediaUnavailable,true,'pending offline state must apply when canonical editor runtime is ready');
 await delayedMedia.play();
+delayedListeners['stonefellow:stem-media-online']({detail:{stemId:88}});
+assert.equal(delayedStem.mediaUnavailable,false,'verified recovery restores the stem');
+assert.equal(delayedMedia.__STONEFELLOW_MEDIA_OFFLINE_V231__,undefined);
+let resumed=0;delayedMedia.play=()=>{resumed++;return Promise.resolve();};
+delayedListeners['stonefellow:stem-media-offline']({detail:{stemId:88}});
+await delayedMedia.play();assert.equal(resumed,0,'quarantine neutralizes actual play');
+delayedListeners['stonefellow:stem-media-online']({detail:{stemId:88}});
+assert.equal(resumed,0,'recovery never resumes after Stop without a transport request');
+await delayedMedia.play();assert.equal(resumed,1,'recovery restores the original callable play method');
+
 
 const schedulerSource=fs.readFileSync('admin/stem-buffer-scheduler-v202.js','utf8');
 assert.doesNotMatch(schedulerSource,/installTransportSeekRecovery|Object\.defineProperty\(host,'StonefellowStemTransportV200'/,'scheduler must not patch canonical seek authority');

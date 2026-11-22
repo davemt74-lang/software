@@ -7,7 +7,7 @@ const browser=await chromium.launch({headless:true,executablePath:process.env.CH
 const base=fs.readFileSync('admin/admin.css','utf8'),controls=fs.readFileSync('admin/stem-controls.css','utf8');
 const wrapper=fs.readFileSync('admin/stems.php','utf8');
 assert.match(wrapper,/preg_replace\('[^\n]*data-admin-tech-theme/,'Only the Studio render removes the incompatible admin theme');
-assert.match(wrapper,/stem-controls\.css\?v=media-20261026/);
+assert.match(wrapper,/stem-controls\.css\?v=media-20261026-/);
 // Render the production Studio template itself, with local fixture records.
 // No copied mixer layout: structural regressions must be visible in review.
 const layout=execFileSync(process.env.PHP_BINARY||'php',['-r',`

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/stem-mp3-metadata-v1.php';
 
 function stem_lower(string $value): string
 {
@@ -383,6 +384,10 @@ function stem_audio_info(string $path, ?array $rppMap = null, float $fallbackDur
         $info = stem_wav_info($path);
         $info['format'] = 'WAV';
         return $info;
+    }
+
+    if ($extension === 'mp3' && ($native = stem_mp3_metadata_v1($path)) !== null) {
+        return $native;
     }
 
     $result = [

@@ -145,6 +145,7 @@
     )return false;
     host.__STONEFELLOW_STEM_MEDIA_OFFLINE_BRIDGE_V231__=true;
     const pendingIds=new Set();
+    const originalPlay=new WeakMap();
     const neutralize=media=>{
       if(!media||media.__STONEFELLOW_MEDIA_OFFLINE_V231__)return;
       media.__STONEFELLOW_MEDIA_OFFLINE_V231__=true;
@@ -152,6 +153,7 @@
       try{media.preload='none';}catch(error){}
       const QuietPromise=host.Promise||Promise;
       const quietPlay=()=>QuietPromise.resolve();
+      originalPlay.set(media,Object.getOwnPropertyDescriptor(media,'play')||null);
       try{Object.defineProperty(media,'play',{configurable:true,value:quietPlay});}
       catch(error){try{media.play=quietPlay;}catch(assignError){}}
     };
@@ -173,7 +175,25 @@
       neutralize(stem.crossfadeAudio);
       return true;
     };
-    const flush=()=>{[...pendingIds].forEach(apply);};
+    const flush=()=>{
+      host.document?.querySelectorAll?.('audio.stem-audio[data-stem-media-offline-v229="1"]').forEach(audio=>pendingIds.add(Number(audio.dataset.stemAudio)));
+      [...pendingIds].forEach(apply);
+    };
+    const recover=id=>{
+      pendingIds.delete(Number(id));
+      const stem=host.STONEFELLOW_STUDIO_RUNTIME_V87?.getStem?.(Number(id));
+      if(!stem)return;
+      [stem.audio,stem.crossfadeAudio].filter(Boolean).forEach(media=>{
+        if(originalPlay.has(media)){
+          const descriptor=originalPlay.get(media);
+          try{if(descriptor)Object.defineProperty(media,'play',descriptor);else delete media.play;}catch(_){}
+          originalPlay.delete(media);
+        }
+        delete media.__STONEFELLOW_MEDIA_OFFLINE_V231__;
+        delete media.__STONEFELLOW_SEEK_DEGRADED_V234__;
+      });
+      stem.mediaUnavailable=false;
+    };
     host.addEventListener(
       'stonefellow:stem-media-offline',
       event=>apply(event?.detail?.stemId)
@@ -182,6 +202,8 @@
       'stonefellow:stem-runtime-ready',
       flush
     );
+    host.addEventListener('stonefellow:stem-media-online',event=>recover(event?.detail?.stemId));
+    flush();
     return true;
   }
 

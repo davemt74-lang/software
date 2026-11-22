@@ -15,3 +15,14 @@ body.admin-canvas-mode input.daw-fader::-moz-range-thumb{width:16px;height:10px;
 body.admin-canvas-mode .daw-stem-volume-control{width:96px;height:18px}
 body.admin-canvas-mode .stem-project-loader-v232-card{max-height:calc(100dvh - 32px);overflow:auto}
 body.admin-canvas-mode .stem-project-loader-v232{padding:16px;box-sizing:border-box}
+
+/* The existing Studio conversation is mounted in the canonical orb popup. */
+.studio-agent-panel.studio-agent-orb-mounted{position:static!important;inset:auto!important;transform:none!important;width:100%!important;max-width:none!important;height:100%!important;max-height:none!important;box-shadow:none!important;border:0!important;border-radius:0!important;display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;overflow:hidden;pointer-events:auto;box-sizing:border-box}
+.studio-agent-panel.studio-agent-orb-mounted[hidden]{display:none!important}
+.studio-agent-orb-mounted .editor-agent-history{flex:1;min-height:0;overflow:auto}
+.studio-agent-orb-mounted .editor-agent-footer{flex:none}
+[data-stem-media-offline-v229] button{font-size:10px;padding:2px 5px;margin-left:4px}
+.daw-track-row:has(>.daw-source-length-repair){position:relative}
+.daw-track-row>.daw-source-length-repair{position:absolute;left:24px;bottom:2px;z-index:2;max-width:calc(100% - 48px);padding:2px 5px;border:1px solid #8b9b77;border-radius:4px;background:#20291d;color:#e4ebde;font:600 9px/1.1 system-ui;cursor:pointer}
+.daw-track-row{position:relative}
+.daw-track-row>span[data-stem-media-offline-v229]{position:absolute;left:24px;bottom:1px;z-index:3;margin-top:0;max-width:calc(100% - 48px)}

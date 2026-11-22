@@ -18,12 +18,12 @@ $html = (string)ob_get_clean();
 // The global light admin theme overrides the Studio's canvas and faders.
 // Exclude it only from this rendered page; other admin pages retain it.
 $html = preg_replace('~<link\b[^>]*\bdata-admin-tech-theme\b[^>]*>~i', '', $html) ?? $html;
-$html = str_replace('</head>', '<link rel="stylesheet" href="' . e(url('/admin/stem-controls.css?v=media-20261026')) . '"></head>', $html);
+$html = str_replace('</head>', '<link rel="stylesheet" href="' . e(url('/admin/stem-controls.css?v=media-20261026-' . substr(hash_file('sha256',__DIR__.'/stem-controls.css'),0,12))) . '"></head>', $html);
 
-$token = 'conversation-integration-v131-20260826';
-$transportToken = 'c9d55f75';
-$projectLoaderToken = 'bb08edb1';
-$coreToken = 'f07e7f70';
+$token = 'stem-recovery-v235-20261122';
+$transportToken = 'fd32ec14';
+$projectLoaderToken = 'b4848d84';
+$coreToken = '2f2e0659';
 $editingToken = 'stem-editing-foundation-v209-20260901';
 $professionalEditingToken = 'stem-professional-editing-v210-20260901';
 $automationMixerToken = 'stem-automation-mixer-v211-20260901';
@@ -36,6 +36,7 @@ $voiceToken = 'voice-three-of-three-v157-20260829';
 $phase1Token = 'stem-tools-phase1-v127-20260826';
 $phase2Token = 'stem-tools-phase2-v128-20260826';
 $projectAgentToken = 'stem-project-library-v158-20260829';
+$studioAgentToken=substr(hash_file('sha256',__DIR__.'/stem-agent-v131.js'),0,12);
 $commandBusToken = 'stem-command-bus-v159-20260829';
 $studioUser = current_user();
 $studioConversationId = max(0,(int)($_GET['conversation_id'] ?? 0));
@@ -48,6 +49,11 @@ if($studioConversationId>0&&$studioUser&&($studioPdo=db())&&table_exists('chat_c
         $studioNamedAgent=user_agent_get_v236($studioPdo,(int)$studioUser['id'],(int)$storedStudioAgent);
         if($studioNamedAgent&&!empty($studioNamedAgent['is_active']))$studioAgentIdentity=['agentId'=>(int)$storedStudioAgent];else $studioConversationId=0;
     }
+}
+if($studioConversationId===0&&$studioUser&&db()&&user_agent_system_schema_ready_v236(db())){
+    $studioAgents=user_agents_list_v236(db(),(int)$studioUser['id'],true);
+    $studioDefault=null;foreach($studioAgents as $candidate)if(!empty($candidate['is_default'])){$studioDefault=$candidate;break;}
+    $studioAgentIdentity=['agentId'=>(int)(($studioDefault?:($studioAgents[0]??[]))['id']??0)];
 }
 $studioTaskTitle = 'Stem Studio · ' . (string)($track['title'] ?? 'Track');
 $preloaderTitle = e((string)($track['title'] ?? 'song'));
@@ -181,15 +187,24 @@ $replacements = [
     'admin/stem-metronome-v91.js?v=97' => 'admin/stem-metronome-v107.js?v=' . $token,
     'admin/stem-metronome-v107.js?v=108' => 'admin/stem-metronome-v107.js?v=' . $token,
     'admin/stem-metronome-v107.js?v=runtime-root-cause-20260825' => 'admin/stem-metronome-v107.js?v=' . $token,
-    'admin/stem-agent-v91.js?v=91' => 'admin/stem-agent-v131.js?v=' . $projectAgentToken,
-    'admin/stem-agent-v107.js?v=108' => 'admin/stem-agent-v131.js?v=' . $projectAgentToken,
-    'admin/stem-agent-v107.js?v=runtime-root-cause-20260825' => 'admin/stem-agent-v131.js?v=' . $projectAgentToken,
-    'admin/stem-agent-v107.js?v=force-cache-bust-20260825-2' => 'admin/stem-agent-v131.js?v=' . $projectAgentToken,
-    'admin/stem-agent-v114.js?v=voice-continuity-v114-20260825' => 'admin/stem-agent-v131.js?v=' . $projectAgentToken,
-    'admin/stem-agent-v114.js?v=conversation-phase2-v122-20260826' => 'admin/stem-agent-v131.js?v=' . $projectAgentToken,
-    'admin/stem-agent-v127.js?v=stem-tools-phase1-v127-20260826' => 'admin/stem-agent-v131.js?v=' . $projectAgentToken,
+    'admin/stem-agent-v91.js?v=91' => 'admin/stem-agent-v131.js?v=' . $studioAgentToken,
+    'admin/stem-agent-v107.js?v=108' => 'admin/stem-agent-v131.js?v=' . $studioAgentToken,
+    'admin/stem-agent-v107.js?v=runtime-root-cause-20260825' => 'admin/stem-agent-v131.js?v=' . $studioAgentToken,
+    'admin/stem-agent-v107.js?v=force-cache-bust-20260825-2' => 'admin/stem-agent-v131.js?v=' . $studioAgentToken,
+    'admin/stem-agent-v114.js?v=voice-continuity-v114-20260825' => 'admin/stem-agent-v131.js?v=' . $studioAgentToken,
+    'admin/stem-agent-v114.js?v=conversation-phase2-v122-20260826' => 'admin/stem-agent-v131.js?v=' . $studioAgentToken,
+    'admin/stem-agent-v127.js?v=stem-tools-phase1-v127-20260826' => 'admin/stem-agent-v131.js?v=' . $studioAgentToken,
 ];
 $html = str_replace(array_keys($replacements), array_values($replacements), $html);
+
+// The compressed-source loader admits a bounded number of private reads.
+// Native elements must not start another complete download before it runs.
+$html = preg_replace_callback('~<audio\\b[^>]*class="stem-audio"[^>]*>~i',static function(array $match): string {
+    $tag=preg_replace('~\\bpreload="[^"]*"~','preload="none"',$match[0])??$match[0];
+    return preg_replace('~\\bsrc="([^"]*)"~','data-stem-media-source="$1"',$tag)??$tag;
+},$html)??$html;
+$mediaLoader='<script src="'.e(url('/admin/stem-media-loader-v235.js?v='.substr(hash_file('sha256',__DIR__.'/stem-media-loader-v235.js'),0,12))).'"></script>';
+$html=preg_replace('~(<script[^>]+src="[^"]*admin/stem-project-loader\\.js[^"]*"[^>]*></script>)~i',$mediaLoader.'$1',$html,1)??$html;
 
 $professionalEditingRuntime = '<link data-stem-editing-v210 rel="stylesheet" href="' . e(url('/admin/stem-professional-editing-v210.css?v=' . $professionalEditingToken)) . '">'
     . '<script data-stem-editing-v210 src="' . e(url('/admin/stem-professional-editing-v210.js?v=' . $professionalEditingToken)) . '"></script>';
@@ -301,7 +316,7 @@ if ($advancedStudioRuntime) {
 
 $html = preg_replace('~<script[^>]+src="[^"]*editor-voice-barge-v117\.js[^"]*"[^>]*></script>~i','',$html) ?? $html;
 
-$contextConfig = '<script>window.STONEFELLOW_AGENT_IDENTITY_V236=' . json_encode($studioAgentIdentity) . ';window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)($studioUser['id'] ?? 0) . ',surface:"stem",trackId:' . (int)$trackId . ',projectId:0,conversationId:' . $studioConversationId . ',taskTitle:' . json_encode($studioTaskTitle) . ',taskKey:' . json_encode('stem:' . (int)$trackId) . ',csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
+$contextConfig = '<script>window.STONEFELLOW_STUDIO_AGENT.agentId=' . (int)$studioAgentIdentity['agentId'] . ';window.STONEFELLOW_STUDIO_AGENT.conversationId=' . $studioConversationId . ';window.STONEFELLOW_AGENT_IDENTITY_V236=' . json_encode($studioAgentIdentity) . ';window.STONEFELLOW_AGENT_CONTEXT={userId:' . (int)($studioUser['id'] ?? 0) . ',surface:"stem",trackId:' . (int)$trackId . ',projectId:0,conversationId:' . $studioConversationId . ',taskTitle:' . json_encode($studioTaskTitle) . ',taskKey:' . json_encode('stem:' . (int)$trackId) . ',csrf:' . json_encode(csrf_token()) . ',proactiveEndpoint:' . json_encode(url('/api/agent-proactive-v93.php')) . '};</script>';
 $sharedConversation = $contextConfig
     . '<script src="' . e(url('/conversation-voice-v122.js?v=' . $voiceToken . '&capture=interactive-listening-section2-20261003')) . '" onload="window.STONEFELLOW_STUDIO_RUNTIME_PROBE.conversationEngine=!!window.StonefellowConversationVoiceV122"></script>'
     . '<script src="' . e(url('/editor-voice-barge-v117.js?v=' . $voiceToken . '&capture=interactive-listening-section2-20261003')) . '"></script>'

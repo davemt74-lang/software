@@ -36,7 +36,7 @@ function vp3_coordination_source_registry_v1(): array
         'media'=>[
             'specialist'=>'media',
             'sweep'=>'always',
-            'native_ref'=>'(?:(?:resume|track|youtube|research|listen):[1-9][0-9]{0,15}|youtube-play:[A-Za-z0-9_-]{11}|stoneward:[a-f0-9]{32}:(?:resume-)?[a-f0-9]{64})',
+            'native_ref'=>'(?:(?:resume|track|youtube|research|listen|studio):[1-9][0-9]{0,15}|youtube-play:[A-Za-z0-9_-]{11}|stoneward:[a-f0-9]{32}:(?:resume-)?[a-f0-9]{64})',
             'read'=>static fn(PDO $pdo, array $scope, array $binding, ?array $refs, DateTimeImmutable $now): array =>
                 vp3_coordination_media_sources_v1($pdo,$scope,$binding,$refs,$now),
         ],

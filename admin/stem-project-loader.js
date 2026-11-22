@@ -8,8 +8,8 @@
 
   /*
    * Project readiness is a hard gate. The editor stays covered until the
-   * runtime exists, every required stem reaches HAVE_ENOUGH_DATA, and every
-   * true waveform has completed. Waveform media requests are released only
+   * runtime exists and every required stem can play. Waveforms complete in
+   * the background and cannot disable verified playable audio. Their work is released only
    * after the audio phase is complete so waveform decoding cannot compete
    * with initial stem loading.
    */
@@ -200,8 +200,9 @@
     const mediaState=id=>{
       const stem=liveStem(id);
       const audio=stem?.audio||mediaFor(id);
+      if(audio?.dataset?.stemMediaRetryingV235==='1')return 'pending';
       if(stem?.mediaUnavailable||audio?.error||audio?.dataset?.stemMediaOfflineV229==='1')return 'failed';
-      if(audio&&Number(audio.readyState||0)>=4)return 'ready';
+      if(audio&&Number(audio.readyState||0)>=3)return 'ready';
       return 'pending';
     };
     const waveformState=id=>{
@@ -224,7 +225,7 @@
       const ReadyEvent=host.CustomEvent||globalThis.CustomEvent;
       if(typeof ReadyEvent==='function')host.dispatchEvent?.(new ReadyEvent('stonefellow:stem-playback-ready',{detail:{build:BUILD,forced:false,degraded,failures}}));
       if(statusNode)statusNode.textContent=degraded?`Opened with ${failures.length} unavailable item${failures.length===1?'':'s'}`:'Song fully loaded';
-      if(waveNode)waveNode.textContent=degraded?'Available tracks are ready to use.':'Audio and waveforms ready';
+      if(waveNode)waveNode.textContent=degraded?'Available tracks are ready to use.':'Audio ready. Waveforms continue in the background.';
       if(progressNode)progressNode.style.width='100%';
       host.setTimeout?.(()=>overlay.classList.add('is-ready'),220);
       host.setTimeout?.(()=>overlay.remove?.(),620);
@@ -235,7 +236,12 @@
       event.preventDefault?.();event.stopImmediatePropagation?.();event.stopPropagation?.();
     };
     host.addEventListener?.('keydown',blockSpace,true);
-    retryButton?.addEventListener?.('click',()=>host.location?.reload?.());
+    retryButton?.addEventListener?.('click',()=>{
+      if(!host.StonefellowStemMediaHealthV235){host.location?.reload?.();return;}
+      acceptedFailures.clear();
+      lastFailures.filter(item=>item.type==='audio').forEach(item=>host.StonefellowStemMediaHealthV235.retry(item.id));
+      lastFailures.filter(item=>item.type==='waveform').forEach(item=>host.dispatchEvent(new host.CustomEvent('stonefellow:stem-waveform-retry',{detail:{stemId:item.id}})));
+    });
     continueButton?.addEventListener?.('click',()=>{
       if(!lastFailures.length)return;
       acceptFailures(lastFailures);
@@ -298,10 +304,7 @@
         const media=mediaState(id);
         if(media==='failed')return acceptedFailures.has(`audio:${Number(id)}`);
         if(media!=='ready')return false;
-        const wave=waveformState(id);
-        if(wave==='ready')return true;
-        if(wave==='failed')return acceptedFailures.has(`waveform:${Number(id)}`);
-        return false;
+        return true;
       });
       if(!playbackReady&&projectReady){
         finishReady({degraded:acceptedFailures.size>0,failures:[...acceptedFailures.values()]});

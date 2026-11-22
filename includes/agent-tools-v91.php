@@ -113,6 +113,15 @@ function agent_v91_sanitize_stem_state(array $raw): array
     $base['snap']=mb_substr((string)($raw['snap'] ?? 'grid'),0,30);
     $base['recording']=!empty($raw['recording']);
     $base['monitoring']=!empty($raw['monitoring']);
+    $base['media_health']=['evidence'=>'browser_observation','failures'=>[]];
+    $health=$raw['media_health']??[];
+    foreach(array_slice(is_array($health['failures']??null)?$health['failures']:[],0,256) as $failure){
+        if(!is_array($failure))continue;
+        $id=(int)($failure['id']??0);
+        if(!in_array($id,array_column($base['stems'],'id'),true))continue;
+        $base['media_health']['failures'][]=['stem_id'=>$id,'reason'=>mb_substr((string)($failure['reason']??'unavailable'),0,80),'status'=>max(0,min(599,(int)($failure['status']??0)))];
+    }
+
     $base['agent_context']=function_exists('agent_surface_v131_planner_state')
         ? agent_surface_v131_planner_state($raw,'stem')
         : [];

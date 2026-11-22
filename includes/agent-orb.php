@@ -12,6 +12,14 @@ try{
         $orbAgents=user_agents_list_v236(db(),(int)$orbUser['id'],true);
         $orbDefault=null;foreach($orbAgents as $candidate)if(!empty($candidate['is_default'])){$orbDefault=$candidate;break;}
         $orbAgentId=(int)(($orbDefault?:($orbAgents[0]??[]))['id']??0);
+        if(basename((string)($_SERVER['SCRIPT_NAME']??''))==='stems.php'&&(int)($_GET['conversation_id']??0)>0){
+            $orbConversation=db()->prepare('SELECT user_agent_id FROM chat_conversations WHERE id=? AND user_id=? LIMIT 1');
+            $orbConversation->execute([(int)$_GET['conversation_id'],(int)$orbUser['id']]);$orbStoredAgent=$orbConversation->fetchColumn();
+            if($orbStoredAgent!==false){
+                if((int)$orbStoredAgent===0)$orbAgentId=0;
+                else{$orbNamed=user_agent_get_v236(db(),(int)$orbUser['id'],(int)$orbStoredAgent);if($orbNamed&&!empty($orbNamed['is_active']))$orbAgentId=(int)$orbStoredAgent;}
+            }
+        }
     }
 }catch(Throwable $ignored){}
 try{$participantUpdatesEnabled=db()?vp3_participant_settings_v1(db(),$orbUser)['enabled']:true;}catch(Throwable $e){$participantUpdatesEnabled=true;}

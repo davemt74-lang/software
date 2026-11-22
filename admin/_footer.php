@@ -7,83 +7,13 @@
 <style data-stem-media-health-v229>
 .daw-track-row[data-stem-media-status="offline"] .daw-track-select{opacity:.72}
 .daw-track-row[data-stem-media-status="offline"] .daw-track-dot{background:#b76f56!important;box-shadow:0 0 0 2px rgba(183,111,86,.18)}
-[data-stem-media-offline-v229]{display:inline-flex;align-items:center;width:max-content;margin-top:3px;padding:2px 5px;border:1px solid rgba(183,111,86,.55);border-radius:999px;font:700 9px/1 system-ui,sans-serif;letter-spacing:.06em;color:#9d5038;background:rgba(183,111,86,.08)}
+span[data-stem-media-offline-v229]{display:inline-flex;align-items:center;width:max-content;margin-top:3px;padding:2px 5px;border:1px solid rgba(183,111,86,.55);border-radius:999px;font:700 9px/1 system-ui,sans-serif;letter-spacing:.06em;color:#9d5038;background:rgba(183,111,86,.08)}
 .daw-arrange-row[data-stem-media-status="offline"] .daw-arrange-track{position:relative;opacity:.68}
 .daw-arrange-row[data-stem-media-status="offline"] .daw-arrange-track::after{content:attr(data-stem-media-label);position:absolute;inset:5px auto auto 8px;z-index:5;padding:2px 6px;border-radius:999px;background:rgba(48,35,31,.82);color:#fff;font:700 9px/1.2 system-ui,sans-serif;letter-spacing:.05em;pointer-events:none}
 .daw-stem-channel[data-stem-media-status="offline"]{opacity:.72}
 .daw-stem-channel[data-stem-media-status="offline"] .daw-channel-head::after{content:attr(data-stem-media-label);display:block;width:max-content;margin-top:3px;padding:2px 5px;border-radius:999px;background:rgba(183,111,86,.12);color:#9d5038;font:700 9px/1 system-ui,sans-serif;letter-spacing:.05em}
 </style>
-<script data-stem-media-health-v229>
-(function(root){
-  'use strict';
-  const BUILD='stem-media-health-v229-20260902';
-  if(root.__STONEFELLOW_STEM_MEDIA_HEALTH_V229__)return;
-  root.__STONEFELLOW_STEM_MEDIA_HEALTH_V229__=true;
-
-  const labelForReason=reason=>{
-    const clean=String(reason||'').toLowerCase();
-    if(clean==='missing'||clean==='not_found')return 'MISSING MEDIA';
-    if(clean==='invalid_signature'||clean==='signature_mismatch'||clean==='unsupported_extension'||clean==='empty')return 'INVALID MEDIA';
-    return 'MEDIA OFFLINE';
-  };
-
-  function mark(stemId,reason='offline',httpStatus=0){
-    const id=String(stemId||'');
-    if(!id)return;
-    const label=labelForReason(reason);
-    const detail=`${label}${httpStatus?` · HTTP ${httpStatus}`:''} · ${String(reason||'offline')}`;
-    const sidebar=root.document.querySelector(`.daw-track-row[data-stem-id="${CSS.escape(id)}"]`);
-    const arrange=root.document.querySelector(`.daw-arrange-row[data-arrange-stem="${CSS.escape(id)}"]`);
-    const mixer=root.document.querySelector(`.daw-stem-channel[data-mixer-stem="${CSS.escape(id)}"]`);
-    [sidebar,arrange,mixer].forEach(node=>{
-      if(!node)return;
-      node.dataset.stemMediaStatus='offline';
-      node.dataset.stemMediaLabel=label;
-      node.title=detail;
-    });
-    if(sidebar&&!sidebar.querySelector('[data-stem-media-offline-v229]')){
-      const badge=root.document.createElement('span');
-      badge.dataset.stemMediaOfflineV229='1';
-      badge.textContent=label;
-      badge.title=detail;
-      sidebar.querySelector('.daw-track-select > span:last-child')?.appendChild(badge);
-    }
-    root.dispatchEvent(new CustomEvent('stonefellow:stem-media-offline',{detail:{build:BUILD,stemId:Number(id),reason:String(reason||'offline'),status:Number(httpStatus||0)}}));
-  }
-
-  async function diagnose(audio){
-    const id=String(audio?.dataset?.stemAudio||'');
-    if(!id||audio.dataset.stemMediaOfflineV229==='1')return;
-    audio.dataset.stemMediaOfflineV229='1';
-    try{audio.pause();audio.preload='none';}catch(error){}
-    let reason='offline';
-    let status=0;
-    try{
-      const response=await root.fetch(String(audio.currentSrc||audio.src||''),{method:'HEAD',credentials:'same-origin',cache:'no-store'});
-      status=Number(response.status||0);
-      reason=String(response.headers.get('x-stonefellow-media-status')||'offline');
-      if(response.ok)reason='decode_error';
-    }catch(error){}
-    mark(id,reason,status);
-  }
-
-  function bind(audio){
-    if(!audio||audio.dataset.stemMediaHealthV229==='1')return;
-    audio.dataset.stemMediaHealthV229='1';
-    audio.addEventListener('error',()=>{diagnose(audio).catch(()=>mark(audio.dataset.stemAudio,'offline',0));});
-    if(audio.error||audio.networkState===HTMLMediaElement.NETWORK_NO_SOURCE){
-      diagnose(audio).catch(()=>mark(audio.dataset.stemAudio,'offline',0));
-    }
-  }
-
-  function boot(){
-    root.document.querySelectorAll('audio.stem-audio[data-stem-audio]').forEach(bind);
-  }
-
-  if(root.document.readyState==='loading')root.document.addEventListener('DOMContentLoaded',boot,{once:true});
-  else boot();
-})(window);
-</script>
+<script data-stem-media-health-v229 src="<?= e(url('/admin/stem-media-health-v235.js?v='.substr(hash_file('sha256',__DIR__.'/stem-media-health-v235.js'),0,12))) ?>"></script>
 <?php endif; ?>
 <?php if (function_exists('midi_v217_can_manage') && midi_v217_can_manage()): ?>
 <script>

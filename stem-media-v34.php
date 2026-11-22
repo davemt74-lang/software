@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/includes/stem-mp3-metadata-v1.php';
 
 // Stem media recovery v229.
 // Keep all reusable inspection/range helpers above the runtime bootstrap so
@@ -9,57 +10,7 @@ const STONEFELLOW_STEM_MEDIA_BUILD = 'stem-media-byte-recovery-v229-20260902';
 
 function stem_media_v229_mp3_frame_length(string $bytes, int $offset): int
 {
-    if ($offset < 0 || strlen($bytes) < $offset + 4) {
-        return 0;
-    }
-
-    $b0 = ord($bytes[$offset]);
-    $b1 = ord($bytes[$offset + 1]);
-    $b2 = ord($bytes[$offset + 2]);
-
-    if ($b0 !== 0xff || ($b1 & 0xe0) !== 0xe0) {
-        return 0;
-    }
-
-    $version = ($b1 >> 3) & 0x03;
-    $layer = ($b1 >> 1) & 0x03;
-    $bitrateIndex = ($b2 >> 4) & 0x0f;
-    $sampleRateIndex = ($b2 >> 2) & 0x03;
-    $padding = ($b2 >> 1) & 0x01;
-
-    // Stonefellow accepts .mp3 as MPEG Layer III only. Reserved MPEG version,
-    // non-Layer-III frames, free/reserved bitrates and reserved sample rates
-    // are not sufficient evidence that arbitrary bytes are playable MP3.
-    if (
-        $version === 0x01 ||
-        $layer !== 0x01 ||
-        $bitrateIndex < 1 ||
-        $bitrateIndex > 14 ||
-        $sampleRateIndex === 0x03
-    ) {
-        return 0;
-    }
-
-    $mpeg1Bitrates = [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0];
-    $mpeg2Bitrates = [0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0];
-    $mpeg1Rates = [44100,48000,32000];
-    $mpeg2Rates = [22050,24000,16000];
-    $mpeg25Rates = [11025,12000,8000];
-
-    $isMpeg1 = $version === 0x03;
-    $bitrate = ($isMpeg1 ? $mpeg1Bitrates : $mpeg2Bitrates)[$bitrateIndex] ?? 0;
-    $sampleRates = $isMpeg1
-        ? $mpeg1Rates
-        : ($version === 0x02 ? $mpeg2Rates : $mpeg25Rates);
-    $sampleRate = $sampleRates[$sampleRateIndex] ?? 0;
-
-    if ($bitrate < 1 || $sampleRate < 1) {
-        return 0;
-    }
-
-    $coefficient = $isMpeg1 ? 144000 : 72000;
-    $length = (int)floor(($coefficient * $bitrate) / $sampleRate) + $padding;
-    return $length >= 24 ? $length : 0;
+    return (int)(stem_mp3_frame_v1($bytes,$offset)['length']??0);
 }
 
 function stem_media_v229_scan_mp3_frames(string $bytes): bool

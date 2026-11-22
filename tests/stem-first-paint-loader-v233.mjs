@@ -67,11 +67,11 @@ assert.match(loader,/Loading project audio · \$\{mediaReady\+mediaFailed\} \/ \
 assert.match(loader,/Waveforms · \$\{waveformReady\} \/ \$\{mediaReady\}/,'waveform progress must target only playable audio tracks');
 assert.match(loader,/browserWaveformMedia&&!mediaPhaseReady/,'waveform media must wait for the settled audio phase, not final editor release');
 assert.match(loader,/await mediaReadyPromise/,'waveforms must begin only after every audio track is ready or explicitly accepted as unavailable');
-assert.match(loader,/Number\(audio\.readyState\|\|0\)>=4/,'preloader must wait for HAVE_ENOUGH_DATA on every usable stem');
-assert.doesNotMatch(loader,/Number\(audio\.readyState\|\|0\)>=3/,'HAVE_FUTURE_DATA alone must not release the editor');
+assert.match(loader,/Number\(audio\.readyState\|\|0\)>=3/,'preloader waits for playable audio on every required stem');
+assert.match(studio,/waitForWaveformIdle/,'preview work yields while the transport or recording is active');
 assert.match(loader,/const projectReady=runtimeReady&&expectedIds\.every/,'final release must evaluate every expected stem');
 assert.match(loader,/acceptedFailures\.has\(`audio:/,'failed audio may be skipped only after explicit user acceptance');
-assert.match(loader,/acceptedFailures\.has\(`waveform:/,'failed waveforms may be skipped only after explicit user acceptance');
+assert.match(loader,/if\(media!==\'ready\'\)return false;\s*return true;/,'preview extraction does not gate otherwise playable audio');
 assert.match(loader,/Audio load failed/,'failed audio must remain visible as a loader error');
 assert.match(loader,/Waveform load failed/,'failed waveforms must remain visible as a loader error');
 assert.match(loader,/Reload and retry/,'loader failures must provide retry');
