@@ -48,6 +48,7 @@ function vp3_top_of_mind_image_projection_v1(array $view,array $row,int $owner,i
     if($messageId>0&&$messageId===(int)($row['user_message_id']??0))$url.='&message_id='.$messageId;
     $result=['id'=>'image-generator','state'=>$state,'detail'=>$detail,'progress'=>null,
         'run_id'=>(int)$view['job_id'],'conversation_id'=>$cid,'result_url'=>$url];
+    if($messageId>0&&$messageId===(int)($row['user_message_id']??0))$result['message_id']=$messageId;
     if($state==='working'&&is_int($lease)&&$lease>$now*1000)
         $result['lease_expires_at']=gmdate(DATE_ATOM,intdiv($lease,1000));
     return $result;

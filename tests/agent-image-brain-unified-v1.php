@@ -16,10 +16,11 @@ $project=static fn(array $v,?array $r=null,int $owner=31,int $aid=7,int $cid=45,
     vp3_top_of_mind_image_projection_v1($v,$r??$row,$owner,$aid,$cid,$now,$mid);
 $p=$project($view);
 ensure($p!==null&&$p['id']==='image-generator'&&$p['state']==='completed','Completed receipt must be shown accurately');
-ensure($p['run_id']===811&&$p['conversation_id']===45,'Original run and chat are retained');
+ensure($p['run_id']===811&&$p['conversation_id']===45&&$p['message_id']===600,'Original run and exact Chat turn are retained');
 ensure($p['result_url']==='/chat.php?agent=7&conversation_id=45&message_id=600','Verified image links to exact Chat turn');
 ensure(!str_contains(json_encode($p,JSON_THROW_ON_ERROR),'PRIVATE TEXT'),'Private prompt is excluded from Brain');
 ensure(str_contains($p['detail'],'2 images generated and saved'),'Completion must include confirmed image count');
+ensure(!isset($project($view,$row,31,7,45,0)['message_id']),'Unverified message id must not be attached');
 ensure($project($view,$row,31,7,45,0)['result_url']==='/chat.php?agent=7&conversation_id=45',
     'Unverified message identifier must not be linked');
 foreach([['owner_user_id'=>99],['agent_id'=>8],['conversation_id'=>46],['generation_id'=>'x'],['run_id'=>42]] as $change){
