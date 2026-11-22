@@ -43,7 +43,9 @@ t=transport();const normal=t.play();await flush();t.gate.resolve();assert.equal(
 t=transport();const broken=t.play();await flush();t.gate.reject(new Error('prepare failed'));await assert.rejects(broken,/prepare failed/);assert.equal(t.state().playbackStarting,false);
 assert.match(read('admin/stems-legacy-v108.php'),/\$fanPrivateMix = .*can_view_track\(\$track,\$currentStudioUser\)/);
 assert.match(read('api/stem-render-v214.php'),/\$fanPrivateMix = .*can_view_track\(\$track,\$user\)/);
-assert.match(read('api/stem-agent-v105.php'),/!can_view_track\(\$track,\$user\)/);
+assert.match(read('api/stem-agent-v105.php'),/stem_agent_authorized_track_v235\(\$pdo,\$trackId,\$user\)/);
+assert.match(read('includes/stem-agent-continuity-v235.php'),/SELECT \* FROM tracks WHERE id=\? LIMIT 1/,'private Studio authorization resolves the exact native track');
+assert.match(read('includes/stem-agent-continuity-v235.php'),/can_manage_track_production\(\$track,\$user\)/,'private drafts retain current production authority');
 for(const p of ['api/stem-direct-v79.php','api/stem-upload-v24.php'])assert.match(read(p),/!can_manage_track_production\(\$track,\$user\)/);
 assert.match(read('admin/stem-project-loader.js'),/row\.mediaVersion/);
 assert.match(core,/await window\.StonefellowStemProjectLoaderV232\?\.whenMediaReady/);
