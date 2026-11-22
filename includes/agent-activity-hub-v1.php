@@ -139,6 +139,19 @@ function vp3_agent_activity_summary_v1(PDO $pdo, array $scope, DateTimeImmutable
             'next_step'=>vp3_agent_activity_text_v1($item['next_step']??'',240),
             'routing'=>vp3_coordination_item_route_v1($settings,$item)]];
     }
+    // Surface the same verified image job in the shared Brain summary. The
+    // source status is read-only and bound to the selected private Chat.
+    foreach ($specialists as $row) {
+        if (($row['id']??null)!=='image-generator'||(int)($row['run_id']??0)<1
+            ||!in_array($row['state']??null,['completed','failed','blocked','interrupted'],true)) continue;
+        $detail=vp3_agent_activity_text_v1($row['detail']??'',320);
+        if ($detail==='') break;
+        $latest['image-generator']=['priority'=>($row['state']==='completed'?1:2),
+            'update'=>['specialist_id'=>'image-generator',
+                'title'=>$row['state']==='completed'?'Image generation complete':'Image generation needs review',
+                'detail'=>$detail,'next_step'=>'Open Image Studio in this Chat to review the job.']];
+        break;
+    }
     uasort($latest, static fn(array $a,array $b): int => $b['priority'] <=> $a['priority']);
     $summary['updates'] = array_column($latest, 'update');
     $checks = [];

@@ -588,6 +588,15 @@ function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,in
     if($profile!==null)$out[]=$profile;
     $tasks=vp3_top_of_mind_tasks_v1($pdo,$user,$cid,$policy,$health,$now);
     if($tasks!==null)$out[]=$tasks;
+    if($cid>0){
+        try{
+            require_once __DIR__.'/agent-top-of-mind-image-v1.php';
+            $image=vp3_top_of_mind_image_status_v1($pdo,$user,$agentId,$cid,$now);
+            if($image!==null)$out[]=$image;
+        }catch(Throwable $error){
+            vp3_initiative_health_diagnostic_v1($error,'image_specialist_status_read',(int)$user['id'],$agentId,$cid);
+        }
+    }
     if($gmail!==null){
         [$state,$detail]=match($gmail['state']??''){
             'working'=>['working','Checking the inbox and open email follow-ups.'],
