@@ -279,7 +279,7 @@
       const keys=[...url.searchParams.keys()];
       if(kind==='campaigns') {
         if(path!=='/campaigns.php'||keys.some(x=>!['merchant','edit_campaign'].includes(x))
-          ||new Set(keys).size!==keys.length||url.hash&&!['#campaign-editor','#marketing-offer-draft'].includes(url.hash))return '';
+          ||new Set(keys).size!==keys.length||url.hash&&!['#campaign-editor','#marketing-offer-draft','#campaign-optimization-v126'].includes(url.hash))return '';
         if(keys.some(x=>!/^[1-9]\d*$/.test(url.searchParams.get(x)||'')))return '';
       }else if(kind==='products') {
         if(path!=='/profile-commerce-products.php'||keys.length||url.hash)return '';
@@ -336,6 +336,43 @@
     const row=n('div','','vp3-marketing-workspace-card-actions');
     row.append(...actions);host.append(row);
   };
+  const portfolioKinds=new Set(['campaign-readiness','campaign-performance','campaign-optimization',
+    'campaign-work','campaign-outcome','product-plan']);
+  function normalizeOpportunityPortfolio(raw,session) {
+    const empty={coverage:'unavailable',items:[]};
+    if(!raw||raw.contract!=='vp3.marketing.opportunity-portfolio.v1'
+      ||raw.review_scope!=='current_authorized_sources_only'
+      ||!['ready','limited','unconfigured','unavailable'].includes(raw.coverage)
+      ||!Array.isArray(raw.opportunities)||raw.opportunities.length>6)return empty;
+    if(!['ready','limited'].includes(raw.coverage))return {...empty,coverage:raw.coverage};
+    const output=[],seen=new Set();
+    for(const candidate of raw.opportunities) {
+      if(!candidate||!portfolioKinds.has(candidate.kind)
+        ||typeof candidate.source_ref!=='string'
+        ||!/^marketing:(?:campaign-(?:readiness|performance|optimization|work|outcome)|product-plan):[1-9]\d{0,15}$/.test(candidate.source_ref)
+        ||!candidate.source_ref.endsWith(':'+String(candidate.source_id))
+        ||typeof candidate.source_revision!=='string'||!/^[a-f0-9]{64}$/.test(candidate.source_revision)
+        ||!Number.isSafeInteger(candidate.source_id)||candidate.source_id<1
+        ||candidate.coverage!==raw.coverage||seen.has(candidate.source_ref)
+        ||!['high','normal','low'].includes(candidate.priority)
+        ||!['product_launch','coordination'].includes(candidate.notification_owner)
+        ||(candidate.kind==='product-plan')!==(candidate.notification_owner==='product_launch')
+        ||[candidate.title,candidate.finding,candidate.next_step,candidate.label].some(text=>
+          typeof text!=='string'||!text.trim()||text.length>480)
+        ||typeof candidate.question!=='string'||candidate.question.length>260)continue;
+      const product=candidate.kind==='product-plan';
+      const href=localLink(candidate.source_href,product?'plan':'campaigns',
+        product?{product_id:candidate.source_id,conversation_id:session.cid}:null);
+      if(!href)continue;
+      seen.add(candidate.source_ref);
+      output.push({kind:candidate.kind,ref:candidate.source_ref,revision:candidate.source_revision,
+        title:candidate.title.slice(0,160),label:candidate.label.slice(0,70),
+        finding:candidate.finding.slice(0,420),next:candidate.next_step.slice(0,260),
+        question:candidate.question.slice(0,260),priority:candidate.priority,href,
+        nativeOwner:product});
+    }
+    return {coverage:raw.coverage,items:output};
+  }
   function renderOverview(session) {
     const target=panes.get('overview');target.replaceChildren();
     const campaigns=session.campaigns||[],plans=[...session.plans.values()];
@@ -349,6 +386,33 @@
       const block=n('div','','vp3-marketing-workspace-stat');block.append(n('strong',String(value)),n('span',label));summary.append(block);
     }
     target.append(summary);
+    const opportunities=session.opportunityPortfolio||{coverage:'unavailable',items:[]};
+    const queue=card('Marketing opportunities',
+      'Prioritized from currently verified Campaign, merchant and product-plan records. Suggestions require your review; no creative was published or action executed.');
+    queue.classList.add('vp3-marketing-opportunity-queue');
+    if(opportunities.items.length) {
+      const list=n('div','','vp3-marketing-opportunity-list');
+      for(const candidate of opportunities.items) {
+        const item=n('article','','vp3-marketing-opportunity');
+        const heading=n('div','','vp3-marketing-opportunity-heading');
+        heading.append(n('strong',candidate.title),
+          n('span',candidate.label+' · '+candidate.priority+' priority','vp3-marketing-workspace-pill'));
+        item.append(heading,n('p',candidate.finding));
+        item.append(n('p','Next step: '+candidate.next));
+        if(candidate.question)item.append(n('p',candidate.question,'vp3-marketing-workspace-muted'));
+        if(candidate.nativeOwner)item.append(n('small','The Product Launch specialist owns its existing Chat announcement.'));
+        rowActions(item,link('Review verified source',candidate.href,
+          candidate.nativeOwner?'plan':'campaigns',
+          candidate.nativeOwner?{product_id:Number(candidate.ref.split(':').at(-1)),conversation_id:session.cid}:null));
+        list.append(item);
+      }
+      queue.append(list);
+    } else {
+      queue.append(n('p','No reviewable opportunities were verified in this bounded scan. This does not mean there are none elsewhere.','vp3-marketing-workspace-muted'));
+    }
+    if(opportunities.coverage!=='ready')queue.append(n('p','Opportunity coverage: '+opportunities.coverage
+      +'. Missing records are not counted as zero.','vp3-marketing-workspace-muted'));
+    target.append(queue);
     const important=campaigns.filter(c=>c.readiness==='needs_setup'||c.readiness==='limited');
     const details=card('What deserves attention',important.length
       ?'These campaign readiness checks need review before the next action.':'No setup blockers were found in the campaigns shown. This is not a full audit.');
@@ -938,6 +1002,7 @@
         linkedCreative:normalizeLinkedCreative(item.linked_creative),
         nativeAB:normalizeNativeAB(item.native_ab)});
     }
+    session.opportunityPortfolio=normalizeOpportunityPortfolio(data.opportunity_portfolio,session);
     session.links=data.links&&typeof data.links==='object'?data.links:{};
     render(session);display('Marketing review loaded. Only currently authorized records are shown.');
   }
@@ -958,6 +1023,7 @@
     const session=active;if(!current(session))return;
     for(const abort of session.requests.values())abort.abort();
     session.requests.clear();session.campaigns=[];session.plans.clear();session.links={};
+    session.opportunityPortfolio={coverage:'unavailable',items:[]};
     session.coverage='loading';session.nextBefore=null;session.campaignFocus=null;
     session.workChoices=null;session.approvalLinkId=null;session.unlinkLinkId=null;render(session);
     display('Checking current campaigns and saved product plans…');
@@ -970,7 +1036,8 @@
       ||!allowed()||!live?.isReady?.()||live?.isRestoring?.()||typeof live?.showMarketingCanvasView!=='function')return false;
     clearSession();
     const session={id:++sequence,cid:bound.conversationId,tab:'overview',requests:new Map(),
-      campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',editor:null,editorActive:false,
+      campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',
+      opportunityPortfolio:{coverage:'unavailable',items:[]},editor:null,editorActive:false,
       canvasLink:null,canvasLinkActive:false,canvasCampaignId:0,
       productPicker:null,productPickerActive:false,campaignFocus:null,workChoices:null,
       workBusy:false,approvalLinkId:null,unlinkLinkId:null,
