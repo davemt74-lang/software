@@ -67,6 +67,11 @@ jobs:
           node --check chat-coding-canvas-v1.js
           php tests/public-canvas-marketing-v1.php
           node tests/public-canvas-marketing-runtime-v1.mjs
+      - name: Create Merchant page scroll, sidebar and owner form contracts
+        run: |
+          php -l campaigns.php
+          php -l includes/member-header.php
+          node tests/campaigns-merchant-layout-contract-v1.mjs
       - name: Unified Marketing workspace owner data and current Chat contract
         run: |
           php -l includes/initiative-marketing-workspace-v1.php
@@ -489,6 +494,14 @@ jobs:
         run: node tests/profile-specialist-workspace-browser.mjs
       - name: Completed Profile analytics periods, fixed briefing links and compact layout
         run: node tests/profile-analytics-period-browser.mjs
+      - name: Create Merchant content and sidebar desktop-mobile acceptance
+        run: node tests/campaigns-merchant-layout-browser-v1.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: campaigns-merchant-layout-evidence
+          path: artifacts/campaigns-merchant-layout/
+          if-no-files-found: ignore
       - name: Unified Marketing workspace Chat Canvas, plans and mobile acceptance
         run: node tests/marketing-workspace-browser-v1.mjs
       - name: Music Library REAPER progress desktop and mobile browser acceptance
