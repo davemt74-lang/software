@@ -51,7 +51,6 @@ sys.stdout.buffer.write(b.getvalue())`],{input:JSON.stringify({rpp,mp3:mp3.toStr
   assert.equal(stems.length,19);
   stems.forEach(row=>{assert.ok(row.duration_seconds>1&&row.duration_seconds<1.5);assert.equal(row.channels,1);assert.equal(row.sample_rate,48000);assert.deepEqual(fs.readFileSync(path.join(f.root,row.file_path.replace(/^\//,''))),mp3);});
   assert.equal(snapshot.mixes[0].mix_json,'{"volume":0.4}');assert.equal(snapshot.history[0].last_position_seconds,23);assert.equal(snapshot.playlists.length,1);
-  fs.appendFileSync(path.join(f.root,'includes/bootstrap.php'),`\nfunction require_permission($key):void{if(!has_permission($key,current_user())){http_response_code(403);exit;}}\nfunction can_view_track(array $t,?array $u=null):bool{return can_manage_track_production($t,$u);}`);
   success=true;return {...f,formData:form,stems,mp3};
 }finally{if(!success)f.close();}
 }

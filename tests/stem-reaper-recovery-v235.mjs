@@ -4,8 +4,9 @@ const f=await recoveryFixture();
 try{
  for(const stem of f.stems){
   const response=await fetch(f.base+'/stem-media-v34.php?id='+stem.id,{headers:{'X-User':'11',Cookie:f.formData.cookie}});
-  assert.equal(response.status,200,f.logs);assert.equal(response.headers.get('Content-Type'),'audio/mpeg');
-  assert.deepEqual(Buffer.from(await response.arrayBuffer()),f.mp3);
+  const bytes=Buffer.from(await response.arrayBuffer());
+  assert.equal(response.status,200,bytes.toString('utf8')+'\n'+f.logs);assert.equal(response.headers.get('Content-Type'),'audio/mpeg');
+  assert.deepEqual(bytes,f.mp3);
  }
  const id=f.stems[0].id;
  const partial=await fetch(f.base+'/stem-media-v34.php?id='+id,{headers:{Range:'bytes=25-1023','X-User':'11'}});
