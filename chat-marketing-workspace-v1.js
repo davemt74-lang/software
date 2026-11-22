@@ -449,6 +449,27 @@
           details.append(n('h4','Measurement & approval'),n('p',candidate.brief.measurement),
             n('p',candidate.brief.approval),n('small',candidate.brief.evidence));
           details.append(button('Use this private brief in Chat',()=>discussPrivateBrief(session,candidate)));
+          // A new Campaign draft is appropriate only for a completed
+          // Campaign outcome or a current product plan. Active-Campaign
+          // readiness/performance issues must be handled in their existing
+          // Campaign instead of silently creating duplicates.
+          if(['product-plan','campaign-outcome'].includes(candidate.kind)){
+            details.append(button('Start private Campaign draft from brief',()=>{
+              if(!current(session)||!candidate.brief)return;
+              const prefill={
+                source_ref:candidate.ref,source_revision:candidate.revision,
+                title:(candidate.title.replace(/\s*·.*$/, '').slice(0,190)||'Marketing campaign draft'),
+                objective:candidate.brief.objective.slice(0,500),
+                description:('Source finding: '+candidate.finding
+                  +'\n\nProposed next step: '+candidate.next
+                  +'\n\nAudience decision: '+candidate.brief.audience
+                  +'\nBudget decision: '+candidate.brief.budget
+                  +'\nChannel decision: '+candidate.brief.channel
+                  +'\n\nNothing is approved, created or published by this prefill.').slice(0,4000)
+              };
+              openDraftEditor(session,0,prefill);
+            }));
+          }
           item.append(details);
         }
         rowActions(item,link('Review verified source',candidate.href,
@@ -478,7 +499,7 @@
     if(session.coverage!=='ready')target.append(n('p','Campaign coverage: '+session.coverage+'. Unavailable reporting is not counted as zero.','vp3-marketing-workspace-muted'));
     if(session.nextBefore)target.append(n('p','More saved product plans are available in the Product plans tab.','vp3-marketing-workspace-muted'));
   }
-  function openDraftEditor(session,campaignId=0) {
+  function openDraftEditor(session,campaignId=0,privateProposal=null) {
     if(!current(session)||!window.VP3MarketingEditorV1?.mount)return;
     session.activation?.dispose();session.activation=null;session.activationActive=false;
     const target=panes.get('campaigns');
@@ -499,7 +520,7 @@
         display('Private Campaign draft saved. Nothing published or sent.');
         void loadOverview(session);
       }
-    },campaignId);
+    },campaignId,privateProposal);
     if(!session.editor){session.editorActive=false;renderCampaigns(session);}
   }
   function openActivationReview(session,campaignId=0) {

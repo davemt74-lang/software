@@ -524,6 +524,12 @@ jobs:
           name: campaigns-merchant-layout-evidence
           path: artifacts/campaigns-merchant-layout/
           if-no-files-found: ignore
+      - name: Marketing Specialist private brief to existing Campaign draft editor contract
+        run: |
+          node --check chat-marketing-editor-v1.js
+          node --check chat-marketing-workspace-v1.js
+          node --check tests/marketing-campaign-editor-browser-v1.mjs
+          node --check tests/marketing-workspace-browser-v1.mjs
       - name: Marketing Specialist private creative brief, source binding and consent
         run: |
           php -l includes/agent-marketing-private-brief-v1.php
