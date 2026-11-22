@@ -71,7 +71,6 @@ function vp3_top_of_mind_image_status_v1(PDO $pdo,array $user,int $agentId,int $
         WHERE g.owner_user_id=? AND g.agent_id=? AND g.conversation_id=?
         ORDER BY g.run_id DESC LIMIT 10");
     $query->execute([$owner,$agentId,$cid]);
-    $recent=null;
     foreach($query->fetchAll(PDO::FETCH_ASSOC) as $row){
         try{
             $view=vp3_image_view_v1($pdo,$user,$row);
@@ -84,11 +83,9 @@ function vp3_top_of_mind_image_status_v1(PDO $pdo,array $user,int $agentId,int $
                 if($messageId<1)continue; // The original owner request is no longer present.
             }
             $status=vp3_top_of_mind_image_projection_v1($view,$row,$owner,$agentId,$cid,$now,$messageId);
-            if($status===null)continue;
-            if(in_array($status['state'],['working','queued','paused'],true))return $status;
-            $recent??=$status;
+            if($status!==null)return $status; // Latest authorized job; do not repeatedly hydrate older image assets.
         }catch(PDOException $error){throw $error;}
         catch(RuntimeException|JsonException $error){continue;} // Revoked or changed source stays private.
     }
-    return $recent;
+    return null;
 }
