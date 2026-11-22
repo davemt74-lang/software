@@ -116,3 +116,11 @@
 #chatThread[data-view="marketing"] .vp3-marketing-opportunity p{margin:8px 0;font-size:12px;line-height:1.5}
 #chatThread[data-view="marketing"] .vp3-marketing-opportunity small{display:block;font-size:11px;line-height:1.4}
 @media (max-width:640px){#chatThread[data-view="marketing"] .vp3-marketing-opportunity-list{grid-template-columns:1fr}}
+
+/* Phase 3B: accessible private brief inside the existing, naturally scrolling Marketing Canvas. */
+#chatThread[data-view="marketing"] .vp3-marketing-private-brief{margin:10px 0;border-top:1px solid var(--vp3-marketing-border,#d8dde5);padding:10px 0;min-width:0;overflow-wrap:anywhere}
+#chatThread[data-view="marketing"] .vp3-marketing-private-brief summary{font-weight:650;font-size:12px;cursor:pointer}
+#chatThread[data-view="marketing"] .vp3-marketing-private-brief h4{font-size:12px;margin:10px 0 4px}
+#chatThread[data-view="marketing"] .vp3-marketing-private-brief p{margin:4px 0;font-size:12px;line-height:1.5}
+#chatThread[data-view="marketing"] .vp3-marketing-private-brief ul{margin:4px 0;padding-inline-start:20px;font-size:12px;line-height:1.5}
+#chatThread[data-view="marketing"] .vp3-marketing-private-brief button{white-space:normal;text-align:center;max-width:100%;margin:8px 0 2px}
