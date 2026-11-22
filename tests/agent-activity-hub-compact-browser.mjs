@@ -162,6 +162,19 @@ await page.route('https://activity.test/api/hub**',route => {
         routing:{specialist:'planning',trigger:'changed',action:'watch'}},
       {specialist_id:'tasks',title:'The checklist is ready'},
       {specialist_id:'unrecognized',title:'Never display an unknown source'},
+    ],briefings:[
+      {specialist_id:'profile',title:'Visitor follow-up',source_coverage:'ready',source_url:'/profile-agent.php?tab=inbox&conversation=23',
+        presentation_owner:'profile_native',sections:{key_findings:['A visitor asked about the current offering.'],
+          actions_followups:['Review the owner conversation'],open_questions:['Which follow-up matters?'],
+          next_step:'Open Profile inbox',questions_for_you:['Would you like to respond?']}},
+      {specialist_id:'media',title:'Verified music suggestion',source_coverage:'ready',source_url:'/track.php?id=8',
+        sections:{key_findings:['Saved listening activity suggests a track. <img src=x>'],
+          actions_followups:['Proposed playback; not yet executed'],open_questions:['Which track next?'],
+          next_step:'Review the saved track',questions_for_you:['Play this track?']}},
+      {specialist_id:'marketing',title:'Campaign needs review',source_coverage:'limited',source_url:'https://outside.test/phishing',
+        sections:{key_findings:['A campaign has a verified follow-up.'],actions_followups:['Review draft'],
+          open_questions:['Is the date final?'],next_step:'Review campaign',
+          questions_for_you:['Approve a draft for review?']}},
     ]};
   }
   if (!view && showCoordinationFindings) {
@@ -403,6 +416,18 @@ try {
   assert.equal(await summary.getByText('Confirm the guest count by Friday. <img src=x>',{exact:true}).count(),1);
   assert.equal(await summary.locator('img').count(),0);
   assert.equal(await summary.getByText('Workshop setup is on Friday',{exact:true}).count(),1);
+  const briefs = summary.locator('.vp3-agent-specialist-briefings');
+  await briefs.getByText('Verified specialist briefings (3)',{exact:true}).click();
+  assert.equal(await briefs.locator('article').count(),3,'All three sources share one Brain reports surface');
+  assert.equal(await briefs.getByText('A visitor asked about the current offering.',{exact:true}).count(),1);
+  assert.equal(await briefs.getByText('Saved listening activity suggests a track. <img src=x>',{exact:true}).count(),1);
+  assert.equal(await briefs.locator('img').count(),0,'Source evidence must be DOM text, never HTML');
+  assert.equal(await briefs.getByText('Proposed playback; not yet executed',{exact:true}).count(),1);
+  assert.equal(await briefs.getByText('Some sources could not be verified.',{exact:true}).count(),1);
+  assert.equal(await briefs.getByText('Existing Profile notifications own this visitor update.',{exact:true}).count(),1);
+  assert.equal(await briefs.locator('a[href*="outside.test"]').count(),0,'Never navigate to an untrusted external source');
+  assert.equal(await briefs.locator('a[href="/track.php?id=8"]').count(),1,'Verified Media source navigation preserved');
+  assert.equal(await briefs.locator('.vp3-agent-specialist-briefing-section b').count(),15,'All five report sections present');
   const nextSummaryCheck = reads + 1;
   await summary.locator('.vp3-agent-activity-summary-updates').evaluate(element=>window.originalSummaryList=element);
   await hub.getByRole('button',{name:'Refresh',exact:true}).click();
