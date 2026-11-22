@@ -167,6 +167,14 @@ jobs:
           php -l includes/agent-top-of-mind-specialists-v1.php
           php -l includes/agent-activity-hub-v1.php
           php tests/agent-image-brain-unified-v1.php
+      - name: Shared Profile Media and Marketing Brain + Chat report contracts
+        run: |
+          php -l includes/agent-unified-specialist-briefings-v1.php
+          php -l includes/agent-coordination-work-v1.php
+          php -l includes/agent-coordination-schedule-v1.php
+          php -l includes/agent-activity-hub-v1.php
+          node --check agent-activity-hub-v1.js
+          php tests/agent-unified-specialist-briefings-v1.php
       - name: Free Profile image catalogs and edits on native MySQL
         env:
           VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
