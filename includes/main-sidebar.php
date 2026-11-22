@@ -15,7 +15,10 @@ $mainSidebarCanChat = $mainSidebarUser && has_permission('chat.access', $mainSid
 $mainSidebarCodingCanvas = $mainSidebarIsChat && $mainSidebarCanChat && personal_knowledge_available($mainSidebarUser);
 $mainSidebarCurrentSection = function_exists('member_navigation_section_label') ? member_navigation_section_label($mainSidebarActive) : 'Workspace';
 
-$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','phone_tracking','canvases','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
+$mainSidebarPrimaryOrder = ['home','chat','profile_agent','messages','contacts','connections','knowledge','media_library','canvases','transcriptions','calendar','scheduling','profile_commerce','campaigns','rewards','team'];
+if ($mainSidebarCanChat && has_permission('account.access', $mainSidebarUser)) {
+    $mainSidebarPrimaryOrder[] = 'phone_tracking';
+}
 $mainSidebarPrimaryKeys = array_fill_keys($mainSidebarPrimaryOrder, true);
 $mainSidebarPrimaryKeys['hosting']=true;
 $mainSidebarPrimaryKeys['apps']=true;

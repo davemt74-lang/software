@@ -1163,15 +1163,17 @@
           .filter(id=>Number.isSafeInteger(id)&&id>0).slice(0,12) : [];
       const data = await readChat({
         action:'activity',
-        phone_updates:Boolean(activeConversationId>0 && document.visibilityState==='visible' && initiativeIdentityMatchesV1()
-          && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()),
+        ...(activeConversationId>0 && document.visibilityState==='visible' && initiativeIdentityMatchesV1()
+          && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.() ? {phone_updates:true} : {}),
         after_id:activityCursor,
         conversation_id:activeConversationId,
         ...(initiativeMessageIds.length?{initiative_message_ids:initiativeMessageIds}:{}),
         agent_context:{user_agent_id:Number(cfg.agentId || 0)}
       }, controller.signal);
       activityRead=true;
-      presentPhoneUpdatesV1(data,activeConversationId,activityChatRevision);
+      if (Array.isArray(data.phone_updates) && data.phone_updates.length) {
+        presentPhoneUpdatesV1(data,activeConversationId,activityChatRevision);
+      }
       if(activityChatRevision===chatRevision&&activeConversationId>0&&activeConversationId===conversationId
         &&Number(data.conversation_id||0)===conversationId&&Number.isSafeInteger(data.latest_message_id)&&data.latest_message_id>=0){
         const changed=canvasActivityStatus?.revision!==chatRevision||canvasActivityStatus.knownLatestMessageId!==data.latest_message_id;
