@@ -55,6 +55,10 @@ function initiative_work_marketing_promotion_source_v1(PDO $pdo, int $owner, arr
     }
     $current = initiative_work_marketing_context_v1($pdo, $owner, $scope, $body, $lock);
     $draft = initiative_work_marketing_draft_v1($pdo,$owner,$productId,$draftId,$lock);
+    if(array_key_exists('campaign_brief',$draft)){
+        require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
+        vp3_marketing_brief_context_v1($pdo,$owner,$scope,$draft['campaign_brief'],$productId);
+    }
     if ((string)($draft['asset_id'] ?? '') !== $current['asset']['id']
         || ($draft['asset_sha256'] ?? '') !== $current['asset']['digest']) {
         throw new DomainException('The original product image changed. Save a new marketing draft.', 409);
@@ -317,6 +321,9 @@ function initiative_work_marketing_promotion_digest_v1(array $asset): ?string
 
 function initiative_work_marketing_promotion_publication_v1(PDO $pdo, int $owner, array $row, bool $lock=false, ?array $campaign=null): array
 {
+    $draft=initiative_work_marketing_draft_v1($pdo,$owner,(int)$row['product_id'],(string)$row['draft_key'],$lock);
+    if(array_key_exists('campaign_brief',$draft))
+        throw new DomainException('Campaign brief creative is private review work. Approve public use in the Campaign Manager.',409);
     if (!in_array($row['status'],['saved','published','paused'],true)) {
         throw new DomainException('Save the reviewed graphic before publishing.',409);
     }
@@ -426,6 +433,14 @@ function initiative_work_marketing_promotion_action_v1(PDO $pdo, int $owner, arr
     if (!is_string($id)) throw new DomainException('Choose an exact promotion design.',422);
     $row = initiative_work_marketing_promotion_row_v1($pdo,$owner,$id);
     initiative_work_marketing_promotion_scope_v1($row,$scope);
+    $boundDraft=in_array($action,['creative_cancel','creative_pause'],true)?[]
+        :initiative_work_marketing_draft_v1($pdo,$owner,$row['product_id'],$row['draft_key']);
+    if(array_key_exists('campaign_brief',$boundDraft)&&$action!=='creative_cancel'){
+        require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
+        vp3_marketing_brief_context_v1($pdo,$owner,$scope,$boundDraft['campaign_brief'],$row['product_id']);
+        if(in_array($action,['creative_publish_preview','creative_publish'],true))
+            throw new DomainException('This Campaign creative is private review work. Approve public use in the Campaign Manager.',409);
+    }
     if (in_array($action,['creative_status','creative_tick','creative_cancel'],true)) {
         $row = initiative_work_marketing_promotion_recover_v1($pdo,$owner,$scope,$row);
     }

@@ -85,7 +85,13 @@ function initiative_work_marketing_context_v1(PDO $pdo, int $owner, array $scope
     $linked = (is_int($linkedAsset) || is_string($linkedAsset)) && (string)$linkedAsset === $sourceId
         && ($linkedDigest === null || (is_string($linkedDigest) && hash_equals($linkedDigest, $asset['digest'])));
     $revision = hash('sha256', json_encode([$productId, $facts, $asset['revision'], $provenance, $linked], JSON_THROW_ON_ERROR));
-    return compact('asset','product','facts','provenance','revision','linked');
+    $campaignBrief=null;
+    if(array_key_exists('campaign_brief',$input)){
+        require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
+        $campaignBrief=vp3_marketing_brief_context_v1($pdo,$owner,$scope,$input['campaign_brief'],$productId);
+        $revision=hash('sha256',json_encode([$revision,$campaignBrief['binding']],JSON_THROW_ON_ERROR));
+    }
+    return compact('asset','product','facts','provenance','revision','linked','campaignBrief');
 }
 
 function initiative_work_marketing_preview_v1(PDO $pdo, int $owner, array $scope, array $input): array
@@ -95,13 +101,17 @@ function initiative_work_marketing_preview_v1(PDO $pdo, int $owner, array $scope
     $drafts = array_values(array_filter(initiative_work_marketing_drafts_v1($pdo, $owner, $input['product_id']),
         static fn(array $draft): bool => (int)$draft['asset_id'] === (int)$asset['id']
             && ($draft['asset_sha256'] ?? '') === $asset['digest']));
+    if($current['campaignBrief']!==null)$drafts=array_values(array_filter($drafts,
+        static fn(array $draft):bool=>($draft['campaign_brief']??null)===$current['campaignBrief']['binding']));
     return ['source_id'=>$asset['id'], 'source_title'=>$asset['title'], 'revision'=>$current['revision'], 'details'=>[
         'image_url'=>media_studio_asset_url((int)$asset['id']),
         'linked_product_image'=>$current['linked'],
         'summary'=>'Product: '.$current['facts']['title'],
         'drafts'=>$drafts,
         'effect'=>$current['provenance']==='openai_image' ? 'Use a generated image for this draft.' : 'Use this saved image for the draft.',
-        'owner_review'=>'Save private copy and a campaign idea with the selected image. Cloud AI receives the product wording and image title.',
+        'owner_review'=>'Save private copy and a campaign idea with the selected image. Cloud AI receives the product wording and image title.'
+            .($current['campaignBrief']===null?'':' Campaign: '.$current['campaignBrief']['campaign']['fields']['title']
+                .'. Objective: '.$current['campaignBrief']['campaign']['fields']['objective'].'. The source brief is saved with this private draft.'),
     ]];
 }
 
@@ -141,8 +151,13 @@ function initiative_work_marketing_save_v1(PDO $pdo, int $owner, array $scope, a
     if (isset($drafts[$request])) return $drafts[$request];
     if (count($drafts) >= 12) throw new DomainException('This product has reached its private marketing draft limit.',429);
     $asset = $current['asset'];
-    $prompt = json_encode(['product'=>$current['facts'],'image_title'=>$asset['title'],
-        'image_source'=>$current['provenance']],JSON_THROW_ON_ERROR);
+    $context=['product'=>$current['facts'],'image_title'=>$asset['title'],'image_source'=>$current['provenance']];
+    if($current['campaignBrief']!==null)$context['campaign_brief']=[
+        'campaign_name'=>$current['campaignBrief']['campaign']['fields']['title'],
+        'objective'=>$current['campaignBrief']['campaign']['fields']['objective'],
+        'private_brief_objective'=>$current['campaignBrief']['link']['record']['brief']['objective'],
+        'scope'=>'Private creative for owner review. No audience, price, spend or publication is authorized.'];
+    $prompt = json_encode($context,JSON_THROW_ON_ERROR);
     if ($model) {
         $answer = $model($prompt);
     } else {
@@ -166,6 +181,7 @@ function initiative_work_marketing_save_v1(PDO $pdo, int $owner, array $scope, a
         'description'=>$body,'campaign_idea'=>$campaign,'asset_id'=>(int)$asset['id'],
         'asset_sha256'=>$asset['digest'],'asset_source'=>$current['provenance'],'image_url'=>media_studio_asset_url((int)$asset['id']),
         'review_url'=>url('/profile-commerce-products.php?workspace_product='.$input['product_id'].'#product-marketing-drafts')];
+    if($current['campaignBrief']!==null)$output['campaign_brief']=$current['campaignBrief']['binding'];
     $pdo->beginTransaction();
     try {
         $resolve(true);
@@ -177,6 +193,7 @@ function initiative_work_marketing_save_v1(PDO $pdo, int $owner, array $scope, a
             $query = $pdo->prepare('INSERT INTO agent_commerce_marketing_drafts_v1
                 (product_id,owner_user_id,request_key,draft_json) VALUES (?,?,?,?)');
             $query->execute([$input['product_id'],$owner,$request,json_encode($output,JSON_THROW_ON_ERROR)]);
+            if(isset($output['campaign_brief']))vp3_marketing_brief_attach_work_v1($pdo,$owner,$scope,$output['campaign_brief'],$output);
             require_once __DIR__.'/initiative-product-launch-v1.php';
             initiative_product_launch_track_v1($pdo,$owner,$scope,$input['product_id'],$request);
         }

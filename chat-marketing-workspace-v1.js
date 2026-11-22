@@ -372,7 +372,7 @@
     // No form submit, provider call, approval or Campaign write.
   }
   const portfolioKinds=new Set(['campaign-readiness','campaign-performance','campaign-optimization',
-    'campaign-work','campaign-outcome','product-plan']);
+    'campaign-work','campaign-outcome','campaign-brief','product-plan']);
   function normalizeOpportunityPortfolio(raw,session) {
     const empty={coverage:'unavailable',items:[]};
     if(!raw||raw.contract!=='vp3.marketing.opportunity-portfolio.v1'
@@ -384,7 +384,7 @@
     for(const candidate of raw.opportunities) {
       if(!candidate||!portfolioKinds.has(candidate.kind)
         ||typeof candidate.source_ref!=='string'
-        ||!/^marketing:(?:campaign-(?:readiness|performance|optimization|work|outcome)|product-plan):[1-9]\d{0,15}$/.test(candidate.source_ref)
+        ||!/^marketing:(?:campaign-(?:readiness|performance|optimization|work|outcome|brief)|product-plan):[1-9]\d{0,15}$/.test(candidate.source_ref)
         ||!candidate.source_ref.endsWith(':'+String(candidate.source_id))
         ||typeof candidate.source_revision!=='string'||!/^[a-f0-9]{64}$/.test(candidate.source_revision)
         ||!Number.isSafeInteger(candidate.source_id)||candidate.source_id<1
@@ -472,6 +472,8 @@
           }
           item.append(details);
         }
+        if(candidate.kind==='campaign-brief')item.append(button('Continue Campaign creative',
+          ()=>void openBriefWork(session,Number(candidate.ref.split(':').at(-1)))));
         rowActions(item,link('Review verified source',candidate.href,
           candidate.nativeOwner?'plan':'campaigns',
           candidate.nativeOwner?{product_id:Number(candidate.ref.split(':').at(-1)),conversation_id:session.cid}:null));
@@ -501,6 +503,7 @@
   }
   function openDraftEditor(session,campaignId=0,privateProposal=null) {
     if(!current(session)||!window.VP3MarketingEditorV1?.mount)return;
+    session.briefFocus=null;
     session.activation?.dispose();session.activation=null;session.activationActive=false;
     const target=panes.get('campaigns');
     session.editor?.dispose();session.editor=null;session.editorActive=true;
@@ -519,6 +522,7 @@
         renderCampaigns(session);
         display('Private Campaign draft saved. Nothing published or sent.');
         void loadOverview(session);
+        if(privateProposal)void openBriefWork(session,draft.id);
       }
     },campaignId,privateProposal);
     if(!session.editor){session.editorActive=false;renderCampaigns(session);}
@@ -567,6 +571,8 @@
         const list=n('ul');for(const issue of campaign.issues)list.append(n('li',issue));item.append(list);
       }
       rowActions(item,...(campaign.status==='draft'?[button('Edit private draft',()=>openDraftEditor(session,campaign.id))]:[]),
+        ...(campaign.status==='draft'&&campaign.has_saved_brief===true
+          ?[button('Open Campaign creative brief',()=>void openBriefWork(session,campaign.id))]:[]),
         ...(['draft','scheduled','paused'].includes(campaign.status)
             ?[button('Review activation',()=>openActivationReview(session,campaign.id))]:[]),
         ...(['draft','scheduled','active','paused'].includes(campaign.status)
@@ -698,8 +704,11 @@
     if(!current(session)||!Number.isSafeInteger(productId)||productId<1
       ||typeof photoId!=='string'||!/^[1-9][0-9]{0,18}$/.test(photoId)
       ||!window.VP3InitiativeWorkbench?.open)return false;
+    const brief=session.briefFocus;
+    const options={productId,...(brief?{campaignBrief:{...brief.binding},
+      marketingPrefill:{level:1,prompt:('Campaign objective: '+brief.objective).slice(0,600)}}:{})};
     leave();
-    const opened=window.VP3InitiativeWorkbench.open('marketing',photoId,'',{productId})===true;
+    const opened=window.VP3InitiativeWorkbench.open('marketing',photoId,'',options)===true;
     if(!opened)context()?.showTurnNotice?.('The Marketing draft workbench could not be opened. No new draft was saved.');
     return opened;
   }
@@ -721,6 +730,7 @@
     }
     session.campaignFocus={id:fresh.id,version:fresh.version,name:fresh.name,
       href:fresh.href,recommendationId};
+    session.briefFocus=null;
     selectTab('creative');renderCreative(session);
     display('Campaign review verified. Choose a product and photo to prepare a private draft; Campaign changes require separate approval.');
   }
@@ -745,6 +755,7 @@
         &&typeof plan.revision==='string'&&/^[a-f0-9]{64}$/.test(plan.revision));
       session.campaignFocus={id:campaign.id,name:campaign.name,version:campaign.version,
         href:campaign.href,recommendationId};
+      session.briefFocus=null;
       session.workChoices={...choices,plans};
       selectTab('creative');renderCreative(session);
       display(plans.length?'Choose a saved draft to link privately. No Campaign changes are made.'
@@ -798,6 +809,51 @@
         :'The current source changed. Review the Campaign before continuing.');
     }finally{session.workBusy=false;}
   }
+  function validBriefWork(value,id){
+    return value?.contract==='vp3.marketing.campaign-brief.v1'&&value.campaign_id===id&&value.private_only===true
+      &&value.binding?.campaign_id===id&&Number.isSafeInteger(value.binding.brief_id)&&value.binding.brief_id>0
+      &&/^[a-f0-9]{64}$/.test(value.binding.campaign_revision||'')
+      &&/^marketing:(?:product-plan|campaign-outcome):[1-9]\d{0,15}$/.test(value.source_ref||'')
+      &&/^[a-f0-9]{64}$/.test(value.source_revision||'')
+      &&['title','objective','source_title','brief_objective'].every(k=>typeof value[k]==='string'&&value[k].length<=2100)
+      &&['brief_saved','copy_saved','creating_image','creative_ready','needs_review'].includes(value.state)
+      &&!!localLink(value.href,'campaigns');
+  }
+  async function openBriefWork(session,id){
+    if(!current(session)||!Number.isSafeInteger(id)||id<1)return;
+    const data=await request(session,'brief','marketing_brief_open',{campaign_id:id});
+    if(!current(session))return;
+    if(!data||!validBriefWork(data.brief_work,id)){
+      session.briefFocus=null;renderCreative(session);
+      if(data)display('The saved Campaign brief could not be verified.');return;
+    }
+    session.briefFocus=data.brief_work;session.campaignFocus=null;session.workChoices=null;
+    session.productPicker?.dispose();session.productPicker=null;session.productPickerActive=false;
+    session.canvasLink?.dispose();session.canvasLink=null;session.canvasLinkActive=false;
+    selectTab('creative');renderCreative(session);
+    display('Saved Campaign brief loaded. Creative remains private for owner review.');
+  }
+  async function resumeBriefWork(session){
+    const id=session.briefFocus?.campaign_id;
+    if(!Number.isSafeInteger(id)||!current(session))return;
+    const data=await request(session,'brief','marketing_brief_open',{campaign_id:id});
+    if(!data||!current(session)||!validBriefWork(data.brief_work,id))return;
+    session.briefFocus=data.brief_work;
+    const r=data.brief_work.resume;
+    if(!r||!Number.isSafeInteger(r.product_id)||r.product_id<1
+      ||!/^[a-f0-9]{64}$/.test(r.draft_id||'')||!/^[1-9]\d{0,18}$/.test(r.source_id||'')
+      ||typeof r.creative_id!=='string'||r.creative_id&&!/^[a-f0-9]{32}$/.test(r.creative_id)){
+      renderCreative(session);display('This creative needs a fresh review. Choose the current product and photo.');return;
+    }
+    const cid=session.cid;leave();
+    if(window.VP3InitiativeWorkbench?.openCampaignCreative?.(r,cid)!==true)
+      context()?.showTurnNotice?.('The saved Campaign creative could not be opened. Reopen Marketing to retry.');
+  }
+  function openCampaignBrief(id,cid){
+    const bound=context()?.mediaCommandContext?.();
+    if(!Number.isSafeInteger(id)||id<1||bound?.conversationId!==cid||!open(bound))return false;
+    void openBriefWork(active,id);return true;
+  }
   function renderCreative(session) {
     const target=panes.get('creative');
     if(session.productPickerActive&&session.productPicker?.host?.isConnected)return;
@@ -808,6 +864,20 @@
     session.productPicker?.dispose();session.productPicker=null;
     target.replaceChildren();
     target.append(n('h3','Creative Studio & Rewards'),n('p','Use the existing editors, protected media library and campaign tools. No outbound promotion or reward is issued from this workspace automatically.'));
+    if(session.briefFocus){
+      const brief=session.briefFocus;
+      const stateLabels={brief_saved:'Ready to prepare creative',copy_saved:'Private copy saved',
+        creating_image:'Creating image',creative_ready:'Creative ready for review',needs_review:'Fresh review needed'};
+      const saved=card('Campaign creative · '+brief.title,'Source brief: '+brief.source_title);
+      saved.classList.add('vp3-marketing-campaign-brief');
+      saved.append(n('p','Campaign objective: '+brief.objective),n('p',stateLabels[brief.state]),
+        n('small','The saved brief records the original proposal. Current Campaign details and media are checked again before creating work.'));
+      rowActions(saved,button('Choose product & photo for Campaign',()=>openProductPicker(session)),
+        ...(brief.resume?[button('Continue saved Campaign creative',()=>void resumeBriefWork(session))]:[]),
+        button('Refresh Campaign creative',()=>void openBriefWork(session,brief.campaign_id)),
+        link('Review Campaign',brief.href,'campaigns'));
+      target.append(saved);
+    }
     if(session.campaignFocus){
       const focus=session.campaignFocus;
       const focusCard=card('Approved review · '+focus.name,
@@ -848,6 +918,8 @@
       const host=n('div','','vp3-marketing-product-media-host');target.append(host);
       session.productPicker=window.VP3MarketingProductMediaV1?.mount?.(host,{
         current:()=>current(session),
+        initialProductId:session.briefFocus?.source_ref?.startsWith('marketing:product-plan:')
+          ?Number(session.briefFocus.source_ref.split(':').at(-1)):0,
         request:(action)=>request(session,'product-media',action),
         onContinue:(productId,photoId)=>continueMarketingProduct(session,productId,photoId),
         onClose:()=>{
@@ -1110,7 +1182,7 @@
       campaigns:[],plans:new Map(),nextBefore:null,links:{},coverage:'loading',
       opportunityPortfolio:{coverage:'unavailable',items:[]},editor:null,editorActive:false,
       canvasLink:null,canvasLinkActive:false,canvasCampaignId:0,
-      productPicker:null,productPickerActive:false,campaignFocus:null,workChoices:null,
+      productPicker:null,productPickerActive:false,campaignFocus:null,briefFocus:null,workChoices:null,
       workBusy:false,approvalLinkId:null,unlinkLinkId:null,
       activation:null,activationActive:false};
     active=session;
@@ -1119,5 +1191,5 @@
     selectTab('overview');render(session);reload();thread.scrollTo({top:0,behavior:'instant'});title.focus({preventScroll:true});
     return true;
   }
-  window.VP3MarketingWorkspaceV1=Object.freeze({open,close:leave});
+  window.VP3MarketingWorkspaceV1=Object.freeze({open,close:leave,openCampaignBrief});
 })();

@@ -67,6 +67,7 @@ function vp3_coordination_rule_definitions_v1(): array
             'optimization_ready'=>['label'=>'Campaign recommendation ready','default'=>'report','actions'=>['watch','ask','report']],
             'performance_gap'=>['label'=>'Verified promotion performance opportunity','default'=>'ask','actions'=>['watch','ask','report']],
             'creative_review_ready'=>['label'=>'Linked creative is ready to review','default'=>'ask','actions'=>['watch','ask','report']],
+            'campaign_creative_progress'=>['label'=>'Private Campaign creative progress','default'=>'watch','actions'=>['watch','report']],
             'creative_approved'=>['label'=>'Linked creative approved for private use','default'=>'report','actions'=>['watch','report']],
             'creative_results'=>['label'=>'Audited post-change Campaign results available','default'=>'report','actions'=>['watch','report']],
             'setup_blocker'=>['label'=>'Campaign setup needs attention','default'=>'ask','actions'=>['watch','ask','report']],

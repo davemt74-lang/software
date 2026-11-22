@@ -120,6 +120,8 @@ function vp3_coordination_campaign_marketing_sources_v1(PDO $pdo,array $scope,?a
         preg_match('/\Acampaign-(?:readiness|outcome|performance):[1-9][0-9]{0,17}\z/D',$ref)===1));
     $workRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>
         preg_match('/\Acampaign-work:[1-9][0-9]{0,17}\z/D',$ref)===1));
+    $briefRefs=$refs===null?null:array_values(array_filter($refs,static fn(string $ref):bool=>
+        preg_match('/\Acampaign-brief:[1-9][0-9]{0,15}\z/D',$ref)===1));
     $recommendations=$recommendationRefs===[]?null:vp3_coordination_marketing_recommendations_v1($pdo,$scope,$recommendationRefs,$now);
     $review=null;
     if($reportRefs!==[]){
@@ -133,7 +135,12 @@ function vp3_coordination_campaign_marketing_sources_v1(PDO $pdo,array $scope,?a
         require_once __DIR__.'/initiative-marketing-recommendation-links-v1.php';
         $work=vp3_marketing_recommendation_sources_v1($pdo,$scope,$workRefs,$now);
     }
-    $sources=array_filter([$review,$recommendations,$work],static fn($value):bool=>$value!==null);
+    $brief=null;
+    if($briefRefs!==[]){
+        require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
+        $brief=vp3_marketing_brief_sources_v1($pdo,$scope,$briefRefs,$now);
+    }
+    $sources=array_filter([$review,$recommendations,$work,$brief],static fn($value):bool=>$value!==null);
     if(!$sources)return ['items'=>[],'coverage'=>'unconfigured'];
     $items=[];$states=[];
     foreach($sources as $source){$items+=$source['items'];$states[]=$source['coverage'];}

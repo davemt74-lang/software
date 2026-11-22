@@ -39,7 +39,7 @@ try {
     $creativeAction = $tool === 'marketing' && in_array($action, ['creative_open','creative_prepare','creative_generate',
         'creative_status','creative_tick','creative_cancel','creative_save','creative_publish_preview','creative_publish','creative_pause'],true);
     $marketingPlanAction = $tool === 'marketing' && in_array($action,[
-        'marketing_plans','marketing_plan','marketing_overview','marketing_canvas_choices','marketing_product_media'],true);
+        'marketing_plans','marketing_plan','marketing_overview','marketing_canvas_choices','marketing_product_media','marketing_brief_open'],true);
     $marketingEditorAction = $tool === 'marketing' && in_array($action,[
         'marketing_editor_options','marketing_editor_open','marketing_editor_preview','marketing_editor_save'],true);
     $marketingActivationAction = $tool === 'marketing' && in_array($action,[
@@ -90,7 +90,12 @@ try {
         $response += vp3_marketing_editor_action_v1($pdo,$owner,$scope,$body,$key);
     } elseif ($marketingPlanAction) {
         require_once dirname(__DIR__).'/includes/initiative-marketing-plans-v1.php';
-        if ($action === 'marketing_product_media') {
+        if ($action === 'marketing_brief_open') {
+            require_once dirname(__DIR__).'/includes/initiative-marketing-brief-campaign-v1.php';
+            $id=$body['campaign_id']??null;
+            if(!is_int($id)||$id<1||$id>9007199254740991)throw new DomainException('Choose an exact Campaign.',422);
+            $response['brief_work']=vp3_marketing_brief_view_v1($pdo,$owner,$scope,$id);
+        } elseif ($action === 'marketing_product_media') {
             require_once dirname(__DIR__).'/includes/initiative-marketing-product-media-v1.php';
             $response += vp3_marketing_product_media_choices_v1($pdo,$owner,$scope);
         } elseif ($action === 'marketing_canvas_choices') {

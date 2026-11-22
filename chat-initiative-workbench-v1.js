@@ -4,6 +4,7 @@
   const tools = document.getElementById('chatToolsContent');
   if (!tools || !cfg?.endpoint || !cfg.csrf || !cfg.ownerKey) return;
   const initialChat = window.STONEFELLOW_CHAT || null;
+  let campaignBrief = null;
   const account = {
     owner:String(cfg.ownerKey),agent:Number(cfg.agentId || 0),csrf:String(cfg.csrf),endpoint:String(cfg.endpoint),
     mediaEndpoint:String(cfg.mediaEndpoint || ''),
@@ -231,10 +232,12 @@
     const handoff = tool === 'marketing' ? options?.marketingHandoff : null;
     if (handoff && (typeof handoff.isCurrent !== 'function' || !handoff.isCurrent()
       || handoff.productId !== Number(productId) || handoff.sourceId !== sourceId || !validDesignSettings(handoff.settings))) return false;
+    if(tool==='marketing'&&options?.campaignBrief&&!validCampaignBrief(options.campaignBrief))return false;
     closeImagePicker('stale');
     marketingHandoff = handoff ? {...handoff, settings:{...handoff.settings}} : null;
     listingHandoff = Boolean(pair && options?.listingHandoff === true);
     requestedSourceRevision = sourceRevision;
+    campaignBrief = tool === 'marketing' && validCampaignBrief(options?.campaignBrief) ? {...options.campaignBrief} : null;
     const hints = tool === 'marketing' ? options?.marketingPrefill : null;
     requestedMarketingPrefill = hints && Number.isInteger(hints.level) && hints.level >= 1 && hints.level <= 10
       ? {level:hints.level, prompt:typeof hints.prompt === 'string' ? hints.prompt.slice(0,600) : ''} : null;
@@ -294,6 +297,7 @@
   }
 
   function scopeChanged() {
+    campaignBrief = null;
     window.clearInterval(scopeTimer);
     scopeTimer = 0;
     requestedSourceRevision = '';
@@ -407,6 +411,7 @@
     return {
       source_id: source.value,
       ...(lane.value === 'marketing' ? {product_id:Number(product.value)} : {}),
+      ...(lane.value === 'marketing' && campaignBrief ? {campaign_brief:{...campaignBrief}} : {}),
       ...(lane.value === 'product' && source.value === 'description' ? {product_description:productDescription.value.trim()} : {}),
       ...(lane.value === 'screen' ? {mode:mode.value, instruction:instructions.value.trim()} : {})
     };
@@ -877,5 +882,16 @@
     window.addEventListener('vp3:chat-context-ready', resume);
     resume();
   }
-  window.VP3InitiativeWorkbench = Object.freeze({open,openProductLaunch,openProductRequest,openMarketingImage});
+  function validCampaignBrief(value){
+    return value&&Number.isSafeInteger(value.campaign_id)&&value.campaign_id>0
+      &&Number.isSafeInteger(value.brief_id)&&value.brief_id>0
+      &&typeof value.campaign_revision==='string'&&/^[a-f0-9]{64}$/.test(value.campaign_revision);
+  }
+  function openCampaignCreative(reference,conversationId){
+    if(!configurationMatches())return false;
+    const bound=currentScope();
+    if(!bound||bound.conversation_id!==conversationId||!reference)return false;
+    return openMarketingDraft(reference.draft_id,reference.product_id,reference.source_id,bound,reference.creative_id||'');
+  }
+  window.VP3InitiativeWorkbench = Object.freeze({open,openProductLaunch,openProductRequest,openMarketingImage,openCampaignCreative});
 })();

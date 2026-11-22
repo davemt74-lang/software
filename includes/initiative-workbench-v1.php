@@ -15,6 +15,10 @@ function initiative_workbench_input_v1(array $body): array
         $productId = $body['product_id'] ?? null;
         if (!is_int($productId) || $productId < 1) throw new DomainException('Choose an owned product.',422);
         $input['product_id'] = $productId;
+        if(array_key_exists('campaign_brief',$body)){
+            require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
+            $input['campaign_brief']=vp3_marketing_brief_context_binding_v1($body['campaign_brief']);
+        }
     }
     if ($body['tool'] === 'screen') {
         $mode = $body['mode'] ?? '';

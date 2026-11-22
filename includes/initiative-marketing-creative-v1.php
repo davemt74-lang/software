@@ -54,6 +54,10 @@ function initiative_marketing_creative_source_v1(PDO $pdo, int $owner, array $sc
 {
     $source = initiative_work_product_source_v1($pdo, $owner, $scope, ['source_id'=>(string)$binding['source_asset_id']], $lock);
     $draft = initiative_work_marketing_draft_v1($pdo,$owner,$binding['product_id'],$binding['draft_key'],$lock);
+    if(array_key_exists('campaign_brief',$draft)){
+        require_once __DIR__.'/initiative-marketing-brief-campaign-v1.php';
+        vp3_marketing_brief_context_v1($pdo,$owner,$scope,$draft['campaign_brief'],$binding['product_id']);
+    }
     if (($draft['asset_id'] ?? null) !== $binding['source_asset_id']
         || ($draft['asset_sha256'] ?? null) !== $binding['source_sha256']
         || !hash_equals($binding['source_sha256'], $source['digest'])) {
