@@ -65,12 +65,29 @@ function vp3_agent_activity_coordination_v1(PDO $pdo, array $scope): array
         $card['state'] = $state;
         if (isset($row['routing'])) $card['routing'] = $row['routing'];
         if (isset($row['delivery'])) $card['delivery'] = $row['delivery'];
+        // Only an exact posted message, source revision and run may be matched
+        // to the signed follow-through receipt below. A source alone is not an action.
+        if (is_int($messageId) && $messageId > 0
+            && in_array($row['routing']['specialist']??null,['profile','media','marketing'],true)
+            && is_string($row['source_ref']??null)
+            && is_string($row['source_revision']??null)
+            && preg_match('/\A[a-f0-9]{64}\z/D',$row['source_revision'])
+            && is_int($row['run_id']??null) && $row['run_id'] > 0) {
+            $card['message_id']=$messageId;
+            $card['conversation_id']=$scope['conversation_id'];
+            $card['url']=vp3_agent_activity_chat_href_v1($scope['agent_id'],$scope['conversation_id']).'&message_id='.$messageId;
+            $card['source_ref']=$row['source_ref'];
+            $card['source_revision']=$row['source_revision'];
+            $card['run_id']=$row['run_id'];
+        }
         $card['next_step'] = vp3_agent_activity_text_v1($row['next_step'] ?? '', 320);
         $card['question'] = $state === 'needs_owner' ? vp3_agent_activity_text_v1($row['question'] ?? '', 320) : '';
         if ($result !== '' && $result !== $card['detail']) $card['result'] = $result;
         $workStatus = $row['work_status'] ?? null;
-        if ($state === 'resolved') $card['work_status'] = 'completed';
-        elseif ($state === 'agent_work' && in_array($workStatus, ['queued','running','failed'], true)) $card['work_status'] = $workStatus;
+        // "Owner marked resolved" is not the same as a verified executor
+        // completion. Keep the older card neutral; the source-bound receipt
+        // supplies the only confirmed completion label in the Brain briefing.
+        if ($state === 'agent_work' && in_array($workStatus, ['queued','running','failed'], true)) $card['work_status'] = $workStatus;
         $card['sources'] = [];
         foreach (array_slice($row['sources'] ?? [], 0, 5) as $source) {
             $specialist = $source['specialist'] ?? '';
@@ -127,7 +144,10 @@ function vp3_agent_activity_summary_v1(PDO $pdo, array $scope, DateTimeImmutable
     $snapshot = vp3_coordination_sources_v1($pdo, $scope['user'], $binding, null, $now);
     if ($binding === $policy) vp3_initiative_access_v1($pdo,$scope['user'],$policy);
     require_once __DIR__.'/agent-unified-specialist-briefings-v1.php';
-    $summary['briefings'] = vp3_unified_specialist_briefings_v1($snapshot);
+    require_once __DIR__.'/agent-unified-specialist-followthrough-v1.php';
+    $sourceBriefings=vp3_unified_specialist_briefings_v1($snapshot);
+    $summary['briefings']=vp3_unified_specialist_followthrough_current_v1(
+        $pdo,$scope,$sourceBriefings,$findings);
     $settings = vp3_coordination_rules_v1($pdo,$scope['user'],$scope['agent_id']);
     $latest = [];
     foreach ($snapshot['items'] as $item) {
