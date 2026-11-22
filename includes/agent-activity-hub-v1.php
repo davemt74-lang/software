@@ -126,6 +126,8 @@ function vp3_agent_activity_summary_v1(PDO $pdo, array $scope, DateTimeImmutable
     }
     $snapshot = vp3_coordination_sources_v1($pdo, $scope['user'], $binding, null, $now);
     if ($binding === $policy) vp3_initiative_access_v1($pdo,$scope['user'],$policy);
+    require_once __DIR__.'/agent-unified-specialist-briefings-v1.php';
+    $summary['briefings'] = vp3_unified_specialist_briefings_v1($snapshot);
     $settings = vp3_coordination_rules_v1($pdo,$scope['user'],$scope['agent_id']);
     $latest = [];
     foreach ($snapshot['items'] as $item) {
