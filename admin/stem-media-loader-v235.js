@@ -138,7 +138,7 @@
           audio.dataset.stemMediaOfflineV229='1';audio.dataset.stemMediaReasonV235='network_error';
           emit('stonefellow:stem-media-offline',{stemId:id,reason:'network_error'});
         },30000));
-        audio.src=result.url;audio.preload='auto';audio.load();ready();
+        audio.src=result.url;audio.dataset.stemMediaLoadedGenerationV235=String(generation);audio.preload='auto';audio.load();ready();
         return true;
       }catch(error){
         if(generations.get(id)!==generation)return false;

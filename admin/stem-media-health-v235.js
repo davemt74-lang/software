@@ -91,6 +91,8 @@
     audio.addEventListener('error',()=>{void diagnose(audio);});
     audio.addEventListener('canplay',()=>{
       if(audio.error||audio.readyState<3)return;
+      // A queued event from a previous Blob must not clear a newer failed read.
+      if(root.StonefellowStemMediaV235&&audio.dataset.stemMediaGenerationV235!==audio.dataset.stemMediaLoadedGenerationV235)return;
       clear(audio.dataset.stemAudio);
       root.dispatchEvent(new CustomEvent('stonefellow:stem-media-online',{detail:{build:BUILD,stemId:Number(audio.dataset.stemAudio)}}));
     });

@@ -56,6 +56,8 @@ try{
  fs.unlinkSync(latePath);
  await page.evaluate(id=>{const s=window.STONEFELLOW_STUDIO_RUNTIME_V87.getStem(id);s.waveformData=null;s.waveformError=true;return window.StonefellowStemMediaHealthV235.retry(id);},late.id);
  await page.waitForFunction(id=>window.StonefellowStemMediaHealthV235.snapshot().some(x=>x.id===id),late.id);
+ await page.evaluate(id=>document.querySelector(`[data-stem-audio="${id}"]`).dispatchEvent(new Event('canplay')),late.id);
+ assert.equal(await page.evaluate(id=>window.StonefellowStemMediaHealthV235.snapshot().some(x=>x.id===id),late.id),true,'a stale canplay event cannot erase the newer missing-file failure');
  assert.equal(await page.evaluate(()=>window.StonefellowStemProjectLoaderV232.isPlaybackReady()),true,'late failures do not close the editor');
  fs.writeFileSync(latePath,f.mp3);await page.getByRole('button',{name:`Retry loading track ${late.id}`,exact:true}).click();
  await page.waitForFunction(id=>{const s=window.STONEFELLOW_STUDIO_RUNTIME_V87.getStem(id);return !s.mediaUnavailable&&!!s.waveformData&&!s.waveformError;},late.id,{timeout:15000});
