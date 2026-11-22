@@ -97,8 +97,10 @@ review_check($out['campaigns'][1]['readiness']==='limited'&&$out['campaigns'][1]
     'missing readiness and window metrics remain unavailable');
 review_check($out['links']===['campaigns'=>'/vp3/campaigns.php','products'=>'/vp3/profile-commerce-products.php','rewards'=>'/vp3/rewards.php'],
     'canonical existing editor routes reused');
-$reportReads=0;$out=vp3_initiative_marketing_workspace_overview_v1($pdo,12,$scope);
-review_check($out['campaigns']===[]&&$out['links']['campaigns']===null&&$reportReads===0&&$opportunityReads===1,'owner mismatch denies all data before review');
+$reportReads=0;$readsBeforeDenied=$opportunityReads;
+$out=vp3_initiative_marketing_workspace_overview_v1($pdo,12,$scope);
+review_check($out['campaigns']===[]&&$out['links']['campaigns']===null&&$reportReads===0
+    &&$opportunityReads===$readsBeforeDenied,'owner mismatch denies all data before review');
 $reportReads=0;$denied=$scope;$denied['user']['account']=false;
 $out=vp3_initiative_marketing_workspace_overview_v1($pdo,11,$denied);
 review_check($out['campaigns']===[]&&$out['links']['products']===null&&$reportReads===0,'account permission denies all links and review');
