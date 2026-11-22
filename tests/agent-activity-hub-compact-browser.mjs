@@ -164,15 +164,19 @@ await page.route('https://activity.test/api/hub**',route => {
       {specialist_id:'unrecognized',title:'Never display an unknown source'},
     ],briefings:[
       {specialist_id:'profile',title:'Visitor follow-up',source_coverage:'ready',source_url:'/profile-agent.php?tab=inbox&conversation=23',
-        presentation_owner:'profile_native',sections:{key_findings:['A visitor asked about the current offering.'],
+        presentation_owner:'profile_native',engagement:{state:'awaiting_owner',conversation_id:42,message_id:443,run_id:551,
+          receipt_run_id:0,chat_url:'/chat.php?agent=7&conversation_id=42&message_id=443'},sections:{key_findings:['A visitor asked about the current offering.'],
           actions_followups:['Review the owner conversation'],open_questions:['Which follow-up matters?'],
           next_step:'Open Profile inbox',questions_for_you:['Would you like to respond?']}},
       {specialist_id:'media',title:'Verified music suggestion',source_coverage:'ready',source_url:'/track.php?id=8',
-        sections:{key_findings:['Saved listening activity suggests a track. <img src=x>'],
+        engagement:{state:'preparation_verified',conversation_id:42,message_id:444,run_id:552,
+          receipt_run_id:702,chat_url:'/chat.php?agent=7&conversation_id=42&message_id=444'},sections:{key_findings:['Saved listening activity suggests a track. <img src=x>'],
           actions_followups:['Proposed playback; not yet executed'],open_questions:['Which track next?'],
           next_step:'Review the saved track',questions_for_you:['Play this track?']}},
       {specialist_id:'marketing',title:'Campaign needs review',source_coverage:'limited',source_url:'https://outside.test/phishing',
-        sections:{key_findings:['A campaign has a verified follow-up.'],actions_followups:['Review draft'],
+        engagement:{state:revisedPlanningSummary?'approved_action_verified':'owner_marked_resolved',
+          conversation_id:42,message_id:445,run_id:553,receipt_run_id:revisedPlanningSummary?727:0,
+          chat_url:'/chat.php?agent=7&conversation_id=42&message_id=445'},sections:{key_findings:['A campaign has a verified follow-up.'],actions_followups:['Review draft'],
           open_questions:['Is the date final?'],next_step:'Review campaign',
           questions_for_you:['Approve a draft for review?']}},
     ]};
@@ -428,6 +432,18 @@ try {
   assert.equal(await briefs.locator('a[href*="outside.test"]').count(),0,'Never navigate to an untrusted external source');
   assert.equal(await briefs.locator('a[href="/track.php?id=8"]').count(),1,'Verified Media source navigation preserved');
   assert.equal(await briefs.locator('.vp3-agent-specialist-briefing-section b').count(),15,'All five report sections present');
+  assert.equal(await briefs.getByText('Waiting for your reply in Chat',{exact:true}).count(),1,
+    'Profile engagement is awaiting its actual owner reply');
+  assert.equal(await briefs.getByText('Private preparation verified · not sent or published',{exact:true}).count(),1,
+    'Media receipt cannot claim playback or publication');
+  assert.equal(await briefs.getByText('You marked this resolved · not an executor completion',{exact:true}).count(),1,
+    'Marketing owner resolution must not be represented as a completed worker action');
+  assert.equal(await briefs.locator('.vp3-agent-specialist-engagement').count(),3,'One bounded lifecycle per specialist');
+  assert.equal(await briefs.locator('a[data-vp3-specialist-message-id="443"][href="/chat.php?agent=7&conversation_id=42&message_id=443"]').count(),1,
+    'Reply links to the exact scoped original Profile Chat question');
+  assert.equal(await briefs.locator('a[data-vp3-specialist-message-id="444"][href="/chat.php?agent=7&conversation_id=42&message_id=444"]').count(),1,
+    'Verified private work keeps the original Media Chat link');
+  assert.equal(await briefs.locator('a[href*="outside.test"]').count(),0,'Untrusted URLs never become actionable');
   const nextSummaryCheck = reads + 1;
   await summary.locator('.vp3-agent-activity-summary-updates').evaluate(element=>window.originalSummaryList=element);
   await hub.getByRole('button',{name:'Refresh',exact:true}).click();
@@ -437,6 +453,12 @@ try {
   revisedPlanningSummary = true;
   await summary.getByText('Workshop setup moved to Monday',{exact:true}).waitFor({timeout:16000});
   assert.equal(await summary.getByText('Workshop setup is on Friday',{exact:true}).count(),0,'An automatic poll replaces the old report');
+  assert.equal(await briefs.getByText('You marked this resolved · not an executor completion',{exact:true}).count(),0,
+    'A newly verified approved action replaces the earlier owner-only resolution');
+  assert.equal(await briefs.getByText('Approved private action completed with receipt',{exact:true}).count(),1,
+    'The Brain refreshes the same specialist report after the executor receipt appears');
+  assert.equal(await briefs.locator('a[data-vp3-specialist-message-id="445"]').count(),1,
+    'Receipt status changes must retain the original owner decision link');
   assert.equal(await summary.getByText('Catering needs a reply',{exact:true}).count(),1);
   assert.equal(await summary.getByText('Changed → Keep in Top of Mind',{exact:true}).count(),1);
   assert.equal(await agentWork.getByText('Which local suppliers rent equipment?',{exact:true}).count(),0,'Raw Gmail handoffs stay in the specialist report');

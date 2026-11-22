@@ -1029,8 +1029,13 @@ function vp3_coordination_visible_v1(PDO $pdo,array $user,int $agentId,int $conv
                     }
                 }
             }
+            $primary=$goal['primary']??null;
+            // The exact primary revision and original workflow run bind a Brain
+            // follow-through state to this authorized, current Chat delivery.
+            $sourceRevision=is_string($primary)?($chatRevisions[$primary]??null):null;
             $row=['id'=>$id,'title'=>$out['title'],'summary'=>$out['summary'],'next_step'=>$out['next_step'],
                 'question'=>$out['question'],'state'=>$out['state'],'conversation_id'=>$conversationId,
+                'source_ref'=>$primary,'source_revision'=>$sourceRevision,'run_id'=>$chatRunId,
                 'delivery'=>$chat!==null?'delivered':$result['initiative_delivery'],
                 'sources'=>array_values(array_map(static fn(array $source):array=>array_intersect_key($source,
                     ['specialist'=>true,'title'=>true,'url'=>true,'source_action'=>true]),$evidence))];

@@ -530,3 +530,9 @@
 .vp3-agent-specialist-briefing-section b { display:block; }
 .vp3-agent-specialist-briefing-section p { margin:2px 0 0; line-height:1.4; }
 .vp3-agent-specialist-briefing > a { display:inline-block; margin-top:7px; font-size:12px; }
+
+/* Phase 2C: distinguish an owner decision from a verified executor receipt. */
+.vp3-agent-specialist-engagement{margin:8px 0 7px;padding:7px 9px;border:1px solid var(--vp3-activity-line,#dce2e9);border-radius:8px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:5px 10px;min-width:0}
+.vp3-agent-specialist-engagement small{font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.vp3-agent-specialist-engagement a{font-size:12px;font-weight:650;text-decoration:underline;text-underline-offset:2px;white-space:normal}
+@media(max-width:640px){.vp3-agent-specialist-engagement{display:block}.vp3-agent-specialist-engagement a{display:inline-block;margin-top:5px}}
