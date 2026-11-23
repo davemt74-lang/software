@@ -41,9 +41,12 @@
 #phone-record-retained button { margin-left:.75rem; width:auto; }
 /* During review the native player and its controls share one scrollable area.
    Keep live video visible above the sharing controls, including in a short viewport. */
-.phone-camera-app:modal:has(#phone-recording[data-phase="review"], #phone-recording[data-phase="uploading"], #phone-recording[data-phase="done"]) .camera-stage {
+.phone-camera-app:modal:has(#phone-recording:not([hidden]):is([data-phase="review"], [data-phase="uploading"], [data-phase="done"])) .camera-stage {
   flex: 0 1 6rem;
   min-height: 3.5rem;
+}
+.phone-camera-app:modal:has(#phone-recording:not([hidden]):is([data-phase="review"], [data-phase="uploading"], [data-phase="done"])) #phone-camera-mode {
+  display: none;
 }
 .phone-camera-app:modal #phone-recording:is([data-phase="review"], [data-phase="uploading"], [data-phase="done"]) {
   flex: 1 1 auto;

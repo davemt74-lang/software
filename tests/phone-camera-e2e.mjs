@@ -246,6 +246,8 @@ async function verifyRecording(chat, selected, second, foreign) {
   await firstStop.click();
   const first=await reviewedTake(phone);
   assert.ok(first.bytes>0);
+  assert.equal(await phone.locator('#phone-camera-mode').isVisible(),false,'the compact camera preview shows one sharing status during review');
+  assert.equal(await phone.locator('#phone-camera-status').isVisible(),true);
   assert.equal(await phone.locator('#phone-record-review').evaluate(video=>video.controls && video.playsInline),true);
   for (const id of ['phone-record-review','phone-record-save','phone-record-submit','phone-record-redo']) {
     const control=phone.locator('#'+id);
