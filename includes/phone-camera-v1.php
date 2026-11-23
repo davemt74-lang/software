@@ -112,6 +112,7 @@ function vp3_phone_camera_request_v1(PDO $pdo,int $owner,int $agent,int $cid,str
     if ($current) {
         if ($current['device_id']!==$deviceId || (int)$current['agent_id']!==$agent || (int)$current['conversation_id']!==$cid)
             throw new RuntimeException('End the existing camera request first.',409);
+        $current['device_expires']=$device['expires_at'];
         return vp3_phone_camera_view_v1($current,$device['device_name'],false);
     }
     vp3_phone_sql_v1($pdo,"DELETE FROM vp3_phone_camera_sessions_v1 WHERE owner_user_id=? AND state='stopped' AND expires_at<?",[$owner,$now-86400]);
@@ -157,7 +158,7 @@ function vp3_phone_camera_owner_v1(PDO $pdo,int $owner,int $agent,int $cid,strin
 
 function vp3_phone_camera_holder_v1(PDO $pdo,string $token,string $action,array $input): array
 {
-    if (!in_array($action,['status','start','offer','stop'],true)) throw new RuntimeException('Unknown phone camera action.',422);
+    if (!in_array($action,['status','prepare','start','offer','stop'],true)) throw new RuntimeException('Unknown phone camera action.',422);
     if (!vp3_phone_secret_valid_v1($token)) throw new RuntimeException('Phone unavailable.',403);
     $hash=vp3_extension_hash_v2000($token);
     $hint=vp3_phone_sql_v1($pdo,'SELECT owner_user_id,id FROM vp3_phone_devices_v1 WHERE token_hash=?',[$hash])->fetch(PDO::FETCH_ASSOC);
@@ -173,6 +174,20 @@ function vp3_phone_camera_holder_v1(PDO $pdo,string $token,string $action,array 
             return [];
         }
         vp3_phone_camera_end_v1($pdo,$owner,vp3_phone_camera_expiry_sql_v1(),vp3_phone_camera_expiry_times_v1($now));
+        if ($action==='prepare') {
+            // Resolve the private destination exclusively from this approved pairing under the account lock.
+            require_once __DIR__.'/paired-phone-agent-v1.php';
+            if (array_diff(array_keys($input),['device_id'])) throw new RuntimeException('Unexpected camera request fields.',422);
+            if (vp3_phone_camera_id_v1($input['device_id']??null)!==$device['id']) throw new RuntimeException('Phone unavailable.',403);
+            if (!vp3_paired_phone_ready_v1($pdo)) throw new RuntimeException('Upgrade required.',503);
+            $thread=vp3_paired_phone_thread_v1($pdo,$device);
+            $agent=(int)$thread['agent_id'];
+            $cid=(int)$thread['conversation_id'];
+            if (!vp3_phone_camera_scope_v1($pdo,$owner,$agent,$cid)) throw new RuntimeException('Camera conversation unavailable.',403);
+            $requested=vp3_phone_camera_request_v1($pdo,$owner,$agent,$cid,$device['id'],$now);
+            $input=['session_id'=>$requested['camera']['session_id']];
+            $action='status';
+        }
         $params=[$owner,$device['id']];
         if ($action==='status' && !array_key_exists('session_id',$input)) $where="state<>'stopped'";
         else { $where='id=?'; $params[]=vp3_phone_camera_id_v1($input['session_id']??null); }

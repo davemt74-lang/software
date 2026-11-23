@@ -430,3 +430,36 @@ $askThird();
 $stopByOwner=$send('Stop using Studio test handset as a camera');
 phone_chat_test(str_contains($stopByOwner['answer'],'Stopped the private camera preview for Studio test handset')
     && count($stopByOwner['phone_updates'])===1 && $activity()===[],'an owner stop is confirmed in the direct reply only once');
+
+// A signed-in owner approves the phone from a linked private Chat and reads each side as it arrives.
+$inbox=$pair('Stage phone');
+$inboxId=$inbox['device']['id'];
+$mapApproval=['device_id'=>$inboxId,'generation'=>$inbox['device']['generation'],'request_id'=>bin2hex(random_bytes(16)),
+    'chat_origin'=>['agent_id'=>7,'conversation_id'=>2]];
+phone_chat_reject(fn()=>vp3_phone_chat_map_command_v1($pdo,$user,'approve',array_merge($mapApproval,[
+    'chat_origin'=>['agent_id'=>7,'conversation_id'=>4]])),403,'map approval rejects another owner’s private conversation');
+$approved=vp3_phone_chat_map_command_v1($pdo,$user,'approve',$mapApproval)['device'];
+$mapLinks=vp3_paired_phone_owner_links_v1($pdo,1,[$approved]);
+phone_chat_test($mapLinks[0]['agent_chat']===['agent_id'=>7,'conversation_id'=>2]
+    && empty(vp3_paired_phone_owner_links_v1($pdo,2,[$approved])[0]['agent_chat']),'Open phone chat links only the approved device and its exact owner thread');
+$promptSeen=[];
+$inboxInput=['device_id'=>$inboxId,'request_id'=>'a91619e0-e124-47a3-9669-431186a94953','message'=>'Is the studio open?'];
+$inboxModel=static function() use($activity,&$promptSeen) {
+    // Run while the provider is working. No reply or duplicate should reach the owner yet.
+    $promptSeen=$activity(2);
+    return 'The studio opens at noon.';
+};
+vp3_paired_phone_chat_v1($pdo,$inbox['token'],'chat_send',$inboxInput,$inboxModel);
+$wrong=$activity(1);$replySeen=$activity(2);
+phone_chat_test($wrong===[] && count($promptSeen)===1 && $promptSeen[0]['speech']==="From Stage phone\nIs the studio open?"
+    && count($replySeen)===1 && $replySeen[0]['speech']==="Reply to Stage phone\nThe studio opens at noon."
+    && $activity(2)===[],'the phone prompt and agent reply each reach the exact private announcement stream once');
+$rawTurns=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id IN (?,?) ORDER BY id',
+    [$promptSeen[0]['message_id'],$replySeen[0]['message_id']])->fetchAll(PDO::FETCH_ASSOC);
+$hydratedTurns=vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[]);
+phone_chat_test(array_column($hydratedTurns,'message')===[$inboxInput['message'],$replySeen[0]['speech']]
+    && json_decode($hydratedTurns[0]['context_json'],true)['phone_sender']==='Stage phone'
+    && !str_contains(json_encode($rawTurns),'studio open'),'private chat restores the phone name and both bodies while ordinary history stores markers');
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
+phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[])===$rawTurns,'participant views cannot read the owner’s paired phone transcript');
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);

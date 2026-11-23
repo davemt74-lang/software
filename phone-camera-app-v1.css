@@ -1,0 +1,23 @@
+dialog.phone-camera-app { box-sizing:border-box; margin:1rem 0; padding:0; border:1px solid #cddbd6; border-radius:1rem; color:inherit; background:#fff; }
+dialog.phone-camera-app[open]:not(:modal) { display:block; position:relative; width:100%; max-width:100%; }
+.phone-camera-app .camera-heading, .phone-camera-app .camera-toolbar { display:flex; align-items:center; gap:.65rem; padding:.75rem 1rem; }
+.phone-camera-app .camera-heading h2 { margin:0; font-size:1.15rem; line-height:1.1; }
+.phone-camera-app #phone-camera-destination { font-size:.75rem; }
+.phone-camera-app .camera-stage { padding:0 1rem; }
+.phone-camera-app #phone-camera-status { margin:0; font-size:.9rem; }
+.phone-camera-app .camera-toolbar button, .phone-camera-app .camera-heading button { margin:0; width:auto; }
+.phone-camera-app::backdrop { background:#06080d; }
+dialog.phone-camera-app:modal { inset:0; margin:0; width:100%; max-width:none; height:100%; height:100dvh; max-height:none; border:0; border-radius:0; overflow:hidden; display:flex; flex-direction:column; color:#f6f7fb; background:#0d111b; color-scheme:dark; }
+.phone-camera-app:modal .camera-heading { background:#131927; padding:max(10px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 10px max(16px,env(safe-area-inset-left)); min-height:54px; }
+.phone-camera-app:modal .camera-heading h2 { font-size:1.2rem; font-weight:800; color:white; }
+.phone-camera-app:modal #phone-camera-destination { color:#b8cdc9; }
+.phone-camera-app:modal #phone-camera-close { margin-left:auto; background:#ffffff12; color:white; border:1px solid #ffffff35; border-radius:10px; font-size:1.45rem; line-height:1; padding:0; height:44px; width:44px; }
+.phone-camera-app:modal .camera-stage { flex:1; min-height:0; position:relative; display:grid; place-items:center; background:#06080d; padding:0; }
+.phone-camera-app:modal #phone-camera-preview { display:block; position:absolute; inset:0; width:100%; height:100%; max-height:none; object-fit:cover; margin:0; border-radius:0; }
+.phone-camera-app:modal #phone-camera-mode { position:absolute; left:max(16px,env(safe-area-inset-left)); top:16px; padding:.35rem .7rem; border-radius:2rem; background:#1d3236e6; color:white; font-size:.75rem; font-weight:750; }
+.phone-camera-app:modal #phone-camera-mode[data-sharing="true"] { background:#17553b; }
+.phone-camera-app:modal #phone-camera-status { position:absolute; bottom:14px; margin-inline:14px; padding:.45rem .8rem; border:1px solid #ffffff33; border-radius:12px; color:#fff; background:#111724df; text-align:center; font-size:.84rem; max-width:38rem; }
+.phone-camera-app:modal .camera-toolbar { justify-content:center; flex-wrap:wrap; background:#131927; padding:12px max(8px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left)); }
+.phone-camera-app:modal .camera-toolbar button { background:#242c3d; color:#f4f4f9; border:1px solid #ffffff35; border-radius:14px; padding:.45rem .65rem; font-size:.83rem; line-height:1.2; min-height:48px; }
+.phone-camera-app:modal #phone-camera-start { background:#274b49; border-color:#69b9a6; }
+.phone-camera-app:modal #phone-camera-stop { background:#144d41; border-color:#83ddc0; }

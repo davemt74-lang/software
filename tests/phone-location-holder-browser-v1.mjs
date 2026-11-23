@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const {chromium} = createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],
   executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined});
 const origin = 'https://vp3-phone.test';
 const pathname = '/tenant/phone-location.php';
-const doc = readFileSync(new URL('../phone-location.php',import.meta.url),'utf8').split('?>')[1];
+const doc = execFileSync(process.env.PHP_BINARY || 'php', [fileURLToPath(new URL('../phone-location.php',import.meta.url))], {encoding:'utf8'});
 const js = readFileSync(new URL('../phone-location-v1.js',import.meta.url),'utf8');
 const css = readFileSync(new URL('../phone-location-v1.css',import.meta.url),'utf8');
 const secret = 'C'.repeat(43), id = 'd'.repeat(32);

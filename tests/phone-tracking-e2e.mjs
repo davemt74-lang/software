@@ -554,6 +554,30 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
     check(await ownerApi(desktop, owner, 'revoke', { device_id: second.id, generation: secondOff.generation }),
       'remove the second test pairing'));
   await choosePhone(deviceId);
+  // The owner enables a single paired phone to create a place while its live GPS remains off.
+  const grantButton = map.locator('#phone-detail [data-action=set_holder_place_access]');
+  await phone.locator('#phone-apps-toggle').click();
+  assert.equal(await phone.locator('#phone-app-save-place').isVisible(),false);
+  await grantButton.click();
+  await phone.locator('#phone-app-save-place').click();
+  await phone.locator('#phone-save-place-name').fill('Side door');
+  const freshSpot = {...gps, longitude:gps.longitude + 0.03};
+  await handset.setGeolocation(freshSpot);
+  const placeReceipt = phone.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint
+    && response.request().postDataJSON()?.action === 'holder_save_place');
+  await phone.locator('#phone-save-place-submit').click();
+  await handset.setGeolocation(freshSpot);
+  assert.equal(check(await read(await placeReceipt),'holder saves named location').saved_place.name,'Side door');
+  await phone.getByRole('button',{name:'Done',exact:true}).click();
+  assert.ok(check(await ownerApi(desktop,owner,'places'),'owner reads holder-created location').places.some(p => p.name === 'Side door'));
+  const afterSave = (await state()).find(d => d.id === deviceId);
+  assert.equal(afterSave.location_state,'off');
+  assert.equal(afterSave.latitude,null);
+  await grantButton.click();
+  await phone.locator('#phone-apps-toggle').click();
+  await phone.locator('#phone-app-save-place').waitFor({state:'hidden'});
+  await phone.locator('#phone-apps-toggle').click();
+  console.log('PASS Owner-enabled one-time named location from the phone apps menu with live sharing off.');
   await android.close();
   console.log('PASS Multiple phones: independent live GPS, isolated per-phone settings, named and ambiguous voice commands, both first-fix announcements, stale map, offline stop and Android reconnect.');
 }

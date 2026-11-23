@@ -25,10 +25,11 @@ try {
     $input = vp3_phone_http_json_v1(['camera_offer']);
     $action = $input['action'] ?? null;
     unset($input['action']);
-    $cameraAction = in_array($action, ['camera_status','camera_start','camera_offer','camera_stop'],true);
-    if (!$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
+    $cameraAction = in_array($action, ['camera_status','camera_prepare','camera_start','camera_offer','camera_stop'],true);
+    $chatAction = in_array($action,['chat_status','chat_send'],true);
+    if (!$chatAction && !$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
         'accept_history','decline_history','stop_history','set_place_permission',
-        'accept_arrival','decline_arrival','stop_arrival'], true)) {
+        'accept_arrival','decline_arrival','stop_arrival','holder_save_place'], true)) {
         throw new RuntimeException('Unknown action.', 422);
     }
     $pdo = db();
@@ -36,7 +37,10 @@ try {
     $name = 'vp3_phone_device_v1';
     $token = (string)($_COOKIE[$name] ?? '');
     if ($action !== 'claim' && $token === '') throw new RuntimeException('Pair a phone first.', 401);
-    if ($cameraAction) {
+    if ($chatAction) {
+        require_once dirname(__DIR__).'/includes/paired-phone-agent-v1.php';
+        $result = vp3_paired_phone_chat_v1($pdo,$token,$action,$input);
+    } elseif ($cameraAction) {
         require_once dirname(__DIR__).'/includes/phone-camera-v1.php';
         require_once dirname(__DIR__).'/includes/phone-camera-http-v1.php';
         $result = vp3_phone_camera_holder_v1($pdo,$token,substr($action,7),$input);

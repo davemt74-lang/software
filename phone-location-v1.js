@@ -136,7 +136,7 @@
 
   async function request(action, data = {}, keepalive = false) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), action === 'chat_send' ? 90000 : 10000);
     try {
       const response = await fetch(endpoint, {
         method:'POST', credentials:'same-origin', cache:'no-store', redirect:'error',
@@ -152,6 +152,11 @@
     } finally { clearTimeout(timer); }
   }
   const camera = window.VP3PhoneCameraHolder?.(request);
+  const savedPlace = window.VP3PhoneSavedPlace?.(request);
+  const chat = window.VP3PhoneAgentChat?.(request, {
+    camera: () => camera?.open(),
+    savePlace: () => savedPlace?.open()
+  });
   function discardDeferred(session) {
     clearTimeout(session.timer);
     session.timer = null;
@@ -223,7 +228,10 @@
   function render() {
     const connected = device?.status === 'approved';
     const queued = Boolean(pending && pending.id === device?.id);
-    camera?.bind(connected && pending?.action !== 'disconnect' ? device.id : null, owner);
+    const paired = connected && pending?.action !== 'disconnect' ? device : null;
+    camera?.bind(paired?.id || null, owner);
+    savedPlace?.bind(paired, owner, available && !queued && navigator.onLine !== false);
+    chat?.bind(paired?.id || null, available && navigator.onLine !== false);
     const gps = Boolean(secure && navigator.geolocation);
     el('label').textContent = device?.name || 'Connect this phone';
     el('badge').textContent = device ? (connected ? 'Connected phone' : 'Pending approval') : 'Phone Tracking';

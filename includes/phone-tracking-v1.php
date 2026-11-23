@@ -28,6 +28,8 @@ function vp3_phone_schema_v1(PDO $pdo): void
         'history_retention_days' => 'SMALLINT NOT NULL DEFAULT 0',
         'history_version' => 'BIGINT NOT NULL DEFAULT 1',
         'history_accepted_at' => 'BIGINT NULL',
+        'holder_can_save_places' => 'SMALLINT NOT NULL DEFAULT 0',
+        'holder_place_version' => 'BIGINT NOT NULL DEFAULT 1',
         'places_generation' => 'BIGINT NULL',
         'place_permission_version' => 'BIGINT NOT NULL DEFAULT 1',
     ];
@@ -49,6 +51,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
         preferences_version {$preferences['preferences_version']},
         history_state {$preferences['history_state']}, history_retention_days {$preferences['history_retention_days']},
         history_version {$preferences['history_version']}, history_accepted_at {$preferences['history_accepted_at']},
+        holder_can_save_places {$preferences['holder_can_save_places']}, holder_place_version {$preferences['holder_place_version']},
         places_generation {$preferences['places_generation']}, place_permission_version {$preferences['place_permission_version']},
         last_seen_at BIGINT NOT NULL, UNIQUE (owner_user_id, id),
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -82,7 +85,7 @@ function vp3_phone_schema_ready_v1(PDO $pdo): bool
     try {
         $pdo->query('SELECT i.invite_hash,i.claimed_device_id,d.token_hash,d.started_at,d.first_fix_at,
             d.update_interval_seconds,d.accuracy_mode,d.preferences_version,
-            d.history_state,d.history_retention_days,d.history_version,d.history_accepted_at,d.places_generation,d.place_permission_version,
+            d.holder_can_save_places,d.holder_place_version,d.history_state,d.history_retention_days,d.history_version,d.history_accepted_at,d.places_generation,d.place_permission_version,
             r.request_hash,r.signature,h.owner_user_id,h.device_id,h.fix_at,h.expires_at,h.history_version,h.generation,
             h.latitude,h.longitude,h.accuracy FROM vp3_phone_invites_v1 i, vp3_phone_devices_v1 d,
             vp3_phone_requests_v1 r,vp3_phone_history_points_v1 h WHERE 1=0');
@@ -173,6 +176,8 @@ function vp3_phone_public_v1(array $row, int $now): array
         'history_state'=>$canRead ? $row['history_state'] : 'off',
         'history_retention_days'=>$canRead ? (int)$row['history_retention_days'] : 0,
         'history_version'=>(int)$row['history_version'],
+        'holder_can_save_places'=>$status === 'approved' && (bool)$row['holder_can_save_places'],
+        'holder_place_version'=>(int)$row['holder_place_version'],
         'allow_saved_places'=>$canRead && in_array($state,['waiting','live','stale'],true)
             && (int)$row['places_generation'] === (int)$row['generation'],
         'place_permission_version'=>(int)$row['place_permission_version'],
@@ -208,13 +213,15 @@ function vp3_phone_save_row_v1(PDO $pdo, array $row): void
     vp3_phone_sql_v1($pdo, 'UPDATE vp3_phone_devices_v1 SET device_role=?, device_status=?,allow_location=?,
         generation=?,location_state=?,latitude=?,longitude=?,accuracy=?,fix_at=?,first_fix_at=?,started_at=?,
         expires_at=?,last_seen_at=?,update_interval_seconds=?,accuracy_mode=?,preferences_version=?,
-        history_state=?,history_retention_days=?,history_version=?,history_accepted_at=?,places_generation=?,place_permission_version=?
+        history_state=?,history_retention_days=?,history_version=?,history_accepted_at=?,places_generation=?,place_permission_version=?,
+        holder_can_save_places=?,holder_place_version=?
         WHERE owner_user_id=? AND id=?', [
         $row['device_role'],$row['device_status'],(int)$row['allow_location'],$row['generation'],$row['location_state'],
         $row['latitude'],$row['longitude'],$row['accuracy'],$row['fix_at'],$row['first_fix_at'],$row['started_at'],
         $row['expires_at'],$row['last_seen_at'],$row['update_interval_seconds'],$row['accuracy_mode'],
         $row['preferences_version'],$row['history_state'],$row['history_retention_days'],$row['history_version'],
-        $row['history_accepted_at'],$row['places_generation'],$row['place_permission_version'],$row['owner_user_id'],$row['id'],
+        $row['history_accepted_at'],$row['places_generation'],$row['place_permission_version'],
+        (int)$row['holder_can_save_places'],$row['holder_place_version'],$row['owner_user_id'],$row['id'],
     ]);
 }
 
@@ -282,6 +289,14 @@ function vp3_phone_owner_transition_v1(array &$row, string $action, array $input
         if (in_array($row['location_state'], ['off','denied'], true)) vp3_phone_end_location_v1($row,'requested');
     } elseif (in_array($action,['request_history','stop_history','delete_history'],true)) {
         vp3_phone_history_transition_v1($row,$action,$input,$now);
+    } elseif ($action === 'set_holder_place_access') {
+        $allow = $input['holder_can_save_places'] ?? null;
+        if (!is_bool($allow)) throw new RuntimeException('Choose a saved location permission.',422);
+        if (($input['holder_place_version'] ?? null) !== (int)$row['holder_place_version']) throw new RuntimeException('Saved location permission changed.',409);
+        if ($allow !== (bool)$row['holder_can_save_places']) {
+            $row['holder_can_save_places'] = $allow;
+            $row['holder_place_version']++;
+        }
     } elseif ($action === 'set_preferences') {
         vp3_phone_set_preferences_v1($row,$input);
     } else {
@@ -302,7 +317,7 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
         return ['devices'=>array_map(static fn(array $row): array => vp3_phone_public_v1($row,$now), $rows),
             'server_time'=>$now,'stale_seconds'=>VP3_PHONE_FRESH_SECONDS_V1];
     }
-    if (!in_array($action,['invite','approve','deny','request_start','stop','revoke','set_preferences','request_history','stop_history','delete_history'],true)) throw new RuntimeException('Unknown phone action.', 422);
+    if (!in_array($action,['invite','approve','deny','request_start','stop','revoke','set_preferences','set_holder_place_access','request_history','stop_history','delete_history'],true)) throw new RuntimeException('Unknown phone action.', 422);
     $requestId = $input['request_id'] ?? null;
     $id = $action === 'invite' ? null : ($input['device_id'] ?? null);
     if (!is_string($requestId) || !preg_match('/^[A-Za-z0-9_.:-]{12,100}$/D',$requestId)) {
@@ -317,6 +332,7 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
     if (in_array($action,['request_history','stop_history','delete_history'],true)) {
         array_push($signatureFields,$input['history_version'] ?? null,$input['retention_days'] ?? null);
     }
+    if ($action === 'set_holder_place_access') array_push($signatureFields,$input['holder_can_save_places'] ?? null,$input['holder_place_version'] ?? null);
     $signature = hash('sha256', json_encode($signatureFields, JSON_THROW_ON_ERROR));
     return vp3_phone_transaction_v1($pdo, static function() use ($pdo,$owner,$action,$input,$id,$hash,$signature): array {
         vp3_phone_account_v1($pdo,$owner,true);
@@ -491,11 +507,14 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             vp3_phone_camera_disconnect_v1($pdo,$row);
             return [];
         }
+        $receipt = [];
         $touch = (int)$row['last_seen_at'] < $now - 10;
         if ($action !== 'status') {
             $previousFix = $row['fix_at'];
             $generation=(int)$row['generation'];
-            if (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
+            if ($action === 'holder_save_place') {
+                $receipt = vp3_phone_holder_save_place_v1($pdo,$row,$input,$now);
+            } elseif (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
                 vp3_phone_arrival_holder_v1($pdo,$row,$action,$input,$now);
             } else {
                 vp3_phone_device_transition_v1($row,$action,$input,$now);
@@ -518,7 +537,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             $row['last_seen_at']=$now;
             vp3_phone_save_row_v1($pdo,$row);
         }
-        return ['device'=>vp3_phone_holder_public_v1($pdo,$row,$now),'owner_name'=>$ownerName];
+        return ['device'=>vp3_phone_holder_public_v1($pdo,$row,$now),'owner_name'=>$ownerName] + $receipt;
     });
     // Return no owner or device data, after committing the withdrawal.
     return $result ?: throw new RuntimeException('Phone connection unavailable.',403);
