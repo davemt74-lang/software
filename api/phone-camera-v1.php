@@ -19,13 +19,14 @@ try {
     }
     $user = current_user();
     if (!$user) throw new RuntimeException('Sign in.',401);
-    $input = vp3_phone_http_json_v1(['camera_answer','camera_map_answer']);
+    $input = vp3_phone_http_json_v1(['camera_answer','camera_map_answer','camera_chat_answer']);
     $csrf = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $input['csrf_token'] ?? null;
     if (!is_string($csrf) || !hash_equals(csrf_token(),$csrf)) throw new RuntimeException('Session expired.',419);
     $wireAction = $input['action'] ?? null;
     $aid = $input['agent_id'] ?? null;
     $cid = $input['conversation_id'] ?? null;
-    if (!in_array($wireAction,['camera_status','camera_answer','camera_stop','camera_map_open','camera_map_status','camera_map_answer','camera_map_close'],true)
+    $recordAction=in_array($wireAction,['camera_record_request','camera_record_status'],true);
+    if ((!$recordAction && !in_array($wireAction,['camera_status','camera_answer','camera_stop','camera_map_open','camera_map_status','camera_map_answer','camera_map_close','camera_chat_open','camera_chat_status','camera_chat_answer','camera_chat_close'],true))
         || !is_int($aid) || $aid < 0 || !is_int($cid) || $cid < 1) {
         throw new RuntimeException('Invalid camera request.',422);
     }
@@ -35,8 +36,12 @@ try {
     $scope = vp3_agent_activity_scope_v1($pdo,$user,$aid,$cid);
     vp3_phone_chat_authorize_v1($pdo,$user,$scope['principal'],$input,$cid);
     unset($input['action'],$input['agent_id'],$input['conversation_id'],$input['csrf_token']);
-    $result = vp3_phone_camera_owner_v1($pdo,(int)$user['id'],$aid,$cid,substr($wireAction,7),$input);
-    $result['ice_servers'] = vp3_phone_camera_ice_v1($result['camera'] ?? null);
+    if ($recordAction) {
+        $result=vp3_phone_record_owner_v1($pdo,(int)$user['id'],$aid,$cid,substr($wireAction,14),$input);
+    } else {
+        $result = vp3_phone_camera_owner_v1($pdo,(int)$user['id'],$aid,$cid,substr($wireAction,7),$input);
+        $result['ice_servers'] = vp3_phone_camera_ice_v1($result['camera'] ?? null);
+    }
     vp3_phone_http_send_v1($result);
 } catch (Throwable $error) {
     vp3_phone_http_error_v1($error);

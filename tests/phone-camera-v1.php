@@ -102,6 +102,8 @@ $inventory=fn()=>vp3_phone_camera_map_devices_v1($db,1,vp3_phone_owner_v1($db,1,
 $beat=$id+['heartbeat'=>true,'map_source_live'=>true];
 check_camera($inventory()===null && $owner('map_open',$popup)===null,'a requested camera alone cannot pulse or start a map preview');
 $holder('start',$id);
+$waiting=vp3_phone_camera_owner_v1($db,1,0,8,'chat_open',$otherPopup);
+check_camera($waiting===['camera'=>null,'camera_starting'=>true], 'Chat can wait for the first frame after an explicit holder grant');
 $holder('offer',$id+['sdp'=>$offer]);
 check_camera($inventory()===null,'GPS and a camera grant do not advertise moving frames');
 $holder('status',['heartbeat'=>true,'map_source_live'=>true]);
@@ -135,6 +137,24 @@ $owner('map_answer',$popup+['sdp'=>$otherAnswer]);
 $info=$holder('status',$beat);
 check_camera($info['map_viewer']['answer_sdp']===$otherAnswer && $info['answer_sdp']===$answer,
     'the same consented track can serve both scoped receivers without replacing their answers');
+$chatViewer=$otherPopup;
+$chatOffer=str_replace('SAVPF 96','SAVPF 98',$offer);
+$chatAnswer=str_replace('sendonly','recvonly',$chatOffer);
+check_camera($owner('chat_open',$chatViewer)['viewer_id']===$chatViewer['viewer_id']
+    && $owner('chat_status',$popup)===null && $owner('map_status',$chatViewer)===null,
+    'the originating Chat can open a third peer without consuming another surface’s slot');
+reject_camera(fn()=>$owner('chat_open',$popup),409);
+reject_camera(fn()=>$holder('chat_offer',$popup+['sdp'=>$chatOffer]),409);
+$holder('chat_offer',$chatViewer+['sdp'=>$chatOffer]);
+$owner('chat_answer',$chatViewer+['sdp'=>$chatAnswer]);
+$all=$holder('status',$beat);
+check_camera($all['answer_sdp']===$answer && $all['map_viewer']['answer_sdp']===$otherAnswer && $all['chat_viewer']['answer_sdp']===$chatAnswer,
+    'Editor, Map and Chat keep distinct answers while consuming the same accepted source');
+$owner('chat_close',$chatViewer);
+check_camera($owner('chat_status',$chatViewer)===null && $owner('map_status',$popup)['offer_sdp']===$otherOffer
+    && $owner('status',$id)['offer_sdp']===$offer, 'hiding the inline stream releases only the Chat viewer');
+$chatReplacement=array_replace($chatViewer,['viewer_id'=>bin2hex(random_bytes(16))]);
+$owner('chat_open',$chatReplacement);
 reject_camera(fn()=>$owner('map_answer',$popup+['sdp'=>$answer]),409);
 $owner('map_close',$popup);
 check_camera($owner('map_status',$popup)===null && $owner('map_open',$popup)===null && $inventory()!==null
@@ -143,11 +163,11 @@ check_camera($owner('map_open',$otherPopup)['viewer_id']===$otherPopup['viewer_i
 $owner('map_close',$popup);
 check_camera($owner('map_status',$otherPopup)['viewer_id']===$otherPopup['viewer_id'],'a late close cannot release the replacement viewer');
 vp3_phone_sql_v1($db,'UPDATE vp3_phone_camera_map_v1 SET source_seen=? WHERE session_id=?',[time()-VP3_PHONE_CAMERA_FRAME_LEASE_V1,$id['session_id']]);
-check_camera($inventory()===null && $owner('map_status',$otherPopup)===null,'stale capture removes the live status even while the primary connection is healthy');
+check_camera($inventory()===null && $owner('map_status',$otherPopup)===null && $owner('chat_status',$chatReplacement)===null,'stale capture removes both private surface viewers even while the primary connection is healthy');
 $holder('status',$beat);
 $holder('status',array_replace($beat,['map_source_live'=>false]));
 check_camera($inventory()===null,'a muted or stopped camera track immediately withdraws its map feed');
 $holder('status',$beat);
 $owner('stop',$id);
-check_camera(!$db->query('SELECT COUNT(*) FROM vp3_phone_camera_map_v1')->fetchColumn() && $inventory()===null,
-    'ending the parent camera wipes map signaling and the private live marker');
+check_camera(!$db->query('SELECT COUNT(*) FROM vp3_phone_camera_map_v1')->fetchColumn() && !$db->query('SELECT COUNT(*) FROM vp3_phone_camera_viewers_v1')->fetchColumn() && $inventory()===null,
+    'ending the parent camera wipes Map and Chat signaling and the private live marker');

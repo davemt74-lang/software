@@ -348,6 +348,7 @@ jobs:
         run: |
           php tests/phone-tracking-domain-v1.php
           php tests/phone-camera-v1.php
+          php tests/phone-camera-recording-v1.php
           php tests/phone-tracking-history-v1.php
           php tests/phone-tracking-places-v1.php
           php tests/phone-tracking-chat-v1.php
@@ -366,9 +367,13 @@ jobs:
           VP3_PHONE_SCREENSHOTS: ${{ runner.temp }}/phone-tracking-screenshots
         run: node tests/phone-tracking-e2e.mjs
       - name: Verify the paired phone camera in private Agent Chat and the Video Editor
+        env:
+          VP3_PHONE_SCREENSHOTS: ${{ runner.temp }}/phone-tracking-screenshots
         run: |
           node tests/phone-camera-holder-v1.mjs
           node tests/phone-map-camera-v1.mjs
+          node tests/phone-recording-holder-v1.mjs
+          node tests/phone-recording-chat-owner-v1.mjs
           node tests/phone-camera-e2e.mjs
       - name: Save tracking acceptance screenshots
         if: success()

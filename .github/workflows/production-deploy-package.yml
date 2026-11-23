@@ -456,6 +456,9 @@ jobs:
                       phone-save-place-v1.js includes/phone-save-place-view.php \
                       api/phone-camera-v1.php phone-camera-ice-v1.js phone-camera-holder-v1.js phone-camera-chat-holder-v1.js phone-camera-editor-v1.js \
                       phone-camera-editor-v1.css phone-camera-receiver-v1.js phone-map-camera-v1.js \
+                      phone-camera-chat-preview-v1.js phone-camera-chat-preview-v1.css phone-recording-chat-owner-v1.js \
+                      phone-recording-holder-v1.js phone-recording-holder-v1.css includes/phone-camera-recording-v1.php \
+                      includes/phone-recording-media-v1.php \
                       phone-location-v1.css phone-tracking-v1.css docs/LIVE-EDITOR-PRIVATE-PHONE-PREVIEW.txt \
                       includes/phone-tracking-chat-v1.php docs/PHONE-TRACKING-PHASE1-INSTALL.txt \
                       docs/PHONE-TRACKING-PHASE2-INSTALL.txt docs/PHONE-TRACKING-PHASE3-INSTALL.txt \

@@ -18,7 +18,9 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-location-v1.css?v=7">
   <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
-  <script src="phone-camera-holder-v1.js?v=5" defer></script>
+  <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
+  <script src="phone-recording-holder-v1.js?v=1" defer></script>
+  <script src="phone-camera-holder-v1.js?v=6" defer></script>
   <script src="phone-agent-chat-v1.js?v=2" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
   <script src="phone-location-v1.js?v=8" defer></script>
@@ -75,6 +77,10 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       <button type="button" class="secondary" id="phone-retry" hidden>Check connection</button>
       <button type="button" class="text-button" id="phone-disconnect" hidden>Disconnect phone</button>
     </div>
+    <section id="phone-record-retained" aria-labelledby="phone-record-retained-title" hidden>
+      <h2 id="phone-record-retained-title">Recording on this phone</h2>
+      <div id="phone-record-retained-list"></div>
+    </section>
     <noscript>Enable JavaScript to pair or manage this phone.</noscript>
   </section>
   <section id="phone-chat" role="tabpanel" aria-labelledby="phone-tab-chat" hidden>

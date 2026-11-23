@@ -7,6 +7,9 @@ require __DIR__.'/agent-connection-gmail-inbox-initial-summary-v1.php';
 require_once __DIR__.'/../includes/phone-tracking-v1.php';
 require_once __DIR__.'/../includes/paired-phone-agent-model-v1.php';
 require_once __DIR__.'/../includes/phone-tracking-chat-v1.php';
+require_once __DIR__.'/../includes/homeserver-execution-routing-v220.php';
+require_once __DIR__.'/../includes/homeserver-capabilities-v024.php';
+require_once __DIR__.'/../includes/ai-gateway-v031.php';
 
 function has_permission(string $permission,array $user): bool
 {
@@ -17,18 +20,18 @@ function vp3_agent_runtime_preference_readonly_v420(PDO $pdo,int $owner,int $age
 {
     return ['effective_preference'=>$GLOBALS['phonePreference']??'vp3_cloud'];
 }
-function homeserver_execution_v220_registry(int $owner): array
-{
-    return ['available'=>true,'capabilities'=>['unified_execution'=>['profile_safe_local_inference'=>[
-        'operation'=>'agent.infer.local','stateless'=>true,'local_only'=>true,'caller_supplied_context_only'=>true,
-        'tools_enabled'=>false,
-    ]]]];
-}
-function homeserver_execution_v220_can_route(int $owner,string $operation): bool { return $owner===1 && $operation==='agent.infer.local'; }
+function homeserver_https_v1300_status(int $owner): array { return ['paired'=>true,'connected'=>$owner===1]; }
 function homeserver_https_v1300_transient_ready(PDO $pdo): bool { return !empty($GLOBALS['phoneRelayReady']); }
 function homeserver_https_v1300_wait_transient(): array { throw new LogicException('Unexpected relay wait.'); }
-function homeserver_https_v1300_remote_operation(int $owner,string $operation,array $payload,bool $transient,callable $guard): array
+function homeserver_https_v1300_remote_operation(int $owner,string $operation,array $payload,bool $transient=false,?callable $guard=null): array
 {
+    if ($operation==='capabilities') {
+        $caps=['features'=>['agent.chat'],'inference'=>['available'=>true]];
+        if (empty($GLOBALS['phoneLegacyLocal'])) $caps['unified_execution']['profile_safe_local_inference']=[
+            'operation'=>'agent.infer.local','stateless'=>true,'local_only'=>true,'caller_supplied_context_only'=>true,'tools_enabled'=>false,
+        ];
+        return $caps;
+    }
     if (!$transient || $operation!=='agent.infer.local' || array_keys($payload)!==['messages']) throw new LogicException('Unexpected local payload.');
     if (!$guard()) throw new RuntimeException('HomeServer inference authorization changed.',403);
     ++$GLOBALS['phoneLocalAttempts'];
@@ -108,8 +111,12 @@ $GLOBALS['phonePreference']='auto';
 $GLOBALS['phoneLocalAttempts']=0;
 $allow=true;
 $plan=static function()use(&$allow):array {
-    return ['blocked'=>false,'route'=>'homeserver','effective_preference'=>$GLOBALS['phonePreference'],
-        'allow_vp3_fallback'=>true,'home'=>['cloud_allowed'=>$allow],'cloud'=>['ready'=>true]];
+    $status=homeserver_https_v1300_status(1);
+    $caps=homeserver_https_v1300_remote_operation(1,'capabilities',[]);
+    $brain=homeserver_capability_v024_resolve(homeserver_capability_v024_registry_from($status,$caps),'agent_brain');
+    return ai_gateway_v031_plan(['surface'=>'chat','preference'=>$GLOBALS['phonePreference'],'home_paired'=>true,
+        'home_supported'=>$brain['supported'],'home_ready'=>$brain['ready'],'cloud_ready'=>true,'homeserver_cloud_allowed'=>$allow])
+        + ['effective_preference'=>$GLOBALS['phonePreference'],'home'=>['cloud_allowed'=>$allow],'cloud'=>['ready'=>true]];
 };
 $GLOBALS['gmailSummaryOnRoute']=$plan;
 $infer=static fn(?Closure $guard=null)=>vp3_paired_phone_model_reply_v1($pdo,1,7,$history,$guard??static fn()=>true);
@@ -131,9 +138,26 @@ $GLOBALS['gmailSummaryOnRoute']=static function()use(&$checks,$plan):array {
 $reject('offline');
 $GLOBALS['gmailSummaryOnRoute']=$plan;
 $GLOBALS['phoneRelayReady']=true;
+$GLOBALS['phoneLegacyLocal']=true; homeserver_execution_v220_registry(1,true);
+if ($infer()!==$answer || $GLOBALS['phoneLocalAttempts']!==0) throw new RuntimeException('A HomeServer without stateless caller-only support must use the permitted Cloud route.');
+$GLOBALS['phoneLegacyLocal']=false; homeserver_execution_v220_registry(1,true);
 if ($infer()!=='A reply from HomeServer.') throw new RuntimeException('An available local agent must reply on its selected route.');
 $reject('access',static fn()=>false);
 $GLOBALS['phoneLocalTimeout']=true; $reject('timeout');
-if ($GLOBALS['phoneLocalAttempts']!==2 || count($GLOBALS['gmailSummaryDispatch'])!==$calls+1)
+if ($GLOBALS['phoneLocalAttempts']!==2 || count($GLOBALS['gmailSummaryDispatch'])!==$calls+2)
     throw new RuntimeException('HomeServer-only, cloud restrictions, revocation and unconfirmed local calls must never replay on Cloud.');
 echo "PASS paired phone HomeServer reply, authorized pre-dispatch fallback, narrowed scope, revocation and timeout.\n";
+
+foreach ([
+    [['status'=>429,'failure_code'=>'credential_empty'],'setup'],
+    [['status'=>403,'failure_code'=>'gmail_summary_access_changed'],'access'],
+    [['status'=>429],'busy'],[['status'=>504],'timeout'],[['status'=>401],'setup'],
+    [['failure_code'=>'provider_attempt_unconfirmed','status'=>503],'failed'],
+    [['failure_code'=>['unrecognized'],'error'=>'private provider diagnostic'],'failed'],
+] as [$failure,$reason]) {
+    $error=vp3_paired_phone_provider_failure_v1($failure);
+    if ($error->reason!==$reason || str_contains($error->getMessage(),'private provider')) throw new RuntimeException('Provider status exposed an incorrect diagnostic.');
+}
+$narrowed=$plan();
+$narrowed['compute_policy']['homeserver_scope']=['supported'=>true,'available'=>false,'cloud_allowed'=>null];
+if (vp3_paired_phone_cloud_fallback_v1($narrowed)) throw new RuntimeException('An unverified supported wrapper scope cannot authorize fallback.');

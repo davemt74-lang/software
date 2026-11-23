@@ -10,7 +10,9 @@ name. A phone can pair using the QR code in Phone Tracking.
 
 On the paired phone, keep the connection page open. Incoming camera requests
 appear on both the Connection and Chat tabs. Tap Start Sharing and allow camera
-access. On the owner’s computer, open the private preview link in Agent Chat.
+access. In the owner’s Agent Chat, select Show live stream on the camera
+announcement to watch inside the conversation. The editor link opens a separate
+private view of the same camera.
 Tap Stop Sharing on the phone or in the editor to end sharing.
 
 The holder can also open Chat, tap + beside the message field, and choose
@@ -18,6 +20,14 @@ Camera. Preview shows the selected lens locally. Start Sharing makes the
 camera available in the owner’s private editor and tracking map. If the phone
 is on the map, its marker pulses red while it sends fresh camera frames.
 Select that marker to watch. Closing the popup lets the phone keep sharing.
+
+Record a take from one phone
+Open that camera’s live stream in Agent Chat and request a recording. The phone
+holder chooses when to start and stop. The take contains camera video only.
+The holder can play it back, save a copy on the phone, or choose Re-record for
+another take. Submit sends the selected take to the owner’s private Media
+Library and adds a link in the same chat. Keep the camera connected until
+submission finishes. A locally saved copy stays on the phone.
 
 Send messages to the connected agent from the phone’s Chat tab. A reply appears
 under the original message. If a reply fails, read the status and tap Retry

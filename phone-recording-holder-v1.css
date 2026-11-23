@@ -1,0 +1,55 @@
+#phone-recording {
+  flex: 0 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
+  max-height: 65dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: .85rem max(1rem,env(safe-area-inset-right)) max(.85rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left));
+  border-top: 1px solid #bccac7;
+}
+.phone-camera-app:modal #phone-recording { background: #192230; border-color: #3a4655; }
+#phone-recording h3 { margin: 0 0 .2rem; font-size: 1rem; }
+#phone-recording p { margin: .25rem 0 .5rem; line-height: 1.35; font-size: .92rem; }
+#phone-recording video { display: block; margin: .5rem auto; width: 100%; max-height: 29dvh; object-fit: contain; background: #080b11; }
+#phone-recording [hidden] { display: none; }
+.phone-record-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.phone-record-actions:empty { display: none; }
+#phone-recording button, #phone-record-save {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  width: auto;
+  margin: 0;
+  padding: .4rem .8rem;
+  border: 1px solid #71817e;
+  border-radius: .65rem;
+  background: transparent;
+  color: inherit;
+  font-size: .9rem;
+  font-weight: 650;
+}
+#phone-recording #phone-record-stop { color: white; background: #9b2535; border-color: #bf5663; }
+#phone-recording #phone-record-start, #phone-recording #phone-record-submit { color: white; background: #176154; }
+#phone-recording[data-phase="recording"] h3::before { content: ""; display: inline-block; width: .65rem; height: .65rem; margin-right: .45rem; border-radius: 50%; background: #fa5e6d; }
+#phone-record-local { margin: .65rem 0; }
+#phone-record-retained { margin-top: 1rem; border-top: 1px solid #c4cfcb; }
+#phone-record-retained video { display:block; width:100%; max-height:32dvh; background:#0d111b; }
+#phone-record-retained a { display:inline-flex; align-items:center; min-height:44px; }
+#phone-record-retained button { margin-left:.75rem; width:auto; }
+/* During review the native player and its controls share one scrollable area.
+   Keep live video visible above the sharing controls, including in a short viewport. */
+.phone-camera-app:modal:has(#phone-recording[data-phase="review"], #phone-recording[data-phase="uploading"], #phone-recording[data-phase="done"]) .camera-stage {
+  flex: 0 1 6rem;
+  min-height: 3.5rem;
+}
+.phone-camera-app:modal #phone-recording:is([data-phase="review"], [data-phase="uploading"], [data-phase="done"]) {
+  flex: 1 1 auto;
+  max-height: none;
+}
+@media (max-height: 42rem) {
+  .phone-camera-app:modal .camera-toolbar { padding-block: .4rem; }
+  #phone-recording video { max-height: 25dvh; }
+}

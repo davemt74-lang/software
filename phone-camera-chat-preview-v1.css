@@ -1,0 +1,9 @@
+.phone-chat-live-preview { width: min(100%, 36rem); margin-block: .75rem; }
+.phone-chat-live-media { position: relative; border-radius: .65rem; overflow: hidden; background: #162022; color: #fff; }
+.phone-chat-live-media video { display: block; width: 100%; max-height: min(48dvh, 24rem); aspect-ratio: 16 / 9; object-fit: contain; }
+.phone-chat-live-preview:not([data-state="live"]) video { position: absolute; opacity: 0; pointer-events: none; }
+.phone-chat-live-media [role="status"] { margin: 0; padding: .65rem .9rem; }
+.phone-chat-live-preview[data-state="live"] .phone-chat-live-media [role="status"] { position: absolute; bottom: .5rem; left: .5rem; padding: .2rem .5rem; border-radius: .4rem; background: #101615d9; }
+.phone-chat-live-recording:not(:empty) { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-top: .5rem; }
+.phone-chat-live-recording [role="status"] { width: 100%; margin: 0; }
+.phone-chat-live-recording [hidden] { display: none; }

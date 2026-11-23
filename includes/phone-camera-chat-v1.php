@@ -136,12 +136,14 @@ function vp3_phone_camera_chat_updates_v1(PDO $pdo,int $uid,int $aid,int $cid): 
         $label=vp3_phone_chat_label_v1(['name'=>$event['device_name']]);
         $started=$event['event']==='started';
         $answer=match ($event['event']) {
-            'started'=>$label.' started sharing its camera with the private editor.',
+            'started'=>$label.' started sharing its camera.',
             'cancelled'=>'The camera request for '.$label.' closed before sharing started.',
             default=>'Private camera sharing ended for '.$label.'.'
         };
-        $row=vp3_phone_chat_store_v1($pdo,$uid,$aid,$cid,'',$answer,$started?'camera':'',null,null,$started?$event['session_id']:null);
-        $updates[]=vp3_phone_chat_announcement_v1($row);
+        $row=vp3_phone_chat_store_v1($pdo,$uid,$aid,$cid,'',$answer,$started?'camera_live':'',null,null,$started?$event['session_id']:null);
+        $update=vp3_phone_chat_announcement_v1($row);
+        if ($started) $update['actions']=vp3_phone_chat_actions_v1('camera_live',$aid,$cid,$event['session_id'],$event['device_id']);
+        $updates[]=$update;
     }
     return $updates;
 }

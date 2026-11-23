@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+define('STONEFELLOW_ROOT',dirname(__DIR__));
 require_once dirname(__DIR__).'/includes/phone-tracking-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-chat-v1.php';
 require_once dirname(__DIR__).'/includes/permissions.php';
@@ -75,6 +76,8 @@ function phone_test_dispatch(PDO $db, array $job): array
             'places' => vp3_phone_places_owner_v1($db,$identity,$action,$input),
             'arrival_poll','research_chat' => phone_test_chat($db,$identity,$input,$principal === 'research_chat'),
             'camera' => vp3_phone_camera_owner_v1($db, $identity, 0, 41, $action, $input),
+            'record_owner' => vp3_phone_record_owner_v1($db, $identity, 0, 41, $action, $input),
+            'record_holder' => vp3_phone_record_holder_v1($db, $identity, $action, $input),
             'device' => vp3_phone_device_v1($db,$identity,$action,$input),
         };
         return ['status'=>200, 'data'=>$result];
@@ -101,7 +104,7 @@ function phone_test_race(array ...$jobs): array
     $clients = [];
     try {
         foreach ($jobs as $job) {
-            $process = proc_open([PHP_BINARY, __FILE__, 'client'], [
+            $process = proc_open([PHP_BINARY, '-d', 'display_errors=stderr', __FILE__, 'client'], [
                 0=>['pipe','r'], 1=>['pipe','w'], 2=>STDERR,
             ], $pipes);
             if (!is_resource($process)) throw new RuntimeException('Unable to start test client.');
@@ -567,13 +570,31 @@ try {
     vp3_phone_camera_owner_v1($db,1,0,41,'map_close',$other);
     $open=vp3_phone_camera_owner_v1($db,1,0,41,'map_status',$winner)['camera'];
     phone_test_check($open['viewer_id']===$winner['viewer_id'], 'a late close from another popup preserves the live viewer');
+    $chatRaces=phone_test_race(['camera',1,'chat_open',$viewerA],['camera',1,'chat_open',$viewerB]);
+    $chatStatuses=array_column($chatRaces,'status');
+    sort($chatStatuses);
+    phone_test_check($chatStatuses===[200,409] && vp3_phone_camera_owner_v1($db,1,0,41,'map_status',$winner)['camera']['viewer_id']===$winner['viewer_id'],
+        'concurrent inline Chat opens admit one Chat viewer while preserving the map winner');
+    $recordRequest=['record_owner',1,'request',$session+['request_id'=>bin2hex(random_bytes(16))]];
+    $recordRequests=phone_test_race($recordRequest,$recordRequest);
+    $takeId=$recordRequests[0]['data']['recording']['id']??'';
+    phone_test_check(array_column($recordRequests,'status')===[200,200] && $takeId!==''
+        && $recordRequests[1]['data']['recording']['id']===$takeId,
+        'simultaneous retries on one camera create a single holder recording request');
+    $take=$session+['recording_id'=>$takeId];
+    $consent=phone_test_dispatch($db,['record_holder',$phone['token'],'accept',$take]);
+    $recordedTake=$take+['take_id'=>$consent['data']['recording']['take_id']??''];
+    $review=phone_test_dispatch($db,['record_holder',$phone['token'],'review',$recordedTake]);
+    phone_test_check($consent['status']===200 && $review['status']===200,
+        'the paired phone can record and review the requested take');
     $stops = phone_test_race(['camera',1,'stop',$session], ['camera',1,'stop',$session]);
     $row = vp3_phone_sql_v1($db,'SELECT state,offer_sdp,answer_sdp FROM vp3_phone_camera_sessions_v1 WHERE id=?',[$sessionId])->fetch();
     phone_test_check(array_column($stops,'status') === [200,200] && $row['state']==='stopped'
         && $row['offer_sdp']===null && $row['answer_sdp']===null,
         'duplicate private stops erase camera signaling');
-    phone_test_check(!vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_map_v1 WHERE session_id=?',[$sessionId])->fetchColumn(),
-        'stopping sharing also removes the map viewer and its signaling');
+    phone_test_check(!vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_map_v1 WHERE session_id=?',[$sessionId])->fetchColumn()
+        && !vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_viewers_v1 WHERE session_id=?',[$sessionId])->fetchColumn(),
+        'stopping sharing also removes the private Map and Chat viewers and their signaling');
     $db->exec('DELETE FROM users WHERE id=1');
     $tables = [
         'vp3_phone_invites_v1', 'vp3_phone_devices_v1', 'vp3_phone_requests_v1',

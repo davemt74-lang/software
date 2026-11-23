@@ -6,16 +6,20 @@ require_once __DIR__.'/paired-phone-agent-v1.php';
 
 function vp3_paired_phone_provider_failure_v1(array $result): PairedPhoneReplyFailure
 {
-    $code=$result['failure_code']??$result['error_code']??'';
+    $value=$result['failure_code']??$result['error_code']??'';
+    $code=is_string($value)?$value:'';
     $status=(int)($result['status']??0);
     $reason=match (true) {
-        $code==='request_rate_limit' || $status===429 => 'busy',
-        $code==='inference_budget_exhausted' || $status===504 => 'timeout',
+        $code==='request_rate_limit' => 'busy',
+        $code==='inference_budget_exhausted' => 'timeout',
         $code==='gmail_summary_access_changed' => 'access', // The shared transport's dispatch guard.
         str_starts_with($code,'credential_') || in_array($code,[
             'service_quota_exhausted','service_disabled','provider_disabled','service_usage_unavailable',
-            'service_route_unavailable','personal_route_unavailable','anthropic_credit_balance_low',
-        ],true) || in_array($status,[401,402,403],true) => 'setup',
+            'service_route_unavailable','personal_route_unavailable','anthropic_credit_balance_low','transport_unavailable',
+        ],true) => 'setup',
+        $status===429 => 'busy',
+        in_array($status,[408,504],true) => 'timeout',
+        in_array($status,[401,402,403],true) => 'setup',
         default => 'failed',
     };
     return new PairedPhoneReplyFailure($reason);
@@ -23,8 +27,12 @@ function vp3_paired_phone_provider_failure_v1(array $result): PairedPhoneReplyFa
 
 function vp3_paired_phone_cloud_fallback_v1(array $plan): bool
 {
-    return empty($plan['blocked']) && ($plan['effective_preference']??null)==='auto'
-        && !empty($plan['allow_vp3_fallback']) && !empty($plan['home']['cloud_allowed']) && !empty($plan['cloud']['ready']);
+    $scope=$plan['compute_policy']['homeserver_scope']??[];
+    return ($plan['blocked']??true)===false && ($plan['effective_preference']??null)==='auto'
+        && in_array($plan['route']??null,['homeserver','vp3_cloud'],true)
+        && ($plan['allow_vp3_fallback']??null)===true && ($plan['home']['cloud_allowed']??null)===true
+        && ($plan['cloud']['ready']??null)===true
+        && (empty($scope['supported']) || (!empty($scope['available']) && ($scope['cloud_allowed']??null)===true));
 }
 
 /** The caller supplies only messages attributed to this device. Recheck its live grant at provider dispatch. */
@@ -92,11 +100,17 @@ function vp3_paired_phone_model_reply_v1(PDO $pdo,int $owner,int $agent,array $h
                 return ['ok'=>!empty($result['ok']),'answer'=>$result['result']['reply']??null];
             } catch (RuntimeException $error) {
                 $kind=homeserver_execution_v230_failure_class($error);
-                if ($kind==='authorization' || in_array($error->getCode(),[401,403,409],true)) {
+                if ($kind==='authorization' || $error->getCode()===409) {
                     throw new PairedPhoneReplyFailure('access');
                 }
+                if (in_array($error->getCode(),[401,402,403],true)) throw new PairedPhoneReplyFailure('setup');
                 if ($atDispatch || $error instanceof PDOException || !vp3_paired_phone_cloud_fallback_v1($plan)) {
-                    throw new PairedPhoneReplyFailure($kind==='timeout'?'timeout':'offline');
+                    $reason=match(true) {
+                        $error->getCode()===429 => 'busy',
+                        $kind==='timeout' || in_array($error->getCode(),[408,504],true) => 'timeout',
+                        default => 'offline',
+                    };
+                    throw new PairedPhoneReplyFailure($reason);
                 }
                 $current=vp3_agent_runtime_plan_v420($pdo,$user,$agent,'chat',$service);
                 if (!vp3_paired_phone_cloud_fallback_v1($current)) {
