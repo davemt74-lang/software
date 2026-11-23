@@ -295,6 +295,35 @@ phone_chat_test(str_contains($send('List my arrival alerts')['answer'],'waiting 
 phone_chat_reject(fn()=>$send($setup,[],false),403,'public runtime cannot propose an arrival alert');
 phone_chat_test(str_contains($send('Stop the arrival alert for Field iPhone at Studio')['answer'],'Stopped') && $rules()===[],
     'the owner can stop the exact alert from its own private Chat');
+// A conditional arrival offer is configured privately before the phone is asked to authorize arrivals.
+$conditional='When my iPhone arrives at Studio, check my open recording tasks. If I still need XLR cables, suggest nearby music stores open today.';
+$search=['item_term'=>'XLR cables','merchant_category'=>'music stores','open_today'=>true];
+$draft=$send($conditional);
+phone_chat_test(str_contains($draft['answer'],'XLR cables') && str_contains($draft['answer'],'music stores open today')
+    && str_contains($draft['answer'],'approve the public search') && $rules()===[], 'the conditional preview identifies the item, category, hours and separate search approval');
+$send('Confirm arrival alert');
+$configured=$rules()[0];
+$holderRule=$holder($field)['arrival_rules'][0];
+phone_chat_test($configured['search_intent']===$search && $configured['task_query']==='recording' && $holderRule['state']==='requested'
+    && $holderRule['offers_local_search'] && !array_intersect(['task_query','search_intent','item_term','merchant_category'],array_keys($holderRule)),
+    'conditional settings belong to the private rule while the holder sees the purpose of its consent');
+$send($conditional); $send('Confirm.');
+phone_chat_test(count($rules())===1 && $rules()[0]['id']===$configured['id'], 'repeating exact conditional setup retains the original pending rule');
+$send($setup); $plainConflict=$send('Confirm.');
+phone_chat_test(str_contains($plainConflict['answer'],'stop the existing alert') && $rules()[0]['search_intent']===$search,
+    'a plain setup cannot silently change an existing conditional rule');
+$send(str_replace('XLR cables','monitors',$conditional)); $changed=$send('Confirm.');
+phone_chat_test(str_contains($changed['answer'],'stop the existing alert') && $rules()[0]['search_intent']===$search,
+    'changing the conditional item cannot reuse the old holder grant');
+phone_chat_test(str_contains($send('List my arrival alerts')['answer'],'XLR cables') && $rules(2)===[],
+    'only the original private conversation lists the conditional search');
+$send('Stop the arrival alert for Field iPhone at Studio');
+phone_chat_test(!(int)$pdo->query('SELECT COUNT(*) FROM vp3_phone_arrival_search_intents_v1')->fetchColumn(),'stopping an alert removes its conditional intent');
+$localVariant=vp3_phone_chat_plan_v1('When my iPhone gets to Studio, look at my open recording tasks; and if I need mic stands, find local audio shops.');
+phone_chat_test($localVariant['search_intent']===['item_term'=>'mic stands','merchant_category'=>'audio shops','open_today'=>false],
+    'a local search without a same-day request retains its own hours choice');
+$invalid=$send(str_replace('XLR cables','https://example.test/private',$conditional));
+phone_chat_test(str_contains($invalid['answer'],'Name the task topic') && $rules()===[], 'an invalid product label stays in private Chat and creates no rule');
 $otherIphone=$approvedPhone('Guest iPhone','guest');
 $prompt=$send($setup);
 phone_chat_test(str_contains($prompt['answer'],'Which phone?') && str_contains($prompt['answer'],'Guest iPhone')

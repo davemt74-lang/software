@@ -356,13 +356,14 @@ try {
     await waitText(page,'Waiting for a fresh');
     const gen=t.device.generation, studio='a'.repeat(32), office='b'.repeat(32);
     const rule=(id,place_name,version)=>({id,place_name,version,generation:gen,state:'requested',task_query:'recording'});
-    t.device.arrival_rules=[rule(studio,'Studio',1),rule(office,'Office',1)];
+    t.device.arrival_rules=[{...rule(studio,'Studio',1),offers_local_search:true},rule(office,'Office',1)];
     const row=id=>page.locator('#phone-arrivals [data-rule-id="'+id+'"]');
     const button=(id,action)=>row(id).locator('[data-arrival-action="'+action+'"]');
     const fixes=()=>t.requests.filter(r=>r.action==='fix');
     await page.evaluate(()=>window.phoneFixture.wake());
     await row(studio).waitFor({state:'visible'});
-    assert.match(await row(studio).textContent(),/Studio.*David Evans.*private Agent Chat/);
+    assert.match(await row(studio).textContent(),/Studio.*David Evans.*private Agent Chat.*approve a local business search/);
+    assert.doesNotMatch(await row(office).textContent(),/local business search/);
     assert.ok(await button(office,'accept_arrival').isVisible(),'the second request has its own consent control');
     await page.evaluate(()=>window.phoneFixture.position(Date.now()-10000));
     await t.firstFix;

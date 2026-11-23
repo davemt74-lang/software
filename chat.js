@@ -2044,21 +2044,22 @@
   function publicResearchSourceLinks(sources, kind = '') {
     if (!Array.isArray(sources)) return '';
     const links = [];
-    let topic = false;
+    let groupLabel = 'Artist';
     for (const source of sources) {
-      if (typeof source?.source !== 'string' || !/^(artist|topic)-web:[a-f0-9]{64}$/.test(source.source) || typeof source.url !== 'string' ||
+      if (typeof source?.source !== 'string' || !/^(artist|topic|location)-web:[a-f0-9]{64}$/.test(source.source) || typeof source.url !== 'string' ||
           (kind && !source.source.startsWith(kind + '-web:')) ||
           !['page_excerpt', 'search_match'].includes(source.coverage)) continue;
       let url;
       try { url = new URL(source.url); } catch (_) { continue; }
       if (url.protocol !== 'https:' || url.username || url.password) continue;
-      topic ||= source.source.startsWith('topic-web:');
+      if (source.source.startsWith('topic-web:')) groupLabel = 'Topic';
+      if (source.source.startsWith('location-web:')) groupLabel = 'Local';
       const coverage = source.coverage === 'page_excerpt' ? (kind ? 'Page excerpt' : 'Page read') : 'Search lead';
       const title = typeof source.title === 'string' && source.title.trim() ? source.title : 'Open source';
       links.push(`<a class="message-source" href="${escapeHtml(url.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(title)} · ${coverage}</a>`);
-      if (links.length === 6) break;
+      if (links.length >= (groupLabel === 'Local' ? 9 : 6)) break;
     }
-    return links.length ? `<div class="message-sources" data-public-research-sources role="group" aria-label="${topic ? 'Topic' : 'Artist'} research sources">${links.join('')}</div>` : '';
+    return links.length ? `<div class="message-sources" data-public-research-sources role="group" aria-label="${groupLabel} research sources">${links.join('')}</div>` : '';
   }
 
   function bindResearchCanvasV1(element, report) {

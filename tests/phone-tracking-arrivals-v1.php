@@ -134,7 +134,24 @@ check($stopped['arrival_rules']===[] && !(int)$db->query('SELECT COUNT(*) FROM v
     'ending live sharing removes the session’s rules');
 $new=post($db,$iphone,'start');
 blocked(409,fn()=>$request($i['generation']),'a restarted live session cannot reuse its earlier generation');
-$request($new['generation']);
+// Upgrading a live Phase 4 pairing with a requested plain rule must never opt the holder into a search.
+$plain=$request($new['generation']);
+$db->exec('DROP TABLE vp3_phone_arrival_search_intents_v1');
+check(!vp3_phone_schema_ready_v1($db),'a pre-search installation reports the missing private intent table');
+vp3_phone_schema_v1($db);
+vp3_phone_schema_v1($db);
+check(vp3_phone_schema_ready_v1($db) && $request($new['generation'])===$plain && $plain['search_intent']===null,
+    'repeated upgrade preserves the existing rule and sharing generation as a plain alert');
+$search=['item_term'=>'XLR cables','merchant_category'=>'music stores','open_today'=>true];
+blocked(409,fn()=>vp3_phone_arrival_request_v1($db,11,0,10,$id,$new['generation'],$placeId,'recording',$search),
+    'an existing plain rule cannot silently acquire a local search');
+vp3_phone_arrival_cancel_v1($db,11,0,10,$plain['id']);
+blocked(422,fn()=>vp3_phone_arrival_request_v1($db,11,0,10,$id,$new['generation'],$placeId,'recording',$search+['private_note'=>'ignore']),
+    'only explicitly supported public search fields are accepted');
+$local=vp3_phone_arrival_request_v1($db,11,0,10,$id,$new['generation'],$placeId,'recording',$search);
+check($local['search_intent']===$search && $local['id']!==$plain['id'] && $local['state']==='requested',
+    'conditional alerts start with a fresh device-bound consent request');
 vp3_phone_places_owner_v1($db,11,'delete_place',['place_id'=>$placeId,'request_id'=>bin2hex(random_bytes(12))]);
-check(post($db,$iphone,'status')['arrival_rules']===[] && !$events(),'deleting a saved place removes attached rules and pending events');
+check(post($db,$iphone,'status')['arrival_rules']===[] && !$events() && !(int)$db->query('SELECT COUNT(*) FROM vp3_phone_arrival_search_intents_v1')->fetchColumn(),
+    'deleting a saved place removes attached rules, pending events and private search intentions');
 echo "PASS Per-phone consent, precise arrivals, private destinations, once-per-visit receipts and independent live GPS.\n";

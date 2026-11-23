@@ -453,7 +453,8 @@ jobs:
                       includes/phone-tracking-chat-v1.php docs/PHONE-TRACKING-PHASE1-INSTALL.txt \
                       docs/PHONE-TRACKING-PHASE2-INSTALL.txt docs/PHONE-TRACKING-PHASE3-INSTALL.txt \
                       docs/PHONE-TRACKING-PHASE4-INSTALL.txt includes/phone-tracking-arrivals-v1.php includes/phone-tracking-arrival-chat-v1.php \
-                      includes/phone-tracking-arrival-delivery-v1.php \
+                      includes/phone-tracking-arrival-delivery-v1.php docs/PHONE-TRACKING-PHASE5-INSTALL.txt \
+                      includes/phone-tracking-local-research-v1.php includes/phone-tracking-local-approval-v1.php includes/phone-tracking-local-offers-v1.php \
                       includes/phone-tracking-history-v1.php includes/phone-tracking-places-v1.php \
                       assets/phone-map/leaflet.js assets/phone-map/leaflet.css assets/phone-map/qr.js assets/phone-map/world.json; do
             test -s "_deploy/$path"

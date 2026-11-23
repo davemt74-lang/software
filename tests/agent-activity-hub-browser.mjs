@@ -223,6 +223,11 @@ try {
   await specialist.getByText('No arrival alerts in this Chat.',{exact:true}).waitFor();
   const newMap = new URL(await specialist.getByRole('link',{name:'Open Phone Tracking'}).getAttribute('href'));
   assert.deepEqual(Object.fromEntries(newMap.searchParams),{agent:'7'});
+  await specialist.getByRole('button',{name:'Set up local research'}).click();
+  assert.equal(await composer.inputValue(),'When my iPhone arrives at Studio, check my open recording tasks. If I still need XLR cables, suggest nearby music stores open today.');
+  await composer.fill('');
+  await page.locator('[data-chat-specialist="location"]').click();
+  await specialist.getByText('No arrival alerts in this Chat.',{exact:true}).waitFor();
   await specialist.getByRole('button',{name:'Set up an arrival alert'}).click();
   assert.equal(await composer.inputValue(),'When my iPhone arrives at Studio, show me my open recording tasks.');
   await composer.fill('');

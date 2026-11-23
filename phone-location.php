@@ -16,7 +16,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
   <link rel="stylesheet" href="phone-location-v1.css?v=4">
-  <script src="phone-location-v1.js?v=4" defer></script>
+  <script src="phone-location-v1.js?v=5" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">

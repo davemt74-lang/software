@@ -27,8 +27,8 @@ function phone_test_check(bool $condition, string $message): void
     echo "ok - $message\n";
 }
 
-/** Use the ordinary private Chat poll and native policy providers, on each child's own connection. */
-function phone_test_arrival_poll(PDO $db, int $owner, int $cid): array
+/** Use the production private Chat entry points on each child's own connection. */
+function phone_test_chat_identity(PDO $db, int $owner): array
 {
     require_once dirname(__DIR__).'/includes/functions.php';
     require_once dirname(__DIR__).'/includes/auth.php';
@@ -39,9 +39,26 @@ function phone_test_arrival_poll(PDO $db, int $owner, int $cid): array
     $GLOBALS['__stonefellow_current_user'] = $user;
     $_SERVER['HTTP_X_VP3_WORKING_ATTENTION'] = vp3_catch_up_page_binding_v1($user);
     $principal = ['kind'=>'system','agent_id'=>0,'owner_user_id'=>$owner,'viewer_user_id'=>$owner];
-    return vp3_phone_chat_updates_v1($db,$user,$principal,[
-        'phone_updates'=>true,'conversation_id'=>$cid,'agent_context'=>['user_agent_id'=>0],
-    ]);
+    return [$user,$principal];
+}
+
+function phone_test_chat(PDO $db, int $owner, array $input, bool $send): array
+{
+    [$user,$principal] = phone_test_chat_identity($db,$owner);
+    $input['agent_context'] = ['user_agent_id'=>0];
+    if (!$send) return vp3_phone_chat_updates_v1($db,$user,$principal,$input + ['phone_updates'=>true]);
+    $plan = vp3_phone_chat_route_v1($db,$user,$principal,$input);
+    if ($plan === null) throw new RuntimeException('The local research command did not reach the phone Chat handler.');
+    return vp3_phone_chat_send_v1($db,$user,null,$principal,$input,$plan,null);
+}
+
+/** Reproduce the pre-research schema in dependency order without disabling referential integrity. */
+function phone_test_remove_local_research(PDO $db): void
+{
+    $db->exec('DROP TABLE IF EXISTS vp3_phone_local_approvals_v1');
+    $db->exec('DROP TABLE IF EXISTS vp3_phone_local_research_v1');
+    $db->exec('DROP TABLE IF EXISTS vp3_phone_local_offers_v1');
+    $db->exec('DROP TABLE IF EXISTS vp3_phone_arrival_search_intents_v1');
 }
 
 function phone_test_dispatch(PDO $db, array $job): array
@@ -50,12 +67,13 @@ function phone_test_dispatch(PDO $db, array $job): array
     try {
         if ($principal === 'installer') {
             vp3_phone_schema_v1($db);
-            return ['status'=>200,'ready'=>vp3_phone_schema_ready_v1($db)];
+            vp3_phone_chat_schema_v1($db);
+            return ['status'=>200,'ready'=>vp3_phone_schema_ready_v1($db) && vp3_phone_chat_schema_ready_v1($db)];
         }
         $result = match ($principal) {
             'owner' => vp3_phone_owner_v1($db,$identity,$action,$input),
             'places' => vp3_phone_places_owner_v1($db,$identity,$action,$input),
-            'arrival_poll' => phone_test_arrival_poll($db,$identity,$input['conversation_id']),
+            'arrival_poll','research_chat' => phone_test_chat($db,$identity,$input,$principal === 'research_chat'),
             'device' => vp3_phone_device_v1($db,$identity,$action,$input),
         };
         return ['status'=>200, 'data'=>$result];
@@ -182,6 +200,7 @@ try {
     phone_test_check($statuses === [200,409] && $settings['preferences_version'] === 2
         && $settings['generation'] === $device['generation'] && $settings['location_state'] === 'off',
         'competing settings saves produce exactly one edit and leave sharing off');
+    phone_test_remove_local_research($db);
     $db->exec('DROP TABLE vp3_phone_arrival_events_v1');
     $db->exec('DROP TABLE vp3_phone_arrival_rules_v1');
     $db->exec('DROP TABLE vp3_phone_history_points_v1, vp3_phone_places_v1');
@@ -254,6 +273,7 @@ try {
         && in_array('Studio',array_column($savedPlaces(),'name'),true),
         'concurrent withdrawal and save respect commit order; existing places survive and subsequent saves are rejected');
     // Upgrade a Phase 3 installation that already holds a real paired phone and a saved place.
+    phone_test_remove_local_research($db);
     $db->exec('DROP TABLE vp3_phone_arrival_events_v1');
     $db->exec('DROP TABLE vp3_phone_arrival_rules_v1');
     phone_test_check(!vp3_phone_schema_ready_v1(phone_test_db($isolatedDsn)), 'Phase 3 reports the missing arrival schema');
@@ -308,6 +328,20 @@ try {
         && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_arrival_briefings_v1')->fetchColumn() === 1,
         'two native private Chat polls emit one arrival with authorized open tasks, including a legacy task without status');
 
+    // Emulate a populated Phase 4 installation with a granted alert and a delivered private briefing.
+    phone_test_remove_local_research($db);
+    phone_test_check(!vp3_phone_schema_ready_v1(phone_test_db($isolatedDsn)) && !vp3_phone_chat_schema_ready_v1(phone_test_db($isolatedDsn)),
+        'Phase 4 phone and private Chat installations report the missing local research upgrade');
+    $upgrade = phone_test_race($installer,$installer);
+    $legacyRule = vp3_phone_arrival_list_v1($db,1,0,41)[0];
+    phone_test_check(array_column($upgrade,'ready') === [true,true] && $legacyRule['id'] === $rule['id']
+        && $legacyRule['version'] === $active['version'] && $legacyRule['state'] === 'active'
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_arrival_search_intents_v1')->fetchColumn() === 0
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_offers_v1')->fetchColumn() === 0
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_research_v1')->fetchColumn() === 0
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_arrival_briefings_v1')->fetchColumn() === 1,
+        'two Phase 5 installers preserve the active Phase 4 grant and briefing without adding any search authorization');
+
     // Keep a second real visit pending to independently exercise the withdrawal race below.
     vp3_phone_device_v1($db,$token,'fix',array_replace($outside,['fix_at'=>$nextSample()]));
     vp3_phone_device_v1($db,$token,'fix',array_replace($inside,['fix_at'=>$nextSample()]));
@@ -320,6 +354,130 @@ try {
         && vp3_phone_device_v1($db,$token,'status',[])['device']['arrival_rules'] === []
         && !vp3_phone_history_read_v1($db,1,$deviceId)['points'],
         'holder withdrawal clears an unannounced arrival and a delayed fix cannot revive it');
+
+    // A second alert explicitly names the need and business category. Only its own confirmed visits may produce offers.
+    $intent = ['item_term'=>'XLR cables','merchant_category'=>'music stores','open_today'=>true];
+    $searchRule = vp3_phone_arrival_request_v1($db,1,0,41,$deviceId,$live['generation'],$studio['id'],'recording',$intent);
+    $searchGrant = vp3_phone_device_v1($db,$token,'accept_arrival',[
+        'device_id'=>$deviceId,'generation'=>$live['generation'],'rule_id'=>$searchRule['id'],'rule_version'=>$searchRule['version'],
+    ])['device'];
+    $version = array_column($searchGrant['arrival_rules'],null,'id')[$searchRule['id']]['version'];
+    $visitStudio = static function () use($db,$token,$outside,$inside,$nextSample,$searchRule,$version): void {
+        $grant = [$searchRule['id']=>$version];
+        foreach ([$outside,$inside] as $position) {
+            vp3_phone_device_v1($db,$token,'fix',array_replace($position,['fix_at'=>$nextSample(),'arrival_grants'=>$grant]));
+        }
+    };
+    $needId = 71;
+    $privateTitle = 'Recording: buy XLR cables for PRIVATE-SESSION-417';
+    $seedTask->execute([$needId,1,null,$privateTitle,'Private stage box wiring','{"task_status":"open"}']);
+    $seedTask->execute([72,1,7,'Recording: XLR cables in another Agent','',null]);
+    $seedTask->execute([73,2,null,'Recording: XLR cables for other owner','',null]);
+    $visitStudio();
+    $offerPolls = phone_test_race($poll,$poll);
+    $offerRows = vp3_phone_sql_v1($db,'SELECT assistant_message_id,visit_number FROM vp3_phone_local_offers_v1 WHERE rule_id=?',[$searchRule['id']])->fetchAll();
+    phone_test_check(array_column($offerPolls,'status') === [200,200] && count($offerRows) === 1 && (int)$offerRows[0]['visit_number'] === 1
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_research_v1')->fetchColumn() === 0,
+        'one qualifying visit and two simultaneous private polls create one local offer without running research');
+    $offerId = (int)$offerRows[0]['assistant_message_id'];
+    $say = static fn(string $message,int $conversation = 41,int $uid = 1) => ['research_chat',$uid,'send',[
+        'conversation_id'=>$conversation,'message'=>$message,'idempotency_key'=>bin2hex(random_bytes(16)),
+    ]];
+    $db->exec('INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES(42,1,NULL),(43,2,NULL)');
+    foreach ([$say("Search area for offer #$offerId: Phoenix, Arizona",42),$say("Search area for offer #$offerId: Phoenix, Arizona",43,2)] as $wrongScope) {
+        phone_test_dispatch($db,$wrongScope);
+    }
+    phone_test_check((int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_approvals_v1')->fetchColumn() === 0,
+        'another private conversation and another account cannot stage an area for the offer');
+    $preview = phone_test_dispatch($db,$say("Search area for offer #$offerId: Phoenix, Arizona"));
+    $previewText = $preview['data']['answer'] ?? '';
+    phone_test_check(($preview['status'] ?? 0) === 200 && preg_match('/Approve local search ([A-F0-9]{12})/i',$previewText,$tokenMatch) === 1
+        && str_contains($previewText,'Phoenix') && stripos($previewText,'XLR cables') !== false
+        && stripos($previewText,'music stores') !== false
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_research_v1')->fetchColumn() === 0,
+        'the public area preview lists the permitted search terms before a mission can be queued');
+    $approveSearch = 'Approve local search '.$tokenMatch[1];
+    $approvals = phone_test_race($say($approveSearch),$say($approveSearch));
+    $jobs = $db->query('SELECT offer_id,owner_user_id,agent_id,conversation_id,state,public_json FROM vp3_phone_local_research_v1')->fetchAll();
+    $approvalStatuses = array_column($approvals,'status');
+    phone_test_check(in_array(200,$approvalStatuses,true) && !array_diff($approvalStatuses,[200,409]) && count($jobs) === 1 && (int)$jobs[0]['offer_id'] === $offerId && $jobs[0]['state'] === 'queued'
+        && (int)$jobs[0]['owner_user_id'] === 1 && (int)$jobs[0]['agent_id'] === 0 && (int)$jobs[0]['conversation_id'] === 41,
+        'two simultaneous approvals with distinct Chat operation IDs queue exactly one mission for the original owner, Agent and conversation');
+    $public = json_decode($jobs[0]['public_json'],true,flags: JSON_THROW_ON_ERROR);
+    $publicText = $jobs[0]['public_json'];
+    $allowedFields = ['area','item','category','open_today','date'];
+    phone_test_check(is_array($public) && !array_diff(array_keys($public),$allowedFields)
+        && str_contains($publicText,'Phoenix') && stripos($publicText,'music stores') !== false && stripos($publicText,'XLR cables') !== false
+        && !str_contains($publicText,'PRIVATE-SESSION') && !str_contains($publicText,$deviceId) && !str_contains($publicText,$studio['name'])
+        && !str_contains($publicText,(string)$studio['latitude']) && !str_contains($publicText,(string)$studio['longitude']),
+        'queued research carries the public area and item while private task, saved place, device and GPS stay private');
+
+    // Route the real worker through a deterministic source. Triggering a normal Chat poll must never contact a public provider in this fixture.
+    [$localUser,$localPrincipal] = phone_test_chat_identity($db,1);
+    $queries = [];
+    $reads = [];
+    $sourceUrl = 'https://desert.example.com/store';
+    $sourcePage = '<html><body><h1>Desert Audio</h1><script type="application/ld+json">'.
+        '{"@context":"https://schema.org","@type":"MusicStore","name":"Desert Audio","address":{"@type":"PostalAddress","addressLocality":"Phoenix","addressRegion":"AZ"}}'.
+        '</script></body></html>';
+    $transport = [
+        'search'=>static function (string $query, int $limit, int $timeout) use (&$queries,$sourceUrl): array {
+            $queries[] = $query;
+            return ['ok'=>true,'results'=>[['title'=>'Desert Audio','url'=>$sourceUrl]]];
+        },
+        'request'=>static function (string $url,array $domains,callable $guard,?callable $resolver,int $timeout) use (&$reads,$sourcePage): array {
+            $guard();
+            $reads[] = $url;
+            return ['status'=>200,'content_type'=>'text/html','location'=>'','body'=>$sourcePage];
+        },
+    ];
+    $checkOffer = static fn(int $id) => vp3_phone_local_authorized_offer_v1($db,$localUser,$localPrincipal,41,$id);
+    vp3_phone_local_research_work_v1($db,$localUser,$localPrincipal,41,$checkOffer,$transport);
+    $queued = (int)$db->query("SELECT COUNT(*) FROM vp3_phone_local_research_v1 WHERE state='queued'")->fetchColumn();
+    phone_test_check(count($queries) >= 1 && count($reads) >= 1 && $queued === 0
+        && !str_contains(implode(' ',$queries),'PRIVATE-SESSION') && !str_contains(implode(' ',$queries),$studio['name']),
+        'the native research worker executes an explicitly approved public lookup through the prepared transport');
+    $resultPolls = phone_test_race($poll,$poll);
+    $answers = array_merge($resultPolls[0]['data'] ?? [],$resultPolls[1]['data'] ?? []);
+    $resultId = (int)vp3_phone_sql_v1($db,'SELECT result_message_id FROM vp3_phone_local_approvals_v1 WHERE offer_id=?',[$offerId])->fetchColumn();
+    phone_test_check(count($answers) === 1 && str_contains($answers[0]['speech'],'Desert Audio') && $resultId > 0,
+        'two simultaneous result polls create one source-backed private result turn');
+    $db->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE id=? AND user_id=1')->execute(['{"task_status":"completed"}',$needId]);
+    $visitStudio();
+    $quietPoll = phone_test_dispatch($db,$poll);
+    phone_test_check($quietPoll['status'] === 200
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_offers_v1')->fetchColumn() === 1
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_research_v1')->fetchColumn() === 1,
+        'completing the qualifying task suppresses a new offer and mission, even when another Agent or account still needs the item');
+    // A task can be updated in another tab after the area was reviewed.
+    $setTaskState = $db->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE user_id=1 AND id=?');
+    $setTaskState->execute(['{"task_status":"open"}',$needId]);
+    $visitStudio();
+    phone_test_dispatch($db,$poll);
+    $newOffer = (int)vp3_phone_sql_v1($db,'SELECT assistant_message_id FROM vp3_phone_local_offers_v1 WHERE rule_id=? ORDER BY visit_number DESC LIMIT 1',
+        [$searchRule['id']])->fetchColumn();
+    phone_test_check($newOffer > $offerId,'reopening the task permits a new offer only on a later visit');
+    // Age only the sensor clock, leaving its last coordinates inside and its current visit intact.
+    vp3_phone_sql_v1($db,'UPDATE vp3_phone_devices_v1 SET fix_at=? WHERE owner_user_id=1 AND id=?',[time()-3600,$deviceId]);
+    $stalePreview = phone_test_dispatch($db,$say("Search area for offer #$newOffer: Tempe, Arizona"));
+    phone_test_check(!preg_match('/Approve local search [A-F0-9]{12}/i',$stalePreview['data']['answer'] ?? '')
+        && (int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_local_approvals_v1 WHERE offer_id=?',[$newOffer])->fetchColumn() === 0,
+        'an old phone fix cannot authorize a public area even though its last recorded position was inside');
+    vp3_phone_device_v1($db,$token,'fix',array_replace($inside,[
+        'fix_at'=>$nextSample(),'arrival_grants'=>[$searchRule['id']=>$version],
+    ]));
+    $nextPreview = phone_test_dispatch($db,$say("Search area for offer #$newOffer: Tempe, Arizona"));
+    phone_test_check(preg_match('/Approve local search ([A-F0-9]{12})/i',$nextPreview['data']['answer'] ?? '',$laterToken) === 1,
+        'the next eligible visit has its own public-area approval');
+    $setTaskState->execute(['{"task_status":"completed"}',$needId]);
+    $staleApproval = phone_test_dispatch($db,$say('Approve local search '.$laterToken[1]));
+    phone_test_check(in_array($staleApproval['status'],[200,403,404,409],true)
+        && (int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_local_research_v1 WHERE offer_id=?',[$newOffer])->fetchColumn() === 0,
+        'a completed task invalidates an already previewed offer before any new external mission is created');
+    vp3_phone_device_v1($db,$token,'stop_arrival',['device_id'=>$deviceId,'generation'=>$live['generation'],
+        'rule_id'=>$searchRule['id'],'rule_version'=>$version]);
+    phone_test_check((int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_research_v1')->fetchColumn() === 0,
+        'withdrawing the holder grant clears the associated research job');
 
     $owner('stop',$input($live['generation']));
     foreach (['account.access','chat.access'] as $permission) {

@@ -3,14 +3,33 @@ declare(strict_types=1);
 
 function vp3_phone_arrival_chat_plan_v1(string $text): ?array
 {
-    if (preg_match('/^when (.+?) (?:arrives? at|gets? to) (.+?),?\s+(?:show|list|read)(?: me)? (?:my |the )?open(?: (.+?))? tasks$/iu', $text, $m)) {
+    $search=null;
+    if (preg_match('/^(when .+? tasks)[\s.,;]+(?:and )?if i (?:still )?need (.+)$/iu',$text,$parts)) {
+        $text=$parts[1];
+        if (!preg_match('/^(.+?),?\s+(?:then )?(?:suggest|recommend|find|look for|show(?: me)?) (?:some )?(?:nearby|local) (.+)$/iu',
+            $parts[2],$fields)) return ['action'=>'arrival_search_help','target'=>''];
+        $category=trim($fields[2]);
+        $openToday=(bool)preg_match('/\s+(?:(?:that|which) are )?open today$/iu',$category);
+        if ($openToday) $category=preg_replace('/\s+(?:(?:that|which) are )?open today$/iu','',$category);
+        if (!$openToday && preg_match('/\bopen (?:now|tomorrow|tonight)\b/iu',$category)) {
+            return ['action'=>'arrival_search_help','target'=>''];
+        }
+        try {
+            $search=vp3_phone_arrival_validate_search_v1(['item_term'=>trim($fields[1]),'merchant_category'=>$category,'open_today'=>$openToday]);
+        } catch (RuntimeException $error) {
+            if ($error->getCode()!==422) throw $error;
+            return ['action'=>'arrival_search_help','target'=>''];
+        }
+    }
+    if (preg_match('/^when (.+?) (?:arrives? at|gets? to|reaches?) (.+?),?\s+(?:show|list|read|check|look at)(?: me)? (?:my |the )?open(?: (.+?))? tasks$/iu', $text, $m)) {
         $topic = trim($m[3] ?? '');
         if ($topic !== '' && !preg_match('/^[\p{L}\p{N}][\p{L}\p{N} \x27’_-]{0,63}$/uD', $topic)) {
             return ['action'=>'arrival_help', 'target'=>''];
         }
         $place=preg_replace('/^[“"](.*)[”"]$/u','$1',trim($m[2]));
-        return ['action'=>'arrival_setup', 'target'=>trim($m[1]), 'place'=>$place, 'topic'=>$topic];
+        return ['action'=>'arrival_setup', 'target'=>trim($m[1]), 'place'=>$place, 'topic'=>$topic, 'search_intent'=>$search];
     }
+    if ($search !== null) return ['action'=>'arrival_search_help','target'=>''];
     if (preg_match('/^(?:list|show|check)(?: me)? (?:my |the )?arrival (?:alerts?|rules?)(?: status)?$/iu',$text)) {
         return ['action'=>'arrival_list','target'=>''];
     }
@@ -26,6 +45,12 @@ function vp3_phone_arrival_chat_plan_v1(string $text): ?array
 function vp3_phone_arrival_chat_topic_v1(string $topic): string
 {
     return 'open '.($topic !== '' ? $topic.' ' : '').'tasks';
+}
+
+function vp3_phone_arrival_chat_offer_text_v1(array $search): string
+{
+    return 'If an open task still calls for '.$search['item_term'].', offer to find nearby '.$search['merchant_category']
+        .($search['open_today'] ? ' open today' : '').'.';
 }
 
 function vp3_phone_arrival_chat_label_v1(string $value): string
@@ -66,8 +91,13 @@ function vp3_phone_arrival_chat_confirm_v1(array $draft,array $phone): array
     $draft['phones']=[array_intersect_key($phone,array_flip(['id','generation','name']))];
     $label=vp3_phone_chat_label_v1($phone);
     $where=vp3_phone_arrival_chat_label_v1($draft['place_name']);
-    return ['When '.$label.' arrives at “'.$where.'”, show your '.vp3_phone_arrival_chat_topic_v1($draft['topic'])
-        .' in this private Chat once per visit. Reply “Confirm arrival alert” to ask the phone holder for permission, or “Cancel”.',
+    $summary='When '.$label.' arrives at “'.$where.'”, check your '.vp3_phone_arrival_chat_topic_v1($draft['topic'])
+        .' in this private Chat once per visit.';
+    if (isset($draft['search_intent'])) {
+        $summary.=' '.vp3_phone_arrival_chat_offer_text_v1($draft['search_intent'])
+            .' You can choose the city or neighborhood and approve the public search when offered.';
+    }
+    return [$summary.' Reply “Confirm arrival alert” to ask the phone holder for permission, or “Cancel”.',
         'map','device_id'=>$phone['id'],'arrival_draft'=>$draft];
 }
 
@@ -75,6 +105,7 @@ function vp3_phone_arrival_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,a
 {
     $action=$plan['action'];
     if ($action==='arrival_missing') return ['There is no current arrival alert to confirm in this Chat. Send the arrival request again.','map'];
+    if ($action==='arrival_search_help') return ['Name the task topic, item and kind of business. For example, “When my iPhone arrives at Studio, check my open recording tasks. If I still need XLR cables, suggest nearby music stores open today.”',''];
     if ($action==='arrival_help') return ['Name the topic you want to match, for example “show me my open recording tasks”.',''];
     if ($action==='arrival_list' || $action==='arrival_cancel') {
         $rules=vp3_phone_arrival_list_v1($pdo,$uid,$aid,$cid);
@@ -83,7 +114,8 @@ function vp3_phone_arrival_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,a
             $lines=[];
             foreach ($rules as $r) {
                 $lines[]=vp3_phone_chat_label_v1(['name'=>$r['device_name']]).' at “'.vp3_phone_arrival_chat_label_v1($r['place_name']).'” — '
-                    .vp3_phone_arrival_chat_topic_v1($r['task_query']).' ('.($r['state']==='active'?'active':'waiting for phone approval').').';
+                    .vp3_phone_arrival_chat_topic_v1($r['task_query']).' ('.($r['state']==='active'?'active':'waiting for phone approval').').'
+                    .(isset($r['search_intent']) ? ' '.vp3_phone_arrival_chat_offer_text_v1($r['search_intent']) : '');
             }
             return [implode("\n",$lines),'map'];
         }
@@ -119,7 +151,8 @@ function vp3_phone_arrival_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,a
         if (!$place) return ['Which saved place? Open Saved places, then repeat the request with its exact name.','places'];
         $phones=vp3_phone_arrival_chat_phones_v1($devices,$plan['target']);
         if (!$phones) return ['Which phone should trigger the alert? Ask me to list your phones, then repeat your request with its name.','map'];
-        $draft=['type'=>'arrival','step'=>'phone','place_id'=>$place['id'],'place_name'=>$place['name'],'topic'=>$plan['topic']];
+        $draft=['type'=>'arrival','step'=>'phone','place_id'=>$place['id'],'place_name'=>$place['name'],'topic'=>$plan['topic'],
+            'search_intent'=>$plan['search_intent']??null];
         if (count($phones)===1) return vp3_phone_arrival_chat_confirm_v1($draft,$phones[0]);
         $labels=array_map('vp3_phone_chat_label_v1',$phones);
         $counts=array_count_values(array_map('vp3_phone_chat_name_key_v1',$labels));
@@ -154,13 +187,14 @@ function vp3_phone_arrival_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,a
     if ($place===false || $place!==$draft['place_name']) return ['The saved place changed. Send the arrival request again.','places'];
     if ($draft['step']==='phone') return vp3_phone_arrival_chat_confirm_v1($draft,$phone);
     try {
-        $rule=vp3_phone_arrival_request_v1($pdo,$uid,$aid,$cid,$phone['id'],$phone['generation'],$draft['place_id'],$draft['topic']);
+        $rule=vp3_phone_arrival_request_v1($pdo,$uid,$aid,$cid,$phone['id'],$phone['generation'],$draft['place_id'],$draft['topic'],$draft['search_intent']??null);
     } catch (RuntimeException $error) {
         // Only turn known, user-correctable domain outcomes into a private reply. Authorization and database errors propagate.
         $reply=match ([$error->getCode(),$error->getMessage()]) {
             [409,'Start live sharing on the selected phone first.'] => ['Start live sharing on the selected phone, then send the arrival request again.','map'],
             [409,'Save a more accurate location for this place before using arrival alerts.'] => ['Save the place again from a more accurate GPS reading, then request the alert.','places'],
             [409,'Stop the existing arrival rule before changing its task topic.'] => ['This phone already has an alert for this place. To change its task topic, stop the existing alert and send the new request.','map'],
+            [409,'Stop the existing arrival rule before changing its local search.'] => ['This phone already has an alert for this place. To change its local search, stop the existing alert and confirm a new one.','map'],
             [429,'Stop an unused arrival rule on this phone first.'] => ['This phone has reached its arrival alert limit. List your arrival alerts and stop one before adding another.','map'],
             [404,'Select a saved place from this account.'] => ['That place is unavailable. Choose a current saved place from this account.','places'],
             [422,'Use a task topic of up to 64 characters.'] => ['Use a task topic of up to 64 characters and send the arrival request again.',''],

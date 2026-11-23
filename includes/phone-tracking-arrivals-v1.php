@@ -21,6 +21,11 @@ function vp3_phone_arrival_schema_v1(PDO $pdo, string $options): void
         FOREIGN KEY (owner_user_id,place_id) REFERENCES vp3_phone_places_v1(owner_user_id,id) ON DELETE CASCADE
         $chatFk
     )".$options);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_arrival_search_intents_v1 (
+        rule_id CHAR(32) NOT NULL PRIMARY KEY, item_term VARCHAR(64) NOT NULL,
+        merchant_category VARCHAR(64) NOT NULL, open_today SMALLINT NOT NULL,
+        FOREIGN KEY (rule_id) REFERENCES vp3_phone_arrival_rules_v1(id) ON DELETE CASCADE
+    )".$options);
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_arrival_events_v1 (
         id CHAR(32) NOT NULL PRIMARY KEY, rule_id CHAR(32) NOT NULL, visit_number BIGINT NOT NULL,
         arrived_at BIGINT NOT NULL, UNIQUE (rule_id,visit_number),
@@ -32,8 +37,10 @@ function vp3_phone_arrival_ready_v1(PDO $pdo): bool
 {
     try {
         $pdo->query('SELECT r.id,r.owner_user_id,r.device_id,r.place_id,r.agent_id,r.conversation_id,r.generation,
-            r.task_query,r.state,r.version,r.zone_state,r.accepted_at,r.visit_number,e.id,e.rule_id,e.visit_number,e.arrived_at
-            FROM vp3_phone_arrival_rules_v1 r JOIN vp3_phone_arrival_events_v1 e ON e.rule_id=r.id WHERE 1=0');
+            r.task_query,r.state,r.version,r.zone_state,r.accepted_at,r.visit_number,e.id,e.rule_id,e.visit_number,e.arrived_at,
+            s.item_term,s.merchant_category,s.open_today
+            FROM vp3_phone_arrival_rules_v1 r JOIN vp3_phone_arrival_events_v1 e ON e.rule_id=r.id
+            LEFT JOIN vp3_phone_arrival_search_intents_v1 s ON s.rule_id=r.id WHERE 1=0');
         return true;
     } catch (PDOException) {
         return false;
@@ -55,11 +62,12 @@ function vp3_phone_arrival_scope_v1(PDO $pdo, int $owner, int $agent, int $conve
 /** Query for phone rules whose original private conversation and account still match. */
 function vp3_phone_arrival_rows_v1(PDO $pdo, string $where, array $params): array
 {
-    return vp3_phone_sql_v1($pdo,'SELECT r.*,d.device_name,p.name AS place_name,
+    return vp3_phone_sql_v1($pdo,'SELECT r.*,s.item_term,s.merchant_category,s.open_today,d.device_name,p.name AS place_name,
         p.latitude AS place_latitude,p.longitude AS place_longitude,p.accuracy AS place_accuracy
         FROM vp3_phone_arrival_rules_v1 r
         JOIN vp3_phone_devices_v1 d ON d.owner_user_id=r.owner_user_id AND d.id=r.device_id AND d.generation=r.generation
         JOIN vp3_phone_places_v1 p ON p.owner_user_id=r.owner_user_id AND p.id=r.place_id
+        LEFT JOIN vp3_phone_arrival_search_intents_v1 s ON s.rule_id=r.id
         JOIN chat_conversations c ON c.id=r.conversation_id AND c.user_id=r.owner_user_id
             AND ((r.agent_id>0 AND c.user_agent_id=r.agent_id) OR (r.agent_id=0 AND c.user_agent_id IS NULL))
         WHERE d.device_status=\'approved\' AND d.allow_location=1 AND d.expires_at>?
@@ -67,16 +75,44 @@ function vp3_phone_arrival_rows_v1(PDO $pdo, string $where, array $params): arra
         array_merge([time()],$params))->fetchAll(PDO::FETCH_ASSOC);
 }
 
+/** Only these two explicitly named search terms and the hours choice belong to an alert. */
+function vp3_phone_arrival_validate_search_v1(?array $search): ?array
+{
+    if ($search === null) return null;
+    $terms = [];
+    foreach (['item_term','merchant_category'] as $field) {
+        $value = $search[$field] ?? null;
+        if (!is_string($value) || !preg_match('/\A[\p{L}\p{N}][\p{L}\p{N}\x20\x27’&-]{0,63}\z/u',$value)
+            || !preg_match('/\p{L}/u',$value)) {
+            throw new RuntimeException('Name an item and a business category for the search.',422);
+        }
+        $terms[$field] = preg_replace('/ +/u',' ',trim($value));
+    }
+    if (!is_bool($search['open_today'] ?? null) || count($search) !== 3) {
+        throw new RuntimeException('Check the local search details.',422);
+    }
+    return $terms + ['open_today'=>$search['open_today']];
+}
+
+function vp3_phone_arrival_stored_search_v1(array $rule): ?array
+{
+    if (($rule['item_term'] ?? null) === null) return null;
+    return ['item_term'=>$rule['item_term'],'merchant_category'=>$rule['merchant_category'],'open_today'=>(bool)$rule['open_today']];
+}
+
 function vp3_phone_arrival_brief_v1(array $rule): array
 {
-    return ['id'=>$rule['id'],'generation'=>(int)$rule['generation'],'version'=>(int)$rule['version'],
-        'state'=>$rule['state'],'place_name'=>$rule['place_name'],'task_query'=>$rule['task_query']];
+    $brief=['id'=>$rule['id'],'generation'=>(int)$rule['generation'],'version'=>(int)$rule['version'],
+        'state'=>$rule['state'],'place_name'=>$rule['place_name']];
+    // The holder approves use of this arrival. Search terms and the triggering task belong to the private Chat.
+    if (($rule['item_term'] ?? null) !== null) return $brief + ['offers_local_search'=>true];
+    return $brief + ['task_query'=>$rule['task_query']];
 }
 
 function vp3_phone_arrival_owner_brief_v1(array $rule): array
 {
     return vp3_phone_arrival_brief_v1($rule) + ['device_id'=>$rule['device_id'],'device_name'=>$rule['device_name'],
-        'place_id'=>$rule['place_id']];
+        'place_id'=>$rule['place_id'],'task_query'=>$rule['task_query'],'search_intent'=>vp3_phone_arrival_stored_search_v1($rule)];
 }
 
 function vp3_phone_arrival_list_v1(PDO $pdo, int $owner, int $agent, int $conversation): array
@@ -89,13 +125,14 @@ function vp3_phone_arrival_list_v1(PDO $pdo, int $owner, int $agent, int $conver
 }
 
 function vp3_phone_arrival_request_v1(PDO $pdo, int $owner, int $agent, int $conversation, string $deviceId,
-    int $generation, string $placeId, string $taskQuery): array
+    int $generation, string $placeId, string $taskQuery, ?array $search=null): array
 {
     $topic = trim($taskQuery);
     if (!mb_check_encoding($topic,'UTF-8') || mb_strlen($topic)>64 || preg_match('/[\p{Cc}\p{Cf}]/u',$topic)) {
         throw new RuntimeException('Use a task topic of up to 64 characters.',422);
     }
-    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$owner,$agent,$conversation,$deviceId,$generation,$placeId,$topic): array {
+    $search=vp3_phone_arrival_validate_search_v1($search);
+    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$owner,$agent,$conversation,$deviceId,$generation,$placeId,$topic,$search): array {
         vp3_phone_arrival_scope_v1($pdo,$owner,$agent,$conversation);
         $device=vp3_phone_row_v1($pdo,$owner,$deviceId);
         vp3_phone_generation_v1($device,['generation'=>$generation]);
@@ -110,10 +147,14 @@ function vp3_phone_arrival_request_v1(PDO $pdo, int $owner, int $agent, int $con
             throw new RuntimeException('Save a more accurate location for this place before using arrival alerts.',409);
         }
         $scope=[$owner,$agent,$conversation,$deviceId,$placeId];
-        $rule=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_arrival_rules_v1
-            WHERE owner_user_id=? AND agent_id=? AND conversation_id=? AND device_id=? AND place_id=?',$scope)->fetch(PDO::FETCH_ASSOC);
+        $rule=vp3_phone_sql_v1($pdo,'SELECT r.*,s.item_term,s.merchant_category,s.open_today FROM vp3_phone_arrival_rules_v1 r
+            LEFT JOIN vp3_phone_arrival_search_intents_v1 s ON s.rule_id=r.id
+            WHERE r.owner_user_id=? AND r.agent_id=? AND r.conversation_id=? AND r.device_id=? AND r.place_id=?',$scope)->fetch(PDO::FETCH_ASSOC);
         if ($rule && $rule['task_query']!==$topic) {
             throw new RuntimeException('Stop the existing arrival rule before changing its task topic.',409);
+        }
+        if ($rule && vp3_phone_arrival_stored_search_v1($rule) !== $search) {
+            throw new RuntimeException('Stop the existing arrival rule before changing its local search.',409);
         }
         if (!$rule) {
             $count=(int)vp3_phone_sql_v1($pdo,'SELECT COUNT(*) FROM vp3_phone_arrival_rules_v1 WHERE owner_user_id=? AND device_id=?',
@@ -124,6 +165,11 @@ function vp3_phone_arrival_request_v1(PDO $pdo, int $owner, int $agent, int $con
                 (owner_user_id,agent_id,conversation_id,device_id,place_id,id,generation,task_query,state,version,zone_state,visit_number)
                 VALUES(?,?,?,?,?,?,?,?,'requested',1,'unknown',0)",array_merge($scope,[$id,$generation,$topic]));
             $rule=['id'=>$id,'device_id'=>$deviceId,'place_id'=>$placeId,'generation'=>$generation,'task_query'=>$topic,'state'=>'requested','version'=>1];
+            if ($search !== null) {
+                vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_arrival_search_intents_v1 (rule_id,item_term,merchant_category,open_today)
+                    VALUES(?,?,?,?)',[$id,$search['item_term'],$search['merchant_category'],(int)$search['open_today']]);
+                $rule += $search;
+            }
         }
         return vp3_phone_arrival_owner_brief_v1($rule+['device_name'=>$device['device_name'],'place_name'=>$place['name']]);
     });
