@@ -62,7 +62,7 @@ function vp3_phone_browser_require_v1(PDO $pdo,array $scope,int $numberId,bool $
     if(!(int)$policy['browser_enabled']||!vp3_phone_browser_config_state_v1()['ready'])vp3_phone_workspace_error_v1('phone_browser_not_ready',409,'Browser calling is not enabled and configured for this assigned number.');
     return $number+['recording_enabled'=>(int)$policy['recording_enabled']];
 }
-function vp3_phone_browser_identity_v1(int $owner,int $chatAgent=0): string{if($owner<1||$chatAgent<0)throw new InvalidArgumentException('Invalid phone identity.');return 'vp3-phone-u'.$owner.'-a'.$chatAgent;}
+function vp3_phone_browser_identity_v1(int $owner,int $chatAgent=0): string{if($owner<1||$chatAgent<0)throw new InvalidArgumentException('Invalid phone identity.');return 'vp3_phone_u'.$owner.'_a'.$chatAgent;}
 function vp3_phone_browser_base64_v1(string $data): string{return rtrim(strtr(base64_encode($data),'+/','-_'),'=');}
 function vp3_phone_browser_token_v1(int $owner,int $now=0,int $chatAgent=0): array
 {
