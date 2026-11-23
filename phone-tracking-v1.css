@@ -93,3 +93,34 @@ body.phone-tracking-page.vp3-orb-has-bar {
 @media(max-width:520px) { .phone-heading { gap:6px; margin-bottom:12px; } .phone-workspace { padding:13px; } #phone-map { height:clamp(245px,48dvh,470px); } .phone-map-tools { gap:5px; padding:6px; } .phone-map-tools > span { font-size:.76rem; } .phone-workspace .phone-map-tools button { font-size:.78rem; padding:7px; } }
 .phone-city { white-space:nowrap; pointer-events:none; color:#455c4e; font:500 11px/1.2 system-ui,sans-serif; text-shadow:0 1px 2px #fff,1px 0 2px #fff,-1px 0 2px #fff; }
 .phone-city::before { content:''; display:inline-block; width:4px; height:4px; border-radius:50%; margin:0 4px 2px 0; background:#718675; }
+
+.phone-panel-tabs { display:flex; flex-wrap:wrap; gap:3px; margin-top:18px; border-bottom:1px solid var(--line); }
+.phone-workspace .phone-panel-tabs button { border:0; border-bottom:3px solid transparent; border-radius:8px 8px 0 0; background:transparent; color:var(--muted); padding:10px 14px; }
+.phone-workspace .phone-panel-tabs button[aria-selected="true"] { border-bottom-color:var(--teal); color:var(--teal); background:#eaf3ee; }
+.phone-archive-panel { margin-top:16px; border:1px solid var(--line); padding:clamp(14px,2vw,24px); background:white; border-radius:12px; }
+.phone-archive-panel h2 { font-size:1.18rem; letter-spacing:-.025em; }
+.phone-archive-heading,.phone-trail-heading { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+.phone-trail-heading { margin-top:16px; border-top:1px solid var(--line); padding-top:16px; }
+.phone-trail-heading h3 { font-size:1rem; }
+.phone-archive-panel p,.phone-trail-heading span { font-size:.86rem; color:var(--muted); line-height:1.45; }
+.phone-archive-panel p:not(:empty) { margin-top:8px; }
+.phone-archive-actions,.phone-place-actions { display:flex; align-items:flex-end; flex-wrap:wrap; gap:8px; }
+.phone-archive-actions { margin-top:10px; }
+.phone-archive-actions label,.phone-archive-heading label { display:grid; gap:4px; font-size:.82rem; color:var(--muted); }
+.phone-archive-panel :is(input,select) { min-height:40px; border:1px solid var(--line); border-radius:8px; padding:7px 10px; font:inherit; color:var(--ink); background:white; max-width:100%; min-width:0; }
+.phone-archive-panel button { min-height:40px; }
+.phone-archive-panel :is(ul,li) { list-style:none; padding:0; margin:0; }
+#phone-history-points,#phone-places-list { margin-top:10px; }
+#phone-history-points li,#phone-places-list li { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:8px 0; border-bottom:1px solid var(--line); }
+#phone-history-points li { justify-content:space-between; }
+#phone-places-list li > div:first-child { flex:0 1 16rem; }
+#phone-history-points li,.phone-archive-empty { font-size:.85rem; color:var(--muted); }
+#phone-history-points li span,#phone-places-list small { font-variant-numeric:tabular-nums; }
+#phone-places-list li > div { min-width:0; overflow-wrap:anywhere; }
+#phone-places-list small { display:block; font-size:.8rem; color:var(--muted); }
+.phone-place-marker { background:#aa6523; border:2px solid white; box-shadow:0 0 0 1.5px #894e1d; border-radius:3px; }
+@media(max-width:520px) {
+  .phone-workspace .phone-panel-tabs button { padding:9px 8px; }
+  .phone-archive-panel :is(input,select) { font-size:1rem; }
+  .phone-archive-actions > label,.phone-archive-heading label { width:100%; }
+}

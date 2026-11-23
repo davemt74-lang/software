@@ -448,10 +448,11 @@ jobs:
           test -f _deploy/includes/bootstrap.php
           test -f _deploy/upgrade.php
           # Phone Tracking must include both the owner and holder entry points.
-          for path in phone-tracking.php phone-location.php phone-tracking-v1.js phone-location-v1.js \
+          for path in phone-tracking.php phone-location.php phone-tracking-v1.js phone-tracking-archive-v1.js phone-location-v1.js \
                       api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php \
                       includes/phone-tracking-chat-v1.php docs/PHONE-TRACKING-PHASE1-INSTALL.txt \
-                      docs/PHONE-TRACKING-PHASE2-INSTALL.txt \
+                      docs/PHONE-TRACKING-PHASE2-INSTALL.txt docs/PHONE-TRACKING-PHASE3-INSTALL.txt \
+                      includes/phone-tracking-history-v1.php includes/phone-tracking-places-v1.php \
                       assets/phone-map/leaflet.js assets/phone-map/leaflet.css assets/phone-map/qr.js assets/phone-map/world.json; do
             test -s "_deploy/$path"
           done

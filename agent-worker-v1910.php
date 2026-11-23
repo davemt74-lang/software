@@ -97,6 +97,11 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         require_once __DIR__.'/includes/profile-calls-pa3c.php';
         try{$counts['profile_calls']=vp3_profile_call_runner_pa3c($pdo,$ownerLimit);}
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.profile_calls.failed',['error_class'=>get_class($e)]);}
+        if (table_exists('vp3_phone_history_points_v1')) {
+            require_once __DIR__.'/includes/phone-tracking-history-v1.php';
+            try { $counts['expired_phone_history_points']=vp3_phone_history_sweep_v1($pdo,time()); }
+            catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.phone_history.sweep_failed',['error_class'=>get_class($e)]);}
+        }
         $counts['profile_speech']=agent_worker_profile_speech_maintenance_v1910($pdo,$ownerLimit);
         $counts['profile_attention']=agent_worker_profile_attention_maintenance_v1910($pdo,$ownerLimit);
         require_once __DIR__.'/includes/agent-initiative-followups-v1.php';

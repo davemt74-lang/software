@@ -32,6 +32,7 @@ $asset = static function (string $path): string {
 <link rel="stylesheet" href="<?= e($asset('phone-tracking-v1.css')) ?>">
 <script defer src="<?= e($asset('assets/phone-map/leaflet.js')) ?>"></script>
 <script defer src="<?= e($asset('assets/phone-map/qr.js')) ?>"></script>
+<script defer src="<?= e($asset('phone-tracking-archive-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
 <body class="phone-tracking-page">
@@ -59,7 +60,12 @@ require __DIR__.'/includes/member-header.php';
     <div id="phone-map" aria-label="Phone location map. Use arrow keys to pan and plus or minus to zoom."></div>
     <div class="phone-map-tools"><span id="phone-map-count">Loading phones…</span><button type="button" id="phone-fit" disabled>Fit phones</button><button type="button" id="phone-streets" aria-haspopup="dialog">Street detail</button></div>
   </section>
-  <section class="phone-devices-section" aria-labelledby="phone-devices-title">
+  <div class="phone-panel-tabs" role="tablist" aria-label="Tracking views">
+    <button type="button" role="tab" id="phone-tab-devices" aria-controls="phone-panel-devices" aria-selected="true">Connected phones</button>
+    <button type="button" role="tab" id="phone-tab-history" aria-controls="phone-panel-history" aria-selected="false" tabindex="-1">History</button>
+    <button type="button" role="tab" id="phone-tab-places" aria-controls="phone-panel-places" aria-selected="false" tabindex="-1">Saved places</button>
+  </div>
+  <section class="phone-devices-section" role="tabpanel" id="phone-panel-devices" aria-labelledby="phone-tab-devices">
     <div class="phone-list-title"><h2 id="phone-devices-title">Connected phones</h2><button type="button" id="phone-review" hidden>Review requests</button></div>
     <div class="phone-devices-layout">
       <div id="phone-devices"></div>
@@ -90,6 +96,40 @@ require __DIR__.'/includes/member-header.php';
       </article>
     </div>
   </section>
+  <section class="phone-archive-panel" role="tabpanel" id="phone-panel-history" aria-labelledby="phone-tab-history" hidden>
+    <div class="phone-archive-heading"><h2>Location history</h2><label>Phone <select id="phone-history-device"></select></label></div>
+    <p id="phone-history-status"></p>
+    <form id="phone-history-form" class="phone-archive-actions">
+      <label>Keep points for <select id="phone-history-retention"><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label>
+      <button type="submit" id="phone-history-request">Request history</button>
+      <button type="button" id="phone-history-stop" hidden>Stop history</button>
+    </form>
+    <div class="phone-trail-heading"><h3>Recorded trail</h3><span id="phone-history-count"></span></div>
+    <p id="phone-history-range"></p>
+    <ul id="phone-history-points" aria-label="Recent points on this page"></ul>
+    <div class="phone-archive-actions">
+      <button type="button" id="phone-history-fit" hidden>Fit trail</button>
+      <button type="button" id="phone-history-earlier" hidden>Earlier points</button>
+      <button type="button" id="phone-history-latest" hidden>Latest points</button>
+      <button type="button" class="phone-destructive" id="phone-history-delete" hidden>Delete history</button>
+    </div>
+    <p id="phone-history-feedback" role="status"></p>
+  </section>
+  <section class="phone-archive-panel" role="tabpanel" id="phone-panel-places" aria-labelledby="phone-tab-places" hidden>
+    <h2>Saved places</h2>
+    <form id="phone-place-form" class="phone-archive-actions">
+      <label>Phone <select id="phone-place-device"></select></label>
+      <label>Place name <input id="phone-place-name" type="text" required maxlength="80" placeholder="Studio" autocomplete="off"></label>
+      <button type="submit" id="phone-place-save">Save current location</button>
+    </form>
+    <p id="phone-place-source"></p>
+    <ul id="phone-places-list" aria-label="Saved places"></ul>
+    <p id="phone-place-feedback" role="status"></p>
+  </section>
+  <dialog id="phone-archive-dialog" class="phone-dialog" aria-labelledby="phone-archive-dialog-title" aria-describedby="phone-archive-dialog-message">
+    <header><h2 id="phone-archive-dialog-title"></h2></header><p id="phone-archive-dialog-message"></p>
+    <div class="phone-dialog-actions"><button type="button" id="phone-archive-cancel" autofocus>Cancel</button><button type="button" class="phone-destructive" id="phone-archive-confirm">Delete</button></div>
+  </dialog>
   <noscript><p>Enable JavaScript to pair phones and display their locations.</p></noscript>
   <dialog id="phone-pairing" aria-labelledby="phone-pair-title" class="phone-dialog">
     <header><h2 id="phone-pair-title">Connect phone</h2><button type="button" class="phone-close" id="phone-pair-close" aria-label="Close pairing">×</button></header>
@@ -103,7 +143,7 @@ require __DIR__.'/includes/member-header.php';
   </dialog>
   <dialog id="phone-street-consent" class="phone-dialog" aria-labelledby="phone-street-title">
     <header><h2 id="phone-street-title">Load street detail?</h2><button type="button" class="phone-close" id="phone-street-close" aria-label="Close street detail">×</button></header>
-    <p>OpenStreetMap will receive your IP address and the map areas you view, including areas around visible phones. This applies while street detail is on.</p>
+    <p>OpenStreetMap will receive your IP address and the map areas you view, including areas around visible phones, trails and saved places. This applies while street detail is on.</p>
     <div class="phone-dialog-actions"><button type="button" id="phone-street-cancel">Keep local map</button><button type="button" class="phone-primary" id="phone-street-accept">Load street detail</button></div>
   </dialog>
   <dialog id="phone-revoke-confirm" class="phone-dialog" aria-labelledby="phone-revoke-title">

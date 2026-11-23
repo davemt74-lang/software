@@ -69,7 +69,16 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
     } else if (!device || revoked) return send(device?403:401,{ok:false});
     else if (req.action !== 'status') {
       if (req.device_id !== id || req.generation !== device.generation) return send(409,{ok:false});
-      if (req.action === 'start') {
+      if (['accept_history','decline_history','stop_history'].includes(req.action)) {
+        const needed = req.action === 'stop_history' ? 'active' : 'requested';
+        if (device.history_state !== needed || device.history_version !== req.history_version) return send(409,{ok:false});
+        device.history_state = req.action === 'accept_history' ? 'active' : 'off';
+        device.history_version++;
+      } else if (req.action === 'set_place_permission') {
+        if (device.place_permission_version !== req.place_permission_version) return send(409,{ok:false});
+        device.allow_saved_places = req.allow_saved_places;
+        device.place_permission_version++;
+      } else if (req.action === 'start') {
         if (device.location_state !== 'requested') device.generation++;
         device.location_state='waiting';
       } else if (req.action === 'fix') {
@@ -269,5 +278,67 @@ try {
     assert.equal(t.requests.filter(r=>r.action==='start').length,1);
     assert.deepEqual(t.errors,[]); await t.close();
   }
-  console.log('PASS phone holder browser: consent, retry, denial, offline stop, supersession, revocation, unavailable GPS, in-flight recovery, per-device cadence and live accuracy changes');
+  {
+    const t=await scenario({initial:{...initialDevice('approved',3),history_state:'off',history_version:7,
+      history_retention_days:0,allow_saved_places:false,place_permission_version:1},holdFirstFix:true});
+    const {page}=t;
+    const fixes=()=>t.requests.filter(r=>r.action==='fix');
+    const scopeText=(kind,pattern)=>waitUntil(kind+' state '+pattern,async()=>
+      pattern.test(await page.locator('#phone-'+kind+'-status').textContent()));
+    await t.visit();
+    await scopeText('history',/^Off$/);
+    assert.equal(await page.evaluate(()=>window.phoneFixture.watches),0);
+    await page.locator('#phone-start').click(); await waitText(page,'Waiting for a fresh');
+    Object.assign(t.device,{history_state:'requested',history_retention_days:7,history_version:8});
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await scopeText('history',/David Evans.*7 days/);
+    await page.evaluate(()=>window.phoneFixture.position(Date.now()-10000));
+    await t.firstFix;
+    await page.evaluate(()=>window.phoneFixture.position(Date.now()-5000));
+    await page.locator('#phone-history-accept').click();
+    t.rejectFirstFix();
+    await scopeText('history',/keep each new shared location for 7 days/);
+    await waitText(page,'received this phone');
+    assert.equal(fixes().length,2);
+    assert.ok(fixes().every(r=>r.history_version === undefined),'acceptance never backfills queued live-only samples');
+    await page.evaluate(()=>window.phoneFixture.position());
+    await waitUntil('fresh history sample',()=>fixes().length===3,8000);
+    assert.equal(fixes()[2].history_version,t.device.history_version);
+    await page.locator('#phone-places-allow').click();
+    await scopeText('places',/can save named places during this live session/);
+    await page.evaluate(()=>window.phoneFixture.network(false));
+    await page.locator('#phone-history-stop').click();
+    await page.locator('#phone-places-stop').click();
+    await scopeText('history',/off on this phone/);
+    await scopeText('places',/withdrawn on this phone/);
+    assert.equal(t.requests.some(r=>r.action==='stop_history'),false);
+    assert.equal(await page.evaluate(()=>window.phoneFixture.active),true,'scope withdrawals preserve the native live watch');
+    await page.evaluate(()=>window.phoneFixture.network(true));
+    await scopeText('history',/^Off$/);
+    await scopeText('places',/^Allow David Evans/);
+    assert.equal(t.device.location_state,'live');
+    assert.deepEqual(t.requests.filter(r=>r.action==='set_place_permission').map(r=>r.allow_saved_places),[true,false]);
+    assert.equal(t.requests.filter(r=>r.action==='stop_history').length,1);
+    await page.evaluate(()=>window.phoneFixture.position(Date.now()+1000));
+    await waitUntil('live-only fix after offline withdrawal',()=>fixes().length===4,8000);
+    assert.equal(fixes()[3].history_version,undefined);
+    Object.assign(t.device,{history_state:'requested',history_version:t.device.history_version+1,history_retention_days:30});
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await scopeText('history',/wants to keep.*30 days/);
+    await page.locator('#phone-history-decline').click(); await scopeText('history',/^Off$/);
+    assert.equal(t.device.location_state,'live');
+    assert.equal(t.requests.filter(r=>r.action==='accept_history').length,1);
+    assert.equal(t.requests.filter(r=>r.action==='decline_history').length,1);
+    Object.assign(t.device,{history_state:'requested',history_version:t.device.history_version+1,history_retention_days:7});
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await scopeText('history',/wants to keep.*7 days/);
+    await page.evaluate(()=>window.phoneFixture.network(false));
+    await page.locator('#phone-history-decline').click();
+    Object.assign(t.device,{history_state:'requested',history_version:t.device.history_version+2,history_retention_days:1});
+    await page.evaluate(()=>window.phoneFixture.network(true));
+    await scopeText('history',/wants to keep.*1 day/);
+    assert.equal(t.requests.filter(r=>r.action==='decline_history').length,1,'old offline decline leaves a replacement request untouched');
+    assert.deepEqual(t.errors,[]); await t.close();
+  }
+  console.log('PASS phone holder browser: consent, retry, denial, offline stop, supersession, revocation, unavailable GPS, in-flight recovery, per-device cadence, live accuracy changes, separate history and place permissions');
 } finally {await browser.close();}

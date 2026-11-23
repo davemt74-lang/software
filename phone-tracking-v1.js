@@ -22,6 +22,7 @@
   let devices = [];
   let selectedId = '';
   let followId = '';
+  let linkedDevice = new URLSearchParams(location.search).get('device_id');
   let resumeSelection = null;
   let choiceToRevoke = null;
   let requestNotice = null;
@@ -76,6 +77,12 @@
   const cityPositions = [];
   const labelPositions = [];
   const markers = map && leaflet.layerGroup().addTo(map);
+  const archive = window.vp3PhoneArchiveV1({
+    map, leaflet, byId, element, seconds, timestamp, request, selectDevice, selected,
+    available:() => available && !document.hidden, writing:() => writing, effectiveState,
+    stopFollowing:() => { followId = ''; }, write:writeArchive,
+    onReadDenied:reportFailure
+  });
   function drawCountryNames() {
     if (!labels) return;
     labels.clearLayers();
@@ -201,12 +208,14 @@
       else if (lastFollowPoint !== position) map.panTo([followed.latitude,followed.longitude], {animate:false});
       lastFollowPoint = position;
     } else if (wasEmpty && withPoint.length) fitPhones();
-    if (!withPoint.length && !wasEmpty) {
+    if (!withPoint.length && !wasEmpty && !archive.hasMapData()) {
       removeStreets();
       map.setView([22,0],1.75,{animate:false});
     }
   }
   function selectDevice(id) {
+    if (!devices.some(d => d.id === id && d.status === 'approved')) return;
+    linkedDevice = null;
     if (id !== selectedId) followId = '';
     selectedId = id;
     if (selected()) focusPoint(selected());
@@ -361,12 +370,15 @@
         status.textContent = '';
       }
     }
-    if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
+    // A link from private Chat refers to one specific phone, even after access changes.
+    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && d.allow_location)?.id || '';
+    else if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
     if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
     renderList(approved);
     renderDetail(selected());
     renderPending(devices.filter(d => d.status === 'pending'));
     renderMarkers();
+    archive.render(approved);
   }
   function eraseInvite() {
     inviteVersion++;
@@ -396,6 +408,7 @@
     lastFollowPoint = '';
     available = false;
     choiceToRevoke = null;
+    archive.clear();
     if (revokeDialog.open) revokeDialog.close();
     byId('phone-revoke-message').textContent = '';
     eraseInvite();
@@ -406,7 +419,10 @@
   async function request(action, fields) {
     const url = new URL(root.dataset.endpoint, location.href);
     const opts = {credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'X-VP3-Working-Attention':root.dataset.binding, Accept:'application/json'}};
-    if (action === 'state') url.searchParams.set('action','state');
+    if (['state','history','places'].includes(action)) {
+      url.searchParams.set('action',action);
+      for (const [key,value] of Object.entries(fields || {})) url.searchParams.set(key,value);
+    }
     else {
       opts.method = 'POST';
       opts.headers['Content-Type'] = 'application/json';
@@ -461,6 +477,7 @@
         resumeSelection = null;
       }
       render();
+      void archive.refresh();
     } catch (error) {
       if (revision === version && !document.hidden) reportFailure(error);
     } finally { reading = false; }
@@ -530,7 +547,7 @@
         if (result.device && ['approved','pending'].includes(result.device.status)) devices[index] = result.device;
         else devices.splice(index,1);
       }
-      if (action === 'approve') selectedId = device.id;
+      if (action === 'approve') { linkedDevice = null; selectedId = device.id; }
       if (action === 'request_start' && result.device) requestNotice = {id:result.device.id,generation:result.device.generation};
       if (action !== 'set_preferences') {
         const messages = {approve:device.name+' approved.',deny:'Connection request denied for '+device.name+'.',request_start:'',stop:'Sharing stopped for '+device.name+'.',revoke:device.name+' disconnected.'};
@@ -550,6 +567,28 @@
       writing = false;
       savingPreferencesFor = '';
       renderPreferences(selected());
+      void refresh();
+    }
+  }
+  async function writeArchive(action, fields) {
+    if (!available || document.hidden || writing) return null;
+    writing = true;
+    const version = ++revision;
+    try {
+      const result = await request(action, fields);
+      if (version !== revision || document.hidden) return null;
+      if (result.device && result.device.id === fields.device_id) {
+        const index = devices.findIndex(d => d.id === fields.device_id);
+        if (index >= 0) devices[index] = result.device;
+      }
+      return result;
+    } catch (error) {
+      if (version !== revision || document.hidden) return null;
+      if (!error.status || [401,419].includes(error.status)) reportFailure(error);
+      throw error;
+    } finally {
+      writing = false;
+      render();
       void refresh();
     }
   }

@@ -17,16 +17,27 @@ try {
         (string)($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'] ?? ''))) throw new RuntimeException('Session changed.', 403);
 
     $method = $_SERVER['REQUEST_METHOD'] ?? '';
-    if ($method === 'GET' && ($_GET['action'] ?? 'state') === 'state') {
-        $action = 'state';
+    if ($method === 'GET') {
+        $action = $_GET['action'] ?? 'state';
+        if (!in_array($action,['state','history','places'],true)) throw new RuntimeException('Unknown action.',422);
         $input = [];
+        if ($action === 'history') {
+            $deviceId = $_GET['device_id'] ?? null;
+            if (!is_string($deviceId) || !preg_match('/^[0-9a-f]{32}$/D',$deviceId)) throw new RuntimeException('Choose a phone.',422);
+            $before = $_GET['before'] ?? null;
+            if ($before !== null && (!is_string($before) || !preg_match('/^[1-9][0-9]{0,11}$/D',$before))) {
+                throw new RuntimeException('Invalid history page.',422);
+            }
+            $input = ['device_id'=>$deviceId,'before'=>$before === null ? null : (int)$before];
+        }
     } elseif ($method === 'POST') {
         $input = vp3_phone_http_json_v1();
         if (!is_string($input['csrf_token'] ?? null) || !hash_equals(csrf_token(), $input['csrf_token'])) {
             throw new RuntimeException('Session expired.', 419);
         }
         $action = $input['action'] ?? null;
-        if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences'], true)) {
+        if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
+            'request_history','stop_history','delete_history','save_place','delete_place'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -36,9 +47,14 @@ try {
     }
     $pdo = db();
     if (!$pdo || !vp3_phone_schema_ready_v1($pdo)) throw new RuntimeException('Upgrade required.', 503);
-    $result = $action === 'request_start' && isset($input['chat_origin'])
-        ? vp3_phone_chat_map_start_v1($pdo, $user, $input)
-        : vp3_phone_owner_v1($pdo, (int)$user['id'], $action, $input);
+    $owner = (int)$user['id'];
+    $result = match ($action) {
+        'history' => vp3_phone_history_read_v1($pdo,$owner,$input['device_id'],$input['before']),
+        'places','save_place','delete_place' => vp3_phone_places_owner_v1($pdo,$owner,$action,$input),
+        'request_start' => isset($input['chat_origin']) ? vp3_phone_chat_map_start_v1($pdo,$user,$input)
+            : vp3_phone_owner_v1($pdo,$owner,$action,$input),
+        default => vp3_phone_owner_v1($pdo,$owner,$action,$input)
+    };
     if ($action === 'invite' && !empty($result['invite'])) {
         $result['phone_url'] = url('/phone-location.php').'#invite='.rawurlencode($result['invite']);
     }
