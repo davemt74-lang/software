@@ -56,7 +56,7 @@
 
   function displayTime(value){const raw=String(value||'');const date=new Date(raw&&!raw.includes('T')?raw.replace(' ','T')+'Z':raw);return Number.isFinite(date.getTime())?date.toLocaleString():'';}
   function displayState(value){return text(value||'unknown').replaceAll('_',' ');}
-  function safeUrl(value){try{const url=new URL(value,location.href);return url.origin===location.origin&&!url.username&&!url.password&&['http:','https:'].includes(url.protocol)?url.href:'';}catch(_){return '';}}
+  function safeUrl(value){if(typeof value!=='string'||!value.trim()||value.length>4096)return '';try{const url=new URL(value,location.href);return url.origin===location.origin&&!url.username&&!url.password&&['http:','https:'].includes(url.protocol)?url.href:'';}catch(_){return '';}}
   function peerName(peer){return (state?.contacts||[]).find(item=>item.phone_e164===peer)?.name||peer||'Unknown caller';}
   function scopeBody(extra={}){return {...extra,conversation_id:context.conversation_id,agent_id:context.agent_id};}
   async function api(action,values={},method='POST',g=generation){

@@ -11,7 +11,7 @@ function vp3_phone_recording_schema_ready_v1(?PDO $pdo=null): bool
     $pdo??=function_exists('db')?db():null;if(!$pdo)return false;
     try{
         $pdo->query('SELECT id,public_id,owner_user_id,agent_id,phone_number_id,origin_kind,call_id,call_public_id,provider_call_sid,provider_account_sid,provider_recording_sid,phone_e164,peer_e164,duration_seconds,state,stage,policy_json,session_id,recording_key,audio_sha256,transcript_hash,analysis_hash,conversation_id,report_message_id,speech_dispatched,analysis_dispatched,lease_token,lease_until,attempts,error_code,last_error,read_epoch,created_epoch,updated_epoch FROM phone_recording_jobs_v1 WHERE 1=0');
-        $pdo->query('SELECT owner_user_id,agent_id,enabled,retain_audio,transcribe,analyze,modules_json,model_route,revision,created_epoch,updated_epoch FROM phone_recording_policies_v1 WHERE 1=0');
+        $pdo->query('SELECT owner_user_id,agent_id,enabled,retain_audio,transcribe,`analyze`,modules_json,model_route,revision,created_epoch,updated_epoch FROM phone_recording_policies_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,recording_id,read_epoch FROM phone_recording_legacy_reads_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,job_id,seconds,reserved_epoch FROM phone_recording_speech_budget_v1 WHERE 1=0');return true;
     }catch(PDOException){return false;}
@@ -25,7 +25,7 @@ function vp3_phone_recording_ensure_schema_v1(PDO $pdo): void
     $jobIndexes=$sqlite?'':',KEY idx_phone_recording_queue_v1(state,id),KEY idx_phone_recording_owner_v1(owner_user_id,agent_id,id)';
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_recording_policies_v1 (
         owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,
-        retain_audio INTEGER NOT NULL DEFAULT 1,transcribe INTEGER NOT NULL DEFAULT 1,analyze INTEGER NOT NULL DEFAULT 1,
+        retain_audio INTEGER NOT NULL DEFAULT 1,transcribe INTEGER NOT NULL DEFAULT 1,`analyze` INTEGER NOT NULL DEFAULT 1,
         modules_json TEXT NOT NULL,model_route VARCHAR(32) NOT NULL DEFAULT 'account_cloud',revision INTEGER NOT NULL DEFAULT 1,
         created_epoch BIGINT NOT NULL,updated_epoch BIGINT NOT NULL,PRIMARY KEY(owner_user_id,agent_id))$tail");
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_recording_jobs_v1 (
@@ -101,8 +101,8 @@ function vp3_phone_recording_save_policy_v1(PDO $pdo,array $user,int $agentId,ar
     }
     $now=time();$encoded=vp3_phone_recording_json_v1($next['modules']);
     $q=$pdo->prepare('SELECT revision FROM phone_recording_policies_v1 WHERE owner_user_id=? AND agent_id=?');$q->execute([(int)$user['id'],$agentId]);$exists=$q->fetchColumn();
-    if($exists===false)$pdo->prepare('INSERT INTO phone_recording_policies_v1 (owner_user_id,agent_id,enabled,retain_audio,transcribe,analyze,modules_json,model_route,revision,created_epoch,updated_epoch) VALUES (?,?,?,?,?,?,?,?,1,?,?)')->execute([(int)$user['id'],$agentId,(int)$next['enabled'],(int)$next['retain_audio'],(int)$next['transcribe'],(int)$next['analyze'],$encoded,'account_cloud',$now,$now]);
-    else $pdo->prepare('UPDATE phone_recording_policies_v1 SET enabled=?,retain_audio=?,transcribe=?,analyze=?,modules_json=?,revision=revision+1,updated_epoch=? WHERE owner_user_id=? AND agent_id=?')->execute([(int)$next['enabled'],(int)$next['retain_audio'],(int)$next['transcribe'],(int)$next['analyze'],$encoded,$now,(int)$user['id'],$agentId]);
+    if($exists===false)$pdo->prepare('INSERT INTO phone_recording_policies_v1 (owner_user_id,agent_id,enabled,retain_audio,transcribe,`analyze`,modules_json,model_route,revision,created_epoch,updated_epoch) VALUES (?,?,?,?,?,?,?,?,1,?,?)')->execute([(int)$user['id'],$agentId,(int)$next['enabled'],(int)$next['retain_audio'],(int)$next['transcribe'],(int)$next['analyze'],$encoded,'account_cloud',$now,$now]);
+    else $pdo->prepare('UPDATE phone_recording_policies_v1 SET enabled=?,retain_audio=?,transcribe=?,`analyze`=?,modules_json=?,revision=revision+1,updated_epoch=? WHERE owner_user_id=? AND agent_id=?')->execute([(int)$next['enabled'],(int)$next['retain_audio'],(int)$next['transcribe'],(int)$next['analyze'],$encoded,$now,(int)$user['id'],$agentId]);
     return vp3_phone_recording_policy_v1($pdo,$user,$agentId);
 }
 function vp3_phone_recording_call_v1(PDO $pdo,array $job): array
