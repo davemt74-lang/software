@@ -189,7 +189,7 @@ async function openChatStream(chat, announcement) {
   assert.equal(chat.context().pages().length,pages,'the stream stays in the same tab');
   assert.equal(await live.evaluate(panel=>Boolean(panel.closest('dialog,[role="dialog"]'))),false,
     'the player renders in the Chat canvas');
-  await decodedVideo(live.locator(':scope > video'));
+  await decodedVideo(live.getByLabel('Private phone camera',{exact:true}));
 }
 
 async function reviewedTake(phone) {
