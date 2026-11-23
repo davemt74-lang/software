@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 
-define('STONEFELLOW_ROOT',dirname(__DIR__));
 require_once dirname(__DIR__).'/includes/phone-tracking-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-chat-v1.php';
 require_once dirname(__DIR__).'/includes/permissions.php';
@@ -78,6 +77,7 @@ function phone_test_dispatch(PDO $db, array $job): array
             'camera' => vp3_phone_camera_owner_v1($db, $identity, 0, 41, $action, $input),
             'record_owner' => vp3_phone_record_owner_v1($db, $identity, 0, 41, $action, $input),
             'record_holder' => vp3_phone_record_holder_v1($db, $identity, $action, $input),
+            'record_upload' => vp3_phone_record_chunk_v1($db, $identity, $input, file_get_contents(__DIR__.'/fixtures/phone-camera-recording-vp8.webm')),
             'device' => vp3_phone_device_v1($db,$identity,$action,$input),
         };
         return ['status'=>200, 'data'=>$result];
@@ -90,6 +90,7 @@ function phone_test_dispatch(PDO $db, array $job): array
 
 // Each child establishes its own database connection before the barrier opens.
 if (($argv[1] ?? '') === 'client') {
+    define('STONEFELLOW_ROOT',(string)getenv('VP3_PHONE_TEST_MEDIA_ROOT'));
     $db = phone_test_db((string)getenv('VP3_PHONE_TEST_ISOLATED_DSN'));
     $job = json_decode((string)fgets(STDIN), true, flags: JSON_THROW_ON_ERROR);
     echo "READY\n";
@@ -133,6 +134,8 @@ function phone_test_race(array ...$jobs): array
 $dsn = (string)getenv('VP3_TEST_MYSQL_DSN');
 if (!str_starts_with($dsn, 'mysql:')) throw new RuntimeException('Configure VP3_TEST_MYSQL_DSN for an isolated MySQL fixture.');
 $schema = 'vp3_phone_test_'.bin2hex(random_bytes(8));
+define('STONEFELLOW_ROOT',sys_get_temp_dir().'/'.$schema);
+putenv('VP3_PHONE_TEST_MEDIA_ROOT='.STONEFELLOW_ROOT);
 $serverDsn = preg_replace('/(?:^mysql:|;)dbname=[^;]*(?:;|$)/',
     str_starts_with(substr($dsn, 6), 'dbname=') ? 'mysql:' : ';', $dsn);
 $server = phone_test_db($serverDsn);
@@ -588,6 +591,14 @@ try {
     $review=phone_test_dispatch($db,['record_holder',$phone['token'],'review',$recordedTake]);
     phone_test_check($consent['status']===200 && $review['status']===200,
         'the paired phone can record and review the requested take');
+    $clip=file_get_contents(__DIR__.'/fixtures/phone-camera-recording-vp8.webm');
+    $upload=['record_upload',$phone['token'],'chunk',$recordedTake+['index'=>'0','total_bytes'=>(string)strlen($clip),'mime_type'=>'video/webm']];
+    $submissions=phone_test_race($upload,$upload);
+    $assets=$db->query("SELECT file_path FROM user_media_assets WHERE user_id=1 AND source='phone_camera'")->fetchAll(PDO::FETCH_COLUMN);
+    $receipts=(int)$db->query("SELECT COUNT(*) FROM vp3_phone_chat_turns_v1 WHERE map_link='camera_clip'")->fetchColumn();
+    phone_test_check(array_column($submissions,'status')===[200,200] && count($assets)===1 && $receipts===1
+        && file_get_contents(STONEFELLOW_ROOT.'/'.$assets[0])===$clip,
+        'retrying the final binary chunk concurrently publishes one exact private video and one Chat receipt');
     $stops = phone_test_race(['camera',1,'stop',$session], ['camera',1,'stop',$session]);
     $row = vp3_phone_sql_v1($db,'SELECT state,offer_sdp,answer_sdp FROM vp3_phone_camera_sessions_v1 WHERE id=?',[$sessionId])->fetch();
     phone_test_check(array_column($stops,'status') === [200,200] && $row['state']==='stopped'
@@ -610,4 +621,9 @@ try {
     echo "PASS Native MySQL phone pairing, consent and revocation races.\n";
 } finally {
     $server->exec("DROP DATABASE `$schema`");
+    if (is_dir(STONEFELLOW_ROOT)) {
+        $files=new RecursiveIteratorIterator(new RecursiveDirectoryIterator(STONEFELLOW_ROOT,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) { if ($file->isDir()) rmdir($file->getPathname()); else unlink($file->getPathname()); }
+        rmdir(STONEFELLOW_ROOT);
+    }
 }

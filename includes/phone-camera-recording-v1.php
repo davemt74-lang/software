@@ -117,22 +117,28 @@ function vp3_phone_record_owner_v1(PDO $pdo,int $owner,int $agent,int $cid,strin
     });
 }
 
-/** Resolve the exact device, session and recording again under the owner's lock for every holder action. */
-function vp3_phone_record_grant_v1(PDO $pdo,string $token,array $input): array
+/** Resolve the lock target before starting a MySQL REPEATABLE READ transaction. */
+function vp3_phone_record_device_hint_v1(PDO $pdo,string $token): array
 {
     if (!vp3_phone_record_ready_v1($pdo)) throw new RuntimeException('Upgrade required.',503);
     if (!vp3_phone_secret_valid_v1($token)) throw new RuntimeException('Phone unavailable.',403);
     $hash=vp3_extension_hash_v2000($token);
     $hint=vp3_phone_sql_v1($pdo,'SELECT owner_user_id,id FROM vp3_phone_devices_v1 WHERE token_hash=?',[$hash])->fetch(PDO::FETCH_ASSOC);
     if (!$hint) throw new RuntimeException('Phone unavailable.',403);
+    return $hint+['token_hash'=>$hash];
+}
+
+/** The account lock is the first database read before the current device, grant and privacy checks. */
+function vp3_phone_record_grant_v1(PDO $pdo,array $hint,array $input): array
+{
     $owner=(int)$hint['owner_user_id'];
     vp3_phone_account_v1($pdo,$owner,true);
     $device=vp3_phone_row_v1($pdo,$owner,$hint['id']);
-    if (!hash_equals($device['token_hash'],$hash) || $device['device_status']!=='approved' || (int)$device['expires_at']<=time())
+    if (!hash_equals($device['token_hash'],$hint['token_hash']) || $device['device_status']!=='approved' || (int)$device['expires_at']<=time())
         throw new RuntimeException('Phone unavailable.',403);
     $row=vp3_phone_sql_v1($pdo,'SELECT r.*,s.owner_user_id,s.agent_id,s.conversation_id,s.state AS camera_state,s.expires_at,s.holder_seen,s.owner_seen
         FROM vp3_phone_camera_recordings_v1 r JOIN vp3_phone_camera_sessions_v1 s ON s.id=r.session_id
-        WHERE s.owner_user_id=? AND s.device_id=? AND s.id=? AND r.id=?',
+        WHERE s.owner_user_id=? AND s.device_id=? AND s.id=? AND r.id=?'.vp3_phone_lock_v1($pdo),
         [$owner,$device['id'],vp3_phone_camera_id_v1($input['session_id']??null),vp3_phone_camera_id_v1($input['recording_id']??null)])->fetch(PDO::FETCH_ASSOC);
     if (!$row || !vp3_phone_camera_scope_v1($pdo,$owner,(int)$row['agent_id'],(int)$row['conversation_id'])) throw new RuntimeException('Camera unavailable.',403);
     $now=time(); $cutoff=$now-VP3_PHONE_CAMERA_LEASE_SECONDS_V1;
@@ -147,8 +153,9 @@ function vp3_phone_record_holder_v1(PDO $pdo,string $token,string $action,array 
 {
     if (!in_array($action,['accept','review','decline'],true) || array_diff(array_keys($input),['recording_id','session_id','take_id']))
         throw new RuntimeException('Invalid recording action.',422);
-    return vp3_phone_transaction_v1($pdo,static function()use($pdo,$token,$action,$input):array {
-        $row=vp3_phone_record_grant_v1($pdo,$token,$input);
+    $hint=vp3_phone_record_device_hint_v1($pdo,$token);
+    return vp3_phone_transaction_v1($pdo,static function()use($pdo,$hint,$action,$input):array {
+        $row=vp3_phone_record_grant_v1($pdo,$hint,$input);
         $state=$row['state']; $take=$input['take_id']??null;
         if ($take!==null) $take=vp3_phone_camera_id_v1($take);
         if ($action==='accept') {
@@ -225,8 +232,9 @@ function vp3_phone_record_chunk_v1(PDO $pdo,string $token,array $input,string $c
     $parts=intdiv($size+VP3_PHONE_RECORD_CHUNK_V1-1,VP3_PHONE_RECORD_CHUNK_V1);
     if ($index===false || $index>=$parts || strlen($chunk)!==min(VP3_PHONE_RECORD_CHUNK_V1,$size-$index*VP3_PHONE_RECORD_CHUNK_V1))
         throw new RuntimeException('Invalid recording chunk.',422);
-    return vp3_phone_transaction_v1($pdo,static function()use($pdo,$token,$input,$index,$size,$take,$mime,$chunk,$parts):array {
-        $row=vp3_phone_record_grant_v1($pdo,$token,$input);
+    $hint=vp3_phone_record_device_hint_v1($pdo,$token);
+    return vp3_phone_transaction_v1($pdo,static function()use($pdo,$hint,$input,$index,$size,$take,$mime,$chunk,$parts):array {
+        $row=vp3_phone_record_grant_v1($pdo,$hint,$input);
         if ($row['take_id']!==$take || !in_array($row['state'],['reviewing','submitted'],true)) throw new RuntimeException('Review recording before submitting.',409);
         $hashes=json_decode((string)$row['hashes'],true)??[];
         $next=count($hashes);

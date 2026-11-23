@@ -498,3 +498,16 @@ phone_chat_test(array_column($hydratedTurns,'message')===[$inboxInput['message']
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
 phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[])===$rawTurns,'participant views cannot read the owner’s paired phone transcript');
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+
+$receipt=vp3_phone_chat_store_v1($pdo,1,7,2,'','Studio camera submitted a camera recording.','camera_clip',null,null,'42');
+$marker=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id=?',[$receipt['assistant_message_id']])->fetchAll(PDO::FETCH_ASSOC);
+$privateReceipt=vp3_phone_chat_history_v1($pdo,$user,7,2,$marker,[]);
+phone_chat_test($privateReceipt[0]['message']===$receipt['answer']
+    && json_decode($privateReceipt[0]['context_json'],true)['actions']===[['type'=>'open_url','label'=>'Open submitted recording','url'=>'/vp3/media-library-file-v86.php?id=42']]
+    && !str_contains(json_encode($marker),'media-library'),'only exact private Chat hydrates the submitted camera recording link');
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
+phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$marker,[])===$marker,'participant history omits the clip address and phone label');
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+$GLOBALS['phoneTestOwner']=2;
+phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$marker,[])===$marker,'changing signed-in accounts immediately hides the private clip receipt');
+unset($GLOBALS['phoneTestOwner']);

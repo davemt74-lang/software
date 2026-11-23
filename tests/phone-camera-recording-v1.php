@@ -25,7 +25,7 @@ $pdo->exec("PRAGMA foreign_keys=ON;
     INSERT INTO chat_conversations VALUES(8,1,NULL,NULL),(9,2,NULL,NULL),(10,1,NULL,NULL);
     CREATE TABLE chat_messages(id INTEGER PRIMARY KEY,user_id INTEGER,conversation_id INTEGER,role TEXT,message TEXT,context_json TEXT);
     CREATE TABLE user_media_assets(id INTEGER PRIMARY KEY,user_id INTEGER,media_type TEXT,mime_type TEXT,title TEXT,file_path TEXT,file_size INTEGER,
-        duration_seconds REAL,source TEXT,created_at TEXT,updated_at TEXT)");
+        duration_seconds REAL,source TEXT,metadata_json TEXT,created_at TEXT,updated_at TEXT)");
 vp3_phone_schema_v1($pdo);vp3_phone_chat_schema_v1($pdo);vp3_phone_record_schema_v1($pdo,'');
 $pair=static function()use($pdo):array {
     $invite=vp3_phone_owner_v1($pdo,1,'invite',['request_id'=>bin2hex(random_bytes(16))]);
