@@ -24,6 +24,12 @@ try {
     $event=vp3_phone_voice_incoming_v130($pdo,$_POST,
         (string)($_SERVER['HTTP_X_TWILIO_SIGNATURE']??''),$callback,$token,(string)$provider['account_sid']);
     http_response_code(200);
+    if(empty($event['accepted'])){
+        $reason=is_string($event['reason']??null)?$event['reason']:'unavailable';
+        $allowedReasons=['number_inactive','account_ineligible','assignment_changed','call_expired','invalid_call','unknown_call',
+            'call_already_streaming','call_already_routed','streaming_mode_changed','call_processing','conversation_mode_changed'];
+        header('X-VP3-Phone-Rejection: '.(in_array($reason,$allowedReasons,true)?$reason:'unavailable'));
+    }
     echo $event['accepted'] ? (string)$event['twiml']
         : '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>';
 } catch(InvalidArgumentException|RuntimeException $error) {

@@ -199,10 +199,12 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
                 ||(string)$row['called_e164']!==$to||(string)$row['caller_e164']!==$caller)
                 throw new RuntimeException('Call receipt conflicts with number assignment.');
         } else {
+            // Route freshness interprets DATETIME receipts as UTC, independently
+            // of the database session's timezone and CURRENT_TIMESTAMP default.
             $pdo->prepare('INSERT INTO phone_voice_calls_v130
-              (provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164)
-              VALUES (\'twilio\',?,?,?,?,?,?)')
-              ->execute([$callSid,$owner,(int)$number['id'],$agent,$caller,$to]);
+              (provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,created_at)
+              VALUES (\'twilio\',?,?,?,?,?,?,?)')
+              ->execute([$callSid,$owner,(int)$number['id'],$agent,$caller,$to,gmdate('Y-m-d H:i:s')]);
         }
         $pdo->commit();
     } catch(Throwable $error) {

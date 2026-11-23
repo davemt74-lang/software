@@ -266,4 +266,53 @@ action('cancel_prepared',['call_id'=>$pendingId]);
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');c(!vp3_phone_workspace_available_v1($pdo,user()),'assignment also requires an active package or explicit administrator grant');
 denies(fn()=>api('GET'),403,'lost phone package removes private workspace access');
 denies(fn()=>action('token',['number_id'=>1]),403,'entitlement revoke prevents new browser tokens');
+
+// Receipt age is UTC even when the database clock and PHP timezone differ.
+// SQLite overrides the clock used by DEFAULT CURRENT_TIMESTAMP; MySQL uses
+// actual session timezones, so the production signed ingress runs in both.
+$pdo->exec('UPDATE users SET plan=1 WHERE id=1');action('token',['number_id'=>1]);
+$oldPhpTimezone=date_default_timezone_get();$oldDatabaseTimezone=$mysql?(string)$pdo->query('SELECT @@session.time_zone')->fetchColumn():null;
+$databaseClockOffset=0;
+if(!$mysql&&!$pdo->sqliteCreateFunction('current_timestamp',static function()use(&$databaseClockOffset):string{return gmdate('Y-m-d H:i:s',time()+$databaseClockOffset);}))throw new RuntimeException('The SQLite database clock fixture could not be installed.');
+$inboundCallback=(string)setting('phone_voice_webhook_url_v130');
+$receiveIncoming=static function(array $form,?string $signature=null)use($pdo,$inboundCallback):array{
+    return vp3_phone_voice_incoming_v130($pdo,$form,$signature??vp3_phone_sms_twilio_signature_v110($inboundCallback,$form,'carrier-auth-token-fixture'),$inboundCallback,'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
+};
+$utcCase=0;
+try{
+    foreach(['-06:00'=>-21600,'+09:00'=>32400] as $databaseTimezone=>$offsetSeconds){
+        if($mysql)$pdo->exec('SET SESSION time_zone = '.$pdo->quote($databaseTimezone));
+        else $databaseClockOffset=$offsetSeconds;
+        foreach(['America/Phoenix','Asia/Tokyo'] as $phpTimezone){
+            date_default_timezone_set($phpTimezone);$label=' DB '.$databaseTimezone.' / PHP '.$phpTimezone;$utcCase++;
+            $probeSid='CA'.str_pad(dechex(1024+$utcCase),32,'0',STR_PAD_LEFT);$beforeProbe=time();
+            $pdo->prepare("INSERT INTO phone_voice_calls_v130(provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164) VALUES ('twilio',?,1,1,7,'+16025550444','+16025550101')")->execute([$probeSid]);
+            $probeQuery=$pdo->prepare('SELECT created_at FROM phone_voice_calls_v130 WHERE provider_call_sid=?');$probeQuery->execute([$probeSid]);$probeEpoch=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',(string)$probeQuery->fetchColumn(),new DateTimeZone('UTC'))->getTimestamp();$probeQuery->closeCursor();
+            c($probeEpoch>=$beforeProbe+$offsetSeconds-1&&$probeEpoch<=time()+$offsetSeconds+1,'the fixture exercises a non-UTC database default clock'.$label);
+            c((vp3_phone_voice_current_route_v131($pdo,$probeSid)['reason']??'')==='call_expired','database-local default timestamps reproduce the incoming receipt-age failure'.$label);
+            $incomingForm=form('CA'.str_pad(dechex(2048+$utcCase),32,'0',STR_PAD_LEFT),['Direction'=>'inbound','From'=>'+16025550444','To'=>'+16025550101']);$beforeIncoming=time();
+            $received=$receiveIncoming($incomingForm);
+            c(!empty($received['accepted'])&&str_contains((string)($received['twiml']??''),'<Client '),'fresh signed incoming calls reach the browser across independent clocks'.$label);
+            $receiptQuery=$pdo->prepare('SELECT created_at FROM phone_voice_calls_v130 WHERE provider_call_sid=?');$receiptQuery->execute([$incomingForm['CallSid']]);$receiptCreated=(string)$receiptQuery->fetchColumn();$receiptQuery->closeCursor();$receiptEpoch=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$receiptCreated,new DateTimeZone('UTC'))->getTimestamp();
+            c($receiptEpoch>=$beforeIncoming&&$receiptEpoch<=time(),'signed incoming receipts are stored as actual UTC'.$label);
+            $browserCall=vp3_phone_browser_call_by_sid_v1($pdo,$incomingForm['CallSid']);$completed=form('CA'.str_pad(dechex(3072+$utcCase),32,'0',STR_PAD_LEFT),['ParentCallSid'=>$incomingForm['CallSid'],'CallStatus'=>'completed']);
+            c(vp3_phone_browser_status_v1($pdo,$completed,signature('status',$completed,$browserCall['public_id']),$browserCall['public_id'])['accepted'],'the timezone case completes its browser leg'.$label);
+            $changeCreated=$pdo->prepare('UPDATE phone_voice_calls_v130 SET created_at=? WHERE provider_call_sid=?');
+            foreach([-14401,120] as $ageOffset){
+                $changeCreated->execute([gmdate('Y-m-d H:i:s',time()+$ageOffset),$incomingForm['CallSid']]);
+                c((vp3_phone_voice_current_route_v131($pdo,$incomingForm['CallSid'])['reason']??'')==='call_expired','aged or future incoming receipts remain rejected offset '.$ageOffset.$label);
+            }
+            $changeCreated->execute([$receiptCreated,$incomingForm['CallSid']]);
+            rejects_message(fn()=>$receiveIncoming($incomingForm,'forged'),'Invalid provider signature.','non-UTC clocks do not bypass carrier signature checks'.$label);
+            $pdo->exec('UPDATE user_agents SET owner_user_id=2 WHERE id=7');
+            try{c(($receiveIncoming($incomingForm)['reason']??'')==='account_ineligible','non-UTC clocks do not bypass the assigned Agent owner check'.$label);}
+            finally{$pdo->exec('UPDATE user_agents SET owner_user_id=1 WHERE id=7');}
+        }
+    }
+}finally{
+    date_default_timezone_set($oldPhpTimezone);
+    if($mysql)$pdo->exec('SET SESSION time_zone = '.$pdo->quote($oldDatabaseTimezone));
+    else $databaseClockOffset=0;
+    $pdo->exec('UPDATE users SET plan=0 WHERE id=1');
+}
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
