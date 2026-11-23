@@ -457,6 +457,15 @@ try {
     $newOffer = (int)vp3_phone_sql_v1($db,'SELECT assistant_message_id FROM vp3_phone_local_offers_v1 WHERE rule_id=? ORDER BY visit_number DESC LIMIT 1',
         [$searchRule['id']])->fetchColumn();
     phone_test_check($newOffer > $offerId,'reopening the task permits a new offer only on a later visit');
+    // Age only the sensor clock, leaving its last coordinates inside and its current visit intact.
+    vp3_phone_sql_v1($db,'UPDATE vp3_phone_devices_v1 SET fix_at=? WHERE owner_user_id=1 AND id=?',[time()-3600,$deviceId]);
+    $stalePreview = phone_test_dispatch($db,$say("Search area for offer #$newOffer: Tempe, Arizona"));
+    phone_test_check(!preg_match('/Approve local search [A-F0-9]{12}/i',$stalePreview['data']['answer'] ?? '')
+        && (int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_local_approvals_v1 WHERE offer_id=?',[$newOffer])->fetchColumn() === 0,
+        'an old phone fix cannot authorize a public area even though its last recorded position was inside');
+    vp3_phone_device_v1($db,$token,'fix',array_replace($inside,[
+        'fix_at'=>$nextSample(),'arrival_grants'=>[$searchRule['id']=>$version],
+    ]));
     $nextPreview = phone_test_dispatch($db,$say("Search area for offer #$newOffer: Tempe, Arizona"));
     phone_test_check(preg_match('/Approve local search ([A-F0-9]{12})/i',$nextPreview['data']['answer'] ?? '',$laterToken) === 1,
         'the next eligible visit has its own public-area approval');

@@ -9,7 +9,7 @@ function vp3_phone_local_research_schema_v1(PDO $pdo): void
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_local_research_v1 (
         offer_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, owner_user_id INT UNSIGNED NOT NULL,
         agent_id INT UNSIGNED NOT NULL, conversation_id BIGINT UNSIGNED NOT NULL, state VARCHAR(16) NOT NULL,
-        public_json TEXT NOT NULL, queued_at BIGINT NOT NULL, claimed_at BIGINT NULL,
+        public_json TEXT NOT NULL, queued_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, claimed_at BIGINT NULL,
         result_json TEXT NULL, delivered_at BIGINT NULL,
         FOREIGN KEY (offer_id) REFERENCES vp3_phone_local_offers_v1(assistant_message_id) ON DELETE CASCADE
     )".$options);
@@ -27,7 +27,7 @@ function vp3_phone_local_research_schema_v1(PDO $pdo): void
 function vp3_phone_local_research_ready_v1(PDO $pdo): bool
 {
     try {
-        $pdo->query('SELECT offer_id,owner_user_id,agent_id,conversation_id,state,public_json,queued_at,claimed_at,result_json,delivered_at
+        $pdo->query('SELECT offer_id,owner_user_id,agent_id,conversation_id,state,public_json,queued_at,expires_at,claimed_at,result_json,delivered_at
             FROM vp3_phone_local_research_v1 WHERE 1=0');
         return true;
     } catch (PDOException) {
@@ -61,7 +61,7 @@ function vp3_phone_local_public_query_v1(array $public): string
         .($public['open_today'] ? ' open on '.$date : '');
 }
 
-function vp3_phone_local_launch_v1(PDO $pdo,array $user,array $principal,int $cid,int $offerId,array $public): void
+function vp3_phone_local_launch_v1(PDO $pdo,array $user,array $principal,int $cid,int $offerId,array $public,int $expiresAt=0): void
 {
     if (!$pdo->inTransaction()) throw new LogicException('Local research must be queued in the private approval transaction.');
     vp3_phone_local_public_query_v1($public);
@@ -78,8 +78,8 @@ function vp3_phone_local_launch_v1(PDO $pdo,array $user,array $principal,int $ci
         if ($existing!==$json) throw new RuntimeException('This approved search has changed.',409);
         return;
     }
-    vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_local_research_v1 (offer_id,owner_user_id,agent_id,conversation_id,state,public_json,queued_at)
-        VALUES(?,?,?,?,'queued',?,?)",[...$scope,$json,time()]);
+    vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_local_research_v1 (offer_id,owner_user_id,agent_id,conversation_id,state,public_json,queued_at,expires_at)
+        VALUES(?,?,?,?,'queued',?,?,?)",[...$scope,$json,time(),$expiresAt===0 ? time()+900 : min(time()+900,$expiresAt)]);
 }
 
 function vp3_phone_local_research_pending_v1(PDO $pdo,int $uid,int $aid,int $cid): bool
@@ -90,6 +90,7 @@ function vp3_phone_local_research_pending_v1(PDO $pdo,int $uid,int $aid,int $cid
 }
 
 final class VP3PhoneLocalResearchWithdrawn extends RuntimeException {}
+final class VP3PhoneLocalResearchExpired extends RuntimeException {}
 
 /** Called by the private activity poll, before it begins its delivery transaction. */
 function vp3_phone_local_research_work_v1(PDO $pdo,array $user,array $principal,int $cid,callable $authority,?array $transport=null): void
@@ -98,7 +99,7 @@ function vp3_phone_local_research_work_v1(PDO $pdo,array $user,array $principal,
     if ($pdo->inTransaction()) throw new LogicException('Local research provider reads must run outside a transaction.');
     $scope = [(int)$user['id'],(int)($principal['agent_id']??0),$cid];
     $bind = 'owner_user_id=? AND agent_id=? AND conversation_id=?';
-    $row = vp3_phone_sql_v1($pdo,"SELECT offer_id,state,public_json,queued_at FROM vp3_phone_local_research_v1 WHERE $bind
+    $row = vp3_phone_sql_v1($pdo,"SELECT offer_id,state,public_json,queued_at,expires_at FROM vp3_phone_local_research_v1 WHERE $bind
         AND (state='queued' OR (state='running' AND claimed_at<=?)) ORDER BY queued_at,offer_id LIMIT 1",[...$scope,time()-90])->fetch(PDO::FETCH_ASSOC);
     if (!$row) return;
     $offer = (int)$row['offer_id'];
@@ -115,13 +116,16 @@ function vp3_phone_local_research_work_v1(PDO $pdo,array $user,array $principal,
         } else {
             $claimed = vp3_phone_sql_v1($pdo,"UPDATE vp3_phone_local_research_v1 SET state='running',claimed_at=? WHERE $where AND state='queued'",[time(),...$ids]);
             if ($claimed->rowCount()!==1) return;
-            if (time()-(int)$row['queued_at']>900) {
-                $report = $empty('This search approval expired before it ran. Choose a new search date and area.');
-            } else {
-                $report = vp3_phone_local_collect_v1(json_decode($row['public_json'],true,16,JSON_THROW_ON_ERROR),$guard,$transport);
-            }
+            $dispatch = static function() use ($guard,$row): void {
+                $guard();
+                if (time()>=(int)$row['expires_at']) throw new VP3PhoneLocalResearchExpired();
+            };
+            $dispatch();
+            $report = vp3_phone_local_collect_v1(json_decode($row['public_json'],true,16,JSON_THROW_ON_ERROR),$dispatch,$transport);
         }
         $guard();
+    } catch (VP3PhoneLocalResearchExpired $e) {
+        $report = $empty('This search approval expired. Choose a new search date and area.');
     } catch (VP3PhoneLocalResearchWithdrawn $e) {
         vp3_phone_sql_v1($pdo,"UPDATE vp3_phone_local_research_v1 SET state='withdrawn',public_json='{}',result_json=NULL WHERE $where",$ids);
         return;
@@ -187,6 +191,23 @@ function vp3_phone_local_node_v1(mixed $value,array $index): array
     return is_string($id) && isset($index[$id]) ? $value+$index[$id] : $value;
 }
 
+/** Resolve US postal abbreviations only in an address that can belong to the US. */
+function vp3_phone_local_us_region_v1(string $value): string
+{
+    static $names=[
+        'al'=>'alabama','ak'=>'alaska','az'=>'arizona','ar'=>'arkansas','ca'=>'california','co'=>'colorado','ct'=>'connecticut',
+        'de'=>'delaware','dc'=>'district of columbia','fl'=>'florida','ga'=>'georgia','hi'=>'hawaii','id'=>'idaho',
+        'il'=>'illinois','in'=>'indiana','ia'=>'iowa','ks'=>'kansas','ky'=>'kentucky','la'=>'louisiana','me'=>'maine',
+        'md'=>'maryland','ma'=>'massachusetts','mi'=>'michigan','mn'=>'minnesota','ms'=>'mississippi','mo'=>'missouri',
+        'mt'=>'montana','ne'=>'nebraska','nv'=>'nevada','nh'=>'new hampshire','nj'=>'new jersey','nm'=>'new mexico',
+        'ny'=>'new york','nc'=>'north carolina','nd'=>'north dakota','oh'=>'ohio','ok'=>'oklahoma','or'=>'oregon',
+        'pa'=>'pennsylvania','ri'=>'rhode island','sc'=>'south carolina','sd'=>'south dakota','tn'=>'tennessee',
+        'tx'=>'texas','ut'=>'utah','vt'=>'vermont','va'=>'virginia','wa'=>'washington','wv'=>'west virginia',
+        'wi'=>'wisconsin','wy'=>'wyoming','pr'=>'puerto rico'
+    ];
+    return isset($names[$value])?$value:(array_search($value,$names,true)?:'');
+}
+
 /** Match complete locality components. An address in West Phoenix is not evidence for Phoenix. */
 function vp3_phone_local_area_matches_v1(string $area,array $node,array $index): bool
 {
@@ -203,8 +224,17 @@ function vp3_phone_local_area_matches_v1(string $area,array $node,array $index):
     }
     $localities=array_filter([$city,$neighborhood,$city&&$neighborhood?$neighborhood.' '.$city:'']);
     if (!$localities || !in_array(array_shift($parts),$localities,true)) return false;
-    $known=array_filter([$city,$region,vp3_phone_local_key_v1($country)]);
-    foreach ($parts as $part) if (!in_array($part,$known,true)) return false;
+    $country=vp3_phone_local_key_v1($country);
+    $us=['us','usa','united states','united states of america'];
+    $isUs=in_array($country,$us,true);
+    $state=$isUs||$country===''?vp3_phone_local_us_region_v1($region):'';
+    $known=array_filter([$city,$region,$country]);
+    foreach ($parts as $part) {
+        if (!$isUs && $country!=='' && $part===$region && vp3_phone_local_us_region_v1($part)!=='' && !in_array($country,$parts,true)) return false;
+        if (in_array($part,$known,true) || ($isUs && in_array($part,$us,true))) continue;
+        if ($state!=='' && vp3_phone_local_us_region_v1($part)===$state) continue;
+        return false;
+    }
     return true;
 }
 
@@ -246,6 +276,7 @@ function vp3_phone_local_hours_v1(array $node,array $index,string $date): array
         }
         return true;
     };
+    $matched=false;
     foreach (['specialOpeningHoursSpecification','openingHoursSpecification'] as $key) {
         $special=$key==='specialOpeningHoursSpecification';
         $matched=false;
@@ -270,16 +301,35 @@ function vp3_phone_local_hours_v1(array $node,array $index,string $date): array
         if ($closed && !$periods) return ['closed'=>true,'detail'=>'Listed closed on '.$date.'.'];
         if ($matched) break;
     }
+    if (!$matched) {
+        // The compact schema.org form uses Mo,Tu or Mo-Fr followed by 24-hour times.
+        $days=['Mo','Tu','We','Th','Fr','Sa','Su'];
+        $today=(int)(new DateTimeImmutable($date,new DateTimeZone('UTC')))->format('N')-1;
+        $periods=[];
+        foreach (vp3_phone_local_values_v1($node['openingHours']??null) as $rule) {
+            if (!is_string($rule) || !preg_match('/^((?:Mo|Tu|We|Th|Fr|Sa|Su)(?:[,-](?:Mo|Tu|We|Th|Fr|Sa|Su))*)\s+((?:[01]\d|2[0-3]):[0-5]\d)-((?:[01]\d|2[0-3]):[0-5]\d|24:00)$/D',$rule,$m)) continue;
+            foreach (explode(',',$m[1]) as $range) {
+                $edges=explode('-',$range);
+                if (count($edges)>2) continue;
+                $a=array_search($edges[0],$days,true);
+                $b=array_search(end($edges),$days,true);
+                if ((($today-$a+7)%7)>(($b-$a+7)%7)) continue;
+                if ($m[2]!==$m[3]) $periods[]=$m[2].'–'.$m[3];
+            }
+        }
+        if ($periods) return ['closed'=>false,'detail'=>'Posted '.$weekday.' hours for '.$date.': '.implode(', ',array_unique($periods)).' local time. Date-specific exceptions unverified.'];
+    }
     return ['closed'=>false,'detail'=>'Opening hours for '.$date.' unverified.'];
 }
 
-function vp3_phone_local_stock_v1(array $store,array $index,string $item): string
+function vp3_phone_local_stock_v1(array $store,array $index,string $item,string $date): string
 {
     $storeId=$store['@id']??null;
     $itemKey=vp3_phone_local_key_v1($item);
     $words=explode(' ',$itemKey);
     $last=array_pop($words);
-    $terms=preg_quote(implode(' ',[...$words,rtrim($last,'s')]),'/');
+    $singular=preg_match('/(?<![su])s$/u',$last)?mb_substr($last,0,-1):$last;
+    $terms=preg_quote(implode(' ',[...$words,$singular]),'/');
     $productMatch='/\b'.$terms.'s?\b/u';
     $offers=[];
     foreach (vp3_phone_local_values_v1($store['makesOffer']??null) as $offer) $offers[]=$offer;
@@ -294,7 +344,23 @@ function vp3_phone_local_stock_v1(array $store,array $index,string $item): strin
     foreach (array_slice($offers,0,80) as $raw) {
         $offer=vp3_phone_local_node_v1($raw,$index);
         $product=vp3_phone_local_node_v1($offer['itemOffered']??null,$index);
-        if (!is_string($product['name']??null) || !preg_match($productMatch,vp3_phone_local_key_v1($product['name']))) continue;
+        $productName=vp3_phone_local_key_v1($product['name']??null);
+        if (!preg_match($productMatch,$productName,$m,PREG_OFFSET_CAPTURE)) continue;
+        $prefix=trim(substr($productName,0,$m[0][1]));
+        $suffix=trim(substr($productName,$m[0][1]+strlen($m[0][0])));
+        if (preg_match('/\b(?:for|compatible with)\b/u',$prefix)
+            || ($suffix!=='' && !preg_match('/^(?:\d|pack\b|set\b|black\b|white\b|male to female\b)/u',$suffix))) continue;
+        $valid=true;
+        foreach (['validFrom','validThrough','availabilityStarts','availabilityEnds'] as $field) {
+            if (!isset($offer[$field])) continue;
+            $stamp=$offer[$field];
+            if (!is_string($stamp) || !preg_match('/^(\d{4}-\d{2}-\d{2})(?:T|$)/D',$stamp,$d)) { $valid=false; break; }
+            $start=$field==='validFrom'||$field==='availabilityStarts';
+            // At a same-day precise boundary, avoid claiming current stock without a verified local clock.
+            if ($start?$d[1]>$date:$d[1]<$date) $valid=false;
+            if ($d[1]===$date && strlen($stamp)>10) $valid=false;
+        }
+        if (!$valid) continue;
         $branches=vp3_phone_local_values_v1($offer['availableAtOrFrom']??null);
         $branchMatch=false;
         foreach ($branches as $branch) {
@@ -348,22 +414,32 @@ function vp3_phone_local_page_v1(array $response,array $public): array
         $type=vp3_phone_local_type_v1($scope->getAttribute('itemtype'));
         if (!str_ends_with($type,'Store') && $type!=='LocalBusiness') continue;
         $attr=static function(string $field) use($xp,$scope): string {
-            $tag=$xp->query('.//*[@itemprop="'.$field.'"]',$scope)->item(0);
-            return $tag ? trim($tag->getAttribute('content')?:$tag->textContent) : '';
+            foreach ($xp->query('.//*[@itemprop="'.$field.'"]',$scope) ?: [] as $tag) {
+                $parent=$xp->query('ancestor::*[@itemscope][1]',$tag)->item(0);
+                if (!$parent) continue;
+                if (!$parent->isSameNode($scope)) {
+                    if (!str_starts_with($field,'address') || $parent->getAttribute('itemprop')!=='address') continue;
+                    $grand=$xp->query('ancestor::*[@itemscope][1]',$parent)->item(0);
+                    if (!$grand || !$grand->isSameNode($scope)) continue;
+                }
+                return trim($tag->getAttribute('content')?:$tag->textContent);
+            }
+            return '';
         };
         $nodes[]=['@type'=>$type,'name'=>$attr('name'),'description'=>$attr('description'),
             'address'=>['addressLocality'=>$attr('addressLocality'),'addressRegion'=>$attr('addressRegion'),'addressCountry'=>$attr('addressCountry')]];
     }
     $stores=[];
+    $closed=[];
     foreach ($nodes as $node) {
         $name=vp3_phone_local_text_v1($node['name']??null,140);
         if ($name==='' || !vp3_phone_local_store_kind_v1($node,$public) || !vp3_phone_local_area_matches_v1($public['area'],$node,$index)) continue;
         $hours=vp3_phone_local_hours_v1($node,$index,$public['date']);
-        if ($public['open_today'] && $hours['closed']) continue;
-        $stores[vp3_phone_local_key_v1($name)]=['name'=>$name,'hours'=>$hours['detail'],'stock'=>vp3_phone_local_stock_v1($node,$index,$public['item'])];
-        if (count($stores)===3) break;
+        $key=vp3_phone_local_key_v1($name);
+        if ($public['open_today'] && $hours['closed']) { $closed[$key]=true; continue; }
+        $stores[$key]??=['name'=>$name,'hours'=>$hours['detail'],'stock'=>vp3_phone_local_stock_v1($node,$index,$public['item'],$public['date'])];
     }
-    return $stores;
+    return array_slice(array_diff_key($stores,$closed),0,3,true);
 }
 
 /** Search and read through VP3's existing bounded public transports. Only the reviewed query leaves in discovery. */
@@ -416,7 +492,7 @@ function vp3_phone_local_collect_v1(array $public,callable $guard,?array $transp
                 }
                 break;
             }
-        } catch (VP3PhoneLocalResearchWithdrawn $e) { throw $e; }
+        } catch (VP3PhoneLocalResearchWithdrawn|VP3PhoneLocalResearchExpired $e) { throw $e; }
         catch (Throwable $e) { $guard(); }
     }
     $guard();
