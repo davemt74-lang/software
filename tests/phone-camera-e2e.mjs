@@ -211,13 +211,19 @@ try {
   const ownerChat=await desktop.newPage();
   await ownerChat.goto('/chat.php?agent=system&conversation_id=8');
   await ownerChat.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY?.phoneCameraScope?.()?.conversation===8);
+  const chatEndpoint=await ownerChat.evaluate(()=>new URL(window.STONEFELLOW_CHAT.endpoint,location.href).href);
   async function typeCameraRequest(text) {
-    const sent=ownerChat.waitForResponse(response=>new URL(response.url()).pathname==='/api/chat.php'
-      && response.request().method()==='POST' && response.request().postDataJSON()?.action==='send'
-      && response.request().postDataJSON()?.message===text);
     await ownerChat.locator('#chatInput').fill(text);
-    await ownerChat.locator('#sendChatButton').click();
-    return (await sent).json();
+    const [response]=await Promise.all([
+      ownerChat.waitForResponse(response=>{
+        const request=response.request();
+        if (response.url()!==chatEndpoint || request.method()!=='POST') return false;
+        const payload=request.postDataJSON();
+        return payload?.action==='send' && payload.message===text;
+      }),
+      ownerChat.locator('#sendChatButton').click()
+    ]);
+    return success({status:response.status(),body:await response.json()},'camera request in the Chat composer');
   }
   const choice=await typeCameraRequest('Request a camera');
   assert.match(choice.answer,/Studio iPhone/i);
