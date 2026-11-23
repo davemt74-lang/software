@@ -103,7 +103,10 @@ $html = preg_replace(
     $html
 ) ?? $html;
 
-$html = str_replace('chat.js?v=101', 'chat.js?v=' . $controlBuild, $html);
+$html = str_replace('<script src="' . e(url('/chat.js?v=101')) . '"></script>',
+    '<script data-reply-endpoint="' . e(url('/api/phone-chat-reply-v1.php')) . '" src="'
+    . e(url('/phone-chat-owner-reply-v1.js?v='.substr(hash_file('sha256',__DIR__.'/phone-chat-owner-reply-v1.js'),0,12))) . '"></script>'
+    . '<script src="' . e(url('/chat.js?v='.$controlBuild)) . '"></script>', $html);
 $html = str_replace('chat.css?v=206-source-light-20260905', 'chat.css?v=' . $controlBuild, $html);
 $html = str_replace('agent-activity-v94.js?v=101', 'agent-activity-v94.js?v=' . $activityBuild, $html);
 

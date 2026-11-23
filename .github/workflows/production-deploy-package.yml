@@ -463,6 +463,7 @@ jobs:
                       api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php \
                       includes/phone-camera-v1.php includes/phone-camera-chat-v1.php includes/phone-camera-http-v1.php includes/phone-camera-map-v1.php \
                       phone-agent-chat-v1.js includes/paired-phone-agent-v1.php includes/paired-phone-agent-model-v1.php \
+                      phone-chat-owner-reply-v1.js api/phone-chat-reply-v1.php \
                       includes/paired-phone-chat-owner-v1.php includes/phone-camera-app-view.php phone-camera-app-v1.css \
                       phone-save-place-v1.js includes/phone-save-place-view.php \
                       api/phone-camera-v1.php phone-camera-ice-v1.js phone-camera-holder-v1.js phone-camera-chat-holder-v1.js phone-camera-editor-v1.js \

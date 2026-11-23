@@ -45,13 +45,20 @@ function vp3_paired_phone_schema_v1(PDO $pdo,string $options): void
         FOREIGN KEY (assistant_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE
     )".$options);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_paired_phone_owner_replies_v1 (
+        phone_message_id BIGINT UNSIGNED PRIMARY KEY, owner_message_id BIGINT UNSIGNED NOT NULL UNIQUE,
+        message TEXT NOT NULL, announced SMALLINT NOT NULL DEFAULT 0,
+        FOREIGN KEY (phone_message_id) REFERENCES vp3_paired_phone_turns_v1(user_message_id) ON DELETE CASCADE,
+        FOREIGN KEY (owner_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE
+    )".$options);
 }
 
 function vp3_paired_phone_ready_v1(PDO $pdo): bool
 {
     try {
-        $pdo->query('SELECT t.lease,t.announced_reply,b.agent_id FROM vp3_paired_phone_turns_v1 t
-            JOIN vp3_paired_phone_threads_v1 b ON b.device_id=t.device_id WHERE 1=0');
+        $pdo->query('SELECT t.lease,t.announced_reply,b.agent_id,o.announced FROM vp3_paired_phone_turns_v1 t
+            JOIN vp3_paired_phone_threads_v1 b ON b.device_id=t.device_id
+            LEFT JOIN vp3_paired_phone_owner_replies_v1 o ON o.phone_message_id=t.user_message_id WHERE 1=0');
         return true;
     } catch (PDOException) { return false; }
 }
@@ -86,30 +93,42 @@ function vp3_paired_phone_thread_v1(PDO $pdo,array $device): array
     return ['agent_id'=>$agent,'conversation_id'=>$cid];
 }
 
-/** All holder entry points bind the supplied device ID to its own cookie. */
-function vp3_paired_phone_device_v1(PDO $pdo,string $token,string $id): array
+function vp3_paired_phone_request_id_v1(mixed $value): string
 {
-    if (!vp3_phone_secret_valid_v1($token)) throw new RuntimeException('Phone unavailable.',403);
-    $hash=vp3_extension_hash_v2000($token);
-    $owner=vp3_phone_sql_v1($pdo,'SELECT owner_user_id FROM vp3_phone_devices_v1 WHERE token_hash=? AND id=?',[$hash,$id])->fetchColumn();
-    if (!$owner) throw new RuntimeException('Phone unavailable.',403);
-    vp3_phone_account_v1($pdo,(int)$owner,true);
-    $row=vp3_phone_row_v1($pdo,(int)$owner,$id);
-    if (!hash_equals($row['token_hash'],$hash) || $row['device_status']!=='approved' || (int)$row['expires_at']<=time()) {
-        throw new RuntimeException('Phone unavailable.',403);
-    }
-    return $row;
+    $id=is_string($value)?strtolower($value):'';
+    if (!preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/D',$id))
+        throw new RuntimeException('Invalid phone message identifier.',422);
+    return $id;
+}
+
+function vp3_paired_phone_message_v1(mixed $value): string
+{
+    $message=is_string($value)?trim($value):'';
+    if ($message==='' || strlen($message)>3000 || !mb_check_encoding($message,'UTF-8') || mb_strlen($message)>1000)
+        throw new RuntimeException('Invalid phone message.',422);
+    return $message;
 }
 
 function vp3_paired_phone_turns_v1(PDO $pdo,string $id): array
 {
-    $rows=vp3_phone_sql_v1($pdo,"SELECT request_id,message,reply,
-        CASE WHEN state='pending' AND lease_until<=? THEN 'timeout' ELSE state END AS state
-        FROM vp3_paired_phone_turns_v1 WHERE device_id=? ORDER BY user_message_id DESC LIMIT 30",[time(),$id])->fetchAll(PDO::FETCH_ASSOC);
+    $rows=vp3_phone_sql_v1($pdo,"SELECT t.request_id,t.message,t.reply,t.state,t.lease_until,o.message AS owner_reply
+        FROM vp3_paired_phone_turns_v1 t LEFT JOIN vp3_paired_phone_owner_replies_v1 o ON o.phone_message_id=t.user_message_id
+        WHERE t.device_id=? ORDER BY COALESCE(o.owner_message_id,t.assistant_message_id,t.user_message_id) DESC LIMIT 30",[$id])->fetchAll(PDO::FETCH_ASSOC);
+    $now=time();
     foreach ($rows as &$row) {
-        if ($row['state']==='pending' || $row['state']==='replied') continue;
-        $row['failure_message']=PairedPhoneReplyFailure::description($row['state']);
-        $row['state']='failed';
+        $ownerReply=$row['owner_reply'];
+        $leaseUntil=(int)$row['lease_until'];
+        unset($row['lease_until'],$row['owner_reply']);
+        if ($row['reply']!==null && $row['state']==='replied') {
+            $row['reply_author']='agent';
+            if ($ownerReply!==null) $row['owner_reply']=$ownerReply;
+        } elseif ($ownerReply!==null) {
+            $row['reply']=$ownerReply;
+            $row['reply_author']='owner';
+            $row['state']='replied';
+        } elseif ($row['state']!=='pending' || $leaseUntil<=$now) {
+            $row['state']='awaiting_owner';
+        }
     }
     return ['turns'=>array_reverse($rows)];
 }
@@ -123,88 +142,43 @@ function vp3_paired_phone_marker_v1(PDO $pdo,int $owner,int $cid,string $role): 
     return $id;
 }
 
-/** Reserve before inference, release the DB lock during provider I/O, then reauthorize before delivering. */
-function vp3_paired_phone_chat_v1(PDO $pdo,string $token,string $action,array $input,?callable $model=null): array
+/** A holder message is delivered to its owner's private Chat without calling an inference provider. */
+function vp3_paired_phone_chat_v1(PDO $pdo,string $token,string $action,array $input): array
 {
     $id=vp3_phone_camera_id_v1($input['device_id']??null);
     if (!in_array($action,['chat_status','chat_send'],true)) throw new RuntimeException('Unknown action.',422);
     $send=$action==='chat_send';
     $allowed=$send?['device_id','message','request_id']:['device_id'];
     if (array_diff(array_keys($input),$allowed)) throw new RuntimeException('Unexpected phone chat fields.',422);
-    $message=is_string($input['message']??null)?trim($input['message']):'';
-    $rid=strtolower(is_string($input['request_id']??null)?$input['request_id']:'');
-    if ($send && (!preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/D',$rid)
-        || $message==='' || mb_strlen($message)>1000 || strlen($message)>3000)) throw new RuntimeException('Invalid phone message.',422);
-    $work=vp3_phone_transaction_v1($pdo,static function() use($pdo,$token,$id,$send,$message,$rid) {
-        $device=vp3_paired_phone_device_v1($pdo,$token,$id);
-        if (!vp3_paired_phone_ready_v1($pdo)) throw new RuntimeException('Upgrade required.',503);
-        $owner=(int)$device['owner_user_id'];
+    $message=$send?vp3_paired_phone_message_v1($input['message']??null):null;
+    $rid=$send?vp3_paired_phone_request_id_v1($input['request_id']??null):null;
+    if (!vp3_phone_secret_valid_v1($token)) throw new RuntimeException('Phone unavailable.',403);
+    if (!vp3_paired_phone_ready_v1($pdo)) throw new RuntimeException('Upgrade required.',503);
+    $hash=vp3_extension_hash_v2000($token);
+    // Discover the lock key before starting a repeatable-read transaction. Recheck the cookie on the locked device.
+    $owner=(int)vp3_phone_sql_v1($pdo,'SELECT owner_user_id FROM vp3_phone_devices_v1 WHERE token_hash=? AND id=?',[$hash,$id])->fetchColumn();
+    if (!$owner) throw new RuntimeException('Phone unavailable.',403);
+    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$owner,$hash,$id,$send,$message,$rid) {
+        vp3_phone_account_v1($pdo,$owner,true);
+        $device=vp3_phone_row_v1($pdo,$owner,$id);
+        if (!hash_equals($device['token_hash'],$hash) || $device['device_status']!=='approved' || (int)$device['expires_at']<=time())
+            throw new RuntimeException('Phone unavailable.',403);
         if (!$send && !vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_paired_phone_threads_v1 WHERE device_id=?',[$id])->fetchColumn()) return ['turns'=>[]];
         $thread=vp3_paired_phone_thread_v1($pdo,$device);
         if (!$send) return vp3_paired_phone_turns_v1($pdo,$id);
+        $existing=vp3_phone_sql_v1($pdo,'SELECT message FROM vp3_paired_phone_turns_v1 WHERE device_id=? AND request_id=?',[$id,$rid])->fetchColumn();
+        if ($existing!==false) {
+            if ($existing!==$message) throw new RuntimeException('Phone message changed.',409);
+            return vp3_paired_phone_turns_v1($pdo,$id);
+        }
         $now=time();
-        $existing=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_paired_phone_turns_v1 WHERE device_id=? AND request_id=?',[$id,$rid])->fetch(PDO::FETCH_ASSOC);
-        if ($existing && $existing['message']!==$message) throw new RuntimeException('Phone message changed.',409);
-        if ($existing && ($existing['state']==='replied' || (int)$existing['lease_until']>$now)) return vp3_paired_phone_turns_v1($pdo,$id);
-        if (vp3_phone_sql_v1($pdo,"SELECT 1 FROM vp3_paired_phone_turns_v1 WHERE device_id=? AND state='pending' AND lease_until>? LIMIT 1",[$id,$now])->fetchColumn()) {
-            throw new RuntimeException('Another phone reply is being prepared.',429);
-        }
-        if ($existing && (int)$existing['attempted_at']>$now-3 ||
-            (int)vp3_phone_sql_v1($pdo,'SELECT COUNT(*) FROM vp3_paired_phone_turns_v1 WHERE owner_user_id=? AND attempted_at>?',[$owner,$now-60])->fetchColumn()>=20) {
+        if ((int)vp3_phone_sql_v1($pdo,'SELECT COUNT(*) FROM vp3_paired_phone_turns_v1 WHERE owner_user_id=? AND attempted_at>?',[$owner,$now-60])->fetchColumn()>=20)
             throw new RuntimeException('Please wait before trying again.',429);
-        }
-        $cid=$thread['conversation_id']; $agent=$thread['agent_id']; $lease=bin2hex(random_bytes(16));
-        if ($existing) {
-            $marker=(int)$existing['user_message_id'];
-            vp3_phone_sql_v1($pdo,"UPDATE vp3_paired_phone_turns_v1 SET state='pending',lease=?,lease_until=?,attempted_at=?
-                WHERE device_id=? AND request_id=?",[$lease,$now+90,$now,$id,$rid]);
-        } else {
-            $marker=vp3_paired_phone_marker_v1($pdo,$owner,$cid,'user');
-            vp3_phone_sql_v1($pdo,"INSERT INTO vp3_paired_phone_turns_v1 (device_id,owner_user_id,agent_id,conversation_id,request_id,message,
-                user_message_id,state,lease,lease_until,attempted_at) VALUES (?,?,?,?,?,?,?,'pending',?,?,?)",
-                [$id,$owner,$agent,$cid,$rid,$message,$marker,$lease,$now+90,$now]);
-        }
-        $prior=vp3_phone_sql_v1($pdo,"SELECT message,reply FROM vp3_paired_phone_turns_v1
-            WHERE device_id=? AND user_message_id<? AND state='replied' ORDER BY user_message_id DESC LIMIT 6",[$id,$marker])->fetchAll(PDO::FETCH_ASSOC);
-        $history=[];
-        foreach (array_reverse($prior) as $turn) {
-            $history[]=['role'=>'user','content'=>$turn['message']];
-            $history[]=['role'=>'assistant','content'=>$turn['reply']];
-        }
-        $history[]=['role'=>'user','content'=>$message];
-        return compact('owner','agent','cid','lease','history');
-    });
-    if (!isset($work['lease'])) return $work;
-    $authorized=static function() use($pdo,$work,$token,$id,$rid): bool {
-        vp3_paired_phone_device_v1($pdo,$token,$id);
-        if (!vp3_phone_camera_scope_v1($pdo,$work['owner'],$work['agent'],$work['cid'])) return false;
-        return (bool)vp3_phone_sql_v1($pdo,"SELECT 1 FROM vp3_paired_phone_turns_v1 WHERE device_id=? AND request_id=?
-            AND conversation_id=? AND agent_id=? AND lease=? AND lease_until>? AND state='pending'",
-            [$id,$rid,$work['cid'],$work['agent'],$work['lease'],time()])->fetchColumn();
-    };
-    $failure='failed';
-    try {
-        if ($model===null) {
-            require_once __DIR__.'/paired-phone-agent-model-v1.php';
-            $model='vp3_paired_phone_model_reply_v1';
-        }
-        $answer=$model($pdo,$work['owner'],$work['agent'],$work['history'],$authorized);
-        $reply=is_string($answer)?trim(mb_substr($answer,0,8000)):'';
-    } catch (PairedPhoneReplyFailure $error) {
-        $failure=$error->reason;
-        $reply='';
-    } catch (Throwable $error) {
-        if (function_exists('agent_runtime_v125_trace')) {
-            agent_runtime_v125_trace('paired_phone.reply_failed',['error_class'=>get_class($error)]);
-        }
-        $reply='';
-    }
-    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$authorized,$work,$id,$rid,$reply,$failure) {
-        if (!$authorized()) throw new RuntimeException('Phone chat changed.',409);
-        $assistant=$reply==='' ? null : vp3_paired_phone_marker_v1($pdo,$work['owner'],$work['cid'],'assistant');
-        vp3_phone_sql_v1($pdo,'UPDATE vp3_paired_phone_turns_v1 SET assistant_message_id=?,reply=?,state=?,lease=NULL,lease_until=0
-            WHERE device_id=? AND request_id=? AND lease=?',
-            [$assistant,$assistant===null?null:$reply,$assistant===null?$failure:'replied',$id,$rid,$work['lease']]);
+        $cid=$thread['conversation_id'];
+        $marker=vp3_paired_phone_marker_v1($pdo,$owner,$cid,'user');
+        vp3_phone_sql_v1($pdo,"INSERT INTO vp3_paired_phone_turns_v1 (device_id,owner_user_id,agent_id,conversation_id,request_id,message,
+            user_message_id,state,lease_until,attempted_at) VALUES (?,?,?,?,?,?,?,'waiting',0,?)",
+            [$id,$owner,$thread['agent_id'],$cid,$rid,$message,$marker,$now]);
         return vp3_paired_phone_turns_v1($pdo,$id);
     });
 }

@@ -39,9 +39,10 @@ button:disabled { opacity:.65; cursor:wait; }
 [hidden] { display:none !important; }
 
 
-/* Connection follows normal document flow. Only Chat has a viewport-sized reading area. */
-#phone-location[data-tab="chat"] { display: flex; flex-direction: column; height: 100vh; height: var(--phone-chat-height,100dvh); }
-#phone-location[data-tab="chat"] .phone-header { flex: none; position: relative; }
+/* The current tab scrolls between the shared header and composer. */
+#phone-location[data-tab] { display: grid; grid-template-rows: auto minmax(0,1fr) auto; height: 100vh; height: var(--phone-viewport-height,100dvh); }
+#phone-location[data-tab] .phone-header { position: relative; }
+#phone-location[data-tab] #phone-connection { min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; }
 #phone-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .phone-chat-history { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: .5rem var(--gutter-right) .75rem var(--gutter-left); }
 .phone-chat-history > * { max-width: 34rem; margin-inline: auto; }
@@ -53,7 +54,7 @@ button:disabled { opacity:.65; cursor:wait; }
 .phone-bubble small { display: block; color: #405d53; font-size: .75rem; font-weight: 700; }
 .phone-bubble p { margin: .15rem 0 0; white-space: pre-wrap; }
 button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; color: #135d4f; background: transparent; padding: .35rem .25rem; text-decoration: underline; }
-#phone-dock { flex: 0 0 auto; background: #fff; border-top: 1px solid #cddbd6; padding: .55rem max(.7rem,env(safe-area-inset-right)) max(.55rem,env(safe-area-inset-bottom)) max(.7rem,env(safe-area-inset-left)); }
+#phone-dock { position: relative; z-index: 3; background: #fff; border-top: 1px solid #cddbd6; padding: .55rem max(.7rem,env(safe-area-inset-right)) max(.55rem,env(safe-area-inset-bottom)) max(.7rem,env(safe-area-inset-left)); }
 .phone-dock-inner { max-width: 34rem; position: relative; margin-inline: auto; }
 #phone-chat-form { display: flex; align-items: center; gap: .35rem; }
 #phone-chat-input { width: 0; flex: 1; min-width: 0; min-height: 44px; margin: 0; border-color: #bacdc2; border-radius: 1.6rem; padding: .55rem .85rem; font-size: 1rem; color: inherit; }
@@ -74,6 +75,6 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
 #phone-save-place-dialog::backdrop { background: rgb(13 34 25 / .45); }
 
 @media (max-height: 430px) {
-  #phone-location[data-tab="chat"] .phone-brand-line { display: none; }
+  #phone-location[data-tab] .phone-brand-line { display: none; }
   .phone-tabs { margin-top: 0; }
 }

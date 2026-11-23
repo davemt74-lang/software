@@ -5948,3 +5948,15 @@ body.chat-create-modal-open{
   object-fit:cover;
   border-radius:.4rem;
 }
+
+[data-phone-owner-reply] { display:grid; gap:.5rem; margin-top:.65rem; max-width:36rem; }
+[data-phone-owner-reply] label { display:grid; gap:.3rem; font-weight:600; }
+[data-phone-owner-reply] textarea {
+  display:block; box-sizing:border-box; width:100%; min-width:0; resize:vertical;
+  border:1px solid #8d999b; border-radius:.6rem; padding:.55rem .7rem;
+  color:#182b2e; background:white; font:inherit; font-size:1rem; font-weight:400;
+}
+[data-phone-owner-reply] .chat-agent-actions { margin:0; flex-wrap:wrap; }
+[data-phone-owner-reply] button { min-height:2.75rem; }
+[data-phone-owner-reply] [role="status"] { margin:0; }
+[data-phone-owner-reply] [role="status"]:empty { display:none; }

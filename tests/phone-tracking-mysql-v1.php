@@ -70,6 +70,10 @@ function phone_test_dispatch(PDO $db, array $job): array
             vp3_phone_chat_schema_v1($db);
             return ['status'=>200,'ready'=>vp3_phone_schema_ready_v1($db) && vp3_phone_chat_schema_ready_v1($db)];
         }
+        if ($principal === 'owner_reply') {
+            [$user,$chatPrincipal]=phone_test_chat_identity($db,$identity);
+            return ['status'=>200,'data'=>vp3_paired_phone_owner_reply_v1($db,$user,$chatPrincipal,$input)];
+        }
         $result = match ($principal) {
             'owner' => vp3_phone_owner_v1($db,$identity,$action,$input),
             'places' => vp3_phone_places_owner_v1($db,$identity,$action,$input),
@@ -551,6 +555,22 @@ try {
     $owner('approve', ['request_id'=>$request(), 'device_id'=>$phone['device']['id'],
         'generation'=>$phone['device']['generation'], 'role'=>'guest','allow_location'=>false]);
     $startCamera = ['camera',1,'request',['device_id'=>$phone['device']['id']]];
+    $deviceId=$phone['device']['id'];
+    vp3_paired_phone_bind_v1($db,$deviceId,1,0,41);
+    $phoneMessage=['device_id'=>$deviceId,'request_id'=>'abc12345-0123-4567-89ab-0123456789ab','message'=>'Which entrance?'];
+    $delivered=vp3_paired_phone_chat_v1($db,$phone['token'],'chat_send',$phoneMessage);
+    phone_test_check($delivered['turns'][0]['state']==='awaiting_owner','an incoming phone message waits for its owner');
+    $ownerAnswer=['device_id'=>$deviceId,'request_id'=>$phoneMessage['request_id'],'agent_id'=>0,'conversation_id'=>41,'message'=>'Use the west door.'];
+    $replyJob=['owner_reply',1,'reply',$ownerAnswer];
+    $answers=phone_test_race($replyJob,$replyJob);
+    $replyId=$answers[0]['data']['reply_message_id']??0;
+    $received=vp3_paired_phone_chat_v1($db,$phone['token'],'chat_status',['device_id'=>$deviceId])['turns'][0];
+    phone_test_check(array_column($answers,'status')===[200,200] && $replyId>0 && $replyId===$answers[1]['data']['reply_message_id']
+        && $received['reply']===$ownerAnswer['message'] && $received['reply_author']==='owner',
+        'concurrent retries deliver the same single human reply back to the phone');
+    $ownerAnswer['message']='A competing reply';
+    phone_test_check(phone_test_dispatch($db,['owner_reply',1,'reply',$ownerAnswer])['status']===409,
+        'a second owner tab cannot overwrite an already delivered human reply');
     $cameraRequests = phone_test_race($startCamera,$startCamera);
     $sessionId = $cameraRequests[0]['data']['camera']['session_id'] ?? '';
     phone_test_check(array_column($cameraRequests,'status') === [200,200] && $sessionId !== ''

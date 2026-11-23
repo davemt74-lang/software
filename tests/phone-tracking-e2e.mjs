@@ -413,9 +413,18 @@ async function verifyPhoneTabs(phone) {
   const connection = phone.getByRole('tab', {name:'Connection', exact:true});
   const chat = phone.getByRole('tab', {name:'Chat', exact:true});
   const input = phone.locator('#phone-chat-input');
+  async function verifyDock() {
+    assert.equal(await input.isVisible(), true);
+    assert.ok(await phone.locator('#phone-apps-toggle').evaluate(button => {
+      const rect = button.getBoundingClientRect();
+      const height = window.visualViewport?.height || innerHeight;
+      return rect.top > height / 2 && rect.bottom <= height + 1 &&
+        button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+    }), 'The shared app launcher is reachable at the bottom of the visible phone viewport');
+  }
   async function verifyConnection() {
     assert.equal(await connection.getAttribute('aria-selected'), 'true');
-    assert.equal(await phone.locator('#phone-chat-form').isVisible(), false);
+    await verifyDock();
     const position = await phone.locator('#phone-label').evaluate(label => {
       const bounds = label.getBoundingClientRect();
       return {top:bounds.top, bottom:bounds.bottom, height:window.visualViewport?.height || innerHeight};
@@ -424,19 +433,14 @@ async function verifyPhoneTabs(phone) {
       'The connected phone name should appear near the top of the iPhone viewport: ' + JSON.stringify(position));
   }
   await verifyConnection();
+  await screenshot(phone, 'phone-connection-tab');
   await chat.click();
   assert.equal(await chat.getAttribute('aria-selected'), 'true');
   assert.equal(await phone.locator('#phone-controls').isVisible(), false);
   await input.fill('Meet me at the studio');
   assert.equal(await phone.locator('#phone-chat-send').isEnabled(), true);
   await input.blur();
-  const apps = phone.locator('#phone-apps-toggle');
-  assert.ok(await apps.evaluate(button => {
-    const rect = button.getBoundingClientRect();
-    const height = window.visualViewport?.height || innerHeight;
-    return rect.top > height / 2 && rect.bottom <= height + 1 &&
-      button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
-  }), 'The Chat app launcher is reachable at the bottom of the visible phone viewport');
+  await verifyDock();
   await screenshot(phone, 'phone-chat-tab');
   await connection.click();
   await verifyConnection();
