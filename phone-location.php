@@ -15,8 +15,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
-  <link rel="stylesheet" href="phone-location-v1.css?v=3">
-  <script src="phone-location-v1.js?v=3" defer></script>
+  <link rel="stylesheet" href="phone-location-v1.css?v=4">
+  <script src="phone-location-v1.js?v=4" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -53,6 +53,10 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <p id="phone-places-status" role="status"></p>
         <button type="button" id="phone-places-allow" class="secondary" hidden>Allow saved places</button>
         <button type="button" id="phone-places-stop" class="secondary" hidden>Stop allowing saved places</button>
+      </section>
+      <section id="phone-arrivals" class="phone-permission" aria-labelledby="phone-arrivals-title" hidden>
+        <h2 id="phone-arrivals-title">Arrival alerts</h2>
+        <ul id="phone-arrival-rules"></ul>
       </section>
       <button type="button" class="secondary" id="phone-retry" hidden>Check connection</button>
       <button type="button" class="text-button" id="phone-disconnect" hidden>Disconnect phone</button>

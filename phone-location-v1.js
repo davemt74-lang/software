@@ -69,6 +69,49 @@
     }
     withdrawals[scope] = storedWithdrawal(scope);
   }
+  const arrivalKey = 'arrival-withdrawal:';
+  const ruleIdPattern = /^[a-f0-9]{32}$/;
+  const arrivalWithdrawals = new Map();
+  function readArrivalWithdrawal(ruleId) {
+    const item = read('localStorage',arrivalKey + ruleId);
+    return item && item.rule_id === ruleId && typeof item.device_id === 'string'
+      && Number.isSafeInteger(item.generation) && Number.isSafeInteger(item.rule_version)
+      && ['decline_arrival','stop_arrival'].includes(item.action) ? item : null;
+  }
+  // Each rule has its own key so simultaneous withdrawals in different tabs remain independent.
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (!key.startsWith(prefix + arrivalKey)) continue;
+      const ruleId = key.slice((prefix + arrivalKey).length);
+      const intent = ruleIdPattern.test(ruleId) && readArrivalWithdrawal(ruleId);
+      if (intent) arrivalWithdrawals.set(ruleId,intent);
+    }
+  } catch { /* Offline withdrawals still work in memory when storage is disabled. */ }
+  function arrivalRules() {
+    return Array.isArray(device?.arrival_rules) ? device.arrival_rules.filter(rule =>
+      rule && ruleIdPattern.test(rule.id) && rule.generation === device.generation && Number.isSafeInteger(rule.version)
+      && typeof rule.place_name === 'string' && ['active','requested'].includes(rule.state)) : [];
+  }
+  function sameArrivalIntent(item,rule) {
+    return !!item && item.device_id === device?.id && item.generation === device.generation
+      && item.rule_id === rule.id && (item.rule_version === rule.version
+        || (item.action === 'decline_arrival' && rule.state === 'active' && rule.version === item.rule_version + 1));
+  }
+  function endingArrival(rule) {
+    return sameArrivalIntent(arrivalWithdrawals.get(rule.id),rule) || sameArrivalIntent(readArrivalWithdrawal(rule.id),rule);
+  }
+  function clearArrivalIntent(item) {
+    const stored = readArrivalWithdrawal(item.rule_id);
+    if (stored?.device_id === item.device_id && stored.generation === item.generation
+      && stored.rule_version === item.rule_version && stored.action === item.action) {
+      write('localStorage',arrivalKey + item.rule_id,null);
+    }
+    if (arrivalWithdrawals.get(item.rule_id) === item) arrivalWithdrawals.delete(item.rule_id);
+  }
+  function arrivalGrants() {
+    return Object.fromEntries(arrivalRules().filter(rule => rule.state === 'active' && !endingArrival(rule))
+      .map(rule => [rule.id,rule.version]));
+  }
   let available = false;
   let initial = true;
   let info = '';
@@ -122,6 +165,7 @@
     cancelWatch();
     clearPending();
     for (const scope of scopes) clearWithdrawal(scope);
+    for (const item of arrivalWithdrawals.values()) clearArrivalIntent(item);
     device = null;
     owner = '';
     available = true;
@@ -216,6 +260,7 @@
     const days = device?.history_retention_days;
     const period = days === 1 ? '1 day' : days + ' days';
     const canApprove = mobileActive(device) && available && secure && !!owner && !actionBusy && !dead && navigator.onLine !== false;
+    renderArrivals(connected,canApprove);
     const endingHistory = withdrawing('history');
     el('history').hidden = !connected || !Number.isSafeInteger(device?.history_version);
     let historyText = 'Off';
@@ -237,6 +282,97 @@
     el('places-allow').hidden = allowed || endingPlaces;
     el('places-allow').disabled = !canApprove;
     el('places-stop').hidden = !allowed || endingPlaces;
+  }
+  let arrivalSignature = '';
+  function renderArrivals(connected,canApprove) {
+    const rules = connected && mobileActive(device) ? arrivalRules() : [];
+    const rows = rules.map(rule => ({rule,ending:endingArrival(rule)}));
+    const signature = JSON.stringify([rows,owner,canApprove,actionBusy]);
+    if (arrivalSignature === signature) return;
+    arrivalSignature = signature;
+    el('arrivals').hidden = !rows.length;
+    const list = el('arrival-rules');
+    list.replaceChildren();
+    for (const {rule,ending} of rows) {
+      const row = document.createElement('li'), name = document.createElement('h3'), status = document.createElement('p');
+      row.dataset.ruleId = rule.id;
+      name.textContent = rule.place_name;
+      const who = owner || 'The account owner';
+      if (ending) status.textContent = 'Alerts stopped on this phone. Waiting for VP3 to confirm.';
+      else if (rule.state === 'active') status.textContent = who + ' can receive one private Agent Chat alert per visit here during this sharing session.';
+      else status.textContent = who + ' requests one private Agent Chat alert per visit here while this phone shares live.';
+      row.append(name,status);
+      if (!ending) {
+        const buttons = document.createElement('div');
+        buttons.className = 'phone-permission-buttons';
+        function add(action,label,secondary) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.arrivalAction = action;
+          button.textContent = label;
+          button.className = secondary ? 'secondary' : '';
+          button.disabled = action === 'accept_arrival' ? !canApprove : action === 'decline_arrival' && actionBusy;
+          button.addEventListener('click',() => actOnArrival(rule,action));
+          buttons.append(button);
+        }
+        if (rule.state === 'requested') {
+          add('accept_arrival','Allow arrival alerts',false);
+          add('decline_arrival','Decline',true);
+        } else add('stop_arrival','Stop arrival alerts',true);
+        row.append(buttons);
+      }
+      list.append(row);
+    }
+  }
+  function reportArrivalFailure(error) {
+    // A rule may have been removed while this phone was off-line. Check the credential and scope separately.
+    if ([403,404,409].includes(error.status)) {
+      info = 'The arrival alert changed. Checking this phone’s current permissions.';
+      schedulePoll();
+    } else reportFailure(error);
+  }
+  async function flushArrivalWithdrawals() {
+    if (!device || dead || pending || navigator.onLine === false) return;
+    for (const item of Array.from(arrivalWithdrawals.values())) {
+      const rule = arrivalRules().find(r => r.id === item.rule_id);
+      if (!rule || !sameArrivalIntent(item,rule)) { clearArrivalIntent(item); continue; }
+      // A lost acceptance reply can leave a local decline one revision behind the server's active grant.
+      const action = rule.state === 'active' ? 'stop_arrival' : 'decline_arrival';
+      const body = {device_id:item.device_id,generation:item.generation,rule_id:item.rule_id,rule_version:rule.version};
+      try {
+        accept(await request(action,body));
+        clearArrivalIntent(item);
+        info = '';
+      } catch (error) { reportArrivalFailure(error); break; }
+    }
+  }
+  function actOnArrival(rule,action) {
+    const current = arrivalRules().find(r => r.id === rule.id && r.version === rule.version && r.state === rule.state);
+    if (!current || pending || dead || endingArrival(rule) || (action === 'decline_arrival' && actionBusy)) return;
+    const body = {device_id:device.id,generation:device.generation,rule_id:rule.id,rule_version:rule.version};
+    if (action === 'accept_arrival') {
+      if (rule.state !== 'requested' || !owner || !secure || !available || actionBusy || navigator.onLine === false
+        || device.status !== 'approved' || !device.allow_location || !mobileActive(device)) return;
+      actionBusy = true;
+      render();
+      queue(async () => {
+        try {
+          if (!pending && !dead && available && navigator.onLine !== false && body.device_id === device?.id
+            && body.generation === device.generation && !endingArrival(rule)
+            && arrivalRules().some(r => r.id === rule.id && r.version === rule.version && r.state === 'requested')) {
+            accept(await request(action,body)); info = '';
+          }
+        } catch (error) { reportArrivalFailure(error); }
+        finally { actionBusy = false; render(); }
+      });
+      return;
+    }
+    if (action !== (rule.state === 'requested' ? 'decline_arrival' : 'stop_arrival')) return;
+    const intent = {...body,action};
+    write('localStorage',arrivalKey + rule.id,intent);
+    arrivalWithdrawals.set(rule.id,intent);
+    render();
+    queue(async () => { await flushArrivalWithdrawals(); render(); });
   }
   function grantScope(scope) {
     if (!device || !owner || !available || dead || !secure || actionBusy || pending || withdrawing(scope)
@@ -353,6 +489,7 @@
         else await sendEnd();
       }
       for (const scope of scopes) await flushWithdrawal(scope);
+      await flushArrivalWithdrawals();
     } catch (error) {
       const hadDevice = Boolean(device);
       if (!hadDevice && [401,403,404].includes(error.status)) {
@@ -415,13 +552,16 @@
         if (reportDelay(session) > 0) return;
         const sample = session.next;
         const sampleHistory = session.nextHistory;
+        const activeGrants = arrivalGrants();
+        const grants = Object.fromEntries(Object.entries(session.nextArrivals || {}).filter(([id,version]) => activeGrants[id] === version));
         session.next = null;
         if (!sample || !canCollect(session)) return;
         const time = Math.floor(sample.timestamp / 1000);
         if (!fresh(time) || time <= session.lastTime) return;
         const {latitude,longitude,accuracy} = sample.coords;
         const result = await request('fix',{device_id:session.id,generation:session.generation,latitude,longitude,accuracy,fix_at:time,
-          ...(sampleHistory && sampleHistory === historyVersion() ? {history_version:sampleHistory} : {})});
+          ...(sampleHistory && sampleHistory === historyVersion() ? {history_version:sampleHistory} : {}),
+          ...(Object.keys(grants).length ? {arrival_grants:grants} : {})});
         if (run !== session) return;
         session.lastTime = time;
         session.lastSent = performance.now();
@@ -464,6 +604,7 @@
         if (!session.next || position.timestamp >= session.next.timestamp) {
           session.next = position;
           session.nextHistory = historyVersion();
+          session.nextArrivals = arrivalGrants();
         }
         sendLatestFix(session);
       }, error => {
@@ -520,6 +661,14 @@
     available = false; info = ''; render();
   });
   window.addEventListener('storage',event => {
+    if (typeof event.key === 'string' && event.key.startsWith(prefix + arrivalKey)) {
+      const id = event.key.slice((prefix + arrivalKey).length);
+      if (!ruleIdPattern.test(id)) return;
+      const item = readArrivalWithdrawal(id);
+      if (item) arrivalWithdrawals.set(id,item);
+      else arrivalWithdrawals.delete(id);
+      render(); schedulePoll(); return;
+    }
     for (const scope of scopes) {
       if (event.key === prefix + scope + '-withdrawal') {
         withdrawals[scope] = storedWithdrawal(scope);
