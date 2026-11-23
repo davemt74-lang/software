@@ -1,5 +1,10 @@
 dialog.phone-camera-app { box-sizing:border-box; margin:1rem 0; padding:0; border:1px solid #cddbd6; border-radius:1rem; color:inherit; background:#fff; }
-dialog.phone-camera-app[open]:not(:modal) { display:block; position:relative; width:100%; max-width:100%; }
+dialog.phone-camera-app[open]:not(:modal) { display:block; position:relative; width:100%; max-width:100%; margin:0 0 .5rem; border-color:#8cb7a9; }
+.phone-camera-app[open]:not(:modal) .camera-heading { padding:.55rem .75rem .2rem; }
+.phone-camera-app[open]:not(:modal) .camera-stage { padding:0 .75rem .35rem; }
+.phone-camera-app[open]:not(:modal) .camera-toolbar { padding:.1rem .75rem .55rem; }
+.phone-camera-app[open]:not(:modal) #phone-camera-destination { display:none; }
+.phone-camera-app[open]:not(:modal) #phone-camera-close { margin-left:auto; min-width:44px; min-height:44px; }
 .phone-camera-app .camera-heading, .phone-camera-app .camera-toolbar { display:flex; align-items:center; gap:.65rem; padding:.75rem 1rem; }
 .phone-camera-app .camera-heading h2 { margin:0; font-size:1.15rem; line-height:1.1; }
 .phone-camera-app #phone-camera-destination { font-size:.75rem; }

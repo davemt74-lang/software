@@ -26,14 +26,14 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
     if (app) {
       if (visible && !app.open) {
         if (expanded) app.showModal();
-        else app.show();
+        else app.open = true; // Reveal the inline invitation without taking focus from the chat draft.
       } else if (!visible && app.open) app.close();
     }
     let message = notice;
     if (current && !message) {
       if (run) message = run.message;
-      else if (current.state === 'requested') message = 'Share video with ' + (owner || 'the account owner')
-        + ' in the private editor preview while this page is open.';
+      else if (current.state === 'requested') message = (owner || 'The account owner')
+        + ' requested this phone’s camera for the private editor preview.';
       else message = 'A private camera session is open on this phone. You can stop it here.';
       if (!run && current.state === 'requested' && !supported()) message = 'Camera sharing needs a secure browser with camera and WebRTC access.';
     }
@@ -43,7 +43,9 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
     if (app && expanded && preparing) message = 'Connecting to the private editor…';
     if (app && expanded && !supported()) message = 'Open Camera in a secure browser with camera and WebRTC access.';
     if (app) {
-      back.hidden = !expanded;
+      element('-title').textContent = current?.state === 'requested' && !run ? 'Camera request' : 'Camera';
+      back.hidden = !expanded && (!!current || !notice);
+      back.setAttribute('aria-label',expanded ? 'Close camera' : 'Dismiss camera message');
       lens.hidden = !expanded || !!run || !!opening || !!preparing || (!!current && current.state !== 'requested');
       lens.textContent = facing === 'environment' ? 'Rear camera' : 'Front camera';
       lens.setAttribute('aria-label',lens.textContent + '. Switch camera');
@@ -296,7 +298,10 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
   window.addEventListener('offline',() => { if (run) end('Camera sharing stopped while this phone is offline.'); else suspend(); });
   window.addEventListener('online',() => void poll());
   if (app) {
-    back.addEventListener('click',leave);
+    back.addEventListener('click',() => {
+      if (expanded) leave();
+      else if (!current) { notice = ''; render(); }
+    });
     app.addEventListener('cancel',event => { event.preventDefault(); leave(); });
     local.addEventListener('click',localPreview);
     lens.addEventListener('click',() => {
@@ -308,7 +313,17 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
   }
   start.addEventListener('click',startCamera);
   stop.addEventListener('click',() => { if (run || valid(current)) end('Camera sharing stopped.'); });
-  decline.addEventListener('click',() => { if (valid(current) && current.state === 'requested') end('Camera request declined.'); });
+  decline.addEventListener('click',() => {
+    if (!valid(current) || current.state !== 'requested' || run) return;
+    if (!expanded || !preview && !opening) { end('Camera request declined.'); return; }
+    // Declining the editor's request leaves a holder's independent local preview alone.
+    revision++;
+    saveStop({deviceId,sessionId:current.session_id,requestedOnly:true});
+    current = null;
+    notice = 'Camera request declined. Your preview stays on this phone.';
+    render();
+    void flushStop();
+  });
   setInterval(poll,2000);
   return {open,bind(id,name) {
     owner = name;

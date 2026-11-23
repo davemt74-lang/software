@@ -129,6 +129,9 @@ $mobile('fix',['generation'=>$mapStart['generation'],'fix_at'=>time()]+$fix);
 phone_chat_test($activity()===[] && count($activity(2))===1 && $activity(2)===[],'map with exact Chat origin confirms once in that Chat');
 $send('Disconnect my iPhone.');
 phone_chat_test(!vp3_phone_owner_v1($pdo,1,'state',[])['devices'],'disconnect closes the selected pairing');
+$emptyCamera=$send('Can you request a camera in chat?');
+phone_chat_test(str_contains($emptyCamera['answer'],'approve a phone') && $emptyCamera['actions'][0]['label']==='Show phone QR code',
+    'an owner without an approved phone gets the pairing action in Chat');
 
 // Drive two independent grants through the private dispatcher with an identically named phone in another account.
 $approvedPhone=static function(string $name,string $role,int $ownerId=1)use($pdo,$pair):array{
@@ -139,9 +142,33 @@ $approvedPhone=static function(string $name,string $role,int $ownerId=1)use($pdo
 };
 $holder=static fn(array $phone,string $action='status',array $input=[])=>vp3_phone_device_v1($pdo,$phone['token'],$action,
     ['device_id'=>$phone['device']['id']]+$input)['device'];
+$named=$approvedPhone('Dave','owner');
+$namedInput=['device_id'=>$named['device']['id']];
+$typed=$send('Can I use my iPhone as a camera?');
+phone_chat_test(str_contains($typed['answer'],'Dave') && !$typed['actions']
+    && vp3_phone_camera_holder_v1($pdo,$named['token'],'status',$namedInput)['camera']===null,
+    'an unnamed iPhone model offers the actual paired nickname without guessing the device');
+$send('Cancel');
+foreach (['Request a camera','Please request a camera from Dave.','Request my phone camera','Send a camera request to Dave','Request Dave’s camera'] as $command) {
+    $response=$send($command);
+    $request=vp3_phone_camera_holder_v1($pdo,$named['token'],'status',$namedInput)['camera'];
+    phone_chat_test(str_contains($response['answer'],'Camera requested from Dave') && $request['state']==='requested'
+        && $response['actions'][0]['label']==='Open private camera preview',$command.' requests the named phone and returns its private preview link');
+    vp3_phone_camera_holder_v1($pdo,$named['token'],'stop',$namedInput+['session_id'=>$request['session_id']]);
+}
+$send('Disconnect Dave');
 $iphone=$approvedPhone('iPhone','owner');
 $pixel=$approvedPhone('Pixel','guest');
 $otherAccount=$approvedPhone('iPhone','owner',2);
+$anyPhone=$send('Request a camera');
+phone_chat_test(str_contains($anyPhone['answer'],'Which phone?') && str_contains($anyPhone['answer'],'iPhone')
+    && str_contains($anyPhone['answer'],'Pixel') && !$anyPhone['actions'],
+    'a generic request with two paired phones displays a numbered choice');
+$send('Cancel');
+$unmatchedPhone=$send('Request a camera from Missing Phone');
+phone_chat_test(str_contains($unmatchedPhone['answer'],'could not find') && !$unmatchedPhone['actions'],
+    'an explicit missing nickname never selects a different phone');
+$activity();
 $send('Start sharing my iPhone’s location.');
 $send('Start sharing location from the guest phone.');
 $grants=[];

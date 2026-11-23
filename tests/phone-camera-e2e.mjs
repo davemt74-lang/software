@@ -208,7 +208,26 @@ try {
   const chatSchema=fileURLToPath(new URL('./fixtures/phone-camera-chat-shell.sql',import.meta.url));
   execFileSync(php,['-r',"(new PDO('sqlite:'.$argv[1]))->exec(file_get_contents($argv[2]));",
     path.join(temp,'data.sqlite'),chatSchema]);
-  const nextLink=previewLink(await sendChat(desktop,owner,message),origin);
+  const ownerChat=await desktop.newPage();
+  await ownerChat.goto('/chat.php?agent=system&conversation_id=8');
+  await ownerChat.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY?.phoneCameraScope?.()?.conversation===8);
+  async function typeCameraRequest(text) {
+    const sent=ownerChat.waitForResponse(response=>new URL(response.url()).pathname==='/api/chat.php'
+      && response.request().method()==='POST' && response.request().postDataJSON()?.action==='send'
+      && response.request().postDataJSON()?.message===text);
+    await ownerChat.locator('#chatInput').fill(text);
+    await ownerChat.locator('#sendChatButton').click();
+    return (await sent).json();
+  }
+  const choice=await typeCameraRequest('Request a camera');
+  assert.match(choice.answer,/Studio iPhone/i);
+  assert.match(choice.answer,/Crew Android/i);
+  await ownerChat.locator('#chatThread .message.assistant').filter({hasText:'Crew Android'}).last().waitFor();
+  assert.equal(success(await post(second.context,holderEndpoint,{action:'camera_status'}),'pending phone choice').camera,null);
+  const nextLink=previewLink(await typeCameraRequest('Studio iPhone'),origin);
+  await ownerChat.locator('#chatThread a').filter({hasText:'Open private camera preview'})
+    .and(ownerChat.locator('[href*="'+nextLink.searchParams.get('camera_session')+'"]')).waitFor();
+  await ownerChat.close();
   assert.notEqual(nextLink.searchParams.get('camera_session'),id,'restart uses a fresh session on the existing pairing');
   await selected.context.addCookies([{name:'PHPSESSID',value:owner.session,url:origin,httpOnly:true,sameSite:'Lax'}]);
   await selected.phone.goto('/chat.php?agent=system&conversation_id=9');

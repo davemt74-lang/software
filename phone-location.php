@@ -16,9 +16,9 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
   <link rel="stylesheet" href="phone-location-v1.css?v=6">
-  <link rel="stylesheet" href="phone-camera-app-v1.css?v=1">
+  <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
-  <script src="phone-camera-holder-v1.js?v=3" defer></script>
+  <script src="phone-camera-holder-v1.js?v=4" defer></script>
   <script src="phone-agent-chat-v1.js?v=1" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
   <script src="phone-location-v1.js?v=8" defer></script>
@@ -41,7 +41,6 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       <button id="phone-claim" type="submit">Request connection</button>
     </form>
     <div id="phone-controls" hidden>
-      <?php require __DIR__.'/includes/phone-camera-app-view.php'; ?>
       <p id="phone-consent"></p>
       <button type="button" id="phone-start" hidden>Start sharing</button>
       <button type="button" id="phone-stop" hidden>Stop sharing</button>
@@ -76,6 +75,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
 </main>
 <footer id="phone-dock" aria-label="Agent Chat and phone apps" hidden>
   <div class="phone-dock-inner">
+    <?php require __DIR__.'/includes/phone-camera-app-view.php'; ?>
     <div id="phone-apps" class="phone-apps" role="group" aria-label="Phone apps" hidden>
       <h2>Phone apps</h2>
       <button type="button" id="phone-app-camera"><span aria-hidden="true" class="phone-app-icon camera-icon"></span>Camera</button>

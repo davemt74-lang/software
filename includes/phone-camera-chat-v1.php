@@ -6,6 +6,15 @@ require_once __DIR__.'/phone-camera-v1.php';
 /** Explicit private camera commands. Camera capture on the phone always requires a separate holder action. */
 function vp3_phone_camera_chat_plan_v1(string $text): ?array
 {
+    $text=preg_replace('/^(?:can|could|may) (?:I|we) (?=request |use )/iu','',$text);
+    if (preg_match('/^request (?:a |the |my )?(?:private |phone |paired phone |connected phone )?camera(?: preview| stream)?(?: (?:from|on) (.+?))?(?: in (?:this )?chat)?$/iuD',$text,$match)
+        || preg_match('/^send (?:a |the )?camera request(?: to (.+))?$/iuD',$text,$match)
+        || preg_match('/^request (.+?)[’\x27]s camera(?: preview| stream)?$/iuD',$text,$match)
+        || preg_match('/^request ((?:my |the )?(?:iphone|android|pixel)) camera(?: preview| stream)?$/iuD',$text,$match)) {
+        $target=trim($match[1]??'');
+        if (preg_match('/^(?:(?:a|my|the) )?(?:paired|connected) phone$/iuD',$target)) $target='phone';
+        return ['action'=>'camera_request','target'=>$target];
+    }
     if (preg_match('/^use (.+?) as (?:a |the |my )?(?:private )?camera$/iuD',$text,$match)) {
         $target=trim($match[1]);
         return ['action'=>'camera_request','target'=>$target,
@@ -68,8 +77,18 @@ function vp3_phone_camera_chat_turn_v1(PDO $pdo,int $uid,int $aid,int $cid,array
     } elseif ($action==='camera_request' || $target!=='') {
         $devices=vp3_phone_owner_v1($pdo,$uid,'state',[])['devices'];
         $matches=vp3_phone_arrival_chat_phones_v1($devices,$target);
+        $unmatchedType=false;
+        if (!$matches && $action==='camera_request') {
+            $approved=array_values(array_filter($devices,static fn($d)=>$d['status']==='approved'));
+            if (!$approved) return ['Connect and approve a phone in Phone Tracking, then request its camera here.','connect'];
+            // Pairings record the holder's chosen name, which might not identify the hardware.
+            if (preg_match('/^(?:(?:the|my) )?(?:iphone|android|pixel)$/iuD',$target)) {
+                $unmatchedType=true;
+                $matches=$approved;
+            }
+        }
         if (!$matches) return ['I could not find an approved phone by that name. Ask me to list your phones.',''];
-        if (count($matches)>1) {
+        if (count($matches)>1 || $unmatchedType) {
             $phones=[];
             $options=[];
             foreach ($matches as $i=>$phone) {
@@ -77,7 +96,8 @@ function vp3_phone_camera_chat_turn_v1(PDO $pdo,int $uid,int $aid,int $cid,array
                 $phones[]=['id'=>$phone['id'],'name'=>$label];
                 $options[]=($i+1).'. '.$label.' ('.$phone['role'].', '.substr($phone['id'],-6).')';
             }
-            return ["Which phone? Reply with its number or name.\n".implode("\n",$options),'',
+            $question=$unmatchedType ? 'Which paired phone should I request?' : 'Which phone?';
+            return [$question." Reply with its number or name.\n".implode("\n",$options),'',
                 'camera_draft'=>['type'=>'camera','action'=>$action,'phones'=>$phones]];
         }
         $selected=$matches[0]['id'];

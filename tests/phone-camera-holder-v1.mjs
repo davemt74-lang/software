@@ -165,4 +165,21 @@ console.log('PASS Phone holder camera consent, send-only video, private answer, 
   const f=fixture({app:true}); f.bind(); await drain(); f.client.open(); f.click('local'); f.capture(); await drain();
   f.hide(); assert.equal(f.track.readyState,'ended','suspended local preview releases the lens');
 }
+{
+  const f=fixture({app:true}); f.bind(); await drain();
+  f.client.open(); f.click('local'); f.capture(); await drain();
+  f.request('incoming'); await f.tick();
+  assert.equal(f.el('title').textContent,'Camera request');
+  assert.match(f.el('status').textContent,/Map owner requested this phone/);
+  assert.equal(f.el('decline').hidden,false);
+  assert.ok(!f.ops.some(([action])=>action==='camera_start'||action==='camera_offer'));
+  f.click('decline'); await drain();
+  assert.equal(f.el('preview').hidden,false);
+  assert.equal(f.track.readyState,'live','rejecting incoming sharing preserves the local preview');
+  assert.equal(f.ops.at(-1)[1].requested_only,true);
+  f.request('second-request'); await f.tick(); f.click('start'); await drain();
+  assert.equal(f.ops.find(([action])=>action==='camera_start')[1].session_id,'second-request');
+  assert.equal(f.ops.filter(([action])=>action==='capture').length,1,'accepting reuses the still-local track');
+  assert.ok(!f.ops.some(([action])=>action==='camera_prepare'),'accept the owner’s exact request');
+}
 console.log('PASS On-phone camera launcher, local preview, independent share, stop, and late consent cleanup.');

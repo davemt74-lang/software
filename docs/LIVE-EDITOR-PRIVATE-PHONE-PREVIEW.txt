@@ -4,19 +4,25 @@ Back up the site and database, install this Cloud deploy over the existing VP3
 root, and run upgrade.php as an administrator. Use HTTPS on the editor and
 phone. Preserve config.php, private/, uploads/ and current environment settings.
 
-1. Open private Agent Chat and type “Use my iPhone as a camera.” Use the paired
-   name if you have several phones. A new phone can join via Connect Phone on
-   the tracking map. Location sharing is optional.
-2. On the paired iPhone, open its connection page or the same signed-in private
-   Agent Chat. Tap Start Sharing in the announcement and allow camera access.
-   On the owner's computer, open the private preview link in that Chat.
-   Move the phone and look for moving video with the Off air label.
-3. Tap Stop Sharing on the phone or stop the preview from the editor. To share
-   again, request the same phone from Chat and accept on the phone. The editor
-   should clear the old feed; the other paired phones remain idle.
-4. This milestone carries video only. The private preview has no audience,
-   recording or program output. Locking the phone, switching tabs, or losing
-   connectivity can interrupt camera access.
+From private Agent Chat, type “Request a camera” or “Request a camera from Dave.”
+Use the paired phone’s name. If several phones match, reply with its number or
+name. A phone can pair using the QR code in Phone Tracking.
+
+On the paired phone, keep the connection page open. A camera request appears
+above the message bar. Tap Start Sharing and allow camera access. On the
+owner’s computer, open the private camera preview link in the same Agent Chat.
+Tap Stop Sharing on the phone or in the editor to end the stream.
+
+The holder can also tap + beside the message field and choose Camera. Preview
+shows the selected lens locally. Start Sharing sends video to the private
+editor. Use Open phone chat on the owner’s Phone Tracking device card to find
+the linked conversation. Messages sent from the phone and the agent’s replies
+appear in that conversation.
+
+To let a particular phone save a place, select its card in Phone Tracking and
+enable Allow phone to add saved locations. On that phone, choose +, then Save
+location. Name the spot and tap Save current location. This uses one location
+reading. Live location sharing and history can stay off.
 
 Using the phone across different networks
 The phone and editor use WebRTC. Direct connections work where the network

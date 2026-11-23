@@ -13,6 +13,7 @@ try {
   page.setDefaultTimeout(5000);
   const device = {id:'d'.repeat(32),name:'Field phone',status:'pending',generation:1,allow_location:false,holder_can_save_places:false};
   const turns = [], sent = [], errors = [];
+  let camera = null;
   page.on('pageerror',error => errors.push(error.message));
   await page.route('https://phone.test/**',async route => {
     const {pathname} = new URL(route.request().url());
@@ -24,7 +25,12 @@ try {
     const q = route.request().postDataJSON();
     switch (q.action) {
       case 'status': return route.fulfill({json:{ok:true,device,owner_name:'Studio'}});
-      case 'camera_status': return route.fulfill({json:{ok:true,camera:null}});
+      case 'camera_status': return route.fulfill({json:{ok:true,camera}});
+      case 'camera_stop':
+        assert.equal(q.session_id,camera.session_id);
+        assert.equal(q.requested_only,true);
+        camera = null;
+        return route.fulfill({json:{ok:true,camera:null}});
       case 'chat_status':
         assert.equal(q.device_id,device.id);
         return route.fulfill({json:{ok:true,turns}});
@@ -62,6 +68,19 @@ try {
   await page.locator('#phone-location').evaluate(el => { el.scrollTop = 0; });
   const footer = await page.locator('#phone-dock').boundingBox();
   assert.ok(footer && Math.abs(footer.y + footer.height - 550) <= 2,'composer must stay at viewport bottom');
+  await input.fill('Unsent chat draft');
+  camera = {device_id:device.id,session_id:'a'.repeat(32),state:'requested',expires_at:Math.floor(Date.now()/1000)+60};
+  await wake();
+  const invitation = page.locator('#phone-dock #phone-camera');
+  await invitation.getByText('Studio requested this phone’s camera for the private editor preview.').waitFor();
+  assert.ok(await input.evaluate(el => el === document.activeElement),'incoming request preserves keyboard focus');
+  assert.equal(await input.inputValue(),'Unsent chat draft');
+  const accept = await invitation.locator('#phone-camera-start').boundingBox();
+  assert.ok(accept && accept.y >= 0 && accept.y + accept.height < 550,'the accept action is visible without scrolling');
+  await invitation.getByRole('button',{name:'Decline'}).click();
+  await invitation.getByText('Camera request declined.').waitFor();
+  await invitation.getByRole('button',{name:'Dismiss camera message'}).click();
+  await invitation.waitFor({state:'hidden'});
   device.status = 'revoked';
   await wake();
   await page.locator('#phone-dock').waitFor({state:'hidden'});
