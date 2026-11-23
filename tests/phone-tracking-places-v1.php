@@ -80,6 +80,10 @@ $otherPlace=$places('save_place',$otherInput+['name'=>'Studio','request_id'=>$sa
 places_test($otherPlace['id']!==$place['id'] && $otherPlace['latitude']===42.0 && $places('places',[],12)['places']===[$otherPlace],
     'two accounts can use an identical name and request identifier without sharing a place');
 $two=$places('save_place',array_replace($save,['name'=>'Second','request_id'=>$request()]))['place'];
+vp3_phone_sql_v1($db,'UPDATE vp3_phone_places_v1 SET created_at=? WHERE id=? AND owner_user_id=?',[$place['created_at'],$two['id'],11]);
+$tiedIds=[$two['id'],$place['id']];
+sort($tiedIds, SORT_STRING);
+places_test(array_column($places('places')['places'],'id')===$tiedIds,'places created in the same second have a stable ID ordering');
 vp3_phone_sql_v1($db,'UPDATE vp3_phone_places_v1 SET created_at=? WHERE id=? AND owner_user_id=?',[$place['created_at']+1,$two['id'],11]);
 places_test(array_column($places('places')['places'],'id')===[$two['id'],$place['id']],'places are listed newest first');
 $places('delete_place',['place_id'=>$two['id'],'request_id'=>$request()]);
@@ -90,6 +94,9 @@ $off=$holder('set_place_permission',['allow_saved_places'=>false,'place_permissi
 places_denied(409,fn()=>$holder('set_place_permission',$permission,$g),'late enable cannot revive a withdrawn grant');
 places_denied(403,fn()=>$places('save_place',array_replace($save,['name'=>'After withdrawal','request_id'=>$request()])),'a withdrawal takes effect before the next place save');
 $on=$holder('set_place_permission',['allow_saved_places'=>true,'place_permission_version'=>$off['place_permission_version']],$g);
+vp3_phone_sql_v1($db,'UPDATE vp3_phone_devices_v1 SET latitude=NULL WHERE id=?',[$phone['id']]);
+places_denied(409,fn()=>$places('save_place',array_replace($save,['name'=>'Partial fix','request_id'=>$request()])),'a partial legacy fix cannot be copied as a zero coordinate');
+vp3_phone_sql_v1($db,'UPDATE vp3_phone_devices_v1 SET latitude=? WHERE id=?',[$fix['latitude'],$phone['id']]);
 vp3_phone_sql_v1($db,'UPDATE vp3_phone_devices_v1 SET fix_at=? WHERE id=?',[time()-60,$phone['id']]);
 places_denied(409,fn()=>$places('save_place',array_replace($save,['name'=>'Old position','request_id'=>$request()])),'stale coordinates cannot become a named place');
 $off=$holder('stop',[],$g);

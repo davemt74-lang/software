@@ -570,8 +570,10 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
   assert.equal((await phoneApi(android, 'fix', { device_id: second.id, generation: beforeMove.generation,
     ...moved, fix_at: Math.floor(Date.now()/1000) })).status, 409);
   const secondOff = (await state()).find(d => d.id === second.id);
-  check(await ownerApi(desktop, owner, 'revoke', { device_id: second.id, generation: secondOff.generation }),
-    'remove the second test pairing');
+  const historyLink = (await fromChat('Show location history for Crew Pixel.')).actions[0].url;
+  await verifyLinkedPhoneHistory(desktop, historyLink, second.id, deviceId, async () =>
+    check(await ownerApi(desktop, owner, 'revoke', { device_id: second.id, generation: secondOff.generation }),
+      'remove the second test pairing'));
   await choosePhone(deviceId);
   await android.close();
   console.log('PASS Multiple phones: independent live GPS, isolated per-phone settings, named and ambiguous voice commands, both first-fix announcements, stale map, offline stop and Android reconnect.');
@@ -648,6 +650,9 @@ async function historyAndPlacesJourney({ desktop, owner, map, handset, phone, an
   await openHistory();
   await map.locator('#phone-history-retention').selectOption('7');
   await map.locator('#phone-history-request').click();
+  await phone.locator('#phone-history-accept').waitFor({state:'visible'});
+  await phone.locator('#phone-history-accept').scrollIntoViewIfNeeded();
+  await screenshot(phone, 'phone-history-consent');
   await phone.locator('#phone-history-accept').click();
   await phone.locator('#phone-history-stop').waitFor({state:'visible'});
   assert.deepEqual(await trail(guestId), []);
@@ -671,6 +676,8 @@ async function historyAndPlacesJourney({ desktop, owner, map, handset, phone, an
   // Keep the guest live-only. An ambiguous request needs a named source even if only one phone can save a place.
   await phone.locator('#phone-places-allow').click();
   await phone.locator('#phone-places-stop').waitFor({state:'visible'});
+  await phone.locator('#phone-places-stop').scrollIntoViewIfNeeded();
+  await screenshot(phone, 'phone-history-and-places-sharing');
   const draftPlaces = async () => (await places()).filter(p => p.name === 'Studio');
   const ambiguity = await send('Save this location as Studio.');
   assert.ok(ambiguity.answer.includes('Field iPhone') && ambiguity.answer.includes('Crew Pixel'), ambiguity.answer);
@@ -729,4 +736,40 @@ async function historyAndPlacesJourney({ desktop, owner, map, handset, phone, an
   });
   assert.deepEqual(await trail(deviceId), []);
   console.log('PASS Emulated iPhone and Android: opt-in trail, live-only guest, two-phone Chat clarification, saved Studio persists, expired/deleted points gone after refresh, both sensors remain live.');
+}
+
+async function verifyLinkedPhoneHistory(desktop, link, linkedId, remainingId, revoke) {
+  const page = await desktop.newPage();
+  const historyReads = [];
+  page.on('request', req => {
+    const url = new URL(req.url());
+    if (url.pathname === ownerEndpoint && url.searchParams.get('action') === 'history') {
+      historyReads.push(url.searchParams.get('device_id'));
+    }
+  });
+  const select = page.locator('#phone-history-device');
+  const assertUnavailable = async () => {
+    await eventually('Unavailable phone links must leave the trail unselected', async () =>
+      await select.inputValue() === '' && /linked phone is unavailable/i.test(await page.locator('#phone-history-status').innerText()));
+    assert.equal(await page.locator('#phone-history-points > li[data-fix-at], .phone-history-trail').count(), 0);
+  };
+  try {
+    await page.goto(link);
+    await eventually('The Chat link must open history for the named phone', async () =>
+      await select.isVisible() && await select.inputValue() === linkedId && historyReads.includes(linkedId));
+    await revoke();
+    await assertUnavailable();
+    assert.ok(historyReads.every(id => id === linkedId), 'Revoking a linked phone must not read another phone’s history');
+
+    const malformed = new URL(page.url());
+    malformed.searchParams.set('device_id', 'invalid');
+    historyReads.length = 0;
+    await page.goto(malformed.href);
+    await assertUnavailable();
+    assert.deepEqual(historyReads, []);
+    await select.selectOption(remainingId);
+    await eventually('Choosing an available phone must load its own trail', () => historyReads.includes(remainingId));
+  } finally {
+    await page.close();
+  }
 }

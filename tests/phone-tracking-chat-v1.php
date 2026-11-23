@@ -33,11 +33,32 @@ $pdo->exec("CREATE TABLE chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conv
 $pdo->exec("INSERT INTO users VALUES (1,'Owner',1),(2,'Another owner',1)");
 $pdo->exec("INSERT INTO user_agents VALUES (7,1,'Studio',1),(8,1,'Producer',1),(9,2,'Other',1)");
 $pdo->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES (1,1,7),(2,1,7),(3,1,8),(4,2,9)");
+// Start with an actual Phase 2 turn: old private replies have a map link without a selected phone.
+$pdo->exec("CREATE TABLE vp3_phone_chat_turns_v1 (
+    assistant_message_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, user_message_id BIGINT UNSIGNED NULL UNIQUE,
+    owner_user_id INT UNSIGNED NOT NULL, agent_id INT UNSIGNED NOT NULL, conversation_id BIGINT UNSIGNED NOT NULL,
+    request_hash CHAR(64) NULL UNIQUE, query_hash CHAR(64) NULL, prompt VARCHAR(300) NOT NULL,
+    answer TEXT NOT NULL, map_link VARCHAR(12) NOT NULL,
+    FOREIGN KEY (assistant_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE)");
+$pdo->prepare("INSERT INTO chat_messages(id,conversation_id,user_id,role,message,context_json) VALUES(1,1,1,'assistant',?,?)")
+    ->execute(['Private phone tracking update.','{"source":"private_phone_tracking"}']);
+$pdo->exec("INSERT INTO vp3_phone_chat_turns_v1(assistant_message_id,owner_user_id,agent_id,conversation_id,prompt,answer,map_link)
+    VALUES(1,1,7,1,'','Original private phone status.','map')");
+phone_chat_test(!vp3_phone_chat_schema_ready_v1($pdo),'the Phase 2 Chat schema requests an upgrade');
 vp3_phone_schema_v1($pdo); vp3_phone_chat_schema_v1($pdo); vp3_phone_chat_schema_v1($pdo);
 phone_chat_test(vp3_phone_chat_schema_ready_v1($pdo),'chat schema installs repeatedly');
 $user=current_user(); $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,7);
 $principal=vp3_agent_chat_principal_v380($user,$agent);
 $_SERVER['HTTP_X_VP3_WORKING_ATTENTION']=vp3_catch_up_page_binding_v1($user);
+$legacy=$pdo->query('SELECT * FROM vp3_phone_chat_turns_v1 WHERE assistant_message_id=1')->fetch();
+$oldRows=$pdo->query('SELECT * FROM chat_messages WHERE id=1')->fetchAll();
+$oldHistory=vp3_phone_chat_history_v1($pdo,$user,7,1,$oldRows,[]);
+$oldActions=json_decode($oldHistory[0]['context_json'],true,512,JSON_THROW_ON_ERROR)['actions'];
+phone_chat_test($legacy['map_device_id']===null && $oldHistory[0]['message']==='Original private phone status.'
+    && $oldActions===vp3_phone_chat_result_v1($legacy,'text')['actions']
+    && $oldActions[0]['url']==='/vp3/phone-tracking.php?agent=7&conversation_id=1',
+    'a real Phase 2 private turn migrates with a null device and hydrates its original map link');
 $send=static function(string $text,array $extra=[],bool $private=true)use($pdo,$user,$agent,$principal):array{
     return vp3_agent_chat_send_v2160($pdo,$user,$agent,$principal,$extra+['message'=>$text,'conversation_id'=>1,
         'agent_context'=>['user_agent_id'=>7],'reminder_request_id'=>bin2hex(random_bytes(16))],false,null,$private);
@@ -229,8 +250,13 @@ phone_chat_test(str_contains($history['answer'],'Approve it on the phone') && $f
     'history request is scoped to one phone and requires a separate holder decision');
 $holder($travel,'accept_history',['generation'=>$fromHolder['generation'],'history_version'=>$fromHolder['history_version']]);
 $status=$send('Show location history for Travel Android.');
+$url=$status['actions'][0]['url'];
+$turnRow=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id=?',[$status['assistant_message_id']])->fetch();
+$restored=vp3_phone_chat_history_v1($pdo,$user,7,1,[$turnRow],[]);
+$restoredUrl=json_decode($restored[0]['context_json'],true,512,JSON_THROW_ON_ERROR)['actions'][0]['url'];
 phone_chat_test(str_contains($status['answer'],'7 days') && str_contains($status['actions'][0]['url'],'panel=history')
-    && !str_contains(json_encode($status),'31.7044') && empty($status['phone_updates']),'history status and map link omit raw points');
+    && str_contains($url,'device_id='.$travel['device']['id']) && $restoredUrl===$url
+    && !str_contains(json_encode($status),'31.7044') && empty($status['phone_updates']),'both original and restored history links select the exact phone without raw points');
 $send('Stop location history for Travel Android.');
 phone_chat_test($holder($travel)['history_state']==='off' && count($places())===1,'stopping history leaves saved places intact');
 $erased=$send('Delete location history for Travel Android.');
@@ -238,3 +264,23 @@ phone_chat_test(str_contains($erased['answer'],'Deleted') && count($places())===
 $general=json_encode($pdo->query("SELECT message,context_json FROM chat_messages WHERE context_json IS NOT NULL")->fetchAll());
 phone_chat_test(!str_contains($general,'Studio') && !str_contains($general,'Field iPhone') && !str_contains($general,'32.3012'),
     'model history and general Chat indexes contain only content-free markers');
+$holder($field,'stop',['generation'=>$holder($field)['generation']]);
+$brackets=$approvedPhone('Field <iPhone>','owner');
+$commandName=$approvedPhone('Stop sharing from Travel Android','guest');
+foreach ([$brackets,$commandName] as $p) {
+    $g=$holder($p,'start',['generation'=>$holder($p)['generation']])['generation'];
+    $holder($p,'fix',['generation'=>$g,'fix_at'=>time()]+$fix);
+    $allowPlaces($p,true);
+}
+$labelQuestion=$send('Save this location as Garage.');
+phone_chat_test(str_contains($labelQuestion['answer'],'Field iPhone') && !str_contains($labelQuestion['answer'],'<iPhone>'),
+    'the choice question offers the display-safe phone label');
+$byLabel=$send('Field iPhone');
+phone_chat_test(str_contains($byLabel['answer'],'Saved “Garage”') && count($places())===2,'the displayed label resolves even when the original nickname contains markup');
+$send('Save this location as Workshop.');
+$byCommand=$send('Stop sharing from Travel Android');
+phone_chat_test(str_contains($byCommand['answer'],'Saved “Workshop”') && $holder($travel)['location_state']==='live'
+    && count($places())===3,'a pending phone name takes precedence over an unrelated executable Chat command');
+$send('Save this location as Booth.');
+$byRaw=$send('Field <iPhone>');
+phone_chat_test(str_contains($byRaw['answer'],'Saved “Booth”') && count($places())===4,'the raw nickname also selects the offered device');

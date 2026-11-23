@@ -99,11 +99,15 @@ window.vp3PhoneArchiveV1 = function ({
     approvedPhones = approved;
     if (panel === 'devices' || !available()) return;
     const d = selected();
-    const choices = JSON.stringify(approved.map(phone => [phone.id,phone.name]));
+    const choices = JSON.stringify([Boolean(d),approved.map(phone => [phone.id,phone.name])]);
     if (choices !== deviceOptions) {
       for (const select of [historyDevice,placeDevice]) {
         select.replaceChildren(...approved.map(phone => new Option(phone.name,phone.id)));
-        if (!approved.length) select.add(new Option('No connected phones',''));
+        if (!d) {
+          const prompt = new Option(approved.length ? 'Choose a phone' : 'No connected phones','');
+          prompt.disabled = true;
+          select.add(prompt);
+        }
         select.disabled = !approved.length;
       }
       deviceOptions = choices;
@@ -139,7 +143,7 @@ window.vp3PhoneArchiveV1 = function ({
       stop.hidden = !(active || pending);
       stop.disabled = busy || writing();
       stop.textContent = pending ? 'Cancel request' : 'Stop history';
-      byId('phone-history-status').textContent = !d ? 'Select a connected phone to view its history.' :
+      byId('phone-history-status').textContent = !d ? (approved.length ? 'The linked phone is unavailable. Choose a phone to view its history.' : 'Connect a phone to view its history.') :
         !d.allow_location ? 'Location access is disabled for this phone.' :
         pending ? 'Waiting for '+d.name+' to approve history.' :
         active ? 'History enabled for '+d.name+'. Each point is kept for '+formatDays(d.history_retention_days)+'.' :
@@ -150,7 +154,7 @@ window.vp3PhoneArchiveV1 = function ({
       const allowed = canSave(d);
       placeName.disabled = !allowed || busy || writing();
       byId('phone-place-save').disabled = !allowed || !placeName.value.trim() || busy || writing();
-      byId('phone-place-source').textContent = !d ? 'Connect a phone to save its current location.' :
+      byId('phone-place-source').textContent = !d ? (approved.length ? 'Choose a phone to save its current location.' : 'Connect a phone to save its current location.') :
         effectiveState(d) !== 'live' ? 'A fresh live location from '+d.name+' is required.' :
         !d.allow_saved_places ? 'The holder of '+d.name+' must allow saved places on the phone.' :
         'Save the current location from '+d.name+' to this account.';

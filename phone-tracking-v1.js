@@ -22,8 +22,8 @@
   let devices = [];
   let selectedId = '';
   let followId = '';
-  const requestedDevice = new URLSearchParams(location.search).get('device_id');
-  let resumeSelection = /^[a-f0-9]{32}$/.test(requestedDevice || '') ? {id:requestedDevice,follow:false} : null;
+  let linkedDevice = new URLSearchParams(location.search).get('device_id');
+  let resumeSelection = null;
   let choiceToRevoke = null;
   let requestNotice = null;
   let expires = 0;
@@ -214,6 +214,8 @@
     }
   }
   function selectDevice(id) {
+    if (!devices.some(d => d.id === id && d.status === 'approved')) return;
+    linkedDevice = null;
     if (id !== selectedId) followId = '';
     selectedId = id;
     if (selected()) focusPoint(selected());
@@ -368,7 +370,9 @@
         status.textContent = '';
       }
     }
-    if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
+    // A link from private Chat refers to one specific phone, even after access changes.
+    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && d.allow_location)?.id || '';
+    else if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
     if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
     renderList(approved);
     renderDetail(selected());
@@ -543,7 +547,7 @@
         if (result.device && ['approved','pending'].includes(result.device.status)) devices[index] = result.device;
         else devices.splice(index,1);
       }
-      if (action === 'approve') selectedId = device.id;
+      if (action === 'approve') { linkedDevice = null; selectedId = device.id; }
       if (action === 'request_start' && result.device) requestNotice = {id:result.device.id,generation:result.device.generation};
       if (action !== 'set_preferences') {
         const messages = {approve:device.name+' approved.',deny:'Connection request denied for '+device.name+'.',request_start:'',stop:'Sharing stopped for '+device.name+'.',revoke:device.name+' disconnected.'};

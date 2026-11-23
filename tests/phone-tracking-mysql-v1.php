@@ -35,9 +35,11 @@ function phone_test_dispatch(PDO $db, array $job): array
             vp3_phone_schema_v1($db);
             return ['status'=>200,'ready'=>vp3_phone_schema_ready_v1($db)];
         }
-        $result = $principal === 'owner'
-            ? vp3_phone_owner_v1($db, $identity, $action, $input)
-            : vp3_phone_device_v1($db, $identity, $action, $input);
+        $result = match ($principal) {
+            'owner' => vp3_phone_owner_v1($db,$identity,$action,$input),
+            'places' => vp3_phone_places_owner_v1($db,$identity,$action,$input),
+            'device' => vp3_phone_device_v1($db,$identity,$action,$input),
+        };
         return ['status'=>200, 'data'=>$result];
     } catch (PDOException $exception) {
         throw $exception;
@@ -207,6 +209,29 @@ try {
         && $liveAgain['location_state'] === 'live' && $liveAgain['fix_at'] === $lateFix['fix_at']
         && $liveAgain['history_state'] === 'off' && !vp3_phone_history_read_v1($db,1,$deviceId)['points'],
         'concurrent delete and upload, then a delayed upload, leave the trail empty and live GPS working');
+
+    $permission = vp3_phone_device_v1($db,$token,'set_place_permission',$scope + [
+        'place_permission_version'=>$liveAgain['place_permission_version'],'allow_saved_places'=>true
+    ])['device'];
+    $save = ['places',1,'save_place',$input($permission['generation']) + ['name'=>'Studio']];
+    $sameSave = phone_test_race($save,$save);
+    $savedPlaces = fn() => vp3_phone_places_owner_v1($db,1,'places')['places'];
+    phone_test_check(array_column($sameSave,'status') === [200,200] && count($savedPlaces()) === 1
+        && $sameSave[0]['data']['place']['id'] === $sameSave[1]['data']['place']['id']
+        && (int)$sameSave[0]['data']['duplicate'] + (int)$sameSave[1]['data']['duplicate'] === 1,
+        'simultaneous saved place retries create one place and one receipt on MySQL');
+    $withdraw = ['device',$token,'set_place_permission',$scope + [
+        'place_permission_version'=>$permission['place_permission_version'],'allow_saved_places'=>false
+    ]];
+    $newPlace = ['places',1,'save_place',$input($permission['generation']) + ['name'=>'At withdrawal']];
+    [$withdrawal,$atWithdrawal] = phone_test_race($withdraw,$newPlace);
+    $nextPlace = ['places',1,'save_place',$input($permission['generation']) + ['name'=>'After withdrawal']];
+    $afterWithdrawal = phone_test_dispatch($db,$nextPlace);
+    phone_test_check($withdrawal['status'] === 200 && !$withdrawal['data']['device']['allow_saved_places']
+        && in_array($atWithdrawal['status'],[200,403],true) && $afterWithdrawal['status'] === 403
+        && count($savedPlaces()) === ($atWithdrawal['status'] === 200 ? 2 : 1)
+        && in_array('Studio',array_column($savedPlaces(),'name'),true),
+        'concurrent withdrawal and save respect commit order; existing places survive and subsequent saves are rejected');
     $owner('stop',$input($live['generation']));
     foreach (['account.access','chat.access'] as $permission) {
         $fix = $startWithFix();
@@ -267,7 +292,10 @@ try {
     $invite = $owner('invite', ['request_id'=>$request()])['invite'];
     $phone = vp3_phone_device_v1($db, '', 'claim', ['invite'=>$invite, 'name'=>'Deletion check']);
     $db->exec('DELETE FROM users WHERE id=1');
-    $tables = ['vp3_phone_invites_v1','vp3_phone_devices_v1','vp3_phone_requests_v1'];
+    $tables = [
+        'vp3_phone_invites_v1', 'vp3_phone_devices_v1', 'vp3_phone_requests_v1',
+        'vp3_phone_history_points_v1', 'vp3_phone_places_v1',
+    ];
     foreach ($tables as $table) {
         phone_test_check(!(int)$db->query("SELECT COUNT(*) FROM $table WHERE owner_user_id=1")->fetchColumn(),
             "deleting the account removes its rows from $table");

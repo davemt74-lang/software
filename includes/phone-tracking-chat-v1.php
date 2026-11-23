@@ -13,10 +13,17 @@ function vp3_phone_chat_schema_v1(PDO $pdo): void
         assistant_message_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, user_message_id BIGINT UNSIGNED NULL UNIQUE,
         owner_user_id INT UNSIGNED NOT NULL, agent_id INT UNSIGNED NOT NULL, conversation_id BIGINT UNSIGNED NOT NULL,
         request_hash CHAR(64) NULL UNIQUE, query_hash CHAR(64) NULL, prompt VARCHAR(300) NOT NULL,
-        answer TEXT NOT NULL, map_link VARCHAR(12) NOT NULL,
+        answer TEXT NOT NULL, map_link VARCHAR(12) NOT NULL, map_device_id CHAR(32) NULL,
         FOREIGN KEY (assistant_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE
     )".$options);
+    if (!schema_metadata_column_exists($pdo,'vp3_phone_chat_turns_v1','map_device_id')) {
+        try {
+            $pdo->exec('ALTER TABLE vp3_phone_chat_turns_v1 ADD COLUMN map_device_id CHAR(32) NULL');
+        } catch (PDOException $error) {
+            if (!schema_metadata_column_exists($pdo,'vp3_phone_chat_turns_v1','map_device_id')) throw $error;
+        }
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_chat_grants_v1 (
         owner_user_id INT UNSIGNED NOT NULL, device_id CHAR(32) NOT NULL, generation BIGINT NOT NULL,
         agent_id INT UNSIGNED NOT NULL, conversation_id BIGINT UNSIGNED NOT NULL,
@@ -36,7 +43,7 @@ function vp3_phone_chat_schema_ready_v1(PDO $pdo): bool
 {
     try {
         $pdo->query('SELECT t.assistant_message_id,t.user_message_id,t.owner_user_id,t.agent_id,t.conversation_id,
-            t.request_hash,t.query_hash,t.prompt,t.answer,t.map_link,g.pending,g.device_id,g.generation,
+            t.request_hash,t.query_hash,t.prompt,t.answer,t.map_link,t.map_device_id,g.pending,g.device_id,g.generation,
             p.place_name,p.candidates_json,p.expires_at
             FROM vp3_phone_chat_turns_v1 t JOIN vp3_phone_chat_grants_v1 g ON g.owner_user_id=t.owner_user_id
             JOIN vp3_phone_chat_place_choices_v1 p ON p.assistant_message_id=t.assistant_message_id
@@ -104,7 +111,7 @@ function vp3_phone_chat_plan_v1(mixed $text): ?array
 
 function vp3_phone_chat_label_v1(array $device): string
 {
-    $name = trim(preg_replace('/[\p{C}<>]/u',' ',(string)$device['name']) ?? '');
+    $name = trim(preg_replace('/[\p{C}<>\s]+/u',' ',(string)$device['name']) ?? '');
     // A user-controlled device label must never turn the chat summary into a coordinate channel.
     if (!$name || preg_match('/[-+]?\d{1,3}\.\d+\s*[,; ]\s*[-+]?\d{1,3}\.\d+/u',$name)) return 'Phone';
     return mb_substr($name,0,48);
@@ -167,11 +174,12 @@ function vp3_phone_chat_authorize_v1(PDO $pdo,array $user,array $principal,array
     if (!has_permission('account.access',$live)) throw new RuntimeException('Phone tracking access changed.',403);
 }
 
-function vp3_phone_chat_actions_v1(string $mapLink,int $aid,int $cid): array
+function vp3_phone_chat_actions_v1(string $mapLink,int $aid,int $cid,?string $deviceId=null): array
 {
     if ($mapLink==='') return [];
     $path='/phone-tracking.php?'.http_build_query(array_filter(['agent'=>$aid,'conversation_id'=>$cid,
-        'connect'=>$mapLink==='connect'?1:null,'panel'=>in_array($mapLink,['history','places'],true)?$mapLink:null],static fn($v)=>$v!==null));
+        'connect'=>$mapLink==='connect'?1:null,'panel'=>in_array($mapLink,['history','places'],true)?$mapLink:null,
+        'device_id'=>$deviceId],static fn($v)=>$v!==null));
     $label=match($mapLink) {'connect'=>'Show phone QR code','history'=>'Open location history','places'=>'Open saved places',default=>'Open tracking map'};
     return [['type'=>'open_url','label'=>$label,'url'=>url($path)]];
 }
@@ -182,7 +190,7 @@ function vp3_phone_chat_result_v1(array $row,string $mode): array
     return ['ok'=>true,'conversation_id'=>$cid,'agent_id'=>$aid,'user_message_id'=>(int)$row['user_message_id'],
         'assistant_message_id'=>(int)$row['assistant_message_id'],'answer'=>$row['answer'],
         'phone_tracking_context'=>['owner_user_id'=>(int)$row['owner_user_id'],'agent_id'=>$aid,'conversation_id'=>$cid],
-        'sources'=>[],'actions'=>vp3_phone_chat_actions_v1($row['map_link'],$aid,$cid),'media'=>[],
+        'sources'=>[],'actions'=>vp3_phone_chat_actions_v1($row['map_link'],$aid,$cid,$row['map_device_id']),'media'=>[],
         'input_mode'=>$mode,'execution'=>['mode'=>'cloud','status'=>'completed']];
 }
 
@@ -193,7 +201,7 @@ function vp3_phone_chat_announcement_v1(array $turn): array
 }
 
 function vp3_phone_chat_store_v1(PDO $pdo,int $uid,int $aid,int $cid,string $prompt,string $answer,string $link,
-    ?string $requestHash=null,?string $queryHash=null): array
+    ?string $requestHash=null,?string $queryHash=null,?string $deviceId=null): array
 {
     $message=$pdo->prepare('INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json) VALUES(?,?,?,?,?)');
     $context='{"source":"private_phone_tracking"}';
@@ -205,11 +213,11 @@ function vp3_phone_chat_store_v1(PDO $pdo,int $uid,int $aid,int $cid,string $pro
     $message->execute([$cid,$uid,'assistant','Private phone tracking update.',$context]);
     $assistantId=(int)$pdo->lastInsertId();
     vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_chat_turns_v1 (assistant_message_id,user_message_id,owner_user_id,
-        agent_id,conversation_id,request_hash,query_hash,prompt,answer,map_link) VALUES(?,?,?,?,?,?,?,?,?,?)',
-        [$assistantId,$userMessageId,$uid,$aid,$cid,$requestHash,$queryHash,$prompt,$answer,$link]);
+        agent_id,conversation_id,request_hash,query_hash,prompt,answer,map_link,map_device_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+        [$assistantId,$userMessageId,$uid,$aid,$cid,$requestHash,$queryHash,$prompt,$answer,$link,$deviceId]);
     vp3_phone_sql_v1($pdo,'UPDATE chat_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?',[$cid,$uid]);
     return ['owner_user_id'=>$uid,'agent_id'=>$aid,'conversation_id'=>$cid,'user_message_id'=>$userMessageId,'assistant_message_id'=>$assistantId,
-        'answer'=>$answer,'map_link'=>$link];
+        'answer'=>$answer,'map_link'=>$link,'map_device_id'=>$deviceId];
 }
 
 /** Only one originating private Chat can claim the first fix for a given grant. */
@@ -254,14 +262,23 @@ function vp3_phone_chat_map_start_v1(PDO $pdo,array $user,array $input): array
 }
 
 /** A later user turn supersedes a pending choice, while automatic Agent announcements do not. */
-function vp3_phone_chat_place_choice_v1(PDO $pdo,int $uid,int $aid,int $cid): ?array
+function vp3_phone_chat_place_choice_v1(PDO $pdo,int $uid,int $aid,int $cid,?string $requestHash=null,?string $queryHash=null): ?array
 {
-    $choice=vp3_phone_sql_v1($pdo,"SELECT p.* FROM vp3_phone_chat_place_choices_v1 p
+    $sql="SELECT p.assistant_message_id,p.place_name,p.candidates_json,0 AS replay FROM vp3_phone_chat_place_choices_v1 p
         WHERE p.owner_user_id=? AND p.agent_id=? AND p.conversation_id=? AND p.expires_at>?
         AND NOT EXISTS (SELECT 1 FROM chat_messages m WHERE m.conversation_id=p.conversation_id
-            AND m.role='user' AND m.id>p.assistant_message_id)",[$uid,$aid,$cid,time()])->fetch(PDO::FETCH_ASSOC);
+            AND m.role='user' AND m.id>p.assistant_message_id)";
+    $params=[$uid,$aid,$cid,time()];
+    if ($requestHash!==null) {
+        // A completed choice no longer has a pending row. Its exact private retry still resolves via its receipt.
+        $sql.=' UNION ALL SELECT assistant_message_id,NULL,NULL,1 AS replay FROM vp3_phone_chat_turns_v1
+            WHERE request_hash=? AND query_hash=? AND owner_user_id=? AND agent_id=? AND conversation_id=?
+            ORDER BY replay DESC LIMIT 1';
+        array_push($params,$requestHash,$queryHash,$uid,$aid,$cid);
+    }
+    $choice=vp3_phone_sql_v1($pdo,$sql,$params)->fetch(PDO::FETCH_ASSOC);
     if (!$choice) return null;
-    $choice['phones']=json_decode($choice['candidates_json'],true,512,JSON_THROW_ON_ERROR);
+    if (!(int)$choice['replay']) $choice['phones']=json_decode($choice['candidates_json'],true,512,JSON_THROW_ON_ERROR);
     return $choice;
 }
 
@@ -269,7 +286,7 @@ function vp3_phone_chat_choice_matches_v1(array $choice,string $reply): array
 {
     $name=vp3_phone_chat_name_key_v1($reply);
     $match=static fn(string $key): array => array_values(array_filter($choice['phones'],static fn($phone): bool =>
-        vp3_phone_chat_name_key_v1($phone['name'])===$key));
+        vp3_phone_chat_name_key_v1($phone['name'])===$key || vp3_phone_chat_name_key_v1(vp3_phone_chat_label_v1($phone))===$key));
     return $match($name) ?: $match(rtrim($name,'.!?'));
 }
 
@@ -359,7 +376,7 @@ function vp3_phone_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,array $pl
             'requested'=>'is waiting for approval on the phone for '.$duration,
             default=>'is off'
         };
-        return ['Location history for '.$name.' '.$state.'. Open History to review any retained points.','history'];
+        return ['Location history for '.$name.' '.$state.'. Open History to review any retained points.','history','device_id'=>$device['id']];
     }
     if (in_array($action,['request_history','stop_history','delete_history'],true)) {
         $input=['device_id'=>$device['id'],'generation'=>$device['generation'],'history_version'=>$device['history_version'],'request_id'=>$key];
@@ -375,7 +392,7 @@ function vp3_phone_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,array $pl
             'stop_history'=>'Location history stopped for '.$name.'. Existing points expire on schedule.',
             'delete_history'=>'Deleted the retained location history for '.$name.' and stopped saving new points.'
         };
-        return [$answer,'history','announce'=>true];
+        return [$answer,'history','device_id'=>$device['id'],'announce'=>true];
     }
     $result=vp3_phone_owner_v1($pdo,$uid,$action,['device_id'=>$device['id'],'generation'=>(int)$device['generation'],'request_id'=>$key]);
     $device=$result['device'];
@@ -401,30 +418,34 @@ function vp3_phone_chat_route_v1(PDO $pdo,array $user,array $principal,array $in
 {
     $text=$input['message']??null;
     $plan=vp3_phone_chat_plan_v1($text);
-    if ($plan!==null && empty($plan['implicit'])) return $plan;
     $cid=(int)($input['conversation_id']??0);
-    if ($plan===null && ($cid<1 || !is_string($text) || trim($text)==='' || mb_strlen($text)>52)) return null;
-    if (!empty($input['initiative_reply']) || !vp3_phone_chat_page_v1($user) || !vp3_phone_schema_ready_v1($pdo)) return null;
+    $uid=(int)$user['id']; $aid=(int)($principal['agent_id']??0);
+    $key=$input['idempotency_key']??$input['reminder_request_id']??null;
+    $requestHash=is_string($key)?hash('sha256',json_encode([$uid,$aid,$key],JSON_THROW_ON_ERROR)):null;
+    $ownerPage=empty($input['initiative_reply']) && vp3_phone_chat_page_v1($user);
     try {
-        $uid=(int)$user['id']; $aid=(int)$principal['agent_id'];
-        $key=$input['idempotency_key']??$input['reminder_request_id']??null;
-        if (!vp3_phone_chat_schema_ready_v1($pdo)) return null;
-        // A successful selection consumes its prompt and a disconnect removes its phone. Their retries still use the private receipt.
-        if (is_string($key)) {
-            $saved=vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_phone_chat_turns_v1 WHERE request_hash=? AND owner_user_id=? AND agent_id=?',
-                [hash('sha256',json_encode([$uid,$aid,$key],JSON_THROW_ON_ERROR)),$uid,$aid]);
-            if ($saved->fetchColumn()) {
+        if ($ownerPage && $cid>0 && is_string($text) && trim($text)!=='' && mb_strlen($text)<=52) {
+            // Check the pending question before commands: a holder can even name their phone "Stop sharing".
+            // The normal short-message path only looks up the scoped question and exact receipt by index.
+            try { $choice=vp3_phone_chat_place_choice_v1($pdo,$uid,$aid,$cid,$requestHash,hash('sha256',trim($text))); }
+            catch (PDOException $e) {
+                if (vp3_phone_chat_schema_ready_v1($pdo)) throw $e;
+                $choice=null;
+            }
+            if ($choice && ((int)$choice['replay'] || vp3_phone_chat_choice_matches_v1($choice,$text))) {
                 vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
-                return $plan??['action'=>'place_choice','target'=>$text,'choice_id'=>0];
+                return ['action'=>'place_choice','target'=>$text,'choice_id'=>(int)$choice['assistant_message_id']];
             }
         }
-        if ($plan===null) {
-            $choice=vp3_phone_chat_place_choice_v1($pdo,$uid,$aid,$cid);
-            if (!$choice || !vp3_phone_chat_choice_matches_v1($choice,$text)) return null;
-            vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
-            return ['action'=>'place_choice','target'=>$text,'choice_id'=>(int)$choice['assistant_message_id']];
-        }
+        if ($plan===null || empty($plan['implicit'])) return $plan;
+        if (!$ownerPage || !vp3_phone_schema_ready_v1($pdo) || !vp3_phone_chat_schema_ready_v1($pdo)) return null;
         vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
+        // An implicit denial or disconnect can be retried after the phone has disappeared from the roster.
+        if ($requestHash!==null) {
+            $saved=vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_phone_chat_turns_v1 WHERE request_hash=? AND owner_user_id=? AND agent_id=?',
+                [$requestHash,$uid,$aid]);
+            if ($saved->fetchColumn()) return $plan;
+        }
         $devices=vp3_phone_owner_v1($pdo,(int)$user['id'],'state',[])['devices'];
         return vp3_phone_chat_matches_v1($devices,$plan['target'])?$plan:null;
     } catch (RuntimeException $e) {
@@ -474,7 +495,7 @@ function vp3_phone_chat_send_v1(PDO $pdo,array $user,?array $agent,array $princi
         [$answer,$mapLink]=$turn;
         // A private phone label or a quoted coordinate must never become shared Chat history.
         $prompt=preg_match('/[-+]?\d{1,3}\.\d+\s*[,; ]\s*[-+]?\d{1,3}\.\d+/u',$query)?'Phone tracking request.':$query;
-        $saved=vp3_phone_chat_store_v1($pdo,$uid,$aid,$cid,$prompt,$answer,$mapLink,$requestHash,$queryHash);
+        $saved=vp3_phone_chat_store_v1($pdo,$uid,$aid,$cid,$prompt,$answer,$mapLink,$requestHash,$queryHash,$turn['device_id']??null);
         vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_chat_place_choices_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=?',[$uid,$aid,$cid]);
         if (isset($turn['choose_place'])) {
             $choice=$turn['choose_place'];
@@ -560,7 +581,7 @@ function vp3_phone_chat_history_v1(PDO $pdo,array $user,int $aid,int $cid,array 
             $i=$markers[$assistant];
             $rows[$i]['message']=$record['answer'];
             $rows[$i]['context_json']=json_encode(['source'=>'private_phone_tracking',
-                'actions'=>vp3_phone_chat_actions_v1($record['map_link'],$aid,$cid)],JSON_THROW_ON_ERROR);
+                'actions'=>vp3_phone_chat_actions_v1($record['map_link'],$aid,$cid,$record['map_device_id'])],JSON_THROW_ON_ERROR);
         }
     }
     return $rows;
