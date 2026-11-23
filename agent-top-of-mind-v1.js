@@ -13,7 +13,7 @@
   const specialistNames={gmail:'Gmail',planning:'Planning & Scheduling',tasks:'Tasks & Lists',
     media:'Media & Entertainment',curiosity:'Curiosity',transcripts:'Transcriptions',canvas:'Canvas Apps',casual:'Casual check-ins',research:'Research',brainstorm:'Opportunity assessment','image-generator':'Image Generator',
     coding:'Coding Agent',development:'Agent Development',mission:'Missions','connected-sites':'Connected Sites',
-    marketing:'Marketing',commerce:'Commerce',profile:'Profile'};
+    marketing:'Marketing',commerce:'Commerce',profile:'Profile',location:'Location Specialist'};
   const handoffNames={...specialistNames,brainstorm:'ob1',transcripts:'Transcripts',commerce:'Commerce'};
   function handoffLabel(handoff){
     const known=id=>typeof id==='string'&&Object.hasOwn(handoffNames,id);
@@ -26,7 +26,7 @@
     waiting_agent:'Waiting for another agent',waiting_owner:'Waiting for your review',waiting_reply:'Awaiting your reply',
     waiting_retry:'Waiting to retry',ready:'Ready to review',ready_to_report:'Ready to report',completed:'Complete',
     assessed:'Assessment complete',queued:'Queued',scheduled:'Scheduled',checked:'Checked',idle:'Idle',paused:'Paused',
-    interrupted:'Interrupted',blocked:'Blocked',failed:'Failed',unavailable:'Unavailable',cancelled:'Cancelled',
+    armed:'Armed',awaiting_consent:'Awaiting phone approval',interrupted:'Interrupted',blocked:'Blocked',failed:'Failed',unavailable:'Unavailable',cancelled:'Cancelled',
     superseded:'Sources changed',unknown:'Status unknown',unverified:'Completion unverified',withheld:'Source changed'};
   const coordinationLabels={brainstorming:'Brainstorming',planning:'Planning',acting:'Acting',analyzing:'Analyzing',
     reviewing:'Reviewing',coordinating:'Coordinating',

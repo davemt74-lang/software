@@ -28,6 +28,7 @@
     planning:{label:'Planning & Scheduling'},tasks:{label:'Tasks & Lists'},
     gmail:{label:'Gmail',fallbackFor:['email','gmail-inbox-review']},
     media:{label:'Media & Entertainment'},
+    location:{label:'Location Specialist'},
     profile:{label:'Profile',viewLabel:'Open Profile report'},
     curiosity:{label:'Curiosity'},
     transcripts:{label:'Transcriptions',viewLabel:'Open Transcription Intelligence',
@@ -42,6 +43,7 @@
   const specialistLabels={thinking:'Thinking',working:'Working',waiting_specialist:'Waiting for another specialist',
     waiting_owner:'Waiting for you',waiting_reply:'Awaiting your reply',queued:'Queued',ready:'Ready to review',
     ready_to_report:'Ready to report',completed:'Completed',checked:'Checked',idle:'Idle',
+    armed:'Armed',awaiting_consent:'Awaiting phone approval',
     paused:'Paused',blocked:'Blocked',failed:'Needs attention',unavailable:'Status unavailable'};
   const specialistWorking=state=>state==='thinking'||state==='working';
   const activeSpecialist=item=>item.presence?specialistWorking(item.state):['queued','running','paused'].includes(item.state);

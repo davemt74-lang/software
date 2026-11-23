@@ -250,6 +250,19 @@ foreach ([[40,1,11,13,'auto_reply','sent'],[41,1,12,12,'auto_reply','sent'],[42,
         gmdate('Y-m-d H:i:s')]);
 }
 
+// The activity reader projects consent state only; private coordinates and names must stay in Phone Tracking.
+$pdo->exec("CREATE TABLE vp3_phone_devices_v1(id CHAR(32),owner_user_id INTEGER,generation INTEGER,
+    device_status VARCHAR(12),allow_location INTEGER,expires_at BIGINT,location_state VARCHAR(12),device_name VARCHAR(48));
+    CREATE TABLE vp3_phone_places_v1(id CHAR(32),owner_user_id INTEGER,name VARCHAR(80),latitude DOUBLE,longitude DOUBLE);
+    CREATE TABLE vp3_phone_arrival_rules_v1(owner_user_id INTEGER,agent_id INTEGER,conversation_id INTEGER,device_id CHAR(32),
+        generation INTEGER,place_id CHAR(32),state VARCHAR(12),task_query VARCHAR(100))");
+$pdo->prepare("INSERT INTO vp3_phone_devices_v1 VALUES ('a',1,2,'approved',1,?,'live','Private handset')")
+    ->execute([time()+3600]);
+$pdo->exec("INSERT INTO vp3_phone_places_v1 VALUES ('b',1,'Private landmark',33.4484,-112.0740);
+    INSERT INTO vp3_phone_arrival_rules_v1 VALUES (1,11,13,'a',2,'b','active','Private task topic'),
+    (1,11,11,'a',2,'b','requested','Other conversation'),(1,12,12,'a',2,'b','requested','Other Agent'),
+    (2,21,20,'a',2,'b','requested','Other account'),(1,11,13,'a',1,'b','requested','Old phone session')");
+
 if ($mysql) $pdo->exec('START TRANSACTION READ ONLY');
 else $pdo->exec('PRAGMA query_only=ON');
 $pdo->readOnly = true;
@@ -257,6 +270,17 @@ $before = $mysql ? 0 : (int)$pdo->query('SELECT total_changes()')->fetchColumn()
 $user = ['id'=>1,'is_active'=>1];
 $binding = vp3_catch_up_page_binding_v1($user);
 $state = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding);
+$location = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'location');
+activity_check($location['sections'] === [] && $location['specialists'] === [
+    ['id'=>'location','conversation_id'=>13,'state'=>'armed','progress'=>null,'detail'=>'1 active arrival alert.']
+], 'A named Agent sees only the active alert count for its exact Chat and current phone session');
+activity_check(!str_contains(json_encode($location,JSON_THROW_ON_ERROR),'Private landmark')
+    && !str_contains(json_encode($location,JSON_THROW_ON_ERROR),'Private task topic'), 'Location activity omits private place and task content');
+$otherThread = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','11',$binding,'location');
+activity_check($otherThread['specialists'][0]['state'] === 'awaiting_consent'
+    && $otherThread['specialists'][0]['detail'] === '1 alert awaits phone approval.', 'Pending phone consent is visible only in its originating Chat');
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','12',$binding,'location'));
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','21','20',$binding,'location'));
 $sections = activity_sections($state);
 $gmailOnly = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'gmail');
 activity_check(array_column($gmailOnly['sections'],'id')===['gmail_inbox'] && $gmailOnly['current_chat']===$state['current_chat'],
