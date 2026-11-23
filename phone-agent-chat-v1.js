@@ -12,24 +12,25 @@ window.VP3PhoneAgentChat = function (request, apps) {
   let turns = [], outgoing = null, sending = false, lastTranscript = '';
   let followReplies = true;
 
-  function sizeChat() {
+  function sizeViewport() {
     const viewport = window.visualViewport;
-    if (!chat.hidden && viewport?.scale === 1 && viewport.height > 0) {
-      main.style.setProperty('--phone-chat-height',viewport.height + 'px');
+    if (deviceId && viewport?.scale === 1 && viewport.height > 0) {
+      main.style.setProperty('--phone-viewport-height',viewport.height + 'px');
     } else {
-      main.style.removeProperty('--phone-chat-height');
+      main.style.removeProperty('--phone-viewport-height');
     }
   }
   function selectTab(showChat) {
     connection.hidden = showChat;
     chat.hidden = !showChat;
-    main.dataset.tab = showChat ? 'chat' : 'connection';
+    if (deviceId) main.dataset.tab = showChat ? 'chat' : 'connection';
+    else delete main.dataset.tab;
     connectionTab.setAttribute('aria-selected',String(!showChat));
     chatTab.setAttribute('aria-selected',String(showChat));
     connectionTab.tabIndex = showChat ? -1 : 0;
     chatTab.tabIndex = showChat ? 0 : -1;
     closeApps();
-    sizeChat();
+    sizeViewport();
     if (showChat) {
       if (followReplies) history.scrollTop = history.scrollHeight;
       nextPoll = 0;
@@ -48,7 +49,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
   history.addEventListener('scroll', () => {
     if (!chat.hidden) followReplies = history.scrollHeight - history.clientHeight - history.scrollTop < 96;
   });
-  window.visualViewport?.addEventListener('resize',sizeChat);
+  window.visualViewport?.addEventListener('resize',sizeViewport);
 
   function status(message) {
     if (notice.textContent !== message) notice.textContent = message;
@@ -100,6 +101,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     const keepBottom = !chat.hidden && followReplies;
     const retained = new Set();
     const existing = new Map(Array.from(transcript.children, n => [n.dataset.request,n]));
+    let previous = null;
     for (const turn of visible) {
       const id = turn.request_id;
       retained.add(id);
@@ -110,15 +112,20 @@ window.VP3PhoneAgentChat = function (request, apps) {
         row = document.createElement('div');
         row.className = 'phone-turn';
         row.dataset.request = id;
-        transcript.append(row);
       }
+      const next = previous ? previous.nextElementSibling : transcript.firstElementChild;
+      if (next !== row) transcript.insertBefore(row,next);
+      previous = row;
       if (row.dataset.render === key) continue;
       row.dataset.render = key;
       const user = bubble('You',turn.message,true);
-      const text = turn.state === 'replied' ? turn.reply :
+      const replied = turn.state === 'replied';
+      const text = replied ? turn.reply :
+        turn.state === 'awaiting_owner' ? 'Sent. Waiting for the owner to reply.' :
         turn.state === 'failed' ? (turn.failure_message || 'The agent could not reply.') :
-        turn.state === 'unconfirmed' ? 'Delivery could not be confirmed.' : 'Waiting for a reply…';
-      const reply = bubble(turn.state === 'replied' ? 'Agent' : 'Message status',text,false);
+        turn.state === 'unconfirmed' ? 'Delivery could not be confirmed.' :
+        outgoing?.request_id === id ? 'Sending…' : 'Waiting for a reply…';
+      const reply = bubble(replied ? (turn.reply_author === 'owner' ? 'Owner' : 'Agent') : 'Message status',text,false);
       if (retryable) {
         const retry = document.createElement('button');
         retry.type = 'button';
@@ -129,6 +136,9 @@ window.VP3PhoneAgentChat = function (request, apps) {
         reply.append(retry);
       }
       row.replaceChildren(user,reply);
+      if (replied && turn.reply_author !== 'owner' && turn.owner_reply) {
+        row.append(bubble('Owner',turn.owner_reply,false));
+      }
     }
     for (const [id,row] of existing) if (!retained.has(id)) row.remove();
     empty.hidden = visible.length > 0;
@@ -145,14 +155,14 @@ window.VP3PhoneAgentChat = function (request, apps) {
     if (!deviceId || !online || chat.hidden || document.hidden || polling || sending || Date.now() < nextPoll) return;
     const version = generation;
     polling = true;
-    nextPoll = Date.now() + (outgoing || turns.some(t => t.state === 'pending') ? 3000 : 12000);
+    nextPoll = Date.now() + (outgoing || turns.some(t => t.state === 'pending' || t.state === 'awaiting_owner') ? 3000 : 12000);
     try {
       const result = await request('chat_status',{device_id:deviceId});
       if (generation !== version) return;
       accept(result);
       if (online) status('');
     } catch {
-      if (generation === version && online) status('Could not refresh Agent Chat.');
+      if (generation === version && online) status('Could not refresh Chat.');
     } finally {
       if (generation === version) polling = false;
     }
@@ -203,8 +213,9 @@ window.VP3PhoneAgentChat = function (request, apps) {
     const hex = Array.from(bytes, value => value.toString(16).padStart(2,'0')).join('');
     const id = [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
     input.value = '';
-    closeApps();
     void sendTurn({request_id:id,message});
+    if (chat.hidden) selectTab(true);
+    else closeApps();
   });
   function bind(id,reachable) {
     const changed = id !== deviceId;
@@ -220,6 +231,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
       transcript.replaceChildren();
       empty.hidden = false;
       tabs.hidden = !id;
+      dock.hidden = !id;
       if (id) connection.setAttribute('role','tabpanel');
       else connection.removeAttribute('role');
       connection.setAttribute('aria-labelledby',id ? connectionTab.id : 'phone-label');

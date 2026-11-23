@@ -86,26 +86,15 @@ vp3_paired_phone_bind_v1($pdo,$id,1,7,9);
 $input=['device_id'=>$id,'request_id'=>'11223344-5566-4777-8888-123456789abc','message'=>'How do I open the camera?'];
 $phoneSend=static fn()=>vp3_paired_phone_chat_v1($pdo,$token,'chat_send',$input)['turns'][0];
 $announcements=static fn()=>vp3_paired_phone_owner_updates_v1($pdo,1,7,9);
-$initialPrompt=[];
-$GLOBALS['gmailSummaryOnRoute']=static function()use(&$initialPrompt,$announcements):void { $initialPrompt=$announcements(); };
-$pdo->exec("UPDATE user_llm_preferences SET route='own_key' WHERE user_id=1; DELETE FROM user_llm_credentials");
 $calls=count($GLOBALS['gmailSummaryDispatch']);
-$failed=$phoneSend();
-if ($failed['state']!=='failed' || $failed['reply']!==null || !str_contains($failed['failure_message'],'account owner')
-    || count($GLOBALS['gmailSummaryDispatch'])!==$calls || count($initialPrompt)!==1
-    || !str_contains($initialPrompt[0]['speech'],$input['message']) || $announcements()!==[]
-    || vp3_paired_phone_chat_v1($pdo,$token,'chat_status',['device_id'=>$id])['turns'][0]!==$failed) {
-    throw new RuntimeException('A missing selected key must preserve the prompt and its actionable private-safe status.');
+$turn=$phoneSend();
+$updates=$announcements();
+if ($turn['state']!=='awaiting_owner' || $turn['reply']!==null || count($updates)!==1
+    || $updates[0]['actions'][0]['type']!=='phone_owner_reply' || !str_contains($updates[0]['speech'],$input['message'])
+    || $phoneSend()!==$turn || $announcements()!==[] || count($GLOBALS['gmailSummaryDispatch'])!==$calls) {
+    throw new RuntimeException('Phone messages must reach the owner exactly once without dispatching a model.');
 }
-unset($GLOBALS['gmailSummaryOnRoute']);
-$pdo->exec("UPDATE user_llm_preferences SET route='system' WHERE user_id=1; UPDATE vp3_paired_phone_turns_v1 SET attempted_at=0");
-$replied=$phoneSend();$replyAnnouncement=$announcements();
-if ($replied['state']!=='replied' || $replied['reply']!==$answer || isset($replied['failure_message'])
-    || count($replyAnnouncement)!==1 || !str_contains($replyAnnouncement[0]['speech'],$answer)
-    || $phoneSend()!==$replied || $announcements()!==[] || count($GLOBALS['gmailSummaryDispatch'])!==$calls+1) {
-    throw new RuntimeException('Retrying the saved prompt must return and announce exactly one metered agent reply.');
-}
-echo "PASS paired phone holder send, missing owner credential, polling, same-ID retry, ordinary text and announcement delivery.\n";
+echo "PASS phone sends and replays are delivered to the owner without inference.\n";
 
 $GLOBALS['phonePreference']='auto';
 $GLOBALS['phoneLocalAttempts']=0;

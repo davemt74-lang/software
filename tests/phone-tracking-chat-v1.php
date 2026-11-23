@@ -477,27 +477,68 @@ $approved=vp3_phone_chat_map_command_v1($pdo,$user,'approve',$mapApproval)['devi
 $mapLinks=vp3_paired_phone_owner_links_v1($pdo,1,[$approved]);
 phone_chat_test($mapLinks[0]['agent_chat']===['agent_id'=>7,'conversation_id'=>2]
     && empty(vp3_paired_phone_owner_links_v1($pdo,2,[$approved])[0]['agent_chat']),'Open phone chat links only the approved device and its exact owner thread');
-$promptSeen=[];
 $inboxInput=['device_id'=>$inboxId,'request_id'=>'a91619e0-e124-47a3-9669-431186a94953','message'=>'Is the studio open?'];
-$inboxModel=static function() use($activity,&$promptSeen) {
-    // Run while the provider is working. No reply or duplicate should reach the owner yet.
-    $promptSeen=$activity(2);
-    return 'The studio opens at noon.';
-};
-vp3_paired_phone_chat_v1($pdo,$inbox['token'],'chat_send',$inboxInput,$inboxModel);
-$wrong=$activity(1);$replySeen=$activity(2);
-phone_chat_test($wrong===[] && count($promptSeen)===1 && $promptSeen[0]['speech']==="From Stage phone\nIs the studio open?"
-    && count($replySeen)===1 && $replySeen[0]['speech']==="Reply to Stage phone\nThe studio opens at noon."
-    && $activity(2)===[],'the phone prompt and agent reply each reach the exact private announcement stream once');
+$holding=vp3_paired_phone_chat_v1($pdo,$inbox['token'],'chat_send',$inboxInput);
+$promptSeen=$activity(2);
+phone_chat_test($holding['turns'][0]['state']==='awaiting_owner' && count($promptSeen)===1
+    && $promptSeen[0]['speech']==="From Stage phone\nIs the studio open?" && $activity(1)===[] && $activity(2)===[],
+    'the phone prompt reaches its owner once and waits for the human reply');
+$replyInput=['agent_id'=>7,'conversation_id'=>2,'device_id'=>$inboxId,'request_id'=>$inboxInput['request_id'],'message'=>'The studio opens at noon.'];
+$reply=static fn($changes=[])=>vp3_paired_phone_owner_reply_v1($pdo,$user,$principal,array_replace($replyInput,$changes));
+$fields=$promptSeen[0]['actions'][0]??[];
+$raw=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id=?',[$promptSeen[0]['message_id']])->fetchAll(PDO::FETCH_ASSOC);
+$before=vp3_phone_chat_history_v1($pdo,$user,7,2,$raw,[]);
+phone_chat_test($fields===json_decode($before[0]['context_json'],true)['actions'][0] && $fields['message_id']===$promptSeen[0]['message_id']
+    && $fields['request_id']===$inboxInput['request_id'] && $fields['device_id']===$inboxId && $fields['type']==='phone_owner_reply',
+    'live phone prompt and restored history expose the same bound Reply button');
+$GLOBALS['phoneTestOwner']=2;
+phone_chat_reject($reply,403,'a changed owner session cannot reply to the phone');
+unset($GLOBALS['phoneTestOwner']);
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
+phone_chat_reject($reply,403,'participant scope cannot reply to the phone');
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+phone_chat_reject(fn()=>$reply(['agent_id'=>0]),403,'another agent cannot reply');
+phone_chat_reject(fn()=>$reply(['conversation_id'=>1]),404,'another conversation cannot reply');
+$sent=$reply();
+phone_chat_test($reply()===$sent,'replaying a manual reply yields its original marker');
+phone_chat_reject(fn()=>$reply(['message'=>'Another answer']),409,'simultaneous different replies cannot replace the first answer');
+$replySeen=$activity(2);
+phone_chat_test(count($replySeen)===1 && $replySeen[0]['phone_owner_reply'] && $replySeen[0]['phone_reply_to']===$fields['message_id']
+    && $replySeen[0]['speech']==="Your reply to Stage phone\nThe studio opens at noon." && $activity(2)===[],
+    'the reply arrives in the originating private Chat once and is labeled as the owner');
+$holderTurns=static fn()=>vp3_paired_phone_chat_v1($pdo,$inbox['token'],'chat_status',['device_id'=>$inboxId])['turns'];
+phone_chat_test($holderTurns()[0]['reply']===$replyInput['message'] && $holderTurns()[0]['reply_author']==='owner','the holder receives the exact reply as an owner message');
 $rawTurns=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id IN (?,?) ORDER BY id',
-    [$promptSeen[0]['message_id'],$replySeen[0]['message_id']])->fetchAll(PDO::FETCH_ASSOC);
+    [$fields['message_id'],$sent['reply_message_id']])->fetchAll(PDO::FETCH_ASSOC);
 $hydratedTurns=vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[]);
 phone_chat_test(array_column($hydratedTurns,'message')===[$inboxInput['message'],$replySeen[0]['speech']]
     && json_decode($hydratedTurns[0]['context_json'],true)['phone_sender']==='Stage phone'
-    && !str_contains(json_encode($rawTurns),'studio open'),'private chat restores the phone name and both bodies while ordinary history stores markers');
+    && empty(json_decode($hydratedTurns[0]['context_json'],true)['actions'])
+    && json_decode($hydratedTurns[1]['context_json'],true)['phone_owner_reply']===true && $hydratedTurns[1]['role']==='user'
+    && !str_contains(json_encode($rawTurns),'studio open'),'private history restores the owner attribution and removes the answered action');
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
 phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[])===$rawTurns,'participant views cannot read the owner’s paired phone transcript');
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+
+// A phone can return to an old turn when its account owner answers it from Chat history.
+$archivedRequest='a91619e0-e124-47a3-9669-000000000000';
+$inboxSend=static fn(string $rid)=>vp3_paired_phone_chat_v1($pdo,$inbox['token'],'chat_send',
+    ['device_id'=>$inboxId,'request_id'=>$rid,'message'=>'Checking in']);
+$inboxSend($archivedRequest);
+$legacyMarker=vp3_paired_phone_marker_v1($pdo,1,2,'assistant');
+vp3_phone_sql_v1($pdo,"UPDATE vp3_paired_phone_turns_v1 SET assistant_message_id=?,reply='Saved agent answer',state='replied'
+    WHERE device_id=? AND request_id=?",[$legacyMarker,$inboxId,$archivedRequest]);
+for ($i=1;$i<=31;$i++) {
+    if ($i%10===0) $pdo->exec('UPDATE vp3_paired_phone_turns_v1 SET attempted_at=0');
+    $inboxSend(sprintf('a91619e0-e124-47a3-9669-%012x',$i));
+}
+phone_chat_test(!in_array($archivedRequest,array_column($holderTurns(),'request_id'),true),'the older prompt has scrolled out of the holder snapshot');
+$reply(['request_id'=>$archivedRequest,'message'=>'New owner answer']);
+$recentTurns=$holderTurns();
+$lateReply=end($recentTurns);
+phone_chat_test(count($recentTurns)===30 && $lateReply['request_id']===$archivedRequest
+    && $lateReply['reply_author']==='agent' && $lateReply['reply']==='Saved agent answer' && $lateReply['owner_reply']==='New owner answer',
+    'a late owner reply returns the archived turn to the phone, preserving the separate original agent answer');
 
 $receipt=vp3_phone_chat_store_v1($pdo,1,7,2,'','Studio camera submitted a camera recording.','camera_clip',null,null,'42');
 $marker=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id=?',[$receipt['assistant_message_id']])->fetchAll(PDO::FETCH_ASSOC);

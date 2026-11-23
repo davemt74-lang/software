@@ -15,7 +15,7 @@ announcement to watch inside the conversation. The editor link opens a separate
 private view of the same camera.
 Tap Stop Sharing on the phone or in the editor to end sharing.
 
-The holder can also open Chat, tap + beside the message field, and choose
+The holder can also tap + beside the message field on either tab and choose
 Camera. Preview shows the selected lens locally. Start Sharing makes the
 camera available in the owner’s private editor and tracking map. If the phone
 is on the map, its marker pulses red while it sends fresh camera frames.
@@ -29,13 +29,15 @@ another take. Submit sends the selected take to the owner’s private Media
 Library and adds a link in the same chat. Keep the camera connected until
 submission finishes. A locally saved copy stays on the phone.
 
-Send messages to the connected agent from the phone’s Chat tab. A reply appears
-under the original message. If a reply fails, read the status and tap Retry
-reply to keep the original message and its owner announcement. Use Open phone
-chat on the owner’s Phone Tracking device card to read the linked conversation.
+The same message field appears on the phone’s Connection and Chat tabs. Sending
+a message opens its conversation in Chat. In the owner’s private Agent Chat,
+select Reply on the phone’s message, write a response and send it. The phone
+shows the owner’s reply under that message. New phone messages wait for the
+owner to answer. Use Open phone chat on the owner’s Phone Tracking device card
+to return to the linked conversation.
 
 To let a particular phone save a place, select its card in Phone Tracking and
-enable Allow phone to add saved locations. On that phone, open Chat, choose +, then Save
+enable Allow phone to add saved locations. On that phone, choose +, then Save
 location. Name the spot and tap Save current location. This uses one location
 reading. Live location sharing and history can stay off.
 

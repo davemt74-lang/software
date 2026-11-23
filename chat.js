@@ -1738,6 +1738,7 @@
     return {
       source:typeof raw.source==='string' ? raw.source : '',
       phoneSender:raw.source==='paired_phone_agent' && typeof raw.phone_sender==='string' ? raw.phone_sender : '',
+      phoneReplyTo:raw.source==='paired_phone_agent' && raw.phone_owner_reply===true ? raw.phone_reply_to : null,
       connected_site_provider_v1:raw.connected_site_provider_v1==='foodmonster'
         || (raw.source==='agent_initiative' && raw.initiative_output?.type==='initiative_coordination'
           && Object.entries(raw.initiative_output.evidence_revisions || {}).some(([ref, revision]) =>
@@ -2192,12 +2193,16 @@
     return el;
   }
 
-  function labelPairedPhoneSender(element, sender) {
+  function bindPairedPhoneMessage(element, context) {
+    if (context.phoneReplyTo) window.VP3PhoneOwnerReply?.received(element,context.phoneReplyTo);
+    const sender=context.phoneSender;
+    if (!sender) return;
     // The holder can be a guest. Keep the phone's name on its own messages in both restored and live Chat.
     element.querySelector('.message-role').textContent = 'Phone · ' + sender;
     const avatar = element.querySelector('.message-avatar');
     avatar.textContent = Array.from(sender)[0] || '';
     avatar.setAttribute('aria-hidden', 'true');
+    window.VP3PhoneOwnerReply?.mount(element,context.actions,sender);
   }
 
   function addTyping() {
@@ -5000,8 +5005,8 @@
         bindCodingCanvasCardV1(renderedMessage,context.coding_canvas_card_v1);
         bindGmailReviewProjectionV1(renderedMessage,context);
       }
-      if (message.role==='user' && context.phoneSender) labelPairedPhoneSender(renderedMessage,context.phoneSender);
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
       if(message.role==='assistant')bindGmailResultTime(renderedMessage,context,message.created_at);
@@ -5163,8 +5168,8 @@
         bindCodingCanvasCardV1(renderedMessage,context.coding_canvas_card_v1);
         bindGmailReviewProjectionV1(renderedMessage,context);
       }
-      if (message.role==='user' && context.phoneSender) labelPairedPhoneSender(renderedMessage,context.phoneSender);
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
       if(message.role==='assistant')bindGmailResultTime(renderedMessage,context,message.created_at);
