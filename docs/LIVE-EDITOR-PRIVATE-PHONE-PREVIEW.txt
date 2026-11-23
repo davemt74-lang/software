@@ -1,0 +1,44 @@
+VP3 Cloud — private phone camera preview
+
+Back up the site and database, install this Cloud deploy over the existing VP3
+root, and run upgrade.php as an administrator. Use HTTPS on the editor and
+phone. Preserve config.php, private/, uploads/ and current environment settings.
+
+1. Open private Agent Chat and type “Use my iPhone as a camera.” Use the paired
+   name if you have several phones. A new phone can join via Connect Phone on
+   the tracking map. Location sharing is optional.
+2. On the paired iPhone, open its connection page or the same signed-in private
+   Agent Chat. Tap Start Sharing in the announcement and allow camera access.
+   On the owner's computer, open the private preview link in that Chat.
+   Move the phone and look for moving video with the Off air label.
+3. Tap Stop Sharing on the phone or stop the preview from the editor. To share
+   again, request the same phone from Chat and accept on the phone. The editor
+   should clear the old feed; the other paired phones remain idle.
+4. This milestone carries video only. The private preview has no audience,
+   recording or program output. Locking the phone, switching tabs, or losing
+   connectivity can interrupt camera access.
+
+Using the phone across different networks
+The phone and editor use WebRTC. Direct connections work where the network
+allows them. For cellular service or restrictive NAT/firewalls, configure your
+STUN/TURN service in the existing private config.php array. For example:
+
+    'phone_camera' => [
+        'ice_urls' => [
+            'stun:relay.example.com:3478',
+            'turn:relay.example.com:3478?transport=udp',
+            'turns:relay.example.com:5349?transport=tcp',
+        ],
+        'turn_shared_secret' => 'your-server-side-coturn-auth-secret',
+    ],
+
+Use your own relay hostname, active ports and coturn shared secret. Only the
+listed servers are used. VP3 issues temporary credentials for an active
+preview. Credentials expire when the pairing expires or four hours after sharing
+starts, whichever comes first. The relay secret stays on the server.
+
+Field check
+Use Safari on a physical iPhone and open the editor on another device. Check
+moving video, holder Stop Sharing, lock/resume, and a fresh request on Wi-Fi
+and cellular. If the cellular test fails while Wi-Fi works, verify that the
+configured TURN service accepts the temporary credentials.

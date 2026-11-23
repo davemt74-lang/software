@@ -5,8 +5,8 @@ header('Cache-Control: private, no-store, max-age=0');
 header('Referrer-Policy: no-referrer');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
-header('Permissions-Policy: geolocation=(self), camera=(), microphone=()');
-header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+header('Permissions-Policy: geolocation=(self), camera=(self), microphone=()');
+header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self' blob: mediastream:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
 ?>
 <!doctype html>
 <html lang="en">
@@ -15,8 +15,10 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
-  <link rel="stylesheet" href="phone-location-v1.css?v=4">
-  <script src="phone-location-v1.js?v=5" defer></script>
+  <link rel="stylesheet" href="phone-location-v1.css?v=5">
+  <script src="phone-camera-ice-v1.js?v=1" defer></script>
+  <script src="phone-camera-holder-v1.js?v=2" defer></script>
+  <script src="phone-location-v1.js?v=6" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -36,6 +38,16 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       <button id="phone-claim" type="submit">Request connection</button>
     </form>
     <div id="phone-controls" hidden>
+      <section id="phone-camera" class="phone-permission" aria-labelledby="phone-camera-title" hidden>
+        <h2 id="phone-camera-title">Agent Chat · Camera preview</h2>
+        <p id="phone-camera-status" role="status" aria-live="polite"></p>
+        <video id="phone-camera-preview" aria-label="Your camera preview" muted autoplay playsinline hidden></video>
+        <div class="phone-permission-buttons">
+          <button type="button" id="phone-camera-start" hidden>Start Sharing</button>
+          <button type="button" id="phone-camera-decline" class="secondary" hidden>Decline</button>
+          <button type="button" id="phone-camera-stop" hidden>Stop Sharing</button>
+        </div>
+      </section>
       <p id="phone-consent"></p>
       <button type="button" id="phone-start" hidden>Start sharing</button>
       <button type="button" id="phone-stop" hidden>Stop sharing</button>

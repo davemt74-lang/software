@@ -22,10 +22,11 @@ try {
         !in_array($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin', ['same-origin','none'], true)) {
         throw new RuntimeException('Invalid origin.', 403);
     }
-    $input = vp3_phone_http_json_v1();
+    $input = vp3_phone_http_json_v1(['camera_offer']);
     $action = $input['action'] ?? null;
     unset($input['action']);
-    if (!in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
+    $cameraAction = in_array($action, ['camera_status','camera_start','camera_offer','camera_stop'],true);
+    if (!$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
         'accept_history','decline_history','stop_history','set_place_permission',
         'accept_arrival','decline_arrival','stop_arrival'], true)) {
         throw new RuntimeException('Unknown action.', 422);
@@ -35,7 +36,14 @@ try {
     $name = 'vp3_phone_device_v1';
     $token = (string)($_COOKIE[$name] ?? '');
     if ($action !== 'claim' && $token === '') throw new RuntimeException('Pair a phone first.', 401);
-    $result = vp3_phone_device_v1($pdo, $token, $action, $input);
+    if ($cameraAction) {
+        require_once dirname(__DIR__).'/includes/phone-camera-v1.php';
+        require_once dirname(__DIR__).'/includes/phone-camera-http-v1.php';
+        $result = vp3_phone_camera_holder_v1($pdo,$token,substr($action,7),$input);
+        $result['ice_servers'] = vp3_phone_camera_ice_v1($result['camera'] ?? null);
+    } else {
+        $result = vp3_phone_device_v1($pdo, $token, $action, $input);
+    }
     if ($action === 'claim') {
         // Keep the credential out of script-readable storage. Server-side expiry
         // and revocation remain authoritative throughout the cookie lifetime.

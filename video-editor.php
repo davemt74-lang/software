@@ -19,6 +19,21 @@ if (!media_studio_schema_ready()) {
 
 $user = current_user();
 $pdo = db();
+$phoneCamera = null;
+if (isset($_GET['camera_session'])) {
+    header('Referrer-Policy: no-referrer');
+    $sessionId = $_GET['camera_session'];
+    $agentParam = $_GET['agent'] ?? null;
+    $agentId = $agentParam === 'system' ? 0 : filter_var($agentParam, FILTER_VALIDATE_INT, ['options'=>['min_range'=>0]]);
+    $chatId = filter_var($_GET['conversation_id'] ?? null, FILTER_VALIDATE_INT, ['options'=>['min_range'=>1]]);
+    if (is_string($sessionId) && preg_match('/^[a-f0-9]{32}$/D', $sessionId) && $agentId !== false && $chatId !== false) {
+        require_once __DIR__.'/includes/agent-catch-up-v1.php';
+        $phoneCamera = [
+            'endpoint'=>url('/api/phone-camera-v1.php'), 'sessionId'=>$sessionId, 'agentId'=>$agentId,
+            'conversationId'=>$chatId, 'binding'=>vp3_catch_up_page_binding_v1($user), 'csrf'=>csrf_token()
+        ];
+    }
+}
 $assets = media_studio_assets($user,250);
 $tracks = media_studio_visible_tracks($user);
 $savedTrackIds = [];
@@ -113,6 +128,9 @@ if ($videoReturnUrl === '') $videoReturnUrl = $videoReturnFallback;
 <link rel="stylesheet" href="<?= e(url('/agent-proactive-v93.css?v=93')) ?>">
 <link rel="stylesheet" href="<?= e(url('/video-editor-v92.css?v=98')) ?>">
 <link rel="stylesheet" href="<?= e(url('/video-editor-v100.css?v=100')) ?>">
+<?php if ($phoneCamera !== null): ?>
+<link rel="stylesheet" href="<?= e(url('/phone-camera-editor-v1.css?v=3')) ?>">
+<?php endif; ?>
 </head>
 <body class="video-editor-body">
 <div class="video-editor-shell">
@@ -151,7 +169,15 @@ if ($videoReturnUrl === '') $videoReturnUrl = $videoReturnFallback;
       <button id="videoOpenCameraMenu" type="button">Camera / Recorder</button>
     </div>
 
-    <section class="video-editor-workspace">
+    <?php if ($phoneCamera !== null): ?>
+    <div class="phone-camera-editor-bar" id="phoneCameraControls" role="group" aria-label="Private camera controls">
+      <strong id="phoneCameraPreviewName">Private phone preview</strong>
+      <button type="button" id="phoneCameraPreviewStop">Stop sharing</button>
+      <button type="button" id="phoneCameraPreviewDismiss" hidden>Return to timeline</button>
+    </div>
+    <?php endif; ?>
+
+    <section class="video-editor-workspace<?= $phoneCamera !== null ? ' inspector-hidden' : '' ?>">
       <aside class="video-editor-library">
         <header>
           <div>
@@ -187,6 +213,13 @@ if ($videoReturnUrl === '') $videoReturnUrl = $videoReturnFallback;
               <strong>Video Editor</strong>
               <span>Add a photo or video to the visual timeline.</span>
             </div>
+            <?php if ($phoneCamera !== null): ?>
+            <section id="phoneCameraPreview" data-state="waiting" aria-label="Private phone camera preview"
+                data-config="<?= e(json_encode($phoneCamera, JSON_THROW_ON_ERROR)) ?>">
+              <video id="phoneCameraPreviewVideo" autoplay playsinline muted disablepictureinpicture aria-label="Phone camera"></video>
+              <span id="phoneCameraPreviewStatus" role="status">Waiting for the phone…</span>
+            </section>
+            <?php endif; ?>
           </div>
 
           <div class="video-preview-controls">
@@ -310,6 +343,10 @@ window.STONEFELLOW_AGENT_CONTEXT={
 };</script>
 <script>window.STONEFELLOW_ACTIVITY={endpoint:<?= json_encode(url('/api/agent-activity-v94.php')) ?>,csrf:<?= json_encode(csrf_token()) ?>,surface:'video',trackId:0,projectId:<?= (int)($project['id'] ?? 0) ?>,conversationId:<?= max(0,(int)($_GET['conversation_id'] ?? 0)) ?>,taskTitle:<?= json_encode('Video Editor · '.(string)($project['title'] ?? 'Untitled Video')) ?>,taskKey:<?= json_encode('video:'.(int)($project['id'] ?? 0)) ?>};</script>
 <script src="<?= e(url('/video-editor.js?v=' . substr((string) hash_file('sha256', __DIR__ . '/video-editor.js'), 0, 12))) ?>"></script>
+<?php if ($phoneCamera !== null): ?>
+<script src="<?= e(url('/phone-camera-ice-v1.js?v=1')) ?>"></script>
+<script src="<?= e(url('/phone-camera-editor-v1.js?v='.substr(hash_file('sha256', __DIR__.'/phone-camera-editor-v1.js'), 0, 12))) ?>"></script>
+<?php endif; ?>
 <script src="<?= e(url('/chat-media-v86.js?v=95')) ?>"></script>
 <script src="<?= e(url('/chat-media-v93.js?v=97')) ?>"></script>
 <script src="<?= e(url('/agent-activity-v94.js?v=' . $conversationBuild)) ?>"></script>

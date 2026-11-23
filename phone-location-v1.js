@@ -139,6 +139,7 @@
       return result;
     } finally { clearTimeout(timer); }
   }
+  const camera = window.VP3PhoneCameraHolder?.(request);
   function discardDeferred(session) {
     clearTimeout(session.timer);
     session.timer = null;
@@ -203,6 +204,7 @@
   function render() {
     const connected = device?.status === 'approved';
     const queued = Boolean(pending && pending.id === device?.id);
+    camera?.bind(connected && pending?.action !== 'disconnect' ? device.id : null, owner);
     const gps = Boolean(secure && navigator.geolocation);
     el('label').textContent = device?.name || 'Connect this phone';
     el('badge').textContent = device ? (connected ? 'Connected phone' : 'Pending approval') : 'Phone Tracking';

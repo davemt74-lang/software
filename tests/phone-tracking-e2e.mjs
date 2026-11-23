@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { createServer } from 'node:net';
+import { localPort, preparePhoneSite } from './fixtures/phone-site-v1.mjs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -22,32 +22,6 @@ const ownerEndpoint = '/api/phone-tracking-v1.php';
 const capture = process.env.VP3_PHONE_SCREENSHOTS;
 let browser, mobileBrowser, server;
 let serverErrors = '';
-
-async function localPort() {
-  const listener = createServer();
-  await new Promise((resolve, reject) => listener.once('error', reject).listen(0, '127.0.0.1', resolve));
-  const { port } = listener.address();
-  await new Promise(resolve => listener.close(resolve));
-  return port;
-}
-
-function prepareSite() {
-  mkdirSync(site);
-  mkdirSync(sessions);
-  for (const folder of ['includes', 'api']) cpSync(path.join(repo, folder), path.join(site, folder), { recursive: true });
-  for (const folder of ['assets', 'images']) symlinkSync(path.join(repo, folder), path.join(site, folder), 'dir');
-  for (const entry of readdirSync(repo, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name !== 'config.php' && /\.(php|css|js)$/.test(entry.name)) {
-      cpSync(path.join(repo, entry.name), path.join(site, entry.name));
-    }
-  }
-  mkdirSync(path.join(site, 'private'));
-  mkdirSync(path.join(site, 'uploads'));
-  writeFileSync(path.join(site, 'config.php'), "<?php return ['db'=>['dsn'=>'sqlite:'.dirname(__DIR__).'/data.sqlite'],'site'=>['name'=>'VP3 Test','base_path'=>'']];");
-  writeFileSync(path.join(site, 'health.txt'), 'ready');
-  const fixture = path.join(repo, 'tests/phone-tracking-e2e-fixture.php');
-  return JSON.parse(execFileSync(php, ['-d', 'session.save_path=' + sessions, fixture, site], { encoding: 'utf8' }));
-}
 
 async function eventually(message, callback, ms = 20000) {
   const deadline = Date.now() + ms;
@@ -98,7 +72,7 @@ async function screenshot(page, name) {
 }
 
 try {
-  const [owner, other] = prepareSite();
+  const [owner, other] = preparePhoneSite(repo, site, sessions, php);
   const port = await localPort();
   const baseURL = 'http://127.0.0.1:' + port;
   server = spawn(php, ['-d', 'session.save_path=' + sessions, '-d', 'display_errors=0',

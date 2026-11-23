@@ -1,0 +1,56 @@
+#phoneCameraPreview {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #0c1014;
+  color: #f9fafb;
+}
+#phoneCameraPreview[hidden], .phone-camera-editor-bar[hidden], .phone-camera-editor-bar button[hidden] { display: none; }
+#phoneCameraPreviewVideo {
+  position: absolute;
+  inset: 0;
+  object-fit: contain;
+  opacity: 0;
+}
+#phoneCameraPreview[data-state="live"] video { opacity: 1; }
+.phone-camera-editor-bar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #11151a;
+  color: #f9fafb;
+  font-size: .8rem;
+}
+.phone-camera-editor-bar strong { min-width: 0; overflow-wrap: anywhere; }
+.phone-camera-editor-bar button {
+  flex-shrink: 0;
+  border: 1px solid #59626d;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: inherit;
+  background: #26303a;
+  cursor: pointer;
+  font: inherit;
+}
+#phoneCameraPreviewStatus {
+  max-width: 90%;
+  padding: 6px 10px;
+  border-radius: 5px;
+  color: #e1e7ed;
+  background: #1b252e;
+  text-align: center;
+  font-size: .83rem;
+}
+#phoneCameraPreview[data-state="live"] #phoneCameraPreviewStatus {
+  position: absolute;
+  inset: auto auto 8px 8px;
+  background: rgb(9 12 16 / 88%);
+}
+
+.video-preview-shell:has(#phoneCameraPreview:not([hidden])) > .video-preview-controls { visibility: hidden; }

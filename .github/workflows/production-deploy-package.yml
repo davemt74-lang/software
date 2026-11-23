@@ -450,6 +450,9 @@ jobs:
           # Phone Tracking must include both the owner and holder entry points.
           for path in phone-tracking.php phone-location.php phone-tracking-v1.js phone-tracking-archive-v1.js phone-location-v1.js \
                       api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php \
+                      includes/phone-camera-v1.php includes/phone-camera-chat-v1.php includes/phone-camera-http-v1.php \
+                      api/phone-camera-v1.php phone-camera-ice-v1.js phone-camera-holder-v1.js phone-camera-chat-holder-v1.js phone-camera-editor-v1.js \
+                      phone-camera-editor-v1.css docs/LIVE-EDITOR-PRIVATE-PHONE-PREVIEW.txt \
                       includes/phone-tracking-chat-v1.php docs/PHONE-TRACKING-PHASE1-INSTALL.txt \
                       docs/PHONE-TRACKING-PHASE2-INSTALL.txt docs/PHONE-TRACKING-PHASE3-INSTALL.txt \
                       docs/PHONE-TRACKING-PHASE4-INSTALL.txt includes/phone-tracking-arrivals-v1.php includes/phone-tracking-arrival-chat-v1.php \

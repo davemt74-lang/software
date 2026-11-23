@@ -6,6 +6,7 @@ require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/phone-tracking-history-v1.php';
 require_once __DIR__.'/phone-tracking-places-v1.php';
 require_once __DIR__.'/phone-tracking-arrivals-v1.php';
+require_once __DIR__.'/phone-camera-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -73,6 +74,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_history_schema_v1($pdo,$options);
     vp3_phone_places_schema_v1($pdo);
     vp3_phone_arrival_schema_v1($pdo,$options);
+    vp3_phone_camera_schema_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -343,6 +345,7 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
             $generation=(int)$row['generation'];
             vp3_phone_owner_transition_v1($row,$action,$input,$now);
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
+            if ($action === 'revoke') vp3_phone_camera_disconnect_v1($pdo,$row);
             if ($action === 'delete_history' || $action === 'revoke') vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_save_row_v1($pdo,$row);
             $expiry = $row['expires_at'];
@@ -485,6 +488,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             }
             vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_arrival_clear_v1($pdo,$row);
+            vp3_phone_camera_disconnect_v1($pdo,$row);
             return [];
         }
         $touch = (int)$row['last_seen_at'] < $now - 10;
@@ -497,6 +501,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 vp3_phone_device_transition_v1($row,$action,$input,$now);
             }
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
+            if ($action === 'disconnect') vp3_phone_camera_disconnect_v1($pdo,$row);
             if ($action === 'fix' && ($previousFix === null || (int)$previousFix !== (int)$row['fix_at'])) {
                 vp3_phone_history_record_v1($pdo,$row,$input,$now);
                 vp3_phone_arrival_fix_v1($pdo,$row,$input,$now);

@@ -783,6 +783,9 @@ $runtime = $headerUiRuntime
              'foodMonsterIcon'=>url('/assets/foodmonster-app-icon-v1.webp'),
          ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) . ';</script>'
          . '<script src="' . e(url('/chat-connected-sites-v1.js?v=' . substr(hash_file('sha256', __DIR__ . '/chat-connected-sites-v1.js'), 0, 12))) . '"></script>'
+         . '<script src="' . e(url('/phone-camera-ice-v1.js?v=1')) . '"></script>'
+         . '<script src="' . e(url('/phone-camera-holder-v1.js?v=2')) . '"></script>'
+         . '<script src="' . e(url('/phone-camera-chat-holder-v1.js?v=1')) . '"></script>'
          . $recordingLibraryRuntime
          . $chatSettingsRuntime
          . '<script data-agent-updates-autodismiss-v173 data-agent-overlay-build="' . e($agentOverlayBuild) . '" src="' . e(url('/chat-agent-updates-autodismiss-v173.js?v=' . $agentOverlayBuild)) . '"></script>'

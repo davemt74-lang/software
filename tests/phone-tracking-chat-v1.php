@@ -359,3 +359,74 @@ phone_chat_test(str_contains($byCommand['answer'],'Saved “Workshop”') && $ho
 $send('Save this location as Booth.');
 $byRaw=$send('Field <iPhone>');
 phone_chat_test(str_contains($byRaw['answer'],'Saved “Booth”') && count($places())===4,'the raw nickname also selects the offered device');
+
+// A camera uses the approved pairing even when GPS is off. This flow exercises the actual private Chat dispatcher.
+$cameraPhone=$approvedPhone('Camera iPhone','owner');
+$cameraTwin=$approvedPhone('Camera iPhone','guest');
+$cameraId=$cameraPhone['device']['id'];
+$cameraDevice=static function(array $phone,string $action='status',array $extra=[]) use($pdo): ?array {
+    return vp3_phone_camera_holder_v1($pdo,$phone['token'],$action,$extra+['device_id'=>$phone['device']['id']])['camera'];
+};
+$cameraPrompt='Use my iPhone as a camera';
+$choice=$send($cameraPrompt);
+phone_chat_test(str_contains($choice['answer'],'Which phone?') && str_contains($choice['answer'],'Camera iPhone')
+    && !$choice['actions'] && $cameraDevice($cameraPhone)===null && $cameraDevice($cameraTwin)===null,
+    'ambiguous camera names offer a private numbered selection without requesting either phone');
+$again=$send('Camera iPhone');
+phone_chat_test(str_contains($again['answer'],'number') && $cameraDevice($cameraPhone)===null,'duplicate camera names cannot silently choose a holder');
+preg_match('/^(\d+)\. Camera iPhone \(owner, /m',$choice['answer'],$cameraNumber);
+phone_chat_test(!empty($cameraNumber[1]),'camera choice distinguishes paired phones with identical display names');
+$cameraKey=['idempotency_key'=>'private-camera-selection-once'];
+$cameraAsk=$send($cameraNumber[1],$cameraKey);
+$cameraReplay=$send($cameraNumber[1],$cameraKey);
+$camera=$cameraDevice($cameraPhone);
+parse_str(parse_url($cameraAsk['actions'][0]['url']??'',PHP_URL_QUERY)??'',$cameraQuery);
+phone_chat_test($camera && $camera['state']==='requested' && str_contains($cameraAsk['answer'],'Start Sharing')
+    && $cameraAsk['actions'][0]['label']==='Open private camera preview' && $cameraQuery===['camera_session'=>$camera['session_id'],'agent'=>'7','conversation_id'=>'1']
+    && $cameraAsk['assistant_message_id']===$cameraReplay['assistant_message_id'] && empty($cameraReplay['phone_updates'])
+    && $cameraDevice($cameraTwin)===null && $holder($cameraPhone)['location_state']==='off',
+    'a retried camera choice requests one exact phone with GPS off and links to the same private editor session');
+phone_chat_test(str_contains($send('Phone camera status',['conversation_id'=>2])['answer'],'no active')
+    && str_contains($send('Stop camera sharing',['conversation_id'=>2])['answer'],'no active') && $cameraDevice($cameraPhone)['state']==='requested',
+    'another private conversation cannot see or stop the requested camera');
+phone_chat_reject(fn()=>$send($cameraPrompt,[],false),403,'public runtime cannot request a camera');
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
+phone_chat_reject(fn()=>$send($cameraPrompt),403,'participant cannot request a camera');
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+$cameraDevice($cameraPhone,'start',['session_id'=>$camera['session_id']]);
+phone_chat_test($activity(2)===[],'another Chat cannot claim a phone camera announcement');
+$cameraAnnouncements=$activity();
+phone_chat_test(count($cameraAnnouncements)===1 && str_contains($cameraAnnouncements[0]['speech'],'Camera iPhone started sharing')
+    && $activity()===[],'the holder start confirms exactly once in the originating private Chat');
+$cameraRows=$pdo->query('SELECT * FROM chat_messages WHERE id='.(int)$cameraAsk['assistant_message_id'])->fetchAll();
+$cameraHistory=vp3_phone_chat_history_v1($pdo,$user,7,1,$cameraRows,[]);
+phone_chat_test($cameraRows[0]['message']==='Private phone tracking update.'
+    && json_decode($cameraHistory[0]['context_json'],true)['actions']===$cameraAsk['actions']
+    && !str_contains(json_encode($cameraHistory),'offer_sdp'),'private history restores the same editor link without media signaling data');
+$cameraDevice($cameraPhone,'stop',['session_id'=>$camera['session_id']]);
+$cameraStopped=$activity();
+phone_chat_test(count($cameraStopped)===1 && str_contains($cameraStopped[0]['speech'],'ended for Camera iPhone') && $activity()===[]
+    && str_contains($send('Phone camera status')['answer'],'no active') && $holder($cameraPhone)['location_state']==='off',
+    'holder stop confirms once, closes the private preview and leaves GPS off');
+phone_chat_test(vp3_phone_chat_route_v1($pdo,$user,$principal,['message'=>'Use the USB webcam as a camera','conversation_id'=>1])===null,
+    'ordinary local camera controls stay with their normal handler');
+
+$thirdPhone=$approvedPhone('Studio test handset','owner');
+$askThird=static fn()=>$send('Use Studio test handset as a camera');
+$askThird();
+$thirdCamera=$cameraDevice($thirdPhone);
+$cameraDevice($thirdPhone,'start',['session_id'=>$thirdCamera['session_id']]);
+$cameraDevice($thirdPhone,'stop',['session_id'=>$thirdCamera['session_id']]);
+$quickStop=$activity();
+phone_chat_test(count($quickStop)===1 && str_contains($quickStop[0]['speech'],'ended for Studio test handset') && $activity()===[],
+    'a start and stop between polls leaves one current named stop announcement');
+$askThird();
+$cancelledRequest=$cameraDevice($thirdPhone);
+$cameraDevice($thirdPhone,'stop',['session_id'=>$cancelledRequest['session_id']]);
+$cancelled=$activity();
+phone_chat_test(count($cancelled)===1 && str_contains($cancelled[0]['speech'],'before sharing started'),
+    'closing a request before acceptance never says that the camera shared video');
+$askThird();
+$stopByOwner=$send('Stop using Studio test handset as a camera');
+phone_chat_test(str_contains($stopByOwner['answer'],'Stopped the private camera preview for Studio test handset')
+    && count($stopByOwner['phone_updates'])===1 && $activity()===[],'an owner stop is confirmed in the direct reply only once');

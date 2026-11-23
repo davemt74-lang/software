@@ -26,14 +26,18 @@ function vp3_phone_http_transport_v1(): void
     }
 }
 
-function vp3_phone_http_json_v1(): array
+function vp3_phone_http_json_v1(array $largeActions=[]): array
 {
     $type = strtolower(trim(explode(';', (string)($_SERVER['CONTENT_TYPE'] ?? ''), 2)[0]));
     if ($type !== 'application/json') throw new RuntimeException('Use a JSON request.', 415);
-    $raw = file_get_contents('php://input', false, null, 0, 4097);
-    if ($raw === false || strlen($raw) > 4096) throw new RuntimeException('Request too large.', 413);
+    $limit = $largeActions ? 65536 : 4096;
+    $raw = file_get_contents('php://input', false, null, 0, $limit + 1);
+    if ($raw === false || strlen($raw) > $limit) throw new RuntimeException('Request too large.', 413);
     $object = json_decode($raw, true, 6);
     if (!is_array($object) || !str_starts_with(ltrim($raw), '{')) throw new RuntimeException('Invalid request.', 422);
+    if (strlen($raw) > 4096 && !in_array($object['action'] ?? null,$largeActions,true)) {
+        throw new RuntimeException('Request too large.', 413);
+    }
     return $object;
 }
 
