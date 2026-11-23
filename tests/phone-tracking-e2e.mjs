@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
@@ -958,7 +958,8 @@ async function verifyLocalResearchJourney({ ownerContext, owner, otherContext, o
   assert.ok(Array.isArray(context?.sources) && context.sources.length===2,JSON.stringify(context));
   assert.deepEqual(new Set(context.sources.map(s=>s.url)),new Set(work.pages));
   for (const source of context.sources) {
-    assert.match(JSON.stringify(source),/location-web:[a-f0-9]{64}/i);
+    assert.equal(source.coverage,'page_excerpt','A store fact requires evidence from the fetched page');
+    assert.equal(source.source,'location-web:'+createHash('sha256').update(source.url).digest('hex'));
   }
   changeTask('completed');
   await move(selectedPhone,outside);

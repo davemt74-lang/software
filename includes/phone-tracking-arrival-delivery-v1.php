@@ -87,7 +87,7 @@ function vp3_phone_arrival_tasks_v1(PDO $pdo, array $user, array $principal, int
         $sql .= " AND (LOWER(t.subject) LIKE ? ESCAPE '!' OR LOWER(t.memory_text) LIKE ? ESCAPE '!')";
         $params[] = $term;
         $params[] = $term;
-        $itemPattern = '/(?<![\\p{L}\\p{N}])'.preg_quote($stem,'/').'s?(?![\\p{L}\\p{N}])/iu';
+        $itemPattern = '(?<![\\p{L}\\p{N}])'.preg_quote($stem,'/').'s?(?![\\p{L}\\p{N}])';
     }
     $tasks = [];
     $before = null;
@@ -101,8 +101,8 @@ function vp3_phone_arrival_tasks_v1(PDO $pdo, array $user, array $principal, int
         $rows = vp3_phone_sql_v1($pdo,$page.' ORDER BY t.id DESC LIMIT 64',$args)->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as $row) {
             $before = (int)$row['id'];
-            if ($itemPattern !== null && !preg_match($itemPattern, (string)$row['subject'])
-                && !preg_match($itemPattern, (string)$row['memory_text'])) continue;
+            if ($itemPattern !== null && !vp3_phone_local_task_needs_item_v1((string)$row['subject'],
+                (string)$row['memory_text'],$topic,$itemPattern)) continue;
             if (!vp3_task_list_task_allowed_v1($pdo,$user,$principal,$before)) continue;
             $tasks[$before] = vp3_phone_arrival_display_text_v1((string)$row['subject'],'Untitled task');
             if (count($tasks) === 5) break 2;
@@ -127,7 +127,7 @@ function vp3_phone_arrival_deliver_v1(PDO $pdo, array $user, array $principal, a
     $events = vp3_phone_sql_v1($pdo,'SELECT e.id,e.arrived_at,e.visit_number,r.id AS rule_id,r.visit_number AS current_visit,r.version,r.zone_state,
         r.task_query,r.state,r.generation,r.accepted_at,i.item_term,i.merchant_category,i.open_today,
         d.id AS device_id,d.device_name,d.generation AS live_generation,d.expires_at,d.device_status,
-        d.location_state,d.allow_location,p.name AS place_name
+        d.location_state,d.allow_location,d.fix_at,p.name AS place_name
         FROM vp3_phone_arrival_rules_v1 r JOIN vp3_phone_arrival_events_v1 e ON e.rule_id=r.id
         LEFT JOIN vp3_phone_arrival_search_intents_v1 i ON i.rule_id=r.id
         LEFT JOIN vp3_phone_devices_v1 d ON d.owner_user_id=r.owner_user_id AND d.id=r.device_id
@@ -147,7 +147,7 @@ function vp3_phone_arrival_deliver_v1(PDO $pdo, array $user, array $principal, a
         if (!$eligible) continue;
         $conditional = $event['item_term'] !== null;
         if ($conditional && ($event['zone_state'] !== 'inside' || (int)$event['visit_number'] !== (int)$event['current_visit']
-            || (int)$event['arrived_at'] <= time()-86400)) continue;
+            || (int)$event['fix_at'] <= time()-VP3_PHONE_FRESH_SECONDS_V1 || (int)$event['arrived_at'] <= time()-86400)) continue;
         $tasks = vp3_phone_arrival_tasks_v1($pdo,$user,$principal,$cid,$event['task_query'],null,$event['item_term'] ?? '');
         if ($conditional && !$tasks) continue;
         $phone = vp3_phone_chat_label_v1(['name'=>$event['device_name']]);
@@ -178,18 +178,22 @@ function vp3_phone_arrival_history_answer_v1(PDO $pdo, array $user, int $aid, in
     $base = $turn['answer'];
     if (!in_array($turn['map_link'],['arrival','local_offer'],true) || (int)$turn['owner_user_id'] !== (int)$user['id']
         || (int)$turn['agent_id'] !== $aid || (int)$turn['conversation_id'] !== $cid) return $base;
-    $receipt = vp3_phone_sql_v1($pdo,'SELECT task_ids_json FROM vp3_phone_arrival_briefings_v1
-        WHERE assistant_message_id=?',[$turn['assistant_message_id']])->fetch(PDO::FETCH_ASSOC);
-    if (!$receipt || $receipt['task_ids_json'] === null) return vp3_phone_arrival_answer_v1($base,null);
-    $ids = json_decode($receipt['task_ids_json'],true,32,JSON_THROW_ON_ERROR);
+    $id = (int)$turn['assistant_message_id'];
     $agent = vp3_agent_chat_resolve_agent_v380($pdo,$user,$aid);
     $principal = vp3_agent_chat_principal_v380($user,$agent);
-    $tasks = vp3_phone_arrival_tasks_v1($pdo,$user,$principal,$cid,'',$ids);
-    $answer = vp3_phone_arrival_answer_v1($base,$tasks);
-    $id = (int)$turn['assistant_message_id'];
-    if ($turn['map_link'] === 'local_offer' && !vp3_phone_local_offer_consumed_v1($pdo,$id)) {
-        $offer = vp3_phone_local_offer_v1($pdo,$user,$principal,$cid,$id);
-        if ($offer) $answer .= "\n".vp3_phone_local_offer_invitation_v1($offer,$id);
+    if ($turn['map_link'] === 'local_offer') {
+        // Edited tasks must still satisfy the original need before even their new titles can appear.
+        $tasks = null;
+        $offer = vp3_phone_local_offer_v1($pdo,$user,$principal,$cid,$id,$tasks);
+        if (!$offer) return $base;
+        $answer = vp3_phone_arrival_answer_v1($base,$tasks);
+        if (!vp3_phone_local_offer_consumed_v1($pdo,$id)) $answer .= "\n".vp3_phone_local_offer_invitation_v1($offer,$id);
+        return $answer;
     }
-    return $answer;
+    $receipt = vp3_phone_sql_v1($pdo,'SELECT task_ids_json FROM vp3_phone_arrival_briefings_v1
+        WHERE assistant_message_id=?',[$id])->fetch(PDO::FETCH_ASSOC);
+    if (!$receipt || $receipt['task_ids_json'] === null) return vp3_phone_arrival_answer_v1($base,null);
+    $ids = json_decode($receipt['task_ids_json'],true,32,JSON_THROW_ON_ERROR);
+    $tasks = vp3_phone_arrival_tasks_v1($pdo,$user,$principal,$cid,'',$ids);
+    return vp3_phone_arrival_answer_v1($base,$tasks);
 }

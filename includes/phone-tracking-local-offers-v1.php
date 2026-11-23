@@ -22,15 +22,54 @@ function vp3_phone_local_offer_invitation_v1(array $terms, int $messageId): stri
         .'. To review the search, reply “Search area for offer #'.$messageId.': [city or neighborhood]”.';
 }
 
-/** Resolve a single current offer. An unnumbered reply is ambiguous if multiple offers qualify. */
-function vp3_phone_local_offer_v1(PDO $pdo, array $user, array $principal, int $cid, ?int $offerId=null): ?array
+/** Match a purchasing need expressed by the task itself. An equipment mention alone cannot authorize an offer. */
+function vp3_phone_local_task_needs_item_v1(string $title, string $body, string $topic, string $itemPattern): bool
 {
+    $title = trim(str_replace('’', "'", $title));
+    $body = str_replace('’', "'", $body);
+    $buy = '(?:buy|purchase|order|acquire|obtain|get|source|pick up|shop for|look for|find|price|restock|stock up on|budget for|save for|rent|replace)';
+    $want = '(?:'.$buy.'|need|require|running low on|short of|out of)';
+    $qty = '(?:(?:a|an|the|some|new|another|extra|spare|replacement|more|additional|one|two|three|four|five|\d+|pairs? of|packs? of|sets? of)\s+){0,6}';
+    // The named product must be the object. Buying an "XLR cable tester" is a different task.
+    $objectEnd = '(?=\s*(?:$|[):]|(?:for|from|at|before|after|by|on|in|to|with|and|or|online|locally|today|tomorrow|now|this|next)\b))';
+    $purchase = '/\b'.$want.'\s+'.$qty.$itemPattern.$objectEnd.'|'.$itemPattern.'\s+(?:(?:is|are|still|to be)\s+)*(?:needed|required|missing|to (?:buy|purchase|order))\b/iu';
+    $negative = '/\b(?:(?:do not|don\x27t|never|no longer|shouldn\x27t|should not|must not|avoid|skip|cancel)\s+(?:need(?: to)?\s+)?'.$want
+        .'|no (?:longer )?need for|already (?:own|have|bought|purchased|ordered|received)|we (?:already )?own|(?:not|no longer) (?:needed|required))\b/iu';
+    // Keep a negation about other supplies separate from a subsequent request for the named item.
+    $clauses = preg_split('/[.;!?\r\n,]+|\s+(?:but|however|then)\s+|\s+and\s+(?=(?:(?:we|I|still|plan to|need to)\s+)*'
+        .$want.'\b)/iu', $title."\n".$body, -1, PREG_SPLIT_NO_EMPTY);
+    $shortTitle = $topic === '' ? $title : preg_replace('/^'.preg_quote($topic,'/').'\s*[:–—-]\s*/iu','',$title);
+    $bare = (bool)preg_match('/^'.$qty.$itemPattern.'[.!]?$/iu', $shortTitle);
+    $found = false;
+    $handling = false;
+    $titleNamesItem = (bool)preg_match('/'.$itemPattern.'/iu',$title);
+    foreach ($clauses as $clause) {
+        $clause = trim($clause);
+        if (preg_match('/\b(?:return|label|sort|coil|test|repair|inspect|pack|organize|organise|bring|use|photograph)\s+'
+            .$qty.'(?:'.$itemPattern.'|them\b|these\b|it\b)/iu',$clause)) $handling = true;
+        if (!preg_match('/'.$itemPattern.'/iu',$clause)) {
+            // The body of "Buy XLR cables" may simply say "Already bought them."
+            if ($titleNamesItem && preg_match('/^(?:(?:I|we|these|they|it)\s+)?(?:already (?:bought|purchased|ordered|received|own|have)|no longer (?:needed|required))(?:\s+(?:them|these|it))?$/iu',$clause)) return false;
+            continue;
+        }
+        if (preg_match($negative,$clause)) return false;
+        if (preg_match('/\b(?:in|from) (?:the |our |my )?(?:storage|stockroom|supply closet|equipment rack|cupboard)\b/iu',$clause)) continue;
+        if (preg_match('/\b(?:whether|check if|see if|find out if)\b/iu',$clause)) continue;
+        if (preg_match($purchase,$clause)) $found = true;
+    }
+    return $found || ($bare && !$handling);
+}
+
+/** Resolve a single current offer. An unnumbered reply is ambiguous if multiple offers qualify. */
+function vp3_phone_local_offer_v1(PDO $pdo, array $user, array $principal, int $cid, ?int $offerId=null, ?array &$taskTitles=null): ?array
+{
+    $taskTitles = null;
     $owner = (int)$user['id'];
     $agent = (int)($principal['agent_id'] ?? 0);
     if ($owner < 1 || $cid < 1 || vp3_participant_scope_v1() !== null
         || !knowledge_retrieval_v162_owner_session($user,$principal)) return null;
     $now = time();
-    $params = [$owner,$agent,$cid,$now,$now-86400];
+    $params = [$owner,$agent,$cid,$now,$now-VP3_PHONE_FRESH_SECONDS_V1,$now-86400];
     $where = '';
     if ($offerId !== null) {
         $where = ' AND o.assistant_message_id=?';
@@ -50,14 +89,19 @@ function vp3_phone_local_offer_v1(PDO $pdo, array $user, array $principal, int $
         WHERE t.owner_user_id=? AND t.agent_id=? AND t.conversation_id=? AND r.zone_state='inside'
             AND r.state='active' AND r.accepted_at IS NOT NULL AND r.accepted_at<=o.created_at
             AND d.device_status='approved' AND d.allow_location=1 AND d.location_state='live' AND d.expires_at>?
-            AND o.created_at>?".$where.' ORDER BY o.assistant_message_id DESC',$params)->fetchAll(PDO::FETCH_ASSOC);
+            AND d.fix_at>? AND o.created_at>?".$where.' ORDER BY o.assistant_message_id DESC',$params)->fetchAll(PDO::FETCH_ASSOC);
     $found = null;
     foreach ($rows as $row) {
         $id = (int)$row['assistant_message_id'];
         if ($offerId === null && vp3_phone_local_offer_consumed_v1($pdo,$id)) continue;
         $ids = json_decode($row['task_ids_json'],true,32,JSON_THROW_ON_ERROR);
-        if (!vp3_phone_arrival_tasks_v1($pdo,$user,$principal,$cid,$row['task_query'],$ids,$row['item_term'])) continue;
-        if ($found !== null) return null;
+        $tasks = vp3_phone_arrival_tasks_v1($pdo,$user,$principal,$cid,$row['task_query'],$ids,$row['item_term']);
+        if (!$tasks) continue;
+        if ($found !== null) {
+            $taskTitles = null;
+            return null;
+        }
+        $taskTitles = $tasks;
         $found = ['id'=>$id,'assistant_message_id'=>$id,'rule_id'=>$row['rule_id'],'visit_number'=>(int)$row['visit_number'],
             'item_term'=>$row['item_term'],'merchant_category'=>$row['merchant_category'],'open_today'=>(bool)$row['open_today']];
     }

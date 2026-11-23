@@ -154,7 +154,7 @@ $pdo->exec("UPDATE vp3_phone_devices_v1 SET generation=4");
 arrival_check($deliver()===[] && !vp3_phone_arrival_pending_v1($pdo,1,7,1),'stale grant generations cannot deliver queued arrivals');
 
 $GLOBALS['brainAccess']=true;
-$pdo->exec('UPDATE vp3_phone_devices_v1 SET generation=3');
+$pdo->prepare('UPDATE vp3_phone_devices_v1 SET generation=3,fix_at=?')->execute([time()]);
 $pdo->prepare('INSERT INTO vp3_phone_arrival_search_intents_v1(rule_id,item_term,merchant_category,open_today) VALUES(?,?,?,?)')
     ->execute([$rule,'XLR cables','music stores',1]);
 $task(12,1,7,'Recording equipment check','open',1,'Buy an XLR cable for the stage box.');
@@ -163,6 +163,13 @@ $task(14,1,8,'Recording: buy XLR cables for another Agent');
 $task(15,2,7,'Recording: buy XLR cables for another owner');
 $task(16,1,7,'Recording: buy spare XLR cables','completed');
 $task(17,1,7,'Recording: XLR cablestore demo');
+$task(18,1,7,'Recording: label the XLR cables we already own');
+$task(19,1,7,'Recording: do not buy XLR cables');
+$task(40,1,7,'Recording: order new mic stands and label the XLR cables');
+$task(41,1,7,'Recording: buy an XLR cable tester');
+$task(42,1,7,'Recording: buy a bag for XLR cables');
+$task(43,1,7,'Recording: XLR cables','open',1,'Return them to the venue.');
+$task(44,1,7,'Recording: buy XLR cables','open',1,'Already bought them.');
 // All these open recording tasks rank above the relevant one; filtering only the usual five would miss it.
 for ($i=20;$i<30;$i++) $task($i,1,7,'Recording: edit take '.$i);
 $event(4);
@@ -188,10 +195,27 @@ arrival_check($current && $current['id']===$message && $current['item_term']==='
     'the conditional item is checked across open scoped tasks before selecting the five results');
 arrival_check(!str_contains($offered[0]['speech'],'cablestore') && !str_contains($offered[0]['speech'],'for home')
     && !str_contains($offered[0]['speech'],'another owner') && !str_contains($offered[0]['speech'],'another Agent')
-    && !str_contains($offered[0]['speech'],'spare XLR'),'offer excludes substring, topic, status and isolation mismatches');
+    && !str_contains($offered[0]['speech'],'spare XLR') && !str_contains($offered[0]['speech'],'already own')
+    && !str_contains($offered[0]['speech'],'do not buy') && !str_contains($offered[0]['speech'],'label the XLR')
+    && !str_contains($offered[0]['speech'],'cable tester') && !str_contains($offered[0]['speech'],'bag for XLR'),
+    'task evidence excludes incidental, negative, resolved and accessory-only references');
 arrival_check(vp3_phone_local_offer_v1($pdo,$user,$principal,2,$message)===null &&
     vp3_phone_local_offer_v1($pdo,['id'=>2],['kind'=>'user_agent','owner_user_id'=>2,'agent_id'=>9],4,$message)===null,
     'foreign conversations and accounts cannot resolve an offer by its visible number');
+$taskRow=$pdo->prepare('UPDATE agent_memory_items SET subject=?,memory_text=? WHERE id=12');
+$taskRow->execute(['Recording: pick up drumsticks','Check inventory of XLR cables']);
+$offerRows=$pdo->query('SELECT * FROM chat_messages WHERE id='.$message)->fetchAll(PDO::FETCH_ASSOC);
+$edited=vp3_phone_chat_history_v1($pdo,$user,7,1,$offerRows,$input)[0]['message'];
+arrival_check($offer($message)===null && !str_contains($edited,'Search area') && !str_contains($edited,'drumsticks'),
+    'an unrelated edit withdraws the old invitation without displaying the changed task title');
+$taskRow->execute(['Recording: do not order a rack, but source another XLR cable','']);
+arrival_check($offer($message)!==null,'a negation of another purchase leaves an explicit need for the item intact');
+$taskRow->execute(['Recording: XLR cables','']);
+arrival_check($offer($message)!==null,'a bare item title with a scoped recording topic is a valid open need');
+$taskRow->execute(['Recording equipment check','Buy an XLR cable for the stage box.']);
+$pdo->prepare('UPDATE vp3_phone_devices_v1 SET fix_at=?')->execute([time()-VP3_PHONE_FRESH_SECONDS_V1]);
+arrival_check($offer($message)===null,'stale map readings with a persisted live state cannot start a local search');
+$pdo->prepare('UPDATE vp3_phone_devices_v1 SET fix_at=?')->execute([time()]);
 $GLOBALS['denied'][]='brain:12';
 arrival_check($offer($message)===null,'revoked source permission withdraws a pending offer');
 array_pop($GLOBALS['denied']);
