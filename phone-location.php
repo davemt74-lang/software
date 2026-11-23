@@ -18,7 +18,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-location-v1.css?v=5">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=2" defer></script>
-  <script src="phone-location-v1.js?v=6" defer></script>
+  <script src="phone-location-v1.js?v=7" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">

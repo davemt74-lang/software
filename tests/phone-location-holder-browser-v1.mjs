@@ -15,7 +15,7 @@ function initialDevice(status = 'pending',g = 1,loc = 'off') {
   return {id,name:'Test phone',role:'owner',status,generation:g,allow_location:status === 'approved',
     location_state:loc,fix_at:null,accuracy:null};
 }
-async function scenario({initial = null, geolocation = true, lostClaimAck = false, holdFirstFix = false} = {}) {
+async function scenario({initial = null, geolocation = true, lostClaimAck = false, holdFirstFix = false, permissionsPolicy} = {}) {
   const context = await browser.newContext({viewport:{width:375,height:667},isMobile:true,hasTouch:true});
   let device = initial && {...initial}, revoked = false, drop = lostClaimAck;
   let requests = [], routes = [], errors = [];
@@ -27,11 +27,15 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
   page.on('pageerror',e=>errors.push(String(e)));
   page.setDefaultTimeout(4500);
   await page.addInitScript(enabled=>{
-    let pos,err,previousPos,online=true,peak=0;
+    let pos,err,previousPos,online=true,peak=0,failNextWatch=false;
     const options=[], active=new Set();
     Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>online});
     Object.defineProperty(navigator,'geolocation',{configurable:true,value:enabled ? {
       watchPosition(ok,bad,opts) {
+        if (failNextWatch) {
+          failNextWatch = false;
+          throw new DOMException('Location service unavailable', 'InvalidStateError');
+        }
         previousPos=pos; pos=ok; err=bad;
         options.push(opts); active.add(options.length); peak=Math.max(peak,active.size);
         return options.length;
@@ -43,7 +47,8 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
       get peak() { return peak; }, get options() { return options; },
       position(timestamp=Date.now()) { if (active.size) pos({timestamp,coords:{latitude:33.4,longitude:-112.1,accuracy:9}}); },
       previous() { previousPos?.({timestamp:Date.now(),coords:{latitude:0,longitude:0,accuracy:123}}); },
-      denial() { if (active.size) err({code:1}); },
+      failNextWatch() { failNextWatch=true; },
+      locationError(code) { if (active.size) err({code}); },
       network(value) { online=value; window.dispatchEvent(new Event(value?'online':'offline')); },
       wake() { window.dispatchEvent(new Event('online')); },
       late() { pos?.({timestamp:Date.now()+1000,coords:{latitude:1,longitude:1,accuracy:9}}); }
@@ -52,7 +57,8 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
   await page.route(origin+'/**',async route=>{
     const u = new URL(route.request().url());
     routes.push(u.href);
-    if (u.pathname === pathname) return route.fulfill({contentType:'text/html',body:doc});
+    if (u.pathname === pathname) return route.fulfill({contentType:'text/html',body:doc,
+      headers: permissionsPolicy ? {'Permissions-Policy':permissionsPolicy} : {}});
     if (u.pathname.endsWith('phone-location-v1.js')) return route.fulfill({contentType:'text/javascript',body:js});
     if (u.pathname.endsWith('phone-location-v1.css')) return route.fulfill({contentType:'text/css',body:css});
     if (!u.pathname.endsWith('/api/phone-location-v1.php')) return route.fulfill({status:404});
@@ -153,15 +159,62 @@ try {
     assert.equal(t.requests.filter(r=>r.action==='start').length,1);
     await t.page.locator('#phone-start').click();
     await waitText(t.page,'Waiting for a fresh');
-    await t.page.evaluate(()=>window.phoneFixture.denial());
-    await waitText(t.page,'permission was denied');
+    await t.page.evaluate(()=>window.phoneFixture.locationError(1));
+    await waitText(t.page,'permission was denied for this attempt');
+    await t.page.locator('#phone-start').waitFor({state:'visible'});
     assert.equal(t.device.location_state,'denied');
     assert.equal(await t.page.evaluate(()=>window.phoneFixture.active),false);
+    // Observe a completed poll before checking that it preserved the current attempt's diagnosis.
+    t.device.name='After location denial';
+    await t.page.evaluate(()=>window.phoneFixture.wake());
+    await t.page.getByText(t.device.name,{exact:true}).waitFor();
+    await waitText(t.page,'permission was denied for this attempt');
+    await t.page.reload();
+    await waitText(t.page,'previous location attempt');
+    assert.equal(await t.page.evaluate(()=>window.phoneFixture.watches),0);
     await t.page.locator('#phone-start').click(); await waitText(t.page,'Waiting for a fresh');
     t.revoke(); await t.page.evaluate(()=>window.phoneFixture.wake()); await waitText(t.page,'expired or disconnected');
     assert.equal(await t.page.evaluate(()=>window.phoneFixture.active),false,'revocation clears browser watch');
     assert.equal(await t.page.locator('#phone-start').isVisible(),false);
     assert.deepEqual(t.errors,[]); await t.close();
+  }
+  {
+    const t = await scenario({initial:initialDevice('approved',4)});
+    const {page}=t;
+    await t.visit();
+    await page.evaluate(()=>window.phoneFixture.failNextWatch());
+    await page.locator('#phone-start').click();
+    await waitText(page,'browser could not start location updates');
+    assert.equal(t.device.location_state,'off');
+    assert.deepEqual(t.requests.filter(r=>r.action!=='status'),[]);
+    assert.equal(await page.locator('#phone-start').isEnabled(),true);
+    t.device.name='After reader failure';
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await page.getByText(t.device.name,{exact:true}).waitFor();
+    await waitText(page,'browser could not start location updates');
+    await page.locator('#phone-start').click();
+    await waitText(page,'Waiting for a fresh');
+    for (const [code,notice] of [[2,'could not determine its location'],[3,'location request timed out']]) {
+      await page.evaluate(code=>window.phoneFixture.locationError(code),code);
+      await waitText(page,notice);
+      assert.equal(await page.evaluate(()=>window.phoneFixture.active),true);
+    }
+    await page.evaluate(()=>window.phoneFixture.position());
+    await waitText(page,'received this phone');
+    assert.deepEqual(t.requests.filter(r=>r.action!=='status').map(r=>r.action),['start','fix']);
+    assert.deepEqual(t.errors,[]);
+    await t.close();
+  }
+  {
+    const t=await scenario({initial:initialDevice('approved',4),permissionsPolicy:'geolocation=()'});
+    await t.visit();
+    await t.page.locator('#phone-start').click();
+    await waitText(t.page,'permissions policy blocks location');
+    assert.equal(await t.page.evaluate(()=>window.phoneFixture.watches),0);
+    assert.deepEqual(t.requests.filter(r=>r.action!=='status'),[]);
+    assert.equal(t.device.location_state,'off');
+    assert.deepEqual(t.errors,[]);
+    await t.close();
   }
   {
     const t=await scenario({initial:initialDevice('approved',4),geolocation:false});
