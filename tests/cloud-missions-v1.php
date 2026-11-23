@@ -5,7 +5,18 @@ require __DIR__.'/fixtures/workflow-agent-schema-v1.php';
 class CloudMissionPDO extends PDO{
  public function prepare(string $query,array $options=[]): PDOStatement|false{return parent::prepare(str_replace([' FOR UPDATE','INSERT IGNORE'],['','INSERT OR IGNORE'],$query),$options);}
 }
-$pdo=new CloudMissionPDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('IF',fn($v,$yes,$no)=>$v?$yes:$no);workflow_agent_fixture_v1($pdo);
+$pdo=new CloudMissionPDO('sqlite::memory:');$pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('IF',fn($v,$yes,$no)=>$v?$yes:$no);
+$checks=0;
+$cameraPrompt=['executor'=>'cloud','objective'=>'Request a camera'];
+check(cloud_mission_dispatch_v1($pdo,['id'=>1],'task.route',$cameraPrompt)['route']==='chat',
+    'The default Cloud composer routes a camera prompt to Chat before Mission setup');
+rejects(fn()=>cloud_mission_dispatch_v1($pdo,['id'=>1],'task.route',[...$cameraPrompt,'objective'=>'Start a Cloud Mission']),
+    'Explicit Mission requests still require the Cloud job engine',503);
+foreach (['auto','homeserver'] as $executor) {
+    check(cloud_mission_dispatch_v1($pdo,['id'=>1],'task.route',[...$cameraPrompt,'executor'=>$executor])===null,
+        "The $executor executor keeps its existing fallback before Mission setup");
+}
+workflow_agent_fixture_v1($pdo);
 foreach(['capability_key TEXT','action_key TEXT','action_type TEXT','label TEXT','summary TEXT','attempt_count INTEGER DEFAULT 0','result_summary TEXT','result_json TEXT','error_class TEXT','started_at TEXT','completed_at TEXT','updated_at TEXT'] as $c)$pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN '.$c);
 foreach(['run_id INTEGER','owner_user_id INTEGER','action_id INTEGER','depends_on_action_id INTEGER'] as $c)$pdo->exec('ALTER TABLE agent_workflow_action_dependencies ADD COLUMN '.$c);
 foreach(['receipt_key TEXT','result_json TEXT'] as $c)$pdo->exec('ALTER TABLE agent_workflow_receipts ADD COLUMN '.$c);
@@ -24,7 +35,7 @@ function search_knowledge(...$args): array{return [['id'=>9,'title'=>'Dough evid
 function get_knowledge_item($id): ?array{return $id===9&&!($GLOBALS['deletedSource']??false)?['id'=>9,'knowledge_scope'=>'personal','created_by_user_id'=>1]:null;}
 function ai_active_provider(): string{return 'fixture';}
 function ai_provider_model($p): string{return 'fixture';}
-$checks=0;function check($v,$label){if(!$v)throw new RuntimeException($label);$GLOBALS['checks']++;echo "PASS $label\n";}function rejects($fn,$label,$code=0){try{$fn();}catch(Throwable $e){check(!$code||$e->getCode()===$code,$label);return;}throw new RuntimeException('Expected rejection: '.$label);}
+function check($v,$label){if(!$v)throw new RuntimeException($label);$GLOBALS['checks']++;echo "PASS $label\n";}function rejects($fn,$label,$code=0){try{$fn();}catch(Throwable $e){check(!$code||$e->getCode()===$code,$label);return;}throw new RuntimeException('Expected rejection: '.$label);}
 cloud_mission_schema_v1($pdo);$u=['id'=>1];$request=['objective'=>'Compare the collected dough research','thread_id'=>11,'request_id'=>'00000000-0000-4000-8000-000000000001'];
 $m=cloud_mission_prepare_v1($pdo,$u,$request);$mid=$m['id'];check($m['execution_target']==='cloud'&&$m['status']==='planned'&&count($m['tasks'])===2,'Cloud Mission is prepared in the existing job engine without HomeServer');
 check($pdo->query("SELECT COUNT(*) FROM agent_workflow_runs WHERE source_kind='cloud_mission'")->fetchColumn()==1,'Mission has exactly one canonical job, not a parallel execution queue');
