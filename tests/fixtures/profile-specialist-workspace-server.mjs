@@ -59,7 +59,10 @@ export async function startProfileWorkspaceServer({analytics=true,imageAnalytics
       pa3_login(1);
       `:''}
       ${marketing?`$seed['followthrough']=profile_commerce_followthrough_fixture_v1(db(),1,${marketingAgent},${marketingAgent===0?94001:11});
-      ${marketingAgent===7?"profile_commerce_followthrough_fixture_event_v1(db(),$seed['followthrough']);":''}
+      ${marketingAgent===7?`// An open thread remains discoverable while its saved promotion receipt keeps its fixed historical dates.
+      db()->prepare("UPDATE profile_agent_conversations SET status='open' WHERE owner_user_id=? AND id=?")
+        ->execute([1,$seed['followthrough']['ids']['public_conversation']]);
+      profile_commerce_followthrough_fixture_event_v1(db(),$seed['followthrough']);`:''}
       profile_analytics_period_fixture_table_v1(db(),'agent_commerce_product_bindings_v800',['product_id'=>'BIGINT PRIMARY KEY','binding_type'=>"VARCHAR(40) NOT NULL DEFAULT ''",'binding_id'=>'BIGINT NULL']);
       profile_analytics_period_fixture_table_v1(db(),'agent_commerce_products_v800',['description'=>'TEXT NULL','metadata_json'=>'TEXT NULL','is_active'=>'INTEGER NOT NULL DEFAULT 1','product_type'=>"VARCHAR(32) NOT NULL DEFAULT 'physical'",
         'fulfillment_type'=>"VARCHAR(32) NOT NULL DEFAULT 'manual'",'payment_mode'=>"VARCHAR(24) NOT NULL DEFAULT 'one_time'",'price_cents'=>'BIGINT NOT NULL DEFAULT 2000',
