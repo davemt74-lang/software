@@ -149,10 +149,62 @@ $rows=api('GET')['state']['voicemails'];c(count($rows)===2&&count(array_filter($
 foreach($rows as $vm){action('mark_voicemail_read',['voicemail_id'=>$vm['id']]);}
 c(count(array_filter(api('GET')['state']['voicemails'],fn($r)=>$r['read']))===2,'legacy and job voicemail read state persists');
 c(api('GET',['action'=>'recording_policy','number_id'=>3])['policy']['model_route']==='account_cloud','policy binds selected assigned Agent from MAIN');
+
+// Existing inbound routes must announce even when nobody registered a browser Device
+// and the caller hangs up before a recording callback ever arrives.
+$pdo->exec('DELETE FROM phone_browser_presence_v1');$priorMessages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();$priorBrowser=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$offlineForm=form('CA'.str_repeat('8',32),['Direction'=>'inbound','From'=>'+16025550777','To'=>'+16025550101']);
+$offlineSignature=vp3_phone_sms_twilio_signature_v110((string)setting('phone_voice_webhook_url_v130'),$offlineForm,'carrier-auth-token-fixture');
+$offline=vp3_phone_voice_incoming_v130($pdo,$offlineForm,$offlineSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
+$query=$pdo->prepare('SELECT * FROM phone_voice_calls_v130 WHERE provider_call_sid=?');$query->execute([$offlineForm['CallSid']]);$offlineReceipt=$query->fetch();$offlineId='legacy-'.(int)$offlineReceipt['id'];
+c($offline['accepted']&&str_contains($offline['twiml'],'<Record'),'offline browser preserves existing voicemail routing');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$priorBrowser,'offline route reuses existing receipt without inventing browser call');
+c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$priorMessages+1,'call without any recording callback still announces once in Chat');
+$offlineMessage=$pdo->query('SELECT * FROM chat_messages ORDER BY id DESC LIMIT 1')->fetch();$offlineMarker=json_decode($offlineMessage['context_json'],true)['phone_v1'];
+c($offlineMarker===['kind'=>'call','call_id'=>$offlineId]&&str_contains($offlineMessage['message'],'+16025550777')&&str_contains($offlineMessage['message'],'+16025550101'),'offline announcement uses stable receipt reference and observed caller/called numbers');
+vp3_phone_voice_incoming_v130($pdo,$offlineForm,$offlineSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
+c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$priorMessages+1,'repeated signed offline callback cannot duplicate announcement');
+$legacyCalls=array_values(array_filter(api('GET')['state']['calls'],fn($r)=>$r['public_id']===$offlineId));
+c(count($legacyCalls)===1&&$legacyCalls[0]['source_kind']==='legacy'&&!$legacyCalls[0]['browser_control']&&$legacyCalls[0]['agent_id']===7&&$legacyCalls[0]['phone_e164']==='+16025550101','Recent calls includes read-only original legacy receipt');
+c(!str_contains(json_encode($legacyCalls),$offlineForm['CallSid']),'legacy public history does not expose carrier SID');
+denies(fn()=>action('bind_call',['call_id'=>$offlineId]),404,'legacy history ID never grants browser call controls');
+action('token',['number_id'=>1,'agent_id'=>7,'conversation_id'=>12]);
+$replayAfterDevice=vp3_phone_voice_incoming_v130($pdo,$offlineForm,$offlineSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
+c(str_contains($replayAfterDevice['twiml'],'<Record')&&vp3_phone_browser_call_by_sid_v1($pdo,$offlineForm['CallSid'])===null&&(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$priorMessages+1,'Device registration cannot promote a retried legacy route into a duplicate browser announcement');
+$secondOffline=form('CA'.str_repeat('9',32),['Direction'=>'inbound','From'=>'+16025550666','To'=>'+16025550103']);$secondSignature=vp3_phone_sms_twilio_signature_v110((string)setting('phone_voice_webhook_url_v130'),$secondOffline,'carrier-auth-token-fixture');
+vp3_phone_voice_incoming_v130($pdo,$secondOffline,$secondSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
+$query->execute([$secondOffline['CallSid']]);$secondOfflineReceipt=$query->fetch();$secondOfflineId='legacy-'.(int)$secondOfflineReceipt['id'];
+$delivered=$pdo->query("SELECT conversation_id,chat_agent_id FROM phone_browser_deliveries_v1 WHERE event_key='call:$secondOfflineId'")->fetch();
+c((int)$delivered['conversation_id']===11&&(int)$delivered['chat_agent_id']===0,'Agent B fallback never announces inside current Agent A conversation');
+$agentACalls=api('GET',['agent_id'=>7,'conversation_id'=>12])['state']['calls'];$agentBCalls=api('GET',['agent_id'=>9,'conversation_id'=>13])['state']['calls'];
+c(in_array($offlineId,array_column($agentACalls,'public_id'),true)&&!in_array($secondOfflineId,array_column($agentACalls,'public_id'),true)&&in_array($secondOfflineId,array_column($agentBCalls,'public_id'),true),'legacy Recent calls preserves exact named Agent namespace');
+$privateForm=form('CA'.str_repeat('0',32),['Direction'=>'inbound','From'=>'anonymous','To'=>'+16025550103']);$privateSignature=vp3_phone_sms_twilio_signature_v110((string)setting('phone_voice_webhook_url_v130'),$privateForm,'carrier-auth-token-fixture');
+vp3_phone_voice_incoming_v130($pdo,$privateForm,$privateSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
+c(str_contains($pdo->query('SELECT message FROM chat_messages ORDER BY id DESC LIMIT 1')->fetchColumn(),'private caller'),'private caller is not invented as an authenticated identity');
+$browserLegacy='legacy-'.(int)$in['voice_call_id'];$allIds=array_column(api('GET')['state']['calls'],'public_id');
+c(in_array($in['public_id'],$allIds,true)&&!in_array($browserLegacy,$allIds,true),'linked browser and legacy receipts project as one call');
+$pdo->prepare('UPDATE phone_browser_calls_v1 SET voice_call_id=NULL WHERE public_id=?')->execute([$in['public_id']]);
+c(!in_array($browserLegacy,array_column(api('GET')['state']['calls'],'public_id'),true),'provider parent SID also excludes legacy duplicate when older link is absent');
+// Chat projection failure must not interrupt the accepted original call route.
+$pdo->exec('ALTER TABLE chat_messages RENAME TO phone_fixture_hidden_chat_messages');
+$failureForm=form('CA'.str_repeat('e',32),['Direction'=>'inbound','From'=>'+16025550555','To'=>'+16025550101']);$failureSignature=vp3_phone_sms_twilio_signature_v110((string)setting('phone_voice_webhook_url_v130'),$failureForm,'carrier-auth-token-fixture');
+$oldErrorLog=ini_get('error_log');ini_set('error_log','/dev/null');
+try{$failureCall=vp3_phone_voice_incoming_v130($pdo,$failureForm,$failureSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));}finally{ini_set('error_log',$oldErrorLog);$pdo->exec('ALTER TABLE phone_fixture_hidden_chat_messages RENAME TO chat_messages');}
+c($failureCall['accepted']&&str_contains($failureCall['twiml'],'<Record')&&!$pdo->inTransaction(),'failed optional Chat projection leaves voicemail routing and transaction usable');
+c(vp3_phone_browser_call_by_sid_v1($pdo,$failureForm['CallSid'])===null,'failed browser Chat projection rolls back the proposed browser route before safe voicemail fallback');
+$pdo->exec('DELETE FROM phone_browser_presence_v1');
+vp3_phone_voice_incoming_v130($pdo,$failureForm,$failureSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
+c(count(array_filter(api('GET')['state']['calls'],fn($r)=>str_starts_with($r['public_id'],'legacy-')))===4,'retry after Chat projection recovery retains one call per immutable legacy receipt');
 foreach($argv as $arg)if(str_starts_with($arg,'--emit-state=')){
     $path=substr($arg,13);if($path===''||!is_dir(dirname($path)))throw new RuntimeException('Create the state fixture destination directory first.');
     file_put_contents($path,json_encode(api('GET')['state'],JSON_THROW_ON_ERROR|JSON_PRETTY_PRINT|JSON_UNESCAPED_SLASHES));
 }
+for($i=0;$i<60;$i++){
+    $pdo->prepare("INSERT INTO phone_voice_calls_v130(provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,state,created_at) VALUES ('twilio',?,1,1,7,'+16025550444','+16025550101','completed',?)")
+        ->execute(['CA'.str_pad(dechex(256+$i),32,'0',STR_PAD_LEFT),gmdate('Y-m-d H:i:s',1577836800+$i)]);
+}
+$bounded=api('GET')['state']['calls'];c(count($bounded)===50,'mixed legacy/browser Recent calls is bounded to50');
+$timestamps=array_column($bounded,'created_at');$sorted=$timestamps;rsort($sorted,SORT_STRING);c($timestamps===$sorted&&end($timestamps)>='2020-01-01T00:00:00+00:00','mixed recent history preserves chronological UTC order');
 
 $pending=prepare();$pendingId=$pending['call']['public_id'];$pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=2,agent_id=8 WHERE id=1');
 [$refused]=start($pending,'4');c(str_contains($refused,'Hangup')&&readcall($pendingId)['intent_consumed_epoch']==0,'reassignment invalidates an issued call intent before carrier use');
@@ -160,6 +212,7 @@ denies(fn()=>action('token',['number_id'=>1]),404,'reassignment revokes new cred
 c(vp3_phone_browser_policy_v1($pdo,['id'=>1,'owner_user_id'=>2,'agent_id'=>8])['browser_enabled']==0,'former owner browser approval does not transfer');
 c(readcall($public)['owner_user_id']==1,'historical call remains with original owner after reassignment');
 $ownerTwo=api('GET',[],2)['state'];c(!in_array($public,array_column($ownerTwo['calls'],'public_id'),true),'new number owner cannot read former owner call history');
+c(!in_array($offlineId,array_column($ownerTwo['calls'],'public_id'),true)&&in_array($offlineId,array_column(api('GET')['state']['calls'],'public_id'),true),'legacy history remains with original owner after number reassignment');
 $pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=1,agent_id=7 WHERE id=1');
 $pdo->exec('UPDATE phone_browser_calls_v1 SET intent_expires_epoch=1 WHERE id='.(int)$pending['call']['id']);
 [$expired]=start($pending,'5');c(str_contains($expired,'Hangup'),'expired intent cannot place call');

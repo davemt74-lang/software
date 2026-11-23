@@ -24,6 +24,10 @@ try{
   const state=JSON.parse(fs.readFileSync(stateFile,'utf8'));
   assert.ok(Array.isArray(state.numbers)&&state.numbers.length>0,'The projection needs a real assigned number.');
   assert.ok(state.numbers.some(number=>number.id===state.selected_number_id),'The selected number belongs to the returned assignments.');
+  assert.ok(Array.isArray(state.calls)&&state.calls.some(call=>call.source_kind==='browser'&&/^[a-f0-9]{32}$/.test(call.public_id)&&call.browser_control===true),'The real browser-call ledger is represented.');
+  assert.ok(state.calls.some(call=>call.source_kind==='legacy'&&/^legacy-[1-9][0-9]*$/.test(call.public_id)&&call.browser_control===false),'Existing inbound call history is represented as read-only legacy calls.');
+  assert.equal(new Set(state.calls.map(call=>call.public_id)).size,state.calls.length,'The merged call projection has no duplicate public call identities.');
+  assert.ok(state.calls.every(call=>call.call_id===call.public_id),'Typed Chat call references preserve their projected call identity.');
   assert.ok(Array.isArray(state.voicemails)&&state.voicemails.some(row=>/^job-[1-9][0-9]*$/.test(row.id)),'The real recording pipeline namespace is represented.');
   assert.ok(state.voicemails.some(row=>/^legacy-[1-9][0-9]*$/.test(row.id)),'Historical voicemail remains represented alongside new jobs.');
   assert.equal(typeof state.post_call_policy?.enabled,'boolean','Persisted policy exposes the explicit post-call processing choice.');
@@ -36,7 +40,7 @@ try{
   assert.equal(ui.config?.agent_id,0,'The real UI fixture uses the backend MAIN Agent namespace.');
   assert.equal(ui.config?.conversation_id,11,'The real UI fixture uses the backend owner MAIN conversation.');
   assert.equal(new URL(ui.config?.endpoint).origin,'https://cloud.example','The rendered UI and actual media links share their real fixture origin.');
-  console.log('PASS real PHP Phone projection includes assigned numbers, both voicemail namespaces and persisted Cloud choice');
+  console.log('PASS real PHP Phone projection includes assigned numbers, browser/legacy call history, both voicemail namespaces and persisted Cloud choice');
   if(!process.argv.includes('--projection-only')){
     run(process.execPath,['tests/phone-workspace-v1-browser.mjs'],{env:{...process.env,PHONE_WORKSPACE_STATE_FIXTURE:stateFile,PHONE_WORKSPACE_UI_FIXTURE:uiFile}});
   }

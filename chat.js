@@ -3355,11 +3355,12 @@
   function bindPhoneWorkspaceV1(element,marker) {
     if(!element||!marker||typeof marker.call_id!=='string')return;
     const validCall=/^[a-f0-9]{32}$/.test(marker.call_id);
+    const validLegacyCall=/^legacy-[1-9][0-9]{0,14}$/.test(marker.call_id);
     const validVoiceId=(Number.isSafeInteger(marker.voicemail_id)&&marker.voicemail_id>0)
       ||(typeof marker.voicemail_id==='string'&&/^(?:job|legacy)-[1-9][0-9]{0,14}$/.test(marker.voicemail_id));
     const validVoicemail=marker.kind==='voicemail'&&validVoiceId
-      &&(validCall||/^legacy-[1-9][0-9]*$/.test(marker.call_id));
-    if(!validCall&&!validVoicemail)return;
+      &&(validCall||validLegacyCall);
+    if(!(marker.kind==='call'&&(validCall||validLegacyCall))&&!validVoicemail)return;
     element.dataset.phoneWorkspaceCall=marker.call_id;
     element.dataset.phoneWorkspaceMarker=JSON.stringify(marker);
     window.VP3PhoneWorkspaceV1?.bindMessage?.(element,marker);

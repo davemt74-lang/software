@@ -155,14 +155,16 @@ function vp3_phone_browser_incoming_v1(PDO $pdo,array $route,string $sid): ?stri
     $q=$pdo->prepare('SELECT * FROM phone_cloud_numbers_v100 WHERE id=?');$q->execute([(int)$route['phone_number_id']]);$n=$q->fetch(PDO::FETCH_ASSOC);if(!$n||(int)$n['owner_user_id']!==(int)$route['owner_user_id']||(int)$n['agent_id']!==(int)$route['agent_id'])return null;
     $policy=vp3_phone_browser_policy_v1($pdo,$n);if(!(int)$policy['browser_enabled'])return null;
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$route,$sid,$n,$policy){
-        $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE provider_call_sid=?');$q->execute([$sid]);$call=$q->fetch(PDO::FETCH_ASSOC);
+        $q=$pdo->prepare('SELECT id FROM users WHERE id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([(int)$n['owner_user_id']]);
+        $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE provider_call_sid=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$sid]);$call=$q->fetch(PDO::FETCH_ASSOC);
         if(!$call){
             $call=['owner_user_id'=>(int)$n['owner_user_id'],'agent_id'=>(int)$n['agent_id'],'phone_number_id'=>(int)$n['id'],'phone_e164'=>(string)$n['phone_e164']];if(!vp3_phone_browser_live_call_v1($pdo,$call))return null;
-            $q=$pdo->prepare('SELECT id FROM users WHERE id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$call['owner_user_id']]);
+            $q=$pdo->prepare("SELECT id FROM phone_voice_calls_v130 WHERE provider='twilio' AND provider_call_sid=?".vp3_phone_workspace_lock_v1($pdo));$q->execute([$sid]);$legacy=(int)$q->fetchColumn();
+            if($legacy>0){$q=$pdo->prepare('SELECT chat_message_id FROM phone_browser_deliveries_v1 WHERE owner_user_id=? AND event_key=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$call['owner_user_id'],'call:legacy-'.$legacy]);if($q->fetchColumn())return null;}
             $q=$pdo->prepare("SELECT id FROM phone_browser_calls_v1 WHERE owner_user_id=? AND state IN ('dialing','ringing','answered') LIMIT 1");$q->execute([$call['owner_user_id']]);if($q->fetchColumn())return null;
             $q=$pdo->prepare('SELECT conversation_id,chat_agent_id FROM phone_browser_presence_v1 WHERE owner_user_id=? AND last_epoch>?');$q->execute([$call['owner_user_id'],time()-300]);$presence=$q->fetch(PDO::FETCH_ASSOC)?:[];
             if(!$presence||((int)$presence['chat_agent_id']!==0&&(int)$presence['chat_agent_id']!==$call['agent_id']))return null;
-            $q=$pdo->prepare("SELECT id FROM phone_voice_calls_v130 WHERE provider='twilio' AND provider_call_sid=?");$q->execute([$sid]);$legacy=(int)$q->fetchColumn();$public=bin2hex(random_bytes(16));$now=time();
+            $public=bin2hex(random_bytes(16));$now=time();
             $pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,voice_call_id,provider_call_sid,conversation_id,chat_agent_id,state,recording_enabled,created_epoch,updated_epoch) VALUES (?,?,?,?,?,?,'inbound',?,?,?,?,'ringing',?,?,?)")
                 ->execute([$public,$call['owner_user_id'],$call['agent_id'],$call['phone_number_id'],$call['phone_e164'],(string)$route['caller_e164'],$legacy?:null,$sid,$presence['conversation_id']??null,(int)($presence['chat_agent_id']??0),(int)$policy['recording_enabled'],$now,$now]);
             $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=?');$q->execute([$public]);$call=$q->fetch(PDO::FETCH_ASSOC);

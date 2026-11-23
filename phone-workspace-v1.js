@@ -6,7 +6,8 @@
   const principal=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):0;
   const text=value=>String(value??'').slice(0,5000);
   const voicemailKey=value=>typeof value==='string'&&/^(?:job|legacy)-[1-9][0-9]{0,14}$/.test(value)?value:positive(value)?String(value):'';
-  const publicId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{8,100}$/.test(value);
+  const publicId=value=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
+  const callKey=value=>publicId(value)?value:typeof value==='string'&&/^legacy-[1-9][0-9]{0,14}$/.test(value)?value:'';
   const node=(tag,cls,value)=>{const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=text(value);return item;};
   const endpoint=new URL(config.endpoint,location.href);
   if(endpoint.origin!==location.origin||endpoint.username||endpoint.password)return;
@@ -76,7 +77,7 @@
   }
   function cleanState(raw){
     if(!raw||!Array.isArray(raw.numbers)||!Array.isArray(raw.calls)||!Array.isArray(raw.voicemails))throw new Error('Phone state was not confirmed.');
-    return {...raw,numbers:raw.numbers.filter(item=>positive(item?.id)).slice(0,30),contacts:(Array.isArray(raw.contacts)?raw.contacts:[]).filter(item=>positive(item?.id)).slice(0,250),favorites:(Array.isArray(raw.favorites)?raw.favorites:[]).filter(item=>positive(item?.id)).slice(0,100),calls:raw.calls.filter(item=>publicId(item?.public_id)).slice(0,60),voicemails:raw.voicemails.filter(item=>voicemailKey(item?.id)).map(item=>({...item,id:voicemailKey(item.id)})).slice(0,60)};
+    return {...raw,numbers:raw.numbers.filter(item=>positive(item?.id)).slice(0,30),contacts:(Array.isArray(raw.contacts)?raw.contacts:[]).filter(item=>positive(item?.id)).slice(0,250),favorites:(Array.isArray(raw.favorites)?raw.favorites:[]).filter(item=>positive(item?.id)).slice(0,100),calls:raw.calls.filter(item=>callKey(item?.public_id)||callKey(item?.call_id)).map(item=>({...item,public_id:callKey(item.public_id)||callKey(item.call_id)})).slice(0,60),voicemails:raw.voicemails.filter(item=>voicemailKey(item?.id)).map(item=>({...item,id:voicemailKey(item.id)})).slice(0,60)};
   }
   async function refresh(){
     if(!authorized||disposed||!context.ready)return;
@@ -202,12 +203,15 @@
   function renderVoicemails(){const host=sections.voicemail;if([...host.querySelectorAll('audio')].some(audio=>!audio.paused))return;host.replaceChildren();if(!state?.voicemails.length){listEmpty(host,'No saved voicemail.');return;}for(const voicemail of state.voicemails)host.append(voicemailCard(voicemail));}
   function callCard(info,entry=null){
     const renderGeneration=generation;
-    const id=info.public_id,card=node('article','vp3-phone-call');card.dataset.phoneCallId=id;
+    const id=info.public_id,readOnlyLegacy=/^legacy-/.test(id),currentState=localStates.get(id)||info.state,card=node('article','vp3-phone-call');card.dataset.phoneCallId=id;
     card.append(node('strong',null,entry?.incoming?'Incoming phone call':'Phone call'),node('p',null,peerName(info.peer_e164)),node('p','vp3-phone-meta',displayState(entry?.phase||localStates.get(id)||info.state)));
     const actions=node('div','vp3-phone-actions');
     if(entry?.incoming&&pending.get(id)===entry){const accept=button('Accept',()=>{if(current(renderGeneration))void acceptCall(id);},'vp3-phone-button vp3-phone-primary');accept.disabled=callBusy||setupPending>0||Boolean(active)||!positive(context.conversation_id);const decline=button('Decline',()=>{if(current(renderGeneration))declineCall(id);});decline.disabled=callBusy;actions.append(accept,decline);}
-    if(entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
-    if(!entry&&['ringing','incoming','offered'].includes(info.state))actions.append(button('Open Phone',()=>open()));
+    if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
+    if(!entry&&!readOnlyLegacy&&['ringing','incoming','offered'].includes(currentState))actions.append(button('Open Phone',()=>open()));
+    if(!entry&&['ended','completed','voicemail_ready','voicemail','no_answer','no-answer','busy','failed','declined','cancelled','canceled','missed'].includes(currentState)){
+      const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(info.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(info.peer_e164||'');actions.append(callback);
+    }
     if(actions.childNodes.length)card.append(actions);return card;
   }
   function renderCards(){
@@ -229,7 +233,7 @@
   }
   function bindMessage(element,payload){
     if(!authorized||disposed||!element?.append||!payload||!['call','voicemail'].includes(payload.kind))return;
-    const callId=publicId(payload.call_id)?payload.call_id:'',voicemailId=voicemailKey(payload.voicemail_id);
+    const callId=callKey(payload.call_id),voicemailId=voicemailKey(payload.voicemail_id);
     if(payload.kind==='call'&&!callId||payload.kind==='voicemail'&&!voicemailId)return;
     if(callId&&!element.closest('[data-phone-announcement]'))removeAnnouncements(callId);
     let item=[...cards].find(row=>row.element===element);if(item){if(item.callId===callId&&item.voicemailId===voicemailId&&item.generation===generation)return;item.host.remove();cards.delete(item);}
