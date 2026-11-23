@@ -7,7 +7,7 @@ concurrency:
 
 on:
   push:
-    branches: [main]
+    branches: [main, delivery/phone-cloud-2e2141c773f7]
   workflow_dispatch:
 
 permissions:
@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   package:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -508,3 +509,95 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
+
+  publish-verified-phone-download:
+    if: github.ref == 'refs/heads/delivery/phone-cloud-2e2141c773f7'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      actions: read
+      contents: write
+    env:
+      PHONE_RELEASE_TAG: vp3-cloud-phone-2e2141c773f7
+      PHONE_RELEASE_SHA: 2e2141c773f73d4a8a76236fbabc0702210f6ef9
+      PHONE_ARCHIVE: VP3-Cloud-Phone-Deploy.zip
+      PHONE_ARCHIVE_SHA256: 90735fc922498459ee7dd927a77aaed81bb77effb3348f935e8b381ed34f5a7c
+    steps:
+      - name: Download the previously certified production ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/14855473970/zip" \
+            --output "${PHONE_ARCHIVE}"
+      - name: Verify exact bytes and deployment provenance
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,zipfile
+          archive=pathlib.Path(os.environ['PHONE_ARCHIVE'])
+          assert archive.stat().st_size==15318697
+          assert hashlib.sha256(archive.read_bytes()).hexdigest()==os.environ['PHONE_ARCHIVE_SHA256']
+          with zipfile.ZipFile(archive) as zipped:
+              assert zipped.testzip() is None
+              files=[item.filename for item in zipped.infolist() if not item.is_dir()]
+              assert len(files)==2285 and len(files)==len(set(files))
+              for name in files:
+                  path=pathlib.PurePosixPath(name)
+                  assert not path.is_absolute() and '..' not in path.parts and chr(92) not in name
+                  assert not any(part in {'private','uploads','.git','.github','tests','tools'} for part in path.parts)
+                  assert 'config.php' not in path.parts and not any(part.startswith('.env') for part in path.parts)
+              manifest=json.loads(zipped.read('VP3_RELEASE.json'))
+              assert manifest['commit']==os.environ['PHONE_RELEASE_SHA']
+              assert str(manifest['workflow_run_id'])=='45253999787'
+              assert manifest['cloud_phone_workspace']=='twilio-browser-phone-v1'
+          print('Verified certified source, ZIP integrity, all 2285 files and runtime-data exclusions.')
+          PY
+      - name: Publish a verified public download without changing Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${PHONE_RELEASE_TAG}" > phone-tag.json 2>/dev/null; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              --field "ref=refs/tags/${PHONE_RELEASE_TAG}" --field "sha=${PHONE_RELEASE_SHA}" >/dev/null
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${PHONE_RELEASE_TAG}" > phone-tag.json
+          fi
+          python3 - <<'PY'
+          import json,os
+          reference=json.load(open('phone-tag.json'))
+          assert reference['object']['type']=='commit' and reference['object']['sha']==os.environ['PHONE_RELEASE_SHA']
+          PY
+          if ! gh release view "${PHONE_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            cat > phone-release-notes.txt <<'NOTES'
+          VP3 Cloud phone deployment from merged PR #839, commit 2e2141c773f73d4a8a76236fbabc0702210f6ef9.
+
+          This is the exact production ZIP certified by workflow 45253999787: 2,285 files; SHA256 90735fc922498459ee7dd927a77aaed81bb77effb3348f935e8b381ed34f5a7c. PR validation: 17/17 workflows successful, 44 passed checks, four conditional skips.
+
+          Extract over the existing Cloud installation, preserve config.php/private/uploads, and run upgrade.php. Configure Browser phone in Admin and the recording worker cron as described in docs/CLOUD-PHONE-WORKSPACE-DEPLOY.txt. Live carrier testing remains a deployed-site check.
+          NOTES
+            gh release create "${PHONE_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --target "${PHONE_RELEASE_SHA}" --title 'VP3 Cloud Phone deployment' \
+              --notes-file phone-release-notes.txt --draft --latest=false --verify-tag
+          fi
+          gh release view "${PHONE_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json assets > phone-assets.json
+          if ! python3 - <<'PY'
+          import json,os,sys
+          assets=json.load(open('phone-assets.json'))['assets']
+          sys.exit(0 if any(asset['name']==os.environ['PHONE_ARCHIVE'] for asset in assets) else 1)
+          PY
+          then
+            gh release upload "${PHONE_RELEASE_TAG}" "${PHONE_ARCHIVE}" --repo "${GITHUB_REPOSITORY}"
+          fi
+          gh release download "${PHONE_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern "${PHONE_ARCHIVE}" --dir phone-public-download-check
+          python3 - <<'PY'
+          import hashlib,os,pathlib
+          downloaded=pathlib.Path('phone-public-download-check')/os.environ['PHONE_ARCHIVE']
+          assert downloaded.stat().st_size==15318697
+          assert hashlib.sha256(downloaded.read_bytes()).hexdigest()==os.environ['PHONE_ARCHIVE_SHA256']
+          print('Release asset round-trip matches the certified ZIP.')
+          PY
+          gh release edit "${PHONE_RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest=false
