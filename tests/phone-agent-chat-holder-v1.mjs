@@ -135,7 +135,7 @@ try {
   await wake();
   await page.locator('#phone-dock').waitFor({state:'hidden'});
   assert.equal(await page.locator('.phone-bubble').count(),0);
-  assert.equal(await input.inputValue(),'');
+  assert.equal(await page.locator('#phone-chat-input').inputValue(),'');
   assert.equal(await chat.isVisible(),false);
   await page.locator('#phone-connection').waitFor();
   assert.deepEqual(errors,[]);
