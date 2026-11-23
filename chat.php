@@ -786,7 +786,11 @@ $runtime = $headerUiRuntime
          ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR) . ';</script>'
          . '<script src="' . e(url('/chat-connected-sites-v1.js?v=' . substr(hash_file('sha256', __DIR__ . '/chat-connected-sites-v1.js'), 0, 12))) . '"></script>'
          . '<script src="' . e(url('/phone-camera-ice-v1.js?v=1')) . '"></script>'
-         . '<script src="' . e(url('/phone-camera-holder-v1.js?v=2')) . '"></script>'
+         . '<script src="' . e(url('/phone-camera-receiver-v1.js?v=' . substr(hash_file('sha256', __DIR__ . '/phone-camera-receiver-v1.js'),0,12))) . '"></script>'
+         . '<link rel="stylesheet" href="' . e(url('/phone-camera-chat-preview-v1.css?v=' . substr(hash_file('sha256', __DIR__ . '/phone-camera-chat-preview-v1.css'),0,12))) . '">'
+         . '<script src="' . e(url('/phone-recording-chat-owner-v1.js?v=' . substr(hash_file('sha256', __DIR__ . '/phone-recording-chat-owner-v1.js'),0,12))) . '"></script>'
+         . '<script data-camera-endpoint="' . e(url('/api/phone-camera-v1.php')) . '" src="' . e(url('/phone-camera-chat-preview-v1.js?v=' . substr(hash_file('sha256', __DIR__ . '/phone-camera-chat-preview-v1.js'),0,12))) . '"></script>'
+         . '<script src="' . e(url('/phone-camera-holder-v1.js?v=6')) . '"></script>'
          . '<script src="' . e(url('/phone-camera-chat-holder-v1.js?v=1')) . '"></script>'
          . $recordingLibraryRuntime
          . $chatSettingsRuntime

@@ -39,6 +39,7 @@ function curl_exec(object $handle): string
     if ($scenario === 'rejected') { $handle->status=429; return '{}'; }
     if ($scenario === 'unknown') { $handle->status=503; return '{}'; }
     $answer = match ($scenario) {
+        'phone'=>'Open the + menu in Chat and tap Camera.',
         'invalid'=>'{"topics":[{"theme":"billing","refs":[99]}]}',
         'reply'=>'{"body":"Thanks for the update."}',
         'thread'=>'{"category":"opportunity","priority":"normal","state":"open","summary":"The venue proposed a session.","importance_reason":"The venue has a date available.","next_step":"Review the date.","followup_question":"Would that date work?","evidence_ref":1}',
@@ -75,7 +76,10 @@ function chat_response_context(string $query,array $context): array
 }
 function vp3_agent_runtime_plan_v420(PDO $pdo,array $user,int $agentId,string $surface,array $context): array
 {
-    if (isset($GLOBALS['gmailSummaryOnRoute'])) ($GLOBALS['gmailSummaryOnRoute'])();
+    if (isset($GLOBALS['gmailSummaryOnRoute'])) {
+        $plan=($GLOBALS['gmailSummaryOnRoute'])();
+        if (is_array($plan)) return $plan;
+    }
     return empty($GLOBALS['gmailSummaryHomeOnly'])
         ? ['blocked'=>false,'route'=>'vp3_cloud','cloud'=>['ready'=>true]]
         : ['blocked'=>true,'effective_preference'=>'homeserver_only'];

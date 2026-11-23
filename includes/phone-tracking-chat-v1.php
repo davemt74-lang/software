@@ -199,9 +199,18 @@ function vp3_phone_chat_authorize_v1(PDO $pdo,array $user,array $principal,array
     if (!has_permission('account.access',$live)) throw new RuntimeException('Phone tracking access changed.',403);
 }
 
-function vp3_phone_chat_actions_v1(string $mapLink,int $aid,int $cid,?string $deviceId=null): array
+function vp3_phone_chat_actions_v1(string $mapLink,int $aid,int $cid,?string $deviceId=null,?string $sourceDevice=null): array
 {
     if ($mapLink==='' || $mapLink==='localresult') return [];
+    if ($mapLink==='camera_clip') {
+        $asset=filter_var($deviceId,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+        return $asset===false?[]:[['type'=>'open_url','label'=>'Open submitted recording','url'=>media_studio_asset_url($asset)]];
+    }
+    if ($mapLink==='camera_live') {
+        if ($cid<1 || !preg_match('/^[a-f0-9]{32}$/D',$deviceId??'') || !preg_match('/^[a-f0-9]{32}$/D',$sourceDevice??'')) return [];
+        return [['type'=>'phone_live_stream','label'=>'Show live stream','session_id'=>$deviceId,'device_id'=>$sourceDevice,
+            'agent_id'=>$aid,'conversation_id'=>$cid]];
+    }
     if ($mapLink==='camera') {
         if ($cid<1 || !is_string($deviceId) || !preg_match('/^[a-f0-9]{32}$/D',$deviceId)) return [];
         $path='/video-editor.php?'.http_build_query(['camera_session'=>$deviceId,'agent'=>$aid ?: 'system','conversation_id'=>$cid]);
@@ -607,7 +616,8 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
     $localPending=vp3_phone_local_research_pending_v1($pdo,$uid,$aid,$cid);
     $cameraPending=vp3_phone_camera_pending_v1($pdo,$uid,$aid,$cid);
     $pairedPending=vp3_paired_phone_pending_v1($pdo,$uid,$aid,$cid);
-    if (!$pairedPending && !$localPending && !$cameraPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
+    $recordPending=vp3_phone_record_pending_v1($pdo,$uid,$aid,$cid);
+    if (!$recordPending && !$pairedPending && !$localPending && !$cameraPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
     vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
     $eligible=static function(int $offerId) use($pdo,$user,$principal,$input,$cid): bool {
         try {
@@ -641,6 +651,7 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
         }
         if ($pairedPending) $updates=array_merge($updates,vp3_paired_phone_owner_updates_v1($pdo,$uid,$aid,$cid));
         if ($cameraPending) $updates=array_merge($updates,vp3_phone_camera_chat_updates_v1($pdo,$uid,$aid,$cid));
+        if ($recordPending) $updates=array_merge($updates,vp3_phone_record_announcements_v1($pdo,$uid,$aid,$cid));
         $updates=array_merge($updates,vp3_phone_arrival_deliver_v1($pdo,$user,$principal,$input,$cid));
         if ($localPending) $updates=array_merge($updates,vp3_phone_local_emit_v1($pdo,$user,$principal,$cid,$eligible));
         vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
@@ -671,14 +682,29 @@ function vp3_phone_chat_history_v1(PDO $pdo,array $user,int $aid,int $cid,array 
     if ($paired) $rows=vp3_paired_phone_owner_history_v1($pdo,(int)$user['id'],$aid,$cid,$rows,$paired);
     if (!$markers) return $rows;
     $ids=array_keys($markers); $marks=implode(',',array_fill(0,count($ids),'?'));
-    $records=vp3_phone_sql_v1($pdo,"SELECT * FROM vp3_phone_chat_turns_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=?
-        AND (assistant_message_id IN ($marks) OR user_message_id IN ($marks))",[(int)$user['id'],$aid,$cid,...$ids,...$ids]);
+    // Old installs can still hydrate private phone history during a rolling upgrade.
+    $cameraJoin='';
+    $cameraField='NULL AS live_device';
+    $params=[];
+    if (vp3_phone_camera_ready_v1($pdo)) {
+        $now=time();
+        $cutoff=$now-VP3_PHONE_CAMERA_LEASE_SECONDS_V1;
+        $cameraJoin=" LEFT JOIN vp3_phone_camera_sessions_v1 s ON t.map_link='camera_live' AND s.id=t.map_device_id
+            AND s.owner_user_id=t.owner_user_id AND s.agent_id=t.agent_id AND s.conversation_id=t.conversation_id
+            AND s.state IN ('sharing','answered') AND s.expires_at>? AND s.holder_seen>? AND (s.state<>'answered' OR s.owner_seen>?)
+            LEFT JOIN vp3_phone_devices_v1 d ON d.owner_user_id=s.owner_user_id AND d.id=s.device_id AND d.device_status='approved' AND d.expires_at>?";
+        $cameraField='d.id AS live_device';
+        $params=[$now,$cutoff,$cutoff,$now];
+    }
+    $records=vp3_phone_sql_v1($pdo,"SELECT t.*,$cameraField FROM vp3_phone_chat_turns_v1 t $cameraJoin
+        WHERE t.owner_user_id=? AND t.agent_id=? AND t.conversation_id=?
+        AND (t.assistant_message_id IN ($marks) OR t.user_message_id IN ($marks))",[...$params,(int)$user['id'],$aid,$cid,...$ids,...$ids]);
     foreach ($records->fetchAll(PDO::FETCH_ASSOC) as $record) {
         $assistant=(int)$record['assistant_message_id']; $author=(int)$record['user_message_id'];
         if (isset($markers[$author])) $rows[$markers[$author]]['message']=$record['prompt'];
         if (isset($markers[$assistant])) {
             $i=$markers[$assistant];
-            $context=['source'=>'private_phone_tracking','actions'=>vp3_phone_chat_actions_v1($record['map_link'],$aid,$cid,$record['map_device_id'])];
+            $context=['source'=>'private_phone_tracking','actions'=>vp3_phone_chat_actions_v1($record['map_link'],$aid,$cid,$record['map_device_id'],$record['live_device'])];
             if ($record['map_link']==='localresult') {
                 [$rows[$i]['message'],$context['sources']]=vp3_phone_local_history_v1($pdo,$record);
             } else {

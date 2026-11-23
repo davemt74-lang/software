@@ -345,6 +345,7 @@ window.STONEFELLOW_AGENT_CONTEXT={
 <script src="<?= e(url('/video-editor.js?v=' . substr((string) hash_file('sha256', __DIR__ . '/video-editor.js'), 0, 12))) ?>"></script>
 <?php if ($phoneCamera !== null): ?>
 <script src="<?= e(url('/phone-camera-ice-v1.js?v=1')) ?>"></script>
+<script src="<?= e(url('/phone-camera-receiver-v1.js?v='.substr(hash_file('sha256', __DIR__.'/phone-camera-receiver-v1.js'), 0, 12))) ?>"></script>
 <script src="<?= e(url('/phone-camera-editor-v1.js?v='.substr(hash_file('sha256', __DIR__.'/phone-camera-editor-v1.js'), 0, 12))) ?>"></script>
 <?php endif; ?>
 <script src="<?= e(url('/chat-media-v86.js?v=95')) ?>"></script>

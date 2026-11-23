@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-camera-map-v1.php';
+require_once __DIR__.'/phone-camera-recording-v1.php';
+
 const VP3_PHONE_CAMERA_REQUEST_SECONDS_V1 = 300;
 const VP3_PHONE_CAMERA_LEASE_SECONDS_V1 = 30;
 const VP3_PHONE_CAMERA_MAX_SECONDS_V1 = 14400;
@@ -19,6 +22,8 @@ function vp3_phone_camera_schema_v1(PDO $pdo, string $options): void
         FOREIGN KEY (owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE
         $chatFk
     )".$options);
+    vp3_phone_camera_map_schema_v1($pdo,$options);
+    vp3_phone_record_schema_v1($pdo,$options);
 }
 
 function vp3_phone_camera_ready_v1(PDO $pdo): bool
@@ -48,8 +53,13 @@ function vp3_phone_camera_scope_v1(PDO $pdo,int $owner,int $agent,int $cid): boo
 /** Called under the account lock. Stopping always removes both descriptions, including ICE credentials. */
 function vp3_phone_camera_end_v1(PDO $pdo,int $owner,string $selector,array $params): void
 {
-    vp3_phone_sql_v1($pdo,"UPDATE vp3_phone_camera_sessions_v1 SET state='stopped',offer_sdp=NULL,answer_sdp=NULL
+    $ended=vp3_phone_sql_v1($pdo,"UPDATE vp3_phone_camera_sessions_v1 SET state='stopped',offer_sdp=NULL,answer_sdp=NULL
         WHERE owner_user_id=? AND state<>'stopped' AND ($selector)",[$owner,...$params]);
+    if ($ended->rowCount()>0 && vp3_phone_camera_map_ready_v1($pdo)) {
+        vp3_phone_sql_v1($pdo,"DELETE FROM vp3_phone_camera_map_v1 WHERE session_id IN
+            (SELECT id FROM vp3_phone_camera_sessions_v1 WHERE owner_user_id=? AND state='stopped')",[$owner]);
+    }
+    if ($ended->rowCount()>0) vp3_phone_record_expire_v1($pdo,$owner);
 }
 
 function vp3_phone_camera_disconnect_v1(PDO $pdo,array $device): void
@@ -126,7 +136,7 @@ function vp3_phone_camera_request_v1(PDO $pdo,int $owner,int $agent,int $cid,str
 /** The HTTP owner endpoint and private Chat separately verify that this browser is the signed-in owner. */
 function vp3_phone_camera_owner_v1(PDO $pdo,int $owner,int $agent,int $cid,string $action,array $input): array
 {
-    if (!in_array($action,['request','status','answer','stop'],true)) throw new RuntimeException('Unknown owner camera action.',422);
+    if (!in_array($action,['request','status','answer','stop','map_open','map_status','map_answer','map_close','chat_open','chat_status','chat_answer','chat_close'],true)) throw new RuntimeException('Unknown owner camera action.',422);
     return vp3_phone_transaction_v1($pdo,static function() use ($pdo,$owner,$agent,$cid,$action,$input): array {
         vp3_phone_account_v1($pdo,$owner,true);
         if (!vp3_phone_camera_scope_v1($pdo,$owner,$agent,$cid)) throw new RuntimeException('Camera conversation unavailable.',403);
@@ -152,13 +162,17 @@ function vp3_phone_camera_owner_v1(PDO $pdo,int $owner,int $agent,int $cid,strin
             vp3_phone_camera_end_v1($pdo,$owner,'id=?',[$row['id']]);
             return ['camera'=>null];
         }
+        if (str_contains($action,'_')) {
+            [$surface,$operation]=explode('_',$action,2);
+            return vp3_phone_camera_viewer_v1($pdo,$row,$surface,$operation,$input,$now);
+        }
         return vp3_phone_camera_transition_v1($pdo,$row,$action,$input,false,$now);
     });
 }
 
 function vp3_phone_camera_holder_v1(PDO $pdo,string $token,string $action,array $input): array
 {
-    if (!in_array($action,['status','prepare','start','offer','stop'],true)) throw new RuntimeException('Unknown phone camera action.',422);
+    if (!in_array($action,['status','prepare','start','offer','stop','map_offer','chat_offer'],true)) throw new RuntimeException('Unknown phone camera action.',422);
     if (!vp3_phone_secret_valid_v1($token)) throw new RuntimeException('Phone unavailable.',403);
     $hash=vp3_extension_hash_v2000($token);
     $hint=vp3_phone_sql_v1($pdo,'SELECT owner_user_id,id FROM vp3_phone_devices_v1 WHERE token_hash=?',[$hash])->fetch(PDO::FETCH_ASSOC);
@@ -203,7 +217,19 @@ function vp3_phone_camera_holder_v1(PDO $pdo,string $token,string $action,array 
         }
         $row['device_name']=$device['device_name'];
         $row['device_expires']=$device['expires_at'];
-        return vp3_phone_camera_transition_v1($pdo,$row,$action,$input,true,$now);
+        if ($action==='map_offer' || $action==='chat_offer') {
+            if (!in_array($row['state'],['sharing','answered'],true) || !vp3_phone_camera_map_ready_v1($pdo)) throw new RuntimeException('Map camera unavailable.',409);
+            vp3_phone_camera_viewer_offer_v1($pdo,$row,$action==='map_offer'?'map':'chat',$input,$now);
+        }
+        $result=vp3_phone_camera_transition_v1($pdo,$row,$action,$input,true,$now);
+        if ($action==='status' && vp3_phone_record_ready_v1($pdo)) {
+            $result['camera']['recording']=vp3_phone_record_view_v1(vp3_phone_record_latest_v1($pdo,$row['id']),true);
+        }
+        if ($action==='status' && ($input['session_id']??null)===$row['id'] && ($input['heartbeat']??false)===true
+            && array_key_exists('map_source_live',$input) && in_array($row['state'],['sharing','answered'],true)) {
+            $result['camera']+=vp3_phone_camera_source_viewers_v1($pdo,$row,$input,$now);
+        }
+        return $result;
     });
     return $result ?: throw new RuntimeException('Phone unavailable.',403);
 }

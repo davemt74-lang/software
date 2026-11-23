@@ -7,10 +7,12 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
   const start = element('-start'), stop = element('-stop'), decline = element('-decline');
   // Signed-in Agent Chat uses the existing inline request controls. The paired page also hosts the Camera app.
   const app = card?.tagName === 'DIALOG' ? card : null;
+  const recording = app && window.VP3PhoneRecording?.(request);
   const local = element('-local'), lens = element('-lens'), back = element('-close'), mode = element('-mode');
   let expanded = false, preview = null, opening = null, preparing = null, facing = 'environment';
   let deviceId = null, owner = '', current = null, run = null, notice = '';
   let revision = 0, polling = false, pendingStop = null, stopping = false;
+  const viewerSurfaces = ['map','chat'];
   const stopKey = 'vp3-phone-camera-stop:' + location.pathname;
   try { pendingStop = JSON.parse(sessionStorage.getItem(stopKey)); } catch {}
   const ready = () => deviceId && !document.hidden && navigator.onLine !== false && inScope();
@@ -33,12 +35,12 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
     if (current && !message) {
       if (run) message = run.message;
       else if (current.state === 'requested') message = (owner || 'The account owner')
-        + ' requested this phone’s camera for the private editor preview.';
-      else message = 'A private camera session is open on this phone. You can stop it here.';
+        + ' requested this phone’s camera for their private editor, Agent Chat, and tracking map.';
+      else message = 'This phone is sharing with the owner’s private editor, Agent Chat, and tracking map. You can stop sharing here.';
       if (!run && current.state === 'requested' && !supported()) message = 'Camera sharing needs a secure browser with camera and WebRTC access.';
     }
     if (app && expanded && !message) message = preview ? 'Preview is visible only on this phone.' :
-      'Preview the camera here or share video with the private editor.';
+      'Preview the camera here or share video with the owner’s private editor, Agent Chat, and tracking map.';
     if (app && expanded && opening) message = 'Waiting for camera permission…';
     if (app && expanded && preparing) message = 'Connecting to the private editor…';
     if (app && expanded && !supported()) message = 'Open Camera in a secure browser with camera and WebRTC access.';
@@ -54,8 +56,9 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
       local.disabled = !ready() || !supported() || !!opening;
       mode.hidden = !expanded || video.hidden;
       mode.dataset.sharing = String(!!run?.granted);
-      mode.textContent = run?.granted ? 'Private editor' : 'Local preview';
+      mode.textContent = run?.granted ? 'Shared privately' : 'Local preview';
     }
+    recording?.sync(current,run?.granted ? run.stream : null);
     if (status.textContent !== message) status.textContent = message;
     start.hidden = (!current && !expanded) || (!!current && current.state !== 'requested') || !!run;
     start.disabled = !ready() || !supported() || !!preparing || !!opening || !!pendingStop;
@@ -110,8 +113,9 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
     notice = '';
     if (app.open) app.close();
     render();
-    const launcher = document.getElementById('phone-app-camera');
-    (launcher?.getClientRects().length ? launcher : document.getElementById('phone-apps-toggle'))?.focus();
+    const returnTarget = ['phone-app-camera','phone-apps-toggle','phone-tab-connection']
+      .map(id => document.getElementById(id)).find(button => button?.getClientRects().length);
+    returnTarget?.focus();
   }
   async function localPreview() {
     if (!expanded || !ready() || run || opening || preparing || (!!current && current.state !== 'requested') || !supported()) return null;
@@ -138,11 +142,14 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
     } finally { if (opening === attempt) opening = null; render(); }
   }
   function closeMedia() {
+    try { recording?.end(); } catch { /* A recorder error must never leave the camera on. */ }
     stopPreview();
     const old = run;
     run = null;
     if (old) {
       clearTimeout(old.connectTimer);
+      if (old.frameRequest != null) video.cancelVideoFrameCallback?.(old.frameRequest);
+      for (const surface of viewerSurfaces) closeViewerPeer(old,surface);
       old.abort.abort();
       old.pc?.close();
       for (const track of old.stream?.getTracks() || []) track.stop();
@@ -166,11 +173,117 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
   }
 
   async function applyAnswer(r, camera) {
-    if (!stillCurrent(r) || !r.offered || r.answering || r.pc.remoteDescription || !camera.answer_sdp) return;
+    if (!stillCurrent(r) || !r.offered || r.editorFailed || r.answering || r.pc.remoteDescription || !camera.answer_sdp) return;
     r.answering = true;
     try { await r.pc.setRemoteDescription({type:'answer',sdp:camera.answer_sdp}); }
-    catch { if (run === r) end('The editor could not connect. Camera sharing stopped.'); }
+    catch {
+      if (run !== r) return;
+      if (!hasOtherConsumer(r)) end('The editor could not connect. Camera sharing stopped.');
+      else {
+        r.editorFailed = true;
+        r.pc.close();
+        checkViewerTimeout(r);
+      }
+    }
     finally { r.answering = false; }
+  }
+  // Report motion from the approved camera track even before either owner preview is open.
+  function sourceLive(r) {
+    const track = r.stream?.getVideoTracks()[0];
+    if (!track || track.readyState !== 'live' || track.muted || track.enabled === false ||
+        video.srcObject !== r.stream || video.paused || video.readyState < 2 || !video.videoWidth) return false;
+    function noteFrame(count) {
+      if (Number.isFinite(count) && count > (r.frameCount || 0)) {
+        r.frameCount = count;
+        r.lastFrame = Date.now();
+      }
+    }
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      if (r.frameRequest == null) r.frameRequest = video.requestVideoFrameCallback((time,metadata) => {
+        r.frameRequest = null;
+        if (stillCurrent(r)) noteFrame(metadata.presentedFrames);
+      });
+    } else {
+      noteFrame(video.getVideoPlaybackQuality?.().totalVideoFrames ?? video.webkitDecodedFrameCount);
+    }
+    return r.frameCount >= 2 && Date.now() - r.lastFrame < 5000;
+  }
+  function connected(pc) {
+    return ['connected','completed'].includes(pc?.connectionState || pc?.iceConnectionState);
+  }
+  function hasOtherConsumer(r) {
+    return recording?.isActive?.() === true || viewerSurfaces.some(surface => r.viewers[surface] && !r.viewers[surface].failed);
+  }
+  function hasConnectedViewer(r) {
+    return connected(r.pc) || viewerSurfaces.some(surface => connected(r.viewers[surface]?.pc));
+  }
+  function checkViewerTimeout(r) {
+    if (!stillCurrent(r) || !r.offered) return;
+    const viewing = hasConnectedViewer(r);
+    if (viewing || recording?.isActive?.()) {
+      r.message = viewing ? 'Sharing camera video with the owner’s private preview.' : 'Camera sharing is active.';
+      clearTimeout(r.connectTimer);
+      r.connectTimer = null;
+    } else if (!r.connectTimer) {
+      r.message = 'Camera ready. Waiting for the owner to open a private preview.';
+      r.connectTimer = setTimeout(() => {
+        r.connectTimer = null;
+        if (run === r && !hasConnectedViewer(r) && !recording?.isActive?.()) end('No private preview connected. Camera sharing stopped.');
+      },60000);
+    }
+  }
+  function closeViewerPeer(r,surface) {
+    const peer = r.viewers[surface];
+    delete r.viewers[surface];
+    if (!peer) return;
+    peer.abort.abort();
+    peer.pc?.close();
+  }
+  function syncViewer(r,surface,viewer,iceServers) {
+    const id = /^[0-9a-f]{32}$/.test(viewer?.viewer_id || '') ? viewer.viewer_id : null;
+    if (id !== (r.viewers[surface]?.id || null)) {
+      closeViewerPeer(r,surface);
+      if (id) {
+        const peer = {id,abort:new AbortController()};
+        r.viewers[surface] = peer;
+        void offerViewer(r,surface,peer,iceServers);
+      }
+    }
+    const peer = r.viewers[surface];
+    if (peer?.offered && !peer.failed && !peer.answering && !peer.pc.remoteDescription && viewer?.answer_sdp) {
+      peer.answering = true;
+      peer.pc.setRemoteDescription({type:'answer',sdp:viewer.answer_sdp}).catch(() => {
+        peer.failed = true;
+        peer.pc.close();
+      }).finally(() => { peer.answering = false; });
+    }
+  }
+  async function offerViewer(r,surface,viewer,iceServers) {
+    const active = () => stillCurrent(r) && r.viewers[surface] === viewer;
+    try {
+      const pc = new RTCPeerConnection({iceServers:iceServers || []});
+      viewer.pc = pc;
+      pc.addTransceiver(r.stream.getVideoTracks()[0],{direction:'sendonly',streams:[r.stream]});
+      function changed() {
+        if (!active()) return;
+        if (pc.connectionState === 'failed') viewer.failed = true;
+        checkViewerTimeout(r);
+        render();
+      }
+      pc.addEventListener('connectionstatechange',changed);
+      pc.addEventListener('iceconnectionstatechange',changed);
+      const offer = await pc.createOffer();
+      if (!active()) return;
+      await pc.setLocalDescription(offer);
+      const sdp = await window.VP3PhoneCameraICE.gather(pc,viewer.abort.signal);
+      if (!active()) return;
+      await request('camera_'+surface+'_offer',{session_id:r.id,viewer_id:viewer.id,sdp});
+      if (active()) viewer.offered = true;
+    } catch {
+      // Each preview owns its negotiation. The accepted camera track belongs to the holder.
+      viewer.failed = true;
+      viewer.pc?.close();
+    }
   }
   async function startCamera() {
     if (!ready() || !supported() || run || opening || preparing || pendingStop) return;
@@ -197,7 +310,7 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
     }
     if (!valid(current) || current.state !== 'requested') return;
     revision++;
-    const r = {id:current.session_id,abort:new AbortController(),message:'Waiting for camera permission…'};
+    const r = {id:current.session_id,viewers:{},abort:new AbortController(),message:'Waiting for camera permission…'};
     run = r;
     notice = '';
     render();
@@ -236,17 +349,19 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
       function connectionChanged() {
         if (run !== r) return;
         const state = pc.connectionState || pc.iceConnectionState;
-        if (['failed','closed','disconnected'].includes(state)) end('The editor disconnected. Camera sharing stopped.');
+        if (['failed','closed','disconnected'].includes(state)) {
+          if (!hasOtherConsumer(r)) end('The editor disconnected. Camera sharing stopped.');
+          else checkViewerTimeout(r);
+        }
         else if (state === 'connected' || state === 'completed') {
-          clearTimeout(r.connectTimer);
-          r.message = 'Sharing camera video with the private editor preview.';
+          checkViewerTimeout(r);
           render();
         }
       }
       pc.addEventListener('connectionstatechange',connectionChanged);
       pc.addEventListener('iceconnectionstatechange',connectionChanged);
       showStream(stream);
-      r.message = 'Camera ready. Waiting for the private editor preview.';
+      r.message = 'Camera ready. Waiting for the owner to open a private preview.';
       render();
       const offer = await pc.createOffer();
       if (!stillCurrent(r)) return;
@@ -257,9 +372,7 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
       if (!stillCurrent(r)) return;
       if (!valid(response.camera) || response.camera.session_id !== r.id) throw new Error('Request ended');
       r.offered = true;
-      r.connectTimer = setTimeout(() => {
-        if (run === r) end('The private editor did not connect. Camera sharing stopped.');
-      },60000);
+      checkViewerTimeout(r);
       await applyAnswer(r,response.camera);
       void poll();
     } catch (error) {
@@ -276,13 +389,18 @@ window.VP3PhoneCameraHolder = function (request, inScope = () => true) {
     polling = true;
     try {
       if (pendingStop?.deviceId === deviceId) await flushStop();
-      const {camera} = await request('camera_status',run?.granted ? {session_id:run.id,heartbeat:true} : {});
+      const heartbeat = run?.granted ? {session_id:run.id,heartbeat:true,map_source_live:sourceLive(run)} : {};
+      const {camera,ice_servers} = await request('camera_status',heartbeat);
       if (stamp !== revision || !ready()) return;
       const next = valid(camera) && camera.session_id !== pendingStop?.sessionId ? camera : null;
       if (run && next?.session_id !== run.id) end('This camera session has ended.',false);
       if (next && next.session_id !== current?.session_id) notice = '';
       current = next;
-      if (run && next) await applyAnswer(run,next);
+      if (run?.granted && next) {
+        for (const surface of viewerSurfaces) syncViewer(run,surface,next[surface+'_viewer'],ice_servers);
+        checkViewerTimeout(run);
+        await applyAnswer(run,next);
+      }
     } catch {
       if (stamp !== revision) return;
       if (run) end('Connection to VP3 was lost. Camera sharing stopped.');

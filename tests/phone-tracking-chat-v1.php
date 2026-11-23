@@ -425,6 +425,13 @@ phone_chat_test($activity(2)===[],'another Chat cannot claim a phone camera anno
 $cameraAnnouncements=$activity();
 phone_chat_test(count($cameraAnnouncements)===1 && str_contains($cameraAnnouncements[0]['speech'],'Camera iPhone started sharing')
     && $activity()===[],'the holder start confirms exactly once in the originating private Chat');
+$liveAction=[['type'=>'phone_live_stream','label'=>'Show live stream','session_id'=>$camera['session_id'],'device_id'=>$cameraPhone['device']['id'],
+    'agent_id'=>7,'conversation_id'=>1]];
+$startRows=$pdo->query('SELECT * FROM chat_messages WHERE id='.(int)$cameraAnnouncements[0]['message_id'])->fetchAll();
+$startHistory=static fn()=>vp3_phone_chat_history_v1($pdo,$user,7,1,$startRows,[]);
+$historyActions=static fn()=>json_decode($startHistory()[0]['context_json'],true,512,JSON_THROW_ON_ERROR)['actions'];
+phone_chat_test($cameraAnnouncements[0]['actions']===$liveAction && $historyActions()===$liveAction,
+    'the named start announcement and private history select the same exact phone and camera session for inline playback');
 $cameraRows=$pdo->query('SELECT * FROM chat_messages WHERE id='.(int)$cameraAsk['assistant_message_id'])->fetchAll();
 $cameraHistory=vp3_phone_chat_history_v1($pdo,$user,7,1,$cameraRows,[]);
 phone_chat_test($cameraRows[0]['message']==='Private phone tracking update.'
@@ -432,6 +439,7 @@ phone_chat_test($cameraRows[0]['message']==='Private phone tracking update.'
     && !str_contains(json_encode($cameraHistory),'offer_sdp'),'private history restores the same editor link without media signaling data');
 $cameraDevice($cameraPhone,'stop',['session_id'=>$camera['session_id']]);
 $cameraStopped=$activity();
+phone_chat_test($historyActions()===[] && empty($cameraStopped[0]['actions']), 'stopped sessions lose the inline action on reload and on the stop receipt');
 phone_chat_test(count($cameraStopped)===1 && str_contains($cameraStopped[0]['speech'],'ended for Camera iPhone') && $activity()===[]
     && str_contains($send('Phone camera status')['answer'],'no active') && $holder($cameraPhone)['location_state']==='off',
     'holder stop confirms once, closes the private preview and leaves GPS off');
@@ -490,3 +498,16 @@ phone_chat_test(array_column($hydratedTurns,'message')===[$inboxInput['message']
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
 phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[])===$rawTurns,'participant views cannot read the owner’s paired phone transcript');
 unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+
+$receipt=vp3_phone_chat_store_v1($pdo,1,7,2,'','Studio camera submitted a camera recording.','camera_clip',null,null,'42');
+$marker=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id=?',[$receipt['assistant_message_id']])->fetchAll(PDO::FETCH_ASSOC);
+$privateReceipt=vp3_phone_chat_history_v1($pdo,$user,7,2,$marker,[]);
+phone_chat_test($privateReceipt[0]['message']===$receipt['answer']
+    && json_decode($privateReceipt[0]['context_json'],true)['actions']===[['type'=>'open_url','label'=>'Open submitted recording','url'=>'/vp3/media-library-file-v86.php?id=42']]
+    && !str_contains(json_encode($marker),'media-library'),'only exact private Chat hydrates the submitted camera recording link');
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
+phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$marker,[])===$marker,'participant history omits the clip address and phone label');
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+$GLOBALS['phoneTestOwner']=2;
+phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$marker,[])===$marker,'changing signed-in accounts immediately hides the private clip receipt');
+unset($GLOBALS['phoneTestOwner']);

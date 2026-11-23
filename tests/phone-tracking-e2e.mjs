@@ -228,7 +228,7 @@ async function browserJourney(baseURL, owner, other) {
   const desktop = await browser.newContext({ baseURL, viewport: { width: 1400, height: 960 } });
   const outsider = await browser.newContext({ baseURL });
   mobileBrowser = process.env.VP3_PHONE_WEBKIT ? await webkit.launch() : browser;
-  const handset = await mobileBrowser.newContext({ ...devices['iPhone 13'], baseURL,
+  const handset = await mobileBrowser.newContext({ ...devices['iPhone 11'], baseURL,
     geolocation: { ...gps, latitude: gps.latitude - 0.01 }, permissions: ['geolocation'], deviceScaleFactor: 1 });
   const newcomer = await browser.newContext({ baseURL });
   for (const [context, user] of [[desktop, owner], [outsider, other]]) {
@@ -359,6 +359,7 @@ async function browserJourney(baseURL, owner, other) {
   await phone.locator('#phone-start').waitFor();
   assert.match(await phone.locator('#phone-owner').innerText(), /Map Operator/);
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
+  await verifyPhoneTabs(phone);
   await screenshot(phone, 'phone-before-consent');
   await startWithFreshSensorReading(phone, handset, gps);
   device = await requireLiveFix('No real browser geolocation fix reached the owner', gps);
@@ -406,6 +407,43 @@ async function browserJourney(baseURL, owner, other) {
   assert.deepEqual(check(await ownerApi(desktop, owner), 'revocation read').devices, []);
   assert.deepEqual(errors, []);
   console.log('PASS Phone Tracking browser acceptance: QR, two accounts, device consent, first fix, both stops, revocation and replay.');
+}
+
+async function verifyPhoneTabs(phone) {
+  const connection = phone.getByRole('tab', {name:'Connection', exact:true});
+  const chat = phone.getByRole('tab', {name:'Chat', exact:true});
+  const input = phone.locator('#phone-chat-input');
+  async function verifyConnection() {
+    assert.equal(await connection.getAttribute('aria-selected'), 'true');
+    assert.equal(await phone.locator('#phone-chat-form').isVisible(), false);
+    const position = await phone.locator('#phone-label').evaluate(label => {
+      const bounds = label.getBoundingClientRect();
+      return {top:bounds.top, bottom:bounds.bottom, height:window.visualViewport?.height || innerHeight};
+    });
+    assert.ok(position.bottom > 0 && position.top < position.height * .35,
+      'The connected phone name should appear near the top of the iPhone viewport: ' + JSON.stringify(position));
+  }
+  await verifyConnection();
+  await chat.click();
+  assert.equal(await chat.getAttribute('aria-selected'), 'true');
+  assert.equal(await phone.locator('#phone-controls').isVisible(), false);
+  await input.fill('Meet me at the studio');
+  assert.equal(await phone.locator('#phone-chat-send').isEnabled(), true);
+  await input.blur();
+  const apps = phone.locator('#phone-apps-toggle');
+  assert.ok(await apps.evaluate(button => {
+    const rect = button.getBoundingClientRect();
+    const height = window.visualViewport?.height || innerHeight;
+    return rect.top > height / 2 && rect.bottom <= height + 1 &&
+      button.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+  }), 'The Chat app launcher is reachable at the bottom of the visible phone viewport');
+  await screenshot(phone, 'phone-chat-tab');
+  await connection.click();
+  await verifyConnection();
+  await chat.click();
+  assert.equal(await input.inputValue(), 'Meet me at the studio');
+  await input.fill('');
+  await connection.click();
 }
 
 async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map, handset, phone, deviceId,
@@ -556,6 +594,7 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
   await choosePhone(deviceId);
   // The owner enables a single paired phone to create a place while its live GPS remains off.
   const grantButton = map.locator('#phone-detail [data-action=set_holder_place_access]');
+  await phone.getByRole('tab',{name:'Chat',exact:true}).click();
   await phone.locator('#phone-apps-toggle').click();
   assert.equal(await phone.locator('#phone-app-save-place').isVisible(),false);
   await grantButton.click();

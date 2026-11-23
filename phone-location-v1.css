@@ -1,11 +1,16 @@
 * { box-sizing: border-box; }
 :root { font: 100%/1.45 system-ui, -apple-system, sans-serif; color: #172f2b; background: #f4f7f6; color-scheme: light; }
-body { position: fixed; inset-inline: 0; top: var(--phone-viewport-top, 0px); display: flex; flex-direction: column; height: 100vh; height: var(--phone-viewport-height,100dvh); margin: 0; }
-#phone-location { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1.25rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left)); }
-.phone-header,.phone-card,#phone-chat { max-width: 34rem; margin-inline: auto; }
-.phone-header { display: flex; align-items: center; gap: .8rem; margin-bottom: 1.15rem; font-weight: 620; color: #466058; }
+body { margin: 0; }
+#phone-location { --gutter-left: max(1rem,env(safe-area-inset-left)); --gutter-right: max(1rem,env(safe-area-inset-right)); }
+.phone-header { position: sticky; top: 0; z-index: 2; background: #f4f7f6; padding: max(.75rem,env(safe-area-inset-top)) var(--gutter-right) .75rem var(--gutter-left); }
+.phone-header-inner { max-width: 34rem; margin: 0 auto; }
+.phone-brand-line { display: flex; align-items: center; gap: .8rem; font-weight: 620; color: #466058; }
 .brand { font-weight: 850; font-size: 1.2rem; letter-spacing: -.07em; color: #174c43; border-right: 1px solid #c7d6cf; padding-right: .8rem; }
-.phone-card { background: #fff; border: 1px solid #cddbd6; border-radius: 1.15rem; padding: clamp(1rem,4vw,1.6rem); }
+.phone-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; background: #e6eeeb; border-radius: .85rem; padding: .2rem; margin-top: .65rem; }
+.phone-tabs [role="tab"] { min-height: 44px; padding: .4rem .8rem; border-radius: .65rem; margin: 0; color: #36564d; background: transparent; }
+.phone-tabs [aria-selected="true"] { color: #173f34; background: white; box-shadow: 0 1px 4px #213d311f; }
+.phone-header-inner > .phone-camera-app[open]:not(:modal) { margin: .6rem 0 0; }
+.phone-card { width: min(34rem,calc(100% - var(--gutter-left) - var(--gutter-right))); margin: .15rem auto max(1rem,env(safe-area-inset-bottom)); background: #fff; border: 1px solid #cddbd6; border-radius: 1.15rem; padding: clamp(1rem,4vw,1.6rem); }
 h1 { margin: .75rem 0 .5rem; overflow-wrap: anywhere; font-size: clamp(1.7rem,7vw,2.15rem); letter-spacing: -.035em; line-height: 1.2; }
 .state { display:inline-block; margin: 0; padding:.25rem .65rem; border-radius: 2rem; font-weight: 700; font-size: .85rem; color:#24564f; background:#e8f2ef; }
 #phone-status, #phone-consent { margin:.65rem 0 1rem; }
@@ -34,8 +39,14 @@ button:disabled { opacity:.65; cursor:wait; }
 [hidden] { display:none !important; }
 
 
-#phone-chat { padding: 1.25rem .2rem 0; }
-#phone-chat-title,.phone-apps h2 { margin: 0 0 .7rem; font-size: 1rem; font-weight: 700; }
+/* Connection follows normal document flow. Only Chat has a viewport-sized reading area. */
+#phone-location[data-tab="chat"] { display: flex; flex-direction: column; height: 100vh; height: var(--phone-chat-height,100dvh); }
+#phone-location[data-tab="chat"] .phone-header { flex: none; position: relative; }
+#phone-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.phone-chat-history { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: .5rem var(--gutter-right) .75rem var(--gutter-left); }
+.phone-chat-history > * { max-width: 34rem; margin-inline: auto; }
+#phone-chat-title { font-size: 1.4rem; margin-block: .2rem .6rem; }
+#phone-chat-empty { color: #466058; }
 .phone-turn { display: grid; gap: .45rem; margin-block: .6rem 1rem; }
 .phone-bubble { width: fit-content; max-width: 90%; padding: .6rem .85rem; border-radius: .95rem .95rem .95rem .25rem; background: white; border: 1px solid #d6e2dc; overflow-wrap: anywhere; }
 .phone-bubble.mine { justify-self: end; background: #e0f0e9; border-color: #c7dfd4; border-radius: .95rem .95rem .25rem .95rem; }
@@ -61,3 +72,8 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
 .place-icon::before { content:''; width:.56rem; height:.56rem; border: 2px solid currentColor; border-radius:50% 50% 0 50%; transform: rotate(45deg); }
 #phone-save-place-dialog { width: min(26rem,calc(100vw - 2rem)); max-height: calc(100% - 2rem); padding: 1.25rem; border: 1px solid #c4d5cc; border-radius: 1rem; color: inherit; }
 #phone-save-place-dialog::backdrop { background: rgb(13 34 25 / .45); }
+
+@media (max-height: 430px) {
+  #phone-location[data-tab="chat"] .phone-brand-line { display: none; }
+  .phone-tabs { margin-top: 0; }
+}

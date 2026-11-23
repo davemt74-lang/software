@@ -13,6 +13,7 @@ try {
   page.setDefaultTimeout(5000);
   const device = {id:'d'.repeat(32),name:'Field phone',status:'pending',generation:1,allow_location:false,holder_can_save_places:false};
   const turns = [], sent = [], errors = [];
+  let chatReads = 0;
   let camera = null;
   page.on('pageerror',error => errors.push(error.message));
   await page.route('https://phone.test/**',async route => {
@@ -32,13 +33,18 @@ try {
         camera = null;
         return route.fulfill({json:{ok:true,camera:null}});
       case 'chat_status':
+        chatReads++;
         assert.equal(q.device_id,device.id);
         return route.fulfill({json:{ok:true,turns}});
       case 'chat_send':
         assert.equal(q.device_id,device.id);
         sent.push(q);
         if (sent.length === 1) return route.abort(); // Lost before the server committed.
-        turns.push({request_id:q.request_id,message:q.message,state:'replied',reply:'The camera is in Phone apps.'});
+        const previous = turns.findIndex(turn => turn.request_id === q.request_id);
+        const turn = {request_id:q.request_id,message:q.message,state:'replied',reply:'The camera is in Phone apps.'};
+        if (sent.length === 3) Object.assign(turn,{state:'failed',reply:null,failure_message:'The agent is busy. Wait a moment, then retry this message.'});
+        if (previous < 0) turns.push(turn);
+        else turns[previous] = turn;
         return route.fulfill({json:{ok:true,turns}});
       default: return route.fulfill({status:400,json:{ok:false}});
     }
@@ -49,7 +55,34 @@ try {
   device.status = 'approved';
   device.allow_location = true;
   const wake = () => page.evaluate(() => window.dispatchEvent(new Event('online')));
+  const connection = page.getByRole('tab',{name:'Connection',exact:true});
+  const chat = page.getByRole('tab',{name:'Chat',exact:true});
+  const invitation = page.locator('#phone-camera');
   await wake();
+  await connection.waitFor();
+  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
+  assert.equal(chatReads,0,'the Connection tab does not request the private transcript');
+  // Safari pans its visual viewport independently while focusing and closing the keyboard.
+  // Offsetting the page by this value used to leave the top of the phone screen blank.
+  await page.evaluate(() => {
+    Object.defineProperty(window.visualViewport,'offsetTop',{configurable:true,get:()=>210});
+    window.visualViewport.dispatchEvent(new Event('scroll'));
+  });
+  const header = await page.locator('.phone-header').boundingBox();
+  assert.ok(header && header.y >= 0 && header.y < 10,'Connection starts at the visible top after viewport pan');
+  await page.evaluate(() => { delete window.visualViewport.offsetTop; });
+  camera = {device_id:device.id,session_id:'b'.repeat(32),state:'requested',expires_at:Math.floor(Date.now()/1000)+60};
+  await wake();
+  await invitation.getByRole('button',{name:'Decline'}).click();
+  await page.getByRole('button',{name:'Dismiss camera message'}).click();
+  await invitation.waitFor({state:'hidden'});
+  assert.equal(await connection.getAttribute('aria-selected'),'true','incoming requests work on Connection');
+  await connection.focus();
+  await connection.press('ArrowRight');
+  assert.equal(await chat.getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-controls').isVisible(),false);
+  await page.locator('#phone-chat-empty').waitFor();
   const apps = page.getByRole('button',{name:'Phone apps'});
   await apps.click();
   assert.equal(await page.locator('#phone-app-save-place').isVisible(),false);
@@ -65,14 +98,31 @@ try {
   assert.equal(sent[0].request_id,sent[1].request_id);
   assert.equal(sent[0].message,sent[1].message);
   assert.equal(await page.locator('.phone-bubble.mine').count(),1);
-  await page.locator('#phone-location').evaluate(el => { el.scrollTop = 0; });
+  await input.fill('Can I find it in Chat?');
+  await input.press('Enter');
+  await page.getByText('The agent is busy. Wait a moment, then retry this message.').waitFor();
+  await page.getByRole('button',{name:'Retry reply'}).click();
+  await page.waitForFunction(() => document.querySelectorAll('.phone-chat-retry').length === 0
+    && document.querySelectorAll('.phone-bubble:not(.mine) small')[1]?.textContent === 'Agent');
+  assert.equal(sent[2].request_id,sent[3].request_id);
+  assert.equal(await page.locator('.phone-bubble.mine').count(),2);
   const footer = await page.locator('#phone-dock').boundingBox();
   assert.ok(footer && Math.abs(footer.y + footer.height - 550) <= 2,'composer must stay at viewport bottom');
   await input.fill('Unsent chat draft');
+  await page.setViewportSize({width:375,height:335});
+  await page.waitForFunction(() => Math.abs(document.querySelector('#phone-dock').getBoundingClientRect().bottom - 335) <= 2);
+  await page.setViewportSize({width:375,height:550});
+  await chat.focus();
+  await chat.press('Home');
+  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  assert.equal(await input.isVisible(),false);
+  await connection.press('End');
+  assert.equal(await chat.getAttribute('aria-selected'),'true');
+  assert.equal(await input.inputValue(),'Unsent chat draft');
+  await input.focus();
   camera = {device_id:device.id,session_id:'a'.repeat(32),state:'requested',expires_at:Math.floor(Date.now()/1000)+60};
   await wake();
-  const invitation = page.locator('#phone-dock #phone-camera');
-  await invitation.getByText('Studio requested this phone’s camera for the private editor preview.').waitFor();
+  await invitation.getByText(/Studio requested this phone’s camera/).waitFor();
   assert.ok(await input.evaluate(el => el === document.activeElement),'incoming request preserves keyboard focus');
   assert.equal(await input.inputValue(),'Unsent chat draft');
   const accept = await invitation.locator('#phone-camera-start').boundingBox();
@@ -85,8 +135,11 @@ try {
   await wake();
   await page.locator('#phone-dock').waitFor({state:'hidden'});
   assert.equal(await page.locator('.phone-bubble').count(),0);
+  assert.equal(await page.locator('#phone-chat-input').inputValue(),'');
+  assert.equal(await chat.isVisible(),false);
+  await page.locator('#phone-connection').waitFor();
   assert.deepEqual(errors,[]);
-  console.log('PASS Paired phone apps, sticky composer, idempotent retry, scoped reply, and revocation.');
+  console.log('PASS Connection and Chat tabs, mobile keyboard layout, incoming consent on both tabs, paired phone apps, draft recovery, scoped reply, and revocation.');
 } finally {
   await browser.close();
 }

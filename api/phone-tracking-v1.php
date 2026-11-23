@@ -6,6 +6,7 @@ require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-http-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-chat-v1.php';
+require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
 vp3_phone_http_headers_v1();
 try {
@@ -55,7 +56,12 @@ try {
             : vp3_phone_owner_v1($pdo,$owner,$action,$input),
         default => vp3_phone_owner_v1($pdo,$owner,$action,$input)
     };
-    if ($action === 'state') $result['devices']=vp3_paired_phone_owner_links_v1($pdo,$owner,$result['devices']);
+    if ($action === 'state') {
+        $result['devices']=vp3_paired_phone_owner_links_v1($pdo,$owner,$result['devices']);
+        if (vp3_participant_scope_v1()===null) {
+            $result['devices']=vp3_phone_camera_map_devices_v1($pdo,$owner,$result['devices']);
+        }
+    }
     if ($action === 'invite' && !empty($result['invite'])) {
         $result['phone_url'] = url('/phone-location.php').'#invite='.rawurlencode($result['invite']);
     }

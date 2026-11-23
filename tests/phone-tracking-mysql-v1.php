@@ -75,6 +75,9 @@ function phone_test_dispatch(PDO $db, array $job): array
             'places' => vp3_phone_places_owner_v1($db,$identity,$action,$input),
             'arrival_poll','research_chat' => phone_test_chat($db,$identity,$input,$principal === 'research_chat'),
             'camera' => vp3_phone_camera_owner_v1($db, $identity, 0, 41, $action, $input),
+            'record_owner' => vp3_phone_record_owner_v1($db, $identity, 0, 41, $action, $input),
+            'record_holder' => vp3_phone_record_holder_v1($db, $identity, $action, $input),
+            'record_upload' => vp3_phone_record_chunk_v1($db, $identity, $input, file_get_contents(__DIR__.'/fixtures/phone-camera-recording-vp8.webm')),
             'device' => vp3_phone_device_v1($db,$identity,$action,$input),
         };
         return ['status'=>200, 'data'=>$result];
@@ -87,6 +90,7 @@ function phone_test_dispatch(PDO $db, array $job): array
 
 // Each child establishes its own database connection before the barrier opens.
 if (($argv[1] ?? '') === 'client') {
+    define('STONEFELLOW_ROOT',(string)getenv('VP3_PHONE_TEST_MEDIA_ROOT'));
     $db = phone_test_db((string)getenv('VP3_PHONE_TEST_ISOLATED_DSN'));
     $job = json_decode((string)fgets(STDIN), true, flags: JSON_THROW_ON_ERROR);
     echo "READY\n";
@@ -101,7 +105,7 @@ function phone_test_race(array ...$jobs): array
     $clients = [];
     try {
         foreach ($jobs as $job) {
-            $process = proc_open([PHP_BINARY, __FILE__, 'client'], [
+            $process = proc_open([PHP_BINARY, '-d', 'display_errors=stderr', __FILE__, 'client'], [
                 0=>['pipe','r'], 1=>['pipe','w'], 2=>STDERR,
             ], $pipes);
             if (!is_resource($process)) throw new RuntimeException('Unable to start test client.');
@@ -130,6 +134,8 @@ function phone_test_race(array ...$jobs): array
 $dsn = (string)getenv('VP3_TEST_MYSQL_DSN');
 if (!str_starts_with($dsn, 'mysql:')) throw new RuntimeException('Configure VP3_TEST_MYSQL_DSN for an isolated MySQL fixture.');
 $schema = 'vp3_phone_test_'.bin2hex(random_bytes(8));
+define('STONEFELLOW_ROOT',sys_get_temp_dir().'/'.$schema);
+putenv('VP3_PHONE_TEST_MEDIA_ROOT='.STONEFELLOW_ROOT);
 $serverDsn = preg_replace('/(?:^mysql:|;)dbname=[^;]*(?:;|$)/',
     str_starts_with(substr($dsn, 6), 'dbname=') ? 'mysql:' : ';', $dsn);
 $server = phone_test_db($serverDsn);
@@ -151,6 +157,7 @@ try {
         user_id INT UNSIGNED NOT NULL, role VARCHAR(12) NOT NULL, message TEXT NOT NULL, context_json LONGTEXT NOT NULL,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE) ENGINE=InnoDB');
     $db->exec("INSERT INTO users(id,display_name) VALUES(1,'Test Owner'),(2,'Other Owner')");
+    $db->exec(file_get_contents(dirname(__DIR__).'/upgrade-stonefellow-v86.sql'));
     vp3_phone_schema_v1($db);
     vp3_phone_chat_schema_v1($db);
     vp3_phone_schema_v1($db);
@@ -555,11 +562,51 @@ try {
         'only the paired holder starts the requested camera');
     $offer = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=sendonly\r\n";
     vp3_phone_camera_holder_v1($db,$phone['token'],'offer',$session+['sdp'=>$offer]);
+    vp3_phone_camera_holder_v1($db,$phone['token'],'status',$session+['heartbeat'=>true,'map_source_live'=>true]);
+    $mapScope=$session+['device_id'=>$phone['device']['id']];
+    $viewerA=$mapScope+['viewer_id'=>bin2hex(random_bytes(16))];
+    $viewerB=$mapScope+['viewer_id'=>bin2hex(random_bytes(16))];
+    $openResults=phone_test_race(['camera',1,'map_open',$viewerA],['camera',1,'map_open',$viewerB]);
+    $statuses=array_column($openResults,'status');
+    sort($statuses);
+    phone_test_check($statuses===[200,409], 'concurrent map opens grant the viewer slot to exactly one popup');
+    [$winner,$other]=$openResults[0]['status']===200 ? [$viewerA,$viewerB] : [$viewerB,$viewerA];
+    vp3_phone_camera_owner_v1($db,1,0,41,'map_close',$other);
+    $open=vp3_phone_camera_owner_v1($db,1,0,41,'map_status',$winner)['camera'];
+    phone_test_check($open['viewer_id']===$winner['viewer_id'], 'a late close from another popup preserves the live viewer');
+    $chatRaces=phone_test_race(['camera',1,'chat_open',$viewerA],['camera',1,'chat_open',$viewerB]);
+    $chatStatuses=array_column($chatRaces,'status');
+    sort($chatStatuses);
+    phone_test_check($chatStatuses===[200,409] && vp3_phone_camera_owner_v1($db,1,0,41,'map_status',$winner)['camera']['viewer_id']===$winner['viewer_id'],
+        'concurrent inline Chat opens admit one Chat viewer while preserving the map winner');
+    $recordRequest=['record_owner',1,'request',$session+['request_id'=>bin2hex(random_bytes(16))]];
+    $recordRequests=phone_test_race($recordRequest,$recordRequest);
+    $takeId=$recordRequests[0]['data']['recording']['id']??'';
+    phone_test_check(array_column($recordRequests,'status')===[200,200] && $takeId!==''
+        && $recordRequests[1]['data']['recording']['id']===$takeId,
+        'simultaneous retries on one camera create a single holder recording request');
+    $take=$session+['recording_id'=>$takeId];
+    $consent=phone_test_dispatch($db,['record_holder',$phone['token'],'accept',$take]);
+    $recordedTake=$take+['take_id'=>$consent['data']['recording']['take_id']??''];
+    $review=phone_test_dispatch($db,['record_holder',$phone['token'],'review',$recordedTake]);
+    phone_test_check($consent['status']===200 && $review['status']===200,
+        'the paired phone can record and review the requested take');
+    $clip=file_get_contents(__DIR__.'/fixtures/phone-camera-recording-vp8.webm');
+    $upload=['record_upload',$phone['token'],'chunk',$recordedTake+['index'=>'0','total_bytes'=>(string)strlen($clip),'mime_type'=>'video/webm']];
+    $submissions=phone_test_race($upload,$upload);
+    $assets=$db->query("SELECT file_path FROM user_media_assets WHERE user_id=1 AND source='phone_camera'")->fetchAll(PDO::FETCH_COLUMN);
+    $receipts=(int)$db->query("SELECT COUNT(*) FROM vp3_phone_chat_turns_v1 WHERE map_link='camera_clip'")->fetchColumn();
+    phone_test_check(array_column($submissions,'status')===[200,200] && count($assets)===1 && $receipts===1
+        && file_get_contents(STONEFELLOW_ROOT.'/'.$assets[0])===$clip,
+        'retrying the final binary chunk concurrently publishes one exact private video and one Chat receipt');
     $stops = phone_test_race(['camera',1,'stop',$session], ['camera',1,'stop',$session]);
     $row = vp3_phone_sql_v1($db,'SELECT state,offer_sdp,answer_sdp FROM vp3_phone_camera_sessions_v1 WHERE id=?',[$sessionId])->fetch();
     phone_test_check(array_column($stops,'status') === [200,200] && $row['state']==='stopped'
         && $row['offer_sdp']===null && $row['answer_sdp']===null,
         'duplicate private stops erase camera signaling');
+    phone_test_check(!vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_map_v1 WHERE session_id=?',[$sessionId])->fetchColumn()
+        && !vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_viewers_v1 WHERE session_id=?',[$sessionId])->fetchColumn(),
+        'stopping sharing also removes the private Map and Chat viewers and their signaling');
     $db->exec('DELETE FROM users WHERE id=1');
     $tables = [
         'vp3_phone_invites_v1', 'vp3_phone_devices_v1', 'vp3_phone_requests_v1',
@@ -574,4 +621,9 @@ try {
     echo "PASS Native MySQL phone pairing, consent and revocation races.\n";
 } finally {
     $server->exec("DROP DATABASE `$schema`");
+    if (is_dir(STONEFELLOW_ROOT)) {
+        $files=new RecursiveIteratorIterator(new RecursiveDirectoryIterator(STONEFELLOW_ROOT,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($files as $file) { if ($file->isDir()) rmdir($file->getPathname()); else unlink($file->getPathname()); }
+        rmdir(STONEFELLOW_ROOT);
+    }
 }

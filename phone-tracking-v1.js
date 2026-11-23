@@ -77,6 +77,15 @@
   const cityPositions = [];
   const labelPositions = [];
   const markers = map && leaflet.layerGroup().addTo(map);
+  const camera = window.vp3PhoneMapCameraV1(root, seconds, (id, fromMarker) => {
+    // A map refresh may have replaced the triggering pin while the dialog was open.
+    queueMicrotask(() => {
+      if (document.hidden || byId('phone-stream-dialog').open) return;
+      const marker = fromMarker && markers?.getLayers().find(layer => layer.options?.deviceId === id)?.getElement();
+      const button = Array.from(list.querySelectorAll('[data-focus]')).find(item => item.dataset.focus === id);
+      (marker || (!fromMarker && detail.querySelector('[data-action="open_stream"]')) || button || byId('phone-connect')).focus({preventScroll:true});
+    });
+  });
   const archive = window.vp3PhoneArchiveV1({
     map, leaflet, byId, element, seconds, timestamp, request, selectDevice, selected,
     available:() => available && !document.hidden, writing:() => writing, effectiveState,
@@ -184,7 +193,7 @@
     byId('phone-map-count').textContent = !available ? 'Location unavailable' :
       (staleCount ? liveCount+' live · '+staleCount+' last known' : liveCount ? liveCount+' sharing live' : 'No live locations');
     byId('phone-fit').disabled = !map || !withPoint.length;
-    const signature = JSON.stringify([selectedId, withPoint.map(d => [d.id,d.name,d.latitude,d.longitude,d.accuracy,effectiveState(d)])]);
+    const signature = JSON.stringify([selectedId, withPoint.map(d => [d.id,d.name,d.latitude,d.longitude,d.accuracy,effectiveState(d),camera.liveCamera(d)?.session_id])]);
     if (!map || signature === markerSignature) return;
     const wasEmpty = markers.getLayers().length === 0;
     markerSignature = signature;
@@ -195,11 +204,26 @@
       if (Number.isFinite(d.accuracy) && d.accuracy > 0) {
         leaflet.circle(coordinate, {radius:d.accuracy, interactive:false, color:stale ? '#966d36' : '#14725c', weight:1.25, fillOpacity:.16}).addTo(markers);
       }
-      const title = d.name+' · '+stateLabels[effectiveState(d)];
-      leaflet.marker(coordinate, {
-        title, alt:title, zIndexOffset:d.id === selectedId ? 1000 : 0,
-        icon:leaflet.divIcon({className:'phone-map-marker'+(stale ? ' is-stale' : '')+(d.id === selectedId ? ' is-selected' : ''),iconSize:[18,18],iconAnchor:[9,9]})
-      }).bindTooltip(element('span',title),{direction:'top',offset:[0,-11]}).on('click', () => selectDevice(d.id)).addTo(markers);
+      const streaming = Boolean(camera.liveCamera(d));
+      const title = d.name+' · '+stateLabels[effectiveState(d)]+(streaming ? ' · Open live camera' : '');
+      const marker = leaflet.marker(coordinate, {
+        title, alt:title, deviceId:d.id, zIndexOffset:d.id === selectedId ? 1000 : 0,
+        icon:leaflet.divIcon({className:'phone-map-marker'+(stale ? ' is-stale' : '')+(d.id === selectedId ? ' is-selected' : '')
+          +(streaming ? ' is-streaming' : ''),iconSize:[18,18],iconAnchor:[9,9]})
+      }).bindTooltip(element('span',title),{direction:'top',offset:[0,-11]}).on('click', () => {
+        const device = devices.find(device => device.id === d.id);
+        selectDevice(d.id);
+        if (camera.liveCamera(device)) camera.open(device,true);
+      }).addTo(markers);
+      const icon = marker.getElement();
+      icon.setAttribute('aria-label',title);
+      if (streaming) icon.setAttribute('aria-haspopup','dialog');
+      icon.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        marker.fire('click');
+      });
     }
     const followed = withPoint.find(d => d.id === followId);
     if (followed) {
@@ -249,7 +273,7 @@
   function renderDetail(d) {
     detail.hidden = !d;
     renderPreferences(d);
-    const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.agent_chat,d.allow_location,d.holder_can_save_places,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId] : []);
+    const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.agent_chat,d.allow_location,d.holder_can_save_places,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId,camera.liveCamera(d)?.session_id] : []);
     if (signature === detailSignature) return;
     detailSignature = signature;
     const focused = summary.contains(document.activeElement) ? document.activeElement.dataset.action : null;
@@ -281,6 +305,11 @@
       url.searchParams.set('conversation_id',String(d.agent_chat.conversation_id));
       link.href = url.href;
       actions.append(link);
+    }
+    if (camera.liveCamera(d)) {
+      const play = actionButton('open_stream','View live camera','phone-primary');
+      play.setAttribute('aria-haspopup','dialog');
+      actions.append(play);
     }
     if (d.allow_location && !followStates.has(d.location_state)) actions.append(actionButton('request_start','Request sharing','phone-primary'));
     if (followStates.has(d.location_state)) actions.append(actionButton('stop','Stop sharing','phone-primary'));
@@ -387,6 +416,7 @@
     if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && d.allow_location)?.id || '';
     else if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
     if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
+    camera.update(approved);
     renderList(approved);
     renderDetail(selected());
     renderPending(devices.filter(d => d.status === 'pending'));
@@ -416,6 +446,7 @@
   }
   function clearView() {
     revision++;
+    camera.close();
     devices = [];
     selectedId = followId = '';
     lastFollowPoint = '';
@@ -536,6 +567,10 @@
   byId('phone-pair-close').addEventListener('click', () => pairing.close());
   pairing.addEventListener('close', () => { eraseInvite(); byId('phone-pair-status').textContent = ''; });
   byId('phone-refresh-invite').addEventListener('click',newInvite);
+  function updateDevice(index, device) {
+    // Mutation receipts omit camera status. Its shorter lease still comes from the last map refresh.
+    devices[index] = {live_camera:devices[index].live_camera, ...device};
+  }
   async function mutate(action, device, fields = {}) {
     if (!device || writing || document.hidden) return;
     writing = true;
@@ -557,7 +592,7 @@
       if (version !== revision || document.hidden) return;
       const index = devices.findIndex(d => d.id === device.id);
       if (index >= 0) {
-        if (result.device && ['approved','pending'].includes(result.device.status)) devices[index] = result.device;
+        if (result.device && ['approved','pending'].includes(result.device.status)) updateDevice(index,result.device);
         else devices.splice(index,1);
       }
       if (action === 'approve') { linkedDevice = null; selectedId = device.id; }
@@ -594,7 +629,7 @@
       if (version !== revision || document.hidden) return null;
       if (result.device && result.device.id === fields.device_id) {
         const index = devices.findIndex(d => d.id === fields.device_id);
-        if (index >= 0) devices[index] = result.device;
+        if (index >= 0) updateDevice(index,result.device);
       }
       return result;
     } catch (error) {
@@ -619,7 +654,9 @@
     const action = event.target.closest('button[data-action]')?.dataset.action;
     const d = selected();
     if (!d || !action || writing) return;
-    if (action === 'follow') {
+    if (action === 'open_stream') {
+      camera.open(d,false);
+    } else if (action === 'follow') {
       followId = followId === d.id ? '' : d.id;
       if (followId) focusPoint(d);
       render();

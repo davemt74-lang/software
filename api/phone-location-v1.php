@@ -22,12 +22,15 @@ try {
         !in_array($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin', ['same-origin','none'], true)) {
         throw new RuntimeException('Invalid origin.', 403);
     }
-    $input = vp3_phone_http_json_v1(['camera_offer']);
+    $multipart=strtolower(trim(explode(';',$_SERVER['CONTENT_TYPE']??'',2)[0]))==='multipart/form-data';
+    if ($multipart && (int)($_SERVER['CONTENT_LENGTH']??0)>VP3_PHONE_RECORD_CHUNK_V1+16384) throw new RuntimeException('Recording chunk too large.',413);
+    $input = $multipart ? ['action'=>'camera_record_chunk'] : vp3_phone_http_json_v1(['camera_offer','camera_map_offer','camera_chat_offer']);
     $action = $input['action'] ?? null;
     unset($input['action']);
-    $cameraAction = in_array($action, ['camera_status','camera_prepare','camera_start','camera_offer','camera_stop'],true);
+    $cameraAction = in_array($action, ['camera_status','camera_prepare','camera_start','camera_offer','camera_stop','camera_map_offer','camera_chat_offer'],true);
     $chatAction = in_array($action,['chat_status','chat_send'],true);
-    if (!$chatAction && !$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
+    $recordAction=in_array($action,['camera_record_accept','camera_record_review','camera_record_decline'],true);
+    if (!$multipart && !$recordAction && !$chatAction && !$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
         'accept_history','decline_history','stop_history','set_place_permission',
         'accept_arrival','decline_arrival','stop_arrival','holder_save_place'], true)) {
         throw new RuntimeException('Unknown action.', 422);
@@ -37,7 +40,11 @@ try {
     $name = 'vp3_phone_device_v1';
     $token = (string)($_COOKIE[$name] ?? '');
     if ($action !== 'claim' && $token === '') throw new RuntimeException('Pair a phone first.', 401);
-    if ($chatAction) {
+    if ($multipart) {
+        $result=vp3_phone_record_upload_v1($pdo,$token,$_POST,$_FILES);
+    } elseif ($recordAction) {
+        $result=vp3_phone_record_holder_v1($pdo,$token,substr($action,14),$input);
+    } elseif ($chatAction) {
         require_once dirname(__DIR__).'/includes/paired-phone-agent-v1.php';
         $result = vp3_paired_phone_chat_v1($pdo,$token,$action,$input);
     } elseif ($cameraAction) {

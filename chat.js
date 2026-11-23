@@ -1931,6 +1931,12 @@
       return `<button class="chat-agent-action-button" type="button" data-chat-email-search="${action.item_ref}" data-chat-email-conversation="${action.conversation_id}">${escapeHtml(action.label || 'Open email')}</button>`;
     }
     if(action.type==='participant_setup'&&/^[a-f0-9]{32}$/.test(String(action.token||''))&&Number.isInteger(action.conversation_id)&&action.conversation_id>0)return '<button class="chat-agent-action-button" type="button" data-participant-setup-token="'+escapeHtml(action.token)+'" data-participant-setup-conversation="'+action.conversation_id+'">Review participant setup</button>';
+    if (action.type==='phone_live_stream') {
+      if (!/^[0-9a-f]{32}$/.test(action.session_id) || !/^[0-9a-f]{32}$/.test(action.device_id)
+          || !Number.isSafeInteger(action.agent_id) || action.agent_id<0
+          || !Number.isSafeInteger(action.conversation_id) || action.conversation_id<1) return '';
+      return `<button type="button" class="chat-agent-action-button" aria-expanded="false" data-phone-live-stream="${escapeHtml(action.session_id)}" data-phone-live-device="${escapeHtml(action.device_id)}" data-phone-live-agent="${action.agent_id}" data-phone-live-conversation="${action.conversation_id}">Show live stream</button>`;
+    }
     if (action.type === 'voice_enrollment') return '<button class="chat-agent-action-button" type="button" data-voice-enrollment-open>Learn my voice</button>';
     if (action.type === 'media_capture') {
       return `<button class="chat-agent-action-button" type="button" data-media-agent-mode="${escapeHtml(action.mode||'camera')}" data-media-camera-index="${Number(action.camera_index||0)}">${escapeHtml(action.label||'Open Camera')}</button>`;
