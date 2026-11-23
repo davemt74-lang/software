@@ -285,6 +285,10 @@ phone_chat_test(count($created)===1 && $created[0]['state']==='requested' && $cr
     && $created[0]['task_query']==='recording' && $created[0]['place_id']===$places()[0]['id']
     && $accepted['assistant_message_id']===$again['assistant_message_id'] && count($accepted['phone_updates'])===1 && empty($again['phone_updates']),
     'confirmation generates one holder request and a retry never repeats the announcement');
+$send('When my iPhone arrives at Studio, show me my open marketing tasks.');
+$conflict=$send('Confirm.');
+phone_chat_test(str_contains($conflict['answer'],'stop the existing alert') && count($rules())===1 && $rules()[0]['task_query']==='recording',
+    'a punctuated confirmation reports a conflicting task topic in private Chat and leaves the existing rule intact');
 phone_chat_test(str_contains($send('List my arrival alerts')['answer'],'waiting for phone approval') && $rules(2)===[]
     && str_contains($send('List my arrival alerts',['conversation_id'=>2])['answer'],'no arrival alerts'),
     'another private conversation cannot see or claim this alert');

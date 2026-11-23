@@ -153,7 +153,22 @@ function vp3_phone_arrival_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,a
     $place=vp3_phone_sql_v1($pdo,'SELECT name FROM vp3_phone_places_v1 WHERE owner_user_id=? AND id=?',[$uid,$draft['place_id']])->fetchColumn();
     if ($place===false || $place!==$draft['place_name']) return ['The saved place changed. Send the arrival request again.','places'];
     if ($draft['step']==='phone') return vp3_phone_arrival_chat_confirm_v1($draft,$phone);
-    $rule=vp3_phone_arrival_request_v1($pdo,$uid,$aid,$cid,$phone['id'],$phone['generation'],$draft['place_id'],$draft['topic']);
+    try {
+        $rule=vp3_phone_arrival_request_v1($pdo,$uid,$aid,$cid,$phone['id'],$phone['generation'],$draft['place_id'],$draft['topic']);
+    } catch (RuntimeException $error) {
+        // Only turn known, user-correctable domain outcomes into a private reply. Authorization and database errors propagate.
+        $reply=match ([$error->getCode(),$error->getMessage()]) {
+            [409,'Start live sharing on the selected phone first.'] => ['Start live sharing on the selected phone, then send the arrival request again.','map'],
+            [409,'Save a more accurate location for this place before using arrival alerts.'] => ['Save the place again from a more accurate GPS reading, then request the alert.','places'],
+            [409,'Stop the existing arrival rule before changing its task topic.'] => ['This phone already has an alert for this place. To change its task topic, stop the existing alert and send the new request.','map'],
+            [429,'Stop an unused arrival rule on this phone first.'] => ['This phone has reached its arrival alert limit. List your arrival alerts and stop one before adding another.','map'],
+            [404,'Select a saved place from this account.'] => ['That place is unavailable. Choose a current saved place from this account.','places'],
+            [422,'Use a task topic of up to 64 characters.'] => ['Use a task topic of up to 64 characters and send the arrival request again.',''],
+            default => null
+        };
+        if ($reply===null) throw $error;
+        return $reply;
+    }
     $label=vp3_phone_chat_label_v1($phone);
     $where=vp3_phone_arrival_chat_label_v1($place);
     $answer=$rule['state']==='active' ? 'The arrival alert for '.$label.' at “'.$where.'” is active.'
