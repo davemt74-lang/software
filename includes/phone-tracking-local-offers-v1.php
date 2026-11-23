@@ -34,7 +34,7 @@ function vp3_phone_local_task_needs_item_v1(string $title, string $body, string 
     $objectEnd = '(?=\s*(?:$|[):]|(?:for|from|at|before|after|by|on|in|to|with|and|or|online|locally|today|tomorrow|now|this|next)\b))';
     $purchase = '/\b'.$want.'\s+'.$qty.$itemPattern.$objectEnd.'|'.$itemPattern.'\s+(?:(?:is|are|still|to be)\s+)*(?:needed|required|missing|to (?:buy|purchase|order))\b/iu';
     $negative = '/\b(?:(?:do not|don\x27t|never|no longer|shouldn\x27t|should not|must not|avoid|skip|cancel)\s+(?:need(?: to)?\s+)?'.$want
-        .'|no (?:longer )?need for|already (?:own|have|bought|purchased|ordered|received)|we (?:already )?own|(?:not|no longer) (?:needed|required))\b/iu';
+        .'|no (?:longer )?need (?:for|to)|(?:do not|don\x27t|no longer) have to|not necessary to|already (?:own|have|bought|purchased|ordered|received)|we (?:already )?own|(?:not|no longer) (?:needed|required))\b/iu';
     // Keep a negation about other supplies separate from a subsequent request for the named item.
     $clauses = preg_split('/[.;!?\r\n,]+|\s+(?:but|however|then)\s+|\s+and\s+(?=(?:(?:we|I|still|plan to|need to)\s+)*'
         .$want.'\b)/iu', $title."\n".$body, -1, PREG_SPLIT_NO_EMPTY);

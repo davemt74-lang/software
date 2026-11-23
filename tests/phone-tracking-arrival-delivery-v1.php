@@ -208,6 +208,10 @@ $offerRows=$pdo->query('SELECT * FROM chat_messages WHERE id='.$message)->fetchA
 $edited=vp3_phone_chat_history_v1($pdo,$user,7,1,$offerRows,$input)[0]['message'];
 arrival_check($offer($message)===null && !str_contains($edited,'Search area') && !str_contains($edited,'drumsticks'),
     'an unrelated edit withdraws the old invitation without displaying the changed task title');
+foreach (["Recording: no need to buy XLR cables","Recording: we don't have to buy XLR cables"] as $negated) {
+    $taskRow->execute([$negated,'']);
+    arrival_check($offer($message)===null,'a waived purchase does not constitute an open need');
+}
 $taskRow->execute(['Recording: do not order a rack, but source another XLR cable','']);
 arrival_check($offer($message)!==null,'a negation of another purchase leaves an explicit need for the item intact');
 $taskRow->execute(['Recording: XLR cables','']);
