@@ -249,7 +249,7 @@
   function renderDetail(d) {
     detail.hidden = !d;
     renderPreferences(d);
-    const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.allow_location,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId] : []);
+    const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.agent_chat,d.allow_location,d.holder_can_save_places,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId] : []);
     if (signature === detailSignature) return;
     detailSignature = signature;
     const focused = summary.contains(document.activeElement) ? document.activeElement.dataset.action : null;
@@ -273,6 +273,15 @@
     field('Session expires',timestamp(d.expires_at));
     summary.append(fields);
     const actions = element('div',undefined,'phone-command-row');
+    if (Number.isSafeInteger(d.agent_chat?.conversation_id) && d.agent_chat.conversation_id > 0
+        && Number.isSafeInteger(d.agent_chat.agent_id) && d.agent_chat.agent_id >= 0) {
+      const link = element('a','Open phone chat');
+      const url = new URL('chat.php',location.href);
+      url.searchParams.set('agent',String(d.agent_chat.agent_id || 'system'));
+      url.searchParams.set('conversation_id',String(d.agent_chat.conversation_id));
+      link.href = url.href;
+      actions.append(link);
+    }
     if (d.allow_location && !followStates.has(d.location_state)) actions.append(actionButton('request_start','Request sharing','phone-primary'));
     if (followStates.has(d.location_state)) actions.append(actionButton('stop','Stop sharing','phone-primary'));
     if (hasPoint(d)) {
@@ -280,6 +289,10 @@
       follow.setAttribute('aria-pressed',String(followId === d.id));
       actions.append(follow);
     }
+    const placeAccess = actionButton('set_holder_place_access','Allow phone to add saved locations');
+    placeAccess.setAttribute('aria-pressed',String(d.holder_can_save_places === true));
+    placeAccess.textContent += d.holder_can_save_places ? ' · On' : ' · Off';
+    actions.append(placeAccess);
     actions.append(actionButton('revoke','Disconnect','phone-destructive'));
     summary.append(actions);
     if (focused) (Array.from(actions.children).find(b => b.dataset.action === focused) || actions.firstElementChild)?.focus({preventScroll:true});
@@ -537,7 +550,7 @@
     try {
       const agent = Number(root.dataset.chatAgent);
       const conversation = Number(root.dataset.chatConversation);
-      if (action === 'request_start' && Number.isSafeInteger(agent) && agent >= 0 && Number.isSafeInteger(conversation) && conversation > 0) {
+      if (['approve','request_start'].includes(action) && Number.isSafeInteger(agent) && agent >= 0 && Number.isSafeInteger(conversation) && conversation > 0) {
         fields.chat_origin = {agent_id:agent,conversation_id:conversation};
       }
       const result = await request(action, {device_id:device.id,generation:device.generation,...fields});
@@ -551,7 +564,9 @@
       if (action === 'request_start' && result.device) requestNotice = {id:result.device.id,generation:result.device.generation};
       if (action !== 'set_preferences') {
         const messages = {approve:device.name+' approved.',deny:'Connection request denied for '+device.name+'.',request_start:'',stop:'Sharing stopped for '+device.name+'.',revoke:device.name+' disconnected.'};
-        message.textContent = status.textContent = messages[action];
+        message.textContent = status.textContent = action === 'set_holder_place_access'
+          ? (result.device.holder_can_save_places ? 'Enabled' : 'Disabled')+' saved location creation for '+device.name+'.'
+          : messages[action];
       }
       delete status.dataset.failure;
       render();
@@ -608,6 +623,8 @@
       followId = followId === d.id ? '' : d.id;
       if (followId) focusPoint(d);
       render();
+    } else if (action === 'set_holder_place_access') {
+      void mutate(action,d,{holder_can_save_places:!d.holder_can_save_places,holder_place_version:d.holder_place_version});
     } else if (action === 'revoke') {
       choiceToRevoke = {id:d.id,name:d.name,generation:d.generation};
       byId('phone-revoke-message').textContent = d.name+' will stop sharing and will need a new pairing code to reconnect.';

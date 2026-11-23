@@ -346,6 +346,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_schema_ready_v1($schemaConnection)
         && vp3_phone_camera_ready_v1($schemaConnection)
         && vp3_phone_chat_schema_ready_v1($schemaConnection)
+        && vp3_paired_phone_ready_v1($schemaConnection)
         && vp3_profile_owner_drafts_ready_v1($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
         && vp3_profile_attention_schema_ready_pa4b($schemaConnection)

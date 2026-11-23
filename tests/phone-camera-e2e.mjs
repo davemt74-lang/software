@@ -109,14 +109,14 @@ async function sendChat(context, user, message, conversationId=8, key=randomUUID
   return success(await post(context,'/api/chat.php',data,user),'private Agent Chat');
 }
 
-function previewLink(reply, baseURL) {
+function previewLink(reply, baseURL, conversation = 8) {
   assert.match(reply.answer,/Studio iPhone/i);
   const action=reply.actions?.find(a=>a.type==='open_url' && a.label==='Open private camera preview');
   assert.ok(action,'Chat reply exposes the native preview link');
   const url=new URL(action.url,baseURL);
   assert.equal(url.origin,baseURL);
   assert.equal(url.pathname,'/video-editor.php');
-  assert.equal(url.searchParams.get('conversation_id'),'8');
+  assert.equal(url.searchParams.get('conversation_id'),String(conversation));
   assert.match(url.searchParams.get('camera_session'),/^[a-f0-9]{32}$/);
   return url;
 }
@@ -208,7 +208,32 @@ try {
   const chatSchema=fileURLToPath(new URL('./fixtures/phone-camera-chat-shell.sql',import.meta.url));
   execFileSync(php,['-r',"(new PDO('sqlite:'.$argv[1]))->exec(file_get_contents($argv[2]));",
     path.join(temp,'data.sqlite'),chatSchema]);
-  const nextLink=previewLink(await sendChat(desktop,owner,message),origin);
+  const ownerChat=await desktop.newPage();
+  await ownerChat.goto('/chat.php?agent=system&conversation_id=8');
+  await ownerChat.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY?.phoneCameraScope?.()?.conversation===8);
+  const chatEndpoint=await ownerChat.evaluate(()=>new URL(window.STONEFELLOW_CHAT.endpoint,location.href).href);
+  async function typeCameraRequest(text) {
+    await ownerChat.locator('#chatInput').fill(text);
+    const [response]=await Promise.all([
+      ownerChat.waitForResponse(response=>{
+        const request=response.request();
+        if (response.url()!==chatEndpoint || request.method()!=='POST') return false;
+        const payload=request.postDataJSON();
+        return payload?.action==='send' && payload.message===text;
+      }),
+      ownerChat.locator('#sendChatButton').click()
+    ]);
+    return success({status:response.status(),body:await response.json()},'camera request in the Chat composer');
+  }
+  const choice=await typeCameraRequest('Request a camera');
+  assert.match(choice.answer,/Studio iPhone/i);
+  assert.match(choice.answer,/Crew Android/i);
+  await ownerChat.locator('#chatThread .message.assistant').filter({hasText:'Crew Android'}).last().waitFor();
+  assert.equal(success(await post(second.context,holderEndpoint,{action:'camera_status'}),'pending phone choice').camera,null);
+  const nextLink=previewLink(await typeCameraRequest('Studio iPhone'),origin);
+  await ownerChat.locator('#chatThread a').filter({hasText:'Open private camera preview'})
+    .and(ownerChat.locator('[href*="'+nextLink.searchParams.get('camera_session')+'"]')).waitFor();
+  await ownerChat.close();
   assert.notEqual(nextLink.searchParams.get('camera_session'),id,'restart uses a fresh session on the existing pairing');
   await selected.context.addCookies([{name:'PHPSESSID',value:owner.session,url:origin,httpOnly:true,sameSite:'Lax'}]);
   await selected.phone.goto('/chat.php?agent=system&conversation_id=9');
@@ -242,6 +267,32 @@ try {
   assert.equal(device.id,selected.device.id);
   assert.equal(device.allow_location,false);
   assert.equal(device.latitude,null);
+  // Enter via the phone's app menu with only the existing pairing cookie.
+  await selected.context.clearCookies({name:'PHPSESSID'});
+  await selected.phone.goto('/phone-location.php');
+  await selected.phone.locator('#phone-apps-toggle').click();
+  await selected.phone.locator('#phone-app-camera').click();
+  assert.equal(await selected.phone.evaluate(()=>window.cameraReads.length),0,'opening Camera leaves the sensor idle');
+  await selected.phone.locator('#phone-camera-local').click();
+  await selected.phone.waitForFunction(()=>document.querySelector('#phone-camera-preview')?.videoWidth>0);
+  assert.equal(success(await post(selected.context,holderEndpoint,{action:'camera_status'}),'local preview').camera,null);
+  const prepared=selected.phone.waitForResponse(r=>new URL(r.url()).pathname===holderEndpoint && r.request().postDataJSON()?.action==='camera_prepare');
+  await selected.phone.locator('#phone-camera-start').click();
+  const {camera}=await (await prepared).json();
+  assert.ok(camera?.conversation_id>0,'the pairing determines the destination');
+  await selected.phone.locator('#phone-camera-stop').waitFor();
+  await eventually('the phone offers its video to the private editor',async()=>{
+    const state=success(await post(desktop,editorEndpoint,{action:'camera_status',agent_id:camera.agent_id,
+      conversation_id:camera.conversation_id,session_id:camera.session_id},owner),'private editor status');
+    return Boolean(state.camera?.offer_sdp);
+  });
+  const selfLink=previewLink(await sendChat(desktop,owner,'Phone camera status',camera.conversation_id),origin,camera.conversation_id);
+  assert.equal(selfLink.searchParams.get('camera_session'),camera.session_id);
+  await editor.goto(selfLink.href);
+  await movingPreview(editor);
+  await selected.phone.locator('#phone-camera-stop').click();
+  await ended(editor,selected.phone);
+  assert.equal(await second.phone.evaluate(()=>window.cameraReads.length),0);
   console.log('PASS private camera: two existing pairings, scoped Chat request, real decoded WebRTC video, stalled media on a connected peer, named stop announcement, fresh consent on reconnect and editor stop.');
 } catch (error) {
   if (serverErrors) console.error(serverErrors.slice(-2500));

@@ -115,6 +115,18 @@
   let available = false;
   let initial = true;
   let info = '';
+  // Only this open page can describe the browser result of its own attempt.
+  let gpsNotice = null;
+  const policyMessage = 'This page’s permissions policy blocks location. Ask the site owner to allow geolocation on the phone connection page.';
+  function policyBlocksLocation() {
+    try {
+      const policy = document.permissionsPolicy || document.featurePolicy;
+      return policy?.allowsFeature?.('geolocation') === false;
+    } catch { return false; }
+  }
+  function noteGps(message) {
+    gpsNotice = {id:device.id,generation:device.generation,message};
+  }
   let chain = Promise.resolve();
   let pollQueued = false;
   let dead = false;
@@ -124,7 +136,7 @@
 
   async function request(action, data = {}, keepalive = false) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), action === 'chat_send' ? 90000 : 10000);
     try {
       const response = await fetch(endpoint, {
         method:'POST', credentials:'same-origin', cache:'no-store', redirect:'error',
@@ -140,16 +152,25 @@
     } finally { clearTimeout(timer); }
   }
   const camera = window.VP3PhoneCameraHolder?.(request);
+  const savedPlace = window.VP3PhoneSavedPlace?.(request);
+  const chat = window.VP3PhoneAgentChat?.(request, {
+    camera: () => camera?.open(),
+    savePlace: () => savedPlace?.open()
+  });
   function discardDeferred(session) {
     clearTimeout(session.timer);
     session.timer = null;
     session.next = null;
   }
+  function clearSensorWatch(id) {
+    if (id === null) return;
+    try { navigator.geolocation.clearWatch(id); } catch { /* Cancelled readers also ignore late callbacks. */ }
+  }
   function cancelWatch() {
     const previous = run;
     run = null;
     if (previous) {
-      if (previous.watch !== null) navigator.geolocation.clearWatch(previous.watch);
+      clearSensorWatch(previous.watch);
       discardDeferred(previous);
     }
     write('sessionStorage', 'watch', null);
@@ -160,6 +181,7 @@
     if (pending && stored?.id === pending.id && stored.generation === pending.generation && stored.action === pending.action) {
       write('localStorage', 'pending', null);
     }
+    if (gpsNotice?.end === pending) gpsNotice = null;
     pending = null;
   }
   function endDevice(message) {
@@ -168,6 +190,7 @@
     for (const scope of scopes) clearWithdrawal(scope);
     for (const item of arrivalWithdrawals.values()) clearArrivalIntent(item);
     device = null;
+    gpsNotice = null;
     owner = '';
     available = true;
     initial = false;
@@ -184,6 +207,7 @@
       next.status === 'approved' && next.allow_location && !mobileActive(next);
     if (run && !awaitingStart && (next.id !== run.id || next.generation !== run.generation ||
         next.status !== 'approved' || !next.allow_location || !mobileActive(next))) cancelWatch();
+    if (gpsNotice && !gpsNotice.end && (gpsNotice.id !== next.id || gpsNotice.generation !== next.generation)) gpsNotice = null;
     device = next;
     owner = typeof result.owner_name === 'string' ? result.owner_name : '';
     initial = false;
@@ -204,7 +228,10 @@
   function render() {
     const connected = device?.status === 'approved';
     const queued = Boolean(pending && pending.id === device?.id);
-    camera?.bind(connected && pending?.action !== 'disconnect' ? device.id : null, owner);
+    const paired = connected && pending?.action !== 'disconnect' ? device : null;
+    camera?.bind(paired?.id || null, owner);
+    savedPlace?.bind(paired, owner, available && !queued && navigator.onLine !== false);
+    chat?.bind(paired?.id || null, available && navigator.onLine !== false);
     const gps = Boolean(secure && navigator.geolocation);
     el('label').textContent = device?.name || 'Connect this phone';
     el('badge').textContent = device ? (connected ? 'Connected phone' : 'Pending approval') : 'Phone Tracking';
@@ -234,7 +261,7 @@
     else if (connected) {
       message = device.allow_location ? 'You choose when to share your location.' : 'The owner has disabled location access for this phone.';
       if (device.location_state === 'requested') message = 'The owner requested your location. Tap Start sharing to allow it.';
-      if (device.location_state === 'denied') message = 'Location permission was denied. You can change browser permissions and try again.';
+      if (device.location_state === 'denied') message = 'The previous location attempt ended without access. Tap Start sharing to try again.';
       if (mobileActive(device) && !run) message = 'This phone has an open sharing session. You can stop it here.';
       if (run && !run.confirmed) message = 'Requesting sharing permission…';
       else if (device.location_state === 'waiting') message = 'Waiting for a fresh location from this phone…';
@@ -245,6 +272,10 @@
       } else if (device.location_state === 'stale' || (device.location_state === 'live' && age > 60)) {
         gpsState = 'Last known'; message = 'VP3 is waiting for a fresh location. Locked or suspended phones may pause updates.';
       } else if (mobileActive(device) || run) gpsState = 'Awaiting update';
+      if (run?.sensorMessage) message = run.sensorMessage;
+      if (!run && device.allow_location && gpsNotice?.id === device.id && gpsNotice.generation === device.generation) {
+        message = gpsNotice.message;
+      }
       if (!gps) message = 'Location is unavailable in this browser. Open this page in a browser with location access.';
     } else if (claim) message = 'Choose a name so the owner can recognize this phone. Pairing leaves location off.';
     if (queued) {
@@ -457,9 +488,11 @@
     if (!item || navigator.onLine === false || !device || item.id !== device.id) return;
     try {
       const result = await request(item.action,{device_id:item.id,generation:item.generation},keepalive);
+      const message = pending === item && gpsNotice?.end === item ? gpsNotice.message : '';
       if (pending === item) clearPending();
       info = '';
       accept(result);
+      if (message && device?.id === item.id) noteGps(message);
       if (item.action === 'disconnect') endDevice('Phone disconnected. Scan a new QR code to pair again.');
     } catch (error) {
       if (error.status === 409 && pending === item) { clearPending(); info = 'The sharing session changed. Checking its current state.'; schedulePoll(); }
@@ -471,7 +504,8 @@
     if (!device) return;
     const previous = cancelWatch();
     rememberEnd(action,device.id,previous?.startSent ? previous.generation : device.generation);
-    info = reason;
+    gpsNotice = reason ? {end:pending,message:reason} : null;
+    info = '';
     render();
     queue(sendEnd);
   }
@@ -571,6 +605,7 @@
         session.lastTime = time;
         session.lastSent = performance.now();
         session.needsFresh = false;
+        session.sensorMessage = '';
         accept(result);
         info = '';
       } catch (error) {
@@ -595,10 +630,11 @@
     session.reader = reader;
     session.needsFresh = false;
     session.hasReading = false;
-    if (session.watch !== null) navigator.geolocation.clearWatch(session.watch);
+    clearSensorWatch(session.watch);
+    session.watch = null;
     session.refreshedAt = Date.now();
     try {
-      session.watch = navigator.geolocation.watchPosition(position => {
+      const watch = navigator.geolocation.watchPosition(position => {
         if (!canCollect(session) || session.reader !== reader) return;
         const {latitude,longitude,accuracy} = position.coords;
         if (!fresh(Math.floor(position.timestamp / 1000)) ||
@@ -614,19 +650,42 @@
         sendLatestFix(session);
       }, error => {
         if (run !== session || session.reader !== reader) return;
-        if (error.code === 1) finish('denied','Location permission denied. Sending the update to VP3.');
-        else { session.needsFresh = true; info = 'GPS is temporarily unavailable. Waiting for a fresh position.'; render(); }
+        if (error.code === 1) {
+          if (policyBlocksLocation()) stopReader(session,policyMessage);
+          else finish('denied','Location permission was denied for this attempt. Check location access for this site and browser. On iPhone, open Settings → Privacy & Security → Location Services → Safari Websites and choose While Using the App.');
+        } else {
+          session.needsFresh = true;
+          session.sensorMessage = (error.code === 3 ? 'The location request timed out.' : 'The phone could not determine its location.') +
+            ' Waiting for a fresh reading.';
+          render();
+        }
       }, {enableHighAccuracy:session.highAccuracy,maximumAge:0,timeout:20000});
-    } catch { finish('denied','Location is unavailable in this browser.'); }
+      if (run === session && session.reader === reader) session.watch = watch;
+      else clearSensorWatch(watch);
+    } catch {
+      if (run === session) stopReader(session,policyBlocksLocation() ? policyMessage :
+        'The browser could not start location updates. Tap Start sharing to try again.');
+    }
+  }
+  function stopReader(session, message) {
+    if (session.startSent) { finish('stop',message); return; }
+    // The queued server grant has not left this page. Leave the owner's request intact for retry.
+    cancelWatch();
+    noteGps(message);
+    info = '';
+    render();
   }
   function start() {
     if (dead || !available || !secure || !navigator.geolocation || !owner || actionBusy || run || pending ||
         device?.status !== 'approved' || !device.allow_location || mobileActive(device)) return;
+    info = '';
+    if (policyBlocksLocation()) { noteGps(policyMessage); render(); return; }
+    gpsNotice = null;
     const initialGeneration = device.generation;
     const session = {id:device.id,baseGeneration:initialGeneration,startSent:false,generation:initialGeneration + (device.location_state === 'requested' ? 0 : 1),
       watch:null,confirmed:false,next:null,lastTime:0,lastSent:null,timer:null,sending:false,needsFresh:false,
       interval:updateInterval(device),highAccuracy:highAccuracy(device)};
-    run = session; actionBusy = true; info = '';
+    run = session; actionBusy = true;
     write('sessionStorage','watch',{id:session.id,generation:session.generation}); render();
     // Ask for browser permission directly in the holder's tap. Send no sample until the matching server grant is confirmed.
     queue(async () => {

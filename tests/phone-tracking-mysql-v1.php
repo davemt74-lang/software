@@ -179,7 +179,8 @@ try {
     phone_test_check(count($state()) === 1 && $device['status'] === 'approved'
         && !vp3_phone_owner_v1($db, 2, 'state', [])['devices'], 'paired phone belongs only to its approving account');
     // Restore the Phase 1 layout around a real approved phone and its existing approval receipt.
-    $db->exec('ALTER TABLE vp3_phone_devices_v1 DROP COLUMN update_interval_seconds, DROP COLUMN accuracy_mode, DROP COLUMN preferences_version');
+    $db->exec('ALTER TABLE vp3_phone_devices_v1 DROP COLUMN update_interval_seconds, DROP COLUMN accuracy_mode, DROP COLUMN preferences_version,
+        DROP COLUMN holder_can_save_places, DROP COLUMN holder_place_version');
     $upgradeConnection = phone_test_db($isolatedDsn);
     phone_test_check(!vp3_phone_schema_ready_v1($upgradeConnection), 'Phase 1 schema reports that a settings upgrade is needed');
     $installer = ['installer',null,'upgrade',[]];
@@ -190,6 +191,7 @@ try {
     $migrated = vp3_phone_device_v1($db,$token,'status',[])['device'];
     phone_test_check(vp3_phone_schema_ready_v1($upgradeConnection) && $owner('approve',$approval)['duplicate']
         && $migrated['id'] === $deviceId && $migrated['generation'] === $device['generation'] && $migrated['status'] === 'approved'
+        && !$migrated['holder_can_save_places'] && $migrated['holder_place_version'] === 1
         && $migrated['preferences_version'] === 1 && $migrated['update_interval_seconds'] === 5 && $migrated['accuracy_mode'] === 'high',
         'upgrading preserves the paired phone, holder credential, approval receipt and original reporting defaults');
     $setPreferences = fn(int $interval) => ['owner',1,'set_preferences',$input($device['generation'])

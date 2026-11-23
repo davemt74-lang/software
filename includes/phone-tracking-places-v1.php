@@ -71,12 +71,18 @@ function vp3_phone_create_place_v1(
         || $phone['fix_at'] > $now + 5) {
         throw new RuntimeException('Wait for a fresh location from this phone.', 409);
     }
+    vp3_phone_insert_place_v1($pdo,$owner,$placeId,$name,$phone['latitude'],$phone['longitude'],$phone['accuracy'],$now);
+}
+
+function vp3_phone_insert_place_v1(
+    PDO $pdo,int $owner,string $placeId,string $name,float $latitude,float $longitude,float $accuracy,int $now
+): void {
     $nameHash = hash('sha256', mb_strtolower($name, 'UTF-8'));
     if (vp3_phone_sql_v1($pdo, 'SELECT id FROM vp3_phone_places_v1 WHERE owner_user_id=? AND name_hash=?', [$owner, $nameHash])->fetchColumn() !== false) {
         throw new RuntimeException('A saved place already uses that name.', 409);
     }
     vp3_phone_sql_v1($pdo, 'INSERT INTO vp3_phone_places_v1(owner_user_id,id,name,name_hash,latitude,longitude,accuracy,created_at)
-        VALUES(?,?,?,?,?,?,?,?)', [$owner, $placeId, $name, $nameHash, $phone['latitude'], $phone['longitude'], $phone['accuracy'], $now]);
+        VALUES(?,?,?,?,?,?,?,?)', [$owner, $placeId, $name, $nameHash, $latitude, $longitude, $accuracy, $now]);
 }
 
 function vp3_phone_places_owner_v1(PDO $pdo, int $owner, string $action, array $input = []): array
@@ -126,4 +132,41 @@ function vp3_phone_places_owner_v1(PDO $pdo, int $owner, string $action, array $
         }
         return $result;
     });
+}
+
+/** One explicit holder submission. Caller has locked the owning account and authenticated device. */
+function vp3_phone_holder_save_place_v1(PDO $pdo,array $row,array $input,int $now): array
+{
+    if ($row['device_status'] !== 'approved' || !(bool)$row['holder_can_save_places']
+        || ($input['device_id'] ?? null) !== $row['id']) throw new RuntimeException('This phone cannot add saved locations.',403);
+    vp3_phone_generation_v1($row,$input);
+    if (($input['holder_place_version'] ?? null) !== (int)$row['holder_place_version']) {
+        throw new RuntimeException('Saved location permission changed.',409);
+    }
+    $name = vp3_phone_place_name_v1($input['name'] ?? null);
+    $request = $input['request_id'] ?? null;
+    if (!is_string($request) || !preg_match('/^[A-Za-z0-9_.:-]{12,100}$/D',$request)) throw new RuntimeException('Invalid operation identifier.',422);
+    $latitude = vp3_phone_number_v1($input['latitude'] ?? null,-90,90);
+    $longitude = vp3_phone_number_v1($input['longitude'] ?? null,-180,180);
+    $accuracy = vp3_phone_number_v1($input['accuracy'] ?? null,0,40075000);
+    $at = $input['fix_at'] ?? null;
+    if (!is_int($at)) throw new RuntimeException('Invalid reading time.',422);
+    $owner = (int)$row['owner_user_id'];
+    $requestHash = hash('sha256',"phone-holder-place/{$row['id']}/$request");
+    $placeId = substr(hash('sha256',"phone-holder-place/$owner/$requestHash"),0,32);
+    $signature = hash('sha256',json_encode([$input['generation'],$input['holder_place_version'],$name,$latitude,$longitude,$accuracy,$at],JSON_THROW_ON_ERROR));
+    $receipt = vp3_phone_sql_v1($pdo,'SELECT signature FROM vp3_phone_requests_v1 WHERE owner_user_id=? AND request_hash=?',
+        [$owner,$requestHash])->fetchColumn();
+    if ($receipt !== false) {
+        if (!hash_equals((string)$receipt,$signature)) throw new RuntimeException('Operation identifier already used.',409);
+        if (!vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_phone_places_v1 WHERE owner_user_id=? AND id=?',[$owner,$placeId])->fetchColumn()) {
+            throw new RuntimeException('This saved place was deleted.',409);
+        }
+    } else {
+        if ($at <= $now - VP3_PHONE_FRESH_SECONDS_V1 || $at > $now + 5) throw new RuntimeException('Wait for a fresh location from this phone.',422);
+        vp3_phone_insert_place_v1($pdo,$owner,$placeId,$name,$latitude,$longitude,$accuracy,$now);
+        vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_requests_v1(owner_user_id,request_hash,signature,device_id,expires_at,created_at)
+            VALUES(?,?,?,?,?,?)',[$owner,$requestHash,$signature,$row['id'],$row['expires_at'],$now]);
+    }
+    return ['saved_place'=>['id'=>$placeId,'name'=>$name],'duplicate'=>$receipt !== false];
 }

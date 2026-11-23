@@ -77,3 +77,19 @@ check_camera(vp3_phone_camera_ice_v1($pending)===[] && count($servers)===2
     && !str_contains(json_encode($servers),'server-side-test-secret'),'only an accepted camera grant yields temporary relay credentials');
 check_camera((int)explode(':',$servers[1]['username'])[0]===$deviceExpiry && $deviceExpiry>$grant['expires_at'],
     'the relay can refresh after negotiation but never beyond pairing or preview expiry');
+
+$holder('stop',['session_id'=>$fresh['session_id']]);
+require_once dirname(__DIR__).'/includes/paired-phone-agent-v1.php';
+$db->exec('CREATE TABLE chat_messages(id INTEGER PRIMARY KEY)');
+vp3_paired_phone_schema_v1($db,'');
+vp3_paired_phone_bind_v1($db,$device['device_id'],1,0,8);
+reject_camera(fn()=>$holder('prepare',['device_id'=>str_repeat('0',32)]),403);
+reject_camera(fn()=>$holder('prepare',$device+['conversation_id'=>9]),422);
+$self=$holder('prepare',$device);
+check_camera($self['owner_user_id']===1 && $self['conversation_id']===8 && $self['state']==='requested'
+    && $self['session_id']===$holder('prepare',$device)['session_id'],
+    'the paired phone can prepare its own private preview with an idempotent retry');
+$selfSession=['session_id'=>$self['session_id']];
+check_camera($holder('start',$selfSession)['state']==='sharing' && $owner('status',$selfSession)['state']==='sharing',
+    'explicit holder sharing is reachable in the linked private editor');
+$holder('stop',$selfSession);

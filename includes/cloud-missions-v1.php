@@ -190,6 +190,12 @@ function cloud_mission_dispatch_v1(PDO $pdo,array $user,string $action,array $in
         if(empty($view['authority_current']))throw new RuntimeException('Mission access changed.',403);
         return ['ok'=>true,'contract'=>'vp3.agent-missions.cloud.v1','execution_target'=>'cloud','mission'=>$view,'tools'=>cloud_mission_tools_v1($mission)];
     }
+    $chatRoute=null;
+    if ($action==='task.route' && !preg_match('/\b(?:start|prepare|run|create)\s+(?:(?:a|the)\s+)?(?:cloud\s+)?mission\b/iu',(string)($input['objective']??''))) {
+        $chatRoute=['ok'=>true,'contract'=>'vp3.agent-missions.cloud.v1','route'=>'chat','reason'=>'Continue ordinary Cloud Chat. Choose Specialist plan to prepare a Mission.'];
+        // The Cloud composer can continue ordinary Chat before the Mission job engine is installed.
+        if (($input['executor']??'auto')==='cloud') return $chatRoute;
+    }
     if(!cloud_mission_ready_v1($pdo)){if(($input['executor']??'auto')==='cloud')throw new RuntimeException('Run the current upgrade to enable the Cloud job engine.',503);return null;}cloud_mission_schema_v1($pdo);require_once __DIR__.'/cloud-mission-schedules-v1.php';cloud_mission_schedules_schema_v1($pdo);
     if($action==='sources.list')return cloud_mission_sources_list_v1($pdo,$user);
     if(in_array($action,['sources.create','sources.update','sources.disable','sources.enable'],true))return cloud_mission_sources_mutate_v1($pdo,$user,$action,$input);
@@ -201,7 +207,7 @@ function cloud_mission_dispatch_v1(PDO $pdo,array $user,string $action,array $in
     if(in_array($action,['schedule.pause','schedule.resume','schedule.cancel'],true)&&!empty($input['schedule_id'])){
         $q=$pdo->prepare('SELECT owner_user_id FROM agent_cloud_mission_schedules_v1 WHERE schedule_id=?');$q->execute([(string)$input['schedule_id']]);$owner=$q->fetchColumn();if($owner!==false){if((int)$owner!==(int)$user['id'])throw new RuntimeException('Schedule not found.',404);return cloud_mission_schedule_mutate_v1($pdo,$user,$action,$input);}
     }
-    if(in_array($action,['create','task.prepare','task.route'],true)){if(!in_array($input['executor']??'auto',['auto','cloud','homeserver'],true))throw new InvalidArgumentException('Choose Cloud or HomeServer execution.');if(($input['executor']??'auto')==='homeserver')return null;if($action==='task.route'&&!preg_match('/\b(?:start|prepare|run|create)\s+(?:(?:a|the)\s+)?(?:cloud\s+)?mission\b/iu',(string)($input['objective']??'')))return ['ok'=>true,'contract'=>'vp3.agent-missions.cloud.v1','route'=>'chat','reason'=>'Continue ordinary Cloud Chat. Choose Specialist plan to prepare a Mission.'];return cloud_mission_service_v1($pdo,$user,$action,$input);}
+    if(in_array($action,['create','task.prepare','task.route'],true)){if(!in_array($input['executor']??'auto',['auto','cloud','homeserver'],true))throw new InvalidArgumentException('Choose Cloud or HomeServer execution.');if(($input['executor']??'auto')==='homeserver')return null;if($chatRoute!==null)return $chatRoute;return cloud_mission_service_v1($pdo,$user,$action,$input);}
     if($action==='notifications.read'&&is_string($input['notice_id']??null)&&str_starts_with($input['notice_id'],'cloud:'))return cloud_mission_service_v1($pdo,$user,$action,$input);
     if(!empty($input['mission_id'])){$q=$pdo->prepare('SELECT owner_user_id FROM agent_cloud_missions_v1 WHERE mission_id=?');$q->execute([(string)$input['mission_id']]);$owner=$q->fetchColumn();if($owner!==false){if((int)$owner!==(int)$user['id'])throw new RuntimeException('Mission not found.',404);if($action==='schedule.create')return cloud_mission_schedule_mutate_v1($pdo,$user,$action,$input);return cloud_mission_service_v1($pdo,$user,$action,$input);}}
     if(!in_array($action,['list','progress.feed','notifications.list'],true))return null;

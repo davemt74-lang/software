@@ -8,12 +8,14 @@ assert.match(template,/geolocation=\(self\), camera=\(self\), microphone=\(\)/);
 assert.ok(template.indexOf('phone-camera-ice-v1.js') < template.indexOf('phone-camera-holder-v1.js'));
 const drain = () => new Promise(resolve => setImmediate(resolve));
 
-function fixture({inScope,conflict=false} = {}) {
+function fixture({inScope,conflict=false,app=false} = {}) {
   const el = new Map();
   const document = Object.assign(new EventTarget(),{hidden:false,getElementById:id => {
-    if (!el.has(id)) el.set(id,Object.assign(new EventTarget(),{hidden:true,textContent:'',pause(){},async play(){}}));
+    if (!el.has(id)) el.set(id,Object.assign(new EventTarget(),{hidden:true,textContent:'',dataset:{},setAttribute(){},focus(){},getClientRects(){return [];},pause(){},async play(){}}));
     return el.get(id);
   }});
+  if (app) Object.assign(document.getElementById('phone-camera'),{tagName:'DIALOG',open:false,
+    show(){this.open=true;},showModal(){this.open=true;},close(){this.open=false;}});
   const window = Object.assign(new EventTarget(),{isSecureContext:true});
   const pending = {};
   const capture = new Promise((resolve,reject) => Object.assign(pending,{resolve,reject}));
@@ -39,6 +41,7 @@ function fixture({inScope,conflict=false} = {}) {
   const request = async (action,body={}) => {
     ops.push([action,body]);
     if (fail) throw new Error('Network interrupted');
+    if (action==='camera_prepare') camera={session_id:'from-device',device_id:'phone-a',state:'requested',expires_at:now+80};
     if (action==='camera_start') {
       assert.equal(body.session_id,camera.session_id);
       camera.state='sharing';
@@ -134,3 +137,49 @@ for (const reason of ['hide','revoke','expire','networkFail','unbind','replaceme
   }
 }
 console.log('PASS Phone holder camera consent, send-only video, private answer, stale permission and lifecycle cleanup.');
+
+{
+  const f=fixture({app:true}); f.bind(); await drain();
+  f.client.open(); assert.equal(f.el('local').hidden,false);
+  assert.deepEqual(f.ops.map(op=>op[0]),['camera_status'],'opening the app leaves the camera off');
+  f.click('lens'); f.click('local'); f.capture(); await drain();
+  assert.equal(f.ops.at(-1)[1].video.facingMode.ideal,'user');
+  assert.equal(f.el('preview').hidden,false);
+  assert.ok(!f.ops.some(op=>op[0]==='camera_prepare'||op[0]==='camera_start'),'private local preview signals nothing');
+  f.click('start'); await drain();
+  assert.equal(f.ops.filter(op=>op[0]==='capture').length,1,'sharing reuses the preview track');
+  assert.deepEqual(f.ops.filter(op=>['camera_prepare','camera_start','camera_offer'].includes(op[0])).map(op=>op[0]),
+    ['camera_prepare','camera_start','camera_offer']);
+  f.click('close'); await drain();
+  assert.equal(f.track.readyState,'ended');
+  assert.equal(f.peer.connectionState,'closed');
+  assert.equal(f.ops.at(-1)[0],'camera_stop');
+}
+{
+  const f=fixture({app:true}); f.bind(); await drain(); f.client.open();
+  f.click('start'); f.click('close'); f.capture(); await drain();
+  assert.equal(f.track.readyState,'ended');
+  assert.ok(!f.ops.some(op=>op[0]==='camera_prepare'||op[0]==='camera_start'),'closing during permission prompt cancels sharing');
+}
+{
+  const f=fixture({app:true}); f.bind(); await drain(); f.client.open(); f.click('local'); f.capture(); await drain();
+  f.hide(); assert.equal(f.track.readyState,'ended','suspended local preview releases the lens');
+}
+{
+  const f=fixture({app:true}); f.bind(); await drain();
+  f.client.open(); f.click('local'); f.capture(); await drain();
+  f.request('incoming'); await f.tick();
+  assert.equal(f.el('title').textContent,'Camera request');
+  assert.match(f.el('status').textContent,/Map owner requested this phone/);
+  assert.equal(f.el('decline').hidden,false);
+  assert.ok(!f.ops.some(([action])=>action==='camera_start'||action==='camera_offer'));
+  f.click('decline'); await drain();
+  assert.equal(f.el('preview').hidden,false);
+  assert.equal(f.track.readyState,'live','rejecting incoming sharing preserves the local preview');
+  assert.equal(f.ops.at(-1)[1].requested_only,true);
+  f.request('second-request'); await f.tick(); f.click('start'); await drain();
+  assert.equal(f.ops.find(([action])=>action==='camera_start')[1].session_id,'second-request');
+  assert.equal(f.ops.filter(([action])=>action==='capture').length,1,'accepting reuses the still-local track');
+  assert.ok(!f.ops.some(([action])=>action==='camera_prepare'),'accept the owner’s exact request');
+}
+console.log('PASS On-phone camera launcher, local preview, independent share, stop, and late consent cleanup.');

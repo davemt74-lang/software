@@ -40,6 +40,38 @@ $pair = function(int $owner,string $name,string $role='guest') use($db,$request)
 $holder=fn(string $action,array $extra=[],?int $generation=null) => vp3_phone_device_v1($db,$token,$action,$extra+[
     'device_id'=>$phone['id'],'generation'=>$generation ?? $phone['generation']])['device'];
 $places=fn(string $action,array $input=[],int $owner=11) => vp3_phone_places_owner_v1($db,$owner,$action,$input);
+// Holder-created saved places have a different permission from owner copies of a live fix.
+$placeAccess=fn(bool $allow,int $version) => vp3_phone_owner_v1($db,11,'set_holder_place_access',[
+    'device_id'=>$phone['id'],'generation'=>$phone['generation'],'request_id'=>$request(),
+    'holder_place_version'=>$version,'holder_can_save_places'=>$allow])['device'];
+$point=['name'=>'Side entrance','request_id'=>$request(),'fix_at'=>time(),'latitude'=>33.4,'longitude'=>-112.0,'accuracy'=>9,
+    'device_id'=>$phone['id'],'generation'=>$phone['generation'],'holder_place_version'=>1];
+$submit=fn(array $fields,?string $credential=null) => vp3_phone_device_v1($db,$credential ?? $token,'holder_save_place',$fields);
+places_test(!$phone['holder_can_save_places'] && !$peer['holder_can_save_places'],'new pairings start without permission to add places');
+places_denied(403,fn()=>$submit($point),'holder cannot add a place without an owner grant');
+places_denied(404,fn()=>vp3_phone_owner_v1($db,12,'set_holder_place_access',[
+    'device_id'=>$phone['id'],'generation'=>$phone['generation'],'request_id'=>$request(),
+    'holder_place_version'=>1,'holder_can_save_places'=>true]),'another account cannot enable a phone');
+$grant=$placeAccess(true,1);
+places_test($grant['holder_can_save_places'] && !$grant['allow_saved_places'],'owner can enable holder creation independently of live sharing consent');
+places_denied(409,fn()=>$submit($point),'a delayed submission from before the grant cannot create a place');
+$point['holder_place_version']=$grant['holder_place_version'];
+places_denied(403,fn()=>$submit($point,$peerToken),'a second phone cannot use the granted phone ID');
+places_denied(422,fn()=>$submit(array_replace($point,['fix_at'=>time()-70])),'holder must send a fresh reading');
+$ack=$submit($point);
+places_test(!$ack['duplicate'] && $ack['saved_place']['name']==='Side entrance' && $submit($point)['duplicate'],
+    'lost acknowledgements can be retried without duplicating the saved place');
+places_test($ack['device']['location_state']==='off' && $ack['device']['fix_at']===null && $ack['device']['history_state']==='off'
+    && count($places('places')['places'])===1 && $places('places')['places'][0]['latitude']===33.4,
+    'one explicitly saved location reaches the owner map without starting location sharing or history');
+places_denied(409,fn()=>$submit(array_replace($point,['latitude'=>35.0])),'a reused operation ID cannot move the place');
+$withdraw=$placeAccess(false,$grant['holder_place_version']);
+places_denied(403,fn()=>$submit($point),'owner withdrawal immediately blocks a stale holder page');
+$againGrant=$placeAccess(true,$withdraw['holder_place_version']);
+places_denied(409,fn()=>$submit($point),'re-enabling a phone cannot revive an older saved location request');
+$placeAccess(false,$againGrant['holder_place_version']);
+$places('delete_place',['place_id'=>$ack['saved_place']['id'],'request_id'=>$request()]);
+
 $waiting=$holder('start');
 $g=$waiting['generation'];
 $fix=['fix_at'=>time(),'latitude'=>33.45,'longitude'=>-112.07,'accuracy'=>12.5];

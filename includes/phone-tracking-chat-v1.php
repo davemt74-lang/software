@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 require_once __DIR__.'/phone-tracking-v1.php';
 require_once __DIR__.'/phone-camera-chat-v1.php';
+require_once __DIR__.'/paired-phone-agent-v1.php';
+require_once __DIR__.'/paired-phone-chat-owner-v1.php';
 require_once __DIR__.'/phone-tracking-arrival-chat-v1.php';
 require_once __DIR__.'/phone-tracking-arrival-delivery-v1.php';
 require_once __DIR__.'/phone-tracking-local-approval-v1.php';
@@ -41,6 +43,7 @@ function vp3_phone_chat_schema_v1(PDO $pdo): void
         FOREIGN KEY (assistant_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE
     )".$options);
+    vp3_paired_phone_schema_v1($pdo,$options);
     vp3_phone_arrival_receipts_schema_v1($pdo);
     vp3_phone_local_approval_schema_v1($pdo);
 }
@@ -260,6 +263,12 @@ function vp3_phone_chat_watch_v1(PDO $pdo,int $uid,int $aid,int $cid,array $devi
 
 function vp3_phone_chat_map_start_v1(PDO $pdo,array $user,array $input): array
 {
+    return vp3_phone_chat_map_command_v1($pdo,$user,'request_start',$input);
+}
+
+function vp3_phone_chat_map_command_v1(PDO $pdo,array $user,string $action,array $input): array
+{
+    if (!in_array($action,['approve','request_start'],true)) throw new RuntimeException('Unknown phone action.',422);
     require_once __DIR__.'/agent-activity-scope-v1.php';
     require_once __DIR__.'/participant-chat-v1.php';
     $origin=$input['chat_origin']??null;
@@ -275,9 +284,12 @@ function vp3_phone_chat_map_start_v1(PDO $pdo,array $user,array $input): array
     try {
         vp3_phone_account_v1($pdo,$uid,true);
         vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
-        $result=vp3_phone_owner_v1($pdo,$uid,'request_start',$input);
+        $result=vp3_phone_owner_v1($pdo,$uid,$action,$input);
         $device=$result['device'];
-        if (!$result['duplicate'] && in_array($device['location_state'],['requested','waiting'],true)) {
+        if ($action==='approve' && !$result['duplicate'] && vp3_paired_phone_ready_v1($pdo)) {
+            vp3_paired_phone_bind_v1($pdo,$device['id'],$uid,$aid,$cid);
+        }
+        if ($action==='request_start' && !$result['duplicate'] && in_array($device['location_state'],['requested','waiting'],true)) {
             vp3_phone_chat_watch_v1($pdo,$uid,$aid,$cid,$device);
         }
         $pdo->commit();
@@ -430,6 +442,9 @@ function vp3_phone_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,array $pl
     }
     $result=vp3_phone_owner_v1($pdo,$uid,$action,['device_id'=>$device['id'],'generation'=>(int)$device['generation'],'request_id'=>$key]);
     $device=$result['device'];
+    if ($action==='approve' && !$result['duplicate'] && vp3_paired_phone_ready_v1($pdo)) {
+        vp3_paired_phone_bind_v1($pdo,$device['id'],$uid,$aid,$cid);
+    }
     $answer=match ($action) {
         'approve'=>$name.' is connected. GPS sharing is off.',
         'deny'=>'Connection request denied for '.$name.'.',
@@ -591,7 +606,8 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
     $sql='SELECT device_id,generation FROM vp3_phone_chat_grants_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=? AND pending=1';
     $localPending=vp3_phone_local_research_pending_v1($pdo,$uid,$aid,$cid);
     $cameraPending=vp3_phone_camera_pending_v1($pdo,$uid,$aid,$cid);
-    if (!$localPending && !$cameraPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
+    $pairedPending=vp3_paired_phone_pending_v1($pdo,$uid,$aid,$cid);
+    if (!$pairedPending && !$localPending && !$cameraPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
     vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
     $eligible=static function(int $offerId) use($pdo,$user,$principal,$input,$cid): bool {
         try {
@@ -623,6 +639,7 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
                 $updates[]=vp3_phone_chat_announcement_v1($row);
             }
         }
+        if ($pairedPending) $updates=array_merge($updates,vp3_paired_phone_owner_updates_v1($pdo,$uid,$aid,$cid));
         if ($cameraPending) $updates=array_merge($updates,vp3_phone_camera_chat_updates_v1($pdo,$uid,$aid,$cid));
         $updates=array_merge($updates,vp3_phone_arrival_deliver_v1($pdo,$user,$principal,$input,$cid));
         if ($localPending) $updates=array_merge($updates,vp3_phone_local_emit_v1($pdo,$user,$principal,$cid,$eligible));
@@ -639,16 +656,20 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
 function vp3_phone_chat_history_v1(PDO $pdo,array $user,int $aid,int $cid,array $rows,array $input): array
 {
     $markers=[];
+    $paired=[];
     foreach ($rows as $i=>$row) {
+        if (($row['context_json']??null)==='{"source":"paired_phone_agent"}') $paired[(int)$row['id']]=$i;
         if (($row['context_json']??null)==='{"source":"private_phone_tracking"}') $markers[(int)$row['id']]=$i;
     }
-    if (!$markers || !$cid || !vp3_phone_chat_page_v1($user)) return $rows;
+    if ((!$markers && !$paired) || !$cid || !vp3_phone_chat_page_v1($user)) return $rows;
     try {
         $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$aid);
         vp3_phone_chat_authorize_v1($pdo,$user,vp3_agent_chat_principal_v380($user,$agent),$input,$cid);
     } catch (RuntimeException) {
         return $rows;
     }
+    if ($paired) $rows=vp3_paired_phone_owner_history_v1($pdo,(int)$user['id'],$aid,$cid,$rows,$paired);
+    if (!$markers) return $rows;
     $ids=array_keys($markers); $marks=implode(',',array_fill(0,count($ids),'?'));
     $records=vp3_phone_sql_v1($pdo,"SELECT * FROM vp3_phone_chat_turns_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=?
         AND (assistant_message_id IN ($marks) OR user_message_id IN ($marks))",[(int)$user['id'],$aid,$cid,...$ids,...$ids]);

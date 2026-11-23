@@ -37,7 +37,7 @@ try {
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'request_history','stop_history','delete_history','save_place','delete_place'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -51,10 +51,11 @@ try {
     $result = match ($action) {
         'history' => vp3_phone_history_read_v1($pdo,$owner,$input['device_id'],$input['before']),
         'places','save_place','delete_place' => vp3_phone_places_owner_v1($pdo,$owner,$action,$input),
-        'request_start' => isset($input['chat_origin']) ? vp3_phone_chat_map_start_v1($pdo,$user,$input)
+        'approve','request_start' => isset($input['chat_origin']) ? vp3_phone_chat_map_command_v1($pdo,$user,$action,$input)
             : vp3_phone_owner_v1($pdo,$owner,$action,$input),
         default => vp3_phone_owner_v1($pdo,$owner,$action,$input)
     };
+    if ($action === 'state') $result['devices']=vp3_paired_phone_owner_links_v1($pdo,$owner,$result['devices']);
     if ($action === 'invite' && !empty($result['invite'])) {
         $result['phone_url'] = url('/phone-location.php').'#invite='.rawurlencode($result['invite']);
     }

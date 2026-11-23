@@ -129,6 +129,9 @@ $mobile('fix',['generation'=>$mapStart['generation'],'fix_at'=>time()]+$fix);
 phone_chat_test($activity()===[] && count($activity(2))===1 && $activity(2)===[],'map with exact Chat origin confirms once in that Chat');
 $send('Disconnect my iPhone.');
 phone_chat_test(!vp3_phone_owner_v1($pdo,1,'state',[])['devices'],'disconnect closes the selected pairing');
+$emptyCamera=$send('Can you request a camera in chat?');
+phone_chat_test(str_contains($emptyCamera['answer'],'approve a phone') && $emptyCamera['actions'][0]['label']==='Show phone QR code',
+    'an owner without an approved phone gets the pairing action in Chat');
 
 // Drive two independent grants through the private dispatcher with an identically named phone in another account.
 $approvedPhone=static function(string $name,string $role,int $ownerId=1)use($pdo,$pair):array{
@@ -139,9 +142,33 @@ $approvedPhone=static function(string $name,string $role,int $ownerId=1)use($pdo
 };
 $holder=static fn(array $phone,string $action='status',array $input=[])=>vp3_phone_device_v1($pdo,$phone['token'],$action,
     ['device_id'=>$phone['device']['id']]+$input)['device'];
+$named=$approvedPhone('Dave','owner');
+$namedInput=['device_id'=>$named['device']['id']];
+$typed=$send('Can I use my iPhone as a camera?');
+phone_chat_test(str_contains($typed['answer'],'Dave') && !$typed['actions']
+    && vp3_phone_camera_holder_v1($pdo,$named['token'],'status',$namedInput)['camera']===null,
+    'an unnamed iPhone model offers the actual paired nickname without guessing the device');
+$send('Cancel');
+foreach (['Request a camera','Please request a camera from Dave.','Request my phone camera','Send a camera request to Dave','Request Dave’s camera'] as $command) {
+    $response=$send($command);
+    $request=vp3_phone_camera_holder_v1($pdo,$named['token'],'status',$namedInput)['camera'];
+    phone_chat_test(str_contains($response['answer'],'Camera requested from Dave') && $request['state']==='requested'
+        && $response['actions'][0]['label']==='Open private camera preview',$command.' requests the named phone and returns its private preview link');
+    vp3_phone_camera_holder_v1($pdo,$named['token'],'stop',$namedInput+['session_id'=>$request['session_id']]);
+}
+$send('Disconnect Dave');
 $iphone=$approvedPhone('iPhone','owner');
 $pixel=$approvedPhone('Pixel','guest');
 $otherAccount=$approvedPhone('iPhone','owner',2);
+$anyPhone=$send('Request a camera');
+phone_chat_test(str_contains($anyPhone['answer'],'Which phone?') && str_contains($anyPhone['answer'],'iPhone')
+    && str_contains($anyPhone['answer'],'Pixel') && !$anyPhone['actions'],
+    'a generic request with two paired phones displays a numbered choice');
+$send('Cancel');
+$unmatchedPhone=$send('Request a camera from Missing Phone');
+phone_chat_test(str_contains($unmatchedPhone['answer'],'could not find') && !$unmatchedPhone['actions'],
+    'an explicit missing nickname never selects a different phone');
+$activity();
 $send('Start sharing my iPhone’s location.');
 $send('Start sharing location from the guest phone.');
 $grants=[];
@@ -430,3 +457,36 @@ $askThird();
 $stopByOwner=$send('Stop using Studio test handset as a camera');
 phone_chat_test(str_contains($stopByOwner['answer'],'Stopped the private camera preview for Studio test handset')
     && count($stopByOwner['phone_updates'])===1 && $activity()===[],'an owner stop is confirmed in the direct reply only once');
+
+// A signed-in owner approves the phone from a linked private Chat and reads each side as it arrives.
+$inbox=$pair('Stage phone');
+$inboxId=$inbox['device']['id'];
+$mapApproval=['device_id'=>$inboxId,'generation'=>$inbox['device']['generation'],'request_id'=>bin2hex(random_bytes(16)),
+    'chat_origin'=>['agent_id'=>7,'conversation_id'=>2]];
+phone_chat_reject(fn()=>vp3_phone_chat_map_command_v1($pdo,$user,'approve',array_merge($mapApproval,[
+    'chat_origin'=>['agent_id'=>7,'conversation_id'=>4]])),403,'map approval rejects another owner’s private conversation');
+$approved=vp3_phone_chat_map_command_v1($pdo,$user,'approve',$mapApproval)['device'];
+$mapLinks=vp3_paired_phone_owner_links_v1($pdo,1,[$approved]);
+phone_chat_test($mapLinks[0]['agent_chat']===['agent_id'=>7,'conversation_id'=>2]
+    && empty(vp3_paired_phone_owner_links_v1($pdo,2,[$approved])[0]['agent_chat']),'Open phone chat links only the approved device and its exact owner thread');
+$promptSeen=[];
+$inboxInput=['device_id'=>$inboxId,'request_id'=>'a91619e0-e124-47a3-9669-431186a94953','message'=>'Is the studio open?'];
+$inboxModel=static function() use($activity,&$promptSeen) {
+    // Run while the provider is working. No reply or duplicate should reach the owner yet.
+    $promptSeen=$activity(2);
+    return 'The studio opens at noon.';
+};
+vp3_paired_phone_chat_v1($pdo,$inbox['token'],'chat_send',$inboxInput,$inboxModel);
+$wrong=$activity(1);$replySeen=$activity(2);
+phone_chat_test($wrong===[] && count($promptSeen)===1 && $promptSeen[0]['speech']==="From Stage phone\nIs the studio open?"
+    && count($replySeen)===1 && $replySeen[0]['speech']==="Reply to Stage phone\nThe studio opens at noon."
+    && $activity(2)===[],'the phone prompt and agent reply each reach the exact private announcement stream once');
+$rawTurns=vp3_phone_sql_v1($pdo,'SELECT * FROM chat_messages WHERE id IN (?,?) ORDER BY id',
+    [$promptSeen[0]['message_id'],$replySeen[0]['message_id']])->fetchAll(PDO::FETCH_ASSOC);
+$hydratedTurns=vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[]);
+phone_chat_test(array_column($hydratedTurns,'message')===[$inboxInput['message'],$replySeen[0]['speech']]
+    && json_decode($hydratedTurns[0]['context_json'],true)['phone_sender']==='Stage phone'
+    && !str_contains(json_encode($rawTurns),'studio open'),'private chat restores the phone name and both bodies while ordinary history stores markers');
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['owner'=>1];
+phone_chat_test(vp3_phone_chat_history_v1($pdo,$user,7,2,$rawTurns,[])===$rawTurns,'participant views cannot read the owner’s paired phone transcript');
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);

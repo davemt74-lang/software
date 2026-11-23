@@ -15,14 +15,17 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
-  <link rel="stylesheet" href="phone-location-v1.css?v=5">
+  <link rel="stylesheet" href="phone-location-v1.css?v=6">
+  <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
-  <script src="phone-camera-holder-v1.js?v=2" defer></script>
-  <script src="phone-location-v1.js?v=6" defer></script>
+  <script src="phone-camera-holder-v1.js?v=4" defer></script>
+  <script src="phone-agent-chat-v1.js?v=1" defer></script>
+  <script src="phone-save-place-v1.js?v=1" defer></script>
+  <script src="phone-location-v1.js?v=8" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
-  <p class="brand">VP3 <span>/</span> Phone connection</p>
+  <header class="phone-header"><b class="brand">VP3</b><span>Phone connection</span></header>
   <section class="phone-card" aria-labelledby="phone-label">
     <p class="state" id="phone-badge">Phone Tracking</p>
     <h1 id="phone-label">Connect this phone</h1>
@@ -38,16 +41,6 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       <button id="phone-claim" type="submit">Request connection</button>
     </form>
     <div id="phone-controls" hidden>
-      <section id="phone-camera" class="phone-permission" aria-labelledby="phone-camera-title" hidden>
-        <h2 id="phone-camera-title">Agent Chat · Camera preview</h2>
-        <p id="phone-camera-status" role="status" aria-live="polite"></p>
-        <video id="phone-camera-preview" aria-label="Your camera preview" muted autoplay playsinline hidden></video>
-        <div class="phone-permission-buttons">
-          <button type="button" id="phone-camera-start" hidden>Start Sharing</button>
-          <button type="button" id="phone-camera-decline" class="secondary" hidden>Decline</button>
-          <button type="button" id="phone-camera-stop" hidden>Stop Sharing</button>
-        </div>
-      </section>
       <p id="phone-consent"></p>
       <button type="button" id="phone-start" hidden>Start sharing</button>
       <button type="button" id="phone-stop" hidden>Stop sharing</button>
@@ -75,6 +68,27 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
     </div>
     <noscript>Enable JavaScript to pair or manage this phone.</noscript>
   </section>
+  <section id="phone-chat" aria-labelledby="phone-chat-title" hidden>
+    <h2 id="phone-chat-title">Agent Chat</h2>
+    <div id="phone-chat-turns" role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions text"></div>
+  </section>
 </main>
+<footer id="phone-dock" aria-label="Agent Chat and phone apps" hidden>
+  <div class="phone-dock-inner">
+    <?php require __DIR__.'/includes/phone-camera-app-view.php'; ?>
+    <div id="phone-apps" class="phone-apps" role="group" aria-label="Phone apps" hidden>
+      <h2>Phone apps</h2>
+      <button type="button" id="phone-app-camera"><span aria-hidden="true" class="phone-app-icon camera-icon"></span>Camera</button>
+      <button type="button" id="phone-app-save-place" hidden><span aria-hidden="true" class="phone-app-icon place-icon"></span>Save location</button>
+    </div>
+    <p id="phone-chat-status" role="status" hidden></p>
+    <form id="phone-chat-form">
+      <button type="button" id="phone-apps-toggle" aria-label="Phone apps" aria-expanded="false" aria-controls="phone-apps"><span aria-hidden="true">+</span></button>
+      <input id="phone-chat-input" type="text" aria-label="Message the connected agent" placeholder="Message the connected agent…" maxlength="1000" enterkeyhint="send" autocomplete="off" required>
+      <button type="submit" id="phone-chat-send" aria-label="Send message" disabled><span aria-hidden="true">↑</span></button>
+    </form>
+  </div>
+</footer>
+<?php require __DIR__.'/includes/phone-save-place-view.php'; ?>
 </body>
 </html>
