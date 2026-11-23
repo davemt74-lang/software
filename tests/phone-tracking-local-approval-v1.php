@@ -58,6 +58,8 @@ $aid=7;
 $cid=1;
 $user=['id'=>$uid];
 $principal=vp3_agent_chat_principal_v380($user,['id'=>$aid]);
+approval_check(vp3_phone_local_date_v1(['reminder_timezone'=>'Asia/Calcutta'])->getTimezone()->getName()==='Asia/Calcutta',
+    'the preview honors legacy IANA timezone identifiers returned by browsers');
 $phone=str_repeat('a',32);
 $place=str_repeat('b',32);
 $now=time();

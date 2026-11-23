@@ -118,7 +118,7 @@ function vp3_phone_local_date_v1(array $input): DateTimeImmutable
 {
     $name=$input['reminder_timezone']??null;
     $zone=new DateTimeZone(date_default_timezone_get());
-    if (is_string($name) && strlen($name)<=64 && in_array($name,DateTimeZone::listIdentifiers(),true)) {
+    if (is_string($name) && strlen($name)<=64 && in_array($name,DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC),true)) {
         $zone=new DateTimeZone($name);
     }
     return new DateTimeImmutable('now',$zone);
@@ -151,7 +151,8 @@ function vp3_phone_local_approval_turn_v1(PDO $pdo,array $user,array $principal,
             return ['Use a public city or neighborhood and a short product and store category.',''];
         }
         $token=strtoupper(bin2hex(random_bytes(6)));
-        $until=min(time()+900,$date->modify('tomorrow')->setTime(0,0)->getTimestamp());
+        $until=time()+900;
+        if ($public['open_today']) $until=min($until,$date->modify('tomorrow')->setTime(0,0)->getTimestamp());
         $json=json_encode($public,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $old=vp3_phone_sql_v1($pdo,'SELECT offer_id FROM vp3_phone_local_approvals_v1 WHERE offer_id=?',[$id])->fetchColumn();
         if ($old!==false) {
