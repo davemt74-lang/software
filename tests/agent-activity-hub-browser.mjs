@@ -54,7 +54,8 @@ await page.route('https://activity.test/api/hub**',async route => {
   const collection = url.searchParams.get('collection');
   if (url.searchParams.get('view') === 'location') {
     state.sections = [];
-    state.specialists = [{id:'location',state:'armed',progress:null,conversation_id:cid,detail:'1 active arrival alert.'}];
+    state.specialists = [{id:'location',state:cid ? 'armed' : 'idle',progress:null,conversation_id:cid,
+      detail:cid ? '1 active arrival alert.' : 'No arrival alerts in this Chat.'}];
   }
   if (collection === 'reviews') state.sections = [{id:'office_reviews',label:'Completed reviews',items:[]}];
   if (collection === 'all') {
@@ -184,7 +185,7 @@ try {
     for (const [id,label,state,status] of [
       ['image-generator','Image Generator','idle','Idle'],['media','Media & Entertainment','checked','Checked'],
       ['development:idle','Agent Development','paused','Paused'],['mission','Missions','idle','Idle'],
-      ['location','Location Specialist','armed','Armed']
+      ['location','Location Specialist','idle','Idle']
     ]) rail.update(id,{label,status,state,presence:true});
   });
   const composer=page.locator('#chatInput');
@@ -209,7 +210,7 @@ try {
   await specialist.getByRole('button',{name:'Find a video',exact:true}).click();
   assert.equal(await composer.inputValue(),'Search YouTube for a short live acoustic performance');
   await composer.fill('');
-  await page.getByRole('button',{name:'Location Specialist · Armed',exact:true}).click();
+  await page.getByRole('button',{name:'Location Specialist · Idle',exact:true}).click();
   await specialist.getByText('1 active arrival alert.',{exact:true}).waitFor();
   const tracking = new URL(await specialist.getByRole('link',{name:'Open Phone Tracking'}).getAttribute('href'));
   assert.equal(tracking.pathname,'/vp3/phone-tracking.php');
@@ -217,6 +218,19 @@ try {
   await specialist.getByRole('button',{name:'List arrival alerts'}).click();
   assert.equal(await composer.inputValue(),'List my arrival alerts');
   await composer.fill('');
+  await page.evaluate(() => { window.currentChat=0;window.dispatchEvent(new Event('vp3:chat-context-ready')); });
+  await page.locator('[data-chat-specialist="location"]').click();
+  await specialist.getByText('No arrival alerts in this Chat.',{exact:true}).waitFor();
+  const newMap = new URL(await specialist.getByRole('link',{name:'Open Phone Tracking'}).getAttribute('href'));
+  assert.deepEqual(Object.fromEntries(newMap.searchParams),{agent:'7'});
+  await specialist.getByRole('button',{name:'Set up an arrival alert'}).click();
+  assert.equal(await composer.inputValue(),'When my iPhone arrives at Studio, show me my open recording tasks.');
+  await composer.fill('');
+  await page.locator('[data-chat-specialist="location"]').click();
+  await specialist.getByText('No arrival alerts in this Chat.',{exact:true}).waitFor();
+  // A restored conversation can become ready without a preceding context-changing event.
+  await page.evaluate(() => { window.currentChat=42;window.dispatchEvent(new Event('vp3:chat-context-ready')); });
+  await specialist.waitFor({state:'detached'});
   await page.getByRole('button',{name:'Agent Development · Paused',exact:true}).click();
   assert.equal(await specialist.getByRole('link',{name:'Agent Development settings',exact:true}).getAttribute('href'),'/admin/agent-development.php');
   assert.equal(await specialist.getByRole('button',{name:'Draft an example request'}).count(),0);

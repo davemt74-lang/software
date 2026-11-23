@@ -1257,6 +1257,8 @@
       const state = entry.state === 'running' || !entry.state ? 'working' : entry.state;
       if (!Object.hasOwn(specialistLabels,state)) continue;
       const row = rows.get(id);
+      // Arrival state belongs to the exact open Chat. Its fresh read outranks an earlier rail poll.
+      if (id === 'location' && row) continue;
       if (!row) rows.set(id,{id,state,progress:entry.progress,entries:entry.presence ? [] : [entry],label:entry.label,
         detail:entry.presence ? entry.detail : ''});
       else {
@@ -3212,7 +3214,7 @@
   window.dispatchEvent(new Event('vp3:agent-activity-ready'));
   window.addEventListener('vp3:chat-context-ready',() => {
     window.dispatchEvent(new Event('vp3:agent-activity-ready'));
-    if (specialistMode && family(selectedSpecialist) === 'profile' && specialistScope !== signature(scope(true))) {
+    if (specialistMode && ['profile','location'].includes(family(selectedSpecialist)) && specialistScope !== signature(scope(true))) {
       close(false);
       return;
     }
