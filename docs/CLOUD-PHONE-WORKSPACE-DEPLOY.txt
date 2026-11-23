@@ -42,7 +42,8 @@ TWILIO BROWSER SETUP
    Public HTTPS and Twilio access to these URLs are required. Do not rewrite or
    remove the signature-checked callback query parameters.
 8. Enable incoming voice, then enable browser calling for the assigned number.
-   Allow browser-call recording only if desired. The member separately chooses
+   Enable recording only if desired: the per-number setting records incoming
+   browser calls and permits recording outgoing calls. The member separately chooses
    Record this call for an outgoing call. Recorded calls play a spoken notice to
    the called party before connecting. Existing voicemail has its own greeting.
 9. The member opens Agent Chat, clicks the header phone icon and enables calls.

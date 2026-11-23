@@ -399,7 +399,7 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
       $browserPolicyQuery->execute([(int)$number['id'],(int)$number['owner_user_id'],(int)$number['agent_id']]);$browserPolicy=$browserPolicyQuery->fetch(PDO::FETCH_ASSOC)?:[]; ?>
       <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="set_browser_phone"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>">
         <label class="phone-field"><span><input type="checkbox" name="browser_enabled" value="1" <?= !empty($browserPolicy['browser_enabled'])?'checked':'' ?>> Enable browser calling</span></label>
-        <label class="phone-field"><span><input type="checkbox" name="recording_enabled" value="1" <?= !empty($browserPolicy['recording_enabled'])?'checked':'' ?>> Allow browser-call recording with a spoken notice</span></label>
+        <label class="phone-field"><span><input type="checkbox" name="recording_enabled" value="1" <?= !empty($browserPolicy['recording_enabled'])?'checked':'' ?>> Record incoming browser calls and allow outgoing-call recording, with a spoken notice</span></label>
         <button class="phone-secondary">Save browser phone preferences</button>
       </form>
     <?php endif; ?>
