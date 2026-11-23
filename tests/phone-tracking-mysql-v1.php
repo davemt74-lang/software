@@ -27,6 +27,23 @@ function phone_test_check(bool $condition, string $message): void
     echo "ok - $message\n";
 }
 
+/** Use the ordinary private Chat poll and native policy providers, on each child's own connection. */
+function phone_test_arrival_poll(PDO $db, int $owner, int $cid): array
+{
+    require_once dirname(__DIR__).'/includes/functions.php';
+    require_once dirname(__DIR__).'/includes/auth.php';
+    require_once dirname(__DIR__).'/includes/personal-capabilities-v242.php';
+    require_once dirname(__DIR__).'/includes/cognitive-runtime-v500.php';
+    require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
+    $user = vp3_phone_sql_v1($db,'SELECT * FROM users WHERE id=?',[$owner])->fetch();
+    $GLOBALS['__stonefellow_current_user'] = $user;
+    $_SERVER['HTTP_X_VP3_WORKING_ATTENTION'] = vp3_catch_up_page_binding_v1($user);
+    $principal = ['kind'=>'system','agent_id'=>0,'owner_user_id'=>$owner,'viewer_user_id'=>$owner];
+    return vp3_phone_chat_updates_v1($db,$user,$principal,[
+        'phone_updates'=>true,'conversation_id'=>$cid,'agent_context'=>['user_agent_id'=>0],
+    ]);
+}
+
 function phone_test_dispatch(PDO $db, array $job): array
 {
     [$principal, $identity, $action, $input] = $job;
@@ -38,6 +55,7 @@ function phone_test_dispatch(PDO $db, array $job): array
         $result = match ($principal) {
             'owner' => vp3_phone_owner_v1($db,$identity,$action,$input),
             'places' => vp3_phone_places_owner_v1($db,$identity,$action,$input),
+            'arrival_poll' => phone_test_arrival_poll($db,$identity,$input['conversation_id']),
             'device' => vp3_phone_device_v1($db,$identity,$action,$input),
         };
         return ['status'=>200, 'data'=>$result];
@@ -108,9 +126,10 @@ try {
     $db->exec('CREATE TABLE role_permissions(role VARCHAR(32), permission_key VARCHAR(64), PRIMARY KEY(role, permission_key)) ENGINE=InnoDB');
     $db->exec("INSERT INTO permissions VALUES ('chat.access'),('account.access')");
     $db->exec("INSERT INTO role_permissions VALUES ('fan','chat.access'),('fan','account.access')");
-    $db->exec('CREATE TABLE chat_conversations(id BIGINT UNSIGNED PRIMARY KEY, user_id INT UNSIGNED NOT NULL, user_agent_id INT UNSIGNED NULL,
+    $db->exec('CREATE TABLE chat_conversations(id BIGINT UNSIGNED PRIMARY KEY, user_id INT UNSIGNED NOT NULL, user_agent_id INT UNSIGNED NULL, updated_at TIMESTAMP NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB');
-    $db->exec('CREATE TABLE chat_messages(id BIGINT UNSIGNED PRIMARY KEY, conversation_id BIGINT UNSIGNED NOT NULL,
+    $db->exec('CREATE TABLE chat_messages(id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT, conversation_id BIGINT UNSIGNED NOT NULL,
+        user_id INT UNSIGNED NOT NULL, role VARCHAR(12) NOT NULL, message TEXT NOT NULL, context_json LONGTEXT NOT NULL,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE) ENGINE=InnoDB');
     $db->exec("INSERT INTO users(id,display_name) VALUES(1,'Test Owner'),(2,'Other Owner')");
     vp3_phone_schema_v1($db);
@@ -268,6 +287,31 @@ try {
     $events = static fn() => (int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_arrival_events_v1 WHERE rule_id=?',[$rule['id']])->fetchColumn();
     phone_test_check(array_column($twoInside,'status') === [200,200] && $events() === 1,
         'two concurrent reports of the same arrival yield one undelivered visit');
+    $db->exec("CREATE TABLE agent_memory_items(id BIGINT UNSIGNED PRIMARY KEY,user_id INT UNSIGNED NOT NULL,
+        user_agent_id INT UNSIGNED NULL,memory_scope_version INT NOT NULL DEFAULT 410,is_active TINYINT NOT NULL DEFAULT 1,
+        memory_type VARCHAR(24) NOT NULL DEFAULT 'task',subject VARCHAR(180) NOT NULL,memory_text TEXT,metadata_json LONGTEXT) ENGINE=InnoDB");
+    $seedTask = $db->prepare('INSERT INTO agent_memory_items(id,user_id,user_agent_id,subject,memory_text,metadata_json) VALUES(?,?,?,?,?,?)');
+    $seedTask->execute([1,1,null,'Recording mic check','','{"task_status":"open"}']);
+    $seedTask->execute([2,1,null,'Recording completed','','{"task_status":"completed"}']);
+    $seedTask->execute([3,1,null,'Recording invalid','','malformed legacy JSON']);
+    $seedTask->execute([4,1,7,'Recording in another Agent','',null]);
+    $seedTask->execute([5,2,null,'Recording by another owner','',null]);
+    $seedTask->execute([6,1,null,'Test room cables','For the recording session',null]);
+    $poll = ['arrival_poll',1,'updates',['conversation_id'=>41]];
+    $polls = phone_test_race($poll,$poll);
+    $announcements = array_merge($polls[0]['data'] ?? [],$polls[1]['data'] ?? []);
+    $answer = $announcements[0]['speech'] ?? '';
+    phone_test_check(array_column($polls,'status') === [200,200] && count($announcements) === 1 && $events() === 0
+        && str_contains($answer,'Recording mic check') && str_contains($answer,'Test room cables')
+        && !str_contains($answer,'Recording completed') && !str_contains($answer,'Recording invalid')
+        && !str_contains($answer,'another Agent') && !str_contains($answer,'another owner')
+        && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_arrival_briefings_v1')->fetchColumn() === 1,
+        'two native private Chat polls emit one arrival with authorized open tasks, including a legacy task without status');
+
+    // Keep a second real visit pending to independently exercise the withdrawal race below.
+    vp3_phone_device_v1($db,$token,'fix',array_replace($outside,['fix_at'=>$nextSample()]));
+    vp3_phone_device_v1($db,$token,'fix',array_replace($inside,['fix_at'=>$nextSample()]));
+    phone_test_check($events() === 1, 'a verified exit and re-entry enqueue the next visit');
     $withdrawRule = array_replace($ruleInput,['rule_version'=>$active['version']]);
     $raced = phone_test_race(['device',$token,'stop_arrival',$withdrawRule],
         ['device',$token,'fix',array_replace($outside,['fix_at'=>$nextSample()])]);
