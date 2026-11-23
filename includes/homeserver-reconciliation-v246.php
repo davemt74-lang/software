@@ -67,6 +67,22 @@ function homeserver_reconciliation_v246_text(mixed $value,int $max=500): string
     return mb_strimwidth(trim(preg_replace('/\s+/u',' ',(string)$value)??(string)$value),0,$max,'');
 }
 
+function homeserver_reconciliation_v246_unavailable(array $snapshot,array $coverage): array
+{
+    $raw=is_array($snapshot['unavailable_datasets']??null)?$snapshot['unavailable_datasets']:[];
+    $reasons=['snapshot_limited:record_limit','snapshot_limited:byte_limit',
+      'snapshot_limited:time_window','snapshot_unavailable:read_failed'];
+    $scoped=['files'=>['permission_required:files.read','scope_limited:knowledge_kinds','scope_limited:knowledge_collections'],'memory'=>['scope_limited:memory_key_prefixes'],
+      'knowledge'=>['scope_limited:knowledge_kinds','scope_limited:knowledge_collections']];
+    $out=[];
+    foreach(homeserver_federated_v240_datasets() as $dataset){
+        $reason=$raw[$dataset]??null;
+        if(!in_array($dataset,$coverage,true)&&is_string($reason)
+          &&in_array($reason,array_merge($reasons,$scoped[$dataset]??[]),true))$out[$dataset]=$reason;
+    }
+    return $out;
+}
+
 function homeserver_reconciliation_v246_state(int $userId): array
 {
     $pdo=db();if(!$pdo||$userId<1)return ['needs_reconciliation'=>true,'known'=>false];
@@ -156,7 +172,7 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
         foreach(homeserver_federated_v240_datasets() as $dataset){
             if(is_array($datasets[$dataset]??null))$coverage[]=$dataset;
         }
-    }elseif(is_array($coverageRaw)){
+    }elseif(is_array($coverageRaw)&&array_is_list($coverageRaw)){
         $coverage=[];
         foreach($coverageRaw as $dataset){
             $name=homeserver_federated_v240_dataset((string)$dataset);
@@ -165,10 +181,12 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
     }else{
         throw new RuntimeException('Federated snapshot covered_datasets must be a list.');
     }
+    $unavailable=homeserver_reconciliation_v246_unavailable($snapshot,[]);
+    if($mode==='full')$coverage=array_values(array_diff($coverage,array_keys($unavailable)));
     if(!$coverage)throw new RuntimeException('Federated snapshot coverage is empty.');
     if($mode==='full'){
         $missing=[];
-        foreach($coverage as $dataset)if(!is_array($datasets[$dataset]??null))$missing[]=$dataset;
+        foreach($coverage as $dataset)if(!is_array($datasets[$dataset]??null)||!array_is_list($datasets[$dataset]))$missing[]=$dataset;
         if($missing)throw new RuntimeException('Full reconciliation snapshot is missing covered datasets: '.implode(', ',$missing));
     }
     $revision=homeserver_reconciliation_v246_text($snapshot['revision']??'',128);
@@ -188,7 +206,14 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
             if(!is_array($datasets[$dataset]??null))continue;
             $seen=[];$rows=[];
             foreach($datasets[$dataset] as $index=>$row){
-                if(!is_array($row))continue;
+                if(!is_array($row)){
+                    if($mode==='full')throw new RuntimeException('Full reconciliation snapshot contains an invalid record.');
+                    continue;
+                }
+                $recordKey=$row['authority_key']??$row['key']??$row['id']??null;
+                if($mode==='full'&&((!is_string($recordKey)&&!is_int($recordKey))||trim((string)$recordKey)==='')){
+                    throw new RuntimeException('Full reconciliation snapshot contains an invalid record identity.');
+                }
                 $item=homeserver_federated_v240_normalize($row,$authority,$dataset,(int)$index);
                 if((string)$item['authority_source']!==$authority){
                     $totals['conflicts']++;
@@ -248,11 +273,9 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
               'created'=>$totals['created'],'updated'=>$totals['updated'],'restored'=>$totals['restored'],
               'unchanged'=>$totals['unchanged'],'tombstoned'=>$totals['tombstoned'],'conflicts'=>$totals['conflicts'],
               'datasets'=>$summaries,
-              // Lack of native file permission is explicit partial coverage,
-              // never evidence that the native file store was deleted.
-              'unavailable_datasets'=>!in_array('files',$coverage,true)
-                &&($snapshot['unavailable_datasets']['files']??'')==='permission_required:files.read'
-                  ?['files'=>'permission_required:files.read']:[],
+              // Bounded or scoped snapshots are explicit partial coverage,
+              // never evidence that omitted authoritative records were deleted.
+              'unavailable_datasets'=>$unavailable,
             ];
             $pdo->prepare("INSERT INTO homeserver_reconciliation_state_v246
               (user_id,needs_reconciliation,last_reconciled_at,cloud_revision,homeserver_revision,last_run_id,last_error,last_summary_json)
@@ -268,6 +291,7 @@ function homeserver_reconciliation_v246_reconcile_snapshot(
           'version'=>'2.4','contract'=>'v246','run_id'=>$runId,'peer_source'=>$authority,
           'observed_source'=>$observed,'snapshot_mode'=>$mode,'snapshot_revision'=>$revision,
           'covered_datasets'=>$coverage,
+          'unavailable_datasets'=>$unavailable,
           'status'=>'completed',...$totals,'datasets'=>$summaries,
         ];
     }catch(Throwable $e){

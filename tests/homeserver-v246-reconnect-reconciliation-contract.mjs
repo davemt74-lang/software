@@ -58,8 +58,9 @@ const checks=[
   /minimumSeconds=30/.test(reconcile) &&
   /max\(10,min\(300,\$minimumSeconds\)\)/.test(reconcile)],
  ['shared snapshots declare full/filtered mode and explicit coverage',
-  /'snapshot_mode'=>\$query===''\?'full':'filtered'/.test(shared) &&
-  /'covered_datasets'=>\['memory','knowledge','contacts','tasks','calendar','files','notifications'\]/.test(shared)],
+  /\$mode=\$query===''\?'full':'filtered'/.test(shared) &&
+  /'covered_datasets'=>\$coverage/.test(shared) && /'unavailable_datasets'=>\$unavailable/.test(shared) &&
+  /snapshot_limited:record_limit/.test(shared) && /snapshot_limited:byte_limit/.test(shared)],
  ['reconnect forces full reconciliation before filtered context',
   /homeserver_shared_v210_reconcile_full/.test(shared) &&
   /if\(!empty\(\$reconciliation\['needs_reconciliation'\]\)\)/.test(shared)],
