@@ -40,6 +40,10 @@ foreach (['XLR cable tester','Travel case for XLR cables','XLR cable organizer',
     $other=$read($store,$address,$offer,array_replace($product,['name'=>$wrong]),$hours);
     local_research_check(str_contains($other['desert audio']['stock'],'unverified'),'accessory does not establish stock of the requested item: '.$wrong);
 }
+$pub=array_replace($store,['@type'=>'LocalBusiness','name'=>'Sunset Pub','description'=>'Live music every Friday']);
+local_research_check(!$read($pub,$address,$offer,$product,$hours),'a pub advertising live music cannot fill a music-store slot');
+$retailer=array_replace($pub,['description'=>'We are a musical instrument retailer serving Phoenix']);
+local_research_check(isset($read($retailer,$address,$offer,$product,$hours)['sunset pub']),'explicit musical instrument merchant category establishes a local store');
 $online=$offer; unset($online['availableAtOrFrom']);
 $online['availableDeliveryMethod']='https://schema.org/ParcelService';
 $otherBranch=array_replace($offer,['availableAtOrFrom'=>['@id'=>'#tucson'],'availableDeliveryMethod'=>'https://schema.org/OnSitePickup']);

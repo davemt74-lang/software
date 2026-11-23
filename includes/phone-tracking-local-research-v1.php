@@ -241,20 +241,41 @@ function vp3_phone_local_area_matches_v1(string $area,array $node,array $index):
 function vp3_phone_local_store_kind_v1(array $node,array $public): bool
 {
     $types=array_map('vp3_phone_local_type_v1',vp3_phone_local_values_v1($node['@type']??null));
-    $merchant=false;
-    foreach ($types as $type) if ($type==='LocalBusiness'||str_ends_with($type,'Store')||$type==='WholesaleStore') $merchant=true;
-    if (!$merchant) return false;
-    $category=vp3_phone_local_key_v1($public['category']);
-    $signals=vp3_phone_local_key_v1(implode(' ',array_map(static fn($type)=>preg_replace('/([a-z])([A-Z])/','$1 $2',$type),$types)).' '
-        .($node['name']??'').' '.(is_string($node['description']??null)?mb_substr($node['description'],0,600):''));
-    $terms=array_filter(explode(' ',$category),static fn($w)=>!in_array($w,['store','stores','shop','shops','retail','retailers','local','nearby','supply','supplies','and'],true));
-    if (!$terms) return true;
-    foreach ($terms as $term) {
-        if (in_array($term,['music','musical','instrument','instruments'],true)
-            && preg_match('/\b(?:music|musical instruments?)\b/u',$signals)) continue;
-        if (!preg_match('/\b'.preg_quote(rtrim($term,'s'),'/').'s?\b/u',$signals)) return false;
+    foreach (vp3_phone_local_values_v1($node['additionalType']??null) as $extra) {
+        $type=vp3_phone_local_type_v1($extra);
+        if (preg_match('/^[A-Za-z]+Store$/D',$type)) $types[]=$type;
     }
-    return true;
+    $storeTypes=array_filter($types,static fn($type)=>str_ends_with($type,'Store'));
+    if (!$storeTypes && !in_array('LocalBusiness',$types,true)) return false;
+    $category=vp3_phone_local_key_v1($public['category']);
+    $terms=array_filter(explode(' ',$category),static fn($w)=>!in_array($w,['store','stores','shop','shops','retail','retailers','local','nearby','supply','supplies','and'],true));
+    $patterns=[];
+    foreach ($terms as $term) {
+        if (in_array($term,['music','musical','instrument','instruments'],true)) {
+            $patterns['music']='(?:music|musical instruments?|instruments?)';
+        } else {
+            $patterns[$term]=preg_quote(rtrim($term,'s'),'/').'s?';
+        }
+    }
+    $wanted=implode('\s+',$patterns);
+    $name=vp3_phone_local_key_v1($node['name']??null);
+    $descriptor=vp3_phone_local_key_v1(is_string($node['description']??null)?mb_substr($node['description'],0,600):'');
+    $categories=[];
+    foreach (array_slice(vp3_phone_local_values_v1($node['category']??null),0,8) as $entry) {
+        $categories[]=vp3_phone_local_key_v1(is_array($entry)?($entry['name']??null):$entry);
+    }
+    if ($storeTypes) {
+        $typeWords=array_map(static fn($type)=>vp3_phone_local_key_v1(preg_replace('/([a-z])([A-Z])/','$1 $2',$type)),$storeTypes);
+        if ($wanted==='') return true;
+        foreach ([...$typeWords,$name,...$categories] as $label) if (preg_match('/\b'.$wanted.'\b/u',$label)) return true;
+    }
+    // A pub may advertise live music. Match an actual merchant designation in the same field.
+    $designation='(?:stores?|shops?|retailers?|dealers?)';
+    $match=$wanted===''?$designation:$wanted.'\s+'.$designation;
+    foreach ([$name,...$categories,$descriptor] as $field) {
+        if (preg_match('/\b'.$match.'\b/u',$field)) return true;
+    }
+    return false;
 }
 
 function vp3_phone_local_day_matches_v1(mixed $days,string $weekday): bool
