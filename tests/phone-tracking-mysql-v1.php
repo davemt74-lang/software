@@ -108,7 +108,7 @@ try {
     $db->exec('CREATE TABLE role_permissions(role VARCHAR(32), permission_key VARCHAR(64), PRIMARY KEY(role, permission_key)) ENGINE=InnoDB');
     $db->exec("INSERT INTO permissions VALUES ('chat.access'),('account.access')");
     $db->exec("INSERT INTO role_permissions VALUES ('fan','chat.access'),('fan','account.access')");
-    $db->exec('CREATE TABLE chat_conversations(id BIGINT UNSIGNED PRIMARY KEY, user_id INT UNSIGNED NOT NULL,
+    $db->exec('CREATE TABLE chat_conversations(id BIGINT UNSIGNED PRIMARY KEY, user_id INT UNSIGNED NOT NULL, user_agent_id INT UNSIGNED NULL,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB');
     $db->exec('CREATE TABLE chat_messages(id BIGINT UNSIGNED PRIMARY KEY, conversation_id BIGINT UNSIGNED NOT NULL,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE) ENGINE=InnoDB');
@@ -163,6 +163,8 @@ try {
     phone_test_check($statuses === [200,409] && $settings['preferences_version'] === 2
         && $settings['generation'] === $device['generation'] && $settings['location_state'] === 'off',
         'competing settings saves produce exactly one edit and leave sharing off');
+    $db->exec('DROP TABLE vp3_phone_arrival_events_v1');
+    $db->exec('DROP TABLE vp3_phone_arrival_rules_v1');
     $db->exec('DROP TABLE vp3_phone_history_points_v1, vp3_phone_places_v1');
     $db->exec('ALTER TABLE vp3_phone_devices_v1 DROP COLUMN history_state, DROP COLUMN history_retention_days,
         DROP COLUMN history_version, DROP COLUMN history_accepted_at, DROP COLUMN places_generation, DROP COLUMN place_permission_version');
@@ -232,6 +234,49 @@ try {
         && count($savedPlaces()) === ($atWithdrawal['status'] === 200 ? 2 : 1)
         && in_array('Studio',array_column($savedPlaces(),'name'),true),
         'concurrent withdrawal and save respect commit order; existing places survive and subsequent saves are rejected');
+    // Upgrade a Phase 3 installation that already holds a real paired phone and a saved place.
+    $db->exec('DROP TABLE vp3_phone_arrival_events_v1');
+    $db->exec('DROP TABLE vp3_phone_arrival_rules_v1');
+    phone_test_check(!vp3_phone_schema_ready_v1(phone_test_db($isolatedDsn)), 'Phase 3 reports the missing arrival schema');
+    $upgrades = phone_test_race($installer,$installer);
+    $holder = vp3_phone_device_v1($db,$token,'status',[])['device'];
+    $studio = $sameSave[0]['data']['place'];
+    phone_test_check(array_column($upgrades,'ready') === [true,true] && $holder['arrival_rules'] === []
+        && $holder['id'] === $deviceId && in_array($studio['id'],array_column($savedPlaces(),'id'),true),
+        'concurrent Phase 4 upgrades preserve the saved place and live phone without granting an alert');
+
+    $owner('stop',$input($live['generation']));
+    $live = $startWithFix();
+    $db->exec('INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES (41,1,NULL)');
+    $rule = vp3_phone_arrival_request_v1($db,1,0,41,$deviceId,$live['generation'],$studio['id'],'recording');
+    $ruleInput = ['device_id'=>$deviceId, 'generation'=>$live['generation'], 'rule_id'=>$rule['id'], 'rule_version'=>$rule['version']];
+    $holding = vp3_phone_device_v1($db,$token,'accept_arrival',$ruleInput)['device'];
+    $active = array_column($holding['arrival_rules'],null,'id')[$rule['id']];
+    phone_test_check($active['state'] === 'active' && $holding['history_state'] === 'off', 'arrival grant is usable with trail history off');
+    $lastSample = max(time(),$live['fix_at']);
+    $nextSample = static function () use (&$lastSample): int {
+        // Use genuine sensor seconds, including when the MySQL runner operates on a fast clock.
+        while (time() <= $lastSample) usleep(50000);
+        return $lastSample = time();
+    };
+    $outside = array_replace($live,['fix_at'=>$nextSample(),'latitude'=>$studio['latitude'] + 0.02,
+        'longitude'=>$studio['longitude'],'accuracy'=>5.0,'arrival_grants'=>[$rule['id']=>$active['version']]]);
+    vp3_phone_device_v1($db,$token,'fix',$outside);
+    $inside = array_replace($outside,['fix_at'=>$nextSample(),'latitude'=>$studio['latitude']]);
+    $arrive = ['device',$token,'fix',$inside];
+    $twoInside = phone_test_race($arrive,$arrive);
+    $events = static fn() => (int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_arrival_events_v1 WHERE rule_id=?',[$rule['id']])->fetchColumn();
+    phone_test_check(array_column($twoInside,'status') === [200,200] && $events() === 1,
+        'two concurrent reports of the same arrival yield one undelivered visit');
+    $withdrawRule = array_replace($ruleInput,['rule_version'=>$active['version']]);
+    $raced = phone_test_race(['device',$token,'stop_arrival',$withdrawRule],
+        ['device',$token,'fix',array_replace($outside,['fix_at'=>$nextSample()])]);
+    vp3_phone_device_v1($db,$token,'fix',array_replace($inside,['fix_at'=>$nextSample()]));
+    phone_test_check($raced[0]['status'] === 200 && $events() === 0
+        && vp3_phone_device_v1($db,$token,'status',[])['device']['arrival_rules'] === []
+        && !vp3_phone_history_read_v1($db,1,$deviceId)['points'],
+        'holder withdrawal clears an unannounced arrival and a delayed fix cannot revive it');
+
     $owner('stop',$input($live['generation']));
     foreach (['account.access','chat.access'] as $permission) {
         $fix = $startWithFix();
