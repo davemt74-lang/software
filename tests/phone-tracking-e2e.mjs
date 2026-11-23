@@ -167,6 +167,7 @@ try {
   assert.equal(mobileRoute.status(), 200);
   assert.match(await mobileRoute.text(), /id="phone-claim"/);
 
+  await verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other);
   await apiOwner.request.dispose();
   await firstGuest.request.dispose();
   console.log('PASS Phone Tracking HTTP acceptance: production routes, QR expiry and retry, denial, Chat-linked map approval, one scoped first-fix announcement, voice stop, late callback and revocation.');
@@ -185,6 +186,66 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
+async function verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other) {
+  const ownerPhone = { request: await request.newContext({ baseURL }) };
+  const guestPhone = { request: await request.newContext({ baseURL }) };
+  const outsider = { request: await request.newContext({ baseURL, extraHTTPHeaders: { Cookie: 'PHPSESSID=' + other.session } }) };
+  async function share(context, name, role, point) {
+    const invitation = check(await ownerApi(apiOwner, owner, 'invite'), 'invite ' + name);
+    const device = check(await phoneApi(context, 'claim', { name, invite: invitation.invite }), 'claim ' + name).device;
+    const approved = check(await ownerApi(apiOwner, owner, 'approve', { device_id: device.id,
+      generation: device.generation, role, allow_location: true }), 'approve ' + name).device;
+    const grant = check(await phoneApi(context, 'start', { device_id: device.id, generation: approved.generation }), 'grant ' + name).device;
+    return check(await phoneApi(context, 'fix', { device_id: device.id, generation: grant.generation,
+      ...point, fix_at: Math.floor(Date.now()/1000) }), name + ' fix').device;
+  }
+  try {
+    const [first, second] = await Promise.all([
+      share(ownerPhone, 'Studio iPhone', 'owner', gps),
+      share(guestPhone, 'Crew Android', 'guest', { ...gps, longitude: gps.longitude + 0.5 })
+    ]);
+    const firstGrant = { device_id: first.id, generation: first.generation };
+    const edit = { ...firstGrant, preferences_version: first.preferences_version, update_interval_seconds: 30, accuracy_mode: 'balanced' };
+    assert.equal((await ownerApi(outsider, other, 'set_preferences', edit)).ok, false);
+    assert.deepEqual(check(await ownerApi(outsider, other), 'unrelated owner list').devices, []);
+    check(await ownerApi(apiOwner, owner, 'set_preferences', edit), 'save first settings');
+    const status = async context => check(await phoneApi(context, 'status'), 'isolated handset settings').device;
+    const profile = d => [d.update_interval_seconds, d.accuracy_mode, d.generation, d.location_state];
+    assert.deepEqual(profile(await status(ownerPhone)), [30, 'balanced', first.generation, 'live']);
+    assert.deepEqual(profile(await status(guestPhone)), [5, 'high', second.generation, 'live']);
+    assert.equal((await phoneApi(guestPhone, 'stop', firstGrant)).status, 403);
+    const typed = { message: 'Stop sharing from Studio iPhone.', input_mode: 'text', idempotency_key: randomUUID() };
+    const stop = check(await chatApi(apiOwner, owner, 'send', typed), 'chat stops one phone');
+    assert.match(stop.answer, /stopped.*Studio iPhone/i);
+    assert.deepEqual(stop.phone_updates.map(x => x.speech), [stop.answer]);
+    const replay = check(await chatApi(apiOwner, owner, 'send', typed), 'repeat named stop');
+    assert.equal(replay.assistant_message_id, stop.assistant_message_id);
+    assert.deepEqual(replay.phone_updates || [], []);
+    assert.equal((await phoneApi(ownerPhone, 'fix', { ...firstGrant, ...gps, fix_at: Math.floor(Date.now()/1000) })).status, 409);
+    assert.equal((await status(ownerPhone)).latitude, null);
+    assert.deepEqual(profile(await status(guestPhone)), [5, 'high', second.generation, 'live']);
+    for (const phone of [ownerPhone, guestPhone]) {
+      const d = await status(phone);
+      check(await ownerApi(apiOwner, owner, 'revoke', { device_id: d.id, generation: d.generation }), 'release test pairing');
+    }
+    console.log('PASS Two-phone HTTP acceptance: concurrent pairing and fixes, isolated device preferences, one typed Chat stop announcement, retry, rejected late fix, and second phone still live.');
+  } finally {
+    await Promise.all([ownerPhone.request.dispose(), guestPhone.request.dispose(), outsider.request.dispose()]);
+  }
+}
+
+async function startWithFreshSensorReading(page, context, reading) {
+  const started = page.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
+    response.request().postDataJSON()?.action === 'start');
+  await page.locator('#phone-start').click();
+  check(await read(await started), 'start from the handset');
+  // An OS can deliver the initial position during the tap. Give the subsequent movement
+  // a distinct GPS second so the server can distinguish it from that first sample.
+  const grantSecond = Math.floor(Date.now()/1000);
+  await eventually('GPS clock did not advance', () => Math.floor(Date.now()/1000) > grantSecond);
+  await context.setGeolocation(reading);
+}
+
 async function browserJourney(baseURL, owner, other) {
   browser = await chromium.launch({ headless: true, executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH });
   const desktop = await browser.newContext({ baseURL, viewport: { width: 1400, height: 960 } });
@@ -200,16 +261,8 @@ async function browserJourney(baseURL, owner, other) {
   const phone = await handset.newPage();
   const errors = [];
   for (const page of [map, phone]) page.on('pageerror', error => errors.push(error.message));
-  async function startWithFreshSensorReading(reading) {
-    const started = phone.waitForResponse(response =>
-      new URL(response.url()).pathname === phoneEndpoint && response.request().postDataJSON()?.action === 'start');
-    await phone.locator('#phone-start').click();
-    check(await read(await started), 'start from the handset');
-    // A moving phone supplies a different position after the server accepts the grant.
-    // WebKit may suppress repeated readings at identical coordinates.
-    await handset.setGeolocation(reading);
-  }
   let gpsRequests = 0;
+  let highAccuracyWatch;
   const observations = [];
   const apiEvents = [];
   phone.on('response', response => {
@@ -220,15 +273,16 @@ async function browserJourney(baseURL, owner, other) {
   });
   await handset.exposeBinding('countLocationRequest', () => { gpsRequests++; });
   await handset.exposeBinding('observeSensor', (_, observation) => {
+    if (observation.kind === 'watch') highAccuracyWatch = observation.highAccuracy;
     observations.push(observation);
     if (observations.length > 12) observations.shift();
   });
-  async function requireLiveFix(label) {
+  async function requireLiveFix(label, expected) {
     let latest;
     try {
       await eventually(label, async () => {
         [latest] = check(await ownerApi(desktop, owner), 'live read').devices;
-        return latest?.location_state === 'live';
+        return latest?.location_state === 'live' && latest.latitude === expected.latitude && latest.longitude === expected.longitude;
       });
       return latest;
     } catch (error) {
@@ -252,6 +306,7 @@ async function browserJourney(baseURL, owner, other) {
       prototype[method] = function (...args) {
         window.countLocationRequest();
         const [success, failure, options] = args;
+        if (method === 'watchPosition') window.observeSensor({ kind: 'watch', highAccuracy: options?.enableHighAccuracy });
         return original.call(this, position => {
           // Playwright's WebKit driver sends epoch milliseconds to a simulator that
           // interprets them as seconds. Convert only its microsecond-sized samples.
@@ -316,6 +371,7 @@ async function browserJourney(baseURL, owner, other) {
   assert.equal((await ownerApi(outsider, other, 'approve', { device_id: deviceId, generation: device.generation })).ok, false);
   const cookie = (await handset.cookies()).find(c => c.name === 'vp3_phone_device_v1');
   assert.ok(cookie?.httpOnly && cookie.sameSite === 'Strict' && cookie.path === phoneEndpoint);
+  await map.locator('#phone-pending select[name=role]').selectOption('owner');
   await map.locator('#phone-pending [data-action=approve]').click();
   await map.locator('#phone-devices [data-device-id] button[data-focus]').first().click();
   await map.locator('#phone-detail [data-action=request_start]').click();
@@ -327,8 +383,8 @@ async function browserJourney(baseURL, owner, other) {
   assert.match(await phone.locator('#phone-owner').innerText(), /Map Operator/);
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
   await screenshot(phone, 'phone-before-consent');
-  await startWithFreshSensorReading(gps);
-  device = await requireLiveFix('No real browser geolocation fix reached the owner');
+  await startWithFreshSensorReading(phone, handset, gps);
+  device = await requireLiveFix('No real browser geolocation fix reached the owner', gps);
   assert.deepEqual([device.latitude, device.longitude, device.accuracy], [gps.latitude, gps.longitude, gps.accuracy]);
   assert.ok(device.first_fix_at && device.fix_at >= device.first_fix_at && Math.abs(Date.now()/1000 - device.fix_at) < 60);
   assert.ok(gpsRequests > 0);
@@ -353,13 +409,16 @@ async function browserJourney(baseURL, owner, other) {
   assert.equal(late.status, 409);
   await map.locator('#phone-map .phone-map-marker').first().waitFor({ state: 'hidden' });
   await phone.reload();
-  await startWithFreshSensorReading({ ...gps, longitude: gps.longitude + 0.001 });
-  await requireLiveFix('Phone did not resume after deliberate local restart');
+  const restartPoint = { ...gps, longitude: -112.07304 };
+  await startWithFreshSensorReading(phone, handset, restartPoint);
+  await requireLiveFix('Phone did not resume after deliberate local restart', restartPoint);
   await map.locator('#phone-map .phone-map-marker').first().waitFor({ state: 'visible' });
   await map.locator('#phone-detail [data-action=stop]').waitFor();
   await phone.locator('#phone-stop').click();
   await eventually('Phone stop did not reach owner', async () =>
     check(await ownerApi(desktop, owner), 'phone stop read').devices[0]?.location_state === 'off');
+  await multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map, handset, phone, deviceId,
+    errors, currentWatchAccuracy: () => highAccuracyWatch });
   // Disconnect the pairing immediately, even if the map last showed its previous GPS generation.
   await map.locator('#phone-detail [data-action=revoke]').click();
   const revoked = map.waitForResponse(response => new URL(response.url()).pathname === ownerEndpoint &&
@@ -370,4 +429,146 @@ async function browserJourney(baseURL, owner, other) {
   assert.deepEqual(check(await ownerApi(desktop, owner), 'revocation read').devices, []);
   assert.deepEqual(errors, []);
   console.log('PASS Phone Tracking browser acceptance: QR, two accounts, device consent, first fix, both stops, revocation and replay.');
+}
+
+async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map, handset, phone, deviceId,
+    errors, currentWatchAccuracy }) {
+  const pixelPoint = { latitude: gps.latitude + 0.18, longitude: gps.longitude - 0.09, accuracy: 18 };
+  const android = await browser.newContext({ ...devices['Pixel 7'], baseURL, permissions: ['geolocation'],
+    geolocation: { ...pixelPoint, latitude: pixelPoint.latitude - 0.01 }, deviceScaleFactor: 1 });
+  const pixel = await android.newPage();
+  pixel.on('pageerror', error => errors.push(error.message));
+  const state = async () => check(await ownerApi(desktop, owner), 'two-phone map state').devices;
+  const fromChat = async (message, idempotency_key = randomUUID()) =>
+    check(await chatApi(desktop, owner, 'send', { message, input_mode: 'voice', idempotency_key }), message);
+  const choosePhone = id => map.locator('#phone-devices [data-focus="' + id + '"]').click();
+  const preferences = map.locator('#phone-preferences');
+  const interval = preferences.locator('[name=update_interval_seconds]');
+  const accuracy = preferences.locator('[name=accuracy_mode]');
+  const markers = map.locator('#phone-map .phone-map-marker');
+  const invite = check(await ownerApi(desktop, owner, 'invite'), 'second phone invite').invite;
+  await pixel.goto('/phone-location.php#invite=' + invite);
+  await pixel.locator('#phone-name').fill('Crew Pixel');
+  const claimed = pixel.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
+    response.request().postDataJSON()?.action === 'claim');
+  await pixel.locator('#phone-claim').click();
+  const second = check(await read(await claimed), 'second phone claim').device;
+  check(await ownerApi(desktop, owner, 'approve', { device_id: second.id, generation: second.generation,
+    allow_location: true, role: 'guest' }), 'second phone approval');
+
+  for (const name of ['Field iPhone', 'Crew Pixel']) {
+    assert.match((await fromChat('Start sharing from ' + name + '.')).answer, /requested/i);
+  }
+  for (const page of [phone, pixel]) {
+    await eventually('Holder missed its named start request', async () =>
+      /requested your location/i.test(await page.locator('#phone-status').innerText()));
+  }
+  const firstPoint = { ...gps, latitude: 33.44938 };
+  await startWithFreshSensorReading(phone, handset, firstPoint);
+  await startWithFreshSensorReading(pixel, android, pixelPoint);
+  await eventually('Both independently granted phones must be live', async () => {
+    const devices = await state();
+    return devices.length === 2 && devices.every(d => d.location_state === 'live') &&
+      devices.some(d => d.id === deviceId && d.role === 'owner' && d.latitude === firstPoint.latitude) &&
+      devices.some(d => d.id === second.id && d.role === 'guest' && d.latitude === pixelPoint.latitude);
+  });
+  await eventually('Two live markers should be visible together', async () => await markers.count() === 2);
+  await map.locator('#phone-fit').click();
+  assert.deepEqual(check(await ownerApi(outsider, other), 'other account sees no shared phones').devices, []);
+  const first = (await state()).find(d => d.id === deviceId);
+  assert.equal(currentWatchAccuracy(), true, 'iPhone should initially request high accuracy');
+  const proposed = { device_id: deviceId, generation: first.generation, preferences_version: first.preferences_version,
+    update_interval_seconds: 15, accuracy_mode: 'balanced' };
+  assert.equal((await ownerApi(outsider, other, 'set_preferences', proposed)).ok, false);
+  await choosePhone(deviceId);
+  assert.match(await map.locator('#phone-detail-summary').innerText(), /Accepted on phone/);
+  await interval.selectOption('15');
+  await accuracy.selectOption('balanced');
+  await accuracy.focus();
+  // A GPS poll may arrive while the user is editing the selected phone.
+  const mapPoll = await map.waitForResponse(response => new URL(response.url()).pathname === ownerEndpoint &&
+    response.request().method() === 'GET');
+  await mapPoll.finished();
+  assert.equal(await accuracy.evaluate(select => select === document.activeElement), true);
+  assert.equal(await interval.inputValue(), '15');
+  assert.equal(await accuracy.inputValue(), 'balanced');
+  const saved = map.waitForResponse(response => new URL(response.url()).pathname === ownerEndpoint &&
+    response.request().method() === 'POST' && response.request().postDataJSON()?.action === 'set_preferences');
+  await preferences.getByRole('button', { name: 'Save settings' }).click();
+  const edited = check(await read(await saved), 'owner edits active phone settings').device;
+  assert.equal(edited.preferences_version, first.preferences_version + 1);
+  assert.equal(edited.generation, first.generation, 'Editing preferences must preserve holder consent');
+  assert.equal(edited.location_state, 'live');
+  await eventually('iPhone did not display its saved GPS settings', async () =>
+    /15 seconds.*balanced/i.test(await phone.locator('#phone-preferences').innerText()));
+  await eventually('Live iPhone sensor kept its old accuracy request', () => currentWatchAccuracy() === false);
+  await choosePhone(second.id);
+  assert.equal(await interval.inputValue(), '5');
+  assert.equal(await accuracy.inputValue(), 'high');
+  assert.match(await pixel.locator('#phone-preferences').innerText(), /5 seconds.*high/i);
+  await choosePhone(deviceId);
+  assert.equal(await interval.inputValue(), '15');
+  assert.equal(await accuracy.inputValue(), 'balanced');
+  await screenshot(map, 'owner-two-live-phones');
+
+  const announcements = async () => check(await chatApi(desktop, owner, 'activity', { phone_updates: true }),
+    'two-phone announcements').phone_updates;
+  const updates = await announcements();
+  assert.equal(updates.length, 2);
+  for (const name of ['Field iPhone', 'Crew Pixel']) {
+    assert.equal(updates.filter(update => update.speech.includes(name)).length, 1);
+  }
+  assert.deepEqual(await announcements(), []);
+  assert.match((await fromChat('Stop sharing my location.')).answer, /which phone/i);
+  assert.ok((await state()).every(d => d.location_state === 'live'));
+  const key = randomUUID();
+  const stop = await fromChat('Stop sharing from Field iPhone.', key);
+  assert.match(stop.answer, /stopped.*Field iPhone/i);
+  assert.equal((await fromChat('Stop sharing from Field iPhone.', key)).assistant_message_id,
+    stop.assistant_message_id, 'Retry must reuse the same private Chat confirmation');
+  assert.equal((await phoneApi(handset, 'fix', { device_id: first.id, generation: first.generation,
+    ...gps, fix_at: Math.floor(Date.now()/1000) })).status, 409);
+  const stopped = (await state()).find(d => d.id === deviceId);
+  assert.equal(stopped.status, 'approved');
+  assert.equal(stopped.latitude, null);
+  assert.equal(stopped.location_state, 'off');
+  await eventually('Only the selected phone should disappear', async () => await markers.count() === 1 &&
+    (await markers.first().getAttribute('title')).startsWith('Crew Pixel'));
+  const beforeMove = (await state()).find(d => d.id === second.id);
+  assert.equal(beforeMove.location_state, 'live');
+  // Wait for the next reporting interval, then supply an actual browser position.
+  await eventually('Second phone reporting window did not open', () =>
+    Math.floor(Date.now()/1000) >= beforeMove.fix_at + beforeMove.update_interval_seconds);
+  const moved = { ...pixelPoint, longitude: pixelPoint.longitude + 0.02 };
+  await android.setGeolocation(moved);
+  await eventually('Stopping the iPhone interrupted the second phone’s live updates', async () =>
+    (await state()).some(d => d.id === second.id && d.longitude === moved.longitude && d.fix_at > beforeMove.fix_at));
+
+  await android.setOffline(true);
+  await eventually('Android did not go offline', () => pixel.evaluate(() => navigator.onLine === false));
+  // Age the test database's one reading to simulate a prolonged sensor suspension without a minute-long sleep.
+  const ageOneFix = "[$file,$id]=array_slice($argv,1);$db=new PDO('sqlite:'.$file);" +
+    "$q=$db->prepare('UPDATE vp3_phone_devices_v1 SET started_at=?,first_fix_at=?,fix_at=?,last_seen_at=? WHERE id=?');" +
+    "$old=time()-90;$q->execute([$old,$old,$old,$old,$id]);";
+  execFileSync(php, ['-r', ageOneFix, path.join(temp, 'data.sqlite'), second.id]);
+  await map.locator('#phone-map .phone-map-marker.is-stale').waitFor();
+  await pixel.locator('#phone-stop').click();
+  await eventually('Offline stop was not applied on the phone', async () =>
+    /stopped/i.test(await pixel.locator('#phone-gps').innerText()));
+  const reconnectStop = pixel.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
+    response.request().postDataJSON()?.action === 'stop');
+  await android.setOffline(false);
+  check(await read(await reconnectStop), 'deliver the Android stop after reconnect');
+  await eventually('Reconnected Android did not deliver its pending stop', async () =>
+    (await state()).every(d => d.status === 'approved' && d.location_state === 'off' && d.latitude === null));
+  await eventually('Both stopped markers should clear', async () => await markers.count() === 0);
+  await pixel.locator('#phone-start').waitFor({ state:'visible' });
+  assert.equal((await phoneApi(android, 'fix', { device_id: second.id, generation: beforeMove.generation,
+    ...moved, fix_at: Math.floor(Date.now()/1000) })).status, 409);
+  const secondOff = (await state()).find(d => d.id === second.id);
+  check(await ownerApi(desktop, owner, 'revoke', { device_id: second.id, generation: secondOff.generation }),
+    'remove the second test pairing');
+  await choosePhone(deviceId);
+  await android.close();
+  console.log('PASS Multiple phones: independent live GPS, isolated per-phone settings, named and ambiguous voice commands, both first-fix announcements, stale map, offline stop and Android reconnect.');
 }

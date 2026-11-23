@@ -19,6 +19,7 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
   const context = await browser.newContext({viewport:{width:375,height:667},isMobile:true,hasTouch:true});
   let device = initial && {...initial}, revoked = false, drop = lostClaimAck;
   let requests = [], routes = [], errors = [];
+  const fixTimes=[];
   let firstFixSeen, rejectFirstFix;
   const firstFix = new Promise(resolve => { firstFixSeen = resolve; });
   const releaseFix = new Promise(resolve => { rejectFirstFix = resolve; });
@@ -26,16 +27,23 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
   page.on('pageerror',e=>errors.push(String(e)));
   page.setDefaultTimeout(4500);
   await page.addInitScript(enabled=>{
-    let pos,err,watch=0,active=false,online=true;
+    let pos,err,previousPos,online=true,peak=0;
+    const options=[], active=new Set();
     Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>online});
     Object.defineProperty(navigator,'geolocation',{configurable:true,value:enabled ? {
-      watchPosition(ok,bad) { pos=ok; err=bad; active=true; return ++watch; },
-      clearWatch() { active=false; },
+      watchPosition(ok,bad,opts) {
+        previousPos=pos; pos=ok; err=bad;
+        options.push(opts); active.add(options.length); peak=Math.max(peak,active.size);
+        return options.length;
+      },
+      clearWatch(id) { active.delete(id); },
     } : undefined});
     window.phoneFixture = {
-      get watches() { return watch; }, get active() { return active; },
-      position(timestamp=Date.now()) { if (active) pos({timestamp,coords:{latitude:33.4,longitude:-112.1,accuracy:9}}); },
-      denial() { if (active) err({code:1}); },
+      get watches() { return options.length; }, get active() { return active.size > 0; },
+      get peak() { return peak; }, get options() { return options; },
+      position(timestamp=Date.now()) { if (active.size) pos({timestamp,coords:{latitude:33.4,longitude:-112.1,accuracy:9}}); },
+      previous() { previousPos?.({timestamp:Date.now(),coords:{latitude:0,longitude:0,accuracy:123}}); },
+      denial() { if (active.size) err({code:1}); },
       network(value) { online=value; window.dispatchEvent(new Event(value?'online':'offline')); },
       wake() { window.dispatchEvent(new Event('online')); },
       late() { pos?.({timestamp:Date.now()+1000,coords:{latitude:1,longitude:1,accuracy:9}}); }
@@ -50,6 +58,7 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
     if (!u.pathname.endsWith('/api/phone-location-v1.php')) return route.fulfill({status:404});
     const req = route.request().postDataJSON();
     requests.push(req);
+    if (req.action === 'fix') fixTimes.push(performance.now());
     assert.equal(route.request().headers()['x-vp3-phone'],'1');
     assert.equal(route.request().headers().authorization,undefined);
     const send = (status,b) => route.fulfill({status,json:b});
@@ -76,11 +85,20 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
     }
     return send(200,{ok:true,device,owner_name:'David Evans'});
   });
-  return {page,requests,routes,errors,firstFix,rejectFirstFix, get device(){return device;}, revoke(){revoked=true;},
+  return {page,requests,fixTimes,routes,errors,firstFix,rejectFirstFix, get device(){return device;}, revoke(){revoked=true;},
     visit:frag=>page.goto(origin+pathname+(frag||'')), close:()=>context.close()};
 }
 const waitText = (p,re) => p.waitForFunction(s=>new RegExp(s,'i').test(document.querySelector('#phone-status').textContent),re);
 const pause = page => page.evaluate(()=>new Promise(r=>setTimeout(r,60)));
+const delay = ms => new Promise(resolve=>setTimeout(resolve,ms));
+async function waitUntil(description,condition,timeout=4500) {
+  const deadline=performance.now()+timeout;
+  do {
+    if (await condition()) return;
+    await delay(20);
+  } while (performance.now()<deadline);
+  throw new Error('Timed out waiting for '+description);
+}
 try {
   {
     const t=await scenario();
@@ -189,5 +207,67 @@ try {
     }
     assert.deepEqual(t.errors,[]); await t.close();
   }
-  console.log('PASS phone holder browser: claim/retry, local consent, stale fix, denial, offline stop, cookie session, supersession, revocation, unavailable GPS and in-flight sample recovery');
+  {
+    const t=await scenario({initial:{...initialDevice('approved',3),update_interval_seconds:30,accuracy_mode:'balanced'}});
+    const page=t.page;
+    const fixes=()=>t.requests.filter(r=>r.action==='fix');
+    await t.visit();
+    const settings=()=>page.locator('#phone-preferences').textContent();
+    const gps=()=>page.locator('#phone-gps').textContent();
+    async function changeSettings(interval,mode) {
+      Object.assign(t.device,{update_interval_seconds:interval,accuracy_mode:mode});
+      await page.evaluate(()=>window.phoneFixture.wake());
+      const expected='Every '+interval+' seconds · '+(mode==='high'?'High':'Balanced')+' accuracy';
+      await waitUntil('phone preferences '+expected,async()=>await settings()===expected);
+    }
+    async function freshPosition() {
+      return page.evaluate(()=>{const time=Date.now(); window.phoneFixture.position(time); return Math.floor(time/1000);});
+    }
+    await waitUntil('initial holder preferences',async()=>await settings()==='Every 30 seconds · Balanced accuracy');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.watches),0,'preferences cannot activate the phone');
+    await page.locator('#phone-start').click();
+    await waitText(page,'Waiting for a fresh');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.options.at(-1).enableHighAccuracy),false);
+    await freshPosition();
+    await waitText(page,'received this phone');
+    const firstGpsLabel=await gps();
+    // Exercise the real fetch pipeline. Advancing a synthetic page clock also expires live network requests.
+    await delay(1050);
+    await freshPosition();
+    await delay(1050);
+    const newest=await freshPosition();
+    assert.equal(fixes().length,1,'first fix is immediate and burst callbacks are coalesced');
+    await changeSettings(5,'balanced');
+    await waitUntil('second GPS acknowledgment',async()=>await gps()!==firstGpsLabel && (await gps()).startsWith('Shared at'),8000);
+    assert.equal(fixes().length,2);
+    assert.equal(fixes()[1].fix_at,newest,'shortened interval sends the newest queued reading');
+    assert.ok(t.fixTimes[1]-t.fixTimes[0]>=5000,'second request respects the new five-second minimum');
+
+    await changeSettings(5,'high');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.options.at(-1).enableHighAccuracy),true);
+    assert.equal(await page.evaluate(()=>window.phoneFixture.peak),1,'replacement never overlaps native watches');
+    const secondGpsLabel=await gps();
+    await delay(5100);
+    await page.evaluate(()=>window.phoneFixture.previous());
+    await freshPosition();
+    await waitUntil('high-accuracy GPS acknowledgment',async()=>await gps()!==secondGpsLabel && (await gps()).startsWith('Shared at'));
+    assert.equal(fixes().length,3);
+    assert.equal(fixes()[2].latitude,33.4,'late callbacks from the replaced reader cannot supply the accepted fix');
+
+    await delay(1050);
+    await freshPosition();
+    await changeSettings(15,'high');
+    await delay(5100);
+    assert.equal(fixes().length,3,'lengthening interval cancels the previous, earlier deadline');
+    await page.locator('#phone-stop').click();
+    await waitText(page,'choose when');
+    // Stay beyond the longest outstanding 15-second timer to catch resurrected callbacks.
+    await delay(Math.max(0,t.fixTimes[2]+16000-performance.now()));
+    assert.equal(fixes().length,3,'stop discards the deferred sample and timer');
+    await changeSettings(30,'balanced');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.active),false,'a settings change cannot reopen a stopped watch');
+    assert.equal(t.requests.filter(r=>r.action==='start').length,1);
+    assert.deepEqual(t.errors,[]); await t.close();
+  }
+  console.log('PASS phone holder browser: consent, retry, denial, offline stop, supersession, revocation, unavailable GPS, in-flight recovery, per-device cadence and live accuracy changes');
 } finally {await browser.close();}

@@ -60,6 +60,23 @@ pt_reject(403,fn()=>$deviceOp('start',1),'pending phone cannot start GPS');
 $approve=$newCommand(1)+['role'=>'owner'];
 $accepted=$owner('approve',$approve)['device'];
 pt_assert($accepted['status']==='approved' && $accepted['role']==='owner' && $accepted['location_state']==='off' && $accepted['latitude']===null,'owner approval does not grant live location');
+pt_assert($accepted['preferences_version']===1 && $accepted['update_interval_seconds']===5 && $accepted['accuracy_mode']==='high',
+    'newly paired phones report the original five-second, high-accuracy defaults');
+$prefs = $newCommand($accepted['generation'])+['preferences_version'=>1,'update_interval_seconds'=>15,'accuracy_mode'=>'balanced'];
+pt_reject(404,fn()=>$owner('set_preferences',$prefs,12),'another account cannot set phone preferences');
+pt_reject(422,fn()=>$deviceOp('set_preferences',$accepted['generation'],$prefs),'holder credential cannot edit owner preferences');
+foreach ([['update_interval_seconds'=>'15'],['update_interval_seconds'=>7],['accuracy_mode'=>'precise'],['preferences_version'=>0]] as $invalid) {
+    pt_reject(422,fn()=>$owner('set_preferences',array_replace($prefs,$invalid)),'invalid preference is rejected');
+}
+$configured=$owner('set_preferences',$prefs)['device'];
+pt_assert($configured['preferences_version']===2 && $configured['location_state']==='off' && $configured['generation']===$accepted['generation']
+    && $deviceState()['update_interval_seconds']===15 && $deviceState()['accuracy_mode']==='balanced','owner settings reach the holder without starting sharing');
+pt_assert($owner('set_preferences',$prefs)['duplicate'],'retry of a settings save has one effect');
+pt_reject(409,fn()=>$owner('set_preferences',array_replace($prefs,['accuracy_mode'=>'high'])),'operation ID cannot be reused with different settings');
+pt_reject(409,fn()=>$owner('set_preferences',array_replace($prefs,['request_id'=>bin2hex(random_bytes(16))])),
+    'a stale settings editor cannot overwrite a newer edit');
+$same=$newCommand($configured['generation'])+['preferences_version'=>2,'update_interval_seconds'=>15,'accuracy_mode'=>'balanced'];
+pt_assert($owner('set_preferences',$same)['device']['preferences_version']===2,'saving the same preferences keeps the version');
 pt_assert($owner('approve',$approve)['duplicate'],'duplicate approve is idempotent');
 pt_reject(409,fn()=>$owner('deny',$approve),'same request ID cannot authorize a different action');
 $startCommand=$newCommand($accepted['generation']);
@@ -78,6 +95,11 @@ $fix['fix_at']=time();
 pt_reject(403,fn()=>$deviceOp('fix',$g,$fix+['device_id'=>str_repeat('e',32)]),'another paired-device cookie cannot consume an old tab’s request');
 $live=$deviceOp('fix',$g,$fix);
 pt_assert($live['location_state']==='live' && abs($live['latitude']-33.45)<1e-8 && $live['first_fix_at']===$fix['fix_at'],'first verified fix creates live marker');
+$duringShare=$newCommand($g)+['preferences_version'=>2,'update_interval_seconds'=>30,'accuracy_mode'=>'high'];
+$updated=$owner('set_preferences',$duringShare)['device'];
+pt_assert($updated['preferences_version']===3 && $updated['generation']===$g && $updated['first_fix_at']===$live['first_fix_at']
+    && $updated['location_state']==='live' && $deviceState()['latitude']===$live['latitude'],'changing live preferences preserves the current grant and first fix');
+pt_assert($owner('set_preferences',$prefs)['device']['update_interval_seconds']===30,'replaying an older save does not undo newer settings');
 vp3_phone_sql_v1($db,'UPDATE vp3_phone_devices_v1 SET expires_at=?,last_seen_at=? WHERE id=?',[time()+60,time(),$id]);
 $retransmit=$deviceOp('fix',$g,$fix);
 pt_assert($retransmit['first_fix_at']===$live['first_fix_at'] && $retransmit['generation']===$g,'retransmitted GPS fix does not reopen or renew the first-fix milestone');
@@ -110,6 +132,10 @@ pt_reject(403,fn()=>vp3_phone_device_v1($db,'','claim',['invite'=>$expired,'name
 $guest=vp3_phone_device_v1($db,'','claim',['invite'=>$issue(),'name'=>'Connected only']);
 $gid=$guest['device']['id']; $guestCommand = fn(int $g) => ['request_id'=>bin2hex(random_bytes(16)),'device_id'=>$gid,'generation'=>$g];
 $guestA=$owner('approve',$guestCommand(1)+['allow_location'=>false])['device'];
+pt_assert($guestA['accuracy_mode']==='high' && $guestA['update_interval_seconds']===5 && $deviceState()['update_interval_seconds']===30,
+    'each phone retains its own reporting preferences');
+pt_reject(403,fn()=>$owner('set_preferences',$guestCommand($guestA['generation'])+
+    ['preferences_version'=>1,'update_interval_seconds'=>15,'accuracy_mode'=>'balanced']),'changing settings cannot bypass a disabled location capability');
 pt_reject(403,fn()=>vp3_phone_device_v1($db,$guest['token'],'start',['device_id'=>$gid,'generation'=>$guestA['generation']]),'paired GPS-disabled device cannot grant itself access');
 pt_reject(403,fn()=>$owner('request_start',$guestCommand($guestA['generation'])),'owner request respects disabled location capability');
 $bye=vp3_phone_device_v1($db,$guest['token'],'disconnect',['device_id'=>$gid,'generation'=>$guestA['generation']]);
@@ -147,4 +173,4 @@ pt_reject(404,fn()=>$owner('revoke',$newCommand($ownerSaw)),'old pairing ID cann
 pt_reject(409,fn()=>$owner('revoke',array_replace($revokeCommand,['device_id'=>$otherId])),'a disconnect receipt cannot be redirected to the replacement pairing');
 pt_assert($otherId!==$id && $owner('state')['devices'][0]['id']===$otherId,'replacement pairing remains connected');
 
-echo "PASS Phone Tracking Phase 1 domain.\n";
+echo "PASS Phone Tracking pairing, sharing and per-phone preferences.\n";

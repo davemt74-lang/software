@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 const source=fs.readFileSync('chat.js','utf8');
-const poll=source.slice(source.indexOf('  async function pollAgentActivity('),source.indexOf('  function startAgentActivityPolling()'));
+const poll=source.slice(source.indexOf('  function phoneChatForegroundV1('),source.indexOf('  function startAgentActivityPolling()'));
 const api=source.slice(source.indexOf('  async function api(payload'),source.indexOf('  function writeActivityCursor('));
 const pendingIds=source.slice(source.indexOf('  function pendingAssistantMessageIds()'),source.indexOf('  function unconfirmedAssistantMessage('));
 const binding=source.slice(source.indexOf('  const initiativePage ='),source.indexOf('  const thread ='));
@@ -67,6 +67,14 @@ await context.poll(true);
 assert.deepEqual(syncedConversations,[1,1],'Resolved meeting reviews must stop forcing history refresh');
 context.document.hidden=true;const count=requestCount;await context.poll();assert.equal(requestCount,count);await context.poll(true);assert.equal(requestCount,count+1);
 assert.deepEqual(requestBodies.at(-1),{action:'activity',after_id:9,conversation_id:1,agent_context:{user_agent_id:7},csrf_token:'token'});
+context.document.hidden=false;context.document.visibilityState='visible';
+for (const [focus,claim] of [[undefined,false],[()=>false,false],[()=>true,true]]) {
+  context.document.hasFocus=focus;
+  const before=requestCount;
+  await context.poll();
+  assert.equal(requestCount,before+1,'Ordinary activity still polls regardless of focus API or focus state');
+  assert.equal(requestBodies.at(-1).phone_updates===true,claim,'Only the focused owner Chat asks to claim phone announcements');
+}
 assert.equal(cleared,requestCount,'Polling timers leaked');
 
 const stem=source.slice(source.indexOf('  function stemMediaHtml(item)'),source.indexOf('  function showChatMediaError('));

@@ -1,0 +1,18 @@
+VP3 Cloud Phone Tracking / Multiple phones
+
+Install on an existing VP3 Cloud site
+1. Back up the site and database. Extract the full Cloud deployment into the existing VP3 root, preserving config.php, private/, uploads/ and local environment settings.
+2. Sign in as an administrator, open upgrade.php and run the database upgrade. Existing approved phones keep their pairing. Open Phone Tracking over HTTPS.
+
+Set up two phones
+1. Use + Connect Phone for each new phone and approve it on the map or in private Agent Chat. Give the phones distinct names, for example "David's iPhone" and "Studio Android".
+2. Select a phone under Connected phones. In Location settings, choose an update interval of 5, 15 or 30 seconds and High accuracy or Balanced, then select Save settings. These settings apply to that phone. A connected holder receives changes on its next refresh.
+3. Request sharing for each phone by name in private Agent Chat. The holder taps Start sharing and grants location access on that phone. A settings change alone cannot start sharing.
+4. Fit phones frames their locations together. Select a phone to see its role, connection, last update and reported accuracy. Follow phone keeps the map centered on the selected phone as fresh positions arrive.
+
+Field check on iPhone Safari and Android
+1. With both phones sharing, set one to 5 seconds and High accuracy and the other to 30 seconds and Balanced. Check that switching between the phones shows the saved settings for each. These are reporting preferences. The browser, available GPS fixes and network determine actual accuracy and delivery time.
+2. With announcements enabled, verify a single first-location confirmation in the requesting private Chat for each phone. Say "Stop sharing from David's iPhone". Its marker should clear, its pairing should remain, and the Android phone should continue updating.
+3. Request sharing again and accept on the iPhone. Lock the iPhone. If the browser suspends GPS, the old position should become last known. Unlock and check that a fresh fix restores live status.
+4. On Android, disconnect from the network, stop sharing on the phone, then reconnect. The stopped phone should stay off after reconnect. A delayed fix should never restore a stopped marker. Check the other phone is unaffected.
+5. In a second VP3 account, verify that its map and private Chat show only phones paired to that account.

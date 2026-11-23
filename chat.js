@@ -1124,10 +1124,14 @@
       && scope.conversation_id===data.conversation_id && (conversationId===0 || conversationId===scope.conversation_id);
   }
 
+  function phoneChatForegroundV1(cid) {
+    return cid>0 && cid===conversationId && initiativeIdentityMatchesV1() && thread.dataset.view==='chat'
+      && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()
+      && document.visibilityState==='visible' && document.hasFocus?.()===true;
+  }
+
   function presentPhoneUpdatesV1(data, cid, revision) {
-    const current=()=>cid>0 && revision===chatRevision && cid===conversationId && data.conversation_id===cid
-      && initiativeIdentityMatchesV1() && thread.dataset.view==='chat' && !historyParticipant
-      && !window.VP3ParticipantContinuity?.selectedContext?.() && document.visibilityState==='visible' && document.hasFocus()
+    const current=()=>phoneChatForegroundV1(cid) && revision===chatRevision && data.conversation_id===cid
       && window.VP3ConversationControls?.acceptsProactivePosts?.()===true;
     if (!current() || !Array.isArray(data.phone_updates)) return;
     for (const update of data.phone_updates) {
@@ -1163,8 +1167,7 @@
           .filter(id=>Number.isSafeInteger(id)&&id>0).slice(0,12) : [];
       const data = await readChat({
         action:'activity',
-        ...(activeConversationId>0 && document.visibilityState==='visible' && initiativeIdentityMatchesV1()
-          && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.() ? {phone_updates:true} : {}),
+        ...(phoneChatForegroundV1(activeConversationId) ? {phone_updates:true} : {}),
         after_id:activityCursor,
         conversation_id:activeConversationId,
         ...(initiativeMessageIds.length?{initiative_message_ids:initiativeMessageIds}:{}),
@@ -5560,6 +5563,9 @@
       }
 
       void refreshHistory().catch(() => {});
+      if (data.phone_tracking_context && !request.voiceSubmission && !existingReply && data.phone_updates) {
+        presentPhoneUpdatesV1(data,conversationId,request.revision);
+      }
       if (inputMode === 'voice' && voiceMode && !existingReply && !data.private_email_read && !data.private_meeting_prep) {
         await speakAgentResponse(data.answer);
       }

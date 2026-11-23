@@ -10,12 +10,19 @@
   const pendingHost = byId('phone-pending');
   const list = byId('phone-devices');
   const detail = byId('phone-detail');
+  const summary = byId('phone-detail-summary');
+  const preferences = byId('phone-preferences');
+  const intervalSelect = preferences.elements.update_interval_seconds;
+  const accuracySelect = preferences.elements.accuracy_mode;
+  const saveSettings = preferences.querySelector('button[type=submit]');
+  const settingsStatus = preferences.querySelector('[role=status]');
   const followStates = new Set(['requested', 'waiting', 'live', 'stale']);
   const stateLabels = {off:'Location off', requested:'Sharing requested', waiting:'Waiting for location', live:'Sharing live', stale:'Last known location', denied:'Location denied'};
   const roleLabels = {owner:'Owner', guest:'Guest', device:'Device'};
   let devices = [];
   let selectedId = '';
   let followId = '';
+  let resumeSelection = null;
   let choiceToRevoke = null;
   let requestNotice = null;
   let expires = 0;
@@ -24,6 +31,7 @@
   let revision = 0;
   let reading = false;
   let writing = false;
+  let savingPreferencesFor = '';
   let available = false;
   let inviteVersion = 0;
   let listSignature = '';
@@ -189,7 +197,8 @@
     const followed = withPoint.find(d => d.id === followId);
     if (followed) {
       const position = [followed.latitude,followed.longitude].join(',');
-      if (lastFollowPoint !== position) map.panTo([followed.latitude,followed.longitude], {animate:false});
+      if (wasEmpty) focusPoint(followed);
+      else if (lastFollowPoint !== position) map.panTo([followed.latitude,followed.longitude], {animate:false});
       lastFollowPoint = position;
     } else if (wasEmpty && withPoint.length) fitPhones();
     if (!withPoint.length && !wasEmpty) {
@@ -204,7 +213,7 @@
     render();
   }
   function renderList(approved) {
-    const signature = JSON.stringify([available, selectedId, approved.map(d => [d.id,d.name,connection(d),effectiveState(d)])]);
+    const signature = JSON.stringify([available, selectedId, approved.map(d => [d.id,d.name,d.role,connection(d),effectiveState(d)])]);
     if (listSignature === signature) return;
     const focusedId = list.contains(document.activeElement) ? document.activeElement.closest('[data-device-id]')?.dataset.deviceId : '';
     listSignature = signature;
@@ -219,7 +228,9 @@
       button.type = 'button';
       button.dataset.focus = d.id;
       button.setAttribute('aria-pressed', String(d.id === selectedId));
-      button.append(element('strong',d.name), element('small', connection(d)+' · '+stateLabels[effectiveState(d)]));
+      const heading = element('span',undefined,'phone-device-heading');
+      heading.append(element('strong',d.name),element('span',roleLabels[d.role] || 'Device','phone-role'));
+      button.append(heading, element('small', connection(d)+' · '+stateLabels[effectiveState(d)]));
       button.addEventListener('click', () => selectDevice(d.id));
       wrapper.append(button);
       list.append(wrapper);
@@ -228,15 +239,16 @@
   }
   function renderDetail(d) {
     detail.hidden = !d;
+    renderPreferences(d);
     const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.allow_location,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId] : []);
     if (signature === detailSignature) return;
     detailSignature = signature;
-    const focused = detail.contains(document.activeElement) ? document.activeElement.dataset.action : null;
-    detail.replaceChildren();
+    const focused = summary.contains(document.activeElement) ? document.activeElement.dataset.action : null;
+    summary.replaceChildren();
     delete detail.dataset.deviceId;
     if (!d) return;
     detail.dataset.deviceId = d.id;
-    detail.append(element('h3',d.name),element('p',(roleLabels[d.role] || 'Device')+' · '+connection(d)+' · '+stateLabels[effectiveState(d)],'phone-detail-meta'));
+    summary.append(element('h3',d.name),element('p',(roleLabels[d.role] || 'Device')+' · '+connection(d)+' · '+stateLabels[effectiveState(d)],'phone-detail-meta'));
     const fields = element('dl',undefined,'phone-info');
     function field(label,value) { fields.append(element('dt',label),element('dd',value)); }
     if (hasPoint(d)) {
@@ -244,9 +256,13 @@
       field('Accuracy',Number.isFinite(d.accuracy) ? '± '+Math.round(d.accuracy)+' m' : 'Unavailable');
       field('Location updated',timestamp(d.fix_at));
     }
-    field('Location access',d.allow_location ? 'Phone consent required' : 'Disabled');
+    const accessLabels = {
+      off:'Phone approval required', requested:'Awaiting phone approval', denied:'Denied on phone',
+      waiting:'Accepted on phone', live:'Accepted on phone', stale:'Accepted on phone'
+    };
+    field('Location access',d.allow_location ? accessLabels[effectiveState(d)] : 'Disabled');
     field('Session expires',timestamp(d.expires_at));
-    detail.append(fields);
+    summary.append(fields);
     const actions = element('div',undefined,'phone-command-row');
     if (d.allow_location && !followStates.has(d.location_state)) actions.append(actionButton('request_start','Request sharing','phone-primary'));
     if (followStates.has(d.location_state)) actions.append(actionButton('stop','Stop sharing','phone-primary'));
@@ -256,9 +272,51 @@
       actions.append(follow);
     }
     actions.append(actionButton('revoke','Disconnect','phone-destructive'));
-    detail.append(actions);
+    summary.append(actions);
     if (focused) (Array.from(actions.children).find(b => b.dataset.action === focused) || actions.firstElementChild)?.focus({preventScroll:true});
   }
+  function preferencesChanged(d) {
+    return Number(intervalSelect.value) !== d.update_interval_seconds || accuracySelect.value !== d.accuracy_mode;
+  }
+  function renderPreferences(d) {
+    preferences.hidden = !d?.allow_location;
+    if (preferences.hidden) {
+      if (preferences.dataset.deviceId) preferences.reset();
+      delete preferences.dataset.deviceId;
+      delete preferences.dataset.version;
+      saveSettings.disabled = true;
+      settingsStatus.textContent = '';
+      return;
+    }
+    preferences.querySelector('fieldset').disabled = d.id === savingPreferencesFor;
+    const newDevice = preferences.dataset.deviceId !== d.id;
+    const version = String(d.preferences_version);
+    if (newDevice || preferences.dataset.version !== version) {
+      const hadDraft = !newDevice && !saveSettings.disabled;
+      preferences.dataset.deviceId = d.id;
+      preferences.dataset.version = version;
+      intervalSelect.value = String(d.update_interval_seconds);
+      accuracySelect.value = d.accuracy_mode;
+      settingsStatus.textContent = hadDraft ? 'Settings changed elsewhere. Review the current values before editing.' : '';
+    }
+    saveSettings.disabled = writing || !preferencesChanged(d);
+  }
+  preferences.addEventListener('change', () => {
+    const d = selected();
+    if (!d || d.id !== preferences.dataset.deviceId) return;
+    settingsStatus.textContent = '';
+    saveSettings.disabled = writing || !preferencesChanged(d);
+  });
+  preferences.addEventListener('submit', event => {
+    event.preventDefault();
+    const d = selected();
+    if (!d?.allow_location || d.id !== preferences.dataset.deviceId || writing || !preferencesChanged(d)) return;
+    void mutate('set_preferences',d,{
+      preferences_version:Number(preferences.dataset.version),
+      update_interval_seconds:Number(intervalSelect.value),
+      accuracy_mode:accuracySelect.value
+    });
+  });
   function renderPending(pending) {
     const review = byId('phone-review');
     review.hidden = !pending.length;
@@ -296,7 +354,7 @@
     if (requestNotice && !status.dataset.failure) {
       const phone = approved.find(d => d.id === requestNotice.id && d.generation === requestNotice.generation);
       if (phone && ['requested','waiting'].includes(phone.location_state)) {
-        const notice = phone.location_state === 'requested' ? 'Sharing requested. Waiting for the phone.' : 'Phone accepted. Waiting for a location update.';
+        const notice = phone.location_state === 'requested' ? 'Waiting for '+phone.name+' to accept sharing.' : 'Waiting for a location update from '+phone.name+'.';
         if (status.textContent !== notice) status.textContent = notice;
       } else {
         requestNotice = null;
@@ -371,6 +429,7 @@
     return error.status ? error.message : 'Connection unavailable. Phone information will refresh when the connection returns.';
   }
   function reportFailure(error) {
+    resumeSelection = null;
     clearView();
     status.textContent = userError(error);
     status.dataset.failure = '1';
@@ -393,6 +452,14 @@
       available = true;
       if (status.dataset.failure) { status.textContent = ''; delete status.dataset.failure; }
       devices = value.devices;
+      if (resumeSelection) {
+        const device = devices.find(d => d.status === 'approved' && d.id === resumeSelection.id);
+        if (device) {
+          selectedId = device.id;
+          if (resumeSelection.follow && hasPoint(device)) followId = device.id;
+        }
+        resumeSelection = null;
+      }
       render();
     } catch (error) {
       if (revision === version && !document.hidden) reportFailure(error);
@@ -443,9 +510,13 @@
     if (!device || writing || document.hidden) return;
     writing = true;
     const version = ++revision;
-    requestNotice = null;
+    if (action !== 'set_preferences') requestNotice = null;
     const message = pairing.open ? byId('phone-pair-status') : status;
-    message.textContent = 'Saving…';
+    if (action === 'set_preferences') {
+      savingPreferencesFor = device.id;
+      renderPreferences(device);
+      settingsStatus.textContent = 'Saving settings…';
+    } else message.textContent = 'Saving…';
     try {
       const agent = Number(root.dataset.chatAgent);
       const conversation = Number(root.dataset.chatConversation);
@@ -454,18 +525,33 @@
       }
       const result = await request(action, {device_id:device.id,generation:device.generation,...fields});
       if (version !== revision || document.hidden) return;
-      devices = devices.filter(d => d.id !== device.id);
-      if (result.device && ['approved','pending'].includes(result.device.status)) devices.push(result.device);
+      const index = devices.findIndex(d => d.id === device.id);
+      if (index >= 0) {
+        if (result.device && ['approved','pending'].includes(result.device.status)) devices[index] = result.device;
+        else devices.splice(index,1);
+      }
       if (action === 'approve') selectedId = device.id;
       if (action === 'request_start' && result.device) requestNotice = {id:result.device.id,generation:result.device.generation};
-      const messages = {approve:'Phone approved.',deny:'Connection request denied.',request_start:'',stop:'Sharing stopped.',revoke:'Phone disconnected.'};
-      message.textContent = status.textContent = messages[action];
+      if (action !== 'set_preferences') {
+        const messages = {approve:device.name+' approved.',deny:'Connection request denied for '+device.name+'.',request_start:'',stop:'Sharing stopped for '+device.name+'.',revoke:device.name+' disconnected.'};
+        message.textContent = status.textContent = messages[action];
+      }
       delete status.dataset.failure;
       render();
+      if (action === 'set_preferences' && selectedId === device.id) settingsStatus.textContent = 'Settings saved for '+device.name+'.';
       if (pairing.open && !devices.some(d => d.status === 'pending')) pairing.close();
     } catch (error) {
-      if (version === revision) reportFailure(error);
-    } finally { writing = false; void refresh(); }
+      if (version === revision) {
+        if (action === 'set_preferences' && error.status === 409) {
+          if (selectedId === device.id) settingsStatus.textContent = 'The phone changed. Review its current settings and try again.';
+        } else reportFailure(error);
+      }
+    } finally {
+      writing = false;
+      savingPreferencesFor = '';
+      renderPreferences(selected());
+      void refresh();
+    }
   }
   pendingHost.addEventListener('click', event => {
     const button = event.target.closest('button[data-action]');
@@ -484,7 +570,7 @@
       if (followId) focusPoint(d);
       render();
     } else if (action === 'revoke') {
-      choiceToRevoke = {id:d.id,generation:d.generation};
+      choiceToRevoke = {id:d.id,name:d.name,generation:d.generation};
       byId('phone-revoke-message').textContent = d.name+' will stop sharing and will need a new pairing code to reconnect.';
       revokeDialog.showModal();
     } else {
@@ -498,17 +584,20 @@
     if (target) void mutate('revoke', target);
   });
   revokeDialog.addEventListener('close', () => { choiceToRevoke = null; });
-  function resetAndRefresh() {
+  function resetAndRefresh(shouldRefresh = true) {
     clearView();
     status.textContent = '';
     byId('phone-pair-status').textContent = '';
     if (pairing.open) pairing.close();
     if (streetDialog.open) streetDialog.close();
-    if (!document.hidden) void refresh();
+    if (shouldRefresh && !document.hidden) void refresh();
   }
-  window.addEventListener('pagehide',clearView);
+  window.addEventListener('pagehide', () => { resumeSelection = null; resetAndRefresh(false); });
   window.addEventListener('pageshow', event => { if (event.persisted) resetAndRefresh(); });
-  document.addEventListener('visibilitychange', resetAndRefresh);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && selectedId) resumeSelection = {id:selectedId, follow:followId === selectedId};
+    resetAndRefresh();
+  });
   window.addEventListener('offline', () => reportFailure(new Error()));
   window.addEventListener('online',refresh);
   setInterval(refresh,4000);

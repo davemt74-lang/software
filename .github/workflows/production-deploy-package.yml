@@ -451,6 +451,7 @@ jobs:
           for path in phone-tracking.php phone-location.php phone-tracking-v1.js phone-location-v1.js \
                       api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php \
                       includes/phone-tracking-chat-v1.php docs/PHONE-TRACKING-PHASE1-INSTALL.txt \
+                      docs/PHONE-TRACKING-PHASE2-INSTALL.txt \
                       assets/phone-map/leaflet.js assets/phone-map/leaflet.css assets/phone-map/qr.js assets/phone-map/world.json; do
             test -s "_deploy/$path"
           done
