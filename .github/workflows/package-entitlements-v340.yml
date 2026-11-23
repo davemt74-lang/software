@@ -237,6 +237,7 @@ jobs:
           php tests/phone-subscription-access-v1.php
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
+          php tests/phone-caller-contacts-schema-v1.php
           php tests/phone-browser-load-v1.php
           php tests/phone-workspace-integration-v1.php
           php tests/phone-recording-pipeline-v1.php

@@ -12,6 +12,8 @@ INSTALL
    Preserve config.php, .env, private/ and uploads/.
 2. Sign in as an administrator and run upgrade.php. It installs phone workspace,
    recording, speech-budget and historical SMS ownership migration storage.
+   It also enables shared CRM contacts with a name and phone number and no email.
+   Run this upgrade before using Add to contacts in a call card or active-call panel.
    Existing assignments remain unchanged. Fresh setup.php installs the same schema.
 3. Open Admin > Phone & Messaging. Keep the tested Twilio Account SID/Auth Token
    and existing number assignment. An actual number must belong to an active
@@ -47,6 +49,8 @@ TWILIO BROWSER SETUP
    Record this call for an outgoing call. Recorded calls play a spoken notice to
    the called party before connecting. Existing voicemail has its own greeting.
 9. The member opens Agent Chat, clicks the header phone icon and enables calls.
+   After updating an existing installation, refresh Chat and enable browser calls
+   again so the browser registers the current Voice identity.
    Browser microphone permission is needed when accepting or placing a call.
    The existing microphone ownership lease prevents competing voice surfaces.
    The phone rings in the compatible owner Chat Agent scope; an unavailable owner
@@ -89,7 +93,9 @@ SITE ACCEPTANCE
 After configuring the deployed site, verify an incoming call with Accept/Decline,
 an outgoing call, muted audio and hang-up, voicemail playback plus Call back,
 an explicitly recorded call with audible notice, and the worker-created transcript
-and report. Confirm an unassigned user has no phone icon and cannot call its APIs.
+and report. Save a caller with Add to contacts and confirm its name and number
+appear in Contacts, call history and SMS history. Confirm an unassigned user has
+no phone icon and cannot call its APIs.
 Confirm paid package access and an explicit admin grant both work only alongside
 a real assignment, and that removing the allowance blocks a new call. Carrier,
 real microphone/audio quality and production credentials need this live check.

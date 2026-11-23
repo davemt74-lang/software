@@ -42,6 +42,25 @@
 .vp3-phone-voicemail summary{cursor:pointer;font-size:12px;font-weight:600}
 .vp3-phone-report{display:block;width:fit-content;margin:10px 0;color:#24578d;font-size:12px;text-decoration:underline}
 .vp3-phone-chat-card{width:100%;min-width:0;max-width:680px;white-space:normal}
+.message.vp3-phone-message{width:100%;min-width:0}
+.message.vp3-phone-message>.message-body{width:100%;min-width:0}
+.message.vp3-phone-message .vp3-phone-chat-card{max-width:none}
+.vp3-phone-call,.vp3-phone-voicemail{width:100%;white-space:normal}
+.vp3-phone-call .vp3-phone-peer-name{margin:10px 0 2px;font-size:18px;font-weight:700;line-height:1.35}
+.vp3-phone-call .vp3-phone-peer-number,.vp3-phone-voicemail .vp3-phone-peer-number{margin:3px 0;font-size:13px;color:#475467;font-variant-numeric:tabular-nums}
+.vp3-phone-call .vp3-phone-peer-context{margin:5px 0 12px;font-size:11px;font-weight:600;color:#475467}
+.vp3-phone-call-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 18px;margin:16px 0 0;min-width:0}
+.vp3-phone-call-details>div{display:grid;gap:3px;min-width:0}
+.vp3-phone-call-details dt{font-size:11px;font-weight:600;line-height:1.4;color:#667085}
+.vp3-phone-call-details dd{margin:0;font-size:13px;line-height:1.45;color:#172033;overflow-wrap:anywhere}
+.vp3-phone-call .vp3-phone-button,.vp3-phone-voicemail .vp3-phone-button{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;width:auto;min-width:90px;min-height:44px;height:auto;max-width:100%;padding:10px 14px;white-space:normal;line-height:1.35}
+.vp3-phone-call audio{display:block;width:100%;max-width:100%;height:40px;margin:14px 0}
+.vp3-phone-call details{margin:12px 0}
+.vp3-phone-call summary{cursor:pointer;font-size:12px;font-weight:600}
+.vp3-phone-contact-form{display:grid;gap:12px;margin:16px 0 0;padding-top:16px;border-top:1px solid #e5e7eb;min-width:0}
+.vp3-phone-contact-form .vp3-phone-actions{margin-top:0}
+.vp3-phone-contact-form input[readonly]{background:#f8fafc;color:#667085}
+@media(max-width:500px){.vp3-phone-call-details{grid-template-columns:minmax(0,1fr);gap:10px}.message.vp3-phone-message .vp3-phone-call,.message.vp3-phone-message .vp3-phone-voicemail{padding:13px}}
 .vp3-phone-announcement{box-sizing:border-box;max-width:760px;width:100%;margin:12px auto;padding:0 12px;white-space:normal}
 .vp3-phone-workspace :focus-visible,.vp3-phone-chat-card :focus-visible{outline:2px solid #2e65a5;outline-offset:3px}
 @media(max-width:500px){.vp3-phone-header{padding:15px 14px}.vp3-phone-notice{padding:10px 14px}.vp3-phone-body{padding:14px 14px calc(20px + env(safe-area-inset-bottom))}.vp3-phone-row{flex-wrap:wrap}.vp3-phone-row-copy{flex-basis:calc(100% - 110px)}.vp3-phone-panel{width:100%}.vp3-phone-tabs button{font-size:10px;padding:10px 2px}}

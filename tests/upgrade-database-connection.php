@@ -30,8 +30,9 @@ $partialSpeech=[
     'partial-promotion-native-context'=>['agent_promotion_clicks_v1','native_context_json_v1'],
     'partial-checkout-open-time'=>['agent_commerce_checkout_attempts_v800','opened_at_utc_ms'],
 ];
+$phoneContactModes=['phone-contacts-old-get','phone-contacts-old-post','phone-contacts-new-post','phone-contacts-ready-get'];
 if (!isset($argv[1])) {
-    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech));
+    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech),$phoneContactModes);
     foreach ($modes as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
@@ -42,9 +43,44 @@ if (!isset($argv[1])) {
 }
 
 $mode = $argv[1];
+$phoneContacts=in_array($mode,$phoneContactModes,true);
 $fixture = new PDO('sqlite::memory:');
 $fixture->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $fixture->exec("CREATE TABLE existing_content (value TEXT); INSERT INTO existing_content VALUES ('preserve me')");
+if($phoneContacts){
+    // Exercise the production readiness and migration, rather than their generic
+    // dependency stubs. Core CRM and platform ownership remain ordered fixtures.
+    require dirname(__DIR__).'/includes/phone-caller-contacts-schema-v1.php';
+    function upgrade_phone_contacts_core_fixture(PDO $pdo): void
+    {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS crm_contacts(id INTEGER PRIMARY KEY AUTOINCREMENT,public_id VARCHAR(64) NOT NULL UNIQUE,name VARCHAR(120) NOT NULL,email VARCHAR(190) NOT NULL DEFAULT '',email_normalized VARCHAR(190) NOT NULL,phone VARCHAR(80) NOT NULL DEFAULT '',company VARCHAR(190) NOT NULL DEFAULT '',source VARCHAR(80) NOT NULL DEFAULT 'manual',status VARCHAR(40) NOT NULL DEFAULT 'active',lifecycle_stage VARCHAR(80) NOT NULL DEFAULT '',marketing_status VARCHAR(40) NOT NULL DEFAULT 'unknown',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+        if(!(int)$pdo->query('SELECT count(*) FROM crm_contacts')->fetchColumn())$pdo->exec("INSERT INTO crm_contacts(public_id,name,email_normalized,phone) VALUES('phone-contact-fixture','Existing phone contact','','+16025550122')");
+    }
+    function upgrade_phone_contacts_platform_fixture(PDO $pdo): void
+    {
+        $columns=array_column($pdo->query('PRAGMA table_info(crm_contacts)')->fetchAll(PDO::FETCH_ASSOC),'name');
+        if(!in_array('owner_user_id',$columns,true))$pdo->exec('ALTER TABLE crm_contacts ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1');
+        $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS crm_contacts_owner_email ON crm_contacts(owner_user_id,email_normalized)');
+    }
+    function upgrade_phone_contacts_core_install(?PDO $connection=null): void
+    {
+        $connection??=$GLOBALS['fixture'];
+        if($connection!==$GLOBALS['fixture'])throw new RuntimeException('Wrong CRM upgrade connection');
+        upgrade_phone_contacts_core_fixture($connection);$GLOBALS['calls'][]='crm_v180_ensure_schema';
+    }
+    function upgrade_phone_contacts_platform_install(PDO $connection): void
+    {
+        if($connection!==$GLOBALS['fixture'])throw new RuntimeException('Wrong platform upgrade connection');
+        upgrade_phone_contacts_platform_fixture($connection);$GLOBALS['calls'][]='campaigns_rewards_platform_ensure_schema_v100';
+    }
+    // Keep isolated fixture functions out of production installer source discovery.
+    eval('function '.'crm_v180_ensure_schema'.'(?PDO $connection=null): void { upgrade_phone_contacts_core_install($connection); }');
+    eval('function '.'campaigns_rewards_platform_ensure_schema_v100'.'(PDO $connection): void { upgrade_phone_contacts_platform_install($connection); }');
+    if($mode!=='phone-contacts-new-post'){
+        upgrade_phone_contacts_core_fixture($fixture);upgrade_phone_contacts_platform_fixture($fixture);
+        if($mode==='phone-contacts-ready-get')vp3_phone_caller_contacts_ensure_schema_v1($fixture);
+    }
+}
 require dirname(__DIR__).'/includes/tv-watching-v1.php';
 $canvasDdl=file_get_contents(dirname(__DIR__).'/includes/coding-canvas-store-v1.php');
 $canvasStart=strpos($canvasDdl,'function '.'vp3_coding_canvas_schema_v1(');
@@ -119,7 +155,7 @@ if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingYouTube=str_starts_with($mode,'missing-vp3_youtube_')||$mode==='missing-vp3_initiative_youtube_playlist_v1';
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$missingYouTube||$mode==='missing-vp3_profile_canvases_v1';
-$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode]);
+$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode])||$phoneContacts;
 $fixture->exec('CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY)');
 if($modern&&$mode!=='missing-ai-service-usage')$fixture->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
 function vp3_ai_service_usage_ready_v1(PDO $pdo): bool
@@ -192,12 +228,34 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','phone-contacts-old-get','phone-contacts-ready-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
+$phoneContactSchemaBefore=$phoneContacts?$fixture->query('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')->fetchAll(PDO::FETCH_ASSOC):[];
+$phoneContactChangesBefore=$phoneContacts?(int)$fixture->query('SELECT total_changes()')->fetchColumn():0;
 ob_start(); eval(preg_replace('/^<\?php\s*/', '', $source)); $html = ob_get_clean();
 function check(bool $ok, string $message): void { if (!$ok) throw new RuntimeException($message); }
-if (in_array($mode, ['post', 'already-ready'], true)) {
+if($phoneContacts){
+    if($_SERVER['REQUEST_METHOD']==='GET'){
+        $ready=$mode==='phone-contacts-ready-get';
+        check($complete===$ready&&$dbCalls===1&&$calls===[],'Phone contact GET must reuse lazy PDO and inspect actual readiness without migrations');
+        check(vp3_phone_caller_contacts_schema_ready_v1($fixture)===$ready,'Phone contact page readiness did not match actual nullable email storage');
+        check($phoneContactSchemaBefore===$fixture->query('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')->fetchAll(PDO::FETCH_ASSOC),'Phone contact GET changed the installed schema');
+        check($phoneContactChangesBefore===(int)$fixture->query('SELECT total_changes()')->fetchColumn(),'Phone contact GET wrote source data');
+        check(str_contains($html,'Run Upgrade')!==$ready,'Phone contact GET displayed the wrong upgrade control');
+        check(!$ready||str_contains($html,'installed and ready'),'Nullable phone contact CRM should report installed and ready');
+        check($fixture->query('SELECT email_normalized FROM crm_contacts WHERE id=1')->fetchColumn()===($ready?null:''),'Phone contact GET altered the existing email identity');
+    }else{
+        check($error===''&&$complete,'Phone contact upgrade POST did not finish: '.$error);
+        check($dbCalls===2&&$pdo===$fixture,'Phone contact POST did not acquire then reuse the upgrade connection');
+        check(vp3_phone_caller_contacts_schema_ready_v1($fixture),'Phone contact POST skipped actual nullable email migration');
+        check($fixture->query('SELECT email_normalized FROM crm_contacts WHERE id=1')->fetchColumn()===null,'Phone contact POST did not clear legacy blank email identity');
+        check($fixture->query('SELECT name FROM crm_contacts WHERE id=1')->fetchColumn()==='Existing phone contact','Phone contact POST changed the source contact');
+        $core=array_search('crm_v180_ensure_schema',$calls,true);$platform=array_search('campaigns_rewards_platform_ensure_schema_v100',$calls,true);
+        check($core!==false&&$platform!==false&&$core<$platform,'Phone contact POST must install CRM before platform owner storage');
+        check(count($flashes)===1&&$redirects===['/admin/users.php'],'Phone contact upgrade did not finish normally');
+    }
+} elseif (in_array($mode, ['post', 'already-ready'], true)) {
     check($error === '', 'Upgrade POST failed: '.$error);
     check($dbCalls === ($mode==='already-ready'?2:1) && $pdo === $fixture, 'Upgrade must acquire its connection before the first migration and reuse it for final readiness');
     foreach (['social_feed_schema_v1', 'knowledge_r6_ensure_schema', 'knowledge_r7_ensure_schema', 'knowledge_r8_ensure_schema', 'workspace_native_schema_v1', 'artist_music_v185_ensure_schema'] as $name) check(in_array($name, $calls, true), 'Upgrade did not reach '.$name);
