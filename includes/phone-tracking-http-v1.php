@@ -57,5 +57,12 @@ function vp3_phone_http_error_v1(Throwable $error): void
         429 => 'Please wait before trying again.',
         default => 'Phone Tracking is unavailable. Check the database upgrade and try again.',
     };
+    // These fixed instructions contain no device, account, place name or position.
+    if ($error::class === RuntimeException::class && in_array($error->getMessage(),[
+        'A saved place already uses that name.', 'Choose a place name using up to 80 characters.',
+        'Wait for a fresh location from this phone.', 'Enable Allow saved places on this phone while sharing.',
+        'This saved place was deleted.', 'History settings changed. Refresh this phone.',
+        'Start sharing location on this phone before requesting location history.'
+    ],true)) $message=$error->getMessage();
     echo json_encode(['ok'=>false, 'error'=>$message]);
 }

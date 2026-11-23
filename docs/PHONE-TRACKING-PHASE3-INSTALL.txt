@@ -1,0 +1,14 @@
+VP3 Cloud Phone Tracking / History and saved places
+
+Install
+1. Back up the existing site and database. Extract the Cloud deployment into the existing VP3 root, preserving config.php, private/, uploads/ and local environment settings.
+2. Open upgrade.php as an administrator and run the upgrade. Previously paired phones begin with history and saved-place permission off. The phone holder chooses what to enable.
+3. Open Phone Tracking over HTTPS and start live sharing on a paired phone. Use the existing Cloud worker for scheduled removal of expired trail points.
+
+Try it with two phones
+1. While the iPhone is sharing, allow saved places on its phone screen. This lets the account owner keep a named location from this live session until they delete the place.
+2. In private Agent Chat say "Save this location as Studio". When more than one phone is sharing, reply with the intended phone's name. Check that Studio appears under Saved places on the map.
+3. Request history for the selected iPhone and choose 1, 7 or 30 days. On the iPhone, review the recipient and retention period and accept. Keep the second phone live without granting history.
+4. Move with the iPhone while its page is active. Open History and select the iPhone to see new readings from after acceptance. Switch to the second phone and verify its trail is empty.
+5. Stop history to end collection while continuing live sharing. Delete the iPhone's history, confirm, and refresh. Its trail should be empty and Studio should still appear under Saved places. To remove Studio, delete that place separately.
+6. Confirm that a different VP3 account cannot read the trail or the saved place. Expired points disappear when their retention period ends. Browser suspension can leave gaps in a trail.

@@ -161,6 +161,17 @@ try {
     phone_test_check($statuses === [200,409] && $settings['preferences_version'] === 2
         && $settings['generation'] === $device['generation'] && $settings['location_state'] === 'off',
         'competing settings saves produce exactly one edit and leave sharing off');
+    $db->exec('DROP TABLE vp3_phone_history_points_v1, vp3_phone_places_v1');
+    $db->exec('ALTER TABLE vp3_phone_devices_v1 DROP COLUMN history_state, DROP COLUMN history_retention_days,
+        DROP COLUMN history_version, DROP COLUMN history_accepted_at, DROP COLUMN places_generation, DROP COLUMN place_permission_version');
+    phone_test_check(!vp3_phone_schema_ready_v1(phone_test_db($isolatedDsn)), 'a populated Phase 2 install requests an upgrade');
+    $upgrades = phone_test_race($installer,$installer);
+    $upgraded = vp3_phone_device_v1($db,$token,'status',[])['device'];
+    phone_test_check(array_column($upgrades,'ready') === [true,true] && $upgraded['id'] === $deviceId
+        && $upgraded['generation'] === $settings['generation'] && $upgraded['update_interval_seconds'] === $settings['update_interval_seconds']
+        && $upgraded['preferences_version'] === $settings['preferences_version'] && $upgraded['history_state'] === 'off'
+        && !$upgraded['allow_saved_places'] && !$upgraded['history_retention_days'],
+        'Phase 3 upgrade keeps the paired holder and its preferences while starting with both retention permissions off');
     $asked = $owner('request_start',$input($device['generation']))['device'];
     $results = phone_test_race(['device',$token,'start',['generation'=>$asked['generation'],'device_id'=>$deviceId]],
         ['owner',1,'stop',$input($asked['generation'])]);
@@ -174,6 +185,29 @@ try {
         vp3_phone_device_v1($db, $token, 'fix', $fix);
         return $fix;
     };
+    // Each worker holds its own PDO connection. A delayed upload can still update
+    // the live map after trail deletion, but must never recreate a retained point.
+    $live = $startWithFix();
+    $scope = ['device_id'=>$deviceId,'generation'=>$live['generation']];
+    $pendingHistory = $owner('request_history',$input($live['generation']) + [
+        'retention_days'=>7,'history_version'=>$state()[0]['history_version'],
+    ])['device'];
+    $acceptHistory = $scope + ['history_version'=>$pendingHistory['history_version']];
+    $history = vp3_phone_device_v1($db,$token,'accept_history',$acceptHistory)['device'];
+    $retainedFix = array_replace($live, ['fix_at'=>time() + 1,'history_version'=>$history['history_version']]);
+    vp3_phone_device_v1($db,$token,'fix',$retainedFix);
+    phone_test_check(count(vp3_phone_history_read_v1($db,1,$deviceId)['points']) === 1,
+        'only a new fix following the holder’s approval enters history');
+    $erase = $input($live['generation']) + ['history_version'=>$history['history_version']];
+    $nextFix = array_replace($retainedFix,['fix_at'=>$retainedFix['fix_at'] + 1]);
+    $race = phone_test_race(['device',$token,'fix',$nextFix], ['owner',1,'delete_history',$erase]);
+    $lateFix = array_replace($nextFix,['fix_at'=>$nextFix['fix_at'] + 1]);
+    $liveAgain = vp3_phone_device_v1($db,$token,'fix',$lateFix)['device'];
+    phone_test_check(array_column($race,'status') === [200,200] && $owner('delete_history',$erase)['duplicate']
+        && $liveAgain['location_state'] === 'live' && $liveAgain['fix_at'] === $lateFix['fix_at']
+        && $liveAgain['history_state'] === 'off' && !vp3_phone_history_read_v1($db,1,$deviceId)['points'],
+        'concurrent delete and upload, then a delayed upload, leave the trail empty and live GPS working');
+    $owner('stop',$input($live['generation']));
     foreach (['account.access','chat.access'] as $permission) {
         $fix = $startWithFix();
         vp3_phone_sql_v1($db, "DELETE FROM role_permissions WHERE role='fan' AND permission_key=?", [$permission]);

@@ -25,7 +25,8 @@ try {
     $input = vp3_phone_http_json_v1();
     $action = $input['action'] ?? null;
     unset($input['action']);
-    if (!in_array($action, ['claim','status','start','fix','stop','denied','disconnect'], true)) {
+    if (!in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
+        'accept_history','decline_history','stop_history','set_place_permission'], true)) {
         throw new RuntimeException('Unknown action.', 422);
     }
     $pdo = db();

@@ -42,6 +42,33 @@
       Number.isSafeInteger(item.generation) ? item : null;
   }
   let pending = storedEnd();
+  const scopes = ['history','places'];
+  function storedWithdrawal(scope) {
+    const value = read('localStorage',scope + '-withdrawal');
+    if (!value || typeof value.id !== 'string' || !Number.isSafeInteger(value.generation)) return null;
+    if (scope === 'places') return value.action === 'set_place_permission' && Number.isSafeInteger(value.place_permission_version) ? value : null;
+    return ['stop_history','decline_history'].includes(value.action) && Number.isSafeInteger(value.history_version)
+      ? value : null;
+  }
+  const withdrawals = {history:storedWithdrawal('history'), places:storedWithdrawal('places')};
+  function matchesWithdrawal(scope, intent, d) {
+    if (!intent || !d || intent.id !== d.id) return false;
+    return scope === 'history' ? intent.history_version === d.history_version
+      : intent.generation === d.generation && intent.place_permission_version === d.place_permission_version;
+  }
+  function withdrawing(scope) {
+    return matchesWithdrawal(scope,withdrawals[scope],device)
+      || matchesWithdrawal(scope,storedWithdrawal(scope),device);
+  }
+  function clearWithdrawal(scope) {
+    const stored = storedWithdrawal(scope), intent = withdrawals[scope];
+    if (intent && stored?.id === intent.id && stored.generation === intent.generation
+      && stored.history_version === intent.history_version && stored.place_permission_version === intent.place_permission_version
+      && stored.action === intent.action) {
+      write('localStorage',scope + '-withdrawal',null);
+    }
+    withdrawals[scope] = storedWithdrawal(scope);
+  }
   let available = false;
   let initial = true;
   let info = '';
@@ -94,6 +121,7 @@
   function endDevice(message) {
     cancelWatch();
     clearPending();
+    for (const scope of scopes) clearWithdrawal(scope);
     device = null;
     owner = '';
     available = true;
@@ -151,6 +179,7 @@
     el('retry').hidden = !secure || (!device && !claim && available) || (available && !queued);
     el('consent').textContent = connected && device.allow_location && owner
       ? 'Start sharing lets ' + owner + ' see this phone’s latest location, accuracy and update time. Keep this page open for updates.' : '';
+    renderPermissions(connected && device.allow_location && !queued);
     let message = 'Scan the QR code in VP3 Phone Tracking to connect this phone.';
     let gpsState = 'Off';
     if (!secure) message = 'Open this page over HTTPS to connect and share location.';
@@ -181,6 +210,88 @@
     }
     el('gps').textContent = gpsState;
     el('status').textContent = secure && info ? info : message;
+  }
+  function renderPermissions(connected) {
+    const historyState = device?.history_state || 'off';
+    const days = device?.history_retention_days;
+    const period = days === 1 ? '1 day' : days + ' days';
+    const canApprove = mobileActive(device) && available && secure && !!owner && !actionBusy && !dead && navigator.onLine !== false;
+    const endingHistory = withdrawing('history');
+    el('history').hidden = !connected || !Number.isSafeInteger(device?.history_version);
+    let historyText = 'Off';
+    if (endingHistory) historyText = 'History is off on this phone. Waiting for VP3 to confirm.';
+    else if (historyState === 'requested') historyText = (owner || 'The owner') + ' wants to keep a trail of this phone’s shared locations for ' + period + '.';
+    else if (historyState === 'active') historyText = (owner || 'The owner') + ' can keep each new shared location for ' + period + '.';
+    el('history-status').textContent = historyText;
+    el('history-accept').hidden = el('history-decline').hidden = historyState !== 'requested' || endingHistory;
+    el('history-accept').disabled = !canApprove;
+    el('history-decline').disabled = actionBusy;
+    el('history-stop').hidden = historyState !== 'active' || endingHistory;
+    const endingPlaces = withdrawing('places');
+    const allowed = device?.allow_saved_places === true;
+    el('places').hidden = !connected || !mobileActive(device) || typeof device.allow_saved_places !== 'boolean';
+    const who = owner || 'The owner';
+    el('places-status').textContent = endingPlaces ? 'Permission withdrawn on this phone. Waiting for VP3 to confirm.'
+      : allowed ? who + ' can save named places during this live session. Saved places remain until the owner deletes them.'
+      : 'Allow ' + who + ' to save your current and future live locations as named places. Saved places remain until the owner deletes them.';
+    el('places-allow').hidden = allowed || endingPlaces;
+    el('places-allow').disabled = !canApprove;
+    el('places-stop').hidden = !allowed || endingPlaces;
+  }
+  function grantScope(scope) {
+    if (!device || !owner || !available || dead || !secure || actionBusy || pending || withdrawing(scope)
+      || navigator.onLine === false || device.status !== 'approved' || !device.allow_location || !mobileActive(device)) return;
+    const history = scope === 'history';
+    if (history ? device.history_state !== 'requested' : device.allow_saved_places !== false) return;
+    const body = {device_id:device.id,generation:device.generation};
+    if (history) body.history_version = device.history_version;
+    else { body.allow_saved_places = true; body.place_permission_version = device.place_permission_version; }
+    actionBusy = true;
+    render();
+    queue(async () => {
+      try {
+        if (dead || pending || withdrawing(scope) || navigator.onLine === false || body.device_id !== device?.id
+          || body.generation !== device.generation || (history ? body.history_version !== device.history_version :
+            body.place_permission_version !== device.place_permission_version)) return;
+        accept(await request(history ? 'accept_history' : 'set_place_permission',body));
+        info = '';
+      } catch (error) { reportFailure(error); }
+      finally { actionBusy = false; render(); }
+    });
+  }
+  async function flushWithdrawal(scope) {
+    const item = withdrawals[scope];
+    if (!item || !device || pending || dead || navigator.onLine === false) return;
+    if (!matchesWithdrawal(scope,item,device) || (scope === 'history'
+      ? !['requested','active'].includes(device.history_state) : device.allow_saved_places !== true)) {
+      clearWithdrawal(scope);
+      return;
+    }
+    const body = {device_id:item.id,generation:device.generation};
+    if (scope === 'history') body.history_version = item.history_version;
+    else { body.allow_saved_places = false; body.place_permission_version = item.place_permission_version; }
+    try {
+      accept(await request(item.action,body));
+      if (withdrawals[scope] === item) clearWithdrawal(scope);
+      info = '';
+    } catch (error) { reportFailure(error); }
+  }
+  function withdrawScope(scope) {
+    if (!device || withdrawing(scope) || pending) return;
+    const intent = {id:device.id,generation:device.generation};
+    if (scope === 'history') {
+      if (!['requested','active'].includes(device.history_state)) return;
+      intent.history_version = device.history_version;
+      intent.action = device.history_state === 'requested' ? 'decline_history' : 'stop_history';
+    } else {
+      if (!device.allow_saved_places) return;
+      intent.action = 'set_place_permission';
+      intent.place_permission_version = device.place_permission_version;
+    }
+    write('localStorage',scope + '-withdrawal',intent);
+    withdrawals[scope] = intent;
+    render();
+    queue(async () => { await flushWithdrawal(scope); render(); });
   }
   function reportFailure(error) {
     if (error.status === 401 || error.status === 403 || error.status === 404) {
@@ -241,6 +352,7 @@
         if (pending.id !== device.id || pending.generation !== device.generation) clearPending();
         else await sendEnd();
       }
+      for (const scope of scopes) await flushWithdrawal(scope);
     } catch (error) {
       const hadDevice = Boolean(device);
       if (!hadDevice && [401,403,404].includes(error.status)) {
@@ -275,7 +387,10 @@
     });
   }
   function canCollect(session) {
-    return run === session && available && !dead && navigator.onLine !== false;
+    return run === session && available && !dead && navigator.onLine !== false && !withdrawing('places');
+  }
+  function historyVersion() {
+    return device?.history_state === 'active' && !withdrawing('history') ? device.history_version : null;
   }
   function fresh(time) {
     return Number.isFinite(time) && time >= now() - 55 && time <= now() + 5;
@@ -299,12 +414,14 @@
         // A preceding status response may have lengthened the interval while this upload was queued.
         if (reportDelay(session) > 0) return;
         const sample = session.next;
+        const sampleHistory = session.nextHistory;
         session.next = null;
         if (!sample || !canCollect(session)) return;
         const time = Math.floor(sample.timestamp / 1000);
         if (!fresh(time) || time <= session.lastTime) return;
         const {latitude,longitude,accuracy} = sample.coords;
-        const result = await request('fix',{device_id:session.id,generation:session.generation,latitude,longitude,accuracy,fix_at:time});
+        const result = await request('fix',{device_id:session.id,generation:session.generation,latitude,longitude,accuracy,fix_at:time,
+          ...(sampleHistory && sampleHistory === historyVersion() ? {history_version:sampleHistory} : {})});
         if (run !== session) return;
         session.lastTime = time;
         session.lastSent = performance.now();
@@ -344,7 +461,10 @@
             Math.abs(longitude)>180 || accuracy<0 || accuracy>40075000) return;
         session.hasReading = true;
         if (Math.floor(position.timestamp / 1000) <= session.lastTime) return;
-        if (!session.next || position.timestamp >= session.next.timestamp) session.next = position;
+        if (!session.next || position.timestamp >= session.next.timestamp) {
+          session.next = position;
+          session.nextHistory = historyVersion();
+        }
         sendLatestFix(session);
       }, error => {
         if (run !== session || session.reader !== reader) return;
@@ -388,6 +508,11 @@
   el('start').addEventListener('click',start);
   el('stop').addEventListener('click',() => finish('stop'));
   el('disconnect').addEventListener('click',() => finish('disconnect'));
+  el('history-accept').addEventListener('click',() => grantScope('history'));
+  el('history-decline').addEventListener('click',() => withdrawScope('history'));
+  el('history-stop').addEventListener('click',() => withdrawScope('history'));
+  el('places-allow').addEventListener('click',() => grantScope('places'));
+  el('places-stop').addEventListener('click',() => withdrawScope('places'));
   el('retry').addEventListener('click',schedulePoll);
   window.addEventListener('online',schedulePoll);
   window.addEventListener('offline',() => {
@@ -395,6 +520,12 @@
     available = false; info = ''; render();
   });
   window.addEventListener('storage',event => {
+    for (const scope of scopes) {
+      if (event.key === prefix + scope + '-withdrawal') {
+        withdrawals[scope] = storedWithdrawal(scope);
+        render(); schedulePoll(); return;
+      }
+    }
     if (event.key !== prefix+'pending') return;
     pending = storedEnd();
     if (pending && pending.id === run?.id && pending.generation === run.generation) cancelWatch();

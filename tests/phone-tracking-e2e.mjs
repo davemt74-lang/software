@@ -68,7 +68,9 @@ async function read(response) {
 
 async function ownerApi(context, user, action = 'state', values = {}) {
   const headers = { 'X-VP3-Working-Attention': user.binding };
-  if (action === 'state') return read(await context.request.get(ownerEndpoint, { headers }));
+  if (['state', 'history', 'places'].includes(action)) {
+    return read(await context.request.get(ownerEndpoint, { headers, params: { action, ...values } }));
+  }
   return read(await context.request.post(ownerEndpoint, { headers,
     data: { action, csrf_token: user.csrf, request_id: randomUUID(), ...values } }));
 }
@@ -204,6 +206,7 @@ async function verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other) {
       share(ownerPhone, 'Studio iPhone', 'owner', gps),
       share(guestPhone, 'Crew Android', 'guest', { ...gps, longitude: gps.longitude + 0.5 })
     ]);
+    await verifyTrailRoutes({ apiOwner, owner, outsider, other, ownerPhone, guestPhone, first, second });
     const firstGrant = { device_id: first.id, generation: first.generation };
     const edit = { ...firstGrant, preferences_version: first.preferences_version, update_interval_seconds: 30, accuracy_mode: 'balanced' };
     assert.equal((await ownerApi(outsider, other, 'set_preferences', edit)).ok, false);
@@ -475,6 +478,7 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
   await eventually('Two live markers should be visible together', async () => await markers.count() === 2);
   await map.locator('#phone-fit').click();
   assert.deepEqual(check(await ownerApi(outsider, other), 'other account sees no shared phones').devices, []);
+  await historyAndPlacesJourney({ desktop, owner, map, handset, phone, android, deviceId, guestId: second.id });
   const first = (await state()).find(d => d.id === deviceId);
   assert.equal(currentWatchAccuracy(), true, 'iPhone should initially request high accuracy');
   const proposed = { device_id: deviceId, generation: first.generation, preferences_version: first.preferences_version,
@@ -571,4 +575,158 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
   await choosePhone(deviceId);
   await android.close();
   console.log('PASS Multiple phones: independent live GPS, isolated per-phone settings, named and ambiguous voice commands, both first-fix announcements, stale map, offline stop and Android reconnect.');
+}
+
+async function verifyTrailRoutes({ apiOwner, owner, outsider, other, ownerPhone, guestPhone, first, second }) {
+  const firstId = { device_id: first.id, generation: first.generation };
+  const secondId = { device_id: second.id, generation: second.generation };
+  const trail = async id => check(await ownerApi(apiOwner, owner, 'history', { device_id: id }), 'history read').points;
+  const places = async () => check(await ownerApi(apiOwner, owner, 'places'), 'saved places').places;
+  const input = { ...firstId, history_version:first.history_version, retention_days:7 };
+  assert.deepEqual(await trail(first.id), []);
+  assert.deepEqual(await trail(second.id), []);
+  assert.equal((await ownerApi(outsider, other, 'request_history', input)).ok, false);
+  assert.equal((await ownerApi(outsider, other, 'history', { device_id: first.id })).ok, false);
+  const waiting = check(await ownerApi(apiOwner, owner, 'request_history', input), 'request seven-day history').device;
+  assert.equal(waiting.history_state, 'requested');
+  assert.equal((await phoneApi(guestPhone, 'accept_history', { ...firstId, history_version: waiting.history_version })).ok, false);
+  const active = check(await phoneApi(ownerPhone, 'accept_history', { ...firstId, history_version: waiting.history_version }),
+    'holder approves history').device;
+  assert.equal(active.history_state, 'active');
+  assert.deepEqual(await trail(first.id), [], 'prior live fixes must never become trail points');
+  const permission = { ...firstId, place_permission_version: active.place_permission_version, allow_saved_places: true };
+  check(await phoneApi(ownerPhone, 'set_place_permission', permission), 'independent holder place consent');
+  assert.equal((await ownerApi(apiOwner, owner, 'save_place', { ...secondId, name:'Guest place' })).ok, false);
+  const send = async (message, idempotency_key = randomUUID()) => check(await chatApi(apiOwner, owner, 'send',
+    { message, idempotency_key }), 'private Chat place choice');
+  const askForPhone = async () => {
+    const question = await send('Save this location as Route office.');
+    assert.ok(question.answer.includes(first.name) && question.answer.includes(second.name), question.answer);
+  };
+  await askForPhone();
+  await send(second.name);
+  assert.deepEqual(await places(), [], 'Choosing a live-only guest must never save the other phone’s location');
+  await askForPhone();
+  const saveKey = randomUUID();
+  const saved = await send(first.name, saveKey);
+  assert.match(saved.answer, /Route office/i);
+  assert.deepEqual(saved.phone_updates.map(u => u.speech), [saved.answer]);
+  const repeated = await send(first.name, saveKey);
+  assert.equal(repeated.assistant_message_id, saved.assistant_message_id);
+  assert.deepEqual(repeated.phone_updates || [], []);
+  const [place] = await places();
+  assert.ok(place && place.name === 'Route office' && place.longitude === first.longitude);
+  assert.deepEqual(check(await ownerApi(outsider, other, 'places'), 'other account places').places, []);
+  assert.equal((await ownerApi(outsider, other, 'delete_place', { place_id: place.id })).ok, false);
+  const consentSecond = Math.floor(Date.now()/1000);
+  await eventually('Need a new post-consent sensor second', () => Math.floor(Date.now()/1000) > consentSecond);
+  const now = Math.floor(Date.now()/1000);
+  check(await phoneApi(ownerPhone, 'fix', { ...firstId, ...gps, fix_at:now, history_version: active.history_version }), 'authorized trail sample');
+  check(await phoneApi(guestPhone, 'fix', { ...secondId, ...gps, longitude: gps.longitude + 0.5, fix_at:now }), 'guest live-only sample');
+  const [point] = await trail(first.id);
+  assert.equal(point.fix_at, now);
+  assert.equal(point.expires_at, point.fix_at + 7 * 86400);
+  assert.deepEqual(await trail(second.id), []);
+  check(await ownerApi(apiOwner, owner, 'delete_history', { ...firstId, history_version:active.history_version }), 'delete trail');
+  assert.deepEqual(await trail(first.id), []);
+  const current = check(await phoneApi(ownerPhone, 'status'), 'after deleting trail').device;
+  assert.equal(current.location_state, 'live');
+  assert.equal(current.history_state, 'off');
+  assert.ok((await places()).some(p => p.id === place.id && p.name === 'Route office'));
+  check(await ownerApi(apiOwner, owner, 'delete_place', { place_id:place.id }), 'remove HTTP test place');
+  console.log('PASS History and places HTTP: distinct holder consent, no backfill, live-only guest, isolated accounts, seven-day retention and deletion preserves the live session and saved place.');
+}
+
+async function historyAndPlacesJourney({ desktop, owner, map, handset, phone, android, deviceId, guestId }) {
+  const trail = async id => check(await ownerApi(desktop, owner, 'history', { device_id: id }), 'read retained samples').points;
+  const places = async () => check(await ownerApi(desktop, owner, 'places'), 'read private places').places;
+  const send = async message => check(await chatApi(desktop, owner, 'send', { message, idempotency_key: randomUUID() }), message);
+  const openHistory = async () => {
+    await map.locator('#phone-tab-history').click();
+    await map.locator('#phone-history-device').selectOption(deviceId);
+  };
+  await openHistory();
+  await map.locator('#phone-history-retention').selectOption('7');
+  await map.locator('#phone-history-request').click();
+  await phone.locator('#phone-history-accept').click();
+  await phone.locator('#phone-history-stop').waitFor({state:'visible'});
+  assert.deepEqual(await trail(guestId), []);
+  const consentSecond = Math.floor(Date.now()/1000);
+  await eventually('First retained fix must be captured after consent', () => Math.floor(Date.now()/1000) > consentSecond);
+  const retainedFixes = [];
+  for (const latitude of [33.45012, 33.45317]) {
+    await handset.setGeolocation({ ...gps, latitude });
+    await eventually('iPhone movement never appeared in its opted-in trail', async () => {
+      const point = (await trail(deviceId)).find(p => Math.abs(p.latitude - latitude) < 0.000001);
+      if (point) retainedFixes.push(point);
+      return !!point;
+    });
+    await eventually('Need a distinct sensor second for the next map point', () => Math.floor(Date.now()/1000) > retainedFixes.at(-1).fix_at);
+  }
+  await eventually('The trail should draw a continuous line and its endpoint on the map', async () =>
+    await map.locator('#phone-map svg .phone-history-trail').count() >= 2);
+  await map.locator('#phone-history-points > li[data-fix-at="' + retainedFixes[1].fix_at + '"]').waitFor();
+  await screenshot(map, 'owner-location-history');
+
+  // Keep the guest live-only. An ambiguous request needs a named source even if only one phone can save a place.
+  await phone.locator('#phone-places-allow').click();
+  await phone.locator('#phone-places-stop').waitFor({state:'visible'});
+  const draftPlaces = async () => (await places()).filter(p => p.name === 'Studio');
+  const ambiguity = await send('Save this location as Studio.');
+  assert.ok(ambiguity.answer.includes('Field iPhone') && ambiguity.answer.includes('Crew Pixel'), ambiguity.answer);
+  assert.deepEqual(await draftPlaces(), []);
+  const named = await send('Field iPhone');
+  assert.match(named.answer, /Studio/i);
+  const [studio] = await draftPlaces();
+  assert.ok(studio && Math.abs(studio.latitude - retainedFixes[1].latitude) < 0.000001,
+    'Studio must reference the named phone’s current fix');
+  await map.locator('#phone-tab-places').click();
+  const savedRow = map.locator('#phone-places-list > li[data-place-id="' + studio.id + '"]');
+  await savedRow.waitFor({state:'visible'});
+  assert.match(await savedRow.innerText(), /Studio/);
+
+  // Stop retention while keeping sharing live, then simulate expiry of one recorded sample.
+  await phone.locator('#phone-history-stop').click();
+  await eventually('Holder did not stop retention independently', async () => {
+    const d = check(await phoneApi(handset, 'status'), 'current retention state').device;
+    return d.history_state === 'off' && d.location_state === 'live';
+  });
+  const [oldest, newer] = retainedFixes;
+  const expireOne = "[$file,$id,$stamp]=array_slice($argv,1);$db=new PDO('sqlite:'.$file);" +
+    "$q=$db->prepare('UPDATE vp3_phone_history_points_v1 SET expires_at=? WHERE device_id=? AND fix_at=?');" +
+    "$q->execute([time()-1,$id,$stamp]);if($q->rowCount()!==1)exit(1);";
+  execFileSync(php, ['-r', expireOne, path.join(temp, 'data.sqlite'), deviceId, String(oldest.fix_at)]);
+  await map.reload();
+  await openHistory();
+  await map.locator('#phone-history-points > li[data-fix-at="' + newer.fix_at + '"]').waitFor();
+  assert.equal(await map.locator('#phone-history-points > li[data-fix-at="' + oldest.fix_at + '"]').count(), 0);
+  assert.ok(!(await trail(deviceId)).some(p => p.fix_at === oldest.fix_at));
+  await map.locator('#phone-history-delete').click();
+  const deleted = map.waitForResponse(r => new URL(r.url()).pathname === ownerEndpoint &&
+    r.request().method() === 'POST' && r.request().postDataJSON()?.action === 'delete_history');
+  await map.locator('#phone-archive-confirm').click();
+  check(await read(await deleted), 'confirmed map trail deletion');
+  await map.reload();
+  await openHistory();
+  assert.deepEqual(await trail(deviceId), []);
+  assert.deepEqual(await trail(guestId), []);
+  await eventually('Deleted history should clear its map/list', async () =>
+    (await map.locator('#phone-history-count').innerText()).trim() === '0 points' &&
+    await map.locator('#phone-history-points > li[data-fix-at]').count() === 0 &&
+    await map.locator('.phone-history-trail').count() === 0);
+  await map.locator('#phone-tab-places').click();
+  await savedRow.waitFor({state:'visible'});
+  assert.equal((await draftPlaces()).length, 1);
+  await screenshot(map, 'owner-saved-studio');
+  await map.locator('#phone-tab-devices').click();
+  // Send fresh positions on both emulated sensors after exercising the archive panels.
+  await handset.setGeolocation({ ...gps, latitude:33.46721 });
+  await android.setGeolocation({ ...gps, latitude:33.62838, longitude:-112.15991 });
+  await eventually('Both live phones must continue after trail deletion', async () => {
+    const devices = check(await ownerApi(desktop, owner), 'live state after history deletion').devices;
+    return devices.some(d => d.id === deviceId && d.location_state === 'live' && d.latitude === 33.46721) &&
+      devices.some(d => d.id === guestId && d.location_state === 'live' && d.longitude === -112.15991);
+  });
+  assert.deepEqual(await trail(deviceId), []);
+  console.log('PASS Emulated iPhone and Android: opt-in trail, live-only guest, two-phone Chat clarification, saved Studio persists, expired/deleted points gone after refresh, both sensors remain live.');
 }
