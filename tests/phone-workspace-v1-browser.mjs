@@ -6,6 +6,9 @@ import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=process.cwd(),source=await fs.readFile(path.join(root,'phone-workspace-v1.js'),'utf8'),css=await fs.readFile(path.join(root,'phone-workspace-v1.css'),'utf8');
+const shellStyles=new Map(await Promise.all(['chat-header-ui.css','stonefellow-ui.css'].map(async file=>['/'+file,await fs.readFile(path.join(root,file),'utf8')])));
+const fixtureHead='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>*,*::before,*::after{box-sizing:border-box}body{margin:0}</style><link rel="stylesheet" href="/chat-header-ui.css"><link rel="stylesheet" href="/phone-workspace-v1.css">';
+const headerShell=button=>'<header class="chat-topbar member-header"><div class="chat-topbar-title"><strong>Agent Chat</strong></div><div class="chat-topbar-actions member-header-actions"><div class="chat-top-menu">'+button+'</div></div></header>';
 const actualState=process.env.PHONE_WORKSPACE_STATE_FIXTURE?JSON.parse(await fs.readFile(process.env.PHONE_WORKSPACE_STATE_FIXTURE,'utf8')):null;
 const actualUi=process.env.PHONE_WORKSPACE_UI_FIXTURE?JSON.parse(await fs.readFile(process.env.PHONE_WORKSPACE_UI_FIXTURE,'utf8')):null;
 const incomingId='a'.repeat(32),outgoingId='b'.repeat(32);
@@ -37,6 +40,7 @@ const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
  if(url.pathname==='/phone-workspace-v1.js'){res.setHeader('Content-Type','text/javascript');return res.end(source);}
  if(url.pathname==='/phone-workspace-v1.css'){res.setHeader('Content-Type','text/css');return res.end(css);}
+ if(shellStyles.has(url.pathname)){res.setHeader('Content-Type','text/css');return res.end(shellStyles.get(url.pathname));}
  if(url.pathname==='/assets/twilio-voice-2.18.5.min.js'){res.setHeader('Content-Type','text/javascript');if(url.searchParams.has('actual'))return res.end(actualSdk);scriptLoads++;return res.end(sdk);}
  if(url.pathname==='/sdk-smoke'){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><meta charset="utf-8"><script src="/assets/twilio-voice-2.18.5.min.js?actual=1" integrity="'+actualIntegrity+'" crossorigin="anonymous"></script>');}
  if(url.pathname==='/api/fixture-audio'){res.setHeader('Content-Type','audio/wav');return res.end(wav);}
@@ -57,7 +61,7 @@ const server=http.createServer((req,res)=>{
   });return;
  }
  const cid=url.searchParams.get('new')==='1'?0:10;
- res.setHeader('Content-Type','text/html');res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/phone-workspace-v1.css"><button data-phone-workspace-toggle aria-label="Phone">Phone</button><div id="chatThread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-workspace-v1.js"></script>`);
+ res.setHeader('Content-Type','text/html');res.end(`${fixtureHead}${headerShell('<button class="chat-icon-button" data-phone-workspace-toggle aria-label="Phone">Phone</button>')}<div id="chatThread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-workspace-v1.js"></script>`);
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
@@ -78,6 +82,31 @@ try{
  });
  await fresh();
  await check('assigned workspace has no token or SDK activity until the owner enables calls',async()=>{assert.equal(scriptLoads,0);assert.equal(apiCalls.some(c=>c.action==='token'),false);assert.equal(await page.locator('.vp3-phone-panel').isVisible(),true);assert.equal(await page.getByText(/purchase|subscribe|sign up/i).count(),0);});
+ await check('Phone covers the production header and Close remains clickable on desktop and mobile',async()=>{
+  for(const viewport of [{width:1360,height:900},{width:390,height:844},{width:320,height:740}]){
+   await page.setViewportSize(viewport);
+   await page.waitForFunction(()=>document.querySelector('.vp3-phone-panel').getAnimations().every(animation=>animation.playState==='finished'));
+   const hits=await page.evaluate(()=>{
+    const close=document.querySelector('.vp3-phone-close'),box=close.getBoundingClientRect(),header=document.querySelector('.chat-topbar').getBoundingClientRect();
+    const closeHit=document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);
+    const covered=[header.x+20,header.right-20].every(x=>document.elementFromPoint(x,header.y+header.height/2)?.closest('.vp3-phone-workspace'));
+    return {close:closeHit===close||close.contains(closeHit),covered};
+   });
+   assert.equal(hits.close,true,'The Phone Close button receives pointer input at '+viewport.width+'px');
+   assert.equal(hits.covered,true,'The Phone backdrop/panel covers both sides of the application header at '+viewport.width+'px');
+   await page.locator('.vp3-phone-close').click();
+   assert.equal(await page.locator('.vp3-phone-panel').isVisible(),false);
+   assert.equal(await page.getByRole('button',{name:'Phone',exact:true}).evaluate(node=>node===document.activeElement),true);
+   await showDrawer();
+   if(viewport.width>500){
+    await page.locator('.vp3-phone-backdrop').click({position:{x:20,y:20}});
+    assert.equal(await page.locator('.vp3-phone-panel').isVisible(),false,'Clicking the backdrop above the application header closes Phone');
+    assert.equal(await page.getByRole('button',{name:'Phone',exact:true}).evaluate(node=>node===document.activeElement),true);
+    await showDrawer();
+   }
+  }
+  await page.setViewportSize({width:1360,height:900});
+ });
  await check('favorites and contact text are safe, scoped and saved through CSRF actions',async()=>{await page.getByRole('tab',{name:'Contacts',exact:true}).click();assert.equal(await page.locator('.vp3-phone-panel img').count(),0);await page.getByRole('button',{name:/^Favorite Fixture contact/}).click();await page.getByRole('button',{name:/^Remove favorite Fixture contact/}).waitFor();const saved=apiCalls.find(c=>c.action==='favorite');assert.equal(saved.contact_id,7);assert.equal(saved.conversation_id,10);assert.equal(saved.agent_id,2);assert.equal(saved.csrf_token,'fixture-csrf');});
  await check('saved voicemail uses authenticated audio and safe transcript/report links',async()=>{await page.getByRole('tab',{name:'Voicemail',exact:true}).click();assert.equal(await page.locator('.vp3-phone-voicemail audio').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail a').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail script').count(),0);await page.locator('.vp3-phone-voicemail summary').first().click();assert.match(await page.locator('.vp3-phone-voicemail').first().innerText(),/<script>unsafe/);await page.locator('audio').evaluate(async audio=>{audio.muted=true;audio.loop=true;window.savedVoicemailAudio=audio;await audio.play();});await page.evaluate(()=>window.VP3PhoneWorkspaceV1.refresh());assert.equal(await page.locator('audio').evaluate(audio=>audio===window.savedVoicemailAudio&&!audio.paused),true,'Polling preserves active playback');});
  await check('absent, null and blank media/transcript/report URLs never become same-page links',async()=>{await page.locator('audio').evaluateAll(nodes=>nodes.forEach(audio=>audio.pause()));const previous=structuredClone(state.voicemails);state.voicemails=[undefined,null,'','   '].map((missing,index)=>({id:'job-'+(70+index),call_id:'fixture_call_'+index,peer_e164:'+16025550222',transcript:'Fixture without media URL',audio_url:missing,transcript_url:missing,report_url:missing}));await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await page.locator('.vp3-phone-voicemail audio').count(),0);assert.equal(await page.locator('.vp3-phone-voicemail a').count(),0);state.voicemails=previous;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());});
@@ -116,8 +145,9 @@ try{
    const url=new URL(route.request().url());
    if(url.pathname==='/phone-workspace-v1.js')return route.fulfill({contentType:'text/javascript',body:source});
    if(url.pathname==='/phone-workspace-v1.css')return route.fulfill({contentType:'text/css',body:css});
+   if(shellStyles.has(url.pathname))return route.fulfill({contentType:'text/css',body:shellStyles.get(url.pathname)});
    if(url.pathname===new URL(actualUi.config.endpoint).pathname){assert.equal(route.request().method(),'GET');return route.fulfill({json:{ok:true,state:actualState}});}
-   return route.fulfill({contentType:'text/html',body:'<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/phone-workspace-v1.css">'+actualUi.button+'<section id="chatThread"></section><script>window.VP3_PHONE_WORKSPACE_V1='+JSON.stringify(actualUi.config)+';</script><script src="/phone-workspace-v1.js"></script>'});
+   return route.fulfill({contentType:'text/html',body:fixtureHead+headerShell(actualUi.button)+'<section id="chatThread"></section><script>window.VP3_PHONE_WORKSPACE_V1='+JSON.stringify(actualUi.config)+';</script><script src="/phone-workspace-v1.js"></script>'});
   });
   await page.goto(origin+'/phone-fixture');await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByLabel('Selected phone number',{exact:true}).waitFor();
   const actualIcon=page.locator('[data-phone-workspace-toggle] svg');assert.equal(await actualIcon.getAttribute('width'),'18');assert.equal(await actualIcon.getAttribute('height'),'18');assert.equal(await page.locator('[data-phone-workspace-toggle]').getAttribute('aria-controls'),await page.locator('.vp3-phone-workspace').getAttribute('id'));

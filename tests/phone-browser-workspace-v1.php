@@ -12,7 +12,7 @@ function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table): bool{$q=db()->prepare($GLOBALS['mysql']?'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?':"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return (bool)$q->fetchColumn();}
 function ddl(string $sql): void{if($GLOBALS['mysql'])$sql=str_replace(['INTEGER PRIMARY KEY AUTOINCREMENT','provider_call_sid TEXT','contact_e164 TEXT'],['INTEGER AUTO_INCREMENT PRIMARY KEY','provider_call_sid VARCHAR(40)','contact_e164 VARCHAR(20)'],$sql);db()->exec($sql);}
 function has_permission(string $key,?array $user=null): bool{return !empty($user['is_active'])&&empty($user['denied']);}
-function subscription_has_entitlement(?array $user,string $key): bool{return !empty($user['plan']);}
+function subscription_has_entitlement(?array $user,string $key): bool{return !empty($user['plan'])&&($key!=='phone.voice'||empty($GLOBALS['phone_fixture_voice_denied']));}
 function subscription_entitlement_limit(?array $user,string $key,?int $default=null): ?int{return 20;}
 function setting(string $key,mixed $default=''): mixed{return $GLOBALS['settings'][$key]??$default;}
 function save_setting(string $key,string $value): void{$GLOBALS['settings'][$key]=$value;}
@@ -42,6 +42,7 @@ $checks=0;
 function c(bool $ok,string $label): void{if(!$ok)throw new RuntimeException('FAIL: '.$label);$GLOBALS['checks']++;}
 function denies(callable $fn,int $status,string $label): void{try{$fn();throw new LogicException('Missing denial: '.$label);}catch(VP3PhoneWorkspaceException $e){c($e->httpStatus===$status,$label);}}
 function bad(callable $fn,string $label): void{try{$fn();throw new LogicException('Missing rejection: '.$label);}catch(InvalidArgumentException|RuntimeException $e){c(true,$label);}}
+function rejects_message(callable $fn,string $message,string $label): void{try{$fn();}catch(RuntimeException $e){c(str_contains($e->getMessage(),$message),$label);return;}c(false,$label);}
 function user(int $id=1): array{$q=db()->prepare('SELECT * FROM users WHERE id=?');$q->execute([$id]);return $q->fetch();}
 function api(string $method,array $input=[],int $owner=1,string $csrf='csrf-fixture'): array{return vp3_phone_workspace_request_v1(db(),user($owner),$method,$input,$csrf);}
 function action(string $name,array $input=[],int $owner=1): array{return api('POST',array_replace(['action'=>$name,'csrf_token'=>'csrf-fixture','conversation_id'=>11,'agent_id'=>0],$input),$owner);}
@@ -74,6 +75,28 @@ c(setting('phone_browser_api_key_secret_v1')!=='api-secret-fixture-123456','API 
 vp3_phone_browser_config_save_v1(['api_key_sid'=>'SK'.str_repeat('b',32),'twiml_app_sid'=>'AP'.str_repeat('c',32)]);
 bad(fn()=>vp3_phone_browser_config_save_v1(['api_key_sid'=>'SK'.str_repeat('d',32),'twiml_app_sid'=>'AP'.str_repeat('c',32)]),'changing API key requires replacement secret');
 c(!api('GET')['state']['readiness']['ready'],'configured provider without explicit number browser approval is not ready');
+$pdo->exec('UPDATE phone_cloud_numbers_v100 SET voice_enabled=0 WHERE id=1');
+vp3_phone_browser_number_policy_set_v1($pdo,1,false,true);
+$savedPolicy=vp3_phone_browser_policy_v1($pdo,['id'=>1,'owner_user_id'=>1,'agent_id'=>7]);
+c(!(int)$savedPolicy['browser_enabled']&&(int)$savedPolicy['recording_enabled']===1,'Admin may save disabled browser preferences while an activation prerequisite is absent');
+rejects_message(fn()=>vp3_phone_browser_number_policy_set_v1($pdo,1,true,false),'Enable incoming voicemail','disabled incoming voice identifies its exact activation control');
+c(vp3_phone_browser_policy_v1($pdo,['id'=>1,'owner_user_id'=>1,'agent_id'=>7])===$savedPolicy,'incoming-voice rejection preserves the existing browser and recording policy');
+$pdo->exec('UPDATE phone_cloud_numbers_v100 SET voice_enabled=1 WHERE id=1');
+$pdo->exec('UPDATE users SET plan=0 WHERE id=1');
+rejects_message(fn()=>vp3_phone_browser_number_policy_set_v1($pdo,1,true,false),'Agent Phone Numbers Included','missing number allowance is distinguished from missing voice allowance');
+c(vp3_phone_browser_policy_v1($pdo,['id'=>1,'owner_user_id'=>1,'agent_id'=>7])===$savedPolicy,'number-allowance rejection preserves the existing policy');
+$pdo->exec('UPDATE users SET plan=1 WHERE id=1');
+$GLOBALS['phone_fixture_voice_denied']=true;
+rejects_message(fn()=>vp3_phone_browser_number_policy_set_v1($pdo,1,true,false),'Agent Phone Calls (phone.voice)','missing voice allowance identifies the assigned member capability');
+c(vp3_phone_browser_policy_v1($pdo,['id'=>1,'owner_user_id'=>1,'agent_id'=>7])===$savedPolicy,'voice-allowance rejection preserves the existing policy');
+unset($GLOBALS['phone_fixture_voice_denied']);
+$savedBrowserSettings=$GLOBALS['settings'];unset($GLOBALS['settings']['phone_browser_api_key_sid_v1']);
+rejects_message(fn()=>vp3_phone_browser_number_policy_set_v1($pdo,1,true,false),'Twilio API Key SID, API Key Secret and TwiML App SID','missing browser credentials identify the separate Browser phone setup');
+c(vp3_phone_browser_policy_v1($pdo,['id'=>1,'owner_user_id'=>1,'agent_id'=>7])===$savedPolicy,'credential rejection preserves the existing policy');
+$GLOBALS['settings']=$savedBrowserSettings;unset($GLOBALS['settings']['phone_voice_webhook_url_v130']);
+rejects_message(fn()=>vp3_phone_browser_number_policy_set_v1($pdo,1,true,false),'Signed HTTPS voice webhook URL under Incoming calls','missing callback identifies the incoming-voice configuration field');
+c(vp3_phone_browser_policy_v1($pdo,['id'=>1,'owner_user_id'=>1,'agent_id'=>7])===$savedPolicy,'callback rejection preserves the existing policy');
+$GLOBALS['settings']=$savedBrowserSettings;
 vp3_phone_browser_number_policy_set_v1($pdo,1,true,true);vp3_phone_browser_number_policy_set_v1($pdo,3,true,true);
 c(api('GET')['state']['readiness']['ready'],'explicit browser approval plus provider credentials becomes ready');
 $token=action('token',['number_id'=>1]);$parts=explode('.',$token['token']);$claims=json_decode(base64_decode(strtr($parts[1],'-_','+/')),true);
