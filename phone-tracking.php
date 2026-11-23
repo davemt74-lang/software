@@ -33,6 +33,9 @@ $asset = static function (string $path): string {
 <script defer src="<?= e($asset('assets/phone-map/leaflet.js')) ?>"></script>
 <script defer src="<?= e($asset('assets/phone-map/qr.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-archive-v1.js')) ?>"></script>
+<script defer src="<?= e($asset('phone-camera-ice-v1.js')) ?>"></script>
+<script defer src="<?= e($asset('phone-camera-receiver-v1.js')) ?>"></script>
+<script defer src="<?= e($asset('phone-map-camera-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
 <body class="phone-tracking-page">
@@ -126,6 +129,15 @@ require __DIR__.'/includes/member-header.php';
     <ul id="phone-places-list" aria-label="Saved places"></ul>
     <p id="phone-place-feedback" role="status"></p>
   </section>
+  <dialog id="phone-stream-dialog" class="phone-dialog phone-stream-dialog" aria-labelledby="phone-stream-name"
+          data-endpoint="<?= e(url('/api/phone-camera-v1.php')) ?>">
+    <header><h2 id="phone-stream-name">Phone camera</h2><button type="button" class="phone-close" id="phone-stream-close" aria-label="Close camera preview" autofocus>×</button></header>
+    <div id="phone-stream-preview" data-state="connecting">
+      <video id="phone-stream-video" autoplay playsinline muted disablepictureinpicture aria-label="Private live phone camera"></video>
+      <span id="phone-stream-status" role="status"></span>
+    </div>
+    <button type="button" id="phone-stream-retry" hidden>Retry camera preview</button>
+  </dialog>
   <dialog id="phone-archive-dialog" class="phone-dialog" aria-labelledby="phone-archive-dialog-title" aria-describedby="phone-archive-dialog-message">
     <header><h2 id="phone-archive-dialog-title"></h2></header><p id="phone-archive-dialog-message"></p>
     <div class="phone-dialog-actions"><button type="button" id="phone-archive-cancel" autofocus>Cancel</button><button type="button" class="phone-destructive" id="phone-archive-confirm">Delete</button></div>

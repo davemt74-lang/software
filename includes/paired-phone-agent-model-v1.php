@@ -2,6 +2,30 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/agent-inference-budget-v1.php';
+require_once __DIR__.'/paired-phone-agent-v1.php';
+
+function vp3_paired_phone_provider_failure_v1(array $result): PairedPhoneReplyFailure
+{
+    $code=$result['failure_code']??$result['error_code']??'';
+    $status=(int)($result['status']??0);
+    $reason=match (true) {
+        $code==='request_rate_limit' || $status===429 => 'busy',
+        $code==='inference_budget_exhausted' || $status===504 => 'timeout',
+        $code==='gmail_summary_access_changed' => 'access', // The shared transport's dispatch guard.
+        str_starts_with($code,'credential_') || in_array($code,[
+            'service_quota_exhausted','service_disabled','provider_disabled','service_usage_unavailable',
+            'service_route_unavailable','personal_route_unavailable','anthropic_credit_balance_low',
+        ],true) || in_array($status,[401,402,403],true) => 'setup',
+        default => 'failed',
+    };
+    return new PairedPhoneReplyFailure($reason);
+}
+
+function vp3_paired_phone_cloud_fallback_v1(array $plan): bool
+{
+    return empty($plan['blocked']) && ($plan['effective_preference']??null)==='auto'
+        && !empty($plan['allow_vp3_fallback']) && !empty($plan['home']['cloud_allowed']) && !empty($plan['cloud']['ready']);
+}
 
 /** The caller supplies only messages attributed to this device. Recheck its live grant at provider dispatch. */
 function vp3_paired_phone_model_reply_v1(PDO $pdo,int $owner,int $agent,array $history,Closure $recheck): string
@@ -30,11 +54,15 @@ function vp3_paired_phone_model_reply_v1(PDO $pdo,int $owner,int $agent,array $h
     }
 
     $service=['service'=>'conversation','stage'=>'paired_phone_chat','agent_id'=>$agent];
-    $result=vp3_ai_with_budget_v1(25,static function() use ($pdo,$user,$owner,$agent,$messages,$last,$name,$service,$recheck):array {
+    // Match the regular provider's 55-second response window, inside the 90-second phone turn lease.
+    $result=vp3_ai_with_budget_v1(55,static function() use ($pdo,$user,$owner,$agent,$messages,$last,$name,$service,$recheck):array {
         $preference=vp3_agent_runtime_preference_readonly_v420($pdo,$owner,$agent);
         $plan=vp3_agent_runtime_plan_v420($pdo,$user,$agent,'chat',$service);
         if (!empty($plan['blocked']) || !in_array($plan['route']??null,['vp3_cloud','homeserver'],true)) {
-            throw new RuntimeException('Connected agent has no available chat route.',503);
+            throw new PairedPhoneReplyFailure(($plan['effective_preference']??null)==='homeserver_only'?'offline':'setup');
+        }
+        if (($plan['requested_preference']??$preference['effective_preference'])!==$preference['effective_preference']) {
+            throw new PairedPhoneReplyFailure('access');
         }
         $guard=static function() use ($pdo,$user,$owner,$agent,$preference,$service,$recheck):bool {
             if (vp3_agent_runtime_preference_readonly_v420($pdo,$owner,$agent)!==$preference) return false;
@@ -45,11 +73,36 @@ function vp3_paired_phone_model_reply_v1(PDO $pdo,int $owner,int $agent,array $h
         if ($plan['route']==='homeserver') {
             // This local-inference operation sees only caller-supplied text and cannot run account tools.
             require_once __DIR__.'/homeserver-local-execution-v230.php';
+            require_once __DIR__.'/homeserver-profile-agent-v235.php';
             $input=[['role'=>'system','content'=>ai_system_prompt([],$user,$control)]];
             foreach (ai_history_messages($messages) as $message) $input[]=$message;
             $input[]=['role'=>'user','content'=>$last['content']];
-            $result=homeserver_execution_v230_execute($owner,'agent.infer.local',['messages'=>$input],null,true,$guard);
-            return ['ok'=>!empty($result['ok']),'answer'=>$result['result']['reply']??null];
+            // The relay invokes this guard immediately before queueing. After that point
+            // a missing reply can mean an accepted request; never send a second one to Cloud.
+            $atDispatch=false;
+            $localGuard=static function() use (&$atDispatch,$guard):bool {
+                $atDispatch=true;
+                return $guard();
+            };
+            try {
+                if (!homeserver_profile_v235_supported($owner)) {
+                    throw new RuntimeException('Stateless HomeServer inference is unavailable.');
+                }
+                $result=homeserver_execution_v230_execute($owner,'agent.infer.local',['messages'=>$input],null,true,$localGuard);
+                return ['ok'=>!empty($result['ok']),'answer'=>$result['result']['reply']??null];
+            } catch (RuntimeException $error) {
+                $kind=homeserver_execution_v230_failure_class($error);
+                if ($kind==='authorization' || in_array($error->getCode(),[401,403,409],true)) {
+                    throw new PairedPhoneReplyFailure('access');
+                }
+                if ($atDispatch || $error instanceof PDOException || !vp3_paired_phone_cloud_fallback_v1($plan)) {
+                    throw new PairedPhoneReplyFailure($kind==='timeout'?'timeout':'offline');
+                }
+                $current=vp3_agent_runtime_plan_v420($pdo,$user,$agent,'chat',$service);
+                if (!vp3_paired_phone_cloud_fallback_v1($current)) {
+                    throw new PairedPhoneReplyFailure('offline');
+                }
+            }
         }
         return ai_v100_with_service_context($service,
             static fn()=>ai_generate_chat_response($last['content'],$messages,[],$user,'chat',$control));
@@ -57,7 +110,7 @@ function vp3_paired_phone_model_reply_v1(PDO $pdo,int $owner,int $agent,array $h
     $answer=$result['answer']??null;
     if (empty($result['ok']) || !is_string($answer) || trim($answer)===''
         || !mb_check_encoding($answer,'UTF-8') || mb_strlen($answer)>12000) {
-        throw new RuntimeException('The connected agent could not generate a reply.',503);
+        throw vp3_paired_phone_provider_failure_v1($result);
     }
     return trim($answer);
 }

@@ -6,9 +6,49 @@ window.VP3PhoneAgentChat = function (request, apps) {
   const form = get('chat-form'), input = get('chat-input'), send = get('chat-send');
   const toggle = get('apps-toggle'), menu = get('apps'), notice = get('chat-status');
   const main = get('location');
+  const history = get('chat-history'), empty = get('chat-empty'), tabs = get('tabs');
+  const connection = get('connection'), connectionTab = get('tab-connection'), chatTab = get('tab-chat');
   let deviceId = null, online = false, generation = 0, nextPoll = 0, polling = false;
   let turns = [], outgoing = null, sending = false, lastTranscript = '';
-  let followReplies = false;
+  let followReplies = true;
+
+  function sizeChat() {
+    const viewport = window.visualViewport;
+    if (!chat.hidden && viewport?.scale === 1 && viewport.height > 0) {
+      main.style.setProperty('--phone-chat-height',viewport.height + 'px');
+    } else {
+      main.style.removeProperty('--phone-chat-height');
+    }
+  }
+  function selectTab(showChat) {
+    connection.hidden = showChat;
+    chat.hidden = !showChat;
+    main.dataset.tab = showChat ? 'chat' : 'connection';
+    connectionTab.setAttribute('aria-selected',String(!showChat));
+    chatTab.setAttribute('aria-selected',String(showChat));
+    connectionTab.tabIndex = showChat ? -1 : 0;
+    chatTab.tabIndex = showChat ? 0 : -1;
+    closeApps();
+    sizeChat();
+    if (showChat) {
+      if (followReplies) history.scrollTop = history.scrollHeight;
+      nextPoll = 0;
+      void refresh();
+    }
+  }
+  connectionTab.addEventListener('click', () => selectTab(false));
+  chatTab.addEventListener('click', () => selectTab(true));
+  tabs.addEventListener('keydown', event => {
+    if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault();
+    const showChat = event.key === 'End' || (event.key !== 'Home' && event.target === connectionTab);
+    selectTab(showChat);
+    (showChat ? chatTab : connectionTab).focus();
+  });
+  history.addEventListener('scroll', () => {
+    if (!chat.hidden) followReplies = history.scrollHeight - history.clientHeight - history.scrollTop < 96;
+  });
+  window.visualViewport?.addEventListener('resize',sizeChat);
 
   function status(message) {
     if (notice.textContent !== message) notice.textContent = message;
@@ -57,7 +97,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     const signature = JSON.stringify([visible,online,sending]);
     if (signature === lastTranscript) return;
     lastTranscript = signature;
-    const keepBottom = followReplies && main.scrollHeight - main.clientHeight - main.scrollTop < 96;
+    const keepBottom = !chat.hidden && followReplies;
     const retained = new Set();
     const existing = new Map(Array.from(transcript.children, n => [n.dataset.request,n]));
     for (const turn of visible) {
@@ -76,7 +116,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
       row.dataset.render = key;
       const user = bubble('You',turn.message,true);
       const text = turn.state === 'replied' ? turn.reply :
-        turn.state === 'failed' ? 'The agent could not reply.' :
+        turn.state === 'failed' ? (turn.failure_message || 'The agent could not reply.') :
         turn.state === 'unconfirmed' ? 'Delivery could not be confirmed.' : 'Waiting for a reply…';
       const reply = bubble(turn.state === 'replied' ? 'Agent' : 'Message status',text,false);
       if (retryable) {
@@ -91,8 +131,8 @@ window.VP3PhoneAgentChat = function (request, apps) {
       row.replaceChildren(user,reply);
     }
     for (const [id,row] of existing) if (!retained.has(id)) row.remove();
-    chat.hidden = !visible.length;
-    if (keepBottom) main.scrollTop = main.scrollHeight;
+    empty.hidden = visible.length > 0;
+    if (keepBottom) history.scrollTop = history.scrollHeight;
   }
   function accept(result) {
     if (!Array.isArray(result.turns)) throw new Error('Missing chat response');
@@ -102,7 +142,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     render();
   }
   async function refresh() {
-    if (!deviceId || !online || document.hidden || polling || sending || Date.now() < nextPoll) return;
+    if (!deviceId || !online || chat.hidden || document.hidden || polling || sending || Date.now() < nextPoll) return;
     const version = generation;
     polling = true;
     nextPoll = Date.now() + (outgoing || turns.some(t => t.state === 'pending') ? 3000 : 12000);
@@ -128,7 +168,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     controls();
     render();
     followReplies = true;
-    main.scrollTop = main.scrollHeight;
+    history.scrollTop = history.scrollHeight;
     try {
       const result = await request('chat_send',{device_id:deviceId,request_id:turn.request_id,message:turn.message});
       if (generation !== version) return;
@@ -174,16 +214,20 @@ window.VP3PhoneAgentChat = function (request, apps) {
       deviceId = id;
       turns = [];
       outgoing = null;
-      sending = polling = followReplies = false;
+      sending = polling = false;
+      followReplies = true;
       input.value = '';
-      closeApps();
       transcript.replaceChildren();
-      chat.hidden = true;
+      empty.hidden = false;
+      tabs.hidden = !id;
+      if (id) connection.setAttribute('role','tabpanel');
+      else connection.removeAttribute('role');
+      connection.setAttribute('aria-labelledby',id ? connectionTab.id : 'phone-label');
+      selectTab(false);
       lastTranscript = '';
       status('');
     }
     online = reachable;
-    dock.hidden = !id;
     if (!id) return;
     get('app-camera').disabled = !online;
     if (!online) status('Offline. Reconnect to send a message.');
@@ -192,18 +236,6 @@ window.VP3PhoneAgentChat = function (request, apps) {
     controls();
     render();
     void refresh();
-  }
-  // iOS can resize or pan the visual viewport independently of the layout viewport.
-  const viewport = window.visualViewport;
-  if (viewport) {
-    const size = () => {
-      if (viewport.scale !== 1) return;
-      document.body.style.setProperty('--phone-viewport-height',viewport.height + 'px');
-      document.body.style.setProperty('--phone-viewport-top',viewport.offsetTop + 'px');
-    };
-    viewport.addEventListener('resize',size);
-    viewport.addEventListener('scroll',size);
-    size();
   }
   window.addEventListener('pagehide', () => bind(null,false));
   return {bind};

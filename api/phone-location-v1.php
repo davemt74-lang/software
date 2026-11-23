@@ -22,10 +22,10 @@ try {
         !in_array($_SERVER['HTTP_SEC_FETCH_SITE'] ?? 'same-origin', ['same-origin','none'], true)) {
         throw new RuntimeException('Invalid origin.', 403);
     }
-    $input = vp3_phone_http_json_v1(['camera_offer']);
+    $input = vp3_phone_http_json_v1(['camera_offer','camera_map_offer']);
     $action = $input['action'] ?? null;
     unset($input['action']);
-    $cameraAction = in_array($action, ['camera_status','camera_prepare','camera_start','camera_offer','camera_stop'],true);
+    $cameraAction = in_array($action, ['camera_status','camera_prepare','camera_start','camera_offer','camera_stop','camera_map_offer'],true);
     $chatAction = in_array($action,['chat_status','chat_send'],true);
     if (!$chatAction && !$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
         'accept_history','decline_history','stop_history','set_place_permission',

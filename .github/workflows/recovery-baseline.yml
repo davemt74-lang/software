@@ -368,6 +368,7 @@ jobs:
       - name: Verify the paired phone camera in private Agent Chat and the Video Editor
         run: |
           node tests/phone-camera-holder-v1.mjs
+          node tests/phone-map-camera-v1.mjs
           node tests/phone-camera-e2e.mjs
       - name: Save tracking acceptance screenshots
         if: success()

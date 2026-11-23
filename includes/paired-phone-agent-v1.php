@@ -3,6 +3,27 @@ declare(strict_types=1);
 
 require_once __DIR__.'/phone-tracking-v1.php';
 
+/** These terminal states fit the existing turn column. Only their fixed descriptions reach a holder. */
+final class PairedPhoneReplyFailure extends RuntimeException
+{
+    public function __construct(public readonly string $reason)
+    {
+        parent::__construct(self::description($reason),503);
+    }
+
+    public static function description(string $reason): string
+    {
+        return match ($reason) {
+            'setup' => 'Ask the account owner to check the connected agent’s AI settings, then retry.',
+            'offline' => 'The agent’s HomeServer is unavailable. Retry when it is connected.',
+            'timeout' => 'The agent did not return a reply in time. You can retry this message.',
+            'busy' => 'The agent is busy. Wait a moment, then retry this message.',
+            'access' => 'Chat access changed before the agent could reply. Check the connection and retry.',
+            default => 'Your message was saved, but the agent did not return a reply. You can retry this message.',
+        };
+    }
+}
+
 function vp3_paired_phone_schema_v1(PDO $pdo,string $options): void
 {
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_paired_phone_threads_v1 (
@@ -83,8 +104,13 @@ function vp3_paired_phone_device_v1(PDO $pdo,string $token,string $id): array
 function vp3_paired_phone_turns_v1(PDO $pdo,string $id): array
 {
     $rows=vp3_phone_sql_v1($pdo,"SELECT request_id,message,reply,
-        CASE WHEN state='pending' AND lease_until<=? THEN 'failed' ELSE state END AS state
+        CASE WHEN state='pending' AND lease_until<=? THEN 'timeout' ELSE state END AS state
         FROM vp3_paired_phone_turns_v1 WHERE device_id=? ORDER BY user_message_id DESC LIMIT 30",[time(),$id])->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as &$row) {
+        if ($row['state']==='pending' || $row['state']==='replied') continue;
+        $row['failure_message']=PairedPhoneReplyFailure::description($row['state']);
+        $row['state']='failed';
+    }
     return ['turns'=>array_reverse($rows)];
 }
 
@@ -156,6 +182,7 @@ function vp3_paired_phone_chat_v1(PDO $pdo,string $token,string $action,array $i
             AND conversation_id=? AND agent_id=? AND lease=? AND lease_until>? AND state='pending'",
             [$id,$rid,$work['cid'],$work['agent'],$work['lease'],time()])->fetchColumn();
     };
+    $failure='failed';
     try {
         if ($model===null) {
             require_once __DIR__.'/paired-phone-agent-model-v1.php';
@@ -163,15 +190,21 @@ function vp3_paired_phone_chat_v1(PDO $pdo,string $token,string $action,array $i
         }
         $answer=$model($pdo,$work['owner'],$work['agent'],$work['history'],$authorized);
         $reply=is_string($answer)?trim(mb_substr($answer,0,8000)):'';
+    } catch (PairedPhoneReplyFailure $error) {
+        $failure=$error->reason;
+        $reply='';
     } catch (Throwable $error) {
+        if (function_exists('agent_runtime_v125_trace')) {
+            agent_runtime_v125_trace('paired_phone.reply_failed',['error_class'=>get_class($error)]);
+        }
         $reply='';
     }
-    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$authorized,$work,$id,$rid,$reply) {
+    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$authorized,$work,$id,$rid,$reply,$failure) {
         if (!$authorized()) throw new RuntimeException('Phone chat changed.',409);
         $assistant=$reply==='' ? null : vp3_paired_phone_marker_v1($pdo,$work['owner'],$work['cid'],'assistant');
         vp3_phone_sql_v1($pdo,'UPDATE vp3_paired_phone_turns_v1 SET assistant_message_id=?,reply=?,state=?,lease=NULL,lease_until=0
             WHERE device_id=? AND request_id=? AND lease=?',
-            [$assistant,$assistant===null?null:$reply,$assistant===null?'failed':'replied',$id,$rid,$work['lease']]);
+            [$assistant,$assistant===null?null:$reply,$assistant===null?$failure:'replied',$id,$rid,$work['lease']]);
         return vp3_paired_phone_turns_v1($pdo,$id);
     });
 }

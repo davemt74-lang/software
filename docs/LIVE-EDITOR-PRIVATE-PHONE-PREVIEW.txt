@@ -8,19 +8,24 @@ From private Agent Chat, type “Request a camera” or “Request a camera from
 Use the paired phone’s name. If several phones match, reply with its number or
 name. A phone can pair using the QR code in Phone Tracking.
 
-On the paired phone, keep the connection page open. A camera request appears
-above the message bar. Tap Start Sharing and allow camera access. On the
-owner’s computer, open the private camera preview link in the same Agent Chat.
-Tap Stop Sharing on the phone or in the editor to end the stream.
+On the paired phone, keep the connection page open. Incoming camera requests
+appear on both the Connection and Chat tabs. Tap Start Sharing and allow camera
+access. On the owner’s computer, open the private preview link in Agent Chat.
+Tap Stop Sharing on the phone or in the editor to end sharing.
 
-The holder can also tap + beside the message field and choose Camera. Preview
-shows the selected lens locally. Start Sharing sends video to the private
-editor. Use Open phone chat on the owner’s Phone Tracking device card to find
-the linked conversation. Messages sent from the phone and the agent’s replies
-appear in that conversation.
+The holder can also open Chat, tap + beside the message field, and choose
+Camera. Preview shows the selected lens locally. Start Sharing makes the
+camera available in the owner’s private editor and tracking map. If the phone
+is on the map, its marker pulses red while it sends fresh camera frames.
+Select that marker to watch. Closing the popup lets the phone keep sharing.
+
+Send messages to the connected agent from the phone’s Chat tab. A reply appears
+under the original message. If a reply fails, read the status and tap Retry
+reply to keep the original message and its owner announcement. Use Open phone
+chat on the owner’s Phone Tracking device card to read the linked conversation.
 
 To let a particular phone save a place, select its card in Phone Tracking and
-enable Allow phone to add saved locations. On that phone, choose +, then Save
+enable Allow phone to add saved locations. On that phone, open Chat, choose +, then Save
 location. Name the spot and tap Save current location. This uses one location
 reading. Live location sharing and history can stay off.
 

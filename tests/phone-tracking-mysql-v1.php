@@ -555,11 +555,25 @@ try {
         'only the paired holder starts the requested camera');
     $offer = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=sendonly\r\n";
     vp3_phone_camera_holder_v1($db,$phone['token'],'offer',$session+['sdp'=>$offer]);
+    vp3_phone_camera_holder_v1($db,$phone['token'],'status',$session+['heartbeat'=>true,'map_source_live'=>true]);
+    $mapScope=$session+['device_id'=>$phone['device']['id']];
+    $viewerA=$mapScope+['viewer_id'=>bin2hex(random_bytes(16))];
+    $viewerB=$mapScope+['viewer_id'=>bin2hex(random_bytes(16))];
+    $openResults=phone_test_race(['camera',1,'map_open',$viewerA],['camera',1,'map_open',$viewerB]);
+    $statuses=array_column($openResults,'status');
+    sort($statuses);
+    phone_test_check($statuses===[200,409], 'concurrent map opens grant the viewer slot to exactly one popup');
+    [$winner,$other]=$openResults[0]['status']===200 ? [$viewerA,$viewerB] : [$viewerB,$viewerA];
+    vp3_phone_camera_owner_v1($db,1,0,41,'map_close',$other);
+    $open=vp3_phone_camera_owner_v1($db,1,0,41,'map_status',$winner)['camera'];
+    phone_test_check($open['viewer_id']===$winner['viewer_id'], 'a late close from another popup preserves the live viewer');
     $stops = phone_test_race(['camera',1,'stop',$session], ['camera',1,'stop',$session]);
     $row = vp3_phone_sql_v1($db,'SELECT state,offer_sdp,answer_sdp FROM vp3_phone_camera_sessions_v1 WHERE id=?',[$sessionId])->fetch();
     phone_test_check(array_column($stops,'status') === [200,200] && $row['state']==='stopped'
         && $row['offer_sdp']===null && $row['answer_sdp']===null,
         'duplicate private stops erase camera signaling');
+    phone_test_check(!vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_map_v1 WHERE session_id=?',[$sessionId])->fetchColumn(),
+        'stopping sharing also removes the map viewer and its signaling');
     $db->exec('DELETE FROM users WHERE id=1');
     $tables = [
         'vp3_phone_invites_v1', 'vp3_phone_devices_v1', 'vp3_phone_requests_v1',

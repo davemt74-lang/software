@@ -19,13 +19,13 @@ try {
     }
     $user = current_user();
     if (!$user) throw new RuntimeException('Sign in.',401);
-    $input = vp3_phone_http_json_v1(['camera_answer']);
+    $input = vp3_phone_http_json_v1(['camera_answer','camera_map_answer']);
     $csrf = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $input['csrf_token'] ?? null;
     if (!is_string($csrf) || !hash_equals(csrf_token(),$csrf)) throw new RuntimeException('Session expired.',419);
     $wireAction = $input['action'] ?? null;
     $aid = $input['agent_id'] ?? null;
     $cid = $input['conversation_id'] ?? null;
-    if (!in_array($wireAction,['camera_status','camera_answer','camera_stop'],true)
+    if (!in_array($wireAction,['camera_status','camera_answer','camera_stop','camera_map_open','camera_map_status','camera_map_answer','camera_map_close'],true)
         || !is_int($aid) || $aid < 0 || !is_int($cid) || $cid < 1) {
         throw new RuntimeException('Invalid camera request.',422);
     }

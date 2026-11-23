@@ -93,3 +93,61 @@ $selfSession=['session_id'=>$self['session_id']];
 check_camera($holder('start',$selfSession)['state']==='sharing' && $owner('status',$selfSession)['state']==='sharing',
     'explicit holder sharing is reachable in the linked private editor');
 $holder('stop',$selfSession);
+
+$cam=$owner('request',$device);
+$id=['session_id'=>$cam['session_id']];
+$popup=$id+$device+['viewer_id'=>bin2hex(random_bytes(16))];
+$otherPopup=array_replace($popup,['viewer_id'=>bin2hex(random_bytes(16))]);
+$inventory=fn()=>vp3_phone_camera_map_devices_v1($db,1,vp3_phone_owner_v1($db,1,'state',[])['devices'])[0]['live_camera'];
+$beat=$id+['heartbeat'=>true,'map_source_live'=>true];
+check_camera($inventory()===null && $owner('map_open',$popup)===null,'a requested camera alone cannot pulse or start a map preview');
+$holder('start',$id);
+$holder('offer',$id+['sdp'=>$offer]);
+check_camera($inventory()===null,'GPS and a camera grant do not advertise moving frames');
+$holder('status',['heartbeat'=>true,'map_source_live'=>true]);
+check_camera($inventory()===null,'an idle holder tab cannot claim capture progress without the exact source session');
+$holder('status',$beat);
+$marker=$inventory();
+check_camera($marker['session_id']===$cam['session_id'] && $marker['conversation_id']===8 && $marker['agent_id']===0
+    && $marker['expires_at']>time() && count($marker)===4,'fresh capture advertises only the scoped private marker reference before an editor opens');
+$db->exec("INSERT INTO chat_conversations VALUES (12,1,NULL)");
+reject_camera(fn()=>vp3_phone_camera_owner_v1($db,1,0,12,'map_open',$popup),404);
+reject_camera(fn()=>vp3_phone_camera_owner_v1($db,2,0,9,'map_open',$popup),404);
+reject_camera(fn()=>$owner('map_open',array_replace($popup,['device_id'=>bin2hex(random_bytes(16))])),404);
+check_camera(vp3_phone_camera_map_devices_v1($db,2,[$device+['id'=>$device['device_id']]])[0]['live_camera']===null,
+    'marker lookup and popup signaling are owner, conversation and device scoped');
+$opened=$owner('map_open',$popup);
+check_camera($opened['viewer_id']===$popup['viewer_id'] && !isset($opened['offer_sdp']) && !isset($opened['answer_sdp'])
+    && $owner('map_open',$popup)['viewer_id']===$opened['viewer_id'],'map opens idempotently without consuming the editor offer');
+reject_camera(fn()=>$owner('map_open',$otherPopup),409);
+check_camera(!isset($holder('status',$id)['map_viewer']) && $holder('status',$beat)['map_viewer']===['viewer_id'=>$popup['viewer_id']],
+    'only the capturing heartbeat learns about the separate map peer');
+$otherOffer=str_replace('SAVPF 96','SAVPF 97',$offer);
+$otherAnswer=str_replace('sendonly','recvonly',$otherOffer);
+reject_camera(fn()=>$owner('map_answer',$popup+['sdp'=>$otherAnswer]),409);
+reject_camera(fn()=>$holder('map_offer',$otherPopup+['sdp'=>$otherOffer]),409);
+reject_camera(fn()=>$holder('map_offer',$popup+['sdp'=>$otherAnswer]),422);
+$holder('map_offer',$popup+['sdp'=>$otherOffer]);
+check_camera($owner('map_status',$popup)['offer_sdp']===$otherOffer && $owner('status',$id)['offer_sdp']===$offer,
+    'the map and private editor receive independent video-only signaling');
+$owner('answer',$id+['sdp'=>$answer]);
+$owner('map_answer',$popup+['sdp'=>$otherAnswer]);
+$info=$holder('status',$beat);
+check_camera($info['map_viewer']['answer_sdp']===$otherAnswer && $info['answer_sdp']===$answer,
+    'the same consented track can serve both scoped receivers without replacing their answers');
+reject_camera(fn()=>$owner('map_answer',$popup+['sdp'=>$answer]),409);
+$owner('map_close',$popup);
+check_camera($owner('map_status',$popup)===null && $owner('map_open',$popup)===null && $inventory()!==null
+    && $owner('status',$id)['state']==='answered','closing only releases the map, and delayed reuse of a closed viewer is fenced');
+check_camera($owner('map_open',$otherPopup)['viewer_id']===$otherPopup['viewer_id'],'a fresh popup can reopen the live source');
+$owner('map_close',$popup);
+check_camera($owner('map_status',$otherPopup)['viewer_id']===$otherPopup['viewer_id'],'a late close cannot release the replacement viewer');
+vp3_phone_sql_v1($db,'UPDATE vp3_phone_camera_map_v1 SET source_seen=? WHERE session_id=?',[time()-VP3_PHONE_CAMERA_FRAME_LEASE_V1,$id['session_id']]);
+check_camera($inventory()===null && $owner('map_status',$otherPopup)===null,'stale capture removes the live status even while the primary connection is healthy');
+$holder('status',$beat);
+$holder('status',array_replace($beat,['map_source_live'=>false]));
+check_camera($inventory()===null,'a muted or stopped camera track immediately withdraws its map feed');
+$holder('status',$beat);
+$owner('stop',$id);
+check_camera(!$db->query('SELECT COUNT(*) FROM vp3_phone_camera_map_v1')->fetchColumn() && $inventory()===null,
+    'ending the parent camera wipes map signaling and the private live marker');

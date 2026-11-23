@@ -1,7 +1,7 @@
 <dialog id="phone-camera" class="phone-camera-app" aria-labelledby="phone-camera-title" hidden>
   <header class="camera-heading">
     <h2 id="phone-camera-title">Camera</h2>
-    <span id="phone-camera-destination">Private editor preview</span>
+    <span id="phone-camera-destination">Private editor and map</span>
     <button type="button" id="phone-camera-close" aria-label="Close camera" hidden>×</button>
   </header>
   <div class="camera-stage">

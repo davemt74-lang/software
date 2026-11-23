@@ -124,3 +124,41 @@ body.phone-tracking-page.vp3-orb-has-bar {
   .phone-archive-panel :is(input,select) { font-size:1rem; }
   .phone-archive-actions > label,.phone-archive-heading label { width:100%; }
 }
+
+.phone-map-marker.is-streaming::before {
+  content:'';
+  position:absolute;
+  inset:-8px;
+  border:2px solid #c92838;
+  border-radius:50%;
+  box-shadow:0 0 0 2px #fff;
+  pointer-events:none;
+  animation:phone-stream-pulse 1.8s ease-out infinite;
+}
+@keyframes phone-stream-pulse {
+  from { transform:scale(.88); opacity:1; }
+  to { transform:scale(1.45); opacity:.42; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .phone-map-marker.is-streaming::before { animation:none; }
+}
+.phone-stream-dialog { width:min(600px,calc(100vw - 24px)); max-width:none; padding:14px; }
+.phone-stream-dialog header { gap:12px; }
+.phone-stream-dialog h2 { overflow-wrap:anywhere; }
+#phone-stream-retry { display:block; margin:12px auto 0; }
+.phone-stream-dialog .phone-close { min-width:44px; min-height:44px; }
+#phone-stream-preview {
+  position:relative;
+  display:grid;
+  place-items:center;
+  width:100%;
+  aspect-ratio:4/3;
+  max-height:65dvh;
+  overflow:hidden;
+  border-radius:8px;
+  background:#101719;
+}
+#phone-stream-video { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; }
+#phone-stream-preview[data-state="live"] video { opacity:1; }
+#phone-stream-status { position:relative; max-width:90%; padding:6px 10px; border-radius:5px; color:white; background:#1d282c; text-align:center; font-size:.85rem; }
+#phone-stream-preview[data-state="live"] #phone-stream-status { position:absolute; left:8px; bottom:8px; background:#101719dc; }

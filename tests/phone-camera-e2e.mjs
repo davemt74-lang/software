@@ -86,7 +86,7 @@ async function privateContext(baseURL, user) {
   return context;
 }
 
-async function pair(baseURL, ownerClient, owner, name) {
+async function pair(baseURL, ownerClient, owner, name, allowLocation=false) {
   const context = await browser.newContext({baseURL,viewport:{width:390,height:844},isMobile:true});
   await context.addInitScript(cameraProbe);
   await context.grantPermissions(['camera'],{origin:baseURL});
@@ -99,8 +99,8 @@ async function pair(baseURL, ownerClient, owner, name) {
   const claim=await (await claimed).json();
   assert.ok(claim.ok && claim.device?.id,'existing QR flow pairs the phone');
   const approved=success(await post(ownerClient,trackingEndpoint,{action:'approve',request_id:randomUUID(),device_id:claim.device.id,
-    generation:claim.device.generation,role:'owner',allow_location:false},owner),'approve phone without location permission');
-  assert.equal(approved.device.allow_location,false);
+    generation:claim.device.generation,role:'owner',allow_location:allowLocation},owner),'approve phone');
+  assert.equal(approved.device.allow_location,allowLocation);
   return { context, phone, device:approved.device };
 }
 
@@ -123,7 +123,11 @@ function previewLink(reply, baseURL, conversation = 8) {
 
 async function movingPreview(editor) {
   await editor.locator('#phoneCameraPreview[data-state="live"]').waitFor({timeout:28000});
-  const evidence=await editor.locator('#phoneCameraPreviewVideo').evaluate(video=>new Promise((resolve,reject)=>{
+  await decodedVideo(editor.locator('#phoneCameraPreviewVideo'));
+}
+
+async function decodedVideo(player) {
+  const evidence=await player.evaluate(video=>new Promise((resolve,reject)=>{
     const timeout=setTimeout(()=>reject(Error('remote video never presented a second moving frame')),5000);
     video.requestVideoFrameCallback((_,first)=>video.requestVideoFrameCallback((_,second)=>{
       clearTimeout(timeout);
@@ -133,9 +137,96 @@ async function movingPreview(editor) {
   }));
   assert.ok(evidence.width>0 && evidence.time>0 && evidence.frames>0,'private preview presents successive decoded frames');
   assert.deepEqual(evidence.tracks,[['video','live']]);
-  assert.equal(await editor.locator('#phoneCameraPreviewVideo').evaluate(video=>
+  assert.equal(await player.evaluate(video=>
     [...document.querySelectorAll('video,audio')].filter(el=>el.srcObject===video.srcObject).length),1,
     'the private stream is attached only to the owner preview');
+}
+
+async function shareMapPosition(phone, point) {
+  const identity={device_id:phone.device.id,generation:phone.device.generation};
+  const grant=success(await post(phone.context,holderEndpoint,{action:'start',...identity}),'holder grants GPS').device;
+  success(await post(phone.context,holderEndpoint,{action:'fix',...identity,generation:grant.generation,
+    ...point,accuracy:8,fix_at:Math.floor(Date.now()/1000)}),'send simulated phone position');
+}
+
+async function openMapPreview(map, trigger, keyboard=false) {
+  if (keyboard) await trigger.press('Enter');
+  else await trigger.click();
+  await map.locator('#phone-stream-dialog[open]').waitFor();
+  await map.locator('#phone-stream-preview[data-state="live"]').waitFor({timeout:30000});
+  await decodedVideo(map.locator('#phone-stream-video'));
+}
+
+async function mapPreviewCleared(map) {
+  await eventually('a stopped or revoked map stream clears its video',()=>map.locator('#phone-stream-video')
+    .evaluate(video=>!video.srcObject));
+}
+
+async function verifyMapMarker(origin, desktop, owner, idle) {
+  const paired=await pair(origin,desktop,owner,'Map camera',true);
+  await shareMapPosition(paired,{latitude:33.45,longitude:-112.08});
+  await shareMapPosition(idle,{latitude:33.53,longitude:-112.15});
+  const mapContext=await privateContext(origin,owner);
+  const map=await mapContext.newPage();
+  await map.goto('/phone-tracking.php');
+  const pin=map.locator('.phone-map-marker[title^="Map camera"]');
+  const idlePin=map.locator('.phone-map-marker[title^="Crew Android"]');
+  const livePin=map.locator('.phone-map-marker.is-streaming[title^="Map camera"]');
+  await pin.waitFor();
+  await idlePin.click();
+  assert.equal(await map.locator('#phone-detail').getAttribute('data-device-id'),idle.device.id);
+  assert.equal(await map.locator('#phone-stream-dialog').isVisible(),false,'an ordinary GPS pin still selects its phone');
+  assert.equal(await map.locator('.phone-map-marker.is-streaming').count(),0);
+  await paired.phone.getByRole('tab',{name:'Chat',exact:true}).click();
+  await paired.phone.locator('#phone-apps-toggle').click();
+  await paired.phone.locator('#phone-app-camera').click();
+  await paired.phone.locator('#phone-camera-local').click();
+  await paired.phone.waitForFunction(()=>document.querySelector('#phone-camera-preview')?.videoWidth>0);
+  assert.equal(await map.locator('.phone-map-marker.is-streaming').count(),0,'local preview is private to the handset');
+  const prepared=paired.phone.waitForResponse(r=>new URL(r.url()).pathname===holderEndpoint &&
+    r.request().postDataJSON()?.action==='camera_prepare');
+  await paired.phone.locator('#phone-camera-start').click();
+  const {camera}=await (await prepared).json();
+  assert.ok(camera?.session_id);
+  await livePin.waitFor({timeout:30000});
+  assert.equal(await livePin.getAttribute('aria-haspopup'),'dialog');
+  assert.equal(await map.locator('.phone-map-marker.is-streaming').count(),1);
+  const ring=await livePin.evaluate(marker=>{
+    const style=getComputedStyle(marker,'::before');
+    return {color:style.borderTopColor,animation:style.animationName};
+  });
+  const [red,green,blue]=ring.color.match(/\d+/g).map(Number);
+  assert.ok(red>green*2 && red>blue*2 && ring.animation!=='none','the live marker has an animated red ring');
+  await map.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await livePin.evaluate(marker=>getComputedStyle(marker,'::before').animationName),'none');
+  await openMapPreview(map,livePin);
+  const streamIdentity=await map.locator('#phone-stream-dialog').innerText();
+  assert.match(streamIdentity,/Map camera/i);
+  const editor=await desktop.newPage();
+  const editorURL=new URL('/video-editor.php',origin);
+  editorURL.searchParams.set('agent',camera.agent_id || 'system');
+  editorURL.searchParams.set('conversation_id',camera.conversation_id);
+  editorURL.searchParams.set('camera_session',camera.session_id);
+  await editor.goto(editorURL.href);
+  await movingPreview(editor);
+  await decodedVideo(map.locator('#phone-stream-video'));
+  await map.locator('#phone-stream-close').click();
+  await map.locator('#phone-stream-dialog').waitFor({state:'hidden'});
+  await mapPreviewCleared(map);
+  await movingPreview(editor);
+  await openMapPreview(map,livePin,true);
+  assert.equal(await paired.phone.evaluate(()=>window.cameraReads.length),1,'opening and reopening the map uses the existing sensor track');
+  assert.equal(await idle.phone.evaluate(()=>window.cameraReads.length),0);
+  const status=success(await post(paired.context,holderEndpoint,{action:'status'}),'map camera before revocation').device;
+  success(await post(desktop,trackingEndpoint,{action:'revoke',request_id:randomUUID(),
+    device_id:status.id,generation:status.generation},owner),'revoke the phone while its popup is playing');
+  await pin.waitFor({state:'hidden',timeout:20000});
+  await mapPreviewCleared(map);
+  await ended(editor,paired.phone);
+  assert.equal(await idlePin.isVisible(),true);
+  await mapContext.close();
+  await editor.close();
+  await paired.context.close();
 }
 
 async function ended(editor, phone) {
@@ -155,7 +246,7 @@ try {
   const desktop=await privateContext(origin,owner);
   const foreign=await privateContext(origin,outsider);
   const selected=await pair(origin,desktop,owner,'Studio iPhone');
-  const second=await pair(origin,desktop,owner,'Crew Android');
+  const second=await pair(origin,desktop,owner,'Crew Android',true);
   const requestKey=randomUUID();
   const message='Use my iPhone as a camera';
   const reply=await sendChat(desktop,owner,message,8,requestKey);
@@ -270,6 +361,7 @@ try {
   // Enter via the phone's app menu with only the existing pairing cookie.
   await selected.context.clearCookies({name:'PHPSESSID'});
   await selected.phone.goto('/phone-location.php');
+  await selected.phone.getByRole('tab',{name:'Chat',exact:true}).click();
   await selected.phone.locator('#phone-apps-toggle').click();
   await selected.phone.locator('#phone-app-camera').click();
   assert.equal(await selected.phone.evaluate(()=>window.cameraReads.length),0,'opening Camera leaves the sensor idle');
@@ -290,10 +382,20 @@ try {
   assert.equal(selfLink.searchParams.get('camera_session'),camera.session_id);
   await editor.goto(selfLink.href);
   await movingPreview(editor);
+  const mapContext=await privateContext(origin,owner);
+  const map=await mapContext.newPage();
+  await map.goto('/phone-tracking.php');
+  await map.locator('#phone-devices [data-focus="'+selected.device.id+'"]').click();
+  assert.equal(await map.locator('.phone-map-marker').count(),0,'sharing a camera cannot reveal an unshared location');
+  await openMapPreview(map,map.locator('#phone-detail [data-action="open_stream"]'));
   await selected.phone.locator('#phone-camera-stop').click();
   await ended(editor,selected.phone);
+  await mapPreviewCleared(map);
+  await mapContext.close();
   assert.equal(await second.phone.evaluate(()=>window.cameraReads.length),0);
   console.log('PASS private camera: two existing pairings, scoped Chat request, real decoded WebRTC video, stalled media on a connected peer, named stop announcement, fresh consent on reconnect and editor stop.');
+  await verifyMapMarker(origin,desktop,owner,second);
+  console.log('PASS phone map camera: only the streaming marker opens a private moving preview, concurrent editor video survives closing and reopening the popup, and revocation clears both viewers.');
 } catch (error) {
   if (serverErrors) console.error(serverErrors.slice(-2500));
   throw error;

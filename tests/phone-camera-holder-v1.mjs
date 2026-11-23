@@ -22,9 +22,10 @@ function fixture({inScope,conflict=false,app=false} = {}) {
   const track = Object.assign(new EventTarget(),{readyState:'live',stop(){this.readyState='ended';}});
   const navigator = {onLine:true,mediaDevices:{getUserMedia:opts => {ops.push(['capture',opts]);return capture;}}};
   const storage = new Map(), ops = [], timers = new Map();
-  let tick, pc, camera, now = 100, fail = false;
+  const peers = [];
+  let tick, pc, camera, now = 100, fail = false, mapOfferFailure=false;
   class Peer extends EventTarget {
-    constructor(config) {super(); this.config=config; this.connectionState='new'; pc=this;}
+    constructor(config) {super(); this.config=config; this.connectionState='new'; pc=this; peers.push(this);}
     close() {this.connectionState='closed';}
     addTransceiver(track,opts) {ops.push(['transceiver',track,opts]);}
     async createOffer() {return {type:'offer',sdp:'video offer'};}
@@ -48,12 +49,16 @@ function fixture({inScope,conflict=false,app=false} = {}) {
       if (conflict) throw Object.assign(new Error('Already granted'),{status:409});
     }
     if (action==='camera_offer') assert.equal(body.sdp,'video offer');
+    if (action==='camera_map_offer' && mapOfferFailure) throw new Error('Map dismissed');
     if (action==='camera_stop' && body.session_id===camera?.session_id) camera=null;
     return {camera:camera?{...camera}:null,ice_servers:[{urls:'stun:fixture.invalid'}]};
   };
   const client=window.VP3PhoneCameraHolder(request,inScope);
   const button=(name)=>document.getElementById('phone-camera-'+name);
-  return {ops,el:button,track,client,get peer(){return pc;},tick:()=>tick(),
+  return {ops,el:button,track,client,peers,get peer(){return pc;},tick:()=>tick(),
+    map(viewerId,answer){camera.map_viewer=viewerId ? {viewer_id:viewerId,answer_sdp:answer} : null;},
+    failMapOffer(){mapOfferFailure=true;},advance(seconds){now+=seconds;},
+    fireViewerTimeout(){for(const [timer,fn] of [...timers])if(timer.ms===60000){timers.delete(timer);fn();}},
     click:name=>button(name).dispatchEvent(new Event('click')),
     request(id='session-a',device_id='phone-a'){camera={session_id:id,device_id,state:'requested',expires_at:now+80};},
     bind(id='phone-a'){client.bind(id,'Map owner');},
@@ -183,3 +188,58 @@ console.log('PASS Phone holder camera consent, send-only video, private answer, 
   assert.ok(!f.ops.some(([action])=>action==='camera_prepare'),'accept the owner’s exact request');
 }
 console.log('PASS On-phone camera launcher, local preview, independent share, stop, and late consent cleanup.');
+
+
+{
+  const f=fixture(), idA='a'.repeat(32), idB='b'.repeat(32);
+  f.request(); f.bind(); await drain();
+  f.click('start'); f.capture(); await drain();
+  const editor=f.peer;
+  const tag=f.el('preview');
+  let frames=2;
+  Object.assign(tag,{videoWidth:320,readyState:4,paused:false,getVideoPlaybackQuality:()=>({totalVideoFrames:frames})});
+  await f.tick();
+  const lastBeat=()=>f.ops.filter(([name,input])=>name==='camera_status' && input.heartbeat===true).at(-1)[1];
+  assert.equal(lastBeat().map_source_live,true,'the accepted camera sends fresh frame evidence before a viewer opens');
+  f.advance(6); await f.tick(); assert.equal(lastBeat().map_source_live,false,'a frozen camera cannot renew its live marker');
+  ++frames; await f.tick(); assert.equal(lastBeat().map_source_live,true);
+  f.track.muted=true; await f.tick(); assert.equal(lastBeat().map_source_live,false);
+  f.track.muted=false;
+  f.map(idA); await f.tick(); await drain();
+  assert.equal(f.peers.length,2);
+  assert.equal(f.ops.filter(([name])=>name==='capture').length,1,'map uses the granted track without another camera request');
+  const offers=f.ops.filter(([name])=>name==='camera_map_offer');
+  assert.equal(offers.length,1);
+  assert.equal(offers[0][1].session_id,'session-a');
+  assert.equal(offers[0][1].viewer_id,idA);
+  assert.strictEqual(f.ops.filter(([name])=>name==='transceiver').at(-1)[1],f.track);
+  f.map(idA,'map answer'); await f.tick();
+  const map=f.peer;
+  assert.equal(map.remoteDescription.sdp,'map answer');
+  assert.equal(editor.remoteDescription,undefined,'the map answer cannot take the editor slot');
+  map.connectionState='connected'; map.dispatchEvent(new Event('connectionstatechange'));
+  f.fireViewerTimeout();
+  assert.equal(f.track.readyState,'live','a connected map remains usable when no editor connects');
+  f.answer(); await f.tick(); assert.equal(editor.remoteDescription.sdp,'editor answer');
+  editor.connectionState='disconnected'; editor.dispatchEvent(new Event('connectionstatechange'));
+  assert.equal(f.track.readyState,'live','an editor transport loss leaves the map viewer running');
+  f.map(null); await f.tick();
+  assert.equal(map.connectionState,'closed'); assert.equal(f.track.readyState,'live');
+  assert.equal(editor.connectionState,'disconnected','closing the map only releases its own peer');
+  f.map(idB); await f.tick(); await drain();
+  assert.equal(f.peers.length,3,'reopening creates a fresh one-way peer');
+  assert.equal(f.ops.filter(([name])=>name==='capture').length,1);
+  f.click('stop');
+  assert.equal(f.track.readyState,'ended');
+  assert.ok(f.peers.every(peer=>peer.connectionState==='closed'));
+}
+{
+  const f=fixture(); f.request(); f.bind(); await drain();
+  f.click('start'); f.capture(); await drain();
+  const editor=f.peer; f.failMapOffer(); f.map('c'.repeat(32)); await f.tick(); await drain();
+  assert.equal(f.peer.connectionState,'closed');
+  f.answer(); await f.tick();
+  assert.equal(editor.remoteDescription.sdp,'editor answer');
+  assert.equal(f.track.readyState,'live','map signaling errors do not stop the primary editor or capture');
+}
+console.log('PASS Shared track freshness, independent map and editor offers, map-only viewing, close/reopen and cleanup.');
