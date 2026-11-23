@@ -1,0 +1,16 @@
+VP3 Cloud / Location Specialist / Local research on arrival
+
+Back up the site and database, extract this Cloud deploy into the existing VP3 root and run upgrade.php as an administrator. Preserve config.php, private/, uploads/ and local environment settings. Existing arrival alerts continue with their previous permissions.
+
+Try it in private Agent Chat
+1. Save Studio on the tracking map and pair the iPhone. Start live sharing. Trail history can stay off.
+2. Create an open task such as “Recording: buy XLR cables” for the agent you plan to use.
+3. Open Location Specialist and choose “Set up local research”, or type: “When my iPhone arrives at Studio, check my open recording tasks. If I still need XLR cables, suggest nearby music stores open today.”
+4. Confirm the proposed rule in Chat. The selected phone holder separately approves the arrival alert. If a plain alert already exists for the same phone and place in this Chat, stop the old alert before replacing it.
+5. Move the selected phone from clearly outside the saved place to clearly inside it. Open the originating private Chat. A matching open task makes this visit eligible for one local research offer.
+6. Reply “Search in Phoenix, AZ” or follow the offer’s numbered instructions when there are several. Review the exact public query, then send the approval shown in Chat. Changing the area requires a fresh confirmation.
+7. Read up to three local business results and their source links. Check the hours and stock evidence for the specific store. A lack of evidence is reported as unknown. With no eligible public sources, the agent explains that the search found no verified stores.
+8. Complete the cable task before the next visit. The next arrival should yield no new cable research offer. Moving a different phone or reloading Chat should not repeat a previous offer.
+
+Physical field check
+Use the real iPhone to verify a departure, a return, and a Safari lock and resume. An arrival is based on fresh phone readings. Live discovery and merchant evidence depend on the information the public sites make available.

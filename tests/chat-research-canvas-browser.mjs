@@ -100,10 +100,22 @@ try {
       title:'A different topic',status:'no_matches',sources:[],
       meeting_followup:{title:'Untrusted meeting',url:'https://other.example/meeting.php'}
     }),
-    report(18, 112, 'An unconfirmed result.', {sources:topicSources.slice(2)})
+    report(18, 112, 'An unconfirmed result.', {sources:topicSources.slice(2)}),
+    {id:19,role:'assistant',message:'Downtown Music: stock unverified.',context_json:JSON.stringify({
+      source:'private_phone_tracking',sources:[
+        web('location','a','Downtown Music · hours','https://music.example/phoenix','page_excerpt'),
+        web('location','b','Unverified stock','javascript:alert(1)','search_match')
+      ]
+    })}
   );
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.syncConversation(42));
   await canvas(110).getByRole('heading',{name:'An independent performer'}).waitFor();
+  const localSources = thread.getByRole('group',{name:'Local research sources',exact:true});
+  const hours = localSources.getByRole('link',{name:'Downtown Music · hours · Page read',exact:true});
+  await hours.waitFor();
+  assert.equal(await hours.getAttribute('href'),'https://music.example/phoenix');
+  assert.equal(await hours.getAttribute('rel'),'noopener noreferrer');
+  assert.equal(await localSources.getByRole('link').count(),1);
   await canvas(111).getByText(/No eligible sources/).waitFor();
   assert.equal(await canvas(111).getByRole('link').count(),0);
   assert.equal(await canvas(112).count(),0);
@@ -113,9 +125,11 @@ try {
   await boot();
   await canvas(110).getByRole('link').waitFor();
   assert.equal(await meeting.count(),1);
+  await hours.waitFor();
   assert.equal(await thread.locator('[data-research-canvas-run-id]').count(),3);
   await page.evaluate(() => window.STONEFELLOW_CHAT_CONTINUITY.openConversation(99));
   await thread.getByText('The other Chat.',{exact:true}).waitFor();
+  assert.equal(await localSources.count(),0);
   assert.equal(await thread.locator('[data-research-canvas-run-id]').count(),0);
   assert.deepEqual(errors,[]);
   console.log('CHAT_RESEARCH_CANVAS_BROWSER=PASS (history, live sync, mobile, source safety and exact Chat scope)');

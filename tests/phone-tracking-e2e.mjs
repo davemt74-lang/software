@@ -860,7 +860,113 @@ async function verifyArrivalJourney({ ownerContext, owner, otherContext, other, 
     const returned = (await reloadChat()).filter(thisVisit);
     assert.equal(returned.length, 2);
   }
+  await verifyLocalResearchJourney({ownerContext,owner,otherContext,other,selectedPhone,guestPhone,
+    selectedId,selectedName,place,handsetPage,previousRuleId:active.id,move,status,send,updates,reloadChat});
   console.log('PASS Location Specialist: separate holder consent, selected phone only, accurate outside-to-inside arrivals, exact private open tasks, silent reload, re-entry and live-only GPS.');
+}
+
+
+async function verifyLocalResearchJourney({ ownerContext, owner, otherContext, other, selectedPhone, guestPhone,
+  selectedId, selectedName, place, handsetPage, previousRuleId, move, status, send, updates, reloadChat }) {
+  const runWorker = () => JSON.parse(execFileSync(php, ['-d','session.save_path='+sessions,
+    path.join(repo,'tests/phone-tracking-local-research-fixture.php'),site,owner.session,owner.binding], {encoding:'utf8'}));
+  const changeTask = state => {
+    const sql = "UPDATE agent_memory_items SET metadata_json=? WHERE user_id=1 AND subject=?";
+    const run = "$db=new PDO('sqlite:'.$argv[1]);$q=$db->prepare($argv[2]);" +
+      "$q->execute([json_encode(['task_status'=>$argv[3]]),$argv[4]]);if($q->rowCount()!==1)exit(1);";
+    execFileSync(php,['-r',run,path.join(temp,'data.sqlite'),sql,state,'Recording: bring XLR cables for confidential Juniper rehearsal']);
+  };
+  changeTask('open');
+  const current = await status(selectedPhone);
+  const prior = current.arrival_rules.find(rule=>rule.id===previousRuleId);
+  if (prior) {
+    check(await phoneApi(selectedPhone,'stop_arrival',{device_id:selectedId,generation:current.generation,
+      rule_id:prior.id,rule_version:prior.version}), 'withdraw the plain task alert before requesting a different one');
+  }
+  const setup = 'When my iPhone arrives at '+place.name+', check my open recording tasks. If I still need XLR cables, suggest nearby music stores open today.';
+  const summary = await send(setup);
+  assert.ok(summary.answer.includes(selectedName) && summary.answer.includes(place.name),summary.answer);
+  assert.match(summary.answer,/XLR cables/i);
+  assert.match(summary.answer,/music stores/i);
+  await send('Confirm arrival alert');
+  const [rule] = (await status(selectedPhone)).arrival_rules;
+  assert.ok(rule && rule.place_name===place.name && rule.state==='requested');
+  assert.deepEqual((await status(guestPhone)).arrival_rules,[]);
+  if (handsetPage) {
+    const row = handsetPage.locator('#phone-arrivals [data-rule-id="'+rule.id+'"]');
+    await row.locator('[data-arrival-action="accept_arrival"]').click();
+    await row.locator('[data-arrival-action="stop_arrival"]').waitFor({state:'visible'});
+  } else {
+    check(await phoneApi(selectedPhone,'accept_arrival',{device_id:selectedId,generation:current.generation,
+      rule_id:rule.id,rule_version:rule.version}), 'phone approves the conditional alert');
+  }
+  const acceptedAt = Math.floor(Date.now()/1000);
+  await eventually('Wait for a sensor reading taken after conditional consent',()=>Math.floor(Date.now()/1000)>acceptedAt);
+  const outside = {latitude:place.latitude+0.014,longitude:place.longitude,accuracy:8};
+  const inside = {latitude:place.latitude+0.00002,longitude:place.longitude,accuracy:8};
+  await move(selectedPhone,outside);
+  await move(guestPhone,outside);
+  await move(guestPhone,inside);
+  assert.deepEqual(await updates(),[], 'Guest phone cannot offer local research');
+  assert.deepEqual(runWorker().queries,[], 'Setup and guest proximity cannot issue an external query');
+  await move(selectedPhone,inside);
+  assert.deepEqual(await updates(otherContext,other,10),[]);
+  assert.deepEqual(await updates(ownerContext,owner,9),[]);
+  const offered = await updates();
+  assert.equal(offered.length,1);
+  const offerId = Number(offered[0].message_id);
+  assert.ok(Number.isSafeInteger(offerId) && offerId>0);
+  assert.match(offered[0].speech,/XLR cables/i);
+  assert.match(offered[0].speech,/music stores/i);
+  assert.deepEqual(await updates(),[],'One eligible visit may offer one search');
+  assert.deepEqual(runWorker().queries,[], 'An eligible arrival may only offer research');
+  const preview = await send('Search area for offer #'+offerId+': Phoenix, Arizona');
+  const approval = preview.answer.match(/Approve local search ([A-F0-9]{12})/i)?.[0];
+  assert.ok(approval && /Phoenix/i.test(preview.answer) && /music stores/i.test(preview.answer)
+    && /XLR cables/i.test(preview.answer),preview.answer);
+  assert.deepEqual(runWorker().queries,[], 'Selecting a public area still requires explicit approval');
+  const approveKey = randomUUID();
+  const approved = await send(approval,approveKey);
+  assert.equal((await send(approval,approveKey)).assistant_message_id,approved.assistant_message_id);
+  const work = runWorker();
+  assert.equal(work.queries.length,1,JSON.stringify(work));
+  const [query] = work.queries;
+  assert.ok(preview.answer.includes(query),'The provider must receive the exact query shown for approval: '+query);
+  assert.match(query,/Phoenix/);
+  assert.match(query,/XLR cables/i);
+  assert.match(query,/music stores/i);
+  for (const secret of [place.name, selectedName, 'Juniper', 'Recording:', 'Map Operator', String(place.longitude), String(place.latitude)]) {
+    assert.ok(!query.toLowerCase().includes(secret.toLowerCase()),'External search leaked a private fixture field');
+  }
+  assert.deepEqual(new Set(work.pages),new Set([
+    'https://west-sound.example.org/phoenix','https://desert-strings.example.org/phoenix'
+  ]));
+  assert.deepEqual(runWorker().queries,[],'A second worker must not repeat the approved external search');
+  assert.deepEqual(await updates(ownerContext,owner,9),[],'Another private conversation cannot claim results');
+  const [result] = await updates();
+  assert.ok(result?.speech.includes('West Sound Music') && result.speech.includes('Desert Strings'),JSON.stringify(result));
+  assert.match(result.speech,/10:00|10\s*(?:am|a\.m\.)/i);
+  assert.match(result.speech,/in stock/i);
+  const desert = result.speech.split('Desert Strings')[1].split('West Sound Music')[0];
+  assert.match(desert,/hours[^\n]{0,110}(?:unverified|unknown|not verified|not confirmed)/i);
+  assert.match(desert,/(?:stock|availability)[^\n]{0,110}(?:unverified|unknown|not verified|not confirmed)/i);
+  assert.doesNotMatch(desert,/always in stock|open 24 hours/i, 'A discovery snippet cannot verify opening hours or stock');
+  assert.deepEqual(await updates(),[],'A completed search must be announced only once');
+  const saved = (await reloadChat()).find(row=>Number(row.id)===Number(result.message_id));
+  assert.ok(saved?.message.includes('West Sound Music') && saved.message.includes('Desert Strings'));
+  const context = typeof saved.context_json==='string' ? JSON.parse(saved.context_json) : saved.context_json;
+  assert.ok(Array.isArray(context?.sources) && context.sources.length===2,JSON.stringify(context));
+  assert.deepEqual(new Set(context.sources.map(s=>s.url)),new Set(work.pages));
+  for (const source of context.sources) {
+    assert.match(JSON.stringify(source),/location-web:[a-f0-9]{64}/i);
+  }
+  changeTask('completed');
+  await move(selectedPhone,outside);
+  await move(selectedPhone,inside);
+  assert.deepEqual(await updates(),[],'Completing the relevant task prevents research offers on the next visit');
+  assert.deepEqual(runWorker().queries,[]);
+  assert.deepEqual(check(await ownerApi(ownerContext,owner,'history',{device_id:selectedId}), 'research with history off').points,[]);
+  console.log('PASS Location research: two phones, one eligible offer, exact public area approval, sourced stores, private task completion suppresses re-entry.');
 }
 
 async function verifyLinkedPhoneHistory(desktop, link, linkedId, remainingId, revoke) {

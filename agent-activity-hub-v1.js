@@ -63,6 +63,7 @@
     planning:{actions:[['Review my calendar','Do I have any events on my calendar?']]},
     location:{actions:[
       ['Set up an arrival alert','When my iPhone arrives at Studio, show me my open recording tasks.'],
+      ['Set up local research','When my iPhone arrives at Studio, check my open recording tasks. If I still need XLR cables, suggest nearby music stores open today.'],
       ['List arrival alerts','List my arrival alerts']
     ]},
     media:{question:'Would you like to listen to music or watch a video?',actions:[
