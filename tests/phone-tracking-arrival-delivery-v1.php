@@ -152,3 +152,66 @@ arrival_check(count($unavailable)===1 && str_contains($unavailable[0]['speech'],
 $event(3);
 $pdo->exec("UPDATE vp3_phone_devices_v1 SET generation=4");
 arrival_check($deliver()===[] && !vp3_phone_arrival_pending_v1($pdo,1,7,1),'stale grant generations cannot deliver queued arrivals');
+
+$GLOBALS['brainAccess']=true;
+$pdo->exec('UPDATE vp3_phone_devices_v1 SET generation=3');
+$pdo->prepare('INSERT INTO vp3_phone_arrival_search_intents_v1(rule_id,item_term,merchant_category,open_today) VALUES(?,?,?,?)')
+    ->execute([$rule,'XLR cables','music stores',1]);
+$task(12,1,7,'Recording equipment check','open',1,'Buy an XLR cable for the stage box.');
+$task(13,1,7,'XLR cables for home');
+$task(14,1,8,'Recording: buy XLR cables for another Agent');
+$task(15,2,7,'Recording: buy XLR cables for another owner');
+$task(16,1,7,'Recording: buy spare XLR cables','completed');
+$task(17,1,7,'Recording: XLR cablestore demo');
+// All these open recording tasks rank above the relevant one; filtering only the usual five would miss it.
+for ($i=20;$i<30;$i++) $task($i,1,7,'Recording: edit take '.$i);
+$event(4);
+$beforeCount=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();
+$pdo->exec("CREATE TRIGGER fail_offer BEFORE INSERT ON vp3_phone_local_offers_v1 BEGIN SELECT RAISE(ABORT,'offer failure'); END");
+try {
+    $deliver();
+    throw new LogicException('Expected offer write failure.');
+} catch (PDOException) {
+    arrival_check((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$beforeCount
+        && vp3_phone_arrival_pending_v1($pdo,1,7,1),'an interrupted offer restores its outbox event and creates no partial Chat message');
+}
+$pdo->exec('DROP TRIGGER fail_offer');
+$offered=$deliver();
+arrival_check(count($offered)===1 && $deliver()===[],'conditional arrival emits one private offer per visit');
+$message=(int)$offered[0]['message_id'];
+$offer=static fn(?int $id=null)=>vp3_phone_local_offer_v1($pdo,$user,$principal,1,$id);
+$current=$offer();
+arrival_check($current && $current['id']===$message && $current['item_term']==='XLR cables'
+    && $current['merchant_category']==='music stores' && $current['open_today']===true
+    && str_contains($offered[0]['speech'],"Search area for offer #$message:")
+    && str_contains($offered[0]['speech'],'Recording equipment check'),
+    'the conditional item is checked across open scoped tasks before selecting the five results');
+arrival_check(!str_contains($offered[0]['speech'],'cablestore') && !str_contains($offered[0]['speech'],'for home')
+    && !str_contains($offered[0]['speech'],'another owner') && !str_contains($offered[0]['speech'],'another Agent')
+    && !str_contains($offered[0]['speech'],'spare XLR'),'offer excludes substring, topic, status and isolation mismatches');
+arrival_check(vp3_phone_local_offer_v1($pdo,$user,$principal,2,$message)===null &&
+    vp3_phone_local_offer_v1($pdo,['id'=>2],['kind'=>'user_agent','owner_user_id'=>2,'agent_id'=>9],4,$message)===null,
+    'foreign conversations and accounts cannot resolve an offer by its visible number');
+$GLOBALS['denied'][]='brain:12';
+arrival_check($offer($message)===null,'revoked source permission withdraws a pending offer');
+array_pop($GLOBALS['denied']);
+$pdo->prepare("UPDATE vp3_phone_arrival_rules_v1 SET zone_state='outside' WHERE id=?")->execute([$rule]);
+arrival_check($offer($message)===null,'a confirmed exit withdraws a pending offer');
+$pdo->prepare("UPDATE vp3_phone_arrival_rules_v1 SET zone_state='inside' WHERE id=?")->execute([$rule]);
+$pdo->exec("UPDATE agent_memory_items SET metadata_json='{\"task_status\":\"completed\"}' WHERE id=12");
+$task(30,1,7,'Recording purchase for an unrelated session');
+$event(5);
+arrival_check($offer($message)===null && $deliver()===[] && !vp3_phone_arrival_pending_v1($pdo,1,7,1),
+    'resolving the original task suppresses a pending offer and the next visit');
+$rows=$pdo->query('SELECT * FROM chat_messages WHERE id='.$message)->fetchAll(PDO::FETCH_ASSOC);
+$history=vp3_phone_chat_history_v1($pdo,$user,7,1,$rows,$input)[0]['message'];
+arrival_check(!str_contains($history,'Search area for offer') && !str_contains($history,'Recording equipment check'),
+    'reloading an obsolete private offer reveals neither an action nor a completed task title');
+$task(31,1,7,'Recording: buy XLR cables for rehearsal');
+arrival_check($offer($message)===null,'a new task cannot reactivate a previous visit');
+$event(6);
+$new=$deliver();
+arrival_check(count($new)===1 && $offer((int)$new[0]['message_id'])!==null,'a new qualifying open task can produce an offer on a later visit');
+$pdo->prepare('DELETE FROM vp3_phone_arrival_rules_v1 WHERE id=?')->execute([$rule]);
+arrival_check((int)$pdo->query('SELECT COUNT(*) FROM vp3_phone_local_offers_v1')->fetchColumn()===0,
+    'stopping the arrival rule removes all its actionable offer records');
