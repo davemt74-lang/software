@@ -728,6 +728,13 @@ async function historyAndPlacesJourney({ desktop, owner, map, handset, phone, an
   // Keep the verified row and its controls above the fixed Chat composer in the viewport capture.
   await savedRow.evaluate(row => row.scrollIntoView({block:'center', behavior:'instant'}));
   await screenshot(map, 'owner-saved-studio');
+  await savedRow.getByRole('button', { name:'Delete Studio' }).click();
+  const dialog = map.getByRole('dialog', { name:/delete.*studio/i });
+  await dialog.waitFor({state:'visible'});
+  await dialog.getByRole('button', { name:'Cancel' }).click();
+  await dialog.waitFor({state:'hidden'});
+  assert.match(await savedRow.innerText(), /Studio/);
+  assert.ok((await places()).some(p => p.id === studio.id), 'Cancelling deletion should preserve Studio');
   await map.locator('#phone-tab-devices').click();
   // Send fresh positions on both emulated sensors after exercising the archive panels.
   await handset.setGeolocation({ ...gps, latitude:33.46721 });

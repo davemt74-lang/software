@@ -111,7 +111,9 @@ body.phone-tracking-page.vp3-orb-has-bar {
 .phone-archive-panel button { min-height:40px; }
 .phone-archive-panel :is(ul,li) { list-style:none; padding:0; margin:0; }
 #phone-history-points,#phone-places-list { margin-top:10px; }
-#phone-history-points li,#phone-places-list li { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:6px 12px; padding:8px 0; border-bottom:1px solid var(--line); }
+#phone-history-points li,#phone-places-list li { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:8px 0; border-bottom:1px solid var(--line); }
+#phone-history-points li { justify-content:space-between; }
+#phone-places-list li > div:first-child { flex:0 1 16rem; }
 #phone-history-points li,.phone-archive-empty { font-size:.85rem; color:var(--muted); }
 #phone-history-points li span,#phone-places-list small { font-variant-numeric:tabular-nums; }
 #phone-places-list li > div { min-width:0; overflow-wrap:anywhere; }
