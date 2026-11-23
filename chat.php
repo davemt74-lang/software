@@ -497,6 +497,10 @@ if ($pdoForAgent && has_permission('account.access',$user) && has_permission('ch
     $specialistPresence['curiosity'] = 'idle';
     $specialistPresence['connected-sites'] = 'idle';
     require_once __DIR__.'/includes/participant-updates-v1.php';
+    require_once __DIR__.'/includes/schema-metadata.php';
+    if (vp3_participant_scope_v1() === null && schema_metadata_table_exists($pdoForAgent,'vp3_phone_arrival_rules_v1')) {
+        $specialistPresence['location'] = 'unavailable';
+    }
     if (vp3_participant_scope_v1() === null
         && personal_capability_has_v242('profile_agent.access', $user)
         && personal_capability_has_v242('profile_chat.access', $user)) {
@@ -591,6 +595,7 @@ if ($pdoForAgent && agent_brain_schema_ready() && has_permission('account.access
 }
 $cognitiveCardsRuntime .= '<script>window.VP3_CHAT_SPECIALIST_PRESENCE='.json_encode([
     'owner_user_id'=>(int)$user['id'], 'agent_id'=>(int)($activeUserAgent['id']??0), 'states'=>$specialistPresence,
+    'phoneTrackingUrl'=>url('/phone-tracking.php'),
 ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT).';</script>';
 $initiativeWorkbenchRuntime = ($profileWorkspaceRuntime === ''
     ? '<script data-vp3-period-tools-only src="'.e(url('/profile-specialist-workspace-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-specialist-workspace-v1.js'),0,12))).'" defer></script>' : '')

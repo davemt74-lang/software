@@ -69,7 +69,14 @@ async function scenario({initial = null, geolocation = true, lostClaimAck = fals
     } else if (!device || revoked) return send(device?403:401,{ok:false});
     else if (req.action !== 'status') {
       if (req.device_id !== id || req.generation !== device.generation) return send(409,{ok:false});
-      if (['accept_history','decline_history','stop_history'].includes(req.action)) {
+      if (['accept_arrival','decline_arrival','stop_arrival'].includes(req.action)) {
+        const rule = device.arrival_rules?.find(r => r.id === req.rule_id && r.generation === device.generation);
+        if (!rule || req.rule_version !== rule.version || (req.action === 'stop_arrival' ? 'active' : 'requested') !== rule.state) {
+          return send(409,{ok:false});
+        }
+        if (req.action === 'accept_arrival') { rule.state='active'; rule.version++; }
+        else device.arrival_rules = device.arrival_rules.filter(r => r !== rule);
+      } else if (['accept_history','decline_history','stop_history'].includes(req.action)) {
         const needed = req.action === 'stop_history' ? 'active' : 'requested';
         if (device.history_state !== needed || device.history_version !== req.history_version) return send(409,{ok:false});
         device.history_state = req.action === 'accept_history' ? 'active' : 'off';
@@ -340,5 +347,59 @@ try {
     assert.equal(t.requests.filter(r=>r.action==='decline_history').length,1,'old offline decline leaves a replacement request untouched');
     assert.deepEqual(t.errors,[]); await t.close();
   }
-  console.log('PASS phone holder browser: consent, retry, denial, offline stop, supersession, revocation, unavailable GPS, in-flight recovery, per-device cadence, live accuracy changes, separate history and place permissions');
+  {
+    const t = await scenario({initial:{...initialDevice('approved',8),arrival_rules:[]},holdFirstFix:true});
+    const {page} = t;
+    await t.visit();
+    assert.equal(await page.locator('#phone-arrivals').isVisible(),false);
+    await page.locator('#phone-start').click();
+    await waitText(page,'Waiting for a fresh');
+    const gen=t.device.generation, studio='a'.repeat(32), office='b'.repeat(32);
+    const rule=(id,place_name,version)=>({id,place_name,version,generation:gen,state:'requested',task_query:'recording'});
+    t.device.arrival_rules=[rule(studio,'Studio',1),rule(office,'Office',1)];
+    const row=id=>page.locator('#phone-arrivals [data-rule-id="'+id+'"]');
+    const button=(id,action)=>row(id).locator('[data-arrival-action="'+action+'"]');
+    const fixes=()=>t.requests.filter(r=>r.action==='fix');
+    await page.evaluate(()=>window.phoneFixture.wake());
+    await row(studio).waitFor({state:'visible'});
+    assert.match(await row(studio).textContent(),/Studio.*David Evans.*private Agent Chat/);
+    assert.ok(await button(office,'accept_arrival').isVisible(),'the second request has its own consent control');
+    await page.evaluate(()=>window.phoneFixture.position(Date.now()-10000));
+    await t.firstFix;
+    await page.evaluate(()=>window.phoneFixture.position(Date.now()-6000));
+    await button(studio,'accept_arrival').click();
+    t.rejectFirstFix();
+    await button(studio,'stop_arrival').waitFor({state:'visible'});
+    await waitText(page,'received this phone');
+    assert.equal(fixes().length,2);
+    assert.ok(fixes().every(f=>!f.arrival_grants),'old buffered fixes stay live-only after approval');
+    await page.evaluate(()=>window.phoneFixture.position());
+    await waitUntil('an arrival-authorized sensor sample',()=>fixes().length===3,8000);
+    assert.deepEqual(fixes()[2].arrival_grants,{[studio]:2},'only the intended phone rule is eligible');
+    assert.equal(fixes()[2].history_version,undefined,'arrival checks work with trail history off');
+
+    await page.evaluate(()=>window.phoneFixture.network(false));
+    await button(studio,'stop_arrival').click();
+    await button(office,'decline_arrival').click();
+    assert.match(await row(studio).textContent(),/stopped on this phone/);
+    assert.equal(t.requests.filter(r=>r.action==='stop_arrival').length,0,'offline stop waits for transport');
+    const storage = await page.evaluate(()=>JSON.stringify([Object.entries(localStorage),Object.entries(sessionStorage)]));
+    assert.ok(!/Studio|Office|recording|latitude|longitude/.test(storage),'local retry records contain only action and opaque scope');
+    t.device.arrival_rules[1].version=3;
+    await page.evaluate(()=>window.phoneFixture.network(true));
+    await row(studio).waitFor({state:'detached'});
+    await button(office,'accept_arrival').waitFor({state:'visible'});
+    assert.equal(t.requests.filter(r=>r.action==='stop_arrival').length,1);
+    assert.equal(t.requests.filter(r=>r.action==='decline_arrival').length,0,'offline withdrawal cannot decline a revised request');
+    assert.equal(await page.evaluate(()=>window.phoneFixture.active),true);
+    await page.evaluate(()=>window.phoneFixture.position(Date.now()+1000));
+    await waitUntil('a live-only sensor sample after arrival withdrawal',()=>fixes().length===4,8000);
+    assert.equal(fixes()[3].arrival_grants,undefined);
+    await button(office,'decline_arrival').click();
+    await page.locator('#phone-arrivals').waitFor({state:'hidden'});
+    assert.deepEqual(t.requests.filter(r=>r.action==='decline_arrival').map(r=>[r.rule_id,r.rule_version]),[[office,3]]);
+    assert.deepEqual(t.errors,[]);
+    await t.close();
+  }
+  console.log('PASS phone holder browser: consent, retry, denial, offline stop, supersession, revocation, unavailable GPS, in-flight recovery, per-device cadence, live accuracy changes, separate history, place and per-rule arrival permissions');
 } finally {await browser.close();}

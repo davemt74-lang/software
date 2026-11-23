@@ -843,7 +843,7 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         'gmail_outcomes'=>['Gmail', static fn() => vp3_agent_activity_gmail_outcomes_v1($pdo, $scope, $now)],
     ];
     if ($gmailOnly) $readers = ['gmail_inbox'=>$readers['gmail_inbox']];
-    if ($mediaOnly || $curiosityOnly || $transcriptsOnly || $profileOnly) $readers = [];
+    if ($mediaOnly || $curiosityOnly || $transcriptsOnly || $profileOnly || $view === 'location') $readers = [];
     if ($codingOnly) $readers = array_intersect_key($readers, array_flip(['canvases','canvas_suggestions']));
     if ($marketingOnly) $readers = ['marketing'=>['Campaign recommendations', static fn() => vp3_agent_activity_marketing_v1($pdo,$scope,$now)]];
     if ($view === 'planning') {
@@ -924,6 +924,12 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         }
     }
     $coordination = [];
+    if ($view === 'location') {
+        require_once __DIR__.'/agent-top-of-mind-specialists-v1.php';
+        $location = vp3_location_specialist_status_v1($pdo,$fresh['user'],$fresh['principal'],$agentId,$conversationId,$now->getTimestamp());
+        if ($location === null) throw new RuntimeException('Location Specialist is unavailable.',403);
+        $attention['specialists'] = [$location];
+    }
     if ($profileOnly) {
         require_once __DIR__.'/agent-profile-specialist-v1.php';
         $profileSnapshot = ['items'=>[], 'coverage'=>['profile'=>'unconfigured']];
@@ -1075,7 +1081,7 @@ function vp3_agent_activity_hub_request_v1(PDO $pdo, array $user, string $method
     if ((int)($user['id'] ?? 0) < 1 || $binding === '' || !hash_equals(vp3_catch_up_page_binding_v1($user), $binding)) {
         throw new RuntimeException('Your Agent session changed.', 403);
     }
-    if (!in_array($view, ['', 'gmail', 'tasks', 'planning', 'media', 'curiosity', 'transcripts', 'coding', 'marketing', 'profile'], true)) throw new RuntimeException('Choose a valid activity view.', 422);
+    if (!in_array($view, ['', 'gmail', 'tasks', 'planning', 'media', 'curiosity', 'transcripts', 'coding', 'marketing', 'profile', 'location'], true)) throw new RuntimeException('Choose a valid activity view.', 422);
     if (!in_array($collection, ['', 'reviews', 'all', 'tasks', 'lists', 'reminders', 'list_items'], true)
         || ($view !== 'tasks' && $collection !== '')
         || ($cursor !== '' && (in_array($collection, ['', 'reviews', 'all'], true) || !vp3_agent_activity_inventory_id_v1($cursor)))

@@ -264,6 +264,52 @@ phone_chat_test(str_contains($erased['answer'],'Deleted') && count($places())===
 $general=json_encode($pdo->query("SELECT message,context_json FROM chat_messages WHERE context_json IS NOT NULL")->fetchAll());
 phone_chat_test(!str_contains($general,'Studio') && !str_contains($general,'Field iPhone') && !str_contains($general,'32.3012'),
     'model history and general Chat indexes contain only content-free markers');
+// The owner's scoped confirmation creates the request. Location history and continuous retention remain independent.
+$setup='When my iPhone arrives at Studio, show me my open recording tasks.';
+$rules=static fn(int $cid=1)=>vp3_phone_arrival_list_v1($pdo,1,7,$cid);
+$proposal=$send($setup);
+phone_chat_test(str_contains($proposal['answer'],'Field iPhone') && str_contains($proposal['answer'],'Studio')
+    && str_contains($proposal['answer'],'open recording tasks') && str_contains($proposal['answer'],'Confirm arrival alert')
+    && $rules()===[] && $holder($field)['history_state']==='off','setup names the exact phone, place and topic before creating a rule');
+phone_chat_test($route('Yes',2)===null && $route('Yes')['action']==='arrival_reply','bare confirmation belongs only to the originating private conversation');
+$pdo->exec("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(1,1,'user','Different work')");
+phone_chat_test($route('Yes')===null && $rules()===[],'intervening work invalidates the pending private confirmation');
+$send($setup); $abandoned=$send('Cancel');
+phone_chat_test(str_contains($abandoned['answer'],'cancelled') && $rules()===[] && $route('Yes')===null,'cancelled setup leaves no rule and consumes the question');
+$send($setup);
+$confirmKey=['idempotency_key'=>'phase-four-confirm-once'];
+$accepted=$send('Confirm arrival alert',$confirmKey);
+$again=$send('Confirm arrival alert',$confirmKey);
+$created=$rules();
+phone_chat_test(count($created)===1 && $created[0]['state']==='requested' && $created[0]['device_id']===$field['device']['id']
+    && $created[0]['task_query']==='recording' && $created[0]['place_id']===$places()[0]['id']
+    && $accepted['assistant_message_id']===$again['assistant_message_id'] && count($accepted['phone_updates'])===1 && empty($again['phone_updates']),
+    'confirmation generates one holder request and a retry never repeats the announcement');
+$send('When my iPhone arrives at Studio, show me my open marketing tasks.');
+$conflict=$send('Confirm.');
+phone_chat_test(str_contains($conflict['answer'],'stop the existing alert') && count($rules())===1 && $rules()[0]['task_query']==='recording',
+    'a punctuated confirmation reports a conflicting task topic in private Chat and leaves the existing rule intact');
+phone_chat_test(str_contains($send('List my arrival alerts')['answer'],'waiting for phone approval') && $rules(2)===[]
+    && str_contains($send('List my arrival alerts',['conversation_id'=>2])['answer'],'no arrival alerts'),
+    'another private conversation cannot see or claim this alert');
+phone_chat_reject(fn()=>$send($setup,[],false),403,'public runtime cannot propose an arrival alert');
+phone_chat_test(str_contains($send('Stop the arrival alert for Field iPhone at Studio')['answer'],'Stopped') && $rules()===[],
+    'the owner can stop the exact alert from its own private Chat');
+$otherIphone=$approvedPhone('Guest iPhone','guest');
+$prompt=$send($setup);
+phone_chat_test(str_contains($prompt['answer'],'Which phone?') && str_contains($prompt['answer'],'Guest iPhone')
+    && str_contains($prompt['answer'],'Field iPhone') && $rules()===[],'an ambiguous device family cannot bind even when only one is currently sharing');
+$offline=$send('Guest iPhone');
+phone_chat_test(str_contains($offline['answer'],'Start live sharing') && $rules()===[],'selecting an inactive phone cannot silently substitute another one');
+$send($setup); $pick=$send('Field iPhone');
+phone_chat_test(str_contains($pick['answer'],'Confirm arrival alert') && $rules()===[],'named clarification still requires confirmation');
+$pdo->exec('UPDATE vp3_phone_chat_place_choices_v1 SET expires_at=0 WHERE conversation_id=1');
+phone_chat_test(str_contains($send('Confirm arrival alert')['answer'],'no current') && $rules()===[],'expired proposal cannot be confirmed');
+$send($setup); $send('Field iPhone');
+$lastGeneration=$holder($field)['generation'];
+$holder($field,'stop',['generation'=>$lastGeneration]);
+phone_chat_test(str_contains($send('Confirm arrival alert')['answer'],'session changed') && $rules()===[],'a stopped sharing generation invalidates the original proposal');
+$holder($field,'start',['generation'=>$holder($field)['generation']]);
 $holder($field,'stop',['generation'=>$holder($field)['generation']]);
 $brackets=$approvedPhone('Field <iPhone>','owner');
 $commandName=$approvedPhone('Stop sharing from Travel Android','guest');

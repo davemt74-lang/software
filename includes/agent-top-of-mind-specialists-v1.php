@@ -576,12 +576,57 @@ function vp3_top_of_mind_opportunity_checks_v1(array $checks,int $now): array
     return $rows;
 }
 
+/** Counts are disclosed only inside the owner’s authorized private conversation. */
+function vp3_location_specialist_status_v1(PDO $pdo,array $user,array $principal,int $agentId,int $cid,int $now): ?array
+{
+    require_once __DIR__.'/schema-metadata.php';
+    if (vp3_participant_scope_v1() !== null || !knowledge_retrieval_v162_owner_session($user,$principal)
+        || !has_permission('account.access',$user) || !has_permission('chat.access',$user)
+        || !schema_metadata_table_exists($pdo,'vp3_phone_arrival_rules_v1')) return null;
+
+    $row = ['id'=>'location','conversation_id'=>$cid,'state'=>'idle','progress'=>null,
+        'detail'=>'No arrival alerts in this Chat.'];
+    if ($cid < 1) return $row;
+    // The enclosing Chat read verified this owner, Agent and conversation. Use only
+    // counts so the activity feed never receives phone names, places, topics or GPS.
+    try {
+        $query = $pdo->prepare("SELECT r.state,COUNT(*) FROM vp3_phone_arrival_rules_v1 r
+            JOIN vp3_phone_devices_v1 d ON d.owner_user_id=r.owner_user_id AND d.id=r.device_id AND d.generation=r.generation
+            JOIN vp3_phone_places_v1 p ON p.owner_user_id=r.owner_user_id AND p.id=r.place_id
+            JOIN chat_conversations c ON c.id=r.conversation_id AND c.user_id=r.owner_user_id
+                AND ((r.agent_id=0 AND c.user_agent_id IS NULL) OR (r.agent_id>0 AND c.user_agent_id=r.agent_id))
+            WHERE r.owner_user_id=? AND r.agent_id=? AND r.conversation_id=?
+            AND d.device_status='approved' AND d.allow_location=1 AND d.expires_at>?
+            AND d.location_state IN ('waiting','live') AND r.state IN ('requested','active') GROUP BY r.state");
+        $query->execute([(int)$user['id'],$agentId,$cid,$now]);
+        $counts = $query->fetchAll(PDO::FETCH_KEY_PAIR);
+    } catch (PDOException) {
+        $row['state'] = 'unavailable';
+        $row['detail'] = 'Arrival alert status could not be verified.';
+        return $row;
+    }
+    $active = (int)($counts['active'] ?? 0);
+    $pending = (int)($counts['requested'] ?? 0);
+    $parts = [];
+    if ($active) $parts[] = $active === 1 ? '1 active arrival alert.' : $active.' active arrival alerts.';
+    if ($pending) $parts[] = $pending === 1 ? '1 alert awaits phone approval.' : $pending.' alerts await phone approval.';
+    if ($parts) {
+        $row['state'] = $pending ? 'awaiting_consent' : 'armed';
+        $row['detail'] = implode(' ',$parts);
+    }
+    return $row;
+}
+
 function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,int $agentId,int $cid,array $policy,array $health,
-    ?array $gmail,int $now,array $items=[],bool $includeEngagements=false,bool $includeTranscriptReports=false): array
+    ?array $gmail,int $now,array $items=[],bool $includeEngagements=false,bool $includeTranscriptReports=false,bool $privateChat=false): array
 {
     require_once __DIR__.'/agent-planning-status-v1.php';
     $out=[vp3_planning_status_read_v1($pdo,$user,$principal,$agentId,$cid,$policy,$health,$now),
         vp3_top_of_mind_curiosity_status_v1($pdo,$user,$agentId,$cid)];
+    if ($privateChat) {
+        $location = vp3_location_specialist_status_v1($pdo,$user,$principal,$agentId,$cid,$now);
+        if ($location !== null) $out[] = $location;
+    }
     $transcripts=vp3_top_of_mind_transcripts_status_v1($pdo,$user,$agentId,$cid,$policy,$now,$includeTranscriptReports);
     if($transcripts!==null)$out[]=$transcripts;
     $profile=vp3_top_of_mind_profile_status_v1($pdo,$user,$principal,$agentId,$cid,$policy,$now,$includeTranscriptReports);

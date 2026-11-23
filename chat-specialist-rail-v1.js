@@ -9,11 +9,12 @@
   const workingStates = new Set(['running','thinking','working']);
   const assignmentStates = new Set([...activeStates,'ready','completed','failed','stopped']);
   const presenceStates = new Set([...assignmentStates,'thinking','working','waiting_specialist','waiting_owner','waiting_reply',
-    'ready_to_report','checked','idle','blocked','unavailable']);
+    'ready_to_report','checked','idle','blocked','unavailable','armed','awaiting_consent']);
   const icons = {
     'image-generator':'M4 4h16v16H4z M4 16l5-5 4 4 2-2 5 5 M15 8h.01',
     'email':'M3 6h18v12H3z M3 7l9 6 9-6',
     'gmail':'M3 6h18v12H3z M3 7l9 6 9-6',
+    location:'M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0z M14.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z',
     'gmail-inbox-review':'M3 6h18v12H3z M3 7l9 6 9-6',
     'development':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
     'coding':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',

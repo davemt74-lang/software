@@ -1,0 +1,13 @@
+VP3 Cloud / Location Specialist / Arrival alerts
+
+Install the Cloud package into your existing VP3 root and run upgrade.php as an administrator. Preserve config.php, private/, uploads/ and your local environment settings.
+
+Try an arrival alert
+1. Save a place named Studio in Phone Tracking. Start live sharing on a paired phone with a recognizable name. Trail history can stay off.
+2. In private Agent Chat, type "When my iPhone arrives at Studio, show me my open recording tasks." Use the phone's actual name if you have several phones. Review the selected phone, place and task request, then confirm in the same Chat.
+3. On that phone, review the recipient and place, then approve the arrival alert. An existing pairing or GPS permission alone does not enable an alert.
+4. With the phone page active, first move clearly outside Studio and then inside it. The originating private Chat shows one arrival and your matching open tasks. An uncertain reading or a first reading already inside does not establish that you arrived. Reopening Chat during the same visit should not create another announcement.
+5. Test with a second connected phone. Moving the second phone should leave the iPhone's alert unchanged. To end the alert, use its stop control on the selected phone or say “Stop arrival alert” in the originating private Chat. “List my arrival alerts” shows the requests in that Chat.
+
+Physical iPhone check
+Lock the iPhone before approaching Studio and reopen Safari after arriving. Check the last update time in Phone Tracking and the private Chat. An arrival requires fresh readings. The time shown by Chat may reflect when the phone resumed sending them. Leave the area, revisit, and verify a second announcement only after a new departure and arrival.

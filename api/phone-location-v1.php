@@ -26,7 +26,8 @@ try {
     $action = $input['action'] ?? null;
     unset($input['action']);
     if (!in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
-        'accept_history','decline_history','stop_history','set_place_permission'], true)) {
+        'accept_history','decline_history','stop_history','set_place_permission',
+        'accept_arrival','decline_arrival','stop_arrival'], true)) {
         throw new RuntimeException('Unknown action.', 422);
     }
     $pdo = db();

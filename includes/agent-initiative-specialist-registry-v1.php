@@ -71,11 +71,11 @@ function vp3_initiative_specialist_catalog_v1(array $tools): array
     }
     $labels = [
         'research' => 'Research', 'image-generator' => 'Image Generator', 'coding' => 'Coding', 'mission' => 'Missions',
-        'transcripts' => 'Transcripts', 'commerce' => 'Commerce', 'brainstorm' => 'ob1', 'development' => 'Agent Development',
+        'location' => 'Location Specialist', 'transcripts' => 'Transcripts', 'commerce' => 'Commerce', 'brainstorm' => 'ob1', 'development' => 'Agent Development',
     ];
     foreach ($labels as $id => $label) {
         $catalog[$id] ??= ['label' => $label, 'state' => match ($id) {
-            'brainstorm' => 'coordinator', 'development' => 'owner_requested', default => 'no_ready_tool',
+            'brainstorm' => 'coordinator', 'development', 'location' => 'owner_requested', default => 'no_ready_tool',
         }, 'report_sources' => [], 'ready_tools' => []];
     }
     foreach ($tools as $id => $tool) {

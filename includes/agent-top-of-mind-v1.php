@@ -51,7 +51,7 @@ function vp3_top_of_mind_work_v1(PDO $pdo,array $user,int $agentId,int $conversa
                 'enabled'=>($health['enabled']??false)===true,'active_jobs'=>$jobs]];
         if($gmailExpiresAt>$now)$out['gmail_job']=['id'=>'gmail:inbox-updates','expiresAt'=>$gmailExpiresAt];
         $out['specialists']=vp3_top_of_mind_specialists_v1($pdo,$live,$principal,$agentId,$cid,$policy,$health,$gmail,intdiv($now,1000),
-            includeEngagements:$includeEngagements,includeTranscriptReports:$includeTranscriptReports);
+            includeEngagements:$includeEngagements,includeTranscriptReports:$includeTranscriptReports,privateChat:$exactChat);
         $out['coordination']=vp3_top_of_mind_coordination_v1($cid>0?$health:['state'=>'no_chat'],$out['specialists'],intdiv($now,1000));
         return $out;
     });
@@ -321,12 +321,12 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
             ($policy['enabled']??null)===false=>'paused',
             default=>'ready',
         };
-        $finish=static function(array $out,array $live)use($pdo,$principal,$agentId,$cid,$policy,$now):array{
+        $finish=static function(array $out,array $live)use($pdo,$principal,$agentId,$cid,$policy,$now,$exactChat):array{
             $out+=vp3_top_of_mind_chat_context_v1($pdo,$live,$agentId,$cid,$now,$principal);
             $health=$out['state']==='ready'?vp3_initiative_worker_health_v1($pdo,$live,$agentId,$cid)
                 :['state'=>$out['state'],'active_jobs'=>[]];
             $out['specialists']=vp3_top_of_mind_specialists_v1($pdo,$live,$principal,$agentId,$cid,$policy,$health,$out['gmail_inbox']??null,
-                $now,$out['items'],includeEngagements:true,includeTranscriptReports:true);
+                $now,$out['items'],includeEngagements:true,includeTranscriptReports:true,privateChat:$exactChat);
             $out['coordination']=vp3_top_of_mind_coordination_v1($health,$out['specialists'],$now,$out['items']);
             if(isset($out['coordination_finding'])){
                 if(in_array($out['coordination']['phase'],['idle','checked'],true)&&$out['coordination_finding']['completed_at']>$now-120)

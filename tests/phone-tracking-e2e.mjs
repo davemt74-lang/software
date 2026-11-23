@@ -479,6 +479,19 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
   await map.locator('#phone-fit').click();
   assert.deepEqual(check(await ownerApi(outsider, other), 'other account sees no shared phones').devices, []);
   await historyAndPlacesJourney({ desktop, owner, map, handset, phone, android, deviceId, guestId: second.id });
+  const announcements = async () => check(await chatApi(desktop, owner, 'activity', { phone_updates: true }),
+    'two-phone announcements').phone_updates;
+  const updates = await announcements();
+  assert.equal(updates.length, 2);
+  for (const name of ['Field iPhone', 'Crew Pixel']) {
+    assert.equal(updates.filter(update => update.speech.includes(name)).length, 1);
+  }
+  assert.deepEqual(await announcements(), []);
+  const [studio] = check(await ownerApi(desktop, owner, 'places'), 'saved place for arrival').places.filter(p => p.name === 'Studio');
+  assert.ok(studio);
+  await verifyArrivalJourney({ ownerContext:desktop, owner, otherContext:outsider, other,
+    selectedPhone:handset, guestPhone:android, selectedId:deviceId, selectedName:'Field iPhone', place:studio,
+    handsetPage:phone });
   const first = (await state()).find(d => d.id === deviceId);
   assert.equal(currentWatchAccuracy(), true, 'iPhone should initially request high accuracy');
   const proposed = { device_id: deviceId, generation: first.generation, preferences_version: first.preferences_version,
@@ -515,14 +528,6 @@ async function multiPhoneJourney({ baseURL, desktop, outsider, owner, other, map
   assert.equal(await accuracy.inputValue(), 'balanced');
   await screenshot(map, 'owner-two-live-phones');
 
-  const announcements = async () => check(await chatApi(desktop, owner, 'activity', { phone_updates: true }),
-    'two-phone announcements').phone_updates;
-  const updates = await announcements();
-  assert.equal(updates.length, 2);
-  for (const name of ['Field iPhone', 'Crew Pixel']) {
-    assert.equal(updates.filter(update => update.speech.includes(name)).length, 1);
-  }
-  assert.deepEqual(await announcements(), []);
   assert.match((await fromChat('Stop sharing my location.')).answer, /which phone/i);
   assert.ok((await state()).every(d => d.location_state === 'live'));
   const key = randomUUID();
@@ -635,6 +640,8 @@ async function verifyTrailRoutes({ apiOwner, owner, outsider, other, ownerPhone,
   assert.equal(current.location_state, 'live');
   assert.equal(current.history_state, 'off');
   assert.ok((await places()).some(p => p.id === place.id && p.name === 'Route office'));
+  await verifyArrivalJourney({ ownerContext:apiOwner, owner, otherContext:outsider, other,
+    selectedPhone:ownerPhone, guestPhone, selectedId:first.id, selectedName:first.name, place });
   check(await ownerApi(apiOwner, owner, 'delete_place', { place_id:place.id }), 'remove HTTP test place');
   console.log('PASS History and places HTTP: distinct holder consent, no backfill, live-only guest, isolated accounts, seven-day retention and deletion preserves the live session and saved place.');
 }
@@ -746,6 +753,114 @@ async function historyAndPlacesJourney({ desktop, owner, map, handset, phone, an
   });
   assert.deepEqual(await trail(deviceId), []);
   console.log('PASS Emulated iPhone and Android: opt-in trail, live-only guest, two-phone Chat clarification, saved Studio persists, expired/deleted points gone after refresh, both sensors remain live.');
+}
+
+
+async function verifyArrivalJourney({ ownerContext, owner, otherContext, other, selectedPhone, guestPhone,
+  selectedId, selectedName, place, handsetPage }) {
+  const status = async phone => check(await phoneApi(phone, 'status'), 'phone arrival status').device;
+  const send = async (message, key = randomUUID()) => check(await chatApi(ownerContext, owner, 'send',
+    { message, idempotency_key:key }), message);
+  const updates = async (context = ownerContext, user = owner, conversation_id = 8) =>
+    check(await chatApi(context, user, 'activity', { phone_updates:true, conversation_id }), 'private arrival poll').phone_updates;
+  const openTask = 'Recording: mic check';
+  const outside = { latitude:place.latitude + 0.011, longitude:place.longitude, accuracy:5 };
+  const inside = { latitude:place.latitude, longitude:place.longitude, accuracy:5 };
+  async function move(phone, point) {
+    const before = await status(phone);
+    const previousFix = before.fix_at || 0;
+    await eventually('Need a new captured GPS second', () => Math.floor(Date.now()/1000) > previousFix);
+    if (handsetPage) {
+      await phone.setGeolocation(point);
+    } else {
+      const grants = Object.fromEntries(before.arrival_rules.filter(rule => rule.state === 'active')
+        .map(rule => [rule.id,rule.version]));
+      check(await phoneApi(phone,'fix',{ device_id:before.id, generation:before.generation, ...point,
+        fix_at:Math.floor(Date.now()/1000), arrival_grants:grants }), 'deliver fresh phone reading');
+    }
+    await eventually('Phone did not publish the new reading', async () => {
+      const d = await status(phone);
+      return d.fix_at > previousFix && d.latitude === point.latitude && d.longitude === point.longitude &&
+        d.accuracy === point.accuracy;
+    });
+  }
+  async function arrival() {
+    assert.deepEqual(await updates(ownerContext,owner,9), [], 'Other conversation must not claim the arrival');
+    assert.deepEqual(await updates(otherContext,other,10), [], 'Other account must not claim the arrival');
+    const messages = await updates();
+    assert.equal(messages.length, 1, 'Expected one private arrival announcement');
+    const speech = messages[0].speech;
+    assert.ok(speech.includes(place.name) && speech.includes(openTask), 'Arrival must name the saved place and actual open task: ' + speech);
+    assert.doesNotMatch(speech, /archived mix|shelved session|groceries|other agent session|other owner session/i);
+    assert.ok(!speech.includes(String(place.longitude)), 'Arrival speech must not include raw coordinates');
+    assert.deepEqual(await updates(), [], 'Polling the same visit must not repeat speech');
+    return Number(messages[0].message_id);
+  }
+  const start = await status(selectedPhone);
+  assert.equal(start.history_state, 'off');
+  const requested = 'When my iPhone arrives at ' + place.name + ', show me my open recording tasks.';
+  const proposed = await send(requested);
+  assert.ok(proposed.answer.includes(selectedName) && proposed.answer.includes(place.name), proposed.answer);
+  assert.match(proposed.answer, /confirm/i);
+  assert.deepEqual((await status(selectedPhone)).arrival_rules, [], 'Chat proposal alone must not request holder consent');
+  const confirmKey = randomUUID();
+  const confirmed = await send('Confirm arrival alert', confirmKey);
+  assert.equal((await send('Confirm arrival alert',confirmKey)).assistant_message_id, confirmed.assistant_message_id);
+  const [rule] = (await status(selectedPhone)).arrival_rules;
+  assert.ok(rule && rule.place_name === place.name && rule.state === 'requested');
+  assert.deepEqual((await status(guestPhone)).arrival_rules, []);
+  const consent = { device_id:selectedId, generation:start.generation, rule_id:rule.id, rule_version:rule.version };
+  assert.equal((await phoneApi(guestPhone, 'accept_arrival', consent)).ok, false);
+  if (handsetPage) {
+    const row = handsetPage.locator('#phone-arrivals [data-rule-id="' + rule.id + '"]');
+    const accept = row.locator('[data-arrival-action="accept_arrival"]');
+    await accept.waitFor({state:'visible'});
+    assert.ok((await row.innerText()).includes(place.name));
+    assert.match(await row.innerText(), /Map Operator/);
+    await accept.scrollIntoViewIfNeeded();
+    await screenshot(handsetPage, 'phone-arrival-consent');
+    await accept.click();
+    await row.locator('[data-arrival-action="stop_arrival"]').waitFor({state:'visible'});
+  } else {
+    check(await phoneApi(selectedPhone, 'accept_arrival', consent), 'holder accepts arrival');
+  }
+  const [active] = (await status(selectedPhone)).arrival_rules;
+  assert.equal(active.state, 'active');
+  const consentSecond = Math.floor(Date.now()/1000);
+  await eventually('Need a captured second after consent', () => Math.floor(Date.now()/1000) > consentSecond);
+
+  await move(selectedPhone, outside);
+  await move(guestPhone, inside);
+  assert.deepEqual(await updates(), [], 'Guest arriving first must stay silent');
+  const stale = await phoneApi(selectedPhone, 'fix', { device_id:selectedId, generation:start.generation,
+    ...inside, fix_at:Math.floor(Date.now()/1000)-120, arrival_grants:{[active.id]:active.version} });
+  assert.equal(stale.status,422);
+  await move(selectedPhone, { ...inside, latitude:place.latitude + 0.00002, accuracy:450 });
+  assert.deepEqual(await updates(), [], 'Stale and imprecise readings must stay silent');
+  await move(selectedPhone, inside);
+  const firstId = await arrival();
+  await move(selectedPhone, { ...inside, latitude:place.latitude + 0.00003 });
+  assert.deepEqual(await updates(), [], 'Another good fix inside the same visit must stay silent');
+  await move(selectedPhone, outside);
+  await move(selectedPhone, inside);
+  const secondId = await arrival();
+  assert.ok(Number(firstId) > 0 && Number(secondId) > Number(firstId));
+  const reloadChat = async () => check(await chatApi(ownerContext, owner, 'load'), 'reopen the private conversation').messages;
+  const thisVisit = m => m.role === 'assistant' && Number(m.id) >= firstId && m.message.includes(openTask);
+  const visits = (await reloadChat()).filter(thisVisit);
+  assert.deepEqual(visits.map(m => Number(m.id)), [Number(firstId), Number(secondId)]);
+  assert.deepEqual(await updates(), [], 'Reopening Chat cannot re-announce either visit');
+  assert.deepEqual(check(await ownerApi(ownerContext,owner,'history',{device_id:selectedId}), 'live-only arrivals').points, []);
+  if (handsetPage) {
+    await handsetPage.reload();
+    await eventually('Reload must relinquish the interrupted live session', async () => (await status(selectedPhone)).location_state === 'off');
+    await startWithFreshSensorReading(handsetPage, selectedPhone, { ...inside, latitude:place.latitude + 0.00004 });
+    await eventually('Explicitly restarted handset did not resume live sharing', async () => (await status(selectedPhone)).location_state === 'live');
+    assert.deepEqual(await updates(), [], 'Reopening the phone at the same place must never manufacture another visit');
+    const returned = (await reloadChat()).filter(thisVisit);
+    assert.equal(returned.length, 2);
+  }
+  console.log('PASS Location Specialist: separate holder consent, selected phone only, accurate outside-to-inside arrivals, exact private open tasks, silent reload, re-entry and live-only GPS.');
 }
 
 async function verifyLinkedPhoneHistory(desktop, link, linkedId, remainingId, revoke) {

@@ -61,6 +61,10 @@
     gmail:{actions:[['Check urgent email','Any urgent emails today?']]},
     tasks:{actions:[['Review saved tasks','List saved Brain tasks']]},
     planning:{actions:[['Review my calendar','Do I have any events on my calendar?']]},
+    location:{actions:[
+      ['Set up an arrival alert','When my iPhone arrives at Studio, show me my open recording tasks.'],
+      ['List arrival alerts','List my arrival alerts']
+    ]},
     media:{question:'Would you like to listen to music or watch a video?',actions:[
       ['Listen to music','Play some music'],['Find a video','Search YouTube for a short live acoustic performance']]},
     research:{actions:[['Try a research question','Research topic speech-to-text accuracy benchmarks']]},
@@ -824,6 +828,18 @@
       if (!transcriptCanvas) { showWorkspace(true); return; }
       openSavedTranscription(scope(),event);
     });
+    if (id === 'location') {
+      const base = localUrl(window.VP3_CHAT_SPECIALIST_PRESENCE?.phoneTrackingUrl);
+      workspaceButton.hidden = !base;
+      if (base) {
+        const current = scope(true);
+        const map = new URL(base,location.origin);
+        map.searchParams.set('agent',String(current.agent || 'system'));
+        if (positive(current.cid)) map.searchParams.set('conversation_id',String(current.cid));
+        workspaceButton = node('a','Open Phone Tracking');
+        workspaceButton.href = map.href;
+      }
+    }
     settingsButton = button('',openSpecialistSettings);
     settingsButton.className = 'vp3-specialist-settings-button';
     settingsButton.setAttribute('aria-label',selectedLabel+' settings');
@@ -831,7 +847,7 @@
     settingsButton.setAttribute('aria-controls','vp3ChatSpecialistSettings');
     settingsButton.setAttribute('aria-expanded','false');
     settingsButton.append(specialistSettingsIcon());
-    settingsButton.hidden = ['curiosity','connected-sites','profile'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
+    settingsButton.hidden = id === 'location' || ['curiosity','connected-sites','profile'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
     backButton = button('Back',() => specialistSettings ? closeSpecialistSettings() : showWorkspace(false));
     backButton.hidden = true;
     header.append(heading,workspaceButton,backButton,settingsButton,button('Close',() => close()));
@@ -1002,7 +1018,8 @@
     if (!snapshot || !current.hasChat || specialistSettings || !row || !Object.hasOwn(specialistExamples,id)) return;
     if (id === 'coding' && snapshot.sections.some(source => source.id === 'canvas_suggestions' && source.items.length)) return;
     const pausedDevelopment = id === 'development' && row.state === 'paused';
-    if (!pausedDevelopment && !['idle','checked','scheduled'].includes(row.state)) return;
+    const arrivalControls = id === 'location' && ['armed','awaiting_consent'].includes(row.state);
+    if (!arrivalControls && !pausedDevelopment && !['idle','checked','scheduled'].includes(row.state)) return;
     const example = specialistExamples[id];
     const article = node('div','','vp3-agent-activity-example');
     if (example.question) article.append(node('p',example.question));
@@ -1240,6 +1257,8 @@
       const state = entry.state === 'running' || !entry.state ? 'working' : entry.state;
       if (!Object.hasOwn(specialistLabels,state)) continue;
       const row = rows.get(id);
+      // Arrival state belongs to the exact open Chat. Its fresh read outranks an earlier rail poll.
+      if (id === 'location' && row) continue;
       if (!row) rows.set(id,{id,state,progress:entry.progress,entries:entry.presence ? [] : [entry],label:entry.label,
         detail:entry.presence ? entry.detail : ''});
       else {
@@ -3045,7 +3064,7 @@
     controller = request;
     const timeout = setTimeout(() => request.abort(),10000);
     const selected = family(selectedSpecialist);
-    const view = specialistMode && (['gmail','tasks','media','curiosity','transcripts','coding','marketing','profile'].includes(selected) || selected === 'planning' && workspace) ? selected : '';
+    const view = specialistMode && (['gmail','tasks','media','curiosity','transcripts','coding','marketing','profile','location'].includes(selected) || selected === 'planning' && workspace) ? selected : '';
     const list = officeWorkspace() ? officeList : null;
     const fullInventory = officeWorkspace() && !list;
     try {
@@ -3195,7 +3214,7 @@
   window.dispatchEvent(new Event('vp3:agent-activity-ready'));
   window.addEventListener('vp3:chat-context-ready',() => {
     window.dispatchEvent(new Event('vp3:agent-activity-ready'));
-    if (specialistMode && family(selectedSpecialist) === 'profile' && specialistScope !== signature(scope(true))) {
+    if (specialistMode && ['profile','location'].includes(family(selectedSpecialist)) && specialistScope !== signature(scope(true))) {
       close(false);
       return;
     }

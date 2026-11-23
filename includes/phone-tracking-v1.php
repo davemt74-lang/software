@@ -5,6 +5,7 @@ require_once __DIR__.'/extension-device-auth-v2000.php';
 require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/phone-tracking-history-v1.php';
 require_once __DIR__.'/phone-tracking-places-v1.php';
+require_once __DIR__.'/phone-tracking-arrivals-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -71,6 +72,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     }
     vp3_phone_history_schema_v1($pdo,$options);
     vp3_phone_places_schema_v1($pdo);
+    vp3_phone_arrival_schema_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -82,7 +84,7 @@ function vp3_phone_schema_ready_v1(PDO $pdo): bool
             r.request_hash,r.signature,h.owner_user_id,h.device_id,h.fix_at,h.expires_at,h.history_version,h.generation,
             h.latitude,h.longitude,h.accuracy FROM vp3_phone_invites_v1 i, vp3_phone_devices_v1 d,
             vp3_phone_requests_v1 r,vp3_phone_history_points_v1 h WHERE 1=0');
-        return vp3_phone_places_ready_v1($pdo);
+        return vp3_phone_places_ready_v1($pdo) && vp3_phone_arrival_ready_v1($pdo);
     } catch (PDOException) {
         return false;
     }
@@ -178,6 +180,15 @@ function vp3_phone_public_v1(array $row, int $now): array
         'last_seen_at'=>(int)$row['last_seen_at'], 'expires_at'=>(int)$row['expires_at'],
         'connected'=>in_array($status, ['pending','approved'], true) && (int)$row['last_seen_at'] > $now - VP3_PHONE_FRESH_SECONDS_V1,
     ];
+}
+
+function vp3_phone_holder_public_v1(PDO $pdo, array $row, int $now): array
+{
+    $device=vp3_phone_public_v1($row,$now);
+    $rules=$device['allow_location'] && in_array($device['location_state'],['waiting','live','stale'],true)
+        ? vp3_phone_arrival_device_rules_v1($pdo,$row) : [];
+    $device['arrival_rules']=array_map('vp3_phone_arrival_brief_v1',$rules);
+    return $device;
 }
 
 function vp3_phone_generation_v1(array $row, array $input, bool $allowEarlier=false): void
@@ -329,7 +340,9 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
             $result = ['invite'=>$secret,'expires_at'=>$expiry,'duplicate'=>false];
         } else {
             $row = vp3_phone_row_v1($pdo,$owner,$id);
+            $generation=(int)$row['generation'];
             vp3_phone_owner_transition_v1($row,$action,$input,$now);
+            if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
             if ($action === 'delete_history' || $action === 'revoke') vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_save_row_v1($pdo,$row);
             $expiry = $row['expires_at'];
@@ -370,7 +383,7 @@ function vp3_phone_claim_v1(PDO $pdo, array $input): array
                 !in_array($row['device_status'],['pending','approved'],true) || (int)$row['expires_at'] <= $now) {
                 throw new RuntimeException('Invitation unavailable.',403);
             }
-            return ['token'=>$token,'owner_name'=>$ownerName,'device'=>vp3_phone_public_v1($row,$now)];
+            return ['token'=>$token,'owner_name'=>$ownerName,'device'=>vp3_phone_holder_public_v1($pdo,$row,$now)];
         }
         $active = vp3_phone_sql_v1($pdo,"SELECT id FROM vp3_phone_devices_v1 WHERE owner_user_id=?
             AND device_status IN ('pending','approved') AND expires_at>? LIMIT 32".vp3_phone_lock_v1($pdo),[$owner,$now])->fetchAll(PDO::FETCH_COLUMN);
@@ -380,7 +393,7 @@ function vp3_phone_claim_v1(PDO $pdo, array $input): array
             (id,owner_user_id,token_hash,device_name,device_role,device_status,allow_location,generation,location_state,created_at,expires_at,last_seen_at)
             VALUES(?,?,?,?,'guest','pending',0,1,'off',?,?,?)",[$id,$owner,$tokenHash,$name,$now,$now+VP3_PHONE_INVITE_SECONDS_V1,$now]);
         vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_invites_v1 SET claimed_device_id=? WHERE invite_hash=?',[$id,$hash]);
-        return ['token'=>$token,'owner_name'=>$ownerName,'device'=>vp3_phone_public_v1(vp3_phone_row_v1($pdo,$owner,$id),$now)];
+        return ['token'=>$token,'owner_name'=>$ownerName,'device'=>vp3_phone_holder_public_v1($pdo,vp3_phone_row_v1($pdo,$owner,$id),$now)];
     });
 }
 
@@ -471,14 +484,22 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 vp3_phone_save_row_v1($pdo,$row);
             }
             vp3_phone_history_delete_v1($pdo,$row);
+            vp3_phone_arrival_clear_v1($pdo,$row);
             return [];
         }
         $touch = (int)$row['last_seen_at'] < $now - 10;
         if ($action !== 'status') {
             $previousFix = $row['fix_at'];
-            vp3_phone_device_transition_v1($row,$action,$input,$now);
+            $generation=(int)$row['generation'];
+            if (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
+                vp3_phone_arrival_holder_v1($pdo,$row,$action,$input,$now);
+            } else {
+                vp3_phone_device_transition_v1($row,$action,$input,$now);
+            }
+            if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
             if ($action === 'fix' && ($previousFix === null || (int)$previousFix !== (int)$row['fix_at'])) {
                 vp3_phone_history_record_v1($pdo,$row,$input,$now);
+                vp3_phone_arrival_fix_v1($pdo,$row,$input,$now);
             } elseif ($action === 'accept_history') {
                 vp3_phone_history_cap_retention_v1($pdo,$row,$now);
             } elseif ($action === 'disconnect') {
@@ -492,7 +513,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             $row['last_seen_at']=$now;
             vp3_phone_save_row_v1($pdo,$row);
         }
-        return ['device'=>vp3_phone_public_v1($row,$now),'owner_name'=>$ownerName];
+        return ['device'=>vp3_phone_holder_public_v1($pdo,$row,$now),'owner_name'=>$ownerName];
     });
     // Return no owner or device data, after committing the withdrawal.
     return $result ?: throw new RuntimeException('Phone connection unavailable.',403);

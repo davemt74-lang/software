@@ -24,6 +24,10 @@ button.text-button { background:transparent; color:#36534d; font-weight:550; }
 .phone-permission p { margin:.35rem 0 .65rem; }
 .phone-permission-buttons { display:flex; gap:.55rem; flex-wrap:wrap; }
 .phone-permission-buttons button { flex:1 1 7rem; margin:0; }
+#phone-arrival-rules { list-style:none; padding:0; margin:.5rem 0 0; }
+#phone-arrival-rules li { overflow-wrap:anywhere; padding:.55rem 0; }
+#phone-arrival-rules li + li { border-top:1px solid #dce4e1; }
+#phone-arrival-rules h3 { font-size:1rem; margin:0; }
 button:disabled { opacity:.65; cursor:wait; }
 :focus-visible { outline:3px solid #087cba; outline-offset:3px; }
 [hidden] { display:none !important; }
