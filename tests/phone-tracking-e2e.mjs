@@ -724,6 +724,9 @@ async function historyAndPlacesJourney({ desktop, owner, map, handset, phone, an
   await map.locator('#phone-tab-places').click();
   await savedRow.waitFor({state:'visible'});
   assert.equal((await draftPlaces()).length, 1);
+  await savedRow.scrollIntoViewIfNeeded();
+  // Keep the verified row and its controls above the fixed Chat composer in the viewport capture.
+  await savedRow.evaluate(row => row.scrollIntoView({block:'center', behavior:'instant'}));
   await screenshot(map, 'owner-saved-studio');
   await map.locator('#phone-tab-devices').click();
   // Send fresh positions on both emulated sensors after exercising the archive panels.
