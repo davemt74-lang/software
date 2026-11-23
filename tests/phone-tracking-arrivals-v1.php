@@ -70,7 +70,7 @@ blocked(409,fn()=>$request($i['generation'],0,10,'mixing'),'a changed task topic
 check(count(vp3_phone_arrival_list_v1($db,11,0,10))===1 && vp3_phone_arrival_list_v1($db,11,7,20)===[],
     'each private Agent Chat sees its own rules');
 $offered=post($db,$iphone,'status')['arrival_rules'][0];
-check($offered['id']===$rule['id'] && !isset($offered['latitude'],$offered['longitude'],$offered['conversation_id'])
+check($offered['id']===$rule['id'] && !array_intersect(['latitude','longitude','conversation_id'],array_keys($offered))
     && post($db,$guest,'status')['arrival_rules']===[],'holder sees only its requested places, without saved coordinates or conversation ID');
 $ref=['rule_id'=>$rule['id'],'rule_version'=>1];
 blocked(409,fn()=>post($db,$guest,'accept_arrival',$ref),'a second phone cannot approve the first phone’s rule');

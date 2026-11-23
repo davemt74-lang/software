@@ -61,7 +61,7 @@ function vp3_phone_arrival_rows_v1(PDO $pdo, string $where, array $params): arra
         JOIN vp3_phone_devices_v1 d ON d.owner_user_id=r.owner_user_id AND d.id=r.device_id AND d.generation=r.generation
         JOIN vp3_phone_places_v1 p ON p.owner_user_id=r.owner_user_id AND p.id=r.place_id
         JOIN chat_conversations c ON c.id=r.conversation_id AND c.user_id=r.owner_user_id
-            AND (c.user_agent_id=r.agent_id OR (r.agent_id=0 AND c.user_agent_id IS NULL))
+            AND ((r.agent_id>0 AND c.user_agent_id=r.agent_id) OR (r.agent_id=0 AND c.user_agent_id IS NULL))
         WHERE d.device_status=\'approved\' AND d.allow_location=1 AND d.expires_at>?
             AND d.location_state IN (\'waiting\',\'live\') AND '.$where.' ORDER BY r.id',
         array_merge([time()],$params))->fetchAll(PDO::FETCH_ASSOC);
