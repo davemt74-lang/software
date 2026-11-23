@@ -102,6 +102,13 @@ c(api('GET')['state']['readiness']['ready'],'explicit browser approval plus prov
 $token=action('token',['number_id'=>1]);$parts=explode('.',$token['token']);$claims=json_decode(base64_decode(strtr($parts[1],'-_','+/')),true);
 c($claims['sub']===setting('phone_twilio_account_sid')&&$claims['iss']===setting('phone_browser_api_key_sid_v1')&&$claims['exp']-$claims['iat']===300,'short JWT binds configured Twilio account and API key');
 c($claims['grants']['identity']===$token['identity']&&$claims['grants']['voice']['incoming']['allow']&&$claims['grants']['voice']['outgoing']['application_sid']===setting('phone_browser_twiml_app_sid_v1'),'JWT grants only owner identity and configured TwiML app');
+c($claims['grants']['identity']==='vp3_phone_u1_a0'&&preg_match('/^[A-Za-z0-9_]{1,121}$/D',$token['identity'])===1,'actual MAIN Voice token uses the carrier identity character and length contract');
+$namedToken=action('token',['number_id'=>1,'agent_id'=>7,'conversation_id'=>12]);$namedClaims=json_decode(base64_decode(strtr(explode('.',$namedToken['token'])[1],'-_','+/')),true);
+c($namedClaims['grants']['identity']===$namedToken['identity']&&$namedToken['identity']==='vp3_phone_u1_a7'&&preg_match('/^[A-Za-z0-9_]{1,121}$/D',$namedToken['identity'])===1,'actual named-Agent Voice token uses the same carrier identity contract');
+vp3_phone_browser_number_policy_set_v1($pdo,2,true,false);$otherToken=action('token',['number_id'=>2,'conversation_id'=>21],2);
+c($otherToken['identity']==='vp3_phone_u2_a0'&&count(array_unique([$token['identity'],$namedToken['identity'],$otherToken['identity']]))===3,'Voice identity keeps owner and Chat Agent namespaces distinct');
+c(preg_match('/^[A-Za-z0-9_]{1,121}$/D',vp3_phone_browser_identity_v1(PHP_INT_MAX,PHP_INT_MAX))===1,'maximum supported numeric identities stay within the carrier character and length limits');
+action('token',['number_id'=>1]);
 c(hash_equals(vp3_phone_browser_base64_v1(hash_hmac('sha256',$parts[0].'.'.$parts[1],'api-secret-fixture-123456',true)),$parts[2]),'JWT authenticated by API secret');
 c(!str_contains(json_encode($token),'carrier-auth-token-fixture')&&!str_contains(json_encode($token),'api-secret-fixture'),'response excludes credentials');
 denies(fn()=>action('token',['number_id'=>2]),404,'foreign assigned caller ID denied');
@@ -116,9 +123,12 @@ action('cancel_prepared',['call_id'=>$public]);c(readcall($public)['state']==='c
 $out=prepare(true);$public=$out['call']['public_id'];c(readcall($public)['recording_enabled']==1,'explicit recording plus admin approval retained');
 $wrong=form('CA'.str_repeat('b',32),['From'=>'client:'.vp3_phone_browser_identity_v1(2),'call_intent'=>$out['connect_params']['call_intent']]);
 c(str_contains(vp3_phone_browser_voice_v1($pdo,$wrong,signature('voice',$wrong)),'Hangup')&&readcall($public)['intent_consumed_epoch']==0,'another client identity cannot consume intent');
+$legacyIdentity=form('CA'.str_repeat('b',32),['From'=>'client:vp3-phone-u1-a0','call_intent'=>$out['connect_params']['call_intent']]);
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$legacyIdentity,signature('voice',$legacyIdentity)),'Hangup')&&readcall($public)['intent_consumed_epoch']==0,'a nonconforming former identity cannot consume a new underscore-identity intent');
 bad(fn()=>vp3_phone_browser_voice_v1($pdo,$wrong,'forged'),'forged Twilio signature rejected');
 $wrong['AccountSid']='AC'.str_repeat('f',32);bad(fn()=>vp3_phone_browser_voice_v1($pdo,$wrong,signature('voice',$wrong)),'cross Twilio account rejected');
 [$xml,$voice]=start($out,'b',['To'=>'+16025550000','CallerId'=>'+16025550001']);
+c($voice['From']==='client:'.$token['identity']&&str_contains($xml,'<Dial '),'the actual MAIN token identity is accepted by the signed outbound From gate');
 c(str_contains($xml,'callerId="+16025550101"')&&str_contains($xml,'>+16025550999</Number>')&&!str_contains($xml,'+16025550000'),'dial target and owned caller ID are immutable server values');
 c(str_contains($xml,'<Number url="https://cloud.example/api/phone-browser-disclosure-v1.php?call='.$public)&&str_contains($xml,'record-from-answer-dual'),'recorded called leg uses fixed server whisper before bridge');
 c(str_contains(vp3_phone_browser_voice_v1($pdo,$voice,signature('voice',$voice)),'Hangup'),'single-use intent replay cannot redial');
@@ -145,12 +155,25 @@ $context=json_decode($pdo->query('SELECT context_json FROM chat_messages ORDER B
 
 // Presence and identity obey the current Chat Agent; MAIN can answer all owned assignments.
 action('token',['number_id'=>1,'agent_id'=>7,'conversation_id'=>12]);
+$namedPrepared=action('prepare_call',['number_id'=>1,'to_number'=>'+16025550999','agent_id'=>7,'conversation_id'=>12]);$namedPublic=$namedPrepared['call']['public_id'];
+$namedForm=form('CA'.str_repeat('ab',16),['From'=>'client:'.$token['identity'],'call_intent'=>$namedPrepared['connect_params']['call_intent']]);
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$namedForm,signature('voice',$namedForm)),'Hangup')&&readcall($namedPublic)['intent_consumed_epoch']==0,'MAIN identity cannot consume a named-Agent outgoing intent');
+$namedForm['From']='client:'.$namedToken['identity'];$namedXml=vp3_phone_browser_voice_v1($pdo,$namedForm,signature('voice',$namedForm));
+c(str_contains($namedXml,'<Dial ')&&readcall($namedPublic)['intent_consumed_epoch']>0,'the actual named-Agent token identity is accepted by the signed outbound From gate');
+$namedStatus=form('CA'.str_repeat('ac',16),['ParentCallSid'=>$namedForm['CallSid'],'CallStatus'=>'completed']);
+c(vp3_phone_browser_status_v1($pdo,$namedStatus,signature('status',$namedStatus,$namedPublic),$namedPublic)['accepted'],'named-Agent identity regression completes its called leg');
+$namedIncomingSid='CA'.str_repeat('ad',16);$pdo->prepare('INSERT INTO phone_voice_calls_v130(provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164) VALUES (?,?,?,?,?,?,?)')->execute(['twilio',$namedIncomingSid,1,1,7,'+16025550888','+16025550101']);
+$namedIncoming=vp3_phone_browser_incoming_v1($pdo,['phone_number_id'=>1,'owner_user_id'=>1,'agent_id'=>7,'caller_e164'=>'+16025550888'],$namedIncomingSid);$namedIncomingCall=vp3_phone_browser_call_by_sid_v1($pdo,$namedIncomingSid);
+c(is_string($namedIncoming)&&str_contains($namedIncoming,'<Identity>'.$namedToken['identity'].'</Identity>'),'incoming named-Agent TwiML addresses the identity issued in its actual Voice token');
+$namedIncomingStatus=form('CA'.str_repeat('ae',16),['ParentCallSid'=>$namedIncomingSid,'CallStatus'=>'completed']);
+c(vp3_phone_browser_status_v1($pdo,$namedIncomingStatus,signature('status',$namedIncomingStatus,$namedIncomingCall['public_id']),$namedIncomingCall['public_id'])['accepted'],'named-Agent incoming identity regression completes its called leg');
 $route=['phone_number_id'=>3,'owner_user_id'=>1,'agent_id'=>9,'caller_e164'=>'+16025550888'];
 c(vp3_phone_browser_incoming_v1($pdo,$route,'CA'.str_repeat('1',32))===null,'Agent A Device cannot receive Agent B incoming call');
 action('token',['number_id'=>3]);
 $sid='CA'.str_repeat('2',32);$pdo->prepare('INSERT INTO phone_voice_calls_v130(provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164) VALUES (?,?,?,?,?,?,?)')->execute(['twilio',$sid,1,3,9,'+16025550888','+16025550103']);
 $incoming=vp3_phone_browser_incoming_v1($pdo,$route,$sid);$in=vp3_phone_browser_call_by_sid_v1($pdo,$sid);
 c(is_string($incoming)&&str_contains($incoming,'<Identity>'.vp3_phone_browser_identity_v1(1,0).'</Identity>')&&str_contains($incoming,'phone_call_id'),'MAIN Device receives owner second Agent with server card reference');
+c(str_contains($incoming,'<Identity>'.$token['identity'].'</Identity>'),'incoming MAIN TwiML addresses the identity issued in its actual Voice token');
 c(strpos($incoming,'This call will be recorded')<strpos($incoming,'<Dial'),'incoming PSTN caller receives recording disclosure before browser bridge');
 c($in['conversation_id']==11&&$in['agent_id']==9&&$in['chat_agent_id']==0,'incoming assigned Agent and owner MAIN Chat kept separately');
 denies(fn()=>action('bind_call',['call_id'=>$in['public_id'],'agent_id'=>7,'conversation_id'=>12]),404,'named Agent cannot bind another assigned Agent incoming call');
