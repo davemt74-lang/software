@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require_once dirname(__DIR__).'/includes/phone-cloud-v100.php';
 
 function vp3_phone_member_json_v100(bool $ok,array $body=[],int $status=200): never
@@ -13,6 +14,8 @@ function vp3_phone_member_json_v100(bool $ok,array $body=[],int $status=200): ne
 $user=current_user();$pdo=db();
 if (!$user || !has_permission('account.access',$user) || !has_permission('chat.access',$user))
     vp3_phone_member_json_v100(false,['error'=>'Phone settings are unavailable for this account.'],403);
+if (!$pdo instanceof PDO || !vp3_phone_workspace_available_v1($pdo,$user))
+    vp3_phone_member_json_v100(false,['error'=>'Phone features require a number assigned by your administrator to an active agent.'],403);
 if (!$pdo || !vp3_phone_schema_ready_v100($pdo))
     vp3_phone_member_json_v100(false,['error'=>'Phone settings require the Cloud database upgrade.'],503);
 $userId=(int)$user['id'];

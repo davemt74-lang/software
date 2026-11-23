@@ -1,10 +1,13 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/phone-workspace-v1.php';
 require_once __DIR__.'/includes/phone-cloud-v100.php';
-require_permission('account.access');
 $user=current_user();$pdo=db();
-if (!$user || !has_permission('chat.access',$user)) redirect(url('/account.php'));
+if (!$user || !$pdo instanceof PDO || !vp3_phone_workspace_available_v1($pdo,$user)) {
+    http_response_code(403);header('Content-Type: text/plain; charset=UTF-8');
+    exit('Phone features require a number assigned by your administrator to an active agent.');
+}
 $ready=$pdo instanceof PDO && vp3_phone_schema_ready_v100($pdo);
 $error='';$message='';$available=[];$areaCode='';
 if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {

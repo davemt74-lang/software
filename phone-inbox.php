@@ -1,13 +1,16 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/phone-workspace-v1.php';
 require_once __DIR__.'/includes/phone-cloud-v100.php';
 require_once __DIR__.'/includes/phone-sms-v110.php';
 require_once __DIR__.'/includes/phone-sms-outbound-v120.php';
-require_permission('account.access');
-$user=current_user();
-if (!$user||!has_permission('chat.access',$user)) redirect(url('/account.php'));
-$ownerId=(int)$user['id'];$pdo=db();$ready=$pdo instanceof PDO && vp3_phone_sms_schema_ready_v110();
+$user=current_user();$pdo=db();
+if (!$user || !$pdo instanceof PDO || !vp3_phone_workspace_available_v1($pdo,$user)) {
+    http_response_code(403);header('Content-Type: text/plain; charset=UTF-8');
+    exit('Phone features require a number assigned by your administrator to an active agent.');
+}
+$ownerId=(int)$user['id'];$ready=vp3_phone_sms_schema_ready_v110();
 $sendReady=$ready&&vp3_phone_sms_outbound_ready_v120();
 $error='';$threads=[];$messages=[];$selected=0;$selectedThread=null;$numbers=[];$draft=null;
 $notice=flash('notice');$quota=['used'=>0,'limit'=>0,'remaining'=>0];

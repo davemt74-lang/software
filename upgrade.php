@@ -94,6 +94,7 @@ require_permission('users.manage');
 
 function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
 {
+    $schemaConnection ??= db();
     return (string)setting('ai_haiku55_defaults_applied', '') === '1'
         && access_schema_ready()
         && subscription_schema_ready()
@@ -177,11 +178,14 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && user_agent_system_schema_ready_v236()
         && vp3_phone_schema_ready_v100()
         && vp3_phone_sms_schema_ready_v110()
+        && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_sms_outbound_ready_v120()
         && vp3_phone_voice_schema_ready_v130()
         && vp3_phone_voice_ready_v140()
         && vp3_phone_stream_ready_v150()
         && vp3_phone_worker_health_ready_v171()
+        && $schemaConnection instanceof PDO && vp3_phone_workspace_schema_ready_v1($schemaConnection)
+        && vp3_phone_recording_schema_ready_v1($schemaConnection)
         && vp3_user_agent_lifecycle_schema_ready_v390()
         && vp3_agent_memory_scope_schema_ready_v410()
         && agent_scheduling_schema_ready_v430()
@@ -455,6 +459,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_phone_voice_ensure_v140($pdo);
             vp3_phone_stream_ensure_v150($pdo);
             vp3_phone_worker_health_ensure_v171($pdo);
+            vp3_phone_workspace_ensure_schema_v1($pdo);
+            vp3_phone_recording_ensure_schema_v1($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();

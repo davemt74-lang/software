@@ -27,6 +27,10 @@ require_once __DIR__ . '/includes/agent-development-v1.php';
 require_once __DIR__ . '/includes/agent-connection-health-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-consent-v1.php';
 require_once __DIR__ . '/includes/agent-connection-youtube-playback-v1.php';
+require_once __DIR__ . '/includes/phone-sms-outbound-v120.php';
+require_once __DIR__ . '/includes/phone-voice-conversation-v140.php';
+require_once __DIR__ . '/includes/phone-voice-stream-v150.php';
+require_once __DIR__ . '/includes/phone-worker-health-v171.php';
 
 $pdo = db();
 if (!$pdo) {
@@ -75,6 +79,15 @@ try {
     music_workspace_resources_v330_ensure_schema($pdo);
     password_reset_ensure_schema();
     user_agent_system_ensure_schema_v236($pdo);
+    vp3_phone_ensure_schema_v100($pdo);
+    vp3_phone_sms_ensure_schema_v110($pdo);
+    vp3_phone_sms_outbound_ensure_schema_v120($pdo);
+    vp3_phone_voice_ensure_schema_v130($pdo);
+    vp3_phone_voice_ensure_v140($pdo);
+    vp3_phone_stream_ensure_v150($pdo);
+    vp3_phone_worker_health_ensure_v171($pdo);
+    vp3_phone_workspace_ensure_schema_v1($pdo);
+    vp3_phone_recording_ensure_schema_v1($pdo);
     vp3_chat_read_ensure_schema_v1($pdo);
     agent_connections_install_v1($pdo);
     vp3_dev_install_v1($pdo);

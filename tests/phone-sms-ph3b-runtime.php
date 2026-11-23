@@ -44,6 +44,7 @@ $pdo->exec("INSERT INTO user_agents VALUES (7,1,1,'Longfellow'),(8,2,1,'Other')"
 $pdo->exec("INSERT INTO phone_cloud_numbers_v100 VALUES
   (1,'twilio','+16025550101',1,7,'PN00000000000000000000000000000001',1),
   (2,'twilio','+16025550102',2,8,'PN00000000000000000000000000000002',1)");
+vp3_phone_sms_ensure_assignments_v111($pdo);
 $checks=0;
 function check(bool $ok,string $message):void {global $checks;if(!$ok)throw new RuntimeException('FAIL: '.$message);$checks++;}
 $fakeCarrier=static function(string $from,string $to,string $body,string $callback):array {

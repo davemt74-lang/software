@@ -59,6 +59,7 @@
   padding:12px 14px 14px;
 }
 .vp3-agent-voice-body[hidden]{display:none!important}
+.vp3-agent-phone-card[hidden]{display:none!important}
 .vp3-agent-voice-field{display:grid;gap:5px}
 .vp3-agent-voice-field>span{
   color:#6b7280!important;

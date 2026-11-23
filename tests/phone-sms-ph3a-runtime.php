@@ -29,6 +29,7 @@ $pdo->exec('INSERT INTO users(id) VALUES (1),(2)');
 $pdo->exec("INSERT INTO user_agents VALUES (7,1,1,'Longfellow'),(8,2,1,'Other agent')");
 $pdo->exec("INSERT INTO phone_cloud_numbers_v100 VALUES (1,'twilio','+16025550101',1,7,1),
     (2,'twilio','+16025550102',2,8,1),(3,'twilio','+16025550103',1,7,0)");
+vp3_phone_sms_ensure_assignments_v111($pdo);
 $url='https://vp3.example/api/phone-sms-inbound-v110.php';
 $token='TEST-TWILIO-TOKEN-FOR-SIGNATURE-ONLY';$account='AC'.str_repeat('a',32);
 $checks=0;

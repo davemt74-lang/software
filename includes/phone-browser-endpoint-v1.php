@@ -1,0 +1,41 @@
+<?php
+declare(strict_types=1);
+/** Public carrier boundary. Session state never grants carrier authority. */
+require_once __DIR__.'/phone-browser-v1.php';
+function vp3_phone_browser_endpoint_v1(string $kind): void
+{
+    header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');
+    $xml=in_array($kind,['voice','complete','disclosure'],true);if($xml)header('Content-Type: application/xml; charset=UTF-8');
+    if(($_SERVER['REQUEST_METHOD']??'')!=='POST'){http_response_code(405);return;}
+    if(!str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE']??'')),'application/x-www-form-urlencoded')){http_response_code(415);return;}
+    if((int)($_SERVER['CONTENT_LENGTH']??0)>12000){http_response_code(413);return;}
+    $pdo=db();if(!$pdo||!vp3_phone_workspace_schema_ready_v1($pdo)||!vp3_phone_twilio_state_v100()['configured']){http_response_code(503);return;}
+    if(count($_POST)>60){http_response_code(413);return;}$formBytes=0;
+    foreach($_POST as $key=>$value){if(!is_string($value)||strlen((string)$key)>100||strlen($value)>3000){http_response_code(422);return;}$formBytes+=strlen((string)$key)+strlen($value);}
+    if($formBytes>12000){http_response_code(413);return;}
+    if(isset($_GET['call'])&&!is_string($_GET['call'])){http_response_code(422);return;}
+    $signature=(string)($_SERVER['HTTP_X_TWILIO_SIGNATURE']??'');$public=(string)($_GET['call']??'');
+    try{
+        http_response_code(200);
+        if($kind==='voice'){echo vp3_phone_browser_voice_v1($pdo,$_POST,$signature);return;}
+        if($kind==='disclosure'){echo vp3_phone_browser_disclosure_v1($pdo,$_POST,$signature,$public);return;}
+        if($kind==='status'||$kind==='complete'){
+            $result=vp3_phone_browser_status_v1($pdo,$_POST,$signature,$public,$kind==='complete');
+            if($kind==='status'){http_response_code(204);return;}
+            if(!empty($result['fallback'])){
+                $route=vp3_phone_voice_current_route_v131($pdo,(string)$result['call']['provider_call_sid']);
+                if(!empty($route['accepted'])){
+                    $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1');$q->execute([(int)$route['agent_id'],(int)$route['owner_user_id']]);$name=$q->fetchColumn();
+                    if($name!==false){echo vp3_phone_voice_twiml_v130((string)$name,vp3_phone_voice_callback_url_v130());return;}
+                }
+            }
+            echo vp3_phone_browser_hangup_v1();return;
+        }
+        if($kind==='recording'){
+            $result=vp3_phone_browser_recording_v1($pdo,$_POST,$signature,$public);http_response_code(204);return;
+        }
+        http_response_code(404);
+    }catch(InvalidArgumentException|RuntimeException $error){
+        $message=$error->getMessage();http_response_code(str_contains($message,'signature')||str_contains($message,'account mismatch')?403:422);
+    }catch(Throwable){http_response_code(503);}
+}

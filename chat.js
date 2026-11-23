@@ -1755,6 +1755,7 @@
       youtube_results:raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
       profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
+      phone_v1:raw.phone_v1 && typeof raw.phone_v1==='object' ? raw.phone_v1 : null,
       profile_speech:raw.profile_speech && typeof raw.profile_speech==='object' ? raw.profile_speech : null,
       profile_attention:raw.profile_attention && typeof raw.profile_attention==='object' ? raw.profile_attention : null,
       initiative_work:raw.initiative_work && typeof raw.initiative_work==='object' ? raw.initiative_work : null,
@@ -3350,6 +3351,19 @@
     element.dataset.profileCallRevision=String(marker.revision);
     element.dataset.profileCallConversation=String(marker.conversation_id);
     window.dispatchEvent(new CustomEvent('vp3:profile-call-message',{detail:{element}}));
+  }
+  function bindPhoneWorkspaceV1(element,marker) {
+    if(!element||!marker||typeof marker.call_id!=='string')return;
+    const validCall=/^[a-f0-9]{32}$/.test(marker.call_id);
+    const validVoiceId=(Number.isSafeInteger(marker.voicemail_id)&&marker.voicemail_id>0)
+      ||(typeof marker.voicemail_id==='string'&&/^(?:job|legacy)-[1-9][0-9]{0,14}$/.test(marker.voicemail_id));
+    const validVoicemail=marker.kind==='voicemail'&&validVoiceId
+      &&(validCall||/^legacy-[1-9][0-9]*$/.test(marker.call_id));
+    if(!validCall&&!validVoicemail)return;
+    element.dataset.phoneWorkspaceCall=marker.call_id;
+    element.dataset.phoneWorkspaceMarker=JSON.stringify(marker);
+    window.VP3PhoneWorkspaceV1?.bindMessage?.(element,marker);
+    window.dispatchEvent(new CustomEvent('vp3:phone-call-message',{detail:{element,marker}}));
   }
   function bindProfileSpeechPa4a(element,marker){
     if(!element||marker?.contract!=='vp3.profile-speech.v1'||!['item_id','revision'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0)||
@@ -4985,6 +4999,7 @@
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
       if(message.role==='assistant')bindGmailResultTime(renderedMessage,context,message.created_at);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
+      if(message.role==='assistant')bindPhoneWorkspaceV1(renderedMessage,context.phone_v1);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context);
@@ -5150,6 +5165,7 @@
         &&Number(element.dataset.chatConversationId)===targetId&&Number(element.dataset.chatMessageId)>Number(message.id));
       if(next)thread.insertBefore(renderedMessage,next);
       if(message.role==='assistant')bindProfileCallPa3c(renderedMessage,context.profile_call);
+      if(message.role==='assistant')bindPhoneWorkspaceV1(renderedMessage,context.phone_v1);
       if(message.role==='assistant')bindProfileSpeechPa4a(renderedMessage,context.profile_speech);
       if(message.role==='assistant')bindProfileAttentionPa4b(renderedMessage,context.profile_attention);
       if(message.role==='assistant')bindInitiativeWorkV1(renderedMessage,context);
@@ -6055,6 +6071,25 @@
   };
   window.STONEFELLOW_CHAT_CONTINUITY_V87 = canonicalChatContinuity;
   window.STONEFELLOW_CHAT_CONTINUITY = canonicalChatContinuity;
+  const syncPhoneWorkspaceContextV1=()=>window.VP3PhoneWorkspaceV1?.contextChanged?.({
+    conversation_id:Number(conversationId||0),agent_id:Number(cfg.agentId||0),
+    ready:contextReady&&!initialRestorePending&&!restoringConversation&&!historyParticipant
+      &&!window.VP3ParticipantContinuity?.selectedContext?.(),
+  });
+  window.addEventListener('vp3:chat-context-ready',syncPhoneWorkspaceContextV1);
+  window.addEventListener('vp3:phone-workspace-event',event=>{
+    const detail=event.detail||{};
+    if(detail.kind!=='incoming'||!contextReady||initialRestorePending||restoringConversation||historyParticipant
+      ||window.VP3ParticipantContinuity?.selectedContext?.()||Number(detail.agent_id)!==Number(cfg.agentId||0)
+      ||Number(detail.conversation_id)!==Number(conversationId||0)||Number(conversationId||0)<1)return;
+    void canonicalChatContinuity.syncConversation(Number(conversationId)).catch(()=>{});
+  });
+  window.addEventListener('vp3:phone-workspace-ready',()=>{
+    syncPhoneWorkspaceContextV1();
+    for(const element of thread.querySelectorAll('[data-phone-workspace-marker]')){
+      try{bindPhoneWorkspaceV1(element,JSON.parse(element.dataset.phoneWorkspaceMarker));}catch(_){}
+    }
+  });
 
   function speakIntroV101(text) {
     if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance || !String(text || '').trim()) return;

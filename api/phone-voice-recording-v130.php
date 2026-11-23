@@ -18,9 +18,22 @@ if (!$pdo||!vp3_phone_voice_schema_ready_v130()||!$provider['configured']||$call
     {http_response_code(503);exit;}
 try {
     $url=vp3_phone_voice_sibling_url_v130($callback,'phone-voice-recording-v130.php');
-    vp3_phone_voice_recording_event_v130($pdo,$_POST,
+    $event=vp3_phone_voice_recording_event_v130($pdo,$_POST,
         (string)($_SERVER['HTTP_X_TWILIO_SIGNATURE']??''),$url,
         vp3_phone_twilio_credentials_v100()[1],(string)$provider['account_sid']);
+    if(!empty($event['accepted'])&&vp3_phone_recording_schema_ready_v1($pdo)){
+        $callQuery=$pdo->prepare("SELECT * FROM phone_voice_calls_v130 WHERE provider='twilio' AND provider_call_sid=? LIMIT 1");
+        $callQuery->execute([(string)($_POST['CallSid']??'')]);$savedCall=$callQuery->fetch(PDO::FETCH_ASSOC);
+        if($savedCall){
+            $savedCall['source_kind']='legacy';$savedCall['public_id']='legacy-'.(int)$savedCall['id'];
+            if(vp3_phone_workspace_schema_ready_v1($pdo)){
+                $browserQuery=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE provider_call_sid=? LIMIT 1');
+                $browserQuery->execute([(string)$_POST['CallSid']]);$browserCall=$browserQuery->fetch(PDO::FETCH_ASSOC);
+                if($browserCall)$savedCall=$browserCall+['source_kind'=>'browser'];
+            }
+            vp3_phone_recording_receive_v1($pdo,$savedCall,$_POST);
+        }
+    }
     http_response_code(204);
 } catch(InvalidArgumentException|RuntimeException $error) {
     http_response_code(str_contains($error->getMessage(),'signature')

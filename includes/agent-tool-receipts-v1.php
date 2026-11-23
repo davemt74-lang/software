@@ -84,7 +84,8 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     $cap=$value['capability']??null;$op=$value['operation']??null;$status=$value['status']??null;
     if(!is_string($cap)||!isset($ops[$cap])||!in_array($op,$ops[$cap],true)||!in_array($status,['read_complete','no_matches','completed','clarification_required','blocked','failed'],true))return null;
     $reason=$value['reason']??'';
-    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user','subscription_required','outcome_unverified','setup_required','scope_restricted','check_failed','not_installed','active_request'],true))return null;
+    if(!in_array($reason,['','upgrade_required','provider_unavailable','invalid_plan','execution_failed','permission_denied','confirmation_required','cancelled_by_user','subscription_required','number_assignment_required','outcome_unverified','setup_required','scope_restricted','check_failed','not_installed','active_request'],true))return null;
+    if($reason==='number_assignment_required'&&(!str_starts_with($cap,'phone.')||$status!=='blocked'))return null;
     $at=$value['checked_at']??null;
     if(!is_string($at)||!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/D',$at)||strtotime($at)===false)return null;
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;

@@ -5,7 +5,7 @@ declare(strict_types=1);
 
 function vp3_phone_sms_outbound_ready_v120(): bool
 {
-    return table_exists('phone_sms_outbox_v120');
+    return table_exists('phone_sms_outbox_v120') && vp3_phone_sms_assignment_schema_ready_v111();
 }
 
 function vp3_phone_sms_outbound_ensure_schema_v120(PDO $pdo): void
@@ -52,8 +52,10 @@ function vp3_phone_sms_validate_status_url_v120(string $url): string
 
 function vp3_phone_sms_sendable_number_v120(PDO $pdo,int $ownerId,int $numberId): array
 {
-    $stmt=$pdo->prepare('SELECT id,owner_user_id,agent_id,phone_e164,provider,provider_sid,sms_enabled
-      FROM phone_cloud_numbers_v100 WHERE id=? AND owner_user_id=? LIMIT 1');
+    $sql='SELECT id,owner_user_id,agent_id,phone_e164,provider,provider_sid,sms_enabled
+      FROM phone_cloud_numbers_v100 WHERE id=? AND owner_user_id=? LIMIT 1';
+    if ($pdo->inTransaction() && $pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite') $sql.=' FOR UPDATE';
+    $stmt=$pdo->prepare($sql);
     $stmt->execute([$numberId,$ownerId]);$number=$stmt->fetch(PDO::FETCH_ASSOC);
     if (!$number||$number['provider']!=='twilio'||(int)$number['sms_enabled']!==1
         ||!vp3_phone_agent_owned_v100($pdo,$ownerId,(int)$number['agent_id']))
@@ -82,6 +84,8 @@ function vp3_phone_sms_monthly_quota_v120(PDO $pdo,int $ownerId): array
 function vp3_phone_sms_draft_v120(PDO $pdo,int $ownerId,int $numberId,string $recipient,
     string $body,string $consentSource): int
 {
+    if (!vp3_phone_sms_assignment_schema_ready_v111($pdo))
+        throw new RuntimeException('SMS assignment storage requires the Cloud database upgrade.');
     vp3_phone_sms_sendable_number_v120($pdo,$ownerId,$numberId);
     $recipient=vp3_phone_e164_v100($recipient);$body=trim($body);$consentSource=trim($consentSource);
     if ($body===''||strlen($body)>3200 || (function_exists('mb_strlen')&&mb_strlen($body,'UTF-8')>800))
@@ -108,6 +112,8 @@ function vp3_phone_sms_draft_owned_v120(PDO $pdo,int $ownerId,int $draftId): ?ar
 function vp3_phone_sms_authorize_send_v120(PDO $pdo,int $ownerId,int $draftId,string $confirmation,
     ?callable $carrierSend=null): array
 {
+    if (!vp3_phone_sms_assignment_schema_ready_v111($pdo))
+        throw new RuntimeException('SMS assignment storage requires the Cloud database upgrade.');
     if (!vp3_phone_sms_live_enabled_v120()) throw new RuntimeException('Outbound SMS has not been activated by an administrator.');
     $statusCallback=vp3_phone_sms_validate_status_url_v120(vp3_phone_sms_status_url_v120());
     $pdo->beginTransaction();
@@ -121,7 +127,9 @@ function vp3_phone_sms_authorize_send_v120(PDO $pdo,int $ownerId,int $draftId,st
         $phrase='SEND '.$draft['recipient_e164'];
         if (!hash_equals($phrase,trim($confirmation)))
             throw new RuntimeException('Type '.$phrase.' to authorize this exact text.');
-        vp3_phone_sms_sendable_number_v120($pdo,$ownerId,(int)$draft['phone_number_id']);
+        $number=vp3_phone_sms_sendable_number_v120($pdo,$ownerId,(int)$draft['phone_number_id']);
+        if ((int)$number['agent_id']!==(int)$draft['agent_id'])
+            throw new RuntimeException('The number was reassigned to another Agent. Create a new draft for its current assignment.');
         $stop=$pdo->prepare('SELECT carrier_opted_out FROM phone_sms_contacts_v110
           WHERE phone_number_id=? AND contact_e164=?');
         $stop->execute([(int)$draft['phone_number_id'],(string)$draft['recipient_e164']]);
@@ -162,22 +170,14 @@ function vp3_phone_sms_authorize_send_v120(PDO $pdo,int $ownerId,int $draftId,st
     }
     try {
         $pdo->beginTransaction();
-        $stmt=$pdo->prepare('SELECT id FROM phone_sms_threads_v110 WHERE phone_number_id=? AND contact_e164=?');
-        $stmt->execute([(int)$draft['phone_number_id'],(string)$draft['recipient_e164']]);
-        $threadId=(int)$stmt->fetchColumn();
-        if (!$threadId) {
-            $pdo->prepare('INSERT INTO phone_sms_threads_v110
-              (owner_user_id,phone_number_id,agent_id,contact_e164,unread_count)
-              VALUES (?,?,?,?,0)')->execute([$ownerId,(int)$draft['phone_number_id'],
-                (int)$draft['agent_id'],(string)$draft['recipient_e164']]);
-            $threadId=(int)$pdo->lastInsertId();
-        }
+        $threadId=vp3_phone_sms_thread_v111($pdo,$ownerId,(int)$draft['phone_number_id'],
+            (int)$draft['agent_id'],(string)$draft['recipient_e164']);
         $pdo->prepare('INSERT INTO phone_sms_messages_v110
           (thread_id,owner_user_id,provider,provider_message_sid,direction,body,delivery_status)
           VALUES (?,?,\'twilio\',?,\'outbound\',?,\'sent\')')
           ->execute([$threadId,$ownerId,$sid,(string)$draft['body']]);
-        $pdo->prepare('UPDATE phone_sms_threads_v110 SET last_message_at=CURRENT_TIMESTAMP WHERE id=?')
-          ->execute([$threadId]);
+        $pdo->prepare('UPDATE phone_sms_threads_v110 SET last_message_at=CURRENT_TIMESTAMP WHERE id=? AND owner_user_id=? AND agent_id=?')
+          ->execute([$threadId,$ownerId,(int)$draft['agent_id']]);
         $pdo->prepare('UPDATE phone_sms_outbox_v120 SET status=\'sent\',provider_message_sid=?
           WHERE id=? AND owner_user_id=? AND status=\'sending\'')->execute([$sid,$draftId,$ownerId]);
         $pdo->commit();

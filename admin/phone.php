@@ -20,6 +20,21 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
     else {
         try {
             $action=(string)($_POST['action']??'');
+            if($action==='save_browser_voice'){
+                vp3_phone_browser_config_save_v1([
+                    'api_key_sid'=>(string)($_POST['browser_api_key_sid']??''),
+                    'api_key_secret'=>(string)($_POST['browser_api_key_secret']??''),
+                    'twiml_app_sid'=>(string)($_POST['browser_twiml_app_sid']??''),
+                ]);
+                flash('notice','Browser phone configuration saved. Enable browser calling for each assigned number below.');
+                redirect(url('/admin/phone.php#browser-phone'));
+            }
+            if($action==='set_browser_phone'){
+                vp3_phone_browser_number_policy_set_v1($pdo,(int)($_POST['number_id']??0),
+                    !empty($_POST['browser_enabled']),!empty($_POST['recording_enabled']));
+                flash('notice','Browser phone and recording preferences saved for the assigned number.');
+                redirect(url('/admin/phone.php#numbers'));
+            }
             if ($action==='save_twilio') {
                 $sid=trim((string)($_POST['account_sid']??''));
                 if (!preg_match('/^AC[a-f0-9]{32}$/iD',$sid)) throw new RuntimeException('Enter a valid Twilio Account SID.');
@@ -209,6 +224,8 @@ $setupPlan=vp3_phone_setup_plan_v170([
     'cloud_sip_saved'=>vp3_phone_stream_configured_v150(),
 ]);
 $workerHealth=vp3_phone_worker_health_state_v171($pdo,time());
+$phoneBrowserState=vp3_phone_browser_config_state_v1();
+$phoneRecordingWorker=vp3_phone_recording_worker_health_v1();
 $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.php';
 ?>
 <style>
@@ -296,10 +313,10 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
     <section class="phone-card">
       <h2>Activation & safety</h2>
       <p>Number purchases are billable and require an exact confirmation. Importing existing numbers does not purchase anything.</p>
-        <p>SMS and incoming voicemail use signed HTTPS Cloud callbacks. PH3F allows explicit per-number activation of turn-based AI phone conversation. Outgoing calls remain disabled.</p>
-      <p>Outgoing calls and texts will still require consent plus an owner approval for the precise action. Outbound: disabled by default; the separate SMS gateway can be enabled by an administrator.</p>
+        <p>SMS and incoming calls use signed HTTPS Cloud callbacks. Browser calling connects members directly through Twilio after the browser phone configuration and per-number activation below. Turn-based AI phone conversation remains a separate per-number choice.</p>
+      <p>Members place outgoing calls explicitly from their phone workspace. Outgoing texts use the separately enabled SMS gateway and require approval for the exact message.</p>
       <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="import_numbers"><button <?= $state['configured']&&$ready?'':'disabled' ?>>Import existing Twilio numbers</button></form>
-      <p><small>SMS registration and voice/recording consent depend on number type, destination, and use case. No live sending is enabled by this page.</small></p>
+      <p><small>Importing inventory does not place a call or send a message. Calling requires an assigned number and an active phone entitlement from a subscription package or an administrator grant.</small></p>
     </section>
   </div>
   <section class="phone-card" id="sms"><h2>Incoming SMS gateway · PH3A</h2>
@@ -311,7 +328,7 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
     <p>Voicemail is the safe default. Optionally enable Cloud AI phone conversation per number. The caller hears an AI disclosure, speaks to the assigned agent, and receives spoken replies. This first Cloud route processes one utterance at a time; it is not continuous full-duplex streaming. Speech text goes to the configured AI provider and uses the number owner's AI token allowance. Caller speech is not treated as owner authentication. No private tools, chat, or Agent Brain are accessible.</p>
     <?php if(!vp3_phone_voice_schema_ready_v130()): ?><p class="phone-alert">Run the PH3C database upgrade before activation.</p><?php endif; ?>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_voice_callback"><label class="phone-field">Signed HTTPS voice webhook URL<input type="url" name="voice_callback_url" required placeholder="https://your-cloud.example/api/phone-voice-inbound-v130.php" value="<?= e(vp3_phone_voice_callback_url_v130()) ?>"></label><button <?= $ready?'':'disabled' ?>>Save voice callback URL</button></form>
-    <p><small>Run upgrade.php for PH3G tables. Activation changes only the selected Twilio number's inbound Voice URL. Turn-based callbacks are individually signature-checked and capped at eight turns / 30 minutes. A failed SIP connection falls back to voicemail. Outbound calls are not enabled.</small></p>
+    <p><small>Activation changes only the selected Twilio number's inbound Voice URL. When browser calling is enabled and the owner is connected, the phone rings in VP3. Otherwise the existing voicemail, turn-based AI or configured streaming fallback handles the call. Turn-based callbacks are individually signature-checked and capped at eight turns / 30 minutes.</small></p>
     <h3>PH3G · Optional real-time SIP bridge</h3>
     <p>For a separately provisioned LiveKit SIP trunk and supervised HomeServer voice worker. All calls start in voicemail mode until enabled per number. The bridge uses TLS, a short-lived signed SIP handoff, and an independently granted HomeServer secondary Agent ID (not the Cloud Agent ID). The worker must be configured to use Cloud resolve mode. The caller is anonymous and receives no account permissions. Test your carrier metadata and voice disclosure before enabling live traffic.</p>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="save_stream_bridge">
@@ -330,6 +347,31 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
         <p><strong>Live audio certification pending:</strong> <?= e(implode('; ',$streamReadiness['live_tests_pending'])) ?>.</p>
       </div>
     <?php endif; ?>
+  </section>
+  <section class="phone-card" id="browser-phone">
+    <h2>Browser phone</h2>
+    <p>Enable calling directly from VP3 through Twilio. Only members with an administrator-assigned number can open the phone workspace.</p>
+    <p><strong><?= !empty($phoneBrowserState['ready'])?'Browser voice configured':'Browser voice setup required' ?></strong></p>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="action" value="save_browser_voice">
+      <label class="phone-field">Twilio API Key SID<input name="browser_api_key_sid" required pattern="SK[0-9a-fA-F]{32}" autocomplete="off" value="<?= e((string)($phoneBrowserState['api_key_sid']??'')) ?>"></label>
+      <label class="phone-field">API Key Secret<input type="password" name="browser_api_key_secret" autocomplete="new-password" placeholder="<?= !empty($phoneBrowserState['has_secret'])?'Saved — leave blank to keep':'Paste the API key secret' ?>"></label>
+      <label class="phone-field">TwiML App SID<input name="browser_twiml_app_sid" required pattern="AP[0-9a-fA-F]{32}" autocomplete="off" value="<?= e((string)($phoneBrowserState['twiml_app_sid']??'')) ?>"></label>
+      <button <?= $ready?'':'disabled' ?>>Save browser phone configuration</button>
+    </form>
+    <p>Set the TwiML App Voice request URL to the following address with POST. Keep each number's existing incoming Voice callback.</p>
+    <p><code><?= e((string)($phoneBrowserState['callback_urls']['voice']??'')) ?></code></p>
+    <p>Then enable browser calling for the assigned number in Number inventory. Recording is a separate per-number choice; post-call transcription and analysis are controlled by the member's saved preferences.</p>
+    <p>Automatic recording processing: <strong><?= ($phoneRecordingWorker['state']??'never_seen')==='observed'?'Server worker observed':'Server worker not recently observed' ?></strong>. Calling and voicemail storage do not require this worker.</p>
+    <p>For automatic transcripts and reports, add a once-per-minute cron command using the hosting account's PHP CLI and this installation's full path:</p>
+    <p><code>php /full/path/to/vp3/phone-recording-worker-v1.php</code></p>
+    <p>The worker processes one recording per run and skips overlapping runs. A server observation shows that the worker ran; it does not verify Twilio or speech-provider availability.</p>
+  </section>
+  <section class="phone-card" id="phone-packages">
+    <h2>Monthly packages and admin overrides</h2>
+    <p>Set the recurring monthly price in <a href="<?= e(url('/admin/packages.php')) ?>">Subscription packages</a>. Include <strong>Agent Phone Numbers Included</strong> with an explicit quantity and <strong>Agent Phone Calls</strong> for calling access.</p>
+    <p>For complimentary or exception access, use <a href="<?= e(url('/admin/entitlements.php')) ?>">Entitlement Grants</a> to grant those phone capabilities to the member, with a reason and optional expiry. Grants can be revoked without changing the member's subscription package.</p>
+    <p>A package or grant supplies the allowance. An administrator must also assign an actual Twilio number to the member's active Agent below. Number assignment alone does not grant paid calling access.</p>
   </section>
   <section class="phone-card" id="outbound"><h2>Authorized outgoing SMS · PH3B</h2>
     <p>Gateway state: <strong><?= vp3_phone_sms_live_enabled_v120()?'Enabled':'Disabled (safe default)' ?></strong>. A subscriber may draft texts, but sending requires their exact approval, a documented consent source, an active SMS package and available monthly allowance.</p>
@@ -352,6 +394,15 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
     <?php else: ?><form method="post" onsubmit="return confirm('Configure Twilio to deliver incoming SMS for this assigned number to the VP3 Cloud inbox?')"><?= csrf_field() ?><input type="hidden" name="action" value="activate_incoming_sms"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button <?= $state['configured']&&vp3_phone_sms_callback_url_v110()!==''?'':'disabled' ?>>Enable incoming SMS</button></form><?php endif; ?>
     <?php if((int)$number['voice_enabled']===1): ?><form method="post" onsubmit="return confirm('Disable inbound call handling for this number?')"><?= csrf_field() ?><input type="hidden" name="action" value="disable_incoming_voice"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary">Disable incoming calls</button></form>
     <?php else: ?><form method="post" onsubmit="return confirm('Activate an automated voicemail greeting with recording for this number?')"><?= csrf_field() ?><input type="hidden" name="action" value="activate_incoming_voice"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button <?= $state['configured']&&vp3_phone_voice_schema_ready_v130()&&vp3_phone_voice_callback_url_v130()!==''?'':'disabled' ?>>Enable incoming voicemail</button></form><?php endif; ?>
+    <?php if((int)$number['owner_user_id']>0&&(int)$number['agent_id']>0&&vp3_phone_workspace_schema_ready_v1($pdo)):
+      $browserPolicyQuery=$pdo->prepare('SELECT browser_enabled,recording_enabled FROM phone_browser_numbers_v1 WHERE phone_number_id=? AND owner_user_id=? AND agent_id=?');
+      $browserPolicyQuery->execute([(int)$number['id'],(int)$number['owner_user_id'],(int)$number['agent_id']]);$browserPolicy=$browserPolicyQuery->fetch(PDO::FETCH_ASSOC)?:[]; ?>
+      <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="set_browser_phone"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>">
+        <label class="phone-field"><span><input type="checkbox" name="browser_enabled" value="1" <?= !empty($browserPolicy['browser_enabled'])?'checked':'' ?>> Enable browser calling</span></label>
+        <label class="phone-field"><span><input type="checkbox" name="recording_enabled" value="1" <?= !empty($browserPolicy['recording_enabled'])?'checked':'' ?>> Allow browser-call recording with a spoken notice</span></label>
+        <button class="phone-secondary">Save browser phone preferences</button>
+      </form>
+    <?php endif; ?>
     <?php $live=vp3_phone_voice_live_config_v140($pdo,['phone_number_id'=>(int)$number['id'],'owner_user_id'=>(int)$number['owner_user_id'],'agent_id'=>(int)$number['agent_id']]); ?>
     <?php $stream=vp3_phone_stream_route_v150($pdo,['phone_number_id'=>(int)$number['id'],'owner_user_id'=>(int)$number['owner_user_id'],'agent_id'=>(int)$number['agent_id']]); ?>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="check_stream_readiness"><input type="hidden" name="number_id" value="<?= (int)$number['id'] ?>"><button class="phone-secondary" <?= $state['configured']?'':'disabled' ?>>Check PH3H streaming readiness</button></form>

@@ -12,4 +12,5 @@ function phone_agent_fixture_v1(PDO $pdo): void
       INSERT OR IGNORE INTO phone_sms_messages_v110 VALUES(101,11,1,'inbound','Fixture pizza pickup at six.','received','2026-10-30 12:00:00'),(102,12,1,'inbound','SECRET other Agent SMS','received','2026-10-30 13:00:00'),(103,13,2,'inbound','SECRET foreign SMS','received','2026-10-30 14:00:00');
       CREATE TABLE IF NOT EXISTS phone_sms_contacts_v110(id INTEGER PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS phone_sms_outbox_v120(id INTEGER PRIMARY KEY)");
+    vp3_phone_sms_ensure_assignments_v111($pdo);
 }
