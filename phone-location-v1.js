@@ -301,6 +301,9 @@
       if (ending) status.textContent = 'Alerts stopped on this phone. Waiting for VP3 to confirm.';
       else if (rule.state === 'active') status.textContent = who + ' can receive one private Agent Chat alert per visit here during this sharing session.';
       else status.textContent = who + ' requests one private Agent Chat alert per visit here while this phone shares live.';
+      if (!ending && rule.offers_local_search) {
+        status.textContent += ' An arrival can prompt the account owner to approve a local business search.';
+      }
       row.append(name,status);
       if (!ending) {
         const buttons = document.createElement('div');
