@@ -40,7 +40,13 @@ function vp3_phone_browser_number_policy_set_v1(PDO $pdo,int $numberId,bool $ena
     vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$numberId,$enabled,$recording){
         $q=$pdo->prepare('SELECT * FROM phone_cloud_numbers_v100 WHERE id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$numberId]);$n=$q->fetch(PDO::FETCH_ASSOC);
         if(!$n||(int)$n['owner_user_id']<1||!vp3_phone_agent_owned_v100($pdo,(int)$n['owner_user_id'],(int)$n['agent_id']))throw new RuntimeException('Assign this number to an active owner Agent first.');
-        if($enabled&&(!(int)$n['voice_enabled']||!vp3_phone_package_v100($pdo,(int)$n['owner_user_id'])['voice']||!vp3_phone_browser_config_state_v1()['ready']))throw new RuntimeException('Configure browser Voice and enable incoming voice for the assigned number first.');
+        if($enabled){
+            if(!(int)$n['voice_enabled'])throw new RuntimeException('Click Enable incoming voicemail for this number in Registered number inventory before enabling browser calling.');
+            $plan=vp3_phone_package_v100($pdo,(int)$n['owner_user_id']);
+            if(!$plan['included'])throw new RuntimeException('The assigned member needs Agent Phone Numbers Included with a positive quantity in their subscription package or an Admin entitlement grant.');
+            if(!$plan['voice'])throw new RuntimeException('The assigned member needs Agent Phone Calls (phone.voice) in their subscription package or an Admin entitlement grant.');
+            if(!vp3_phone_browser_config_state_v1()['ready'])throw new RuntimeException('Complete Browser phone with a Twilio API Key SID, API Key Secret and TwiML App SID, and save the Signed HTTPS voice webhook URL under Incoming calls first.');
+        }
         $pdo->prepare('DELETE FROM phone_browser_numbers_v1 WHERE phone_number_id=?')->execute([$numberId]);
         $pdo->prepare('INSERT INTO phone_browser_numbers_v1(phone_number_id,owner_user_id,agent_id,browser_enabled,recording_enabled) VALUES (?,?,?,?,?)')->execute([$numberId,(int)$n['owner_user_id'],(int)$n['agent_id'],$enabled?1:0,$recording?1:0]);
     });
