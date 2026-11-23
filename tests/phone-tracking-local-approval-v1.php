@@ -62,8 +62,8 @@ $phone=str_repeat('a',32);
 $place=str_repeat('b',32);
 $now=time();
 $pdo->prepare("INSERT INTO vp3_phone_devices_v1(id,owner_user_id,token_hash,device_name,device_role,device_status,allow_location,
-    generation,location_state,created_at,expires_at,last_seen_at) VALUES(?,1,?,'Field iPhone','owner','approved',1,3,'live',?,?,?)")
-    ->execute([$phone,str_repeat('0',64),$now,$now+2000,$now]);
+    generation,location_state,created_at,expires_at,last_seen_at,fix_at,first_fix_at) VALUES(?,1,?,'Field iPhone','owner','approved',1,3,'live',?,?,?,?,?)")
+    ->execute([$phone,str_repeat('0',64),$now,$now+2000,$now,$now,$now]);
 $pdo->prepare("INSERT INTO vp3_phone_places_v1(owner_user_id,id,name,name_hash,latitude,longitude,accuracy,created_at)
     VALUES(1,?,'Studio',?,33.424242,-112.292929,5,?)")->execute([$place,hash('sha256','studio'),$now]);
 
@@ -102,6 +102,11 @@ approval_check(vp3_phone_local_area_v1('Roosevelt Row, Phoenix')==='Roosevelt Ro
     && vp3_phone_local_area_v1('St. Louis, Missouri')==='St. Louis, Missouri','allow public city and neighborhood names');
 foreach (['Field iPhone','Studio','Recording supplies','Buy XLR cables'] as $privateLabel) {
     approval_check(!str_contains($turn("Search area for offer #$id: $privateLabel"),'Approve local search '),'a private label or task is never turned into search geography');
+}
+$publicFields=['area'=>'Phoenix, Arizona','item'=>'XLR cables','category'=>'music stores'];
+foreach (['item'=>'XLR cables for Studio','category'=>'Field iPhone dealers'] as $field=>$privateTerm) {
+    approval_check(vp3_phone_local_private_field_v1($pdo,$uid,$aid,$cid,$id,array_replace($publicFields,[$field=>$privateTerm]))===$field,
+        'private place and phone labels cannot enter public product or merchant search terms');
 }
 approval_check(!str_contains($turn('Search in Phoenix'.PHP_EOL.'Private'),'Approve local search '),'multiline search area cannot become a preview');
 $preview=$turn('Search in Phoenix, Arizona');

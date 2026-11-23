@@ -48,8 +48,8 @@ function vp3_phone_local_area_v1(string $value): ?string
     return $value;
 }
 
-/** A separately entered locality must not echo private labels or the underlying task. */
-function vp3_phone_local_private_area_v1(PDO $pdo,int $uid,int $aid,int $cid,int $offerId,string $area): bool
+/** A public field must not reuse private phone/place labels. Geography must also be independent of the task. */
+function vp3_phone_local_private_field_v1(PDO $pdo,int $uid,int $aid,int $cid,int $offerId,array $public): ?string
 {
     $row=vp3_phone_sql_v1($pdo,'SELECT d.device_name,p.name AS place_name,b.task_ids_json
         FROM vp3_phone_local_offers_v1 o JOIN vp3_phone_arrival_briefings_v1 b ON b.assistant_message_id=o.assistant_message_id
@@ -58,24 +58,28 @@ function vp3_phone_local_private_area_v1(PDO $pdo,int $uid,int $aid,int $cid,int
         JOIN vp3_phone_places_v1 p ON p.owner_user_id=r.owner_user_id AND p.id=r.place_id
         WHERE o.assistant_message_id=? AND r.owner_user_id=? AND r.agent_id=? AND r.conversation_id=?',
         [$offerId,$uid,$aid,$cid])->fetch(PDO::FETCH_ASSOC);
-    if (!$row) return true;
-    $labels=[$row['device_name'],$row['place_name']];
+    if (!$row) return 'offer';
+    $words=static fn($text)=>trim(preg_replace('/[^\p{L}\p{N}]+/u',' ',mb_strtolower((string)$text))??'');
+    foreach (['area','item','category'] as $field) {
+        $candidate=' '.$words($public[$field]).' ';
+        foreach ([$row['device_name'],$row['place_name']] as $label) {
+            $private=$words($label);
+            if ($private!=='' && str_contains($candidate,' '.$private.' ')) return $field;
+        }
+    }
+    $area=' '.$words($public['area']).' ';
     $ids=array_filter(json_decode($row['task_ids_json']??'[]',true,32,JSON_THROW_ON_ERROR)??[],static fn($id)=>is_int($id)&&$id>0);
     if ($ids) {
         $marks=implode(',',array_fill(0,count($ids),'?'));
         $tasks=vp3_phone_sql_v1($pdo,"SELECT subject,memory_text FROM agent_memory_items WHERE user_id=? AND id IN ($marks)",[$uid,...$ids]);
         foreach ($tasks->fetchAll(PDO::FETCH_ASSOC) as $task) {
-            $labels[]=$task['subject'];
-            $labels[]=$task['memory_text'];
+            foreach ([$task['subject'],$task['memory_text']] as $label) {
+                $private=$words($label);
+                if ($private!=='' && str_contains($area,' '.$private.' ')) return 'area';
+            }
         }
     }
-    $words=static fn($text)=>trim(preg_replace('/[^\p{L}\p{N}]+/u',' ',mb_strtolower((string)$text))??'');
-    $candidate=' '.$words($area).' ';
-    foreach ($labels as $label) {
-        $private=$words($label);
-        if ($private!=='' && str_contains($candidate,' '.$private.' ')) return true;
-    }
-    return false;
+    return null;
 }
 
 function vp3_phone_local_offer_consumed_v1(PDO $pdo,int $offerId): bool
@@ -87,11 +91,17 @@ function vp3_phone_local_offer_consumed_v1(PDO $pdo,int $offerId): bool
 /** Check the original Chat, active phone grant, visit and current native task before any public work. */
 function vp3_phone_local_authorized_offer_v1(PDO $pdo,array $user,array $principal,int $cid,int $offerId): bool
 {
-    $approved=vp3_phone_sql_v1($pdo,"SELECT 1 FROM vp3_phone_local_approvals_v1 a
+    $json=vp3_phone_sql_v1($pdo,"SELECT a.public_json FROM vp3_phone_local_approvals_v1 a
         JOIN vp3_phone_chat_turns_v1 t ON t.assistant_message_id=a.offer_id
         WHERE a.offer_id=? AND a.state='approved' AND t.owner_user_id=? AND t.agent_id=? AND t.conversation_id=?",
         [$offerId,(int)$user['id'],(int)($principal['agent_id']??0),$cid])->fetchColumn();
-    return $approved && vp3_phone_local_offer_v1($pdo,$user,$principal,$cid,$offerId)!==null;
+    if ($json===false) return false;
+    $offer=vp3_phone_local_offer_v1($pdo,$user,$principal,$cid,$offerId);
+    if (!$offer) return false;
+    $public=json_decode($json,true,16,JSON_THROW_ON_ERROR);
+    return $public['item']===$offer['item_term'] && $public['category']===$offer['merchant_category']
+        && $public['open_today']===(bool)$offer['open_today']
+        && vp3_phone_local_private_field_v1($pdo,(int)$user['id'],(int)$principal['agent_id'],$cid,$offerId,$public)===null;
 }
 
 /** Gate the generic “Search in…” shortcut; ordinary research commands continue with the normal dispatcher. */
@@ -128,12 +138,13 @@ function vp3_phone_local_approval_turn_v1(PDO $pdo,array $user,array $principal,
             : 'That offer is no longer available in this private Chat. A current visit and an open matching task are required.',''];
         $id=(int)$offer['id'];
         if (vp3_phone_local_offer_consumed_v1($pdo,$id)) return ['This visit’s local search was already approved or cancelled.',''];
-        if (vp3_phone_local_private_area_v1($pdo,$uid,$aid,$cid,$id,$area)) {
-            return ['Enter a public city or neighborhood separately from your saved place, phone name and private task.',''];
-        }
         $date=vp3_phone_local_date_v1($input);
         $public=['area'=>$area,'item'=>$offer['item_term'],'category'=>$offer['merchant_category'],
             'open_today'=>(bool)$offer['open_today'],'date'=>$date->format('Y-m-d')];
+        $private=vp3_phone_local_private_field_v1($pdo,$uid,$aid,$cid,$id,$public);
+        if ($private!==null) return [$private==='area'
+            ? 'Enter a public city or neighborhood separately from your saved place, phone name and private task.'
+            : 'Update the rule with a public item and store category that omit private phone and place names.',''];
         try { $query=vp3_phone_local_public_query_v1($public); }
         catch (RuntimeException $e) {
             if ($e->getCode()!==422) throw $e;
@@ -150,7 +161,7 @@ function vp3_phone_local_approval_turn_v1(PDO $pdo,array $user,array $principal,
             vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_local_approvals_v1 (offer_id,preview_token,state,public_json,expires_at)
                 VALUES(?,?,'preview',?,?)",[$id,$token,$json,$until]);
         }
-        return ["Public search for offer #$id\n$query\n\nReply “Approve local search $token” to send this query, or “Cancel local search $token”. To change the area, reply “Search area for offer #$id: [city or neighborhood]”.",''];
+        return ["Public search for offer #$id\n$query\n\nReply “Approve local search {$token}” to send this query, or “Cancel local search {$token}”. To change the area, reply “Search area for offer #$id: [city or neighborhood]”.",''];
     }
     $token=$plan['token'];
     $row=preg_match('/^[A-F0-9]{12}$/D',$token) ? vp3_phone_sql_v1($pdo,'SELECT a.offer_id,a.public_json,a.expires_at,a.state
@@ -168,11 +179,12 @@ function vp3_phone_local_approval_turn_v1(PDO $pdo,array $user,array $principal,
     if (!$offer) return ['This visit or its matching task is no longer current. The search was not sent.',''];
     $public=json_decode($row['public_json'],true,16,JSON_THROW_ON_ERROR);
     if ($public['item']!==$offer['item_term'] || $public['category']!==$offer['merchant_category']
-        || $public['open_today']!==(bool)$offer['open_today']) {
+        || $public['open_today']!==(bool)$offer['open_today']
+        || vp3_phone_local_private_field_v1($pdo,$uid,$aid,$cid,$id,$public)!==null) {
         return ['The search request changed. Choose the area again to review a new preview.',''];
     }
     vp3_phone_sql_v1($pdo,"UPDATE vp3_phone_local_approvals_v1 SET state='approved' WHERE offer_id=? AND state='preview'",[$id]);
-    vp3_phone_local_launch_v1($pdo,$user,$principal,$cid,$id,$public);
+    vp3_phone_local_launch_v1($pdo,$user,$principal,$cid,$id,$public,(int)$row['expires_at']);
     return ['Local search approved. Results will appear in this private Chat.',''];
 }
 
