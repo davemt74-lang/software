@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/phone-tracking-v1.php';
+require_once __DIR__.'/phone-camera-chat-v1.php';
 require_once __DIR__.'/phone-tracking-arrival-chat-v1.php';
 require_once __DIR__.'/phone-tracking-arrival-delivery-v1.php';
 require_once __DIR__.'/phone-tracking-local-approval-v1.php';
@@ -73,6 +74,8 @@ function vp3_phone_chat_plan_v1(mixed $text): ?array
     $text = trim(preg_replace('/\s+/u', ' ', $text) ?? '', " \t\r\n.!?");
     $text = preg_replace('/^(?:(?:can|could|would) you |please )+/iu', '', $text);
     $text = preg_replace('/,? please$/iu', '', $text);
+    $camera=vp3_phone_camera_chat_plan_v1($text);
+    if ($camera!==null) return $camera;
     $local=vp3_phone_local_approval_plan_v1($text);
     if ($local!==null) {
         if ($hasControls && $local['action']==='local_area') $local['area']='';
@@ -196,6 +199,11 @@ function vp3_phone_chat_authorize_v1(PDO $pdo,array $user,array $principal,array
 function vp3_phone_chat_actions_v1(string $mapLink,int $aid,int $cid,?string $deviceId=null): array
 {
     if ($mapLink==='' || $mapLink==='localresult') return [];
+    if ($mapLink==='camera') {
+        if ($cid<1 || !is_string($deviceId) || !preg_match('/^[a-f0-9]{32}$/D',$deviceId)) return [];
+        $path='/video-editor.php?'.http_build_query(['camera_session'=>$deviceId,'agent'=>$aid ?: 'system','conversation_id'=>$cid]);
+        return [['type'=>'open_url','label'=>'Open private camera preview','url'=>url($path)]];
+    }
     $path='/phone-tracking.php?'.http_build_query(array_filter(['agent'=>$aid,'conversation_id'=>$cid,
         'connect'=>$mapLink==='connect'?1:null,'panel'=>in_array($mapLink,['history','places'],true)?$mapLink:null,
         'device_id'=>$deviceId],static fn($v)=>$v!==null));
@@ -300,6 +308,7 @@ function vp3_phone_chat_place_choice_v1(PDO $pdo,int $uid,int $aid,int $cid,?str
     if (!(int)$choice['replay']) {
         $payload=json_decode($choice['candidates_json'],true,512,JSON_THROW_ON_ERROR);
         if (($payload['type']??null)==='arrival') $choice['arrival']=$payload;
+        elseif (($payload['type']??null)==='camera') $choice['camera']=$payload;
         else $choice['phones']=$payload;
     }
     return $choice;
@@ -368,6 +377,7 @@ function vp3_phone_chat_save_place_v1(PDO $pdo,int $uid,int $aid,int $cid,array 
 function vp3_phone_chat_execute_v1(PDO $pdo,int $uid,int $aid,int $cid,array $plan,string $key): array
 {
     $action=$plan['action'];
+    if (str_starts_with($action,'camera_')) return vp3_phone_camera_chat_turn_v1($pdo,$uid,$aid,$cid,$plan);
     if (str_starts_with($action,'arrival_')) return vp3_phone_arrival_chat_execute_v1($pdo,$uid,$aid,$cid,$plan);
     if ($action==='connect') return ['Open the phone QR code and scan it with the phone you want to connect. Then ask me to approve its name.','connect'];
     if ($action==='places') return ['Open Saved places on your tracking map to see your private places.','places'];
@@ -469,6 +479,10 @@ function vp3_phone_chat_route_v1(PDO $pdo,array $user,array $principal,array $in
                 if (vp3_phone_chat_schema_ready_v1($pdo)) throw $e;
                 $choice=null;
             }
+            if (isset($choice['camera']) && vp3_phone_camera_chat_reply_v1($choice['camera'],$text)) {
+                vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
+                return ['action'=>'camera_choice','target'=>$text,'choice_id'=>(int)$choice['assistant_message_id']];
+            }
             if (isset($choice['arrival']) && vp3_phone_arrival_chat_reply_v1($choice['arrival'],$text)) {
                 vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
                 return ['action'=>'arrival_reply','target'=>$text,'choice_id'=>(int)$choice['assistant_message_id']];
@@ -505,6 +519,9 @@ function vp3_phone_chat_send_v1(PDO $pdo,array $user,?array $agent,array $princi
     if (!vp3_phone_chat_schema_ready_v1($pdo) || !vp3_phone_schema_ready_v1($pdo)) {
         throw new RuntimeException('Phone tracking is unavailable until the database upgrade is installed.',503);
     }
+    if (str_starts_with($plan['action'],'camera_') && !vp3_phone_camera_ready_v1($pdo)) {
+        throw new RuntimeException('Phone camera sharing is unavailable until the database upgrade is installed.',503);
+    }
     $query=trim($input['message']);
     $queryHash=hash('sha256',$query);
     $request=$input['idempotency_key']??$input['reminder_request_id']??null;
@@ -540,10 +557,10 @@ function vp3_phone_chat_send_v1(PDO $pdo,array $user,?array $agent,array $princi
         $prompt=preg_match('/[-+]?\d{1,3}\.\d+\s*[,; ]\s*[-+]?\d{1,3}\.\d+/u',$query)?'Phone tracking request.':$query;
         $saved=vp3_phone_chat_store_v1($pdo,$uid,$aid,$cid,$prompt,$answer,$mapLink,$requestHash,$queryHash,$turn['device_id']??null);
         vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_chat_place_choices_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=?',[$uid,$aid,$cid]);
-        if (isset($turn['choose_place']) || isset($turn['arrival_draft'])) {
+        if (isset($turn['choose_place']) || isset($turn['arrival_draft']) || isset($turn['camera_draft'])) {
             $choice=$turn['choose_place']??null;
-            $draft=$turn['arrival_draft']??null;
-            $placeName=$draft['place_name']??$choice['name'];
+            $draft=$turn['arrival_draft']??$turn['camera_draft']??null;
+            $placeName=$draft['place_name']??$choice['name']??'';
             $payload=$draft??$choice['phones'];
             vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_chat_place_choices_v1
                 (owner_user_id,agent_id,conversation_id,assistant_message_id,place_name,candidates_json,expires_at)
@@ -573,7 +590,8 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
         || !vp3_phone_chat_schema_ready_v1($pdo)) return [];
     $sql='SELECT device_id,generation FROM vp3_phone_chat_grants_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=? AND pending=1';
     $localPending=vp3_phone_local_research_pending_v1($pdo,$uid,$aid,$cid);
-    if (!$localPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
+    $cameraPending=vp3_phone_camera_pending_v1($pdo,$uid,$aid,$cid);
+    if (!$localPending && !$cameraPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
     vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
     $eligible=static function(int $offerId) use($pdo,$user,$principal,$input,$cid): bool {
         try {
@@ -605,6 +623,7 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
                 $updates[]=vp3_phone_chat_announcement_v1($row);
             }
         }
+        if ($cameraPending) $updates=array_merge($updates,vp3_phone_camera_chat_updates_v1($pdo,$uid,$aid,$cid));
         $updates=array_merge($updates,vp3_phone_arrival_deliver_v1($pdo,$user,$principal,$input,$cid));
         if ($localPending) $updates=array_merge($updates,vp3_phone_local_emit_v1($pdo,$user,$principal,$cid,$eligible));
         vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);

@@ -74,6 +74,7 @@ function phone_test_dispatch(PDO $db, array $job): array
             'owner' => vp3_phone_owner_v1($db,$identity,$action,$input),
             'places' => vp3_phone_places_owner_v1($db,$identity,$action,$input),
             'arrival_poll','research_chat' => phone_test_chat($db,$identity,$input,$principal === 'research_chat'),
+            'camera' => vp3_phone_camera_owner_v1($db, $identity, 0, 41, $action, $input),
             'device' => vp3_phone_device_v1($db,$identity,$action,$input),
         };
         return ['status'=>200, 'data'=>$result];
@@ -538,10 +539,29 @@ try {
         'the holder can end the pairing during a permission suspension');
     $invite = $owner('invite', ['request_id'=>$request()])['invite'];
     $phone = vp3_phone_device_v1($db, '', 'claim', ['invite'=>$invite, 'name'=>'Deletion check']);
+    $owner('approve', ['request_id'=>$request(), 'device_id'=>$phone['device']['id'],
+        'generation'=>$phone['device']['generation'], 'role'=>'guest','allow_location'=>false]);
+    $startCamera = ['camera',1,'request',['device_id'=>$phone['device']['id']]];
+    $cameraRequests = phone_test_race($startCamera,$startCamera);
+    $sessionId = $cameraRequests[0]['data']['camera']['session_id'] ?? '';
+    phone_test_check(array_column($cameraRequests,'status') === [200,200] && $sessionId !== ''
+        && $sessionId === $cameraRequests[1]['data']['camera']['session_id'],
+        'concurrent requests select a single preview on a phone with location disabled');
+    $session = ['session_id'=>$sessionId];
+    phone_test_check(vp3_phone_camera_holder_v1($db,$phone['token'],'status',[])['camera']['state'] === 'requested'
+        && vp3_phone_camera_holder_v1($db,$phone['token'],'start',$session)['camera']['state'] === 'sharing',
+        'only the paired holder starts the requested camera');
+    $offer = "v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=sendonly\r\n";
+    vp3_phone_camera_holder_v1($db,$phone['token'],'offer',$session+['sdp'=>$offer]);
+    $stops = phone_test_race(['camera',1,'stop',$session], ['camera',1,'stop',$session]);
+    $row = vp3_phone_sql_v1($db,'SELECT state,offer_sdp,answer_sdp FROM vp3_phone_camera_sessions_v1 WHERE id=?',[$sessionId])->fetch();
+    phone_test_check(array_column($stops,'status') === [200,200] && $row['state']==='stopped'
+        && $row['offer_sdp']===null && $row['answer_sdp']===null,
+        'duplicate private stops erase camera signaling');
     $db->exec('DELETE FROM users WHERE id=1');
     $tables = [
         'vp3_phone_invites_v1', 'vp3_phone_devices_v1', 'vp3_phone_requests_v1',
-        'vp3_phone_history_points_v1', 'vp3_phone_places_v1',
+        'vp3_phone_history_points_v1', 'vp3_phone_places_v1', 'vp3_phone_camera_sessions_v1',
     ];
     foreach ($tables as $table) {
         phone_test_check(!(int)$db->query("SELECT COUNT(*) FROM $table WHERE owner_user_id=1")->fetchColumn(),

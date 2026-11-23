@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "includes/phone-tracking*.php"
+      - "includes/phone-camera*.php"
+      - "api/phone-camera-v1.php"
       - "api/phone-tracking-v1.php"
       - "api/phone-location-v1.php"
       - "tests/phone-tracking-mysql-v1.php"
@@ -139,6 +141,8 @@ on:
       - main
     paths:
       - "includes/phone-tracking*.php"
+      - "includes/phone-camera*.php"
+      - "api/phone-camera-v1.php"
       - "api/phone-tracking-v1.php"
       - "api/phone-location-v1.php"
       - "tests/phone-tracking-mysql-v1.php"

@@ -6000,6 +6000,10 @@
     parkFailedProactiveReply:parkCurrentProactiveReplyV1,
     showTurnNotice:showChatTurnNotice,
     phoneReplyCurrent:data => phoneReplyCurrentV1(data),
+    phoneCameraScope:() => contextReady && !initialRestorePending && !restoringConversation
+      && initiativeIdentityMatchesV1() && conversationId > 0 && thread.dataset.view === 'chat'
+      && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()
+      ? {owner:initiativePage.owner, agent:initiativePage.agent, conversation:conversationId} : null,
     conversationId:() => Number(conversationId || 0),
     agentId:() => Number(cfg.agentId || 0),
     ensureConversation:ensureConversationPa3,

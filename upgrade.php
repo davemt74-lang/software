@@ -344,6 +344,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_initiative_youtube_playlist_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
         && vp3_phone_schema_ready_v1($schemaConnection)
+        && vp3_phone_camera_ready_v1($schemaConnection)
         && vp3_phone_chat_schema_ready_v1($schemaConnection)
         && vp3_profile_owner_drafts_ready_v1($schemaConnection)
         && vp3_profile_speech_schema_ready_pa4a($schemaConnection)
