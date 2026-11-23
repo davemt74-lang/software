@@ -874,7 +874,7 @@ async function verifyLocalResearchJourney({ ownerContext, owner, otherContext, o
     const sql = "UPDATE agent_memory_items SET metadata_json=? WHERE user_id=1 AND subject=?";
     const run = "$db=new PDO('sqlite:'.$argv[1]);$q=$db->prepare($argv[2]);" +
       "$q->execute([json_encode(['task_status'=>$argv[3]]),$argv[4]]);if($q->rowCount()!==1)exit(1);";
-    execFileSync(php,['-r',run,path.join(temp,'data.sqlite'),sql,state,'Recording: bring XLR cables for confidential Juniper rehearsal']);
+    execFileSync(php,['-r',run,path.join(temp,'data.sqlite'),sql,state,'Recording: buy XLR cables for confidential Juniper rehearsal']);
   };
   changeTask('open');
   const current = await status(selectedPhone);

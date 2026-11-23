@@ -449,6 +449,22 @@ try {
         && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_offers_v1')->fetchColumn() === 1
         && (int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_research_v1')->fetchColumn() === 1,
         'completing the qualifying task suppresses a new offer and mission, even when another Agent or account still needs the item');
+    // A task can be updated in another tab after the area was reviewed.
+    $setTaskState = $db->prepare('UPDATE agent_memory_items SET metadata_json=? WHERE user_id=1 AND id=?');
+    $setTaskState->execute(['{"task_status":"open"}',$needId]);
+    $visitStudio();
+    phone_test_dispatch($db,$poll);
+    $newOffer = (int)vp3_phone_sql_v1($db,'SELECT assistant_message_id FROM vp3_phone_local_offers_v1 WHERE rule_id=? ORDER BY visit_number DESC LIMIT 1',
+        [$searchRule['id']])->fetchColumn();
+    phone_test_check($newOffer > $offerId,'reopening the task permits a new offer only on a later visit');
+    $nextPreview = phone_test_dispatch($db,$say("Search area for offer #$newOffer: Tempe, Arizona"));
+    phone_test_check(preg_match('/Approve local search ([A-F0-9]{12})/i',$nextPreview['data']['answer'] ?? '',$laterToken) === 1,
+        'the next eligible visit has its own public-area approval');
+    $setTaskState->execute(['{"task_status":"completed"}',$needId]);
+    $staleApproval = phone_test_dispatch($db,$say('Approve local search '.$laterToken[1]));
+    phone_test_check(in_array($staleApproval['status'],[200,403,404,409],true)
+        && (int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_local_research_v1 WHERE offer_id=?',[$newOffer])->fetchColumn() === 0,
+        'a completed task invalidates an already previewed offer before any new external mission is created');
     vp3_phone_device_v1($db,$token,'stop_arrival',['device_id'=>$deviceId,'generation'=>$live['generation'],
         'rule_id'=>$searchRule['id'],'rule_version'=>$version]);
     phone_test_check((int)$db->query('SELECT COUNT(*) FROM vp3_phone_local_research_v1')->fetchColumn() === 0,

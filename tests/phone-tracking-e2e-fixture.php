@@ -42,8 +42,10 @@ foreach ([
     [1,null,'Buy groceries',1,'open'],
     [1,7,'Recording: other agent session',1,'open'],
     [2,null,'Recording: other owner session',1,'open'],
-    [1,null,'Recording: bring XLR cables for confidential Juniper rehearsal',1,'completed'],
+    [1,null,'Recording: buy XLR cables for confidential Juniper rehearsal',1,'completed'],
     [1,null,'Recording: replace old XLR cables',1,'completed'],
+    [1,null,'Recording: return the XLR cables we already own',1,'open'],
+    [1,null,'Recording: no need to buy XLR cables for rehearsal',1,'open'],
     [2,null,'Recording: XLR cables for different owner',1,'open'],
     [1,7,'Recording: XLR cables for another agent',1,'open'],
 ] as [$uid,$aid,$title,$active,$state]) {
