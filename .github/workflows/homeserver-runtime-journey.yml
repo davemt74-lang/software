@@ -580,6 +580,11 @@ jobs:
           VP3_CONNECTION_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=connection;charset=utf8mb4
           VP3_CONNECTION_MYSQL_PASSWORD: connection-fixture
         run: php tests/homeserver-continuity-permissions.php
+      - name: Bounded snapshot coverage preserves live mirrors
+        env:
+          VP3_CONNECTION_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=connection;charset=utf8mb4
+          VP3_CONNECTION_MYSQL_PASSWORD: connection-fixture
+        run: php tests/homeserver-snapshot-coverage.php
   runtime-journey:
     name: Runtime journey · PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
@@ -597,6 +602,7 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          extensions: mbstring, pdo_sqlite
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -607,6 +613,8 @@ jobs:
         run: php tests/connection_lifecycle.php
       - name: Authorized reconciliation coverage and permission failure retries
         run: php tests/homeserver-continuity-permissions.php
+      - name: Bounded snapshot coverage preserves live mirrors
+        run: php tests/homeserver-snapshot-coverage.php
       - name: Connected and reconciliation status presentation
         run: node tests/homeserver-continuity-permissions.mjs
       - name: Chat device pairing contract

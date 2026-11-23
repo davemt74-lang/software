@@ -94,8 +94,9 @@ function homeserver_shared_v210_record(string $dataset,mixed $id,string $title,s
     ];
 }
 
-function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=170000): array
+function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=170000,?array &$unavailable=null): array
 {
+    $unavailable??=[];
     $order=['notifications','files','calendar','tasks','contacts','knowledge','memory'];
     while(true){
         $encoded=json_encode($datasets,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
@@ -103,7 +104,7 @@ function homeserver_shared_v210_fit_datasets(array $datasets,int $maxBytes=17000
         $removed=false;
         foreach($order as $dataset){
             if(count((array)($datasets[$dataset]??[]))>5){
-                array_pop($datasets[$dataset]);$removed=true;break;
+                array_pop($datasets[$dataset]);$unavailable[$dataset]='snapshot_limited:byte_limit';$removed=true;break;
             }
         }
         if(!$removed)break;
@@ -115,26 +116,30 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
 {
     $pdo=db();if(!$pdo||$userId<1)throw new RuntimeException('Database connection is unavailable.');
     $datasets=['memory'=>[],'knowledge'=>[],'contacts'=>[],'tasks'=>[],'calendar'=>[],'files'=>[],'notifications'=>[]];
+    $unavailable=[];
 
     if(table_exists('agent_memory_items')){
         $s=$pdo->prepare("SELECT id,memory_type,subject,memory_text,confidence,last_seen_at,metadata_json
-          FROM agent_memory_items WHERE user_id=? AND is_active=1 ORDER BY last_seen_at DESC,id DESC LIMIT 120");
+          FROM agent_memory_items WHERE user_id=? AND is_active=1 ORDER BY last_seen_at DESC,id DESC LIMIT 121");
         $s->execute([$userId]);
-        foreach($s->fetchAll()?:[] as $row){
+        $rows=$s->fetchAll()?:[];
+        if(count($rows)>120)$unavailable['memory']='snapshot_limited:record_limit';
+        foreach(array_slice($rows,0,120) as $row){
             $text=trim((string)($row['subject']??'').' '.(string)($row['memory_text']??''));
             if(!homeserver_shared_v210_matches($query,$text))continue;
+            if(count($datasets['memory'])>=40){$unavailable['memory']='snapshot_limited:record_limit';break;}
             $datasets['memory'][]=homeserver_shared_v210_record(
               'memory',(int)$row['id'],
               (string)($row['subject']??'Agent Brain memory'),
               (string)($row['memory_text']??'').' · type: '.(string)($row['memory_type']??'memory').' · confidence: '.round(((float)($row['confidence']??0))*100).'%',
               (string)($row['last_seen_at']??'')
             );
-            if(count($datasets['memory'])>=40)break;
         }
 
         if(function_exists('homeserver_task_calendar_v243_cloud_tasks')){
-            foreach(homeserver_task_calendar_v243_cloud_tasks($userId,$query,30) as $row){
+            foreach(homeserver_task_calendar_v243_cloud_tasks($userId,$query,31) as $row){
                 if(!is_array($row))continue;
+                if(count($datasets['tasks'])>=30){$unavailable['tasks']='snapshot_limited:record_limit';break;}
                 $datasets['tasks'][]=[
                   'id'=>(int)($row['id']??0),
                   'key'=>(string)($row['authority_key']??''),
@@ -157,20 +162,23 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
     if(table_exists('knowledge_items')&&column_exists('knowledge_items','created_by_user_id')){
         $canvasFilter = column_exists('knowledge_items', 'file_type') ? " AND (file_type IS NULL OR file_type<>'coding_canvas')" : '';
         $s=$pdo->prepare("SELECT id,title,description,content_text,updated_at
-          FROM knowledge_items WHERE created_by_user_id=?{$canvasFilter} ORDER BY updated_at DESC,id DESC LIMIT 80");
+          FROM knowledge_items WHERE created_by_user_id=?{$canvasFilter} ORDER BY updated_at DESC,id DESC LIMIT 81");
         $s->execute([$userId]);
-        foreach($s->fetchAll()?:[] as $row){
+        $rows=$s->fetchAll()?:[];
+        if(count($rows)>80)$unavailable['knowledge']='snapshot_limited:record_limit';
+        foreach(array_slice($rows,0,80) as $row){
             $content=trim((string)($row['description']??'').' '.(string)($row['content_text']??''));
             if(!homeserver_shared_v210_matches($query,(string)$row['title'].' '.$content))continue;
+            if(count($datasets['knowledge'])>=30){$unavailable['knowledge']='snapshot_limited:record_limit';break;}
             $datasets['knowledge'][]=homeserver_shared_v210_record('knowledge',(int)$row['id'],(string)$row['title'],$content,(string)($row['updated_at']??''));
-            if(count($datasets['knowledge'])>=30)break;
         }
     }
 
     if(function_exists('homeserver_files_v244_cloud_items')){
         try{
-            foreach(homeserver_files_v244_cloud_items($userId,$query,40) as $row){
+            foreach(homeserver_files_v244_cloud_items($userId,$query,41) as $row){
                 if(!is_array($row))continue;
+                if(count($datasets['files'])>=40){$unavailable['files']='snapshot_limited:record_limit';break;}
                 $datasets['files'][]=[
                   'id'=>(int)($row['id']??0),
                   'key'=>(string)($row['authority_key']??''),
@@ -191,27 +199,32 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
                   'mirror_only'=>false,
                   'dataset'=>'files',
                 ];
-                if(count($datasets['files'])>=40)break;
             }
-        }catch(Throwable $ignored){}
+        }catch(Throwable $ignored){$unavailable['files']='snapshot_unavailable:read_failed';}
     }
 
     if(function_exists('homeserver_contacts_v241_snapshot_records')){
         try{
-            foreach(homeserver_contacts_v241_snapshot_records($userId,$query,80) as $row){
+            foreach(homeserver_contacts_v241_snapshot_records($userId,$query,81) as $row){
                 if(!is_array($row))continue;
+                if(count($datasets['contacts'])>=80){$unavailable['contacts']='snapshot_limited:record_limit';break;}
                 $datasets['contacts'][]=$row;
-                if(count($datasets['contacts'])>=80)break;
             }
-        }catch(Throwable $ignored){}
+        }catch(Throwable $ignored){$unavailable['contacts']='snapshot_unavailable:read_failed';}
     }
 
     if(function_exists('homeserver_task_calendar_v243_cloud_calendar_records')){
         try{
             $calendarFrom=gmdate('Y-m-d H:i:s',time()-30*86400);
             $calendarTo=gmdate('Y-m-d H:i:s',time()+370*86400);
-            foreach(homeserver_task_calendar_v243_cloud_calendar_records($userId,$calendarFrom,$calendarTo) as $row){
+            $calendarRows=homeserver_task_calendar_v243_cloud_calendar_records($userId,$calendarFrom,$calendarTo);
+            $calendarSeen=[];
+            foreach($calendarRows as $row){
                 if(!is_array($row))continue;
+                $key=(string)($row['authority_key']??'');
+                if(isset($calendarSeen[$key]))continue;
+                $calendarSeen[$key]=true;
+                if(count($datasets['calendar'])>=60){$unavailable['calendar']='snapshot_limited:record_limit';break;}
                 $datasets['calendar'][]=[
                   'id'=>(int)($row['id']??0),
                   'key'=>(string)($row['authority_key']??''),
@@ -227,30 +240,47 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
                   'mirror_only'=>false,
                   'dataset'=>'calendar',
                 ];
-                if(count($datasets['calendar'])>=60)break;
             }
-        }catch(Throwable $ignored){}
+            // The projection is a time window and may contain many occurrences
+            // of one recurring event. Neither window omission nor a row cap is
+            // evidence that an authoritative event was deleted.
+            if(table_exists('user_calendar_events')){
+                $count=$pdo->prepare("SELECT COUNT(*) FROM user_calendar_events WHERE owner_user_id=? AND status='active'");
+                $count->execute([$userId]);
+                if((int)$count->fetchColumn()>count($calendarSeen)&&!isset($unavailable['calendar']))$unavailable['calendar']=count($calendarRows)>=300
+                  ?'snapshot_limited:record_limit':'snapshot_limited:time_window';
+            }
+        }catch(Throwable $ignored){$unavailable['calendar']='snapshot_unavailable:read_failed';}
     }
 
     if(table_exists('notifications')){
+        $notificationFrom=gmdate('Y-m-d H:i:s',time()-14*86400);
         $s=$pdo->prepare("SELECT id,type,title,body,is_read,created_at FROM notifications
-          WHERE user_id=? AND created_at>=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 14 DAY)
-          ORDER BY is_read ASC,id DESC LIMIT 80");
-        $s->execute([$userId]);
-        foreach($s->fetchAll()?:[] as $row){
+          WHERE user_id=? AND created_at>=?
+          ORDER BY is_read ASC,id DESC LIMIT 81");
+        $s->execute([$userId,$notificationFrom]);
+        $rows=$s->fetchAll()?:[];
+        if(count($rows)>80)$unavailable['notifications']='snapshot_limited:record_limit';
+        foreach(array_slice($rows,0,80) as $row){
             $text=(string)($row['title']??'').' '.(string)($row['body']??'');
             if(!homeserver_shared_v210_matches($query,$text))continue;
+            if(count($datasets['notifications'])>=30){$unavailable['notifications']='snapshot_limited:record_limit';break;}
             $datasets['notifications'][]=homeserver_shared_v210_record(
               'notifications',(int)$row['id'],(string)($row['title']??'Notification'),
               (string)($row['body']??'').' · '.(!empty($row['is_read'])?'read':'unread').' · type: '.(string)($row['type']??''),
               (string)($row['created_at']??'')
             );
-            if(count($datasets['notifications'])>=30)break;
         }
+        $older=$pdo->prepare('SELECT 1 FROM notifications WHERE user_id=? AND created_at<? LIMIT 1');
+        $older->execute([$userId,$notificationFrom]);
+        if($older->fetchColumn()!==false)$unavailable['notifications']='snapshot_limited:time_window';
     }
 
-    $datasets=homeserver_shared_v210_fit_datasets($datasets);
-    $json=json_encode($datasets,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
+    $datasets=homeserver_shared_v210_fit_datasets($datasets,170000,$unavailable);
+    $coverage=array_values(array_diff(array_keys($datasets),array_keys($unavailable)));
+    $mode=$query===''?'full':'filtered';
+    if(!$coverage){$mode='filtered';$coverage=array_keys($datasets);}
+    $json=json_encode(['datasets'=>$datasets,'covered_datasets'=>$coverage,'unavailable_datasets'=>$unavailable,'snapshot_mode'=>$mode],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);
     $revision=hash('sha256',is_string($json)?$json:'{}');
     return [
       'version'=>VP3_HOMESERVER_SHARED_AGENT_VERSION,
@@ -258,8 +288,9 @@ function homeserver_shared_v210_cloud_snapshot(int $userId,string $query=''): ar
       'generated_at'=>gmdate(DATE_ATOM),
       'authoritative_source'=>'vp3_cloud',
       'federation_version'=>defined('VP3_HOMESERVER_FEDERATED_DATA_VERSION')?VP3_HOMESERVER_FEDERATED_DATA_VERSION:null,
-      'snapshot_mode'=>$query===''?'full':'filtered',
-      'covered_datasets'=>['memory','knowledge','contacts','tasks','calendar','files','notifications'],
+      'snapshot_mode'=>$mode,
+      'covered_datasets'=>$coverage,
+      'unavailable_datasets'=>$unavailable,
       'datasets'=>$datasets,
     ];
 }
