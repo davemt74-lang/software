@@ -1,0 +1,62 @@
+.vp3-phone-workspace{position:fixed;inset:0;z-index:19000;display:flex;justify-content:flex-end;color:#172033;font:14px/1.5 system-ui,sans-serif}
+.vp3-phone-workspace[hidden],.vp3-phone-workspace [hidden]{display:none!important}
+.vp3-phone-backdrop{position:absolute;inset:0;border:0;background:rgba(15,23,42,.3);cursor:pointer}
+.vp3-phone-panel{position:relative;display:flex;flex-direction:column;width:min(460px,100%);height:100dvh;max-width:100%;background:#fff;box-shadow:-12px 0 40px rgba(15,23,42,.15);overflow:hidden}
+.vp3-phone-header{display:flex;flex:0 0 auto;align-items:center;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid #e5e7eb;background:#fff}
+.vp3-phone-header h2{margin:0;font-size:19px;font-weight:700}
+.vp3-phone-button,.vp3-phone-close{box-sizing:border-box;min-height:38px;border:1px solid #d8dee8;border-radius:9px;padding:7px 12px;background:#fff;color:#26364a;font:inherit;font-size:13px;line-height:1.4;cursor:pointer;text-align:center}
+.vp3-phone-button:hover,.vp3-phone-close:hover{background:#f3f6fa}
+.vp3-phone-button:disabled,.vp3-phone-panel button:disabled{opacity:.55;cursor:not-allowed}
+.vp3-phone-primary{background:#172033;border-color:#172033;color:#fff}
+.vp3-phone-primary:hover{background:#2c3b50}
+.vp3-phone-danger{border-color:#d5a4a8;color:#a42232}
+.vp3-phone-notice{flex:0 0 auto;margin:0;padding:12px 20px;color:#475467;background:#f8fafc;font-size:12px;min-height:18px;overflow-wrap:anywhere}
+.vp3-phone-tabs{display:grid;flex:0 0 auto;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:8px 10px;border-bottom:1px solid #e5e7eb}
+.vp3-phone-tabs button{border:0;border-radius:8px;padding:10px 4px;background:#fff;color:#475467;font:inherit;font-size:11px;font-weight:600;cursor:pointer;overflow-wrap:anywhere}
+.vp3-phone-tabs button[aria-selected=true]{background:#eaf0f8;color:#122e50}
+.vp3-phone-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:18px 20px calc(24px + env(safe-area-inset-bottom))}
+.vp3-phone-section{min-width:0;outline-offset:3px}
+.vp3-phone-section h3{font-size:13px;margin:20px 0 8px;color:#344054}
+.vp3-phone-field{display:flex;flex-direction:column;gap:7px;min-width:0;font-size:12px;font-weight:600;color:#344054}
+.vp3-phone-field input,.vp3-phone-field select,.vp3-phone-section>input[type=search]{box-sizing:border-box;width:100%;min-width:0;min-height:42px;border:1px solid #cbd2de;border-radius:9px;padding:9px 11px;background:#fff;color:#172033;font:14px system-ui,sans-serif}
+.vp3-phone-field input:focus,.vp3-phone-field select:focus{border-color:#5c7ba1;outline:2px solid #c9d9f0;outline-offset:1px}
+.vp3-phone-connection{display:grid;gap:10px;margin:16px 0;padding:14px;border:1px solid #dfe6ef;border-radius:12px;background:#f9fbfe}
+.vp3-phone-connection strong{font-size:13px}
+.vp3-phone-dial{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end;margin:20px 0}
+.vp3-phone-dial>button{min-height:42px}
+.vp3-phone-empty{margin:12px 0;color:#667085;font-size:12px}
+.vp3-phone-row{display:flex;align-items:center;gap:8px;border-bottom:1px solid #edf0f4;padding:13px 0;min-width:0}
+.vp3-phone-row-copy{display:grid;flex:1;min-width:0;gap:3px}
+.vp3-phone-row-copy strong{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.vp3-phone-row-copy span{font-size:11px;color:#667085;overflow-wrap:anywhere}
+.vp3-phone-row button{flex:0 0 auto;padding:7px 10px}
+.vp3-phone-call,.vp3-phone-voicemail{box-sizing:border-box;min-width:0;border:1px solid #dce3ec;border-radius:12px;padding:15px;margin:12px 0;background:#fff;color:#172033;box-shadow:0 2px 7px rgba(15,23,42,.03);overflow-wrap:anywhere}
+.vp3-phone-call>strong,.vp3-phone-voicemail>strong{display:block;font-size:14px}
+.vp3-phone-call p,.vp3-phone-voicemail p{margin:8px 0;white-space:pre-wrap;font-size:13px;line-height:1.5}
+.vp3-phone-call .vp3-phone-meta,.vp3-phone-voicemail .vp3-phone-meta{font-size:11px;color:#667085}
+.vp3-phone-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.vp3-phone-voicemail audio{display:block;width:100%;max-width:100%;height:40px;margin:10px 0}
+.vp3-phone-voicemail details{margin:12px 0}
+.vp3-phone-voicemail summary{cursor:pointer;font-size:12px;font-weight:600}
+.vp3-phone-report{display:block;width:fit-content;margin:10px 0;color:#24578d;font-size:12px;text-decoration:underline}
+.vp3-phone-chat-card{width:100%;min-width:0;max-width:680px;white-space:normal}
+.vp3-phone-announcement{box-sizing:border-box;max-width:760px;width:100%;margin:12px auto;padding:0 12px;white-space:normal}
+.vp3-phone-workspace :focus-visible,.vp3-phone-chat-card :focus-visible{outline:2px solid #2e65a5;outline-offset:3px}
+@media(max-width:500px){.vp3-phone-header{padding:15px 14px}.vp3-phone-notice{padding:10px 14px}.vp3-phone-body{padding:14px 14px calc(20px + env(safe-area-inset-bottom))}.vp3-phone-row{flex-wrap:wrap}.vp3-phone-row-copy{flex-basis:calc(100% - 110px)}.vp3-phone-panel{width:100%}.vp3-phone-tabs button{font-size:10px;padding:10px 2px}}
+@media(prefers-reduced-motion:no-preference){.vp3-phone-panel{animation:vp3-phone-enter .16s ease-out}@keyframes vp3-phone-enter{from{transform:translateX(25px);opacity:.7}to{transform:translateX(0);opacity:1}}}
+
+.vp3-phone-policy{margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb}
+.vp3-phone-policy h3{margin:0 0 10px}
+.vp3-phone-check{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.5;margin:11px 0;color:#344054}
+.vp3-phone-check input{flex:0 0 auto;width:16px;height:16px;margin:1px 0 0;accent-color:#213b60}
+.vp3-phone-modules{min-width:0;border:1px solid #e1e6ed;border-radius:10px;margin:16px 0;padding:8px 12px}
+.vp3-phone-modules legend{font-size:12px;color:#475467;padding:0 5px}
+.vp3-phone-processing-error{color:#9c2839;font-size:12px}
+
+.vp3-phone-dial .vp3-phone-record{grid-column:1/-1;margin:2px 0}
+
+.vp3-phone-worker-status{font-size:11px;line-height:1.5;color:#667085;margin:10px 0}
+@media(max-width:360px){
+  .vp3-phone-tabs{gap:2px;padding-inline:6px}
+  .vp3-phone-tabs button{min-height:44px;padding:10px 2px;font-size:10px;overflow-wrap:normal;white-space:nowrap}
+}

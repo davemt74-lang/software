@@ -40,6 +40,7 @@ if ($memberHeaderRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_A
 
   <div class="chat-topbar-actions member-header-actions">
     <?= $memberHeaderActions ?>
+    <?= function_exists('vp3_phone_workspace_button_v1') ? vp3_phone_workspace_button_v1($memberHeaderUser) : '' ?>
 
     <div class="chat-top-menu" id="chatNotificationMenu">
       <button class="chat-notification-link" id="chatNotificationButton" type="button" aria-label="Notifications" aria-expanded="false" aria-controls="chatNotificationDropdown">
@@ -65,6 +66,7 @@ if ($memberHeaderRenderAgentVoiceAssets) $GLOBALS['VP3_MEMBER_AGENT_VOICE_MENU_A
     <?php $memberMenuUser = $memberHeaderUser; require __DIR__ . '/member-user-menu.php'; ?>
   </div>
 </header>
+<?= function_exists('vp3_phone_workspace_runtime_v1') ? vp3_phone_workspace_runtime_v1($memberHeaderUser) : '' ?>
 <?php
 $memberHeaderRuntimeRendered = !empty($GLOBALS['VP3_MEMBER_HEADER_RUNTIME_RENDERED']) || !empty($GLOBALS['STONEFELLOW_MEMBER_HEADER_RUNTIME_RENDERED']);
 if (!$memberHeaderRuntimeRendered):

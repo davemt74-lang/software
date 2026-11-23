@@ -23,8 +23,7 @@
     profileAgentUrl: source?.dataset.profileAgentUrl || '/profile-agent.php',
     accountAgentsUrl: source?.dataset.accountAgentsUrl || '/account.php#agents-data',
     phoneEndpoint: source?.dataset.phoneEndpoint || '/api/phone-cloud-v100.php',
-    phoneRegisterUrl: source?.dataset.phoneRegisterUrl || '/phone.php',
-    pricingUrl: source?.dataset.pricingUrl || '/pricing.php'
+    phoneRegisterUrl: source?.dataset.phoneRegisterUrl || '/phone.php'
   };
 
   const agentVoiceSyncKey = `vp3:agent-voice-sync:${cfg.userId || 0}`;
@@ -105,9 +104,9 @@
             <div><small>Voice clone</small><strong data-vp3-clone-state>Checking ElevenLabs…</strong><span data-vp3-clone-detail>Your existing Voice Profile remains the source of truth.</span></div>
             <a data-vp3-manage-voice href="${esc(cfg.voiceProfileUrl)}">Manage clone</a>
           </div>
-          <div class="vp3-agent-phone-card" data-vp3-agent-phone-card>
-            <div><small>Agent phone number</small><strong data-vp3-agent-phone-label>Checking phone package…</strong><span data-vp3-agent-phone-detail>Calls and texts are managed with your agent.</span></div>
-            <a data-vp3-agent-phone-link href="${esc(cfg.phoneRegisterUrl)}">Register number</a>
+          <div class="vp3-agent-phone-card" data-vp3-agent-phone-card hidden>
+            <div><small>Agent phone number</small><strong data-vp3-agent-phone-label></strong><span data-vp3-agent-phone-detail>Calls and texts are managed with your agent.</span></div>
+            <a data-vp3-agent-phone-link href="${esc(cfg.phoneRegisterUrl)}">Open phone</a>
           </div>
 
           <div class="vp3-agent-voice-actions">
@@ -153,7 +152,7 @@
     }
     if (!dashboard.querySelector('[data-vp3-agent-phone-card]')) {
       const clone=dashboard.querySelector('.vp3-agent-voice-clone-card');
-      clone?.insertAdjacentHTML('afterend',`<div class="vp3-agent-phone-card" data-vp3-agent-phone-card><div><small>Agent phone number</small><strong data-vp3-agent-phone-label>Checking phone package…</strong><span data-vp3-agent-phone-detail>Calls and texts are managed with your agent.</span></div><a data-vp3-agent-phone-link href="${esc(cfg.phoneRegisterUrl)}">Register number</a></div>`);
+      clone?.insertAdjacentHTML('afterend',`<div class="vp3-agent-phone-card" data-vp3-agent-phone-card hidden><div><small>Agent phone number</small><strong data-vp3-agent-phone-label></strong><span data-vp3-agent-phone-detail>Calls and texts are managed with your agent.</span></div><a data-vp3-agent-phone-link href="${esc(cfg.phoneRegisterUrl)}">Open phone</a></div>`);
     }
     return dashboard;
   }
@@ -177,6 +176,7 @@
     systemVoiceStatus: dashboard.querySelector('[data-vp3-system-voice-status]'),
     agentVoice: menu.querySelector('[data-vp3-global-agent-voice]'),
     autoGreet: menu.querySelector('[data-vp3-agent-auto-greet]'),
+    phoneCard: dashboard.querySelector('[data-vp3-agent-phone-card]'),
     phoneLabel: dashboard.querySelector('[data-vp3-agent-phone-label]'),
     phoneDetail: dashboard.querySelector('[data-vp3-agent-phone-detail]'),
     phoneLink: dashboard.querySelector('[data-vp3-agent-phone-link]')
@@ -191,38 +191,35 @@
   }
 
   async function loadPhone() {
-    if (!el.phoneLabel || !el.phoneLink) return;
+    if (!el.phoneCard || !el.phoneLabel || !el.phoneLink) return;
+    // Subscription entitlement and pending requests do not expose Phone UI.
+    // Hide old server-rendered cards too, including while this request runs.
+    el.phoneCard.hidden = true;
+    el.phoneLabel.textContent = '';
+    if (el.phoneDetail) el.phoneDetail.textContent = '';
     try {
-      const data=await json(cfg.phoneEndpoint);
-      const state=data.state||{};
-      const number=state.number?.phone_e164;
-      const pending=state.request?.phone_e164;
-      const allowed=state.package?.included===true;
-      el.phoneLink.href=cfg.phoneRegisterUrl;
-      if(number){
-        el.phoneLabel.textContent=number;
-        el.phoneDetail.textContent=`${state.number.agent_name||'Your agent'} · ${state.number.status||'Pending setup'}`;
-        el.phoneLink.textContent='Manage number';
-      }else if(pending){
-        el.phoneLabel.textContent=`Request pending · ${pending}`;
-        el.phoneDetail.textContent='Waiting for administrator review and carrier purchase.';
-        el.phoneLink.textContent='View request';
-      }else if(allowed){
-        el.phoneLabel.textContent='No number registered';
-        el.phoneDetail.textContent=data.provider_connected?'Your package includes an agent phone number.':'Your package includes a number; Twilio setup is pending.';
-        el.phoneLink.textContent='Register number';
-      }else{
-        el.phoneLabel.textContent='Not included in your package';
-        el.phoneDetail.textContent='Choose a plan with an agent phone number.';
-        el.phoneLink.href=cfg.pricingUrl;
-        el.phoneLink.textContent='View plans';
-      }
-    }catch(_error){
-      el.phoneLabel.textContent='Phone setup unavailable';
-      el.phoneDetail.textContent='Your administrator may need to run a Cloud upgrade.';
-      el.phoneLink.textContent='Phone settings';
+      const data = await json(cfg.phoneEndpoint);
+      const number = data.state?.number;
+      const numberId = Number(number?.id);
+      if (!number || !Number.isSafeInteger(numberId) || numberId < 1 || !/^\+[1-9][0-9]{7,14}$/.test(String(number.phone_e164 || ''))) return;
+      el.phoneLabel.textContent = String(number.phone_e164);
+      if (el.phoneDetail) el.phoneDetail.textContent = `${number.agent_name || 'Your agent'} · ${number.status || 'Pending setup'}`;
+      el.phoneLink.href = cfg.phoneRegisterUrl;
+      el.phoneLink.textContent = 'Open phone';
+      el.phoneCard.hidden = false;
+    } catch (_error) {
+      el.phoneCard.hidden = true;
     }
   }
+
+  el.phoneLink?.addEventListener('click', event => {
+    const workspace = window.VP3PhoneWorkspaceV1;
+    if (typeof workspace?.open !== 'function') return;
+    event.preventDefault();
+    void Promise.resolve().then(() => workspace.open()).catch(() => {
+      location.href = cfg.phoneRegisterUrl;
+    });
+  });
 
   async function json(url, options = {}) {
     const response = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options});

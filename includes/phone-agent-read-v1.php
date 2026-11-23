@@ -11,6 +11,14 @@ function vp3_phone_agent_readiness_v1(PDO $pdo,array $user): array
     $out=['numbers'=>'upgrade_required','sms'=>'upgrade_required','send'=>'upgrade_required'];
     if((int)($user['id']??0)<1||(isset($user['is_active'])&&empty($user['is_active']))||!has_permission('account.access',$user)||!has_permission('chat.access',$user))return array_fill_keys(array_keys($out),'permission_denied');
     if(!vp3_phone_schema_ready_v100($pdo))return $out;
+    if(function_exists('vp3_phone_workspace_available_v1'))$assigned=vp3_phone_workspace_available_v1($pdo,$user);
+    else {
+        // Isolated capability fixtures and older bootstrap callers can inspect
+        // the same base assignment without importing the browser-phone stack.
+        $q=$pdo->prepare('SELECT n.id FROM phone_cloud_numbers_v100 n INNER JOIN user_agents a ON a.id=n.agent_id AND a.owner_user_id=n.owner_user_id AND a.is_active=1 WHERE n.owner_user_id=? LIMIT 1');
+        $q->execute([(int)$user['id']]);$assigned=(bool)$q->fetchColumn();
+    }
+    if(!$assigned)return array_fill_keys(array_keys($out),'number_assignment_required');
     $package=vp3_phone_package_v100($pdo,(int)$user['id']);
     $out['numbers']=$package['included']?'ready':'subscription_required';
     if(!vp3_phone_sms_schema_ready_v110())return $out;

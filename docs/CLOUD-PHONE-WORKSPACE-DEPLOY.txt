@@ -1,0 +1,95 @@
+VP3 Cloud Phone Workspace — deployment and acceptance
+
+This release adds a member phone drawer, Twilio browser calling, call cards in
+private Agent Chat, owner-private voicemail playback and callback controls,
+favorites from existing CRM contacts, and optional recorded-call transcription
+and reports. Core browser calls use Twilio directly. They do not require
+LiveKit or a HomeServer installation. The separate Phone Tracking, paired-phone
+camera and location applications are not the telephone feature.
+
+INSTALL
+1. Extract the verified Cloud deployment ZIP over the existing Cloud source.
+   Preserve config.php, .env, private/ and uploads/.
+2. Sign in as an administrator and run upgrade.php. It installs phone workspace,
+   recording, speech-budget and historical SMS ownership migration storage.
+   Existing assignments remain unchanged. Fresh setup.php installs the same schema.
+3. Open Admin > Phone & Messaging. Keep the tested Twilio Account SID/Auth Token
+   and existing number assignment. An actual number must belong to an active
+   Agent owned by that member. Unassigned members get no phone entry point.
+
+SUBSCRIPTION AND ADMIN ACCESS
+4. Admin > Subscription packages sets the recurring monthly package price.
+   Enable Agent Phone Numbers Included (phone.numbers), with an explicit positive
+   quantity, and Agent Phone Calls (phone.voice). Existing package billing and
+   subscription lifecycle remain authoritative; this release does not choose a
+   price, create customer subscriptions or charge a customer on deployment.
+5. For a complimentary/admin override, use Admin > Entitlement Grants. Grant a
+   positive phone.numbers quantity and phone.voice, with a reason and optional
+   expiry. Existing grants compose with the package and can be revoked. A grant
+   still requires an administrator-assigned number. Assignment alone does not
+   bypass package/grant calling entitlements. Expired/revoked access prevents new
+   paid phone actions and processing. Existing owner-private records retain their
+   original owner when numbers are reassigned.
+
+TWILIO BROWSER SETUP
+6. Under Browser phone, save a Twilio API Key SID, API Key Secret and TwiML App
+   SID from the same Twilio account as the assigned number. Account SID/Auth Token
+   alone cannot mint browser Voice access tokens. Secrets are encrypted at rest
+   and are never sent to the browser.
+7. Set that TwiML App's Voice Request URL to the exact POST URL displayed in
+   Admin > Phone. It ends in /api/phone-browser-voice-v1.php. Keep the number's
+   existing signed incoming callback /api/phone-voice-inbound-v130.php.
+   Public HTTPS and Twilio access to these URLs are required. Do not rewrite or
+   remove the signature-checked callback query parameters.
+8. Enable incoming voice, then enable browser calling for the assigned number.
+   Enable recording only if desired: the per-number setting records incoming
+   browser calls and permits recording outgoing calls. The member separately chooses
+   Record this call for an outgoing call. Recorded calls play a spoken notice to
+   the called party before connecting. Existing voicemail has its own greeting.
+9. The member opens Agent Chat, clicks the header phone icon and enables calls.
+   Browser microphone permission is needed when accepting or placing a call.
+   The existing microphone ownership lease prevents competing voice surfaces.
+   The phone rings in the compatible owner Chat Agent scope; an unavailable owner
+   follows the existing voicemail/AI fallback. Browser calling does not require
+   the separately configured LiveKit/HomeServer streaming bridge.
+
+AUTOMATIC TRANSCRIPTS AND REPORTS
+10. Add a once-per-minute hosting cron job, using the installed PHP CLI binary
+    and full installation path:
+      * * * * * php /full/path/to/vp3/phone-recording-worker-v1.php
+    On cPanel, select Once Per Minute and enter the command portion only.
+    Use the hosting account's PHP CLI matching the Cloud PHP version/extensions.
+    This dedicated worker processes one recording per invocation; a private
+    nonblocking lock prevents overlap. It keeps speech jobs off the shared Agent
+    worker. Signed webhooks enqueue metadata and never run speech inline.
+11. In the member phone's After calls settings, explicitly enable Cloud processing
+    and choose retained audio, transcripts and report sections. Defaults do not
+    automatically send recordings to speech or AI providers. Transcription uses
+    the configured Cloud speech service; report analysis uses existing Cloud model
+    routing and AI quotas. Speech-provider usage is separate from LLM token usage.
+    Automatic speech has a 60-minute/hour owner ceiling, 25 MB media bound and
+    one-hour per-recording ceiling. Uncertain paid requests require review before
+    retry, so a lost response is not automatically charged twice.
+12. Reports use existing Summary, Questions, Actions, Decisions and Follow-up
+    modules. Transcripts are private canonical drafts. The worker posts a report
+    to owner Chat; it does not send a callback, publish a transcript or accept
+    suggested actions automatically. Server worker observation means only that
+    the process ran; the UI does not claim a provider was verified by that signal.
+
+RELEASE VALIDATION
+Automated checks cover actual PHP/SQLite state projections, isolated MySQL
+persistence/migrations, signed carrier callbacks, single-use dial intent replay,
+Agent/owner boundaries, disclosure ordering, out-of-order callbacks, typed legacy
+and new voicemail identities, private playback, recording/transcript persistence,
+policy/assignment revocation between paid requests, budgets, UI/media races,
+responsive screenshots and the pinned unmodified Twilio JavaScript SDK.
+No test calls or customer billing changes are made by deployment or CI.
+
+SITE ACCEPTANCE
+After configuring the deployed site, verify an incoming call with Accept/Decline,
+an outgoing call, muted audio and hang-up, voicemail playback plus Call back,
+an explicitly recorded call with audible notice, and the worker-created transcript
+and report. Confirm an unassigned user has no phone icon and cannot call its APIs.
+Confirm paid package access and an explicit admin grant both work only alongside
+a real assignment, and that removing the allowance blocks a new call. Carrier,
+real microphone/audio quality and production credentials need this live check.

@@ -1,0 +1,7 @@
+Twilio Voice JavaScript SDK 2.18.5
+Source: https://registry.npmjs.org/@twilio/voice-sdk/-/voice-sdk-2.18.5.tgz
+Official release: https://github.com/twilio/twilio-voice.js/releases/tag/2.18.5
+Package integrity: sha512-2/tw1IDAIn7j6yFDOln8p93v3aHIxNIN93JwL98cHIlbkSNeU/Jt9zGM/0TvDpNjo+k88lvAew4jgOjKlc9/KA==
+Vendored script SHA256: 35d3cb1b22e309f9884724a89250aecd2de4f1556ad7b67a7bc5e06c73dcb74a
+Script SRI: sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8
+Unmodified distribution bundle; license in assets/twilio-voice-LICENSE.txt.

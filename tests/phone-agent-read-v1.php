@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/agent-capability-chat-v1.php';
 require __DIR__.'/fixtures/phone-agent-schema-v1.php';
 function url($p){return $p;}
+function db(): PDO {return $GLOBALS['pdo'];}
 function subscription_has_entitlement($user,$key){return ($GLOBALS['phoneSubscription']??true)&&(int)$user['id']===1;}
 function subscription_entitlement_limit(...$args){return 3;}
 function vp3_transcript_analyze_v1(){}
@@ -27,9 +28,13 @@ rejected(fn()=>vp3_capability_plan_v1('{"operation":"phone_read","ids":["phone.s
 rejected(fn()=>vp3_capability_plan_v1('{"operation":"continue","ids":[],"thread_id":11}',$s),'phone parameters cannot be smuggled into ordinary routing');
 rejected(fn()=>vp3_capability_plan_v1('{"operation":"phone_read","ids":["phone.sms.read"],"thread_id":"11"}',$s),'model thread IDs are strictly typed');
 rejected(fn()=>vp3_tool_receipt_v1('phone.sms.read','read','completed'),'an SMS read cannot issue a successful mutation receipt');
-$q=$pdo->prepare('INSERT INTO phone_sms_threads_v110 VALUES(?,1,2,8,?,0,?)');for($i=200;$i<330;$i++)$q->execute([$i,'+15550003001','2030-01-01 00:00:00']);$r=phoneChat(phonePlan('phone.sms.read'));check(str_contains($r['answer'],'Thread #11'),'Agent scope is applied before the thread list limit');
+$q=$pdo->prepare('INSERT INTO phone_sms_threads_v110 VALUES(?,1,2,8,?,0,?)');for($i=200;$i<330;$i++)$q->execute([$i,'+15550003'.sprintf('%03d',$i),'2030-01-01 00:00:00']);$r=phoneChat(phonePlan('phone.sms.read'));check(str_contains($r['answer'],'Thread #11'),'Agent scope is applied before the thread list limit');
 $q=$pdo->prepare('INSERT INTO phone_sms_messages_v110 VALUES(?,11,1,?,?,?,?)');for($i=400;$i<415;$i++)$q->execute([$i,'inbound',str_repeat('é',1600),'received','2026-10-30 17:00:00']);$r=phoneChat(phonePlan('phone.sms.read',11));check($r['tool_receipt']['count']===10&&str_contains($r['answer'],'latest 10')&&str_contains($r['answer'],'[excerpt]')&&mb_strlen($r['answer'])<12000,'long SMS threads have explicit bounded message excerpts');
 check((int)$pdo->query('SELECT unread_count FROM phone_sms_threads_v110 WHERE id=11')->fetchColumn()===7&&(int)$pdo->query('SELECT COUNT(*) FROM phone_sms_outbox_v120')->fetchColumn()===0,'all reads and inspection leave unread counts and outbound storage unchanged');
 $pdo->exec('CREATE TABLE artist_transcript_master_analysis_v237(id INTEGER);CREATE TABLE artist_transcript_page_analysis_v237(id INTEGER)');$s=vp3_capability_snapshot_v1($pdo,$u,$p);check(row($s,'transcripts.analyze')['reason']==='upgrade_required','analysis tables alone do not falsely establish transcript source readiness');
 $pdo->exec('CREATE TABLE artist_transcript_sessions_v172(id INTEGER);CREATE TABLE artist_transcript_segments_v172(id INTEGER);DROP TABLE artist_transcript_master_analysis_v237');$s=vp3_capability_snapshot_v1($pdo,$u,$p);check(row($s,'transcripts.highlight')['ready']&&!row($s,'transcripts.analyze')['ready'],'raw highlights use transcript and Brain readiness independently of saved analysis');
+$pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=2 WHERE owner_user_id=1');
+$readiness=vp3_phone_agent_readiness_v1($pdo,$u);
+check($readiness===array_fill_keys(['numbers','sms','send'],'number_assignment_required'),'plan entitlement alone cannot expose Phone capabilities after the last assignment is revoked');
+$r=phoneChat(phonePlan('phone.sms.read',11));check($r['tool_receipt']['status']==='blocked'&&$r['tool_receipt']['reason']==='number_assignment_required'&&!str_contains($r['answer'],'pizza pickup'),'revoked assignment blocks saved Phone reads before revealing historical text');
 echo 'PHONE_AGENT_READ=PASS ('.($checks-$before)." cases; real SQLite records, production shared broker and canonical SMS reader)\n";

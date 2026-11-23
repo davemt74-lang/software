@@ -7,6 +7,7 @@ const inbound=read('api/phone-voice-inbound-v130.php');
 const complete=read('api/phone-voice-complete-v130.php');
 const recording=read('api/phone-voice-recording-v130.php');
 const playback=read('api/phone-voice-audio-v130.php');
+const workspace=read('includes/phone-workspace-v1.php');
 const page=read('phone-calls.php');
 const admin=read('admin/phone.php');
 const upgrade=read('upgrade.php');
@@ -29,7 +30,8 @@ check('recording metadata idempotent and account scoped, no provider URL persist
   voice.includes('uq_phone_voice_recording')&&voice.includes('voicemail_ready')
   &&!voice.includes('RecordingUrl')&&voice.includes('owner_user_id'));
 check('member-only playback, server-held Twilio credential and bounded download',
-  playback.includes("require_permission('account.access')")&&playback.includes("has_permission('chat.access'")
+  playback.includes('vp3_phone_workspace_available_v1($pdo,$user)')
+  &&workspace.includes("has_permission('account.access',$live)")&&workspace.includes("has_permission('chat.access',$live)")
   &&playback.includes('owner_user_id=?')&&playback.includes('vp3_phone_twilio_credentials_v100')
   &&playback.includes('maxBytes')&&playback.includes('CURLOPT_PROTOCOLS'));
 check('owner call UI and admin per-number activation are wired',

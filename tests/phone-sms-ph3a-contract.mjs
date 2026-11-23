@@ -8,6 +8,7 @@ const inbound=read('api/phone-sms-inbound-v110.php');
 const api=read('api/phone-sms-v110.php');
 const inbox=read('phone-inbox.php');
 const admin=read('admin/phone.php');
+const outbound=read('includes/phone-sms-outbound-v120.php');
 const upgrade=read('upgrade.php');
 check('provider-independent thread/message schema and unique SID replay protection',
   domain.includes('phone_sms_threads_v110')&&domain.includes('phone_sms_messages_v110')
@@ -25,9 +26,10 @@ check('member inbox and API are account-scoped and protect mark read with CSRF',
   inbox.includes('vp3_phone_sms_messages_v110($pdo,$ownerId')
   &&api.includes('verify')===false&&api.includes('csrf_token()')
   &&api.includes('has_permission'));
-check('admin callback activation configures Twilio and starts disabled',
+check('admin incoming SMS activation is per number and outgoing sends have a separate default-off switch',
   domain.includes("'SmsUrl'=>$callback")&&admin.includes('activate_incoming_sms')
-  &&admin.includes('disable_incoming_sms')&&admin.includes('Outbound: disabled'));
+  &&admin.includes('disable_incoming_sms')&&domain.includes('SET sms_enabled=1 WHERE id=? AND owner_user_id=?')
+  &&outbound.includes("setting('phone_sms_outbound_live_v120','0')==='1'"));
 check('STOP/START tracking and bounded payload storage',
   domain.includes("'STOP'")&&domain.includes("'START'")&&domain.includes('strlen($body)>6400'));
 check('upgrade initializes inbox after phone inventory',

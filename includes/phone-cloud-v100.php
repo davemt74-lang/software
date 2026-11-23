@@ -65,12 +65,27 @@ function vp3_phone_package_v100(PDO $pdo, int $userId): array
 {
     $stmt=$pdo->prepare('SELECT * FROM users WHERE id=? LIMIT 1');$stmt->execute([$userId]);
     $user=$stmt->fetch();
-    if (!$user) return ['included'=>false,'limit'=>0,'voice'=>false,'sms'=>false];
-    $included=subscription_has_entitlement($user,'phone.numbers');
-    $limit=$included?subscription_entitlement_limit($user,'phone.numbers',0):0;
-    return ['included'=>$included && ($limit===null || $limit>0),
-        'limit'=>$limit,'voice'=>$included && subscription_has_entitlement($user,'phone.voice'),
-        'sms'=>$included && subscription_has_entitlement($user,'phone.sms')];
+    if (!$user || (array_key_exists('is_active',$user) && !(int)$user['is_active']))
+        return ['included'=>false,'limit'=>0,'voice'=>false,'sms'=>false];
+    if (function_exists('subscription_effective_entitlement_v340')) {
+        // Carrier access needs an active package or an explicit, unexpired
+        // Admin entitlement grant. The general subscription helpers also let
+        // internal Admin roles bypass packages; that is not a phone override.
+        $numbers=subscription_effective_entitlement_v340($user,'phone.numbers');
+        $limit=empty($numbers['enabled'])?0:(!empty($numbers['unlimited'])?null:max(0,(int)($numbers['limit']??0)));
+        $included=!empty($numbers['enabled']) && ($limit===null || $limit>0);
+        $voice=$included && !empty(subscription_effective_entitlement_v340($user,'phone.voice')['enabled']);
+        $sms=$included && !empty(subscription_effective_entitlement_v340($user,'phone.sms')['enabled']);
+    } else {
+        // Compatibility for isolated legacy integrations that load only this
+        // module. The Cloud bootstrap always loads the composed runtime above.
+        $numbers=subscription_has_entitlement($user,'phone.numbers');
+        $limit=$numbers?subscription_entitlement_limit($user,'phone.numbers',0):0;
+        $included=$numbers && ($limit===null || $limit>0);
+        $voice=$included && subscription_has_entitlement($user,'phone.voice');
+        $sms=$included && subscription_has_entitlement($user,'phone.sms');
+    }
+    return ['included'=>$included,'limit'=>$limit,'voice'=>$voice,'sms'=>$sms];
 }
 
 function vp3_phone_quota_v100(PDO $pdo, int $userId, int $excludeNumberId=0): void
@@ -91,7 +106,7 @@ function vp3_phone_member_state_v100(PDO $pdo, int $userId): array
     if (!vp3_phone_schema_ready_v100($pdo)) return ['ready'=>false,'number'=>null,'request'=>null];
     $query=$pdo->prepare('SELECT n.id,n.phone_e164,n.status,n.sms_enabled,n.voice_enabled,n.agent_id,
        a.display_name AS agent_name FROM phone_cloud_numbers_v100 n
-       LEFT JOIN user_agents a ON a.id=n.agent_id AND a.owner_user_id=n.owner_user_id
+       INNER JOIN user_agents a ON a.id=n.agent_id AND a.owner_user_id=n.owner_user_id AND a.is_active=1
        WHERE n.owner_user_id=? ORDER BY n.id DESC LIMIT 20');
     $query->execute([$userId]);$numbers=$query->fetchAll()?:[];$number=$numbers[0]??null;
     $query=$pdo->prepare('SELECT r.id,r.phone_e164,r.status,r.agent_id,a.display_name AS agent_name
@@ -228,6 +243,9 @@ function vp3_phone_import_inventory_v100(PDO $pdo): int
 
 function vp3_phone_assign_v100(PDO $pdo, int $numberId, int $userId, int $agentId): void
 {
+    if (function_exists('vp3_phone_sms_assignment_schema_ready_v111') && table_exists('phone_sms_threads_v110')
+        && !vp3_phone_sms_assignment_schema_ready_v111($pdo))
+        throw new RuntimeException('Run the Cloud SMS assignment upgrade before assigning or transferring a phone number.');
     if (!vp3_phone_agent_owned_v100($pdo,$userId,$agentId)) {
         throw new RuntimeException('The selected agent does not belong to that user.');
     }
@@ -253,6 +271,10 @@ function vp3_phone_assign_v100(PDO $pdo, int $numberId, int $userId, int $agentI
         }
         if (table_exists('phone_voice_stream_routes_v150'))
             $pdo->prepare('DELETE FROM phone_voice_stream_routes_v150 WHERE phone_number_id=?')->execute([$numberId]);
+        // Browser answering and recording are approvals for an exact assignment,
+        // never a permanent grant attached to the carrier number itself.
+        if (table_exists('phone_browser_numbers_v1'))
+            $pdo->prepare('DELETE FROM phone_browser_numbers_v1 WHERE phone_number_id=?')->execute([$numberId]);
         $pdo->prepare('UPDATE phone_cloud_requests_v100 SET status=\'fulfilled\'
           WHERE owner_user_id=? AND agent_id=? AND phone_e164=(SELECT phone_e164 FROM phone_cloud_numbers_v100 WHERE id=?) AND status=\'pending\'')
           ->execute([$userId,$agentId,$numberId]);

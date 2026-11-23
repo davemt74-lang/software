@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require_once dirname(__DIR__).'/includes/phone-cloud-v100.php';
 require_once dirname(__DIR__).'/includes/phone-sms-v110.php';
 require_once dirname(__DIR__).'/includes/phone-sms-outbound-v120.php';
@@ -14,6 +15,8 @@ function vp3_phone_outbound_json_v120(bool $ok,array $data=[],int $status=200): 
 $user=current_user();$pdo=db();
 if (!$user||!has_permission('account.access',$user)||!has_permission('chat.access',$user))
     vp3_phone_outbound_json_v120(false,['error'=>'Not authorized.'],403);
+if (!$pdo instanceof PDO || !vp3_phone_workspace_available_v1($pdo,$user))
+    vp3_phone_outbound_json_v120(false,['error'=>'Phone features require a number assigned by your administrator to an active agent.'],403);
 if (!$pdo||!vp3_phone_sms_outbound_ready_v120())
     vp3_phone_outbound_json_v120(false,['error'=>'SMS sending requires the Cloud upgrade.'],503);
 $owner=(int)$user['id'];

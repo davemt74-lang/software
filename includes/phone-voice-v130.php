@@ -147,7 +147,12 @@ function vp3_phone_voice_current_route_v131(PDO $pdo,string $callSid,int $maxAge
         ||(string)$receipt['current_did']!==(string)$receipt['called_e164']
         ||!in_array((string)$receipt['state'],$allowedStates,true))
         return ['accepted'=>false,'reason'=>'assignment_changed'];
-    $created=strtotime((string)$receipt['created_at']);
+    // Database DATETIME receipts use UTC, independently of the PHP host's
+    // configured timezone. Reject invalid calendar values rather than letting
+    // strtotime normalize or interpret them as a new local call.
+    $rawCreated=(string)$receipt['created_at'];
+    $createdAt=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$rawCreated,new DateTimeZone('UTC'));
+    $created=$createdAt && $createdAt->format('Y-m-d H:i:s')===$rawCreated?$createdAt->getTimestamp():false;
     if ($created===false||$created>time()+60||time()-$created>$maxAgeSeconds)
         return ['accepted'=>false,'reason'=>'call_expired'];
     if (!vp3_phone_package_v100($pdo,$owner)['voice']
@@ -206,6 +211,16 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     }
     $route=vp3_phone_voice_current_route_v131($pdo,$callSid,14400,['voicemail_offered','conversation_active','streaming_active']);
     if (!$route['accepted']) return $route;
+    if(function_exists('vp3_phone_browser_incoming_v1')&&vp3_phone_workspace_schema_ready_v1($pdo)){
+        $browserTwiml=null;
+        try{$browserTwiml=vp3_phone_browser_incoming_v1($pdo,$route,$callSid);}
+        catch(Throwable){error_log('Phone browser incoming projection is temporarily unavailable.');}
+        if($browserTwiml!==null)return ['accepted'=>true,'twiml'=>$browserTwiml];
+    }
+    if(function_exists('vp3_phone_workspace_legacy_incoming_v1')){
+        try{vp3_phone_workspace_legacy_incoming_v1($pdo,$route,$callSid);}
+        catch(Throwable){error_log('Phone incoming Chat projection is temporarily unavailable.');}
+    }
     if (function_exists('vp3_phone_stream_route_v150') && vp3_phone_stream_route_v150($pdo,$route)) {
         if ($row && (string)$row['state']==='streaming_active')
             return ['accepted'=>false,'reason'=>'call_already_streaming'];

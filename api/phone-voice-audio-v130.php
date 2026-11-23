@@ -3,16 +3,19 @@ declare(strict_types=1);
 // Authenticated owner-only voicemail stream. Recording bytes are not saved in
 // Cloud storage or delivered to an LLM. Twilio credentials remain server-side.
 require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require_once dirname(__DIR__).'/includes/phone-cloud-v100.php';
 require_once dirname(__DIR__).'/includes/phone-voice-v130.php';
-require_permission('account.access');
-$user=current_user();
-if (!$user||!has_permission('chat.access',$user)) {http_response_code(403);exit;}
+$user=current_user();$pdo=db();
+if (!$user || !$pdo instanceof PDO || !vp3_phone_workspace_available_v1($pdo,$user)) {
+    http_response_code(403);header('Content-Type: application/json; charset=UTF-8');
+    header('Cache-Control: no-store');
+    echo json_encode(['ok'=>false,'error'=>'Phone features require a number assigned by your administrator to an active agent.']);exit;
+}
 if (($_SERVER['REQUEST_METHOD']??'')!=='GET') {http_response_code(405);exit;}
 header('Cache-Control: private, no-store');
 header('X-Content-Type-Options: nosniff');
 $recordId=(int)($_GET['id']??0);
-$pdo=db();
 if (!$pdo||!vp3_phone_voice_schema_ready_v130()||$recordId<1) {http_response_code(404);exit;}
 $q=$pdo->prepare('SELECT provider_recording_sid FROM phone_voice_recordings_v130
   WHERE id=? AND owner_user_id=? AND provider=\'twilio\' AND recording_status=\'completed\' LIMIT 1');

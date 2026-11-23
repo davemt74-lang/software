@@ -1,12 +1,15 @@
 <?php
 declare(strict_types=1);
 require __DIR__.'/includes/bootstrap.php';
+require_once __DIR__.'/includes/phone-workspace-v1.php';
 require_once __DIR__.'/includes/phone-cloud-v100.php';
 require_once __DIR__.'/includes/phone-voice-v130.php';
 require_once __DIR__.'/includes/phone-voice-conversation-v140.php';
-require_permission('account.access');
-$user=current_user();
-if (!$user||!has_permission('chat.access',$user)) redirect(url('/account.php'));
+$user=current_user();$pdo=db();
+if (!$user || !$pdo instanceof PDO || !vp3_phone_workspace_available_v1($pdo,$user)) {
+    http_response_code(403);header('Content-Type: text/plain; charset=UTF-8');
+    exit('Phone features require a number assigned by your administrator to an active agent.');
+}
 $ready=vp3_phone_voice_schema_ready_v130();$calls=[];$error='';
 if ($ready) {
     try {$calls=vp3_phone_voice_calls_v130(db(),(int)$user['id']);}

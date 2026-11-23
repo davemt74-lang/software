@@ -177,6 +177,7 @@ function vp3_capability_reason_v1(string $reason): string
         'invalid_response'=>'HomeServer capability response could not be verified','remote_unavailable'=>'HomeServer did not complete the capability check',
         'scope_restricted'=>'the authenticated HomeServer scope does not allow this operation',
         'subscription_required'=>'your subscription does not include this capability',
+        'number_assignment_required'=>'an administrator must assign a phone number to your active Agent first',
         'setup_required'=>'an active schedule or Team pool must be configured first',
         'provider_setup_required'=>'the site administrator must enable and configure this provider',
         'connection_required'=>'link or reconnect the mailbox from Connections',

@@ -4,6 +4,21 @@ declare(strict_types=1);
 require_once __DIR__.'/ai-service-usage-v1.php';
 require_once __DIR__.'/ai-usage-accounting-v032.php';
 
+/** Server-only, synchronous authority scope for jobs with revocable source grants. */
+final class VP3AIDirectAuthorityScopeV1
+{
+    private static array $guards=[];
+    public static function run(callable $guard,callable $operation): mixed
+    {
+        self::$guards[]=$guard;
+        try{return $operation();}finally{array_pop(self::$guards);}
+    }
+    public static function assertCurrent(): void
+    {foreach(self::$guards as $guard)$guard();}
+}
+function vp3_ai_direct_authority_scope_v1(callable $guard,callable $operation): mixed
+{return VP3AIDirectAuthorityScopeV1::run($guard,$operation);}
+
 /** Observe the provider result independently of the subscription debit. */
 function vp3_ai_direct_observe_v1(?PDO $pdo,array $user,array $route,string $scope,string $requestKey,array $result,float $started,?string $cloudRequestKey=null): string
 {
@@ -86,6 +101,7 @@ function vp3_ai_direct_request_v1(array $user,array $route,string $scope,array $
         &&function_exists('subscription_ai_preflight')&&function_exists('subscription_ai_commit_usage')
         &&function_exists('subscription_ai_release_reservation');
     try{
+        VP3AIDirectAuthorityScopeV1::assertCurrent();
         $pdo=$private?db():null;
         if($metered){
             $encoded=json_encode($payload,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -114,6 +130,8 @@ function vp3_ai_direct_request_v1(array $user,array $route,string $scope,array $
                 }
             }
         }
+        // Recheck after quota reservation and immediately before each dispatch.
+        VP3AIDirectAuthorityScopeV1::assertCurrent();
         $started=microtime(true);
         $observer=static function(array $response)use($pdo,$user,$route,$scope,$requestKey,$started,&$observed,&$observedKey,&$attempt):void{
             $observed=true;$attempt++;

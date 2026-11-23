@@ -24,14 +24,18 @@ check('phone registries are separate from provider credentials',
 check('member phone assignment and requests enforce account-owned agent and package quotas',
   domain.includes('vp3_phone_agent_owned_v100')&&domain.includes('vp3_phone_package_v100')&&domain.includes('vp3_phone_quota_v100')
   &&domain.includes('owner_user_id=?')&&member.includes('can_register'));
+check('legacy member API and page require an actual assignment before any phone action',
+  member.includes('vp3_phone_workspace_available_v1($pdo,$user)')&&page.includes('vp3_phone_workspace_available_v1($pdo,$user)')
+  &&member.indexOf('vp3_phone_workspace_available_v1($pdo,$user)')<member.indexOf("$action==='search'"));
 check('carrier search is read-only and rate-limited',
   member.includes("$action==='search'")&&member.includes('count($attempts)>=6')&&domain.includes('AvailablePhoneNumbers/US/Local.json'));
 check('purchase requires exact explicit approval, never retries uncertain sends',
   domain.includes("'PURCHASE '.$number")&&domain.includes('review_required')
   &&domain.includes("status=\\'purchasing\\'")&&domain.includes("status=\\'fulfilled\\' WHERE id=? AND status=\\'purchasing\\'"));
-check('admin is privileged and cannot auto-enable calling or SMS',
+check('admin assignment clears live flags and browser activation is a separate CSRF-protected action',
   admin.includes("require_permission('users.manage')")&&domain.includes('sms_enabled=0,voice_enabled=0')
-  &&admin.includes('No live sending is enabled'));
+  &&admin.includes('verify_csrf()')&&admin.includes("$action==='set_browser_phone'")
+  &&admin.includes('vp3_phone_browser_number_policy_set_v1'));
 check('menu and standalone page use existing shared voice UI, without extra voice toggle',
   menu.includes('data-vp3-agent-phone-card')&&page.includes('includes/member-header.php')
   &&!page.includes('data-vp3-global-agent-voice'));
@@ -46,7 +50,8 @@ check('phone quota counts all owned numbers, not the 20-row menu preview',
 if (process.env.PHONE_BROWSER_TEST === '1') {
 const {chromium}=await import('playwright');
 
-let phone={number:{phone_e164:'+16025550111',agent_name:'Test Agent',status:'unconfigured'},package:{included:true},request:null};
+let phone={number:{id:1,phone_e164:'+16025550111',agent_name:'Test Agent',status:'unconfigured'},package:{included:true},request:null};
+let phoneStatus=200;
 const server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://local').pathname;
   res.setHeader('Cache-Control','no-store');
@@ -56,7 +61,7 @@ const server=http.createServer(async(req,res)=>{
   if(path.startsWith('/api/')){
     res.setHeader('Content-Type','application/json');
     let result={ok:true};
-    if(path.includes('phone-cloud')) result={ok:true,state:phone,provider_connected:true};
+    if(path.includes('phone-cloud')) {res.statusCode=phoneStatus;result=phoneStatus===200?{ok:true,state:phone,provider_connected:true}:{ok:false,error:'No assigned number.'};}
     else if(path.includes('user-agent-system'))result={ok:true,state:{agents:[{id:7,display_name:'Test Agent',is_active:1,is_default:1,voice_enabled:0}],system_voice:{}}};
     else if(path.includes('studio-voice-profile'))result={ok:true,state:{voice:{has_clone_binding:false,clone_enabled:false}}};
     else if(path.includes('chat-settings'))result={ok:true,agent_voice_allowed:true,chat:{agent_voice_enabled:true}};
@@ -72,25 +77,31 @@ const base=`http://127.0.0.1:${server.address().port}`;
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
 try{
   const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  async function visit(state){phone=state;await page.goto(base);await page.waitForFunction(()=>!document.querySelector('[data-vp3-agent-phone-label]')?.textContent.includes('Checking'));}
-  await visit({number:{phone_e164:'+16025550111',agent_name:'Test Agent',status:'unconfigured'},package:{included:true},request:null});
+  async function visit(state,status=200){phone=state;phoneStatus=status;await page.goto(base);await page.waitForLoadState('networkidle');}
+  await visit({number:{id:1,phone_e164:'+16025550111',agent_name:'Test Agent',status:'unconfigured'},package:{included:true},request:null});
   check('assigned phone displays in the Agent + Voice dropdown',
     (await page.locator('[data-vp3-agent-phone-label]').innerText())==='+16025550111');
-  check('assigned number link opens number management',
+  check('only an assigned number exposes the Phone link',
     (await page.locator('[data-vp3-agent-phone-link]').getAttribute('href'))==='/phone.php'
-    &&(await page.locator('[data-vp3-agent-phone-link]').innerText())==='Manage number');
+    &&(await page.locator('[data-vp3-agent-phone-link]').innerText())==='Open phone'
+    &&await page.locator('[data-vp3-agent-phone-card]').isVisible());
   check('phone card does not duplicate global Agent Voice toggle',
     (await page.locator('[data-vp3-global-agent-voice]').count())===1);
   await visit({number:null,package:{included:true},request:{phone_e164:'+16025550222'}});
-  check('pending number request is visible',
-    (await page.locator('[data-vp3-agent-phone-label]').innerText()).includes('+16025550222'));
+  check('a pending request does not expose Phone before administrator assignment',
+    !(await page.locator('[data-vp3-agent-phone-card]').isVisible()));
   await visit({number:null,package:{included:true},request:null});
-  check('eligible user sees Register number',
-    (await page.locator('[data-vp3-agent-phone-link]').innerText())==='Register number');
+  check('a plan allowance alone does not expose Phone or member registration',
+    !(await page.locator('[data-vp3-agent-phone-card]').isVisible()));
   await visit({number:null,package:{included:false},request:null});
-  check('ineligible user sees package upgrade, not register',
-    (await page.locator('[data-vp3-agent-phone-link]').innerText())==='View plans'
-    &&(await page.locator('[data-vp3-agent-phone-link]').getAttribute('href'))==='/pricing.php');
+  check('an unassigned account receives no Phone plan upsell entry point',
+    !(await page.locator('[data-vp3-agent-phone-card]').isVisible()));
+  await visit({number:{id:1,phone_e164:'+16025550111',agent_name:'Test Agent',status:'unconfigured'},package:{included:false},request:null},403);
+  check('an assigned number cannot bypass an authoritative entitlement denial',
+    !(await page.locator('[data-vp3-agent-phone-card]').isVisible()));
+  await visit({number:{id:1,phone_e164:'+16025550111'},package:{included:true},request:null},403);
+  check('an authoritative assignment denial hides stale assigned-number UI',
+    !(await page.locator('[data-vp3-agent-phone-card]').isVisible()));
   assert.deepEqual(errors,[]);await page.close();
 }finally{
   await browser.close();await new Promise(resolve=>server.close(resolve));
