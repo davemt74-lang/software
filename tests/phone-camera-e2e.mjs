@@ -72,6 +72,18 @@ const cameraProbe = () => {
   const originals = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
   window.cameraReads=[];
   window.recordingStarts=0;
+  window.recordedBlobs=new Map();
+  const createObjectURL=URL.createObjectURL.bind(URL);
+  URL.createObjectURL=blob=>{
+    const source=createObjectURL(blob);
+    if (blob instanceof Blob && blob.type.startsWith('video/')) window.recordedBlobs.set(source,blob);
+    return source;
+  };
+  const revokeObjectURL=URL.revokeObjectURL.bind(URL);
+  URL.revokeObjectURL=source=>{
+    window.recordedBlobs.delete(source);
+    revokeObjectURL(source);
+  };
   if (window.MediaRecorder) {
     const Recorder=window.MediaRecorder;
     window.MediaRecorder=class extends Recorder {
@@ -205,7 +217,9 @@ async function reviewedTake(phone) {
     video.pause();
     const source=video.currentSrc;
     if (!source.startsWith('blob:')) throw Error('unsubmitted recording must be local to the holder');
-    const blob=await (await fetch(source)).arrayBuffer();
+    const reviewed=window.recordedBlobs.get(source);
+    if (!reviewed) throw Error('review must play the actual recorded video blob');
+    const blob=await reviewed.arrayBuffer();
     const hash=await crypto.subtle.digest('SHA-256',blob);
     return {bytes:blob.byteLength,digest:Array.from(new Uint8Array(hash),byte=>byte.toString(16).padStart(2,'0')).join('')};
   });
