@@ -306,6 +306,7 @@ function vp3_phone_local_hours_v1(array $node,array $index,string $date): array
         $days=['Mo','Tu','We','Th','Fr','Sa','Su'];
         $today=(int)(new DateTimeImmutable($date,new DateTimeZone('UTC')))->format('N')-1;
         $periods=[];
+        $closed=false;
         foreach (vp3_phone_local_values_v1($node['openingHours']??null) as $rule) {
             if (!is_string($rule) || !preg_match('/^((?:Mo|Tu|We|Th|Fr|Sa|Su)(?:[,-](?:Mo|Tu|We|Th|Fr|Sa|Su))*)\s+((?:[01]\d|2[0-3]):[0-5]\d)-((?:[01]\d|2[0-3]):[0-5]\d|24:00)$/D',$rule,$m)) continue;
             foreach (explode(',',$m[1]) as $range) {
@@ -314,10 +315,12 @@ function vp3_phone_local_hours_v1(array $node,array $index,string $date): array
                 $a=array_search($edges[0],$days,true);
                 $b=array_search(end($edges),$days,true);
                 if ((($today-$a+7)%7)>(($b-$a+7)%7)) continue;
-                if ($m[2]!==$m[3]) $periods[]=$m[2].'–'.$m[3];
+                if ($m[2]==='00:00' && $m[3]==='00:00') $closed=true;
+                elseif ($m[2]!==$m[3]) $periods[]=$m[2].'–'.$m[3];
             }
         }
-        if ($periods) return ['closed'=>false,'detail'=>'Posted '.$weekday.' hours for '.$date.': '.implode(', ',array_unique($periods)).' local time. Date-specific exceptions unverified.'];
+        if ($closed && !$periods) return ['closed'=>true,'detail'=>'Listed closed on '.$date.'.'];
+        if ($periods && !$closed) return ['closed'=>false,'detail'=>'Posted '.$weekday.' hours for '.$date.': '.implode(', ',array_unique($periods)).' local time. Date-specific exceptions unverified.'];
     }
     return ['closed'=>false,'detail'=>'Opening hours for '.$date.' unverified.'];
 }
@@ -348,8 +351,11 @@ function vp3_phone_local_stock_v1(array $store,array $index,string $item,string 
         if (!preg_match($productMatch,$productName,$m,PREG_OFFSET_CAPTURE)) continue;
         $prefix=trim(substr($productName,0,$m[0][1]));
         $suffix=trim(substr($productName,$m[0][1]+strlen($m[0][0])));
-        if (preg_match('/\b(?:for|compatible with)\b/u',$prefix)
-            || ($suffix!=='' && !preg_match('/^(?:\d|pack\b|set\b|black\b|white\b|male to female\b)/u',$suffix))) continue;
+        if (preg_match('/\b(?:for|compatible with|case|bag|tester|organizer|holder|accessory|adapter|adaptor)\b/u',$prefix)) continue;
+        if ($suffix!=='') {
+            $attribute='(?:\d+(?:\s*(?:ft|feet|foot|in|inch|inches|m|metres?|meters?|cm|mm|pack|pk|pcs))?|pack|set|black|white|male to female)';
+            if (!preg_match('/^'.$attribute.'(?:\s+'.$attribute.')*$/uD',$suffix)) continue;
+        }
         $valid=true;
         foreach (['validFrom','validThrough','availabilityStarts','availabilityEnds'] as $field) {
             if (!isset($offer[$field])) continue;

@@ -36,7 +36,7 @@ local_research_check(!$read($store,array_replace($address,['addressLocality'=>'W
     && !$read($store,array_replace($address,['addressRegion'=>'CA']),$offer,$product,$hours)
     && !$read($store,array_replace($address,['addressCountry'=>'CA']),$offer,$product,$hours),
     'city boundaries, region and country evidence prevent false local matches');
-foreach (['XLR cable tester','Travel case for XLR cables','XLR cable organizer'] as $wrong) {
+foreach (['XLR cable tester','Travel case for XLR cables','XLR cable organizer','XLR cable 10 ft tester','Protective case with XLR cables'] as $wrong) {
     $other=$read($store,$address,$offer,array_replace($product,['name'=>$wrong]),$hours);
     local_research_check(str_contains($other['desert audio']['stock'],'unverified'),'accessory does not establish stock of the requested item: '.$wrong);
 }
@@ -53,6 +53,10 @@ local_research_check(!$read($closed,$address,$offer,$product,$hours),'a dated cl
 $compact=$store; unset($compact['openingHoursSpecification']); $compact['openingHours']='Mo-Fr 09:00-17:00';
 local_research_check(str_contains($read($compact,$address,$offer,$product,$hours)['desert audio']['hours'],'09:00–17:00'),'compact schema.org weekday ranges use the requested local calendar date');
 
+$compact['openingHours']='Mo 00:00-00:00';
+local_research_check(!$read($compact,$address,$offer,$product,$hours),'explicit closed day in a compact schedule excludes an open-today candidate');
+$holidayHours=$store+['specialOpeningHoursSpecification'=>['validFrom'=>'2026-11-23','validThrough'=>'2026-11-23','opens'=>'12:00','closes'=>'14:00']];
+local_research_check(str_contains($read($holidayHours,$address,$offer,$product,$hours)['desert audio']['hours'],'12:00–14:00'),'a dated special schedule overrides ordinary business hours');
 $urls=['https://desert.example.com/store','https://other.example.com/retail','https://third.example.com/phoenix','https://fourth.example.com/phoenix'];
 $log=[];
 $net=[
