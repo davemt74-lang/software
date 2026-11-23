@@ -277,7 +277,8 @@ async function verifyRecording(chat, selected, second, foreign) {
 async function verifyMapMarker(origin, desktop, owner, idle) {
   const paired=await pair(origin,desktop,owner,'Map camera',true);
   await shareMapPosition(paired,{latitude:33.45,longitude:-112.08});
-  await shareMapPosition(idle,{latitude:33.53,longitude:-112.15});
+  // Distinct Phoenix and Tucson fixtures stay selectable at the local map's max fit zoom (7).
+  await shareMapPosition(idle,{latitude:32.22,longitude:-110.97});
   const mapContext=await privateContext(origin,owner);
   const map=await mapContext.newPage();
   await map.goto('/phone-tracking.php');
@@ -285,6 +286,8 @@ async function verifyMapMarker(origin, desktop, owner, idle) {
   const idlePin=map.locator('.phone-map-marker[title^="Crew Android"]');
   const livePin=map.locator('.phone-map-marker.is-streaming[title^="Map camera"]');
   await pin.waitFor();
+  await idlePin.waitFor();
+  await map.getByRole('button',{name:'Fit phones',exact:true}).click();
   await idlePin.click();
   assert.equal(await map.locator('#phone-detail').getAttribute('data-device-id'),idle.device.id);
   assert.equal(await map.locator('#phone-stream-dialog').isVisible(),false,'an ordinary GPS pin still selects its phone');

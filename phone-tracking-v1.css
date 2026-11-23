@@ -45,7 +45,7 @@ body.phone-tracking-page.vp3-orb-has-bar {
 .phone-country { white-space:nowrap; pointer-events:none; color:#5a6c62; text-align:center; font:600 11px/1.2 system-ui,sans-serif; letter-spacing:.03em; text-shadow:0 1px 2px #fff,1px 0 2px #fff; }
 .phone-map-marker { background:#14725c; border-radius:50%; border:3px solid white; box-shadow:0 0 0 2px #226853,0 2px 8px #12362d58; }
 .phone-map-marker.is-stale { background:#927037; box-shadow:0 0 0 2px #927037; }
-.phone-map-marker.is-selected::after { content:''; position:absolute; inset:-7px; border:1px solid #1c5143; border-radius:50%; }
+.phone-map-marker.is-selected::after { content:''; position:absolute; pointer-events:none; inset:-7px; border:1px solid #1c5143; border-radius:50%; }
 .phone-map-tools { flex-wrap:wrap; min-height:48px; padding:7px 12px; gap:6px; border-top:1px solid #bbcec5; }
 .phone-map-tools > span { margin-right:auto; color:var(--muted); font-size:.82rem; }
 .phone-workspace .phone-map-tools button { padding:6px 10px; }

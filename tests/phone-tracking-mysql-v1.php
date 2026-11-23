@@ -154,6 +154,7 @@ try {
         user_id INT UNSIGNED NOT NULL, role VARCHAR(12) NOT NULL, message TEXT NOT NULL, context_json LONGTEXT NOT NULL,
         FOREIGN KEY (conversation_id) REFERENCES chat_conversations(id) ON DELETE CASCADE) ENGINE=InnoDB');
     $db->exec("INSERT INTO users(id,display_name) VALUES(1,'Test Owner'),(2,'Other Owner')");
+    $db->exec(file_get_contents(dirname(__DIR__).'/upgrade-stonefellow-v86.sql'));
     vp3_phone_schema_v1($db);
     vp3_phone_chat_schema_v1($db);
     vp3_phone_schema_v1($db);

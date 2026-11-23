@@ -27,7 +27,8 @@ function fixture({supported=true,mime='video/mp4',limit=32*1024*1024,chunk=512*1
   const get = id => { if (!nodes.has(id)) nodes.set(id,new Node()); return nodes.get(id); };
   const by = key => get('phone-record-' + key);
   get('phone-location').dataset.endpoint = 'api/phone-location-v1.php';
-  let record = {id:'rec1',state:'requested',max_bytes:limit,chunk_bytes:chunk}, next=0, acceptError=false;
+  const fresh = id => ({id,state:'requested',max_bytes:limit,chunk_bytes:chunk});
+  let record = fresh('rec1'), next=0, acceptError=false;
   let failUpload=false, failCapture=false, failReview=false;
   class Recorder {
     static isTypeSupported(type) { return type === mime; }
@@ -45,7 +46,7 @@ function fixture({supported=true,mime='video/mp4',limit=32*1024*1024,chunk=512*1
     assert.equal(endpoint.origin,'https://test.invalid'); assert.equal(options.credentials,'same-origin');
     assert.equal(options.headers['X-VP3-Phone'],'1');
     const fields=options.body.fields; uploads.push(fields);
-    assert.equal(fields.session_id,'session'); assert.equal(fields.recording_id,'rec1'); assert.equal(fields.take_id,record.take_id);
+    assert.equal(fields.session_id,'session'); assert.equal(fields.recording_id,record.id); assert.equal(fields.take_id,record.take_id);
     if (failUpload) throw Error('provider disconnected');
     if ((Number(fields.index)+1)*chunk>=Number(fields.total_bytes)) record={...record,state:'submitted'};
     return {ok:true,json:async()=>({ok:true,next_index:Number(fields.index)+1,recording:{...record}})};
@@ -55,7 +56,7 @@ function fixture({supported=true,mime='video/mp4',limit=32*1024*1024,chunk=512*1
     URL:BlobURL,location:new URL('https://test.invalid/phone-location.php'),Blob,FormData:Form,AbortController,fetch,setTimeout,clearTimeout});
   const request=async(action,fields)=>{
     calls.push([action,fields]);
-    assert.equal(fields.session_id,'session'); assert.equal(fields.recording_id,'rec1');
+    assert.equal(fields.session_id,'session'); assert.equal(fields.recording_id,record.id);
     if (action==='camera_record_accept') {
       if (acceptError) throw Error();
       if (record.state==='accepted' && !fields.take_id) return {recording:{...record}};
@@ -70,6 +71,7 @@ function fixture({supported=true,mime='video/mp4',limit=32*1024*1024,chunk=512*1
   const app = win.VP3PhoneRecording(request);
   return {app,by,get,events,calls,uploads,sessions,urls,released,track,
     sync:(enabled=true,camera={session_id:'session',device_id:'phone',recording:record})=>app.sync(camera,enabled?stream:null),
+    nextRequest:()=>{record=fresh('rec2'); app.sync({session_id:'session',device_id:'phone',recording:record},stream);},
     click:(key,trusted=true)=>by(key).click(trusted),setUploadFailure:value=>{failUpload=value;},
     setCaptureFailure:value=>{failCapture=value;},setAcceptFailure:value=>{acceptError=value;},setReviewFailure:value=>{failReview=value;},
     async take(value='first take',action='start') { await by(action).click(); sessions.at(-1).emit(value); by('stop').click(); await drain(); }};
@@ -93,7 +95,11 @@ assert.ok(page.indexOf('phone-recording-holder-v1.js')<page.indexOf('phone-camer
   f.setUploadFailure(false); await f.click('submit'); assert.ok(f.by('submit').hidden);
   assert.equal(f.by('save').href,second); assert.equal(f.app.isActive(),false);
   assert.equal(await f.uploads.at(-1).chunk.text(),'take two'); assert.match(f.by('status').textContent,/submitted/);
-  f.app.end(); assert.ok(f.released.includes(second)); assert.equal(f.track.readyState,'live');
+  f.nextRequest(); assert.ok(f.released.includes(second)); assert.equal(f.by('start').hidden,false);
+  assert.equal(f.by('review').hidden,true,'new request does not inherit the prior take');
+  await f.take('new request'); await f.click('submit');
+  assert.equal(f.uploads.at(-1).recording_id,'rec2'); assert.equal(await f.uploads.at(-1).chunk.text(),'new request');
+  f.app.end(); assert.equal(f.track.readyState,'live');
 }
 {
   const f=fixture({mime:'video/webm',chunk:4});

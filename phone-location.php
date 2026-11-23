@@ -79,6 +79,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
     </div>
     <section id="phone-record-retained" aria-labelledby="phone-record-retained-title" hidden>
       <h2 id="phone-record-retained-title">Recording on this phone</h2>
+      <p>Camera sharing ended. Save a copy before closing this page.</p>
       <div id="phone-record-retained-list"></div>
     </section>
     <noscript>Enable JavaScript to pair or manage this phone.</noscript>

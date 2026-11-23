@@ -105,6 +105,8 @@ function vp3_phone_record_owner_v1(PDO $pdo,int $owner,int $agent,int $cid,strin
         $request=vp3_phone_camera_id_v1($input['request_id']??null);
         $prior=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_camera_recordings_v1 WHERE session_id=? AND request_id=?',[$sid,$request])->fetch(PDO::FETCH_ASSOC);
         if ($prior) return ['recording'=>vp3_phone_record_view_v1($prior,false)];
+        if (!schema_metadata_table_exists($pdo,'user_media_assets') || !schema_metadata_table_exists($pdo,'vp3_phone_chat_turns_v1'))
+            throw new RuntimeException('Upgrade required.',503);
         if (!in_array($session['state'],['sharing','answered'],true) || $session['device_status']!=='approved' || (int)$session['device_expires']<=$now)
             throw new RuntimeException('Start camera sharing first.',409);
         if ($latest && in_array($latest['state'],['requested','accepted','reviewing'],true)) throw new RuntimeException('Recording already requested.',409);
