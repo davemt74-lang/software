@@ -86,7 +86,10 @@
     }
     stopButton.disabled = false;
   });
-  dismiss.addEventListener('click', () => { panel.hidden = true; });
+  dismiss.addEventListener('click', () => {
+    panel.hidden = true;
+    document.getElementById('phoneCameraControls').hidden = true;
+  });
   window.addEventListener('pagehide', () => {
     const shouldStop = (!ended && answerAccepted) || stopUnconfirmed;
     finish('stopped', 'Camera preview closed.');

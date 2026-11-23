@@ -129,7 +129,7 @@ if ($videoReturnUrl === '') $videoReturnUrl = $videoReturnFallback;
 <link rel="stylesheet" href="<?= e(url('/video-editor-v92.css?v=98')) ?>">
 <link rel="stylesheet" href="<?= e(url('/video-editor-v100.css?v=100')) ?>">
 <?php if ($phoneCamera !== null): ?>
-<link rel="stylesheet" href="<?= e(url('/phone-camera-editor-v1.css?v=2')) ?>">
+<link rel="stylesheet" href="<?= e(url('/phone-camera-editor-v1.css?v=3')) ?>">
 <?php endif; ?>
 </head>
 <body class="video-editor-body">
@@ -169,7 +169,15 @@ if ($videoReturnUrl === '') $videoReturnUrl = $videoReturnFallback;
       <button id="videoOpenCameraMenu" type="button">Camera / Recorder</button>
     </div>
 
-    <section class="video-editor-workspace">
+    <?php if ($phoneCamera !== null): ?>
+    <div class="phone-camera-editor-bar" id="phoneCameraControls" role="group" aria-label="Private camera controls">
+      <strong id="phoneCameraPreviewName">Private phone preview</strong>
+      <button type="button" id="phoneCameraPreviewStop">Stop sharing</button>
+      <button type="button" id="phoneCameraPreviewDismiss" hidden>Return to timeline</button>
+    </div>
+    <?php endif; ?>
+
+    <section class="video-editor-workspace<?= $phoneCamera !== null ? ' inspector-hidden' : '' ?>">
       <aside class="video-editor-library">
         <header>
           <div>
@@ -209,11 +217,6 @@ if ($videoReturnUrl === '') $videoReturnUrl = $videoReturnFallback;
             <section id="phoneCameraPreview" data-state="waiting" aria-label="Private phone camera preview"
                 data-config="<?= e(json_encode($phoneCamera, JSON_THROW_ON_ERROR)) ?>">
               <video id="phoneCameraPreviewVideo" autoplay playsinline muted disablepictureinpicture aria-label="Phone camera"></video>
-              <div class="phone-camera-editor-bar">
-                <strong id="phoneCameraPreviewName">Private phone preview</strong>
-                <button type="button" id="phoneCameraPreviewStop">Stop sharing</button>
-                <button type="button" id="phoneCameraPreviewDismiss" hidden>Return to timeline</button>
-              </div>
               <span id="phoneCameraPreviewStatus" role="status">Waiting for the phone…</span>
             </section>
             <?php endif; ?>

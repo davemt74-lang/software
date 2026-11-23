@@ -8,7 +8,7 @@
   background: #0c1014;
   color: #f9fafb;
 }
-#phoneCameraPreview[hidden], #phoneCameraPreview button[hidden] { display: none; }
+#phoneCameraPreview[hidden], .phone-camera-editor-bar[hidden], .phone-camera-editor-bar button[hidden] { display: none; }
 #phoneCameraPreviewVideo {
   position: absolute;
   inset: 0;
@@ -17,14 +17,14 @@
 }
 #phoneCameraPreview[data-state="live"] video { opacity: 1; }
 .phone-camera-editor-bar {
-  position: absolute;
-  inset: 0 0 auto;
+  flex: 0 0 auto;
   display: flex;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  background: rgb(9 12 16 / 88%);
+  background: #11151a;
+  color: #f9fafb;
   font-size: .8rem;
 }
 .phone-camera-editor-bar strong { min-width: 0; overflow-wrap: anywhere; }
