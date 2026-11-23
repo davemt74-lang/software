@@ -47,10 +47,12 @@ function vp3_phone_chat_schema_ready_v1(PDO $pdo): bool
     try {
         $pdo->query('SELECT t.assistant_message_id,t.user_message_id,t.owner_user_id,t.agent_id,t.conversation_id,
             t.request_hash,t.query_hash,t.prompt,t.answer,t.map_link,t.map_device_id,g.pending,g.device_id,g.generation,
-            p.place_name,p.candidates_json,p.expires_at,z.assistant_message_id AS arrival_receipt
+            p.place_name,p.candidates_json,p.expires_at,z.task_ids_json,r.task_query,e.visit_number
             FROM vp3_phone_chat_turns_v1 t JOIN vp3_phone_chat_grants_v1 g ON g.owner_user_id=t.owner_user_id
             JOIN vp3_phone_chat_place_choices_v1 p ON p.assistant_message_id=t.assistant_message_id
             LEFT JOIN vp3_phone_arrival_briefings_v1 z ON z.assistant_message_id=t.assistant_message_id
+            LEFT JOIN vp3_phone_arrival_rules_v1 r ON r.owner_user_id=t.owner_user_id
+            LEFT JOIN vp3_phone_arrival_events_v1 e ON e.rule_id=r.id
             WHERE 1=0');
         return true;
     } catch (PDOException) {

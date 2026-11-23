@@ -1,9 +1,6 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__.'/agent-task-lists-v1.php';
-require_once __DIR__.'/agent-memory-scope-v410.php';
-
 /** Store the original task references privately. Titles are read under the current Agent's permissions. */
 function vp3_phone_arrival_receipts_schema_v1(PDO $pdo): void
 {
@@ -35,6 +32,8 @@ function vp3_phone_arrival_display_text_v1(string $value, string $fallback): str
 /** Null means source access is unavailable; an empty array means an authorized read found no open matches. */
 function vp3_phone_arrival_tasks_v1(PDO $pdo, array $user, array $principal, int $cid, string $topic, ?array $originalIds=null): ?array
 {
+    if (!function_exists('vp3_task_list_authorize_v1')) require_once __DIR__.'/agent-task-lists-v1.php';
+    if (!function_exists('vp3_agent_memory_scope_sql_v410')) require_once __DIR__.'/agent-memory-scope-v410.php';
     $aid = vp3_task_list_agent_v1($principal);
     if (!function_exists('personal_capability_has_v242') || !table_exists('agent_memory_items')
         || ($aid > 0 && !function_exists('user_data_policy_can_use_v236'))) return null;
