@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
@@ -310,6 +311,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_recording_schema_ready_v1($schemaConnection)
         && vp3_operator_auto_call_schema_ready_v1($schemaConnection)
         && vp3_operator_live_schema_ready_v1($schemaConnection)
+        && VP3OperatorOwnerPhoneV1::ready($schemaConnection)
         && vp3_phone_caller_contacts_schema_ready_v1($schemaConnection)
         && vp3_ai_service_usage_ready_v1($schemaConnection)
         && vp3_coding_canvas_ready_v1($schemaConnection)
@@ -467,6 +469,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_phone_recording_ensure_schema_v1($pdo);
             vp3_operator_auto_call_ensure_schema_v1($pdo);
             vp3_operator_live_ensure_schema_v1($pdo);
+            VP3OperatorOwnerPhoneV1::install($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();

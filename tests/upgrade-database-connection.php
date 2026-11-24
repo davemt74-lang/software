@@ -32,8 +32,9 @@ $partialSpeech=[
 ];
 $phoneContactModes=['phone-contacts-old-get','phone-contacts-old-post','phone-contacts-new-post','phone-contacts-ready-get'];
 $operatorPolicyModes=['operator-policy-old-get','operator-policy-old-post','operator-policy-ready-get'];
+$ownerPhoneModes=['owner-phone-old-get','owner-phone-old-post','owner-phone-ready-get','owner-phone-preserve-post'];
 if (!isset($argv[1])) {
-    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech),$phoneContactModes,$operatorPolicyModes);
+    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech),$phoneContactModes,$operatorPolicyModes,$ownerPhoneModes);
     foreach ($modes as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
@@ -46,6 +47,7 @@ if (!isset($argv[1])) {
 $mode = $argv[1];
 $phoneContacts=in_array($mode,$phoneContactModes,true);
 $operatorPolicies=in_array($mode,$operatorPolicyModes,true);
+$ownerPhones=in_array($mode,$ownerPhoneModes,true);
 $fixture = new PDO('sqlite::memory:');
 $fixture->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $fixture->exec("CREATE TABLE existing_content (value TEXT); INSERT INTO existing_content VALUES ('preserve me')");
@@ -109,6 +111,8 @@ require_once dirname(__DIR__).'/includes/profile-promotion-attribution-v1.php';
 require_once dirname(__DIR__).'/includes/agent-connection-youtube-playback-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-youtube-playlist-v1.php';
 $fixture->exec('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER); CREATE TABLE chat_messages(id INTEGER PRIMARY KEY)');
+require_once dirname(__DIR__).'/includes/agent-operator-owner-phone-v1.php';
+if($ownerPhones)$fixture->exec('INSERT INTO users(id,is_active) VALUES(1,1)');
 $fixture->exec('CREATE TABLE team_user_presence(user_id INTEGER PRIMARY KEY, presence_mode TEXT, social_chat_enabled INTEGER, sound_enabled INTEGER, agent_voice_enabled INTEGER, agent_assisted_phone_chat_enabled INTEGER)');
 $fixture->exec('INSERT INTO team_user_presence (user_id) VALUES (1)');
 if ($mode !== 'post') {
@@ -158,7 +162,7 @@ if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingYouTube=str_starts_with($mode,'missing-vp3_youtube_')||$mode==='missing-vp3_initiative_youtube_playlist_v1';
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$missingYouTube||$mode==='missing-vp3_profile_canvases_v1';
-$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode])||$phoneContacts||$operatorPolicies;
+$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode])||$phoneContacts||$operatorPolicies||$ownerPhones;
 $fixture->exec('CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY)');
 if($modern&&$mode!=='missing-ai-service-usage')$fixture->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
 function vp3_ai_service_usage_ready_v1(PDO $pdo): bool
@@ -171,6 +175,10 @@ function ai_usage_accounting_v032_ensure_schema(?PDO $pdo=null): void
     $pdo??=$GLOBALS['fixture'];
     if(!vp3_ai_service_usage_ready_v1($pdo))$pdo->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
     $GLOBALS['calls'][]=__FUNCTION__;
+}
+if($modern && !in_array($mode,['owner-phone-old-get','owner-phone-old-post'],true)){
+    VP3OperatorOwnerPhoneV1::install($fixture);
+    if($mode==='owner-phone-preserve-post')$fixture->exec("INSERT INTO phone_operator_owner_preferences_v1(owner_user_id,phone_e164,phone_revision,revision,updated_epoch) VALUES(1,'+16025550100',3,4,1800000000)");
 }
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);vp3_profile_event_clock_install_v1($fixture);}
 if($modern){
@@ -231,14 +239,26 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','phone-contacts-old-get','phone-contacts-ready-get','operator-policy-old-get','operator-policy-ready-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','phone-contacts-old-get','phone-contacts-ready-get','operator-policy-old-get','operator-policy-ready-get','owner-phone-old-get','owner-phone-ready-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
 $phoneContactSchemaBefore=$phoneContacts?$fixture->query('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')->fetchAll(PDO::FETCH_ASSOC):[];
 $phoneContactChangesBefore=$phoneContacts?(int)$fixture->query('SELECT total_changes()')->fetchColumn():0;
 ob_start(); eval(preg_replace('/^<\?php\s*/', '', $source)); $html = ob_get_clean();
 function check(bool $ok, string $message): void { if (!$ok) throw new RuntimeException($message); }
-if($operatorPolicies){
+if($ownerPhones){
+    $ready=$mode!=='owner-phone-old-get';
+    check($complete===$ready&&VP3OperatorOwnerPhoneV1::ready($fixture)===$ready,'Owner phone upgrade readiness did not match actual schema');
+    if($_SERVER['REQUEST_METHOD']==='GET')check($dbCalls===1&&$calls===[],'Owner phone GET must remain read-only');
+    else check($error===''&&$dbCalls===2&&$pdo===$fixture,'Owner phone upgrade POST did not use shared connection: '.$error);
+    if($ready){
+        $rows=$fixture->query('SELECT * FROM phone_operator_owner_preferences_v1')->fetchAll(PDO::FETCH_ASSOC);
+        if($mode==='owner-phone-preserve-post'){
+            check(count($rows)===1&&(int)$rows[0]['revision']===4&&(int)$rows[0]['phone_revision']===3&&$rows[0]['phone_e164']==='+16025550100','Upgrade modified existing private phone');
+            check((int)$rows[0]['updates_requested']===0&&(int)$rows[0]['hello_requested']===0,'Upgrade opted in existing user');
+        }else check($rows===[],'Upgrade must not create owner preferences');
+    }
+} elseif($operatorPolicies){
     $ready=$mode!=='operator-policy-old-get';
     check($complete===$ready&&vp3_operator_auto_call_schema_ready_v1($fixture)===$ready,'Operator migration readiness did not match actual installed storage');
     check($fixture->query('SELECT value FROM existing_content')->fetchColumn()==='preserve me','Operator upgrade must preserve existing content');
@@ -281,6 +301,7 @@ if($operatorPolicies){
     check(vp3_initiative_youtube_playlist_ready_v1($fixture), 'Upgrade skipped the pending YouTube report cache');
     check(vp3_ai_service_usage_ready_v1($fixture) && in_array('ai_usage_accounting_v032_ensure_schema',$calls,true), 'Upgrade skipped AI service usage storage');
     check(vp3_coding_canvas_ready_v1($fixture), 'Upgrade skipped private Coding Canvas storage');
+    check(VP3OperatorOwnerPhoneV1::ready($fixture),'Upgrade skipped private owner phone storage');
     check(vp3_profile_canvases_ready_v1($fixture), 'Upgrade skipped public Profile Canvas listing storage');
     check((int)$fixture->query('SELECT COUNT(*) FROM vp3_profile_canvases_v1')->fetchColumn() === ($mode === 'post' ? 0 : 1), 'Upgrade opted an app in or discarded a saved Profile Canvas choice');
     if ($mode === 'already-ready') check((int)$fixture->query('SELECT generation FROM vp3_profile_canvases_v1')->fetchColumn() === 3, 'Upgrade changed a saved Profile Canvas revision');

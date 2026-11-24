@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
@@ -91,6 +92,7 @@ try {
     vp3_phone_recording_ensure_schema_v1($pdo);
     vp3_operator_auto_call_ensure_schema_v1($pdo);
     vp3_operator_live_ensure_schema_v1($pdo);
+    VP3OperatorOwnerPhoneV1::install($pdo);
     vp3_chat_read_ensure_schema_v1($pdo);
     agent_connections_install_v1($pdo);
     vp3_dev_install_v1($pdo);

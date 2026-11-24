@@ -664,3 +664,43 @@ jobs:
         run: |
           php -l tests/fixtures/operator-worker-interop-8a4.php
           python3 -B tests/operator-worker-interop-8a4.py
+
+  owner-phone-preferences:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: fixture-only-root
+          MYSQL_DATABASE: operator_owner_ci
+          MYSQL_USER: operator_owner_test
+          MYSQL_PASSWORD: fixture-only-owner
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: pdo_sqlite, pdo_mysql
+      - name: Account private number and preferences on SQLite
+        run: |
+          php -l account.php
+          php -l includes/agent-operator-owner-phone-v1.php
+          php -l setup.php
+          php -l upgrade.php
+          php tests/agent-operator-owner-phone-v1.php
+          node tests/agent-operator-owner-phone-contract-v1.mjs
+      - name: Account private number and preferences on native MySQL
+        env:
+          VP3_OWNER_PHONE_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=operator_owner_ci
+          VP3_OWNER_PHONE_TEST_USER: operator_owner_test
+          VP3_OWNER_PHONE_TEST_PASSWORD: fixture-only-owner
+        run: php tests/agent-operator-owner-phone-v1.php
