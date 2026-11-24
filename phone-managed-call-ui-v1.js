@@ -79,7 +79,7 @@
       send.disabled=disabled||!confirm.checked||!numberOK(normalize(dest.value))||!options.some(n=>String(n.id)===line.value);
       pilotStart.hidden=nativeMode||p?.dispatch_enabled!==true||r?.transport==='twilio_native'||r?.state!=='approved'||expired||r?.recording?.requested===true;
       pilotStart.disabled=busy||!ready||!visible()||pilotStart.hidden;
-      if(!nativeMode&&r?.state==='approved'&&!expired)state.textContent+=p?.dispatch_enabled?' · Unrecorded pilot ready':' · Live acceptance gate closed';
+      if(!nativeMode&&r?.state==='approved'&&!expired)detail.textContent+=p?.dispatch_enabled?' · Unrecorded pilot ready':' · Live acceptance gate closed';
       withdrawRecording.hidden=!r?.recording?.requested||r.recording.state==='revoked'||!active(r)||expired;
       withdrawRecording.disabled=busy||!ready||!visible()||withdrawRecording.hidden;
       if(r?.recording?.state==='revoked')state.textContent+=' · Stop: '+String(r.recording.stop_state||'unconfirmed').replaceAll('_',' ');
