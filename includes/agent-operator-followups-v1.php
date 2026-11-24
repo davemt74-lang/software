@@ -77,6 +77,7 @@ function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable 
         if ((function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)
             || (function_exists('knowledge_retrieval_v162_owner_session')&&!knowledge_retrieval_v162_owner_session($scope['user'],$scope['principal'])))
             return array_replace($empty,['coverage'=>'unconfigured']);
+        if (!vp3_phone_workspace_available_v1($pdo,$scope['user'])) return array_replace($empty,['coverage'=>'unconfigured']);
         $phone=vp3_phone_workspace_scope_v1($pdo,$scope['user'],['agent_id'=>$agent,'conversation_id'=>$cid]);
         $user=$phone['user'];$owner=$phone['owner_user_id'];
         if (!vp3_phone_package_v100($pdo,$owner)['voice']||!has_permission('artist_listening.access',$user))
@@ -123,6 +124,8 @@ function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable 
             }
         }
         return ['coverage'=>$coverage,'reports'=>$reports];
+    } catch (VP3PhoneWorkspaceException $error) {
+        return $error->httpStatus===403?array_replace($empty,['coverage'=>'unconfigured']):$empty;
     } catch (Throwable $error) {
         if ($error instanceof PDOException && $pdo->inTransaction()) throw $error;
         return $empty;
