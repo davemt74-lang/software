@@ -64,7 +64,8 @@ function vp3_operator_live_view_v1(PDO $pdo,array $scope,?array $active,int $now
         $call=vp3_operator_live_call_v1($pdo,$scope,(string)$active['public_id'],$now);
         $view['call_id']=$call['public_id'];$row=vp3_operator_live_row_v1($pdo,(int)$call['id']);
         if($row){
-            $view['state']=$row['state']==='active'&&(int)$row['expires_epoch']>$now
+            $assist=vp3_operator_live_assist_row_v1($pdo,(int)$call['id']);
+            $view['state']=$assist!==null&&$row['state']==='active'&&(int)$row['expires_epoch']>$now
                 &&(int)$row['policy_revision']===$call['live_policy_revision']?'authorized':'closed';
             $view['eligible']=$view['state']==='authorized'&&vp3_operator_live_speech_key_v1()!=='';
             return $view;
@@ -187,8 +188,8 @@ function vp3_operator_live_chunk_v1(PDO $pdo,array $scope,string $public,string 
                 $at=$clock?$clock():time();$fresh=vp3_operator_live_lock_owner_v1($pdo,$scope);
                 $call=vp3_operator_live_call_v1($pdo,$fresh,$public,$at,true);
                 $row=vp3_operator_live_row_v1($pdo,$id,true);$assist=vp3_operator_live_assist_row_v1($pdo,$id,true);
-                if(!$assist||$assist['capture_mode']!=='both'||(int)$row['pending_seq']!==$seq
-                    ||!vp3_operator_live_session_matches_v1($row,$call,$fresh,$token,$at))
+                if(!$assist||$assist['capture_mode']!=='both'||!vp3_operator_live_session_matches_v1($row,$call,$fresh,$token,$at)
+                    ||(int)$row['pending_seq']!==$seq)
                     vp3_phone_workspace_error_v1('operator_live_changed',409,'Live caption permission changed.');
             });
             $localCaption=vp3_operator_live_caption_text_v1($speech($localPcm));
