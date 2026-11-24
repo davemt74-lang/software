@@ -60,6 +60,11 @@ await page.route('https://activity.test/api/hub**',async route => {
   if (url.searchParams.get('view') === 'operator') {
     state.sections = [];
     state.specialists = [{id:'operator',state:'idle',progress:null,conversation_id:cid,detail:'Phone calling is available.'}];
+    state.operator_history={coverage:'ready',recording_coverage:'ready',calls:[
+      {call_id:'a'.repeat(32),contact_id:5,contact_name:'Taylor Caller',peer_e164:'+16025550111',direction:'outbound',state:'completed',created_at:'2026-11-23T10:00:00Z',duration_seconds:90,recording:{state:'ready',transcript_saved:true,report_saved:true}},
+      {call_id:'b'.repeat(32),contact_id:5,contact_name:'Taylor Caller',peer_e164:'+16025550112',direction:'inbound',state:'no_answer',created_at:'2026-11-23T09:00:00Z',duration_seconds:0,recording:{state:'none',transcript_saved:false,report_saved:false}},
+      {call_id:'legacy-1',contact_id:0,contact_name:'',peer_e164:'+16025550113',direction:'inbound',state:'voicemail_ready',created_at:'2026-11-23T08:00:00Z',duration_seconds:30,recording:{state:'received',transcript_saved:false,report_saved:false}}
+    ]};
   }
   if (collection === 'reviews') state.sections = [{id:'office_reviews',label:'Completed reviews',items:[]}];
   if (collection === 'all') {
@@ -241,7 +246,7 @@ try {
   await page.evaluate(() => { window.currentChat=42;window.dispatchEvent(new Event('vp3:chat-context-ready')); });
   await specialist.waitFor({state:'detached'});
   await page.evaluate(() => {
-    window.VP3PhoneWorkspaceV1={open:()=>{window.operatorPhoneOpens=(window.operatorPhoneOpens||0)+1;}};
+    window.VP3PhoneWorkspaceV1={open:()=>{window.operatorPhoneOpens=(window.operatorPhoneOpens||0)+1;},openHistory:()=>{window.operatorHistoryOpens=(window.operatorHistoryOpens||0)+1;},openRecordings:()=>{window.operatorRecordingOpens=(window.operatorRecordingOpens||0)+1;}};
     window.VP3ChatSpecialists.update('operator',{label:'Operator Specialist',status:'Idle',state:'idle',presence:true});
   });
   await page.locator('[data-chat-specialist="operator"]').click();
@@ -252,7 +257,20 @@ try {
   await specialist.waitFor({state:'detached'});
   assert.equal(await page.evaluate(()=>window.operatorPhoneOpens),1,'Operator hands off to the canonical Phone workspace');
   await page.locator('[data-chat-specialist="operator"]').click();
-  await specialist.getByText('Phone calling is available.',{exact:true}).waitFor();
+  await specialist.getByText('3 recent calls · 2 caller groups',{exact:true}).waitFor();
+  await specialist.getByText('1 saved transcripts · 1 saved reports',{exact:true}).waitFor();
+  await specialist.getByRole('button',{name:'History',exact:true}).click();
+  await specialist.getByText('Recording job completed · Saved transcript · Saved report',{exact:true}).waitFor();
+  assert.equal(await specialist.getByText('Taylor Caller',{exact:true}).count(),2,'Operator groups two saved phone channels into the same contact');
+  await specialist.getByRole('combobox',{name:'Filter call history by caller'}).selectOption('contact:5');
+  assert.equal(await specialist.getByText('+16025550113',{exact:true}).count(),0,'Operator contact filtering excludes other calls');
+  await specialist.getByRole('button',{name:'Open recordings and reports',exact:true}).evaluate(control=>control.click());
+  assert.equal(await page.evaluate(()=>window.operatorRecordingOpens||0),0,'Synthetic recording shortcut is rejected');
+  await specialist.getByRole('button',{name:'Open recordings and reports',exact:true}).click();
+  await specialist.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>window.operatorRecordingOpens),1,'Operator hands off to the existing recording and report workspace');
+  await page.locator('[data-chat-specialist="operator"]').click();
+  await specialist.getByText('3 recent calls · 2 caller groups',{exact:true}).waitFor();
   await page.evaluate(()=>{window.currentChat=43;window.dispatchEvent(new Event('vp3:chat-context-ready'));});
   await specialist.waitFor({state:'detached'});
   await page.evaluate(()=>{window.currentChat=42;window.dispatchEvent(new Event('vp3:chat-context-ready'));});
