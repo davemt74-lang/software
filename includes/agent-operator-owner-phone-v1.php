@@ -95,12 +95,12 @@ final class VP3OperatorOwnerPhoneV1
         return $out;
     }
 
-    /** The full number is returned only to the authenticated Account settings form. */
-    public static function read(PDO $pdo,array $user):array
+    /** The full number is returned only to authenticated private owner settings. */
+    public static function read(PDO $pdo,array $user,bool $lock=false):array
     {
-        $owner=self::owner($pdo,$user);
+        $owner=self::owner($pdo,$user,$lock);
         self::check(self::ready($pdo),'Install the Account phone preferences database upgrade.');
-        return self::view(self::row($pdo,$owner));
+        return self::view(self::row($pdo,$owner,$lock));
     }
 
     public static function normalize(mixed $value):string
