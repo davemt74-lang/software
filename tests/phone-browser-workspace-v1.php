@@ -638,10 +638,13 @@ denies(fn()=>$liveApi(array_replace($chunk,['pcm'=>'a']),$liveNow+4),422,'invali
 denies(fn()=>$liveApi(array_replace($chunk,['token'=>str_repeat('0',64)]),$liveNow+4),409,'another browser token cannot dispatch speech');
 denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+4),409,'out-of-order caption chunks cannot dispatch');
 denies(fn()=>$liveApi($chunk,$liveNow+1),409,'caption request cannot outrun its bounded audio interval');
+denies(fn()=>$liveApi($chunk+['local_pcm'=>base64_encode($fixturePcm)],$liveNow+4),409,'remote-only consent cannot transmit local audio');
 c($sent===0,'rejected caption inputs do not send paid speech requests');
 $caption=$liveApi($chunk,$liveNow+4);
 c($caption===['call_id'=>$livePublic,'seq'=>1,'text'=>'Fixture remote words <script> are data.','speaker'=>'remote_audio']&&$sent===1,'a current authorized audio chunk returns only a transient caption');
 denies(fn()=>$liveApi($chunk,$liveNow+8),409,'a previously reserved sequence cannot be billed again');
+$deniedModel=static function():never{throw new LogicException('Unapproved model dispatch');};
+denies(fn()=>vp3_operator_live_request_v1($pdo,user(),'POST',['action'=>'suggest','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken,'receipts'=>[]],'csrf-fixture',$speech,$liveNow+5,$deniedModel),409,'caption consent alone does not authorize private model processing');
 $stop=['action'=>'stop','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken];
 denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+8,static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
     $sent++;$liveApi($stop,$liveNow+8);return 'Late private result';
@@ -726,6 +729,19 @@ denies(fn()=>$suggestApi(array_replace($suggest,['receipts'=>$dualCaption2['rece
 c($models===2&&vp3_operator_live_row_v1($pdo,$dualId)['state']==='closed','revoked suggestions do not restart a session');
 $terminalDual=form($dualChild,['ParentCallSid'=>$dualParent,'CallStatus'=>'completed']);
 vp3_phone_browser_status_v1($pdo,$terminalDual,signature('status',$terminalDual,$dualPublic),$dualPublic);
+$midPublic=str_repeat('f',31).'9';$midParent='CA'.str_repeat('f',31).'9';$midChild='CA'.str_repeat('f',31).'a';
+$insertLive->execute([$midPublic,$midParent,time(),time()]);$midId=(int)$pdo->lastInsertId();
+$midForm=form($midChild,['ParentCallSid'=>$midParent,'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$midForm,signature('status',$midForm,$midPublic),$midPublic);
+$midNow=time();$midGrant=$liveApi(array_replace($dualRequest,['call_id'=>$midPublic,'suggestions_attested'=>false]),$midNow);
+$midChunk=array_replace($dualChunk,['call_id'=>$midPublic,'token'=>$midGrant['token']]);
+$midStop=array_replace($stop,['call_id'=>$midPublic,'token'=>$midGrant['token']]);$midDispatches=0;
+denies(fn()=>$liveApi($midChunk,$midNow+4,static function(string $audio)use(&$midDispatches,$liveApi,$midStop,$midNow):string{
+    $midDispatches++;$liveApi($midStop,$midNow+4);return 'Do not return this caption';
+}),409,'revocation during the first side prevents dispatch of the second side');
+c($midDispatches===1&&(int)vp3_operator_live_row_v1($pdo,$midId)['reserved_seconds']===8,'dual frame reserves both sides before dispatch and never repeats uncertain speech');
+$terminalMid=form($midChild,['ParentCallSid'=>$midParent,'CallStatus'=>'completed']);
+vp3_phone_browser_status_v1($pdo,$terminalMid,signature('status',$terminalMid,$midPublic),$midPublic);
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$liveBeforeMessages
     &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$liveBeforeJobs,'live assistance does not create another Chat message or recording job');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
