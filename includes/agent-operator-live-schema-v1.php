@@ -1,0 +1,24 @@
+<?php
+declare(strict_types=1);
+
+/** Optional metadata-only live caption session storage; install explicitly. */
+function vp3_operator_live_schema_ready_v1(PDO $pdo): bool
+{
+    try {
+        $pdo->query('SELECT call_id,owner_user_id,agent_id,chat_agent_id,conversation_id,number_id,policy_revision,token_hash,state,consent_epoch,expires_epoch,reserved_seconds,next_seq,pending_seq,last_dispatch_epoch FROM phone_operator_live_sessions_v1 WHERE 1=0');
+        return true;
+    } catch(PDOException) {return false;}
+}
+function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
+{
+    if($pdo->inTransaction())throw new RuntimeException('Install live caption preferences outside a transaction.');
+    $suffix=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+    $pdo->exec("CREATE TABLE IF NOT EXISTS phone_operator_live_sessions_v1(
+        call_id BIGINT PRIMARY KEY,owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,
+        chat_agent_id BIGINT NOT NULL,conversation_id BIGINT NOT NULL,number_id BIGINT NOT NULL,
+        policy_revision BIGINT NOT NULL,token_hash CHAR(64) NOT NULL,state VARCHAR(20) NOT NULL,
+        consent_epoch BIGINT NOT NULL,expires_epoch BIGINT NOT NULL,reserved_seconds INTEGER NOT NULL DEFAULT 0,
+        next_seq INTEGER NOT NULL DEFAULT 1,pending_seq INTEGER NOT NULL DEFAULT 0,last_dispatch_epoch BIGINT NOT NULL DEFAULT 0
+    )".$suffix);
+    if(!vp3_operator_live_schema_ready_v1($pdo))throw new RuntimeException('Live caption metadata installation failed.');
+}
