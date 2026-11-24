@@ -510,7 +510,7 @@
     const view=state?.operator_live,session=entry.captionSession;
     if(view?.available!==true&&!session&&!entry.captionNotice)return;
     const panel=node('section','vp3-phone-live-caption');panel.append(node('strong',null,'Operator · Live caller captions'));
-    panel.append(node('p','vp3-phone-meta','Remote side only. Short Cloud speech segments may be delayed or missed. No live caption text or audio is saved by this feature.'));
+    panel.append(node('p','vp3-phone-meta','Remote side only. Short Cloud speech segments may be delayed or missed. Processing uses your speech allowance and may incur provider charges. No live caption text or audio is saved by this feature.'));
     if(entry.captionNotice)panel.append(node('p','vp3-phone-meta',entry.captionNotice));
     if(session){
       panel.append(node('p','vp3-phone-meta',session.phase==='listening'?'Live captions on · human call remains in control':'Authorizing live captions…'));
