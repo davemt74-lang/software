@@ -31,8 +31,9 @@ $partialSpeech=[
     'partial-checkout-open-time'=>['agent_commerce_checkout_attempts_v800','opened_at_utc_ms'],
 ];
 $phoneContactModes=['phone-contacts-old-get','phone-contacts-old-post','phone-contacts-new-post','phone-contacts-ready-get'];
+$operatorPolicyModes=['operator-policy-old-get','operator-policy-old-post','operator-policy-ready-get'];
 if (!isset($argv[1])) {
-    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech),$phoneContactModes);
+    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech),$phoneContactModes,$operatorPolicyModes);
     foreach ($modes as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
@@ -44,9 +45,11 @@ if (!isset($argv[1])) {
 
 $mode = $argv[1];
 $phoneContacts=in_array($mode,$phoneContactModes,true);
+$operatorPolicies=in_array($mode,$operatorPolicyModes,true);
 $fixture = new PDO('sqlite::memory:');
 $fixture->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $fixture->exec("CREATE TABLE existing_content (value TEXT); INSERT INTO existing_content VALUES ('preserve me')");
+if($operatorPolicies){require dirname(__DIR__).'/includes/agent-operator-auto-call-schema-v1.php';if($mode==='operator-policy-ready-get')vp3_operator_auto_call_ensure_schema_v1($fixture);}
 if($phoneContacts){
     // Exercise the production readiness and migration, rather than their generic
     // dependency stubs. Core CRM and platform ownership remain ordered fixtures.
@@ -155,7 +158,7 @@ if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingYouTube=str_starts_with($mode,'missing-vp3_youtube_')||$mode==='missing-vp3_initiative_youtube_playlist_v1';
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$missingYouTube||$mode==='missing-vp3_profile_canvases_v1';
-$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode])||$phoneContacts;
+$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode])||$phoneContacts||$operatorPolicies;
 $fixture->exec('CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY)');
 if($modern&&$mode!=='missing-ai-service-usage')$fixture->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
 function vp3_ai_service_usage_ready_v1(PDO $pdo): bool
@@ -228,14 +231,21 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','phone-contacts-old-get','phone-contacts-ready-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','phone-contacts-old-get','phone-contacts-ready-get','operator-policy-old-get','operator-policy-ready-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
 $phoneContactSchemaBefore=$phoneContacts?$fixture->query('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')->fetchAll(PDO::FETCH_ASSOC):[];
 $phoneContactChangesBefore=$phoneContacts?(int)$fixture->query('SELECT total_changes()')->fetchColumn():0;
 ob_start(); eval(preg_replace('/^<\?php\s*/', '', $source)); $html = ob_get_clean();
 function check(bool $ok, string $message): void { if (!$ok) throw new RuntimeException($message); }
-if($phoneContacts){
+if($operatorPolicies){
+    $ready=$mode!=='operator-policy-old-get';
+    check($complete===$ready&&vp3_operator_auto_call_schema_ready_v1($fixture)===$ready,'Operator migration readiness did not match actual installed storage');
+    check($fixture->query('SELECT value FROM existing_content')->fetchColumn()==='preserve me','Operator upgrade must preserve existing content');
+    if($_SERVER['REQUEST_METHOD']==='GET')check($dbCalls===1&&$calls===[],'Operator GET must not install missing preferences');
+    else check($error===''&&$dbCalls===2&&$pdo===$fixture,'Operator upgrade POST must install using the real shared connection');
+    if($ready)check((int)$fixture->query('SELECT COUNT(*) FROM phone_operator_contact_policies_v1')->fetchColumn()===0,'Upgrade cannot authorize any contact');
+} elseif($phoneContacts){
     if($_SERVER['REQUEST_METHOD']==='GET'){
         $ready=$mode==='phone-contacts-ready-get';
         check($complete===$ready&&$dbCalls===1&&$calls===[],'Phone contact GET must reuse lazy PDO and inspect actual readiness without migrations');
