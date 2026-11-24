@@ -62,6 +62,7 @@ phone_ui_check(($config['agent_id']??null)===7&&($config['conversation_id']??nul
 phone_ui_check(($config['endpoint']??'')==='/installed-vp3/api/phone-workspace-v1.php'&&($config['sdk_url']??'')==='/installed-vp3/assets/twilio-voice-2.18.5.min.js','Subdirectory installations use their own API and vendored SDK paths.');
 phone_ui_check(($config['csrf']??'')===csrf_token()&&!str_contains($match[1],'</script>'),'CSRF survives JSON decoding without breaking out of the inline configuration.');
 phone_ui_check(substr_count($runtime,'data-phone-workspace-v1')===2&&preg_match('/\?v=[a-f0-9]{12}/',$runtime)===1,'One render supplies the stylesheet and versioned frontend script.');
+phone_ui_check(str_contains($runtime,'/installed-vp3/phone-operator-voice-mixer-v1.js?v=')&&strpos($runtime,'data-phone-operator-voice-mixer')<strpos($runtime,'<script data-phone-workspace-v1'),'The optional outbound mixer loads before the existing phone client.');
 phone_ui_check(vp3_phone_workspace_runtime_v1($owner,7,42)==='','Repeated shared header calls do not duplicate the Phone runtime.');
 
 foreach([3=>10,4=>11,5=>12] as $userId=>$agentId){
