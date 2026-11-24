@@ -35,13 +35,14 @@ function vp3_operator_call_status_v1(PDO $pdo,array $user,int $agentId,int $cid,
             $updated=(int)$call['updated_epoch'];
             // There is no continuous carrier heartbeat in this release. Report
             // the last signed state, and stop implying current activity when old.
-            if ($updated>$now || $updated<$now-300) {$stale=true;continue;}
+            if ($updated>$now || $updated<=$now-300) {$stale=true;continue;}
             $detail=match($call['state']){
                 'dialing'=>'Carrier last reported a dialing call.',
                 'ringing'=>'Carrier last reported a ringing call.',
                 'answered'=>'Carrier last reported an answered call.',
             };
-            return array_replace($row,['state'=>'working','detail'=>$detail.' Open Phone for call controls.']);
+            return array_replace($row,['state'=>'working','detail'=>$detail.' Open Phone for call controls.',
+                'status_fresh_until'=>gmdate(DATE_ATOM,$updated+300)]);
         }
         if ($stale) return array_replace($row,['state'=>'unavailable','detail'=>'Current call status could not be verified. Open Phone to check the call.']);
         return $row;
