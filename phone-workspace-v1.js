@@ -611,7 +611,7 @@
     if(terminal&&Number.isInteger(info.duration_seconds)&&(!readOnlyLegacy||info.duration_seconds>0))addDetail(readOnlyLegacy?'Recording duration':'Call duration',callDuration(info.duration_seconds));
     addDetail('Your line',info.phone_e164);
     const managed=info.transport_kind==='managed_callback',control=info.managed_control;
-    if(managed){addDetail('Transport','Twilio managed callback');addDetail('Connection stage',displayState(control?.dispatch_state));addDetail('Carrier check',control?.read_state==='none'?'':displayState(control?.read_state));addDetail('End request',control?.end_state==='none'?'':displayState(control?.end_state));}
+    if(managed){addDetail('Transport','Twilio managed callback');if(control?.missed_leg)addDetail('No answer',control.missed_leg==='holder'?'Connected phone':'Destination');addDetail('Connection stage',displayState(control?.dispatch_state));addDetail('Carrier check',control?.read_state==='none'?'':displayState(control?.read_state));addDetail('End request',control?.end_state==='none'?'':displayState(control?.end_state));}
     const line=(state?.numbers||[]).find(number=>Number(number.id)===Number(info.number_id)&&Number(number.agent_id)===Number(info.agent_id)&&number.phone_e164===info.phone_e164);
     if(line?.agent_name)addDetail('Agent',text(line.agent_name).slice(0,180));
     const recording=(state?.voicemails||[]).find(voicemail=>callKey(voicemail.call_id)===id);
