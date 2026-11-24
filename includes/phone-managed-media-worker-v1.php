@@ -9,12 +9,6 @@ function vp3_managed_media_driver_enabled_v1():bool
 {
     return (string)setting('phone_managed_media_driver_enabled_v1','0')==='1';
 }
-function vp3_managed_media_nonce_v1(string $public):string
-{
-    vp3_managed_callback_id_v1($public);
-    // No plaintext callback credential in the worker queue. Rotation fails closed.
-    return hash_hmac('sha256','vp3-managed-media-callback-v1:'.$public,vp3_phone_twilio_credentials_v100()[1]);
-}
 function vp3_managed_media_recording_resource_v1(string $account,string $parent,string $record):string
 {
     vp3_managed_callback_need_v1(preg_match('/^AC[a-f0-9]{32}$/iD',$account)===1&&vp3_managed_transport_sid_v1($parent)&&vp3_managed_recording_sid_v1($record),422);

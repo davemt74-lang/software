@@ -15,6 +15,11 @@ function vp3_managed_transport_nonce_v1(mixed $nonce):string
     vp3_managed_callback_need_v1(is_string($nonce)&&preg_match('/\A[a-f0-9]{64}\z/D',$nonce)===1,422);
     return $nonce;
 }
+function vp3_managed_media_nonce_v1(string $public):string
+{
+    vp3_managed_callback_id_v1($public);
+    return hash_hmac('sha256','vp3-managed-media-callback-v1:'.$public,vp3_phone_twilio_credentials_v100()[1]);
+}
 function vp3_managed_transport_url_v1(string $event,string $public,string $nonce):string
 {
     vp3_managed_callback_need_v1(in_array($event,['answer','confirm','parent','child','complete','record_notice','record_consent','recording','native_pin'],true),422);
@@ -98,7 +103,7 @@ function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $
         vp3_managed_callback_need_v1($busy===0);
         $q=$pdo->prepare('SELECT COUNT(*) FROM phone_browser_calls_v1 WHERE owner_user_id=? AND created_epoch>?');$q->execute([$owner,$now-600]);$recent=(int)$q->fetchColumn();$q->closeCursor();
         vp3_managed_callback_need_v1($recent<10,429);
-        $public=bin2hex(random_bytes(16));$nonce=bin2hex(random_bytes(32));
+        $public=bin2hex(random_bytes(16));$nonce=vp3_managed_media_nonce_v1($public);
         $plan=vp3_managed_callback_plan_v1($row,$now,vp3_managed_transport_url_v1('answer',$public,$nonce),vp3_managed_transport_url_v1('parent',$public,$nonce));
         $pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,
             conversation_id,chat_agent_id,state,recording_enabled,created_epoch,updated_epoch,paired_device_id,paired_profile_id,paired_profile_revision,paired_phone_revision,transport_kind)
