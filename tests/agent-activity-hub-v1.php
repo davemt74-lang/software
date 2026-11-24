@@ -281,6 +281,7 @@ activity_check($otherThread['specialists'][0]['state'] === 'awaiting_consent'
     && $otherThread['specialists'][0]['detail'] === '1 alert awaits phone approval.', 'Pending phone consent is visible only in its originating Chat');
 activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','12',$binding,'location'));
 activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','21','20',$binding,'location'));
+activity_rejects(403,fn()=>vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'operator'));
 $sections = activity_sections($state);
 $gmailOnly = vp3_agent_activity_hub_request_v1($pdo,$user,'GET','11','13',$binding,'gmail');
 activity_check(array_column($gmailOnly['sections'],'id')===['gmail_inbox'] && $gmailOnly['current_chat']===$state['current_chat'],

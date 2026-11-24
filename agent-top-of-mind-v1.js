@@ -13,7 +13,7 @@
   const specialistNames={gmail:'Gmail',planning:'Planning & Scheduling',tasks:'Tasks & Lists',
     media:'Media & Entertainment',curiosity:'Curiosity',transcripts:'Transcriptions',canvas:'Canvas Apps',casual:'Casual check-ins',research:'Research',brainstorm:'Opportunity assessment','image-generator':'Image Generator',
     coding:'Coding Agent',development:'Agent Development',mission:'Missions','connected-sites':'Connected Sites',
-    marketing:'Marketing',commerce:'Commerce',profile:'Profile',location:'Location Specialist'};
+    marketing:'Marketing',commerce:'Commerce',profile:'Profile',location:'Location Specialist',operator:'Operator Specialist'};
   const handoffNames={...specialistNames,brainstorm:'ob1',transcripts:'Transcripts',commerce:'Commerce'};
   function handoffLabel(handoff){
     const known=id=>typeof id==='string'&&Object.hasOwn(handoffNames,id);
@@ -108,7 +108,7 @@
   function specialistRows(current){
     const rows=new Map();
     if(Array.isArray(snapshot.specialists)){
-      for(const row of snapshot.specialists.slice(0,16)){
+      for(const row of snapshot.specialists.slice(0,24)){
         if(Object.hasOwn(specialistNames,row?.id)&&Object.hasOwn(specialistLabels,row.state))rows.set(row.id,row);
       }
     }
