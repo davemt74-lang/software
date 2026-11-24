@@ -19,19 +19,19 @@ function vp3_managed_control_row_v1(PDO $pdo,string $public,bool $lock=false):?a
     $q->execute([$public]);$row=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();return $row?:null;
 }
 /** The controls belong to the exact private paired Chat, not to a participant. */
-function vp3_managed_control_scope_v1(PDO $pdo,array $scope,array $call):void
+function vp3_managed_control_scope_v1(PDO $pdo,array $scope,array $call,bool $lock=false):void
 {
     vp3_managed_callback_need_v1((!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null)
         &&(int)$call['owner_user_id']===(int)$scope['owner_user_id']
         &&(int)$scope['conversation_id']>0&&(int)$call['conversation_id']===(int)$scope['conversation_id']
         &&(int)$call['chat_agent_id']===(int)$scope['agent_id'],404);
-    $line=vp3_phone_workspace_number_v1($pdo,$scope,(int)$call['phone_number_id'],false);
+    $line=vp3_phone_workspace_number_v1($pdo,$scope,(int)$call['phone_number_id'],false,$lock);
     vp3_managed_callback_need_v1((int)$line['agent_id']===(int)$call['agent_id']
         &&hash_equals((string)$line['phone_e164'],(string)$call['phone_e164']),403);
 }
 function vp3_managed_control_view_v1(PDO $pdo,array $scope,array $call):array
 {
-    $out=['can_reconcile'=>false,'can_end'=>false,'parent_bound'=>false,'read_state'=>'unavailable','end_state'=>'none','dispatch_state'=>'','parent_state'=>''];
+    $out=['can_reconcile'=>false,'can_end'=>false,'parent_bound'=>false,'read_state'=>'unavailable','end_state'=>'none','dispatch_state'=>'','parent_state'=>'','missed_leg'=>''];
     if(($call['transport_kind']??'')!=='managed_callback'||!vp3_managed_control_ready_v1($pdo))return $out;
     try{
         vp3_managed_control_scope_v1($pdo,$scope,$call);
@@ -39,6 +39,7 @@ function vp3_managed_control_view_v1(PDO $pdo,array $scope,array $call):array
         $t=vp3_managed_transport_row_v1($pdo,$call['public_id']);
         if(!$t||(int)$t['owner_user_id']!==(int)$scope['owner_user_id'])return $out;
         $out['dispatch_state']=(string)$t['state'];$out['parent_state']=(string)$t['parent_state'];
+        if($call['state']==='no_answer')$out['missed_leg']=(int)$t['confirmation_epoch']>0?'destination':'holder';
         $out['parent_bound']=vp3_managed_transport_sid_v1($call['provider_call_sid']??null);
         $out['read_state']=$control['read_state']??'none';$out['end_state']=$control['end_state']??'none';
         if(!vp3_managed_control_terminal_v1((string)$call['state'])){
@@ -88,7 +89,7 @@ function vp3_managed_control_claim_v1(PDO $pdo,array $scope,string $public,strin
         $owner=(int)$scope['owner_user_id'];vp3_managed_callback_owner_lock_v1($pdo,$owner);
         $call=vp3_managed_transport_call_v1($pdo,$public,true);$t=vp3_managed_transport_row_v1($pdo,$public,true);
         vp3_managed_callback_need_v1(is_array($call)&&is_array($t)&&(int)$t['owner_user_id']===$owner,404);
-        vp3_managed_control_scope_v1($pdo,$scope,$call);
+        vp3_managed_control_scope_v1($pdo,$scope,$call,true);
         if(vp3_managed_control_terminal_v1((string)$call['state']))return ['done'=>true];
         $request=vp3_managed_callback_row_v1($pdo,$t['request_id'],true);
         vp3_managed_callback_need_v1(is_array($request)&&(int)$request['owner_user_id']===$owner&&$request['device_id']===$call['paired_device_id']&&$request['profile_id']===$call['paired_profile_id'],409);
@@ -119,7 +120,7 @@ function vp3_managed_control_apply_v1(PDO $pdo,array $scope,array $snapshot,?arr
     vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope,$snapshot,$parent,$child,$readState,$endState,$now,$public){
         vp3_managed_callback_owner_lock_v1($pdo,(int)$scope['owner_user_id']);
         $call=vp3_managed_transport_call_v1($pdo,$public,true);$t=vp3_managed_transport_row_v1($pdo,$public,true);
-        vp3_managed_callback_need_v1(is_array($call)&&is_array($t),404);vp3_managed_control_scope_v1($pdo,$scope,$call);
+        vp3_managed_callback_need_v1(is_array($call)&&is_array($t),404);vp3_managed_control_scope_v1($pdo,$scope,$call,true);
         vp3_managed_callback_need_v1(hash_equals((string)$snapshot['call']['provider_call_sid'],(string)$call['provider_call_sid'])&&$t['request_id']===$snapshot['transport']['request_id']);
         $state=(string)$call['state'];
         if(!vp3_managed_control_terminal_v1($state)&&$parent){
@@ -167,7 +168,7 @@ function vp3_managed_control_action_v1(PDO $pdo,array $scope,array $input,?calla
                         vp3_managed_callback_owner_lock_v1($pdo,(int)$scope['owner_user_id']);
                         $fresh=vp3_managed_transport_call_v1($pdo,$public,true);$control=vp3_managed_control_row_v1($pdo,$public,true);
                         if(!$fresh||!$control||$control['end_state']!=='claimed'||vp3_managed_control_terminal_v1((string)$fresh['state'])||$fresh['provider_call_sid']!==$call['provider_call_sid'])return false;
-                        vp3_managed_control_scope_v1($pdo,$scope,$fresh);return true;
+                        vp3_managed_control_scope_v1($pdo,$scope,$fresh,true);return true;
                     });
                     if($can){
                         $receipt=vp3_managed_control_evidence_v1($carrier('POST',$resource,['Status'=>$parent['state']==='answered'?'completed':'canceled']),$account,$call);
