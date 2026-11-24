@@ -21,7 +21,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
   <script src="phone-recording-holder-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
-  <script src="phone-agent-chat-v1.js?v=3" defer></script>
+  <script src="phone-agent-chat-v1.js?v=4" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
   <script src="phone-location-v1.js?v=9" defer></script>
 </head>
