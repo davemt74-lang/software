@@ -157,7 +157,7 @@ function vp3_phone_communication_map_v1(PDO $pdo,int $owner,array $devices,int $
 {
     if((function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)
         ||!vp3_phone_communication_ready_v1($pdo))return $devices;
-    $rows=vp3_phone_sql_v1($pdo,"SELECT * FROM vp3_phone_devices_v1 WHERE owner_user_id=? AND device_status='approved' AND expires_at>? LIMIT 32",[$owner,$now])->fetchAll(PDO::FETCH_ASSOC);
+    $rows=vp3_phone_sql_v1($pdo,"SELECT * FROM vp3_phone_devices_v1 WHERE owner_user_id=? AND device_status='approved' AND expires_at>? ORDER BY created_at DESC,id LIMIT 32",[$owner,$now])->fetchAll(PDO::FETCH_ASSOC);
     $byId=[];foreach($rows as $d)$byId[$d['id']]=$d;
     foreach($devices as &$device){
         $d=$byId[$device['id']]??null;

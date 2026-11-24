@@ -278,7 +278,8 @@
     if(!d){host.replaceChildren();profileDevice='';profileSignature='';return;}
     if(profileDevice!==d.id){profileDevice=d.id;profileTab='communication';profileSignature='';}
     const p=d.communication;
-    const sig=JSON.stringify([d.id,d.generation,p,profileTab,Boolean(d.agent_chat?.conversation_id),Boolean(camera.liveCamera(d)),d.last_seen_at,d.history_state,d.holder_can_save_places,d.allow_location,d.allow_saved_places,d.location_state,writing]);
+    const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[];
+    const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra]);
     if(sig===profileSignature)return;
     // Do not overwrite an in-progress permission form on an unrelated GPS poll.
     const focused=host.contains(document.activeElement)&&document.activeElement.closest('form');
@@ -295,18 +296,14 @@
     const facts=element('dl',undefined,'phone-info');
     const field=(key,val)=>facts.append(element('dt',key),element('dd',String(val)));
     if(profileTab==='communication'){
+      if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
       field('Personal number',p?.phone_saved?p.phone_masked:'Not saved');
       field('Telephone calls',p?.call_permission_saved?'Both permissions saved':p?.owner_calls?'Awaiting phone holder':'Not allowed');
       field('Proactive check-ins',p?.proactive_permission_saved?'Preference saved':'Off');
       field('Information requests',p?.request_permission_saved?'Preference saved':'Off');
       if(p){field('Calling hours',p.window_start+' – '+p.window_end+' · '+p.timezone);field('Call limit',p.max_calls_per_day+' per day · '+p.min_gap_minutes+' min between calls');}
       host.append(facts);
-      const actions=element('div',undefined,'phone-command-row');
-      if(Number.isSafeInteger(d.agent_chat?.conversation_id)&&d.agent_chat.conversation_id>0&&Number.isSafeInteger(d.agent_chat.agent_id)&&d.agent_chat.agent_id>=0){
-        const a=element('a','Open phone chat'),u=new URL('chat.php',location.href);u.searchParams.set('agent',String(d.agent_chat.agent_id||'system'));u.searchParams.set('conversation_id',String(d.agent_chat.conversation_id));a.href=u.href;actions.append(a);
-      }
-      if(camera.liveCamera(d))actions.append(actionButton('open_stream','View live camera'));
-      host.append(actions,element('p','Calling and information-request execution are not enabled in this build. Existing chat and camera access remain available when authorized.','phone-detail-meta'));
+      host.append(element('p','Calling and information-request execution are not enabled in this build. Existing chat and camera access remain available when authorized above.','phone-detail-meta'));
     }else if(profileTab==='permissions'){
       if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
       const form=element('form',undefined,'phone-profile-form');
