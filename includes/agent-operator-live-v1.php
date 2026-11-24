@@ -28,6 +28,7 @@ function vp3_operator_live_call_v1(PDO $pdo,array $scope,string $public,int $now
     if($call['state']!=='answered'||$call['ended_epoch']!==null
         ||!preg_match('/^CA[a-f0-9]{32}$/iD',(string)$call['provider_call_sid'])
         ||!preg_match('/^CA[a-f0-9]{32}$/iD',(string)$call['provider_child_sid'])
+        ||(int)$call['created_epoch']>$now||(int)$call['created_epoch']<=$now-300
         ||(int)$call['updated_epoch']>$now||(int)$call['updated_epoch']<=$now-300
         ||!vp3_phone_browser_live_call_v1($pdo,$call))
         vp3_phone_workspace_error_v1('operator_live_call_changed',409,'A fresh signed answered call is required.');
@@ -65,7 +66,7 @@ function vp3_operator_live_view_v1(PDO $pdo,array $scope,?array $active,int $now
         if($row){
             $view['state']=$row['state']==='active'&&(int)$row['expires_epoch']>$now
                 &&(int)$row['policy_revision']===$call['live_policy_revision']?'authorized':'closed';
-            $view['eligible']=$view['state']==='authorized';
+            $view['eligible']=$view['state']==='authorized'&&vp3_operator_live_speech_key_v1()!=='';
             return $view;
         }
         $view['eligible']=vp3_operator_live_speech_key_v1()!=='';
@@ -111,7 +112,8 @@ function vp3_operator_live_start_v1(PDO $pdo,array $scope,string $public,int $no
         if($busy)vp3_phone_workspace_error_v1('operator_live_busy',409,'Another live caption session is authorized.');
         if(vp3_operator_live_budget_v1($pdo,$scope['owner_user_id'],$now)+4>VP3_OPERATOR_LIVE_HOUR_SECONDS_V1)
             vp3_phone_workspace_error_v1('operator_live_budget',429,'Live caption processing allowance has been reached.');
-        $token=bin2hex(random_bytes(32));$expires=min($now+VP3_OPERATOR_LIVE_SECONDS_V1,(int)$call['updated_epoch']+300);
+        $token=bin2hex(random_bytes(32));$expires=min($now+VP3_OPERATOR_LIVE_SECONDS_V1,(int)$call['created_epoch']+300,(int)$call['updated_epoch']+300);
+        if($expires<$now+8)vp3_phone_workspace_error_v1('operator_live_call_changed',409,'The recent call receipt window is ending.');
         $q=$pdo->prepare("INSERT INTO phone_operator_live_sessions_v1(call_id,owner_user_id,agent_id,chat_agent_id,conversation_id,number_id,policy_revision,token_hash,state,consent_epoch,expires_epoch) VALUES(?,?,?,?,?,?,?,?,'active',?,?)");
         $q->execute([(int)$call['id'],$scope['owner_user_id'],(int)$call['agent_id'],$scope['agent_id'],$scope['conversation_id'],(int)$call['phone_number_id'],$call['live_policy_revision'],hash('sha256',$token),$now,$expires]);
         return ['call_id'=>$public,'token'=>$token,'expires_epoch'=>$expires,'chunk_seconds'=>4,'execution'=>'captions_only'];
@@ -154,6 +156,7 @@ function vp3_operator_live_speech_v1(string $pcm,string $key): string
 /** Reserve exactly one paid request before releasing the owner transaction. */
 function vp3_operator_live_chunk_v1(PDO $pdo,array $scope,string $public,string $token,int $seq,string $pcm,int $now,callable $speech,?callable $clock=null): array
 {
+    if(strlen($pcm)!==VP3_OPERATOR_LIVE_PCM_BYTES_V1)vp3_phone_workspace_error_v1('operator_live_request',422,'Invalid live caption audio chunk.');
     $id=vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$public,$token,$seq,$now):int{
         $scope=vp3_operator_live_lock_owner_v1($pdo,$scope);
         $call=vp3_operator_live_call_v1($pdo,$scope,$public,$now,true);
