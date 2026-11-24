@@ -57,6 +57,10 @@ await page.route('https://activity.test/api/hub**',async route => {
     state.specialists = [{id:'location',state:cid ? 'armed' : 'idle',progress:null,conversation_id:cid,
       detail:cid ? '1 active arrival alert.' : 'No arrival alerts in this Chat.'}];
   }
+  if (url.searchParams.get('view') === 'operator') {
+    state.sections = [];
+    state.specialists = [{id:'operator',state:'idle',progress:null,conversation_id:cid,detail:'Phone calling is available.'}];
+  }
   if (collection === 'reviews') state.sections = [{id:'office_reviews',label:'Completed reviews',items:[]}];
   if (collection === 'all') {
     state.sections = state.sections.filter(section=>['reminders','lists'].includes(section.id));
@@ -236,6 +240,22 @@ try {
   // A restored conversation can become ready without a preceding context-changing event.
   await page.evaluate(() => { window.currentChat=42;window.dispatchEvent(new Event('vp3:chat-context-ready')); });
   await specialist.waitFor({state:'detached'});
+  await page.evaluate(() => {
+    window.VP3PhoneWorkspaceV1={open:()=>{window.operatorPhoneOpens=(window.operatorPhoneOpens||0)+1;}};
+    window.VP3ChatSpecialists.update('operator',{label:'Operator Specialist',status:'Idle',state:'idle',presence:true});
+  });
+  await page.locator('[data-chat-specialist="operator"]').click();
+  await specialist.getByText('Phone calling is available.',{exact:true}).waitFor();
+  await specialist.getByRole('button',{name:'Open Phone',exact:true}).evaluate(control=>control.click());
+  assert.equal(await page.evaluate(()=>window.operatorPhoneOpens||0),0,'Synthetic Operator clicks cannot open Phone');
+  await specialist.getByRole('button',{name:'Open Phone',exact:true}).click();
+  await specialist.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>window.operatorPhoneOpens),1,'Operator hands off to the canonical Phone workspace');
+  await page.locator('[data-chat-specialist="operator"]').click();
+  await specialist.getByText('Phone calling is available.',{exact:true}).waitFor();
+  await page.evaluate(()=>{window.currentChat=43;window.dispatchEvent(new Event('vp3:chat-context-ready'));});
+  await specialist.waitFor({state:'detached'});
+  await page.evaluate(()=>{window.currentChat=42;window.dispatchEvent(new Event('vp3:chat-context-ready'));});
   await page.getByRole('button',{name:'Agent Development · Paused',exact:true}).click();
   assert.equal(await specialist.getByRole('link',{name:'Agent Development settings',exact:true}).getAttribute('href'),'/admin/agent-development.php');
   assert.equal(await specialist.getByRole('button',{name:'Draft an example request'}).count(),0);
