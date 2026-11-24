@@ -31,13 +31,13 @@
     const alert=make('section',undefined,'phone-dialer-alert');alert.hidden=true;alert.setAttribute('aria-label','Incoming dialer request');
     const heading=make('strong','Incoming call request'),target=make('p'),state=make('p'),actions=make('div',undefined,'phone-permission-buttons'),call=button('Call now'),decline=button('Decline');
     state.setAttribute('role','status');decline.className='secondary';actions.append(call,decline);alert.append(heading,target,state,actions);
-    let device=null,received=0,ready=false,signature='',saving=false,operating=false,blocked=false,attempted='',dismissed='',lastRef=null;
+    let device=null,received=-Infinity,ready=false,signature='',saving=false,operating=false,blocked=false,attempted='',dismissed='',lastRef=null;
     const current=(key,id)=>ready&&visible()&&scope(device)===key&&device.dialer.request?.id===id&&live(device,received);
     function controls(){auto.disabled=!enabled.checked||saving;dest.disabled=!enabled.checked||!auto.checked||saving;enabled.disabled=saving;save.disabled=saving||(!dest.disabled&&!numberOK(number(dest.value)));}
     enabled.addEventListener('change',()=>{if(!enabled.checked)auto.checked=false;controls();});
     auto.addEventListener('change',controls);dest.addEventListener('input',controls);
     function invalidate(){
-      ready=false;device=null;received=0;alert.hidden=true;target.textContent='';state.textContent='';prefs.hidden=true;
+      ready=false;device=null;received=-Infinity;alert.hidden=true;target.textContent='';state.textContent='';prefs.hidden=true;
       // Keep the prior response identity so foreground resume requires a fresh server response.
     }
     function renderAlert(){
@@ -92,6 +92,7 @@
     function bind(d,available){
       if(!available||!visible()||!scope(d)||typeof d.dialer.auto_number!=='string'){invalidate();return;}
       if(d!==lastRef){lastRef=d;received=performance.now();}
+      if(!Number.isFinite(received))return;
       device=d;ready=true;prefs.hidden=false;
       const k=scope(d);
       if(signature!==k){
