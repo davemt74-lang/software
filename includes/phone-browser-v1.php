@@ -49,6 +49,7 @@ function vp3_phone_browser_number_policy_set_v1(PDO $pdo,int $numberId,bool $ena
         }
         $pdo->prepare('DELETE FROM phone_browser_numbers_v1 WHERE phone_number_id=?')->execute([$numberId]);
         $pdo->prepare('INSERT INTO phone_browser_numbers_v1(phone_number_id,owner_user_id,agent_id,browser_enabled,recording_enabled) VALUES (?,?,?,?,?)')->execute([$numberId,(int)$n['owner_user_id'],(int)$n['agent_id'],$enabled?1:0,$recording?1:0]);
+        if(!$enabled||!$recording)vp3_operator_live_revoke_line_v1($pdo,$numberId);
     });
 }
 function vp3_phone_browser_policy_v1(PDO $pdo,array $number): array
