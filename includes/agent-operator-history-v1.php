@@ -21,7 +21,7 @@ function vp3_operator_recording_evidence_v1(PDO $pdo,array $user,int $agentId,ar
     } catch (RuntimeException $error) {return null;}
     $state=(string)$job['state'];
     $out=['state'=>match($state){
-        'queued'=>'queued','processing','running','analyzing'=>'processing',
+        'queued'=>'queued','transcribing','analyzing'=>(int)$job['lease_until']>time()?'processing':'unavailable',
         'ready'=>'ready','failed'=>'failed',default=>'unavailable',
     },'transcript_saved'=>false,'report_saved'=>false];
     $session=(int)$job['session_id'];
@@ -30,6 +30,9 @@ function vp3_operator_recording_evidence_v1(PDO $pdo,array $user,int $agentId,ar
         $q->execute([$session,(int)$user['id']]);
         $meta=vp3_phone_recording_decode_v1($q->fetchColumn());
         if (($meta['source']??'')==='phone_call_v1' && (int)($meta['phone_recording_v1']['job_id']??0)===(int)$job['id']
+            && ($meta['phone_recording_v1']['call_kind']??null)===$job['origin_kind']
+            && ($meta['phone_recording_v1']['call_id']??null)===$job['call_public_id']
+            && (int)($meta['phone_recording_v1']['agent_id']??0)===(int)$job['agent_id']
             && preg_match('/^[a-f0-9]{64}$/D',(string)$job['transcript_hash'])) {
             $q=$pdo->prepare("SELECT 1 FROM artist_transcript_segments_v172 WHERE session_id=? AND segment_type='transcript' AND transcript_text IS NOT NULL AND transcript_text<>'' LIMIT 1");
             $q->execute([$session]);$out['transcript_saved']=(bool)$q->fetchColumn();
@@ -69,10 +72,12 @@ function vp3_operator_history_v1(PDO $pdo,array $user,int $agentId,int $cid): ar
         $args=[$scope['owner_user_id']];
         if ($agentId>0) {$sql.=' AND agent_id=?';$args[]=$agentId;}
         $q=$pdo->prepare($sql.' ORDER BY created_epoch DESC,id DESC LIMIT 50');$q->execute($args);
-        $calls=array_map('vp3_phone_workspace_call_projection_v1',$q->fetchAll(PDO::FETCH_ASSOC));
-        foreach (vp3_phone_workspace_legacy_calls_v1($pdo,$scope) as $legacy)
-            if (in_array($legacy['state'],['completed','voicemail_ready'],true)) $calls[]=$legacy;
-        usort($calls,static fn(array $a,array $b):int=>strcmp($b['created_at'],$a['created_at'])?:strcmp($b['public_id'],$a['public_id']));
+        $browserRows=$q->fetchAll(PDO::FETCH_ASSOC);
+        $browserById=array_column($browserRows,null,'id');
+        $calls=array_map('vp3_phone_workspace_call_projection_v1',$browserRows);
+        foreach (vp3_phone_workspace_legacy_calls_v1($pdo,$scope,true) as $legacy) $calls[]=$legacy;
+        usort($calls,static fn(array $a,array $b):int=>strcmp($b['created_at'],$a['created_at'])
+            ?:strcmp($a['source_kind'],$b['source_kind'])?:($b['id']<=>$a['id']));
         $calls=array_slice($calls,0,50);
         $known=vp3_phone_caller_contacts_lookup_v1($pdo,$scope['owner_user_id'],array_column($calls,'peer_e164'));
         $recordingReady=vp3_phone_recording_schema_ready_v1($pdo);$recordingCoverage=$recordingReady?'ready':'unavailable';
@@ -82,17 +87,40 @@ function vp3_operator_history_v1(PDO $pdo,array $user,int $agentId,int $cid): ar
             $recording=['state'=>$recordingReady?'none':'unavailable','transcript_saved'=>false,'report_saved'=>false];
             if ($recordingReady) {
                 try {
-                    $q=$pdo->prepare("SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=? AND origin_kind=? AND call_id=? ORDER BY id DESC LIMIT 10");
-                    $q->execute([$scope['owner_user_id'],$call['source_kind'],$call['id']]);
-                    foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $job) {
-                        $evidence=vp3_operator_recording_evidence_v1($pdo,$scope['user'],$agentId,$job,$call);
+                    $sources=[$call['source_kind'].':'.$call['id']=>$call];
+                    // A browser inbound call can fall back to voicemail on its original
+                    // legacy receipt. Verify the exact carrier/owner/Agent/number binding.
+                    if ($call['source_kind']==='browser' && $call['direction']==='inbound' && table_exists('phone_voice_calls_v130')) {
+                        $raw=$browserById[$call['id']];
+                        $q=$pdo->prepare("SELECT id,agent_id,caller_e164 FROM phone_voice_calls_v130 WHERE owner_user_id=? AND agent_id=? AND phone_number_id=? AND provider='twilio' AND provider_call_sid=? AND caller_e164=? LIMIT 1");
+                        $q->execute([$scope['owner_user_id'],$call['agent_id'],$call['number_id'],$raw['provider_call_sid'],$peer]);
+                        $linked=$q->fetch(PDO::FETCH_ASSOC);
+                        if ($linked && (empty($raw['voice_call_id']) || (int)$raw['voice_call_id']===(int)$linked['id'])) {
+                            $legacyId=(int)$linked['id'];
+                            $sources['legacy:'.$legacyId]=['source_kind'=>'legacy','id'=>$legacyId,'agent_id'=>(int)$linked['agent_id'],'public_id'=>'legacy-'.$legacyId];
+                        }
+                    }
+                    $jobs=[];$legacyIds=[];
+                    foreach ($sources as $source) {
+                        $q=$pdo->prepare("SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=? AND origin_kind=? AND call_id=? ORDER BY id DESC LIMIT 10");
+                        $q->execute([$scope['owner_user_id'],$source['source_kind'],$source['id']]);
+                        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $job) $jobs[]=$job;
+                        if ($source['source_kind']==='legacy') $legacyIds[]=$source['id'];
+                    }
+                    usort($jobs,static fn(array $a,array $b):int=>(int)$b['id']<=>(int)$a['id']);
+                    foreach ($jobs as $job) {
+                        $source=$sources[$job['origin_kind'].':'.$job['call_id']]??null;
+                        $evidence=$source?vp3_operator_recording_evidence_v1($pdo,$scope['user'],$agentId,$job,$source):null;
                         if ($evidence!==null) {$recording=$evidence;break;}
                     }
-                    if ($recording['state']==='none' && $call['source_kind']==='legacy' && table_exists('phone_voice_recordings_v130')) {
-                        $q=$pdo->prepare("SELECT 1 FROM phone_voice_recordings_v130 WHERE owner_user_id=? AND call_id=? AND provider='twilio' AND recording_status='completed' LIMIT 1");
-                        $q->execute([$scope['owner_user_id'],$call['id']]);
-                        if ($q->fetchColumn()) $recording['state']='received';
+                    if ($recording['state']==='none' && $legacyIds && table_exists('phone_voice_recordings_v130')) {
+                        foreach ($legacyIds as $legacyId) {
+                            $q=$pdo->prepare("SELECT 1 FROM phone_voice_recordings_v130 WHERE owner_user_id=? AND call_id=? AND provider='twilio' AND recording_status='completed' LIMIT 1");
+                            $q->execute([$scope['owner_user_id'],$legacyId]);
+                            if ($q->fetchColumn()) {$recording['state']='received';break;}
+                        }
                     }
+                    if ($recording['state']==='unavailable') $recordingCoverage='limited';
                 } catch (Throwable $error) {
                     $recording=['state'=>'unavailable','transcript_saved'=>false,'report_saved'=>false];$recordingCoverage='limited';
                 }
