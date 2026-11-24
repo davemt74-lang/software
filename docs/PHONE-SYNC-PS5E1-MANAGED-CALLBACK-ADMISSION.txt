@@ -1,0 +1,22 @@
+Phone Sync PS5E.1 — Managed callback admission
+
+This infrastructure-only slice stores an explicit owner request for a managed
+Twilio callback, using the assigned line, approved device and private linked
+conversation. The exact holder phone and destination are immutable, and both
+call permissions, quiet hours, profile/phone revisions and device generation
+must be current. One outstanding request per owner; bounded request lifetime
+and frequency. Approval is an explicit holder decision, not a placed call.
+Owner cancellation, holder decline, expiry and permission withdrawal fence
+outstanding requests. Owner projections exclude phone numbers; no recording.
+
+Migration is integrated into the Phone workspace installer. Existing SQLite
+and MySQL workspace regression suite exercises the real storage and authorization
+boundary and pure first-leg command. No public action or UI dispatch is exposed;
+no provider call, background task, recording, transcription or paid operation
+is performed in this slice. The owner/holder API and actual callback transport
+are later slices, requiring a durable one-use dispatch fence, signed carrier
+parent/child binding, an affirmative on-call keypad challenge, uncertain dispatch
+reconciliation, and independent recording/processing consent. Never infer that a
+carrier callback, voicemail answer or browser click proves a person approved.
+
+Release gate: parent PS5D and exact-head workflows green; no live call test in CI.
