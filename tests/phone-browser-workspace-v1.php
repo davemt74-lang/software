@@ -1018,13 +1018,12 @@ $carrierEvidence=static function(string $sid,string $to,string $status,string $d
     return ['sid'=>$sid,'account_sid'=>$carrierAccount,'from'=>'+16025550102','to'=>$to,'direction'=>$parent===null?'outbound-api':'outbound-dial',
         'parent_call_sid'=>$parent,'status'=>$status,'duration'=>$duration];
 };
-$controlDispatch=static function(array $v,string $tag)use($pdo,$clock,$approveManagedTransport):array{
+$controlDispatch=static function(array $v,string $tag)use($pdo,$clock,$approveManagedTransport,$transportNonce):array{
     $approveManagedTransport($v);$plan=[];$sid='CA'.md5('control-parent-'.$tag);
     $carrier=static function(array $fields)use(&$plan,$sid):array{$plan=$fields;return ['sid'=>$sid,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$fields['From'],'to'=>$fields['To']];};
     $result=vp3_managed_transport_dispatch_v1($pdo,user(2),$v['id'],true,$carrier,$clock);
-    return ['public'=>$result['call']['public_id'],'sid'=>$sid,'nonce'=>($GLOBALS['controlNonceParser'])($plan)];
+    return ['public'=>$result['call']['public_id'],'sid'=>$sid,'nonce'=>$transportNonce($plan)];
 };
-$GLOBALS['controlNonceParser']=$transportNonce;
 $GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
 $t4=$makeManagedTransport('reconcile','+16025550150','+16025550151');$d4=$controlDispatch($t4,'reconcile');
 $p4=$d4['public'];$parent4=$d4['sid'];$nonce4=$d4['nonce'];
@@ -1082,6 +1081,26 @@ c($stopMethods===['GET','POST'],'uncertain end is never automatically sent twice
 $stopRead=static fn(string $method,string $resource,array $fields):array=>$carrierEvidence($parent5,$t5['holder'],'no-answer');
 $stopDone=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_reconcile','call_id'=>$p5],$stopRead,$clock+11);
 c($stopDone['call']['state']==='no_answer'&&$stopDone['call']['managed_control']['missed_leg']==='holder','verified unanswered parent is distinct from a missed destination');
-unset($GLOBALS['controlNonceParser'],$GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+
+// No parent SID: no number/time-based provider lookup. Stop fences even an uncertain first leg.
+$t6=$makeManagedTransport('unbound-stop','+16025550154','+16025550155');$approveManagedTransport($t6);
+$unboundPlan=[];$unboundCarrier=static function(array $fields)use(&$unboundPlan):array{$unboundPlan=$fields;throw new RuntimeException('Synthetic lost dispatch receipt');};
+$unbound=vp3_managed_transport_dispatch_v1($pdo,user(2),$t6['id'],true,$unboundCarrier,$clock);
+$p6=$unbound['call']['public_id'];$nonce6=$transportNonce($unboundPlan);
+$beforeNoCalls=$noCalls;
+$unboundRead=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_reconcile','call_id'=>$p6],$unexpected,$clock);
+c($unboundRead['call']['managed_control']['read_state']==='parent_unbound'&&$noCalls===$beforeNoCalls,'unbound parent cannot be discovered by untrusted number or time');
+$unboundEnd=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_end','call_id'=>$p6,'confirmed'=>true],$unexpected,$clock);
+c($unboundEnd['call']['managed_control']['end_state']==='awaiting_identity'&&$noCalls===$beforeNoCalls,'unbound stop records intent but sends no carrier command');
+$parent6='CA'.md5('control-parent-unbound-stop');
+$parentForm6=form($parent6,['From'=>'+16025550102','To'=>$t6['holder'],'CallStatus'=>'in-progress']);
+c(!$transportEvent('answer',$p6,$nonce6,$parentForm6)['accepted']&&readcall($p6)['provider_call_sid']===$parent6,'late signed callback binds identity but cannot bridge after stop');
+$knownEndMethods=[];
+$knownEnd=static function(string $method,string $resource,array $fields)use(&$knownEndMethods,$carrierEvidence,$parent6,$t6):array{
+    $knownEndMethods[]=$method;return $carrierEvidence($parent6,$t6['holder'],$method==='GET'?'in-progress':'completed',$method==='GET'?'':'8');
+};
+$knownStop=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_end','call_id'=>$p6,'confirmed'=>true],$knownEnd,$clock+1);
+c($knownEndMethods===['GET','POST']&&$knownStop['call']['state']==='canceled'&&$knownStop['call']['managed_control']['end_state']==='parent_ended','explicit end after signed identity uses one bound carrier stop');
+unset($GLOBALS['settings']['phone_managed_callback_enabled_v1']);
 
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
