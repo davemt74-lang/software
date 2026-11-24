@@ -9,7 +9,7 @@ require_permission('account.access');
 $user = current_user();
 header('Cache-Control: private, no-store, max-age=0');
 header('Referrer-Policy: same-origin');
-header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+header('Permissions-Policy: camera=(), microphone=(self), geolocation=()');
 
 $phoneChatParams = [];
 foreach (['agent' => '/^(?:system|0|[1-9][0-9]{0,18})$/D', 'conversation_id' => '/^[1-9][0-9]{0,18}$/D'] as $key => $pattern) {
@@ -36,6 +36,7 @@ $asset = static function (string $path): string {
 <script defer src="<?= e($asset('phone-camera-ice-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-camera-receiver-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-map-camera-v1.js')) ?>"></script>
+<script defer data-voice-capture-scope="<?= (int)$user['id'] ?>" src="<?= e($asset('voice-lease-v122.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
 <body class="phone-tracking-page">

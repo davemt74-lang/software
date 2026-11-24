@@ -161,7 +161,14 @@ function vp3_phone_communication_map_v1(PDO $pdo,int $owner,array $devices,int $
     $byId=[];foreach($rows as $d)$byId[$d['id']]=$d;
     foreach($devices as &$device){
         $d=$byId[$device['id']]??null;
-        if($d!==null)$device['communication']=vp3_phone_communication_project_v1($pdo,$d,$now,false);
+        if($d!==null){
+            $device['communication']=vp3_phone_communication_project_v1($pdo,$d,$now,false);
+            $p=$device['communication'];
+            if(is_array($p)&&$p['profile_id']!==''){
+                require_once __DIR__.'/agent-operator-connected-call-v1.php';
+                $device['communication']['recent_calls']=vp3_connected_phone_recent_v1($pdo,$owner,$d['id'],$p['profile_id']);
+            }
+        }
     }
     unset($device);return $devices;
 }

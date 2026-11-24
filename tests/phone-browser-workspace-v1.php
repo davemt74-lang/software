@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id '.($mysql?'INT UNSIGNED':'INTEGER').' PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -738,5 +738,71 @@ $mine=$ownerAct('save_owner_phone',['phone_e164'=>'','expected_revision'=>'3'])[
 c($mine['phone_e164']===''&&$mine['last_test']===null,'remove number clears test projection');
 unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);
 denies(fn()=>$ownerGet(),403,'stale browser session cannot read owner phone');
+
+
+// PS4 uses the same canonical browser ledger and signed carrier callbacks.
+// Build a minimal paired-device/thread fixture with the real profile installer.
+require_once dirname(__DIR__).'/includes/phone-communication-profile-v1.php';
+$pdo->exec('CREATE TABLE vp3_phone_devices_v1(id CHAR(32) PRIMARY KEY,owner_user_id '.($mysql?'INT UNSIGNED':'INTEGER').' NOT NULL,device_status VARCHAR(12) NOT NULL,expires_at BIGINT NOT NULL,UNIQUE(owner_user_id,id))'.($mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':''));
+vp3_phone_communication_install_v1($pdo,$mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':'');
+$pdo->exec('CREATE TABLE vp3_paired_phone_threads_v1(device_id CHAR(32) PRIMARY KEY,owner_user_id INTEGER NOT NULL,agent_id INTEGER NOT NULL,conversation_id INTEGER NOT NULL)');
+$device1=md5('ps4-device-one');$profile1=md5('ps4-profile-one');$device2=md5('ps4-device-two');$profile2=md5('ps4-profile-two');$clock=time();
+$insertDevice=$pdo->prepare("INSERT INTO vp3_phone_devices_v1 VALUES (?,2,'approved',?)");
+$insertDevice->execute([$device1,$clock+3600]);$insertDevice->execute([$device2,$clock+3600]);
+$insertThread=$pdo->prepare('INSERT INTO vp3_paired_phone_threads_v1 VALUES (?,2,0,21)');$insertThread->execute([$device1]);$insertThread->execute([$device2]);
+$zone=gmdate('H:i',$clock)==='23:59'?'America/Phoenix':'UTC';
+$insertProfile=$pdo->prepare("INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,owner_calls,holder_calls,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch) VALUES(2,?,?,1,1,?,1,1,?,'00:00','23:59',2,120,?)");
+$insertProfile->execute([$device1,$profile1,'+16025550135',$zone,$clock]);$insertProfile->execute([$device2,$profile2,'+16025550136',$zone,$clock]);
+$prepareConnected=static fn(array $extra=[])=>$ownerAct('prepare_connected_call',array_replace(['number_id'=>2,'device_id'=>$device1,'profile_id'=>$profile1,'profile_revision'=>1,'phone_revision'=>1,'confirmed'=>true],$extra));
+denies(fn()=>$prepareConnected(['confirmed'=>false]),422,'connected calling requires explicit confirmation');
+denies(fn()=>$prepareConnected(['to_number'=>'+16025550199']),422,'connected calling refuses caller-supplied destination');
+denies(fn()=>$prepareConnected(['recording_enabled'=>false]),422,'connected call has no recording input');
+denies(fn()=>$prepareConnected(['number_id'=>1]),404,'foreign assigned line is rejected');
+denies(fn()=>$prepareConnected(['profile_id'=>$profile2]),409,'cannot mix device and profile');
+denies(fn()=>$prepareConnected(['profile_revision'=>2]),409,'stale profile revision rejected');
+denies(fn()=>$prepareConnected(['phone_revision'=>2]),409,'stale number revision rejected');
+denies(fn()=>$prepareConnected(['conversation_id'=>0]),409,'connected call needs its saved private conversation');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=0 WHERE profile_id=?')->execute([$profile1]);
+denies(fn()=>$prepareConnected(),409,'holder must consent to direct calls');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=1 WHERE profile_id=?')->execute([$profile1]);
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET owner_calls=0 WHERE profile_id=?')->execute([$profile1]);
+denies(fn()=>$prepareConnected(),409,'owner must also grant direct calls');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET owner_calls=1 WHERE profile_id=?')->execute([$profile1]);
+$local=(new DateTimeImmutable('@'.$clock))->setTimezone(new DateTimeZone($zone))->format('H:i');
+[$quietStart,$quietEnd]=$local<'12:00'?['13:00','14:00']:['01:00','02:00'];
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET window_start=?,window_end=? WHERE profile_id=?')->execute([$quietStart,$quietEnd,$profile1]);
+denies(fn()=>$prepareConnected(),409,'quiet hours block reservation');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET window_start='00:00',window_end='23:59' WHERE profile_id=?")->execute([$profile1]);
+$pc=$prepareConnected();$pcid=$pc['call']['public_id'];$row=readcall($pcid);
+c($pc['call']['connected_phone']===true&&$pc['call']['peer_e164']===''&&$pc['call']['peer_masked']==='Ending in 0135'
+    &&$row['peer_e164']==='+16025550135'&&$row['paired_profile_id']===$profile1&&!$row['recording_enabled'],'private destination bound to profile and redacted in response');
+c($row['provider_call_sid']===null,'prepared connected call is not carrier dispatch');
+denies(fn()=>$prepareConnected(),429,'per-profile minimum interval includes reservations');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=0,revision=2 WHERE profile_id=?")->execute([$profile1]);
+$pcform=form('CA'.md5('ps4-denied-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$pc['connect_params']['call_intent']]);
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$pcform,signature('voice',$pcform)),'<Hangup')&&readcall($pcid)['state']==='prepared','carrier cannot dial after holder revokes consent');
+$ownerAct('cancel_prepared',['call_id'=>$pcid]);
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=1,revision=3 WHERE profile_id=?")->execute([$profile1]);
+denies(fn()=>$prepareConnected(['profile_revision'=>3]),429,'consent edits do not reset frequency budget');
+$pc2=$prepareConnected(['device_id'=>$device2,'profile_id'=>$profile2]);$pcid2=$pc2['call']['public_id'];
+$pcform2=form('CA'.md5('ps4-connected-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$pc2['connect_params']['call_intent']]);
+$xml2=vp3_phone_browser_voice_v1($pdo,$pcform2,signature('voice',$pcform2));
+c(str_contains($xml2,'+16025550136')&&str_contains($xml2,'timeLimit="180"')&&!str_contains($xml2,' record=')
+    &&str_contains($xml2,'callerId="+16025550102"'),'second profile uses same owned line with bounded no-record call');
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$pcform2,signature('voice',$pcform2)),'<Hangup'),'connected call intent single use');
+$pcrow=readcall($pcid2);$pcchild=form('CA'.md5('ps4-connected-child'),['ParentCallSid'=>$pcrow['provider_call_sid'],'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$pcchild,signature('status',$pcchild,$pcid2),$pcid2);
+denies(fn()=>$ownerAct('bind_call',['call_id'=>$pcid2]),404,'connected call cannot be rebound to a different conversation');
+denies(fn()=>vp3_operator_live_call_v1($pdo,$scope,$pcid2,time()),409,'connected reachability call has no AI speech authority');
+denies(fn()=>$ownerAct('save_caller_contact',['call_id'=>$pcid2,'name'=>'Private phone']),403,'contact save cannot expose private destination');
+$pcend=form('CA'.md5('ps4-connected-child'),['ParentCallSid'=>$pcrow['provider_call_sid'],'CallStatus'=>'completed','CallDuration'=>'15']);
+vp3_phone_browser_status_v1($pdo,$pcend,signature('status',$pcend,$pcid2),$pcid2);
+$recent1=vp3_connected_phone_recent_v1($pdo,2,$device1,$profile1);
+$recent2=vp3_connected_phone_recent_v1($pdo,2,$device2,$profile2);
+c(count($recent1)===1&&count($recent2)===1&&$recent1[0]['call_id']===$pcid&&$recent2[0]['call_id']===$pcid2&&$recent2[0]['duration_seconds']===15,'each profile has isolated redacted telephone activity');
+c(vp3_connected_phone_recent_v1($pdo,1,$device2,$profile2)===[],'other account cannot read connected profile call activity');
+$hist=vp3_operator_history_v1($pdo,user(2),0,21);
+$connectedHistory=array_values(array_filter($hist['calls'],fn($call)=>$call['call_id']===$pcid2));
+c(count($connectedHistory)===1&&$connectedHistory[0]['connected_profile_id']===$profile2&&$connectedHistory[0]['peer_e164']===''&&$connectedHistory[0]['peer_masked']==='Ending in 0136','Operator history uses separate masked profile identity');
 
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

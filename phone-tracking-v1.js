@@ -278,7 +278,7 @@
     if(!d){host.replaceChildren();profileDevice='';profileSignature='';return;}
     if(profileDevice!==d.id){profileDevice=d.id;profileTab='communication';profileSignature='';}
     const p=d.communication;
-    const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[];
+    const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[d.agent_chat,typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function'];
     const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra]);
     if(sig===profileSignature)return;
     // Do not overwrite an in-progress permission form on an unrelated GPS poll.
@@ -303,7 +303,10 @@
       field('Information requests',p?.request_permission_saved?'Preference saved':'Off');
       if(p){field('Calling hours',p.window_start+' – '+p.window_end+' · '+p.timezone);field('Call limit',p.max_calls_per_day+' per day · '+p.min_gap_minutes+' min between calls');}
       host.append(facts);
-      host.append(element('p','Calling and information-request execution are not enabled in this build. Existing chat and camera access remain available when authorized above.','phone-detail-meta'));
+      const ready=p.call_permission_saved===true&&Number.isSafeInteger(d.agent_chat?.conversation_id)&&d.agent_chat.conversation_id>0&&typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function';
+      const actions=element('div',undefined,'phone-command-row'),call=actionButton('open_connected_call','Call phone','phone-primary');call.disabled=!ready;actions.append(call);host.append(actions);
+      host.append(element('p',ready?'Place a user-requested call with your assigned line. The Phone drawer will ask for confirmation.':!p.call_permission_saved?'Both calling permissions are required.':!d.agent_chat?.conversation_id?'Open the paired phone chat to establish its linked conversation.':'The assigned browser calling service is unavailable.','phone-detail-meta'));
+      host.append(element('p','Autonomous Agent calls and information-request execution remain disabled.','phone-detail-meta'));
     }else if(profileTab==='permissions'){
       if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
       const form=element('form',undefined,'phone-profile-form');
@@ -328,7 +331,14 @@
       for(const [panel,label] of [['history','Location history'],['places','Saved places']]){
         const b=element('button',label);b.type='button';b.addEventListener('click',()=>{if(selected()?.id===d.id)archive.openPanel(panel);});actions.append(b);
       }
-      host.append(actions,element('p','Telephone history, relationship Brain and ongoing objectives will use this same profile when their services are implemented.','phone-detail-meta'));
+      host.append(actions,element('h3','Recent telephone activity'));
+      const calls=p?.recent_calls;
+      if(Array.isArray(calls)&&calls.length){
+        const rows=element('ul',undefined,'phone-connected-calls');
+        for(const call of calls.slice(0,5))rows.append(element('li',timestamp(call.created_epoch)+' · '+String(call.state||'unknown').replaceAll('_',' ')+' · '+Math.max(0,Number(call.duration_seconds)||0)+' sec'));
+        host.append(rows);
+      }else host.append(element('p',Array.isArray(calls)?'No connected-phone call reservations yet.':'Connected-phone call history is unavailable.','phone-detail-meta'));
+      host.append(element('p','Relationship Brain and ongoing objectives remain a separate build.','phone-detail-meta'));
     }
   }
 
@@ -718,7 +728,9 @@
     const action = event.target.closest('button[data-action]')?.dataset.action;
     const d = selected();
     if (!d || !action || writing) return;
-    if (action === 'open_stream') {
+    if (action === 'open_connected_call') {
+      if(event.isTrusted&&window.VP3PhoneWorkspaceV1?.openConnectedPhone?.(d,event.target.closest('button'))!==true)status.textContent='Review the current connected phone and assigned line before calling.';
+    } else if (action === 'open_stream') {
       camera.open(d,false);
     } else if (action === 'follow') {
       followId = followId === d.id ? '' : d.id;
