@@ -226,7 +226,7 @@ function vp3_phone_browser_recording_v1(PDO $pdo,array $form,string $signature,s
     if(!preg_match('/^[a-f0-9]{32}$/D',$public))throw new InvalidArgumentException('Invalid phone call.');
     $sid=vp3_phone_browser_verify_v1($form,$signature,vp3_phone_browser_callback_v1('recording',['call'=>$public]));
     $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=?');$q->execute([$public]);$call=$q->fetch(PDO::FETCH_ASSOC);
-    if(!$call||!(int)$call['recording_enabled']||!hash_equals((string)$call['provider_call_sid'],$sid))return ['accepted'=>false];
+    if(!$call||($call['transport_kind']??'')==='managed_callback'||!(int)$call['recording_enabled']||!hash_equals((string)$call['provider_call_sid'],$sid))return ['accepted'=>false];
     require_once __DIR__.'/phone-recording-pipeline-v1.php';
     if(!vp3_phone_recording_schema_ready_v1($pdo))throw new RuntimeException('Phone recording storage needs an upgrade.');
     return vp3_phone_recording_receive_v1($pdo,$call,$form);
