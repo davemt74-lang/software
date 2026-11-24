@@ -131,7 +131,7 @@ function vp3_phone_voice_turn_v140(PDO $pdo,array $form,string $signature,string
     if ($speech==='') {
         $pdo->prepare("UPDATE phone_voice_calls_v130 SET state='voicemail_fallback'
           WHERE provider='twilio' AND provider_call_sid=? AND state='conversation_active'")->execute([$sid]);
-        return ['accepted'=>true,'twiml'=>vp3_phone_voice_twiml_v130('', $callback),'fallback'=>'voicemail'];
+        return ['accepted'=>true,'twiml'=>vp3_phone_voicemail_twiml_v1($pdo,$route,$sid,'', $callback),'fallback'=>'voicemail'];
     }
     if (preg_match('/^\s*(?:goodbye|bye|hang up|end call|stop call)[.! ]*$/iu',$speech)) {
         $pdo->prepare("UPDATE phone_voice_calls_v130 SET state='completed'
@@ -176,7 +176,7 @@ function vp3_phone_voice_turn_v140(PDO $pdo,array $form,string $signature,string
                 ->execute([$sid,$step]);
             $pdo->prepare("UPDATE phone_voice_calls_v130 SET state='voicemail_fallback'
               WHERE provider='twilio' AND provider_call_sid=? AND state='conversation_active'")->execute([$sid]);
-            return ['accepted'=>true,'twiml'=>vp3_phone_voice_twiml_v130('', $callback),'fallback'=>'model_unavailable'];
+            return ['accepted'=>true,'twiml'=>vp3_phone_voicemail_twiml_v1($pdo,$route,$sid,'', $callback),'fallback'=>'model_unavailable'];
         }
         $reply=mb_strimwidth(trim((string)$result['answer']),0,650,'…');
         $pdo->prepare("UPDATE phone_voice_turns_v140 SET response_text=?,state='ready'

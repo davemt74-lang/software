@@ -22,8 +22,9 @@
 .vp3-phone-section{min-width:0;outline-offset:3px}
 .vp3-phone-section h3{font-size:13px;margin:20px 0 8px;color:#344054}
 .vp3-phone-field{display:flex;flex-direction:column;gap:7px;min-width:0;font-size:12px;font-weight:600;color:#344054}
-.vp3-phone-field input,.vp3-phone-field select,.vp3-phone-section>input[type=search]{box-sizing:border-box;width:100%;min-width:0;min-height:42px;border:1px solid #cbd2de;border-radius:9px;padding:9px 11px;background:#fff;color:#172033;font:14px system-ui,sans-serif}
-.vp3-phone-field input:focus,.vp3-phone-field select:focus{border-color:#5c7ba1;outline:2px solid #c9d9f0;outline-offset:1px}
+.vp3-phone-field input,.vp3-phone-field select,.vp3-phone-field textarea,.vp3-phone-contact-toolbar input[type=search]{box-sizing:border-box;width:100%;min-width:0;min-height:42px;border:1px solid #cbd2de;border-radius:9px;padding:9px 11px;background:#fff;color:#172033;font:14px system-ui,sans-serif}
+.vp3-phone-field textarea{resize:vertical;line-height:1.5}
+.vp3-phone-field input:focus,.vp3-phone-field select:focus,.vp3-phone-field textarea:focus{border-color:#5c7ba1;outline:2px solid #c9d9f0;outline-offset:1px}
 .vp3-phone-connection{display:grid;gap:10px;margin:16px 0;padding:14px;border:1px solid #dfe6ef;border-radius:12px;background:#f9fbfe}
 .vp3-phone-connection strong{font-size:13px}
 .vp3-phone-dial{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end;margin:20px 0}
@@ -62,6 +63,15 @@
 .vp3-phone-contact-form{display:grid;gap:12px;margin:16px 0 0;padding-top:16px;border-top:1px solid #e5e7eb;min-width:0}
 .vp3-phone-contact-form .vp3-phone-actions{margin-top:0}
 .vp3-phone-contact-form input[readonly]{background:#f8fafc;color:#667085}
+.vp3-phone-contact-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.vp3-phone-contact-toolbar .vp3-phone-button{min-height:42px}
+.vp3-phone-contact-editor,.vp3-phone-schedule-form{display:grid;gap:14px;margin:14px 0;min-width:0}
+.vp3-phone-contact-editor .vp3-phone-actions,.vp3-phone-schedule-form .vp3-phone-actions{margin-top:0}
+.vp3-phone-contact-schedules{border-top:1px solid #e5e7eb;margin-top:22px;padding-top:4px;min-width:0}
+.vp3-phone-scheduled-call{border:1px solid #dce3ec;border-radius:10px;padding:12px;margin:12px 0;min-width:0;overflow-wrap:anywhere;background:#fff}
+.vp3-phone-scheduled-call>strong{font-size:13px}
+.vp3-phone-scheduled-call p{font-size:12px;line-height:1.5;margin:7px 0}
+.vp3-phone-schedule-objectives{white-space:pre-wrap}
 @media(max-width:500px){.vp3-phone-call-details{grid-template-columns:minmax(0,1fr);gap:10px}.message.vp3-phone-message .vp3-phone-call,.message.vp3-phone-message .vp3-phone-voicemail{padding:13px}}
 .vp3-phone-announcement{box-sizing:border-box;max-width:760px;width:100%;margin:12px auto;padding:0 12px;white-space:normal}
 .vp3-phone-workspace :focus-visible,.vp3-phone-chat-card :focus-visible{outline:2px solid #2e65a5;outline-offset:3px}
@@ -110,3 +120,11 @@
 .vp3-phone-managed-report{white-space:pre-wrap;line-height:1.5;font-size:.92rem}
 .vp3-phone-managed-finding{display:grid;gap:.4rem;padding:.7rem;border:1px solid #d7dfdc;border-radius:.55rem;min-width:0;overflow-wrap:anywhere}
 .vp3-phone-managed-review .vp3-phone-report{white-space:normal;overflow-wrap:anywhere}
+.vp3-phone-voicemail-settings{padding:14px;border:1px solid #e2e7ee;border-radius:12px;background:#fff;margin-bottom:16px;color:#17212f}
+.vp3-phone-voicemail-settings h3,.vp3-phone-voicemail-settings h4{margin:0 0 10px;font-size:14px}
+.vp3-phone-voicemail-form,.vp3-phone-greeting{display:grid;gap:10px;min-width:0}
+.vp3-phone-greeting{margin-top:18px;padding-top:14px;border-top:1px solid #e2e7ee}
+.vp3-phone-greeting audio{display:block;width:100%;max-width:100%}
+.vp3-phone-greeting-actions,.vp3-phone-voicemail-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.vp3-phone-voicemail-settings .vp3-phone-button,.vp3-phone-voicemail-actions .vp3-phone-button{min-height:44px;max-width:100%;white-space:normal}
+.vp3-phone-voicemail-actions{margin:12px 0}

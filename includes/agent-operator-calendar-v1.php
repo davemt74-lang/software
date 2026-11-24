@@ -92,6 +92,8 @@ function vp3_operator_calendar_event_view_v1(array $event): array
     $path=parse_url(url('/calendar-event.php'),PHP_URL_PATH);
     if(!is_string($path)||!str_starts_with($path,'/')||str_starts_with($path,'//'))throw new RuntimeException('Calendar event link unavailable.');
     return ['event_id'=>(int)$event['id'],'title'=>mb_substr((string)$event['title'],0,190),
+        'occurrence_id'=>(string)($event['occurrence_id']??('event:'.(int)$event['id'])),
+        'recurrence'=>(string)($event['recurrence']??'none'),
         'start_at'=>$start->format(DATE_ATOM),'end_at'=>$end->format(DATE_ATOM),
         'label'=>$start->setTimezone($zone)->format('D, M j, g:i A T'),
         'url'=>$path.'?id='.(int)$event['id'],
@@ -102,10 +104,14 @@ function vp3_operator_calendar_event_view_v1(array $event): array
 function vp3_operator_calendar_existing_v1(PDO $pdo,array $scope,int $contactId,int $now): ?array
 {
     $q=$pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND source='user'
-        AND source_reference LIKE ? AND status='active' AND (end_at_utc>? OR recurrence='weekly')
+        AND source_reference LIKE ? AND status='active' AND (end_at_utc>? OR recurrence IN ('daily','weekly'))
         ORDER BY start_at_utc,id LIMIT 1");
     $q->execute([$scope['owner_user_id'],VP3_OPERATOR_CALENDAR_PREFIX_V1.$contactId.':%',gmdate('Y-m-d H:i:s',$now)]);
     $row=$q->fetch(PDO::FETCH_ASSOC);
+    if($row&&in_array($row['recurrence']??'none',['daily','weekly'],true)){
+        $occurrences=user_calendar_occurrences_v1340($row,gmdate('Y-m-d H:i:s',$now),gmdate('Y-m-d H:i:s',$now+8*86400));
+        if($occurrences)return $occurrences[0];
+    }
     return $row?:null;
 }
 
@@ -174,7 +180,7 @@ function vp3_operator_calendar_save_v1(PDO $pdo,array $scope,array $input,int $n
     });
 }
 
-/** Operator Brain lists native one-time appointments, never schedules a job. */
+/** Operator Brain projects native reminders, never schedules a call job. */
 function vp3_operator_calendar_upcoming_v1(PDO $pdo,array $user,int $agentId,int $cid,int $now): array
 {
     $out=['coverage'=>'unavailable','appointments'=>[],'execution_enabled'=>false];
@@ -183,15 +189,18 @@ function vp3_operator_calendar_upcoming_v1(PDO $pdo,array $user,int $agentId,int
         $scope=vp3_phone_workspace_scope_v1($pdo,$user,['agent_id'=>$agentId,'conversation_id'=>$cid]);
         if(!vp3_phone_package_v100($pdo,$scope['owner_user_id'])['voice']||!vp3_operator_calendar_ready_v1($pdo))return $out;
         $q=$pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND source='user' AND source_reference LIKE ?
-            AND status='active' AND recurrence='none' AND end_at_utc>? AND start_at_utc<? ORDER BY start_at_utc,id LIMIT 51");
+            AND status='active' AND (end_at_utc>? OR recurrence IN ('daily','weekly')) AND start_at_utc<? ORDER BY start_at_utc,id LIMIT 51");
         $q->execute([$scope['owner_user_id'],VP3_OPERATOR_CALENDAR_PREFIX_V1.'%',gmdate('Y-m-d H:i:s',$now),gmdate('Y-m-d H:i:s',$now+VP3_OPERATOR_CALENDAR_HORIZON_V1)]);
-        $rows=$q->fetchAll(PDO::FETCH_ASSOC);$out['coverage']=count($rows)>50?'limited':'ready';
+        $rows=$q->fetchAll(PDO::FETCH_ASSOC);$out['coverage']=count($rows)>50?'limited':'ready';$appointments=[];
         foreach(array_slice($rows,0,50) as $row){
             if(!preg_match('/^operator-call-v1:([1-9][0-9]{0,15}):([1-9][0-9]{0,15}):[a-f0-9]{64}$/D',(string)$row['source_reference'],$match))continue;
             if($agentId>0&&(int)$match[2]!==$agentId)continue;
-            $out['appointments'][]=vp3_operator_calendar_event_view_v1($row);
-            if(count($out['appointments'])===10){$out['coverage']='limited';break;}
+            foreach(user_calendar_occurrences_v1340($row,gmdate('Y-m-d H:i:s',$now),gmdate('Y-m-d H:i:s',$now+VP3_OPERATOR_CALENDAR_HORIZON_V1)) as $event)
+                $appointments[]=vp3_operator_calendar_event_view_v1($event);
         }
+        usort($appointments,static fn(array $a,array $b):int=>strcmp($a['start_at'],$b['start_at'])?:strcmp($a['occurrence_id'],$b['occurrence_id']));
+        if(count($appointments)>10)$out['coverage']='limited';
+        $out['appointments']=array_slice($appointments,0,10);
         return $out;
     }catch(Throwable $error){return ['coverage'=>'unavailable','appointments'=>[],'execution_enabled'=>false];}
 }

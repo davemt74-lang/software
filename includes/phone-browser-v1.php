@@ -141,9 +141,9 @@ function vp3_phone_browser_live_call_v1(PDO $pdo,array $call): bool
         $scope=vp3_phone_workspace_scope_v1($pdo,$user,['agent_id'=>(int)$call['agent_id']]);$n=vp3_phone_browser_require_v1($pdo,$scope,(int)$call['phone_number_id']);return hash_equals((string)$call['phone_e164'],(string)$n['phone_e164']);
     }catch(VP3PhoneWorkspaceException){return false;}
 }
-function vp3_phone_browser_dial_attrs_v1(array $call,bool $record): string
+function vp3_phone_browser_dial_attrs_v1(array $call,bool $record,int $timeout=20): string
 {
-    $query=['call'=>(string)$call['public_id']];$attrs=' answerOnBridge="true" timeout="20" action="'.vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('complete',$query)).'" method="POST"';
+    $query=['call'=>(string)$call['public_id']];$attrs=' answerOnBridge="true" timeout="'.max(5,min(60,$timeout)).'" action="'.vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('complete',$query)).'" method="POST"';
     if((int)($call['owner_phone_revision']??0)>0)$attrs.=' timeLimit="60"';
     elseif((string)($call['paired_profile_id']??'')!=='')$attrs.=' timeLimit="180"';
     if($record)$attrs.=' record="record-from-answer-dual" recordingStatusCallback="'.vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('recording',$query)).'" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"';return $attrs;
@@ -193,7 +193,7 @@ function vp3_phone_browser_incoming_v1(PDO $pdo,array $route,string $sid): ?stri
         if((int)$call['owner_user_id']!==(int)$route['owner_user_id']||!vp3_phone_browser_live_call_v1($pdo,$call)||!in_array($call['state'],['ringing'],true))return vp3_phone_browser_hangup_v1();
         $status=vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('status',['call'=>$call['public_id']]));
         $notice=$call['recording_enabled']?'<Say>This call will be recorded. Please hang up now if you do not want to be recorded.</Say><Pause length="2"/>':'';
-        return '<?xml version="1.0" encoding="UTF-8"?><Response>'.$notice.'<Dial'.vp3_phone_browser_dial_attrs_v1($call,(bool)$call['recording_enabled']).'><Client statusCallback="'.$status.'" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"><Identity>'.vp3_phone_browser_identity_v1((int)$call['owner_user_id'],(int)$call['chat_agent_id']).'</Identity><Parameter name="phone_call_id" value="'.$call['public_id'].'"/></Client></Dial></Response>';
+        return '<?xml version="1.0" encoding="UTF-8"?><Response>'.$notice.'<Dial'.vp3_phone_browser_dial_attrs_v1($call,(bool)$call['recording_enabled'],vp3_phone_voicemail_ring_timeout_v1($pdo,$call)).'><Client statusCallback="'.$status.'" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"><Identity>'.vp3_phone_browser_identity_v1((int)$call['owner_user_id'],(int)$call['chat_agent_id']).'</Identity><Parameter name="phone_call_id" value="'.$call['public_id'].'"/></Client></Dial></Response>';
     });
 }
 function vp3_phone_browser_call_by_sid_v1(PDO $pdo,string $sid): ?array
