@@ -24,7 +24,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -60,6 +60,9 @@ function status(array $call,string $value,string $hex='c',array $extra=[],bool $
 c(!vp3_phone_workspace_schema_ready_v1($pdo),'unreleased tables cannot masquerade as installed');
 vp3_phone_workspace_ensure_schema_v1($pdo);c(vp3_phone_workspace_schema_ready_v1($pdo),'explicit schema installs phone workspace');
 vp3_phone_recording_ensure_schema_v1($pdo);
+c(!vp3_operator_auto_call_schema_ready_v1($pdo),'missing optional Operator migration does not create schema on read');
+c(api('GET')['state']['auto_call']===['available'=>false,'execution_enabled'=>false,'policies'=>[]],'unupgraded Operator preferences do not disable manual phone access');
+denies(fn()=>action('save_auto_call_policy',['contact_id'=>1,'number_id'=>1,'enabled'=>false,'expected_revision'=>0]),503,'Operator preferences require an explicit upgrade');
 $pdo->exec('DELETE FROM phone_sms_assignment_migrations_v111');c(!vp3_phone_workspace_schema_ready_v1($pdo),'old v110 schema does not grant readiness');$pdo->exec('INSERT INTO phone_sms_assignment_migrations_v111 VALUES(1)');
 c(vp3_phone_workspace_available_v1($pdo,user()),'actual owned active assignment exposes Phone');
 c(!vp3_phone_workspace_available_v1($pdo,user(3)),'plan alone never exposes Phone');
@@ -491,6 +494,59 @@ c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader)['rep
 // The SQLite fixture is in memory and still has earlier read cursors. Its
 // connection teardown releases these tables; clean the shared MySQL fixture explicitly.
 if($mysql){$pdo->exec('DROP TABLE artist_transcript_segments_v172');$pdo->exec('DROP TABLE artist_transcript_sessions_v172');}
+// Operator authorization changes are owner-only preferences, not call intents.
+vp3_operator_auto_call_ensure_schema_v1($pdo);vp3_operator_auto_call_ensure_schema_v1($pdo);
+c(vp3_operator_auto_call_schema_ready_v1($pdo)&&(int)$pdo->query('SELECT COUNT(*) FROM phone_operator_contact_policies_v1')->fetchColumn()===0,'explicit repeatable upgrade leaves every contact off');
+$pdo->exec("UPDATE crm_contacts SET phone='+16025550999' WHERE id=1");
+$pdo->exec('UPDATE phone_cloud_numbers_v100 SET voice_enabled=1 WHERE id=1');
+vp3_phone_browser_number_policy_set_v1($pdo,1,true,true);
+action('select_number',['number_id'=>1]);
+$settings=vp3_operator_auto_call_defaults_v1();$settings['timezone']='America/Phoenix';
+$authorization=['contact_id'=>1,'number_id'=>1,'enabled'=>true,'expected_revision'=>0,'expected_destination'=>'+16025550999','expected_line'=>'+16025550101','settings'=>$settings];
+$policyScope=vp3_phone_workspace_scope_v1($pdo,user(),['agent_id'=>0,'conversation_id'=>11]);
+$readPolicy=static fn():array=>vp3_operator_auto_call_book_v1($pdo,$policyScope,1,[['id'=>1]])['policies'][0];
+c($readPolicy()['state']==='off'&&$readPolicy()['execution_enabled']===false,'Auto Call defaults off and has no execution capability');
+vp3_phone_recording_save_policy_v1($pdo,user(),7,['enabled'=>false,'analyze'=>false]);
+denies(fn()=>action('save_auto_call_policy',$authorization),409,'permission cannot enable without configured recording and transcription');
+vp3_phone_recording_save_policy_v1($pdo,user(),7,['enabled'=>true,'retain_audio'=>true,'transcribe'=>true,'analyze'=>false]);
+c($readPolicy()['can_enable'],'explicit recording and transcription preferences permit saving owner authorization');
+$callCount=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$recordingCount=(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn();
+$request=['action'=>'save_auto_call_policy','agent_id'=>0,'conversation_id'=>11]+$authorization;
+denies(fn()=>api('GET',$request),405,'GET cannot save a contact authorization');
+denies(fn()=>api('POST',$request),403,'authorization save needs CSRF');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['csrf_token'=>'forged'])),403,'forged CSRF cannot change Auto Call');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['contact_id'=>2])),404,'foreign contact cannot be authorized');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['contact_id'=>3])),404,'archived contact cannot be authorized');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['number_id'=>2])),404,'foreign carrier line cannot be authorized');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['agent_id'=>9,'conversation_id'=>13])),404,'named Agent cannot authorize a different Agent line');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['conversation_id'=>0])),403,'authorization requires a saved private Chat');
+denies(fn()=>action('save_auto_call_policy',$authorization+['owner_user_id'=>2]),422,'client cannot supply owner authority');
+denies(fn()=>action('save_auto_call_policy',$authorization+['recording_required'=>false]),422,'client cannot turn off mandatory recording');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['expected_destination'=>'+16025550888'])),409,'browser cannot supply another dial destination');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['expected_line'=>'+16025550103'])),409,'browser cannot substitute another calling line');
+foreach (['timezone'=>'not/a/timezone','window_start'=>'25:00','window_end'=>'08:00','max_calls_per_day'=>4,'min_gap_minutes'=>0,'max_duration_seconds'=>901] as $field=>$invalid)
+    denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['settings'=>array_replace($settings,[$field=>$invalid])])),422,'invalid Auto Call limit '.$field.' rejected');
+$stored=action('save_auto_call_policy',$authorization)['policy'];
+c($stored['state']==='saved'&&$stored['revision']===1&&$stored['enabled']&&$stored['recording_required']&&$stored['transcription_required']&&!$stored['execution_enabled'],'exact owner authorization persists mandatory recording and explicit execution-disabled state');
+c($stored['settings']===$settings&&$readPolicy()===$stored,'saved time zone, window and calling limits round trip');
+c(!str_contains(json_encode($stored),'provider_sid_hash'),'permission projection never exposes carrier identity fingerprints');
+denies(fn()=>action('save_auto_call_policy',$authorization),409,'stale editor cannot overwrite a newer permission');
+$pdo->exec("UPDATE crm_contacts SET phone='+16025550699' WHERE id=1");
+c($readPolicy()['state']==='needs_review','changed primary contact number does not inherit authorization');
+denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['expected_revision'=>1])),409,'previous destination cannot be reauthorized silently');
+$pdo->exec("UPDATE crm_contacts SET phone='+16025550999' WHERE id=1");
+$pdo->exec('UPDATE phone_browser_numbers_v1 SET recording_enabled=0 WHERE phone_number_id=1');
+c($readPolicy()['state']==='blocked','revoked recording approval blocks saved owner authorization');
+$revoked=action('save_auto_call_policy',['contact_id'=>1,'number_id'=>1,'enabled'=>false,'expected_revision'=>1])['policy'];
+c(!$revoked['enabled']&&$revoked['revision']===2,'owner can revoke while calling prerequisites are disabled');
+$pdo->exec('UPDATE phone_browser_numbers_v1 SET recording_enabled=1 WHERE phone_number_id=1');
+$storedAgain=action('save_auto_call_policy',array_replace($authorization,['expected_revision'=>2]))['policy'];
+c($storedAgain['revision']===3&&$storedAgain['enabled'],'owner can explicitly reauthorize');
+vp3_operator_auto_call_revoke_line_v1($pdo,1);
+c(!$readPolicy()['enabled']&&$readPolicy()['revision']===4,'assignment invalidation revokes previously stored authority and advances its revision');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$callCount
+    &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$recordingCount,'permission writes do not create call intents or recording jobs');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
