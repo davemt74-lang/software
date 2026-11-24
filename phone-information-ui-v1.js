@@ -24,6 +24,8 @@
       const box=make('div',undefined,'phone-information-file'),label=make('label','Choose attachment'),input=make('input');
       input.type='file';input.accept=photoOnly?'image/jpeg,image/png,.jpg,.jpeg,.png':accepted;input.setAttribute('aria-label','Choose attachment');label.append(input);
       const agreement=make('label',undefined,'phone-information-confirm'),check=make('input');check.type='checkbox';
+      check.setAttribute('aria-label','Share this selected file with the other party.');
+      input.addEventListener('change',()=>{check.checked=false;});
       agreement.append(check,make('span','Share this selected file with the other party.'));
       box.append(label,agreement,make('small','JPEG, PNG, PDF or plain text, up to 2 MiB. Photos can contain location metadata. Files are not malware-scanned.'));
       return {box,input,check};
