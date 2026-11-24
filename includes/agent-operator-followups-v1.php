@@ -23,7 +23,7 @@ function vp3_operator_followup_items_v1(array $job,array $saved): array
         || ($saved['session_id']??null)!==$session || ($saved['fresh']??null)!==true
         || ($saved['source_hash']??null)!==$hash) return [];
     $out=[];$seen=[];
-    foreach (($saved['research_candidates']??[]) as $item) {
+    foreach (is_array($saved['research_candidates']??null)?$saved['research_candidates']:[] as $item) {
         if (!is_array($item) || ($item['kind']??null)!=='followup'
             || ($item['session_id']??null)!==$session || ($item['source_hash']??null)!==$hash
             || !in_array($item['review_state']??null,['unreviewed','accepted'],true)) continue;
@@ -74,7 +74,8 @@ function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable 
     if ($cid<1||$agent<0||!is_array($scope['user']??null)||!is_array($scope['principal']??null))
         return array_replace($empty,['coverage'=>'unconfigured']);
     try {
-        if (function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)
+        if ((function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)
+            || (function_exists('knowledge_retrieval_v162_owner_session')&&!knowledge_retrieval_v162_owner_session($scope['user'],$scope['principal'])))
             return array_replace($empty,['coverage'=>'unconfigured']);
         $phone=vp3_phone_workspace_scope_v1($pdo,$scope['user'],['agent_id'=>$agent,'conversation_id'=>$cid]);
         $user=$phone['user'];$owner=$phone['owner_user_id'];
