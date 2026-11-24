@@ -159,6 +159,14 @@
     camera: () => camera?.open(),
     savePlace: () => savedPlace?.open()
   });
+  const handoff=window.VP3PhoneHandoffV1?.({request:(action,body)=>new Promise((resolve,reject)=>queue(async()=>{
+    try{
+      if(dead||document.hidden)throw Error('Phone page not active');
+      const result=await request(action,body);
+      if(['handoff_offer','handoff_cancel'].includes(action)&&result.device)accept(result);
+      resolve(result);
+    }catch(error){reject(error);}
+  })),onMoved:result=>{accept(result);info='Connection moved. Review your sharing and communication preferences.';render();schedulePoll();}});
   function discardDeferred(session) {
     clearTimeout(session.timer);
     session.timer = null;
@@ -317,6 +325,7 @@
     renderInformation();
     renderCommunication();
     const connected = device?.status === 'approved';
+    handoff?.bind(device,secure&&available&&!initial&&!dead&&navigator.onLine!==false&&!pending&&!claim&&!actionBusy);
     const queued = Boolean(pending && pending.id === device?.id);
     const paired = connected && pending?.action !== 'disconnect' ? device : null;
     camera?.bind(paired?.id || null, owner);

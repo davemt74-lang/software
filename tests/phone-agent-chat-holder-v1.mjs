@@ -62,6 +62,14 @@ try {
   assert.equal(await connection.getAttribute('aria-selected'),'true');
   assert.equal(await page.locator('#phone-chat-form').isVisible(),true);
   assert.equal(chatReads,0,'the Connection tab does not request the private transcript');
+  await page.locator('#phone-footer-guide').click();
+  await page.locator('#phone-info-title').waitFor();
+  assert.equal(await page.locator('#phone-chat-form').isVisible(),false,'Info does not need the composer');
+  assert.equal(chatReads,0,'Info guide never requests private Chat');
+  assert.equal(await page.locator('#phone-guide-notification-state').textContent(),'Background notifications are not enabled yet.');
+  await page.locator('#phone-info-back').click();
+  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-chat-form').isVisible(),true);
   // Safari pans its visual viewport independently while focusing and closing the keyboard.
   // Offsetting the page by this value used to leave the top of the phone screen blank.
   await page.evaluate(() => {
@@ -130,6 +138,10 @@ try {
   assert.equal(await input.isVisible(),true);
   assert.equal(await input.inputValue(),'Unsent chat draft');
   await connection.press('End');
+  const info = page.getByRole('tab',{name:'Info',exact:true});
+  assert.equal(await info.getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-info').isVisible(),true);
+  await info.press('ArrowLeft');
   assert.equal(await chat.getAttribute('aria-selected'),'true');
   assert.equal(await input.inputValue(),'Unsent chat draft');
   await input.focus();

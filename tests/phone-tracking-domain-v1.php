@@ -184,4 +184,6 @@ pt_reject(404,fn()=>$owner('revoke',$newCommand($ownerSaw)),'old pairing ID cann
 pt_reject(409,fn()=>$owner('revoke',array_replace($revokeCommand,['device_id'=>$otherId])),'a disconnect receipt cannot be redirected to the replacement pairing');
 pt_assert($otherId!==$id && $owner('state')['devices'][0]['id']===$otherId,'replacement pairing remains connected');
 
-echo "PASS Phone Tracking pairing, sharing and per-phone preferences.\n";
+require_once __DIR__.'/phone-handoff-cases-v1.php';
+vp3_test_phone_handoff_v1($db,11,12,'pt_assert');
+echo "PASS Phone Tracking pairing, sharing, handoff and per-phone preferences.\n";

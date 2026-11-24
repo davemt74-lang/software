@@ -167,6 +167,7 @@ require __DIR__.'/includes/member-header.php';
       </details>
     </div>
     <p id="phone-pair-status" role="status"></p>
+    <div id="phone-handoff-pending"></div>
     <div id="phone-pending"></div>
   </dialog>
   <dialog id="phone-street-consent" class="phone-dialog" aria-labelledby="phone-street-title">
