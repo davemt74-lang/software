@@ -39,12 +39,13 @@ function setup(options={}){
   throw Error('Unexpected action');
  };
  const crypto={getRandomValues:value=>webcrypto.getRandomValues(value),subtle:{digest:async(algorithm,value)=>{assert.equal(algorithm,'SHA-256');return Uint8Array.from(createHash('sha256').update(Buffer.from(value)).digest()).buffer;}}};
- const sandbox={window,document,navigator,location,history,Notification,crypto,performance:{now:()=>1000},TextEncoder,Uint8Array,ArrayBuffer,Date,Number,String,Boolean,Promise,Object,Array,Map,Set,RegExp,JSON,URL,
+ let clockOffset=0;const ClockDate=class extends Date{static now(){return Date.now()+clockOffset;}};
+ const sandbox={window,document,navigator,location,history,Notification,crypto,performance:{now:()=>1000},TextEncoder,Uint8Array,ArrayBuffer,Date:ClockDate,Number,String,Boolean,Promise,Object,Array,Map,Set,RegExp,JSON,URL,
   atob:value=>Buffer.from(value,'base64').toString('binary'),MutationObserver:class{constructor(fn){observers.push(fn);}observe(){}},console};
  for(const name of ['localStorage','sessionStorage','indexedDB'])Object.defineProperty(sandbox,name,{get(){throw Error('Private push state must not be persisted in '+name);}});
  vm.runInNewContext(source,sandbox);controller=window.VP3PhonePushSubscriptionsV1({request,onResolved:value=>resolved.push(structuredClone(value)),onUnavailable:()=>unavailable.push(elements.get('phone-push-test-state')?.textContent)});
  const click=(id,trusted=true)=>{facts.gesture=trusted;const pending=elements.get(id).emit('click',{isTrusted:trusted});facts.gesture=false;return pending;};
- return {window,document,elements,calls,resolved,unavailable,historyCalls,facts,location,registration,controller,bind,click,get device(){return device;},setHandler:fn=>handler=fn,setRegistrationError:value=>registrationError=value,setPermission:value=>permission=value,setOnline:value=>navigator.onLine=value,setInfoHidden:value=>{elements.get('phone-info').hidden=value;observers.forEach(fn=>fn());},wake:()=>window.emit('pageshow'),dispose:()=>window.emit('pagehide')};
+ return {window,document,elements,calls,resolved,unavailable,historyCalls,facts,location,registration,controller,bind,click,get device(){return device;},advanceClock:milliseconds=>{clockOffset+=milliseconds;},setHandler:fn=>handler=fn,setRegistrationError:value=>registrationError=value,setPermission:value=>permission=value,setOnline:value=>navigator.onLine=value,setInfoHidden:value=>{elements.get('phone-info').hidden=value;observers.forEach(fn=>fn());},wake:()=>window.emit('pageshow'),dispose:()=>window.emit('pagehide')};
 }
 let checks=0;async function test(name,fn){await fn();checks++;console.log('PASS '+name);}
 async function ready(options={}){const b=setup(options);b.bind(options.device||fixture(),options.available!==false);await flush();return b;}
@@ -75,6 +76,21 @@ await test('duplicate clicks share one in-flight test and explicit retry reuses 
 });
 await test('a polled display or terminal receipt allows a fresh test on the next trusted click',async()=>{
  for(const settled of [{client_observed_epoch:Math.floor(Date.now()/1000)},{opened_epoch:Math.floor(Date.now()/1000)},{state:'failed'},{state:'cancelled'},{state:'expired'}]){const b=await ready();await b.click('phone-push-test');const previous=b.calls[0].request_id,d=structuredClone(b.device);d.push.delivery.last_test=receipt(d,settled);b.bind(d);b.setHandler((_action,_body,{receipt})=>receipt({event_ref:'c'.repeat(32)}));await b.click('phone-push-test');assert.equal(b.calls.length,2);assert.notEqual(b.calls[1].request_id,previous);assert.match(b.elements.get('phone-push-test-state').textContent,/queued/);await b.dispose();}
+});
+await test('accepted and uncertain tests allow a fresh request after the delivery window expires',async()=>{
+ for(const state of ['accepted','uncertain'])for(const polled of [false,true]){
+  const b=await ready({request:(_action,_body,{receipt})=>receipt({state})});await b.click('phone-push-test');const previous=b.calls[0].request_id;
+  if(polled){const d=structuredClone(b.device);d.push.delivery.last_test=receipt(d,{state});b.bind(d);}
+  b.advanceClock(301000);await b.wake();assert.match(b.elements.get('phone-push-test-state').textContent,/window expired without a display report/);
+  b.setHandler((_action,_body,{receipt})=>receipt({event_ref:'c'.repeat(32),expires_epoch:Math.floor(Date.now()/1000)+900}));await b.click('phone-push-test');
+  assert.notEqual(b.calls[1].request_id,previous);assert.match(b.elements.get('phone-push-test-state').textContent,/queued/);await b.dispose();
+ }
+});
+await test('accepted and uncertain receipts retain the same request while their delivery window is active',async()=>{
+ for(const state of ['accepted','uncertain']){
+  const b=await ready({request:(_action,_body,{receipt})=>receipt({state})});await b.click('phone-push-test');const d=structuredClone(b.device);d.push.delivery.last_test=receipt(d,{state});b.bind(d);b.advanceClock(60000);
+  await b.click('phone-push-test');assert.equal(b.calls[1].request_id,b.calls[0].request_id);assert.doesNotMatch(b.elements.get('phone-push-test-state').textContent,/expired/);await b.dispose();
+ }
 });
 await test('malformed foreign and stale-revision test receipts cannot claim success',async()=>{
  for(const overrides of [{event_ref:'not-a-reference'},{device_id:'e'.repeat(32)},{subscription_revision:3},{state:'delivered'},{client_observed_epoch:'1'},{opened_epoch:Math.floor(Date.now()/1000)+3600},{expires_epoch:0}]){const b=await ready({request:(_action,_body,{receipt})=>receipt(overrides)});await b.click('phone-push-test');assert.match(b.elements.get('phone-push-test-state').textContent,/could not be confirmed/);assert.doesNotMatch(b.elements.get('phone-push-test-state').textContent,/reported showing|was opened|queued/);await b.dispose();}

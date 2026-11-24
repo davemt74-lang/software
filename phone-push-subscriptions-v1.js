@@ -34,12 +34,13 @@
       if(result.created_epoch<1||result.expires_epoch<=result.created_epoch||[result.provider_accepted_epoch,result.client_observed_epoch,result.opened_epoch].some(value=>value>Math.floor(Date.now()/1000)+300))return null;
       return result;
     }
-    const testSettled=receipt=>receipt&&(receipt.client_observed_epoch>0||receipt.opened_epoch>0||['failed','cancelled','expired'].includes(receipt.state));
+    const testSettled=receipt=>receipt&&(receipt.client_observed_epoch>0||receipt.opened_epoch>0||['failed','cancelled','expired'].includes(receipt.state)||receipt.expires_epoch<=Math.floor(Date.now()/1000));
     function testDescription(receipt){
       if(['cancelled','expired'].includes(receipt.state))return 'This test notification is no longer active. Send another test when notifications are ready.';
       if(receipt.opened_epoch>0)return 'The test notification was opened in VP3 Phone.';
       if(receipt.client_observed_epoch>0)return 'This installation reported showing the test notification.';
       if(receipt.state==='failed')return 'The test could not be sent. Check your notification setup before trying again.';
+      if(receipt.expires_epoch<=Math.floor(Date.now()/1000))return 'The test notification window expired without a display report. Send another test when notifications are ready.';
       if(receipt.provider_accepted_epoch>0||receipt.state==='accepted')return 'The push service accepted the test. Display on this device is not confirmed.';
       if(receipt.state==='uncertain')return 'The send result is uncertain. Display on this device is not confirmed.';
       if(receipt.state==='retry')return 'The test is waiting for the server to retry. Display on this device is not confirmed.';
@@ -181,7 +182,7 @@
       if(!event.isTrusted||!canTest())return;
       const expected=binding(),v=version;
       const saved=testResult(view()?.delivery?.last_test,expected);
-      if(testRequest&&saved?.event_ref===testRequest.event_ref&&testSettled(saved))testRequest=null;
+      if(testRequest&&[saved,testResult(testReceipt,expected)].some(receipt=>receipt?.event_ref===testRequest.event_ref&&testSettled(receipt)))testRequest=null;
       if(!testRequest||!current(testRequest))testRequest={...expected,request_id:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('')};
       const intent=testRequest;busy=true;testNotice='Sending test request…';render();
       try{
