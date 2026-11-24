@@ -646,9 +646,10 @@ denies(fn()=>$liveApi($chunk,$liveNow+8),409,'a previously reserved sequence can
 $deniedModel=static function():never{throw new LogicException('Unapproved model dispatch');};
 denies(fn()=>vp3_operator_live_request_v1($pdo,user(),'POST',['action'=>'suggest','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken,'receipts'=>[]],'csrf-fixture',$speech,$liveNow+5,$deniedModel),409,'caption consent alone does not authorize private model processing');
 $stop=['action'=>'stop','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken];
-denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+8,static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
+$stopDuringSpeech=static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
     $sent++;$liveApi($stop,$liveNow+8);return 'Late private result';
-}),409,'consent revoked while speech is pending suppresses the late result');
+};
+denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+8,$stopDuringSpeech),409,'consent revoked while speech is pending suppresses the late result');
 c($sent===2&&vp3_operator_live_row_v1($pdo,$liveCallId)['state']==='closed'&&(int)vp3_operator_live_row_v1($pdo,$liveCallId)['reserved_seconds']===8,'uncertain or stopped requests remain counted and cannot replay');
 c($liveApi($stop,$liveNow+9)['stopped'],'owner stop is idempotent');
 denies(fn()=>$liveApi(array_replace($chunk,['seq'=>3]),$liveNow+12),409,'stopped caption session cannot transmit audio');
@@ -665,9 +666,10 @@ vp3_phone_browser_status_v1($pdo,$liveForm2,signature('status',$liveForm2,$live2
 $liveNow2=time();$req2=array_replace($liveRequest,['call_id'=>$live2]);
 $grant2=$liveApi($req2,$liveNow2);
 $chunk2=array_replace($chunk,['call_id'=>$live2,'token'=>$grant2['token'],'seq'=>1]);
-denies(fn()=>$liveApi($chunk2,$liveNow2+4,static function(string $audio)use($pdo,&$sent):string{
+$revokeDuringSpeech=static function(string $audio)use($pdo,&$sent):string{
     $sent++;$pdo->exec('UPDATE phone_recording_policies_v1 SET revision=revision+1 WHERE owner_user_id=1 AND agent_id=7');return 'Revoked private result';
-}),409,'a changed recording/transcription policy fences an in-flight caption result');
+};
+denies(fn()=>$liveApi($chunk2,$liveNow2+4,$revokeDuringSpeech),409,'a changed recording/transcription policy fences an in-flight caption result');
 c(vp3_operator_live_row_v1($pdo,$liveCallId2)['state']==='closed','failed authority verification closes the session');
 $pdo->prepare("UPDATE phone_operator_live_sessions_v1 SET reserved_seconds=240 WHERE call_id=?")->execute([$liveCallId]);
 $live3=str_repeat('f',31).'5';$liveParent3='CA'.str_repeat('f',31).'5';$liveChild3='CA'.str_repeat('f',31).'6';
@@ -722,10 +724,10 @@ denies(fn()=>$suggestApi($suggest,$dualNow+6,$model),429,'model requests are rat
 $dualCaption2=$liveApi(array_replace($dualChunk,['seq'=>2]),$dualNow+28,$dualSpeech);
 $stopDual=array_replace($stop,['call_id'=>$dualPublic,'token'=>$dualGrant['token']]);
 denies(fn()=>$suggestApi($suggest,$dualNow+29,$model),409,'old caption evidence cannot consume another suggestion');
-denies(fn()=>$suggestApi(array_replace($suggest,['receipts'=>$dualCaption2['receipts']]),$dualNow+29,
-    static function(array $u,array $evidence,callable $guard)use($liveApi,$stopDual,$dualNow,&$models):string{
-        $guard();$models++;$liveApi($stopDual,$dualNow+29);return 'Late suggestion';
-    }),409,'stopping during inference fences the returned suggestion');
+$stopDuringSuggestion=static function(array $u,array $evidence,callable $guard)use($liveApi,$stopDual,$dualNow,&$models):string{
+    $guard();$models++;$liveApi($stopDual,$dualNow+29);return 'Late suggestion';
+};
+denies(fn()=>$suggestApi(array_replace($suggest,['receipts'=>$dualCaption2['receipts']]),$dualNow+29,$stopDuringSuggestion),409,'stopping during inference fences the returned suggestion');
 c($models===2&&vp3_operator_live_row_v1($pdo,$dualId)['state']==='closed','revoked suggestions do not restart a session');
 $terminalDual=form($dualChild,['ParentCallSid'=>$dualParent,'CallStatus'=>'completed']);
 vp3_phone_browser_status_v1($pdo,$terminalDual,signature('status',$terminalDual,$dualPublic),$dualPublic);
@@ -736,9 +738,10 @@ vp3_phone_browser_status_v1($pdo,$midForm,signature('status',$midForm,$midPublic
 $midNow=time();$midGrant=$liveApi(array_replace($dualRequest,['call_id'=>$midPublic,'suggestions_attested'=>false]),$midNow);
 $midChunk=array_replace($dualChunk,['call_id'=>$midPublic,'token'=>$midGrant['token']]);
 $midStop=array_replace($stop,['call_id'=>$midPublic,'token'=>$midGrant['token']]);$midDispatches=0;
-denies(fn()=>$liveApi($midChunk,$midNow+4,static function(string $audio)use(&$midDispatches,$liveApi,$midStop,$midNow):string{
+$stopMidSide=static function(string $audio)use(&$midDispatches,$liveApi,$midStop,$midNow):string{
     $midDispatches++;$liveApi($midStop,$midNow+4);return 'Do not return this caption';
-}),409,'revocation during the first side prevents dispatch of the second side');
+};
+denies(fn()=>$liveApi($midChunk,$midNow+4,$stopMidSide),409,'revocation during the first side prevents dispatch of the second side');
 c($midDispatches===1&&(int)vp3_operator_live_row_v1($pdo,$midId)['reserved_seconds']===8,'dual frame reserves both sides before dispatch and never repeats uncertain speech');
 $terminalMid=form($midChild,['ParentCallSid'=>$midParent,'CallStatus'=>'completed']);
 vp3_phone_browser_status_v1($pdo,$terminalMid,signature('status',$terminalMid,$midPublic),$midPublic);
