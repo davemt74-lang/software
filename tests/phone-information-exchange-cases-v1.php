@@ -35,7 +35,7 @@ function vp3_test_phone_information_v1(PDO $db,int $owner,int $other,string $id,
     $reject(404,fn()=>vp3_phone_information_owner_v1($db,$other,'information_list',['device_id'=>$id]),'other owner cannot view this inbox');
     $reject(422,fn()=>$create(1,'photo','Not supported yet'),'file or sensor request not executed as text type');
     $reject(422,fn()=>$create(1,'question',str_repeat('x',1001)),'oversized information text rejected');
-    $reject(403,fn()=>$holderAct('information_create',['exchange_id'=>$ids[0],'kind'=>'update','message'=>'spoofed owner']),'holder cannot impersonate owner creation');
+    $reject(422,fn()=>$holderAct('information_create',['exchange_id'=>$ids[0],'kind'=>'update','message'=>'spoofed owner']),'holder cannot impersonate owner creation');
     $row=$find($create(1,'question','What is your preferred meeting time?'),$ids[0]);
     $assert($row['state']==='pending'&&$row['version']===1,'question is durably pending');
     $assert($find($create(1,'question','What is your preferred meeting time?'),$ids[0])===$row,'lost creation reply exact retry is idempotent');
@@ -47,7 +47,7 @@ function vp3_test_phone_information_v1(PDO $db,int $owner,int $other,string $id,
     $assert($status()['communication']['information_pending']===4,'status contains only current open count');
     $assert(!str_contains(json_encode($status(),JSON_THROW_ON_ERROR),'preferred meeting time'),'status polling never returns private request text');
     $reject(429,fn()=>$create(5,'question','One too many'),'maximum four unfinished exchanges');
-    $reject(403,fn()=>$ownerAct('information_accept',['exchange_id'=>$ids[0],'version'=>1]),'owner cannot fabricate acceptance');
+    $reject(422,fn()=>$ownerAct('information_accept',['exchange_id'=>$ids[0],'version'=>1]),'owner cannot fabricate acceptance');
     $reject(409,fn()=>$holderAct('information_reply',['exchange_id'=>$ids[0],'version'=>1,'response'=>'Morning']),'reply requires explicit acceptance');
     $a=$find($holderAct('information_accept',['exchange_id'=>$ids[0],'version'=>1]),$ids[0]);
     $assert($a['state']==='accepted'&&$a['version']===2,'holder can explicitly accept');
