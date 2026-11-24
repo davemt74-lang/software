@@ -101,3 +101,8 @@
 .vp3-phone-caption-lines{display:grid;gap:8px;min-width:0}
 .vp3-phone-caption-lines>p{padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e1e6ed}
 .vp3-phone-live-caption>.vp3-phone-button{justify-self:start;max-width:100%}
+
+.vp3-phone-caption-turn,.vp3-phone-suggestion{display:grid;gap:5px;padding:10px;border:1px solid #dce3ec;border-radius:8px;background:#fff;min-width:0;overflow-wrap:anywhere}
+.vp3-phone-caption-turn>strong,.vp3-phone-suggestion>strong{font-size:11px;color:#475467}
+.vp3-phone-caption-turn>p,.vp3-phone-suggestion>p{margin:0}
+.vp3-phone-suggestion{border-color:#9baec7}
