@@ -17,6 +17,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <title>Phone connection · VP3</title>
   <link rel="stylesheet" href="phone-location-v1.css?v=11">
   <link rel="stylesheet" href="phone-remote-dialer-v1.css?v=1">
+  <link rel="stylesheet" href="phone-managed-call-ui-v1.css?v=1">
   <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
@@ -26,7 +27,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-save-place-v1.js?v=1" defer></script>
   <script src="phone-information-ui-v1.js?v=2" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
-  <script src="phone-location-v1.js?v=12" defer></script>
+  <script src="phone-managed-call-ui-v1.js?v=1" defer></script>
+  <script src="phone-location-v1.js?v=13" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -39,6 +41,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       </div>
       <?php require __DIR__.'/includes/phone-camera-app-view.php'; ?>
       <div id="phone-dialer-alert-host"></div>
+      <div id="phone-managed-alert-host"></div>
     </div>
   </header>
   <section id="phone-connection" aria-labelledby="phone-label">
