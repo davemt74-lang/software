@@ -113,7 +113,7 @@
     const actions=make('div',undefined,'phone-permission-buttons'),approve=button('Approve managed request','phone-primary'),decline=button('Decline managed request','secondary');
     actions.append(approve,decline);
     root.append(heading,detail,destination,state,check,actions,feedback);
-    let device=null,scope='',requestKey='',ready=false,busy=false,received=0,lastProjection=null;
+    let device=null,scope='',requestKey='',ready=false,busy=false,received=0,lastProjection=null,invalidatedProjection=null;
     function controls(){
       const p=device?.managed_callback,r=p?.request;
       const fresh=performance.now()-received<10000;
@@ -131,11 +131,14 @@
     function bind(d,available){
       const k=key(d),rk=k+'/'+(d?.managed_callback?.request?.request_id||'')+'/'+(d?.managed_callback?.request?.state||'');
       if(k!==scope||rk!==requestKey){scope=k;requestKey=rk;consent.checked=false;feedback.textContent='';}
-      device=d;ready=!!k&&available&&visible();
-      if(d?.managed_callback!==lastProjection){lastProjection=d?.managed_callback;received=performance.now();}
+      const projection=d?.managed_callback;
+      if(!available||!visible())invalidatedProjection=projection||lastProjection;
+      if(projection&&projection!==invalidatedProjection)invalidatedProjection=null;
+      device=d;ready=!!k&&available&&visible()&&!!projection&&projection!==invalidatedProjection;
+      if(projection!==lastProjection){lastProjection=projection;received=performance.now();}
       controls();
     }
-    function invalidate(){device=null;scope=requestKey='';ready=false;consent.checked=false;feedback.textContent='';lastProjection=null;controls();}
+    function invalidate(){invalidatedProjection=lastProjection;device=null;scope=requestKey='';ready=false;consent.checked=false;feedback.textContent='';controls();}
     consent.addEventListener('change',controls);
     async function respond(decision){
       const d=device,r=d?.managed_callback?.request,k=key(d);
