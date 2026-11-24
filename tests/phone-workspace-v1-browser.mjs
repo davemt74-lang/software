@@ -193,7 +193,8 @@ try{
   }
  });
  await check('a temporary refresh failure labels retained data and disables calling until Retry succeeds',async()=>{
-  await fresh();stateFailure={status:503,code:'phone_unavailable'};await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  await fresh();await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  stateFailure={status:503,code:'phone_unavailable'};await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   const panel=page.locator('.vp3-phone-panel');assert.match(await panel.innerText(),/cached|previously loaded|last (?:confirmed|loaded|saved)|may be out of date/i);
   assert.equal(await page.getByLabel('Selected phone number',{exact:true}).inputValue(),'1');assert.equal(await page.locator('.vp3-phone-dial button').isEnabled(),false);assert.equal(await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).isEnabled(),false);
   stateFailure=null;await panel.getByRole('button',{name:'Retry',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.vp3-phone-dial button').disabled);
