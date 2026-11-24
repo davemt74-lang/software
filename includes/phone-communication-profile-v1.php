@@ -175,6 +175,8 @@ function vp3_phone_communication_map_v1(PDO $pdo,int $owner,array $devices,int $
         if($d!==null){
             $device['communication']=vp3_phone_communication_project_v1($pdo,$d,$now,false);
             $device['dialer']=vp3_phone_dialer_view_v1($pdo,$d,$now,false);
+            require_once __DIR__.'/phone-managed-ui-v1.php';
+            $device['managed_callback']=vp3_managed_ui_projection_v1($pdo,$d,$now,false);
             $p=$device['communication'];
             if(is_array($p)&&$p['profile_id']!==''){
                 require_once __DIR__.'/agent-operator-connected-call-v1.php';
