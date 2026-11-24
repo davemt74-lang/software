@@ -90,6 +90,7 @@ try {
     vp3_phone_workspace_ensure_schema_v1($pdo);
     vp3_phone_recording_ensure_schema_v1($pdo);
     vp3_operator_auto_call_ensure_schema_v1($pdo);
+    vp3_operator_admission_install_v1($pdo);
     vp3_operator_live_ensure_schema_v1($pdo);
     vp3_chat_read_ensure_schema_v1($pdo);
     agent_connections_install_v1($pdo);
