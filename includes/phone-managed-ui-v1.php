@@ -68,9 +68,16 @@ function vp3_managed_ui_projection_v1(PDO $pdo,array $d,int $now,bool $holder):?
                 FROM phone_managed_callback_dispatch_v1 t JOIN phone_browser_calls_v1 b ON b.public_id=t.call_public_id AND b.owner_user_id=t.owner_user_id
                 WHERE t.owner_user_id=? AND t.request_id=? AND b.paired_device_id=? AND b.paired_profile_id=? AND b.transport_kind='managed_callback'");
             $q->execute([$owner,$row['public_id'],$device,$p['profile_id']]);$call=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
-            if($call)$view['call']=['public_id'=>(string)$call['public_id'],'state'=>(string)$call['call_state'],
-                'dispatch_state'=>(string)$call['dispatch_state'],'parent_state'=>(string)$call['parent_state'],
-                'duration_seconds'=>max(0,(int)$call['duration_seconds'])];
+            if($call){
+                $view['call']=['public_id'=>(string)$call['public_id'],'state'=>(string)$call['call_state'],
+                    'dispatch_state'=>(string)$call['dispatch_state'],'parent_state'=>(string)$call['parent_state'],
+                    'duration_seconds'=>max(0,(int)$call['duration_seconds'])];
+                if(!$holder){
+                    require_once __DIR__.'/phone-managed-control-v1.php';
+                    $full=vp3_managed_transport_call_v1($pdo,$call['public_id']);
+                    if($full)$view['call']['managed_control']=vp3_managed_control_view_v1($pdo,$scope,$full);
+                }
+            }
         }
         $out['request']=$view;return $out;
     }catch(Throwable){
@@ -82,7 +89,8 @@ function vp3_managed_ui_owner_action_v1(PDO $pdo,array $user,string $action,arra
 {
     require_once __DIR__.'/phone-managed-callback-v1.php';
     vp3_managed_callback_need_v1(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null,403);
-    vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel'],true),422);
+    vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel','managed_reconcile','managed_end'],true),422);
+    if(in_array($action,['managed_reconcile','managed_end'],true))return vp3_managed_ui_control_v1($pdo,$user,$action,$input,$now);
     $allowed=$action==='managed_prepare'
         ?['request_id','managed_request_id','device_id','generation','profile_id','profile_revision','phone_revision','number_id','destination_e164','confirmed']
         :['request_id','managed_request_id','device_id','generation'];
@@ -115,4 +123,24 @@ function vp3_managed_ui_holder_action_v1(PDO $pdo,array $d,array $input,int $now
         'destination_e164'=>$input['destination_e164']??null,'confirmed'=>$input['confirmed']??false];
     vp3_managed_callback_holder_locked_v1($pdo,(int)$d['owner_user_id'],$d['id'],$args,$now);
     return ['managed_callback'=>vp3_managed_ui_projection_v1($pdo,$d,$now,true)];
+}
+
+
+/** Existing managed call controls do not authorize a fresh call or another device. */
+function vp3_managed_ui_control_v1(PDO $pdo,array $user,string $action,array $input,int $now):array
+{
+    require_once __DIR__.'/phone-managed-control-v1.php';
+    vp3_managed_callback_need_v1(!array_diff(array_keys($input),['request_id','device_id','generation','call_id','confirmed']),422);
+    $owner=(int)($user['id']??0);$device=vp3_managed_callback_id_v1($input['device_id']??null);
+    $public=vp3_managed_callback_id_v1($input['call_id']??null);
+    $d=vp3_managed_ui_device_v1($pdo,$owner,$device);
+    vp3_managed_callback_need_v1(is_array($d)&&(int)$d['expires_at']>$now,404);
+    vp3_managed_callback_need_v1(is_int($input['generation']??null)&&(int)$d['generation']===$input['generation']);
+    $call=vp3_managed_transport_call_v1($pdo,$public);
+    vp3_managed_callback_need_v1(is_array($call)&&(int)$call['owner_user_id']===$owner&&$call['paired_device_id']===$device,404);
+    $thread=vp3_managed_ui_thread_v1($pdo,$owner,$device);vp3_managed_callback_need_v1(is_array($thread));
+    $scope=vp3_phone_workspace_scope_v1($pdo,$user,$thread);
+    $result=vp3_managed_control_action_v1($pdo,$scope,['action'=>$action,'call_id'=>$public,'confirmed'=>($input['confirmed']??false)===true]);
+    $fresh=vp3_managed_ui_device_v1($pdo,$owner,$device);
+    return $result+['managed_callback'=>$fresh?vp3_managed_ui_projection_v1($pdo,$fresh,time(),false):null];
 }
