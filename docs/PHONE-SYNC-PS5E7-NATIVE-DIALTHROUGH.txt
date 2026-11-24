@@ -1,0 +1,56 @@
+Phone Sync PS5E.7 — Native dial-through Twilio
+
+The owner can choose Dial through Twilio in Phone Tracking. This uses the
+same immutable destination, assigned line, approved connected device and
+private Chat scope as the existing managed callback review. The mode is
+immutable for each request and is distinct from outbound callback dispatch.
+This native pilot deliberately does not request or start recording.
+
+After the holder approves the destination, an explicit holder gesture may
+issue a private one-time eight-digit code when BOTH administrator settings
+phone_managed_callback_enabled_v1 and phone_native_dialthrough_enabled_v1
+are enabled. Both are off by default. The ticket is returned once to the
+authenticated pairing response, not the owner view, status poll, URL, or
+browser persistence. The UI removes it on expiry, scope change, hiding or
+disconnect. Memorize the code before manually opening the phone dialer.
+The tel: link contains only the assigned Twilio number, never the PIN or
+far-end number. The operating system and holder determine whether to call.
+
+The existing signed inbound voice edge checks for an exact current native
+reservation. Caller ID and matching line alone can only produce a keypad
+prompt, not a destination connection. A keyed digest, exact parent CallSid,
+signed challenge URL, 120-second request expiry and 30-second challenge
+window authorize at most one PIN attempt. Incorrect/expired/withdrawn
+authorization cannot bridge; a failed attempt is consumed and its digest
+cleared. A lost code requires a new approved request. Ordinary unrelated
+inbound calls retain existing routing. During a valid issued reservation,
+a matching inbound caller is routed to the challenge; an unrelated caller
+from the same apparent number could temporarily interfere, but cannot
+bridge without the code. If a reservation is no longer valid before the
+first call arrives, the ordinary inbound route can answer instead; hang up
+rather than entering a code on an unexpected prompt.
+
+Successful PIN verification revalidates owner, assignment, profile/phone
+revision, generation, quiet hours, call budget and exact paired Chat.
+The canonical managed ledger binds the inbound parent SID and a signed
+child leg; the destination receives the assigned Twilio caller ID.
+The existing Check carrier status and End managed call controls verify
+inbound parent direction and child evidence. Terminal destination duration
+does not count the keypad prompt. If completion evidence is missing,
+the call remains unresolved pending exact-SID reconciliation. No new
+Twilio REST call-creation request is used.
+
+Cloud upgrade installs a native authorization table and parent-mode column.
+Existing unrecorded callback/browser calls retain their previous contract.
+Synthetic shared SQLite/MySQL and browser regression cases cover the
+review, one-time code, signature, wrong attempt, revocation, duplicate
+bridge, leg binding and holder-only presentation. No real call is placed
+by tests.
+
+RELEASE GATE: all parent PRs and exact-head CI must be green. Pilot switches
+must remain OFF until physical handset and carrier acceptance, including
+real inbound webhook and DTMF behavior, caller-ID presentation, end-call
+reconciliation and ordinary incoming calls on the same number. The owner
+must understand both Twilio call-leg charges and possible mobile charges.
+Recording consent/automatic start and stop, post-call worker verification,
+and full live integration remain separate outstanding gates.
