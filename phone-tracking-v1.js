@@ -24,6 +24,8 @@
   let followId = '';
   let linkedDevice = new URLSearchParams(location.search).get('device_id');
   const initialInformation=new URLSearchParams(location.search).get('profile')==='information';
+  const initialManaged=new URLSearchParams(location.search).get('profile')==='managed';
+  let openManagedFromLink=initialManaged;
   let resumeSelection = null;
   let choiceToRevoke = null;
   let requestNotice = null;
@@ -523,7 +525,7 @@
       }
     }
     // A link from private Chat refers to one specific phone, even after access changes.
-    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && (initialInformation||d.allow_location))?.id || '';
+    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && (initialInformation||initialManaged||d.allow_location))?.id || '';
     else if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
     if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
     camera.update(approved);
@@ -531,6 +533,7 @@
     renderDetail(selected());
     dialerOwner?.bind(selected(),available&&!document.hidden);
     managedOwner?.bind(selected(),available&&!document.hidden);
+    if(openManagedFromLink&&selected()?.id===linkedDevice&&available){openManagedFromLink=false;managedOwner?.setMode('managed');}
     renderPending(devices.filter(d => d.status === 'pending'));
     renderMarkers();
     archive.render(approved);
