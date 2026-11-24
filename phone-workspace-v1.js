@@ -490,7 +490,7 @@
     try{
       const result=await liveCaptionRequest(entry,session,'suggest',{token:session.token,receipts});
       if(!captionCurrent(entry,session))return;
-      if(!captionTracksCurrent(entry,session)){stopRemoteCaptions(entry,'Call audio changed. Live captions stopped.');return;}
+      if(!captionTracksCurrent(entry,session)){stopRemoteCaptions(entry,'Call audio changed. Live captions stopped.');render();return;}
       if(result.call_id!==entry.info.public_id||result.based_on_seq!==last||result.speech_enabled!==false||
         typeof result.suggestion!=='string'||!result.suggestion.trim()||result.suggestion.length>1000||
         !Number.isInteger(result.prior_call_count)||result.prior_call_count<0||result.prior_call_count>3)
@@ -521,7 +521,7 @@
       readCaptionReceipts(session,result,seq);
       render();
     }catch(error){if(captionCurrent(entry,session)){stopRemoteCaptions(entry,error.message||'Live captions stopped.');render();}}
-    finally{session.busy=false;}
+    finally{session.busy=false;if(captionCurrent(entry,session))render();}
   }
   async function startRemoteCaptions(entry,event){
     const view=state?.operator_live;
