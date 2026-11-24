@@ -488,7 +488,9 @@ c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader)['rep
 $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET discarded_at=NULL WHERE id=?')->execute([$session]);
 $pdo->prepare('DELETE FROM phone_browser_deliveries_v1 WHERE event_key=?')->execute(['phone-recording-report:'.$followJob['public_id']]);
 c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader)['reports']===[],'removed canonical report delivery fences the follow-up');
-$pdo->exec('DROP TABLE artist_transcript_segments_v172');$pdo->exec('DROP TABLE artist_transcript_sessions_v172');
+// The SQLite fixture is in memory and still has earlier read cursors. Its
+// connection teardown releases these tables; clean the shared MySQL fixture explicitly.
+if($mysql){$pdo->exec('DROP TABLE artist_transcript_segments_v172');$pdo->exec('DROP TABLE artist_transcript_sessions_v172');}
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
