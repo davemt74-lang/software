@@ -52,7 +52,9 @@ $normalized=vp3_initiative_schedule_action_event_v1($pdo,$event);
 schedule_check($normalized===vp3_initiative_schedule_action_event_v1($pdo,$normalized),'reviewed calendar arguments normalize stably');
 $range=user_calendar_local_range_v1300($normalized,$normalized['timezone']);
 schedule_check($range['start_at_utc']==='2026-11-07 14:00:00'&&$range['end_at_utc']==='2026-11-07 15:00:00','canonical local calendar range retains explicit timezone');
-foreach([['timezone'=>'Invalid/Zone'],['date'=>'2027-03-14','start_time'=>'02:30','end_time'=>'03:30'],['end_time'=>null],['created_by_agent_id'=>21],['all_day'=>'yes'],['recurrence'=>'daily']] as $patch)
+$daily=vp3_initiative_schedule_action_event_v1($pdo,array_merge($event,['recurrence'=>'daily']));
+schedule_check($daily['recurrence']==='daily'&&$daily===vp3_initiative_schedule_action_event_v1($pdo,$daily),'reviewed daily calendar arguments normalize stably');
+foreach([['timezone'=>'Invalid/Zone'],['date'=>'2027-03-14','start_time'=>'02:30','end_time'=>'03:30'],['end_time'=>null],['created_by_agent_id'=>21],['all_day'=>'yes'],['recurrence'=>'monthly']] as $patch)
     schedule_reject(fn()=>vp3_initiative_schedule_action_event_v1($pdo,array_merge($event,$patch)),'calendar review rejects guessed, invalid or privileged fields');
 schedule_reject(fn()=>vp3_initiative_schedule_action_event_v1($pdo,['title'=>'Missing timezone','date'=>'2026-11-07','start_time'=>'09:00','end_time'=>'10:00']),'calendar action requires an explicit valid timezone');
 schedule_reject(fn()=>vp3_initiative_schedule_action_fields_v1(['yes'],['target_ref']),'positional model arguments are not a typed action');
@@ -64,6 +66,8 @@ $pdo->beginTransaction();
 $calendar=user_calendar_create_event_locked_v1300($pdo,['id'=>1],array_merge($normalized,$range),'agent',11,'initiative:kernel-test');
 $duplicate=user_calendar_create_event_locked_v1300($pdo,['id'=>1],array_merge($normalized,$range),'agent',11,'initiative:kernel-test');
 schedule_check($pdo->inTransaction()&&$calendar['id']===$duplicate['id'],'canonical calendar source reference is idempotent without a nested commit');
+$dailyCalendar=user_calendar_create_event_locked_v1300($pdo,['id'=>1],array_merge($daily,user_calendar_local_range_v1300($daily,$daily['timezone'])),'agent',11,'initiative:kernel-test-daily');
+schedule_check($pdo->inTransaction()&&$dailyCalendar['recurrence']==='daily'&&(int)$pdo->query("SELECT COUNT(*) FROM user_calendar_events WHERE recurrence='daily' AND owner_user_id=1 AND created_by_agent_id=11")->fetchColumn()===1,'reviewed daily recurrence persists in the canonical owner and Agent transaction');
 $calendarId=(int)$calendar['id'];$revision=section12_revision($calendar);
 schedule_reject(fn()=>user_calendar_update_event_locked_v1300($pdo,['id'=>2],$calendarId,$normalized),'canonical personal-calendar kernel rejects another owner');
 $updated=user_calendar_update_event_locked_v1300($pdo,['id'=>1],$calendarId,array_merge($normalized,['title'=>'Reviewed change','expected_revision'=>$revision]));
