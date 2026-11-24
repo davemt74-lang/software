@@ -1276,6 +1276,24 @@ async function verifyManagedReviewUI(context){
     // The empty parent may have zero layout height. Assert the sensitive child is actually hidden.
     assert.equal(await hold.locator('.phone-managed-holder').isVisible(),false);
     assert.equal(await hold.locator('.phone-managed-destination').textContent(),'');
+    // Mount a synthetic existing managed call; controls must not initiate a new call.
+    const mountManagedCall=()=>page.evaluate(()=>{
+      const {ownerUI,d}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,request:{request_id:'d'.repeat(32),state:'dispatch_claimed',expires_epoch:Math.floor(Date.now()/1000)+120,
+        call:{public_id:'e'.repeat(32),state:'ringing',dispatch_state:'bridging',duration_seconds:0,managed_control:{can_reconcile:true,can_end:true,end_state:'none',read_state:'none'}}}};
+      ownerUI.bind(d,true);ownerUI.setMode('managed');
+    });
+    await mountManagedCall();
+    await own.getByRole('button',{name:'Check carrier status',exact:true}).click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_reconcile'));
+    await mountManagedCall();
+    page.once('dialog',dialog=>dialog.accept());
+    await own.getByRole('button',{name:'End managed call',exact:true}).click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_end'));
+    const controlCalls=await page.evaluate(()=>window.managedFixture.calls.slice(3));
+    assert.deepEqual(controlCalls.map(x=>x.action),['managed_reconcile','managed_end']);
+    assert.equal(controlCalls[1].body.call_id,'e'.repeat(32));
+    assert.equal(controlCalls[1].body.confirmed,true);
     console.log('PASS Managed callback review UI: mode selection, exact approval, cancel, scoped draft clearing and no carrier dispatch.');
   }finally{await page.close();}
 }
