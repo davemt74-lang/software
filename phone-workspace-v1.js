@@ -635,8 +635,8 @@
       if(!canCall()){card.feedback='Select an enabled assigned phone line first.';renderOwnerSetup(card);open(event.currentTarget);return;}
       card.busy=true;card.feedback='Starting browser reachability test…';renderOwnerSetup(card);
       open(card.element);selectTab('connections');
-      await placeCall(model.phone_e164,{ownerPhoneRevision:model.phone_revision});
-      if(ownerSetupCurrent(card)){card.busy=false;await loadOwnerSetup(card);}
+      const started=await placeCall(model.phone_e164,{ownerPhoneRevision:model.phone_revision});
+      if(ownerSetupCurrent(card)){card.busy=false;await loadOwnerSetup(card);if(ownerSetupCurrent(card)&&!started&&card.model){card.feedback='Test call did not start. Check the Phone panel for details.';renderOwnerSetup(card);}}
     });
     const updateTest=()=>{test.disabled=card.busy||!model.phone_e164||input.value!==model.phone_e164||!consent.checked||Boolean(active||callBusy||setupPending||pending.size);};
     consent.disabled=card.busy||!model.phone_e164;consent.addEventListener('change',updateTest);input.addEventListener('input',updateTest);updateTest();
@@ -802,6 +802,7 @@
       if(!current(g)||operation!==callEpoch||!sessionCurrent(session)||active!==entry){stopCall(call);releaseEntry(entry);return;}
       entry.call=call;bindCall(entry);ownStream(entry);callBusy=false;render();
       if(ownerTest)window.dispatchEvent(new CustomEvent('vp3:phone-workspace-event',{detail:{kind:'outgoing',call_id:entry.info.public_id,conversation_id:callScope.conversation_id,agent_id:callScope.agent_id}}));
+      return true;
     }catch(error){cancelPrepared(receipt);ticket?.release();if(preparingTicket===ticket)preparingTicket=null;if(current(g)&&operation===callEpoch){if(entry&&active===entry){active=null;releaseEntry(entry);}say(error.name==='NotAllowedError'?'Microphone access was not allowed.':error.message);render();}}
     finally{if(receipt?.cancelPromise)await receipt.cancelPromise;if(setupOwned)setupPending=Math.max(0,setupPending-1);if(preparingTicket===ticket)preparingTicket=null;if(current(g)&&operation===callEpoch)callBusy=false;if(current(g)){signalCallState();render();}}
   }

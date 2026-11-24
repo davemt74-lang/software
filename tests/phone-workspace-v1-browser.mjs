@@ -406,7 +406,23 @@ try{
    assert.equal(await test.isDisabled(),true);
    await card.getByLabel('This is my phone number. I want one test call (voice charges may apply).',{exact:true}).check();
    await test.evaluate(el=>el.click());assert.equal(apiCalls.some(c=>c.action==='prepare_owner_test'),false);
-   await test.click();await page.waitForFunction(()=>window.phoneFixture?.connects.length===1);
+   // The real Chat page installs the microphone lease before the Twilio SDK.
+   // With no lease, the new shortcut must fail closed without requesting a call.
+   await test.click();
+   await page.locator('.vp3-phone-panel .vp3-phone-notice').getByText('Microphone ownership is unavailable.',{exact:true}).waitFor();
+   assert.equal(apiCalls.some(c=>['token','prepare_owner_test'].includes(c.action)),false);
+   await closeDrawer();
+   await page.evaluate(()=>{
+     window.StonefellowVoiceLeaseV122={acquireCapture(){
+       let live=true;const streams=new Set();
+       return {isCurrent:()=>live,ownStream:s=>{if(!live){s.getTracks().forEach(t=>t.stop());return false;}streams.add(s);return true;},
+         release(){if(!live)return;live=false;for(const s of streams)s.getTracks().forEach(t=>t.stop());}};
+     }};
+   });
+   await card.getByLabel('This is my phone number. I want one test call (voice charges may apply).',{exact:true}).check();
+   await test.click();
+   try{await page.waitForFunction(()=>window.phoneFixture?.connects.length===1);}
+   catch(e){console.error('Owner test diagnostic:',JSON.stringify({actions:apiCalls.map(c=>c.action),notice:await page.locator('.vp3-phone-panel .vp3-phone-notice').innerText(),errors}));throw e;}
    assert.equal(apiCalls.filter(c=>c.action==='prepare_owner_test').length,1);
    assert.equal(apiCalls.some(c=>c.action==='prepare_call'),false);
    await page.getByRole('button',{name:'Hang up',exact:true}).click();await closeDrawer();
