@@ -65,6 +65,8 @@ require_once __DIR__.'/phone-information-exchange-cases-v1.php';
 vp3_test_phone_information_v1($db,11,12,$id,$token,'pt_assert');
 require_once __DIR__.'/phone-information-file-cases-v1.php';
 vp3_test_phone_files_v1($db,11,12,$id,$token,'pt_assert');
+require_once __DIR__.'/phone-remote-dialer-cases-v1.php';
+vp3_test_phone_dialer_v1($db,11,12,$id,$token,'pt_assert');
 pt_assert($accepted['status']==='approved' && $accepted['role']==='owner' && $accepted['location_state']==='off' && $accepted['latitude']===null,'owner approval does not grant live location');
 pt_assert($accepted['preferences_version']===1 && $accepted['update_interval_seconds']===5 && $accepted['accuracy_mode']==='high',
     'newly paired phones report the original five-second, high-accuracy defaults');
