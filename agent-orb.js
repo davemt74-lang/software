@@ -29,6 +29,7 @@
     gmail:{label:'Gmail',fallbackFor:['email','gmail-inbox-review']},
     media:{label:'Media & Entertainment'},
     location:{label:'Location Specialist'},
+    operator:{label:'Operator Specialist'},
     profile:{label:'Profile',viewLabel:'Open Profile report'},
     curiosity:{label:'Curiosity'},
     transcripts:{label:'Transcriptions',viewLabel:'Open Transcription Intelligence',
@@ -105,7 +106,8 @@
         if(observed)known.add(id);
         const row=observed||(configuredState?{state:configuredState}:null);
         if(!row){if(known.has(id))placeholder(id);continue;}
-        const lease=Date.parse(row.lease_expires_at);
+        // Operator observes carrier receipts, not a worker lease.
+        const lease=Date.parse(id==='operator'?row.status_fresh_until:row.lease_expires_at);
         const live=specialistWorking(row.state)&&lease>now;
         const state=specialistWorking(row.state)&&!live?'unavailable':row.state;
         working||=live;
