@@ -2983,7 +2983,7 @@
           const option=node('option',title);option.value=id;option.selected=id===operatorContact;filter.append(option);
         }
         filter.addEventListener('change',event=>{
-          if (!event.isTrusted || signature(current)!==signature(scope())) return;
+          if (signature(current)!==signature(scope())) return;
           operatorContact=contacts.has(filter.value)?filter.value:'';renderOperatorHistory(current);
         });
         panel.append(filter);
