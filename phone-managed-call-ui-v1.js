@@ -65,6 +65,7 @@
       const control=r?.call?.managed_control;
       reconcile.hidden=control?.can_reconcile!==true;end.hidden=control?.can_end!==true;
       reconcile.disabled=end.disabled=busy||!ready||!visible();
+      if(control?.missed_leg)state.textContent+=' · No answer: '+(control.missed_leg==='holder'?'connected phone':'destination');
       if(control?.end_state&&control.end_state!=='none')state.textContent+=' · End request: '+control.end_state.replaceAll('_',' ');
       if(control?.read_state&&control.read_state!=='none')state.textContent+=' · Carrier check: '+control.read_state.replaceAll('_',' ');
       browserButton.disabled=!ready||busy||device?.communication?.call_permission_saved!==true||!device?.agent_chat?.conversation_id;
