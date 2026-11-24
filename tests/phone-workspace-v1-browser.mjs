@@ -37,6 +37,7 @@ const actualIntegrity='sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/
 assert.equal('sha384-'+createHash('sha384').update(actualSdk).digest('base64'),actualIntegrity,'The actual shipped SDK bytes match their pinned integrity');
 const emptyOwnerPhone=()=>({phone_e164:'',phone_revision:0,revision:0,updates_requested:false,hello_requested:false,last_test:null,execution_enabled:false});
 let ownerPhone=emptyOwnerPhone();
+let contactDetail=null,contactSchedules=[];
 let state=fixture(),authorized=true,apiCalls=[],apiMethods=[],stateFailure=null,tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
 const wav=Buffer.alloc(44+16000*2*4);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server=http.createServer((req,res)=>{
@@ -140,6 +141,24 @@ const server=http.createServer((req,res)=>{
     for(const row of [...state.calls,...state.voicemails,...(state.active_call?[state.active_call]:[])])if(row.peer_e164===contact.phone_e164){row.contact_id=contact.id;row.contact_name=contact.name;}
     result={contact};
    }
+   if(values.action==='phone_contact_detail'){
+    assert.equal(req.method,'GET');assert.equal(Number(values.contact_id),contactDetail.id);
+    result={contact:structuredClone(contactDetail),editable:true,schedules:{available:true,items:structuredClone(contactSchedules),execution_enabled:false}};
+   }
+   if(values.action==='save_phone_contact'){
+    contactDetail={id:values.contact_id||18,name:values.name,phone_e164:values.phone,relationship:values.relationship,notes:values.notes,revision:'b'.repeat(64)};
+    state.contacts=[{id:contactDetail.id,name:contactDetail.name,phone_e164:contactDetail.phone_e164,relationship:contactDetail.relationship,favorite:false}];
+    result={contact:structuredClone(contactDetail),created:values.contact_id===0};
+   }
+   if(values.action==='save_phone_contact_schedule'){
+    assert.equal(values.contact_id,contactDetail.id);assert.equal(values.contact_revision,contactDetail.revision);assert.equal(values.confirmed,true);
+    const schedule={event_id:values.event_id||91,revision:'c'.repeat(64),date:values.date,time:values.time,timezone:values.timezone,recurrence:values.recurrence,duration_minutes:values.duration_minutes,editable:true,objectives:values.objectives,next_label:'Thu, Dec 3, 5:15 PM UTC',url:'/calendar-event.php?id=91',execution_enabled:false};
+    contactSchedules=[schedule];result={schedule,created:values.event_id===0,execution_enabled:false};
+   }
+   if(values.action==='cancel_phone_contact_schedule'){
+    assert.equal(values.contact_id,contactDetail.id);assert.equal(values.event_id,91);assert.equal(values.expected_revision,'c'.repeat(64));assert.equal(values.confirmed,true);
+    contactSchedules=[];result={event_id:91,cancelled:true,execution_enabled:false};
+   }
    res.end(JSON.stringify({ok:true,...result}));
   });return;
  }
@@ -150,7 +169,7 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
 let checks=0;const errors=[];let page,succeeded=false;
 async function fresh(suffix='',options={}){
- state=fixture();ownerPhone=emptyOwnerPhone();authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];apiMethods=[];stateFailure=options.stateFailure||null;
+ state=fixture();ownerPhone=emptyOwnerPhone();contactDetail=null;contactSchedules=[];authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];apiMethods=[];stateFailure=options.stateFailure||null;
  if(page)await page.close();page=await browser.newPage({viewport:options.viewport||{width:1360,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/'+suffix);await page.waitForFunction(()=>window.VP3PhoneWorkspaceV1);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByRole(options.stateFailure?'button':'combobox',{name:options.stateFailure?'Retry':'Selected phone number',exact:true}).waitFor();if(options.stateFailure)await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Retry'&&!button.disabled&&!button.closest('[hidden]')));return page;
 }
 async function check(name,run){await run();checks++;console.log('PASS '+name);}
@@ -521,6 +540,31 @@ try{
    assert.equal(apiCalls.some(c=>['prepare_call','managed_dispatch','save_auto_call_policy'].includes(c.action)),false);
    await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true}));
    assert.equal(await page.locator('[data-managed-conversation-review]').count(),0);
+ });
+ await check('contact editor and daily call reminders fit desktop and phone widths and preserve private details',async()=>{
+  for(const viewport of [{width:1360,height:900},{width:390,height:844},{width:320,height:740}]){
+   await fresh('',{viewport});state.contact_details_ready=true;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+   await page.getByRole('tab',{name:'Contacts',exact:true}).click();await page.getByRole('button',{name:'+ Contact',exact:true}).click();
+   const editor=page.getByRole('form',{name:'Add phone contact',exact:true});
+   await editor.getByLabel('Name',{exact:true}).fill('Ada <img src=x>');await editor.getByLabel('Phone number',{exact:true}).fill('+16025550812');
+   await editor.getByLabel('Relationship',{exact:true}).fill('Friend');await editor.getByLabel('Private notes',{exact:true}).fill('Private project note <script>\nDiscuss next steps.');
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await editor.getByLabel('Private notes',{exact:true}).inputValue(),'Private project note <script>\nDiscuss next steps.');
+   const layout=await page.locator('.vp3-phone-panel').evaluate(node=>({width:node.clientWidth,scroll:node.scrollWidth,background:getComputedStyle(node).backgroundColor}));assert.ok(layout.scroll<=layout.width+1);assert.equal(layout.background,'rgb(255, 255, 255)');
+   await editor.getByRole('button',{name:'Save contact',exact:true}).click();await page.getByRole('button',{name:'+ Scheduled call',exact:true}).waitFor();
+   assert.equal(apiCalls.filter(call=>call.action==='save_phone_contact').length,1);assert.equal(apiCalls.find(call=>call.action==='save_phone_contact').relationship,'Friend');
+   await page.getByRole('button',{name:'+ Scheduled call',exact:true}).click();const schedule=page.getByRole('form',{name:'Scheduled call',exact:true});
+   await schedule.getByLabel('First call date',{exact:true}).fill('2026-12-03');await schedule.getByLabel('Call time',{exact:true}).fill('17:15');await schedule.getByLabel('Time zone',{exact:true}).fill('UTC');
+   await schedule.getByLabel('Repeat',{exact:true}).selectOption('daily');await schedule.getByLabel('Call notes and objectives',{exact:true}).fill('Review progress\nAgree the next step.');
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await schedule.getByLabel('Repeat',{exact:true}).inputValue(),'daily');
+   assert.match(await page.locator('.vp3-phone-panel').innerText(),/Automatic dialing is not enabled/);assert.equal(apiCalls.some(call=>call.action==='save_phone_contact_schedule'),false);
+   await schedule.getByLabel('Repeat',{exact:true}).scrollIntoViewIfNeeded();await fs.mkdir(path.join(root,'tests/artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-contact-schedule-'+viewport.width+'.png')});
+   assert.equal(await page.locator('.vp3-phone-panel').evaluate(node=>node.scrollWidth<=node.clientWidth+1),true);
+   await schedule.getByRole('button',{name:'Save scheduled call',exact:true}).click();await page.getByText('Every day',{exact:true}).waitFor();
+   const saved=apiCalls.find(call=>call.action==='save_phone_contact_schedule');assert.equal(saved.time,'17:15');assert.equal(saved.recurrence,'daily');assert.equal(saved.confirmed,true);assert.equal(saved.contact_revision,'b'.repeat(64));
+   assert.equal(await page.locator('.vp3-phone-panel img,.vp3-phone-panel script').count(),0);assert.equal(await page.locator('#chatThread').innerText(),'');
+   await page.getByRole('button',{name:'Cancel schedule',exact:true}).click();assert.equal(apiCalls.some(call=>call.action==='cancel_phone_contact_schedule'),false);await page.getByRole('button',{name:'Confirm cancellation',exact:true}).click();await page.getByText('No scheduled calls.',{exact:true}).waitFor();
+   await page.getByRole('button',{name:'Back to contacts',exact:true}).click();assert.doesNotMatch(await page.locator('.vp3-phone-panel').innerText(),/Private project note/);assert.ok(apiCalls.every(call=>!['token','prepare_call','save_auto_call_policy'].includes(call.action)));
+  }
  });
  if(actualState)await check('the unmodified PHP projection renders both voicemail namespaces and saved processing policy',async()=>{
   assert.ok(actualUi?.button&&actualUi?.config,'The actual PHP header and runtime configuration are mandatory with the real projection');

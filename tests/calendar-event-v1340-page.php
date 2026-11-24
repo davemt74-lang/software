@@ -49,7 +49,7 @@ try{
  for($i=0;$i<100;$i++){if(@fsockopen('127.0.0.1',(int)substr(strrchr($address,':'),1))){break;}usleep(10000);}
  [$status,$html]=request('/calendar-event.php');
  check($status===200,'Real editor renders');
- check(str_contains($html,'One time')&&str_contains($html,'Every week')&&str_contains($html,'Include agent notifications'),'All requested controls are visible');
+ check(str_contains($html,'One time')&&str_contains($html,'Every day')&&str_contains($html,'Every week')&&str_contains($html,'Include agent notifications'),'All requested controls are visible');
  check((bool)preg_match('/option value="none" selected/',$html),'New events default to one time');
  check(!(bool)preg_match('/name="agent_notifications"[^>]*checked/',$html),'Priority is opt-in');
  preg_match('/name="csrf_token" value="([^"]+)"/',$html,$m);$csrf=$m[1];
@@ -61,6 +61,10 @@ try{
  check($status===200&&(bool)preg_match('/option value="weekly" selected/',$html),'Edit reload retains weekly selection');
  check((bool)preg_match('/name="agent_notifications"[^>]*checked/',$html),'Edit reload retains priority');
  if($out=getenv('CALENDAR_HTML_OUTPUT'))file_put_contents($out,str_replace('</head>','<style>'.file_get_contents($repo.'/chat.css').file_get_contents($repo.'/calendar-v1300.css').'</style></head>',$html));
+ $post['event_id']=1;$post['expected_revision']=revision($html);$post['recurrence']='daily';
+ [$status]=request('/calendar-event.php?id=1',$post);check($status===302,'Changing a saved series to daily submits');
+ [$status,$html]=request('/calendar-event.php?id=1');
+ check($status===200&&(bool)preg_match('/option value="daily" selected/',$html)&&$pdo->query('SELECT recurrence FROM user_calendar_events WHERE id=1')->fetchColumn()==='daily','Daily selection persists and reloads through the real editor');
  $post['event_id']=1;$post['expected_revision']=revision($html);$post['recurrence']='none';unset($post['agent_notifications']);
  [$status]=request('/calendar-event.php?id=1',$post);check($status===302,'Update submits');
  $event=$pdo->query('SELECT * FROM user_calendar_events WHERE id=1')->fetch();check($event['recurrence']==='none'&&!(bool)$event['agent_notifications'],'Clearing checkbox and recurrence persists');

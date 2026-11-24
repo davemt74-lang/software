@@ -179,8 +179,8 @@ function vp3_initiative_office_calendar_state_v1(PDO $pdo,array $scope,int $id,?
     if(!user_calendar_schema_ready_v1300($pdo))throw new RuntimeException('Calendar storage is unavailable.',503);
     $owner=(int)$scope['user']['id'];$row=user_calendar_event_v1300($pdo,$owner,$id);
     if(!$row||(int)$row['owner_user_id']!==$owner||($row['status']??'')!=='active')return null;
-    $weekly=($row['recurrence']??'none')==='weekly';$event=$row;
-    if($weekly!==($occurrence!==null))return null;
+    $recurring=in_array($row['recurrence']??'none',['daily','weekly'],true);$event=$row;
+    if($recurring!==($occurrence!==null))return null;
     if($occurrence!==null){
         $at=DateTimeImmutable::createFromFormat('!Ymd\THis\Z',$occurrence,new DateTimeZone('UTC'));
         if(!$at||$at->format('Ymd\THis\Z')!==$occurrence)return null;
@@ -241,7 +241,7 @@ function vp3_initiative_office_entry_v1(string $ref,array $selector,array $state
     $detail=match($selector['family']){
         'task'=>'Saved '.$state['status'].' task. '.mb_substr($state['text'],0,320),
         'reminder'=>'Saved active reminder with '.count($state['pending_occurrences']).' bounded pending occurrence records. Schedule and occurrence reads do not deliver, snooze or complete it.',
-        'calendar'=>'Saved active Cloud calendar '.($state['recurrence']==='weekly'?'occurrence':'event').' starting '.$state['start_at_utc'].' UTC. '.mb_substr($state['description'],0,320).' Reading details changes no event or meeting-readiness state.',
+        'calendar'=>'Saved active Cloud calendar '.(in_array($state['recurrence'],['daily','weekly'],true)?'occurrence':'event').' starting '.$state['start_at_utc'].' UTC. '.mb_substr($state['description'],0,320).' Reading details changes no event or meeting-readiness state.',
     };
     if(isset($state['prep']))$detail.=' Linked agenda '.$state['prep']['agenda_status'].'. '.count($state['prep']['open_items']).' open and '.count($state['prep']['completed_items']).' completed linked items in the bounded view. Unverified completion remains unknown.';
     $entry=['ref'=>$ref,'kind'=>$selector['family']==='calendar'?'calendar':$selector['family'],
@@ -349,8 +349,8 @@ function vp3_initiative_office_candidates_v1(PDO $pdo,array $scope,string $famil
     if(!user_calendar_schema_ready_v1300($pdo))throw new RuntimeException('Calendar storage is unavailable.',503);
     $from=$now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
     $to=$now->modify('+7 days')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
-    $weekly=user_calendar_recurrence_schema_ready_v1340($pdo);
-    $q=$pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND start_at_utc<? AND (end_at_utc>?".($weekly?" OR recurrence='weekly'":'').") ORDER BY start_at_utc,id LIMIT 51");
+    $recurrenceReady=user_calendar_recurrence_schema_ready_v1340($pdo);
+    $q=$pdo->prepare("SELECT * FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND start_at_utc<? AND (end_at_utc>?".($recurrenceReady?" OR recurrence IN ('daily','weekly')":'').") ORDER BY start_at_utc,id LIMIT 51");
     $q->execute([(int)$scope['user']['id'],$to,$from]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);$refs=[];
     foreach($rows as $row)foreach(user_calendar_occurrences_v1340($row,$from,$to) as $event)
         $refs[]='calendar:'.($event['occurrence_id']??('event:'.(int)$event['id']));

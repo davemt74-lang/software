@@ -238,6 +238,9 @@ jobs:
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
           php tests/phone-caller-contacts-schema-v1.php
+          php tests/phone-contact-management-v1.php
+          php tests/calendar-recurrence-v1340.php
+          php tests/calendar-event-v1340-page.php
           php tests/phone-browser-load-v1.php
           php tests/phone-workspace-integration-v1.php
           php tests/phone-recording-pipeline-v1.php
@@ -288,7 +291,7 @@ jobs:
           coverage: none
       - name: Create isolated disposable databases
         run: |
-          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306",getenv("VP3_PHONE_MYSQL_USER"),getenv("VP3_PHONE_MYSQL_PASSWORD")); foreach(["phone_assignment_test","phone_workspace_test","phone_pipeline_test","phone_subscription_test"] as $name){$p->exec("CREATE DATABASE ".$name." CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");}'
+          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306",getenv("VP3_PHONE_MYSQL_USER"),getenv("VP3_PHONE_MYSQL_PASSWORD")); foreach(["phone_assignment_test","phone_workspace_test","phone_pipeline_test","phone_subscription_test","phone_contacts_test"] as $name){$p->exec("CREATE DATABASE ".$name." CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");}'
       - name: Upgrade historical SMS assignment ownership on MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_assignment_test;charset=utf8mb4
@@ -301,6 +304,10 @@ jobs:
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_pipeline_test;charset=utf8mb4
         run: php tests/phone-recording-pipeline-v1.php
+      - name: Contact ownership and Calendar schedules on MySQL
+        env:
+          VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_contacts_test;charset=utf8mb4
+        run: php tests/phone-contact-management-v1.php
       - name: Real monthly subscriptions and explicit admin grants on MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_subscription_test;charset=utf8mb4

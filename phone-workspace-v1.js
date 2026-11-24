@@ -17,7 +17,7 @@
   let context={conversation_id:principal(config.conversation_id??config.conversationId),agent_id:principal(config.agent_id??config.agentId),ready:true},generation=0,requestSequence=0;
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
   let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0,connectedDraft=null;
-  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,stateError='',autoCallDraft=null,calendarDraft=null;
+  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,stateError='',autoCallDraft=null,calendarDraft=null,phoneContactDraft=null;
   const layer=node('div','vp3-phone-workspace');layer.hidden=true;
   const backdrop=node('button','vp3-phone-backdrop');backdrop.type='button';backdrop.tabIndex=-1;backdrop.setAttribute('aria-label','Close phone workspace');
   const panel=node('aside','vp3-phone-panel');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','vp3PhoneTitle');panel.tabIndex=-1;
@@ -72,6 +72,7 @@
   function requestErrorMessage(action,data,status){
     if(data?.error==='phone_upgrade_required')return 'Phone needs the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.';
     if(action==='state')return status===422?'Phone could not load this Chat context. Refresh the page and try again.':'Phone is temporarily unavailable. Retry to load your connections.';
+    if(['phone_contact_detail','save_phone_contact','save_phone_contact_schedule','cancel_phone_contact_schedule'].includes(action)&&typeof data?.error==='string'&&data.error.startsWith('phone_contact')&&typeof data.message==='string')return data.message.slice(0,300);
     const operatorError=['save_auto_call_policy','operator_calendar_preview','save_operator_calendar','owner_phone_settings','save_owner_phone','save_owner_call_preferences','prepare_owner_test','confirm_owner_test','prepare_connected_call'].includes(action)&&typeof data?.error==='string'&&data.error.startsWith('operator_')&&typeof data.message==='string';
     return operatorError?data.message.slice(0,300):status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.';
   }
@@ -406,7 +407,9 @@
     const renderGeneration=generation;
     const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy');details.append(node('strong',null,contact.name||contact.phone_e164),node('span',null,contact.phone_e164));
     const favorite=button(contact.favorite?'★':'☆',async()=>{const g=renderGeneration;if(!current(g))return;favorite.disabled=true;try{await api('favorite',{contact_id:Number(contact.id),favorite:!contact.favorite},'POST',g);if(current(g))await refresh();}catch(error){if(current(g))say(error.message);}finally{if(current(g))favorite.disabled=false;}});favorite.setAttribute('aria-label',(contact.favorite?'Remove favorite ':'Favorite ')+(contact.name||contact.phone_e164));favorite.setAttribute('aria-pressed',String(Boolean(contact.favorite)));
-    const call=button('Call',()=>{if(current(renderGeneration))void placeCall(contact.phone_e164);});call.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size);row.append(details,favorite,call);
+    if(contact.relationship)details.append(node('span',null,contact.relationship));
+    const edit=button('Edit',()=>{if(current(renderGeneration))void openPhoneContact(Number(contact.id));});edit.setAttribute('aria-label','Edit contact '+(contact.name||contact.phone_e164));edit.disabled=Boolean(autoCallDraft||calendarDraft||stateError);
+    const call=button('Call',()=>{if(current(renderGeneration))void placeCall(contact.phone_e164);});call.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size);row.append(details,favorite,edit,call);
     const policy=autoCallPolicy(contact);if(!policy)return row;
     const wrap=node('div','vp3-phone-contact-with-policy'),key=autoCallKey(policy);wrap.append(row);
     const openEditor=button('Agent Auto Call · '+({off:'Off',saved:'Permission saved',blocked:'Blocked',needs_review:'Review required'}[policy.state]),event=>{
@@ -437,7 +440,10 @@
   }
   function renderContacts(){
     const host=sections.contacts;host.replaceChildren();if(!state){listEmpty(host,'Phone contacts are unavailable.');return;}
-    const search=node('input');search.type='search';search.placeholder='Search contacts';search.setAttribute('aria-label','Search phone contacts');search.dataset.phoneFocusKey='contact-search';search.value=contactQuery;host.append(search);
+    if(phoneContactDraft){renderPhoneContact(host);return;}
+    const tools=node('div','vp3-phone-contact-toolbar'),search=node('input');search.type='search';search.placeholder='Search contacts';search.setAttribute('aria-label','Search phone contacts');search.dataset.phoneFocusKey='contact-search';search.value=contactQuery;
+    const add=button('+ Contact',()=>void openPhoneContact(0),'vp3-phone-button vp3-phone-primary');add.disabled=state.contact_details_ready!==true||Boolean(stateError||autoCallDraft||calendarDraft);tools.append(search,add);host.append(tools);
+    if(state.contact_details_ready===false)host.append(node('p','vp3-phone-empty','Run the Cloud database upgrade to add contacts and save private notes.'));
     if(state.auto_call?.available===false)host.append(node('p','vp3-phone-empty','Auto Call preferences are unavailable. Run the Cloud database upgrade if needed. Manual calling is unchanged.'));
     else if(state.auto_call?.available===true&&!positive(context.conversation_id))host.append(node('p','vp3-phone-empty','Open a saved private Chat to change Auto Call permissions.'));
     if(autoCallDraft&&!state.contacts.some(contact=>{const policy=autoCallPolicy(contact);return policy&&autoCallKey(policy)===autoCallDraft.key;}))autoCallDraft=null;
@@ -450,6 +456,138 @@
     }
     if(autoCallDraft||calendarDraft)search.disabled=true;
     search.addEventListener('input',()=>{if(autoCallDraft||calendarDraft)return;contactQuery=search.value.slice(0,120);fill();});fill();
+  }
+  function phoneContactModel(raw){
+    if(!raw||!positive(raw.id)||typeof raw.revision!=='string'||!/^[a-f0-9]{64}$/.test(raw.revision)
+      ||typeof raw.name!=='string'||typeof raw.phone_e164!=='string'||typeof raw.relationship!=='string'||typeof raw.notes!=='string')return null;
+    return {id:Number(raw.id),revision:raw.revision,name:text(raw.name).slice(0,120),phone:raw.phone_e164.slice(0,80),relationship:text(raw.relationship).slice(0,80),notes:text(raw.notes).slice(0,2000)};
+  }
+  function phoneScheduleModel(raw){
+    if(!raw||!positive(raw.event_id)||raw.execution_enabled!==false||typeof raw.revision!=='string'||!/^[a-f0-9]{64}$/.test(raw.revision)
+      ||!['none','daily','weekly'].includes(raw.recurrence)||typeof raw.date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(raw.date)
+      ||typeof raw.time!=='string'||!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(raw.time)||!Number.isSafeInteger(raw.duration_minutes)||raw.duration_minutes<1||typeof raw.editable!=='boolean'
+      ||typeof raw.timezone!=='string'||raw.timezone.length>80||typeof raw.objectives!=='string'||typeof raw.next_label!=='string')return null;
+    const href=safeUrl(raw.url);if(!href)return null;const url=new URL(href),expected=new URL('calendar-event.php',new URL(config.urlbase||'/',location.origin));
+    if(url.pathname!==expected.pathname||url.searchParams.get('id')!==String(raw.event_id)||url.hash||[...url.searchParams.keys()].length!==1)return null;
+    return {...raw,url:href,objectives:text(raw.objectives).slice(0,2000),next_label:text(raw.next_label).slice(0,160)};
+  }
+  function phoneScheduleBook(raw){
+    if(!raw||typeof raw.available!=='boolean'||raw.execution_enabled!==false||!Array.isArray(raw.items)||raw.items.length>20)return null;
+    const items=raw.items.map(phoneScheduleModel);if(items.some(item=>!item))return null;return {...raw,items};
+  }
+  async function loadPhoneContact(draft){
+    const g=generation;draft.loading=true;draft.feedback='';render();
+    try{
+      const response=await api('phone_contact_detail',{contact_id:draft.id},'GET',g);
+      if(!current(g)||phoneContactDraft!==draft)return;
+      const model=phoneContactModel(response.contact),schedules=phoneScheduleBook(response.schedules);
+      if(!model||model.id!==draft.id||!schedules)throw phoneError('Contact details could not be confirmed. Reload the contact.');
+      draft.model=model;draft.fields={...model};draft.editable=response.editable===true;draft.schedules=schedules;draft.dirty=false;draft.schedule=null;draft.cancelId=0;
+    }catch(error){if(current(g)&&phoneContactDraft===draft)draft.feedback=error.phonePublicMessage||'Contact details could not be loaded. Retry.';}
+    finally{if(current(g)&&phoneContactDraft===draft){draft.loading=false;render();}}
+  }
+  async function openPhoneContact(id){
+    if(!current(generation)||!state||stateError||autoCallDraft||calendarDraft||phoneContactDraft?.saving)return;
+    const draft={id,fields:{name:'',phone:'',relationship:'',notes:''},model:null,editable:state.contact_details_ready===true,dirty:false,loading:false,saving:false,feedback:'',schedules:null,schedule:null,cancelId:0};
+    phoneContactDraft=draft;selectTab('contacts');render();if(id>0)await loadPhoneContact(draft);
+  }
+  function phoneDetailField(form,draft,key,labelText,type='text',limit=120){
+    const label=node('label','vp3-phone-field',labelText),input=node(type==='textarea'?'textarea':'input');if(type!=='textarea')input.type=type;else input.rows=4;
+    input.value=String(draft.fields[key]||'');input.maxLength=limit;input.disabled=draft.loading||draft.saving||!draft.editable;input.required=['name','phone'].includes(key);input.dataset.phoneFocusKey='contact-detail-'+key;
+    if(key==='phone'){input.autocomplete='tel';input.placeholder='+1 602 555 0123';}
+    if(key==='name')input.autocomplete='name';if(key==='relationship')input.placeholder='Friend, family, colleague, client…';
+    const g=generation;input.addEventListener('input',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving){const firstChange=!draft.dirty;draft.fields[key]=input.value;draft.dirty=true;draft.feedback='';if(firstChange)render();}});label.append(input);form.append(label);
+  }
+  function renderPhoneContact(host){
+    const draft=phoneContactDraft,g=generation;
+    const back=button('Back to contacts',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving){phoneContactDraft=null;render();}});back.disabled=draft.saving;host.append(back,node('h3',null,draft.id?'Contact details':'New contact'));
+    if(draft.loading){host.append(node('p','vp3-phone-empty','Loading contact…'));return;}
+    if(draft.feedback){const message=node('p','vp3-phone-processing-error',draft.feedback);message.setAttribute('role','status');host.append(message);}
+    if(draft.id&&!draft.model){host.append(button('Retry contact',()=>void loadPhoneContact(draft)));return;}
+    const form=node('form','vp3-phone-contact-editor');form.setAttribute('aria-label',draft.id?'Edit phone contact':'Add phone contact');
+    phoneDetailField(form,draft,'name','Name');phoneDetailField(form,draft,'phone','Phone number','tel',80);phoneDetailField(form,draft,'relationship','Relationship','text',80);phoneDetailField(form,draft,'notes','Private notes','textarea',2000);
+    if(!draft.editable)form.append(node('p','vp3-phone-empty','Run the Cloud database upgrade to edit contact details.'));
+    const actions=node('div','vp3-phone-actions'),save=node('button','vp3-phone-button vp3-phone-primary','Save contact');save.type='submit';save.disabled=!draft.editable||draft.saving||Boolean(stateError);actions.append(save);
+    if(draft.id){const reload=button('Reload saved contact',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving)void loadPhoneContact(draft);});reload.disabled=draft.saving;actions.append(reload);}
+    form.append(actions);form.addEventListener('submit',async event=>{
+      event.preventDefault();if(!current(g)||phoneContactDraft!==draft||draft.saving||!draft.editable||stateError)return;
+      draft.saving=true;draft.feedback='';render();
+      try{
+        const result=await api('save_phone_contact',{contact_id:draft.id,expected_revision:draft.model?.revision||'',name:draft.fields.name,phone:draft.fields.phone,relationship:draft.fields.relationship,notes:draft.fields.notes},'POST',g);
+        if(!current(g)||phoneContactDraft!==draft)return;const contact=phoneContactModel(result.contact);
+        if(!contact||(draft.id&&contact.id!==draft.id))throw phoneError('The contact save could not be confirmed. Reload before trying again.');
+        draft.id=contact.id;draft.model=contact;draft.fields={...contact};draft.dirty=false;say(result.created?'Contact added.':'Contact saved.');
+        if(fetching)await fetching;if(!current(g)||phoneContactDraft!==draft)return;await refresh();if(current(g)&&phoneContactDraft===draft)await loadPhoneContact(draft);
+      }catch(error){if(current(g)&&phoneContactDraft===draft)draft.feedback=error.phonePublicMessage||'The contact could not be saved. Retry when connected.';}
+      finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
+    });host.append(form);
+    if(!draft.id){host.append(node('p','vp3-phone-empty','Save the contact to add scheduled calls.'));return;}
+    renderContactSchedules(host,draft,g);
+    const calls=(state?.calls||[]).filter(call=>Number(call.contact_id)===draft.id||call.peer_e164===draft.model.phone).slice(0,5);
+    host.append(node('h3',null,'Recent calls with this contact'));
+    if(!calls.length)host.append(node('p','vp3-phone-empty','No calls in the recent history.'));
+    for(const call of calls)host.append(node('p','vp3-phone-meta',[displayTime(call.created_at),displayState(call.state),callDuration(call.duration_seconds)].filter(Boolean).join(' · ')));
+  }
+  function newContactSchedule(raw=null){
+    const tomorrow=new Date(Date.now()+86400000),pad=value=>String(value).padStart(2,'0');let timezone='UTC';try{timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||timezone;}catch(_){}
+    const mutation=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)+'-'+Math.random().toString(36).slice(2);
+    return {event_id:raw?.event_id||0,expected_revision:raw?.revision||'',mutation_id:'phone-schedule-'+mutation,
+      date:raw?.date||tomorrow.getFullYear()+'-'+pad(tomorrow.getMonth()+1)+'-'+pad(tomorrow.getDate()),time:raw?.time||'09:00',timezone:raw?.timezone||timezone,
+      recurrence:raw?.recurrence||'none',duration_minutes:raw?.duration_minutes||10,objectives:raw?.objectives||'',feedback:''};
+  }
+  function renderContactSchedules(host,draft,g){
+    const section=node('section','vp3-phone-contact-schedules');section.append(node('h3',null,'Scheduled calls'),node('p','vp3-phone-empty','Calendar reminders for calls you place. Automatic dialing is not enabled.'));
+    if(!draft.schedules?.available){section.append(node('p','vp3-phone-empty','Run the Cloud Calendar upgrade to manage scheduled calls.'));host.append(section);return;}
+    const blocked=draft.saving||draft.dirty||Boolean(stateError);
+    if(draft.dirty)section.append(node('p','vp3-phone-empty','Save the contact changes before editing a schedule.'));
+    if(draft.schedule){renderContactScheduleForm(section,draft,g);host.append(section);return;}
+    for(const schedule of draft.schedules.items){
+      const card=node('article','vp3-phone-scheduled-call');card.append(node('strong',null,({none:'One time',daily:'Every day',weekly:'Every week'})[schedule.recurrence]),node('p','vp3-phone-meta',schedule.next_label||'No upcoming occurrence'));
+      if(schedule.objectives)card.append(node('p','vp3-phone-schedule-objectives',schedule.objectives));
+      const actions=node('div','vp3-phone-actions'),edit=button('Edit schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError&&schedule.editable){draft.schedule=newContactSchedule(schedule);draft.cancelId=0;render();}});
+      const cancel=button('Cancel schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError){draft.cancelId=schedule.event_id;render();}});edit.disabled=blocked||!schedule.editable;cancel.disabled=blocked;actions.append(edit,cancel);
+      if(!schedule.editable)card.append(node('p','vp3-phone-empty','This event has additional Calendar details. Open it in Calendar to edit.'));
+      const link=node('a','vp3-phone-report','Open in Calendar');link.href=schedule.url;card.append(actions,link);
+      if(draft.cancelId===schedule.event_id){
+        card.append(node('p','vp3-phone-empty',schedule.recurrence==='none'?'Cancel this call reminder?':'Cancel this schedule and all future repeats?'));
+        const confirm=button('Confirm cancellation',async()=>{if(!current(g)||phoneContactDraft!==draft||draft.saving||draft.dirty)return;draft.saving=true;draft.feedback='';render();
+          try{const result=await api('cancel_phone_contact_schedule',{contact_id:draft.id,event_id:schedule.event_id,expected_revision:schedule.revision,confirmed:true},'POST',g);
+            if(!current(g)||phoneContactDraft!==draft)return;if(result.cancelled!==true||result.event_id!==schedule.event_id||result.execution_enabled!==false)throw phoneError('Schedule cancellation could not be confirmed. Reload the contact.');
+            say('Scheduled call canceled.');await loadPhoneContact(draft);
+          }catch(error){if(current(g)&&phoneContactDraft===draft)draft.feedback=error.phonePublicMessage||'Schedule cancellation could not be confirmed. Reload before trying again.';}
+          finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
+        },'vp3-phone-button vp3-phone-danger');confirm.disabled=blocked;
+        const keep=button('Keep schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving){draft.cancelId=0;render();}});keep.disabled=draft.saving;card.append(confirm,keep);
+      }
+      section.append(card);
+    }
+    if(!draft.schedules.items.length)section.append(node('p','vp3-phone-empty','No scheduled calls.'));
+    const add=button('+ Scheduled call',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError){draft.schedule=newContactSchedule();render();}});add.disabled=blocked||draft.schedules.items.length>=20;section.append(add);host.append(section);
+  }
+  function renderContactScheduleForm(host,draft,g){
+    const schedule=draft.schedule,form=node('form','vp3-phone-schedule-form');form.setAttribute('aria-label','Scheduled call');
+    for(const [key,labelText,type] of [['date',schedule.event_id?'Series start date':'First call date','date'],['time','Call time','time'],['timezone','Time zone','text'],['duration_minutes','Call length (minutes)','number']]){
+      const label=node('label','vp3-phone-field',labelText),input=node('input');input.type=type;input.required=true;input.value=String(schedule[key]);input.disabled=draft.saving;input.dataset.phoneFocusKey='contact-schedule-'+key;
+      if(key==='duration_minutes'){input.min='1';input.max='60';input.step='1';}if(key==='timezone'){input.maxLength=80;input.placeholder='America/Phoenix';}
+      input.addEventListener('input',()=>{if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule&&!draft.saving)schedule[key]=type==='number'?Number(input.value):input.value;});label.append(input);form.append(label);
+    }
+    const repeatLabel=node('label','vp3-phone-field','Repeat'),repeat=node('select');repeat.dataset.phoneFocusKey='contact-schedule-recurrence';
+    for(const [value,title] of [['none','One time'],['daily','Every day'],['weekly','Every week']]){const option=node('option',null,title);option.value=value;repeat.append(option);}repeat.value=schedule.recurrence;repeat.disabled=draft.saving;
+    repeat.addEventListener('change',()=>{if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule&&!draft.saving)schedule.recurrence=repeat.value;});repeatLabel.append(repeat);form.append(repeatLabel);
+    const notesLabel=node('label','vp3-phone-field','Call notes and objectives'),notes=node('textarea');notes.rows=4;notes.maxLength=2000;notes.value=schedule.objectives;notes.disabled=draft.saving;notes.dataset.phoneFocusKey='contact-schedule-objectives';notes.addEventListener('input',()=>{if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule&&!draft.saving)schedule.objectives=notes.value;});notesLabel.append(notes);form.append(notesLabel);
+    form.append(node('p','vp3-phone-empty','Repeats keep the same local time and objectives. Calendar conflicts are checked for the next 90 days; no invitation or automatic call is sent.'));
+    if(schedule.feedback){const message=node('p','vp3-phone-processing-error',schedule.feedback);message.setAttribute('role','status');form.append(message);}
+    const actions=node('div','vp3-phone-actions'),save=node('button','vp3-phone-button vp3-phone-primary','Save scheduled call');save.type='submit';save.disabled=draft.saving||draft.dirty||Boolean(stateError)||!positive(state?.selected_number_id);actions.append(save);
+    const cancel=button('Close schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving){draft.schedule=null;render();}});cancel.disabled=draft.saving;actions.append(cancel);form.append(actions);
+    form.addEventListener('submit',async event=>{event.preventDefault();if(!current(g)||phoneContactDraft!==draft||draft.schedule!==schedule||draft.saving||draft.dirty||stateError||!positive(state?.selected_number_id))return;
+      draft.saving=true;schedule.feedback='';render();
+      try{const result=await api('save_phone_contact_schedule',{contact_id:draft.id,contact_revision:draft.model.revision,number_id:Number(state.selected_number_id),
+          event_id:schedule.event_id,expected_revision:schedule.expected_revision,mutation_id:schedule.mutation_id,date:schedule.date,time:schedule.time,timezone:schedule.timezone,recurrence:schedule.recurrence,duration_minutes:schedule.duration_minutes,objectives:schedule.objectives,confirmed:true},'POST',g);
+        if(!current(g)||phoneContactDraft!==draft)return;const saved=phoneScheduleModel(result.schedule);if(!saved||result.execution_enabled!==false)throw phoneError('The schedule save could not be confirmed. Reload before trying again.');
+        say('Scheduled call saved to Calendar. You will place the call.');await loadPhoneContact(draft);
+      }catch(error){if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule)schedule.feedback=error.phonePublicMessage||'The schedule could not be saved. Retry when connected.';}
+      finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
+    });host.append(form);
   }
   function renderCalls(){
     const host=sections.calls;if(!state?.calls.length){host.replaceChildren();listEmpty(host,state?'No recent calls.':'Recent calls are unavailable.');return;}
@@ -1002,21 +1140,21 @@
   function clearAudio(){for(const audio of [...audioNodes]){audio.pause();audio.removeAttribute('src');audio.load();if(!audio.isConnected)audioNodes.delete(audio);}}
 
   function revoke(){
-    if(!authorized)return;connectedDraft=null;clearOwnerSetup();authorized=false;generation++;stateError='';autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
+    if(!authorized)return;connectedDraft=null;clearOwnerSetup();authorized=false;generation++;stateError='';autoCallDraft=null;calendarDraft=null;phoneContactDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
     for(const item of document.querySelectorAll('[data-phone-workspace-toggle]'))item.hidden=true;
     for(const section of Object.values(sections))section.replaceChildren();renderCards();
   }
   function contextChanged(next={}){
     const normalized={conversation_id:principal(next.conversation_id),agent_id:principal(next.agent_id),ready:next.ready!==false};
     if(normalized.conversation_id===context.conversation_id&&normalized.agent_id===context.agent_id&&normalized.ready===context.ready)return;
-    clearManagedReview();connectedDraft=null;clearOwnerSetup();generation++;requestSequence++;stateError='';for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;render();void refresh();
+    clearManagedReview();connectedDraft=null;clearOwnerSetup();generation++;requestSequence++;stateError='';for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;phoneContactDraft=null;render();void refresh();
   }
-  function dispose(){if(disposed)return;connectedDraft=null;clearOwnerSetup();generation++;stateError='';autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
+  function dispose(){if(disposed)return;connectedDraft=null;clearOwnerSetup();generation++;stateError='';autoCallDraft=null;calendarDraft=null;phoneContactDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-phone-workspace-toggle]');if(trigger){event.preventDefault();opened?close():open(trigger);}});
   backdrop.addEventListener('click',close);closeButton.addEventListener('click',close);
   document.addEventListener('keydown',event=>{
     if(!opened)return;if(event.key==='Escape'){event.preventDefault();close();return;}
-    if(event.key!=='Tab')return;const focusable=[...panel.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href],audio[controls],[tabindex="0"]')].filter(item=>!item.closest('[hidden]'));
+    if(event.key!=='Tab')return;const focusable=[...panel.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],audio[controls],[tabindex="0"]')].filter(item=>!item.closest('[hidden]'));
     if(!focusable.length){event.preventDefault();panel.focus();return;}const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&(document.activeElement===first||document.activeElement===panel)){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   });
   tabs.addEventListener('keydown',event=>{const list=Object.values(tabButtons),index=list.indexOf(event.target);if(index<0||!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();selectTab(Object.keys(tabNames)[event.key==='Home'?0:event.key==='End'?list.length-1:(index+(event.key==='ArrowRight'?1:-1)+list.length)%list.length],true);});
