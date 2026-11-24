@@ -89,6 +89,8 @@ jobs:
           test -f _deploy/phone-pwa-v1.js
           test -f _deploy/phone-handoff-v1.js
           test -f _deploy/includes/phone-handoff-v1.php
+          test -f _deploy/includes/phone-push-subscriptions-v1.php
+          test -f _deploy/phone-push-subscriptions-v1.js
           test -f _deploy/assets/phone-pwa/icon-180.png
           test -f _deploy/assets/phone-pwa/icon-192.png
           test -f _deploy/assets/phone-pwa/icon-512.png

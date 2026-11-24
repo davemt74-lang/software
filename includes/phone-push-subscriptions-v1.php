@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/ai-settings.php';
 
 /** PS5C.3 enrollment only. No notification transport or arbitrary URL fetch. */
 function vp3_phone_push_install_v1(PDO $pdo,string $options):void
@@ -130,7 +131,7 @@ function vp3_phone_push_endpoint_v1(mixed $raw):?string
     $p=parse_url($raw);
     if(!is_array($p)||($p['scheme']??null)!=='https'||isset($p['user'],$p['pass'])||array_intersect(array_keys($p),['user','pass','port','query','fragment']))return null;
     $host=$p['host']??'';$path=$p['path']??'';
-    if(!is_string($host)||!is_string($path)||$host!==strtolower($host)||!preg_match('#^/[A-Za-z0-9._~!~^/[A-Za-z0-9._~!$&\'()*+,;=:@%/-]+$~D\'()*+,;=:@%/-]+$#D',$path))return null;
+    if(!is_string($host)||!is_string($path)||$host!==strtolower($host)||!preg_match('#^/[A-Za-z0-9._~%/+=:-]+$#D',$path))return null;
     // Limit the first release to verified common browser push providers.
     $apple=$host==='web.push.apple.com'||preg_match('/^[a-z0-9-]+\.push\.apple\.com$/D',$host)===1;
     $fcm=$host==='fcm.googleapis.com'&&(str_starts_with($path,'/fcm/send/')||str_starts_with($path,'/wp/'));
@@ -187,7 +188,9 @@ function vp3_phone_push_holder_v1(PDO $pdo,array $d,string $action,array $input,
     $s=vp3_phone_push_row_v1($pdo,$d,true);$rev=(int)($s['revision']??0);
     vp3_phone_push_need_v1(is_int($input['subscription_revision']??null)&&$input['subscription_revision']===$rev&&$rev<9007199254740990,409);
     if($action==='push_disable'){
-        vp3_phone_push_revoke_v1($pdo,$d,$now);
+        if(!$s){vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_push_subscriptions_v1(owner_user_id,device_id,revision,state,created_epoch,updated_epoch) VALUES(?,?,1,'off',?,?)",[(int)$d['owner_user_id'],$d['id'],$now,$now]);}
+        elseif($s['state']==='off')vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_push_subscriptions_v1 SET revision=revision+1,updated_epoch=? WHERE owner_user_id=? AND device_id=?',[$now,(int)$d['owner_user_id'],$d['id']]);
+        else vp3_phone_push_revoke_v1($pdo,$d,$now);
         return ['push'=>vp3_phone_push_view_v1($pdo,$d,$now,true,$testKey)];
     }
     $c=vp3_phone_push_config_v1($pdo,true);$key=vp3_phone_push_master_v1($testKey);
