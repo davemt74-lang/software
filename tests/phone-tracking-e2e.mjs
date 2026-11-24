@@ -1398,8 +1398,54 @@ async function verifyInstalledPairing(baseURL,desktop,owner){
     assert.equal((await phoneApi(installed,'status')).device.id,d.id,'same installation keeps the existing authenticated cookie');
     const reused=await browser.newContext({baseURL});
     try{assert.equal((await phoneApi(reused,'claim',{invite:code,name:'Replay attempt'})).status,403);}finally{await reused.close();}
-    check(await ownerApi(desktop,owner,'revoke',{device_id:d.id,generation:approved.generation}),'revoke installed fixture');
-    assert.equal((await phoneApi(installed,'status')).status,403);
+    // Transfer the existing device into an independently authenticated app.
+    const moved=await browser.newContext({baseURL,viewport:{width:390,height:844},serviceWorkers:'allow'});
+    const fresh=await moved.newPage();
+    fresh.on('pageerror',e=>errors.push(e.message));
+    try{
+      const messageId=randomUUID();
+      check(await phoneApi(installed,'chat_send',{device_id:d.id,request_id:messageId,message:'Private handoff fixture'}),'source chat');
+      await guest.getByRole('tab',{name:'Info',exact:true}).click();
+      await guest.locator('#phone-handoff-panel summary').click();
+      await guest.locator('#phone-handoff-offer').waitFor();
+      guest.once('dialog',dialog=>dialog.accept());
+      await guest.locator('#phone-handoff-offer').click();
+      await guest.locator('#phone-handoff-ticket').waitFor();
+      const moveCode=await guest.locator('#phone-handoff-code').inputValue();
+      assert.match(moveCode,/^[A-Za-z0-9_-]{43}$/);
+      await fresh.goto('/phone-location.php');
+      await fresh.locator('#phone-setup-guide').click();
+      await fresh.locator('#phone-handoff-panel summary').click();
+      await fresh.locator('#phone-handoff-entry').fill(moveCode);
+      await fresh.locator('#phone-handoff-claim').click();
+      await fresh.waitForFunction(()=>/^[0-9A-F]{8}$/.test(document.getElementById('phone-handoff-compare').textContent));
+      const comparison=await fresh.locator('#phone-handoff-compare').textContent();
+      assert.equal(await fresh.locator('#phone-handoff-finish').isVisible(),false);
+      assert.equal((await phoneApi(installed,'status')).device.id,d.id,'source remains authorized during review');
+      await map.locator('#phone-review').waitFor();
+      if(!await map.locator('#phone-pairing').isVisible())await map.locator('#phone-review').click();
+      const review=map.locator('#phone-handoff-pending [data-handoff-id]');
+      await review.waitFor();
+      assert.match(await review.innerText(),new RegExp(comparison));
+      map.once('dialog',dialog=>dialog.accept());
+      await review.getByRole('button',{name:'Approve move',exact:true}).click();
+      await eventually('owner must approve exact target',async()=>check(await ownerApi(desktop,owner),'transfer approval').devices.find(v=>v.id===d.id)?.handoff?.state==='approved');
+      await fresh.locator('#phone-handoff-check').click();
+      await fresh.locator('#phone-handoff-finish').waitFor();
+      assert.equal((await phoneApi(installed,'status')).device.id,d.id,'approval alone leaves old session valid');
+      fresh.once('dialog',dialog=>dialog.accept());
+      await fresh.locator('#phone-handoff-finish').click();
+      await fresh.waitForFunction(()=>document.getElementById('phone-badge').textContent==='Connected phone');
+      const newDevice=check(await phoneApi(moved,'status'),'moved device').device;
+      assert.equal(newDevice.id,d.id);assert.ok(newDevice.generation>approved.generation);
+      assert.equal(newDevice.location_state,'off');
+      assert.equal((await phoneApi(installed,'status')).status,403);
+      const history=check(await phoneApi(moved,'chat_status',{device_id:d.id}),'preserved private conversation').turns;
+      assert.ok(history.some(turn=>turn.request_id===messageId&&turn.message==='Private handoff fixture'));
+      assert.equal(await fresh.evaluate(secret=>Object.values(sessionStorage).some(v=>v.includes(secret))||Object.values(localStorage).some(v=>v.includes(secret)),moveCode),false);
+      check(await ownerApi(desktop,owner,'revoke',{device_id:d.id,generation:newDevice.generation}),'revoke moved fixture');
+      assert.equal((await phoneApi(moved,'status')).status,403);
+    }finally{await moved.close();}
     if(await map.locator('#phone-pair-close').isVisible())await map.locator('#phone-pair-close').click();
     await eventually('closed invite must be cleared',async()=>await map.locator('#phone-install-code').inputValue()==='');
     assert.deepEqual(errors,[]);
