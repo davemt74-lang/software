@@ -37,7 +37,7 @@ const actualIntegrity='sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/
 assert.equal('sha384-'+createHash('sha384').update(actualSdk).digest('base64'),actualIntegrity,'The actual shipped SDK bytes match their pinned integrity');
 const emptyOwnerPhone=()=>({phone_e164:'',phone_revision:0,revision:0,updates_requested:false,hello_requested:false,last_test:null,execution_enabled:false});
 let ownerPhone=emptyOwnerPhone();
-let state=fixture(),authorized=true,apiCalls=[],tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
+let state=fixture(),authorized=true,apiCalls=[],apiMethods=[],stateFailure=null,tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
 const wav=Buffer.alloc(44+16000*2*4);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
@@ -64,10 +64,11 @@ const server=http.createServer((req,res)=>{
  }
  if(url.pathname==='/api/phone-workspace-v1.php'){
   let body='';req.on('data',c=>body+=c);req.on('end',async()=>{
-   const values=req.method==='POST'?JSON.parse(body):Object.fromEntries(url.searchParams);apiCalls.push(values);res.setHeader('Content-Type','application/json');
+   const values=req.method==='POST'?JSON.parse(body):Object.fromEntries(url.searchParams);apiCalls.push(values);apiMethods.push({action:values.action,method:req.method});res.setHeader('Content-Type','application/json');
    if(!authorized){res.statusCode=403;return res.end(JSON.stringify({ok:false,error:'Phone access unavailable'}));}
    if(req.method==='POST'&&values.csrf_token!=='fixture-csrf'){res.statusCode=419;return res.end(JSON.stringify({ok:false}));}
    let result={};
+   if(values.action==='state'&&stateFailure){res.statusCode=stateFailure.status;return res.end(JSON.stringify({ok:false,error:stateFailure.code,message:stateFailure.message}));}
    if(values.action==='state')result={state:structuredClone(state)};
    if(values.action==='managed_review'){
      assert.equal(req.method,'GET');assert.equal(values.call_id,'6'.repeat(32));
@@ -148,9 +149,9 @@ const server=http.createServer((req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
 let checks=0;const errors=[];let page,succeeded=false;
-async function fresh(suffix=''){
- state=fixture();ownerPhone=emptyOwnerPhone();authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];
- if(page)await page.close();page=await browser.newPage({viewport:{width:1360,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/'+suffix);await page.waitForFunction(()=>window.VP3PhoneWorkspaceV1);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByLabel('Selected phone number',{exact:true}).waitFor();return page;
+async function fresh(suffix='',options={}){
+ state=fixture();ownerPhone=emptyOwnerPhone();authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];apiMethods=[];stateFailure=options.stateFailure||null;
+ if(page)await page.close();page=await browser.newPage({viewport:options.viewport||{width:1360,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/'+suffix);await page.waitForFunction(()=>window.VP3PhoneWorkspaceV1);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByRole(options.stateFailure?'button':'combobox',{name:options.stateFailure?'Retry':'Selected phone number',exact:true}).waitFor();if(options.stateFailure)await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Retry'&&!button.disabled&&!button.closest('[hidden]')));return page;
 }
 async function check(name,run){await run();checks++;console.log('PASS '+name);}
 async function enable(){await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).click();await page.waitForFunction(()=>window.phoneFixture?.devices.length&&document.querySelector('.vp3-phone-notice')?.textContent==='Ready for incoming calls.');}
@@ -170,6 +171,33 @@ try{
  await check('the actual bundled Twilio SDK loads with pinned integrity and no device registration or capture',async()=>{
   page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(()=>{window.sdkSmokeCapture=0;const get=navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);if(get)navigator.mediaDevices.getUserMedia=(...args)=>{window.sdkSmokeCapture++;return get(...args);};});
   await page.goto(base+'/sdk-smoke');await page.waitForFunction(()=>typeof window.Twilio?.Device==='function');assert.equal(await page.evaluate(()=>window.sdkSmokeCapture),0);assert.equal(apiCalls.length,0);
+ });
+ await check('failed Phone loading has actionable recovery on desktop and mobile without enabling calls',async()=>{
+  for(const scenario of [
+   {viewport:{width:1360,height:900},code:'phone_upgrade_required'},
+   {viewport:{width:320,height:740},code:'phone_unavailable'},
+  ]){
+   await fresh('',{viewport:scenario.viewport,stateFailure:{status:503,code:scenario.code,message:'SQLSTATE private service <img src=x onerror=alert(1)> https://private.invalid/token'}});
+   const panel=page.locator('.vp3-phone-panel'),retry=panel.getByRole('button',{name:'Retry',exact:true});
+   assert.equal(await retry.count(),1);assert.equal(await retry.isEnabled(),true);
+   const text=await panel.innerText();assert.doesNotMatch(text,/Loading assigned phone connections|Loading contacts|Loading recent calls|Loading voicemail/);assert.doesNotMatch(text,/SQLSTATE|private service|private\.invalid/);
+   if(scenario.code==='phone_upgrade_required'){assert.match(text,/Cloud database upgrade/);assert.match(text,/upgrade\.php/);}
+   assert.equal(await panel.locator('img,script,a[href^="https://private.invalid"]').count(),0);
+   const layout=await panel.evaluate(node=>({width:node.clientWidth,scroll:node.scrollWidth}));assert.ok(layout.scroll<=layout.width+1,'Recovery fits the '+scenario.viewport.width+'px drawer');
+   const hit=await retry.evaluate(button=>{const box=button.getBoundingClientRect(),at=document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);return (at===button||button.contains(at))&&box.height>=38&&box.width>60;});assert.equal(hit,true,'Retry is visible and receives pointer input');
+   if(scenario.viewport.width===320){await fs.mkdir(path.join(root,'tests/artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-recovery-mobile.png')});}
+   const originalUrl=page.url(),requestCount=apiCalls.length;stateFailure=null;await retry.click();await page.getByLabel('Selected phone number',{exact:true}).waitFor();
+   assert.equal(page.url(),originalUrl);assert.equal(await page.getByLabel('Selected phone number',{exact:true}).inputValue(),'1');assert.equal(await retry.isVisible(),false);
+   assert.ok(apiCalls.length>requestCount);assert.ok(apiCalls.every(call=>call.action==='state'));assert.ok(apiMethods.every(call=>call.method==='GET'));
+   assert.equal(await page.evaluate(()=>window.phoneFixture?.connects.length||0),0);assert.equal(scriptLoads,0,'Loading and retrying never load the voice SDK');
+  }
+ });
+ await check('a temporary refresh failure labels retained data and disables calling until Retry succeeds',async()=>{
+  await fresh();stateFailure={status:503,code:'phone_unavailable'};await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  const panel=page.locator('.vp3-phone-panel');assert.match(await panel.innerText(),/cached|previously loaded|last (?:confirmed|loaded|saved)|may be out of date/i);
+  assert.equal(await page.getByLabel('Selected phone number',{exact:true}).inputValue(),'1');assert.equal(await page.locator('.vp3-phone-dial button').isEnabled(),false);assert.equal(await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).isEnabled(),false);
+  stateFailure=null;await panel.getByRole('button',{name:'Retry',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.vp3-phone-dial button').disabled);
+  assert.equal(await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).isEnabled(),true);assert.ok(apiMethods.every(call=>call.action==='state'&&call.method==='GET'));
  });
  await fresh();
  await check('assigned workspace has no token or SDK activity until the owner enables calls',async()=>{assert.equal(scriptLoads,0);assert.equal(apiCalls.some(c=>c.action==='token'),false);assert.equal(await page.locator('.vp3-phone-panel').isVisible(),true);assert.equal(await page.getByText(/purchase|subscribe|sign up/i).count(),0);});

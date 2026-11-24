@@ -13,6 +13,8 @@
 .vp3-phone-primary:hover{background:#2c3b50}
 .vp3-phone-danger{border-color:#d5a4a8;color:#a42232}
 .vp3-phone-notice{flex:0 0 auto;margin:0;padding:12px 20px;color:#475467;background:#f8fafc;font-size:12px;min-height:18px;overflow-wrap:anywhere}
+.vp3-phone-recovery{flex:0 0 auto;padding:0 20px 12px;background:#f8fafc}
+.vp3-phone-recovery button{min-width:90px;min-height:44px}
 .vp3-phone-tabs{display:grid;flex:0 0 auto;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:8px 10px;border-bottom:1px solid #e5e7eb}
 .vp3-phone-tabs button{border:0;border-radius:8px;padding:10px 4px;background:#fff;color:#475467;font:inherit;font-size:11px;font-weight:600;cursor:pointer;overflow-wrap:anywhere}
 .vp3-phone-tabs button[aria-selected=true]{background:#eaf0f8;color:#122e50}

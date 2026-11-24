@@ -15,19 +15,20 @@ class Element{
 class Events{constructor(){this.listeners={};}addEventListener(n,f){(this.listeners[n]??=[]).push(f);}removeEventListener(n,f){this.listeners[n]=(this.listeners[n]||[]).filter(v=>v!==f);}dispatchEvent(e){for(const f of this.listeners[e.type]||[])f(e);return true;}emit(n,e={}){this.dispatchEvent({type:n,...e});}}
 const flush=async()=>{for(let i=0;i<40;i++)await Promise.resolve();};
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
-function setup(){
+function setup(testOptions={}){
  const document=new Events();document.body=new Element('body',document);document.head=new Element('head',document);document.createElement=tag=>new Element(tag,document);document.getElementById=id=>[document.body,document.head,...document.body.querySelectorAll('*'),...document.head.querySelectorAll('*')].find(n=>n.id===id)||document.body.querySelector('#'+id);document.querySelectorAll=selector=>[...document.body.querySelectorAll(selector),...document.head.querySelectorAll(selector)];document.querySelector=selector=>document.querySelectorAll(selector)[0]||null;document.visibilityState='visible';
  const originalMatches=Element.prototype.matches;Element.prototype.matches=function(s){return s.trim()==='*'||originalMatches.call(this,s);};
  const toggle=document.createElement('button');toggle.setAttribute('data-phone-workspace-toggle','');document.body.append(toggle);const thread=document.createElement('section');thread.id='chatThread';document.body.append(thread);
- const window=new Events(),calls=[],devices=[],tracks=[],facts={claims:0,releases:0,registers:0,connects:0,destroyed:0};let authorized=true,prepareGate=null,registerGate=null,contactGate=null;
+ const window=new Events(),calls=[],devices=[],tracks=[],facts={claims:0,releases:0,registers:0,connects:0,destroyed:0,stateMethods:[]};let authorized=true,authorizationStatus=403,prepareGate=null,registerGate=null,contactGate=null,stateResponder=testOptions.stateResponder||null;
  const state={numbers:[{id:1,phone_e164:'+16025550111',agent_id:2,voice_enabled:true,browser_enabled:true,recording_enabled:true}],selected_number_id:1,readiness:{ready:true},contacts:[],favorites:[],calls:[],voicemails:[{id:'job-4',call_id:'legacy-4',peer_e164:'+16025550222',audio_url:'/audio',transcript:'Synthetic transcript',report_url:'/report'}],active_call:null,post_call_policy:{enabled:false,retain_audio:false,transcribe:false,analyze:false,modules:['basic','qa','actions','decisions','followup']}};
  class Call extends Events{constructor(){super();this.track={readyState:'live',stop(){this.readyState='ended';}};tracks.push(this.track);this.stream={getTracks:()=>[this.track]};this.parameters={From:'+16025550333'};this.customParameters=new Map([['phone_call_id','a'.repeat(32)]]);}on(n,f){this.addEventListener(n,f);}status(){return 'open';}getLocalStream(){return this.stream;}accept(){this.emit('accept');}reject(){this.emit('reject');}disconnect(){this.emit('disconnect');}isMuted(){return false;}mute(){}}
  class Device extends Events{constructor(){super();devices.push(this);}emit(n,...args){for(const fn of this.listeners[n]||[])fn(...args);}on(n,f){this.addEventListener(n,f);}async register(){facts.registers++;if(registerGate)await registerGate.promise;this.emit('registered');}async connect(options){facts.connects++;facts.params=options;return new Call();}destroy(){facts.destroyed++;}disconnectAll(){}updateToken(){facts.updated=true;}}
  window.VP3_PHONE_WORKSPACE_V1={endpoint:'/api/phone-workspace-v1.php',urlbase:'/',csrf:'fixture',agent_id:2,conversation_id:10,sdk_url:'/assets/twilio-voice-2.18.5.min.js'};
  window.Twilio={Device};window.StonefellowVoiceLeaseV122={acquireCapture(){facts.claims++;let live=true;const streams=new Set();return {isCurrent:()=>live,ownStream:s=>{streams.add(s);},release(){if(!live)return;live=false;facts.releases++;for(const stream of streams)stream.getTracks().forEach(t=>t.stop());}};}};
- const fetch=async(url,options={})=>{const body=options.method==='POST'?JSON.parse(options.body):Object.fromEntries(new URL(url).searchParams);calls.push(body);if(!authorized)return {ok:false,status:403,json:async()=>({ok:false})};let value={};if(body.action==='state')value={state:structuredClone(state)};if(body.action==='token')value={token:'x'.repeat(60),identity:'fixture',expires_at:Date.now()+3600000};if(body.action==='prepare_call'){if(prepareGate)await prepareGate.promise;value={call:{public_id:'b'.repeat(32),peer_e164:body.to_number,conversation_id:body.conversation_id,agent_id:body.agent_id},connect_params:{call_intent:'c'.repeat(64)}};}if(body.action==='save_recording_policy')value={policy:body};if(body.action==='save_caller_contact'){if(contactGate)await contactGate.promise;const call=state.calls.find(row=>(row.public_id||row.call_id)===body.call_id);const contact={id:91,name:body.name,phone_e164:call.peer_e164};state.contacts.push(contact);for(const row of state.calls)if(row.peer_e164===contact.phone_e164){row.contact_id=contact.id;row.contact_name=contact.name;}value={contact};}return {ok:true,status:200,json:async()=>({ok:true,...value})};};
- const sandbox={window,document,location:{href:'https://fixture.test/chat.php',origin:'https://fixture.test'},URL,Date,Number,String,Boolean,Map,Set,Promise,Object,Array,RegExp,JSON,fetch,AbortController,DOMException,CustomEvent:class{constructor(type,opts={}){this.type=type;this.detail=opts.detail;}},Event:class{constructor(type){this.type=type;}},setTimeout,clearTimeout,setInterval:()=>1,clearInterval(){},console};
- vm.runInNewContext(source,sandbox);return {window,document,toggle,thread,state,calls,devices,facts,tracks,setAuthorized:v=>authorized=v,setPrepareGate:v=>prepareGate=v,setRegisterGate:v=>registerGate=v,setContactGate:v=>contactGate=v,findButton:label=>document.querySelectorAll('button').find(n=>n.textContent===label),field:key=>document.querySelectorAll('[data-phone-focus-key]').find(n=>n.dataset.phoneFocusKey===key)};
+ const fetch=async(url,options={})=>{const body=options.method==='POST'?JSON.parse(options.body):Object.fromEntries(new URL(url).searchParams);calls.push(body);if(body.action==='state')facts.stateMethods.push(options.method||'GET');if(!authorized)return {ok:false,status:authorizationStatus,json:async()=>({ok:false})};if(body.action==='state'&&stateResponder){const response=await stateResponder({body,options,state});if(response)return response;}let value={};if(body.action==='state')value={state:structuredClone(state)};if(body.action==='token')value={token:'x'.repeat(60),identity:'fixture',expires_at:Date.now()+3600000};if(body.action==='prepare_call'){if(prepareGate)await prepareGate.promise;value={call:{public_id:'b'.repeat(32),peer_e164:body.to_number,conversation_id:body.conversation_id,agent_id:body.agent_id},connect_params:{call_intent:'c'.repeat(64)}};}if(body.action==='save_recording_policy')value={policy:body};if(body.action==='save_caller_contact'){if(contactGate)await contactGate.promise;const call=state.calls.find(row=>(row.public_id||row.call_id)===body.call_id);const contact={id:91,name:body.name,phone_e164:call.peer_e164};state.contacts.push(contact);for(const row of state.calls)if(row.peer_e164===contact.phone_e164){row.contact_id=contact.id;row.contact_name=contact.name;}value={contact};}return {ok:true,status:200,json:async()=>({ok:true,...value})};};
+ const timers=new Map();const schedule=(fn,ms)=>{if(!testOptions.manualTimers)return setTimeout(fn,ms);const id=Symbol('request timer');timers.set(id,{fn,ms});return id;};const unschedule=id=>{if(!timers.delete(id)&&typeof id!=='symbol')clearTimeout(id);};
+ const sandbox={window,document,location:{href:'https://fixture.test/chat.php',origin:'https://fixture.test'},URL,Date,Number,String,Boolean,Map,Set,Promise,Object,Array,RegExp,JSON,fetch,AbortController,DOMException,CustomEvent:class{constructor(type,opts={}){this.type=type;this.detail=opts.detail;}},Event:class{constructor(type){this.type=type;}},setTimeout:schedule,clearTimeout:unschedule,setInterval:()=>1,clearInterval(){},console};
+ vm.runInNewContext(source,sandbox);return {window,document,toggle,thread,state,calls,devices,facts,tracks,setAuthorized:(v,status=403)=>{authorized=v;authorizationStatus=status;},setStateResponder:v=>stateResponder=v,expireRequestTimers:()=>{for(const [id,timer] of [...timers])if(timer.ms===15000){timers.delete(id);timer.fn();}},setPrepareGate:v=>prepareGate=v,setRegisterGate:v=>registerGate=v,setContactGate:v=>contactGate=v,findButton:label=>document.querySelectorAll('button').find(n=>n.textContent===label),field:key=>document.querySelectorAll('[data-phone-focus-key]').find(n=>n.dataset.phoneFocusKey===key)};
 }
 let count=0;async function test(name,fn){await fn();count++;console.log('PASS '+name);}
 await test('typed voicemail cards render without converting their identity',async()=>{const b=setup();await flush();const card=b.document.createElement('div');b.thread.append(card);b.window.VP3PhoneWorkspaceV1.bindMessage(card,{kind:'voicemail',voicemail_id:'job-4'});assert.match(card.textContent,/Synthetic transcript/);assert.equal(card.querySelectorAll('audio').length,1);assert.equal(card.querySelectorAll('a').length,1,'Missing transcript URL creates no bogus link');await card.querySelector('audio').play();await flush();assert.equal(b.calls.find(v=>v.action==='mark_voicemail_read').voicemail_id,'job-4');b.window.VP3PhoneWorkspaceV1.dispose();});
@@ -57,5 +58,77 @@ await test('contact setup readiness disables only contact saving and late save r
 });
 await test('a playing recording stays live while contact forms and caller details update',async()=>{
  const b=setup(),id='8'.repeat(32);b.state.calls=[{public_id:id,peer_e164:'+16025550888',direction:'inbound',state:'completed'}];b.state.voicemails=[{id:'job-8',call_id:id,peer_e164:'+16025550888',audio_url:'/audio',read:true}];await flush();await b.window.VP3PhoneWorkspaceV1.refresh();const host=b.document.createElement('div');b.thread.append(host);b.window.VP3PhoneWorkspaceV1.bindMessage(host,{kind:'call',call_id:id});const audio=host.querySelector('audio');await audio.play();host.querySelectorAll('button').find(button=>button.textContent==='Add to contacts').click();assert.equal(host.querySelector('audio'),audio);assert.equal(audio.paused,false);let form=host.querySelector('form');assert.ok(form,'Playing audio does not block the contact form');form.querySelector('input').value='Saved while playing';form.querySelector('input').emit('input');form.emit('submit');await flush();assert.equal(host.querySelector('audio'),audio);assert.equal(audio.paused,false);assert.match(host.textContent,/Saved while playing/);assert.equal(host.querySelector('form'),null);b.window.VP3PhoneWorkspaceV1.dispose();assert.equal(audio.paused,true);
+});
+await test('initial state failures stop loading, keep server details private, and recover through read-only Retry',async()=>{
+ const upstream='SQLSTATE private endpoint credential';
+ const failures=[
+  ['upgrade',{ok:false,status:503,json:async()=>({ok:false,error:'phone_upgrade_required',message:upstream})}],
+  ['unavailable',{ok:false,status:503,json:async()=>({ok:false,error:'phone_unavailable',message:upstream})}],
+  ['invalid JSON',{ok:true,status:200,json:async()=>{throw new SyntaxError(upstream);}}],
+  ['invalid state',{ok:true,status:200,json:async()=>({ok:true,state:{numbers:[]}})}],
+  ['network',new TypeError(upstream)],
+  ['aborted request',new DOMException(upstream,'AbortError')],
+ ];
+ for(const [kind,result] of failures){
+  const b=setup({stateResponder:async()=>{if(result instanceof Error)throw result;return result;}});
+  await flush();b.toggle.click();await flush();
+  const panel=b.document.querySelector('.vp3-phone-panel');
+  assert.doesNotMatch(panel.textContent,/Loading assigned phone connections|Loading contacts|Loading recent calls|Loading voicemail/,kind+' must leave the loading state');
+  assert.doesNotMatch(panel.textContent,/SQLSTATE|private endpoint credential/,kind+' must not expose upstream details');
+  assert.equal(b.document.querySelectorAll('button').filter(button=>button.textContent==='Retry'&&!button.closest('[hidden]')).length,1,kind+' exposes one retry control');
+  assert.equal(b.findButton('Retry').disabled,false);
+  if(kind==='upgrade'){assert.match(panel.textContent,/Cloud database upgrade/);assert.match(panel.textContent,/upgrade\.php/);}
+  const countBefore=b.calls.filter(call=>call.action==='state').length;
+  b.setStateResponder(null);const retry=b.findButton('Retry');retry.click();retry.click();await flush();
+  assert.equal(b.calls.filter(call=>call.action==='state').length,countBefore+1,kind+' shares one in-flight retry');
+  assert.equal(b.field('number').value,'1',kind+' recovers the assigned number without a page reload');
+  assert.ok(b.calls.every(call=>call.action==='state'),kind+' cannot prepare calls or mutate settings');
+  assert.ok(b.facts.stateMethods.every(method=>method==='GET'));
+  assert.equal(b.facts.claims,0);assert.equal(b.facts.registers,0);assert.equal(b.facts.connects,0);
+  assert.equal(!b.findButton('Retry')||Boolean(b.findButton('Retry').closest('[hidden]')),true);
+  b.window.VP3PhoneWorkspaceV1.dispose();
+ }
+});
+await test('a timed-out state request exits loading and can be retried without a page reload',async()=>{
+ const b=setup({manualTimers:true,stateResponder:({options})=>new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('Fixture aborted','AbortError')),{once:true}))});
+ b.toggle.click();await flush();assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/Loading assigned phone connections/);
+ b.expireRequestTimers();await flush();
+ const panel=b.document.querySelector('.vp3-phone-panel');assert.doesNotMatch(panel.textContent,/Loading assigned phone connections/);assert.match(panel.textContent,/timed out|too long/i);assert.equal(b.findButton('Retry').disabled,false);
+ b.setStateResponder(null);b.findButton('Retry').click();await flush();assert.equal(b.field('number').value,'1');assert.ok(b.calls.every(call=>call.action==='state'));b.window.VP3PhoneWorkspaceV1.dispose();
+});
+await test('a failed refresh labels cached data and prevents dialing until recovery',async()=>{
+ const b=setup();await flush();b.toggle.click();await flush();
+ b.setStateResponder(async()=>({ok:false,status:503,json:async()=>({ok:false,error:'phone_unavailable'})}));await b.window.VP3PhoneWorkspaceV1.refresh();await flush();
+ assert.equal(b.field('number').value,'1','The last confirmed number remains visible');
+ assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/cached|previously loaded|last (?:confirmed|loaded|saved)|may be out of date/i);
+ assert.equal(b.findButton('Call').disabled,true);assert.equal(b.findButton('Enable calls in this browser').disabled,true);
+ b.setStateResponder(null);b.findButton('Retry').click();await flush();assert.equal(b.findButton('Call').disabled,false);assert.equal(b.facts.connects,0);b.window.VP3PhoneWorkspaceV1.dispose();
+});
+await test('a delayed failure from an old Chat context cannot replace the current phone state',async()=>{
+ const b=setup(),gate=deferred();await flush();b.toggle.click();await flush();
+ b.setStateResponder(({body})=>Number(body.conversation_id)===10?gate.promise:undefined);
+ const pending=b.window.VP3PhoneWorkspaceV1.refresh();await flush();b.state.numbers[0].phone_e164='+16025550999';b.window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:11,agent_id:2,ready:true});await flush();
+ assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/\+16025550999/);
+ gate.resolve({ok:false,status:503,json:async()=>({ok:false,error:'phone_upgrade_required',message:'Old context error'})});await pending;await flush();
+ assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/\+16025550999/);assert.doesNotMatch(b.document.querySelector('.vp3-phone-panel').textContent,/database upgrade|Old context error/);assert.equal(!b.findButton('Retry')||Boolean(b.findButton('Retry').closest('[hidden]')),true);assert.ok(b.calls.every(call=>call.action==='state'));b.window.VP3PhoneWorkspaceV1.dispose();
+});
+await test('an unavailable recording schema leaves connections, contacts and call history usable',async()=>{
+ const b=setup();b.state.recording_readiness={ready:false};b.state.voicemails=[];
+ b.state.contacts=[{id:7,name:'Fixture saved caller',phone_e164:'+16025550888',favorite:false}];
+ b.state.calls=[{public_id:'9'.repeat(32),peer_e164:'+16025550888',direction:'inbound',state:'completed'}];
+ await flush();b.toggle.click();await flush();
+ assert.equal(b.field('number').value,'1');assert.equal(b.findButton('Call').disabled,false);
+ assert.equal(b.field('record-call'),undefined);assert.equal(b.findButton('Save after-call settings'),undefined);
+ b.findButton('Contacts').click();assert.match(b.document.getElementById('vp3PhoneSection-contacts').textContent,/Fixture saved caller/);
+ b.findButton('Recent calls').click();assert.match(b.document.getElementById('vp3PhoneSection-calls').textContent,/Fixture saved caller/);
+ b.findButton('Voicemail').click();const voicemail=b.document.getElementById('vp3PhoneSection-voicemail');assert.match(voicemail.textContent,/Cloud database upgrade/);assert.match(voicemail.textContent,/upgrade\.php/);assert.doesNotMatch(voicemail.textContent,/No saved voicemail/);
+ const retry=voicemail.querySelector('button');assert.equal(retry.textContent,'Retry');assert.equal(retry.disabled,false);
+ b.state.recording_readiness={ready:true};retry.click();await flush();assert.match(voicemail.textContent,/No saved voicemail/);assert.ok(b.field('record-call'));assert.ok(b.findButton('Save after-call settings'));assert.ok(b.calls.every(call=>call.action==='state'));b.window.VP3PhoneWorkspaceV1.dispose();
+});
+await test('authentication and assignment errors still erase private phone content rather than offering a retry',async()=>{
+ for(const status of [401,403]){
+  const b=setup();await flush();b.toggle.click();await flush();b.setAuthorized(false,status);await b.window.VP3PhoneWorkspaceV1.refresh();await flush();
+  assert.equal(b.toggle.hidden,true);assert.equal(b.document.querySelector('.vp3-phone-workspace').hidden,true);assert.doesNotMatch(b.document.querySelector('.vp3-phone-panel').textContent,/\+16025550111|Synthetic transcript/);assert.equal(!b.findButton('Retry')||Boolean(b.findButton('Retry').closest('[hidden]')),true);b.window.VP3PhoneWorkspaceV1.dispose();
+ }
 });
 console.log('PHONE_WORKSPACE_DOM=PASS ('+count+' cases)');

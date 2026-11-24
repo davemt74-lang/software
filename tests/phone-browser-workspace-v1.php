@@ -61,7 +61,33 @@ function status(array $call,string $value,string $hex='c',array $extra=[],bool $
 
 c(!vp3_phone_workspace_schema_ready_v1($pdo),'unreleased tables cannot masquerade as installed');
 vp3_phone_workspace_ensure_schema_v1($pdo);c(vp3_phone_workspace_schema_ready_v1($pdo),'explicit schema installs phone workspace');
+// Reading the existing Phone workspace never installs optional recording tables.
+$pdo->exec("INSERT INTO phone_voice_calls_v130(id,provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,state,created_at) VALUES(90001,'twilio','CA00000000000000000000000000090001',1,1,7,'+16025550999','+16025550101','completed','2026-01-01 01:00:00')");
+$pdo->exec("INSERT INTO phone_voice_recordings_v130(id,call_id,owner_user_id,provider,provider_recording_sid,recording_status,duration_seconds,created_at) VALUES(90001,90001,1,'twilio','RE00000000000000000000000000090001','completed',12,'2026-01-01 01:00:00')");
+$recordingUpgradeReason='Phone recordings need the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.';
+$unupgraded=api('GET')['state'];
+c(count($unupgraded['numbers'])===2&&count($unupgraded['contacts'])===1&&count($unupgraded['calls'])===1,'missing optional recording storage preserves assigned lines, contacts and call history');
+c($unupgraded['recording_readiness']===['ready'=>false,'reason'=>$recordingUpgradeReason]&&$unupgraded['post_call_policy']===null&&$unupgraded['voicemails']===[],'missing recording storage explicitly reports unavailable recordings instead of a successful empty inbox');
+c(!table_exists('phone_recording_jobs_v1')&&!table_exists('phone_recording_policies_v1'),'Phone state reads do not run the recording migration');
 vp3_phone_recording_ensure_schema_v1($pdo);
+$upgraded=api('GET')['state'];
+c($upgraded['recording_readiness']===['ready'=>true,'reason'=>'']&&is_array($upgraded['post_call_policy'])&&count($upgraded['voicemails'])===1,'explicit recording upgrade restores policy and the existing voicemail');
+foreach(['phone_recording_policies_v1','phone_recording_jobs_v1','phone_recording_legacy_reads_v1','phone_recording_speech_budget_v1'] as $recordingTable){
+    $pdo->exec('DROP TABLE '.$recordingTable);
+    $partial=api('GET')['state'];
+    c($partial['recording_readiness']===['ready'=>false,'reason'=>$recordingUpgradeReason]&&$partial['post_call_policy']===null&&$partial['voicemails']===[],'partial recording upgrade is explicit when '.$recordingTable.' is missing');
+    c($partial['numbers']===$upgraded['numbers']&&$partial['contacts']===$upgraded['contacts']&&$partial['calls']===$upgraded['calls']&&!table_exists($recordingTable),'missing '.$recordingTable.' cannot break other Phone sections or silently recreate storage');
+    vp3_phone_recording_ensure_schema_v1($pdo);
+    c(api('GET')['state']['recording_readiness']['ready'],'replaying the recording installer recovers '.$recordingTable);
+}
+$pdo->exec('ALTER TABLE phone_managed_callback_dispatch_v1 DROP COLUMN pilot_required');
+try{api('GET');throw new LogicException('Missing core upgrade rejection.');}catch(VP3PhoneWorkspaceException $e){c($e->httpStatus===503&&$e->publicCode==='phone_upgrade_required','a missing managed/core migration retains the typed upgrade failure');}
+vp3_phone_workspace_ensure_schema_v1($pdo);
+vp3_phone_recording_ensure_schema_v1($pdo);
+$recovered=api('GET')['state'];
+c($recovered['recording_readiness']['ready']&&$recovered['numbers']===$upgraded['numbers']&&$recovered['calls']===$upgraded['calls']&&count($recovered['voicemails'])===1,'replaying explicit installers restores the complete Phone state without losing history');
+$pdo->exec('DELETE FROM phone_voice_recordings_v130 WHERE id=90001');
+$pdo->exec('DELETE FROM phone_voice_calls_v130 WHERE id=90001');
 c(!vp3_operator_auto_call_schema_ready_v1($pdo),'missing optional Operator migration does not create schema on read');
 c(api('GET')['state']['auto_call']===['available'=>false,'execution_enabled'=>false,'policies'=>[]],'unupgraded Operator preferences do not disable manual phone access');
 denies(fn()=>action('save_auto_call_policy',['contact_id'=>1,'number_id'=>1,'enabled'=>false,'expected_revision'=>0]),503,'Operator preferences require an explicit upgrade');
