@@ -489,6 +489,14 @@ async function browserJourney(baseURL, owner, other) {
   assert.deepEqual(Buffer.concat(fileParts),textFile,'holder receives exact selected document');
   await fileHolder.getByRole('button',{name:'Acknowledge file',exact:true}).click();
   await fileHolder.getByText('Send a file · Acknowledged',{exact:true}).waitFor();
+  // The file journey produces its own two private receipts. Verify and drain them
+  // here so the later two-phone location test sees only its location announcements.
+  const fileReceipts=check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'file exchange Chat receipts').phone_updates;
+  assert.equal(fileReceipts.filter(u=>u.speech.includes('responded to an information request')).length,1,'photo completion has one scoped receipt');
+  assert.equal(fileReceipts.filter(u=>u.speech.includes('acknowledged an update')).length,1,'file acknowledgement has one scoped receipt');
+  assert.equal(fileReceipts.length,2,'only the two file exchange receipts are outstanding');
+  assert.ok(!JSON.stringify(fileReceipts).includes('synthetic review photo')&&!JSON.stringify(fileReceipts).includes('synthetic document'),'file receipts contain no private request bodies or document content');
+  assert.deepEqual(check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'file receipt replay').phone_updates,[]);
   await screenshot(map,'owner-connected-files');
   await holderInbox.locator('summary').click();
   await communication.getByRole('button',{name:'Communication',exact:true}).click();
