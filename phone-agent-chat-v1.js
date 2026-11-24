@@ -35,6 +35,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
       if (followReplies) history.scrollTop = history.scrollHeight;
       nextPoll = 0;
       void refresh();
+    } else {
+      // Connection settings may have scrolled far below the phone identity.
+      // A deliberate tab selection restores the overview, not background polls.
+      connection.scrollTop=0;
     }
   }
   connectionTab.addEventListener('click', () => selectTab(false));

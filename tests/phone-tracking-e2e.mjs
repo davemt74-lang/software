@@ -467,6 +467,9 @@ async function verifyPhoneTabs(phone) {
     assert.ok(position.bottom > 0 && position.top < position.height * .35,
       'The connected phone name should appear near the top of the iPhone viewport: ' + JSON.stringify(position));
   }
+  // The new preference journey deliberately scrolls to controls below the fold.
+  // Reselect Connection and verify that it restores the overview.
+  await connection.click();
   await verifyConnection();
   await screenshot(phone, 'phone-connection-tab');
   await chat.click();
