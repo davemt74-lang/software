@@ -107,7 +107,7 @@ function vp3_operator_admission_projection_v1(PDO $pdo,array $scope,array $bound
     $row=vp3_operator_consent_row_v1($pdo,$scope,$bound);
     $withdrawn=$bound['destination_valid']&&vp3_operator_recipient_opted_out_v1($pdo,$scope['owner_user_id'],$bound['destination_hash']);
     $consent=vp3_operator_consent_state_v1($row,$bound,$withdrawn,$now);
-    $block=vp3_operator_admission_policy_block_v1($pdo,$scope,$bound);
+    try{$block=vp3_operator_admission_policy_block_v1($pdo,$scope,$bound);}catch(Throwable){$block='Calling prerequisites could not be verified.';}
     $settings=vp3_operator_auto_call_defaults_v1();
     foreach($settings as $key=>$default)$settings[$key]=is_int($default)?(int)$bound['policy'][$key]:(string)$bound['policy'][$key];
     $gates=[];
@@ -117,15 +117,17 @@ function vp3_operator_admission_projection_v1(PDO $pdo,array $scope,array $bound
     $history=['today'=>0,'last_attempt_epoch'=>0];$valid=false;
     try{$settings=vp3_operator_auto_call_settings_v1($settings);$valid=true;}catch(VP3PhoneWorkspaceException){}
     $add('calling_window',$valid&&vp3_operator_admission_window_v1($settings,$now)?'pass':'blocked','Check the full permitted call duration in the saved local time zone.');
-    if($valid&&$bound['destination_valid']){
+    try{
+        if(!$valid||!$bound['destination_valid'])throw new RuntimeException('Unverified call history.');
         $history=vp3_operator_admission_history_v1($pdo,$scope,$bound,$settings,$now);
         $add('daily_limit',$history['within_limit']?'pass':'blocked','Known browser call attempts to this destination across all assigned Agents today.');
         $add('minimum_gap',$history['gap_ok']?'pass':'blocked','Minimum time since the most recent known outbound attempt.');
-    }else{
+    }catch(Throwable){
         $add('daily_limit','unverified','Call history could not be evaluated.');
         $add('minimum_gap','unverified','Call history could not be evaluated.');
     }
-    $add('phone_idle',vp3_operator_admission_idle_v1($pdo,$scope['owner_user_id'],$now)?'pass':'blocked','Existing unsettled phone calls block a new autonomous attempt.');
+    try{$add('phone_idle',vp3_operator_admission_idle_v1($pdo,$scope['owner_user_id'],$now)?'pass':'blocked','Existing unsettled phone calls block a new autonomous attempt.');}
+    catch(Throwable){$add('phone_idle','unverified','Existing phone sessions could not be verified.');}
     try{
         $free=$valid&&vp3_operator_calendar_slot_free_v1($now,$settings['max_duration_seconds'],
             vp3_operator_calendar_conflicts_v1($pdo,$scope,$now,$now+$settings['max_duration_seconds']));
@@ -161,7 +163,7 @@ function vp3_operator_consent_save_v1(PDO $pdo,array $scope,array $input,int $no
     if($decision==='attest'&&(($input['recipient_agreement_attested']??null)!==true
         ||!is_string($input['purpose']??null)||!isset(VP3_OPERATOR_CALL_PURPOSES_V1[$input['purpose']])))
         vp3_phone_workspace_error_v1('operator_recipient_review_required',422,'Confirm affirmative recipient agreement for the chosen purpose.');
-    return vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$input,$decision,$now):array{
+    vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$input,$decision,$now):void{
         $lock=$pdo->prepare('SELECT id FROM users WHERE id=?'.vp3_phone_workspace_lock_v1($pdo));
         $lock->execute([$scope['owner_user_id']]);$owner=$lock->fetchColumn();$lock->closeCursor();
         if(!$owner)vp3_phone_workspace_error_v1();
@@ -195,6 +197,9 @@ function vp3_operator_consent_save_v1(PDO $pdo,array $scope,array $input,int $no
                 $q->execute([...$keys,$revision]);if($q->rowCount()!==1)vp3_phone_workspace_error_v1('operator_consent_changed',409,'Consent review changed.');
             }
         }
-        return ['readiness'=>vp3_operator_admission_projection_v1($pdo,$scope,$bound,$now)];
     });
+    // Consent removal is durable before any optional readiness projection.
+    // A failed projection cannot roll back a recipient withdrawal.
+    $fresh=vp3_phone_workspace_scope_v1($pdo,$scope['user'],$input);
+    return ['readiness'=>vp3_operator_admission_projection_v1($pdo,$fresh,vp3_operator_admission_context_v1($pdo,$fresh,$input),$now)];
 }
