@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
 require_once __DIR__.'/extension-device-auth-v2000.php';
 require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/phone-tracking-history-v1.php';
@@ -13,6 +14,8 @@ require_once __DIR__.'/phone-remote-dialer-v1.php';
 require_once __DIR__.'/phone-managed-ui-v1.php';
 require_once __DIR__.'/phone-handoff-v1.php';
 require_once __DIR__.'/phone-push-subscriptions-v1.php';
+require_once __DIR__.'/phone-push-delivery-v1.php';
+require_once __DIR__.'/phone-push-events-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -22,7 +25,7 @@ const VP3_PHONE_MAX_DAYS_V1 = 90;
 /** Explicit installation only. Live requests do not create or alter tables. */
 function vp3_phone_schema_v1(PDO $pdo): void
 {
-    if ($pdo->inTransaction()) throw new LogicException('Install Phone Tracking outside a transaction.');
+    if (vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Install Phone Tracking outside a transaction.');
     $options = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
         ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : '';
     // The same defaults apply to new and already-paired phones.
@@ -90,6 +93,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_dialer_install_v1($pdo,$options);
     vp3_phone_handoff_install_v1($pdo,$options);
     vp3_phone_push_install_v1($pdo,$options);
+    vp3_phone_push_delivery_install_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -117,26 +121,6 @@ function vp3_phone_sql_v1(PDO $pdo, string $sql, array $params): PDOStatement
 function vp3_phone_lock_v1(PDO $pdo): string
 {
     return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
-}
-
-/** All mutations lock in the same order: account, then invite/device/receipt. */
-function vp3_phone_transaction_v1(PDO $pdo, callable $work): array
-{
-    // The Chat coordinator can own the transaction so the command and its receipt commit together.
-    if ($pdo->inTransaction()) return $work();
-    $sqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
-    if ($sqlite) $pdo->exec('BEGIN IMMEDIATE');
-    else $pdo->beginTransaction();
-    try {
-        $result = $work();
-        if ($sqlite) $pdo->exec('COMMIT');
-        else $pdo->commit();
-        return $result;
-    } catch (Throwable $e) {
-        if ($sqlite) $pdo->exec('ROLLBACK');
-        elseif ($pdo->inTransaction()) $pdo->rollBack();
-        throw $e;
-    }
 }
 
 function vp3_phone_authorized_owner_v1(PDO $pdo, int $owner, bool $lock): ?string
@@ -529,6 +513,8 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             $generation=(int)$row['generation'];
             if (in_array($action,['push_register','push_disable'],true)) {
                 $receipt=vp3_phone_push_holder_v1($pdo,$row,$action,$input,$now);
+            } elseif (in_array($action,['push_test','push_resolve'],true)) {
+                $receipt=vp3_phone_push_delivery_holder_v1($pdo,$row,$action,$input,$now);
             } elseif (in_array($action,['handoff_offer','handoff_cancel'],true)) {
                 $receipt=vp3_phone_handoff_holder_v1($pdo,$row,$action,$input,$now);
             } elseif ($action === 'save_communication_profile') {

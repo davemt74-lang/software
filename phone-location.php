@@ -29,14 +29,14 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
   <script src="phone-recording-holder-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
-  <script src="phone-agent-chat-v1.js?v=5" defer></script>
+  <script src="phone-agent-chat-v1.js?v=6" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
-  <script src="phone-information-ui-v1.js?v=2" defer></script>
+  <script src="phone-information-ui-v1.js?v=3" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
   <script src="phone-handoff-v1.js?v=1" defer></script>
-  <script src="phone-push-subscriptions-v1.js?v=1" defer></script>
-  <script src="phone-location-v1.js?v=16" defer></script>
+  <script src="phone-push-subscriptions-v1.js?v=2" defer></script>
+  <script src="phone-location-v1.js?v=17" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -150,9 +150,11 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <div id="phone-push-controls" hidden>
           <button id="phone-push-enable" type="button" hidden>Enable notifications</button>
           <button id="phone-push-disable" type="button" class="secondary" hidden>Turn off notifications</button>
+          <button id="phone-push-test" type="button" class="secondary" hidden>Send test notification</button>
           <p id="phone-push-feedback" role="status"></p>
+          <p id="phone-push-test-state" role="status"></p>
         </div>
-        <p class="phone-install-note">Setup saves your subscription only. Keep VP3 Phone open for current requests until background delivery is available.</p>
+        <p class="phone-install-note">When background delivery is enabled, alerts can notify you about private replies and information requests for this phone. Test status distinguishes push-service acceptance from an alert reported by this installation. Opening an alert checks your current connection and permissions.</p>
       </section>
       <section class="phone-guide-section" aria-labelledby="phone-guide-requests-title">
         <h2 id="phone-guide-requests-title">Agent requests</h2>

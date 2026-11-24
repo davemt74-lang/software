@@ -109,11 +109,19 @@ function vp3_paired_phone_message_v1(mixed $value): string
     return $message;
 }
 
-function vp3_paired_phone_turns_v1(PDO $pdo,string $id): array
+function vp3_paired_phone_turns_v1(PDO $pdo,string $id,?string $focusRequest=null): array
 {
-    $rows=vp3_phone_sql_v1($pdo,"SELECT t.request_id,t.message,t.reply,t.state,t.lease_until,o.message AS owner_reply
+    $select="SELECT t.request_id,t.message,t.reply,t.state,t.lease_until,o.message AS owner_reply
         FROM vp3_paired_phone_turns_v1 t LEFT JOIN vp3_paired_phone_owner_replies_v1 o ON o.phone_message_id=t.user_message_id
-        WHERE t.device_id=? ORDER BY COALESCE(o.owner_message_id,t.assistant_message_id,t.user_message_id) DESC LIMIT 30",[$id])->fetchAll(PDO::FETCH_ASSOC);
+        JOIN vp3_paired_phone_threads_v1 b ON b.device_id=t.device_id AND b.owner_user_id=t.owner_user_id
+            AND b.agent_id=t.agent_id AND b.conversation_id=t.conversation_id WHERE t.device_id=?";
+    $rows=vp3_phone_sql_v1($pdo,$select.' ORDER BY COALESCE(o.owner_message_id,t.assistant_message_id,t.user_message_id) DESC LIMIT 30',[$id])->fetchAll(PDO::FETCH_ASSOC);
+    // A notification can refer to a reply that has moved beyond the recent
+    // page. Include at most one exact turn, still bound to this private thread.
+    if($focusRequest!==null&&!in_array($focusRequest,array_column($rows,'request_id'),true)){
+        $focused=vp3_phone_sql_v1($pdo,$select.' AND t.request_id=? LIMIT 1',[$id,$focusRequest])->fetch(PDO::FETCH_ASSOC);
+        if($focused)$rows[]=$focused;
+    }
     $now=time();
     foreach ($rows as &$row) {
         $ownerReply=$row['owner_reply'];
@@ -148,24 +156,25 @@ function vp3_paired_phone_chat_v1(PDO $pdo,string $token,string $action,array $i
     $id=vp3_phone_camera_id_v1($input['device_id']??null);
     if (!in_array($action,['chat_status','chat_send'],true)) throw new RuntimeException('Unknown action.',422);
     $send=$action==='chat_send';
-    $allowed=$send?['device_id','message','request_id']:['device_id'];
+    $allowed=$send?['device_id','message','request_id']:['device_id','focus_request_id'];
     if (array_diff(array_keys($input),$allowed)) throw new RuntimeException('Unexpected phone chat fields.',422);
     $message=$send?vp3_paired_phone_message_v1($input['message']??null):null;
     $rid=$send?vp3_paired_phone_request_id_v1($input['request_id']??null):null;
+    $focus=!$send&&isset($input['focus_request_id'])?vp3_paired_phone_request_id_v1($input['focus_request_id']):null;
     if (!vp3_phone_secret_valid_v1($token)) throw new RuntimeException('Phone unavailable.',403);
     if (!vp3_paired_phone_ready_v1($pdo)) throw new RuntimeException('Upgrade required.',503);
     $hash=vp3_extension_hash_v2000($token);
     // Discover the lock key before starting a repeatable-read transaction. Recheck the cookie on the locked device.
     $owner=(int)vp3_phone_sql_v1($pdo,'SELECT owner_user_id FROM vp3_phone_devices_v1 WHERE token_hash=? AND id=?',[$hash,$id])->fetchColumn();
     if (!$owner) throw new RuntimeException('Phone unavailable.',403);
-    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$owner,$hash,$id,$send,$message,$rid) {
+    return vp3_phone_transaction_v1($pdo,static function() use($pdo,$owner,$hash,$id,$send,$message,$rid,$focus) {
         vp3_phone_account_v1($pdo,$owner,true);
         $device=vp3_phone_row_v1($pdo,$owner,$id);
         if (!hash_equals($device['token_hash'],$hash) || $device['device_status']!=='approved' || (int)$device['expires_at']<=time())
             throw new RuntimeException('Phone unavailable.',403);
         if (!$send && !vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_paired_phone_threads_v1 WHERE device_id=?',[$id])->fetchColumn()) return ['turns'=>[]];
         $thread=vp3_paired_phone_thread_v1($pdo,$device);
-        if (!$send) return vp3_paired_phone_turns_v1($pdo,$id);
+        if (!$send) return vp3_paired_phone_turns_v1($pdo,$id,$focus);
         $existing=vp3_phone_sql_v1($pdo,'SELECT message FROM vp3_paired_phone_turns_v1 WHERE device_id=? AND request_id=?',[$id,$rid])->fetchColumn();
         if ($existing!==false) {
             if ($existing!==$message) throw new RuntimeException('Phone message changed.',409);

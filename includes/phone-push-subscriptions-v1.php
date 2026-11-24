@@ -1,10 +1,12 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** PS5C.3 enrollment only. No notification transport or arbitrary URL fetch. */
 function vp3_phone_push_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install phone push outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install phone push outside transactions.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_push_config_v1 (
         id SMALLINT PRIMARY KEY,enrollment_enabled SMALLINT NOT NULL DEFAULT 0,
         public_key VARCHAR(90) NOT NULL DEFAULT '',private_cipher TEXT NULL,
@@ -168,6 +170,11 @@ function vp3_phone_push_view_v1(PDO $pdo,array $d,int $now,bool $holder=true,?st
         $out['key_id']=$keyId;$out['application_server_key']=$c['public_key'];
         if($registered)$out['endpoint_hash']=$s['endpoint_hash'];
     }
+    if(function_exists('vp3_phone_push_delivery_view_v1')){
+        $delivery=vp3_phone_push_delivery_view_v1($pdo,$d,$now,$testKey);
+        $out['delivery_ready']=$registered&&$delivery['ready'];
+        if($holder)$out['delivery']=$delivery;
+    }
     return $out;
 }
 /** Under the owner/device transaction. Revision advances independently of GPS. */
@@ -176,6 +183,7 @@ function vp3_phone_push_revoke_v1(PDO $pdo,array $d,int $now):void
     if(!vp3_phone_push_ready_v1($pdo))return;
     vp3_phone_sql_v1($pdo,"UPDATE vp3_phone_push_subscriptions_v1 SET revision=revision+1,state='off',credential_hash=NULL,endpoint_hash=NULL,key_id=NULL,payload_hash=NULL,subscription_cipher=NULL,expires_epoch=NULL,updated_epoch=? WHERE owner_user_id=? AND device_id=? AND state<>'off'",
         [$now,(int)$d['owner_user_id'],$d['id']]);
+    if(function_exists('vp3_phone_push_delivery_cancel_device_v1'))vp3_phone_push_delivery_cancel_device_v1($pdo,$d,$now);
 }
 function vp3_phone_push_holder_v1(PDO $pdo,array $d,string $action,array $input,int $now,?string $testKey=null):array
 {
@@ -214,5 +222,6 @@ function vp3_phone_push_holder_v1(PDO $pdo,array $d,string $action,array $input,
             [$next,$d['token_hash'],$endpointHash,$keyId,$payloadHash,$cipher,$expires,$now,(int)$d['owner_user_id'],$d['id'],$rev]);
         vp3_phone_push_need_v1($q->rowCount()===1,409);
     }
+    if(function_exists('vp3_phone_push_delivery_cancel_device_v1'))vp3_phone_push_delivery_cancel_device_v1($pdo,$d,$now,'subscription_changed');
     return ['push'=>vp3_phone_push_view_v1($pdo,$d,$now,true,$testKey)];
 }

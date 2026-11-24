@@ -1,0 +1,3023 @@
+{
+  "schema": 1,
+  "purpose": "Production-only, pinned Web Push crypto dependencies; no Composer required on deployment.",
+  "minimum_worker_php": "8.2.0",
+  "composer_version": "2.11.3",
+  "composer_sha256": "04f8b003da4e3a2459056591fbfebd02b4dc3e5adeb158616b90cf55a65113ec",
+  "audit_checked_utc": "2026-11-24T21:30:42Z",
+  "audit_result": {
+    "advisories": [],
+    "abandoned": []
+  },
+  "audit_command": "composer audit --no-dev --format=json",
+  "composer_lock_sha256": "cdd2e7353bd5aa3836bb98141c27c8f765757bcf232d2ecc99dc8657d58c8587",
+  "packages": [
+    {
+      "name": "brick/math",
+      "version": "1.0.0",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/brick/math.git",
+        "reference": "2effe05d2177c451b86c6a073196a4034c02f211"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/brick/math/zipball/2effe05d2177c451b86c6a073196a4034c02f211",
+        "reference": "2effe05d2177c451b86c6a073196a4034c02f211",
+        "shasum": ""
+      },
+      "license_file": "vendor/brick/math/LICENSE"
+    },
+    {
+      "name": "minishlink/web-push",
+      "version": "v11.0.0",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/web-push-libs/web-push-php.git",
+        "reference": "f8410afb73486ab895bb4792b879bdca62025b47"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/web-push-libs/web-push-php/zipball/f8410afb73486ab895bb4792b879bdca62025b47",
+        "reference": "f8410afb73486ab895bb4792b879bdca62025b47",
+        "shasum": ""
+      },
+      "license_file": "vendor/minishlink/web-push/LICENSE"
+    },
+    {
+      "name": "nyholm/psr7",
+      "version": "1.8.2",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/Nyholm/psr7.git",
+        "reference": "a71f2b11690f4b24d099d6b16690a90ae14fc6f3"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/Nyholm/psr7/zipball/a71f2b11690f4b24d099d6b16690a90ae14fc6f3",
+        "reference": "a71f2b11690f4b24d099d6b16690a90ae14fc6f3",
+        "shasum": ""
+      },
+      "license_file": "vendor/nyholm/psr7/LICENSE"
+    },
+    {
+      "name": "php-http/discovery",
+      "version": "1.20.0",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-http/discovery.git",
+        "reference": "82fe4c73ef3363caed49ff8dd1539ba06044910d"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-http/discovery/zipball/82fe4c73ef3363caed49ff8dd1539ba06044910d",
+        "reference": "82fe4c73ef3363caed49ff8dd1539ba06044910d",
+        "shasum": ""
+      },
+      "license_file": "vendor/php-http/discovery/LICENSE"
+    },
+    {
+      "name": "php-http/httplug",
+      "version": "2.4.1",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-http/httplug.git",
+        "reference": "5cad731844891a4c282f3f3e1b582c46839d22f4"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-http/httplug/zipball/5cad731844891a4c282f3f3e1b582c46839d22f4",
+        "reference": "5cad731844891a4c282f3f3e1b582c46839d22f4",
+        "shasum": ""
+      },
+      "license_file": "vendor/php-http/httplug/LICENSE"
+    },
+    {
+      "name": "php-http/promise",
+      "version": "1.3.1",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-http/promise.git",
+        "reference": "fc85b1fba37c169a69a07ef0d5a8075770cc1f83"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-http/promise/zipball/fc85b1fba37c169a69a07ef0d5a8075770cc1f83",
+        "reference": "fc85b1fba37c169a69a07ef0d5a8075770cc1f83",
+        "shasum": ""
+      },
+      "license_file": "vendor/php-http/promise/LICENSE"
+    },
+    {
+      "name": "psr/clock",
+      "version": "1.0.0",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-fig/clock.git",
+        "reference": "e41a24703d4560fd0acb709162f73b8adfc3aa0d"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-fig/clock/zipball/e41a24703d4560fd0acb709162f73b8adfc3aa0d",
+        "reference": "e41a24703d4560fd0acb709162f73b8adfc3aa0d",
+        "shasum": ""
+      },
+      "license_file": "vendor/psr/clock/LICENSE"
+    },
+    {
+      "name": "psr/http-client",
+      "version": "1.0.3",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-fig/http-client.git",
+        "reference": "bb5906edc1c324c9a05aa0873d40117941e5fa90"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-fig/http-client/zipball/bb5906edc1c324c9a05aa0873d40117941e5fa90",
+        "reference": "bb5906edc1c324c9a05aa0873d40117941e5fa90",
+        "shasum": ""
+      },
+      "license_file": "vendor/psr/http-client/LICENSE"
+    },
+    {
+      "name": "psr/http-factory",
+      "version": "1.1.0",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-fig/http-factory.git",
+        "reference": "2b4765fddfe3b508ac62f829e852b1501d3f6e8a"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-fig/http-factory/zipball/2b4765fddfe3b508ac62f829e852b1501d3f6e8a",
+        "reference": "2b4765fddfe3b508ac62f829e852b1501d3f6e8a",
+        "shasum": ""
+      },
+      "license_file": "vendor/psr/http-factory/LICENSE"
+    },
+    {
+      "name": "psr/http-message",
+      "version": "2.0",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-fig/http-message.git",
+        "reference": "402d35bcb92c70c026d1a6a9883f06b2ead23d71"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-fig/http-message/zipball/402d35bcb92c70c026d1a6a9883f06b2ead23d71",
+        "reference": "402d35bcb92c70c026d1a6a9883f06b2ead23d71",
+        "shasum": ""
+      },
+      "license_file": "vendor/psr/http-message/LICENSE"
+    },
+    {
+      "name": "psr/log",
+      "version": "3.0.2",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/php-fig/log.git",
+        "reference": "f16e1d5863e37f8d8c2a01719f5b34baa2b714d3"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/php-fig/log/zipball/f16e1d5863e37f8d8c2a01719f5b34baa2b714d3",
+        "reference": "f16e1d5863e37f8d8c2a01719f5b34baa2b714d3",
+        "shasum": ""
+      },
+      "license_file": "vendor/psr/log/LICENSE"
+    },
+    {
+      "name": "spomky-labs/base64url",
+      "version": "v2.0.4",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/Spomky-Labs/base64url.git",
+        "reference": "7752ce931ec285da4ed1f4c5aa27e45e097be61d"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/Spomky-Labs/base64url/zipball/7752ce931ec285da4ed1f4c5aa27e45e097be61d",
+        "reference": "7752ce931ec285da4ed1f4c5aa27e45e097be61d",
+        "shasum": ""
+      },
+      "license_file": "vendor/spomky-labs/base64url/LICENSE"
+    },
+    {
+      "name": "spomky-labs/pki-framework",
+      "version": "1.6.3",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/Spomky-Labs/pki-framework.git",
+        "reference": "792e909d4e387adffe3c4f404451c7d57a3d2022"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/Spomky-Labs/pki-framework/zipball/792e909d4e387adffe3c4f404451c7d57a3d2022",
+        "reference": "792e909d4e387adffe3c4f404451c7d57a3d2022",
+        "shasum": ""
+      },
+      "license_file": "vendor/spomky-labs/pki-framework/LICENSE"
+    },
+    {
+      "name": "symfony/deprecation-contracts",
+      "version": "v3.8.1",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/symfony/deprecation-contracts.git",
+        "reference": "feb1edf4e546af3b85c5caebe8359a20db230ca3"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/symfony/deprecation-contracts/zipball/feb1edf4e546af3b85c5caebe8359a20db230ca3",
+        "reference": "feb1edf4e546af3b85c5caebe8359a20db230ca3",
+        "shasum": ""
+      },
+      "license_file": "vendor/symfony/deprecation-contracts/LICENSE"
+    },
+    {
+      "name": "symfony/polyfill-php83",
+      "version": "v1.43.0",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/symfony/polyfill-php83.git",
+        "reference": "80ccff923a8d61f73ebe9da0aa94e25232f004ce"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/symfony/polyfill-php83/zipball/80ccff923a8d61f73ebe9da0aa94e25232f004ce",
+        "reference": "80ccff923a8d61f73ebe9da0aa94e25232f004ce",
+        "shasum": ""
+      },
+      "license_file": "vendor/symfony/polyfill-php83/LICENSE"
+    },
+    {
+      "name": "web-token/jwt-library",
+      "version": "4.2.8",
+      "license": [
+        "MIT"
+      ],
+      "source": {
+        "type": "git",
+        "url": "https://github.com/web-token/jwt-library.git",
+        "reference": "a1909b6b7c9171529f65e6bb6ecae615cd8a92ed"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/web-token/jwt-library/zipball/a1909b6b7c9171529f65e6bb6ecae615cd8a92ed",
+        "reference": "a1909b6b7c9171529f65e6bb6ecae615cd8a92ed",
+        "shasum": ""
+      },
+      "license_file": "vendor/web-token/jwt-library/LICENSE"
+    }
+  ],
+  "runtime_files": [
+    {
+      "path": "composer.json",
+      "sha256": "523f97c34fd72cc50b9278c43fa7233e5d87a2312b20764532743fe2fab62596"
+    },
+    {
+      "path": "composer.lock",
+      "sha256": "cdd2e7353bd5aa3836bb98141c27c8f765757bcf232d2ecc99dc8657d58c8587"
+    },
+    {
+      "path": "vendor/autoload.php",
+      "sha256": "92860fa65d1df3b4fb2380f21fe8dfac69bcc4baa6e3787d1034088012d440c4"
+    },
+    {
+      "path": "vendor/brick/math/LICENSE",
+      "sha256": "d2625cc652e6ffa9f16827f1dba2d83ac12b050dc8150a38720420dbb810cae3"
+    },
+    {
+      "path": "vendor/brick/math/composer.json",
+      "sha256": "fe93d538393d24617d615b373389d8a8970d8be18a8928d17c5a5cd9381a6522"
+    },
+    {
+      "path": "vendor/brick/math/src/BigDecimal.php",
+      "sha256": "ccf44c9e463182dd158190fd3b27b631ea7a58968505157e2bc715b61604515c"
+    },
+    {
+      "path": "vendor/brick/math/src/BigInteger.php",
+      "sha256": "a6d7b7824a8399ece864332672800f13be4ef57609f868dd577de2cf586bc3a1"
+    },
+    {
+      "path": "vendor/brick/math/src/BigNumber.php",
+      "sha256": "5a2a5ad1e73835fb200bbf1f959dbd36b8785b5e4a1c7c9ef505992130c08049"
+    },
+    {
+      "path": "vendor/brick/math/src/BigRational.php",
+      "sha256": "99d999ae1d4ccb9bbe231a2e5242f315b9483f317b8b5bd226277ced1a4ba2ab"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/DivisionByZeroException.php",
+      "sha256": "6dad71505461e21c56db4222659891b1a4efa8bf7737290418668aa881f6c3d3"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/IntegerOverflowException.php",
+      "sha256": "d4264eb4bc039baa7cb8a4aa62c8928c85ff947e9823532095e156d87392455b"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/InvalidArgumentException.php",
+      "sha256": "c25c58c48379436ce704ea28cc3c5cff5f853ed5e2b439e639d198ed7bdfddf9"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/MathException.php",
+      "sha256": "34033cc2b90fa897e9e79d05a589c8e6411b9a117a80765b58013eacad0b255e"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/NegativeNumberException.php",
+      "sha256": "2c6a1c878e96bbb06d07fcd64ce06b66e5ac56f5ba51a2ba69cdd62b1f5dfd6d"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/NoInverseException.php",
+      "sha256": "1e072b6b8802ef678cd8aed6aab4f5534e83e514c67c10cfbd457aa9e67d77d2"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/NumberFormatException.php",
+      "sha256": "9513693ceea593b6686ca7ef9253c595c6502145382f9da9872c791b37b5a258"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/PlatformException.php",
+      "sha256": "b2bc33189336bf6c8b3b145bd8c8397218e90588cca9ead140ef4a66d1c6be51"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/RandomSourceException.php",
+      "sha256": "462eb152713684b4d5ac0efe2fa27f8b2fd0d877ceb3e7315516757c5640e67c"
+    },
+    {
+      "path": "vendor/brick/math/src/Exception/RoundingNecessaryException.php",
+      "sha256": "3f9e061a0eeda28fc35d6f70cd1625c74d3002891c2d063ed2bede16155c8549"
+    },
+    {
+      "path": "vendor/brick/math/src/Internal/Calculator/BcMathCalculator.php",
+      "sha256": "aaf790516424d97f2257bf6fdc7eee9a95fc5440abd11d2fbc4f09ba73549b6a"
+    },
+    {
+      "path": "vendor/brick/math/src/Internal/Calculator/GmpCalculator.php",
+      "sha256": "0351a740b49e88cf379319af9fccab8c8f437cd5d54b2d57b79c1ea72fcc0420"
+    },
+    {
+      "path": "vendor/brick/math/src/Internal/Calculator/NativeCalculator.php",
+      "sha256": "4980f1a9b620a8de0588a018276044ed20c01293c2a0254613094e81e1cb6c1a"
+    },
+    {
+      "path": "vendor/brick/math/src/Internal/Calculator.php",
+      "sha256": "a92ba12d6e6487ef8ee6cf435ede5b2d4f4d4684b7bca14aa9c133b842724655"
+    },
+    {
+      "path": "vendor/brick/math/src/Internal/CalculatorRegistry.php",
+      "sha256": "7047026d82935de4736cb9f2f73915a75c2e9a776c68476b72bd430cab115088"
+    },
+    {
+      "path": "vendor/brick/math/src/Internal/DecimalHelper.php",
+      "sha256": "6884286a2dd2ebbba5d373140e2cca58d6efb8dd63b0868e517fb39eff4ad016"
+    },
+    {
+      "path": "vendor/brick/math/src/Internal/Safe.php",
+      "sha256": "26100429b186305ee9143f0b45c36168c1a7d039099dff13f5ab1a9ca2e32ccf"
+    },
+    {
+      "path": "vendor/brick/math/src/NumberSyntax.php",
+      "sha256": "f5ad04274721dd3bbc4572b90eb8e71fb47d052fd1ab6974e08aa013fef94b9e"
+    },
+    {
+      "path": "vendor/brick/math/src/RoundingMode.php",
+      "sha256": "1b7e6399d071d1ee922ec6ee928ae06bfa092b6d932af5faac8fbe65ef9b258d"
+    },
+    {
+      "path": "vendor/composer/ClassLoader.php",
+      "sha256": "d4b2313e562edf942838ec316d983c1a3459ca67da3e5658e861200b0b3693c2"
+    },
+    {
+      "path": "vendor/composer/InstalledVersions.php",
+      "sha256": "1e4525198301d1ed1f87ac3df2a8555a6f139f8df30a703d0b775a61963c96e4"
+    },
+    {
+      "path": "vendor/composer/LICENSE",
+      "sha256": "c8cce4b6b9729f264ffdf9296d505d63432497feeed1f586d1902b942197e024"
+    },
+    {
+      "path": "vendor/composer/autoload_classmap.php",
+      "sha256": "22d9f026bf030ae20f9458d3ae6f121606fdd371a29e0939f7f2b42c2bd3405e"
+    },
+    {
+      "path": "vendor/composer/autoload_files.php",
+      "sha256": "81eda60301f1375bd38100e693f54c1a10d8f7140d58bcc2b7eeb4468a854590"
+    },
+    {
+      "path": "vendor/composer/autoload_namespaces.php",
+      "sha256": "ede505407590638a435137f4e060136f1008de79fc169b3de9793423b0cea38c"
+    },
+    {
+      "path": "vendor/composer/autoload_psr4.php",
+      "sha256": "8cacae879324927cb61244d7e42fbe18c885369a8417b24e5def624631ab3673"
+    },
+    {
+      "path": "vendor/composer/autoload_real.php",
+      "sha256": "3aa6741202ad7da0be6021dd4fce5bc5780c2f41e8ca85663a8bc11231390105"
+    },
+    {
+      "path": "vendor/composer/autoload_static.php",
+      "sha256": "67459795d5bf55e4c3d3d379cde052b6d34b3bb5c4f2eb3258bde32c29317ddb"
+    },
+    {
+      "path": "vendor/composer/installed.json",
+      "sha256": "ca3a61e24df1e339b1e987e26bf285d694ee0661bd7fc3d8e56920ba3b703b3d"
+    },
+    {
+      "path": "vendor/composer/installed.php",
+      "sha256": "f70c4547a31474e53ef2d79f3894a310456d5f02e05956b7c58775394c47fc8d"
+    },
+    {
+      "path": "vendor/composer/platform_check.php",
+      "sha256": "41743d7195e89b976110c4b2ea6af4ea812d7bd0b8e5d600d6b2bda3df782ca7"
+    },
+    {
+      "path": "vendor/minishlink/web-push/LICENSE",
+      "sha256": "62547897c1c0e943d518b2a86b83b98a85e1e43659f5a1ef5e55088f608a947d"
+    },
+    {
+      "path": "vendor/minishlink/web-push/composer.json",
+      "sha256": "e509d1f75902b182bc802c93f5104c5622298adf24bbb6a56b9cae26f4487b81"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/ContentEncoding.php",
+      "sha256": "7b114805e129b0be52ce52c485d686609d78eb10320b940779e8a99ef8d73b5b"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/Encryption.php",
+      "sha256": "a57e94b17fade3969c4253e8e8ee4c6f902c11a94a408b7edf5af8fbb88e727a"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/MessageSentReport.php",
+      "sha256": "2d93a6e226801970f44e077c34f0e2782736a32628d19f0c11ae844666bc6464"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/Notification.php",
+      "sha256": "73e96fbbb2b8b75537fe44519a125f5fe8342f666b382174bcda699088433ffd"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/Subscription.php",
+      "sha256": "852d40026e2283a91706b6c5c8a6af74f60851c69e687519e44dc91407d46d67"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/SubscriptionInterface.php",
+      "sha256": "b7b7005bb66220fa8b840bb63776d32cfb606a8a4d96514db98887b47e609dc3"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/Utils.php",
+      "sha256": "c2a192c42666d9d11bbd6dfdf65b551a2ba9ade8c3ab8fcbe9f1f17a55eff4da"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/VAPID.php",
+      "sha256": "43eda1d5bf8723068fda91a630cd5b7cab446a538d0bb7d261ba5df6bb130b2d"
+    },
+    {
+      "path": "vendor/minishlink/web-push/src/WebPush.php",
+      "sha256": "c4459375dca7b340acd45fbe36ea5d2a2ffedb86ae0734c6b18dde5566ecfea4"
+    },
+    {
+      "path": "vendor/nyholm/psr7/LICENSE",
+      "sha256": "a683f57e45992c4f0e7394e2f99a7a49bcffee6f973e42c7b5b720af6c8a3f05"
+    },
+    {
+      "path": "vendor/nyholm/psr7/composer.json",
+      "sha256": "bd9ebc154d2f6d207ca245fa6739ffeaf9b4ef05f4c7febe7ba87d36622d6ca4"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/Factory/HttplugFactory.php",
+      "sha256": "f013ddc9269cb9f3ef9e41f7048c0c3480a2acfcfe250b83a83890dc03243851"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/Factory/Psr17Factory.php",
+      "sha256": "d54ebad6f281a56a745dc68edfef526e9215de9f51b28a4b67feb23cee1b8fd9"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/MessageTrait.php",
+      "sha256": "19440d84d353206a8715910414bd57f84e7cb7000a2f9cfa867d8f15b20e524b"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/Request.php",
+      "sha256": "605a1196b843a5fd2f13f138b2d25890afdd5128e241ea32d665e424cd70f54a"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/RequestTrait.php",
+      "sha256": "f662c13eed33696d1a0d760d687a80e19db81654fe94d886ba5fa268c2d74070"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/Response.php",
+      "sha256": "47be110bf8acedef3d8555d4e8a16b7d2125482b77ba50b29a2e0e3edf2cc8c7"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/ServerRequest.php",
+      "sha256": "65b9e137c57e767732fda2a0405901c95bea0ab21780c832483c46739b9cc026"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/Stream.php",
+      "sha256": "063897b94845dc3abe13259d00c7855d5be8c3d1676e9af81908b37f7a23f3f1"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/StreamTrait.php",
+      "sha256": "1f0b821cf1dc6612aa98dbbdeddbf8856e1479e5628d345c2b4404fce8266cf4"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/UploadedFile.php",
+      "sha256": "6432b1b361a811a60fe662aa5afc40d2826937b989a6587e2f072cb79b0afb88"
+    },
+    {
+      "path": "vendor/nyholm/psr7/src/Uri.php",
+      "sha256": "7f19627bf5d7bfe6491a7e47495a89a13af18054177d1d7fef17880c6be41feb"
+    },
+    {
+      "path": "vendor/php-http/discovery/.php-cs-fixer.php",
+      "sha256": "ec62cfbb4ab95c5f3a0893e6006bf29eb4a81fa70e74d4b9772dae7d3035656d"
+    },
+    {
+      "path": "vendor/php-http/discovery/LICENSE",
+      "sha256": "ac99bc614f4bd9908575f9d2fc239c82ab2b8a0626810837e191d0ebd5d1a5dc"
+    },
+    {
+      "path": "vendor/php-http/discovery/composer.json",
+      "sha256": "4ab41595a55992032ed418f5432ce98537e5dc55a14c0c8a8c28bec062f69ba8"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/ClassDiscovery.php",
+      "sha256": "322f6d1edf5ffcde64f99b59141bf9a2895ebe0cd2ac2896464833e7aba969ab"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Composer/Plugin.php",
+      "sha256": "e840bf8910dc3d5f7fb144cdbbf0648587dbb1dd371a04c9546e07d22c422d16"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Exception/ClassInstantiationFailedException.php",
+      "sha256": "296cfd2d3ca7f74a60c367754e37729276131c3d18366d7500ce15c280ae92dc"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Exception/DiscoveryFailedException.php",
+      "sha256": "a480f4ea87087823b5ddba70a0f7a084e236e261d5c60458a0cc491d65affb2b"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Exception/NoCandidateFoundException.php",
+      "sha256": "9a61266eb8d51181cbd4c7dfd42b8b9cad1c06435902308511112fb1a1c03e46"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Exception/NotFoundException.php",
+      "sha256": "88274140d874d98ed5579ada576b8422842c834bcc1bdb6ba3eabdf1e2eb1bb8"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Exception/PuliUnavailableException.php",
+      "sha256": "c19a443a8d9576bba5e2beb8fe34f7110de38b40ff547d7fa858ca0727044291"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Exception/StrategyUnavailableException.php",
+      "sha256": "aeaa7a65eaf9d73500d48d3b7e848edfdbb7de528d95c5ad4cf2c9358c3b4da4"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Exception.php",
+      "sha256": "f5e2cdba2f393877bc1443f5b407782bf1eef8183b38f50e8553154cd1923898"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/HttpAsyncClientDiscovery.php",
+      "sha256": "e69c694cc8df9a94988ededd23afbc7f7b64249c5b949359295480cc8672f52a"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/HttpClientDiscovery.php",
+      "sha256": "54fd5d5a71b9a4205c7e63715175c4d6722348f7d1375b89819dc7ec6fa5e04c"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/MessageFactoryDiscovery.php",
+      "sha256": "f9ad0b3da68785b5a189415f796b35f2bf72623e21c5c2cd7da2b1c0310f76df"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/NotFoundException.php",
+      "sha256": "d7d34573ef29c02695f1fe2371494db1230376420d8497d956fbe4002e46ad34"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Psr17Factory.php",
+      "sha256": "ea8fffd634312f756d4a1f1a64e1afed0e710137e95edc06a27ace8ec6717157"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Psr17FactoryDiscovery.php",
+      "sha256": "d63bf1cb9a0f88ae7a5a7ab60ce3f20f3b7626077be6085f1dc0dd3cbc1508f1"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Psr18Client.php",
+      "sha256": "caa29c0ed4718a508b7e7a01e8809fe0826492e8670ab893d1a77fe64879ba43"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Psr18ClientDiscovery.php",
+      "sha256": "d58834e14bbd939f01652a5eace372d3f5169105abbed639a847f6062a9164e4"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Strategy/CommonClassesStrategy.php",
+      "sha256": "716c61a2bdf15c6aa295d415dd4d3c8bf965d4bf4cb959523fb25f0bc33c4a9c"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Strategy/CommonPsr17ClassesStrategy.php",
+      "sha256": "0c3d99057179b855664a36bbe7c000dd91dd7f6703951b294f2f326ff2429ac9"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Strategy/DiscoveryStrategy.php",
+      "sha256": "8d5600714ed6c1403cfbd559dfa2b6871b3ea0fc8a93c08394108221dcc3864a"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Strategy/MockClientStrategy.php",
+      "sha256": "087a62d04a92004e0b5a0ba09b6924109283ee517e1962f6c51ca4ba4065fc45"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/Strategy/PuliBetaStrategy.php",
+      "sha256": "5e69c46e2b9ebfa9a3d9d36c46d67de40b452826df3b54e3e43b27430ddc7e3e"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/StreamFactoryDiscovery.php",
+      "sha256": "2bf8707a06b1808ce24a40e27a845ec7d4f74b89e69a938396e7a976faaa595a"
+    },
+    {
+      "path": "vendor/php-http/discovery/src/UriFactoryDiscovery.php",
+      "sha256": "144033b8b74a7287649fa8d939e4cda96d9d2a6007ae35a9b3d5f98b7d129c1c"
+    },
+    {
+      "path": "vendor/php-http/httplug/.php-cs-fixer.dist.php",
+      "sha256": "519bb57f2bda861e6c8eceb2b2d61c84c2d468d1645358f22cc884b5ec29777a"
+    },
+    {
+      "path": "vendor/php-http/httplug/LICENSE",
+      "sha256": "5f0b45033ea15c407280938c1432ed23488ea3a77e40a35fdced08601c1d8867"
+    },
+    {
+      "path": "vendor/php-http/httplug/composer.json",
+      "sha256": "18d55e45278650186ce4f5b86c17e65516083aae41cb2ed3ba057fea27c73321"
+    },
+    {
+      "path": "vendor/php-http/httplug/puli.json",
+      "sha256": "a524b1178a39f1210743a3037d7d99e1b36e70f6b1e15894414b5bdb35144a10"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Exception/HttpException.php",
+      "sha256": "c1ebd6a13f893c62830ce4f2de7a8713504ef9bfc405327b8d58b38950a49a03"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Exception/NetworkException.php",
+      "sha256": "18154e48703c82c93e8faad68b88dcedeac5cd1a338310cc392e9f0841d524d8"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Exception/RequestAwareTrait.php",
+      "sha256": "f32fc0a99f815e15b71a0e626d586a799411d884a9c8714df94aa501f6b6b344"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Exception/RequestException.php",
+      "sha256": "68872d4e0ab63a503d0b004817d82b3600d7f35371d9b0625fe4d245ca3c5f91"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Exception/TransferException.php",
+      "sha256": "9aa050fda64b0141ad70a05a54ee5adc2db4728f2683224ea9d02fb1bffea39f"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Exception.php",
+      "sha256": "f9cd9f3571195311338dd1dc2f0993c3a5f9f941ed4addcc8cff2084c2b9d4ba"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/HttpAsyncClient.php",
+      "sha256": "84c29de0f2b93674b79da69393afa3eacf013b523082210cec1520a70b23a65a"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/HttpClient.php",
+      "sha256": "b8f004e864c3721a7d6ae208e4ad18019049fa0c2073601c079121ea77e8d93a"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Promise/HttpFulfilledPromise.php",
+      "sha256": "7d4f1e9c8945bca32e9ac8eb541a4b97520f19eb97c9fe327ca1a7ccb43c363e"
+    },
+    {
+      "path": "vendor/php-http/httplug/src/Promise/HttpRejectedPromise.php",
+      "sha256": "d30fbc693a907525177a771e31f61db0945d3f741e922034d952c36ef42d2d1e"
+    },
+    {
+      "path": "vendor/php-http/promise/LICENSE",
+      "sha256": "ac99bc614f4bd9908575f9d2fc239c82ab2b8a0626810837e191d0ebd5d1a5dc"
+    },
+    {
+      "path": "vendor/php-http/promise/composer.json",
+      "sha256": "2d482fbd305eaf7abe9204decb6a062b74bf36eb02ebd7d6fd8c7b1359f0e4b1"
+    },
+    {
+      "path": "vendor/php-http/promise/phpstan.neon.dist",
+      "sha256": "d4534ef13249776cfccda81e1a2e8a9a0a317323f5cc46b85a43f8dd6c847b1c"
+    },
+    {
+      "path": "vendor/php-http/promise/src/FulfilledPromise.php",
+      "sha256": "a8d0409cc01048b236f50a0d4dd63cc45a4de15b7a789bd0fee89911d1ada391"
+    },
+    {
+      "path": "vendor/php-http/promise/src/Promise.php",
+      "sha256": "506cfd0fd55a0184c9dcc89d384a586aa43c1c14ce3dcbaa55ed0a296473be18"
+    },
+    {
+      "path": "vendor/php-http/promise/src/RejectedPromise.php",
+      "sha256": "0c4061bd33b87efe19b4bcd455ebaa7071eaa087ad4d0fb0178898da8af1d3ee"
+    },
+    {
+      "path": "vendor/psr/clock/LICENSE",
+      "sha256": "8f35dcf3247dcce7f0c4d1ad51de19726a56a43ced7a59ad1df0378125ac9227"
+    },
+    {
+      "path": "vendor/psr/clock/composer.json",
+      "sha256": "16dc2de432f61df46987cb2d7f66bb9d5010adbec5f0c77db172a1c59c3363f1"
+    },
+    {
+      "path": "vendor/psr/clock/src/ClockInterface.php",
+      "sha256": "da2cd72f7727f28088ea329d6e23cdb8167f0170aabf6d1cc59662eb04f6eb3f"
+    },
+    {
+      "path": "vendor/psr/http-client/LICENSE",
+      "sha256": "ea5ec78820494a5256b0ccbecef9212bc7b93b797273ab08cc2eaa34e0ab3e50"
+    },
+    {
+      "path": "vendor/psr/http-client/composer.json",
+      "sha256": "0ac2435b7bf0fd6ded53a95d2a8914d8a326f1902b512314391226ee52911af5"
+    },
+    {
+      "path": "vendor/psr/http-client/src/ClientExceptionInterface.php",
+      "sha256": "2ae6b264ddfc8d48096fe50927634a6b406e1eb26e1d00bd992e9aa36f55410b"
+    },
+    {
+      "path": "vendor/psr/http-client/src/ClientInterface.php",
+      "sha256": "f377b570f3211f8d824c7f1edd5c2288c97b51cc27347b1aa74988b05616e137"
+    },
+    {
+      "path": "vendor/psr/http-client/src/NetworkExceptionInterface.php",
+      "sha256": "93b74d294718e772af07780a6df2bb13671701df8a1d1e752d79cb3decd08f66"
+    },
+    {
+      "path": "vendor/psr/http-client/src/RequestExceptionInterface.php",
+      "sha256": "1bcf5fc2b4a6e1a982020caddab497edd889124fd8d17aea1efb1895cb96ee38"
+    },
+    {
+      "path": "vendor/psr/http-factory/LICENSE",
+      "sha256": "d2e70341a9667b93ad542e4842b0b7022d302aa7c2d2a909b156b8f1e3c4cca8"
+    },
+    {
+      "path": "vendor/psr/http-factory/composer.json",
+      "sha256": "1dedaf2d8613201a978dbcad920bd7a332cd28c95be57c0d75be7a8d6e868362"
+    },
+    {
+      "path": "vendor/psr/http-factory/src/RequestFactoryInterface.php",
+      "sha256": "95bb9e09f52d05bf09630cce49abbfdb2282d396ccc3e16e77e3a9f54cd4071f"
+    },
+    {
+      "path": "vendor/psr/http-factory/src/ResponseFactoryInterface.php",
+      "sha256": "fb58f39db8e472bed4109f6392443a10785305ccc0c920d11f98208f91214e02"
+    },
+    {
+      "path": "vendor/psr/http-factory/src/ServerRequestFactoryInterface.php",
+      "sha256": "8584390af1bc3c624918525e725a7cfa639366c15bb7a3c7c065d04d8a20703b"
+    },
+    {
+      "path": "vendor/psr/http-factory/src/StreamFactoryInterface.php",
+      "sha256": "25fe9d048ce6718141d21c122ef9b3498be45025300717ccbe912ef5bc0083ec"
+    },
+    {
+      "path": "vendor/psr/http-factory/src/UploadedFileFactoryInterface.php",
+      "sha256": "712c705ac850b43dbf47458e571c8be314d1d1f01b0e470407ed014b702d9e5b"
+    },
+    {
+      "path": "vendor/psr/http-factory/src/UriFactoryInterface.php",
+      "sha256": "2600f967cd969706dcdff326d3fe602e812110352c75c6b5e9773601f2d17c7d"
+    },
+    {
+      "path": "vendor/psr/http-message/LICENSE",
+      "sha256": "8d36e938943b04ef01994bb148793c971685b746d0ced31da03a97594a47ee62"
+    },
+    {
+      "path": "vendor/psr/http-message/composer.json",
+      "sha256": "96781ea96de30367767e298f5a340a040878144b7540ce490c9089bf7e0b9b37"
+    },
+    {
+      "path": "vendor/psr/http-message/src/MessageInterface.php",
+      "sha256": "1ef5798924509ccea3ff3e596af4c5b6b63e121f7d0441503310b29cf837b9df"
+    },
+    {
+      "path": "vendor/psr/http-message/src/RequestInterface.php",
+      "sha256": "3d7531e17a3e704d7bed9f0f2bb37ffc7f1842a2cd39f789ce7e7a4023d434f9"
+    },
+    {
+      "path": "vendor/psr/http-message/src/ResponseInterface.php",
+      "sha256": "1cc32dded30a668714b17688a2be8a0053effb7fabe7655bd4459ecfbc6eeb44"
+    },
+    {
+      "path": "vendor/psr/http-message/src/ServerRequestInterface.php",
+      "sha256": "43c218d6c4426c7f1d354b20736ec77be924b94e7c1b11786057de6c3f3f66e8"
+    },
+    {
+      "path": "vendor/psr/http-message/src/StreamInterface.php",
+      "sha256": "0a3267552ebbcac5f0cd522dd10d96ad985595fd4f90d8566b449db2e060b385"
+    },
+    {
+      "path": "vendor/psr/http-message/src/UploadedFileInterface.php",
+      "sha256": "2823ae936f8f0030879fe12a507080d4eb91c6a534f57ff38e8f37561d78916c"
+    },
+    {
+      "path": "vendor/psr/http-message/src/UriInterface.php",
+      "sha256": "8d96e63fb984db31eaedd858ae60549dcf6332c939d4cc940ca97f1fe6d91d1e"
+    },
+    {
+      "path": "vendor/psr/log/LICENSE",
+      "sha256": "6e944907067bae93c00a9f2ad51032243820b22df34b77c77690d46cb2e98e24"
+    },
+    {
+      "path": "vendor/psr/log/composer.json",
+      "sha256": "1f8dfc72d50f452d0795681fde72b7c008eedd4fcbca482b70a35401c9fbb661"
+    },
+    {
+      "path": "vendor/psr/log/src/AbstractLogger.php",
+      "sha256": "84c69c6cc60fd805eb525daa79bd04a8d0b73e52776e1a0c2a9e666b37b4512e"
+    },
+    {
+      "path": "vendor/psr/log/src/InvalidArgumentException.php",
+      "sha256": "403c6def4d4199a12cb4a54e804c7d29405968871366500f72d6f3ea401bfc64"
+    },
+    {
+      "path": "vendor/psr/log/src/LogLevel.php",
+      "sha256": "9f2520b22945ce1599c4fedba0a4c75985f172ca86cdf386766ebb8b2363768c"
+    },
+    {
+      "path": "vendor/psr/log/src/LoggerAwareInterface.php",
+      "sha256": "076efac38ab493f4fc3e701cce9a2641135048f2bf0407b322c45712ef73813c"
+    },
+    {
+      "path": "vendor/psr/log/src/LoggerAwareTrait.php",
+      "sha256": "eb114e265de2d1c8c1190b0fa9cb5f8a25e262a46d1d28d1aa02f01aaf025c64"
+    },
+    {
+      "path": "vendor/psr/log/src/LoggerInterface.php",
+      "sha256": "05aecbaded98967719d76a058ea27465ffae03b7800dc36049e1ed23c825e6b3"
+    },
+    {
+      "path": "vendor/psr/log/src/LoggerTrait.php",
+      "sha256": "c854406af9c4706980e93183b5f37fa9cca523df9bb1019a927f8e4713834172"
+    },
+    {
+      "path": "vendor/psr/log/src/NullLogger.php",
+      "sha256": "22fbb348f7b25259ca801f595fc9aa22b9f035a44e7899687bd89bf4070d78c8"
+    },
+    {
+      "path": "vendor/spomky-labs/base64url/LICENSE",
+      "sha256": "2e3cece15d737d1694e6ef88c00237c13829bdf9abb9a5c6ccf6111a2906a073"
+    },
+    {
+      "path": "vendor/spomky-labs/base64url/composer.json",
+      "sha256": "821c542395dc71056c2bcaf922a11fb3af68469595487ed6cf93f98767640b48"
+    },
+    {
+      "path": "vendor/spomky-labs/base64url/src/Base64Url.php",
+      "sha256": "4b88f0f99f98fe9acdc0e8aa4d723cbbd53cb97753472cee1fa41da2f7821c68"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/LICENSE",
+      "sha256": "886d60c46ae5a9a368a6b5069f7401664eeb1c3648ffc202f8d228b5557eccf5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/composer.json",
+      "sha256": "1dbb474eb91491dcb4fdd1cd8295c1737dd9d254231f947805980a4761c381cc"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Component/Identifier.php",
+      "sha256": "0fb56c0dbb17e9b519c16bf7dd48e933d6382e337087321bbbfb80772bc65bc8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Component/Length.php",
+      "sha256": "8eda01eee49834f73aa64fec23d8cc32acf5b5a05847bee65f6d8bd03b350c52"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/DERData.php",
+      "sha256": "41e61222469c16dea78acc49c999bd8231501897da44bcdcdbbc437801f16b8d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Element.php",
+      "sha256": "6e952595021322b81dfbb332833e12d6a6c265c7344b88a1d104c2233c1d290b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Exception/DecodeException.php",
+      "sha256": "b3cd21b7159ab5f07bdaa9ab8b090749056d60fbd0997e0a6684d84e03210444"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Feature/ElementBase.php",
+      "sha256": "bc9ce0d92c438a67b104d1924987ea465eb0ee3b8a981ead8aa4b1893b275d4f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Feature/Encodable.php",
+      "sha256": "d8ab20779791e557a5d35866b17d7694c535dbb6d4b11b7ba1cd8aba460e8bf9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Feature/Stringable.php",
+      "sha256": "b4fefa7f635b7a2f666bfcbdf55d56f5a1de1b39ea945165f1f350bd213f5482"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/BaseString.php",
+      "sha256": "b323cf5d367fb2dc08ba5709372fe6184e031ac5db8660ceab5d44a2b47980db"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/BaseTime.php",
+      "sha256": "b14b1574ade247799b296134f0b87b36bc0780ca5543dd06e6a123d506d648e6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Constructed/ConstructedString.php",
+      "sha256": "43331b4d920c74c4e28e564fa2e48464e7a9ed7289a7b09437886e236c35578c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Constructed/Sequence.php",
+      "sha256": "687b6950166b5943321be8feda6632b1a23fa89ea21165fd4fe8902265174029"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Constructed/Set.php",
+      "sha256": "ab933df0c7d45f641b316024cedfbff7949f492a6766b476da4887dc7d3d4c65"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/BMPString.php",
+      "sha256": "24aebe45331f4d036c15bb79cc50a02545f592170703fb04810c102b152514c9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/BitString.php",
+      "sha256": "b9e881bc074590b15c5f4b295b3ff856c3d47bb0916dad7c95acf7c4965857ac"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/Boolean.php",
+      "sha256": "3175a059edb08af89713235bb9a30b5404858d3583b6778960823796d7fb5fae"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/CharacterString.php",
+      "sha256": "87d13f27d9ac8e46f6f82442165538e7afeadf8eb05b5c569e17f08c2f14a864"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/EOC.php",
+      "sha256": "0625d7fcc4094cdfac93fc497ec196a05ccbbe2abe66500ab04d0bb11e9d2806"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/Enumerated.php",
+      "sha256": "5665dac54c0f2cade7fd3bf7abe6c4dd8c64ccd02f77c63b3192405cb388aac8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/GeneralString.php",
+      "sha256": "0a5caa266be8ba770532846b752242b59e84eb57c2d0b9bf43b394d8594c2b47"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/GeneralizedTime.php",
+      "sha256": "bb1604a379f301ecc002648ebe00a66ba617f527cdd1b8a625588008872ea162"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/GraphicString.php",
+      "sha256": "e46d19d74875e005da4f9b70ad04fa8b22321872fca53a556f36a1b062807c42"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/IA5String.php",
+      "sha256": "8c3225a4b2f3beced3e743cdc7ad6c8c3b8a74d09fd79acdf3b292d9e9fe47c9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/Integer.php",
+      "sha256": "11d7c3ee413f56c35b0771dedcb3fa5982ef682db099f8754e221ac016dcf94e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/NullType.php",
+      "sha256": "610745f355ee27559edf1860c00a3fb20e6d8e452d9612e3c7d568ab0cfbbfbc"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/Number.php",
+      "sha256": "5cae47fdc2856f994a8f544f7c6b278af74ac6972d2585d21127abb7f324a342"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/NumericString.php",
+      "sha256": "3c4a2356d07eaacbc948b8da5ec55178ca034baae6aee9553f03a683d148a10e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/ObjectDescriptor.php",
+      "sha256": "64968cbf2a08de4bb9891484a083f4cdcd56e9ff8507fe07ba61b4f05ad660ee"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/ObjectIdentifier.php",
+      "sha256": "410d3d4eec6e577815a87d252ed58dc186b83b1109b85142be0e7530d5b7cef9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/OctetString.php",
+      "sha256": "b184f2ae792f47380e8a6c3af5382ad09e2436926768669d1c6189099c07d227"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/PrintableString.php",
+      "sha256": "336587800500e43a01a28eaffb383412b925eb452f7bb785c940a353c0bed273"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/Real.php",
+      "sha256": "35bac2d3042a346e3564a737b050f477d5a590c4b9c776def58cda637de66496"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/RelativeOID.php",
+      "sha256": "09e377663e3d7501e499abc25fd0086b45a8b9f53a1c91f044ed85b2121776ac"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/T61String.php",
+      "sha256": "6991d3055006421ed97416d66c763e687ed2bc70b04f19c89b3c224239002f2c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/UTCTime.php",
+      "sha256": "2777c1107e292626ede703b44ae36cf4c3091ca23db0a86d683fdf31a49ec8c3"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/UTF8String.php",
+      "sha256": "af5ee8d2b4e4621da97bc36b71ad1d7bca4ede64db442039da0c1eec7803d9a7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/UniversalString.php",
+      "sha256": "c31bf96e632be3106b64458408dddeb1bdeb8462cf290d888a7504668495fab1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/VideotexString.php",
+      "sha256": "46c5f753be7e82ec237369e1d344a1d7595b732efd60812729705b7134eb57cc"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Primitive/VisibleString.php",
+      "sha256": "c9b586db935036723f718d38918e8727e0423d503eb634493bcfcb9eabdb85d5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/PrimitiveString.php",
+      "sha256": "8fee531ee73cf9bac442387c7e379986d1a07eaa8de309f16f96ea9889d190af"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/PrimitiveType.php",
+      "sha256": "1ae4c11d8b80d8b06f7109cbbcc67c6442028f71a574d1222b7c51b1768bbce3"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/StringType.php",
+      "sha256": "ee4cb40577abd759acb2d6c924547c4c8428ab7719f68f6dab5da044fa76b929"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Structure.php",
+      "sha256": "669d6ff7ed3f630bb1640e4876246f3a996e641ef9c7db9c8aa24abce86b7730"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/ApplicationType.php",
+      "sha256": "a0a38c197548925e05be44c6fbc693dadef25fcda75d2f9ec6311012bd7c8a9f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/ContextSpecificType.php",
+      "sha256": "c9b15e3b3ff743e886f48ee1b96ac77273795ccfbc33c5ae5a4c7781ae5c3e1b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/DERTaggedType.php",
+      "sha256": "8aa1ea9642c03118303b41375120ab947b0b77ee9a0e9ef6f32f8fe0bb4c87c7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/ExplicitTagging.php",
+      "sha256": "d7a8b89029156a8d690ee013a5ceeb824a0e3f6d563d9e2d949b8c75aca57367"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/ExplicitlyTaggedType.php",
+      "sha256": "ccdd6e647fa5c44844fed3f3306725dc7eadeac4121711bee90b2d8f3736f4ea"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/ImplicitTagging.php",
+      "sha256": "f19e7b2b3e7be46827befa86a634b696fddfe8dda5046dba7be6f9e6bddb65e1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/ImplicitlyTaggedType.php",
+      "sha256": "2fcf853e69f0c1019759340340bea9902444c027d9490747a5f592334297755a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/PrivateType.php",
+      "sha256": "19e5476cf4064b77df16e2fd79cf865b40891b93e04488c32dac4a4b08d2ac74"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/Tagged/TaggedTypeWrap.php",
+      "sha256": "025930f32eb977e1250a6b20b8530212a7ef2f37164d2f6bd3230c09416e08dd"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/TaggedType.php",
+      "sha256": "d9d17b73f7dbdd05aeac1a736154e0e9dd4e43dd3fca45c37bd4bdb09e3627aa"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/TimeType.php",
+      "sha256": "b793945b0b18af62cb5c6e40f27e27b46114fcc8be99684c8065bc54319cda03"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/UniversalClass.php",
+      "sha256": "153b8906115c631f7b290d12d79a9072ac86c50c6a506e97320b89ece8d8fb0f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Type/UnspecifiedType.php",
+      "sha256": "740c61afdebcbd4796213da475efdb841e624d9763a869f201d61b26e63ada3b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Util/BigInt.php",
+      "sha256": "1e6dafb60ef16e56ec07b139fc206f6d920d67a86190a2f7e18c517c8bb020b3"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/ASN1/Util/Flags.php",
+      "sha256": "0f0b965d039cefcaff7be133766113bfe6d777309fad0305bdaf0c65c40a6fe4"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoBridge/Crypto/OpenSSLCrypto.php",
+      "sha256": "387382cdfc434f874845263321dac42bb25ddae3d9560b43b0f77ca3d57f8dad"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoBridge/Crypto.php",
+      "sha256": "424f6afb26eb2b51c5f6121bbe616e0c5bfa2de5d2a9ad4cf3344a3321ae4c1b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoEncoding/PEM.php",
+      "sha256": "c5a835f4bf5f5ad9e4cc09966ce7f2c2d23d8f5801ee378a1baa9995b5ae636c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoEncoding/PEMBundle.php",
+      "sha256": "1be004e488975f8c12ff9d9fe12bda89a77b92050b29dd088ef84fde58cb5b3f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/AlgorithmIdentifier.php",
+      "sha256": "63c726b0ecf5d54d5bcf5879b260b79bacbe2ad5c99dcf2d895f1c79b6121b19"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/AlgorithmIdentifierFactory.php",
+      "sha256": "50fd0fa3fa91261f7d6199c91e162d73ffc28401a8e61ab2396c6f53a3981ea5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/AlgorithmIdentifierProvider.php",
+      "sha256": "3be9ab5f43e772d5969b029a9714be85acd11b48f4e5611eb8156cad7b6908e4"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/ECPublicKeyAlgorithmIdentifier.php",
+      "sha256": "094b7729fe0211e0b4e4a09b28e63a36a7adf099c75d205e47e148354fda14df"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/Ed25519AlgorithmIdentifier.php",
+      "sha256": "badc4e6eb28f827c88f2d54ab63f90b0b01ffe0de93e56686e4f793483a0762e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/Ed448AlgorithmIdentifier.php",
+      "sha256": "88ee7b3e9934083f180b77f8e1da2e9fced8f0f2c5204d387bf049b88a278c65"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/RFC8410EdAlgorithmIdentifier.php",
+      "sha256": "1dec2acb38df64dffade20d6a84141d9d7e23d5a5c3efaaf57125fbb5bb94723"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/RFC8410XAlgorithmIdentifier.php",
+      "sha256": "6b5362188e2390945dcbc6c074e4ebee63b3f4077f5c7310ab6ba857b1e32260"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/RSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "b59a85e7b48a6e28c16e68562da0ea8b270f42f9aaac6043e763e46e1c1d173e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/RSAPSSSSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "5fbff3fae85aace22911a51e68b0f57fa0d05b3ecfd30314ee9b779f2d1eadaa"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/X25519AlgorithmIdentifier.php",
+      "sha256": "75f1b814f55bf9e8ca5a3c3808a994a7d2fb03e3129b53698cd97f99d2478552"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Asymmetric/X448AlgorithmIdentifier.php",
+      "sha256": "a0a842d695ed83bd1bcd486d898787e4465cfc74b7595dc5a85dfa556a04fb4f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/AES128CBCAlgorithmIdentifier.php",
+      "sha256": "eab3b06fffd862cddfdd6c18ea636bfd74482c189357c66d7a6ce1f1bd600617"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/AES192CBCAlgorithmIdentifier.php",
+      "sha256": "d9de1652da28861fb1c9894492052677fd182ea68383dd0bd2962d4c7dc3ec63"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/AES256CBCAlgorithmIdentifier.php",
+      "sha256": "5c81f44964b36d191d0e32813c31154125858086c35f2b087e9b205570542354"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/AESCBCAlgorithmIdentifier.php",
+      "sha256": "8c09fb9de52805af7b03edfc0e7eee8114ef6f7b08431597fca8829eaabc366e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/BlockCipherAlgorithmIdentifier.php",
+      "sha256": "3ace2eb427c67eb662f91a9856acbfa0ded9f142041cb973bb6567928606d327"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/CipherAlgorithmIdentifier.php",
+      "sha256": "b5417fae8070eeaa24d08a2422e8f8225bce50cc2c5562a57523addab1722600"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/DESCBCAlgorithmIdentifier.php",
+      "sha256": "002654b39ec9a55f1855ddaddcef70e93207f7c6975cd30834d3dc1c2f82060b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/DESEDE3CBCAlgorithmIdentifier.php",
+      "sha256": "95bce3401a6e291c2604a350cd14802782a70067b76ee0e4dc83abba90d82044"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Cipher/RC2CBCAlgorithmIdentifier.php",
+      "sha256": "1b8bc74705e03bd15ceda184c64f3560bf983a79f156b598424982914d5d4d91"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Feature/AlgorithmIdentifierType.php",
+      "sha256": "beb9c40a2c3c2286358edd7ea751ee0b92a95865a80a74f04037901ae210eff9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Feature/AsymmetricCryptoAlgorithmIdentifier.php",
+      "sha256": "812df61c767e00db587be47dd350acea75a3fa21cd668a6e31a9bc496dad0f10"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Feature/EncryptionAlgorithmIdentifier.php",
+      "sha256": "8933f1e66d59b8625da9f9d60f2627a9cc096c08df27ba4bb6d7e35e7a972d99"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Feature/HashAlgorithmIdentifier.php",
+      "sha256": "a1a75535d5929ebecda3bed066e7dbdf5a21f9b05c859db313360c4a493d3381"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Feature/PRFAlgorithmIdentifier.php",
+      "sha256": "767cce927157b26edca96880be1e13a53a719a4abe590722ebd039ed2ae33582"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Feature/SignatureAlgorithmIdentifier.php",
+      "sha256": "ca48d5c68ba37688757df1baf6c0a7d39a150f6fb1f0993f7938ca33478d05b9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/GenericAlgorithmIdentifier.php",
+      "sha256": "cb0fb98c1f19472e8a936853d723125709f610c41b0ab54120ed32e97a911453"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/HMACWithSHA1AlgorithmIdentifier.php",
+      "sha256": "0ea6a2f76b2950e381841c0972543da93ba5b1ac742b351bc47eafbf7d6fe5ef"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/HMACWithSHA224AlgorithmIdentifier.php",
+      "sha256": "d86429a1a284e2db916fc2bdff27c9f35449e4471ac37969623f10628ce01f8a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/HMACWithSHA256AlgorithmIdentifier.php",
+      "sha256": "8b05a3d19effcb88dc0cb355f5d91e3a97613862401250c2b5af79c16eb08f51"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/HMACWithSHA384AlgorithmIdentifier.php",
+      "sha256": "c7f8191add9ebda6ad432fc1d5bf564d934a125586aaa0723df9a2355bc0148e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/HMACWithSHA512AlgorithmIdentifier.php",
+      "sha256": "09a51356fc137f8cce339a1cd06d7ebfaf711797edc09c618b81534d5db5e57c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/MD5AlgorithmIdentifier.php",
+      "sha256": "643b8b8f689506f922efe794e1b59e92867b9325ac0dea2b67fc019f09fd312a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/RFC4231HMACAlgorithmIdentifier.php",
+      "sha256": "ebed57114a24507d44e8d2cec8aec89548181520f2db266e5607e00ae8d076f6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/SHA1AlgorithmIdentifier.php",
+      "sha256": "911d672fd44c8f1642265b8b8f611ee6b4caba19f1f116212cc379f4458ceade"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/SHA224AlgorithmIdentifier.php",
+      "sha256": "56d809c6dabafbe0499e2e908d44e65baa5efc4f7b2e925547e1806e6164ec6b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/SHA256AlgorithmIdentifier.php",
+      "sha256": "f189edd9230cfa8a980289bd566117bfa9144d9d91147109de3e93650ef72a65"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/SHA2AlgorithmIdentifier.php",
+      "sha256": "4a5ff4967c7f0ab93c63c96ba5ac85374b9872840c2e6d93913b352b0923ab3c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/SHA384AlgorithmIdentifier.php",
+      "sha256": "b79c505d66681041196a19fd5e4046ef767ea820cf0fed33df3f048cae7dadcd"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Hash/SHA512AlgorithmIdentifier.php",
+      "sha256": "638c8ad3e4bfcb61e399b705ceb2f1b0858df0475266ae9af813db708e8bf60b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/ECDSAWithSHA1AlgorithmIdentifier.php",
+      "sha256": "cf6cac4c092a162f283b7ab93d220a9d489d5d97fc47323d6fe196dbdb2f20cc"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/ECDSAWithSHA224AlgorithmIdentifier.php",
+      "sha256": "6be3373e61cd0273beb1214e22c334546d31fe4c5011beb3a66fc5a9ae6d3e5f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/ECDSAWithSHA256AlgorithmIdentifier.php",
+      "sha256": "aaada5449721d1897ca781c9557a3f2293d190640b80d2821e85baa1976c3e19"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/ECDSAWithSHA384AlgorithmIdentifier.php",
+      "sha256": "1712810da9e351320120f349c0da77b932f44a80e33c09ffd7d2803753d6a2b0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/ECDSAWithSHA512AlgorithmIdentifier.php",
+      "sha256": "77d241de0cd60c7b71acd03fc0cefb36848641cc69d6f1a872a7b250a0085559"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/ECSignatureAlgorithmIdentifier.php",
+      "sha256": "5f4a2d32edb689f33916172e8de5611a74cb348b5e7703e5f7bac3bdf66c4614"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/MD2WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "a800a178c33f0fa11b20d5ed0d11b820d41525fcbd14dabacbbe562cd1752890"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/MD4WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "649c2f43bdc597f9c845eb520dc62113e63b5c722e000a357f83f7d2d0d86469"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/MD5WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "4cc709ccdcfdd04182d19552d6dc1212ac47b35acbc5c1bcc909b420124b204a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/RFC3279RSASignatureAlgorithmIdentifier.php",
+      "sha256": "ea79cd97e151937c398f8be17c855866e3493196b43efd3e99e74acbb376e095"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/RFC4055RSASignatureAlgorithmIdentifier.php",
+      "sha256": "9d160dece2cde5d96e72845e54c3e7243a1022d39cb2864447898d22cd3b9591"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/RSASignatureAlgorithmIdentifier.php",
+      "sha256": "0e7698e5667ab7b39dc752631025c90df7fdc576daf91e80922c10eb8d38b9d9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/SHA1WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "b4e67c88dd4e45351f63e1f236f7893d40a8882f30b8432c9b7fddcadc9fbd3d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/SHA224WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "4739d6ecd799c43685388a7f5779c46c1a1f98b2530fdbf7614b68db8a397ca4"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/SHA256WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "f8f14593be6f57f6f00ecb869dd63006988745b0dd6956566860801dc6288dc0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/SHA384WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "85977b421ec889e127c87e47796997c48d8c2d531b96bd90f406144b3483841e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/Signature/SHA512WithRSAEncryptionAlgorithmIdentifier.php",
+      "sha256": "436fb7879d76de1c8499b1da4c833f1f960c111575a60198d849fbe21424dad1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/AlgorithmIdentifier/SpecificAlgorithmIdentifier.php",
+      "sha256": "9b76bb324fcb580902fe65136f976e9cbeffa712395c748dbec28ad448bde05b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/Attribute/OneAsymmetricKeyAttributes.php",
+      "sha256": "c088548cc9baeb7e85db5cdad8d958fa85003ff5e6be1285b4c77fc512317dca"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/EC/ECConversion.php",
+      "sha256": "c9acfac70a5b00c33caab45c59d2ae647235b0506f2fe3cbe1266feec10c415a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/EC/ECPrivateKey.php",
+      "sha256": "797afa3970480651a68466e872a4bfbdb8446b2d461bee43a1b336e2f436dcce"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/EC/ECPublicKey.php",
+      "sha256": "01bec9b498eb35463b49fd509488c8ccc6bc77b8c8d2e29a8ef024315d2ef63e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/OneAsymmetricKey.php",
+      "sha256": "4bafb26cd6314dcff07299c7926205a56ef44838929200550617a5c67001fd24"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/PrivateKey.php",
+      "sha256": "485fa4706eb72b9dd347df0b5f5c926f935996501781c099fe1a8f38acd4cc6c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/PrivateKeyInfo.php",
+      "sha256": "0cc831454a4c625fdedd66be77ebec8d3dd2e61475399b57b2cc7d648760b87d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/PublicKey.php",
+      "sha256": "2b35eb132c879278555e813fb70595e80fb44c140d3ab696cb8472afcaf5ec80"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/PublicKeyInfo.php",
+      "sha256": "7c4accd55d7619f535b6f090bdaee5d43ed1c872146ceaea19fbeba81bfb8c68"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve25519/Curve25519PrivateKey.php",
+      "sha256": "916589baae1410ad4164402e8769841a4d38ff5dab811987d9c836afa620ba0d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve25519/Curve25519PublicKey.php",
+      "sha256": "75def5fcb29fc1f39c2766f5ecab8fc5199c124decd74e3bda82eb17ee7590de"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve25519/Ed25519PrivateKey.php",
+      "sha256": "75328b6177c8329104ebddeb83579475d8ebedf51841883ba18e34f1a61bbc6a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve25519/Ed25519PublicKey.php",
+      "sha256": "77fae1a9240f2b5d69bfd9004039db3a97fcaca621854b093e4b75f43b47c035"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve25519/X25519PrivateKey.php",
+      "sha256": "d7c8431a637669aabe5be9b431db219d9dc79dfcb24a0a57086b72735d0148d8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve25519/X25519PublicKey.php",
+      "sha256": "505d0c656b2de009a33547ae450e13af4ab8325720b9c94e3eb362e5b64caf92"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve448/Ed448PrivateKey.php",
+      "sha256": "8b35c1b04c665cf85a024cad274843b50e01090f125f809cb9bb03b0cc7cf154"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve448/Ed448PublicKey.php",
+      "sha256": "e5e6203a2fb57690f3851f96d9ee930c119cf202f18a9a9128dc36f88676fc2d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve448/X448PrivateKey.php",
+      "sha256": "f099c3642875b010aaecb6c64f50c8dcd754d9a3a4759e73b3fa49d8fe9754ed"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/Curve448/X448PublicKey.php",
+      "sha256": "d51cf929bfc29bc76ee05ac0d4c3a83d5ad807d3e430f1371fdf8851c0de343e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/RFC8410PrivateKey.php",
+      "sha256": "49f78f549b6ae15842d355464c24b17309b79298efa147466c447e558ad0f801"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RFC8410/RFC8410PublicKey.php",
+      "sha256": "64adfffcb566e69661349e5205dc15cc2cdf407e06722be8e608264a12309333"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RSA/RSAPrivateKey.php",
+      "sha256": "f1cc557fe174599ea67ef0221c18b4f882c50b8ad222d4030f914c2532876f2b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RSA/RSAPublicKey.php",
+      "sha256": "2c246ab39da9874d6abd16a6c28e857c6eb88957fb53acb35d3ebb1026b6b499"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Asymmetric/RSA/RSASSAPSSPrivateKey.php",
+      "sha256": "086b0277c5e81a2bda32028539b4bd8d9de66069693b10b88ee2c6c315b57d1c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Signature/ECSignature.php",
+      "sha256": "3cfcff34bed84e8992864e51064720fd69c9e2e7956f739ed4976953eed219a8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Signature/Ed25519Signature.php",
+      "sha256": "4748260a65beccf059d35c1484251fc66823d25db8b4302853fba34218391aee"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Signature/Ed448Signature.php",
+      "sha256": "e6bd2e3028fabce9c3a951647fdde002ef23a2b1338506fbb2fcd01cbb6ce2a6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Signature/GenericSignature.php",
+      "sha256": "dd8c13c521241c0c9e06a72c601e861d65974beae769bceba38cdc69217c3675"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Signature/RSASignature.php",
+      "sha256": "f9754fd1c2a1147f20bd57a8f55922e891178bc887bf8aa9252bd766c6c5b62b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/CryptoTypes/Signature/Signature.php",
+      "sha256": "6af8fc7a14b8bccf55b4c72f36feb90a8917ff95b1797eb35491a78e8664916e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/Attribute.php",
+      "sha256": "185d6623c1b6f1ab6867f002edc9bbda1a68f3acb530ea1b84478c29b80e35c1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeType.php",
+      "sha256": "95911cccf30558638ec57c0af658695f0ab1d32092d023f05aea49fec84323b2"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeTypeAndValue.php",
+      "sha256": "baa2753081ca22a74823e361c86c3d165c99ed2d384d2e8d6f645bf050cc87b6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/AttributeValue.php",
+      "sha256": "b87eab9dbcd48cf9bf05861a73cc434d5b27d4cec3fe5e5587699e35751e81c7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/CommonNameValue.php",
+      "sha256": "df93a55242a87468995c51f44d1a27cc37e23d91b77f2cd5a6296c31a67ae575"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/CountryNameValue.php",
+      "sha256": "a6ff2eca6d7201f1a3ad879dc7db134ec59ddbd11931094c22f4349926603d1a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/DescriptionValue.php",
+      "sha256": "67f82b9f1dfa64376cc3e54802da4314f9a4139ef24e0556fb43b2006589a71d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/Feature/DirectoryString.php",
+      "sha256": "88cda7d4090dd84b1f5f0c2af3388557f953a3bb59968718dc147f8313bd65b7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/Feature/PrintableStringValue.php",
+      "sha256": "f4d0492a9a2e84f96f4b7fb9c7c7742e337a98f9789bd4cb5c6bdcd59bbc3b53"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/GivenNameValue.php",
+      "sha256": "5a7fe43190f15ac815f5776ba120aefa44daaeac4732c1a3f9e2d59a6a57bb70"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/LocalityNameValue.php",
+      "sha256": "db8e07223a77b9a458895b3339b5fc2c872e1ce652aff255c9da9fa10bc05d44"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/NameValue.php",
+      "sha256": "c94e66038492b13dd602c31bfd0d18ab723cac89a4ae6b028112bef7f37bfee4"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/OrganizationNameValue.php",
+      "sha256": "e77c1d1548f5eb1e410f93c00a4cf55d3114a729b980bb92aec48b9b78704a18"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/OrganizationalUnitNameValue.php",
+      "sha256": "178ec48b8b2e72230d8a7f42a2d08fcd7a58f630cfd2c55447b2446cd47c87f5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/PseudonymValue.php",
+      "sha256": "5a85fed2be7a61fee607b1ffc267482d8e06272989f90f99f089623772512a00"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/SerialNumberValue.php",
+      "sha256": "ccd5b70f8c1e4a8641696a061781467ae813b0ac4a57abfb4af570819e548e60"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/StateOrProvinceNameValue.php",
+      "sha256": "a60335ca74d68768c9f0e58e5bad518f5fc1d550dbe61370b5078eb2d1b61a34"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/SurnameValue.php",
+      "sha256": "795f41d07be7d8fc141b6018a569d1266fe71b1e29e728f3cff6d935c76d3158"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/TitleValue.php",
+      "sha256": "344e81869eb44588ee5cef32bca4846a7cd1cc7b12b2de09d1bc36cec67df0a9"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/AttributeValue/UnknownAttributeValue.php",
+      "sha256": "2eb72bf07d46daa603b39acfe0f598ede8f748200fe70a2e68027cf0eabf3a72"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/Collection/AttributeCollection.php",
+      "sha256": "0249a097c1a1e393fd69be1f724532e3b4df49e34bd609b7f1cc279af7c40a20"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/Collection/SequenceOfAttributes.php",
+      "sha256": "2fb9bce675b231113642d4d2d9bcb84d253a32356fda7d7238fbeae1aa07dc01"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/Collection/SetOfAttributes.php",
+      "sha256": "af672d350d9fd29693e58d3cecf90c30c94380eb0bf38d9a51df9c534607540d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/Name.php",
+      "sha256": "ca40014908abda0a5692e1d9f65b532de4766d8e13aa7abd87ee0fcfeca04437"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/ASN1/RDN.php",
+      "sha256": "c1f62fe05974063d6241016cb7d5906f859932bd58b1ca86be2fd07c4637e2ce"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/DN/DNParser.php",
+      "sha256": "2708b1b60d1273343ba2860a5c556a2503cfcfb0cfb9ed3c17d79f5a35ce90f1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/MatchingRule/BinaryMatch.php",
+      "sha256": "f35f79993d7eb01c1f2c5efd614cb133e3b26c8a98c4190bc9630259be581c1e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/MatchingRule/CaseExactMatch.php",
+      "sha256": "cda22c590dbcdf8aaad9337d33b1d7cbcc7175e424d1f5dd582144bddc90cf66"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/MatchingRule/CaseIgnoreMatch.php",
+      "sha256": "73fbb90d64cb5671f2be7f92a05ea38e2e495cda8322dc651b2d11de60706137"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/MatchingRule/MatchingRule.php",
+      "sha256": "8d88cdcd9b8b5cf12ae85613fc69a05094d8345585a0a2718fd88e2fe393e9a1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/MatchingRule/StringPrepMatchingRule.php",
+      "sha256": "cb63e86fb323131a186c8db4e2b487dcd39cb580a71e6398d3f96d2a173db1f5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/CheckBidiStep.php",
+      "sha256": "6b26729ef10d977448be2db051d430c704fb8bb1aac05d0159b6a96e6fd8d125"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/Exception/StringPreparationException.php",
+      "sha256": "eca3455bb3f00e07650a2dbc1515f9fc3149570ab8acf38cd636b18dd897d439"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/InsignificantNonSubstringSpaceStep.php",
+      "sha256": "5bd9a617410a9b0b7b03ca2286600f805a044f62bbcdb143ca11fd54f6f4ad8c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/MapStep.php",
+      "sha256": "2a70f540fcbea2b707b3a7000407e343fa78d3e544f83d13ed15df0731009efd"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/NormalizeStep.php",
+      "sha256": "7ffcc667bb20ea57f0c7ff79534fa7155a4bf7e512db84ff6a9509924a4fdccd"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/PrepareStep.php",
+      "sha256": "29e136abea9440fc12e2315a30d1c59546ee38a7daf7ce004f8eaa328a8cf52c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/ProhibitStep.php",
+      "sha256": "42a261d55bc97d1c4786a903824ab8698ac3e24eda4db747f85ca5ca6813a203"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/StringPreparer.php",
+      "sha256": "a1268f597122cc9920c7fb9fbf276c73fd9d1502315ade7b51faef978cc43a1c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X501/StringPrep/TranscodeStep.php",
+      "sha256": "14431c162a1f8c406e895d6aa8042f5165e897183ccc2f2099257b53ba43b193"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/AttCertIssuer.php",
+      "sha256": "89a956d02ad37b4dbead1553c8ba312a53beb62f5fe36ef50bf6c5ca9d83e22e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/AttCertValidityPeriod.php",
+      "sha256": "aa9786f42365ef1c51af2b56ba87ffa50b4f80ea88ee71c95b17233bd65e2b4d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/AccessIdentityAttributeValue.php",
+      "sha256": "facaf1a3ed690d95d33431fde1f9938491c0aa0fada3f5be211abb816be2f2d1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/AuthenticationInfoAttributeValue.php",
+      "sha256": "8ce5d18c7307ec68fd6dbfe15c22ec53c0ee3e8b6f86974a22b76b3bd583d64f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/ChargingIdentityAttributeValue.php",
+      "sha256": "57f7e7c4c5340d5338d8a9ab6c989afdde530c9b24af41d853851c3bdcbb3b45"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/GroupAttributeValue.php",
+      "sha256": "5b0c616f5fa2ffb3e8b9559f78f8404d74accea571de28f416948648941ba7f5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/IetfAttrSyntax.php",
+      "sha256": "ae6673a076a14b1accad4e695bea6ff2b040f8246751eb33bd8cc841f0af38a3"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/IetfAttrValue.php",
+      "sha256": "65086081cc9563e2a37497c1682c2127256b2253d10197b487f56d969f8cae95"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/RoleAttributeValue.php",
+      "sha256": "bda7872079e3946006f213828aae614000b9c1e393f9a2fc61583281c408dd1e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attribute/SvceAuthInfo.php",
+      "sha256": "d432aa8ffaa0ef95d796e0e96abd4df84c3ad211ed50754b52bf6f96546e9666"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/AttributeCertificate.php",
+      "sha256": "2e639c64d319940513fec273ee4c1e5546220bd973a1ffbe87ca1475bd6957ba"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/AttributeCertificateInfo.php",
+      "sha256": "befd8b6999c14ffd3d426ac7556aa5fb6f1a086596dcd388fdde09e9cb0c8e77"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Attributes.php",
+      "sha256": "46f971f437202b5257f6252ebc101ece1dc1c501963eb309958f85d14d410439"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Holder.php",
+      "sha256": "676c0dc1920693c3b88e1f2489e6613dfe4a6f44af9bc47286dd13fbda939d25"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/IssuerSerial.php",
+      "sha256": "34ef0b2b2c1392a32c5614197d4b928d775e6ba718f2c8090f9a0643d99b3d80"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/ObjectDigestInfo.php",
+      "sha256": "acdb8202e41be2b11fa26ef83d434bb13052198c5f5ca111970c8fd7b0498c34"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/V2Form.php",
+      "sha256": "cccb3c6a074bcb1fea8e23fbdc0410c5f670bc948c082c21e09a25a15576a2b4"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Validation/ACValidationConfig.php",
+      "sha256": "0c1f7c3e10cdd081129e43347f51445f4508a22b7138821df76ab1fca935fbfb"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Validation/ACValidator.php",
+      "sha256": "344f2570820d3dd048d0b248e101f20124aeca508b310d260bcecddf93671d34"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/AttributeCertificate/Validation/Exception/ACValidationException.php",
+      "sha256": "8f37638688896db37d5438871c17a132647566d1899e9b4f375cba9b3240b872"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Certificate.php",
+      "sha256": "68d08137bb1b94816a3fb81c2f7f10052e2141151fc664b0eb2b594d0039465c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/CertificateBundle.php",
+      "sha256": "5bdfc4c3444fc25cd5033bbb060a7a44f7d04c3f4b01f12f527ca25f927423d8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/CertificateChain.php",
+      "sha256": "82a7cf9505e618815637736f3592693e7a6ce104f2450cad53f0f342b7e20c55"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/AAControlsExtension.php",
+      "sha256": "286645f60c4b456394babeb77af5218818a2ca602d00ab802c968b676322da54"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/AccessDescription/AccessDescription.php",
+      "sha256": "c32228664ab25cb9966dbd470b475ae556b8debb0cb7e17cd4bd171856e4ec4b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/AccessDescription/AuthorityAccessDescription.php",
+      "sha256": "01066bd1ec5a3233e709d5e550b42b10e107c14910d7e805d6b3e3fc92a9fbf8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/AccessDescription/SubjectAccessDescription.php",
+      "sha256": "17a247761a28a2c77c7353a8e489c987ce119368e90236e5b66df2876279e149"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/AuthorityInformationAccessExtension.php",
+      "sha256": "ca92875dd964fc1051dc62fffb6b3acbc0fe45f0ae07d11f780719ed948484b8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/AuthorityKeyIdentifierExtension.php",
+      "sha256": "a8df33385506382030df6877e72fec6799eb8f0c20be46ee9aafe318e32c9b01"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/BasicConstraintsExtension.php",
+      "sha256": "7f9403109d359b143d4c4f1b9fbd64d3757f2a091187dca4f7b50be0fdcc6955"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CRLDistributionPointsExtension.php",
+      "sha256": "01fa2a1bd5768aa702f9729b40c04e389bbcfeedafebb1bee899bf2ffb2110a7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CertificatePoliciesExtension.php",
+      "sha256": "84c2d83fa224cdf939413414634a6ff40cee7b76e6fbf9117ec002d1c93b4d81"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CertificatePolicy/CPSQualifier.php",
+      "sha256": "1c72546ec09866b4694518353c2d1f7de336934eae6f2bd8fe87fe7476f1efd4"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CertificatePolicy/DisplayText.php",
+      "sha256": "af5524430a8505a30b489362c807f078ad030e105de297de5912674e7b5719eb"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CertificatePolicy/NoticeReference.php",
+      "sha256": "8e8d6ad8588a84b196dc78862e1a1b7afeade2a13d4baca1184dee38d73b477d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CertificatePolicy/PolicyInformation.php",
+      "sha256": "7d69c2b934d709e4fd9bd282b82c1229dfd6e5894f85e8e589482667a3f5cb24"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CertificatePolicy/PolicyQualifierInfo.php",
+      "sha256": "811d0a85d63b522770bb5fd26ff1d200d63c7e87f2798ad4036204315f084e20"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/CertificatePolicy/UserNoticeQualifier.php",
+      "sha256": "5bec7182594d1987f473f4cf473b0ded2ae347fd903d99b72fc64e551f259443"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/DistributionPoint/DistributionPoint.php",
+      "sha256": "ad4bcf9e2dc3b9c204ec86ada586cb9dcebfff9c57b8bb85937f2e09a438c6a0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/DistributionPoint/DistributionPointName.php",
+      "sha256": "b7d462f8eddc367766c4615c5dd1530ebefb8decf22d71bd821f74f4efbf0fb6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/DistributionPoint/FullName.php",
+      "sha256": "93e95d703ab95d4564cc4fa4f05d5a6aa37fb5d8adfb5400b4f953c0ef7d881b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/DistributionPoint/ReasonFlags.php",
+      "sha256": "77f62d3d3e818c1a37e712cb7d04023c3ab955f3733d957d28fe071086a8c112"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/DistributionPoint/RelativeName.php",
+      "sha256": "7c04fad6807a575d3fe9bc3b301772f82ac875af0bb2783602afebaf76728ed6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/ExtendedKeyUsageExtension.php",
+      "sha256": "459b0cb4d96fcf69ed835bf125a575aa26fc0755f457eac118cc27f77f34e9ad"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/Extension.php",
+      "sha256": "afbfc224c04a054b5e332d80049f87669f81995270df5b9e2ca444d370d0a2c6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/FreshestCRLExtension.php",
+      "sha256": "9c46b3b8965791cdfc009cff68ad53e5798602744dade29b9eb872aeeb28f000"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/InhibitAnyPolicyExtension.php",
+      "sha256": "3310bd5475dbf060ab93c8964e0f3537ccebf2ea4e6d8911c5f2f1e3489e600f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/IssuerAlternativeNameExtension.php",
+      "sha256": "63c4801391be391ba49a1cb912a9abfaa92e78a4fa283ea7595a9d104914a190"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/KeyUsageExtension.php",
+      "sha256": "ca5afc33621b3eddb00511581fc7158e37a92b33def5a1c3c9de3fbf7e0a816d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/NameConstraints/GeneralSubtree.php",
+      "sha256": "f6f65857f2217c8b5ec706f76ac4aed4c52b5fdf113d8b4447cdcd3ae3ab01aa"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/NameConstraints/GeneralSubtrees.php",
+      "sha256": "3bf2804447e07e9617446bfa7de8621ec5906460c8634289187fb09ee033efae"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/NameConstraintsExtension.php",
+      "sha256": "ee1b788e44aa6ef1b92a2aa1acebc8d4bd68380e72ca63df6444ea4c102219ed"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/NoRevocationAvailableExtension.php",
+      "sha256": "dbcb9a09f5ddedb5b79ecf433c0d0f02fd2ae1b637b2034b094861da2fec834c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/PolicyConstraintsExtension.php",
+      "sha256": "1447e69319ee2cba2900c2ba6ee44bd8497f438ab7b53f1f46a6999b54a8530d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/PolicyMappings/PolicyMapping.php",
+      "sha256": "973f20dd76d8f9e41602b2864ba9bfe8b22f51917338435de4e20d2095984bf7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/PolicyMappingsExtension.php",
+      "sha256": "7840c2ae5145d3eb2e91fd346cc0084678800415f6fdbe46b002c296c6e9f2af"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/SubjectAlternativeNameExtension.php",
+      "sha256": "0bb0413fca46c5ac2e09b579662639a174b71e1d35dd60c788008534237b5bc6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/SubjectDirectoryAttributesExtension.php",
+      "sha256": "7c71837d7bcb9fb157c068cd674ebc8a1e0d505d887667240a63f1003f58eb38"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/SubjectInformationAccessExtension.php",
+      "sha256": "263c6579c30bf12a52e50ef731ef98b5bdd97a1ddbf6f219ed6fa65e498ca86f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/SubjectKeyIdentifierExtension.php",
+      "sha256": "1546212170ff2ea0ae7190463cae39415e427abd393e4086af97463451f6980f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/Target/Target.php",
+      "sha256": "6b50dff8651a94dbacac4d08989cb844c758aa44533eb2ffaafbad92f35aa167"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/Target/TargetGroup.php",
+      "sha256": "7553504075e88218cd3eb602bd55077dd109e66898a9438c5e71fd22cfb66fb8"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/Target/TargetName.php",
+      "sha256": "bc0b8806e5cf3bb529e2b4929c4206109349cd88762133327ddb7c1f3821ff75"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/Target/Targets.php",
+      "sha256": "b959cc6ea2fe75da33512f4dc91a95e502a703b736e2d91f5bcbf40b18abee2e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/TargetInformationExtension.php",
+      "sha256": "7ccfe77d5162ccd1b89fc2afc0169b9bb893832ed3bcbaab9afb990ada9b9a3b"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extension/UnknownExtension.php",
+      "sha256": "8732b04067ae552de52f22619aef4b17171d7526c983ddef157d4c313c1a33e7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Extensions.php",
+      "sha256": "885ca81e4ed4e432af7874a7e8d73b3d514cb6b6efc8050ceb4e98581943baf0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/TBSCertificate.php",
+      "sha256": "58bb7861890fdd89496cccd76d0274f587a5f5e49b1864b0c14ed377314df31e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Time.php",
+      "sha256": "d8576a17d41ef739425cdf5eaa99fad02930be345e8af371ebc6bd56df34be2f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/UniqueIdentifier.php",
+      "sha256": "0ec35ab065b6b81c3494e309355a52d6ca10701c10e2e1dcd7aa957c9c248b88"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Certificate/Validity.php",
+      "sha256": "14f087175b8faa75ba5577ec21f3e2b6facc6491b438808f156106a052b48a07"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/CertificationPath.php",
+      "sha256": "ce6eafff0410242079c0be32ea5237ed7632587c88b644ef656d20cb11fd61eb"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/Exception/PathBuildingException.php",
+      "sha256": "bf252d053a3652c1b0e35a9d4b59ed8cbed86a97b27a099a52688072d0530e0a"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/Exception/PathValidationException.php",
+      "sha256": "ac86b9d7739a9d338d333ed1bce9dd7ba529c6f9e76fa697d1fc9a52571df7e7"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/PathBuilding/CertificationPathBuilder.php",
+      "sha256": "4e01b845339e3a8c0881ed5b04b28db1373d04a08aee8962fd891edea59653bd"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/PathValidation/NameConstraintsMatcher.php",
+      "sha256": "49a988f14af9a77ecb1fd17175957e90e7df4df95421f83756bb78f9e0ef1fd5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/PathValidation/PathValidationConfig.php",
+      "sha256": "ee826aca9c85d1c03bafc080b84fc726c82e2db8d391964643268df95a629229"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/PathValidation/PathValidationResult.php",
+      "sha256": "dfbcaf88494b916c6ae1aaf9fc680f739427753ad54b5d9e48e4733b0877e7ae"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/PathValidation/PathValidator.php",
+      "sha256": "6cee2949b342ece15d76a785f1a08a24db85ce9bd96b65aad054e949e4bad182"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/PathValidation/SignaturePolicy.php",
+      "sha256": "355d42eb306f870f7f76535f6adc41ddd325cd051c53735b1d5b4e25ef692d7f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/PathValidation/ValidatorState.php",
+      "sha256": "aebb8c4b186a9d33e5e052930b2d5c435c8eb12605a9ea3f6d6b9b9b282b95d6"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/Policy/PolicyNode.php",
+      "sha256": "290b7dae5053976337999f06746b02270820b3420f847ccae68857c5271d21a0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationPath/Policy/PolicyTree.php",
+      "sha256": "a327d536ea079a35533b56613113e24e8a52cfc1b244350e6fb2464d03f90af5"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationRequest/Attribute/ExtensionRequestValue.php",
+      "sha256": "00aeb5105dd4704bfbb80a14694b51a1a36ca609c19b796a2170daf466f82ad0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationRequest/Attributes.php",
+      "sha256": "c410c15aa231d21ffb3a4000ecb45f1724178f21572f116cac1a37a4e59c8581"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationRequest/CertificationRequest.php",
+      "sha256": "23395980178a448174343a095e1e0b79d5dd42c43e03372e38eb89993c3eeecb"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/CertificationRequest/CertificationRequestInfo.php",
+      "sha256": "b45ecf9676a1630e1c9a1ed73817e948cc7064b9bad14f3d11ec665017040bb0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Exception/X509ValidationException.php",
+      "sha256": "cf43bf87e0356185dbef7786d3600e8cc4860f659dd5eae362b13786cbb3b080"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Feature/DateTimeHelper.php",
+      "sha256": "39ec14cf49020ed3fe84ffb37736ea842e2f4ff496794e53432cff4833777e66"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/Feature/SignedDER.php",
+      "sha256": "a62606296dfe0710cda6f17ef133949c75a39bc1a84dddb7a96b4ed158a3201c"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/DNSName.php",
+      "sha256": "efda17bb229de1cda7921133dc2d9d28a003c431b40b97e24b8587fe81fbe1a1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/DirectoryName.php",
+      "sha256": "5599cf58c99f9af609c115309cc6f5febfebfdc0400b46684682c704341ac42d"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/EDIPartyName.php",
+      "sha256": "91454dea60af68b3f606d9982c63e1e2eec5a8d7b3f67d2ead5b284fa07eb304"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/GeneralName.php",
+      "sha256": "3368599bdc9d86ba024cc551b2e8c0da4c712b8d5550deab6e30fe5558904086"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/GeneralNames.php",
+      "sha256": "8fbf21af4fad712434a6d0f954433e94994b1e9d901e50380005b990ffd17f69"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/IPAddress.php",
+      "sha256": "22cd0e978ca0a9a5d81c204c3a72ecebe7fa3e9d5fe43df8f4b72e330a681382"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/IPv4Address.php",
+      "sha256": "d9083123c048e9607aac71e9a7d0ad962e98d89c18b74452e79dee7f554fc4c0"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/IPv6Address.php",
+      "sha256": "d72f3776f03747ce320ca6a975ff28083cedfb9bfc342f057bc139867cee8f40"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/OtherName.php",
+      "sha256": "1f0088ee21279be15c9f3541aa08e15f1d9ab5651d15f5e5644a2f06662a185f"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/RFC822Name.php",
+      "sha256": "cd485e6ec66cebc6594c11e1cda651ae7fe319355c0357b200b3615c556ac6d1"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/RegisteredID.php",
+      "sha256": "c2f1267d19b778bf20cd856e66e7a4144ebd7a3f6138451daa5914f720094d6e"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/UniformResourceIdentifier.php",
+      "sha256": "cfe3a6fbdebed2c6bf5b3f6ba60f58e77d839417e0198383c34453931d53b184"
+    },
+    {
+      "path": "vendor/spomky-labs/pki-framework/src/X509/GeneralName/X400Address.php",
+      "sha256": "6fce773acfdeea764f21b28320cce397ae5cdd0153b5ffc022222239f8676ffe"
+    },
+    {
+      "path": "vendor/symfony/deprecation-contracts/LICENSE",
+      "sha256": "b92809182501f0fa422167ea44484b41877e1736e8283d0377fdc9664bb9a02d"
+    },
+    {
+      "path": "vendor/symfony/deprecation-contracts/composer.json",
+      "sha256": "7e30d567371a1e319e78ef6c3a9e4910d88e86c4e6e9260c0253a5b847c3a1d5"
+    },
+    {
+      "path": "vendor/symfony/deprecation-contracts/function.php",
+      "sha256": "7b613b9e9473ab25c57052225446644319d4cfc18fb757921d827c278feadeb1"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/LICENSE",
+      "sha256": "6439cc1bba78b7de0c1905b0643679a5a7768ba020a090370d7742030303c6b2"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Php83.php",
+      "sha256": "18aac07ebd7fd272d0488f80b489ab1b6e2dee1b75b430ea2acc28c4f72b52af"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateError.php",
+      "sha256": "72e1fffeddc492f3726fadb4bf338dea6d9d18f5f7cb64c16b292bbc14d53778"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateException.php",
+      "sha256": "4229e2f87de442cab70d186931ad88cd68b9027a385834aadc81bae88524a319"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateInvalidOperationException.php",
+      "sha256": "96ef44367f42f7feb3488d29e2ac1f3382647c04a2084d1451ad18043c6b5add"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateInvalidTimeZoneException.php",
+      "sha256": "519c9a52e7d657aa25e76944a408577a0ff615b88318dfde16479139c515d109"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateMalformedIntervalStringException.php",
+      "sha256": "3f669907751c517d477c290e872a5ef0f4148cf76493137afe13a3af1c2486a2"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateMalformedPeriodStringException.php",
+      "sha256": "8af794f98ff2ab1577ce94c4300e7b314237eb2ad0b09d49b7f71bb82d5d5cb7"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateMalformedStringException.php",
+      "sha256": "a4bac703b6b7ceed48bb8b082dddd061111420eab527eb45ca9e5908b2a94e86"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateObjectError.php",
+      "sha256": "4f7578373b5f56a25628da4d80c58fe923ba5195f8e8d4e407a58d3613e39540"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/DateRangeError.php",
+      "sha256": "1728ade479eca502b4169314895d7423b892810ef51518b9acccc41498a807c2"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/Override.php",
+      "sha256": "57d1627659933c6d4d44c4ddfc8d7e07d2452645a414e387221d5572af9e6f05"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/Resources/stubs/SQLite3Exception.php",
+      "sha256": "b0054f6ff0ce2eab047cd5c4cfe0784f94c748e878573b8b3818283650f2137a"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/bootstrap.php",
+      "sha256": "c1a38e6aeea87046fb4d04d5e5aeea5d4287faa995b1701fc76a1f7694af5476"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/bootstrap72.php",
+      "sha256": "23e8a4f5857612665b0a40ca8a8c4b414aa8f537525f20e248091a69ce5a7d36"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/bootstrap81.php",
+      "sha256": "8f7a103ff036ce07984a6b8112a25efbe1b8504244421ab710f0436b6d95e88b"
+    },
+    {
+      "path": "vendor/symfony/polyfill-php83/composer.json",
+      "sha256": "06fa868d6ffe7965e5aacec69da00cf458dfa7e0fe7667c4123db0d4b669771d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/AlgorithmChecker.php",
+      "sha256": "bd36dfc5f2c44c4cc66868fb4c7bfa46f7ab1d3e19eb3ffa8af31ffc78b47478"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/AudienceChecker.php",
+      "sha256": "f67246d5f3d5b12d70698456eea3f6e82a98e3b92e8657d03576269ba2f426ec"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/CallableChecker.php",
+      "sha256": "66ea917eb2cf8a72833129ace4179180757d59c8c45f3766490f4c5853352ca6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/ClaimChecker.php",
+      "sha256": "3a22b68591426c123685f1d7c2eb5cf2d7ae92c336130a65e2f98529d164562c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/ClaimCheckerManager.php",
+      "sha256": "c74e40f5ea7a62d3bdf1050937ac90e814a187de580b87438ca11aaed327fd52"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/ClaimCheckerManagerFactory.php",
+      "sha256": "dfed100178b5e82e28737e0af8d66269e31ed6a5fad59b9e13075f184cc1b1a2"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/ClaimExceptionInterface.php",
+      "sha256": "e641c910b887975cd910d70a75e4f7e070719bd1bdef8452e8f3d9b2f558f3db"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/ExpirationTimeChecker.php",
+      "sha256": "743fdb2c168673b2e018c17f0bb858dc1db64d8a6b698f1f83da54889dc5c0e2"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/HeaderChecker.php",
+      "sha256": "ea35c1da8de4c3e71d93d165f94859c5b1a2370896eee52ce452b4a640c5f547"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/HeaderCheckerManager.php",
+      "sha256": "2e2e4dd3ce6ced79d301092c41ead8976b9191e377caf2b73b4e938aaa72a872"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/HeaderCheckerManagerFactory.php",
+      "sha256": "8fe274ff783e400b66850eeaa9ddc3952e14cdfc9946a0fbf5f027fcdf4ee483"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/InvalidClaimException.php",
+      "sha256": "ee7a69989a44a5cf376a0f59dddaddc2762b8f100ff3065d2cb771d3e8381012"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/InvalidHeaderException.php",
+      "sha256": "c2d71d238c0373a973f89d4dbbf78050bc05965be8f5c45e5ceda0db8fb086e5"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/IsEqualChecker.php",
+      "sha256": "17a3595692917b52e3e9d14f23108033f10a5837f881125ce31204597f52a26c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/IssuedAtChecker.php",
+      "sha256": "68e5b9996978d7e14ac7766a7a18c832ae4633a4ad68d6185f707ece662f52cd"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/IssuerChecker.php",
+      "sha256": "53921e8ebab64591b98ba74c7ce23e9b80050066a78fae604d5c04bd741f6c60"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/MissingMandatoryClaimException.php",
+      "sha256": "197bf6762ee399f9029a18f59e2a7983887b9b33bee132b853254acecfc21a73"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/MissingMandatoryHeaderParameterException.php",
+      "sha256": "d142b457a9973e57eff5c3140673a306f440c2569f52c62363fc228cddc3ab16"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/NotBeforeChecker.php",
+      "sha256": "a6d88807f89261df15bef59f29d8be37911a38523ab07a3260db4888a98cec33"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/TokenTypeSupport.php",
+      "sha256": "2643b6b07af5b55afc047feca5e316db24d848fb4e1074b4d6aae8f1a992f74e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Checker/UnencodedPayloadChecker.php",
+      "sha256": "54e057ea19e5f8b592d9b99359d4b9f2fb407d8deadb5da2c1a3fccd09e9bcac"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/AddKeyIntoKeysetCommand.php",
+      "sha256": "6b56a568248e6d35da36a4c682765c839fc5f496835ec28d23ca3f74cde1c1f4"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/EcKeyGeneratorCommand.php",
+      "sha256": "04aafe1b85d44eaf0fca794029b08f0df760770de8b05104a5743ba2ce07374a"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/EcKeysetGeneratorCommand.php",
+      "sha256": "94803e2ebddcdf2cf957c9fc34152c7d2c0b7bbc4c879657142027aa9de87345"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/GeneratorCommand.php",
+      "sha256": "bcfa63bb87c82679cdbd41bf60bd52e00a6741cff6fa5a8ba4535ec1a3467183"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/GetThumbprintCommand.php",
+      "sha256": "c7d976c8b6e8833c733a8aa88ecc48d01ac43fb1f480ff12a47ff5ff459e7cc8"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/JKULoaderCommand.php",
+      "sha256": "1931915c9a03f1869d554111e2e4167ff9ef52f262a907705069c1a9f9b2bb55"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/KeyAnalyzerCommand.php",
+      "sha256": "12384b0924cc0fa7fc3acecae3a69597115eaa63f616e0bd073a83bf7d98ec42"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/KeyFileLoaderCommand.php",
+      "sha256": "6ce2e921052e550ec36e1af0d9c885976ddee4853292255ea2ec22e65c19e413"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/KeysetAnalyzerCommand.php",
+      "sha256": "e719542970f74921d7b7836406c439373a72d491957ffaaf782bebd93af6aa7b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/MergeKeysetCommand.php",
+      "sha256": "3106f31962a70ee5459ca733fcf88b2abf95c2b219335adc793f405e5dd2ce15"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/NoneKeyGeneratorCommand.php",
+      "sha256": "6e04d3d636aaaa4c51b70c21cdafead2413338b887450bc3190f5dca7b454de7"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/ObjectOutputCommand.php",
+      "sha256": "28b931b0e64ecb3097db2930f42a4b902d18b87476d931f09b6619ff8e473be0"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/OctKeyGeneratorCommand.php",
+      "sha256": "ff03f8d4d3733600c09f62e2427e3eac91f388e276a7557fd45119e64f6ddb3c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/OctKeysetGeneratorCommand.php",
+      "sha256": "3ad7c3adec2764809824062aabdece5b8630dfc837e4b18c308a63899c3046d6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/OkpKeyGeneratorCommand.php",
+      "sha256": "b9455d3157fbac09749dfd9a0a560415a43cadbac24bae864781fdb44d142186"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/OkpKeysetGeneratorCommand.php",
+      "sha256": "3545df5672a4607efe1ea1db7e0240e7f380ca2e5a029f1f4570163103d87f13"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/OptimizeRsaKeyCommand.php",
+      "sha256": "e246bd38e175bfda10430ec3c2537b1c00cf3cdb7b7c8f74fbf0000f281ee0c1"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/P12CertificateLoaderCommand.php",
+      "sha256": "8297e8639e60810a05e1c389e268d5b231a9861382554abeb8537387a0e886c9"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/PemConverterCommand.php",
+      "sha256": "3b91b2616edf84e0e3256d424e9e72dc9d0bfe96ebe5d308a6b601d5cee6cbb7"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/Pkcs8ConverterCommand.php",
+      "sha256": "de6b68888ff42fc5a4e5383ca56aae797bb067a9ca9ab96a0661b2f26968d410"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/PublicKeyCommand.php",
+      "sha256": "10082926322b0dc10f3d9ce1dd0f43f6f90cfcadeae054a40205dfc65756dbbd"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/PublicKeysetCommand.php",
+      "sha256": "d0bc2b005cfa3b11141478ed3f368ca1ab5f3d3e6ad349df523e5b24a86af057"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/RotateKeysetCommand.php",
+      "sha256": "a1b5be98df754be8064193b2f388d1135d4c0d19ef41cc138f5c98a3a391de34"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/RsaKeyGeneratorCommand.php",
+      "sha256": "e53f152e4d70fceb0069b5ba40a6748a9e55e6344e63f65e0e2aeff0382fdf5a"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/RsaKeysetGeneratorCommand.php",
+      "sha256": "b4e25047cf2d099e3c2068b0b169d74b126352958bce5be2c8e83674924a1a3d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/SecretKeyGeneratorCommand.php",
+      "sha256": "dd9022a3b6743c1c34ce83c8ed580802753b37b91efde869128273598ba7585d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/X509CertificateLoaderCommand.php",
+      "sha256": "0acd36d918f40153049678f05ecbf9f6a0abbbaf14e8448c0e97083ce57f628c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Console/X5ULoaderCommand.php",
+      "sha256": "029b61304d5005c8123b392347c5dfc446136fa6eb1092e7e2955d87f0ec4b38"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Algorithm.php",
+      "sha256": "d13a74924a23578e12facb3ee4a681ed1650f0a65653a95af04b90860c38ceb7"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/AlgorithmManager.php",
+      "sha256": "8b9b3b01ea33f215afaf1c51734a40aa8fa59f72147bb0115498f3b24e7602e4"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/AlgorithmManagerFactory.php",
+      "sha256": "3dfd79ef238c432a0fba6d7266c302495b271dab568f729030b794dc287a536c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/JWK.php",
+      "sha256": "ea814eb3ed752e20a291336e7d6778dda966b6932b09bb9e76c0e8e34869249b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/JWKSet.php",
+      "sha256": "e2219390f38445ade355599470a4fc47a1b3b3e9cb2f3c82bca8e6d53acf5fd4"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/JWT.php",
+      "sha256": "bf291370d0626f4f6201c8be4e7486c0f6c38f629ec56124c9197a7c2f118e17"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Base64UrlSafe.php",
+      "sha256": "646941331073489439161f95c517698430799e6f47ee68e0150673a63c2070e8"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/BigInteger.php",
+      "sha256": "f3ff77533e11f27c0f6b1222d02b73d9bdbfe2dc8cc9cc2a0a8d7a7391bb3fe0"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/BoundedJsonDecoder.php",
+      "sha256": "be49799eba570a92a9fa99e4b45bc743b2df2d41301a971e884abb30b306d3c6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/ECKey.php",
+      "sha256": "8ad09439ff5823608d494f3b3d96bff62f7712e02699210843bad7058581857d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/ECSignature.php",
+      "sha256": "561623a1868d6499acb1f77baa681c6cdcdfe7825d50b58b85ffba5fc9e6a46a"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/BrainpoolCurve.php",
+      "sha256": "1fc504528b08d988fd6c00f78a6b99ceeb2131e5ac998232b7305e6ad5f0fbbe"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/Curve.php",
+      "sha256": "e5a7aa80e0fd09e45176b1d370d3e3c3c0c109e3fd22059c8a838dc2973b599d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/EcDH.php",
+      "sha256": "bd2075fcdccaeb9944a06dfeb5ec1c4073ec082168428ebc0f93e54366378191"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/Math.php",
+      "sha256": "47b0f6e68dd476eed6ad30014658f77be31d0f69a971a4278df1c6b26ef84325"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/ModularArithmetic.php",
+      "sha256": "c5dd24da3ba6b99338799a3a45ea9d4171190fa441a77841e5de0f26fd7c5b72"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/NistCurve.php",
+      "sha256": "29039d01eae7c34b267752d11c164e44b0ab1c26867761e40b17dab7dc3ecbc8"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/Point.php",
+      "sha256": "1f79d1e5d015b66247acda064b8c5cbdca0e92b4370d428bf325b9aeb5ce1ac1"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/PrivateKey.php",
+      "sha256": "9f8c7ff8f7a7f9e9f47655ad43fa46196e14f72ca757b0e3e0d0fc1ca5f9a2c5"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Ecc/PublicKey.php",
+      "sha256": "8b0685bcf37fd62b0a6d320b21a7e593707963cbcd48e9e6df18f6702c5c638f"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/Hash.php",
+      "sha256": "dfc2a085ef51b5063382ccc8fae744d5ca10e7ab24fc597eac2f3067ff8e3da1"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/JsonConverter.php",
+      "sha256": "73a1543fc568de684a2de71700dc8798c126c42c3c041b9ff4a860dcb6df7f3b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/KeyChecker.php",
+      "sha256": "c9a2865db340545f9de761325b227043a2c059583b4f82f2cf5471fadc9d9be6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/OKPKey.php",
+      "sha256": "069b462533e9ca07bb3bc2c95aa14712f08a0ea05de5a69839e8744dffb867c7"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Core/Util/RSAKey.php",
+      "sha256": "b63be59deeb33b1cf17d0744d51cd709ef2108fbcafd37199b1b963ae9da717f"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/A128CBCHS256.php",
+      "sha256": "ee95cdd069c51152b933ff0bf95bd338c8dc30897d30a355e7ddbdc98c670f68"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/A128GCM.php",
+      "sha256": "711b1b21b080f928d95dcf4e45ab84b75f0746acb7c2816069f0144b24e7af63"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/A192CBCHS384.php",
+      "sha256": "303d3c66d97c2ff069cf6b241f3943c82201aad1412dae9e0f8a516927e3ace1"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/A192GCM.php",
+      "sha256": "69419f0a64d44dcbc6d8c020878ef0e16e784abe3cf4bb5a933cac09254a1139"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/A256CBCHS512.php",
+      "sha256": "1e1301976d68b9f16d50f78a40f819b2db52d375393e16c2388f8404637f6acc"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/A256GCM.php",
+      "sha256": "ae424dfc042b618f7c3a0e1cd73f1930320f34db7f3574e999085b5dc2294834"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/AESCBCHS.php",
+      "sha256": "605fe42819fc9018b39be6b905ee5c21bce5d8679f43b330921ea3c9160d562d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryption/AESGCM.php",
+      "sha256": "6c297d34ece125e3b8a723d459f46380ff55bfae34f1e1476309a3dac23a5498"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/ContentEncryptionAlgorithm.php",
+      "sha256": "e646497b911e36855bf59db184ff5bafe469a4dd285ab7dca6604497b82c12f8"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/A128GCMKW.php",
+      "sha256": "017cce7a8d923360c2771f5e3d502c6299dd0225360872d2909092408808394f"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/A128KW.php",
+      "sha256": "04f78d6e95e62ff16b966f6dc347a07177e09b21c35b76ba612e51bbdec4821d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/A192GCMKW.php",
+      "sha256": "fafcae953b0652c16ef31c15efea336029fee227eb0f812ce9624dedc155d7d5"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/A192KW.php",
+      "sha256": "11bd112c966eede68efd3f66a25a6738fa0b1aa410a30ee7598f4f66a7bf64d9"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/A256GCMKW.php",
+      "sha256": "8394a40c49587a7a594f9b4eb548e5c635461041c9366478c470b7dc889a98b2"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/A256KW.php",
+      "sha256": "1e0024cd458fa935f95a403ac39a42bdbc01c9c1a676afc6aa44acdd9e457eca"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/AESGCMKW.php",
+      "sha256": "d823c1810ca93d2bec20b23d811ae9eef16a3669936474e3def2906ed5b6d51b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/AESKW.php",
+      "sha256": "6fa75a3676b61298fb1624538520855cc9cf6f316951e7f59b7ecc682a677b32"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/AbstractECDH.php",
+      "sha256": "c6ffc98eb82858c939e750e1a918bd51104e79110b898735ad34a2c8271f98f1"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/AbstractECDHAESKW.php",
+      "sha256": "e29b5575feefa7b85c4dbd23352a1f6ac6a3f5b18adf333f9b3304b61fc59913"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/Dir.php",
+      "sha256": "aad0c8b50c621a58efab6c6711110f0d1278a1a7dbf8fdc9c3d1814eade38524"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/DirectEncryption.php",
+      "sha256": "8b1e7833596f000e96e4aec20817c4585a72755705355b6d0827d9a22bfeeb97"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHES.php",
+      "sha256": "5d3ed6c5e0d6c9bbc1e11b49decc75d838946cf06e628a3cfd3ff2c24a87c7db"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHESA128KW.php",
+      "sha256": "471b50af725e37d682f4346f747cb1dd0d68f9d058542a760ebe604af0135c2d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHESA192KW.php",
+      "sha256": "48f8766299d6ca72b8c74511d87280309a635ad1c75a8931ac4072b2d3fc1e00"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHESA256KW.php",
+      "sha256": "bf26a1f7781792f74a9e22ae421c05560dd41d8aeb78cf8d536f8f0486fa9280"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHESAESKW.php",
+      "sha256": "4a4e3d1534c589b78a480b58d1530bd34c11c694f7b989d007fc152140d6f4ca"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHSS.php",
+      "sha256": "8c0c43dd4386c1c52f828225a0f66b2f77880b1b96f76511a7292cb4216f3c0f"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHSSA128KW.php",
+      "sha256": "bbcc691f078ff038ec1fdd04567b70e7b7dc4fb3c0d3dfd95cf14279461f4293"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHSSA192KW.php",
+      "sha256": "c3b0932e6ab3b959cc7bb2d52e3f1617ac9e1ea8c8e2e8cf4496b9f506bf91b6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHSSA256KW.php",
+      "sha256": "164bc64b2e897f824c7c13209598cafae0cb2f787ba281bf144d9304b0605190"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/ECDHSSAESKW.php",
+      "sha256": "21963d5209e64a3ba0fa9efecc17e3ed47041c861526bb24de805a4c809ab0bf"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/KeyAgreement.php",
+      "sha256": "893f06b91c3cd6ae9715b207f8a03bc89603132b5c401a2f3efbe09a29a09827"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/KeyAgreementWithKeyWrapping.php",
+      "sha256": "2616f2d71d8a6e3d02616253ed6b6d8fac26bbc66851ce49cf616f6277587235"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/KeyEncryption.php",
+      "sha256": "533b4e8754e3c9f31cfa4555f4c0d7406ad79846fc2e9b218e850a32977edae6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/KeyWrapping.php",
+      "sha256": "cab3e098c77ed6fe80bf2f9f410a3a6492e53959ed3a02581c47144f804e087b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/PBES2AESKW.php",
+      "sha256": "db3881a7d307da4d625c2930847a6c8cd029dc38a77b1a5f28e90b089e814bbd"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/PBES2HS256A128KW.php",
+      "sha256": "53d6de29caf69765da5f0073beecec5ccdba0bd839ac02da51ae510b53cd1e59"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/PBES2HS384A192KW.php",
+      "sha256": "d567740d40156c8aec7cb632e178543e5231fcd321544a5845c3326390dcb309"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/PBES2HS512A256KW.php",
+      "sha256": "21d23c6fc419aec5e8308568af995f448171368e35b747f44f3b5afe54bfd9fa"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/RSA.php",
+      "sha256": "991397e3da537c7a51f9a3141ee3c505481a3c63aa4fb73fc38410d63dc789ef"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/RSA15.php",
+      "sha256": "b8c5affd0be19221818b3b090d3169fa423c7d0d5d98e1474aa1e5f4efff3a8e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/RSAOAEP.php",
+      "sha256": "915885c8c7cc5c4979cb51c3bb8e8dcb94154520ac76d420d7c74ffbaa3fe471"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/RSAOAEP256.php",
+      "sha256": "1af268af4aa7033564d41e5119c0474ccad7402a79ba18a4c460420f6877f971"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/Util/AESKeyWrap.php",
+      "sha256": "a92a9359598f6b4de8f599afe949b58d338690f2f5b4bc46c2cc24213166d508"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/Util/ConcatKDF.php",
+      "sha256": "5925ea6ee4ae1ade9fe67d5a5738d3c078026ff3601217f75eb75689966bc7bb"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryption/Util/RSACrypt.php",
+      "sha256": "72c1b3f30214c13ba2d676fabe756aeb91b58021008b37ab35ea53798d50eb29"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Algorithm/KeyEncryptionAlgorithm.php",
+      "sha256": "9545852adda494eef5318f95fbee02f84476907826bfeaa038b70eac58030d99"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWE.php",
+      "sha256": "361e237a32eb7a2b3bec5073c787a15ac5dd435c78251b295bbc8db62408ad41"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWEBuilder.php",
+      "sha256": "51b23333713f8a6aa718be16d718f8e4e6e06f6c2088c6c2550fd5c8cf10f6a9"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWEBuilderFactory.php",
+      "sha256": "d5556f552fa0c49142eec9b673d1b2ad6b4f6727fa03aac7eea3c09f457eca81"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWEDecrypter.php",
+      "sha256": "3c1f11e58d01581f23c698d1d6d8925eb283c1a3b7194c6da7e2917137b34353"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWEDecrypterFactory.php",
+      "sha256": "9832279b1822d482927be219d04928eb6044317bef4d09bbc73e517ef2a6a629"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWELoader.php",
+      "sha256": "e2d1fc9d36665945053672231e100fda697d8649fbbc51c457e00cf00a93918b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWELoaderFactory.php",
+      "sha256": "12b988e5a398242f25707be1a23082cd4c8f8f4496f339cc8696f63a08370bad"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/JWETokenSupport.php",
+      "sha256": "482c9692b08341917eaf4e2e61439d412becc60162faac5dc293592409635745"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Recipient.php",
+      "sha256": "ba4125a21eb54a7ef7cebd7a0c7249d6ddfd07356c72819e054038e029b861da"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Serializer/CompactSerializer.php",
+      "sha256": "0562da8460eec64fb00e6e0f0523572098eb1c8a0cc4d0853a766876c3ec81d8"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Serializer/JSONFlattenedSerializer.php",
+      "sha256": "18c26bd4fd153c6a8a5dbcd333586797fa947562e5d59ab24de0317167748803"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Serializer/JSONGeneralSerializer.php",
+      "sha256": "e52456e2b3a20f74fe94ea4a9940d891a726bed37c0debc48b053ed6a604cda6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Serializer/JWESerializer.php",
+      "sha256": "5ea923e0a441682247d75d43daafe1d2d098df7c6ada53bfea3f9ed786399274"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Serializer/JWESerializerManager.php",
+      "sha256": "2f8d78cb1790a802111d03d377c813556fbaddf7ed48db9b3d6e5181418999f1"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Encryption/Serializer/JWESerializerManagerFactory.php",
+      "sha256": "a6fc22006b32559bbcccc3d040dac82d365a1e56f80f651dc875dc468b4db6c7"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/AlgorithmAnalyzer.php",
+      "sha256": "20ba1211fcc12cc38a956144faa334f695c97c5117d2284a988989cac75f38fb"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/ES256KeyAnalyzer.php",
+      "sha256": "03eaf96e8795f09e44cbfa1065d261b67ed2d41335afbb0a2a6509904784d01f"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/ES384KeyAnalyzer.php",
+      "sha256": "d0a798ac2a67a793b70099dd71a12892004852da7ca890a998458624eaa20937"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/ES512KeyAnalyzer.php",
+      "sha256": "fb71be2c816510807bbf383dc63f04f1b5a1cd030ddb0b1dc578f9891590ec48"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/ESKeyAnalyzer.php",
+      "sha256": "f2ae3990a9eb1b7ab3b19d4f1fd05c633f5912de2ae6eb8da47363b226ccd30f"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/HS256KeyAnalyzer.php",
+      "sha256": "d98f85e213cbc950d35dc0f598c8ac222f2842afa2291e103023fbf1440200c0"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/HS384KeyAnalyzer.php",
+      "sha256": "763030e36d259aece3f82a6afaa0141ba1dd8c234a5883299cec9b4ddce86d2c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/HS512KeyAnalyzer.php",
+      "sha256": "c0c9c901f3343c988eaaad4c4dccc41fd107ea8ab92d0027996c1369c655814e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/HSKeyAnalyzer.php",
+      "sha256": "f5ddf13a0e7ff2df77c1469c679551831b6c68614979e16e650b3d60e31084fb"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/KeyAnalyzer.php",
+      "sha256": "aa7194e47f1a36498f0426220c7ebad2d7e4d6e2e90e264608f753b936654671"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/KeyAnalyzerManager.php",
+      "sha256": "c45b2c35f06937f3a3324ad5d80e8b9ccd088b24c5ff7de8cd0b9f77aa72b04e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/KeyIdentifierAnalyzer.php",
+      "sha256": "6e068bd1f9c361768028c553e1efa59d25fd915d1fd00875dd329254b0bb156d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/KeysetAnalyzer.php",
+      "sha256": "f939c8c21d4eb7b3da10739c4825ff90116ff4acf811b7940d30fa23665fb8d1"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/KeysetAnalyzerManager.php",
+      "sha256": "9c608a3992e852aafa3e644da6dba38cf679f04cba3a101302088de9e6794b04"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/Message.php",
+      "sha256": "1efb0ea2c571715d287cb1492046fb9720912444e4bf6abb727974edb94450a8"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/MessageBag.php",
+      "sha256": "11c0591946270e77f0d5a3666cf15bb98c0c04b4b5d547784826ad96c3d65c26"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/MixedKeyTypes.php",
+      "sha256": "23673188689daac5cb7f85639253a6cd0bf0c618ed2fd13532907d7c9a65aa2c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/MixedPublicAndPrivateKeys.php",
+      "sha256": "fb88d2eb108171f5bfdbf0b4102d946815602e39fb720a9bf90e3e49be0daa41"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/NoneAnalyzer.php",
+      "sha256": "7b96f400faf6897087c20db4da7f482f01329c320868a01b0c3bcb222b704a2d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/OctAnalyzer.php",
+      "sha256": "546f6f986a480a003ac09cac5f0029acc852f6f22e2bf9764b37a166db3230e8"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/RsaAnalyzer.php",
+      "sha256": "a52632746b8412b29847c9481d1be421dc101c83748f3f94face031149ba1018"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/UsageAnalyzer.php",
+      "sha256": "f637a8876440f12e95f8f818fa10d7fdd9d1e696e06aa815c1a43a7e62fa3c3e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/Analyzer/ZxcvbnKeyAnalyzer.php",
+      "sha256": "265980c8ca8cba659fda9477ba154e8f021f4f7dd0ece1533c077bac6d61e03a"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/JKUFactory.php",
+      "sha256": "3ad45646c8eea12be7db64b3255502c95e0a2659296c16c5b508961d9a49b256"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/JWKFactory.php",
+      "sha256": "18d462f4ca079ccd72be423c8b4141aa6cf5cbed664d0b7e3a2c3e2b8b136d9e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/KeyConverter/ECKey.php",
+      "sha256": "2a87dc104dbc0f3924e916cfae776a60b11192874496d8df5c0be1b2be4ca512"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/KeyConverter/KeyConverter.php",
+      "sha256": "32d8c3462a86ab537212bfc8b2f225f6f855bcf8cc53c49ac7bfa4c61bf8997e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/KeyConverter/RSAKey.php",
+      "sha256": "b075485bcc3d7eefd3ccd5f99ae13f8283d2ef2d9fd109316764e151e3def62e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/UrlKeySetFactory.php",
+      "sha256": "cd82e68f74ab978243d380b6c99cfa802b18cdc228718be21b35dc7a1bf65781"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/KeyManagement/X5UFactory.php",
+      "sha256": "958287201fde93282f44829377d1527e928386dca47df33994edb42fc8a59206"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/LICENSE",
+      "sha256": "9c8e44cc77a2465f62983433da0107435395146d76eb370d43ee2adba91ab219"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/NestedToken/NestedTokenBuilder.php",
+      "sha256": "1d046169e80b1e1befd19ecc0e93a00f1f79fddcd749f675f0f84fc8c6cc6e0a"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/NestedToken/NestedTokenBuilderFactory.php",
+      "sha256": "786f9712b84fe202918f02f71dadb1e3365232dc9f8c59066f04613c4cb0f3c5"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/NestedToken/NestedTokenLoader.php",
+      "sha256": "899121ffba37aff514f77ffdfe05108145f074fe539e6ff208e203cbe2407609"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/NestedToken/NestedTokenLoaderFactory.php",
+      "sha256": "6014e35286fd866acb2d0ab6d298b774af410fd9942f2d3b566ebfe0a8b1a35b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/ECDSA.php",
+      "sha256": "e258c66ea716f4d12db104596cf4a510af2e1622d5044a05ddb16ba5bebae99c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/ES256.php",
+      "sha256": "02a5baad58e66f732b7d0cd778f2bb91c8b9a54c15d09336e97063a1d4e9e023"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/ES384.php",
+      "sha256": "cc94b8e89fed5f47e43e0939cfed8bf8e41fb94996cd9155b81838def3dd7b6a"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/ES512.php",
+      "sha256": "ad050aa1c0401d285c304822e450238279348a5df45f15f931d5d2ce53cfd63c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/EdDSA.php",
+      "sha256": "1b2bc33ee6a27a0c0430de078a241b3399b35d8d4ae4c979196e8ed828d44138"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/HMAC.php",
+      "sha256": "829e9c929ac7f566f3ca0ae3cc01039ab7978933c4f5a89a68d915e63066e482"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/HS256.php",
+      "sha256": "35702eba6912c35178c8c821686831f8a77a3ebd1404db2b75a36d525776738f"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/HS384.php",
+      "sha256": "08b568eea152b5cadcd264f657e8693c51bd32aa865600a980550d4daa57e34a"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/HS512.php",
+      "sha256": "e4c7ebd744658d1c701e19e458b643a5a8bcda540287155d06d46746674abc11"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/MacAlgorithm.php",
+      "sha256": "cba288d070ea07686370295862354c149aa07e6a35c2d7268c664768b9f2ac30"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/None.php",
+      "sha256": "26dd1844e996f6f3543266ded2bc75bade367a85424b8acc28462bb6a7e4f2a2"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/PS256.php",
+      "sha256": "4dccc91a01a09625dd0caf19374facf544304ddead4c916204977796f1e65245"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/PS384.php",
+      "sha256": "f07228dcb83ce5098b68ce09131aceadfd666af3077bd17df908a0b58788de0c"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/PS512.php",
+      "sha256": "9870ef25d21d49a049d827fa06e398a9882ac8170776f6e84178371d6ba10042"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/RS256.php",
+      "sha256": "0d341f01401c9bb903eb42a87df990f14ab669ed0fc5146ba40a01818c2d07c0"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/RS384.php",
+      "sha256": "4946420547739656a145aaaca100045ee81a2dd55ca1ec97448c75d1df9889ef"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/RS512.php",
+      "sha256": "7d5d0ec77b458d15b0dfc6a3669afde59d92c5e12d6eefe74edda2a38559ab73"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/RSAPKCS1.php",
+      "sha256": "77f87b32dd0538c967af9f3e8d60b9efe8098f0fb84f468cacc6429e20fb7afd"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/RSAPSS.php",
+      "sha256": "ce9ea9530600d172b273d0d15ecda5239629b707682be03ed5ebd0906236270b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/SignatureAlgorithm.php",
+      "sha256": "18e1dab14b39c4c0d45df004088de7ad8ff910d2b069b0da564d3a6acfb53fa7"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Algorithm/Util/RSA.php",
+      "sha256": "a2c31532428c63bdb236f84053c99fe0383d1f570c7439c9db3cd9f7a2498aad"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWS.php",
+      "sha256": "e88b3b9c9e92d4f0d5de8e2ae4c4ee9c07725b1d5064d5eddc0f6a09ef792dec"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWSBuilder.php",
+      "sha256": "fb1ea5b345cac407a7d4184e5ea3536eb0f4b7edef2ebed5c37b945714332080"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWSBuilderFactory.php",
+      "sha256": "c4f21a8469cabae6403fe9a548a8fda2a09b0ed29db38e7f651656e1b9949d65"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWSLoader.php",
+      "sha256": "44887aea809b24a8c37cc0c53b1aca8329446bbef81008a264cec63eef5cad16"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWSLoaderFactory.php",
+      "sha256": "f78902bfe42a5dd7547ada3d0f77d8dbe77dbc94ae540e15d804b8b344535254"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWSTokenSupport.php",
+      "sha256": "852c43704269942dc549ed6a72eee38c5e6a2a033f6527bd4cf4ab6f1a8b203d"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWSVerifier.php",
+      "sha256": "44eb8b89c26f87d7c6a5ff5e0ad40eec9194556623d14915d57a4b6aee3c09e3"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/JWSVerifierFactory.php",
+      "sha256": "69e31c350334be6a2cde3837e6e3ace1a0dd4c1cf7835ddb961c329ee3cb95a6"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Serializer/CompactSerializer.php",
+      "sha256": "2963c4b2dfa0a6273a64e7500c2b6e28825fef38a445eb9751e81086d2da4316"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Serializer/JSONFlattenedSerializer.php",
+      "sha256": "c51d5874c087c74806f32db06f8bf62f5e490da12a89fc2ca7e52ebf122ce1cb"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Serializer/JSONGeneralSerializer.php",
+      "sha256": "4049242f7ce31fc4b9a5048dedcc8100c26f325872d2f460e77e06dc8d664fa2"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Serializer/JWSSerializer.php",
+      "sha256": "47a13030512d33d9b355189b1fc0182d5fec5d95d4b2bd30fe4f241265c1f28b"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Serializer/JWSSerializerManager.php",
+      "sha256": "59223a1b234e5ac6d2446793b69062566f3e75c5b476009d3c296a388fcaba4e"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Serializer/JWSSerializerManagerFactory.php",
+      "sha256": "a4fb8c566ecdd9de0f5d8353d3650b35892e35b4d52cb3a66106766f51ac2f57"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Serializer/Serializer.php",
+      "sha256": "819ca0d69204a9c93aabee6faf63e8bf35f6a662f18415e5fb975fa8d9b67371"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/Signature/Signature.php",
+      "sha256": "a9e59e3a7737fa19f1456d12a7555ed1717ec1e05d46c823a96839699157ece7"
+    },
+    {
+      "path": "vendor/web-token/jwt-library/composer.json",
+      "sha256": "204929d158e26a11c385c18023eb6dba08a74da552512945cf8e74bd85ce8e2f"
+    }
+  ],
+  "runtime_manifest_note": "The runtime hash list follows production packaging: Markdown, .gitignore and excluded metadata/tool/test directories are omitted. Original vendor source is otherwise unchanged."
+}

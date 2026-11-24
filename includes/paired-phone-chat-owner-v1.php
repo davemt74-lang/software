@@ -36,6 +36,8 @@ function vp3_paired_phone_owner_reply_v1(PDO $pdo,array $user,array $principal,a
         $reply=vp3_paired_phone_marker_v1($pdo,$uid,$cid,'user');
         vp3_phone_sql_v1($pdo,'INSERT INTO vp3_paired_phone_owner_replies_v1(phone_message_id,owner_message_id,message) VALUES(?,?,?)',
             [$original,$reply,$message]);
+        $now=time();
+        vp3_phone_push_event_enqueue_v1($pdo,$phone,['type'=>'private_chat','id'=>(string)$reply,'revision'=>1,'expires_epoch'=>$now+86400],$now);
         return ['reply_message_id'=>$reply];
     });
 }

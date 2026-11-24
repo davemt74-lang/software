@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+
+require_once __DIR__.'/phone-transactions-v1.php';
 require_once __DIR__.'/phone-information-files-v1.php';
 
 /** PS5A: bounded, explicit text exchange. No device sensor, file or model access. */
@@ -7,7 +9,7 @@ const VP3_PHONE_INFO_TTL_V1=86400;
 const VP3_PHONE_INFO_RETENTION_V1=2592000;
 function vp3_phone_information_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install information exchange outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install information exchange outside transactions.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_information_v1(
         owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,profile_id CHAR(32) NOT NULL,
         exchange_id CHAR(32) NOT NULL,profile_revision BIGINT NOT NULL,version BIGINT NOT NULL,
@@ -164,6 +166,8 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
         vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_information_v1(owner_user_id,device_id,exchange_id,profile_id,profile_revision,version,kind,state,message,response,created_epoch,updated_epoch,expires_epoch,announced)
             VALUES(?,?,?,?,?,1,?,'pending',?,'',?,?,?,0)",[...$scope,$p['profile_id'],(int)$p['revision'],$kind,$text,$now,$now,$now+VP3_PHONE_INFO_TTL_V1]);
         if($file!==null)vp3_phone_file_store_v1($pdo,$scope,$file,$now);
+        vp3_phone_push_event_enqueue_v1($pdo,$d,['type'=>'agent_request','id'=>$id,'revision'=>(int)$p['revision'],
+            'expires_epoch'=>$now+VP3_PHONE_INFO_TTL_V1],$now);
         return vp3_phone_information_list_v1($pdo,$d,$p,$now);
     }
     vp3_phone_information_need_v1($r!==false&&$r['profile_id']===$p['profile_id'],404);

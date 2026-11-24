@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-tracking-local-research-v1.php';
 
 /** One approved public query belongs to one visitor event in one owner's private Chat. */
@@ -126,7 +128,7 @@ function vp3_phone_local_date_v1(array $input): DateTimeImmutable
 
 function vp3_phone_local_approval_turn_v1(PDO $pdo,array $user,array $principal,int $cid,array $plan,array $input): array
 {
-    if (!$pdo->inTransaction()) throw new LogicException('Local search approval requires the private Chat transaction.');
+    if (!vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Local search approval requires the private Chat transaction.');
     $uid=(int)$user['id'];
     $aid=(int)($principal['agent_id']??0);
     if ($plan['action']==='local_area') {

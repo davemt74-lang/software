@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** Managed recording is a separate capability, off by default. */
 require_once __DIR__.'/phone-managed-recording-schema-v1.php';
 require_once __DIR__.'/phone-managed-callback-v1.php';
@@ -176,7 +178,7 @@ function vp3_managed_recording_start_v1(PDO $pdo,string $public,string $nonce,?c
 {
     require_once __DIR__.'/phone-managed-transport-v1.php';
     require_once __DIR__.'/phone-managed-control-v1.php';
-    vp3_managed_callback_need_v1(!$pdo->inTransaction());
+    vp3_managed_callback_need_v1(!vp3_phone_transaction_active_v1($pdo));
     vp3_managed_callback_id_v1($public);vp3_managed_transport_nonce_v1($nonce);
     $now=$clock??time();
     $snapshot=vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$public,$nonce,$now){

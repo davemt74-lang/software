@@ -13,6 +13,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
   let deviceId = null, online = false, generation = 0, nextPoll = 0, polling = false;
   let turns = [], outgoing = null, sending = false, lastTranscript = '';
   let followReplies = true;
+  let notificationRequest = null, focusNotification = false;
 
   function sizeViewport() {
     const viewport = window.visualViewport;
@@ -24,6 +25,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
   }
   function selectTab(view) {
     if(view==='chat'&&!deviceId)view='connection';
+    if(view!=='chat'){notificationRequest=null;focusNotification=false;}
     selectedTab=view;
     for(const [key,tab,panel] of tabItems){
       const active=key===view;panel.hidden=!active;
@@ -155,6 +157,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
     for (const [id,row] of existing) if (!retained.has(id)) row.remove();
     empty.hidden = visible.length > 0;
     if (keepBottom) history.scrollTop = history.scrollHeight;
+    if(focusNotification&&notificationRequest&&!chat.hidden){
+      const target=Array.from(transcript.children).find(row=>row.dataset.request===notificationRequest);
+      if(target){target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'center'});focusNotification=false;followReplies=false;}
+    }
   }
   function accept(result) {
     if (!Array.isArray(result.turns)) throw new Error('Missing chat response');
@@ -169,7 +175,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     polling = true;
     nextPoll = Date.now() + (outgoing || turns.some(t => t.state === 'pending' || t.state === 'awaiting_owner') ? 3000 : 12000);
     try {
-      const result = await request('chat_status',{device_id:deviceId});
+      const result = await request('chat_status',{device_id:deviceId,...(notificationRequest?{focus_request_id:notificationRequest}:{})});
       if (generation !== version) return;
       accept(result);
       if (online) status('');
@@ -235,6 +241,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     if (changed) {
       generation++;
       deviceId = id;
+      notificationRequest=null;focusNotification=false;
       turns = [];
       outgoing = null;
       sending = polling = false;
@@ -264,5 +271,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
     void refresh();
   }
   window.addEventListener('pagehide', () => bind(null,false));
-  return {bind,openInfo:openGuide};
+  function openNotification(requestId){
+    if(!deviceId||!online||typeof requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(requestId))return;
+    notificationRequest=requestId;focusNotification=true;lastTranscript='';followReplies=false;
+    selectTab('chat');render();
+  }
+  return {bind,openInfo:openGuide,openConnection:()=>selectTab('connection'),openNotification};
 };

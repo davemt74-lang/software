@@ -1,11 +1,13 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** Remote dialer handoff is not a telephone call, recording, or carrier API. */
 const VP3_DIALER_TTL_V1=120;
 function vp3_phone_dialer_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install remote dialer outside a transaction.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install remote dialer outside a transaction.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_dialer_settings_v1(
         owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,
         revision BIGINT NOT NULL,enabled SMALLINT NOT NULL,auto_number VARCHAR(20) NOT NULL,

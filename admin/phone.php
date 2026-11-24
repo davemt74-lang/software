@@ -12,6 +12,7 @@ require_once dirname(__DIR__).'/includes/phone-setup-v170.php';
 require_once dirname(__DIR__).'/includes/phone-worker-health-v171.php';
 require_once dirname(__DIR__).'/includes/phone-managed-pilot-v1.php';
 require_once dirname(__DIR__).'/includes/phone-push-subscriptions-v1.php';
+require_once dirname(__DIR__).'/includes/phone-push-delivery-v1.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';$streamReadiness=null;
@@ -24,7 +25,12 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
             $action=(string)($_POST['action']??'');
             if(in_array($action,['phone_push_enroll','phone_push_pause'],true)){
                 vp3_phone_push_configure_v1($pdo,current_user(),$action==='phone_push_enroll',time());
-                flash('notice',$action==='phone_push_enroll'?'Phone notification enrollment enabled. Delivery is not active yet.':'New notification enrollment paused.');redirect(url('/admin/phone.php#phone-push'));
+                flash('notice',$action==='phone_push_enroll'?'Phone notification enrollment enabled. Configure delivery separately below.':'New notification enrollment paused. Existing subscriptions are preserved.');redirect(url('/admin/phone.php#phone-push'));
+            }
+            if($action==='phone_push_delivery'){
+                vp3_phone_push_delivery_configure_v1($pdo,current_user(),['enabled'=>($_POST['delivery_enabled']??'')==='1',
+                    'subject'=>trim((string)($_POST['delivery_subject']??'')),'revision'=>(int)($_POST['delivery_revision']??0)],time());
+                flash('notice','Notification delivery settings saved. The worker and each phone must be ready before alerts can arrive.');redirect(url('/admin/phone.php#phone-push'));
             }
             if($action==='managed_pilot_disable'){
                 vp3_managed_pilot_disable_v1(current_user());flash('notice','Managed live pilot disabled. Existing active calls can still be ended.');redirect(url('/admin/phone.php#managed-pilot'));
@@ -241,6 +247,7 @@ $phoneBrowserState=vp3_phone_browser_config_state_v1();
 $phoneRecordingWorker=vp3_phone_recording_worker_health_v1();
 $managedPilot=vp3_managed_pilot_admin_status_v1(time());
 $phonePush=vp3_phone_push_admin_status_v1($pdo);
+$phonePushDelivery=vp3_phone_push_delivery_status_v1($pdo,time());
 $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.php';
 ?>
 <style>
@@ -381,12 +388,26 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
   </section>
   <section class="phone-card" id="phone-push">
     <h2>Connected phone notifications</h2>
-    <p>Prepare secure Web Push enrollment for approved phones. Each holder must enable notifications in the installed app. No messages are sent by this control.</p>
-    <p>Enrollment: <strong><?= $phonePush['enrollment_enabled']?'Enabled':'Paused' ?></strong> · saved subscriptions: <?= (int)$phonePush['registered_count'] ?> · delivery worker: not enabled</p>
+    <p>Each holder enables notifications in their installed app. Alerts cover private replies and information requests addressed to that phone. Lock-screen previews contain no message text.</p>
+    <p>Enrollment: <strong><?= $phonePush['enrollment_enabled']?'Enabled':'Paused' ?></strong> · saved subscriptions: <?= (int)$phonePush['registered_count'] ?></p>
     <p>Key status: <?= e(str_replace('_',' ',$phonePush['state'])) ?>. An existing VP3 credential encryption key must be available. Preserve your private credential key and database when deploying.</p>
     <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $phonePush['enrollment_enabled']?'phone_push_pause':'phone_push_enroll' ?>">
       <button class="phone-secondary" <?= $phonePush['state']==='upgrade_required'?'disabled':'' ?>><?= $phonePush['enrollment_enabled']?'Pause new enrollment':'Prepare and enable enrollment' ?></button>
     </form>
+    <h3>Background delivery</h3>
+    <p>Delivery: <strong><?= e(str_replace('_',' ',$phonePushDelivery['state'])) ?></strong> · worker: <?= e(str_replace('_',' ',$phonePushDelivery['worker']['state'])) ?><?= $phonePushDelivery['worker']['runtime']!==''?' (PHP '.e($phonePushDelivery['worker']['runtime']).')':'' ?>.</p>
+    <?php if($phonePushDelivery['worker']['code']!=='ready'): ?><p>Worker check: <?= e(str_replace('_',' ',$phonePushDelivery['worker']['code'])) ?>.</p><?php endif; ?>
+    <?php if(($phonePushDelivery['capacity_skipped_count']??0)>0): ?><p>Alerts skipped because the queue was full: <?= (int)$phonePushDelivery['capacity_skipped_count'] ?>. The original messages and requests were saved. Check that the cron worker is running.</p><?php endif; ?>
+    <form method="post">
+      <?= csrf_field() ?><input type="hidden" name="action" value="phone_push_delivery"><input type="hidden" name="delivery_revision" value="<?= (int)$phonePushDelivery['revision'] ?>">
+      <label class="phone-field">Push service contact<input name="delivery_subject" maxlength="254" value="<?= e($phonePushDelivery['subject']) ?>" placeholder="mailto:admin@example.com" autocomplete="off"></label>
+      <p>Enter an administrator contact as a mailto: address or HTTPS URL. This is shared with the push service for support, never displayed in notifications.</p>
+      <label style="display:flex;gap:8px;align-items:center;margin:12px 0"><input style="width:20px;min-height:20px" type="checkbox" name="delivery_enabled" value="1" <?= $phonePushDelivery['enabled']?'checked':'' ?>> Enable delivery for phones with an active notification subscription</label>
+      <button <?= $phonePushDelivery['state']==='upgrade_required'?'disabled':'' ?>>Save notification delivery</button>
+    </form>
+    <p>Add a once-per-minute cron command using your hosting account's PHP 8.2 or newer CLI with curl, json, mbstring and openssl enabled:</p>
+    <p><code>/path/to/php82 <?= e(STONEFELLOW_ROOT.'/phone-push-worker-v1.php') ?></code></p>
+    <p>The web app and queue can run on PHP 8.1. A worker with an unsupported runtime leaves queued events untouched. Disabling delivery cancels queued alerts; pausing enrollment only stops new subscriptions. A phone must report a test alert before delivery to that installation is confirmed.</p>
   </section>
   <section class="phone-card" id="browser-phone">
     <h2>Browser phone</h2>

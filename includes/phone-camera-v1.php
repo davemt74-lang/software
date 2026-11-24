@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-camera-map-v1.php';
 require_once __DIR__.'/phone-camera-recording-v1.php';
 
@@ -292,7 +294,7 @@ function vp3_phone_camera_pending_v1(PDO $pdo,int $owner,int $agent,int $cid): b
 function vp3_phone_camera_events_v1(PDO $pdo,int $owner,int $agent,int $cid): array
 {
     if (!vp3_phone_camera_ready_v1($pdo)) return [];
-    if (!$pdo->inTransaction()) throw new LogicException('Camera events must be saved with their Chat turns.');
+    if (!vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Camera events must be saved with their Chat turns.');
     vp3_phone_account_v1($pdo,$owner,true);
     if (!vp3_phone_camera_scope_v1($pdo,$owner,$agent,$cid)) return [];
     $now=time();

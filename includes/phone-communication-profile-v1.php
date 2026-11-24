@@ -1,12 +1,14 @@
 <?php
 declare(strict_types=1);
+
+require_once __DIR__.'/phone-transactions-v1.php';
 require_once __DIR__.'/phone-information-exchange-v1.php';
 require_once __DIR__.'/phone-remote-dialer-v1.php';
 
 /** Communication preferences for one existing QR pairing. No execution grant. */
 function vp3_phone_communication_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install communication profiles outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install communication profiles outside transactions.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_communication_profiles_v1(
         owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,profile_id CHAR(32) NOT NULL UNIQUE,
         revision BIGINT NOT NULL,phone_revision BIGINT NOT NULL DEFAULT 0,phone_e164 VARCHAR(20) NOT NULL DEFAULT '',

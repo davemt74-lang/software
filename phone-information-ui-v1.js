@@ -35,6 +35,7 @@
     root.append(title,notice,controls);if(!holder)root.append(form);root.append(list);
     const labels={pending:'Pending',accepted:'Accepted',declined:'Declined',completed:'Completed',acknowledged:'Acknowledged',canceled:'Canceled',expired:'Expired'};
     let device=null,scopeKey='',epoch=0,writing=false,reading=false,nextRead=0,items=[],signature='',draftId='',draftHash='',filesReady=false,replies=new Map();
+    let notificationExchange=null;
     const hex=v=>typeof v==='string'&&/^[a-f0-9]{32}$/.test(v);
     const randomId=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
     const goodText=s=>typeof s==='string'&&s.trim()&&new TextEncoder().encode(s.trim()).length<=1000;
@@ -43,6 +44,7 @@
     function clear(){
       epoch++;device=null;scopeKey='';writing=reading=false;nextRead=0;items=[];signature='';draftId=draftHash='';replies.clear();
       filesReady=false;message.value='';kind.value='update';attachment.input.value='';attachment.check.checked=false;notice.textContent='';list.replaceChildren();
+      notificationExchange=null;
     }
     function setStatus(s){notice.textContent=s;}
     function setControls(){
@@ -115,6 +117,7 @@
       if(!items.length)list.append(make('p','No information exchanged yet.','phone-information-empty'));
       for(const i of items){
         const card=make('article',undefined,'phone-information-item');
+        card.dataset.exchangeId=i.exchange_id;
         card.append(make('strong',kinds[i.kind]+' · '+labels[i.state]));
         if(i.message)card.append(make('p',i.message,'phone-information-text'));
         if(i.response)card.append(make('p','Response: '+i.response,'phone-information-text'));
@@ -144,6 +147,16 @@
         card.append(actions);list.append(card);
       }
       setControls();
+      focusNotification();
+    }
+    function focusNotification(){
+      if(!notificationExchange||root.hidden)return;
+      const card=Array.from(list.children).find(item=>item.dataset.exchangeId===notificationExchange);
+      if(card){card.tabIndex=-1;card.focus({preventScroll:true});card.scrollIntoView({block:'center'});notificationExchange=null;}
+    }
+    function openNotification(exchangeId){
+      if(!device||!holder||!hex(exchangeId))return;
+      notificationExchange=exchangeId;focusNotification();nextRead=0;void read();
     }
     async function read(){
       if(!device||reading||writing||document.hidden)return;
@@ -227,6 +240,6 @@
       device=d;form.hidden=holder;refresh.hidden=false;setControls();
       if(!reading&&!writing&&Date.now()>=nextRead)void read();
     }
-    return {root,bind,clear};
+    return {root,bind,clear,openNotification};
   };
 })();
