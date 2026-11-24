@@ -647,3 +647,20 @@ jobs:
           php tests/agent-operator-worker-authority-8a4.php
           php tests/agent-operator-worker-race-8a4.php
           php tests/agent-operator-paired-worker-8a4.php
+
+      - name: Check out exact HomeServer reporting implementation for interoperability
+        uses: actions/checkout@v4
+        with:
+          repository: davemt74-lang/otro
+          ref: 0b059239c489655f1c65dbe857c58a73bdf0b3c3
+          path: .operator-interop-homeserver
+          persist-credentials: false
+          sparse-checkout: |
+            telephony
+          sparse-checkout-cone-mode: true
+      - name: Cross-runtime Python/PHP loopback TLS acceptance
+        env:
+          VP3_INTEROP_HOMESERVER: ${{ github.workspace }}/.operator-interop-homeserver
+        run: |
+          php -l tests/fixtures/operator-worker-interop-8a4.php
+          python3 -B tests/operator-worker-interop-8a4.py
