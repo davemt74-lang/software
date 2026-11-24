@@ -31,11 +31,14 @@ function vp3_managed_control_scope_v1(PDO $pdo,array $scope,array $call):void
 }
 function vp3_managed_control_view_v1(PDO $pdo,array $scope,array $call):array
 {
-    $out=['can_reconcile'=>false,'can_end'=>false,'parent_bound'=>false,'read_state'=>'unavailable','end_state'=>'none'];
+    $out=['can_reconcile'=>false,'can_end'=>false,'parent_bound'=>false,'read_state'=>'unavailable','end_state'=>'none','dispatch_state'=>'','parent_state'=>''];
     if(($call['transport_kind']??'')!=='managed_callback'||!vp3_managed_control_ready_v1($pdo))return $out;
     try{
         vp3_managed_control_scope_v1($pdo,$scope,$call);
         $control=vp3_managed_control_row_v1($pdo,$call['public_id']);
+        $t=vp3_managed_transport_row_v1($pdo,$call['public_id']);
+        if(!$t||(int)$t['owner_user_id']!==(int)$scope['owner_user_id'])return $out;
+        $out['dispatch_state']=(string)$t['state'];$out['parent_state']=(string)$t['parent_state'];
         $out['parent_bound']=vp3_managed_transport_sid_v1($call['provider_call_sid']??null);
         $out['read_state']=$control['read_state']??'none';$out['end_state']=$control['end_state']??'none';
         if(!vp3_managed_control_terminal_v1((string)$call['state'])){
@@ -71,7 +74,7 @@ function vp3_managed_control_evidence_v1(mixed $raw,string $account,array $call,
     if($duration===null||$duration==='')$duration=0;
     if(!is_int($duration)&&!(is_string($duration)&&preg_match('/^\d{1,6}$/D',$duration)))return null;
     if((int)$duration<0||(int)$duration>240)return null;
-    if($state==='completed'&&!isset($raw['duration']))return null;
+    if($state==='completed'&&(!isset($raw['duration'])||$raw['duration']===''))return null;
     return ['state'=>$state,'duration'=>(int)$duration];
 }
 /** Lock and reserve the control operation before any provider I/O. */
@@ -150,8 +153,9 @@ function vp3_managed_control_action_v1(PDO $pdo,array $scope,array $input,?calla
     if(isset($snapshot['done']))return vp3_managed_control_result_v1($pdo,$scope,$public);
     $carrier=$carrier??'vp3_phone_twilio_http_v100';$account=(string)vp3_phone_twilio_state_v100()['account_sid'];
     $parent=null;$child=null;$endState=null;$readState='provider_unconfirmed';
-    $call=$snapshot['call'];$resource=vp3_managed_control_resource_v1($account,$call['provider_call_sid']);
+    $call=$snapshot['call'];
     try{
+        $resource=vp3_managed_control_resource_v1($account,$call['provider_call_sid']);
         $parent=vp3_managed_control_evidence_v1($carrier('GET',$resource,[]),$account,$call);
         if($parent){
             $readState='parent_'.$parent['state'];
@@ -167,7 +171,7 @@ function vp3_managed_control_action_v1(PDO $pdo,array $scope,array $input,?calla
                     });
                     if($can){
                         $receipt=vp3_managed_control_evidence_v1($carrier('POST',$resource,['Status'=>$parent['state']==='answered'?'completed':'canceled']),$account,$call);
-                        if($receipt&&vp3_managed_control_terminal_v1($receipt['state'])){$parent=$receipt;$endState='parent_ended';}
+                        if($receipt&&vp3_managed_control_terminal_v1($receipt['state'])){$parent=$receipt;$endState='parent_ended';$readState='parent_'.$parent['state'];}
                         else $endState='uncertain';
                     }else $endState='not_sent';
                 }
