@@ -11,6 +11,7 @@ require_once dirname(__DIR__).'/includes/phone-voice-readiness-v160.php';
 require_once dirname(__DIR__).'/includes/phone-setup-v170.php';
 require_once dirname(__DIR__).'/includes/phone-worker-health-v171.php';
 require_once dirname(__DIR__).'/includes/phone-managed-pilot-v1.php';
+require_once dirname(__DIR__).'/includes/phone-push-subscriptions-v1.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';$streamReadiness=null;
@@ -21,6 +22,10 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
     else {
         try {
             $action=(string)($_POST['action']??'');
+            if(in_array($action,['phone_push_enroll','phone_push_pause'],true)){
+                vp3_phone_push_configure_v1($pdo,current_user(),$action==='phone_push_enroll',time());
+                flash('notice',$action==='phone_push_enroll'?'Phone notification enrollment enabled. Delivery is not active yet.':'New notification enrollment paused.');redirect(url('/admin/phone.php#phone-push'));
+            }
             if($action==='managed_pilot_disable'){
                 vp3_managed_pilot_disable_v1(current_user());flash('notice','Managed live pilot disabled. Existing active calls can still be ended.');redirect(url('/admin/phone.php#managed-pilot'));
             }
@@ -235,6 +240,7 @@ $workerHealth=vp3_phone_worker_health_state_v171($pdo,time());
 $phoneBrowserState=vp3_phone_browser_config_state_v1();
 $phoneRecordingWorker=vp3_phone_recording_worker_health_v1();
 $managedPilot=vp3_managed_pilot_admin_status_v1(time());
+$phonePush=vp3_phone_push_admin_status_v1($pdo);
 $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.php';
 ?>
 <style>
@@ -372,6 +378,15 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
       <button <?= $ready&&$state['configured']?'':'disabled' ?>>Save temporary pilot</button>
     </form>
     <form method="post" style="margin-top:10px"><?= csrf_field() ?><input type="hidden" name="action" value="managed_pilot_disable"><button class="phone-secondary">Disable pilot</button></form>
+  </section>
+  <section class="phone-card" id="phone-push">
+    <h2>Connected phone notifications</h2>
+    <p>Prepare secure Web Push enrollment for approved phones. Each holder must enable notifications in the installed app. No messages are sent by this control.</p>
+    <p>Enrollment: <strong><?= $phonePush['enrollment_enabled']?'Enabled':'Paused' ?></strong> · saved subscriptions: <?= (int)$phonePush['registered_count'] ?> · delivery worker: not enabled</p>
+    <p>Key status: <?= e(str_replace('_',' ',$phonePush['state'])) ?>. An existing VP3 credential encryption key must be available. Preserve your private credential key and database when deploying.</p>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="<?= $phonePush['enrollment_enabled']?'phone_push_pause':'phone_push_enroll' ?>">
+      <button class="phone-secondary" <?= $phonePush['state']==='upgrade_required'?'disabled':'' ?>><?= $phonePush['enrollment_enabled']?'Pause new enrollment':'Prepare and enable enrollment' ?></button>
+    </form>
   </section>
   <section class="phone-card" id="browser-phone">
     <h2>Browser phone</h2>

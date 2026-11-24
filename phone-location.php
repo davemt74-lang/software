@@ -35,7 +35,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
   <script src="phone-handoff-v1.js?v=1" defer></script>
-  <script src="phone-location-v1.js?v=15" defer></script>
+  <script src="phone-push-subscriptions-v1.js?v=1" defer></script>
+  <script src="phone-location-v1.js?v=16" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -145,7 +146,13 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       <section class="phone-guide-section" aria-labelledby="phone-guide-notifications-title">
         <h2 id="phone-guide-notifications-title">Notifications</h2>
         <p class="phone-guide-status" id="phone-guide-notification-state">Background notifications are not enabled yet.</p>
-        <p>On iPhone or iPad with iOS or iPadOS 16.4 or later, the installed app can receive notifications after you allow them. Once enabled, use Settings &gt; Notifications &gt; VP3 Phone to manage alerts. Keep VP3 Phone open to see current requests for now.</p>
+        <p>Install VP3 Phone on your Home Screen, then allow notifications. On iPhone or iPad, iOS or iPadOS 16.4 or later is required. Use Settings &gt; Notifications &gt; VP3 Phone to manage alerts.</p>
+        <div id="phone-push-controls" hidden>
+          <button id="phone-push-enable" type="button" hidden>Enable notifications</button>
+          <button id="phone-push-disable" type="button" class="secondary" hidden>Turn off notifications</button>
+          <p id="phone-push-feedback" role="status"></p>
+        </div>
+        <p class="phone-install-note">Setup saves your subscription only. Keep VP3 Phone open for current requests until background delivery is available.</p>
       </section>
       <section class="phone-guide-section" aria-labelledby="phone-guide-requests-title">
         <h2 id="phone-guide-requests-title">Agent requests</h2>

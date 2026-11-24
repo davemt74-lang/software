@@ -637,10 +637,12 @@ try {
         'stopping sharing also removes the private Map and Chat viewers and their signaling');
     require_once __DIR__.'/phone-handoff-cases-v1.php';
     vp3_test_phone_handoff_v1($db,1,2,'phone_test_check');
+    require_once __DIR__.'/phone-push-cases-v1.php';
+    vp3_test_phone_push_v1($db,1,2,'phone_test_check');
     $db->exec('DELETE FROM users WHERE id=1');
     $tables = [
         'vp3_phone_invites_v1', 'vp3_phone_devices_v1', 'vp3_phone_requests_v1',
-        'vp3_phone_history_points_v1', 'vp3_phone_places_v1', 'vp3_phone_camera_sessions_v1','vp3_phone_handoffs_v1',
+        'vp3_phone_history_points_v1', 'vp3_phone_places_v1', 'vp3_phone_camera_sessions_v1','vp3_phone_handoffs_v1','vp3_phone_push_subscriptions_v1',
     ];
     foreach ($tables as $table) {
         phone_test_check(!(int)$db->query("SELECT COUNT(*) FROM $table WHERE owner_user_id=1")->fetchColumn(),

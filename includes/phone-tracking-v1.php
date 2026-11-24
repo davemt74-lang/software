@@ -12,6 +12,7 @@ require_once __DIR__.'/phone-information-exchange-v1.php';
 require_once __DIR__.'/phone-remote-dialer-v1.php';
 require_once __DIR__.'/phone-managed-ui-v1.php';
 require_once __DIR__.'/phone-handoff-v1.php';
+require_once __DIR__.'/phone-push-subscriptions-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -88,6 +89,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_file_install_v1($pdo,$options);
     vp3_phone_dialer_install_v1($pdo,$options);
     vp3_phone_handoff_install_v1($pdo,$options);
+    vp3_phone_push_install_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -371,7 +373,7 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
             $generation=(int)$row['generation'];
             vp3_phone_owner_transition_v1($row,$action,$input,$now);
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
-            if ($action === 'revoke') {vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
+            if ($action === 'revoke') {vp3_phone_push_revoke_v1($pdo,$row,$now);vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
             if ($action === 'delete_history' || $action === 'revoke') vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_save_row_v1($pdo,$row);
             $expiry = $row['expires_at'];
@@ -517,6 +519,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             vp3_phone_camera_disconnect_v1($pdo,$row);
             vp3_phone_communication_delete_v1($pdo,$row);
             vp3_phone_handoff_revoke_v1($pdo,$row);
+            vp3_phone_push_revoke_v1($pdo,$row,$now);
             return [];
         }
         $receipt = [];
@@ -524,7 +527,9 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
         if ($action !== 'status') {
             $previousFix = $row['fix_at'];
             $generation=(int)$row['generation'];
-            if (in_array($action,['handoff_offer','handoff_cancel'],true)) {
+            if (in_array($action,['push_register','push_disable'],true)) {
+                $receipt=vp3_phone_push_holder_v1($pdo,$row,$action,$input,$now);
+            } elseif (in_array($action,['handoff_offer','handoff_cancel'],true)) {
                 $receipt=vp3_phone_handoff_holder_v1($pdo,$row,$action,$input,$now);
             } elseif ($action === 'save_communication_profile') {
                 vp3_phone_communication_require_v1(is_string($input['device_id']??null)&&hash_equals($row['id'],$input['device_id']),403);
@@ -548,7 +553,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 vp3_phone_device_transition_v1($row,$action,$input,$now);
             }
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
-            if ($action === 'disconnect') {vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
+            if ($action === 'disconnect') {vp3_phone_push_revoke_v1($pdo,$row,$now);vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
             if ($action === 'fix' && ($previousFix === null || (int)$previousFix !== (int)$row['fix_at'])) {
                 vp3_phone_history_record_v1($pdo,$row,$input,$now);
                 vp3_phone_arrival_fix_v1($pdo,$row,$input,$now);
@@ -570,6 +575,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
         $public['dialer']=vp3_phone_dialer_view_v1($pdo,$row,$now,true);
         $public['managed_callback']=vp3_managed_ui_projection_v1($pdo,$row,$now,true);
         $public['handoff']=vp3_phone_handoff_view_v1($pdo,$row,$now);
+        $public['push']=vp3_phone_push_view_v1($pdo,$row,$now);
         return ['device'=>$public,'owner_name'=>$ownerName] + $receipt;
     });
     // Return no owner or device data, after committing the withdrawal.

@@ -68,10 +68,10 @@ try {
         if (vp3_participant_scope_v1()===null) {
             $result['devices']=vp3_phone_camera_map_devices_v1($pdo,$owner,$result['devices']);
             $result['devices']=vp3_phone_communication_map_v1($pdo,$owner,$result['devices'],time());
-            if(vp3_phone_handoff_ready_v1($pdo)){
+            if(vp3_phone_handoff_ready_v1($pdo)||vp3_phone_push_ready_v1($pdo)){
                 foreach($result['devices'] as &$public){
                     $q=$pdo->prepare('SELECT * FROM vp3_phone_devices_v1 WHERE owner_user_id=? AND id=?');$q->execute([$owner,$public['id']]);$d=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
-                    if($d)$public['handoff']=vp3_phone_handoff_view_v1($pdo,$d,time(),true);
+                    if($d){$public['handoff']=vp3_phone_handoff_view_v1($pdo,$d,time(),true);$public['push']=vp3_phone_push_view_v1($pdo,$d,time(),false);}
                 }unset($public);
             }
         }

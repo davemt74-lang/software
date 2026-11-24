@@ -186,4 +186,6 @@ pt_assert($otherId!==$id && $owner('state')['devices'][0]['id']===$otherId,'repl
 
 require_once __DIR__.'/phone-handoff-cases-v1.php';
 vp3_test_phone_handoff_v1($db,11,12,'pt_assert');
+require_once __DIR__.'/phone-push-cases-v1.php';
+vp3_test_phone_push_v1($db,11,12,'pt_assert');
 echo "PASS Phone Tracking pairing, sharing, handoff and per-phone preferences.\n";

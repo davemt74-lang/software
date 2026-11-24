@@ -317,7 +317,7 @@
     if(profileTab==='information'&&exchange&&host.contains(exchange.root)&&host.dataset.exchangeDevice===d.id)return;
     const p=d.communication;
     const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[d.agent_chat,typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function'];
-    const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra]);
+    const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra,d.push]);
     if(sig===profileSignature)return;
     // Do not overwrite an in-progress permission form on an unrelated GPS poll.
     const focused=host.contains(document.activeElement)&&document.activeElement.closest('form');
@@ -365,6 +365,7 @@
       if(exchange)host.append(exchange.root);else host.append(element('p','Information exchange is unavailable.','phone-detail-meta'));
     }else{
       field('Connection',connection(d));field('Last seen',timestamp(d.last_seen_at));field('Location',stateLabels[effectiveState(d)]);
+      field('Push notifications',d.push?.state==='registered'?'Subscription saved · delivery pending':d.push?.state==='unavailable'?'Needs attention':'Not enrolled');
       field('Location history',d.history_state==='active'?'Enabled · '+d.history_retention_days+' days':d.history_state==='requested'?'Awaiting holder':'Off');
       field('Live camera',camera.liveCamera(d)?'Sharing':'Not sharing');field('Phone chat',d.agent_chat?.conversation_id?'Linked':'Not linked');
       host.append(facts);

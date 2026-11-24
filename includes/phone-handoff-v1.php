@@ -118,6 +118,7 @@ function vp3_phone_handoff_owner_v1(PDO $pdo,array $user,string $action,array $i
 /** The next installation cannot carry over another holder's active grants. */
 function vp3_phone_handoff_reset_v1(PDO $pdo,array &$d,int $now):void
 {
+    vp3_phone_push_revoke_v1($pdo,$d,$now);
     vp3_phone_end_location_v1($d,'off');
     $d['places_generation']=null;$d['place_permission_version']=(int)$d['place_permission_version']+1;
     vp3_phone_arrival_clear_v1($pdo,$d);
