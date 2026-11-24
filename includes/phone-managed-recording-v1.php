@@ -133,3 +133,130 @@ function vp3_managed_recording_child_v1(PDO $pdo,string $event,array $row,array 
     // not itself start recording. Start admission separately verifies both legs.
     return ['accepted'=>true,'xml'=>'<?xml version="1.0" encoding="UTF-8"?><Response></Response>'];
 }
+
+
+function vp3_managed_recording_sid_v1(mixed $sid):bool
+{
+    return is_string($sid)&&preg_match('/^RE[a-f0-9]{32}$/iD',$sid)===1;
+}
+/** Read-only verification and one durable start claim. Never start on a whisper alone. */
+function vp3_managed_recording_start_snapshot_v1(PDO $pdo,string $public,string $nonce,int $now,string $expected):array
+{
+    vp3_managed_callback_need_v1(vp3_managed_recording_enabled_v1()&&vp3_managed_transport_enabled_v1(),503);
+    $hint=vp3_managed_transport_row_v1($pdo,$public);
+    vp3_managed_callback_need_v1(is_array($hint)&&hash_equals($hint['callback_nonce_hash'],hash('sha256',$nonce)),403);
+    $owner=(int)$hint['owner_user_id'];$live=vp3_managed_callback_owner_lock_v1($pdo,$owner);
+    $t=vp3_managed_transport_row_v1($pdo,$public,true);$call=vp3_managed_transport_call_v1($pdo,$public,true);
+    vp3_managed_callback_need_v1(is_array($t)&&is_array($call)&&(int)$call['owner_user_id']===$owner&&$call['state']==='answered'
+        &&$t['state']==='bridging'&&$t['parent_state']===''&&hash_equals($t['callback_nonce_hash'],hash('sha256',$nonce)));
+    $row=vp3_managed_callback_row_v1($pdo,$t['request_id'],true);$c=vp3_managed_recording_row_v1($pdo,$t['request_id'],true);
+    vp3_managed_callback_need_v1(is_array($row)&&is_array($c)&&$row['state']==='dispatch_claimed'&&(int)$row['expires_epoch']>$now
+        &&$c['start_state']===$expected&&(int)$c['holder_epoch']>0&&(int)$c['parent_epoch']>0&&(int)$c['child_epoch']>0
+        &&(int)$c['start_epoch']===0&&vp3_managed_transport_sid_v1($call['provider_call_sid'])&&vp3_managed_transport_sid_v1($call['provider_child_sid'])
+        &&hash_equals((string)$c['child_sid'],(string)$call['provider_child_sid']));
+    $a=vp3_managed_callback_current_v1($pdo,$row,$live,$now);
+    vp3_managed_recording_current_v1($pdo,$row,$c,$a);
+    return ['call'=>$call,'transport'=>$t,'request'=>$row,'consent'=>$c];
+}
+function vp3_managed_recording_bind_sid_v1(PDO $pdo,array $c,string $sid,int $now):bool
+{
+    if(!vp3_managed_recording_sid_v1($sid))return false;
+    if($c['recording_sid'])return hash_equals((string)$c['recording_sid'],$sid);
+    $q=$pdo->prepare('SELECT request_id FROM phone_managed_recording_consent_v1 WHERE recording_sid=?');$q->execute([$sid]);$other=$q->fetchColumn();$q->closeCursor();
+    if($other!==false)return false;
+    $q=$pdo->prepare('UPDATE phone_managed_recording_consent_v1 SET recording_sid=?,updated_epoch=? WHERE request_id=? AND recording_sid IS NULL');
+    $q->execute([$sid,$now,$c['request_id']]);return $q->rowCount()===1;
+}
+/**
+ * Internal server-only start. No web/user/worker entry point invokes it yet.
+ * A future real-time driver must call it outside the carrier webhook transaction.
+ */
+function vp3_managed_recording_start_v1(PDO $pdo,string $public,string $nonce,?callable $carrier=null,?int $clock=null):array
+{
+    require_once __DIR__.'/phone-managed-transport-v1.php';
+    require_once __DIR__.'/phone-managed-control-v1.php';
+    vp3_managed_callback_need_v1(!$pdo->inTransaction());
+    vp3_managed_callback_id_v1($public);vp3_managed_transport_nonce_v1($nonce);
+    $now=$clock??time();
+    $snapshot=vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$public,$nonce,$now){
+        $s=vp3_managed_recording_start_snapshot_v1($pdo,$public,$nonce,$now,'consented');
+        $q=$pdo->prepare("UPDATE phone_managed_recording_consent_v1 SET start_state='checking',updated_epoch=? WHERE request_id=? AND start_state='consented'");
+        $q->execute([$now,$s['request']['public_id']]);vp3_managed_callback_need_v1($q->rowCount()===1);return $s;
+    });
+    $call=$snapshot['call'];$request=$snapshot['request'];$id=$request['public_id'];
+    $carrier=$carrier??'vp3_phone_twilio_http_v100';$account=(string)vp3_phone_twilio_state_v100()['account_sid'];
+    $result=null;$attempted=false;
+    try{
+        $parent=vp3_managed_control_evidence_v1($carrier('GET',vp3_managed_control_resource_v1($account,$call['provider_call_sid']),[]),$account,$call);
+        $child=vp3_managed_control_evidence_v1($carrier('GET',vp3_managed_control_resource_v1($account,$call['provider_child_sid']),[]),$account,$call,$request);
+        if($parent&&$child&&$parent['state']==='answered'&&$child['state']==='answered'){
+            vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$public,$nonce,$clock,$call,$id){
+                $now=$clock??time();$s=vp3_managed_recording_start_snapshot_v1($pdo,$public,$nonce,$now,'checking');
+                vp3_managed_callback_need_v1($s['call']['provider_call_sid']===$call['provider_call_sid']&&$s['call']['provider_child_sid']===$call['provider_child_sid']);
+                $q=$pdo->prepare("UPDATE phone_managed_recording_consent_v1 SET start_state='starting',start_epoch=?,updated_epoch=? WHERE request_id=? AND start_state='checking' AND revoked_epoch=0");
+                $q->execute([$now,$now,$id]);vp3_managed_callback_need_v1($q->rowCount()===1);return true;
+            });
+            $attempted=true;
+            $result=$carrier('POST','/2010-04-01/Accounts/'.$account.'/Calls/'.$call['provider_call_sid'].'/Recordings.json',[
+                'RecordingChannels'=>'dual','RecordingTrack'=>'both','Trim'=>'do-not-trim','PlayBeep'=>'true',
+                'RecordingStatusCallback'=>vp3_managed_transport_url_v1('recording',$public,$nonce),
+                'RecordingStatusCallbackMethod'=>'POST','RecordingStatusCallbackEvent'=>'completed absent']);
+        }
+    }catch(Throwable){ /* A lost mutation response is uncertain, never replayed. */ }
+    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$snapshot,$id,$account,$result,$attempted,$clock){
+        $now=$clock??time();$call=$snapshot['call'];vp3_managed_callback_need_v1(vp3_managed_transport_owner_lock_v1($pdo,(int)$call['owner_user_id']));
+        $c=vp3_managed_recording_row_v1($pdo,$id,true);vp3_managed_callback_need_v1(is_array($c));
+        if(!in_array($c['start_state'],['checking','starting'],true))return vp3_managed_recording_view_v1($c);
+        $valid=is_array($result)&&vp3_managed_recording_sid_v1($result['sid']??null)
+            &&($result['account_sid']??null)===$account&&($result['call_sid']??null)===$call['provider_call_sid']
+            &&($result['source']??null)==='StartCallRecordingAPI'&&in_array($result['status']??null,['in-progress','processing','completed'],true)
+            &&in_array($result['channels']??null,[2,'2'],true);
+        $bound=$attempted&&$valid&&vp3_managed_recording_bind_sid_v1($pdo,$c,$result['sid'],$now);
+        $state=$bound?'started':($attempted?'uncertain':'not_started');
+        $pdo->prepare('UPDATE phone_managed_recording_consent_v1 SET start_state=?,updated_epoch=? WHERE request_id=?')->execute([$state,$now,$id]);
+        if($bound)$pdo->prepare("UPDATE phone_browser_calls_v1 SET recording_enabled=1 WHERE public_id=? AND transport_kind='managed_callback'")->execute([$call['public_id']]);
+        return vp3_managed_recording_view_v1(vp3_managed_recording_row_v1($pdo,$id,true));
+    });
+}
+/** Only a signed, exact parent receipt can enqueue a consented recording. */
+function vp3_managed_recording_event_v1(PDO $pdo,array $row,array $t,array $call,string $sid,array $form,int $now):array
+{
+    $reject=['accepted'=>false,'xml'=>vp3_phone_browser_hangup_v1()];
+    $c=vp3_managed_recording_row_v1($pdo,$row['public_id'],true);$record=$form['RecordingSid']??null;$status=$form['RecordingStatus']??null;
+    if(!$c||(int)$c['owner_user_id']!==(int)$call['owner_user_id']||(int)$c['revoked_epoch']>0
+        ||(int)$c['holder_epoch']===0||(int)$c['parent_epoch']===0||(int)$c['child_epoch']===0||(int)$c['start_epoch']===0
+        ||!hash_equals((string)$call['provider_call_sid'],$sid)||!hash_equals((string)$call['provider_child_sid'],(string)$c['child_sid'])
+        ||!in_array($c['start_state'],['starting','started','uncertain','received','absent'],true)||!vp3_managed_recording_sid_v1($record)
+        ||($form['RecordingSource']??null)!=='StartCallRecordingAPI'||!in_array($status,['completed','absent','failed'],true))return $reject;
+    if($status==='completed'&&(($form['RecordingChannels']??null)!=='2'||($form['RecordingTrack']??null)!=='both'
+        ||!is_string($form['RecordingDuration']??null)||preg_match('/^\d{1,3}$/D',$form['RecordingDuration'])!==1||(int)$form['RecordingDuration']<1||(int)$form['RecordingDuration']>240))return $reject;
+    if(in_array($c['start_state'],['received','absent'],true)){
+        if(!$c['recording_sid']||!hash_equals($c['recording_sid'],$record))return $reject;
+        return ['accepted'=>true,'duplicate'=>true,'xml'=>vp3_phone_browser_hangup_v1()];
+    }
+    // Current owner and the exact original policy must still authorize ingestion.
+    $user=vp3_managed_callback_owner_lock_v1($pdo,(int)$call['owner_user_id']);
+    $scope=vp3_phone_workspace_scope_v1($pdo,$user,['agent_id'=>(int)$call['chat_agent_id'],'conversation_id'=>(int)$call['conversation_id']]);
+    $n=vp3_phone_browser_require_v1($pdo,$scope,(int)$call['phone_number_id'],true);
+    if((int)$n['agent_id']!==(int)$call['agent_id']||$n['phone_e164']!==$call['phone_e164'])return $reject;
+    vp3_managed_recording_current_v1($pdo,$row,$c,['scope'=>$scope,'number'=>$n]);
+    if(!vp3_managed_recording_bind_sid_v1($pdo,$c,$record,$now))return $reject;
+    $state=$status==='completed'?'received':'absent';
+    $pdo->prepare('UPDATE phone_managed_recording_consent_v1 SET start_state=?,updated_epoch=? WHERE request_id=?')->execute([$state,$now,$row['public_id']]);
+    $pdo->prepare("UPDATE phone_browser_calls_v1 SET recording_enabled=1 WHERE public_id=? AND transport_kind='managed_callback'")->execute([$call['public_id']]);
+    $call['recording_enabled']=1;
+    $saved=vp3_phone_recording_receive_v1($pdo,$call,$form);
+    return $saved+['xml'=>vp3_phone_browser_hangup_v1()];
+}
+/** Reused by the existing pipeline. Consent snapshot cannot be replaced on retry. */
+function vp3_managed_recording_saved_policy_v1(PDO $pdo,array $call,string $record):array
+{
+    require_once __DIR__.'/phone-managed-transport-v1.php';
+    $t=vp3_managed_transport_row_v1($pdo,$call['public_id']);$c=$t?vp3_managed_recording_row_v1($pdo,$t['request_id']):null;
+    if(!$c||(int)$c['owner_user_id']!==(int)$call['owner_user_id']||(int)$c['revoked_epoch']>0
+        ||(int)$c['holder_epoch']===0||(int)$c['parent_epoch']===0||(int)$c['child_epoch']===0||(int)$c['start_epoch']===0
+        ||!in_array($c['start_state'],['received','absent'],true)||!vp3_managed_recording_sid_v1($record)
+        ||!hash_equals((string)$c['recording_sid'],$record)||!hash_equals((string)$c['child_sid'],(string)$call['provider_child_sid']))
+        throw new RuntimeException('Managed recording consent or source changed.',403);
+    return vp3_phone_recording_decode_v1($c['policy_json']);
+}
