@@ -82,7 +82,7 @@ function vp3_coordination_discovery_summary_v1(array $snapshot): array
         $specialist = $adapter['specialist'];
         $coverage = $snapshot['coverage'][$specialist]??null;
         if (!in_array($coverage,['ready','limited','unavailable','unconfigured'],true)) continue;
-        if (in_array($specialist,['canvas','connected-sites'],true) && $coverage==='unconfigured') continue;
+        if (in_array($specialist,['canvas','connected-sites','operator'],true) && $coverage==='unconfigured') continue;
         $summary[$specialist] = ['coverage'=>$coverage,'found'=>0];
         $failure = $snapshot['failures'][$specialist]??null;
         if ($failure !== null) $summary[$specialist]['failure'] = $failure;

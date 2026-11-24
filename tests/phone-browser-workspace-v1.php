@@ -7,6 +7,7 @@ require dirname(__DIR__).'/includes/phone-browser-endpoint-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-specialist-v1.php';
 require dirname(__DIR__).'/includes/phone-recording-pipeline-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-history-v1.php';
+require_once dirname(__DIR__).'/includes/agent-operator-followups-v1.php';
 $dsn=getenv('VP3_PHONE_MYSQL_DSN')?:'sqlite::memory:';$mysql=str_starts_with($dsn,'mysql:');
 $pdo=new PDO($dsn,$mysql?(getenv('VP3_PHONE_MYSQL_USER')?:'root'):null,$mysql?(getenv('VP3_PHONE_MYSQL_PASSWORD')?:''):null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 if($mysql)$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
@@ -23,7 +24,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -443,6 +444,53 @@ $insert=$pdo->prepare("INSERT INTO crm_contacts(public_id,owner_user_id,name,ema
 for($i=0;$i<251;$i++)$insert->execute([sprintf('aaaaaaaa-aaaa-4aaa-8aaa-%012d',$i),'A contact '.sprintf('%03d',$i),'+1602555'.str_pad((string)(1000+$i),4,'0',STR_PAD_LEFT),gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);
 action('favorite',['contact_id'=>$contactId,'favorite'=>true]);$boundedBook=api('GET')['state'];$boundedContacts=array_column($boundedBook['contacts'],null,'id');
 c(count($boundedBook['contacts'])===250&&isset($boundedContacts[$contactId])&&$boundedContacts[$contactId]['favorite'],'related caller and favorite flag survive the bounded contact book');
+// Exercise the exact delivered-report binding using the real signed call and recording job.
+// The canonical intelligence reader is replaced by an in-process saved-result fixture.
+ddl('CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,metadata_json TEXT,discarded_at DATETIME NULL)');
+ddl('CREATE TABLE artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,segment_type VARCHAR(30),transcript_text TEXT)');
+$q=$pdo->prepare("SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=1 AND call_public_id=? AND origin_kind='browser'");$q->execute([$public]);$followJob=$q->fetch(PDO::FETCH_ASSOC);
+$session=771;$hash=str_repeat('a',64);$revision=str_repeat('b',64);
+$meta=['source'=>'phone_call_v1','phone_recording_v1'=>['job_id'=>(int)$followJob['id'],'call_kind'=>'browser','call_id'=>$public,'agent_id'=>7]];
+$pdo->prepare('INSERT INTO artist_transcript_sessions_v172 VALUES(?,1,?,NULL)')->execute([$session,json_encode($meta,JSON_THROW_ON_ERROR)]);
+$pdo->prepare("INSERT INTO artist_transcript_segments_v172 VALUES(1,?,'transcript','Fixture private transcript')")->execute([$session]);
+$delivery=vp3_phone_workspace_delivery_v1($pdo,readcall($public),'voicemail','phone-recording-report:'.$followJob['public_id'],'Fixture reviewed source',
+    ['voicemail_id'=>'job-'.(int)$followJob['id'],'report'=>['source_hash'=>$hash,'review_state'=>'unreviewed']]);
+$pdo->prepare("UPDATE phone_recording_jobs_v1 SET state='ready',session_id=?,transcript_hash=?,analysis_hash=?,conversation_id=?,report_message_id=? WHERE id=?")
+    ->execute([$session,$hash,str_repeat('c',64),$delivery['conversation_id'],$delivery['message_id'],$followJob['id']]);
+$followJob=vp3_phone_recording_row_v1($pdo,(int)$followJob['id']);
+$candidate=['session_id'=>$session,'source_hash'=>$hash,'kind'=>'followup','plugin'=>'actions','section'=>'items','item_id'=>'action:1',
+    'item_revision'=>$revision,'review_state'=>'unreviewed','question'=>'Review the proposal.','next_step'=>'Confirm timing.',
+    'source_url'=>'https://untrusted.example/unsafe?page=1'];
+$savedFollow=['session_id'=>$session,'source_hash'=>$hash,'fresh'=>true,'page_count'=>2,'research_candidates'=>[
+    $candidate,array_replace($candidate,['item_id'=>'action:2','review_state'=>'accepted','question'=>'Confirm the meeting.']),
+    array_replace($candidate,['item_id'=>'action:3','review_state'=>'rejected']),
+    array_replace($candidate,['item_id'=>'action:4','kind'=>'research']),$candidate]];
+$reads=0;$reader=static function(int $id)use(&$reads,$session,$savedFollow):array{$reads++;if($id!==$session)throw new RuntimeException('Wrong fixture session');return $savedFollow;};
+$followScope=['user'=>user(),'principal'=>['kind'=>'system'],'agent_id'=>0,'conversation_id'=>11];
+$followNow=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+$review=vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader);
+$items=$review['reports'][0]['items']??[];
+c($review['coverage']==='ready'&&count($items)===2&&$items[0]['review_state']==='accepted'&&$reads===1,'Operator reviews canonical open suggestions, deduplicates and prioritizes reviewed items');
+c($items[1]['source_url']==='/artist-listening-evidence.php?session=771&plugin=actions&section=items&item=action%3A1&page=1'&&!str_contains(json_encode($review),'untrusted.example'),'Operator rebuilds exact same-origin evidence links');
+c(!str_contains(json_encode($review),'Fixture private transcript')&&!str_contains(json_encode($review),'provider_call_sid'),'Operator review does not export speech or carrier identifiers');
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,['followup:'.$followJob['public_id']],$reader)===$review,'exact saved report re-reads the same evidence');
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,['followup:'.str_repeat('0',32)],$reader)['reports']===[],'unknown report reference never substitutes another call');
+$beforeReads=$reads;
+c(vp3_operator_followup_queue_v1($pdo,array_replace($followScope,['agent_id'=>7,'conversation_id'=>12]),$followNow,null,$reader)['reports']===[]&&$reads===$beforeReads,'another Chat cannot borrow the original report');
+c(vp3_operator_followup_queue_v1($pdo,array_replace($followScope,['user'=>user(2),'conversation_id'=>21]),$followNow,null,$reader)['reports']===[],'another owner cannot borrow the report');
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow->modify('+8 days'),null,$reader)['reports']===[],'proactive review is limited to recent reports');
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,static fn(int $id):array=>array_replace($savedFollow,['fresh'=>false]))['reports']===[],'stale canonical analysis cannot suggest a follow-up');
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,static fn(int $id):array=>array_replace($savedFollow,['source_hash'=>str_repeat('d',64)]))['reports']===[],'edited transcript cannot reuse the original report suggestions');
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,static function(int $id):array{throw new RuntimeException('Reader unavailable');})['coverage']==='limited','failed verification is not a verified empty queue');
+$pdo->prepare('UPDATE artist_transcript_sessions_v172 SET discarded_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s'),$session]);
+$beforeReads=$reads;
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader)['reports']===[]&&$reads===$beforeReads,'discarded transcript prevents further candidate reads');
+$pdo->prepare('UPDATE artist_transcript_sessions_v172 SET discarded_at=NULL WHERE id=?')->execute([$session]);
+$pdo->prepare('DELETE FROM phone_browser_deliveries_v1 WHERE event_key=?')->execute(['phone-recording-report:'.$followJob['public_id']]);
+c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader)['reports']===[],'removed canonical report delivery fences the follow-up');
+// The SQLite fixture is in memory and still has earlier read cursors. Its
+// connection teardown releases these tables; clean the shared MySQL fixture explicitly.
+if($mysql){$pdo->exec('DROP TABLE artist_transcript_segments_v172');$pdo->exec('DROP TABLE artist_transcript_sessions_v172');}
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

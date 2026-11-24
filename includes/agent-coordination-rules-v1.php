@@ -79,6 +79,9 @@ function vp3_coordination_rule_definitions_v1(): array
             'open_question'=>['label'=>'An open question in a saved analysis','default'=>'ask','actions'=>['watch','ask','report']],
             'open_followup'=>['label'=>'An open follow-up in a saved analysis','default'=>'report','actions'=>['watch','report']],
         ]],
+        'operator'=>['label'=>'Operator Specialist','triggers'=>[
+            'followup_review'=>['label'=>'Saved call follow-ups for review','default'=>'watch','actions'=>['watch']],
+        ]],
         'profile'=>['label'=>'Profile','triggers'=>[
             'commerce_followthrough'=>['label'=>'Verified product marketing follow-through','default'=>'report','actions'=>['watch','report']],
             'analytics_period'=>['label'=>'Completed Profile reporting period','default'=>'report','actions'=>['watch','report']],

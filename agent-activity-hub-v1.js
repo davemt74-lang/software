@@ -2939,6 +2939,63 @@
     close(false);
     phone[method](trigger);
   }
+  function operatorFollowupModel(raw) {
+    if (!raw || !['ready','limited','unavailable','unconfigured'].includes(raw.coverage) ||
+      !Array.isArray(raw.reports) || raw.reports.length>8 ||
+      (['unavailable','unconfigured'].includes(raw.coverage) && raw.reports.length)) return null;
+    const refs=new Set();
+    for (const report of raw.reports) {
+      if (!report || typeof report.ref!=='string' || !/^followup:[a-f0-9]{32}$/.test(report.ref) ||
+        refs.has(report.ref) || typeof report.call_id!=='string' || !/^(?:[a-f0-9]{32}|legacy-[1-9][0-9]{0,17})$/.test(report.call_id) ||
+        typeof report.created_at!=='string' || !Number.isFinite(Date.parse(report.created_at)) ||
+        !Array.isArray(report.items) || !report.items.length || report.items.length>3) return null;
+      refs.add(report.ref);
+      const keys=new Set();
+      for (const item of report.items) {
+        if (!item || typeof item.key!=='string' || !/^[a-f0-9]{64}$/.test(item.key) || keys.has(item.key) ||
+          !positive(item.session_id) || typeof item.text!=='string' || !item.text.trim() || item.text.length>600 ||
+          typeof item.next_step!=='string' || item.next_step.length>560 || !['accepted','unreviewed'].includes(item.review_state) ||
+          typeof item.revision!=='string' || !/^[a-f0-9]{64}$/.test(item.revision) || !localUrl(item.source_url)) return null;
+        const source=new URL(item.source_url,location.origin);
+        if (!source.pathname.endsWith('/artist-listening-evidence.php') || source.hash ||
+          source.searchParams.get('session')!==String(item.session_id) ||
+          !/^[a-z0-9_-]{1,64}$/.test(source.searchParams.get('plugin')||'') ||
+          !/^[a-z0-9_-]{1,64}$/.test(source.searchParams.get('section')||'') ||
+          !/^[A-Za-z0-9_.:-]{1,190}$/.test(source.searchParams.get('item')||'') ||
+          [...source.searchParams.keys()].some(key=>!['session','plugin','section','item','page'].includes(key)) ||
+          [...source.searchParams.keys()].length!==new Set(source.searchParams.keys()).size ||
+          (source.searchParams.has('page')&&!/^[1-9][0-9]{0,5}$/.test(source.searchParams.get('page')))) return null;
+        keys.add(item.key);
+      }
+    }
+    return raw;
+  }
+  function renderOperatorFollowups(current,panel,review) {
+    panel.append(node('h4','Conversation follow-ups'));
+    if (!review || ['unavailable','unconfigured'].includes(review.coverage)) {
+      panel.append(node('p',review?.coverage==='unconfigured'?'Follow-up review requires a saved authorized Chat and transcript access.':'Call follow-ups could not be verified.'));
+      return;
+    }
+    panel.append(node('small','Recent call analysis delivered in this Chat. AI suggestions are not confirmed commitments; no calls, tasks or calendar entries are created here.'));
+    if (!review.reports.length) panel.append(node('p','No current open follow-ups found in the recent call reports checked.'));
+    for (const report of review.reports) {
+      for (const item of report.items) {
+        const copy=itemCopy(item.text,item.next_step,'operator-followup:'+item.key,true);
+        copy.append(node('small',item.review_state==='accepted'?'Reviewed · not yet tracked':'AI suggestion · needs review'));
+        const actions=node('div','','vp3-agent-activity-actions');
+        const source=node('a','Review source evidence');source.href=localUrl(item.source_url);
+        source.dataset.operatorFocus='source:'+item.key;
+        source.addEventListener('click',event=>{if(!event.isTrusted||signature(current)!==signature(scope()))event.preventDefault();});
+        actions.append(source);
+        if (typeof window.STONEFELLOW_TRANSCRIPTION_CANVAS?.open==='function') {
+          const control=button('Open saved transcript',event=>openSavedTranscription(current,event,item.session_id));
+          control.dataset.operatorFocus='transcript:'+item.key;actions.append(control);
+        }
+        appendSpecialistItem(panel,copy,actions);
+      }
+    }
+    if (review.coverage==='limited') panel.append(node('small','Review is limited to the most recent eight eligible reports; some sources could not be checked.'));
+  }
   function renderOperatorHistory(current) {
     const history=operatorHistoryModel(snapshot?.operator_history);
     if (!history) {sections.replaceChildren();operatorRendered='';return;}
@@ -2947,7 +3004,8 @@
     const contacts=new Map();
     for (const call of history.calls) if (!contacts.has(contactKey(call))) contacts.set(contactKey(call),label(call));
     if (operatorContact && !contacts.has(operatorContact)) operatorContact='';
-    const key=JSON.stringify([history,operatorTab,operatorContact]);
+    const followups=operatorFollowupModel(snapshot?.operator_followups);
+    const key=JSON.stringify([history,followups,operatorTab,operatorContact]);
     if (key===operatorRendered && sections.querySelector('[data-operator-view]')) return;
     operatorRendered=key;
     const focus=sections.contains(document.activeElement)?document.activeElement.dataset.operatorFocus:'';
@@ -2977,6 +3035,7 @@
         panel.append(node('p',count(c=>c.recording.state==='failed')+' calls with processing failures to review'));
         panel.append(node('p',count(c=>c.recording.transcript_saved)+' saved transcripts · '+count(c=>c.recording.report_saved)+' saved reports'));
         panel.append(node('small','Recording status describes the latest linked receipt. Saved reports are historical and require review; this overview does not infer commitments or send follow-ups.'));
+        renderOperatorFollowups(current,panel,followups);
       } else {
         const filter=node('select');filter.dataset.operatorFocus='contact-filter';filter.setAttribute('aria-label','Filter call history by caller');
         for (const [id,title] of [['','All callers'],...contacts]) {
@@ -3206,7 +3265,7 @@
       const data = await response.json();
       if (!isCurrent()) return;
       if (!response.ok || data?.ok !== true || !validState(data.state,current)) throw new Error('Top of Mind could not be refreshed.');
-      if (view === 'operator' && !operatorHistoryModel(data.state.operator_history)) throw new Error('The Operator history could not be verified.');
+      if (view === 'operator' && (!operatorHistoryModel(data.state.operator_history) || !operatorFollowupModel(data.state.operator_followups))) throw new Error('The Operator history or follow-ups could not be verified.');
       if (view === 'profile' && (!profileReportModel(data.state.profile_report)
         || data.state.coverage?.profile_report !== data.state.profile_report.coverage)) throw new Error('The Profile report could not be verified.');
       accessRejected = false;
