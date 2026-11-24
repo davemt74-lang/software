@@ -261,9 +261,9 @@ try {
   await specialist.getByText('1 saved transcripts · 1 saved reports',{exact:true}).waitFor();
   await specialist.getByRole('button',{name:'History',exact:true}).click();
   await specialist.getByText('Recording job completed · Saved transcript · Saved report',{exact:true}).waitFor();
-  assert.equal(await specialist.getByText('Taylor Caller',{exact:true}).count(),2,'Operator groups two saved phone channels into the same contact');
+  assert.equal(await specialist.locator('[data-operator-view] article strong').filter({hasText:'Taylor Caller'}).count(),2,'Operator groups two saved phone channels into the same contact');
   await specialist.getByRole('combobox',{name:'Filter call history by caller'}).selectOption('contact:5');
-  assert.equal(await specialist.getByText('+16025550113',{exact:true}).count(),0,'Operator contact filtering excludes other calls');
+  assert.equal(await specialist.locator('[data-operator-view] article strong').filter({hasText:'+16025550113'}).count(),0,'Operator contact filtering excludes other calls');
   await specialist.getByRole('button',{name:'Open recordings and reports',exact:true}).evaluate(control=>control.click());
   assert.equal(await page.evaluate(()=>window.operatorRecordingOpens||0),0,'Synthetic recording shortcut is rejected');
   await specialist.getByRole('button',{name:'Open recordings and reports',exact:true}).click();
