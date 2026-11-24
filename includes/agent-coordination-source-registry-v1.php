@@ -80,6 +80,9 @@ function vp3_coordination_source_registry_v1(): array
             'sweep'=>'enabled',
             'native_ref'=>'followup:[a-f0-9]{32}',
             'read'=>static function(PDO $pdo,array $scope,array $binding,?array $refs,DateTimeImmutable $now): array {
+                require_once __DIR__.'/schema-metadata.php';
+                if(!has_permission('artist_listening.access',$scope['user'])
+                    ||!schema_metadata_table_exists($pdo,'phone_recording_jobs_v1')) return ['items'=>[],'coverage'=>'unconfigured'];
                 require_once __DIR__.'/agent-operator-followups-v1.php';
                 return vp3_coordination_operator_sources_v1($pdo,$scope,$refs,$now);
             },
