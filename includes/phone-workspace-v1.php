@@ -252,9 +252,9 @@ function vp3_phone_workspace_delivery_v1(PDO $pdo,array $call,string $kind,strin
     if(!in_array($kind,['call','voicemail'],true)||!preg_match('/^[a-zA-Z0-9:_.-]{1,145}$/D',$eventKey))throw new InvalidArgumentException('Invalid phone delivery.');
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$call,$kind,$eventKey,$text,$extra){
         $owner=(int)$call['owner_user_id'];$q=$pdo->prepare('SELECT id FROM users WHERE id=? AND is_active=1'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$owner]);if(!$q->fetchColumn())vp3_phone_workspace_error_v1();
-        $q=$pdo->prepare('SELECT * FROM phone_browser_deliveries_v1 WHERE owner_user_id=? AND event_key=?');$q->execute([$owner,$eventKey]);$old=$q->fetch(PDO::FETCH_ASSOC);if($old)return ['message_id'=>(int)$old['chat_message_id'],'conversation_id'=>(int)$old['conversation_id'],'chat_agent_id'=>(int)$old['chat_agent_id']];
-        $cid=(int)($call['conversation_id']??0);$aid=(int)($call['chat_agent_id']??0);$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? AND COALESCE(user_agent_id,0)=?');$q->execute([$cid,$owner,$aid]);
-        if(!$q->fetchColumn()){$aid=0;$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE user_id=? AND user_agent_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1');$q->execute([$owner]);$cid=(int)$q->fetchColumn();
+        $q=$pdo->prepare('SELECT * FROM phone_browser_deliveries_v1 WHERE owner_user_id=? AND event_key=?');$q->execute([$owner,$eventKey]);$old=$q->fetch(PDO::FETCH_ASSOC);if($old&&($call['transport_kind']??'')==='managed_callback'&&((int)$old['conversation_id']!==(int)($call['conversation_id']??0)||(int)$old['chat_agent_id']!==(int)($call['chat_agent_id']??0)))vp3_phone_workspace_error_v1('managed_report_scope_changed',409,'The managed call’s original conversation changed.');if($old)return ['message_id'=>(int)$old['chat_message_id'],'conversation_id'=>(int)$old['conversation_id'],'chat_agent_id'=>(int)$old['chat_agent_id']];
+        $cid=(int)($call['conversation_id']??0);$aid=(int)($call['chat_agent_id']??0);$managed=($call['transport_kind']??'')==='managed_callback';$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? AND COALESCE(user_agent_id,0)=?');$q->execute([$cid,$owner,$aid]);
+        if(!$q->fetchColumn()){if($managed)vp3_phone_workspace_error_v1('managed_report_scope_changed',409,'The managed call’s original conversation is unavailable.');$aid=0;$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE user_id=? AND user_agent_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1');$q->execute([$owner]);$cid=(int)$q->fetchColumn();
             if(!$cid){$pdo->prepare("INSERT INTO chat_conversations(user_id,user_agent_id,title,created_at,updated_at) VALUES (?,NULL,'Phone',?,?)")->execute([$owner,gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);$cid=(int)$pdo->lastInsertId();}}
         $context=['phone_v1'=>['kind'=>$kind,'call_id'=>(string)$call['public_id']]];
         foreach(['voicemail_id','transcript_session_id','recording_refs','report','status'] as $key)if(array_key_exists($key,$extra))$context['phone_v1'][$key]=$extra[$key];
@@ -286,6 +286,11 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
 {
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);$action=(string)($input['action']??'');
     if(in_array($action,['owner_phone_settings','save_owner_phone','save_owner_call_preferences','confirm_owner_test'],true))return vp3_owner_phone_chat_action_v1($pdo,$scope,$input);
+    if($action==='managed_review'){
+        require_once __DIR__.'/agent-operator-managed-intelligence-v1.php';
+        if(array_diff(array_keys($input),['action','call_id','agent_id','conversation_id']))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose an existing managed call.');
+        return ['review'=>vp3_managed_intelligence_review_v1($pdo,$scope,vp3_managed_callback_id_v1($input['call_id']??null),time())];
+    }
     if(in_array($action,['managed_reconcile','managed_end'],true)){
         require_once __DIR__.'/phone-managed-control-v1.php';
         return vp3_managed_control_action_v1($pdo,$scope,$input);
@@ -324,12 +329,12 @@ function vp3_phone_workspace_request_v1(PDO $pdo,?array $user,string $method,arr
     $action=$input['action']??($method==='GET'?'state':'');if(!is_string($action))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a supported phone action.');$input['action']=$action;
     if($method==='GET'){
         if($action==='state')return ['state'=>vp3_phone_workspace_state_v1($pdo,$user,$input)];
-        if(in_array($action,['recording_policy','operator_calendar_preview','owner_phone_settings'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
+        if(in_array($action,['recording_policy','operator_calendar_preview','owner_phone_settings','managed_review'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
         vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires POST.');
     }
     if($method!=='POST')vp3_phone_workspace_error_v1('method_not_allowed',405,'Use GET or POST for Phone.');
     if($csrf===''||!is_string($input['csrf_token']??null)||!hash_equals($csrf,$input['csrf_token']))vp3_phone_workspace_error_v1('csrf_failed',403,'Refresh this page before changing Phone.');
-    if(in_array($action,['state','recording_policy','operator_calendar_preview','owner_phone_settings'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
+    if(in_array($action,['state','recording_policy','operator_calendar_preview','owner_phone_settings','managed_review'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
     return vp3_phone_workspace_action_v1($pdo,$user,$input);
 }
 /** Existing Chat activity delivers each incoming call once into its validated current principal. */
