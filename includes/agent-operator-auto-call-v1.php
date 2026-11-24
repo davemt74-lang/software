@@ -170,8 +170,9 @@ function vp3_operator_auto_call_save_v1(PDO $pdo,array $scope,array $input): arr
         $row=vp3_operator_auto_call_row_v1($pdo,$scope,$contactId,$agentId,true);
         if ((int)($row['revision']??0)!==$revision)
             vp3_phone_workspace_error_v1('operator_policy_changed',409,'The authorization changed. Reopen its current settings.');
-        $block=vp3_operator_auto_call_prerequisites_v1($pdo,$scope,$line);
+        $block='';
         if ($enabled) {
+            $block=vp3_operator_auto_call_prerequisites_v1($pdo,$scope,$line);
             if ($block!=='') vp3_phone_workspace_error_v1('operator_prerequisite',409,$block);
             if ($contact['destination_e164']===''||$contact['destination_e164']===$line['phone_e164']
                 ||!hash_equals($contact['destination_e164'],$input['expected_destination'])
@@ -198,6 +199,10 @@ function vp3_operator_auto_call_save_v1(PDO $pdo,array $scope,array $input): arr
             }
         }
         $fresh=vp3_operator_auto_call_row_v1($pdo,$scope,$contactId,$agentId);
+        if (!$enabled) {
+            try {$block=vp3_operator_auto_call_prerequisites_v1($pdo,$scope,$line);}
+            catch (Throwable $error) {$block='Calling prerequisites could not be verified.';}
+        }
         return ['policy'=>vp3_operator_auto_call_public_v1($fresh,$contact,$line,$block)];
     });
 }
