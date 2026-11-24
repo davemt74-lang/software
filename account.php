@@ -41,8 +41,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ?VP3OperatorOwnerPhoneV1::saveNumber($pdo,$user,$_POST,time())
                     :VP3OperatorOwnerPhoneV1::savePreferences($pdo,$user,$_POST,time());
                 flash('account_notice',$action==='operator_owner_phone_number'
-                    ?'Personal phone number saved. Phone verification is required before any Agent calls.'
-                    :'Agent calling preferences saved. Calls remain off until verification and the calling service are ready.');
+                    ?'Personal phone number saved. You can test it from private Agent Chat.'
+                    :'Agent calling preferences saved. Autonomous calling remains off until the calling service is ready.');
             } catch (DomainException $error) {
                 flash('account_error',$error->getMessage());
             } catch (Throwable) {
@@ -445,7 +445,7 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
                       <small>Private. Include your country code. Clear this field and save to remove the number.</small>
                     </div>
                   </div>
-                  <p><?= $ownerPhone['phone_e164']!==''?'Verification required — no calls authorized.':'No personal number saved.' ?></p>
+                  <p><?= $ownerPhone['phone_e164']!==''?'Saved number — test the connection in private Agent Chat.':'No personal number saved.' ?></p>
                   <button class="account-submit" type="submit">Save phone number</button>
                 </form>
                 <form method="post" class="account-form">
@@ -505,7 +505,7 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
                     </div>
                     <button class="account-submit" type="submit">Save calling preferences</button>
                   </fieldset>
-                  <small>These are requested preferences only. Number ownership verification and the autonomous calling service are required before use. Calls outside your window, automatic redial, and recording are not authorized by these settings. Changing or removing your number clears both call preferences.</small>
+                  <small>These are requested preferences only. A successful connection test is not identity verification. Autonomous calling remains disabled until the calling service and permission checks are ready. Calls outside your window, automatic redial, and recording are not authorized by these settings. Changing or removing your number clears both call preferences.</small>
                 </form>
               <?php endif; ?>
             </section>

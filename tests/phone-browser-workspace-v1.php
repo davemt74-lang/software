@@ -26,8 +26,8 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
-ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
+if($mysql)foreach(['phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+ddl('CREATE TABLE users(id '.($mysql?'INT UNSIGNED':'INTEGER').' PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
 ddl('CREATE TABLE phone_sms_threads_v110(id INTEGER PRIMARY KEY,phone_number_id INTEGER,owner_user_id INTEGER,agent_id INTEGER,contact_e164 TEXT,UNIQUE(phone_number_id,owner_user_id,agent_id,contact_e164))');
@@ -678,4 +678,65 @@ $terminalForm3=form($liveChild3,['ParentCallSid'=>$liveParent3,'CallStatus'=>'co
 $terminalForm2=form($liveChild2,['ParentCallSid'=>$liveParent2,'CallStatus'=>'completed']);vp3_phone_browser_status_v1($pdo,$terminalForm2,signature('status',$terminalForm2,$live2),$live2);
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
+
+// Isolated second-account Phone Sync checks, after the existing call assertions.
+$pdo->exec("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NOT NULL DEFAULT 'fixture-password-hash'");
+if(!$mysql)$pdo->exec('PRAGMA foreign_keys=ON');
+$_SESSION=['user_id'=>2,'auth_password_fingerprint'=>hash('sha256','2:fixture-password-hash')];
+$ownerGet=static fn(array $extra=[])=>api('GET',array_replace(['action'=>'owner_phone_settings','conversation_id'=>21,'agent_id'=>0],$extra),2);
+$ownerAct=static fn(string $name,array $extra=[])=>action($name,array_replace(['conversation_id'=>21,'agent_id'=>0],$extra),2);
+denies(fn()=>$ownerGet(),503,'owner phone settings require explicit migration');
+VP3OperatorOwnerPhoneV1::install($pdo);
+c($ownerGet()['owner_phone']['phone_e164']==='','private owner number initially empty');
+denies(fn()=>$ownerGet(['conversation_id'=>11]),403,'owner phone settings cannot read foreign Chat');
+denies(fn()=>$ownerGet(['conversation_id'=>0]),403,'owner phone settings require saved private Chat');
+denies(fn()=>api('POST',['action'=>'save_owner_phone','conversation_id'=>21,'agent_id'=>0,'phone_e164'=>'+16025550100','expected_revision'=>'0'],2),403,'owner phone changes require CSRF');
+$mine=$ownerAct('save_owner_phone',['phone_e164'=>'+1 (602) 555-0100','expected_revision'=>'0'])['owner_phone'];
+c($mine['phone_e164']==='+16025550100'&&$mine['phone_revision']===1&&$mine['revision']===1&&!$mine['execution_enabled'],'Chat saves canonical number, never live authority');
+c(VP3OperatorOwnerPhoneV1::read($pdo,user(2))['phone_e164']===$mine['phone_e164'],'Account and Chat use one private number');
+denies(fn()=>$ownerAct('save_owner_phone',['phone_e164'=>'+16025550108','expected_revision'=>'0']),409,'stale phone form cannot replace newer number');
+$mine=$ownerAct('save_owner_call_preferences',['expected_revision'=>'1','updates_requested'=>true,'hello_requested'=>true])['owner_phone'];
+c($mine['updates_requested']&&$mine['hello_requested']&&!$mine['execution_enabled'],'requested outreach preferences are non-executable');
+c(VP3OperatorOwnerPhoneV1::read($pdo,user(2))['min_gap_minutes']===240,'Chat toggles preserve Account calling limits');
+vp3_phone_browser_number_policy_set_v1($pdo,2,true,true);
+$prepareOwner=static fn(array $extra=[])=>$ownerAct('prepare_owner_test',array_replace(['number_id'=>2,'phone_revision'=>1,'confirmed'=>true],$extra));
+denies(fn()=>$prepareOwner(['confirmed'=>false]),422,'test requires explicit confirmation');
+denies(fn()=>$prepareOwner(['to_number'=>'+16025550109']),422,'test never accepts arbitrary destination');
+denies(fn()=>$prepareOwner(['recording_enabled'=>true]),422,'test recording denied');
+denies(fn()=>$prepareOwner(['phone_revision'=>2]),409,'test rejects stale phone revision');
+denies(fn()=>$prepareOwner(['number_id'=>1]),404,'test cannot use another owner line');
+$test=$prepareOwner();$id=$test['call']['public_id'];$row=readcall($id);
+c($test['call']['owner_test']===true&&$row['peer_e164']==='+16025550100'&&(int)$row['owner_phone_revision']===1&&!(int)$row['recording_enabled'],'test binds exact number revision and recording off');
+c($row['provider_call_sid']===null&&$row['state']==='prepared','test preparation is not carrier send');
+denies(fn()=>$prepareOwner(),429,'duplicate test is rate limited');
+denies(fn()=>$ownerAct('confirm_owner_test',['call_id'=>$id,'phone_revision'=>1,'received'=>true]),409,'unanswered test cannot be confirmed');
+$mine=$ownerAct('save_owner_phone',['phone_e164'=>'+16025550108','expected_revision'=>'2'])['owner_phone'];
+c($mine['phone_revision']===2&&!$mine['updates_requested']&&!$mine['hello_requested']&&$mine['last_test']===null,'number change resets preferences and old test evidence');
+$f=form('CA'.md5('ps2-superseded-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$test['connect_params']['call_intent']]);
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$f,signature('voice',$f)),'<Hangup')&&readcall($id)['state']==='prepared','signed voice callback fences superseded number');
+$ownerAct('cancel_prepared',['call_id'=>$id]);
+denies(fn()=>$prepareOwner(['phone_revision'=>2]),429,'number change does not reset test cooldown');
+$pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=? WHERE public_id=?')->execute([time()-121,$id]);
+$test=$prepareOwner(['phone_revision'=>2]);$id2=$test['call']['public_id'];
+$f=form('CA'.md5('ps2-test-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$test['connect_params']['call_intent']]);
+$xml=vp3_phone_browser_voice_v1($pdo,$f,signature('voice',$f));$row=readcall($id2);
+c(str_contains($xml,'+16025550108')&&str_contains($xml,'timeLimit="60"')&&!str_contains($xml,' record='),'test TwiML limits duration and never records');
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$f,signature('voice',$f)),'<Hangup'),'test carrier intent single use');
+$child=form('CA'.md5('ps2-test-child'),['ParentCallSid'=>$row['provider_call_sid'],'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$child,signature('status',$child,$id2),$id2);
+c($ownerGet()['owner_phone']['last_test']['can_confirm']===true,'signed answer makes receipt confirmation available');
+$scope=vp3_phone_workspace_scope_v1($pdo,user(2),['conversation_id'=>21,'agent_id'=>0]);
+denies(fn()=>vp3_operator_live_call_v1($pdo,$scope,$id2,time()),409,'test call cannot authorize AI captions');
+$received=$ownerAct('confirm_owner_test',['call_id'=>$id2,'phone_revision'=>2,'received'=>true])['owner_phone'];
+c($received['last_test']['received']&&!$received['last_test']['can_confirm']&&!$received['execution_enabled'],'receipt is not identity certification or live grant');
+$stamp=(int)readcall($id2)['owner_test_received_epoch'];
+$ownerAct('confirm_owner_test',['call_id'=>$id2,'phone_revision'=>2,'received'=>true]);
+c((int)readcall($id2)['owner_test_received_epoch']===$stamp,'confirmation idempotent');
+$terminal=form('CA'.md5('ps2-test-child'),['ParentCallSid'=>$row['provider_call_sid'],'CallStatus'=>'completed']);
+vp3_phone_browser_status_v1($pdo,$terminal,signature('status',$terminal,$id2),$id2);
+$mine=$ownerAct('save_owner_phone',['phone_e164'=>'','expected_revision'=>'3'])['owner_phone'];
+c($mine['phone_e164']===''&&$mine['last_test']===null,'remove number clears test projection');
+unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);
+denies(fn()=>$ownerGet(),403,'stale browser session cannot read owner phone');
+
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

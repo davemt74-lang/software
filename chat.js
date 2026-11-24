@@ -5345,6 +5345,14 @@
     if(initiativePosts.size&&!initiativeIdentityMatchesV1()){
       clearInitiativeReplyV1(true);recoveryStatus('The account or session changed. Refresh Chat before replying to an Agent update.');return;
     }
+    if(!imageReference&&!initiativeReplyTarget&&!historyParticipant&&!window.VP3ParticipantContinuity?.selectedContext()
+      &&/^(?:please\s+)?(?:call me|test (?:my )?phone(?: number)?|connect my phone|sync my phone|set up my phone)[.!?]*$/i.test(message.trim())
+      &&typeof window.VP3PhoneWorkspaceV1?.openOwnerSetup==='function'){
+      if(inputMode==='voice')stopVoiceRecognition();
+      setChatCanvasView('chat',{newChat:conversationId<1});
+      const opened=await window.VP3PhoneWorkspaceV1.openOwnerSetup();
+      if(opened){input.value='';autoSize();keepDraft('',conversationId);return;}
+    }
     const youtubeAction = window.VP3_CHAT_YOUTUBE_V1?.command(message);
     if (youtubeAction && !initiativeReplyTarget && !window.VP3ParticipantContinuity?.selectedContext()) {
       if (inputMode === 'voice') stopVoiceRecognition();
@@ -6091,7 +6099,7 @@
   window.addEventListener('vp3:chat-context-ready',syncPhoneWorkspaceContextV1);
   window.addEventListener('vp3:phone-workspace-event',event=>{
     const detail=event.detail||{};
-    if(detail.kind!=='incoming'||!contextReady||initialRestorePending||restoringConversation||historyParticipant
+    if(!['incoming','outgoing'].includes(detail.kind)||!contextReady||initialRestorePending||restoringConversation||historyParticipant
       ||window.VP3ParticipantContinuity?.selectedContext?.()||Number(detail.agent_id)!==Number(cfg.agentId||0)
       ||Number(detail.conversation_id)!==Number(conversationId||0)||Number(conversationId||0)<1)return;
     void canonicalChatContinuity.syncConversation(Number(conversationId)).catch(()=>{});

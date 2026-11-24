@@ -106,21 +106,24 @@ function vp3_phone_browser_action_v1(PDO $pdo,array $scope,array $input): array
         vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope){$pdo->prepare('DELETE FROM phone_browser_presence_v1 WHERE owner_user_id=?')->execute([$scope['owner_user_id']]);$pdo->prepare('INSERT INTO phone_browser_presence_v1(owner_user_id,last_epoch,conversation_id,chat_agent_id) VALUES (?,?,?,?)')->execute([$scope['owner_user_id'],time(),$scope['conversation_id']?:null,$scope['agent_id']]);});
         return vp3_phone_browser_token_v1($scope['owner_user_id'],0,$scope['agent_id']);
     }
-    if($action!=='prepare_call')vp3_phone_workspace_error_v1('invalid_phone_action',422,'Choose a supported phone action.');
+    $ownerTest=$action==='prepare_owner_test';
+    if($action!=='prepare_call'&&!$ownerTest)vp3_phone_workspace_error_v1('invalid_phone_action',422,'Choose a supported phone action.');
     if($scope['conversation_id']<1)vp3_phone_workspace_error_v1('phone_conversation_required',409,'Open a Chat conversation before dialing.');
-    if(!is_string($input['to_number']??null))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a valid international phone number.');
-    $to=vp3_phone_e164_v100($input['to_number']);if(array_key_exists('recording_enabled',$input)&&!is_bool($input['recording_enabled']))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a recording preference.');
-    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope,$id,$to,$input){
+    if(!$ownerTest&&!is_string($input['to_number']??null))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a valid international phone number.');
+    $to=$ownerTest?'':vp3_phone_e164_v100($input['to_number']);if(array_key_exists('recording_enabled',$input)&&!is_bool($input['recording_enabled']))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a recording preference.');
+    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope,$id,$to,$input,$ownerTest){
         $q=$pdo->prepare('SELECT id FROM users WHERE id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$scope['owner_user_id']]);$n=vp3_phone_browser_require_v1($pdo,$scope,$id,true);
+        $testRevision=0;
+        if($ownerTest){$test=vp3_owner_phone_test_destination_v1($pdo,$scope,$input,time());$to=$test['destination'];$testRevision=$test['revision'];}
         if(hash_equals((string)$n['phone_e164'],$to))vp3_phone_workspace_error_v1('invalid_phone_destination',422,'Choose a different destination number.');
         $now=time();$pdo->prepare("UPDATE phone_browser_calls_v1 SET state='canceled',ended_epoch=?,updated_epoch=? WHERE owner_user_id=? AND state='prepared' AND intent_expires_epoch<?")->execute([$now,$now,$scope['owner_user_id'],$now]);
         $q=$pdo->prepare("SELECT COUNT(*) FROM phone_browser_calls_v1 WHERE owner_user_id=? AND state IN ('prepared','dialing','ringing','answered')");$q->execute([$scope['owner_user_id']]);if((int)$q->fetchColumn()>0)vp3_phone_workspace_error_v1('phone_busy',409,'End the current call before dialing another.');
         $q=$pdo->prepare('SELECT COUNT(*) FROM phone_browser_calls_v1 WHERE owner_user_id=? AND created_epoch>?');$q->execute([$scope['owner_user_id'],$now-600]);if((int)$q->fetchColumn()>=10)vp3_phone_workspace_error_v1('phone_rate_limited',429,'Wait before placing more calls.');
-        $public=bin2hex(random_bytes(16));$intent=bin2hex(random_bytes(32));$record=!empty($input['recording_enabled'])&&!empty($n['recording_enabled']);
-        $pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,intent_hash,intent_expires_epoch,conversation_id,chat_agent_id,state,recording_enabled,created_epoch,updated_epoch) VALUES (?,?,?,?,?,?,'outbound',?,?,?,?, 'prepared',?,?,?)")
-            ->execute([$public,$scope['owner_user_id'],(int)$n['agent_id'],$id,(string)$n['phone_e164'],$to,hash('sha256',$intent),$now+90,$scope['conversation_id'],$scope['agent_id'],$record?1:0,$now,$now]);
+        $public=bin2hex(random_bytes(16));$intent=bin2hex(random_bytes(32));$record=!$ownerTest&&!empty($input['recording_enabled'])&&!empty($n['recording_enabled']);
+        $pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,intent_hash,intent_expires_epoch,conversation_id,chat_agent_id,state,recording_enabled,created_epoch,updated_epoch,owner_phone_revision) VALUES (?,?,?,?,?,?,'outbound',?,?,?,?, 'prepared',?,?,?,?)")
+            ->execute([$public,$scope['owner_user_id'],(int)$n['agent_id'],$id,(string)$n['phone_e164'],$to,hash('sha256',$intent),$now+90,$scope['conversation_id'],$scope['agent_id'],$record?1:0,$now,$now,$testRevision]);
         $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=?');$q->execute([$public]);$call=$q->fetch(PDO::FETCH_ASSOC);
-        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,'Outgoing phone call.');$pdo->prepare('UPDATE phone_browser_calls_v1 SET chat_message_id=? WHERE id=?')->execute([$delivery['message_id'],$call['id']]);
+        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,$ownerTest?'Personal phone test call.':'Outgoing phone call.');$pdo->prepare('UPDATE phone_browser_calls_v1 SET chat_message_id=? WHERE id=?')->execute([$delivery['message_id'],$call['id']]);
         return ['call'=>vp3_phone_workspace_call_projection_v1($call),'connect_params'=>['call_intent'=>$intent]];
     });
 }
@@ -140,6 +143,7 @@ function vp3_phone_browser_live_call_v1(PDO $pdo,array $call): bool
 function vp3_phone_browser_dial_attrs_v1(array $call,bool $record): string
 {
     $query=['call'=>(string)$call['public_id']];$attrs=' answerOnBridge="true" timeout="20" action="'.vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('complete',$query)).'" method="POST"';
+    if((int)($call['owner_phone_revision']??0)>0)$attrs.=' timeLimit="60"';
     if($record)$attrs.=' record="record-from-answer-dual" recordingStatusCallback="'.vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('recording',$query)).'" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed"';return $attrs;
 }
 function vp3_phone_browser_voice_v1(PDO $pdo,array $form,string $signature): string
@@ -149,6 +153,7 @@ function vp3_phone_browser_voice_v1(PDO $pdo,array $form,string $signature): str
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$form,$parent,$intent){
         $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE intent_hash=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([hash('sha256',$intent)]);$call=$q->fetch(PDO::FETCH_ASSOC);
         if(!$call||$call['state']!=='prepared'||(int)$call['intent_consumed_epoch']>0||(int)$call['intent_expires_epoch']<time()||!hash_equals('client:'.vp3_phone_browser_identity_v1((int)$call['owner_user_id'],(int)$call['chat_agent_id']),(string)($form['From']??''))||!vp3_phone_browser_live_call_v1($pdo,$call))return vp3_phone_browser_hangup_v1();
+        if(!vp3_owner_phone_test_current_v1($pdo,$call))return vp3_phone_browser_hangup_v1();
         $now=time();$q=$pdo->prepare("UPDATE phone_browser_calls_v1 SET provider_call_sid=?,intent_consumed_epoch=?,state='dialing',updated_epoch=? WHERE id=? AND intent_consumed_epoch=0 AND state='prepared'");$q->execute([$parent,$now,$now,$call['id']]);if($q->rowCount()!==1)return vp3_phone_browser_hangup_v1();
         $call['provider_call_sid']=$parent;$status=vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('status',['call'=>$call['public_id']]));
         $disclosure=$call['recording_enabled']?' url="'.vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('disclosure',['call'=>$call['public_id']])).'" method="POST"':'';
