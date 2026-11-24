@@ -16,7 +16,7 @@ function vp3_managed_transport_nonce_v1(mixed $nonce):string
 }
 function vp3_managed_transport_url_v1(string $event,string $public,string $nonce):string
 {
-    vp3_managed_callback_need_v1(in_array($event,['answer','confirm','parent','child','complete','record_notice','record_consent','recording'],true),422);
+    vp3_managed_callback_need_v1(in_array($event,['answer','confirm','parent','child','complete','record_notice','record_consent','recording','native_pin'],true),422);
     vp3_managed_callback_id_v1($public);vp3_managed_transport_nonce_v1($nonce);
     $base=vp3_phone_voice_validate_url_v130(vp3_phone_voice_callback_url_v130());
     return substr($base,0,-strlen('phone-voice-inbound-v130.php')).'phone-managed-callback-event-v1.php?'.
@@ -77,6 +77,8 @@ function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $
         $owner=(int)($user['id']??0);$live=vp3_managed_callback_owner_lock_v1($pdo,$owner);
         $row=vp3_managed_callback_row_v1($pdo,$id,true);
         vp3_managed_callback_need_v1(is_array($row)&&(int)$row['owner_user_id']===$owner,404);
+        require_once __DIR__.'/phone-native-dialthrough-v1.php';
+        vp3_managed_callback_need_v1(!vp3_native_dialthrough_row_v1($pdo,$id,true));
         $q=$pdo->prepare('SELECT call_public_id FROM phone_managed_callback_dispatch_v1 WHERE request_id=?');$q->execute([$id]);$already=$q->fetchColumn();$q->closeCursor();
         if($already!==false){
             $transport=vp3_managed_transport_row_v1($pdo,(string)$already,true);$call=vp3_managed_transport_call_v1($pdo,(string)$already,true);
@@ -167,6 +169,10 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
 {
     $url=vp3_managed_transport_url_v1($event,$public,$nonce);
     $sid=vp3_phone_browser_verify_v1($form,$signature,$url);
+    if($event==='native_pin'){
+        require_once __DIR__.'/phone-native-dialthrough-v1.php';
+        return vp3_native_dialthrough_confirm_v1($pdo,$public,$nonce,$sid,$form,$now);
+    }
     $hangup=['accepted'=>false,'xml'=>vp3_phone_browser_hangup_v1()];
     $hint=vp3_managed_transport_row_v1($pdo,$public);
     if(!$hint||!hash_equals((string)$hint['callback_nonce_hash'],hash('sha256',$nonce)))return $hangup;
@@ -180,11 +186,13 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
         $mapping=['queued'=>'dialing','initiated'=>'dialing','ringing'=>'ringing','in-progress'=>'answered','answered'=>'answered',
             'completed'=>'completed','busy'=>'busy','no-answer'=>'no_answer','failed'=>'failed','canceled'=>'canceled'];
         $finished=in_array($call['state'],$terminal,true);
+        $native=($call['managed_parent_kind']??'callback')==='native';
+        if($native&&in_array($event,['answer','confirm','record_notice','record_consent','recording'],true))return $hangup;
         require_once __DIR__.'/phone-managed-recording-v1.php';
         if(in_array($event,['record_notice','record_consent'],true))return vp3_managed_recording_child_v1($pdo,$event,$row,$t,$call,$sid,$nonce,$form,$now);
         if($event==='recording')return vp3_managed_recording_event_v1($pdo,$row,$t,$call,$sid,$form,$now);
         if($event!=='child'){
-            if(!hash_equals((string)$call['phone_e164'],(string)($form['From']??''))||!hash_equals((string)$call['peer_e164'],(string)($form['To']??'')))return $hangup;
+            if(!hash_equals((string)$call[$native?'peer_e164':'phone_e164'],(string)($form['From']??''))||!hash_equals((string)$call[$native?'phone_e164':'peer_e164'],(string)($form['To']??'')))return $hangup;
             if(!vp3_managed_transport_bind_parent_v1($pdo,$call,$sid))return $hangup;
         }
         if($event==='answer'||$event==='confirm'){

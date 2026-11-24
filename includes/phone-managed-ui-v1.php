@@ -64,6 +64,7 @@ function vp3_managed_ui_projection_v1(PDO $pdo,array $d,int $now,bool $holder):?
         if(in_array($view['state'],['pending','approved'],true)){
             try{vp3_managed_callback_current_v1($pdo,$row,$user,$now);}catch(VP3PhoneWorkspaceException){
                 $view['state']='unavailable';unset($view['destination_e164']);
+                if(isset($view['native']))$view['native']['can_issue_pin']=false;
             }
         }
         if(vp3_managed_transport_ready_v1($pdo)){
@@ -95,7 +96,7 @@ function vp3_managed_ui_owner_action_v1(PDO $pdo,array $user,string $action,arra
     vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel','managed_reconcile','managed_end'],true),422);
     if(in_array($action,['managed_reconcile','managed_end'],true))return vp3_managed_ui_control_v1($pdo,$user,$action,$input,$now);
     $allowed=$action==='managed_prepare'
-        ?['request_id','managed_request_id','device_id','generation','profile_id','profile_revision','phone_revision','number_id','destination_e164','confirmed','recording_requested','recording_policy_revision']
+        ?['request_id','managed_request_id','device_id','generation','profile_id','profile_revision','phone_revision','number_id','destination_e164','confirmed','recording_requested','recording_policy_revision','transport']
         :['request_id','managed_request_id','device_id','generation'];
     vp3_managed_callback_need_v1(!array_diff(array_keys($input),$allowed),422);
     $owner=(int)($user['id']??0);$device=vp3_managed_callback_id_v1($input['device_id']??null);

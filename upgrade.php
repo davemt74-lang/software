@@ -310,6 +310,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
         && vp3_managed_recording_ready_v1($schemaConnection)
+        && vp3_native_dialthrough_ready_v1($schemaConnection)
         && vp3_phone_recording_schema_ready_v1($schemaConnection)
         && vp3_operator_auto_call_schema_ready_v1($schemaConnection)
         && vp3_operator_live_schema_ready_v1($schemaConnection)

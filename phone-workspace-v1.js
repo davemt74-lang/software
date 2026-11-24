@@ -676,7 +676,7 @@
     info={...info,...state?.calls.find(call=>call.public_id===info.public_id)};
     const id=info.public_id,readOnlyLegacy=/^legacy-/.test(id),currentState=localStates.get(id)||info.state,card=node('article','vp3-phone-call');card.dataset.phoneCallId=id;
     const incoming=entry?.incoming===true||info.direction==='inbound',outgoing=entry?.incoming===false||info.direction==='outbound',contact=callerContact(info);
-    card.append(node('strong','vp3-phone-call-heading',info.transport_kind==='managed_callback'?'Twilio managed callback':info.connected_phone===true?'Connected phone call':info.owner_test===true?'Personal phone test call':incoming?'Incoming phone call':outgoing?'Outgoing phone call':'Phone call'),node('p','vp3-phone-peer-name',text(contact?.name||callPeerName(info)).slice(0,180)));
+    card.append(node('strong','vp3-phone-call-heading',info.transport_kind==='managed_callback'?(info.managed_mode==='twilio_native'?'Twilio native dial-through':'Twilio managed callback'):info.connected_phone===true?'Connected phone call':info.owner_test===true?'Personal phone test call':incoming?'Incoming phone call':outgoing?'Outgoing phone call':'Phone call'),node('p','vp3-phone-peer-name',text(contact?.name||callPeerName(info)).slice(0,180)));
     if(contact)card.append(node('p','vp3-phone-peer-number',info.peer_e164));
     const prior=info.caller_familiar===true||info.caller_familiar===undefined&&(state?.calls||[]).some(call=>call.public_id!==id&&call.peer_e164===info.peer_e164&&info.peer_e164&&typeof call.created_at==='string'&&typeof info.created_at==='string'&&call.created_at<info.created_at);
     if(contact||prior)card.append(node('p','vp3-phone-peer-context',contact?'Saved contact':'Seen in recent calls'));
@@ -686,7 +686,7 @@
     if(terminal&&Number.isInteger(info.duration_seconds)&&(!readOnlyLegacy||info.duration_seconds>0))addDetail(readOnlyLegacy?'Recording duration':'Call duration',callDuration(info.duration_seconds));
     addDetail('Your line',info.phone_e164);
     const managed=info.transport_kind==='managed_callback',control=info.managed_control;
-    if(managed){addDetail('Transport','Twilio managed callback');if(control?.missed_leg)addDetail('No answer',control.missed_leg==='holder'?'Connected phone':'Destination');addDetail('Connection stage',displayState(control?.dispatch_state));addDetail('Carrier check',control?.read_state==='none'?'':displayState(control?.read_state));addDetail('End request',control?.end_state==='none'?'':displayState(control?.end_state));}
+    if(managed){addDetail('Transport',info.managed_mode==='twilio_native'?'Twilio native dial-through':'Twilio managed callback');if(control?.missed_leg)addDetail('No answer',control.missed_leg==='holder'?'Connected phone':'Destination');addDetail('Connection stage',displayState(control?.dispatch_state));addDetail('Carrier check',control?.read_state==='none'?'':displayState(control?.read_state));addDetail('End request',control?.end_state==='none'?'':displayState(control?.end_state));}
     const line=(state?.numbers||[]).find(number=>Number(number.id)===Number(info.number_id)&&Number(number.agent_id)===Number(info.agent_id)&&number.phone_e164===info.phone_e164);
     if(line?.agent_name)addDetail('Agent',text(line.agent_name).slice(0,180));
     const recording=(state?.voicemails||[]).find(voicemail=>callKey(voicemail.call_id)===id);

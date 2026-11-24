@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 /** Managed-callback storage and withdrawal cleanup; no carrier dependencies. */
 require_once __DIR__.'/phone-managed-recording-schema-v1.php';
+require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
 function vp3_managed_callback_install_v1(PDO $pdo):void
 {
     if($pdo->inTransaction())throw new LogicException('Install managed callbacks outside transactions.');
@@ -28,6 +29,7 @@ function vp3_managed_callback_revoke_v1(PDO $pdo,int $owner,string $device,int $
 {
     if(!vp3_managed_callback_ready_v1($pdo))return;
     vp3_managed_recording_revoke_device_v1($pdo,$owner,$device,$now);
+    vp3_native_dialthrough_revoke_device_v1($pdo,$owner,$device,$now);
     $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='canceled',holder_e164='',destination_e164='',updated_epoch=? WHERE owner_user_id=? AND device_id=? AND state IN ('pending','approved')")->execute([$now,$owner,$device]);
     // Already claimed callbacks need their immutable numbers until signed terminal receipts arrive.
     // Revocation prevents a subsequent answer/confirm from authorizing the destination leg.

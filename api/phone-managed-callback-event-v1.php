@@ -16,8 +16,8 @@ foreach($_POST as $key=>$value){
 }
 if($bytes>12000){http_response_code(413);return;}
 $event=$_GET['event']??null;$call=$_GET['call']??null;$nonce=$_GET['nonce']??null;
-if(!is_string($event)||!in_array($event,['answer','confirm','parent','child','complete','record_notice','record_consent','recording'],true)||!is_string($call)||!is_string($nonce)){http_response_code(422);return;}
-$xml=in_array($event,['answer','confirm','complete','record_notice','record_consent'],true);
+if(!is_string($event)||!in_array($event,['answer','confirm','parent','child','complete','record_notice','record_consent','recording','native_pin'],true)||!is_string($call)||!is_string($nonce)){http_response_code(422);return;}
+$xml=in_array($event,['answer','confirm','complete','record_notice','record_consent','native_pin'],true);
 if($xml)header('Content-Type: application/xml; charset=UTF-8');
 $pdo=db();
 if(!$pdo||!vp3_phone_workspace_schema_ready_v1($pdo)||!vp3_managed_transport_ready_v1($pdo)||!vp3_phone_twilio_state_v100()['configured']){http_response_code(503);return;}

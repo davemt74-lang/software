@@ -1232,19 +1232,21 @@ async function verifyManagedReviewUI(context){
       const holderDevice={...d,managed_callback:{...p,lines:[]}};
       const calls=[];let saved=null;
       function refresh(){
-        const redacted=saved?{request_id:saved.request_id,state:saved.state,expires_epoch:epoch+120}:null;
+        const redacted=saved?{request_id:saved.request_id,state:saved.state,expires_epoch:epoch+120,...(saved.transport==='twilio_native'?{transport:'twilio_native',native:{state:saved.issued?'issued':'review',enabled:true,can_issue_pin:false}}:{})}:null;
         d.managed_callback={...p,request:redacted};
-        holderDevice.managed_callback={...p,lines:[],request:redacted?{...redacted,...(saved.state==='pending'?{destination_e164:saved.destination_e164}:{})}:null};
+        holderDevice.managed_callback={...p,lines:[],request:redacted?{...redacted,...(saved.state==='pending'?{destination_e164:saved.destination_e164}:{}),...(redacted.native?{native:{...redacted.native,can_issue_pin:saved.state==='approved'&&!saved.issued}}:{})}:null};
         ownerUI.bind(d,true);holderUI.bind(holderDevice,true);
       }
       const ownerUI=window.VP3ManagedCallUIV1.owner({directRoot:document.createElement('div'),openBrowser:()=>{},request:async(action,body)=>{
         calls.push({action,body});
-        if(action==='managed_prepare')saved={request_id:body.managed_request_id,destination_e164:body.destination_e164,state:'pending'};
+        if(action==='managed_prepare')saved={request_id:body.managed_request_id,destination_e164:body.destination_e164,state:'pending',transport:body.transport||'twilio_callback'};
         if(action==='managed_cancel')saved.state='canceled';
         refresh();return {managed_callback:d.managed_callback};
       }});
       const holderUI=window.VP3ManagedCallUIV1.holder({request:async(action,body)=>{
-        calls.push({action,body});saved.state=body.decision==='approve'?'approved':'declined';refresh();return {device:holderDevice};
+        calls.push({action,body});
+        if(action==='native_dialthrough_issue'){saved.issued=true;refresh();return {device:holderDevice,native_dialthrough_ticket:{request_id:saved.request_id,line_e164:'+16025550102',pin:'00412567',server_epoch:epoch,expires_epoch:epoch+120}};}
+        saved.state=body.decision==='approve'?'approved':'declined';refresh();return {device:holderDevice};
       }});
       document.getElementById('owner').append(ownerUI.root);
       document.getElementById('holder').append(holderUI.root);
@@ -1294,6 +1296,22 @@ async function verifyManagedReviewUI(context){
     assert.deepEqual(controlCalls.map(x=>x.action),['managed_reconcile','managed_end']);
     assert.equal(controlCalls[1].body.call_id,'e'.repeat(32));
     assert.equal(controlCalls[1].body.confirmed,true);
-    console.log('PASS Managed callback review UI: mode selection, exact approval, cancel, scoped draft clearing and no carrier dispatch.');
+    // Native mode uses the same approval form but never auto-opens the OS dialer.
+    await page.evaluate(()=>{const {d,ownerUI,refresh}=window.managedFixture;d.managed_callback={...d.managed_callback,request:null};ownerUI.bind(d,true);ownerUI.setMode('native');});
+    await own.getByLabel('Managed destination number (international format)').fill('+16025550159');
+    await own.getByRole('checkbox').check();await own.getByRole('button',{name:'Request dial-through approval',exact:true}).click();
+    await hold.getByText('+16025550159',{exact:true}).waitFor();
+    await hold.getByRole('checkbox').check();await hold.getByRole('button',{name:'Approve managed request',exact:true}).click();
+    await hold.getByRole('button',{name:'Get one-time dialing code',exact:true}).click();
+    await hold.getByText('00412567',{exact:true}).waitFor();
+    await hold.getByRole('button',{name:'Open native phone dialer',exact:true}).waitFor();
+    assert.equal(await own.getByText('00412567',{exact:true}).count(),0,'PIN never appears in owner view');
+    assert.equal(await hold.getByRole('button',{name:'Get one-time dialing code',exact:true}).isVisible(),false);
+    await page.evaluate(()=>window.managedFixture.holderUI.invalidate());
+    assert.equal(await hold.getByText('00412567',{exact:true}).count(),0,'invalidating holder view removes native PIN');
+    const nativeCalls=await page.evaluate(()=>window.managedFixture.calls.slice(5));
+    assert.deepEqual(nativeCalls.map(x=>x.action),['managed_prepare','managed_respond','native_dialthrough_issue']);
+    assert.equal(nativeCalls[0].body.transport,'twilio_native');assert.equal(nativeCalls[2].body.confirmed,true);
+    console.log('PASS Managed callback and native dial-through review UI: no real carrier dispatch or native dialer navigation.');
   }finally{await page.close();}
 }
