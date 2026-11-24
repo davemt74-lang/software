@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** PS5E.3: authenticated review UI only. This module never invokes carrier dispatch. */
+/** Authenticated review UI and explicitly gated owner pilot dispatch. */
 require_once __DIR__.'/phone-managed-callback-schema-v1.php';
 
 function vp3_managed_ui_device_v1(PDO $pdo,int $owner,string $id):?array
@@ -83,6 +83,11 @@ function vp3_managed_ui_projection_v1(PDO $pdo,array $d,int $now,bool $holder):?
                 }
             }
         }
+        require_once __DIR__.'/phone-managed-pilot-v1.php';
+        $pilot=vp3_managed_pilot_review_v1($pdo,$row,$now);
+        if($view['state']!=='approved')$pilot['available']=false;
+        $view['pilot']=$pilot;
+        $out['dispatch_enabled']=!$holder&&$view['transport']==='twilio_callback'&&$pilot['available'];
         $out['request']=$view;return $out;
     }catch(Throwable){
         // This optional feature must not break location, camera or messaging status.
@@ -93,7 +98,8 @@ function vp3_managed_ui_owner_action_v1(PDO $pdo,array $user,string $action,arra
 {
     require_once __DIR__.'/phone-managed-callback-v1.php';
     vp3_managed_callback_need_v1(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null,403);
-    vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel','managed_reconcile','managed_end'],true),422);
+    vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch'],true),422);
+    if($action==='managed_pilot_dispatch')return vp3_managed_ui_pilot_dispatch_v1($pdo,$user,$input,$now);
     if(in_array($action,['managed_reconcile','managed_end'],true))return vp3_managed_ui_control_v1($pdo,$user,$action,$input,$now);
     $allowed=$action==='managed_prepare'
         ?['request_id','managed_request_id','device_id','generation','profile_id','profile_revision','phone_revision','number_id','destination_e164','confirmed','recording_requested','recording_policy_revision','transport']
@@ -148,4 +154,24 @@ function vp3_managed_ui_control_v1(PDO $pdo,array $user,string $action,array $in
     $result=vp3_managed_control_action_v1($pdo,$scope,['action'=>$action,'call_id'=>$public,'confirmed'=>($input['confirmed']??false)===true]);
     $fresh=vp3_managed_ui_device_v1($pdo,$owner,$device);
     return $result+['managed_callback'=>$fresh?vp3_managed_ui_projection_v1($pdo,$fresh,time(),false):null];
+}
+
+
+/** Explicit owner action only; the injected carrier/clock are server test seams. */
+function vp3_managed_ui_pilot_dispatch_v1(PDO $pdo,array $user,array $input,int $now,?callable $carrier=null):array
+{
+    require_once __DIR__.'/phone-managed-transport-v1.php';
+    require_once __DIR__.'/phone-managed-recording-v1.php';
+    vp3_managed_callback_need_v1(!array_diff(array_keys($input),['request_id','device_id','generation','managed_request_id','confirmed'])
+        &&($input['confirmed']??null)===true,422);
+    vp3_managed_callback_need_v1(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null,403);
+    $owner=(int)($user['id']??0);$device=vp3_managed_callback_id_v1($input['device_id']??null);
+    $id=vp3_managed_callback_id_v1($input['managed_request_id']??null);
+    $d=vp3_managed_ui_device_v1($pdo,$owner,$device);
+    $row=vp3_managed_callback_row_v1($pdo,$id);
+    vp3_managed_callback_need_v1(is_array($d)&&is_array($row)&&(int)$row['owner_user_id']===$owner&&$row['device_id']===$device&&(int)$d['expires_at']>$now,404);
+    vp3_managed_callback_need_v1(is_int($input['generation']??null)&&(int)$d['generation']===$input['generation']&&(int)$row['generation']===$input['generation']);
+    $result=vp3_managed_transport_dispatch_v1($pdo,$user,$id,true,$carrier,$carrier!==null?$now:null,true);
+    $fresh=vp3_managed_ui_device_v1($pdo,$owner,$device);
+    return $result+['managed_callback'=>$fresh?vp3_managed_ui_projection_v1($pdo,$fresh,$carrier!==null?$now:time(),false):null];
 }

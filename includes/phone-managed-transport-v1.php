@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** PS5E.2: private, one-use callback transport. No recording or autonomous execution. */
 require_once __DIR__.'/phone-managed-callback-v1.php';
 require_once __DIR__.'/phone-managed-transport-schema-v1.php';
+require_once __DIR__.'/phone-managed-pilot-v1.php';
 
 function vp3_managed_transport_enabled_v1():bool
 {
@@ -68,12 +69,12 @@ function vp3_managed_transport_terminal_v1(PDO $pdo,array $transport,array $call
     $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='finished',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=?")->execute([$now,$transport['request_id']]);
 }
 /** Reserve once before any network access; canonical busy and profile budgets are shared. */
-function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $confirmed,int $now):array
+function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $confirmed,int $now,bool $pilotRequired=false):array
 {
     vp3_managed_callback_need_v1(vp3_managed_transport_enabled_v1()&&vp3_managed_transport_ready_v1($pdo),503);
     vp3_managed_callback_need_v1($confirmed&&(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null),403);
     vp3_managed_callback_id_v1($id);
-    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$user,$id,$now){
+    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$user,$id,$now,$pilotRequired){
         $owner=(int)($user['id']??0);$live=vp3_managed_callback_owner_lock_v1($pdo,$owner);
         $row=vp3_managed_callback_row_v1($pdo,$id,true);
         vp3_managed_callback_need_v1(is_array($row)&&(int)$row['owner_user_id']===$owner,404);
@@ -88,6 +89,7 @@ function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $
         vp3_managed_callback_need_v1($row['state']==='approved'&&(int)$row['approved_epoch']>0&&(int)$row['expires_epoch']>$now);
         $authority=vp3_managed_callback_current_v1($pdo,$row,$live,$now);
         require_once __DIR__.'/phone-managed-recording-v1.php';
+        if($pilotRequired)vp3_managed_callback_need_v1(vp3_managed_pilot_review_v1($pdo,$row,$now)['available'],403);
         vp3_managed_recording_parent_v1($pdo,$row,$authority,false,$now);
         vp3_connected_phone_prepare_v1($pdo,$authority['scope'],['device_id'=>$row['device_id'],'profile_id'=>$row['profile_id'],
             'profile_revision'=>(int)$row['profile_revision'],'phone_revision'=>(int)$row['phone_revision'],'confirmed'=>true],$now);
@@ -103,8 +105,8 @@ function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $
             VALUES (?,?,?,?,?,?,'outbound',?,?,'dialing',0,?,?,?,?,?,?,'managed_callback')")
             ->execute([$public,$owner,(int)$row['line_agent_id'],(int)$row['number_id'],$row['line_e164'],$row['holder_e164'],
                 (int)$row['conversation_id'],(int)$row['chat_agent_id'],$now,$now,$row['device_id'],$row['profile_id'],(int)$row['profile_revision'],(int)$row['phone_revision']]);
-        $pdo->prepare("INSERT INTO phone_managed_callback_dispatch_v1(request_id,call_public_id,owner_user_id,callback_nonce_hash,state,created_epoch,updated_epoch)
-            VALUES (?,?,?,?,'dispatching',?,?)")->execute([$id,$public,$owner,hash('sha256',$nonce),$now,$now]);
+        $pdo->prepare("INSERT INTO phone_managed_callback_dispatch_v1(request_id,call_public_id,owner_user_id,callback_nonce_hash,state,created_epoch,updated_epoch,pilot_required)
+            VALUES (?,?,?,?,'dispatching',?,?,?)")->execute([$id,$public,$owner,hash('sha256',$nonce),$now,$now,(int)$pilotRequired]);
         $q=$pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='dispatch_claimed',updated_epoch=? WHERE public_id=? AND state='approved'");$q->execute([$now,$id]);vp3_managed_callback_need_v1($q->rowCount()===1);
         $call=vp3_managed_transport_call_v1($pdo,$public,true);
         $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,'Twilio managed callback requested. Carrier connection is not yet confirmed.');
@@ -114,11 +116,12 @@ function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $
     });
 }
 /** Explicit private dispatch only. No worker or web endpoint invokes this function in PS5E.2. */
-function vp3_managed_transport_dispatch_v1(PDO $pdo,array $user,string $id,bool $confirmed,?callable $carrier=null,?int $clock=null):array
+function vp3_managed_transport_dispatch_v1(PDO $pdo,array $user,string $id,bool $confirmed,?callable $carrier=null,?int $clock=null,bool $pilotRequired=false):array
 {
     vp3_managed_callback_need_v1(!$pdo->inTransaction(),409);
     $now=$clock??time();
-    $reserved=vp3_managed_transport_reserve_v1($pdo,$user,$id,$confirmed,$now);
+    $pilotRequired=$pilotRequired||$carrier===null;
+    $reserved=vp3_managed_transport_reserve_v1($pdo,$user,$id,$confirmed,$now,$pilotRequired);
     if(isset($reserved['existing']))return $reserved['existing'];
     $public=$reserved['public'];$owner=(int)$user['id'];
     // Recheck immediately before sending. A later revocation still fences the signed answer/confirm.
@@ -131,6 +134,7 @@ function vp3_managed_transport_dispatch_v1(PDO $pdo,array $user,string $id,bool 
             $live=vp3_managed_callback_owner_lock_v1($pdo,$owner);
             vp3_managed_callback_need_v1(vp3_managed_transport_enabled_v1()&&$row['state']==='dispatch_claimed'&&(int)$row['expires_epoch']>$now&&$transport['state']==='dispatching'&&!$call['provider_call_sid']);
             $authority=vp3_managed_callback_current_v1($pdo,$row,$live,$now);
+            if((int)$transport['pilot_required']===1)vp3_managed_callback_need_v1(vp3_managed_pilot_allowed_v1($row,$now)&&!vp3_managed_recording_row_v1($pdo,$row['public_id'],true),403);
             vp3_managed_recording_parent_v1($pdo,$row,$authority,false,$now);return true;
         }catch(VP3PhoneWorkspaceException){vp3_managed_transport_terminal_v1($pdo,$transport,$call,'canceled',0,$now,null,'not_sent');return false;}
     });
@@ -199,6 +203,7 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
             if($finished||!vp3_managed_transport_enabled_v1()||$row['state']!=='dispatch_claimed'||(int)$row['expires_epoch']<=$now||$t['parent_state']!=='')return $hangup;
             try{
                 $live=vp3_managed_callback_owner_lock_v1($pdo,$owner);$authority=vp3_managed_callback_current_v1($pdo,$row,$live,$now);
+                if((int)$t['pilot_required']===1)vp3_managed_callback_need_v1(vp3_managed_pilot_allowed_v1($row,$now)&&!vp3_managed_recording_row_v1($pdo,$row['public_id'],true),403);
                 $recordPolicy=vp3_managed_recording_parent_v1($pdo,$row,$authority,false,$now);
             }catch(VP3PhoneWorkspaceException){return $hangup;}
             if($event==='answer'){

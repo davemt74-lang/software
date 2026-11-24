@@ -13,9 +13,10 @@ function vp3_managed_transport_install_v1(PDO $pdo):void
         created_epoch BIGINT NOT NULL,confirmation_epoch BIGINT NOT NULL DEFAULT 0,
         updated_epoch BIGINT NOT NULL
     )".$suffix);
+    try{$pdo->query('SELECT pilot_required FROM phone_managed_callback_dispatch_v1 WHERE 1=0');}catch(PDOException){$pdo->exec('ALTER TABLE phone_managed_callback_dispatch_v1 ADD COLUMN pilot_required SMALLINT NOT NULL DEFAULT 0');}
     if(!vp3_managed_transport_ready_v1($pdo))throw new RuntimeException('Managed transport upgrade incomplete.');
 }
 function vp3_managed_transport_ready_v1(PDO $pdo):bool
 {
-    try{$pdo->query('SELECT request_id,call_public_id,owner_user_id,callback_nonce_hash,state,parent_state,created_epoch,confirmation_epoch,updated_epoch FROM phone_managed_callback_dispatch_v1 WHERE 1=0');return true;}catch(PDOException){return false;}
+    try{$pdo->query('SELECT request_id,call_public_id,owner_user_id,callback_nonce_hash,state,parent_state,created_epoch,confirmation_epoch,updated_epoch,pilot_required FROM phone_managed_callback_dispatch_v1 WHERE 1=0');return true;}catch(PDOException){return false;}
 }
