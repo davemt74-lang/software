@@ -18,6 +18,11 @@ function vp3_operator_recording_evidence_v1(PDO $pdo,array $user,int $agentId,ar
     try {
         $source=vp3_phone_recording_call_v1($pdo,$job);
         if ((string)$source['public_id']!==(string)$call['public_id']) return null;
+        if(($source['transport_kind']??'')==='managed_callback'){
+            require_once __DIR__.'/phone-managed-recording-v1.php';
+            $policy=vp3_managed_recording_saved_policy_v1($pdo,$source,(string)$job['provider_recording_sid']);
+            if($policy!==vp3_phone_recording_decode_v1($job['policy_json'])||(int)$job['conversation_id']!==(int)$source['conversation_id'])return null;
+        }
     } catch (RuntimeException $error) {return null;}
     $state=(string)$job['state'];
     $out=['state'=>match($state){

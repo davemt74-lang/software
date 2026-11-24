@@ -101,3 +101,10 @@
 .vp3-phone-caption-lines{display:grid;gap:8px;min-width:0}
 .vp3-phone-caption-lines>p{padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e1e6ed}
 .vp3-phone-live-caption>.vp3-phone-button{justify-self:start;max-width:100%}
+
+/* Managed conversation evidence stays inside the existing Phone card. */
+.vp3-phone-managed-review{display:grid;gap:.7rem;min-width:0;border-top:1px solid #d7dfdc;padding-top:.8rem;margin-top:.8rem}
+.vp3-phone-managed-review h3,.vp3-phone-managed-review h4,.vp3-phone-managed-review p{margin:0;min-width:0;overflow-wrap:anywhere}
+.vp3-phone-managed-report{white-space:pre-wrap;line-height:1.5;font-size:.92rem}
+.vp3-phone-managed-finding{display:grid;gap:.4rem;padding:.7rem;border:1px solid #d7dfdc;border-radius:.55rem;min-width:0;overflow-wrap:anywhere}
+.vp3-phone-managed-review .vp3-phone-report{white-space:normal;overflow-wrap:anywhere}

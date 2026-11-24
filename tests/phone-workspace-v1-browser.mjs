@@ -69,6 +69,16 @@ const server=http.createServer((req,res)=>{
    if(req.method==='POST'&&values.csrf_token!=='fixture-csrf'){res.statusCode=419;return res.end(JSON.stringify({ok:false}));}
    let result={};
    if(values.action==='state')result={state:structuredClone(state)};
+   if(values.action==='managed_review'){
+     assert.equal(req.method,'GET');assert.equal(values.call_id,'6'.repeat(32));
+     assert.equal(Number(values.conversation_id),10);assert.equal(Number(values.agent_id),2);
+     result={review:{call_id:values.call_id,coverage:'ready',execution_enabled:false,outcome:'completed',duration_seconds:35,
+       transcript_url:'/artist-listening.php?session=772',
+       report:{text:'Key findings\nFixture report <img src=x onerror=alert(1)>\nActions & follow-ups\nConfirm timing.',review_state:'unreviewed',historical:true},
+       followups:[{text:'Confirm timing.',next_step:'Review the source.',review_state:'unreviewed',source_url:'/artist-listening-evidence.php?session=772&plugin=actions&section=items&item=fixture'},
+         {text:'Untrusted link',review_state:'accepted',source_url:'https://untrusted.invalid/secret'}],
+       continuity:{state:'permission_required',calls:[]}}};
+   }
    if(values.action==='owner_phone_settings')result={owner_phone:structuredClone(ownerPhone)};
    if(values.action==='save_owner_phone'){
      assert.equal(Number(values.expected_revision),ownerPhone.revision);
@@ -462,6 +472,26 @@ try{
    assert.equal(await setup.getByRole('button',{name:'Call connected phone',exact:true}).isDisabled(),true);
    await setup.getByRole('button',{name:'Close connected phone setup',exact:true}).click();
    assert.equal(await setup.count(),0);
+ });
+ await check('managed call review is read-only, literal text, source-linked and cleared on Chat switch',async()=>{
+   await fresh();
+   const id='6'.repeat(32);
+   state.calls=[historyCall(id,{transport_kind:'managed_callback',direction:'outbound',connected_phone:true,peer_e164:'',peer_masked:'Ending in 0156',conversation_id:10,browser_control:false})];
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+   await page.getByRole('tab',{name:'Recent calls',exact:true}).click();
+   const row=page.locator('#vp3PhoneSection-calls .vp3-phone-call');
+   await row.getByRole('button',{name:'Review conversation',exact:true}).click();
+   const review=row.locator('[data-managed-conversation-review]');
+   await review.getByText('Conversation intelligence',{exact:true}).waitFor();
+   await review.getByText('Confirm timing.',{exact:true}).waitFor();
+   assert.ok((await review.innerText()).includes('Fixture report <img src=x onerror=alert(1)>'));
+   assert.equal(await review.locator('img,script').count(),0);
+   assert.equal(await review.getByRole('link',{name:'Review original finding',exact:true}).count(),1);
+   assert.equal(await review.locator('a[href^="https://untrusted.invalid"]').count(),0);
+   assert.equal(apiCalls.filter(c=>c.action==='managed_review').length,1);
+   assert.equal(apiCalls.some(c=>['prepare_call','managed_dispatch','save_auto_call_policy'].includes(c.action)),false);
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true}));
+   assert.equal(await page.locator('[data-managed-conversation-review]').count(),0);
  });
  if(actualState)await check('the unmodified PHP projection renders both voicemail namespaces and saved processing policy',async()=>{
   assert.ok(actualUi?.button&&actualUi?.config,'The actual PHP header and runtime configuration are mandatory with the real projection');

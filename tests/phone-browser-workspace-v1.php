@@ -1185,4 +1185,71 @@ vp3_phone_recording_save_policy_v1($pdo,user(2),8,['transcribe'=>false]);
 bad(fn()=>vp3_phone_recording_authorize_v1($pdo,$job,true),'changed owner policy cannot broaden consent or run additional paid processing');
 unset($GLOBALS['settings']['phone_managed_recording_enabled_v1'],$GLOBALS['settings']['phone_managed_callback_enabled_v1']);
 
+// PS5E.6: saved report evidence, profile continuity and count-only coordination.
+require_once dirname(__DIR__).'/includes/agent-operator-managed-intelligence-v1.php';
+$intelScope=vp3_phone_workspace_scope_v1($pdo,user(2),['agent_id'=>0,'conversation_id'=>21]);
+$intelScope['principal']=['kind'=>'system'];
+$intelForeign=vp3_phone_workspace_scope_v1($pdo,user(1),['agent_id'=>0,'conversation_id'=>11]);
+$intelClock=time();
+$queuedReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock);
+c($queuedReview['coverage']==='queued'&&$queuedReview['report']===null&&!$queuedReview['execution_enabled'],'queued recording does not invent a report or execution permission');
+denies(fn()=>vp3_managed_intelligence_review_v1($pdo,$intelForeign,$recPublic,$intelClock),404,'managed report cannot cross account');
+denies(fn()=>vp3_managed_intelligence_review_v1($pdo,array_replace($intelScope,['conversation_id'=>999]),$recPublic,$intelClock),404,'managed report cannot cross exact conversation');
+denies(fn()=>api('POST',['action'=>'managed_review','call_id'=>$recPublic,'conversation_id'=>21,'agent_id'=>0,'csrf_token'=>'csrf-fixture'],2),405,'conversation review is read only');
+if($mysql){
+    ddl('CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,metadata_json TEXT,discarded_at DATETIME NULL)');
+    ddl('CREATE TABLE artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,segment_type VARCHAR(30),transcript_text TEXT)');
+}
+$intelSession=772;$intelHash=str_repeat('e',64);$intelRevision=str_repeat('f',64);
+$intelMeta=['source'=>'phone_call_v1','phone_recording_v1'=>['job_id'=>$jobId,'call_kind'=>'browser','call_id'=>$recPublic,'agent_id'=>8,'transport_kind'=>'managed_callback']];
+$pdo->prepare('INSERT INTO artist_transcript_sessions_v172 VALUES(?,2,?,NULL)')->execute([$intelSession,json_encode($intelMeta,JSON_THROW_ON_ERROR)]);
+$pdo->prepare("INSERT INTO artist_transcript_segments_v172 VALUES(2,?,'transcript','Fixture private managed speech')")->execute([$intelSession]);
+$reportText="Phone call report\nKey findings\nReview the synthetic proposal.\nActions & follow-ups\nConfirm timing.\nOpen questions\nWhich day?\n";
+$intelDelivery=vp3_phone_workspace_delivery_v1($pdo,readcall($recPublic),'voicemail','phone-recording-report:'.$job['public_id'],$reportText,
+    ['voicemail_id'=>'job-'.$jobId,'report'=>['source_hash'=>$intelHash,'review_state'=>'unreviewed','text'=>$reportText]]);
+$pdo->prepare("UPDATE phone_recording_jobs_v1 SET state='ready',session_id=?,transcript_hash=?,analysis_hash=?,report_message_id=? WHERE id=?")
+    ->execute([$intelSession,$intelHash,str_repeat('a',64),$intelDelivery['message_id'],$jobId]);
+$intelCandidate=['session_id'=>$intelSession,'source_hash'=>$intelHash,'kind'=>'followup','plugin'=>'actions','section'=>'items','item_id'=>'managed:1',
+    'item_revision'=>$intelRevision,'review_state'=>'unreviewed','question'=>'Confirm timing.','next_step'=>'Review the original call.',
+    'source_url'=>'https://untrusted.example/other?page=1'];
+$intelSaved=['session_id'=>$intelSession,'source_hash'=>$intelHash,'fresh'=>true,'page_count'=>2,'research_candidates'=>[
+    $intelCandidate,array_replace($intelCandidate,['plugin'=>'research_brief','item_id'=>'managed:outside-policy']),
+    array_replace($intelCandidate,['item_id'=>'managed:rejected','review_state'=>'rejected']),$intelCandidate]];
+$intelReads=0;$intelReader=static function(int $id)use(&$intelReads,$intelSaved,$intelSession):array{
+    $intelReads++;if($id!==$intelSession)throw new RuntimeException('Wrong managed fixture session');return $intelSaved;
+};
+$noAnalysis=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($noAnalysis['coverage']==='analysis_off'&&$noAnalysis['report']===null&&$noAnalysis['followups']===[],'transcription-only consent does not expose unconsented analysis');
+c(vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader)['reports']===[],'transcription-only managed recording has no proactive analysis candidate');
+// Explicit historical analysis fixture, not a production policy update: the
+// original consent snapshot and its saved job reflect the same authorized modules.
+$intelPolicy=array_replace($recPolicy,['analyze'=>true,'modules'=>['basic','actions','qa','decisions','followup']]);
+$intelPolicyJson=vp3_phone_recording_json_v1($intelPolicy);
+$pdo->prepare('UPDATE phone_managed_recording_consent_v1 SET policy_json=? WHERE request_id=?')->execute([$intelPolicyJson,$recordRequest]);
+$pdo->prepare('UPDATE phone_recording_jobs_v1 SET policy_json=? WHERE id=?')->execute([$intelPolicyJson,$jobId]);
+$intelReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($intelReview['coverage']==='ready'&&$intelReview['report']['historical']&&$intelReview['report']['review_state']==='unreviewed'&&count($intelReview['followups'])===1,'saved managed report and consented canonical follow-up appear in private review');
+c($intelReview['continuity']['state']==='permission_required','ongoing connected-profile context defaults off');
+c(!str_contains(json_encode($intelReview),'Fixture private managed speech')&&!str_contains(json_encode($intelReview),'provider_call_sid')&&!str_contains(json_encode($intelReview),'untrusted.example'),'review exposes no raw transcript, provider ID or foreign evidence URL');
+$beforeIntelReads=$intelReads;
+$intelQueue=vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader);
+c($intelQueue['reports']===[]&&$intelReads===$beforeIntelReads,'no proactive candidate read without current connected memory grant');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=1 WHERE profile_id=?')->execute([$recordProfile]);
+$intelReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($intelReview['continuity']['state']==='available'&&$intelReview['continuity']['calls']===[],'history excludes different connected profile calls');
+$intelQueue=vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader);
+c(count($intelQueue['reports'])===1&&count($intelQueue['reports'][0]['items'])===1,'consented managed report reuses existing Operator followup queue with module filter');
+$staleIntel=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,static fn(int $id):array=>array_replace($intelSaved,['source_hash'=>str_repeat('d',64)]));
+c($staleIntel['coverage']==='stale'&&$staleIntel['report']===null&&$staleIntel['followups']===[],'changed transcript cannot reuse the prior report');
+$managedRow=readcall($recPublic);
+denies(fn()=>vp3_phone_workspace_delivery_v1($pdo,array_replace($managedRow,['conversation_id'=>999]),'voicemail','fixture-managed-wrong-chat','Private report'),409,'managed report cannot fall back to another Chat');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=0 WHERE profile_id=?')->execute([$recordProfile]);
+c(vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader)['reports']===[],'withdrawing memory grant removes proactive followup');
+$pdo->prepare('DELETE FROM phone_browser_deliveries_v1 WHERE owner_user_id=2 AND event_key=?')->execute(['phone-recording-report:'.$job['public_id']]);
+$missingReport=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($missingReport['coverage']==='stale'&&$missingReport['report']===null,'removed report delivery prevents source reuse');
+vp3_managed_recording_revoke_v1($pdo,$recordRequest,$intelClock);
+$revokedReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($revokedReview['coverage']==='consent_unavailable'&&$revokedReview['report']===null&&$revokedReview['followups']===[],'recording consent withdrawal blocks further managed report review');
+
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

@@ -109,10 +109,17 @@ function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable 
                 if (!preg_match('/^[a-f0-9]{32}$/D',(string)$job['public_id'])
                     || !preg_match('/^[a-f0-9]{64}$/D',(string)$job['analysis_hash'])) continue;
                 $source=vp3_phone_recording_call_v1($pdo,$job);
+                $managedPolicy=null;
+                if(($source['transport_kind']??'')==='managed_callback'){
+                    require_once __DIR__.'/agent-operator-managed-intelligence-v1.php';
+                    $managedPolicy=vp3_managed_intelligence_policy_v1($pdo,$phone,$job,$source);
+                    if(empty($managedPolicy['analyze'])||!vp3_managed_intelligence_continuity_v1($pdo,$phone,$source,$now->getTimestamp()))continue;
+                }
                 $evidence=vp3_operator_recording_evidence_v1($pdo,$user,$agent,$job,$source);
                 if (!$evidence||!$evidence['transcript_saved']||!$evidence['report_saved']) continue;
                 $saved=$read((int)$job['session_id']);
                 if (!is_array($saved)||empty($saved['fresh'])||($saved['source_hash']??null)!==$job['transcript_hash']) continue;
+                if($managedPolicy!==null)$saved=vp3_managed_intelligence_candidates_v1($saved,$managedPolicy);
                 $items=vp3_operator_followup_items_v1($job,$saved);
                 if (!$items) continue;
                 $reports[]=['ref'=>'followup:'.$job['public_id'],'call_id'=>(string)$job['call_public_id'],

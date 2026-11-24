@@ -320,6 +320,8 @@ function vp3_phone_recording_import_v1(PDO $pdo,array $job,array $user,array $sp
     if($existing){$meta=vp3_phone_recording_decode_v1($existing['metadata_json']);if($existing['discarded_at']!==null||(int)($meta['phone_recording_v1']['job_id']??0)!==(int)$job['id']||!hash_equals((string)($meta['phone_recording_v1']['import_hash']??''),$contentHash))throw new RuntimeException('A different or removed transcript already exists for this recording.',409);return ['session_id'=>(int)$existing['id'],'recording_key'=>(string)($meta['phone_recording_v1']['recording_key']??''),'transcript_hash'=>(string)($meta['phone_recording_v1']['transcript_hash']??'')];}
     $key=$retain?substr(hash('sha256','phone-audio:'.$job['provider_recording_sid']),0,32):'';$duration=(int)$job['duration_seconds']*1000;
     $origin=['job_id'=>(int)$job['id'],'call_kind'=>$job['origin_kind'],'call_id'=>$job['call_public_id'],'agent_id'=>(int)$job['agent_id'],'import_hash'=>$contentHash,'audio_sha256'=>hash_file('sha256',$path),'recording_key'=>$key];
+    $call=vp3_phone_recording_call_v1($pdo,$job);
+    if(($call['transport_kind']??'')==='managed_callback')$origin['transport_kind']='managed_callback';
     $meta=['source'=>'phone_call_v1','capture_mode'=>'phone_recording_import','audio_retained'=>$retain,'phone_recording_v1'=>$origin];
     $pdo->beginTransaction();$copied='';
     try{
