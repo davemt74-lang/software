@@ -274,6 +274,20 @@
   // The map remains the main workspace. These tabs are scoped to its selected phone.
   let profileTab='communication',profileDevice='',profileSignature='';
   const exchange=window.VP3PhoneInformationV1?.({request,onChanged:()=>{void refresh();}});
+  const dialerOwner=window.VP3RemoteDialerV1?.owner({request:dialerOwnerRequest});
+  if(dialerOwner)byId('phone-dialer-owner-host')?.append(dialerOwner.root);
+  async function dialerOwnerRequest(action,fields){
+    const d=selected();
+    if(!available||writing||document.hidden||!d||d.id!==fields.device_id||d.generation!==fields.generation||d.dialer?.revision!==fields.dialer_revision)throw Error('Selected phone changed.');
+    writing=true;const version=++revision;
+    try{
+      const result=await request(action,fields);
+      if(version!==revision||document.hidden)throw Error('View changed.');
+      const index=devices.findIndex(x=>x.id===d.id&&x.generation===d.generation&&x.dialer?.revision===d.dialer.revision);
+      if(index<0||result.dialer?.revision!==d.dialer.revision)throw Error('Dialer changed.');
+      devices[index]={...devices[index],dialer:result.dialer};render();return result;
+    }finally{writing=false;void refresh();}
+  }
   function renderCommunication(d){
     const host=byId('phone-communication-profile');if(!host)return;
     host.hidden=!d;
@@ -499,6 +513,7 @@
     camera.update(approved);
     renderList(approved);
     renderDetail(selected());
+    dialerOwner?.bind(selected(),available&&!document.hidden);
     renderPending(devices.filter(d => d.status === 'pending'));
     renderMarkers();
     archive.render(approved);

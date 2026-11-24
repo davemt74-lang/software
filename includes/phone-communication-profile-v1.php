@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/phone-information-exchange-v1.php';
+require_once __DIR__.'/phone-remote-dialer-v1.php';
 
 /** Communication preferences for one existing QR pairing. No execution grant. */
 function vp3_phone_communication_install_v1(PDO $pdo,string $options):void
@@ -68,6 +69,7 @@ function vp3_phone_communication_project_v1(PDO $pdo,array $d,int $now,bool $hol
 }
 function vp3_phone_communication_delete_v1(PDO $pdo,array $d):void
 {
+    vp3_phone_dialer_clear_v1($pdo,$d);
     if(vp3_phone_communication_ready_v1($pdo))vp3_phone_sql_v1($pdo,
         'DELETE FROM vp3_phone_communication_profiles_v1 WHERE owner_user_id=? AND device_id=?',
         [(int)$d['owner_user_id'],$d['id']]);
@@ -168,6 +170,7 @@ function vp3_phone_communication_map_v1(PDO $pdo,int $owner,array $devices,int $
         $d=$byId[$device['id']]??null;
         if($d!==null){
             $device['communication']=vp3_phone_communication_project_v1($pdo,$d,$now,false);
+            $device['dialer']=vp3_phone_dialer_view_v1($pdo,$d,$now,false);
             $p=$device['communication'];
             if(is_array($p)&&$p['profile_id']!==''){
                 require_once __DIR__.'/agent-operator-connected-call-v1.php';

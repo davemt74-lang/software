@@ -286,7 +286,21 @@
   infoDetails?.addEventListener('toggle',renderInformation);
   el('tab-connection')?.addEventListener('click',()=>queueMicrotask(renderInformation));
   el('tab-chat')?.addEventListener('click',()=>queueMicrotask(renderInformation));
+  const dialer=window.VP3RemoteDialerV1?.holder({request:dialerRequest});
+  if(dialer){el('dialer-alert-host')?.append(dialer.alert);el('dialer-settings-host')?.append(dialer.prefs);}
+  function dialerAvailable(){return secure&&!dead&&!pending&&available&&navigator.onLine!==false&&device?.status==='approved';}
+  function dialerRequest(action,body,keepalive=false){
+    return new Promise((resolve,reject)=>queue(async()=>{
+      try{
+        if(!dialerAvailable()||device.id!==body.device_id||device.generation!==body.generation||device.dialer?.revision!==body.dialer_revision||(!keepalive&&document.hidden))throw Error('Dialer scope changed.');
+        const result=await request(action,body,keepalive);
+        if(device?.id!==body.device_id||pending||dead)throw Error('Connection changed.');
+        accept(result);render();resolve(result);
+      }catch(error){reject(error);schedulePoll();}
+    }));
+  }
   function render() {
+    dialer?.bind(device,dialerAvailable());
     renderInformation();
     renderCommunication();
     const connected = device?.status === 'approved';
@@ -809,6 +823,7 @@
   });
   window.addEventListener('pagehide',() => {
     dead = true;
+    dialer?.invalidate();
     exchange?.clear();
     if (run) {
       const old = cancelWatch();
@@ -818,7 +833,7 @@
     }
   });
   window.addEventListener('pageshow',() => { dead = false; schedulePoll(); });
-  document.addEventListener('visibilitychange',() => { if (document.hidden)exchange?.clear();else schedulePoll(); });
+  document.addEventListener('visibilitychange',() => { if (document.hidden){exchange?.clear();dialer?.invalidate();}else schedulePoll(); });
   setInterval(() => {
     if (document.hidden || dead) return;
     if (device || !available) schedulePoll();

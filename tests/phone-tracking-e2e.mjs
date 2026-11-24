@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { createRequire } from 'node:module';
 import { localPort, preparePhoneSite } from './fixtures/phone-site-v1.mjs';
 import { tmpdir } from 'node:os';
@@ -72,6 +73,21 @@ async function screenshot(page, name) {
 }
 
 try {
+  {
+  const dialerWindow={};
+  runInNewContext(readFileSync(path.join(repo,'phone-remote-dialer-v1.js'),'utf8'),{window:dialerWindow,performance:{now:()=>1000}});
+  const {canAuto,live,numberOK}=dialerWindow.VP3RemoteDialerV1;
+  const d={id:'a'.repeat(32),status:'approved',generation:2,dialer:{revision:1,server_epoch:100,enabled:true,auto_enabled:true,auto_number:'+16025550138',request:{id:'b'.repeat(32),state:'pending',expires_epoch:220,auto_allowed:true,auto_attempted:false,destination:'+16025550138'}}};
+  const active={visible:true,focused:true,mobile:true,clock:1000};
+  assert.equal(canAuto(d,1000,active),true);
+  for(const gate of ['visible','focused','mobile'])assert.equal(canAuto(d,1000,{...active,[gate]:false}),false);
+  assert.equal(canAuto(d,1000,{...active,clock:11000}),false);
+  assert.equal(canAuto({...d,dialer:{...d.dialer,request:{...d.dialer.request,auto_attempted:true}}},1000,active),false);
+  assert.equal(canAuto({...d,dialer:{...d.dialer,auto_number:'+16025550137'}},1000,active),false);
+  assert.equal(live({...d,dialer:{...d.dialer,request:{...d.dialer.request,expires_epoch:100}}},1000,1000),false);
+  assert.equal(numberOK('+16025550138;123'),false);
+  }
+
   const [owner, other] = preparePhoneSite(repo, site, sessions, php);
   const port = await localPort();
   const baseURL = 'http://127.0.0.1:' + port;
@@ -386,6 +402,35 @@ async function browserJourney(baseURL, owner, other) {
   await communication.getByRole('button',{name:'Saved places',exact:true}).waitFor();
   await communication.getByRole('button',{name:'Communication',exact:true}).click();
   await screenshot(map,'owner-connected-user-communication');
+  // PS5D: choose a different synthetic destination than the holder's approved automatic number.
+  // Never invoke tel: or a carrier call during automated browser coverage.
+  const dialerSettings=phone.locator('#phone-dialer-settings-host');
+  await dialerSettings.getByLabel('Allow remote call requests',{exact:true}).check();
+  await dialerSettings.getByLabel('Automatically try to open the dialer for my approved number',{exact:true}).check();
+  await dialerSettings.getByLabel('Approved automatic destination (international number)',{exact:true}).fill('+16025550138');
+  await dialerSettings.getByRole('button',{name:'Save dialer permissions',exact:true}).click();
+  await eventually('Dialer opt-in was not saved',async()=>{
+    const d=check(await phoneApi(handset,'status'),'dialer permission').device;
+    return d.dialer?.enabled&&d.dialer.auto_number==='+16025550138';
+  });
+  const dialerMap=map.locator('#phone-dialer-owner-host');
+  await dialerMap.getByLabel('Destination number (international format)',{exact:true}).fill('+16025550137');
+  await dialerMap.getByLabel('Ask this connected phone to open its own dialer',{exact:true}).check();
+  await dialerMap.getByRole('button',{name:'Send call request',exact:true}).click();
+  const dialerAlert=phone.locator('#phone-dialer-alert-host');
+  await dialerAlert.getByText('+16025550137',{exact:true}).waitFor();
+  await dialerAlert.getByRole('button',{name:'Call now',exact:true}).waitFor();
+  const pendingDialer=check(await phoneApi(handset,'status'),'dialer pending').device.dialer.request;
+  assert.equal(pendingDialer.auto_allowed,false);
+  assert.equal(pendingDialer.auto_attempted,false);
+  const mapDialer=check(await ownerApi(desktop,owner),'dialer owner status').devices.find(d=>d.id===deviceId).dialer;
+  assert.ok(mapDialer.request?.state==='pending'&&!('destination' in mapDialer.request)&&!('auto_number' in mapDialer));
+  await dialerAlert.getByRole('button',{name:'Decline',exact:true}).click();
+  await eventually('Dialer decline was not recorded',async()=>check(await phoneApi(handset,'status'),'dialer declined').device.dialer.request?.state==='declined');
+  await dialerSettings.getByLabel('Allow remote call requests',{exact:true}).uncheck();
+  await dialerSettings.getByRole('button',{name:'Save dialer permissions',exact:true}).click();
+  await eventually('Dialer opt-out was not saved',async()=>check(await phoneApi(handset,'status'),'dialer off').device.dialer.enabled===false);
+
   await communication.getByRole('button',{name:'Information',exact:true}).click();
   const panel=communication.locator('.phone-information-panel');
   await panel.getByLabel('Information type',{exact:true}).selectOption('question');

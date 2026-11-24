@@ -39,7 +39,7 @@ try {
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_create_file','information_download'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_create_file','information_download','dialer_send','dialer_cancel'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -52,6 +52,7 @@ try {
     $owner = (int)$user['id'];
     $result = match ($action) {
         'information_list','information_create','information_cancel','information_create_file','information_download' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
+        'dialer_send','dialer_cancel' => vp3_phone_dialer_owner_v1($pdo,$owner,$action,$input),
         'save_communication_grants' => vp3_phone_communication_owner_v1($pdo,$owner,$input),
         'history' => vp3_phone_history_read_v1($pdo,$owner,$input['device_id'],$input['before']),
         'places','save_place','delete_place' => vp3_phone_places_owner_v1($pdo,$owner,$action,$input),

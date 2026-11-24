@@ -9,6 +9,7 @@ require_once __DIR__.'/phone-tracking-arrivals-v1.php';
 require_once __DIR__.'/phone-camera-v1.php';
 require_once __DIR__.'/phone-communication-profile-v1.php';
 require_once __DIR__.'/phone-information-exchange-v1.php';
+require_once __DIR__.'/phone-remote-dialer-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -83,6 +84,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_communication_install_v1($pdo,$options);
     vp3_phone_information_install_v1($pdo,$options);
     vp3_phone_file_install_v1($pdo,$options);
+    vp3_phone_dialer_install_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -523,6 +525,8 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 vp3_phone_communication_save_v1($pdo,$row,$input,$now,true);
             } elseif (in_array($action,['information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download'],true)) {
                 $receipt=['information'=>vp3_phone_information_action_v1($pdo,$row,$action,$input,$now,true)];
+            } elseif (in_array($action,['dialer_preferences','dialer_claim','dialer_handled','dialer_decline'],true)) {
+                $receipt=vp3_phone_dialer_action_v1($pdo,$row,$action,$input,$now,true);
             } elseif ($action === 'holder_save_place') {
                 $receipt = vp3_phone_holder_save_place_v1($pdo,$row,$input,$now);
             } elseif (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
@@ -550,6 +554,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
         }
         $public=vp3_phone_holder_public_v1($pdo,$row,$now);
         $public['communication']=vp3_phone_communication_project_v1($pdo,$row,$now,true);
+        $public['dialer']=vp3_phone_dialer_view_v1($pdo,$row,$now,true);
         return ['device'=>$public,'owner_name'=>$ownerName] + $receipt;
     });
     // Return no owner or device data, after committing the withdrawal.
