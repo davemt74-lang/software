@@ -164,6 +164,8 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
         vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_information_v1(owner_user_id,device_id,exchange_id,profile_id,profile_revision,version,kind,state,message,response,created_epoch,updated_epoch,expires_epoch,announced)
             VALUES(?,?,?,?,?,1,?,'pending',?,'',?,?,?,0)",[...$scope,$p['profile_id'],(int)$p['revision'],$kind,$text,$now,$now,$now+VP3_PHONE_INFO_TTL_V1]);
         if($file!==null)vp3_phone_file_store_v1($pdo,$scope,$file,$now);
+        vp3_phone_push_event_enqueue_v1($pdo,$d,['type'=>'agent_request','id'=>$id,'revision'=>(int)$p['revision'],
+            'expires_epoch'=>$now+VP3_PHONE_INFO_TTL_V1],$now);
         return vp3_phone_information_list_v1($pdo,$d,$p,$now);
     }
     vp3_phone_information_need_v1($r!==false&&$r['profile_id']===$p['profile_id'],404);

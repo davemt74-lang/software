@@ -19,6 +19,11 @@ try {
   const publicKey=pushKey.getPublicKey().toString('base64url'),keyId=createHash('sha256').update(publicKey).digest('hex');
   const pushSub={endpoint:'https://web.push.apple.com/Qsynthetic-notification-fixture',expirationTime:null,keys:{p256dh:publicKey,auth:randomBytes(16).toString('base64url')}};
   const endpointHash=createHash('sha256').update(pushSub.endpoint).digest('hex'),pushActions=[];
+  const pushRefs={test:'1'.repeat(32),chat:'2'.repeat(32),requests:'3'.repeat(32),stale:'4'.repeat(32)};
+  const focusedRequest='12345678-1234-1234-1234-123456789abc',focusedExchange='e'.repeat(32),resolutions=[],chatFocus=[];
+  const historicPushTurn={request_id:focusedRequest,message:'Earlier private phone question',state:'replied',reply_author:'owner',reply:'The exact earlier owner reply.'};
+  const pushReceipt=(event_ref,extra={})=>({event_ref,device_id:device.id,subscription_revision:device.push.revision,state:'queued',attempts:0,
+    created_epoch:Math.floor(Date.now()/1000)-5,expires_epoch:Math.floor(Date.now()/1000)+600,provider_accepted_epoch:0,client_observed_epoch:0,opened_epoch:0,retry_at:0,last_code:'',...extra});
   let camera = null;
   page.on('pageerror',error => errors.push(error.message));
   await page.route('https://phone.test/**',async route => {
@@ -39,6 +44,17 @@ try {
         assert.equal(q.device_id,device.id);assert.equal(q.subscription_revision,1);assert.equal(q.confirmed,true);
         pushActions.push(q.action);device.push={...device.push,state:'off',revision:2};delete device.push.endpoint_hash;
         return route.fulfill({json:{ok:true,device,owner_name:'Studio',push:device.push}});
+      case 'push_test':
+        assert.deepEqual(Object.keys(q).sort(),['action','confirmed','device_id','request_id','subscription_revision']);
+        assert.equal(q.device_id,device.id);assert.equal(q.subscription_revision,1);assert.equal(q.confirmed,true);assert.match(q.request_id,/^[a-f0-9]{32}$/);
+        pushActions.push(q.action);device.push.delivery.last_test=pushReceipt(pushRefs.test);
+        return route.fulfill({json:{ok:true,device,owner_name:'Studio',push:device.push,...device.push.delivery.last_test}});
+      case 'push_resolve': {
+        assert.deepEqual(Object.keys(q).sort(),['action','device_id','event_ref']);assert.equal(q.device_id,device.id);resolutions.push(q.event_ref);
+        if(q.event_ref===pushRefs.stale)return route.fulfill({status:404,json:{ok:false,error:'Fixture private source is unavailable'}});
+        const target=q.event_ref===pushRefs.chat?{tab:'chat',request_id:focusedRequest}:q.event_ref===pushRefs.requests?{tab:'requests',exchange_id:focusedExchange}:{tab:'info'};
+        return route.fulfill({json:{ok:true,device,owner_name:'Studio',...pushReceipt(q.event_ref,{state:'uncertain',opened_epoch:Math.floor(Date.now()/1000)}),target}});
+      }
       case 'camera_status': return route.fulfill({json:{ok:true,camera}});
       case 'camera_stop':
         assert.equal(q.session_id,camera.session_id);
@@ -48,7 +64,14 @@ try {
       case 'chat_status':
         chatReads++;
         assert.equal(q.device_id,device.id);
-        return route.fulfill({json:{ok:true,turns}});
+        if(q.focus_request_id){assert.equal(q.focus_request_id,focusedRequest);chatFocus.push(q.focus_request_id);}
+        return route.fulfill({json:{ok:true,turns:q.focus_request_id?[historicPushTurn,...turns]:turns}});
+      case 'information_list': {
+        assert.equal(q.device_id,device.id);const now=Math.floor(Date.now()/1000);
+        const item=(exchange_id,message)=>({exchange_id,version:1,kind:'question',state:'pending',message,response:'',created_epoch:now-30,expires_epoch:now+600});
+        return route.fulfill({json:{ok:true,information:{profile_id:device.communication.profile_id,profile_revision:device.communication.revision,files_ready:false,
+          items:[item('f'.repeat(32),'A different current information request.'),item(focusedExchange,'The exact notified information request.')]}}});
+      }
       case 'chat_send':
         assert.equal(q.device_id,device.id);
         sent.push(q);
@@ -108,9 +131,26 @@ try {
   assert.equal(await page.evaluate(()=>window.phonePushFixture.calls),1);
   assert.deepEqual(pushActions,['push_register']);
   assert.ok((await page.locator('#phone-push-feedback').textContent()).includes('Background delivery is not active yet.'));
+  assert.equal(await page.locator('#phone-push-test').isVisible(),false,'subscription enrollment alone does not enable delivery testing');
+  device.push.delivery_ready=true;
+  device.push.delivery={enabled:true,ready:true,worker:{state:'observed',last_observed_epoch:Math.floor(Date.now()/1000),transport_ready:true},last_test:null};
+  await wake();
+  const testPush=page.getByRole('button',{name:'Send test notification',exact:true});await testPush.waitFor();
+  await page.waitForFunction(()=>!document.getElementById('phone-push-test').disabled);
+  assert.deepEqual(pushActions,['push_register'],'ready status never sends automatically');
+  await testPush.click();
+  await page.getByText('Test notification queued. Check this device for an alert.',{exact:true}).waitFor();
+  assert.deepEqual(pushActions,['push_register','push_test']);
+  device.push.delivery.last_test=pushReceipt(pushRefs.test,{state:'accepted',provider_accepted_epoch:Math.floor(Date.now()/1000)});
+  await wake();
+  await page.getByText('The push service accepted the test. Display on this device is not confirmed.',{exact:true}).waitFor();
+  device.push.delivery.last_test.client_observed_epoch=Math.floor(Date.now()/1000);
+  await wake();
+  await page.getByText('This installation reported showing the test notification.',{exact:true}).waitFor();
+  assert.equal(resolutions.length,0,'display status never opens a private source');
   await page.locator('#phone-push-disable').click();
   await page.getByText('VP3 notification subscription turned off.',{exact:true}).waitFor();
-  assert.deepEqual(pushActions,['push_register','push_disable']);
+  assert.deepEqual(pushActions,['push_register','push_test','push_disable']);
   assert.equal(await page.evaluate(()=>window.phonePushFixture.unsubscribed),1);
   assert.equal(await page.evaluate(()=>Object.values(localStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))||Object.values(sessionStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))),false);
   await page.locator('#phone-info-back').click();
@@ -209,8 +249,38 @@ try {
   assert.equal(await page.locator('#phone-chat-input').inputValue(),'');
   assert.equal(await chat.isVisible(),false);
   await page.locator('#phone-connection').waitFor();
+  // A notification carries only its reference. The normal authenticated holder
+  // API chooses a fixed destination and the foreground UI reads the private source.
+  device.status='approved';device.push={...device.push,state:'registered',revision:3,endpoint_hash:endpointHash};
+  device.communication={profile_id:'c'.repeat(32),revision:2,request_permission_saved:true,information_pending:2};
+  await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.chat);
+  const notifiedTurn=page.locator('.phone-turn[data-request="'+focusedRequest+'"]');
+  await notifiedTurn.getByText(historicPushTurn.reply,{exact:true}).waitFor();
+  assert.equal(await chat.getAttribute('aria-selected'),'true');
+  assert.ok(chatFocus.includes(focusedRequest),'tap hydration asks for the exact older canonical UUID');
+  await page.waitForFunction(id=>document.activeElement?.dataset.request===id,focusedRequest);
+  assert.equal(new URL(page.url()).searchParams.has('push_event'),false,'opaque tap reference is removed from the live address');
+  await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.requests);
+  const notifiedCard=page.locator('.phone-information-item[data-exchange-id="'+focusedExchange+'"]');
+  await notifiedCard.getByText('The exact notified information request.',{exact:true}).waitFor();
+  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-information').evaluate(section=>section.open),true);
+  await page.waitForFunction(id=>document.activeElement?.dataset.exchangeId===id,focusedExchange);
+  assert.equal(await page.locator('.phone-information-item').count(),2,'only the notified card receives focus within the current inbox');
+  await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.test);
+  await page.getByText('Notification opened in VP3 Phone.',{exact:true}).waitFor();
+  assert.equal(await info.getAttribute('aria-selected'),'true');
+  const readsBeforeUnavailable=chatReads;
+  await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.stale);
+  await page.getByText('This notification is no longer available. Review the current connection in VP3 Phone.',{exact:true}).waitFor();
+  assert.equal(await info.getAttribute('aria-selected'),'true','an unavailable notification opens the visible Info explanation');
+  assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
+  assert.equal(await page.locator('.phone-bubble').count(),0);
+  assert.equal(chatReads,readsBeforeUnavailable,'a stale tap never requests private Chat');
+  assert.deepEqual(resolutions,[pushRefs.chat,pushRefs.requests,pushRefs.test,pushRefs.stale]);
+  assert.equal(await page.getByText('Fixture private source is unavailable',{exact:true}).count(),0);
   assert.deepEqual(errors,[]);
-  console.log('PASS shared mobile composer and apps, complete Connection controls, private owner replies, historical agent attribution, delivery retry, draft retention and revocation.');
+  console.log('PASS shared mobile composer, enrollment and delivery test status, exact authenticated notification destinations, private owner replies, retry, draft retention and revocation.');
 } finally {
   await browser.close();
 }

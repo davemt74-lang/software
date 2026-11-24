@@ -171,7 +171,15 @@
     try{if(dead||document.hidden||!device||device.id!==body.device_id)throw Error('Phone connection changed');
       const result=await request(action,body);if(!dead&&result.device?.id===device?.id){accept(result);render();}resolve(result);
     }catch(error){reject(error);}
-  }))});
+  })),onUnavailable:()=>chat?.openInfo(),onResolved:notification=>{
+    if(dead||pending||notification.device_id!==device?.id)return;
+    const target=notification.target;
+    if(target.tab==='info')chat?.openInfo();
+    else if(target.tab==='chat')chat?.openNotification(target.request_id);
+    else if(target.tab==='requests'&&device?.communication?.request_permission_saved===true){
+      chat?.openConnection();infoDetails.open=true;renderInformation();exchange?.openNotification(target.exchange_id);
+    }
+  }});
   function discardDeferred(session) {
     clearTimeout(session.timer);
     session.timer = null;

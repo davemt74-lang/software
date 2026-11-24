@@ -1,0 +1,125 @@
+VP3 Phone Web Push transport dependency bundle
+============================================
+
+The deployment ZIP includes these production dependencies. The server does not
+need Composer, a dependency download, an installation script or a Composer plugin.
+Keep this directory and its vendor/ subdirectory in the production package.
+
+Worker requirements
+-------------------
+Run the Phone push worker with PHP 8.2 or newer (the release CI uses PHP 8.3).
+The web UI/API and queue may continue running on PHP 8.1. The transport wrapper
+checks PHP_VERSION_ID before loading this autoloader and reports
+runtime_requires_php82 without making a send attempt on PHP 8.1.
+
+Required PHP extensions: curl, json, mbstring and openssl. OpenSSL must support
+prime256v1 (P-256), aes-128-gcm and HMAC SHA-256; cURL must support HTTPS. DNS
+resolution and the relevant cURL/OpenSSL functions must be enabled. GMP or BCMath
+is an optional performance improvement, not a deployment requirement.
+
+The helper vp3_phone_push_transport_ready_v1() reports local transport capability.
+It does not confirm that keys, subscriptions, consent or a real phone are ready.
+The worker must check readiness before claiming work. Configuration credentials
+remain in the existing protected registry; no secret belongs in this directory.
+
+Pinned upstream software
+------------------------
+minishlink/web-push v11.0.0 is the maintained PHP 8.2+ release. It supplies the
+standards implementations for RFC 8291 aes128gcm and RFC 8292 VAPID/ES256.
+nyholm/psr7 1.8.2 supplies explicit PSR-7/PSR-17 message factories. The application
+supplies its own PSR-18 transport; the library never chooses an HTTP client for
+this send path. All transitive production packages are pinned by composer.lock.
+MANIFEST.json records exact versions, original Git commits/dist references,
+license paths and SHA-256 hashes for production files. No development packages
+are installed. THIRD-PARTY-LICENSES.txt retains all MIT notices in one file, and
+the original notices remain with each package and the Composer autoloader.
+
+Upstream release and source:
+https://github.com/web-push-libs/web-push-php/releases/tag/v11.0.0
+https://github.com/web-push-libs/web-push-php/tree/v11.0.0
+https://packagist.org/packages/minishlink/web-push
+https://www.rfc-editor.org/rfc/rfc8291
+https://www.rfc-editor.org/rfc/rfc8292
+
+Composer's advisory and abandonment audit reported no findings on 2026-11-24.
+The checked timestamp is recorded in MANIFEST.json. Recheck advisories when this
+bundle is updated; this historical result is not a promise about future findings.
+
+Reproduce the installed dependencies
+-----------------------------------
+Use Composer 2.11.3, obtained from https://getcomposer.org/download/2.11.3/composer.phar
+and verify its SHA-256 against the official release checksum:
+04f8b003da4e3a2459056591fbfebd02b4dc3e5adeb158616b90cf55a65113ec
+
+Run from this directory using a supported PHP executable:
+
+    php composer.phar install --no-dev --no-scripts --no-plugins --prefer-dist --classmap-authoritative --no-interaction
+    php composer.phar check-platform-reqs --no-dev
+    php composer.phar audit --no-dev --format=json
+
+The Composer binary is not bundled in the application. Use the path where you
+downloaded it when running these commands. Never use --ignore-platform-reqs.
+config.platform.php=8.2.0 fixes the minimum resolution target; the generated
+platform_check.php still enforces the actual PHP version and required extensions.
+Exact version constraints are intentional; Composer validate's corresponding
+semver recommendations are not errors in the lock or deployment.
+
+Runtime and review boundaries
+-----------------------------
+The public transport API accepts only the subscription, VAPID key pair/subject
+with a verified cached authorization, generic JSON payload and ttl/topic/urgency.
+There are no URL, arbitrary header, proxy, CA or
+HTTP-client options. Internal callable seams exist only for credential-free
+tests. The queue is responsible for current audience and authorization checks.
+
+Apple requires that a VAPID JWT not be refreshed more frequently than once per
+hour. vp3_phone_push_transport_vapid_header_v1 is a local signing factory for the
+queue's durable encrypted cache; it returns authorization, issued_epoch and
+expires_epoch with a 12-hour JWT. Call it only on a permitted cache refresh, not
+for every send. The transport requires that cached authorization and verifies
+its ES256 signature, provider origin, configured subject and expiration using
+the bundled JOSE library before injecting it into WebPush. It never falls back
+to per-send JWT generation. Each payload still gets fresh ephemeral encryption
+keys and a fresh salt, independently of the reused authentication token.
+https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers
+
+Every attempt revalidates the recognized provider URL and every A/AAAA answer,
+rejects private/reserved/tunnel addresses, and pins one public address while
+retaining the provider hostname for TLS. No redirects, inherited proxy/netrc
+credentials, hidden HTTP retry, response-body storage or exception text logging
+is allowed. cURL has at most 3 seconds to connect and 8 seconds total, reduced by
+DNS time already spent. Response headers/body stop at 16 KiB/8 KiB. PHP's native
+DNS call uses the host resolver's timeout outside cURL's hard deadline; configure
+a process-level worker watchdog to bound a stuck resolver. Where the host offers
+the timeout command, wrap the worker cron command with timeout 55s. A late DNS
+answer is rejected before sending.
+
+accepted means the provider accepted an attempt, not that the phone displayed it.
+Only a proven pre-send failure or explicit HTTP 429/503 response is retryable.
+An ambiguous upload, unexpected response or other 5xx result is terminal uncertain
+to avoid duplicating a notification that may already have been accepted.
+
+Focused verification from the repository root:
+
+    php tests/phone-push-transport-v1.php
+    PHP_BINARY=php node tests/phone-push-transport-crypto-v1.mjs
+
+The PHP suite verifies all production-file SHA-256 hashes, the Composer lock and
+the complete retained license copies without any network access. It also includes
+the published RFC 8291 known-answer vector, SSRF/pinning, TLS/redirect/proxy
+settings, bounded response readers and provider outcomes.
+The Node suite independently decrypts actual PHP-generated records, rejects a
+modified GCM record and verifies VAPID signatures/claims using Node/OpenSSL.
+On PHP 8.1 the PHP suite verifies the guard without loading vendor code. Crypto
+interoperability and real transport capability require the supported worker.
+Neither suite contacts a push service or uses real device credentials.
+
+To check an extracted deployment package with the same offline integrity tests,
+point only the test suite at that package's bundle:
+
+    VP3_PHONE_PUSH_VERIFY_BUNDLE=/path/to/extracted/vendor/web-push-v1 php tests/phone-push-transport-v1.php
+
+The runtime manifest excludes the same Markdown and repository/tool/test
+metadata directories omitted by the production package. All runtime code and
+all original license files remain covered. This verification variable exists
+only in the test; the production helper always loads its fixed local bundle.

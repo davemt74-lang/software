@@ -58,6 +58,9 @@ jobs:
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",
             "cloud_phone_workspace": "twilio-browser-phone-v1",
+            "phone_push_section": "PS5C.4",
+            "phone_push_worker_minimum_php": "8.2",
+            "phone_push_delivery_default": "off",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -96,6 +99,20 @@ jobs:
           test -f _deploy/includes/phone-handoff-v1.php
           test -f _deploy/includes/phone-push-subscriptions-v1.php
           test -f _deploy/phone-push-subscriptions-v1.js
+          test -f _deploy/phone-service-worker-v1.js
+          test -f _deploy/phone-push-worker-v1.php
+          test -f _deploy/api/phone-push-receipt-v1.php
+          test -f _deploy/includes/phone-push-delivery-v1.php
+          test -f _deploy/includes/phone-push-events-v1.php
+          test -f _deploy/includes/phone-push-transport-v1.php
+          test -f _deploy/includes/phone-push-vapid-cache-v1.php
+          test -f _deploy/includes/phone-push-worker-v1.php
+          test -f _deploy/vendor/web-push-v1/composer.lock
+          test -f _deploy/vendor/web-push-v1/vendor/autoload.php
+          test -f _deploy/vendor/web-push-v1/MANIFEST.json
+          test -f _deploy/vendor/web-push-v1/THIRD-PARTY-LICENSES.txt
+          test -f _deploy/vendor/web-push-v1/INSTALL.txt
+          test -f _deploy/docs/PHONE-PUSH-DELIVERY-PS5C4.txt
           test -f _deploy/assets/phone-pwa/icon-180.png
           test -f _deploy/assets/phone-pwa/icon-192.png
           test -f _deploy/assets/phone-pwa/icon-512.png
