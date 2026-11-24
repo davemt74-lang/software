@@ -4,8 +4,10 @@ declare(strict_types=1);
 require_once __DIR__.'/phone-transactions-v1.php';
 
 require_once __DIR__.'/phone-tracking-v1.php';
-require_once __DIR__.'/ai-settings.php';
 require_once __DIR__.'/phone-push-vapid-cache-v1.php';
+
+// Production entry points load protected credential helpers through bootstrap.
+// Ordinary phone reads must not load the AI provider stack just for this optional queue.
 
 /** PS5C.4: private, per-device outbox. Installation and transport are explicit.
  * No source text, endpoint, browser secret or VAPID private key is copied here.

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+require_once dirname(__DIR__).'/includes/ai-settings.php';
 require_once dirname(__DIR__).'/includes/phone-push-delivery-v1.php';
 require_once dirname(__DIR__).'/includes/permissions.php';
 

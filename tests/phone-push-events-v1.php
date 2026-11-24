@@ -6,6 +6,7 @@ $root=sys_get_temp_dir().'/vp3-push-events-'.bin2hex(random_bytes(10));
 mkdir($root.'/private',0700,true);define('STONEFELLOW_ROOT',$root);
 $key=random_bytes(32);file_put_contents($root.'/private/ai-key.php','<?php return '.var_export(base64_encode($key),true).';');
 register_shutdown_function(static function()use($root):void{unlink($root.'/private/ai-key.php');rmdir($root.'/private');rmdir($root);});
+require_once dirname(__DIR__).'/includes/ai-settings.php';
 require_once dirname(__DIR__).'/includes/paired-phone-agent-v1.php';
 require_once dirname(__DIR__).'/includes/paired-phone-chat-owner-v1.php';
 function has_permission(string $permission,array $user):bool
