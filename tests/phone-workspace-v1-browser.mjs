@@ -56,6 +56,19 @@ const server=http.createServer((req,res)=>{
    if(values.action==='bind_call')result={call:{id:8,public_id:values.call_id,peer_e164:'+16025550444',conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'ringing'}};
    if(values.action==='favorite'){state.contacts[0].favorite=values.favorite;state.favorites=values.favorite?[state.contacts[0]]:[];}
    if(values.action==='save_recording_policy'){state.post_call_policy={enabled:values.enabled,retain_audio:values.retain_audio,transcribe:values.transcribe,analyze:values.analyze,model_route:'account_cloud',modules:values.modules};result={policy:state.post_call_policy};}
+   if(values.action==='operator_calendar_preview'){
+    const p=state.auto_call?.policies.find(item=>item.contact_id===Number(values.contact_id)&&item.number_id===Number(values.number_id));
+    if(!p||!p.enabled||p.revision!==Number(values.expected_revision)){res.statusCode=409;return res.end(JSON.stringify({ok:false,error:'operator_policy_changed',message:'Review current permission.'}));}
+    const start=Math.ceil((Date.now()/1000+3600)/900)*900;
+    result={plan:{contact_id:p.contact_id,number_id:p.number_id,revision:p.revision,coverage:'cloud_calendar_only',execution_enabled:false,existing:null,slots:[
+      {start_epoch:start,duration_seconds:600,timezone:p.settings.timezone,label:'Tomorrow at 10 AM'},
+      {start_epoch:start+86400,duration_seconds:600,timezone:p.settings.timezone,label:'Following day at 10 AM'}]}};
+   }
+   if(values.action==='save_operator_calendar'){
+    result={created:true,appointment:{event_id:81,title:'Planned phone call — Fixture contact',label:'Following day at 10 AM',
+      start_at:new Date(values.start_epoch*1000).toISOString(),end_at:new Date((values.start_epoch+values.duration_seconds)*1000).toISOString(),
+      url:'/calendar-event.php?id=81',execution_enabled:false}};
+   }
    if(values.action==='save_auto_call_policy'){
     const p=state.auto_call?.policies.find(item=>item.contact_id===values.contact_id&&item.number_id===values.number_id);
     if(!p||p.revision!==values.expected_revision||values.expected_destination!==p.destination_e164||values.expected_line!==p.line_e164){res.statusCode=409;return res.end(JSON.stringify({ok:false,error:'operator_policy_changed',message:'Review the current authorization.'}));}
@@ -157,6 +170,20 @@ try{
   const saved=apiCalls.find(c=>c.action==='save_auto_call_policy');
   assert.equal(saved.contact_id,7);assert.equal(saved.number_id,1);assert.equal(saved.expected_revision,0);assert.equal(saved.expected_destination,'+16025550222');assert.equal(saved.expected_line,'+16025550111');
   assert.equal(saved.settings.timezone,'America/Phoenix');assert.equal(saved.settings.max_calls_per_day,2);assert.equal(saved.csrf_token,'fixture-csrf');
+  const planButton=page.getByRole('button',{name:/^Plan a call with Fixture contact/});
+  await planButton.click();
+  const planEditor=page.getByRole('region',{name:'Plan a phone call'});
+  await planEditor.getByRole('radio',{name:'Following day at 10 AM',exact:true}).check();
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  assert.equal(await planEditor.getByRole('radio',{name:'Following day at 10 AM',exact:true}).isChecked(),true,'Polling preserves reviewed slot selection');
+  assert.equal(apiCalls.filter(c=>c.action==='save_operator_calendar').length,0,'Reading suggested times never creates an event');
+  await planEditor.getByRole('button',{name:'Save Calendar appointment',exact:true}).click();
+  await planEditor.getByRole('link',{name:'Open Calendar appointment',exact:true}).waitFor();
+  assert.match(await planEditor.getByRole('link',{name:'Open Calendar appointment',exact:true}).getAttribute('href'),/\/calendar-event\.php\?id=81$/);
+  const appointment=apiCalls.find(c=>c.action==='save_operator_calendar');
+  assert.equal(appointment.contact_id,7);assert.equal(appointment.expected_revision,1);assert.equal(appointment.duration_seconds,600);
+  assert.equal(appointment.csrf_token,'fixture-csrf');
+  await planEditor.getByRole('button',{name:'Close plan',exact:true}).click();
   state.auto_call.policies[0].can_enable=false;state.auto_call.policies[0].state='blocked';state.auto_call.policies[0].reason='Recording approval changed.';
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   await launcher.click();await editor.getByLabel('Allow Agent Auto Call',{exact:true}).uncheck();
