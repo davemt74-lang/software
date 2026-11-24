@@ -933,6 +933,7 @@ runtime_check($work[$ownerFailure]['summary']==='Keep the user task summary.'&&$
     &&$work[$preparation]['state']==='repair_needed'&&$issues[$preparation]['health_state']==='terminal_failure'
     &&$work[$approval]['state']==='needs_approval'&&!str_contains(json_encode([$work,$issues]),$secret),
     'Open Work preserves genuine failures and approvals while never exposing Initiative binding JSON');
+require_once dirname(__DIR__).'/includes/agent-coordination-schedule-v1.php';
 $operatorRef='operator:followup:'.str_repeat('a',32);
 $operatorItem=['ref'=>$operatorRef,'revision'=>str_repeat('b',64),'specialist'=>'operator','trigger'=>'followup_review','priority'=>'normal','history_only'=>true];
 runtime_check(vp3_coordination_source_ref_valid_v1($operatorRef)&&!vp3_coordination_source_ref_valid_v1('operator:followup:invalid'),
