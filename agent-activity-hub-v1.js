@@ -3028,6 +3028,29 @@
     }
     if(calendar.coverage==='limited')panel.append(node('small','Some appointments may be outside this recent view.'));
   }
+  const operatorWorkerLabels={disabled:'Reporting disabled',not_granted:'Worker not granted',revoked:'Worker credential revoked',
+    pairing_unavailable:'Pairing unavailable',awaiting_registration:'Awaiting signed registration',reporting:'Signed HomeServer report verified',
+    stale:'Worker report stale',retired:'Worker retired',unavailable:'Worker status unavailable'};
+  function operatorWorkerModel(current) {
+    const row=Array.isArray(snapshot?.specialists)?snapshot.specialists.find(r=>r?.id==='operator'&&r.conversation_id===current.cid):null;
+    const raw=row?.operator_worker;
+    if(!raw||!Object.hasOwn(operatorWorkerLabels,raw.state)||raw.execution_enabled!==false||raw.live_certified!==false
+      ||!Number.isSafeInteger(raw.checked_at)||raw.checked_at<1||raw.checked_at>4102444710
+      ||!Number.isSafeInteger(raw.fresh_until)||raw.fresh_until<0
+      ||(raw.last_verified_epoch!==null&&(!Number.isSafeInteger(raw.last_verified_epoch)||raw.last_verified_epoch<1||raw.last_verified_epoch>raw.checked_at))
+      ||(raw.state==='reporting'&&(raw.last_verified_epoch===null||raw.fresh_until<=raw.checked_at||raw.fresh_until>raw.last_verified_epoch+25))
+      ||(raw.state!=='reporting'&&raw.fresh_until!==0))return null;
+    return {state:raw.state,last_verified_epoch:raw.last_verified_epoch,checked_at:raw.checked_at,fresh_until:raw.fresh_until};
+  }
+  function renderOperatorWorker(panel,worker) {
+    if(!worker)return; // Legacy/disabled deployments retain the existing Brain.
+    const block=node('section','','vp3-agent-activity-specialist');block.dataset.operatorWorkerStatus='true';
+    block.append(node('h4','HomeServer worker'),node('p',operatorWorkerLabels[worker.state]));
+    if(worker.last_verified_epoch!==null)
+      block.append(node('small','Last verified report: '+new Date(worker.last_verified_epoch*1000).toLocaleString()));
+    block.append(node('p','Registration reporting only. Autonomous calls are off; live call readiness is not verified.'));
+    panel.append(block);
+  }
   function renderOperatorHistory(current) {
     const history=operatorHistoryModel(snapshot?.operator_history);
     if (!history) {sections.replaceChildren();operatorRendered='';return;}
@@ -3038,7 +3061,8 @@
     if (operatorContact && !contacts.has(operatorContact)) operatorContact='';
     const followups=operatorFollowupModel(snapshot?.operator_followups);
     const calendar=operatorCalendarModel(snapshot?.operator_calendar);
-    const key=JSON.stringify([history,followups,calendar,operatorTab,operatorContact]);
+    const worker=operatorWorkerModel(current);
+    const key=JSON.stringify([history,followups,calendar,worker,operatorTab,operatorContact]);
     if (key===operatorRendered && sections.querySelector('[data-operator-view]')) return;
     operatorRendered=key;
     const focus=sections.contains(document.activeElement)?document.activeElement.dataset.operatorFocus:'';
@@ -3054,6 +3078,7 @@
       tab.dataset.operatorFocus=id;tab.setAttribute('aria-pressed',String(operatorTab===id));nav.append(tab);
     }
     panel.append(nav);
+    if(operatorTab==='brain')renderOperatorWorker(panel,worker);
     if (history.coverage!=='ready') {
       panel.append(node('p',history.coverage==='no_chat'?'Open a saved private Chat to review phone history.':'Phone conversation history could not be verified.'));
     } else {
