@@ -29,13 +29,13 @@
     const managed=make('div',undefined,'phone-managed-panel'),browser=make('div',undefined,'phone-managed-panel');
     const detail=make('p'),state=make('p'),feedback=make('p');state.setAttribute('role','status');feedback.setAttribute('role','status');
     const transportHeading=make('h4','Managed callback review'),transportHelp=make('p');
-    const form=make('form',undefined,'phone-profile-form'),line=make('select'),dest=make('input'),confirm=make('input'),send=make('button','Request managed callback approval','phone-primary'),cancel=button('Cancel managed request'),reconcile=button('Check carrier status'),end=button('End managed call','phone-primary');
+    const form=make('form',undefined,'phone-profile-form'),line=make('select'),dest=make('input'),confirm=make('input'),send=make('button','Request managed callback approval','phone-primary'),pilotStart=button('Start unrecorded pilot call','phone-primary'),cancel=button('Cancel managed request'),reconcile=button('Check carrier status'),end=button('End managed call','phone-primary');
     line.setAttribute('aria-label','Assigned Twilio line');dest.type='tel';dest.autocomplete='off';dest.placeholder='+1 602 555 0100';dest.maxLength=32;
     confirm.type='checkbox';send.type='submit';
     const record=make('input');record.type='checkbox';
     const recordLabel=label('Request recording with participant consent',record),recordDetail=make('p',undefined,'phone-detail-meta');
-    form.append(label('Assigned Twilio line',line),label('Managed destination number (international format)',dest),recordLabel,recordDetail,label('Ask the holder to review this exact destination. No live call will be placed in this release.',confirm),send);
-    managed.append(transportHeading,transportHelp,detail,state,form,cancel,reconcile,end,feedback);
+    form.append(label('Assigned Twilio line',line),label('Managed destination number (international format)',dest),recordLabel,recordDetail,label('Ask the holder to approve this exact destination. This review itself places no call.',confirm),send);
+    managed.append(transportHeading,transportHelp,detail,state,form,pilotStart,cancel,reconcile,end,feedback);
     const browserButton=button('Open browser calling','phone-primary');
     browser.append(make('h4','Browser call to connected user'),make('p','Use your existing assigned line and browser audio to call this connected phone. The Phone drawer requires confirmation.'),browserButton);
     let device=null,scope='',mode='personal',ready=false,busy=false,linesSignature='',policySignature='',draftId='',draftKey='',received=0,lastProjection=null;
@@ -48,7 +48,7 @@
       for(const [v,b] of buttons)b.setAttribute('aria-pressed',String(mode===v));
       const nativeMode=mode==='native';
       transportHeading.textContent=nativeMode?'Dial through Twilio review':'Managed callback review';
-      transportHelp.textContent=nativeMode?'The connected user approves a destination, obtains a private one-time code, then manually dials your assigned Twilio number. This pilot is unrecorded and live access depends on administrator enablement.':'Twilio calls the connected phone first, then bridges the approved destination after keypad confirmation. Live callback dispatch and recording startup remain disabled. You may request recording consent for review.';
+      transportHelp.textContent=nativeMode?'The connected user approves a destination, obtains a private one-time code, then manually dials your assigned Twilio number. This pilot is unrecorded and live access depends on administrator enablement.':'Twilio calls the connected phone first, then bridges the approved destination after keypad confirmation. Live callback testing is limited to an administrator-approved pilot. Recorded calls remain review-only.';
       send.textContent=nativeMode?'Request dial-through approval':'Request managed callback approval';
       detail.textContent=p?.available?'Ready to prepare a review request.':reasons[p?.reason]||'Managed calling requires a private connected-phone profile.';
       const expired=r&&['pending','approved'].includes(r.state)&&remaining(p,received)<=0;
@@ -77,6 +77,9 @@
       const disabled=busy||blocked||!ready||!visible()||!p?.available;
       dest.disabled=confirm.disabled=line.disabled=disabled;record.disabled=disabled||!policyOK||nativeMode;
       send.disabled=disabled||!confirm.checked||!numberOK(normalize(dest.value))||!options.some(n=>String(n.id)===line.value);
+      pilotStart.hidden=nativeMode||p?.dispatch_enabled!==true||r?.transport==='twilio_native'||r?.state!=='approved'||expired||r?.recording?.requested===true;
+      pilotStart.disabled=busy||!ready||!visible()||pilotStart.hidden;
+      if(!nativeMode&&r?.state==='approved'&&!expired)state.textContent+=p?.dispatch_enabled?' · Unrecorded pilot ready':' · Live acceptance gate closed';
       cancel.hidden=!r||!['pending','approved'].includes(r.state)||expired;
       cancel.disabled=busy||!ready||!visible();
       const control=r?.call?.managed_control;
@@ -100,7 +103,9 @@
       try{
         const value=await request(action,{...bound(d),...fields});
         if(scope!==k||!ready)return;
-        if(action==='managed_end'||action==='managed_reconcile'){
+        if(action==='managed_pilot_dispatch'){
+          feedback.textContent=value?.dispatch_state==='submitted'?'Carrier accepted the callback request. Answer and confirm on the connected phone.':value?.dispatch_state==='uncertain'?'Carrier outcome is uncertain. Check status; do not place another call.':'Pilot request processed. Review call status.';
+        }else if(action==='managed_end'||action==='managed_reconcile'){
           const c=value?.call?.managed_control;
           feedback.textContent=action==='managed_end'?(c?.end_state==='parent_ended'?'Carrier confirmed the holder leg ended.':'End request submitted or fenced. Check carrier status; hang up on the phone if needed.'):'Carrier status checked; unresolved states remain unconfirmed.';
         }else if(value?.managed_callback?.request?.state){
@@ -125,6 +130,11 @@
       if(!draftId||draftKey!==sig){draftId=randomId();draftKey=sig;}
       void act('managed_prepare',{managed_request_id:draftId,profile_id:p.profile_id,profile_revision:p.revision,phone_revision:p.phone_revision,number_id:numberId,destination_e164:n,confirmed:true,...recording,...transport});
     });
+    pilotStart.addEventListener('click',event=>{
+      const r=device?.managed_callback?.request;
+      if(!event.isTrusted||!ready||!visible()||busy||pilotStart.hidden||pilotStart.disabled||!idOK(r?.request_id))return;
+      if(window.confirm('Place this approved unrecorded test callback through Twilio? Carrier charges may apply.'))void act('managed_pilot_dispatch',{managed_request_id:r.request_id,confirmed:true});
+    });
     cancel.addEventListener('click',event=>{
       const r=device?.managed_callback?.request;
       if(event.isTrusted&&ready&&visible()&&!busy&&!cancel.hidden&&idOK(r?.request_id))void act('managed_cancel',{managed_request_id:r.request_id});
@@ -147,7 +157,7 @@
     const heading=make('strong','Twilio managed callback'),detail=make('p'),destination=make('p',undefined,'phone-managed-destination'),state=make('p'),feedback=make('p');
     state.setAttribute('role','status');feedback.setAttribute('role','status');
     const consent=make('input');consent.type='checkbox';
-    const check=label('I approve this exact destination for review. No live call or recording will start.',consent);
+    const check=label('I approve this exact destination. A separate live pilot action is required; this approval itself places no call.',consent);
     const recordConsent=make('input');recordConsent.type='checkbox';
     const recordCheck=label('I also agree to the listed recording and processing options.',recordConsent),recordDetails=make('p');
     const actions=make('div',undefined,'phone-permission-buttons'),approve=button('Approve managed request','phone-primary'),decline=button('Decline managed request','secondary');
@@ -164,7 +174,7 @@
       root.hidden=!show;
       const native=r?.transport==='twilio_native';
       heading.textContent=native?'Dial through Twilio':'Twilio managed callback';
-      detail.textContent=native?(r.native?.enabled?'Approve this destination; you alone choose whether to dial. This pilot is not recorded. Carrier charges may apply.':'Native dial-through review only · pilot disabled.'): 'Review only · live calls and recording are disabled.';
+      detail.textContent=native?(r.native?.enabled?'Approve this destination; you alone choose whether to dial. This pilot is not recorded. Carrier charges may apply.':'Native dial-through review only · pilot disabled.'): (r?.pilot?.available?'Approved unrecorded pilot · the owner may explicitly initiate a test callback. Carrier charges may apply.':'Review only · no live dispatch or recording is authorized.');
       const pending=show&&r?.state==='pending'&&remaining(p,received)>0&&numberOK(r.destination_e164)&&p.available===true;
       const approved=show&&r?.state==='approved'&&remaining(p,received)>0;
       destination.textContent=pending?r.destination_e164:'';
@@ -209,7 +219,7 @@
         const result=await request('managed_respond',body);
         if(scope!==k||!ready)return;
         const saved=result?.device?.managed_callback?.request;
-        feedback.textContent=saved?.state==='approved'?'Approved. No live call was placed.':saved?.state==='declined'?'Declined.':'Review updated.';
+        feedback.textContent=saved?.state==='approved'?'Approved. Approval itself places no call.':saved?.state==='declined'?'Declined.':'Review updated.';
         consent.checked=false;
       }catch(error){if(scope===k)feedback.textContent='Unable to confirm the response. Check the connection.';}
       finally{busy=false;controls();}

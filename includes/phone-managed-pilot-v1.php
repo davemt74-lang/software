@@ -36,6 +36,8 @@ function vp3_managed_pilot_review_v1(PDO $pdo,array $row,int $now):array
     if(!vp3_managed_transport_ready_v1($pdo)||!vp3_managed_control_ready_v1($pdo)||!vp3_native_dialthrough_ready_v1($pdo)){
         $out['reason']='upgrade_required';return $out;
     }
+    if(!vp3_managed_recording_ready_v1($pdo)){$out['reason']='upgrade_required';return $out;}
+    require_once __DIR__.'/phone-managed-recording-v1.php';
     if(vp3_managed_recording_row_v1($pdo,$row['public_id'])){
         $out['reason']='recording_acceptance_required';return $out;
     }
