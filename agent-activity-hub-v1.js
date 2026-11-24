@@ -101,6 +101,9 @@
   let participantActor = 0;
   let returnFocus = null;
   let selectedSpecialist = '';
+  let operatorTab = 'brain';
+  let operatorContact = '';
+  let operatorRendered = '';
   let revealSpecialist = false;
   let disposed = false;
   let orbSurface = null;
@@ -232,6 +235,9 @@
     analysisRequest = null;
     analysisFeedback = '';
     snapshot = null;
+    operatorTab = 'brain';
+    operatorContact = '';
+    operatorRendered = '';
     revealSpecialist = false;
     detailOpen.clear();
     marketingCanvasSelections.clear();
@@ -2905,8 +2911,106 @@
     return section;
   }
 
+  const operatorCallStates = {completed:'Completed',busy:'Busy',no_answer:'No answer',failed:'Failed',canceled:'Canceled',voicemail_ready:'Voicemail saved'};
+  const operatorRecordingStates = {none:'No linked recording receipt',unavailable:'Recording status unavailable',received:'Recording receipt saved',queued:'Recording queued',processing:'Processing recording',ready:'Recording job completed',failed:'Processing needs review'};
+  function operatorHistoryModel(raw) {
+    if (!raw || !['ready','unavailable','no_chat'].includes(raw.coverage) || !['ready','limited','unavailable'].includes(raw.recording_coverage)
+      || !Array.isArray(raw.calls) || raw.calls.length>50) return null;
+    if (raw.coverage!=='ready' && raw.calls.length) return null;
+    const seen=new Set();
+    for (const call of raw.calls) {
+      if (!call || typeof call.call_id!=='string' || !/^(?:[a-f0-9]{32}|legacy-[1-9][0-9]{0,17})$/.test(call.call_id)
+        || seen.has(call.call_id) || !Number.isSafeInteger(call.contact_id) || call.contact_id<0
+        || typeof call.contact_name!=='string' || call.contact_name.length>240
+        || typeof call.peer_e164!=='string' || (call.peer_e164!=='' && !/^\+[1-9][0-9]{7,14}$/.test(call.peer_e164))
+        || !['inbound','outbound'].includes(call.direction) || !Object.hasOwn(operatorCallStates,call.state)
+        || typeof call.created_at!=='string' || (call.created_at!=='' && !Number.isFinite(Date.parse(call.created_at)))
+        || !Number.isSafeInteger(call.duration_seconds) || call.duration_seconds<0 || call.duration_seconds>86400
+        || !Object.hasOwn(operatorRecordingStates,call.recording?.state)
+        || typeof call.recording.transcript_saved!=='boolean' || typeof call.recording.report_saved!=='boolean') return null;
+      seen.add(call.call_id);
+    }
+    return raw;
+  }
+  function operatorPhoneAction(current,method,control,event) {
+    const phone=window.VP3PhoneWorkspaceV1;
+    if (!event.isTrusted || signature(current)!==signature(scope()) || typeof phone?.[method]!=='function') return;
+    const trigger=specialistTrigger;
+    close(false);
+    phone[method](trigger);
+  }
+  function renderOperatorHistory(current) {
+    const history=operatorHistoryModel(snapshot?.operator_history);
+    if (!history) {sections.replaceChildren();operatorRendered='';return;}
+    const contactKey=call=>call.contact_id>0?'contact:'+call.contact_id:call.peer_e164?'phone:'+call.peer_e164:'unknown:'+call.call_id;
+    const label=call=>call.contact_name||call.peer_e164||'Unknown caller';
+    const contacts=new Map();
+    for (const call of history.calls) if (!contacts.has(contactKey(call))) contacts.set(contactKey(call),label(call));
+    if (operatorContact && !contacts.has(operatorContact)) operatorContact='';
+    const key=JSON.stringify([history,operatorTab,operatorContact]);
+    if (key===operatorRendered && sections.querySelector('[data-operator-view]')) return;
+    operatorRendered=key;
+    const focus=sections.contains(document.activeElement)?document.activeElement.dataset.operatorFocus:'';
+    const panel=node('section','','vp3-agent-activity-specialist');
+    panel.dataset.operatorView=operatorTab;
+    const nav=node('nav','','vp3-agent-activity-actions');nav.setAttribute('aria-label','Operator views');
+    for (const [id,title] of [['brain','Brain'],['history','History']]) {
+      const tab=button(title,event=>{
+        if (!event.isTrusted || signature(current)!==signature(scope())) return;
+        operatorTab=id;renderOperatorHistory(current);
+        sections.querySelector('[data-operator-focus="'+id+'"]')?.focus({preventScroll:true});
+      });
+      tab.dataset.operatorFocus=id;tab.setAttribute('aria-pressed',String(operatorTab===id));nav.append(tab);
+    }
+    panel.append(nav);
+    if (history.coverage!=='ready') {
+      panel.append(node('p',history.coverage==='no_chat'?'Open a saved private Chat to review phone history.':'Phone conversation history could not be verified.'));
+    } else {
+      panel.append(node('small','Most recent 50 completed call receipts for this '+(current.agent>0?'assigned Agent.':'account.')));
+      if (operatorTab==='brain') {
+        const calls=history.calls;
+        const count=predicate=>calls.filter(predicate).length;
+        panel.append(node('h4','Conversation overview'));
+        panel.append(node('p',calls.length+' recent calls · '+contacts.size+' caller groups'));
+        panel.append(node('p',count(c=>['busy','no_answer','failed'].includes(c.state))+' busy, unanswered or failed calls'));
+        panel.append(node('p',count(c=>['queued','processing'].includes(c.recording.state))+' calls awaiting recording processing'));
+        panel.append(node('p',count(c=>c.recording.state==='failed')+' calls with processing failures to review'));
+        panel.append(node('p',count(c=>c.recording.transcript_saved)+' saved transcripts · '+count(c=>c.recording.report_saved)+' saved reports'));
+        panel.append(node('small','Saved reports are historical and require review; this overview does not infer commitments or send follow-ups.'));
+      } else {
+        const filter=node('select');filter.dataset.operatorFocus='contact-filter';filter.setAttribute('aria-label','Filter call history by caller');
+        for (const [id,title] of [['','All callers'],...contacts]) {
+          const option=node('option',title);option.value=id;option.selected=id===operatorContact;filter.append(option);
+        }
+        filter.addEventListener('change',event=>{
+          if (!event.isTrusted || signature(current)!==signature(scope())) return;
+          operatorContact=contacts.has(filter.value)?filter.value:'';renderOperatorHistory(current);
+        });
+        panel.append(filter);
+        const calls=history.calls.filter(c=>!operatorContact||contactKey(c)===operatorContact);
+        if (!calls.length) panel.append(node('p','No completed call receipts in this view.'));
+        for (const call of calls) {
+          const when=call.created_at?new Date(call.created_at).toLocaleString():'Date unavailable';
+          const duration=Math.floor(call.duration_seconds/60)+'m '+(call.duration_seconds%60)+'s';
+          const copy=itemCopy(label(call),[call.contact_name?call.peer_e164:'',call.direction==='inbound'?'Incoming':'Outgoing',operatorCallStates[call.state],when,duration].filter(Boolean).join(' · '),'operator:'+call.call_id);
+          copy.append(node('small',[operatorRecordingStates[call.recording.state],call.recording.transcript_saved?'Saved transcript':'',call.recording.report_saved?'Saved report':''].filter(Boolean).join(' · ')));
+          appendSpecialistItem(panel,copy,node('div','','vp3-agent-activity-actions'));
+        }
+      }
+      if (history.recording_coverage!=='ready') panel.append(node('p','Some recording or transcript status could not be verified.'));
+      const actions=node('div','','vp3-agent-activity-actions');
+      for (const [method,title] of [['openHistory','Open call history'],['openRecordings','Open recordings and reports']]) {
+        if (typeof window.VP3PhoneWorkspaceV1?.[method]!=='function') continue;
+        const control=button(title,event=>operatorPhoneAction(current,method,control,event));control.dataset.operatorFocus=method;actions.append(control);
+      }
+      if (actions.childElementCount) panel.append(actions);
+    }
+    sections.replaceChildren(panel);
+    if (focus) sections.querySelector('[data-operator-focus="'+CSS.escape(focus)+'"]')?.focus({preventScroll:true});
+  }
   function renderWorkspaceSources(current) {
     const specialist = family(selectedSpecialist);
+    if (specialist === 'operator') {renderOperatorHistory(current);return;}
     if (specialist === 'profile') {
       renderProfileWorkspace(current);
       return;
@@ -3102,6 +3206,7 @@
       const data = await response.json();
       if (!isCurrent()) return;
       if (!response.ok || data?.ok !== true || !validState(data.state,current)) throw new Error('Top of Mind could not be refreshed.');
+      if (view === 'operator' && !operatorHistoryModel(data.state.operator_history)) throw new Error('The Operator history could not be verified.');
       if (view === 'profile' && (!profileReportModel(data.state.profile_report)
         || data.state.coverage?.profile_report !== data.state.profile_report.coverage)) throw new Error('The Profile report could not be verified.');
       accessRejected = false;
