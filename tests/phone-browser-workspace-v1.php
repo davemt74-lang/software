@@ -6,6 +6,7 @@ require dirname(__DIR__).'/includes/phone-browser-v1.php';
 require dirname(__DIR__).'/includes/phone-browser-endpoint-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-specialist-v1.php';
 require dirname(__DIR__).'/includes/phone-recording-pipeline-v1.php';
+require_once dirname(__DIR__).'/includes/agent-operator-history-v1.php';
 $dsn=getenv('VP3_PHONE_MYSQL_DSN')?:'sqlite::memory:';$mysql=str_starts_with($dsn,'mysql:');
 $pdo=new PDO($dsn,$mysql?(getenv('VP3_PHONE_MYSQL_USER')?:'root'):null,$mysql?(getenv('VP3_PHONE_MYSQL_PASSWORD')?:''):null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 if($mysql)$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
@@ -134,6 +135,7 @@ $first=prepare();$public=$first['call']['public_id'];c($first['call']['agent_id'
 c(!str_contains(json_encode($first['call']),'intent')&&!str_contains(json_encode($first['call']),'provider_call_sid'),'public call does not disclose carrier handles or intent hash');
 c(readcall($public)['intent_hash']===hash('sha256',$first['connect_params']['call_intent']),'only hashed short-lived intent persisted');
 c(vp3_operator_call_status_v1($pdo,user(),0,11,time())['state']==='idle','Operator never claims an unconsumed dial intent is a live call');
+c(vp3_operator_history_v1($pdo,user(),0,11)['calls']===[],'Operator history excludes an unconsumed intent');
 denies(fn()=>prepare(),409,'one prepared call prevents parallel dial');
 action('cancel_prepared',['call_id'=>$public]);c(readcall($public)['state']==='canceled','preconnect failure can release unconsumed intent');
 $out=prepare(true);$public=$out['call']['public_id'];c(readcall($public)['recording_enabled']==1,'explicit recording plus admin approval retained');
@@ -171,6 +173,13 @@ c(vp3_operator_call_status_v1($pdo,user(),0,11,time())['state']==='idle','Operat
 c(status($call,'in-progress')['duplicate']&&readcall($public)['duration_seconds']==24,'late status cannot resurrect terminal call or erase duration');
 $recording=form($call['provider_call_sid'],['RecordingSid'=>'RE'.str_repeat('a',32),'RecordingStatus'=>'completed','RecordingDuration'=>'24','RecordingUrl'=>'https://untrusted.example/never-fetch']);
 $saved=vp3_phone_browser_recording_v1($pdo,$recording,signature('recording',$recording,$public),$public);
+$operatorHistory=vp3_operator_history_v1($pdo,user(),0,11);$operatorCalls=array_column($operatorHistory['calls'],null,'call_id');
+c($operatorHistory['coverage']==='ready'&&isset($operatorCalls[$public])&&$operatorCalls[$public]['contact_name']==='Mine'&&$operatorCalls[$public]['direction']==='outbound','Operator history projects a signed terminal call with its canonical contact');
+c($operatorCalls[$public]['recording']===['state'=>'queued','transcript_saved'=>false,'report_saved'=>false],'Operator distinguishes a queued recording from saved results');
+c(!str_contains(json_encode($operatorHistory),'provider_call_sid')&&!str_contains(json_encode($operatorHistory),'lease_token')&&!str_contains(json_encode($operatorHistory),'carrier-auth-token-fixture'),'Operator history does not export internal carrier or worker credentials');
+c(vp3_operator_history_v1($pdo,user(),0,21)['coverage']==='unavailable'&&vp3_operator_history_v1($pdo,user(),9,12)['coverage']==='unavailable','Operator rejects foreign Chat and mismatched Agent scopes');
+c(vp3_operator_history_v1($pdo,user(),0,0)['coverage']==='no_chat'&&vp3_operator_history_v1($pdo,user(2),0,21)['calls']===[],'Operator requires saved owner Chat and does not expose another owner history');
+c(vp3_operator_history_v1($pdo,user(),9,13)['calls']===[]&&isset(array_column(vp3_operator_history_v1($pdo,user(),7,12)['calls'],null,'call_id')[$public]),'Operator named Agent view is scoped to the assigned call Agent');
 c($saved['accepted']&&$saved['queued']&&str_starts_with($saved['recording']['id'],'job-'),'signed opted-in recording enqueues durable typed job without provider I/O');
 c(!str_contains($pdo->query('SELECT policy_json FROM phone_recording_jobs_v1')->fetchColumn(),'untrusted.example'),'untrusted RecordingUrl is not persisted or fetched');
 c(vp3_phone_browser_recording_v1($pdo,$recording,signature('recording',$recording,$public),$public)['duplicate'],'recording receipt replay is idempotent');
@@ -217,6 +226,8 @@ ob_start();vp3_phone_browser_endpoint_v1('complete');$fallbackXml=ob_get_clean()
 c(http_response_code()===200&&str_contains($fallbackXml,'Second Agent')&&str_contains($fallbackXml,'<Record'),'actual complete endpoint returns current Agent voicemail TwiML without warnings');
 $_GET=['call'=>['forged']];ob_start();vp3_phone_browser_endpoint_v1('complete');$invalidXml=ob_get_clean();c(http_response_code()===422&&$invalidXml==='','array public query fails without corrupting XML');
 $legacyId=(int)$pdo->query("SELECT id FROM phone_voice_calls_v130 WHERE provider_call_sid='$sid'")->fetchColumn();$pdo->prepare("INSERT INTO phone_voice_recordings_v130(call_id,owner_user_id,provider,provider_recording_sid,recording_status,duration_seconds) VALUES (?,1,'twilio',?,'completed',12)")->execute([$legacyId,'RE'.str_repeat('b',32)]);
+$operatorFallback=array_column(vp3_operator_history_v1($pdo,user(),0,11)['calls'],null,'call_id');
+c(($operatorFallback[$second['public_id']]['recording']['state']??'')==='received'&&!isset($operatorFallback['legacy-'.$legacyId]),'Operator links fallback voicemail to its canonical browser call without duplicate history');
 $rows=api('GET')['state']['voicemails'];c(count($rows)===2&&count(array_filter($rows,fn($r)=>str_starts_with($r['id'],'job-')))===1&&count(array_filter($rows,fn($r)=>str_starts_with($r['id'],'legacy-')))===1,'existing voicemail and new recording have distinct stable IDs');
 foreach($rows as $vm){action('mark_voicemail_read',['voicemail_id'=>$vm['id']]);}
 c(count(array_filter(api('GET')['state']['voicemails'],fn($r)=>$r['read']))===2,'legacy and job voicemail read state persists');
@@ -433,4 +444,5 @@ for($i=0;$i<251;$i++)$insert->execute([sprintf('aaaaaaaa-aaaa-4aaa-8aaa-%012d',$
 action('favorite',['contact_id'=>$contactId,'favorite'=>true]);$boundedBook=api('GET')['state'];$boundedContacts=array_column($boundedBook['contacts'],null,'id');
 c(count($boundedBook['contacts'])===250&&isset($boundedContacts[$contactId])&&$boundedContacts[$contactId]['favorite'],'related caller and favorite flag survive the bounded contact book');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
+c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
