@@ -89,10 +89,12 @@ function vp3_operator_calendar_event_view_v1(array $event): array
     $start=user_calendar_validate_utc_v1300((string)$event['start_at_utc']);
     $end=user_calendar_validate_utc_v1300((string)$event['end_at_utc']);
     $zone=new DateTimeZone((string)$event['timezone']);
+    $path=parse_url(url('/calendar-event.php'),PHP_URL_PATH);
+    if(!is_string($path)||!str_starts_with($path,'/')||str_starts_with($path,'//'))throw new RuntimeException('Calendar event link unavailable.');
     return ['event_id'=>(int)$event['id'],'title'=>mb_substr((string)$event['title'],0,190),
         'start_at'=>$start->format(DATE_ATOM),'end_at'=>$end->format(DATE_ATOM),
         'label'=>$start->setTimezone($zone)->format('D, M j, g:i A T'),
-        'url'=>url('/calendar-event.php?id='.(int)$event['id']),
+        'url'=>$path.'?id='.(int)$event['id'],
         'execution_enabled'=>false];
 }
 
