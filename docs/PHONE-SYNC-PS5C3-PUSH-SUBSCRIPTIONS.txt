@@ -1,0 +1,45 @@
+Phone Sync PS5C.3 — connected-phone push enrollment
+
+Adds a compact notification setup section in Info, an administrator
+enrollment control in Phone & Messaging, and a redacted per-device
+subscription status in Phone Tracking > Activity. This is enrollment,
+not Web Push message delivery. No test notification is sent by this
+release. The service worker still has no push/fetch handler; actual
+notification display, event routing and delivery receipts are PS5C.4.
+
+Cloud upgrade installs a global VAPID configuration and a per-device
+subscription registry. The admin can prepare/enable enrollment once
+the existing VP3 private credential encryption key is available.
+A generated P-256 key pair is persistent: repeated setup never rotates
+it. The private VAPID material and each browser subscription (endpoint,
+auth secret, public encryption key and binding metadata) are encrypted
+using VP3's existing protected key. Preserve the private credential
+key and database backups; no automatic key regeneration on key loss.
+The admin may pause new enrollment, without changing saved consent.
+
+The holder opens the installed app (iOS/iPadOS 16.4+ or supported
+installed Android browser), selects Info and taps Enable notifications.
+Only this trusted foreground gesture initiates browser subscription
+using the current public VAPID key and userVisibleOnly. No permission
+prompt on page load or from the owner. The saved subscription is
+bound to owner, immutable device, credential hash and its independent
+revision. GPS start/stop does not invalidate notification consent.
+Only exact registered HTTPS Apple/FCM/Mozilla service endpoint forms
+are admitted; unsupported providers fail closed. Sender-side DNS/IP,
+TLS, redirect and endpoint revalidation remain mandatory in PS5C.4.
+No arbitrary endpoint network access takes place on the server here.
+
+Turning off enrollment on the phone first withdraws the server grant
+and clears its encrypted subscription. Local unsubscribe is best
+effort and restricted to the matching local subscription. A changed
+or missing local subscription is reported as needing attention,
+rather than silently authorizing another installation. Expired,
+revoked, disconnected, disabled-account or transferred devices are
+ineligible; revocation/transfer clears registered material and
+advances the independent revision. Owner status never includes
+endpoint, keys, encrypted credentials or private browser data.
+
+No notification preferences, background delivery, badge, test-send,
+automatic resubscription or Agent outreach are enabled. Real iOS
+permission/installation and provider acceptance remain physical
+release gates. Synthetic fixtures do not request real push permission.
