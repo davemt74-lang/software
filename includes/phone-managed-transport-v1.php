@@ -170,7 +170,7 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$event,$public,$nonce,$form,$sid,$now,$hint,$hangup){
         $owner=(int)$hint['owner_user_id'];if(!vp3_managed_transport_owner_lock_v1($pdo,$owner))return $hangup;
         $t=vp3_managed_transport_row_v1($pdo,$public,true);$call=vp3_managed_transport_call_v1($pdo,$public,true);
-        if(!$t||!$call||(int)$call['owner_user_id']!==$owner||!hash_equals($t['callback_nonce_hash'],hash('sha256',$nonce)))return $hangup;
+        if(!$t||!$call||(int)$call['owner_user_id']!==$owner||$t['state']==='not_sent'||!hash_equals($t['callback_nonce_hash'],hash('sha256',$nonce)))return $hangup;
         $row=vp3_managed_callback_row_v1($pdo,$t['request_id'],true);
         if(!$row||(int)$row['owner_user_id']!==$owner)return $hangup;
         $terminal=['completed','busy','no_answer','failed','canceled'];
@@ -193,7 +193,11 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
                 $xml='<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="dtmf" numDigits="1" timeout="8" actionOnEmptyResult="true" action="'.$action.'" method="POST"><Say>VP3 managed callback. Press 1 to connect the destination you approved in the app. Otherwise hang up. This call is not recorded by VP3.</Say></Gather><Hangup/></Response>';
                 return ['accepted'=>true,'xml'=>$xml];
             }
-            if($t['state']!=='awaiting_confirmation'||(int)$t['confirmation_epoch']>0||($form['Digits']??null)!=='1')return $hangup;
+            if($t['state']!=='awaiting_confirmation'||(int)$t['confirmation_epoch']>0)return $hangup;
+            if(($form['Digits']??null)!=='1'){
+                $pdo->prepare("UPDATE phone_managed_callback_dispatch_v1 SET state='holder_declined',updated_epoch=? WHERE call_public_id=? AND state='awaiting_confirmation'")->execute([$now,$public]);
+                return $hangup;
+            }
             $q=$pdo->prepare("UPDATE phone_managed_callback_dispatch_v1 SET state='bridging',confirmation_epoch=?,updated_epoch=? WHERE call_public_id=? AND state='awaiting_confirmation' AND confirmation_epoch=0");
             $q->execute([$now,$now,$public]);if($q->rowCount()!==1)return $hangup;
             $complete=vp3_phone_browser_xml_v1(vp3_managed_transport_url_v1('complete',$public,$nonce));$status=vp3_phone_browser_xml_v1(vp3_managed_transport_url_v1('child',$public,$nonce));
