@@ -453,7 +453,7 @@ c(count($boundedBook['contacts'])===250&&isset($boundedContacts[$contactId])&&$b
 // The canonical intelligence reader is replaced by an in-process saved-result fixture.
 ddl('CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,metadata_json TEXT,discarded_at DATETIME NULL)');
 ddl('CREATE TABLE artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,segment_type VARCHAR(30),transcript_text TEXT)');
-$q=$pdo->prepare("SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=1 AND call_public_id=? AND origin_kind='browser'");$q->execute([$public]);$followJob=$q->fetch(PDO::FETCH_ASSOC);
+$q=$pdo->prepare("SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=1 AND call_public_id=? AND origin_kind='browser'");$q->execute([$public]);$followJob=$q->fetch(PDO::FETCH_ASSOC);$originalFollowJob=$followJob;$q->closeCursor();
 $session=771;$hash=str_repeat('a',64);$revision=str_repeat('b',64);
 $meta=['source'=>'phone_call_v1','phone_recording_v1'=>['job_id'=>(int)$followJob['id'],'call_kind'=>'browser','call_id'=>$public,'agent_id'=>7]];
 $pdo->prepare('INSERT INTO artist_transcript_sessions_v172 VALUES(?,1,?,NULL)')->execute([$session,json_encode($meta,JSON_THROW_ON_ERROR)]);
@@ -493,6 +493,10 @@ c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader)['rep
 $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET discarded_at=NULL WHERE id=?')->execute([$session]);
 $pdo->prepare('DELETE FROM phone_browser_deliveries_v1 WHERE event_key=?')->execute(['phone-recording-report:'.$followJob['public_id']]);
 c(vp3_operator_followup_queue_v1($pdo,$followScope,$followNow,null,$reader)['reports']===[],'removed canonical report delivery fences the follow-up');
+// Restore the original recording job before the next integration section reads
+// the real Phone workspace. The synthetic evidence is not a canonical transcript.
+$pdo->prepare('UPDATE phone_recording_jobs_v1 SET state=?,session_id=?,transcript_hash=?,analysis_hash=?,conversation_id=?,report_message_id=? WHERE id=?')
+    ->execute([$originalFollowJob['state'],$originalFollowJob['session_id'],$originalFollowJob['transcript_hash'],$originalFollowJob['analysis_hash'],$originalFollowJob['conversation_id'],$originalFollowJob['report_message_id'],$originalFollowJob['id']]);
 // The SQLite fixture is in memory and still has earlier read cursors. Its
 // connection teardown releases these tables; clean the shared MySQL fixture explicitly.
 if($mysql){$pdo->exec('DROP TABLE artist_transcript_segments_v172');$pdo->exec('DROP TABLE artist_transcript_sessions_v172');}
