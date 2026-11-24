@@ -617,6 +617,17 @@ function vp3_location_specialist_status_v1(PDO $pdo,array $user,array $principal
     return $row;
 }
 
+/** Operator status is only a private owner Chat read; it never starts a call. */
+function vp3_operator_specialist_status_v1(PDO $pdo,array $user,array $principal,int $agentId,int $cid,int $now): ?array
+{
+    require_once __DIR__.'/schema-metadata.php';
+    if (vp3_participant_scope_v1() !== null || !knowledge_retrieval_v162_owner_session($user,$principal)
+        || !has_permission('account.access',$user) || !has_permission('chat.access',$user)
+        || !schema_metadata_table_exists($pdo,'phone_browser_calls_v1')) return null;
+    require_once __DIR__.'/agent-operator-specialist-v1.php';
+    return vp3_operator_call_status_v1($pdo,$user,$agentId,$cid,$now);
+}
+
 function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,int $agentId,int $cid,array $policy,array $health,
     ?array $gmail,int $now,array $items=[],bool $includeEngagements=false,bool $includeTranscriptReports=false,bool $privateChat=false): array
 {
@@ -626,6 +637,8 @@ function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,in
     if ($privateChat) {
         $location = vp3_location_specialist_status_v1($pdo,$user,$principal,$agentId,$cid,$now);
         if ($location !== null) $out[] = $location;
+        $operator = vp3_operator_specialist_status_v1($pdo,$user,$principal,$agentId,$cid,$now);
+        if ($operator !== null) $out[] = $operator;
     }
     $transcripts=vp3_top_of_mind_transcripts_status_v1($pdo,$user,$agentId,$cid,$policy,$now,$includeTranscriptReports);
     if($transcripts!==null)$out[]=$transcripts;
