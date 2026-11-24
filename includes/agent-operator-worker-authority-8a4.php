@@ -76,7 +76,7 @@ final class VP3OperatorWorkerAuthority8A4
                 && in_array($c['route']??null,['homeserver','cloud'],true));
             $id=$c['credential_id'];$finger=hash('sha256',$c['secret']);
             $binding=$c['owner_id'].':'.$c['device_id'].':'.$c['worker_id'];
-            self::require(!isset($this->credentials[$id],$keys[$finger]) && !isset($this->credentials[$id])
+            self::require(!isset($this->credentials[$id])
                 && !isset($keys[$finger]) && !isset($identities[$binding]));
             $keys[$finger]=true;$identities[$binding]=true;$this->credentials[$id]=$c;
         }
@@ -98,7 +98,7 @@ final class VP3OperatorWorkerAuthority8A4
             boot_id CHAR(32) NOT NULL, generation BIGINT NOT NULL, seq BIGINT NOT NULL,
             last_seen BIGINT NOT NULL, lease_until BIGINT NOT NULL, state VARCHAR(16) NOT NULL,
             request_hash CHAR(64) NOT NULL, receipt VARCHAR(4096) NOT NULL,
-            UNIQUE(owner_id,device_id,worker_id,credential_id)
+            UNIQUE(key_fingerprint)
         )'.$suffix);
         $db->exec('CREATE TABLE IF NOT EXISTS operator_worker_boots_8a4 (
             credential_id CHAR(32) NOT NULL, boot_id CHAR(32) NOT NULL, PRIMARY KEY(credential_id,boot_id)
@@ -184,6 +184,9 @@ final class VP3OperatorWorkerAuthority8A4
                 }
             }
             if ($register) {
+                // Never reuse a secret across credential IDs, including after rotation.
+                self::require($this->row('SELECT credential_id FROM operator_worker_registry_8a4 WHERE key_fingerprint=? AND credential_id<>?',
+                    [hash('sha256',$c['secret']),$id])===null);
                 self::require($r===null || $r['state']!=='reporting' || (int)$r['lease_until']<=$now);
                 // A different credential may not inherit the same worker's active identity.
                 // Rotation requires explicit revocation of the old credential, not merely a new key.
