@@ -1,0 +1,40 @@
+Phone Sync PS5E.2 — Managed Twilio callback transport
+
+This transport-only slice extends the approved PS5E.1 reservation. The
+administrator-controlled setting phone_managed_callback_enabled_v1 defaults
+OFF. No owner or holder HTTP action, worker, UI or autonomous Agent can invoke
+the carrier dispatch in this release. The internal dispatch function requires
+explicit owner confirmation and current exact holder approval. It consumes the
+reservation once, writes the canonical Phone/Operator ledger and private Chat
+entry, and issues a first-leg command through the existing Twilio REST helper.
+It never records. No real calls are made by the tests.
+
+The first leg targets the holder's saved number, not the destination. Carrier
+REST response identity is checked; an uncertain response is not automatically
+retried. Signed callbacks require the exact configured HTTPS URL, carrier
+account, opaque callback nonce, matching assigned line, and bound call SIDs.
+The answer returns a keypad challenge. Only a fresh affirmative digit 1 on
+the exact parent leg and a current approval authorizes bounded Dial to the
+immutable destination. Answered voicemail alone cannot trigger that Dial.
+A decline, expiry, changed profile/phone/device or withdrawn permission blocks
+subsequent bridge authorization. A concurrent withdrawal after carrier dispatch
+may still allow the first leg to ring; no later bridge is authorized after the
+withdrawal is observed. There is no in-flight remote hangup implementation.
+
+Destination ringing/answer/end events update the existing call ledger. Parent
+completion alone is not destination completion. Late or duplicate child events
+cannot regress a terminal state. Terminal callbacks erase temporary routing
+numbers. Call rows use the existing Operator history namespace and are marked
+as managed, not a browser-controlled call. Recording and AI remain disabled.
+
+The next slice must add authenticated owner/holder request UI, reviewable
+uncertain-dispatch reconciliation using read-only provider evidence, a safe
+end-call control, and physical handset/carrier acceptance BEFORE public dispatch
+is exposed. A missing terminal event can conservatively keep the canonical
+owner busy gate closed. Do not bypass the gate or retry ambiguous paid requests.
+The shared SQLite/MySQL test suite uses only synthetic carrier replies and
+signed synthetic events; no credential or paid service is contacted.
+
+Release gate: PS5D and PS5E.1 merged, exact-head CI passes, no live enablement.
+The full two-party recording, transcript, reports and Top of Mind workflow is
+subsequent work with separate consent and evidence checks.

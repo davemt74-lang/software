@@ -236,7 +236,7 @@ function vp3_phone_browser_status_v1(PDO $pdo,array $form,string $signature,stri
     if(!preg_match('/^[a-f0-9]{32}$/D',$public))throw new InvalidArgumentException('Invalid phone call.');
     $sid=vp3_phone_browser_verify_v1($form,$signature,vp3_phone_browser_callback_v1($complete?'complete':'status',['call'=>$public]));
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$form,$public,$sid,$complete){
-        $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$public]);$call=$q->fetch(PDO::FETCH_ASSOC);if(!$call||!$call['provider_call_sid'])return ['accepted'=>false];
+        $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$public]);$call=$q->fetch(PDO::FETCH_ASSOC);if(!$call||!$call['provider_call_sid']||($call['transport_kind']??'browser')==='managed_callback')return ['accepted'=>false];
         if($complete){if(!hash_equals((string)$call['provider_call_sid'],$sid))return ['accepted'=>false];$child=(string)($form['DialCallSid']??'');$state=(string)($form['DialCallStatus']??'');}
         else{$child=$sid;$state=(string)($form['CallStatus']??'');if($sid===$call['provider_call_sid'])return ['accepted'=>false];if(isset($form['ParentCallSid'])&&!hash_equals((string)$call['provider_call_sid'],(string)$form['ParentCallSid']))return ['accepted'=>false];if(!$call['provider_child_sid']&&(!isset($form['ParentCallSid'])||!hash_equals((string)$call['provider_call_sid'],(string)$form['ParentCallSid'])))return ['accepted'=>false];}
         if($child!==''&&!preg_match('/^CA[a-f0-9]{32}$/iD',$child))return ['accepted'=>false];

@@ -27,4 +27,7 @@ function vp3_managed_callback_revoke_v1(PDO $pdo,int $owner,string $device,int $
 {
     if(!vp3_managed_callback_ready_v1($pdo))return;
     $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='canceled',holder_e164='',destination_e164='',updated_epoch=? WHERE owner_user_id=? AND device_id=? AND state IN ('pending','approved')")->execute([$now,$owner,$device]);
+    // Already claimed callbacks need their immutable numbers until signed terminal receipts arrive.
+    // Revocation prevents a subsequent answer/confirm from authorizing the destination leg.
+    $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='revoked',updated_epoch=? WHERE owner_user_id=? AND device_id=? AND state='dispatch_claimed'")->execute([$now,$owner,$device]);
 }
