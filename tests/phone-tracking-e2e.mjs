@@ -157,7 +157,16 @@ try {
   assert.match(mapHtml, /<a[^>]*data-vp3-nav-key="phone_tracking"[^>]*aria-current="page"/);
   const mobileRoute = await firstGuest.request.get('/phone-location.php');
   assert.equal(mobileRoute.status(), 200);
-  assert.match(await mobileRoute.text(), /id="phone-claim"/);
+  const phoneHTML=await mobileRoute.text();
+  assert.match(phoneHTML, /id="phone-claim"/);
+  assert.match(phoneHTML,/rel="manifest" href="phone-app.webmanifest"/);
+  assert.match(mobileRoute.headers()['content-security-policy'],/manifest-src 'self'; worker-src 'self'/);
+  const manifestResponse=await firstGuest.request.get('/phone-app.webmanifest');
+  assert.equal(manifestResponse.status(),200);
+  const manifest=JSON.parse(await manifestResponse.text());
+  assert.equal(manifest.scope,'./phone-location.php');assert.equal(manifest.start_url,'./phone-location.php');assert.equal(manifest.display,'standalone');
+  for(const icon of manifest.icons){const response=await firstGuest.request.get('/'+icon.src);assert.equal(response.status(),200);const bytes=await response.body();assert.equal(bytes.readUInt32BE(16),Number(icon.sizes.split('x')[0]));assert.equal(bytes.readUInt32BE(20),Number(icon.sizes.split('x')[1]));}
+  const sw=await firstGuest.request.get('/phone-service-worker-v1.js');assert.equal(sw.status(),200);const workerText=await sw.text();assert.ok(!/addEventListener\(['"]fetch|caches\.open|PushManager|pushManager\.subscribe/.test(workerText),'installation worker must not cache or subscribe');
 
   await verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other);
   await apiOwner.request.dispose();
@@ -251,6 +260,7 @@ async function browserJourney(baseURL, owner, other) {
     await context.addCookies([{ name: 'PHPSESSID', value: user.session, url: baseURL }]);
   }
   await verifyManagedReviewUI(desktop);
+  await verifyInstalledPairing(baseURL,desktop,owner);
   const map = await desktop.newPage();
   const phone = await handset.newPage();
   const errors = [];
@@ -1347,4 +1357,49 @@ async function verifyManagedReviewUI(context){
     await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_recording_withdraw'));
     console.log('PASS Managed call review, native code and explicit pilot controls without actual carrier traffic.');
   }finally{await page.close();}
+}
+
+
+/** Real server pairing in a new, isolated installation context. Not physical OS installation. */
+async function verifyInstalledPairing(baseURL,desktop,owner){
+  const installed=await browser.newContext({baseURL,viewport:{width:390,height:844},serviceWorkers:'allow'});
+  const guest=await installed.newPage(),map=await desktop.newPage(),errors=[];
+  guest.on('pageerror',e=>errors.push(e.message));
+  await guest.addInitScript(()=>Object.defineProperty(navigator,'standalone',{configurable:true,value:true}));
+  try{
+    await guest.goto('/phone-location.php');
+    await guest.getByText('Opened from your installed app.',{exact:true}).waitFor();
+    await guest.locator('#phone-pair-entry').waitFor();
+    await guest.waitForFunction(()=>document.getElementById('phone-install-panel').dataset.workerState==='registered');
+    const regs=await guest.evaluate(async()=>Array.from(await navigator.serviceWorker.getRegistrations(),r=>r.scope));
+    assert.deepEqual(regs,[baseURL+'/phone-location.php'],'worker is not installed for main Chat or the whole origin');
+    await map.goto('/phone-tracking.php?agent=system&conversation_id=8');
+    await map.locator('#phone-connect').click();
+    await map.locator('#phone-qr svg').waitFor();
+    await map.locator('#phone-install-code-box summary').click();
+    const code=await map.locator('#phone-install-code').inputValue();
+    assert.match(code,/^[A-Za-z0-9_-]{43}$/);
+    const requests=[];guest.on('request',req=>{requests.push(req.url());});
+    await guest.locator('#phone-pair-code').fill(code);
+    await guest.locator('#phone-pair-continue').click();
+    await guest.locator('#phone-name').fill('Installed phone fixture');
+    await guest.locator('#phone-claim').click();
+    await eventually('manual code must create a pending device',async()=>check(await ownerApi(desktop,owner),'manual pairing').devices.some(d=>d.name==='Installed phone fixture'&&d.status==='pending'));
+    const d=check(await ownerApi(desktop,owner),'manual pending read').devices.find(d=>d.name==='Installed phone fixture');
+    assert.equal(d.location_state,'off');assert.ok(!requests.some(u=>u.includes(code)));
+    assert.equal(await guest.locator('#phone-pair-code').inputValue(),'');
+    assert.equal(await guest.evaluate(secret=>Object.values(sessionStorage).some(v=>v.includes(secret))||Object.values(localStorage).some(v=>v.includes(secret)),code),false,'manual invite never persists in browser storage');
+    const approved=check(await ownerApi(desktop,owner,'approve',{device_id:d.id,generation:d.generation,role:'guest',allow_location:false}),'installed device approval').device;
+    await eventually('installed connection must become approved',async()=>(await phoneApi(installed,'status')).device?.status==='approved');
+    await guest.reload();
+    await guest.getByText('Connected phone',{exact:true}).waitFor();
+    assert.equal((await phoneApi(installed,'status')).device.id,d.id,'same installation keeps the existing authenticated cookie');
+    const reused=await browser.newContext({baseURL});
+    try{assert.equal((await phoneApi(reused,'claim',{invite:code,name:'Replay attempt'})).status,403);}finally{await reused.close();}
+    check(await ownerApi(desktop,owner,'revoke',{device_id:d.id,generation:approved.generation}),'revoke installed fixture');
+    assert.equal((await phoneApi(installed,'status')).status,403);
+    await map.locator('#phone-pair-close').click();
+    assert.equal(await map.locator('#phone-install-code').inputValue(),'');
+    assert.deepEqual(errors,[]);
+  }finally{await installed.close();await map.close();}
 }

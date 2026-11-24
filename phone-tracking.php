@@ -157,6 +157,14 @@ require __DIR__.'/includes/member-header.php';
       <p>Scan with the phone you want to connect. You’ll review its name and access here.</p>
       <div id="phone-qr"></div><p class="phone-expiry" id="phone-expiry"></p>
       <div class="phone-invite-actions"><a id="phone-join" target="_blank" rel="noopener noreferrer" hidden>Open pairing link</a><button type="button" id="phone-refresh-invite" hidden>Create new code</button></div>
+      <details id="phone-install-code-box" hidden>
+        <summary>Pair an installed VP3 Phone app instead</summary>
+        <p>Open VP3 Phone from the Home Screen and enter this fresh one-use code. Share only with the intended phone holder. You still approve the resulting connection.</p>
+        <label for="phone-install-code">Pairing code</label>
+        <input id="phone-install-code" type="text" readonly autocomplete="off" spellcheck="false" autocapitalize="none">
+        <button type="button" id="phone-copy-install-code">Copy pairing code</button>
+        <p id="phone-copy-install-status" role="status"></p>
+      </details>
     </div>
     <p id="phone-pair-status" role="status"></p>
     <div id="phone-pending"></div>

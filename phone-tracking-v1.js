@@ -544,6 +544,8 @@
     byId('phone-qr').replaceChildren();
     byId('phone-join').removeAttribute('href');
     byId('phone-join').hidden = true;
+    byId('phone-install-code').value='';byId('phone-install-code-box').open=false;byId('phone-install-code-box').hidden=true;
+    byId('phone-copy-install-status').textContent='';
     byId('phone-expiry').textContent = '';
     byId('phone-invite-box').hidden = true;
   }
@@ -661,6 +663,7 @@
       const join = byId('phone-join');
       join.href = url.href;
       join.hidden = false;
+      byId('phone-install-code').value=url.hash.slice('#invite='.length);byId('phone-install-code-box').hidden=false;
       // The local encoder returns rectangles derived from its boolean matrix only.
       try {
         byId('phone-qr').innerHTML = window.LuckyQR.svg(url.href);
@@ -684,6 +687,12 @@
   byId('phone-pair-close').addEventListener('click', () => pairing.close());
   pairing.addEventListener('close', () => { eraseInvite(); byId('phone-pair-status').textContent = ''; });
   byId('phone-refresh-invite').addEventListener('click',newInvite);
+  byId('phone-copy-install-code').addEventListener('click',async event=>{
+    const field=byId('phone-install-code'),notice=byId('phone-copy-install-status'),version=inviteVersion;
+    if(!event.isTrusted||document.hidden||!pairing.open||!byId('phone-install-code-box').open||!expires||expires<=seconds()||!/^[A-Za-z0-9_-]{43}$/.test(field.value))return;
+    try{await navigator.clipboard.writeText(field.value);if(version===inviteVersion&&pairing.open)notice.textContent='Copied. Paste this code only into the intended VP3 Phone app.';}
+    catch(_error){if(version===inviteVersion&&pairing.open){field.focus();field.select();notice.textContent='Select and copy the code, then paste it into VP3 Phone.';}}
+  });
   function updateDevice(index, device) {
     // Mutation receipts omit camera status. Its shorter lease still comes from the last map refresh.
     devices[index] = {live_camera:devices[index].live_camera, ...device};

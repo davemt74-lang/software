@@ -17,7 +17,7 @@ export function preparePhoneSite(repo, site, sessions, php) {
   for (const folder of ['includes', 'api']) cpSync(path.join(repo, folder), path.join(site, folder), { recursive: true });
   for (const folder of ['assets', 'images']) symlinkSync(path.join(repo, folder), path.join(site, folder), 'dir');
   for (const entry of readdirSync(repo, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name !== 'config.php' && /\.(php|css|js)$/.test(entry.name)) {
+    if (entry.isFile() && entry.name !== 'config.php' && /\.(php|css|js|webmanifest)$/.test(entry.name)) {
       cpSync(path.join(repo, entry.name), path.join(site, entry.name));
     }
   }

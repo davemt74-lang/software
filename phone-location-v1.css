@@ -99,3 +99,5 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
 #phone-information summary{font-weight:700;cursor:pointer;min-height:44px;padding:10px 0} #phone-information .phone-information-panel h3{font-size:1rem}
 
 .phone-information-file{display:grid;gap:8px;min-width:0}.phone-information-file input[type=file]{max-width:100%;font:inherit}.phone-information-file .phone-information-confirm{display:flex;gap:8px;align-items:center}.phone-information-confirm input[type=checkbox]{width:20px;height:20px;min-height:20px;flex:none;margin:0}.phone-information-file small{font-size:.8rem;line-height:1.4;color:#4e635b}
+
+#phone-pair-code{font-family:ui-monospace,monospace;font-size:1rem}.phone-install-note,#phone-install-help{font-size:.9rem;color:#466058;overflow-wrap:anywhere}#phone-install-status{font-weight:650}
