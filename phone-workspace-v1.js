@@ -192,7 +192,7 @@
   function autoCallKey(policy){return policy.agent_id+':'+policy.number_id+':'+policy.contact_id;}
   function autoCallEditor(contact,policy){
     const draft=autoCallDraft,g=generation,key=autoCallKey(policy);
-    const form=node('form','vp3-phone-auto-call-form');
+    const form=node('form','vp3-phone-auto-call-form');form.noValidate=true;
     form.setAttribute('aria-label','Agent Auto Call settings for '+(contact.name||contact.phone_e164));
     const changed=draft.revision!==policy.revision||draft.destination!==policy.destination_e164||draft.line!==policy.line_e164;
     form.append(node('strong',null,'Agent Auto Call'));
