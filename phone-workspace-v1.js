@@ -143,7 +143,7 @@
     select.addEventListener('change',async()=>{const g=renderGeneration;if(!current(g))return;const id=Number(select.value);select.disabled=true;try{await api('select_number',{number_id:id},'POST',g);if(!current(g))return;stopDevice('Phone number changed. Enable calls for this number.');await refresh();}catch(error){if(current(g))say(error.message);}finally{if(current(g))render();}});
     label.append(select);host.append(label);
     const connection=node('div','vp3-phone-connection');connection.append(node('strong',null,deviceSession?.phase==='registered'?'Browser ready for incoming calls':deviceSession?'Connecting browser…':'Browser calls are off'));
-    const enable=button(deviceSession?'Turn off browser calls':'Enable calls in this browser',()=>deviceSession?stopDevice('Browser calls are off.'):void enableDevice().catch(()=>{}));enable.disabled=!deviceSession&&!canCall();connection.append(enable);host.append(connection);
+    const enable=button(deviceSession?'Turn off browser calls':'Enable calls in this browser',()=>deviceSession?stopDevice('Browser calls are off.'):void enableDevice().catch(()=>{}));enable.disabled=!deviceSession&&(!canCall()||Boolean(voiceArm?.pending));connection.append(enable);host.append(connection);
     if(state.operator_live?.voice_available===true&&window.VP3OperatorVoiceMixerV1?.create){
       const arm=button(deviceSession?.voiceMixer?'Agent voice path prepared':voiceArm?'Disable prepared Agent voice':'Prepare Agent voice for browser calls',event=>void toggleVoiceArm(event,renderGeneration));
       arm.disabled=Boolean(deviceSession||active||callBusy||setupPending||pending.size||voiceArm?.pending);
