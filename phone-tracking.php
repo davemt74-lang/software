@@ -40,6 +40,8 @@ $asset = static function (string $path): string {
 <script defer src="<?= e($asset('phone-information-ui-v1.js')) ?>"></script>
 <link rel="stylesheet" href="<?= e($asset('phone-remote-dialer-v1.css')) ?>">
 <script defer src="<?= e($asset('phone-remote-dialer-v1.js')) ?>"></script>
+<link rel="stylesheet" href="<?= e($asset('phone-managed-call-ui-v1.css')) ?>">
+<script defer src="<?= e($asset('phone-managed-call-ui-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
 <body class="phone-tracking-page">
