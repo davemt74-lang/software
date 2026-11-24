@@ -851,6 +851,16 @@ denies(fn()=>action('save_operator_consent',array_replace($consentInput,['expect
 $pdo->exec("UPDATE crm_contacts SET phone='+16025550999' WHERE id=1");
 c(vp3_operator_recipient_opted_out_v1($pdo,1,hash('sha256','+16025550999'))&&!vp3_operator_recipient_opted_out_v1($pdo,2,hash('sha256','+16025550999')),
     'destination suppression is shared across the owner’s contact aliases and Agents without crossing owners');
+$pdo->prepare("INSERT INTO crm_contacts(public_id,owner_user_id,name,email,email_normalized,phone,status,created_at,updated_at)
+    VALUES(?,1,'Duplicate recipient','alias@example.test','alias@example.test','+16025550999','active','2026-01-01','2026-01-01')")
+    ->execute(['88888888-8888-4888-8888-888888888888']);
+$aliasId=(int)$pdo->lastInsertId();
+$aliasPolicy=action('save_auto_call_policy',array_replace($authorization,['contact_id'=>$aliasId,'expected_revision'=>0]))['policy'];
+$aliasInput=array_replace($admissionInput,['contact_id'=>$aliasId,'expected_revision'=>$aliasPolicy['revision']]);
+$aliasReadiness=api('GET',$aliasInput)['readiness'];
+c($aliasReadiness['consent_state']==='withdrawn'&&!$aliasReadiness['can_attest'],'a newly saved contact alias cannot bypass a recipient opt-out');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['contact_id'=>$aliasId,'expected_revision'=>$aliasPolicy['revision'],'expected_consent_revision'=>0])),409,'re-authorizing an alias cannot remove destination suppression');
+
 foreach($admissionBefore as $table=>$count)c((int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn()===$count,'readiness and recipient review never create '.$table.' records');
 c(vp3_operator_admission_execution_enabled_v1()===false,'there is no executable autonomous dialing capability');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
