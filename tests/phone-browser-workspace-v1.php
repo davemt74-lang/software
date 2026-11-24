@@ -743,11 +743,11 @@ denies(fn()=>$ownerGet(),403,'stale browser session cannot read owner phone');
 // PS4 uses the same canonical browser ledger and signed carrier callbacks.
 // Build a minimal paired-device/thread fixture with the real profile installer.
 require_once dirname(__DIR__).'/includes/phone-communication-profile-v1.php';
-$pdo->exec('CREATE TABLE vp3_phone_devices_v1(id CHAR(32) PRIMARY KEY,owner_user_id '.($mysql?'INT UNSIGNED':'INTEGER').' NOT NULL,device_status VARCHAR(12) NOT NULL,expires_at BIGINT NOT NULL,UNIQUE(owner_user_id,id))'.($mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':''));
+$pdo->exec('CREATE TABLE vp3_phone_devices_v1(id CHAR(32) PRIMARY KEY,owner_user_id '.($mysql?'INT UNSIGNED':'INTEGER').' NOT NULL,device_status VARCHAR(12) NOT NULL,expires_at BIGINT NOT NULL,generation BIGINT NOT NULL DEFAULT 1,UNIQUE(owner_user_id,id))'.($mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':''));
 vp3_phone_communication_install_v1($pdo,$mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':'');
 $pdo->exec('CREATE TABLE vp3_paired_phone_threads_v1(device_id CHAR(32) PRIMARY KEY,owner_user_id INTEGER NOT NULL,agent_id INTEGER NOT NULL,conversation_id INTEGER NOT NULL)');
 $device1=md5('ps4-device-one');$profile1=md5('ps4-profile-one');$device2=md5('ps4-device-two');$profile2=md5('ps4-profile-two');$clock=time();
-$insertDevice=$pdo->prepare("INSERT INTO vp3_phone_devices_v1 VALUES (?,2,'approved',?)");
+$insertDevice=$pdo->prepare("INSERT INTO vp3_phone_devices_v1(id,owner_user_id,device_status,expires_at) VALUES (?,2,'approved',?)");
 $insertDevice->execute([$device1,$clock+3600]);$insertDevice->execute([$device2,$clock+3600]);
 $insertThread=$pdo->prepare('INSERT INTO vp3_paired_phone_threads_v1 VALUES (?,2,0,21)');$insertThread->execute([$device1]);$insertThread->execute([$device2]);
 $zone=gmdate('H:i',$clock)==='23:59'?'America/Phoenix':'UTC';
@@ -804,5 +804,73 @@ c(vp3_connected_phone_recent_v1($pdo,1,$device2,$profile2)===[],'other account c
 $hist=vp3_operator_history_v1($pdo,user(2),0,21);
 $connectedHistory=array_values(array_filter($hist['calls'],fn($call)=>$call['call_id']===$pcid2));
 c(count($connectedHistory)===1&&$connectedHistory[0]['connected_profile_id']===$profile2&&$connectedHistory[0]['peer_e164']===''&&$connectedHistory[0]['peer_masked']==='Ending in 0136','Operator history uses separate masked profile identity');
+
+// PS5E.1: test the actual durable admission on both database engines, no provider I/O.
+require_once dirname(__DIR__).'/includes/phone-managed-callback-v1.php';
+c(vp3_managed_callback_ready_v1($pdo),'managed callback migration is installed by Phone upgrade');
+vp3_managed_callback_install_v1($pdo);
+$managedDevice=md5('ps5e-device');$managedProfile=md5('ps5e-profile');$managedId=md5('ps5e-request-one');
+$insertDevice->execute([$managedDevice,$clock+3600]);
+$insertThread->execute([$managedDevice]);
+$insertProfile->execute([$managedDevice,$managedProfile,'+16025550138',$zone,$clock]);
+$managedArgs=['request_id'=>$managedId,'device_id'=>$managedDevice,'profile_id'=>$managedProfile,
+    'generation'=>1,'profile_revision'=>1,'phone_revision'=>1,'number_id'=>2,'agent_id'=>0,'conversation_id'=>21,
+    'destination_e164'=>'+16025550139','confirmed'=>true];
+$managed=static fn(array $extra=[],int $owner=2,int $at=0)=>vp3_managed_callback_prepare_v1($pdo,user($owner),array_replace($managedArgs,$extra),$at?:$clock);
+$holderResponse=static fn(array $extra=[],string $device='',int $at=0)=>vp3_managed_callback_holder_v1($pdo,2,$device?:$managedDevice,array_replace(['request_id'=>$managedId,'decision'=>'approve','confirmed'=>true,'destination_e164'=>'+16025550139'],$extra),$at?:$clock);
+denies(fn()=>$managed(['confirmed'=>false]),422,'managed request requires explicit owner confirmation');
+denies(fn()=>$managed(['recording_enabled'=>true]),422,'managed admission cannot enable recording');
+denies(fn()=>$managed(['holder_e164'=>'+16025550199']),422,'managed callback refuses caller supplied holder number');
+denies(fn()=>$managed(['number_id'=>1]),404,'managed callback rejects foreign Twilio line');
+denies(fn()=>$managed(['generation'=>2]),409,'managed callback rejects stale pairing generation');
+denies(fn()=>$managed(['profile_revision'=>2]),409,'managed callback rejects stale holder revision');
+denies(fn()=>$managed(['destination_e164'=>'+16025550102']),422,'managed callback cannot dial its own line');
+denies(fn()=>$managed(['destination_e164'=>'+16025550138']),422,'managed callback cannot dial its holder as second leg');
+denies(fn()=>$managed(['destination_e164'=>'+16025550139#123']),422,'managed destination accepts only E.164');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=0 WHERE profile_id=?")->execute([$managedProfile]);
+denies(fn()=>$managed(),409,'managed request requires current holder calling grant');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=1 WHERE profile_id=?")->execute([$managedProfile]);
+$beforeCalls=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$preparedManaged=$managed();
+c($preparedManaged['state']==='pending'&&!isset($preparedManaged['destination_e164'],$preparedManaged['holder_e164'])&&$preparedManaged['recording_enabled']===false,'owner receives only redacted pending reservation');
+c($managed()===$preparedManaged,'exact managed request retry is idempotent');
+denies(fn()=>$managed(['destination_e164'=>'+16025550140']),409,'same request cannot replace target');
+denies(fn()=>$managed(['request_id'=>md5('ps5e-duplicate')]),409,'one outstanding callback per owner');
+$storedManaged=vp3_managed_callback_row_v1($pdo,$managedId);
+c($storedManaged['holder_e164']==='+16025550138'&&$storedManaged['line_e164']==='+16025550102','managed callback binds assigned line and exact saved holder');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock,'https://cloud.example/api/answer','https://cloud.example/api/status'),409,'pending request cannot build carrier command');
+denies(fn()=>$holderResponse([], $device1),404,'another paired phone cannot approve');
+denies(fn()=>$holderResponse(['destination_e164'=>'+16025550140']),422,'holder approves only the exact displayed destination');
+denies(fn()=>$holderResponse(['confirmed'=>false]),422,'holder requires explicit call confirmation');
+$approved=$holderResponse();
+c($approved['state']==='approved'&&$approved['approved_epoch']===$clock&&!isset($approved['destination_e164']),'holder approval stores bounded authority, not a call');
+c($holderResponse()===$approved,'repeated holder approval does not create another effect');
+$storedManaged=vp3_managed_callback_row_v1($pdo,$managedId);
+$plan=vp3_managed_callback_plan_v1($storedManaged,$clock,'https://cloud.example/api/answer','https://cloud.example/api/status');
+c($plan['From']==='+16025550102'&&$plan['To']==='+16025550138'&&$plan['Record']==='false'&&$plan['TimeLimit']===240
+    &&!in_array('+16025550139',$plan,true),'first leg command targets holder only, not destination, and does not record');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock,'http://cloud.example/api/answer','https://cloud.example/api/status'),422,'managed plan requires HTTPS');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock,'https://user@cloud.example/api/answer','https://cloud.example/api/status'),422,'managed plan rejects URL user info');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock+120,'https://cloud.example/api/answer','https://cloud.example/api/status'),409,'expired approval cannot prepare carrier command');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=2 WHERE profile_id=?')->execute([$managedProfile]);
+denies(fn()=>$holderResponse(),409,'changed communication consent invalidates approved callback');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=1 WHERE profile_id=?')->execute([$managedProfile]);
+denies(fn()=>vp3_managed_callback_cancel_v1($pdo,user(1),$managedId,$clock),404,'foreign account cannot cancel request');
+$cancel=vp3_managed_callback_cancel_v1($pdo,user(2),$managedId,$clock);
+c($cancel['state']==='canceled'&&vp3_managed_callback_row_v1($pdo,$managedId)['destination_e164']==='','owner cancellation removes sensitive target');
+denies(fn()=>$holderResponse(),409,'canceled request cannot be approved');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$beforeCalls,'admission and planning do not insert a carrier call or execute dispatch');
+$ageManaged=static function(string $id)use($pdo,$clock):void{$pdo->prepare('UPDATE phone_managed_callback_requests_v1 SET created_epoch=? WHERE public_id=?')->execute([$clock-61,$id]);};
+$ageManaged($managedId);
+$managedId2=md5('ps5e-request-two');
+$managed(['request_id'=>$managedId2]);
+$declined=$holderResponse(['request_id'=>$managedId2,'decision'=>'decline']);
+c($declined['state']==='declined'&&vp3_managed_callback_row_v1($pdo,$managedId2)['holder_e164']==='','holder decline removes stored phone numbers');
+c($holderResponse(['request_id'=>$managedId2,'decision'=>'decline'])===$declined,'repeat decline is safe');
+$ageManaged($managedId2);
+$managedId3=md5('ps5e-request-three');
+$managed(['request_id'=>$managedId3]);
+vp3_managed_callback_revoke_v1($pdo,2,$managedDevice,$clock);
+c(vp3_managed_callback_row_v1($pdo,$managedId3)['state']==='canceled'&&vp3_managed_callback_row_v1($pdo,$managedId3)['destination_e164']==='','withdrawal cancels pending admission and clears destination');
 
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

@@ -32,6 +32,8 @@ function vp3_phone_workspace_schema_ready_v1(PDO $pdo): bool
 {
     try{
         if(!vp3_phone_sms_assignment_schema_ready_v111($pdo))return false;
+        require_once __DIR__.'/phone-managed-callback-schema-v1.php';
+        if(!vp3_managed_callback_ready_v1($pdo))return false;
         $pdo->query('SELECT id,public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,voice_call_id,provider_call_sid,provider_child_sid,intent_hash,intent_expires_epoch,intent_consumed_epoch,conversation_id,chat_agent_id,chat_message_id,state,recording_enabled,duration_seconds,created_epoch,updated_epoch,ended_epoch,fallback_claimed_epoch,owner_phone_revision,owner_test_received_epoch,paired_device_id,paired_profile_id,paired_profile_revision,paired_phone_revision FROM phone_browser_calls_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,agent_id,selected_number_id FROM phone_browser_preferences_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,contact_id FROM phone_browser_favorites_v1 WHERE 1=0');
@@ -43,6 +45,8 @@ function vp3_phone_workspace_schema_ready_v1(PDO $pdo): bool
 function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
 {
     if($pdo->inTransaction())throw new RuntimeException('Phone schema must initialize outside a transaction.');
+    require_once __DIR__.'/phone-managed-callback-schema-v1.php';
+    vp3_managed_callback_install_v1($pdo);
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';$auto=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';$suffix=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_browser_calls_v1(id $auto,public_id CHAR(32) NOT NULL UNIQUE,
         owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,phone_number_id BIGINT NOT NULL,phone_e164 VARCHAR(20) NOT NULL,peer_e164 VARCHAR(20) NOT NULL DEFAULT '',
