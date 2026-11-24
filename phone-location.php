@@ -16,6 +16,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
   <link rel="stylesheet" href="phone-location-v1.css?v=11">
+  <link rel="stylesheet" href="phone-remote-dialer-v1.css?v=1">
   <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
@@ -24,7 +25,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-agent-chat-v1.js?v=4" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
   <script src="phone-information-ui-v1.js?v=2" defer></script>
-  <script src="phone-location-v1.js?v=11" defer></script>
+  <script src="phone-remote-dialer-v1.js?v=1" defer></script>
+  <script src="phone-location-v1.js?v=12" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -36,6 +38,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <button type="button" role="tab" id="phone-tab-chat" aria-controls="phone-chat" aria-selected="false" tabindex="-1">Chat</button>
       </div>
       <?php require __DIR__.'/includes/phone-camera-app-view.php'; ?>
+      <div id="phone-dialer-alert-host"></div>
     </div>
   </header>
   <section id="phone-connection" aria-labelledby="phone-label">
@@ -61,6 +64,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
           <summary id="phone-information-summary">Information exchange</summary>
           <div id="phone-information-host"></div>
         </details>
+        <div id="phone-dialer-settings-host"></div>
         <section id="phone-communication" class="phone-permission" aria-labelledby="phone-communication-title" hidden>
           <h2 id="phone-communication-title">Communication preferences</h2>
           <p id="phone-communication-feedback" role="status"></p>
