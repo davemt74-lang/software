@@ -27,11 +27,11 @@
     const personal=make('div');if(directRoot)personal.append(directRoot);
     const managed=make('div',undefined,'phone-managed-panel'),browser=make('div',undefined,'phone-managed-panel');
     const detail=make('p'),state=make('p'),feedback=make('p');state.setAttribute('role','status');feedback.setAttribute('role','status');
-    const form=make('form',undefined,'phone-profile-form'),line=make('select'),dest=make('input'),confirm=make('input'),send=make('button','Request managed callback approval','phone-primary'),cancel=button('Cancel managed request');
+    const form=make('form',undefined,'phone-profile-form'),line=make('select'),dest=make('input'),confirm=make('input'),send=make('button','Request managed callback approval','phone-primary'),cancel=button('Cancel managed request'),reconcile=button('Check carrier status'),end=button('End managed call','phone-primary');
     line.setAttribute('aria-label','Assigned Twilio line');dest.type='tel';dest.autocomplete='off';dest.placeholder='+1 602 555 0100';dest.maxLength=32;
     confirm.type='checkbox';send.type='submit';
     form.append(label('Assigned Twilio line',line),label('Managed destination number (international format)',dest),label('Ask the holder to review this exact destination. No live call will be placed in this release.',confirm),send);
-    managed.append(make('h4','Managed callback review'),make('p','Twilio will eventually call the connected phone first, then bridge the approved destination after keypad confirmation. Live dispatch, recording and remote hangup are disabled in this release.'),detail,state,form,cancel,feedback);
+    managed.append(make('h4','Managed callback review'),make('p','Twilio will eventually call the connected phone first, then bridge the approved destination after keypad confirmation. Live dispatch and recording remain disabled. Existing managed calls can be checked or ended using the carrier controls.'),detail,state,form,cancel,reconcile,end,feedback);
     const browserButton=button('Open browser calling','phone-primary');
     browser.append(make('h4','Browser call to connected user'),make('p','Use your existing assigned line and browser audio to call this connected phone. The Phone drawer requires confirmation.'),browserButton);
     let device=null,scope='',mode='personal',ready=false,busy=false,linesSignature='',draftId='',draftKey='',received=0,lastProjection=null;
@@ -62,6 +62,11 @@
       send.disabled=disabled||!confirm.checked||!numberOK(normalize(dest.value))||!options.some(n=>String(n.id)===line.value);
       cancel.hidden=!r||!['pending','approved'].includes(r.state)||expired;
       cancel.disabled=busy||!ready||!visible();
+      const control=r?.call?.managed_control;
+      reconcile.hidden=control?.can_reconcile!==true;end.hidden=control?.can_end!==true;
+      reconcile.disabled=end.disabled=busy||!ready||!visible();
+      if(control?.end_state&&control.end_state!=='none')state.textContent+=' · End request: '+control.end_state.replaceAll('_',' ');
+      if(control?.read_state&&control.read_state!=='none')state.textContent+=' · Carrier check: '+control.read_state.replaceAll('_',' ');
       browserButton.disabled=!ready||busy||device?.communication?.call_permission_saved!==true||!device?.agent_chat?.conversation_id;
     }
     function bind(d,available){
@@ -77,7 +82,10 @@
       try{
         const value=await request(action,{...bound(d),...fields});
         if(scope!==k||!ready)return;
-        if(value?.managed_callback?.request?.state){
+        if(action==='managed_end'||action==='managed_reconcile'){
+          const c=value?.call?.managed_control;
+          feedback.textContent=action==='managed_end'?(c?.end_state==='parent_ended'?'Carrier confirmed the holder leg ended.':'End request submitted or fenced. Check carrier status; hang up on the phone if needed.'):'Carrier status checked; unresolved states remain unconfirmed.';
+        }else if(value?.managed_callback?.request?.state){
           feedback.textContent=action==='managed_prepare'?'Review request saved. No call has been placed.':'Request canceled.';
           dest.value='';confirm.checked=false;draftId=draftKey='';
         }else feedback.textContent='Request saved; refresh the connected phone for current status.';
@@ -98,6 +106,14 @@
     cancel.addEventListener('click',event=>{
       const r=device?.managed_callback?.request;
       if(event.isTrusted&&ready&&visible()&&!busy&&!cancel.hidden&&idOK(r?.request_id))void act('managed_cancel',{managed_request_id:r.request_id});
+    });
+    reconcile.addEventListener('click',event=>{
+      const c=device?.managed_callback?.request?.call;
+      if(event.isTrusted&&ready&&visible()&&!busy&&!reconcile.hidden&&idOK(c?.public_id))void act('managed_reconcile',{call_id:c.public_id});
+    });
+    end.addEventListener('click',event=>{
+      const c=device?.managed_callback?.request?.call;
+      if(event.isTrusted&&ready&&visible()&&!busy&&!end.hidden&&idOK(c?.public_id)&&window.confirm('End this managed call and block any pending destination connection?'))void act('managed_end',{call_id:c.public_id,confirmed:true});
     });
     browserButton.addEventListener('click',event=>{
       if(event.isTrusted&&ready&&visible()&&!browserButton.disabled)openBrowser(device,browserButton);
