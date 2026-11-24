@@ -73,21 +73,27 @@ function vp3_native_dialthrough_inbound_v1(PDO $pdo,array $number,string $sid,st
     if(!$prior&&(!vp3_native_dialthrough_enabled_v1()||!preg_match('/^\+[1-9][0-9]{7,14}$/D',$from)))return null;
     $owner=(int)$number['owner_user_id'];
     if($prior&&(int)$prior['owner_user_id']!==$owner)return vp3_native_dialthrough_hangup_v1();
+    // Ordinary incoming calls never acquire a native reservation or owner lock.
+    if(!$prior){
+        $q=$pdo->prepare("SELECT 1 FROM phone_managed_callback_requests_v1 r JOIN phone_native_dialthrough_v1 n ON n.request_id=r.public_id AND n.owner_user_id=r.owner_user_id WHERE r.owner_user_id=? AND r.number_id=? AND r.line_e164=? AND r.holder_e164=? AND r.state='approved' AND r.expires_epoch>? AND n.state IN ('issued','challenge') LIMIT 1");
+        $q->execute([$owner,(int)$number['id'],$to,$from,$now]);$candidate=$q->fetchColumn();$q->closeCursor();if(!$candidate)return null;
+    }
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$number,$sid,$from,$to,$now,$prior,$owner){
         if($prior){
-            $row=vp3_managed_callback_row_v1($pdo,$prior['request_id']);$n=vp3_native_dialthrough_row_v1($pdo,$prior['request_id']);
+            try{$user=vp3_managed_callback_owner_lock_v1($pdo,$owner);}catch(VP3PhoneWorkspaceException){return vp3_native_dialthrough_hangup_v1();}
+            $row=vp3_managed_callback_row_v1($pdo,$prior['request_id'],true);$n=vp3_native_dialthrough_row_v1($pdo,$prior['request_id'],true);
             if(!$row||!$n||!vp3_native_dialthrough_enabled_v1()||$n['state']!=='challenge'||$row['state']!=='approved'||(int)$row['expires_epoch']<=$now
                 ||$row['holder_e164']!==$from||$row['line_e164']!==$to||(int)$row['number_id']!==(int)$number['id'])return vp3_native_dialthrough_hangup_v1();
             // Do not replay a challenge after any transition, including consent withdrawal.
-            try{$user=vp3_managed_callback_owner_lock_v1($pdo,$owner);vp3_managed_callback_current_v1($pdo,$row,$user,$now);}
+            try{vp3_managed_callback_current_v1($pdo,$row,$user,$now);}
             catch(VP3PhoneWorkspaceException){return vp3_native_dialthrough_hangup_v1();}
             return vp3_native_dialthrough_prompt_v1($row,$sid);
         }
         $user=vp3_managed_callback_owner_lock_v1($pdo,$owner);
         $q=$pdo->prepare("SELECT r.public_id FROM phone_managed_callback_requests_v1 r JOIN phone_native_dialthrough_v1 n ON n.request_id=r.public_id AND n.owner_user_id=r.owner_user_id
-            WHERE r.owner_user_id=? AND r.number_id=? AND r.line_e164=? AND r.holder_e164=? AND r.state='approved' AND r.expires_epoch>? AND n.state='issued' LIMIT 2");
+            WHERE r.owner_user_id=? AND r.number_id=? AND r.line_e164=? AND r.holder_e164=? AND r.state='approved' AND r.expires_epoch>? AND n.state IN ('issued','challenge') LIMIT 2");
         $q->execute([$owner,(int)$number['id'],$to,$from,$now]);$ids=$q->fetchAll(PDO::FETCH_COLUMN);$q->closeCursor();
-        if(!$ids)return null;
+        if(!$ids)return vp3_native_dialthrough_hangup_v1();
         if(count($ids)!==1)return vp3_native_dialthrough_hangup_v1();
         $row=vp3_managed_callback_row_v1($pdo,$ids[0],true);$n=vp3_native_dialthrough_row_v1($pdo,$ids[0],true);
         if(!$row||!$n||$n['state']!=='issued'||$n['pin_hash']===null)return vp3_native_dialthrough_hangup_v1();
@@ -146,7 +152,7 @@ function vp3_native_dialthrough_confirm_v1(PDO $pdo,string $id,string $nonce,str
                 (int)$row['conversation_id'],(int)$row['chat_agent_id'],$now,$now,$row['device_id'],$row['profile_id'],(int)$row['profile_revision'],(int)$row['phone_revision']]);
         $pdo->prepare("INSERT INTO phone_managed_callback_dispatch_v1(request_id,call_public_id,owner_user_id,callback_nonce_hash,state,created_epoch,confirmation_epoch,updated_epoch)
             VALUES (?,?,?,?,'bridging',?,?,?)")->execute([$id,$public,$owner,hash('sha256',$callbackNonce),$now,$now,$now]);
-        $pdo->prepare("UPDATE phone_native_dialthrough_v1 SET pin_hash=NULL,state='consumed',call_public_id=?,consumed_epoch=?,updated_epoch=? WHERE request_id=? AND state='challenge'")->execute([$public,$now,$now,$id]);
+        $q=$pdo->prepare("UPDATE phone_native_dialthrough_v1 SET pin_hash=NULL,state='consumed',call_public_id=?,consumed_epoch=?,updated_epoch=? WHERE request_id=? AND state='challenge'");$q->execute([$public,$now,$now,$id]);vp3_managed_callback_need_v1($q->rowCount()===1);
         $q=$pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='dispatch_claimed',updated_epoch=? WHERE public_id=? AND state='approved'");$q->execute([$now,$id]);vp3_managed_callback_need_v1($q->rowCount()===1);
         $call=vp3_managed_transport_call_v1($pdo,$public,true);
         $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,'Twilio native dial-through authorized. Destination connection is not yet confirmed.');

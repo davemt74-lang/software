@@ -64,6 +64,7 @@ function vp3_managed_callback_prune_v1(PDO $pdo,int $owner,int $now):void
     if(vp3_native_dialthrough_ready_v1($pdo))$pdo->prepare("UPDATE phone_native_dialthrough_v1 SET state='revoked',pin_hash=NULL,updated_epoch=? WHERE owner_user_id=? AND state IN ('review','issued','challenge') AND request_id IN (SELECT public_id FROM phone_managed_callback_requests_v1 WHERE owner_user_id=? AND expires_epoch<=?)")->execute([$now,$owner,$owner,$now]);
     $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='expired',holder_e164='',destination_e164='',updated_epoch=? WHERE owner_user_id=? AND state IN ('pending','approved') AND expires_epoch<=?")->execute([$now,$owner,$now]);
     $pdo->prepare("DELETE FROM phone_managed_callback_requests_v1 WHERE owner_user_id=? AND created_epoch<=? AND state IN ('expired','declined','canceled')")->execute([$owner,$now-86400]);
+    if(vp3_native_dialthrough_ready_v1($pdo))$pdo->prepare("DELETE FROM phone_native_dialthrough_v1 WHERE owner_user_id=? AND state='revoked' AND challenge_sid IS NULL AND updated_epoch<=? AND NOT EXISTS (SELECT 1 FROM phone_managed_callback_requests_v1 r WHERE r.public_id=phone_native_dialthrough_v1.request_id)")->execute([$owner,$now-86400]);
 }
 /** Revalidate all current grants, exact number assignment and linked conversation under owner lock. */
 function vp3_managed_callback_current_v1(PDO $pdo,array $row,array $user,int $now):array

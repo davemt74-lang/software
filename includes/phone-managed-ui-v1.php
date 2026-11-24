@@ -64,6 +64,7 @@ function vp3_managed_ui_projection_v1(PDO $pdo,array $d,int $now,bool $holder):?
         if(in_array($view['state'],['pending','approved'],true)){
             try{vp3_managed_callback_current_v1($pdo,$row,$user,$now);}catch(VP3PhoneWorkspaceException){
                 $view['state']='unavailable';unset($view['destination_e164']);
+                if(isset($view['native']))$view['native']['can_issue_pin']=false;
             }
         }
         if(vp3_managed_transport_ready_v1($pdo)){
