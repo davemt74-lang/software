@@ -172,3 +172,6 @@ body.phone-tracking-page.vp3-orb-has-bar {
 .phone-profile-check{display:flex;align-items:center;gap:8px;line-height:1.4}
 .phone-profile-check input{width:18px;height:18px;flex:none}
 .phone-connected-profile .phone-info dd{overflow-wrap:anywhere;min-width:0}
+
+.phone-connected-calls{margin:10px 0 0;padding:0;list-style:none;font-size:.86rem;color:var(--muted)}
+.phone-connected-calls li{padding:8px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
