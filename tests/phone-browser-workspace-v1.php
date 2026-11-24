@@ -21,7 +21,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -29,14 +29,15 @@ ddl('CREATE TABLE phone_sms_threads_v110(id INTEGER PRIMARY KEY,phone_number_id 
 ddl('CREATE TABLE phone_sms_assignment_migrations_v111(id INTEGER PRIMARY KEY)');$pdo->exec('INSERT INTO phone_sms_assignment_migrations_v111 VALUES(1)');
 ddl('CREATE TABLE chat_conversations(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,user_agent_id INTEGER,title TEXT,created_at DATETIME,updated_at DATETIME)');
 ddl('CREATE TABLE chat_messages(id INTEGER PRIMARY KEY AUTOINCREMENT,conversation_id INTEGER,user_id INTEGER,role TEXT,message TEXT,context_json TEXT,created_at DATETIME)');
-ddl('CREATE TABLE crm_contacts(id INTEGER PRIMARY KEY,owner_user_id INTEGER,name TEXT,phone TEXT,status TEXT)');
+ddl("CREATE TABLE crm_contacts(id INTEGER PRIMARY KEY AUTOINCREMENT,public_id VARCHAR(36) NOT NULL UNIQUE,owner_user_id INTEGER NOT NULL,name VARCHAR(120) NOT NULL,email VARCHAR(190) NOT NULL DEFAULT '',email_normalized VARCHAR(190) NOT NULL,phone VARCHAR(80) NOT NULL DEFAULT '',company VARCHAR(190) NOT NULL DEFAULT '',source VARCHAR(40) NOT NULL DEFAULT '',status VARCHAR(24) NOT NULL DEFAULT 'active',lifecycle_stage VARCHAR(40) NOT NULL DEFAULT '',marketing_status VARCHAR(24) NOT NULL DEFAULT 'unknown',created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,UNIQUE(owner_user_id,email_normalized))");
+ddl("CREATE TABLE crm_contact_phones(id INTEGER PRIMARY KEY AUTOINCREMENT,contact_id INTEGER NOT NULL,phone VARCHAR(80) NOT NULL,phone_normalized VARCHAR(80) NOT NULL,label VARCHAR(40) NOT NULL DEFAULT 'primary',is_primary INTEGER NOT NULL DEFAULT 0,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,UNIQUE(contact_id,phone_normalized))");
 ddl("CREATE TABLE phone_voice_calls_v130(id INTEGER PRIMARY KEY AUTOINCREMENT,provider VARCHAR(24),provider_call_sid TEXT,owner_user_id INTEGER,phone_number_id INTEGER,agent_id INTEGER,caller_e164 TEXT,called_e164 TEXT,state VARCHAR(24) DEFAULT 'voicemail_offered',created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(provider,provider_call_sid))");
 ddl('CREATE TABLE phone_voice_recordings_v130(id INTEGER PRIMARY KEY AUTOINCREMENT,call_id INTEGER,owner_user_id INTEGER,provider VARCHAR(24),provider_recording_sid VARCHAR(40),recording_status VARCHAR(24),duration_seconds INTEGER,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(provider,provider_recording_sid))');
 $pdo->exec("INSERT INTO users VALUES(1,1,1,0),(2,1,1,0),(3,1,1,0),(4,0,1,0),(5,1,1,1)");
 $pdo->exec("INSERT INTO user_agents VALUES(7,1,1,'First Agent'),(8,2,1,'Foreign Agent'),(9,1,1,'Second Agent'),(10,4,1,'Disabled'),(11,5,1,'Denied'),(12,1,0,'Archived')");
 $pdo->exec("INSERT INTO phone_cloud_numbers_v100 VALUES(1,'twilio','PNaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','+16025550101',1,7,'ready',1),(2,'twilio','PNbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','+16025550102',2,8,'ready',1),(3,'twilio','PNcccccccccccccccccccccccccccccccc','+16025550103',1,9,'ready',1),(4,'twilio','PNdddddddddddddddddddddddddddddddd','+16025550104',4,10,'ready',1),(5,'twilio','PNeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee','+16025550105',5,11,'ready',1),(6,'twilio','PNffffffffffffffffffffffffffffffff','+16025550106',1,12,'ready',1)");
 $pdo->exec("INSERT INTO chat_conversations VALUES(11,1,NULL,'Main','2026-01-01','2026-01-01'),(12,1,7,'First','2026-01-01','2026-01-01'),(13,1,9,'Second','2026-01-01','2026-01-01'),(21,2,NULL,'Foreign','2026-01-01','2026-01-01')");
-$pdo->exec("INSERT INTO crm_contacts VALUES(1,1,'Mine','+16025550999','active'),(2,2,'Foreign','+16025550888','active'),(3,1,'Archived','+16025550777','archived')");
+$pdo->exec("INSERT INTO crm_contacts(id,public_id,owner_user_id,name,email,email_normalized,phone,status,created_at,updated_at) VALUES(1,'11111111-1111-4111-8111-111111111111',1,'Mine','mine@example.test','mine@example.test','+16025550999','active','2026-01-01','2026-01-01'),(2,'22222222-2222-4222-8222-222222222222',2,'Foreign','foreign@example.test','foreign@example.test','+16025550888','active','2026-01-01','2026-01-01'),(3,'33333333-3333-4333-8333-333333333333',1,'Archived','archived@example.test','archived@example.test','+16025550777','archived','2026-01-01','2026-01-01')");
 $GLOBALS['settings']=['phone_twilio_account_sid'=>'AC'.str_repeat('a',32),'phone_twilio_auth_token'=>ai_encrypt_secret('carrier-auth-token-fixture'),'phone_voice_webhook_url_v130'=>'https://cloud.example/api/phone-voice-inbound-v130.php'];
 $checks=0;
 function c(bool $ok,string $label): void{if(!$ok)throw new RuntimeException('FAIL: '.$label);$GLOBALS['checks']++;}
@@ -69,6 +70,11 @@ denies(fn()=>api('GET',['conversation_id'=>21]),403,'conversation owner IDOR den
 denies(fn()=>api('GET',['conversation_id'=>12,'agent_id'=>9]),403,'conversation Agent namespace enforced');
 denies(fn()=>api('GET',['agent_id'=>8]),403,'foreign Agent denied');
 $state=api('GET')['state'];c(count($state['numbers'])===2&&count($state['contacts'])===1,'number and contact projection is owner-only and active');
+c(!$state['contact_write_ready']&&vp3_phone_workspace_available_v1($pdo,user()),'pending contact upgrade leaves existing phone access available');
+denies(fn()=>action('save_caller_contact',['call_id'=>str_repeat('0',32),'name'=>'Caller']),503,'contact creation requires an explicit CRM upgrade rather than runtime DDL');
+vp3_phone_caller_contacts_ensure_schema_v1($pdo);
+c(api('GET')['state']['contact_write_ready'],'explicit CRM upgrade enables contact saving without changing phone readiness');
+c((int)$pdo->query('SELECT COUNT(*) FROM crm_contacts')->fetchColumn()===3,'contact migration preserves existing people');
 c(!$state['readiness']['ready'],'missing API credentials are not ready');
 vp3_phone_browser_config_save_v1(['api_key_sid'=>'SK'.str_repeat('b',32),'api_key_secret'=>'api-secret-fixture-123456','twiml_app_sid'=>'AP'.str_repeat('c',32)]);
 c(setting('phone_browser_api_key_secret_v1')!=='api-secret-fixture-123456','API secret encrypted at rest');
@@ -315,4 +321,96 @@ try{
     else $databaseClockOffset=0;
     $pdo->exec('UPDATE users SET plan=0 WHERE id=1');
 }
+
+// Save real owner-private people from an immutable call, without inventing an email.
+$pdo->exec('UPDATE users SET plan=1 WHERE id=1');
+$fixtureCaller=static function(int $owner,int $agent,string $peer,int $number=1)use($pdo):string{
+    static $sequence=8192;$sequence++;
+    $pdo->prepare("INSERT INTO phone_voice_calls_v130(provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,state,created_at) VALUES ('twilio',?,?,?,?,?,?,'completed',?)")
+        ->execute(['CA'.str_pad(dechex($sequence),32,'0',STR_PAD_LEFT),$owner,$number,$agent,$peer,'+16025550101',gmdate('Y-m-d H:i:s')]);
+    return 'legacy-'.(int)$pdo->lastInsertId();
+};
+$contactCall=$fixtureCaller(1,7,'+16025550601');$otherOwnerCall=$fixtureCaller(2,8,'+16025550602',2);
+$save=['action'=>'save_caller_contact','call_id'=>$contactCall,'name'=>'  Taylor Caller  ','csrf_token'=>'csrf-fixture'];
+denies(fn()=>api('GET',$save),405,'caller contacts cannot be changed with GET');
+denies(fn()=>api('POST',array_diff_key($save,['csrf_token'=>true])),403,'caller contact rejects missing CSRF');
+denies(fn()=>api('POST',array_replace($save,['csrf_token'=>'forged'])),403,'caller contact rejects forged CSRF');
+denies(fn()=>action('save_caller_contact',['call_id'=>$otherOwnerCall,'name'=>'Foreign']),404,'a foreign immutable call cannot supply a contact number');
+denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Wrong Agent','agent_id'=>9,'conversation_id'=>13]),404,'named Agent cannot save another Agent caller');
+foreach(['',str_repeat('x',121),"Caller\nInjected",['not a string']] as $invalidName)denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>$invalidName]),422,'invalid caller name is rejected');
+foreach(['owner_user_id'=>2,'owner_id'=>2,'phone'=>'+16025550000','phone_e164'=>'+16025550000','phone_number'=>'+16025550000','number'=>2] as $field=>$value)denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Forged',$field=>$value]),422,'caller identity authority cannot be supplied through '.$field);
+denies(fn()=>action('save_caller_contact',['call_id'=>'legacy-0','name'=>'Invalid']),404,'malformed legacy reference is rejected');
+$privateCall=$fixtureCaller(1,7,'');denies(fn()=>action('save_caller_contact',['call_id'=>$privateCall,'name'=>'Private']),422,'withheld caller number is never fabricated');
+c((int)$pdo->query('SELECT COUNT(*) FROM crm_contacts')->fetchColumn()===3,'rejected contact requests do not create CRM records');
+$saved=action('save_caller_contact',['call_id'=>$contactCall,'name'=>'  Taylor Caller  ','agent_id'=>7,'conversation_id'=>12]);$contactId=$saved['contact']['id'];
+c($saved['created']&&$saved['contact']===['id'=>$contactId,'name'=>'Taylor Caller','phone_e164'=>'+16025550601'],'contact creation returns the canonical ledger number and trimmed name');
+$q=$pdo->prepare('SELECT * FROM crm_contacts WHERE id=?');$q->execute([$contactId]);$person=$q->fetch();
+c((int)$person['owner_user_id']===1&&$person['email']===''&&$person['email_normalized']===null&&$person['phone']==='+16025550601'&&$person['source']==='phone_call','phone-only person persists in the canonical private CRM without synthetic email');
+c(preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/D',$person['public_id'])===1,'phone contact uses a normal canonical CRM public identifier');
+$q=$pdo->prepare('SELECT phone,phone_normalized,is_primary FROM crm_contact_phones WHERE contact_id=?');$q->execute([$contactId]);$channel=$q->fetch();
+c($channel['phone']==='+16025550601'&&$channel['phone_normalized']==='16025550601'&&(int)$channel['is_primary']===1,'phone contact shares the existing primary contact channel');
+$again=action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Do not rename an existing person']);
+c(!$again['created']&&$again['contact']===$saved['contact']&&(int)$pdo->query('SELECT COUNT(*) FROM crm_contacts')->fetchColumn()===4,'repeat save deduplicates and preserves the established contact name');
+$secondContact=action('save_caller_contact',['call_id'=>$fixtureCaller(1,7,'+16025550603'),'name'=>'Second phone-only person']);
+c($secondContact['created']&&$secondContact['contact']['id']!==$contactId&&(int)$pdo->query("SELECT COUNT(*) FROM crm_contacts WHERE owner_user_id=1 AND email='' AND email_normalized IS NULL")->fetchColumn()===2,'different phone-only people coexist under owner/email uniqueness');
+$existing=action('save_caller_contact',['call_id'=>$public,'name'=>'Do not rename Mine']);
+c(!$existing['created']&&$existing['contact']['id']===1&&$existing['contact']['name']==='Mine','browser-ledger references reuse existing canonical people');
+denies(fn()=>action('save_caller_contact',['call_id'=>$public,'name'=>'Foreign browser','conversation_id'=>21],2),404,'another owner cannot save a browser-ledger reference');
+$pdo->exec("UPDATE crm_contacts SET phone='(602) 555-0999' WHERE id=1");
+c(action('save_caller_contact',['call_id'=>$public,'name'=>'Formatted'])['contact']['id']===1,'human-formatted primary number deduplicates against its known international caller');
+$pdo->prepare("INSERT INTO crm_contact_phones(contact_id,phone,phone_normalized,label,is_primary,created_at,updated_at) VALUES (1,'+44 (20) 7946 0100','442079460100','work',0,?,?)")->execute([gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);
+$alternate=action('save_caller_contact',['call_id'=>$fixtureCaller(1,7,'+442079460100'),'name'=>'Alternate']);
+c(!$alternate['created']&&$alternate['contact']['id']===1&&$alternate['contact']['phone_e164']==='+442079460100','alternate contact phone resolves to its existing owner-private person');
+$foreignMatch=action('save_caller_contact',['call_id'=>$fixtureCaller(1,7,'+16025550888'),'name'=>'My separate caller']);
+c($foreignMatch['created']&&$foreignMatch['contact']['id']!==2&&$foreignMatch['contact']['name']==='My separate caller','a foreign owner contact neither leaks nor suppresses the current owner contact');
+$archivedMatch=action('save_caller_contact',['call_id'=>$offlineId,'name'=>'Active caller']);
+c($archivedMatch['created']&&$archivedMatch['contact']['id']!==3,'archived people are not silently reactivated by caller saving');
+$repeatCall=$fixtureCaller(1,7,'+16025550601');
+$refreshed=api('GET')['state'];$card=array_values(array_filter($refreshed['calls'],fn($row)=>$row['call_id']===$contactCall))[0];
+c($card['contact_id']===$contactId&&$card['contact_name']==='Taylor Caller'&&!$card['caller_familiar'],'first call projects its saved contact without treating later calls as prior history');
+$repeatCard=array_values(array_filter($refreshed['calls'],fn($row)=>$row['call_id']===$repeatCall))[0];
+c($repeatCard['contact_name']==='Taylor Caller'&&$repeatCard['caller_familiar'],'repeat call projects earlier owner-scoped history even within one timestamp second');
+$foreignAgentPrior=$fixtureCaller(1,9,'+16025550605',3);$ownAgentFirst=$fixtureCaller(1,7,'+16025550605');
+$mainFirst=array_values(array_filter(api('GET')['state']['calls'],fn($row)=>$row['call_id']===$ownAgentFirst))[0];
+$namedFirst=array_values(array_filter(api('GET',['agent_id'=>7,'conversation_id'=>12])['state']['calls'],fn($row)=>$row['call_id']===$ownAgentFirst))[0];
+c($mainFirst['caller_familiar']&&!$namedFirst['caller_familiar'],'repeat caller evidence respects the exact named Agent history boundary');
+$tieEpoch=time();$browserFirst=str_repeat('f',32);$browserLater=str_repeat('0',32);
+$browserReceipt=$pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,state,created_epoch,updated_epoch,ended_epoch) VALUES (?,1,7,1,'+16025550101','+16025550606','inbound','completed',?,?,?)");
+foreach([$browserFirst,$browserLater] as $ref)$browserReceipt->execute([$ref,$tieEpoch,$tieEpoch,$tieEpoch]);
+$browserHistory=array_column(api('GET')['state']['calls'],null,'call_id');
+c(!$browserHistory[$browserFirst]['caller_familiar']&&$browserHistory[$browserLater]['caller_familiar'],'same-second browser receipts use monotonic database IDs rather than random public ID order');
+$legacyTie=$fixtureCaller(1,7,'+16025550607');$pdo->prepare('UPDATE phone_voice_calls_v130 SET created_at=? WHERE id=?')->execute([gmdate('Y-m-d H:i:s',$tieEpoch),(int)substr($legacyTie,7)]);
+$browserReceipt=$pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,state,created_epoch,updated_epoch,ended_epoch) VALUES (?,1,7,1,'+16025550101','+16025550607','inbound','completed',?,?,?)");$crossKindRef=str_repeat('1',32);$browserReceipt->execute([$crossKindRef,$tieEpoch,$tieEpoch,$tieEpoch]);
+$crossKindCards=array_column(api('GET')['state']['calls'],null,'call_id');
+c(!$crossKindCards[$legacyTie]['caller_familiar']&&!$crossKindCards[$crossKindRef]['caller_familiar'],'equal-second receipts in separate ledgers conservatively avoid an unknown prior order');
+$oldCallerCards=array_values(array_filter($refreshed['calls'],fn($row)=>$row['peer_e164']==='+16025550444'&&$row['created_at']>'2020-01-02'));
+c(count($oldCallerCards)>0&&count(array_filter($oldCallerCards,fn($row)=>$row['caller_familiar']))===count($oldCallerCards),'earlier history outside the recent fifty calls still identifies a familiar caller');
+$firstCard=array_values(array_filter($refreshed['calls'],fn($row)=>$row['call_id']===$privateCall))[0];
+c($firstCard['contact_id']===0&&$firstCard['contact_name']===''&&!$firstCard['caller_familiar'],'private callers stay unnamed and are never grouped as familiar');
+$contactsById=array_column($refreshed['contacts'],null,'id');
+c(isset($contactsById[$contactId])&&$contactsById[$contactId]['name']==='Taylor Caller'&&$contactsById[$contactId]['phone_e164']==='+16025550601','saved name and number appear in the phone Contacts list');
+$matchingVoicemail=array_values(array_filter($refreshed['voicemails'],fn($row)=>$row['peer_e164']==='+16025550888'));
+c(count($matchingVoicemail)>0&&count(array_filter($matchingVoicemail,fn($row)=>$row['contact_id']===$foreignMatch['contact']['id']&&$row['contact_name']==='My separate caller'))===count($matchingVoicemail),'saved owner contact name is shared by existing voicemail history');
+require_once dirname(__DIR__).'/includes/workspace-native-actions-v1.php';
+$edited=workspace_native_contact_update_v1($pdo,1,$contactId,['display_name'=>'Taylor Updated']);
+$editedSecond=workspace_native_contact_update_v1($pdo,1,$secondContact['contact']['id'],['display_name'=>'Second Updated']);
+c($edited['name']==='Taylor Updated'&&$edited['email_normalized']===null&&$editedSecond['email_normalized']===null,'existing native contact editor can edit multiple people with no email');
+$edited=workspace_native_contact_update_v1($pdo,1,$contactId,['email'=>'Taylor@Example.Test']);
+c($edited['email']==='taylor@example.test'&&$edited['email_normalized']==='taylor@example.test','adding a real email preserves existing normalized email identity');
+try{$pdo->exec("UPDATE crm_contacts SET email_normalized='mine@example.test' WHERE id=".(int)$contactId);c(false,'existing owner/email uniqueness remains enforced');}catch(PDOException){c(true,'existing owner/email uniqueness remains enforced');}
+$edited=workspace_native_contact_update_v1($pdo,1,$contactId,['email'=>'']);c($edited['email']===''&&$edited['email_normalized']===null,'removing optional email restores NULL identity');
+$historyCall=$fixtureCaller(1,7,'+16025550604');$pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=2,agent_id=8 WHERE id=1');
+try{
+    $historyContact=action('save_caller_contact',['call_id'=>$historyCall,'name'=>'Historical caller']);
+    c($historyContact['created']&&$historyContact['contact']['phone_e164']==='+16025550604','original call owner can save their history after the number is reassigned');
+    denies(fn()=>action('save_caller_contact',['call_id'=>$historyCall,'name'=>'New number owner','conversation_id'=>21],2),404,'number reassignment never transfers original caller contact authority');
+    $newOwnerContacts=api('GET',[],2)['state']['contacts'];
+    c(!in_array($historyContact['contact']['id'],array_column($newOwnerContacts,'id'),true),'new number owner cannot see the historical owner contact');
+}finally{$pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=1,agent_id=7 WHERE id=1');}
+// A recent saved caller remains available when the ordinary alphabetical book is full.
+$insert=$pdo->prepare("INSERT INTO crm_contacts(public_id,owner_user_id,name,email,email_normalized,phone,status,created_at,updated_at) VALUES (?,1,?,'',NULL,?,'active',?,?)");
+for($i=0;$i<251;$i++)$insert->execute([sprintf('aaaaaaaa-aaaa-4aaa-8aaa-%012d',$i),'A contact '.sprintf('%03d',$i),'+1602555'.str_pad((string)(1000+$i),4,'0',STR_PAD_LEFT),gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);
+action('favorite',['contact_id'=>$contactId,'favorite'=>true]);$boundedBook=api('GET')['state'];$boundedContacts=array_column($boundedBook['contacts'],null,'id');
+c(count($boundedBook['contacts'])===250&&isset($boundedContacts[$contactId])&&$boundedContacts[$contactId]['favorite'],'related caller and favorite flag survive the bounded contact book');
+$pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

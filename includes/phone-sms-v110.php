@@ -338,7 +338,18 @@ function vp3_phone_sms_threads_v110(PDO $pdo,int $ownerId,?int $scopeAgentId=nul
       INNER JOIN phone_cloud_numbers_v100 n ON n.id=t.phone_number_id
       LEFT JOIN user_agents a ON a.id=t.agent_id AND a.owner_user_id=t.owner_user_id
       WHERE t.owner_user_id=?'.$scope.' ORDER BY t.last_message_at DESC,t.id DESC LIMIT 100');
-    $query->execute($args);return $query->fetchAll(PDO::FETCH_ASSOC)?:[];
+    $query->execute($args);$threads=$query->fetchAll(PDO::FETCH_ASSOC)?:[];
+    if($threads){
+        require_once __DIR__.'/phone-caller-contacts-v1.php';
+        $contacts=vp3_phone_caller_contacts_lookup_v1($pdo,$ownerId,array_column($threads,'contact_e164'));
+        foreach($threads as &$thread){
+            $contact=$contacts[(string)$thread['contact_e164']]??[];
+            $thread['contact_id']=(int)($contact['id']??0);
+            $thread['contact_name']=(string)($contact['name']??'');
+        }
+        unset($thread);
+    }
+    return $threads;
 }
 
 function vp3_phone_sms_messages_v110(PDO $pdo,int $ownerId,int $threadId): array

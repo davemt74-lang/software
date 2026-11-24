@@ -65,6 +65,7 @@ try {
     vp3_connected_sites_ensure_schema_v100($pdo);
     crm_v180_ensure_schema($pdo);
     campaigns_rewards_platform_ensure_schema_v100($pdo);
+    vp3_phone_caller_contacts_ensure_schema_v1($pdo);
     campaigns_rewards_ensure_schema_v100($pdo);
     campaigns_rewards_journey_release_ensure_schema_v123($pdo);
     campaigns_rewards_journey_operations_ensure_schema_v124($pdo);

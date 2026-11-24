@@ -69,7 +69,27 @@ check($stop['accepted']===true,'STOP stored');
 check((int)$pdo->query('SELECT carrier_opted_out FROM phone_sms_contacts_v110')->fetchColumn()===1,'STOP records opt-out');
 receive($pdo,message(['MessageSid'=>'SM'.str_repeat('2',32),'Body'=>'START']));
 check((int)$pdo->query('SELECT carrier_opted_out FROM phone_sms_contacts_v110')->fetchColumn()===0,'START releases carrier stop, not marketing consent');
-check(count(vp3_phone_sms_threads_v110($pdo,1))===1 && count(vp3_phone_sms_threads_v110($pdo,2))===0,'tenant-isolated thread list');
+$unnamedThreads=vp3_phone_sms_threads_v110($pdo,1);
+check(count($unnamedThreads)===1 && count(vp3_phone_sms_threads_v110($pdo,2))===0,'tenant-isolated thread list');
+check(($unnamedThreads[0]['contact_name']??'')===''&&(int)($unnamedThreads[0]['contact_id']??0)===0,'missing optional CRM storage keeps SMS history available by number');
+$pdo->exec("CREATE TABLE crm_contacts(id INTEGER PRIMARY KEY,owner_user_id INTEGER,name TEXT,phone TEXT,status TEXT,email TEXT DEFAULT '',email_normalized TEXT NULL)");
+$pdo->exec("INSERT INTO crm_contacts(id,owner_user_id,name,phone,status) VALUES
+    (1,1,'My caller <example> & Co','(602) 555-0999','active'),
+    (2,2,'Other owner name','+16025550999','active'),
+    (3,1,'Archived caller','+16025550999','archived')");
+$namedThreads=vp3_phone_sms_threads_v110($pdo,1);
+check($namedThreads[0]['contact_name']==='My caller <example> & Co'&&(int)$namedThreads[0]['contact_id']===1
+    &&$namedThreads[0]['contact_e164']==='+16025550999','SMS history resolves the owner phone-only contact and retains its number');
+$pdo->exec("UPDATE crm_contacts SET name='Updated caller name' WHERE id=1");
+check(vp3_phone_sms_threads_v110($pdo,1)[0]['contact_name']==='Updated caller name','saved contact changes appear in existing SMS history');
+$pdo->exec("INSERT INTO phone_sms_threads_v110(owner_user_id,phone_number_id,agent_id,contact_e164) VALUES(2,2,8,'+16025550999')");
+check(vp3_phone_sms_threads_v110($pdo,2)[0]['contact_name']==='Other owner name','the same caller number resolves independently for another owner');
+$pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=2,agent_id=8 WHERE id=1');
+check(vp3_phone_sms_threads_v110($pdo,1)[0]['contact_name']==='Updated caller name','reassigned numbers do not replace the original owner historical contact name');
+$pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=1,agent_id=7 WHERE id=1');
+$pdo->exec("UPDATE crm_contacts SET status='archived' WHERE id=1");
+check(vp3_phone_sms_threads_v110($pdo,1)[0]['contact_name']===''&&(int)vp3_phone_sms_threads_v110($pdo,1)[0]['contact_id']===0,'archiving a contact removes its label without exposing another owner name');
+$pdo->exec("UPDATE crm_contacts SET status='active' WHERE id=1");
 $threadId=(int)$first['thread_id'];
 check(count(vp3_phone_sms_messages_v110($pdo,1,$threadId))===3,'owner reads own thread');
 try {vp3_phone_sms_messages_v110($pdo,2,$threadId);throw new RuntimeException('missing reject');}

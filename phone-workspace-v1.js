@@ -11,7 +11,7 @@
   const node=(tag,cls,value)=>{const item=document.createElement(tag);if(cls)item.className=cls;if(value!==undefined)item.textContent=text(value);return item;};
   const endpoint=new URL(config.endpoint,location.href);
   if(endpoint.origin!==location.origin||endpoint.username||endpoint.password)return;
-  const cards=new Set(),requests=new Set(),pending=new Map(),localStates=new Map(),audioNodes=new Set(),policyDrafts=new Map();
+  const cards=new Set(),requests=new Set(),pending=new Map(),localStates=new Map(),audioNodes=new Set(),policyDrafts=new Map(),contactDrafts=new Map();
   let context={conversation_id:principal(config.conversation_id??config.conversationId),agent_id:principal(config.agent_id??config.agentId),ready:true},generation=0,requestSequence=0;
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
   let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0;
@@ -58,7 +58,10 @@
   function displayTime(value){const raw=String(value||'');const date=new Date(raw&&!raw.includes('T')?raw.replace(' ','T')+'Z':raw);return Number.isFinite(date.getTime())?date.toLocaleString():'';}
   function displayState(value){return text(value||'unknown').replaceAll('_',' ');}
   function safeUrl(value){if(typeof value!=='string'||!value.trim()||value.length>4096)return '';try{const url=new URL(value,location.href);return url.origin===location.origin&&!url.username&&!url.password&&['http:','https:'].includes(url.protocol)?url.href:'';}catch(_){return '';}}
-  function peerName(peer){return (state?.contacts||[]).find(item=>item.phone_e164===peer)?.name||peer||'Unknown caller';}
+  function peerContact(peer){return (state?.contacts||[]).find(item=>item.phone_e164===peer&&typeof item.name==='string'&&item.name.trim());}
+  function callerContact(info){return positive(info?.contact_id)&&typeof info.contact_name==='string'&&info.contact_name.trim()?{id:Number(info.contact_id),name:info.contact_name,phone_e164:info.peer_e164}:peerContact(info?.peer_e164);}
+  function peerName(peer){return peerContact(peer)?.name||peer||'Unknown caller';}
+  function callDuration(value){const seconds=Number(value);if(!Number.isSafeInteger(seconds)||seconds<0||seconds>86400)return '';return Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');}
   function scopeBody(extra={}){return {...extra,conversation_id:context.conversation_id,agent_id:context.agent_id};}
   async function api(action,values={},method='POST',g=generation){
     if(!current(g))throw new DOMException('Phone context changed.','AbortError');
@@ -113,6 +116,12 @@
     if(focus)tabButtons[key].focus();
   }
   function listEmpty(host,message){host.append(node('p','vp3-phone-empty',message));}
+  function replacePhoneContent(host,...contents){
+    const previous=[...host.childNodes],playing=[...host.querySelectorAll('audio')].filter(audio=>!audio.paused),nextAudio=contents.flatMap(content=>[...(content.querySelectorAll?.('audio')||[])]);
+    host.append(...contents);
+    for(const audio of playing){const replacement=nextAudio.find(next=>next.dataset.phoneRecordingKey===audio.dataset.phoneRecordingKey&&next.src===audio.src);if(replacement){replacement.replaceWith(audio);audioNodes.delete(replacement);nextAudio.splice(nextAudio.indexOf(replacement),1);}}
+    for(const child of previous)child.remove();
+  }
   function render(){
     const focused=document.activeElement,focusKey=layer.contains(focused)?focused?.dataset?.phoneFocusKey:'',selection=focusKey&&'selectionStart' in focused?[focused.selectionStart,focused.selectionEnd]:null,scroll=body.scrollTop;
     notice.textContent=statusText;
@@ -122,8 +131,8 @@
     body.scrollTop=scroll;
   }
   function renderConnections(){
-    const renderGeneration=generation,host=sections.connections;host.replaceChildren();
-    if(!state){listEmpty(host,initialState?'Loading assigned phone connections…':'Phone connections are unavailable.');return;}
+    const renderGeneration=generation,host=node('div');
+    if(!state){listEmpty(host,initialState?'Loading assigned phone connections…':'Phone connections are unavailable.');replacePhoneContent(sections.connections,...host.childNodes);return;}
     const label=node('label','vp3-phone-field','Phone number'),select=node('select');select.setAttribute('aria-label','Selected phone number');select.dataset.phoneFocusKey='number';
     for(const number of state.numbers){const option=node('option',null,number.phone_e164+(number.agent_name?' · '+number.agent_name:''));option.value=String(number.id);select.append(option);}
     select.value=String(state.selected_number_id||'');select.disabled=Boolean(active||callBusy||setupPending||pending.size);
@@ -138,7 +147,7 @@
       const recordLabel=node('label','vp3-phone-check vp3-phone-record'),record=node('input');record.type='checkbox';record.checked=recordThisCall;record.dataset.phoneFocusKey='record-call';record.addEventListener('change',()=>{if(current(renderGeneration))recordThisCall=record.checked;});recordLabel.append(record,node('span',null,'Record this call'));dial.append(recordLabel,node('p','vp3-phone-empty vp3-phone-record','The person you call hears a recording notice. Your saved after-call settings control transcripts and reports.'));
     }
     dial.addEventListener('submit',event=>{event.preventDefault();if(current(renderGeneration))void placeCall(input.value,{record:recordThisCall});});host.append(dial);
-    renderCurrentCall(host);renderPolicy(host);
+    renderCurrentCall(host);renderPolicy(host);replacePhoneContent(sections.connections,...host.childNodes);
   }
   function normalizePolicy(raw={}){
     const modules=['basic','qa','actions','decisions','followup'];
@@ -167,7 +176,7 @@
   function renderCurrentCall(host){
     for(const entry of pending.values())host.append(callCard(entry.info,entry));
     if(active)host.append(callCard(active.info,active));
-    else if(state?.active_call&&!pending.size){const card=node('div','vp3-phone-call');card.append(node('strong',null,'Call in progress'),node('p',null,peerName(state.active_call.peer_e164)),node('p',null,displayState(state.active_call.state)));host.append(card);}
+    else if(state?.active_call&&!pending.size)host.append(callCard(state.active_call));
   }
   function contactRow(contact){
     const renderGeneration=generation;
@@ -188,23 +197,44 @@
   }
   function renderCalls(){
     const host=sections.calls;host.replaceChildren();if(!state?.calls.length){listEmpty(host,'No recent calls.');return;}
-    const renderGeneration=generation;for(const call of state.calls){const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy');details.append(node('strong',null,peerName(call.peer_e164)),node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);host.append(row);}
+    const renderGeneration=generation;for(const call of state.calls){const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||peerName(call.peer_e164)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);host.append(row);}
   }
   function voicemailCard(voicemail){
     const renderGeneration=generation;
     const card=node('article','vp3-phone-voicemail');card.append(node('strong',null,'Voicemail from '+peerName(voicemail.peer_e164)),node('p','vp3-phone-meta',[displayTime(voicemail.created_at),displayState(voicemail.state||voicemail.stage||'saved')].filter(Boolean).join(' · ')));
+    const contact=callerContact(voicemail);if(contact){card.querySelector('strong').textContent='Voicemail from '+text(contact.name).slice(0,180);card.append(node('p','vp3-phone-peer-number',voicemail.peer_e164));}
     if(voicemail.state==='failed'||voicemail.error||voicemail.last_error)card.append(node('p','vp3-phone-processing-error',voicemail.error||voicemail.last_error||'Call processing needs attention.'));
-    const audioUrl=safeUrl(voicemail.audio_url);if(audioUrl){const audio=node('audio');audioNodes.add(audio);audio.controls=true;audio.preload='none';audio.src=audioUrl;audio.setAttribute('aria-label','Play voicemail');audio.addEventListener('play',()=>{if(!current(renderGeneration)){audio.pause();return;}if(!voicemail.read)void api('mark_voicemail_read',{voicemail_id:voicemailKey(voicemail.id)},'POST',renderGeneration).catch(()=>{});});card.append(audio);}
-    if(voicemail.transcript){const details=node('details'),summary=node('summary',null,'Transcript');details.append(summary,node('p',null,voicemail.transcript));card.append(details);}
-    const transcriptUrl=safeUrl(voicemail.transcript_url);if(transcriptUrl){const transcript=node('a','vp3-phone-report','Open transcript');transcript.href=transcriptUrl;card.append(transcript);}
-    const reportUrl=safeUrl(voicemail.report_url);if(reportUrl){const report=node('a','vp3-phone-report','Open voicemail report');report.href=reportUrl;card.append(report);}
+    appendRecording(card,voicemail,renderGeneration);
     const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(voicemail.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(voicemail.peer_e164||'');card.append(callback);return card;
   }
-  function renderVoicemails(){const host=sections.voicemail;if([...host.querySelectorAll('audio')].some(audio=>!audio.paused))return;host.replaceChildren();if(!state?.voicemails.length){listEmpty(host,'No saved voicemail.');return;}for(const voicemail of state.voicemails)host.append(voicemailCard(voicemail));}
+  function appendRecording(card,voicemail,renderGeneration,isCall=false){
+    const audioUrl=safeUrl(voicemail.audio_url);if(audioUrl){const audio=node('audio');audioNodes.add(audio);audio.controls=true;audio.preload='none';audio.src=audioUrl;audio.dataset.phoneRecordingKey=voicemailKey(voicemail.id);audio.setAttribute('aria-label',isCall?'Play call recording':'Play voicemail');audio.addEventListener('play',()=>{if(!current(renderGeneration)){audio.pause();return;}if(!voicemail.read)void api('mark_voicemail_read',{voicemail_id:voicemailKey(voicemail.id)},'POST',renderGeneration).catch(()=>{});});card.append(audio);}
+    if(voicemail.transcript){const details=node('details'),summary=node('summary',null,'Transcript');details.append(summary,node('p',null,voicemail.transcript));card.append(details);}
+    const transcriptUrl=safeUrl(voicemail.transcript_url);if(transcriptUrl){const transcript=node('a','vp3-phone-report','Open transcript');transcript.href=transcriptUrl;card.append(transcript);}
+    const reportUrl=safeUrl(voicemail.report_url);if(reportUrl){const report=node('a','vp3-phone-report',isCall?'Open call report':'Open voicemail report');report.href=reportUrl;card.append(report);}
+  }
+  function renderVoicemails(){const contents=state?.voicemails.length?state.voicemails.map(voicemailCard):[node('p','vp3-phone-empty','No saved voicemail.')];replacePhoneContent(sections.voicemail,...contents);}
   function callCard(info,entry=null){
     const renderGeneration=generation;
+    info={...info,...state?.calls.find(call=>call.public_id===info.public_id)};
     const id=info.public_id,readOnlyLegacy=/^legacy-/.test(id),currentState=localStates.get(id)||info.state,card=node('article','vp3-phone-call');card.dataset.phoneCallId=id;
-    card.append(node('strong',null,entry?.incoming?'Incoming phone call':'Phone call'),node('p',null,peerName(info.peer_e164)),node('p','vp3-phone-meta',displayState(entry?.phase||localStates.get(id)||info.state)));
+    const incoming=entry?.incoming===true||info.direction==='inbound',outgoing=entry?.incoming===false||info.direction==='outbound',contact=callerContact(info);
+    card.append(node('strong','vp3-phone-call-heading',incoming?'Incoming phone call':outgoing?'Outgoing phone call':'Phone call'),node('p','vp3-phone-peer-name',text(contact?.name||peerName(info.peer_e164)).slice(0,180)));
+    if(contact)card.append(node('p','vp3-phone-peer-number',info.peer_e164));
+    const prior=info.caller_familiar===true||info.caller_familiar===undefined&&(state?.calls||[]).some(call=>call.public_id!==id&&call.peer_e164===info.peer_e164&&info.peer_e164&&typeof call.created_at==='string'&&typeof info.created_at==='string'&&call.created_at<info.created_at);
+    if(contact||prior)card.append(node('p','vp3-phone-peer-context',contact?'Saved contact':'Seen in recent calls'));
+    const details=node('dl','vp3-phone-call-details'),addDetail=(label,value)=>{if(value===undefined||value===null||value==='')return;const row=node('div');row.append(node('dt',null,label),node('dd',null,value));details.append(row);};
+    const terminal=['ended','completed','voicemail_ready','voicemail','no_answer','no-answer','busy','failed','declined','cancelled','canceled','missed'].includes(info.state);
+    addDetail('Status',terminal?displayState(info.state):currentState==='answered'?'Answered':entry?.phase==='connected'?'Browser connected':displayState(entry?.phase||currentState));addDetail('Call time',displayTime(info.created_at));
+    if(terminal&&Number.isInteger(info.duration_seconds)&&(!readOnlyLegacy||info.duration_seconds>0))addDetail(readOnlyLegacy?'Recording duration':'Call duration',callDuration(info.duration_seconds));
+    addDetail('Your line',info.phone_e164);
+    const line=(state?.numbers||[]).find(number=>Number(number.id)===Number(info.number_id)&&Number(number.agent_id)===Number(info.agent_id)&&number.phone_e164===info.phone_e164);
+    if(line?.agent_name)addDetail('Agent',text(line.agent_name).slice(0,180));
+    const recording=(state?.voicemails||[]).find(voicemail=>callKey(voicemail.call_id)===id);
+    if(recording&&safeUrl(recording.audio_url))addDetail('Recording','Available');else if(info.recording_enabled===true)addDetail('Recording','Requested');
+    if(recording?.transcript||safeUrl(recording?.transcript_url))addDetail('Transcript','Available');
+    if(safeUrl(recording?.report_url))addDetail('Call report','Available');
+    card.append(details);if(recording)appendRecording(card,recording,renderGeneration,true);
     const actions=node('div','vp3-phone-actions');
     if(entry?.incoming&&pending.get(id)===entry){const accept=button('Accept',()=>{if(current(renderGeneration))void acceptCall(id);},'vp3-phone-button vp3-phone-primary');accept.disabled=callBusy||setupPending>0||Boolean(active)||!positive(context.conversation_id);const decline=button('Decline',()=>{if(current(renderGeneration))declineCall(id);});decline.disabled=callBusy;actions.append(accept,decline);}
     if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
@@ -212,16 +242,49 @@
     if(!entry&&['ended','completed','voicemail_ready','voicemail','no_answer','no-answer','busy','failed','declined','cancelled','canceled','missed'].includes(currentState)){
       const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(info.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(info.peer_e164||'');actions.append(callback);
     }
-    if(actions.childNodes.length)card.append(actions);return card;
+    const draft=contactDrafts.get(id);
+    if(!contact&&callKey(id)&&/^\+[1-9]\d{7,14}$/.test(info.peer_e164||'')&&!draft){
+      const addContact=button('Add to contacts',()=>{if(!current(renderGeneration)||state?.contact_write_ready===false)return;const focusHost=addContact.closest('.vp3-phone-chat-card')||sections.connections;contactDrafts.set(id,{name:'',saving:false,error:'',generation:renderGeneration});render();const field=[...focusHost.querySelectorAll('[data-phone-focus-key]')].find(input=>input.dataset.phoneFocusKey==='caller-name-'+id);field?.focus({preventScroll:true});});addContact.disabled=state?.contact_write_ready===false;addContact.dataset.phoneAddContact=id;actions.append(addContact);
+    }
+    if(actions.childNodes.length)card.append(actions);
+    if(!contact&&state?.contact_write_ready===false)card.append(node('p','vp3-phone-meta','An administrator needs to update Contacts before this caller can be saved.'));
+    if(!contact&&draft?.generation===renderGeneration)appendContactForm(card,info,draft,renderGeneration);
+    return card;
+  }
+  function appendContactForm(card,info,draft,g){
+    const id=info.public_id,form=node('form','vp3-phone-contact-form');form.setAttribute('aria-label','Add caller to contacts');
+    const nameLabel=node('label','vp3-phone-field','Name'),name=node('input');name.type='text';name.maxLength=120;name.required=true;name.autocomplete='off';name.value=draft.name;name.disabled=draft.saving;name.setAttribute('aria-label','Contact name');name.dataset.phoneFocusKey='caller-name-'+id;
+    name.addEventListener('input',()=>{if(current(g)&&contactDrafts.get(id)===draft&&!draft.saving)draft.name=name.value.slice(0,120);});nameLabel.append(name);
+    const phoneLabel=node('label','vp3-phone-field','Phone number'),phone=node('input');phone.type='tel';phone.readOnly=true;phone.setAttribute('readonly','');phone.value=info.peer_e164;phone.setAttribute('aria-label','Caller phone number');phoneLabel.append(phone);
+    form.append(nameLabel,phoneLabel);
+    if(draft.error){const error=node('p','vp3-phone-processing-error',draft.error);error.setAttribute('role','alert');form.append(error);}
+    const controls=node('div','vp3-phone-actions'),save=node('button','vp3-phone-button vp3-phone-primary',draft.saving?'Saving…':'Save contact');save.type='submit';save.disabled=draft.saving||state?.contact_write_ready===false;
+    const cancel=button('Cancel',()=>{if(current(g)&&contactDrafts.get(id)===draft&&!draft.saving){contactDrafts.delete(id);render();}});cancel.disabled=draft.saving;controls.append(save,cancel);form.append(controls);
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();if(!current(g)||contactDrafts.get(id)!==draft||draft.saving)return;
+      if(state?.contact_write_ready===false){draft.error='An administrator needs to update Contacts before this caller can be saved.';render();return;}
+      const value=name.value.trim();draft.name=name.value.slice(0,120);if(!value){draft.error='Enter a contact name.';render();return;}
+      draft.saving=true;draft.error='';render();
+      try{
+        const result=await api('save_caller_contact',{call_id:id,name:value},'POST',g);
+        if(!current(g)||contactDrafts.get(id)!==draft)return;
+        const contact=result.contact;if(!positive(contact?.id)||typeof contact.name!=='string'||!contact.name.trim()||contact.phone_e164!==info.peer_e164)throw new Error('The saved contact could not be confirmed. Refresh Phone.');
+        if(fetching)await fetching;if(!current(g)||contactDrafts.get(id)!==draft)return;
+        if(state){state.contacts=[contact,...state.contacts.filter(row=>Number(row.id)!==Number(contact.id)&&row.phone_e164!==contact.phone_e164)];for(const call of [...state.calls,...state.voicemails])if(call.peer_e164===contact.phone_e164){call.contact_id=Number(contact.id);call.contact_name=contact.name;}}
+        contactDrafts.delete(id);say('Contact saved.');render();await refresh();
+      }catch(error){if(current(g)&&contactDrafts.get(id)===draft)draft.error=error.message;}
+      finally{if(current(g)&&contactDrafts.get(id)===draft){draft.saving=false;render();}}
+    });card.append(form);
   }
   function renderCards(){
     for(const item of [...cards]){
       if(!item.element.isConnected){cards.delete(item);continue;}
-      if(authorized&&item.generation===generation&&[...item.host.querySelectorAll('audio')].some(audio=>!audio.paused))continue;
-      item.host.replaceChildren();if(!authorized){item.host.append(node('p',null,'Phone access is unavailable.'));continue;}
-      if(item.generation!==generation){item.host.append(button('Open current Phone workspace',()=>open()));continue;}
-      if(item.kind==='voicemail'){const voicemail=state?.voicemails.find(row=>voicemailKey(row.id)===item.voicemailId);if(voicemail)item.host.append(voicemailCard(voicemail));else item.host.append(button('Open voicemail',()=>{open();selectTab('voicemail');}));}
-      else{const pendingCall=pending.get(item.callId),entry=active?.info.public_id===item.callId?active:pendingCall,call=entry?.info||state?.calls.find(row=>row.public_id===item.callId);if(call)item.host.append(callCard(call,entry));else item.host.append(button('Open call history',()=>{open();selectTab('calls');}));}
+      const focused=document.activeElement,focusKey=item.host.contains(focused)?focused?.dataset?.phoneFocusKey:'',selection=focusKey&&'selectionStart' in focused?[focused.selectionStart,focused.selectionEnd]:null;
+      if(!authorized){item.host.replaceChildren(node('p',null,'Phone access is unavailable.'));continue;}
+      if(item.generation!==generation){item.host.replaceChildren(button('Open current Phone workspace',()=>open()));continue;}
+      if(item.kind==='voicemail'){const voicemail=state?.voicemails.find(row=>voicemailKey(row.id)===item.voicemailId);replacePhoneContent(item.host,voicemail?voicemailCard(voicemail):button('Open voicemail',()=>{open();selectTab('voicemail');}));}
+      else{const pendingCall=pending.get(item.callId),entry=active?.info.public_id===item.callId?active:pendingCall,call=entry?.info||state?.calls.find(row=>row.public_id===item.callId);replacePhoneContent(item.host,call?callCard(call,entry):button('Open call history',()=>{open();selectTab('calls');}));}
+      if(focusKey){const replacement=[...item.host.querySelectorAll('[data-phone-focus-key]')].find(field=>field.dataset.phoneFocusKey===focusKey);if(replacement&&!replacement.disabled){replacement.focus({preventScroll:true});if(selection)try{replacement.setSelectionRange(...selection);}catch(_){}}}
     }
   }
   function removeAnnouncements(callId=null){
@@ -237,7 +300,11 @@
     if(payload.kind==='call'&&!callId||payload.kind==='voicemail'&&!voicemailId)return;
     if(callId&&!element.closest('[data-phone-announcement]'))removeAnnouncements(callId);
     let item=[...cards].find(row=>row.element===element);if(item){if(item.callId===callId&&item.voicemailId===voicemailId&&item.generation===generation)return;item.host.remove();cards.delete(item);}
-    const host=node('div','vp3-phone-chat-card');host.dataset.phoneWorkspaceCard='1';element.append(host);item={element,host,kind:payload.kind,callId,voicemailId,generation};cards.add(item);
+    const host=node('div','vp3-phone-chat-card');host.dataset.phoneWorkspaceCard='1';
+    // A canonical Chat message is an avatar/content grid. A third direct child
+    // falls into the narrow avatar column, so cards belong inside its body.
+    const messageBody=element.querySelector?.('.message-body');(messageBody||element).append(host);element.classList?.add('vp3-phone-message');
+    item={element,host,kind:payload.kind,callId,voicemailId,generation};cards.add(item);
     if(cards.size>100){const first=cards.values().next().value;first.host.remove();cards.delete(first);}
     renderCards();if(!state)void refresh();
   }
@@ -337,7 +404,7 @@
     const id=call.customParameters?.get?.('phone_call_id');if(!publicId(id)||active||callBusy||setupPending||pending.size){stopCall(call,true);return;}
     const record=state?.calls.find(item=>item.public_id===id),entry={session,generation,info:record||{public_id:id,peer_e164:text(call.parameters?.From).slice(0,32),state:'ringing'},call,ticket:null,phase:'ringing',incoming:true};pending.set(id,entry);
     for(const event of ['cancel','reject','disconnect','error'])call.on(event,()=>{if(pending.get(id)===entry){pending.delete(id);localStates.set(id,event==='error'?'failed':'ended');render();void refresh();}});
-    say('Incoming phone call from '+peerName(entry.info.peer_e164));render();announceIncoming(entry);void refresh();
+    say('Incoming phone call from '+(callerContact(entry.info)?.name||peerName(entry.info.peer_e164)));render();announceIncoming(entry);void refresh();
   }
   async function acceptCall(id){
     const entry=pending.get(id);if(!entry||active||callBusy||setupPending||!sessionCurrent(entry.session)||!positive(context.conversation_id))return;
@@ -355,16 +422,16 @@
   function clearAudio(){for(const audio of [...audioNodes]){audio.pause();audio.removeAttribute('src');audio.load();if(!audio.isConnected)audioNodes.delete(audio);}}
 
   function revoke(){
-    if(!authorized)return;authorized=false;generation++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
+    if(!authorized)return;authorized=false;generation++;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
     for(const item of document.querySelectorAll('[data-phone-workspace-toggle]'))item.hidden=true;
     for(const section of Object.values(sections))section.replaceChildren();renderCards();
   }
   function contextChanged(next={}){
     const normalized={conversation_id:principal(next.conversation_id),agent_id:principal(next.agent_id),ready:next.ready!==false};
     if(normalized.conversation_id===context.conversation_id&&normalized.agent_id===context.agent_id&&normalized.ready===context.ready)return;
-    generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();render();void refresh();
+    generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();render();void refresh();
   }
-  function dispose(){if(disposed)return;generation++;for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
+  function dispose(){if(disposed)return;generation++;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-phone-workspace-toggle]');if(trigger){event.preventDefault();opened?close():open(trigger);}});
   backdrop.addEventListener('click',close);closeButton.addEventListener('click',close);
   document.addEventListener('keydown',event=>{
