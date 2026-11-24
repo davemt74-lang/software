@@ -113,7 +113,7 @@ function vp3_managed_intelligence_review_v1(PDO $pdo,array $scope,string $public
     if(count($jobs)!==1){$out['coverage']='unavailable';return $out;}
     $job=$jobs[0];
     try{$policy=vp3_managed_intelligence_policy_v1($pdo,$scope,$job,$call);}
-    catch(VP3PhoneWorkspaceException|RuntimeException $error){$out['coverage']='consent_unavailable';return $out;}
+    catch(RuntimeException $error){$out['coverage']='consent_unavailable';return $out;}
     $call['source_kind']='browser';$evidence=vp3_operator_recording_evidence_v1($pdo,$scope['user'],(int)$scope['agent_id'],$job,$call);
     if(!$evidence){$out['coverage']='unavailable';return $out;}
     $out['recording_state']=$evidence['state'];
@@ -122,7 +122,7 @@ function vp3_managed_intelligence_review_v1(PDO $pdo,array $scope,string $public
     if(!$evidence['transcript_saved']||!preg_match('/^[a-f0-9]{64}$/D',(string)$job['transcript_hash'])){$out['coverage']='unavailable';return $out;}
     if($read===null){
         require_once __DIR__.'/transcript-agent-v1.php';
-        $principal=(int)$scope['agent_id']>0?['kind'=>'user_agent','agent_id'=>(int)$scope['agent_id']]:['kind'=>'system'];
+        $principal=(int)$scope['agent_id']>0?['kind'=>'user_agent','agent_id'=>(int)$scope['agent_id'],'owner_user_id'=>(int)$scope['owner_user_id'],'viewer_user_id'=>(int)$scope['owner_user_id']]:['kind'=>'system','viewer_user_id'=>(int)$scope['owner_user_id']];
         $read=static function(int $session)use($pdo,$scope,$principal):array{
             $s=vp3_transcript_session_v1($pdo,$scope['user'],$principal,$session);
             if((int)($s['conversation_id']??0)!==(int)$scope['conversation_id'])throw new RuntimeException('Transcript conversation changed.',409);
