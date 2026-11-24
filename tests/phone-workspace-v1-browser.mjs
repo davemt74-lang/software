@@ -56,6 +56,13 @@ const server=http.createServer((req,res)=>{
    if(values.action==='bind_call')result={call:{id:8,public_id:values.call_id,peer_e164:'+16025550444',conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'ringing'}};
    if(values.action==='favorite'){state.contacts[0].favorite=values.favorite;state.favorites=values.favorite?[state.contacts[0]]:[];}
    if(values.action==='save_recording_policy'){state.post_call_policy={enabled:values.enabled,retain_audio:values.retain_audio,transcribe:values.transcribe,analyze:values.analyze,model_route:'account_cloud',modules:values.modules};result={policy:state.post_call_policy};}
+   if(values.action==='save_auto_call_policy'){
+    const p=state.auto_call?.policies.find(item=>item.contact_id===values.contact_id&&item.number_id===values.number_id);
+    if(!p||p.revision!==values.expected_revision||values.expected_destination!==p.destination_e164||values.expected_line!==p.line_e164){res.statusCode=409;return res.end(JSON.stringify({ok:false,error:'operator_policy_changed',message:'Review the current authorization.'}));}
+    Object.assign(p,{enabled:values.enabled,revision:p.revision+1,state:values.enabled?'saved':'off',settings:values.settings,
+      authorized_line_e164:values.enabled?p.line_e164:'',authorized_destination_e164:values.enabled?p.destination_e164:''});
+    result={policy:structuredClone(p)};
+   }
    if(values.action==='mark_voicemail_read')state.voicemails.find(v=>v.id===String(values.voicemail_id)).read=true;
    if(values.action==='save_caller_contact'){
     contactStarted=true;if(contactGate)await contactGate;
@@ -126,6 +133,40 @@ try{
   await page.setViewportSize({width:1360,height:900});
  });
  await check('favorites and contact text are safe, scoped and saved through CSRF actions',async()=>{await page.getByRole('tab',{name:'Contacts',exact:true}).click();assert.equal(await page.locator('.vp3-phone-panel img').count(),0);await page.getByRole('button',{name:/^Favorite Fixture contact/}).click();await page.getByRole('button',{name:/^Remove favorite Fixture contact/}).waitFor();const saved=apiCalls.find(c=>c.action==='favorite');assert.equal(saved.contact_id,7);assert.equal(saved.conversation_id,10);assert.equal(saved.agent_id,2);assert.equal(saved.csrf_token,'fixture-csrf');});
+ await check('contact Auto Call permission remains default-off, explicit and revocable without dialing',async()=>{
+  state.auto_call={available:true,execution_enabled:false,policies:[{contact_id:7,agent_id:2,number_id:1,line_e164:'+16025550111',destination_e164:'+16025550222',revision:0,enabled:false,state:'off',can_enable:true,reason:'',authorized_line_e164:'',authorized_destination_e164:'',recording_required:true,transcription_required:true,execution_enabled:false,settings:{timezone:'UTC',window_start:'09:00',window_end:'17:00',max_calls_per_day:1,min_gap_minutes:1440,max_duration_seconds:600}}]};
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  const launcher=page.getByRole('button',{name:/^Agent Auto Call for Fixture contact/});
+  assert.match(await launcher.innerText(),/Off/);
+  await launcher.click();
+  const editor=page.locator('.vp3-phone-auto-call-form');
+  assert.equal(await editor.getByLabel('Allow Agent Auto Call',{exact:true}).isChecked(),false);
+  assert.match(await editor.innerText(),/Autonomous dialing is not available/);
+  await editor.getByLabel('Allow Agent Auto Call',{exact:true}).check();
+  await editor.getByLabel('Calling time zone',{exact:true}).fill('America/Phoenix');
+  await editor.getByLabel('Maximum calls per day',{exact:true}).fill('2');
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  assert.equal(await editor.getByLabel('Maximum calls per day',{exact:true}).inputValue(),'2');
+  assert.equal(await editor.getByLabel('Allow Agent Auto Call',{exact:true}).isChecked(),true);
+  assert.equal(apiCalls.filter(c=>c.action==='save_auto_call_policy').length,0,'Drafting does not save permission');
+  await page.setViewportSize({width:320,height:700});
+  assert.equal(await editor.evaluate(n=>n.scrollWidth<=n.clientWidth+1),true,'Compact policy editor fits the drawer');
+  await editor.getByRole('button',{name:'Save Auto Call permissions',exact:true}).click();
+  await editor.waitFor({state:'detached'});
+  assert.match(await launcher.innerText(),/Permission saved/);
+  const saved=apiCalls.find(c=>c.action==='save_auto_call_policy');
+  assert.equal(saved.contact_id,7);assert.equal(saved.number_id,1);assert.equal(saved.expected_revision,0);assert.equal(saved.expected_destination,'+16025550222');assert.equal(saved.expected_line,'+16025550111');
+  assert.equal(saved.settings.timezone,'America/Phoenix');assert.equal(saved.settings.max_calls_per_day,2);assert.equal(saved.csrf_token,'fixture-csrf');
+  state.auto_call.policies[0].can_enable=false;state.auto_call.policies[0].state='blocked';state.auto_call.policies[0].reason='Recording approval changed.';
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  await launcher.click();await editor.getByLabel('Allow Agent Auto Call',{exact:true}).uncheck();
+  await editor.getByRole('button',{name:'Save Auto Call permissions',exact:true}).click();
+  await editor.waitFor({state:'detached'});
+  assert.match(await launcher.innerText(),/Off/);
+  assert.equal(apiCalls.filter(c=>c.action==='save_auto_call_policy').at(-1).enabled,false);
+  assert.equal(apiCalls.some(c=>['prepare_call','token'].includes(c.action)),false,'Contact authorization never starts a carrier session');
+  await page.setViewportSize({width:1360,height:900});
+ });
  await check('saved voicemail uses authenticated audio and safe transcript/report links',async()=>{await page.getByRole('tab',{name:'Voicemail',exact:true}).click();assert.equal(await page.locator('.vp3-phone-voicemail audio').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail a').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail script').count(),0);await page.locator('.vp3-phone-voicemail summary').first().click();assert.match(await page.locator('.vp3-phone-voicemail').first().innerText(),/<script>unsafe/);await page.locator('audio').evaluate(async audio=>{audio.muted=true;audio.loop=true;window.savedVoicemailAudio=audio;await audio.play();});await page.evaluate(()=>window.VP3PhoneWorkspaceV1.refresh());assert.equal(await page.locator('audio').evaluate(audio=>audio===window.savedVoicemailAudio&&!audio.paused),true,'Polling preserves active playback');});
  await check('absent, null and blank media/transcript/report URLs never become same-page links',async()=>{await page.locator('audio').evaluateAll(nodes=>nodes.forEach(audio=>audio.pause()));const previous=structuredClone(state.voicemails);state.voicemails=[undefined,null,'','   '].map((missing,index)=>({id:'job-'+(70+index),call_id:'fixture_call_'+index,peer_e164:'+16025550222',transcript:'Fixture without media URL',audio_url:missing,transcript_url:missing,report_url:missing}));await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await page.locator('.vp3-phone-voicemail audio').count(),0);assert.equal(await page.locator('.vp3-phone-voicemail a').count(),0);state.voicemails=previous;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());});
  await check('drawer focus and Escape restore the header button',async()=>{await page.keyboard.press('Escape');assert.equal(await page.locator('.vp3-phone-panel').isVisible(),false);assert.equal(await page.getByRole('button',{name:'Phone',exact:true}).evaluate(n=>n===document.activeElement),true);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByRole('tab',{name:'Connections',exact:true}).click();});
