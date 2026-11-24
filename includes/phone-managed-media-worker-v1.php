@@ -93,6 +93,26 @@ function vp3_managed_media_tick_v1(PDO $pdo,?callable $carrier=null,?int $clock=
     $out=['started'=>0,'stopped'=>0,'unconfirmed'=>0,'attempted'=>0];
     if(!vp3_managed_recording_ready_v1($pdo)||!vp3_managed_transport_ready_v1($pdo))return $out;
     $now=$clock??time();
+    // A current authority or policy loss also becomes a durable withdrawal
+    // for in-flight media; no new paid work is authorized by a stale snapshot.
+    $q=$pdo->query("SELECT t.call_public_id,t.owner_user_id,t.request_id FROM phone_managed_recording_consent_v1 c
+        JOIN phone_managed_callback_dispatch_v1 t ON t.request_id=c.request_id AND t.owner_user_id=c.owner_user_id
+        JOIN phone_browser_calls_v1 b ON b.public_id=t.call_public_id AND b.owner_user_id=t.owner_user_id
+        WHERE c.revoked_epoch=0 AND c.start_epoch>0 AND c.start_state IN ('starting','started','uncertain')
+          AND b.state IN ('dialing','ringing','answered') ORDER BY c.updated_epoch ASC LIMIT 4");
+    $liveRows=$q->fetchAll(PDO::FETCH_ASSOC);$q->closeCursor();
+    foreach($liveRows as $hint){
+        try{vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$hint,$now){
+            if(!vp3_managed_transport_owner_lock_v1($pdo,(int)$hint['owner_user_id']))return;
+            $r=vp3_managed_callback_row_v1($pdo,$hint['request_id'],true);$c=vp3_managed_recording_row_v1($pdo,$hint['request_id'],true);
+            if(!$r||!$c||(int)$c['revoked_epoch']>0)return;
+            try{
+                vp3_managed_callback_need_v1(vp3_managed_recording_enabled_v1()&&vp3_managed_transport_enabled_v1()&&vp3_managed_media_driver_enabled_v1()&&$r['state']==='dispatch_claimed');
+                $user=vp3_managed_callback_owner_lock_v1($pdo,(int)$hint['owner_user_id']);$a=vp3_managed_callback_current_v1($pdo,$r,$user,$now);
+                vp3_managed_recording_current_v1($pdo,$r,$c,$a);
+            }catch(VP3PhoneWorkspaceException){vp3_managed_recording_revoke_v1($pdo,$r['public_id'],$now);}
+        });}catch(Throwable){$out['unconfirmed']++;}
+    }
     // First service explicit withdrawal. Unknown identity is left for a signed
     // terminal receipt or operator hangup; never guess or retry an uncertain POST.
     $q=$pdo->query("SELECT t.call_public_id FROM phone_managed_recording_consent_v1 c
