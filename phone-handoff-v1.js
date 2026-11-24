@@ -17,7 +17,7 @@
       source.hidden=!approved;
       target.hidden=Boolean(device)||Boolean(proof);
       review.hidden=!proof;
-      get('help').textContent=approved?'Move only to your own installed app. Stop sharing and finish calls first. The owner must approve the move; the old session disconnects only after you finish. Sharing and communication consent reset.':'Use the move code from your existing connected app to keep its private Chat. The owner must verify and approve this new installation.';
+      get('help').textContent=approved?'Move only to your own installed app. Stop sharing and finish calls first. The owner must approve the move; the old session disconnects only after you finish. Sharing, saved phone number and information access reset.':'Use the move code from your existing connected app to keep its private Chat. The owner must verify and approve this new installation.';
       get('offer').hidden=Boolean(r)||Boolean(ticket)||!saved;
       get('offer').disabled=!live()||!['off','denied'].includes(device?.location_state);
       get('cancel').hidden=!r;get('cancel').disabled=!live();

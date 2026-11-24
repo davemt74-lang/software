@@ -9,7 +9,7 @@
   function render(){
     const active=installed();
     status.textContent=active?'Opened from your installed app.':'Opened in a browser.';
-    help.textContent=active?'Use this installed app for your connection. If it has a separate session, pair it with an owner-approved code.':'On Android, use Install app or Add to Home Screen if your browser offers it. Open the installed app to connect.';
+    help.textContent=active?'If this app is not connected, use a fresh pairing code or move your existing connection below.':'On Android, use Install app or Add to Home Screen if your browser offers it. Open the installed app to connect.';
     button.hidden=active||!prompt;button.disabled=busy||button.hidden;
     panel.dataset.workerState=workerState;
   }
