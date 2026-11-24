@@ -142,6 +142,19 @@ function vp3_initiative_transcript_capabilities_cloud_v1(PDO $pdo,array $scope,a
     try{
         $scope=video_meeting_processing_scope_readonly_v1801($pdo,$scope['user'],$scope);
         $session=vp3_transcript_session_v1($pdo,$scope['user'],$scope['principal'],(int)$session['id']);
+        $meta=json_decode((string)($session['metadata_json']??''),true);
+        if(is_array($meta)&&($meta['source']??null)==='phone_call_v1'){
+            $origin=$meta['phone_recording_v1']??[];
+            // Managed call follow-up is owned by Operator's consent-gated,
+            // count-only source. Do not duplicate it into proactive transcript AI.
+            $managed=($origin['transport_kind']??'')==='managed_callback';
+            if(!$managed&&is_array($origin)&&($origin['call_kind']??'')==='browser'&&(int)($origin['job_id']??0)>0){
+                $q=$pdo->prepare('SELECT b.transport_kind FROM phone_recording_jobs_v1 j JOIN phone_browser_calls_v1 b ON b.id=j.call_id AND b.public_id=j.call_public_id AND b.owner_user_id=j.owner_user_id WHERE j.id=? AND j.owner_user_id=? AND j.session_id=? AND j.origin_kind=?');
+                $q->execute([(int)$origin['job_id'],$owner,(int)$session['id'],'browser']);$kind=$q->fetchColumn();$q->closeCursor();
+                $managed=$kind==='managed_callback';
+            }
+            if($managed)throw new RuntimeException('Managed phone reports use the private Operator review workflow.',403);
+        }
         $meeting=video_meeting_transcription_readonly_binding_v1801($pdo,$scope['user'],$session);
         if($meeting===null){
             video_meeting_transcription_assert_cloud_ai_v1801($pdo,$scope['user'],$session,true,$scope);
