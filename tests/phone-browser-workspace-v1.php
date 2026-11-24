@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_managed_recording_consent_v1','phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_native_dialthrough_v1','phone_managed_recording_consent_v1','phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id '.($mysql?'INT UNSIGNED':'INTEGER').' PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -1251,5 +1251,86 @@ c($missingReport['coverage']==='stale'&&$missingReport['report']===null,'removed
 vp3_managed_recording_revoke_v1($pdo,$recordRequest,$intelClock);
 $revokedReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
 c($revokedReview['coverage']==='consent_unavailable'&&$revokedReview['report']===null&&$revokedReview['followups']===[],'recording consent withdrawal blocks further managed report review');
+
+
+// PS5E.7: native caller admission, single-use keypad, no carrier or live dial.
+require_once dirname(__DIR__).'/includes/phone-native-dialthrough-v1.php';
+c(vp3_native_dialthrough_ready_v1($pdo),'native dial-through schema installed');
+vp3_native_dialthrough_install_v1($pdo);
+$nativeClock=$clock;
+$nativeNumber=['id'=>2,'owner_user_id'=>2,'agent_id'=>8,'voice_enabled'=>1];
+$nativeLine='+16025550102';
+$makeNative=static function(string $tag,string $holder,string $destination)use($pdo,$insertDevice,$insertThread,$insertProfile,$zone,$nativeClock):array{
+    $device=md5('native-device-'.$tag);$profile=md5('native-profile-'.$tag);$id=md5('native-request-'.$tag);
+    $insertDevice->execute([$device,$nativeClock+3600]);$insertThread->execute([$device]);$insertProfile->execute([$device,$profile,$holder,$zone,$nativeClock]);
+    $args=['request_id'=>$id,'device_id'=>$device,'profile_id'=>$profile,'generation'=>1,'profile_revision'=>1,'phone_revision'=>1,
+        'number_id'=>2,'agent_id'=>0,'conversation_id'=>21,'destination_e164'=>$destination,'confirmed'=>true,'transport'=>'twilio_native'];
+    $review=vp3_managed_callback_prepare_v1($pdo,user(2),$args,$nativeClock);
+    c($review['transport']==='twilio_native'&&$review['native']['can_issue_pin']===false&&!$review['recording_enabled'],'owner prepares native review but cannot issue holder PIN');
+    return ['id'=>$id,'device'=>$device,'profile'=>$profile,'holder'=>$holder,'destination'=>$destination,'args'=>$args];
+};
+$nativeIssue=static function(array $v,array $extra=[])use($pdo,$nativeClock):array{
+    $d=vp3_managed_ui_device_v1($pdo,2,$v['device']);
+    return vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_native_dialthrough_issue_v1($pdo,$d,array_replace(['device_id'=>$v['device'],'generation'=>1,'managed_request_id'=>$v['id'],'confirmed'=>true],$extra),$nativeClock));
+};
+$nativeApprove=static fn(array $v)=>vp3_managed_callback_holder_v1($pdo,2,$v['device'],['request_id'=>$v['id'],'decision'=>'approve','confirmed'=>true,'destination_e164'=>$v['destination']],$nativeClock);
+$nativeInbound=static fn(string $sid,string $from,int $at=0)=>vp3_native_dialthrough_inbound_v1($pdo,$nativeNumber,$sid,$from,$nativeLine,$at?:$nativeClock);
+$nativeEvent=static function(string $event,string $public,string $nonce,array $form,int $at=0)use($pdo,$nativeClock):array{
+    $url=vp3_managed_transport_url_v1($event,$public,$nonce);
+    return vp3_managed_transport_event_v1($pdo,$event,$public,$nonce,$form,vp3_phone_sms_twilio_signature_v110($url,$form,'carrier-auth-token-fixture'),$at?:$nativeClock);
+};
+$nv=$makeNative('valid','+16025550158','+16025550159');
+denies(fn()=>$nativeIssue($nv),503,'native pilot defaults disabled');
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+$GLOBALS['settings']['phone_native_dialthrough_enabled_v1']='1';
+denies(fn()=>$nativeIssue($nv),409,'pending owner review cannot issue native code');
+denies(fn()=>vp3_managed_callback_prepare_v1($pdo,user(2),array_replace($nv['args'],['transport'=>'twilio_callback']),$nativeClock),409,'native mode cannot be changed by retry');
+denies(fn()=>vp3_managed_callback_prepare_v1($pdo,user(2),$nv['args']+['recording_requested'=>true],$nativeClock),422,'native pilot refuses recording');
+$nativeApprove($nv);
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$nv['id'],true,static fn()=>throw new LogicException('No carrier IO'),$nativeClock),409,'native approval cannot be used for callback dispatch');
+denies(fn()=>$nativeIssue($nv,['confirmed'=>false]),422,'code issuance requires holder gesture');
+$beforeNativeCalls=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$ticket=$nativeIssue($nv)['native_dialthrough_ticket'];$pin=$ticket['pin'];
+c(preg_match('/^[0-9]{8}$/D',$pin)===1&&$ticket['line_e164']===$nativeLine&&$ticket['expires_epoch']===$nativeClock+120,'one private eight digit code bound to assigned line and expiry');
+$nativeStored=vp3_native_dialthrough_row_v1($pdo,$nv['id']);
+c($nativeStored['pin_hash']!==$pin&&hash_equals($nativeStored['pin_hash'],vp3_native_dialthrough_digest_v1($nv['id'],$pin)),'only keyed PIN digest retained');
+$nativePoll=vp3_managed_ui_projection_v1($pdo,vp3_managed_ui_device_v1($pdo,2,$nv['device']),$nativeClock,true);
+c(!isset($nativePoll['request']['native']['pin'],$nativePoll['request']['native']['pin_hash'])&&!$nativePoll['request']['native']['can_issue_pin'],'status does not replay secret code');
+denies(fn()=>$nativeIssue($nv),409,'one code issuance per request');
+c($nativeInbound('CA'.md5('ordinary-native'),'+16025550198')===null,'unrelated caller retains ordinary routing');
+$sid='CA'.md5('native-first');$form=form($sid,['From'=>$nv['holder'],'To'=>$nativeLine,'Direction'=>'inbound']);
+$prompt=$nativeInbound($sid,$nv['holder']);
+c($prompt&&$prompt['accepted']&&str_contains($prompt['twiml'],'numDigits="8"')&&!str_contains($prompt['twiml'],'<Dial')&&!str_contains($prompt['twiml'],$nv['destination']),'matching caller ID alone produces only keypad challenge');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$beforeNativeCalls,'no billable destination call or managed ledger before PIN');
+$nativeNonce=vp3_native_dialthrough_nonce_v1($nv['id'],$sid);
+$pinForm=$form+['Digits'=>$pin];
+bad(fn()=>vp3_managed_transport_event_v1($pdo,'native_pin',$nv['id'],$nativeNonce,$pinForm,'forged',$nativeClock),'forged PIN callback rejected');
+c(!$nativeEvent('native_pin',$nv['id'],$nativeNonce,array_replace($pinForm,['CallSid'=>'CA'.md5('foreign-native')]))['accepted'],'another parent cannot use the code');
+$bridgeNative=$nativeEvent('native_pin',$nv['id'],$nativeNonce,$pinForm);
+c($bridgeNative['accepted']&&str_contains($bridgeNative['xml'],'<Dial callerId="'.$nativeLine.'"')&&str_contains($bridgeNative['xml'],$nv['destination'])&&!str_contains($bridgeNative['xml'],' record='),'signed correct code authorizes exact bounded unrecorded destination');
+$nativeStored=vp3_native_dialthrough_row_v1($pdo,$nv['id']);$nativePublic=$nativeStored['call_public_id'];
+c($nativeStored['state']==='consumed'&&$nativeStored['pin_hash']===null,'successful PIN consumed and erased');
+c(readcall($nativePublic)['provider_call_sid']===$sid&&readcall($nativePublic)['managed_parent_kind']==='native','canonical call ledger binds inbound parent');
+c(!$nativeEvent('native_pin',$nv['id'],$nativeNonce,$pinForm)['accepted'],'signed PIN replay never returns another Dial');
+c(!str_contains($nativeInbound($sid,$nv['holder'])['twiml'],'<Gather'),'inbound replay never falls back to normal voicemail');
+preg_match('/action="([^"]+)"/',$bridgeNative['xml'],$m);parse_str((string)parse_url(html_entity_decode($m[1],ENT_QUOTES|ENT_XML1),PHP_URL_QUERY),$nativeQuery);
+$childNative='CA'.md5('native-child');$childFormNative=form($childNative,['ParentCallSid'=>$sid,'From'=>$nativeLine,'To'=>$nv['destination'],'CallStatus'=>'in-progress']);
+c($nativeEvent('child',$nativePublic,$nativeQuery['nonce'],$childFormNative)['accepted'],'signed native destination child updates shared ledger');
+$nativeParentEvidence=['sid'=>$sid,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$nv['holder'],'to'=>$nativeLine,'direction'=>'inbound','parent_call_sid'=>null,'status'=>'in-progress','duration'=>''];
+c(vp3_managed_control_evidence_v1($nativeParentEvidence,(string)setting('phone_twilio_account_sid'),readcall($nativePublic))['state']==='answered','control evidence validates reversed native parent direction');
+$completeNative=form($sid,['From'=>$nv['holder'],'To'=>$nativeLine,'DialCallSid'=>$childNative,'DialCallStatus'=>'completed','DialCallDuration'=>'22']);
+c($nativeEvent('complete',$nativePublic,$nativeQuery['nonce'],$completeNative)['accepted']&&readcall($nativePublic)['state']==='completed'&&(int)readcall($nativePublic)['duration_seconds']===22,'native completion records destination duration, not parent time');
+$badNative=$makeNative('wrong-pin','+16025550160','+16025550161');$nativeApprove($badNative);$badTicket=$nativeIssue($badNative)['native_dialthrough_ticket'];
+$badSid='CA'.md5('native-wrong');$nativeInbound($badSid,$badNative['holder']);
+$badNonce=vp3_native_dialthrough_nonce_v1($badNative['id'],$badSid);$badForm=form($badSid,['From'=>$badNative['holder'],'To'=>$nativeLine,'Digits'=>$badTicket['pin']==='00000000'?'11111111':'00000000']);
+c(!$nativeEvent('native_pin',$badNative['id'],$badNonce,$badForm)['accepted'],'incorrect PIN cannot bridge');
+c(vp3_native_dialthrough_row_v1($pdo,$badNative['id'])['pin_hash']===null&&vp3_managed_callback_row_v1($pdo,$badNative['id'])['state']==='canceled','incorrect code consumes request and clears secret');
+c(!$nativeEvent('native_pin',$badNative['id'],$badNonce,array_replace($badForm,['Digits'=>$badTicket['pin']]))['accepted'],'no second attempt after wrong code');
+$revNative=$makeNative('revoked','+16025550162','+16025550163');$nativeApprove($revNative);$revTicket=$nativeIssue($revNative)['native_dialthrough_ticket'];
+$revSid='CA'.md5('native-revoked');$nativeInbound($revSid,$revNative['holder']);$revNonce=vp3_native_dialthrough_nonce_v1($revNative['id'],$revSid);
+vp3_managed_callback_revoke_v1($pdo,2,$revNative['device'],$nativeClock);
+c(!$nativeEvent('native_pin',$revNative['id'],$revNonce,form($revSid,['From'=>$revNative['holder'],'To'=>$nativeLine,'Digits'=>$revTicket['pin']]))['accepted'],'pairing withdrawal before PIN blocks bridge');
+c(vp3_native_dialthrough_row_v1($pdo,$revNative['id'])['pin_hash']===null,'withdrawal erases PIN digest');
+unset($GLOBALS['settings']['phone_native_dialthrough_enabled_v1'],$GLOBALS['settings']['phone_managed_callback_enabled_v1']);
 
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
