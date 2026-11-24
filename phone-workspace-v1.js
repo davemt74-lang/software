@@ -15,7 +15,7 @@
   let context={conversation_id:principal(config.conversation_id??config.conversationId),agent_id:principal(config.agent_id??config.agentId),ready:true},generation=0,requestSequence=0;
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
   let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0;
-  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true;
+  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,autoCallDraft=null;
   const layer=node('div','vp3-phone-workspace');layer.hidden=true;
   const backdrop=node('button','vp3-phone-backdrop');backdrop.type='button';backdrop.tabIndex=-1;backdrop.setAttribute('aria-label','Close phone workspace');
   const panel=node('aside','vp3-phone-panel');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','vp3PhoneTitle');panel.tabIndex=-1;
@@ -74,7 +74,7 @@
       const response=await fetch(url.href,options);let data={};try{data=await response.json();}catch(_){throw new Error('Phone returned an invalid response.');}
       if(!current(g)){if(action==='prepare_call'&&data.ok===true&&publicId(data.call?.public_id))await cancelPrepared({info:data.call,scope:requestScope,prepared:true});throw new DOMException('Phone context changed.','AbortError');}
       if(response.status===401||response.status===403){revoke();throw new Error('Phone access is unavailable.');}
-      if(!response.ok||data.ok!==true){const error=new Error(response.status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.');error.status=response.status;throw error;}
+      if(!response.ok||data.ok!==true){const operatorError=action==='save_auto_call_policy'&&typeof data.error==='string'&&data.error.startsWith('operator_')&&typeof data.message==='string';const error=new Error(operatorError?data.message.slice(0,300):response.status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.');error.status=response.status;throw error;}
       return data;
     }finally{clearTimeout(timer);requests.delete(controller);}
   }
@@ -178,22 +178,122 @@
     if(active)host.append(callCard(active.info,active));
     else if(state?.active_call&&!pending.size)host.append(callCard(state.active_call));
   }
+  function autoCallPolicy(contact){
+    const book=state?.auto_call,number=selectedNumber();
+    if(book?.available!==true||book.execution_enabled!==false||!Array.isArray(book.policies)||!number)return null;
+    const policy=book.policies.slice(0,250).find(p=>p?.contact_id===Number(contact.id)&&p.number_id===Number(number.id)&&p.agent_id===Number(number.agent_id));
+    if(!policy||policy.execution_enabled!==false||policy.recording_required!==true||policy.transcription_required!==true||
+      !Number.isSafeInteger(policy.revision)||policy.revision<0||typeof policy.enabled!=='boolean'||typeof policy.can_enable!=='boolean'||
+      !['off','saved','blocked','needs_review'].includes(policy.state)||typeof policy.reason!=='string'||
+      typeof policy.destination_e164!=='string'||typeof policy.line_e164!=='string'||
+      policy.line_e164!==number.phone_e164||!policy.settings)return null;
+    return policy;
+  }
+  function autoCallKey(policy){return policy.agent_id+':'+policy.number_id+':'+policy.contact_id;}
+  function autoCallEditor(contact,policy){
+    const draft=autoCallDraft,g=generation,key=autoCallKey(policy);
+    const form=node('form','vp3-phone-auto-call-form');form.noValidate=true;
+    form.setAttribute('aria-label','Agent Auto Call settings for '+(contact.name||contact.phone_e164));
+    const changed=draft.revision!==policy.revision||draft.destination!==policy.destination_e164||draft.line!==policy.line_e164;
+    form.append(node('strong',null,'Agent Auto Call'));
+    form.append(node('p','vp3-phone-empty','Owner permission only. Autonomous dialing is not available in this release. A future call must disclose the AI, obtain required consent, record and transcribe the conversation, and obey these limits.'));
+    form.append(node('p','vp3-phone-auto-call-target','From '+policy.line_e164+' · '+(selectedNumber()?.agent_name||'Assigned Agent')+'\nTo '+(policy.destination_e164||'No valid primary number')));
+    if(policy.state==='needs_review')form.append(node('p','vp3-phone-processing-error','The previously authorized contact or line changed. Review the numbers before saving again.'));
+    if(policy.reason)form.append(node('p','vp3-phone-empty',policy.reason));
+    if(changed)form.append(node('p','vp3-phone-processing-error','This permission changed while you were editing. Cancel and reopen before saving.'));
+    const checkLabel=node('label','vp3-phone-check'),check=node('input');check.type='checkbox';check.checked=draft.enabled;
+    check.disabled=draft.saving||changed||(!policy.can_enable&&!policy.enabled);
+    check.dataset.phoneFocusKey='auto-call-enable-'+key;
+    check.addEventListener('change',()=>{if(current(g)&&autoCallDraft===draft&&!draft.saving){draft.enabled=check.checked;draft.feedback='';}});
+    checkLabel.append(check,node('span',null,'Allow Agent Auto Call'));form.append(checkLabel);
+    const fields=node('div','vp3-phone-auto-call-fields');
+    const definitions=[
+      ['timezone','Calling time zone','text',null,null,1],
+      ['window_start','Earliest call (local time)','time',null,null,60],
+      ['window_end','Latest call (local time)','time',null,null,60],
+      ['max_calls_per_day','Maximum calls per day','number',1,3,1],
+      ['min_gap_minutes','Minimum minutes between calls','number',60,10080,1],
+      ['max_duration_seconds','Maximum call duration (minutes)','number',1,15,1]
+    ];
+    for(const [name,title,type,min,max,step] of definitions){
+      const label=node('label','vp3-phone-field',title),input=node('input');input.type=type;input.required=true;
+      input.dataset.phoneFocusKey='auto-call-'+name+'-'+key;input.disabled=draft.saving||changed;
+      if(type==='number'){input.min=String(min);input.max=String(max);input.step=String(step);}
+      if(type==='time')input.step=String(step);
+      if(name==='timezone'){input.maxLength=80;input.placeholder='America/Phoenix';}
+      input.value=String(name==='max_duration_seconds'?Number(draft.settings[name])/60:draft.settings[name]??'');
+      input.addEventListener('input',()=>{if(current(g)&&autoCallDraft===draft&&!draft.saving){
+        draft.settings[name]=type==='number'?(input.value===''?null:Number(input.value)*(name==='max_duration_seconds'?60:1)):input.value;
+        draft.feedback='';
+      }});
+      label.append(input);fields.append(label);
+    }
+    form.append(fields,node('p','vp3-phone-empty','Calling window applies each day in the selected time zone. Limits are stored here; they do not start calls.'));
+    if(draft.feedback){const message=node('p','vp3-phone-processing-error',draft.feedback);message.setAttribute('role','status');form.append(message);}
+    const actions=node('div','vp3-phone-actions'),save=node('button','vp3-phone-button vp3-phone-primary','Save Auto Call permissions');save.type='submit';save.disabled=draft.saving||changed;
+    save.dataset.phoneFocusKey='auto-call-save-'+key;
+    const cancel=button('Cancel',()=>{if(current(g)&&autoCallDraft===draft&&!draft.saving){autoCallDraft=null;render();}});cancel.disabled=draft.saving;
+    actions.append(save,cancel);form.append(actions);
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();
+      if(!event.isTrusted||!current(g)||autoCallDraft!==draft||draft.saving||changed||autoCallKey(autoCallPolicy(contact)||{})!==key)return;
+      const fresh=autoCallPolicy(contact);
+      if(!fresh||fresh.revision!==draft.revision||fresh.destination_e164!==draft.destination||fresh.line_e164!==draft.line)return;
+      if(draft.enabled&&!fresh.can_enable){draft.feedback=fresh.reason||'Calling prerequisites are unavailable.';render();return;}
+      draft.saving=true;draft.feedback='';render();
+      try{
+        const result=await api('save_auto_call_policy',{contact_id:Number(contact.id),number_id:policy.number_id,expected_revision:draft.revision,enabled:draft.enabled,
+          expected_destination:draft.destination,expected_line:draft.line,settings:draft.settings},'POST',g);
+        if(!current(g)||autoCallDraft!==draft)return;
+        if(fetching)await fetching;if(!current(g)||autoCallDraft!==draft)return;
+        if(result.policy?.contact_id!==Number(contact.id)||result.policy?.number_id!==policy.number_id||result.policy?.execution_enabled!==false||
+          result.policy?.enabled!==draft.enabled)throw new Error('The authorization save could not be confirmed. Reopen its current settings.');
+        if(state?.auto_call?.available&&Array.isArray(state.auto_call.policies)){
+          state.auto_call.policies=state.auto_call.policies.map(item=>item.contact_id===Number(contact.id)&&item.number_id===policy.number_id?result.policy:item);
+        }
+        autoCallDraft=null;say(draft.enabled?'Auto Call permission saved. Autonomous dialing is off.':'Auto Call permission revoked.');render();void refresh();
+      }catch(error){if(current(g)&&autoCallDraft===draft)draft.feedback=error.message;}
+      finally{if(current(g)&&autoCallDraft===draft){draft.saving=false;render();}}
+    });
+    return form;
+  }
   function contactRow(contact){
     const renderGeneration=generation;
     const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy');details.append(node('strong',null,contact.name||contact.phone_e164),node('span',null,contact.phone_e164));
     const favorite=button(contact.favorite?'★':'☆',async()=>{const g=renderGeneration;if(!current(g))return;favorite.disabled=true;try{await api('favorite',{contact_id:Number(contact.id),favorite:!contact.favorite},'POST',g);if(current(g))await refresh();}catch(error){if(current(g))say(error.message);}finally{if(current(g))favorite.disabled=false;}});favorite.setAttribute('aria-label',(contact.favorite?'Remove favorite ':'Favorite ')+(contact.name||contact.phone_e164));favorite.setAttribute('aria-pressed',String(Boolean(contact.favorite)));
-    const call=button('Call',()=>{if(current(renderGeneration))void placeCall(contact.phone_e164);});call.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size);row.append(details,favorite,call);return row;
+    const call=button('Call',()=>{if(current(renderGeneration))void placeCall(contact.phone_e164);});call.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size);row.append(details,favorite,call);
+    const policy=autoCallPolicy(contact);if(!policy)return row;
+    const wrap=node('div','vp3-phone-contact-with-policy'),key=autoCallKey(policy);wrap.append(row);
+    const openEditor=button('Agent Auto Call · '+({off:'Off',saved:'Permission saved',blocked:'Blocked',needs_review:'Review required'}[policy.state]),event=>{
+      if(!event.isTrusted||!current(renderGeneration)||!positive(context.conversation_id)||autoCallDraft?.saving)return;
+      const fresh=autoCallPolicy(contact);if(!fresh||autoCallKey(fresh)!==key)return;
+      if(autoCallDraft?.key===key){autoCallDraft=null;render();return;}
+      if(autoCallDraft)return;
+      const settings={...fresh.settings};
+      if(fresh.revision===0){try{settings.timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||settings.timezone;}catch(_){}}
+      autoCallDraft={key,revision:fresh.revision,enabled:fresh.enabled,destination:fresh.destination_e164,line:fresh.line_e164,settings,saving:false,feedback:''};render();
+    });
+    openEditor.setAttribute('aria-label','Agent Auto Call for '+(contact.name||contact.phone_e164));
+    openEditor.setAttribute('aria-expanded',String(autoCallDraft?.key===key));openEditor.dataset.phoneFocusKey='auto-call-open-'+key;
+    openEditor.disabled=!positive(context.conversation_id)||Boolean(autoCallDraft&&autoCallDraft.key!==key)||Boolean(autoCallDraft?.saving);
+    wrap.append(openEditor);
+    if(autoCallDraft?.key===key)wrap.append(autoCallEditor(contact,policy));
+    return wrap;
   }
   function renderContacts(){
     const host=sections.contacts;host.replaceChildren();if(!state){listEmpty(host,'Phone contacts are unavailable.');return;}
     const search=node('input');search.type='search';search.placeholder='Search contacts';search.setAttribute('aria-label','Search phone contacts');search.dataset.phoneFocusKey='contact-search';search.value=contactQuery;host.append(search);
+    if(state.auto_call?.available===false)host.append(node('p','vp3-phone-empty','Auto Call preferences are unavailable. Run the Cloud database upgrade if needed. Manual calling is unchanged.'));
+    else if(state.auto_call?.available===true&&!positive(context.conversation_id))host.append(node('p','vp3-phone-empty','Open a saved private Chat to change Auto Call permissions.'));
+    if(autoCallDraft&&!state.contacts.some(contact=>{const policy=autoCallPolicy(contact);return policy&&autoCallKey(policy)===autoCallDraft.key;}))autoCallDraft=null;
     const results=node('div','vp3-phone-contact-results');host.append(results);
     function fill(){results.replaceChildren();const query=contactQuery.trim().toLocaleLowerCase();const contacts=state.contacts.filter(item=>!query||(String(item.name)+' '+String(item.phone_e164)).toLocaleLowerCase().includes(query));
       const favoriteIds=new Set(state.favorites.map(item=>Number(item.id)));const favorites=contacts.filter(item=>item.favorite||favoriteIds.has(Number(item.id)));
       if(favorites.length){results.append(node('h3',null,'Favorites'));for(const item of favorites)results.append(contactRow({...item,favorite:true}));}
       results.append(node('h3',null,'Contacts'));for(const item of contacts.filter(item=>!favorites.includes(item)))results.append(contactRow(item));if(!contacts.length)listEmpty(results,'No matching phone contacts.');
     }
-    search.addEventListener('input',()=>{contactQuery=search.value.slice(0,120);fill();});fill();
+    if(autoCallDraft)search.disabled=true;
+    search.addEventListener('input',()=>{if(autoCallDraft)return;contactQuery=search.value.slice(0,120);fill();});fill();
   }
   function renderCalls(){
     const host=sections.calls;host.replaceChildren();if(!state?.calls.length){listEmpty(host,'No recent calls.');return;}
@@ -422,16 +522,16 @@
   function clearAudio(){for(const audio of [...audioNodes]){audio.pause();audio.removeAttribute('src');audio.load();if(!audio.isConnected)audioNodes.delete(audio);}}
 
   function revoke(){
-    if(!authorized)return;authorized=false;generation++;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
+    if(!authorized)return;authorized=false;generation++;autoCallDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
     for(const item of document.querySelectorAll('[data-phone-workspace-toggle]'))item.hidden=true;
     for(const section of Object.values(sections))section.replaceChildren();renderCards();
   }
   function contextChanged(next={}){
     const normalized={conversation_id:principal(next.conversation_id),agent_id:principal(next.agent_id),ready:next.ready!==false};
     if(normalized.conversation_id===context.conversation_id&&normalized.agent_id===context.agent_id&&normalized.ready===context.ready)return;
-    generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();render();void refresh();
+    generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;render();void refresh();
   }
-  function dispose(){if(disposed)return;generation++;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
+  function dispose(){if(disposed)return;generation++;autoCallDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-phone-workspace-toggle]');if(trigger){event.preventDefault();opened?close():open(trigger);}});
   backdrop.addEventListener('click',close);closeButton.addEventListener('click',close);
   document.addEventListener('keydown',event=>{
