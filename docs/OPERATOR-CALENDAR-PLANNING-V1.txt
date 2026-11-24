@@ -1,0 +1,11 @@
+OPERATOR SPECIALIST — CLOUD CALENDAR PLANNING V1
+
+Use Phone / Connections to choose the assigned line, then Phone / Contacts to save an explicit Auto Call permission for the contact. Plan a call becomes available when that permission is current and recording/transcription prerequisites are satisfied.
+
+The preview checks the owner's native Cloud Calendar, recurring events, and pending/confirmed scheduling bookings. It suggests up to three times on different days in the next seven days, inside the contact's selected time zone and calling window. The reminder duration is up to ten minutes, capped by the saved authorization. HomeServer and external calendars, recipient availability, call budgets and actual calling eligibility are not verified by this planning preview.
+
+Choose one suggested time and explicitly save a Calendar appointment. The save rechecks the owner/Agent/line/contact binding, policy revision, time window, and Cloud calendar conflicts under the existing owner transaction. Only one upcoming appointment per contact is created by this flow. Exact repeated saves return the existing event; canceled or changed appointments do not silently recreate. The native Calendar page remains responsible for editing/removing appointments. Operator Brain displays upcoming one-time reminders and links to Calendar. The native Planning notification/checkpoint path owns calendar notifications; no duplicate announcement engine is added.
+
+This is a reminder, not an automatic phone call, recipient invitation, consent receipt or call execution authorization. There is no dialing, provider call, new paid model request or new schema for Calendar planning. The future executor must separately enforce all current authorization, consent, call frequency, time zone, spend and recording controls; ordinary calendar events must never be treated as executable call jobs.
+
+Verification extends the existing SQLite/MySQL phone workspace fixture with native Calendar events and bookings, recurring conflicts, read-only preview, CSRF/owner/Agent isolation, recheck on save, idempotence, cancellation and no carrier side effects. Browser fixtures cover slot selection, polling, explicit save, compact layout and Operator Brain Calendar links. Hosted CI and actual phone tests remain release gates.

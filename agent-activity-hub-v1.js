@@ -2996,6 +2996,38 @@
     }
     if (review.coverage==='limited') panel.append(node('small','Review is limited to the most recent eight eligible reports; some sources could not be checked.'));
   }
+  function operatorCalendarModel(raw) {
+    if (!raw || raw.execution_enabled!==false || !['ready','limited','unavailable'].includes(raw.coverage)
+      || !Array.isArray(raw.appointments) || raw.appointments.length>10 || raw.coverage==='unavailable'&&raw.appointments.length) return null;
+    const seen=new Set();
+    for (const appointment of raw.appointments) {
+      if (!appointment || !positive(appointment.event_id) || seen.has(appointment.event_id) || appointment.execution_enabled!==false
+        || typeof appointment.title!=='string' || appointment.title.length>380 || typeof appointment.label!=='string' || appointment.label.length>160
+        || !Number.isFinite(Date.parse(appointment.start_at)) || !Number.isFinite(Date.parse(appointment.end_at))
+        || Date.parse(appointment.end_at)<=Date.parse(appointment.start_at) || !localUrl(appointment.url)) return null;
+      const href=new URL(appointment.url,location.origin);
+      if (!href.pathname.endsWith('/calendar-event.php')||href.hash||href.searchParams.get('id')!==String(appointment.event_id)
+        || [...href.searchParams.keys()].length!==1) return null;
+      seen.add(appointment.event_id);
+    }
+    return raw;
+  }
+  function renderOperatorCalendar(current,panel,calendar) {
+    panel.append(node('h4','Planned calls'));
+    panel.append(node('small','Upcoming owner-reviewed Calendar appointments. These are reminders, not automated calls.'));
+    if (!calendar || calendar.coverage==='unavailable') {
+      panel.append(node('p','Planned calls could not be verified.'));return;
+    }
+    if (!calendar.appointments.length) panel.append(node('p','No upcoming phone appointments found.'));
+    for (const appointment of calendar.appointments) {
+      const copy=itemCopy(appointment.title,appointment.label,'operator-calendar:'+appointment.event_id,true);
+      const actions=node('div','','vp3-agent-activity-actions'),link=node('a','Open Calendar appointment');
+      link.href=localUrl(appointment.url);link.dataset.operatorFocus='calendar:'+appointment.event_id;
+      link.addEventListener('click',event=>{if(!event.isTrusted||signature(current)!==signature(scope()))event.preventDefault();});
+      actions.append(link);appendSpecialistItem(panel,copy,actions);
+    }
+    if(calendar.coverage==='limited')panel.append(node('small','Some appointments may be outside this recent view.'));
+  }
   function renderOperatorHistory(current) {
     const history=operatorHistoryModel(snapshot?.operator_history);
     if (!history) {sections.replaceChildren();operatorRendered='';return;}
@@ -3005,7 +3037,8 @@
     for (const call of history.calls) if (!contacts.has(contactKey(call))) contacts.set(contactKey(call),label(call));
     if (operatorContact && !contacts.has(operatorContact)) operatorContact='';
     const followups=operatorFollowupModel(snapshot?.operator_followups);
-    const key=JSON.stringify([history,followups,operatorTab,operatorContact]);
+    const calendar=operatorCalendarModel(snapshot?.operator_calendar);
+    const key=JSON.stringify([history,followups,calendar,operatorTab,operatorContact]);
     if (key===operatorRendered && sections.querySelector('[data-operator-view]')) return;
     operatorRendered=key;
     const focus=sections.contains(document.activeElement)?document.activeElement.dataset.operatorFocus:'';
@@ -3036,6 +3069,7 @@
         panel.append(node('p',count(c=>c.recording.transcript_saved)+' saved transcripts · '+count(c=>c.recording.report_saved)+' saved reports'));
         panel.append(node('small','Recording status describes the latest linked receipt. Saved reports are historical and require review; this overview does not infer commitments or send follow-ups.'));
         renderOperatorFollowups(current,panel,followups);
+        renderOperatorCalendar(current,panel,calendar);
       } else {
         const filter=node('select');filter.dataset.operatorFocus='contact-filter';filter.setAttribute('aria-label','Filter call history by caller');
         for (const [id,title] of [['','All callers'],...contacts]) {
@@ -3265,7 +3299,7 @@
       const data = await response.json();
       if (!isCurrent()) return;
       if (!response.ok || data?.ok !== true || !validState(data.state,current)) throw new Error('Top of Mind could not be refreshed.');
-      if (view === 'operator' && (!operatorHistoryModel(data.state.operator_history) || !operatorFollowupModel(data.state.operator_followups))) throw new Error('The Operator history or follow-ups could not be verified.');
+      if (view === 'operator' && (!operatorHistoryModel(data.state.operator_history) || !operatorFollowupModel(data.state.operator_followups) || !operatorCalendarModel(data.state.operator_calendar))) throw new Error('The Operator history or follow-ups could not be verified.');
       if (view === 'profile' && (!profileReportModel(data.state.profile_report)
         || data.state.coverage?.profile_report !== data.state.profile_report.coverage)) throw new Error('The Profile report could not be verified.');
       accessRejected = false;

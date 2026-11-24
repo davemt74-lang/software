@@ -65,6 +65,7 @@ await page.route('https://activity.test/api/hub**',async route => {
       {call_id:'b'.repeat(32),contact_id:5,contact_name:'Taylor Caller',peer_e164:'+16025550112',direction:'inbound',state:'no_answer',created_at:'2026-11-23T09:00:00Z',duration_seconds:0,recording:{state:'none',transcript_saved:false,report_saved:false}},
       {call_id:'legacy-1',contact_id:0,contact_name:'',peer_e164:'+16025550113',direction:'inbound',state:'voicemail_ready',created_at:'2026-11-23T08:00:00Z',duration_seconds:30,recording:{state:'received',transcript_saved:false,report_saved:false}}
     ]};
+    state.operator_calendar={coverage:'ready',execution_enabled:false,appointments:[{event_id:91,title:'Planned phone call — Taylor Caller',label:'Tue, Nov 24, 10:00 AM MST',start_at:'2026-11-24T17:00:00Z',end_at:'2026-11-24T17:10:00Z',url:'/vp3/calendar-event.php?id=91',execution_enabled:false}]};
     state.operator_followups={coverage:'ready',reports:[{ref:'followup:'+'c'.repeat(32),call_id:'a'.repeat(32),created_at:'2026-11-23T10:00:00Z',items:[{key:'d'.repeat(64),revision:'e'.repeat(64),session_id:12,text:'Confirm the proposal deadline.',next_step:'Review timing with the contact.',review_state:'unreviewed',source_url:'/vp3/artist-listening-evidence.php?session=12&plugin=qa&section=unanswered&item=question-1&page=1'}]}]};
   }
   if (collection === 'reviews') state.sections = [{id:'office_reviews',label:'Completed reviews',items:[]}];
@@ -262,6 +263,8 @@ try {
   await specialist.getByText('1 saved transcripts · 1 saved reports',{exact:true}).waitFor();
   await specialist.getByText('Confirm the proposal deadline.',{exact:true}).waitFor();
   await specialist.getByText('AI suggestion · needs review',{exact:true}).waitFor();
+  await specialist.getByText('Planned phone call — Taylor Caller',{exact:true}).waitFor();
+  assert.equal(await specialist.getByRole('link',{name:'Open Calendar appointment',exact:true}).getAttribute('href'),'/vp3/calendar-event.php?id=91');
   assert.equal(await specialist.getByRole('link',{name:'Review source evidence'}).getAttribute('href'),'/vp3/artist-listening-evidence.php?session=12&plugin=qa&section=unanswered&item=question-1&page=1');
   await specialist.getByRole('button',{name:'History',exact:true}).click();
   await specialist.getByText('Recording job completed · Saved transcript · Saved report',{exact:true}).waitFor();
