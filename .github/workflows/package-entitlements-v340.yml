@@ -250,6 +250,7 @@ jobs:
           php tests/phone-sms-ph3b-runtime.php
           node tests/phone-workspace-v1.mjs
           node tests/phone-operator-capture-v1.mjs
+          node tests/phone-operator-voice-mixer-v1.mjs
           PHP_BIN=php node tests/phone-workspace-release-v1.mjs --projection-only
       - name: PHP and JavaScript syntax
         run: |
