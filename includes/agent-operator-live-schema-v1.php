@@ -21,4 +21,18 @@ function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
         next_seq INTEGER NOT NULL DEFAULT 1,pending_seq INTEGER NOT NULL DEFAULT 0,last_dispatch_epoch BIGINT NOT NULL DEFAULT 0
     )".$suffix);
     if(!vp3_operator_live_schema_ready_v1($pdo))throw new RuntimeException('Live caption metadata installation failed.');
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_phone_operator_live_owner_v1 ON phone_operator_live_sessions_v1(owner_user_id,consent_epoch)');
+    else{
+        $q=$pdo->query("SHOW INDEX FROM phone_operator_live_sessions_v1 WHERE Key_name='idx_phone_operator_live_owner_v1'");
+        $exists=(bool)$q->fetch();$q->closeCursor();
+        if(!$exists)$pdo->exec('CREATE INDEX idx_phone_operator_live_owner_v1 ON phone_operator_live_sessions_v1(owner_user_id,consent_epoch)');
+    }
+}
+
+/** Disabling/reassigning a line closes live processing without affecting calls. */
+function vp3_operator_live_revoke_line_v1(PDO $pdo,int $numberId): void
+{
+    if(!vp3_operator_live_schema_ready_v1($pdo))return;
+    $pdo->prepare("UPDATE phone_operator_live_sessions_v1 SET state='closed',pending_seq=0 WHERE number_id=? AND state='active'")->execute([$numberId]);
 }
