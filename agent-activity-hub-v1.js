@@ -2932,7 +2932,7 @@
     }
     return raw;
   }
-  function operatorPhoneAction(current,method,control,event) {
+  function operatorPhoneAction(current,method,event) {
     const phone=window.VP3PhoneWorkspaceV1;
     if (!event.isTrusted || signature(current)!==signature(scope()) || typeof phone?.[method]!=='function') return;
     const trigger=specialistTrigger;
@@ -2966,7 +2966,7 @@
     if (history.coverage!=='ready') {
       panel.append(node('p',history.coverage==='no_chat'?'Open a saved private Chat to review phone history.':'Phone conversation history could not be verified.'));
     } else {
-      panel.append(node('small','Most recent 50 completed call receipts for this '+(current.agent>0?'assigned Agent.':'account.')));
+      panel.append(node('small','Up to 50 recent finished call receipts for this '+(current.agent>0?'assigned Agent.':'account.')));
       if (operatorTab==='brain') {
         const calls=history.calls;
         const count=predicate=>calls.filter(predicate).length;
@@ -2976,7 +2976,7 @@
         panel.append(node('p',count(c=>['queued','processing'].includes(c.recording.state))+' calls awaiting recording processing'));
         panel.append(node('p',count(c=>c.recording.state==='failed')+' calls with processing failures to review'));
         panel.append(node('p',count(c=>c.recording.transcript_saved)+' saved transcripts · '+count(c=>c.recording.report_saved)+' saved reports'));
-        panel.append(node('small','Saved reports are historical and require review; this overview does not infer commitments or send follow-ups.'));
+        panel.append(node('small','Recording status describes the latest linked receipt. Saved reports are historical and require review; this overview does not infer commitments or send follow-ups.'));
       } else {
         const filter=node('select');filter.dataset.operatorFocus='contact-filter';filter.setAttribute('aria-label','Filter call history by caller');
         for (const [id,title] of [['','All callers'],...contacts]) {
@@ -2988,7 +2988,7 @@
         });
         panel.append(filter);
         const calls=history.calls.filter(c=>!operatorContact||contactKey(c)===operatorContact);
-        if (!calls.length) panel.append(node('p','No completed call receipts in this view.'));
+        if (!calls.length) panel.append(node('p','No finished call receipts in this view.'));
         for (const call of calls) {
           const when=call.created_at?new Date(call.created_at).toLocaleString():'Date unavailable';
           const duration=Math.floor(call.duration_seconds/60)+'m '+(call.duration_seconds%60)+'s';
@@ -3001,7 +3001,7 @@
       const actions=node('div','','vp3-agent-activity-actions');
       for (const [method,title] of [['openHistory','Open call history'],['openRecordings','Open recordings and reports']]) {
         if (typeof window.VP3PhoneWorkspaceV1?.[method]!=='function') continue;
-        const control=button(title,event=>operatorPhoneAction(current,method,control,event));control.dataset.operatorFocus=method;actions.append(control);
+        const control=button(title,event=>operatorPhoneAction(current,method,event));control.dataset.operatorFocus=method;actions.append(control);
       }
       if (actions.childElementCount) panel.append(actions);
     }
