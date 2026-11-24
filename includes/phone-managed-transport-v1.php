@@ -119,10 +119,12 @@ function vp3_managed_transport_dispatch_v1(PDO $pdo,array $user,string $id,bool 
     $public=$reserved['public'];$owner=(int)$user['id'];
     // Recheck immediately before sending. A later revocation still fences the signed answer/confirm.
     $allowed=vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$owner,$public,$id,$clock){
-        $now=$clock??time();$live=vp3_managed_callback_owner_lock_v1($pdo,$owner);
+        $now=$clock??time();
+        if(!vp3_managed_transport_owner_lock_v1($pdo,$owner))return false;
         $row=vp3_managed_callback_row_v1($pdo,$id,true);$transport=vp3_managed_transport_row_v1($pdo,$public,true);$call=vp3_managed_transport_call_v1($pdo,$public,true);
         if(!$row||!$transport||!$call)return false;
         try{
+            $live=vp3_managed_callback_owner_lock_v1($pdo,$owner);
             vp3_managed_callback_need_v1(vp3_managed_transport_enabled_v1()&&$row['state']==='dispatch_claimed'&&(int)$row['expires_epoch']>$now&&$transport['state']==='dispatching'&&!$call['provider_call_sid']);
             vp3_managed_callback_current_v1($pdo,$row,$live,$now);return true;
         }catch(VP3PhoneWorkspaceException){vp3_managed_transport_terminal_v1($pdo,$transport,$call,'canceled',0,$now,null,'not_sent');return false;}
@@ -144,9 +146,10 @@ function vp3_managed_transport_dispatch_v1(PDO $pdo,array $user,string $id,bool 
         $t=vp3_managed_transport_row_v1($pdo,$public,true);$call=vp3_managed_transport_call_v1($pdo,$public,true);
         vp3_managed_callback_need_v1(is_array($t)&&is_array($call));
         $valid=is_array($receipt)&&vp3_managed_transport_sid_v1($receipt['sid']??null)
-            &&hash_equals((string)vp3_phone_twilio_state_v100()['account_sid'],(string)($receipt['account_sid']??''))
-            &&hash_equals($reserved['plan']['From'],(string)($receipt['from']??''))
-            &&hash_equals($reserved['plan']['To'],(string)($receipt['to']??''));
+            &&is_string($receipt['account_sid']??null)&&is_string($receipt['from']??null)&&is_string($receipt['to']??null)
+            &&hash_equals((string)vp3_phone_twilio_state_v100()['account_sid'],$receipt['account_sid'])
+            &&hash_equals($reserved['plan']['From'],$receipt['from'])
+            &&hash_equals($reserved['plan']['To'],$receipt['to']);
         $bound=$valid&&vp3_managed_transport_bind_parent_v1($pdo,$call,$receipt['sid']);
         if($t['state']==='dispatching'){
             $state=$bound?'submitted':'uncertain';
