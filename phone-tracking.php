@@ -38,6 +38,8 @@ $asset = static function (string $path): string {
 <script defer src="<?= e($asset('phone-map-camera-v1.js')) ?>"></script>
 <script defer data-voice-capture-scope="<?= (int)$user['id'] ?>" src="<?= e($asset('voice-lease-v122.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-information-ui-v1.js')) ?>"></script>
+<link rel="stylesheet" href="<?= e($asset('phone-remote-dialer-v1.css')) ?>">
+<script defer src="<?= e($asset('phone-remote-dialer-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
 <body class="phone-tracking-page">
@@ -77,6 +79,7 @@ require __DIR__.'/includes/member-header.php';
       <article id="phone-detail" aria-label="Phone details" hidden>
         <div id="phone-detail-summary"></div>
         <section id="phone-communication-profile" class="phone-connected-profile" aria-label="Connected user communication and activity" hidden></section>
+        <div id="phone-dialer-owner-host"></div>
         <form id="phone-preferences" hidden>
           <fieldset>
             <legend>Location settings</legend>
