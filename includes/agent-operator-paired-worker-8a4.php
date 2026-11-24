@@ -10,6 +10,7 @@ require_once __DIR__.'/agent-operator-worker-authority-8a4.php';
 final class VP3OperatorPairedWorker8A4
 {
     private const WORKER='operator-homeserver';
+    private const REPORT_MAX_AGE=25;
     private const CAPS=['session.recover','session.simulate'];
     private PDO $db;
     private string $key;
@@ -167,6 +168,60 @@ final class VP3OperatorPairedWorker8A4
         });
     }
 
+    /** Recheck the complete grant and exact active pairing under the registry mutex. */
+    private function authorizeGrant(array $g,int $owner,int $now):void
+    {
+        $this->pairing($owner,$g['pairing_device'],$g['pairing_hash']);
+        $current=$this->grantRow($owner,true);
+        self::check($current!==null && $current['state']==='active' && (int)$current['granted_at']<=$now
+            && (int)$current['granted_at']===(int)$g['granted_at']
+            && $current['credential_id']===$g['credential_id']
+            && hash_equals($current['pairing_hash'],$g['pairing_hash'])
+            && $current['pairing_device']===$g['pairing_device'] && $current['worker_device']===$g['worker_device']
+            && hash_equals($current['encrypted_secret'],$g['encrypted_secret'])
+            && $this->row('SELECT credential_id FROM operator_worker_revoked_8a4 WHERE credential_id=?',[$g['credential_id']],true)===null);
+    }
+
+    /** Internal paired simulation entry point, NOT a live call or browser action.
+     * The caller must already have verified the owner; no request may choose it.
+     * Missing, corrupt or replaced grants cannot authorize new or held work.
+     */
+    private function simulationAuthority(int $owner,int $now):array
+    {
+        self::clock($now);self::check($owner>0);
+        $g=$this->grantRow($owner);
+        $inventory=[];
+        if($g!==null&&$g['state']==='active'&&(int)$g['granted_at']<=$now){
+            try{$inventory=[$this->inventory($g)];}
+            catch(DomainException){$g=null;}
+        }else{$g=null;}
+        $guard=function()use($g,$owner,$now):bool{
+            if($g===null)return false;
+            try{$this->authorizeGrant($g,$owner,$now);return true;}
+            catch(DomainException){return false;}
+        };
+        return [new VP3OperatorWorkerAuthority8A4($this->db,$inventory,self::REPORT_MAX_AGE),$guard];
+    }
+
+    public function selectSimulation(int $owner,int $now):?array
+    {
+        [$authority,$guard]=$this->simulationAuthority($owner,$now);
+        return $authority->select($owner,$now,'session.simulate',$guard);
+    }
+
+    public function claimSimulation(int $owner,string $occurrence,int $now):?array
+    {
+        [$authority,$guard]=$this->simulationAuthority($owner,$now);
+        $claim=$authority->claimSimulation($owner,$occurrence,$now,$guard);
+        return $claim===null?null:$claim+['live_certified'=>false,'mode'=>'simulation'];
+    }
+
+    public function finishSimulation(int $owner,string $occurrence,string $claim,int $now):bool
+    {
+        [$authority,$guard]=$this->simulationAuthority($owner,$now);
+        return $authority->finishSimulation($owner,$occurrence,$claim,$now,$guard);
+    }
+
     /** The public wire handler trusts only the signed, current preprovisioned identity. */
     public function receive(string $body,string $mac,int $now):array
     {
@@ -176,16 +231,9 @@ final class VP3OperatorPairedWorker8A4
         $g=$this->row('SELECT * FROM operator_paired_workers_8a4 WHERE credential_id=?',[$p['credential_id']]);
         self::check($g!==null && $g['state']==='active' && (int)$g['granted_at']<=$now);
         $c=$this->inventory($g);$owner=$c['owner_id'];
-        $a=new VP3OperatorWorkerAuthority8A4($this->db,[$c]);
+        $a=new VP3OperatorWorkerAuthority8A4($this->db,[$c],self::REPORT_MAX_AGE);
         return $a->receive($body,$mac,$now,function()use($g,$owner,$now){
-            // Same transaction as the registration ledger and receipt.
-            $this->pairing($owner,$g['pairing_device'],$g['pairing_hash']);
-            $current=$this->grantRow($owner,true);
-            self::check($current!==null && $current['state']==='active' && (int)$current['granted_at']<=$now
-                && $current['credential_id']===$g['credential_id']
-                && hash_equals($current['pairing_hash'],$g['pairing_hash'])
-                && $current['pairing_device']===$g['pairing_device'] && $current['worker_device']===$g['worker_device']
-                && hash_equals($current['encrypted_secret'],$g['encrypted_secret']));
+            $this->authorizeGrant($g,$owner,$now);
         });
     }
 

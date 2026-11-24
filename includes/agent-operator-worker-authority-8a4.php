@@ -14,6 +14,7 @@ final class VP3OperatorWorkerAuthority8A4
     private const CLOCK_MAX = 4102444800;
     private array $credentials = [];
     private PDO $db;
+    private int $reportMaxAge;
 
     private static function require(bool $condition): void
     {
@@ -61,11 +62,12 @@ final class VP3OperatorWorkerAuthority8A4
     /** Inventory comes only from trusted server-side test/deployment code, never a request.
      * A real pairing/provisioning adapter and secret storage are separate gates.
      */
-    public function __construct(PDO $db, #[\SensitiveParameter] array $inventory)
+    public function __construct(PDO $db, #[\SensitiveParameter] array $inventory, int $reportMaxAge=90)
     {
         self::require(PHP_INT_SIZE>=8 && $db->getAttribute(PDO::ATTR_ERRMODE)===PDO::ERRMODE_EXCEPTION);
         self::require(in_array($db->getAttribute(PDO::ATTR_DRIVER_NAME),['sqlite','mysql'],true));
-        self::require(count($inventory)<=128);
+        self::require(count($inventory)<=128 && $reportMaxAge>=1 && $reportMaxAge<=90);
+        $this->reportMaxAge=$reportMaxAge;
         $keys=[];$identities=[];
         foreach ($inventory as $c) {
             self::require(is_array($c) && self::hex($c['credential_id']??null)
@@ -230,6 +232,7 @@ final class VP3OperatorWorkerAuthority8A4
         $id=$r['credential_id'];$c=$this->credentials[$id]??null;
         if ($c===null || $c['owner_id']!==$owner || !self::binding($r,$c) || $this->revoked($id)
             || $r['state']!=='reporting' || (int)$r['last_seen']>$now || (int)$r['lease_until']<=$now
+            || $now-(int)$r['last_seen'] >= $this->reportMaxAge
             || !in_array($cap,$c['capabilities'],true)) return false;
         $receipt=self::frame($r['receipt']);
         return in_array($cap,$receipt['capabilities'],true);
@@ -259,41 +262,54 @@ final class VP3OperatorWorkerAuthority8A4
         return null;
     }
 
+    /** The optional guard is supplied only by trusted internal pairing authority.
+     * A denied guard fences held synthetic work in that owner's ledger atomically.
+     */
+    private function simulationGuard(int $owner,?callable $guard):bool
+    {
+        if($guard===null||$guard()===true)return true;
+        $this->sql("UPDATE operator_worker_claims_8a4 SET state='uncertain' WHERE owner_id=? AND state='held'",[$owner]);
+        return false;
+    }
+
     /** Advisory selection. No reservation, phone number, contact, or live grant. */
-    public function select(int $owner,int $now,string $cap='session.simulate'): ?array
+    public function select(int $owner,int $now,string $cap='session.simulate',?callable $guard=null): ?array
     {
         self::clock($now);self::require(self::integer($owner) && in_array($cap,self::CAPS,true));
-        return $this->tx(function() use($owner,$now,$cap) {
+        return $this->tx(function() use($owner,$now,$cap,$guard) {
+            if(!$this->simulationGuard($owner,$guard))return null;
             $this->reconcile($owner,$now);
             $r=$this->selectInternal($owner,$now,$cap);
             return $r===null?null:['worker_id'=>$r['worker_id'],'route'=>$r['route'],'generation'=>(int)$r['generation'],
-                'lease_until'=>(int)$r['lease_until'],'execution_enabled'=>false,'live_certified'=>false];
+                'lease_until'=>min((int)$r['lease_until'],(int)$r['last_seen']+$this->reportMaxAge),'execution_enabled'=>false,'live_certified'=>false];
         });
     }
 
     /** Explicitly synthetic occurrence reservation. Never a carrier dispatch grant.
      * Trusted server code only. No public endpoint or recipient contact.
      */
-    public function claimSimulation(int $owner,string $occurrence,int $now): ?array
+    public function claimSimulation(int $owner,string $occurrence,int $now,?callable $guard=null): ?array
     {
         self::clock($now);self::require(self::integer($owner) && self::hex($occurrence));
-        return $this->tx(function() use($owner,$occurrence,$now) {
+        return $this->tx(function() use($owner,$occurrence,$now,$guard) {
+            if(!$this->simulationGuard($owner,$guard))return null;
             $this->reconcile($owner,$now);
             $old=$this->row('SELECT state FROM operator_worker_claims_8a4 WHERE owner_id=? AND occurrence_id=?',[$owner,$occurrence]);
             if ($old!==null) return ['state'=>$old['state'],'duplicate'=>true,'execution_enabled'=>false];
             $r=$this->selectInternal($owner,$now,'session.simulate');
             if ($r===null) return null;
-            $claim=bin2hex(random_bytes(16));$lease=min((int)$r['lease_until'],$now+30);
+            $claim=bin2hex(random_bytes(16));$lease=min((int)$r['lease_until'],(int)$r['last_seen']+$this->reportMaxAge,$now+30);
             $this->sql("INSERT INTO operator_worker_claims_8a4(owner_id,occurrence_id,claim_id,credential_id,boot_id,generation,created_at,lease_until,state) VALUES(?,?,?,?,?,?,?,?,'held')",
                 [$owner,$occurrence,$claim,$r['credential_id'],$r['boot_id'],(int)$r['generation'],$now,$lease]);
             return ['state'=>'held','claim_id'=>$claim,'worker_id'=>$r['worker_id'],'route'=>$r['route'],'lease_until'=>$lease,
                 'duplicate'=>false,'execution_enabled'=>false];
         });
     }
-    public function finishSimulation(int $owner,string $occurrence,string $claim,int $now): bool
+    public function finishSimulation(int $owner,string $occurrence,string $claim,int $now,?callable $guard=null): bool
     {
         self::clock($now);self::require(self::integer($owner) && self::hex($occurrence) && self::hex($claim));
-        return $this->tx(function() use($owner,$occurrence,$claim,$now) {
+        return $this->tx(function() use($owner,$occurrence,$claim,$now,$guard) {
+            if(!$this->simulationGuard($owner,$guard))return false;
             $this->reconcile($owner,$now);
             return $this->sql("UPDATE operator_worker_claims_8a4 SET state='finished' WHERE owner_id=? AND occurrence_id=? AND claim_id=? AND state='held'",
                 [$owner,$occurrence,$claim])->rowCount()===1;
