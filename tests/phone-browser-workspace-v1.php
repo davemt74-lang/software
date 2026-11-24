@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id '.($mysql?'INT UNSIGNED':'INTEGER').' PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -1006,5 +1006,82 @@ $pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=2 WHERE p
 c(vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,true)['request']===null,'stale profile request is not disclosed to handset');
 denies(fn()=>vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,$uiRaw,array_replace($uiResponse,['managed_request_id'=>$uiId2]),$clock)),409,'stale holder consent cannot approve');
 vp3_managed_callback_revoke_v1($pdo,2,$uiDevice,$clock);
+
+// PS5E.4: exercise provider read/stop controls with synthetic, exact SID evidence.
+require_once dirname(__DIR__).'/includes/phone-managed-control-v1.php';
+c(vp3_managed_control_ready_v1($pdo),'managed control migration installed');
+vp3_managed_control_install_v1($pdo);
+$controlScope=vp3_phone_workspace_scope_v1($pdo,user(2),['agent_id'=>0,'conversation_id'=>21]);
+$foreignControlScope=vp3_phone_workspace_scope_v1($pdo,user(1),['agent_id'=>0,'conversation_id'=>11]);
+$carrierAccount=(string)setting('phone_twilio_account_sid');
+$carrierEvidence=static function(string $sid,string $to,string $status,string $duration='',?string $parent=null)use($carrierAccount):array{
+    return ['sid'=>$sid,'account_sid'=>$carrierAccount,'from'=>'+16025550102','to'=>$to,'direction'=>$parent===null?'outbound-api':'outbound-dial',
+        'parent_call_sid'=>$parent,'status'=>$status,'duration'=>$duration];
+};
+$controlDispatch=static function(array $v,string $tag)use($pdo,$clock,$approveManagedTransport):array{
+    $approveManagedTransport($v);$plan=[];$sid='CA'.md5('control-parent-'.$tag);
+    $carrier=static function(array $fields)use(&$plan,$sid):array{$plan=$fields;return ['sid'=>$sid,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$fields['From'],'to'=>$fields['To']];};
+    $result=vp3_managed_transport_dispatch_v1($pdo,user(2),$v['id'],true,$carrier,$clock);
+    return ['public'=>$result['call']['public_id'],'sid'=>$sid,'nonce'=>($GLOBALS['controlNonceParser'])($plan)];
+};
+$GLOBALS['controlNonceParser']=$transportNonce;
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+$t4=$makeManagedTransport('reconcile','+16025550150','+16025550151');$d4=$controlDispatch($t4,'reconcile');
+$p4=$d4['public'];$parent4=$d4['sid'];$nonce4=$d4['nonce'];
+$read4=['action'=>'managed_reconcile','call_id'=>$p4];$end4=['action'=>'managed_end','call_id'=>$p4,'confirmed'=>true];
+$noCarrier=static function():array{throw new LogicException('Unexpected carrier request');};
+denies(fn()=>vp3_managed_control_action_v1($pdo,$foreignControlScope,$read4,$noCarrier,$clock),404,'foreign account cannot reconcile managed carrier call');
+denies(fn()=>vp3_managed_control_action_v1($pdo,array_replace($controlScope,['conversation_id'=>999]),$read4,$noCarrier,$clock),404,'unrelated Chat cannot control managed call');
+denies(fn()=>vp3_managed_control_action_v1($pdo,$controlScope,array_replace($end4,['confirmed'=>false]),$noCarrier,$clock),403,'managed end requires explicit confirmation');
+c(vp3_managed_control_evidence_v1(array_replace($carrierEvidence($parent4,$t4['holder'],'completed','12'),['account_sid'=>'AC'.str_repeat('f',32)]),$carrierAccount,readcall($p4))===null,'wrong carrier account rejected as evidence');
+$readMethods=[];
+$parentRead=static function(string $method,string $resource,array $fields)use(&$readMethods,$carrierEvidence,$parent4,$t4,$pdo):array{
+    c(!$pdo->inTransaction(),'managed control carrier IO is outside transaction');
+    $readMethods[]=$method;c(str_contains($resource,$parent4)&&$fields===[],'carrier read targets exact stored parent SID');
+    return $carrierEvidence($parent4,$t4['holder'],'in-progress');
+};
+$checked=vp3_managed_control_action_v1($pdo,$controlScope,$read4,$parentRead,$clock);
+c($readMethods===['GET']&&$checked['call']['state']==='dialing'&&$checked['call']['managed_control']['read_state']==='parent_answered','parent answered evidence never implies destination answered');
+denies(fn()=>vp3_managed_control_action_v1($pdo,$controlScope,$read4,$noCarrier,$clock+1),429,'carrier status checks are rate limited');
+$parentForm4=form($parent4,['From'=>'+16025550102','To'=>$t4['holder'],'CallStatus'=>'in-progress']);
+c($transportEvent('answer',$p4,$nonce4,$parentForm4)['accepted'],'signed parent answer opens confirmation');
+c($transportEvent('confirm',$p4,$nonce4,$parentForm4+['Digits'=>'1'])['accepted'],'holder confirms second leg');
+$child4='CA'.md5('control-child-reconcile');
+$childForm4=form($child4,['ParentCallSid'=>$parent4,'From'=>'+16025550102','To'=>$t4['destination'],'CallStatus'=>'ringing']);
+c($transportEvent('child',$p4,$nonce4,$childForm4)['accepted'],'signed destination binds child SID');
+$readLegs=[];
+$terminalRead=static function(string $method,string $resource,array $fields)use(&$readLegs,$carrierEvidence,$parent4,$child4,$t4):array{
+    c($method==='GET'&&$fields===[],'reconciliation never mutates carrier');$readLegs[]=$resource;
+    if(str_contains($resource,$parent4))return $carrierEvidence($parent4,$t4['holder'],'completed','44');
+    return $carrierEvidence($child4,$t4['destination'],'completed','27',$parent4);
+};
+$done=vp3_managed_control_action_v1($pdo,$controlScope,$read4,$terminalRead,$clock+11);
+c(count($readLegs)===2&&$done['call']['state']==='completed'&&$done['call']['duration_seconds']===27&&$done['call']['managed_control']['read_state']==='terminal_verified','read-only bound leg evidence resolves lost terminal callback using child duration');
+c(!$done['call']['managed_control']['can_end']&&!$done['call']['managed_control']['can_reconcile'],'terminal call has no further carrier controls');
+$noCalls=0;$unexpected=static function()use(&$noCalls):array{$noCalls++;return [];};
+vp3_managed_control_action_v1($pdo,$controlScope,$end4,$unexpected,$clock+12);
+c($noCalls===0,'terminal call end is idempotent without provider IO');
+
+$t5=$makeManagedTransport('stop-uncertain','+16025550152','+16025550153');$d5=$controlDispatch($t5,'stop-uncertain');
+$p5=$d5['public'];$parent5=$d5['sid'];$nonce5=$d5['nonce'];$end5=['action'=>'managed_end','call_id'=>$p5,'confirmed'=>true];
+$stopMethods=[];
+$stopCarrier=static function(string $method,string $resource,array $fields)use(&$stopMethods,$carrierEvidence,$parent5,$t5,$pdo):array{
+    c(!$pdo->inTransaction()&&str_contains($resource,$parent5),'end action targets bound parent outside DB transaction');
+    $stopMethods[]=$method;
+    if($method==='GET')return $carrierEvidence($parent5,$t5['holder'],'ringing');
+    c($fields===['Status'=>'canceled'],'ringing parent uses cancellation instead of new call');
+    throw new RuntimeException('Synthetic lost end receipt');
+};
+$stopResult=vp3_managed_control_action_v1($pdo,$controlScope,$end5,$stopCarrier,$clock);
+c($stopMethods===['GET','POST']&&$stopResult['call']['managed_control']['end_state']==='uncertain','lost end receipt is not reported as successful');
+c(vp3_managed_callback_row_v1($pdo,$t5['id'])['state']==='revoked','end intent fences destination authorization before carrier IO');
+$parentForm5=form($parent5,['From'=>'+16025550102','To'=>$t5['holder'],'CallStatus'=>'in-progress']);
+c(!$transportEvent('answer',$p5,$nonce5,$parentForm5)['accepted'],'late answer cannot bridge after end intent');
+vp3_managed_control_action_v1($pdo,$controlScope,$end5,$stopCarrier,$clock+1);
+c($stopMethods===['GET','POST'],'uncertain end is never automatically sent twice');
+$stopRead=static fn(string $method,string $resource,array $fields):array=>$carrierEvidence($parent5,$t5['holder'],'no-answer');
+$stopDone=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_reconcile','call_id'=>$p5],$stopRead,$clock+11);
+c($stopDone['call']['state']==='no_answer'&&$stopDone['call']['managed_control']['missed_leg']==='holder','verified unanswered parent is distinct from a missed destination');
+unset($GLOBALS['controlNonceParser'],$GLOBALS['settings']['phone_managed_callback_enabled_v1']);
 
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
