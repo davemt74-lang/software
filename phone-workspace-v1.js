@@ -69,7 +69,7 @@
   async function api(action,values={},method='POST',g=generation){
     if(!current(g))throw new DOMException('Phone context changed.','AbortError');
     const requestScope={conversation_id:context.conversation_id,agent_id:context.agent_id};
-    const controller=new AbortController();requests.add(controller);const timer=setTimeout(()=>controller.abort(),15000);
+    const controller=new AbortController();requests.add(controller);const timer=setTimeout(()=>controller.abort(),['managed_reconcile','managed_end'].includes(action)?50000:15000);
     try{
       const url=new URL(endpoint);const options={method,credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{Accept:'application/json'}};
       if(method==='GET'){for(const [key,value] of Object.entries(scopeBody({action,...values})))url.searchParams.set(key,String(value));}
@@ -579,12 +579,29 @@
     }else if(!entry.captionNotice)panel.append(node('p','vp3-phone-meta',view?.state==='authorized'?'Live caption permission belongs to another browser session.':view?.state==='closed'?'Live captions are closed for this call.':view?.reason||'Waiting for a verified answered call and transcription permission.'));
     card.append(panel);
   }
+  const managedControlBusy=new Set();
+  async function runManagedControl(action,id,g){
+    if(!current(g)||managedControlBusy.has(id)||!publicId(id))return;
+    managedControlBusy.add(id);render();
+    try{
+      const result=await api(action,{call_id:id,...(action==='managed_end'?{confirmed:true}:{})},'POST',g);
+      if(!current(g))return;
+      const row=result.call;
+      if(row?.public_id===id&&row.transport_kind==='managed_callback'&&state){
+        state.calls=state.calls.map(c=>c.public_id===id?{...c,...row}:c);
+        if(state.active_call?.public_id===id)state.active_call={...state.active_call,...row};
+      }
+      say(action==='managed_end'?'End request processed. Review carrier evidence; hang up on the phone if needed.':'Carrier status checked. Unresolved calls remain unconfirmed.');
+      render();void refresh();
+    }catch(error){if(current(g))say(error.message||'Carrier result was not confirmed.');}
+    finally{managedControlBusy.delete(id);if(current(g))render();}
+  }
   function callCard(info,entry=null){
     const renderGeneration=generation;
     info={...info,...state?.calls.find(call=>call.public_id===info.public_id)};
     const id=info.public_id,readOnlyLegacy=/^legacy-/.test(id),currentState=localStates.get(id)||info.state,card=node('article','vp3-phone-call');card.dataset.phoneCallId=id;
     const incoming=entry?.incoming===true||info.direction==='inbound',outgoing=entry?.incoming===false||info.direction==='outbound',contact=callerContact(info);
-    card.append(node('strong','vp3-phone-call-heading',info.connected_phone===true?'Connected phone call':info.owner_test===true?'Personal phone test call':incoming?'Incoming phone call':outgoing?'Outgoing phone call':'Phone call'),node('p','vp3-phone-peer-name',text(contact?.name||callPeerName(info)).slice(0,180)));
+    card.append(node('strong','vp3-phone-call-heading',info.transport_kind==='managed_callback'?'Twilio managed callback':info.connected_phone===true?'Connected phone call':info.owner_test===true?'Personal phone test call':incoming?'Incoming phone call':outgoing?'Outgoing phone call':'Phone call'),node('p','vp3-phone-peer-name',text(contact?.name||callPeerName(info)).slice(0,180)));
     if(contact)card.append(node('p','vp3-phone-peer-number',info.peer_e164));
     const prior=info.caller_familiar===true||info.caller_familiar===undefined&&(state?.calls||[]).some(call=>call.public_id!==id&&call.peer_e164===info.peer_e164&&info.peer_e164&&typeof call.created_at==='string'&&typeof info.created_at==='string'&&call.created_at<info.created_at);
     if(contact||prior)card.append(node('p','vp3-phone-peer-context',contact?'Saved contact':'Seen in recent calls'));
@@ -593,6 +610,8 @@
     addDetail('Status',terminal?displayState(info.state):currentState==='answered'?'Answered':entry?.phase==='connected'?'Browser connected':displayState(entry?.phase||currentState));addDetail('Call time',displayTime(info.created_at));
     if(terminal&&Number.isInteger(info.duration_seconds)&&(!readOnlyLegacy||info.duration_seconds>0))addDetail(readOnlyLegacy?'Recording duration':'Call duration',callDuration(info.duration_seconds));
     addDetail('Your line',info.phone_e164);
+    const managed=info.transport_kind==='managed_callback',control=info.managed_control;
+    if(managed){addDetail('Transport','Twilio managed callback');if(control?.missed_leg)addDetail('No answer',control.missed_leg==='holder'?'Connected phone':'Destination');addDetail('Connection stage',displayState(control?.dispatch_state));addDetail('Carrier check',control?.read_state==='none'?'':displayState(control?.read_state));addDetail('End request',control?.end_state==='none'?'':displayState(control?.end_state));}
     const line=(state?.numbers||[]).find(number=>Number(number.id)===Number(info.number_id)&&Number(number.agent_id)===Number(info.agent_id)&&number.phone_e164===info.phone_e164);
     if(line?.agent_name)addDetail('Agent',text(line.agent_name).slice(0,180));
     const recording=(state?.voicemails||[]).find(voicemail=>callKey(voicemail.call_id)===id);
@@ -603,8 +622,13 @@
     const actions=node('div','vp3-phone-actions');
     if(entry?.incoming&&pending.get(id)===entry){const accept=button('Accept',()=>{if(current(renderGeneration))void acceptCall(id);},'vp3-phone-button vp3-phone-primary');accept.disabled=callBusy||setupPending>0||Boolean(active)||!positive(context.conversation_id);const decline=button('Decline',()=>{if(current(renderGeneration))declineCall(id);});decline.disabled=callBusy;actions.append(accept,decline);}
     if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
-    if(!entry&&!readOnlyLegacy&&['ringing','incoming','offered'].includes(currentState))actions.append(button('Open Phone',()=>open()));
-    if(!entry&&['ended','completed','voicemail_ready','voicemail','no_answer','no-answer','busy','failed','declined','cancelled','canceled','missed'].includes(currentState)){
+    if(managed&&!entry&&!terminal){
+      if(control?.can_reconcile===true){const check=button('Check carrier status',event=>{if(event.isTrusted&&current(renderGeneration))void runManagedControl('managed_reconcile',id,renderGeneration);});check.disabled=managedControlBusy.has(id);actions.append(check);}
+      if(control?.can_end===true){const end=button('End managed call',event=>{if(event.isTrusted&&current(renderGeneration)&&window.confirm('End this managed call and block any pending destination connection?'))void runManagedControl('managed_end',id,renderGeneration);},'vp3-phone-button vp3-phone-danger');end.disabled=managedControlBusy.has(id);actions.append(end);}
+      if(control?.end_state==='uncertain'||control?.end_state==='awaiting_identity'||control?.read_state==='destination_unresolved')card.append(node('p','vp3-phone-meta','Carrier outcome is unconfirmed. Check status or hang up directly on the connected phone. Do not retry a call.'));
+    }
+    if(!entry&&!readOnlyLegacy&&!managed&&['ringing','incoming','offered'].includes(currentState))actions.append(button('Open Phone',()=>open()));
+    if(!entry&&!managed&&['ended','completed','voicemail_ready','voicemail','no_answer','no-answer','busy','failed','declined','cancelled','canceled','missed'].includes(currentState)){
       const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(info.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(info.peer_e164||'');actions.append(callback);
     }
     const draft=contactDrafts.get(id);

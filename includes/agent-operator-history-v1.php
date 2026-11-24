@@ -130,7 +130,7 @@ function vp3_operator_history_v1(PDO $pdo,array $user,int $agentId,int $cid): ar
                 'peer_e164'=>preg_match('/^\+[1-9][0-9]{7,14}$/D',$peer)?$peer:'',
                 'direction'=>$call['direction']==='outbound'?'outbound':'inbound','state'=>$call['state'],
                 'created_at'=>$call['created_at'],'duration_seconds'=>max(0,min(86400,(int)$call['duration_seconds'])),
-                'recording'=>$recording]+(!empty($call['connected_phone'])?['connected_profile_id'=>$call['connected_profile_id'],'peer_masked'=>$call['peer_masked']]:[]);
+                'recording'=>$recording]+(($call['transport_kind']??'')==='managed_callback'?['transport_kind'=>'managed_callback']:[])+(!empty($call['connected_phone'])?['connected_profile_id'=>$call['connected_profile_id'],'peer_masked'=>$call['peer_masked']]:[]);
         }
         return ['coverage'=>'ready','recording_coverage'=>$recordingCoverage,'calls'=>$out];
     } catch (Throwable $error) {return $empty;}
