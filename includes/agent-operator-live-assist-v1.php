@@ -119,6 +119,9 @@ function vp3_operator_live_suggest_v1(PDO $pdo,array $scope,string $public,strin
         [$fresh,$call,$session,$assist]=$read($now,false);
         if((int)$assist['suggestion_attempts']>=2||(int)$assist['last_suggestion_epoch']>$now-20)
             vp3_phone_workspace_error_v1('operator_live_budget',429,'Wait before requesting another private suggestion; two are allowed per call.');
+        $q=$pdo->prepare('SELECT COALESCE(SUM(a.suggestion_attempts),0) FROM phone_operator_live_assist_v1 a JOIN phone_operator_live_sessions_v1 s ON s.call_id=a.call_id WHERE s.owner_user_id=? AND s.consent_epoch>=?');
+        $q->execute([$fresh['owner_user_id'],$now-3720]);$attempts=(int)$q->fetchColumn();$q->closeCursor();
+        if($attempts>=8)vp3_phone_workspace_error_v1('operator_live_budget',429,'Hourly private suggestion allowance reached.');
         $source=vp3_operator_live_suggestion_evidence_v1($assist,$session,$public,$receipts);
         $id=(int)$call['id'];
         $history=vp3_operator_live_history_context_v1($pdo,$call,$now);
