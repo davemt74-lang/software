@@ -103,6 +103,9 @@ function vp3_managed_control_claim_v1(PDO $pdo,array $scope,string $public,strin
         if($action==='managed_end'){
             // A stop intent fences the bridge even if the carrier POST receipt was lost.
             if(!in_array($control['end_state'],['none','awaiting_identity'],true))return ['done'=>true];
+            // A stop intent prevents any not-yet-started recording. Already recorded
+            // content is not made inaccessible just because a normal call ends.
+            if(vp3_managed_recording_ready_v1($pdo))$pdo->prepare("UPDATE phone_managed_recording_consent_v1 SET revoked_epoch=?,updated_epoch=? WHERE request_id=? AND start_epoch=0 AND revoked_epoch=0")->execute([$now,$now,$t['request_id']]);
             $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='revoked',updated_epoch=? WHERE public_id=? AND state='dispatch_claimed'")->execute([$now,$t['request_id']]);
             $pdo->prepare('UPDATE phone_managed_callback_controls_v1 SET end_state=?,end_epoch=?,updated_epoch=? WHERE call_public_id=?')->execute([$bound?'claimed':'awaiting_identity',$now,$now,$public]);
         }else{

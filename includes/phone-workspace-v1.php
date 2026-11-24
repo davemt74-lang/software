@@ -11,6 +11,7 @@ require_once __DIR__.'/agent-operator-live-schema-v1.php';
 require_once __DIR__.'/agent-operator-owner-phone-chat-v1.php';
 require_once __DIR__.'/agent-operator-connected-call-v1.php';
 require_once __DIR__.'/phone-managed-control-schema-v1.php';
+require_once __DIR__.'/phone-managed-recording-schema-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -54,6 +55,7 @@ function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
     vp3_managed_transport_install_v1($pdo);
     require_once __DIR__.'/phone-managed-control-schema-v1.php';
     vp3_managed_control_install_v1($pdo);
+    vp3_managed_recording_install_v1($pdo);
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';$auto=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';$suffix=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_browser_calls_v1(id $auto,public_id CHAR(32) NOT NULL UNIQUE,
         owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,phone_number_id BIGINT NOT NULL,phone_e164 VARCHAR(20) NOT NULL,peer_e164 VARCHAR(20) NOT NULL DEFAULT '',

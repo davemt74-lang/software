@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_managed_recording_consent_v1','phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id '.($mysql?'INT UNSIGNED':'INTEGER').' PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -1105,5 +1105,84 @@ $knownEnd=static function(string $method,string $resource,array $fields)use(&$kn
 $knownStop=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_end','call_id'=>$p6,'confirmed'=>true],$knownEnd,$clock+1);
 c($knownEndMethods===['GET','POST']&&$knownStop['call']['state']==='canceled'&&$knownStop['call']['managed_control']['end_state']==='parent_ended','explicit end after signed identity uses one bound carrier stop');
 unset($GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+
+// PS5E.5: real consent and recording receipt domain with synthetic provider commands.
+require_once dirname(__DIR__).'/includes/phone-managed-recording-v1.php';
+c(vp3_managed_recording_ready_v1($pdo),'managed recording consent migration installed');
+vp3_managed_recording_install_v1($pdo);
+vp3_phone_browser_number_policy_set_v1($pdo,2,true,true);
+$recPolicy=vp3_phone_recording_save_policy_v1($pdo,user(2),8,['enabled'=>true,'retain_audio'=>true,'transcribe'=>true,'analyze'=>false]);
+$recordDevice=md5('ps5e5-device');$recordProfile=md5('ps5e5-profile');$recordRequest=md5('ps5e5-request');
+$insertDevice->execute([$recordDevice,$clock+3600]);$insertThread->execute([$recordDevice]);$insertProfile->execute([$recordDevice,$recordProfile,'+16025550156',$zone,$clock]);
+$recArgs=['request_id'=>$recordRequest,'device_id'=>$recordDevice,'profile_id'=>$recordProfile,'generation'=>1,'profile_revision'=>1,'phone_revision'=>1,'number_id'=>2,'agent_id'=>0,'conversation_id'=>21,'destination_e164'=>'+16025550157','confirmed'=>true,'recording_requested'=>true,'recording_policy_revision'=>$recPolicy['revision']];
+$recApprove=['request_id'=>$recordRequest,'decision'=>'approve','confirmed'=>true,'destination_e164'=>'+16025550157','recording_consent'=>true,'recording_consent_revision'=>1];
+$recPrepare=static fn(array $extra=[])=>vp3_managed_callback_prepare_v1($pdo,user(2),array_replace($recArgs,$extra),$clock);
+$recHolder=static fn(array $extra=[])=>vp3_managed_callback_holder_v1($pdo,2,$recordDevice,array_replace($recApprove,$extra),$clock);
+denies(fn()=>$recPrepare(['recording_policy_revision'=>$recPolicy['revision']+1]),409,'owner cannot select a stale processing policy');
+$recView=$recPrepare();
+c($recView['recording']['requested']&&$recView['recording']['transcribe']&&!$recView['recording']['analyze']&&!$recView['recording_enabled'],'recording review snapshots exact owner policy without recording');
+denies(fn()=>$recPrepare(['recording_requested'=>false]),409,'request retry cannot silently remove recording consent');
+denies(fn()=>$recHolder(['recording_consent'=>false]),422,'holder must explicitly accept recording');
+denies(fn()=>$recHolder(['recording_consent_revision'=>2]),422,'holder cannot consent to another revision');
+c($recHolder()['recording']['holder_consented'],'holder accepts exact per-call recording and processing policy');
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+$recordPlan=[];$recParent='CA'.md5('managed-recording-parent');
+$recCarrier=static function(array $fields)use(&$recordPlan,$recParent):array{
+    $recordPlan=$fields;return ['sid'=>$recParent,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$fields['From'],'to'=>$fields['To']];
+};
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$recordRequest,true,$recCarrier,$clock),409,'recording-requested call cannot dispatch with recording capability disabled');
+$GLOBALS['settings']['phone_managed_recording_enabled_v1']='1';
+$pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=? WHERE owner_user_id=2')->execute([$clock-601]);
+$recCall=vp3_managed_transport_dispatch_v1($pdo,user(2),$recordRequest,true,$recCarrier,$clock);
+$recPublic=$recCall['call']['public_id'];$recNonce=$transportNonce($recordPlan);
+c($recordPlan['Record']==='false'&&!$recCall['call']['recording_enabled'],'first call leg never starts a recording');
+$recParentForm=form($recParent,['From'=>'+16025550102','To'=>'+16025550156','CallStatus'=>'in-progress']);
+$notice=$transportEvent('answer',$recPublic,$recNonce,$recParentForm);
+c($notice['accepted']&&str_contains($notice['xml'],'Cloud AI will transcribe')&&!str_contains($notice['xml'],'<Dial'),'holder hears recording and processing disclosure before pressing a key');
+$bridge=$transportEvent('confirm',$recPublic,$recNonce,$recParentForm+['Digits'=>'1']);
+c($bridge['accepted']&&str_contains($bridge['xml'],'record_notice')&&!str_contains($bridge['xml'],' record='),'bridge includes destination consent whisper but no record attribute');
+$recChild='CA'.md5('managed-recording-child');
+$recChildForm=form($recChild,['ParentCallSid'=>$recParent,'From'=>'+16025550102','To'=>'+16025550157','CallStatus'=>'in-progress']);
+$recIO=0;
+$noRecording=static function()use(&$recIO):array{$recIO++;return [];};
+denies(fn()=>vp3_managed_recording_start_v1($pdo,$recPublic,$recNonce,$noRecording,$clock),409,'recording cannot begin without destination consent');
+c($recIO===0,'no provider IO before both parties consent');
+c(!$transportEvent('record_notice',$recPublic,$recNonce,array_replace($recChildForm,['To'=>'+16025550199']))['accepted'],'wrong destination cannot enter recording consent');
+$destNotice=$transportEvent('record_notice',$recPublic,$recNonce,$recChildForm);
+c($destNotice['accepted']&&str_contains($destNotice['xml'],'<Gather')&&!str_contains($destNotice['xml'],'<Record'),'destination hears affirmative consent prompt without recording');
+c($transportEvent('record_consent',$recPublic,$recNonce,$recChildForm+['Digits'=>'1'])['accepted'],'destination affirmative consent binds exact child');
+c(!$transportEvent('record_consent',$recPublic,$recNonce,$recChildForm+['Digits'=>'1'])['accepted'],'recording consent replay cannot create another authorization');
+$transportEvent('child',$recPublic,$recNonce,$recChildForm);
+$recSid='RE'.md5('managed-recording-media');
+$recForm=form($recParent,['RecordingSid'=>$recSid,'RecordingStatus'=>'completed','RecordingSource'=>'StartCallRecordingAPI','RecordingChannels'=>'2','RecordingTrack'=>'both','RecordingDuration'=>'12']);
+c(!$transportEvent('recording',$recPublic,$recNonce,$recForm)['accepted'],'receipt before a recording start claim is rejected');
+$recMethods=[];
+$recTransport=static function(string $method,string $resource,array $fields)use(&$recMethods,$carrierEvidence,$recParent,$recChild,$recSid,$pdo):array{
+    c(!$pdo->inTransaction(),'recording start provider IO runs outside transaction');
+    $recMethods[]=$method;
+    if($method==='GET'){
+        if(str_contains($resource,$recParent))return $carrierEvidence($recParent,'+16025550156','in-progress');
+        return $carrierEvidence($recChild,'+16025550157','in-progress','',$recParent);
+    }
+    c(str_ends_with($resource,'/Calls/'.$recParent.'/Recordings.json')&&$fields['RecordingChannels']==='dual'&&$fields['RecordingTrack']==='both'&&$fields['PlayBeep']==='true','one exact parent dual-channel recording request with audible beep');
+    return ['sid'=>$recSid,'account_sid'=>setting('phone_twilio_account_sid'),'call_sid'=>$recParent,'source'=>'StartCallRecordingAPI','status'=>'in-progress','channels'=>2];
+};
+$started=vp3_managed_recording_start_v1($pdo,$recPublic,$recNonce,$recTransport,$clock);
+c($started['state']==='started'&&$recMethods===['GET','GET','POST']&&(int)readcall($recPublic)['recording_enabled']===1,'verified consent and both exact active legs permit one recording command');
+denies(fn()=>vp3_managed_recording_start_v1($pdo,$recPublic,$recNonce,$recTransport,$clock),409,'recording start cannot be replayed');
+c($recMethods===['GET','GET','POST'],'no duplicate recording provider mutation');
+c(!$transportEvent('recording',$recPublic,$recNonce,array_replace($recForm,['RecordingSid'=>'RE'.md5('other-recording')]))['accepted'],'different media SID cannot use consented receipt');
+c(!$transportEvent('recording',$recPublic,$recNonce,array_replace($recForm,['RecordingChannels'=>'1']))['accepted'],'wrong recording channel mode rejected');
+c(!vp3_phone_browser_recording_v1($pdo,$recForm,signature('recording',$recForm,$recPublic),$recPublic)['accepted'],'ordinary browser recording endpoint cannot bypass managed consent');
+$saved= $transportEvent('recording',$recPublic,$recNonce,$recForm);
+c($saved['accepted']&&$saved['queued']&&$saved['recording']['peer_e164']==='','signed managed recording enters existing private pipeline with redacted peer');
+$jobId=vp3_phone_recording_job_id_v1($saved['recording']['id']);$job=vp3_phone_recording_row_v1($pdo,$jobId);
+c(vp3_phone_recording_decode_v1($job['policy_json'])===$recPolicy&&$job['call_public_id']===$recPublic,'post-call job preserves exact consented processing policy');
+c($transportEvent('recording',$recPublic,$recNonce,$recForm)['duplicate']===true,'duplicate recording callback is idempotent');
+$transportEvent('child',$recPublic,$recNonce,array_replace($recChildForm,['CallStatus'=>'completed','CallDuration'=>'15']));
+vp3_phone_recording_authorize_v1($pdo,$job,true);
+vp3_phone_recording_save_policy_v1($pdo,user(2),8,['transcribe'=>false]);
+bad(fn()=>vp3_phone_recording_authorize_v1($pdo,$job,true),'changed owner policy cannot broaden consent or run additional paid processing');
+unset($GLOBALS['settings']['phone_managed_recording_enabled_v1'],$GLOBALS['settings']['phone_managed_callback_enabled_v1']);
 
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

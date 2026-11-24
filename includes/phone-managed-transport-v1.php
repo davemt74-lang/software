@@ -16,7 +16,7 @@ function vp3_managed_transport_nonce_v1(mixed $nonce):string
 }
 function vp3_managed_transport_url_v1(string $event,string $public,string $nonce):string
 {
-    vp3_managed_callback_need_v1(in_array($event,['answer','confirm','parent','child','complete'],true),422);
+    vp3_managed_callback_need_v1(in_array($event,['answer','confirm','parent','child','complete','record_notice','record_consent','recording'],true),422);
     vp3_managed_callback_id_v1($public);vp3_managed_transport_nonce_v1($nonce);
     $base=vp3_phone_voice_validate_url_v130(vp3_phone_voice_callback_url_v130());
     return substr($base,0,-strlen('phone-voice-inbound-v130.php')).'phone-managed-callback-event-v1.php?'.
@@ -85,6 +85,8 @@ function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $
         }
         vp3_managed_callback_need_v1($row['state']==='approved'&&(int)$row['approved_epoch']>0&&(int)$row['expires_epoch']>$now);
         $authority=vp3_managed_callback_current_v1($pdo,$row,$live,$now);
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        vp3_managed_recording_parent_v1($pdo,$row,$authority,false,$now);
         vp3_connected_phone_prepare_v1($pdo,$authority['scope'],['device_id'=>$row['device_id'],'profile_id'=>$row['profile_id'],
             'profile_revision'=>(int)$row['profile_revision'],'phone_revision'=>(int)$row['phone_revision'],'confirmed'=>true],$now);
         $pdo->prepare("UPDATE phone_browser_calls_v1 SET state='canceled',ended_epoch=?,updated_epoch=? WHERE owner_user_id=? AND state='prepared' AND intent_expires_epoch<?")->execute([$now,$now,$owner,$now]);
@@ -126,7 +128,8 @@ function vp3_managed_transport_dispatch_v1(PDO $pdo,array $user,string $id,bool 
         try{
             $live=vp3_managed_callback_owner_lock_v1($pdo,$owner);
             vp3_managed_callback_need_v1(vp3_managed_transport_enabled_v1()&&$row['state']==='dispatch_claimed'&&(int)$row['expires_epoch']>$now&&$transport['state']==='dispatching'&&!$call['provider_call_sid']);
-            vp3_managed_callback_current_v1($pdo,$row,$live,$now);return true;
+            $authority=vp3_managed_callback_current_v1($pdo,$row,$live,$now);
+            vp3_managed_recording_parent_v1($pdo,$row,$authority,false,$now);return true;
         }catch(VP3PhoneWorkspaceException){vp3_managed_transport_terminal_v1($pdo,$transport,$call,'canceled',0,$now,null,'not_sent');return false;}
     });
     if(!$allowed){
@@ -177,6 +180,9 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
         $mapping=['queued'=>'dialing','initiated'=>'dialing','ringing'=>'ringing','in-progress'=>'answered','answered'=>'answered',
             'completed'=>'completed','busy'=>'busy','no-answer'=>'no_answer','failed'=>'failed','canceled'=>'canceled'];
         $finished=in_array($call['state'],$terminal,true);
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        if(in_array($event,['record_notice','record_consent'],true))return vp3_managed_recording_child_v1($pdo,$event,$row,$t,$call,$sid,$nonce,$form,$now);
+        if($event==='recording')return vp3_managed_recording_event_v1($pdo,$row,$t,$call,$sid,$form,$now);
         if($event!=='child'){
             if(!hash_equals((string)$call['phone_e164'],(string)($form['From']??''))||!hash_equals((string)$call['peer_e164'],(string)($form['To']??'')))return $hangup;
             if(!vp3_managed_transport_bind_parent_v1($pdo,$call,$sid))return $hangup;
@@ -184,13 +190,15 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
         if($event==='answer'||$event==='confirm'){
             if($finished||!vp3_managed_transport_enabled_v1()||$row['state']!=='dispatch_claimed'||(int)$row['expires_epoch']<=$now||$t['parent_state']!=='')return $hangup;
             try{
-                $live=vp3_managed_callback_owner_lock_v1($pdo,$owner);vp3_managed_callback_current_v1($pdo,$row,$live,$now);
+                $live=vp3_managed_callback_owner_lock_v1($pdo,$owner);$authority=vp3_managed_callback_current_v1($pdo,$row,$live,$now);
+                $recordPolicy=vp3_managed_recording_parent_v1($pdo,$row,$authority,false,$now);
             }catch(VP3PhoneWorkspaceException){return $hangup;}
             if($event==='answer'){
                 if(!in_array($t['state'],['dispatching','submitted','uncertain','awaiting_confirmation'],true)||(int)$t['confirmation_epoch']>0)return $hangup;
                 $pdo->prepare("UPDATE phone_managed_callback_dispatch_v1 SET state='awaiting_confirmation',updated_epoch=? WHERE call_public_id=?")->execute([$now,$public]);
                 $action=vp3_phone_browser_xml_v1(vp3_managed_transport_url_v1('confirm',$public,$nonce));
-                $xml='<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="dtmf" numDigits="1" timeout="8" actionOnEmptyResult="true" action="'.$action.'" method="POST"><Say>VP3 managed callback. Press 1 to connect the destination you approved in the app. Otherwise hang up. This call is not recorded by VP3.</Say></Gather><Hangup/></Response>';
+                $notice=$recordPolicy?vp3_managed_recording_notice_v1($recordPolicy):'VP3 managed callback. Press 1 to connect the destination you approved in the app. Otherwise hang up. This call is not recorded by VP3.';
+                $xml='<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="dtmf" numDigits="1" timeout="8" actionOnEmptyResult="true" action="'.$action.'" method="POST"><Say>'.vp3_phone_browser_xml_v1($notice).'</Say></Gather><Hangup/></Response>';
                 return ['accepted'=>true,'xml'=>$xml];
             }
             if($t['state']!=='awaiting_confirmation'||(int)$t['confirmation_epoch']>0)return $hangup;
@@ -198,11 +206,13 @@ function vp3_managed_transport_event_v1(PDO $pdo,string $event,string $public,st
                 $pdo->prepare("UPDATE phone_managed_callback_dispatch_v1 SET state='holder_declined',updated_epoch=? WHERE call_public_id=? AND state='awaiting_confirmation'")->execute([$now,$public]);
                 return $hangup;
             }
+            if($recordPolicy)vp3_managed_recording_parent_v1($pdo,$row,$authority,true,$now);
             $q=$pdo->prepare("UPDATE phone_managed_callback_dispatch_v1 SET state='bridging',confirmation_epoch=?,updated_epoch=? WHERE call_public_id=? AND state='awaiting_confirmation' AND confirmation_epoch=0");
             $q->execute([$now,$now,$public]);if($q->rowCount()!==1)return $hangup;
             $complete=vp3_phone_browser_xml_v1(vp3_managed_transport_url_v1('complete',$public,$nonce));$status=vp3_phone_browser_xml_v1(vp3_managed_transport_url_v1('child',$public,$nonce));
             $line=vp3_phone_browser_xml_v1($row['line_e164']);$dest=vp3_phone_browser_xml_v1(vp3_managed_callback_number_v1($row['destination_e164']));
-            $xml='<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="'.$line.'" answerOnBridge="true" timeout="20" timeLimit="180" action="'.$complete.'" method="POST"><Number statusCallback="'.$status.'" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed">'.$dest.'</Number></Dial><Hangup/></Response>';
+            $screen=$recordPolicy?' url="'.vp3_phone_browser_xml_v1(vp3_managed_transport_url_v1('record_notice',$public,$nonce)).'" method="POST"':'';
+            $xml='<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="'.$line.'" answerOnBridge="true" timeout="20" timeLimit="180" action="'.$complete.'" method="POST"><Number'.$screen.' statusCallback="'.$status.'" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed">'.$dest.'</Number></Dial><Hangup/></Response>';
             return ['accepted'=>true,'xml'=>$xml];
         }
         if($event==='parent'){
