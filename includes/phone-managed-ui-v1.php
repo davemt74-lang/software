@@ -98,7 +98,8 @@ function vp3_managed_ui_owner_action_v1(PDO $pdo,array $user,string $action,arra
 {
     require_once __DIR__.'/phone-managed-callback-v1.php';
     vp3_managed_callback_need_v1(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null,403);
-    vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch'],true),422);
+    vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch','managed_recording_withdraw'],true),422);
+    if($action==='managed_recording_withdraw')return vp3_managed_ui_withdraw_owner_v1($pdo,$user,$input,$now);
     if($action==='managed_pilot_dispatch')return vp3_managed_ui_pilot_dispatch_v1($pdo,$user,$input,$now);
     if(in_array($action,['managed_reconcile','managed_end'],true))return vp3_managed_ui_control_v1($pdo,$user,$action,$input,$now);
     $allowed=$action==='managed_prepare'
@@ -174,4 +175,40 @@ function vp3_managed_ui_pilot_dispatch_v1(PDO $pdo,array $user,array $input,int 
     $result=vp3_managed_transport_dispatch_v1($pdo,$user,$id,true,$carrier,$carrier!==null?$now:null,true);
     $fresh=vp3_managed_ui_device_v1($pdo,$owner,$device);
     return $result+['managed_callback'=>$fresh?vp3_managed_ui_projection_v1($pdo,$fresh,$carrier!==null?$now:time(),false):null];
+}
+
+
+function vp3_managed_ui_withdraw_locked_v1(PDO $pdo,array $d,array $input,int $now,bool $holder):array
+{
+    require_once __DIR__.'/phone-managed-media-worker-v1.php';
+    vp3_managed_callback_need_v1($pdo->inTransaction()&&!array_diff(array_keys($input),['request_id','device_id','generation','managed_request_id','confirmed'])&&($input['confirmed']??null)===true,422);
+    vp3_managed_callback_need_v1(($d['device_status']??'')==='approved'&&(int)$d['expires_at']>$now&&($input['device_id']??null)===$d['id']&&($input['generation']??null)===(int)$d['generation'],403);
+    $id=vp3_managed_callback_id_v1($input['managed_request_id']??null);$owner=(int)$d['owner_user_id'];
+    $row=vp3_managed_callback_row_v1($pdo,$id,true);
+    vp3_managed_callback_need_v1(is_array($row)&&(int)$row['owner_user_id']===$owner&&$row['device_id']===$d['id']&&(int)$row['generation']===(int)$d['generation'],404);
+    vp3_managed_callback_need_v1(in_array($row['state'],['pending','approved','dispatch_claimed','revoked'],true),409);
+    $receipt=vp3_managed_media_withdraw_locked_v1($pdo,$row,$now);
+    if(in_array($row['state'],['pending','approved'],true)){
+        $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='canceled',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=?")->execute([$now,$id]);
+    }elseif($row['state']==='dispatch_claimed'){
+        $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='revoked',updated_epoch=? WHERE public_id=?")->execute([$now,$id]);
+    }
+    return ['recording_withdrawal'=>$receipt,'managed_callback'=>vp3_managed_ui_projection_v1($pdo,$d,$now,$holder)];
+}
+function vp3_managed_ui_withdraw_owner_v1(PDO $pdo,array $user,array $input,int $now):array
+{
+    require_once __DIR__.'/phone-managed-callback-v1.php';
+    vp3_managed_callback_need_v1(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null,403);
+    $device=vp3_managed_callback_id_v1($input['device_id']??null);$owner=(int)$user['id'];
+    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$owner,$device,$input,$now){
+        vp3_managed_callback_owner_lock_v1($pdo,$owner);
+        $d=vp3_managed_ui_device_v1($pdo,$owner,$device);
+        vp3_managed_callback_need_v1(is_array($d),404);
+        return vp3_managed_ui_withdraw_locked_v1($pdo,$d,$input,$now,false);
+    });
+}
+function vp3_managed_ui_withdraw_holder_v1(PDO $pdo,array $d,array $input,int $now):array
+{
+    // Only the existing authenticated pairing-cookie transaction can call this.
+    return vp3_managed_ui_withdraw_locked_v1($pdo,$d,$input,$now,true);
 }

@@ -32,7 +32,7 @@ try {
     $recordAction=in_array($action,['camera_record_accept','camera_record_review','camera_record_decline'],true);
     if (!$multipart && !$recordAction && !$chatAction && !$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
         'accept_history','decline_history','stop_history','set_place_permission',
-        'accept_arrival','decline_arrival','stop_arrival','holder_save_place','save_communication_profile','information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download','dialer_preferences','dialer_claim','dialer_handled','dialer_decline','managed_respond','native_dialthrough_issue'], true)) {
+        'accept_arrival','decline_arrival','stop_arrival','holder_save_place','save_communication_profile','information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download','dialer_preferences','dialer_claim','dialer_handled','dialer_decline','managed_respond','native_dialthrough_issue','managed_recording_withdraw'], true)) {
         throw new RuntimeException('Unknown action.', 422);
     }
     $pdo = db();

@@ -29,13 +29,13 @@
     const managed=make('div',undefined,'phone-managed-panel'),browser=make('div',undefined,'phone-managed-panel');
     const detail=make('p'),state=make('p'),feedback=make('p');state.setAttribute('role','status');feedback.setAttribute('role','status');
     const transportHeading=make('h4','Managed callback review'),transportHelp=make('p');
-    const form=make('form',undefined,'phone-profile-form'),line=make('select'),dest=make('input'),confirm=make('input'),send=make('button','Request managed callback approval','phone-primary'),pilotStart=button('Start unrecorded pilot call','phone-primary'),cancel=button('Cancel managed request'),reconcile=button('Check carrier status'),end=button('End managed call','phone-primary');
+    const form=make('form',undefined,'phone-profile-form'),line=make('select'),dest=make('input'),confirm=make('input'),send=make('button','Request managed callback approval','phone-primary'),pilotStart=button('Start unrecorded pilot call','phone-primary'),withdrawRecording=button('Withdraw recording consent'),cancel=button('Cancel managed request'),reconcile=button('Check carrier status'),end=button('End managed call','phone-primary');
     line.setAttribute('aria-label','Assigned Twilio line');dest.type='tel';dest.autocomplete='off';dest.placeholder='+1 602 555 0100';dest.maxLength=32;
     confirm.type='checkbox';send.type='submit';
     const record=make('input');record.type='checkbox';
     const recordLabel=label('Request recording with participant consent',record),recordDetail=make('p',undefined,'phone-detail-meta');
     form.append(label('Assigned Twilio line',line),label('Managed destination number (international format)',dest),recordLabel,recordDetail,label('Ask the holder to approve this exact destination. This review itself places no call.',confirm),send);
-    managed.append(transportHeading,transportHelp,detail,state,form,pilotStart,cancel,reconcile,end,feedback);
+    managed.append(transportHeading,transportHelp,detail,state,form,pilotStart,withdrawRecording,cancel,reconcile,end,feedback);
     const browserButton=button('Open browser calling','phone-primary');
     browser.append(make('h4','Browser call to connected user'),make('p','Use your existing assigned line and browser audio to call this connected phone. The Phone drawer requires confirmation.'),browserButton);
     let device=null,scope='',mode='personal',ready=false,busy=false,linesSignature='',policySignature='',draftId='',draftKey='',received=0,lastProjection=null;
@@ -80,6 +80,9 @@
       pilotStart.hidden=nativeMode||p?.dispatch_enabled!==true||r?.transport==='twilio_native'||r?.state!=='approved'||expired||r?.recording?.requested===true;
       pilotStart.disabled=busy||!ready||!visible()||pilotStart.hidden;
       if(!nativeMode&&r?.state==='approved'&&!expired)state.textContent+=p?.dispatch_enabled?' · Unrecorded pilot ready':' · Live acceptance gate closed';
+      withdrawRecording.hidden=!r?.recording?.requested||r.recording.state==='revoked'||!active(r)||expired;
+      withdrawRecording.disabled=busy||!ready||!visible()||withdrawRecording.hidden;
+      if(r?.recording?.state==='revoked')state.textContent+=' · Stop: '+String(r.recording.stop_state||'unconfirmed').replaceAll('_',' ');
       cancel.hidden=!r||!['pending','approved'].includes(r.state)||expired;
       cancel.disabled=busy||!ready||!visible();
       const control=r?.call?.managed_control;
@@ -103,7 +106,9 @@
       try{
         const value=await request(action,{...bound(d),...fields});
         if(scope!==k||!ready)return;
-        if(action==='managed_pilot_dispatch'){
+        if(action==='managed_recording_withdraw'){
+          feedback.textContent='Recording consent withdrawn. If a recording was active, hang up until its stop is verified.';
+        }else if(action==='managed_pilot_dispatch'){
           feedback.textContent=value?.dispatch_state==='submitted'?'Carrier accepted the callback request. Answer and confirm on the connected phone.':value?.dispatch_state==='uncertain'?'Carrier outcome is uncertain. Check status; do not place another call.':'Pilot request processed. Review call status.';
         }else if(action==='managed_end'||action==='managed_reconcile'){
           const c=value?.call?.managed_control;
@@ -129,6 +134,10 @@
       const sig=JSON.stringify([scope,numberId,n,recording,transport]);
       if(!draftId||draftKey!==sig){draftId=randomId();draftKey=sig;}
       void act('managed_prepare',{managed_request_id:draftId,profile_id:p.profile_id,profile_revision:p.revision,phone_revision:p.phone_revision,number_id:numberId,destination_e164:n,confirmed:true,...recording,...transport});
+    });
+    withdrawRecording.addEventListener('click',event=>{
+      const r=device?.managed_callback?.request;
+      if(event.isTrusted&&ready&&visible()&&!busy&&!withdrawRecording.hidden&&idOK(r?.request_id)&&window.confirm('Withdraw recording and processing consent for this request?'))void act('managed_recording_withdraw',{managed_request_id:r.request_id,confirmed:true});
     });
     pilotStart.addEventListener('click',event=>{
       const r=device?.managed_callback?.request;
@@ -163,7 +172,8 @@
     const actions=make('div',undefined,'phone-permission-buttons'),approve=button('Approve managed request','phone-primary'),decline=button('Decline managed request','secondary');
     const nativeBox=make('div',undefined,'phone-managed-native-ticket'),nativeIssue=button('Get one-time dialing code','phone-primary'),nativePin=make('p',undefined,'phone-managed-native-pin'),nativeLine=make('p'),nativeHelp=make('p'),nativeDial=button('Open native phone dialer','phone-primary');
     nativeBox.append(nativeHelp,nativeIssue,nativePin,nativeLine,nativeDial);
-    actions.append(approve,decline);
+    const withdraw=button('Withdraw recording consent','secondary');
+    actions.append(approve,decline,withdraw);
     root.append(heading,detail,destination,state,check,recordDetails,recordCheck,actions,nativeBox,feedback);
     let device=null,scope='',requestKey='',ready=false,busy=false,received=0,lastProjection=null,invalidatedProjection=null,ticket=null;
     function clearTicket(){ticket=null;nativePin.textContent='';nativeLine.textContent='';nativeDial.hidden=true;}
@@ -179,7 +189,9 @@
       const approved=show&&r?.state==='approved'&&remaining(p,received)>0;
       destination.textContent=pending?r.destination_e164:'';
       state.textContent=show?(remaining(p,received)<=0&&['pending','approved'].includes(r.state)?'Expired':stateText(r)):'';
-      check.hidden=!pending;approve.hidden=!pending;decline.hidden=!(pending||approved);actions.hidden=approve.hidden&&decline.hidden;
+      check.hidden=!pending;approve.hidden=!pending;decline.hidden=!(pending||approved);withdraw.hidden=!show||!r?.recording?.requested||r.recording.state==='revoked'||!active(r);withdraw.disabled=busy||withdraw.hidden;
+      actions.hidden=approve.hidden&&decline.hidden&&withdraw.hidden;
+      if(show&&r?.recording?.state==='revoked')state.textContent+=' · Recording withdrawal saved. Carrier stop: '+String(r.recording.stop_state||'unconfirmed').replaceAll('_',' ')+'. Hang up if stop is not verified.';
       const recordRequested=r?.recording?.requested===true;
       recordCheck.hidden=recordDetails.hidden=!pending||!recordRequested;
       recordDetails.textContent=pending&&recordRequested?recordingText(r.recording):'';
@@ -224,6 +236,13 @@
       }catch(error){if(scope===k)feedback.textContent='Unable to confirm the response. Check the connection.';}
       finally{busy=false;controls();}
     }
+    withdraw.addEventListener('click',async event=>{
+      const d=device,r=d?.managed_callback?.request,k=key(d);
+      if(!event.isTrusted||!ready||!visible()||busy||withdraw.hidden||withdraw.disabled||!idOK(r?.request_id))return;
+      busy=true;controls();try{await request('managed_recording_withdraw',{...bound(d),managed_request_id:r.request_id,confirmed:true});
+        if(scope===k&&ready)feedback.textContent='Withdrawal saved. Hang up if recording stop is not verified.';
+      }catch(error){if(scope===k)feedback.textContent='Withdrawal not confirmed; hang up now if you do not consent.';}finally{busy=false;controls();}
+    });
     nativeIssue.addEventListener('click',async event=>{
       const d=device,r=d?.managed_callback?.request,k=key(d);
       if(!event.isTrusted||!ready||!visible()||busy||nativeIssue.hidden||nativeIssue.disabled||!idOK(r?.request_id))return;
