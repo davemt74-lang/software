@@ -62,6 +62,13 @@ return [
         'relay_base_url' => 'https://relay.example.com',
     ],
 
+    // Simulation-only Operator worker registration. Explicit CLI install and per-owner grant required.
+    // Keep the dedicated 32-byte random key in private config.php; never commit it.
+    'operator_worker_registration' => [
+        'enabled' => false,
+        'master_key_hex' => '',
+    ],
+
     // Optional OpenAI-compatible chat endpoint. Leave blank to use
     // VP3's built-in database/knowledge retrieval responses.
     'ai' => [
