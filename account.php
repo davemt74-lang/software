@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_permission('account.access');
 require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
+header('Cache-Control: no-store, private');
 
 $pdo = db();
 $user = current_user();

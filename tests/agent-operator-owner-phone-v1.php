@@ -24,7 +24,7 @@ VP3OperatorOwnerPhoneV1::install($pdo);VP3OperatorOwnerPhoneV1::install($pdo);
 $initial=VP3OperatorOwnerPhoneV1::read($pdo,$one);
 ok8owner($initial===VP3OperatorOwnerPhoneV1::defaults(),'all preferences off by default');
 ok8owner((int)$pdo->query('SELECT COUNT(*) FROM phone_operator_owner_preferences_v1')->fetchColumn()===0,'read never creates a row');
-$save=fn(array $data,int $t=$now)=>VP3OperatorOwnerPhoneV1::saveNumber($pdo,$one,$data,$t);
+$save=fn(array $data,?int $t=null)=>VP3OperatorOwnerPhoneV1::saveNumber($pdo,$one,$data,$t??$now);
 $prefs=['expected_revision'=>'0','updates_requested'=>'1','hello_requested'=>'1','update_scope'=>'important','timezone'=>'America/Phoenix',
     'window_start'=>'09:00','window_end'=>'17:00','max_calls_per_day'=>'1','min_gap_minutes'=>'240','max_duration_seconds'=>'180'];
 no8owner(fn()=>VP3OperatorOwnerPhoneV1::savePreferences($pdo,$one,$prefs,$now),'no call preference without a phone');
