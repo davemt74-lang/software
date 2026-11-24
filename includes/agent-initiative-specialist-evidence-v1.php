@@ -40,7 +40,7 @@ function vp3_initiative_specialist_evidence_v1(PDO $pdo,array $user,array $bindi
         $specialist=$item['specialist'];
         // Gmail content requires its dedicated mailbox path. Proposed Curiosity
         // questions are not evidence of owner preferences.
-        if(in_array($specialist,['gmail','curiosity','casual'],true))continue;
+        if(in_array($specialist,['gmail','curiosity','casual','operator'],true))continue;
         $route=vp3_coordination_item_route_v1($settings,$item);
         $ownedProduct=$specialist==='marketing'&&vp3_product_marketing_ref_kind_v1($ref)!==null;
         if(($route['action']==='watch'&&$specialist!=='profile'&&!$ownedProduct)||$route['trigger']==='start_plan')continue;
