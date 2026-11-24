@@ -275,7 +275,23 @@
   let profileTab='communication',profileDevice='',profileSignature='';
   const exchange=window.VP3PhoneInformationV1?.({request,onChanged:()=>{void refresh();}});
   const dialerOwner=window.VP3RemoteDialerV1?.owner({request:dialerOwnerRequest});
-  if(dialerOwner)byId('phone-dialer-owner-host')?.append(dialerOwner.root);
+  const managedOwner=window.VP3ManagedCallUIV1?.owner({request:managedOwnerRequest,directRoot:dialerOwner?.root,openBrowser:(d,source)=>{
+    if(window.VP3PhoneWorkspaceV1?.openConnectedPhone?.(d,source)!==true)status.textContent='Review the current connected phone and assigned line before calling.';
+  }});
+  if(managedOwner)byId('phone-dialer-owner-host')?.append(managedOwner.root);
+  else if(dialerOwner)byId('phone-dialer-owner-host')?.append(dialerOwner.root);
+  async function managedOwnerRequest(action,fields){
+    const d=selected();
+    if(!available||writing||document.hidden||!d||d.id!==fields.device_id||d.generation!==fields.generation)throw Error('Selected phone changed.');
+    writing=true;const version=++revision;
+    try{
+      const result=await request(action,fields);
+      if(version!==revision||document.hidden)throw Error('View changed.');
+      const index=devices.findIndex(x=>x.id===d.id&&x.generation===d.generation&&x.communication?.revision===d.communication?.revision);
+      if(index<0)throw Error('Connected profile changed.');
+      devices[index]={...devices[index],managed_callback:result.managed_callback};render();return result;
+    }finally{writing=false;void refresh();}
+  }
   async function dialerOwnerRequest(action,fields){
     const d=selected();
     if(!available||writing||document.hidden||!d||d.id!==fields.device_id||d.generation!==fields.generation||d.dialer?.revision!==fields.dialer_revision)throw Error('Selected phone changed.');
@@ -514,6 +530,7 @@
     renderList(approved);
     renderDetail(selected());
     dialerOwner?.bind(selected(),available&&!document.hidden);
+    managedOwner?.bind(selected(),available&&!document.hidden);
     renderPending(devices.filter(d => d.status === 'pending'));
     renderMarkers();
     archive.render(approved);
