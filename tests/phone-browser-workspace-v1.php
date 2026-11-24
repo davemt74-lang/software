@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -590,6 +590,86 @@ vp3_operator_auto_call_revoke_line_v1($pdo,1);
 c(!$readPolicy()['enabled']&&$readPolicy()['revision']===4,'assignment invalidation revokes previously stored authority and advances its revision');
 c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$callCount
     &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$recordingCount,'permission writes do not create call intents or recording jobs');
+// Live caption authorization is a separate, default-off permission on an exact signed call.
+require_once dirname(__DIR__).'/includes/agent-operator-live-v1.php';
+c(!vp3_operator_live_schema_ready_v1($pdo)&&api('GET')['state']['operator_live']['available']===false,'unupgraded live captions leave the existing Phone workspace available');
+$liveNow=time();
+$livePublic=str_repeat('f',31).'1';$liveParent='CA'.str_repeat('f',31).'1';$liveChild='CA'.str_repeat('f',31).'2';
+$insertLive=$pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,provider_call_sid,conversation_id,chat_agent_id,state,recording_enabled,created_epoch,updated_epoch) VALUES (?,1,7,1,'+16025550101','+16025550999','outbound',?,11,0,'dialing',0,?,?)");
+$insertLive->execute([$livePublic,$liveParent,$liveNow,$liveNow]);$liveCallId=(int)$pdo->lastInsertId();
+$sent=0;$fixturePcm=str_repeat("\0",128000);
+$speech=static function(string $audio)use(&$sent,$fixturePcm):string{
+    $sent++;
+    c($audio===$fixturePcm,'only exact bounded PCM bytes reach the server speech adapter');
+    $wav=vp3_operator_live_wav_v1($audio);
+    c(strlen($wav)===128044&&substr($wav,0,4)==='RIFF'&&substr($wav,8,8)==='WAVEfmt '&&unpack('V',substr($wav,24,4))[1]===16000,'caption transport constructs an exact 16 kHz mono PCM WAV');
+    return 'Fixture remote words <script> are data.';
+};
+$liveRequest=['action'=>'start','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'consent_attested'=>true];
+$liveApi=static function(array $input,int $at,?callable $transport=null,int $owner=1,string $method='POST')use($pdo,$speech):array{
+    return vp3_operator_live_request_v1($pdo,user($owner),$method,$input,'csrf-fixture',$transport??$speech,$at);
+};
+denies(fn()=>$liveApi($liveRequest,$liveNow),503,'live captions require explicit migration');
+vp3_operator_live_ensure_schema_v1($pdo);vp3_operator_live_ensure_schema_v1($pdo);
+c(vp3_operator_live_schema_ready_v1($pdo)&&(int)$pdo->query('SELECT COUNT(*) FROM phone_operator_live_sessions_v1')->fetchColumn()===0,'repeated caption upgrade creates no authorization');
+denies(fn()=>$liveApi($liveRequest,$liveNow,null,1,'GET'),405,'caption actions never run through GET');
+denies(fn()=>$liveApi(array_replace($liveRequest,['csrf_token'=>'forged']),$liveNow),403,'live caption permission requires owner CSRF');
+denies(fn()=>$liveApi(array_replace($liveRequest,['consent_attested'=>false]),$liveNow),422,'recording notice is not consent to live AI transcription');
+denies(fn()=>$liveApi($liveRequest,$liveNow),409,'dialing call cannot start live audio processing');
+$liveForm=form($liveChild,['ParentCallSid'=>$liveParent,'CallStatus'=>'in-progress']);
+c(vp3_phone_browser_status_v1($pdo,$liveForm,signature('status',$liveForm,$livePublic),$livePublic)['accepted'],'signed called leg establishes answered state for caption authority');
+$liveNow=time();
+denies(fn()=>$liveApi(array_replace($liveRequest,['conversation_id'=>12,'agent_id'=>7]),$liveNow),404,'other Agent Chat cannot read this exact live call');
+denies(fn()=>$liveApi(array_replace($liveRequest,['conversation_id'=>21]),$liveNow,null,2),404,'other owner cannot authorize a live call');
+denies(fn()=>$liveApi($liveRequest,$liveNow+301),409,'old call receipt cannot authorize live capture');
+$liveBeforeMessages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();
+$liveBeforeJobs=(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn();
+$captionGrant=$liveApi($liveRequest,$liveNow);
+c($captionGrant['call_id']===$livePublic&&$captionGrant['execution']==='captions_only'&&$captionGrant['expires_epoch']===$liveNow+120,'explicit consent authorizes only bounded live captions');
+$captionToken=$captionGrant['token'];$sessionRow=vp3_operator_live_row_v1($pdo,$liveCallId);
+c(strlen($captionToken)===64&&$sessionRow['token_hash']===hash('sha256',$captionToken)&&!str_contains(json_encode($sessionRow),$captionToken),'caption token is stored only as a hash');
+denies(fn()=>$liveApi($liveRequest,$liveNow),409,'second browser cannot reopen the same caption session');
+$chunk=['action'=>'chunk','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken,'seq'=>1,'pcm'=>base64_encode($fixturePcm)];
+denies(fn()=>$liveApi(array_replace($chunk,['pcm'=>'a']),$liveNow+4),422,'invalid audio is rejected before any provider request');
+denies(fn()=>$liveApi(array_replace($chunk,['token'=>str_repeat('0',64)]),$liveNow+4),409,'another browser token cannot dispatch speech');
+denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+4),409,'out-of-order caption chunks cannot dispatch');
+denies(fn()=>$liveApi($chunk,$liveNow+1),409,'caption request cannot outrun its bounded audio interval');
+c($sent===0,'rejected caption inputs do not send paid speech requests');
+$caption=$liveApi($chunk,$liveNow+4);
+c($caption===['call_id'=>$livePublic,'seq'=>1,'text'=>'Fixture remote words <script> are data.','speaker'=>'remote_audio']&&$sent===1,'a current authorized audio chunk returns only a transient caption');
+denies(fn()=>$liveApi($chunk,$liveNow+8),409,'a previously reserved sequence cannot be billed again');
+$stop=['action'=>'stop','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken];
+denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+8,static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
+    $sent++;$liveApi($stop,$liveNow+8);return 'Late private result';
+}),409,'consent revoked while speech is pending suppresses the late result');
+c($sent===2&&vp3_operator_live_row_v1($pdo,$liveCallId)['state']==='closed'&&(int)vp3_operator_live_row_v1($pdo,$liveCallId)['reserved_seconds']===8,'uncertain or stopped requests remain counted and cannot replay');
+c($liveApi($stop,$liveNow+9)['stopped'],'owner stop is idempotent');
+denies(fn()=>$liveApi(array_replace($chunk,['seq'=>3]),$liveNow+12),409,'stopped caption session cannot transmit audio');
+c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$liveBeforeMessages
+    &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$liveBeforeJobs
+    &&!str_contains(json_encode(vp3_operator_live_row_v1($pdo,$liveCallId)),'Fixture remote words'),'live caption processing does not persist speech, create a recording or post an independent Chat message');
+$terminalForm=form($liveChild,['ParentCallSid'=>$liveParent,'CallStatus'=>'completed']);
+vp3_phone_browser_status_v1($pdo,$terminalForm,signature('status',$terminalForm,$livePublic),$livePublic);
+denies(fn()=>$liveApi(array_replace($chunk,['seq'=>3]),$liveNow+16),409,'terminal carrier receipt blocks subsequent caption audio');
+$live2=str_repeat('f',31).'3';$liveParent2='CA'.str_repeat('f',31).'3';$liveChild2='CA'.str_repeat('f',31).'4';
+$insertLive->execute([$live2,$liveParent2,time(),time()]);$liveCallId2=(int)$pdo->lastInsertId();
+$liveForm2=form($liveChild2,['ParentCallSid'=>$liveParent2,'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$liveForm2,signature('status',$liveForm2,$live2),$live2);
+$liveNow2=time();$req2=array_replace($liveRequest,['call_id'=>$live2]);
+$grant2=$liveApi($req2,$liveNow2);
+$chunk2=array_replace($chunk,['call_id'=>$live2,'token'=>$grant2['token'],'seq'=>1]);
+denies(fn()=>$liveApi($chunk2,$liveNow2+4,static function(string $audio)use($pdo,&$sent):string{
+    $sent++;$pdo->exec('UPDATE phone_recording_policies_v1 SET revision=revision+1 WHERE owner_user_id=1 AND agent_id=7');return 'Revoked private result';
+}),409,'a changed recording/transcription policy fences an in-flight caption result');
+c(vp3_operator_live_row_v1($pdo,$liveCallId2)['state']==='closed','failed authority verification closes the session');
+$pdo->prepare("UPDATE phone_operator_live_sessions_v1 SET reserved_seconds=240 WHERE call_id=?")->execute([$liveCallId]);
+$live3=str_repeat('f',31).'5';$liveParent3='CA'.str_repeat('f',31).'5';$liveChild3='CA'.str_repeat('f',31).'6';
+$insertLive->execute([$live3,$liveParent3,time(),time()]);
+$liveForm3=form($liveChild3,['ParentCallSid'=>$liveParent3,'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$liveForm3,signature('status',$liveForm3,$live3),$live3);
+denies(fn()=>$liveApi(array_replace($liveRequest,['call_id'=>$live3]),time()),429,'account speech allowance prevents new caption authorizations');
+$terminalForm3=form($liveChild3,['ParentCallSid'=>$liveParent3,'CallStatus'=>'completed']);vp3_phone_browser_status_v1($pdo,$terminalForm3,signature('status',$terminalForm3,$live3),$live3);
+$terminalForm2=form($liveChild2,['ParentCallSid'=>$liveParent2,'CallStatus'=>'completed']);vp3_phone_browser_status_v1($pdo,$terminalForm2,signature('status',$terminalForm2,$live2),$live2);
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
