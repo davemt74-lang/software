@@ -151,7 +151,7 @@
     const recordConsent=make('input');recordConsent.type='checkbox';
     const recordCheck=label('I also agree to the listed recording and processing options.',recordConsent),recordDetails=make('p');
     const actions=make('div',undefined,'phone-permission-buttons'),approve=button('Approve managed request','phone-primary'),decline=button('Decline managed request','secondary');
-    const nativeBox=make('div',undefined,'phone-managed-native-ticket'),nativeIssue=button('Get one-time dialing code','phone-primary'),nativePin=make('p',undefined,'phone-managed-destination'),nativeLine=make('p'),nativeHelp=make('p'),nativeDial=button('Open native phone dialer','phone-primary');
+    const nativeBox=make('div',undefined,'phone-managed-native-ticket'),nativeIssue=button('Get one-time dialing code','phone-primary'),nativePin=make('p',undefined,'phone-managed-native-pin'),nativeLine=make('p'),nativeHelp=make('p'),nativeDial=button('Open native phone dialer','phone-primary');
     nativeBox.append(nativeHelp,nativeIssue,nativePin,nativeLine,nativeDial);
     actions.append(approve,decline);
     root.append(heading,detail,destination,state,check,recordDetails,recordCheck,actions,nativeBox,feedback);

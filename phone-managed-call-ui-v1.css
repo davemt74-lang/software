@@ -15,4 +15,4 @@
 .phone-managed-holder .phone-permission-buttons button{flex:1 1 9rem;min-width:0;white-space:normal}
 .phone-managed-modes[hidden],.phone-managed-modes [hidden],.phone-managed-holder[hidden],.phone-managed-holder [hidden]{display:none!important}
 
-.phone-managed-native-ticket{display:grid;gap:.5rem;min-width:0}.phone-managed-native-ticket[hidden]{display:none}.phone-managed-native-ticket p{margin:0;overflow-wrap:anywhere}.phone-managed-native-ticket button{white-space:normal}.phone-managed-native-ticket .phone-managed-destination{font-variant-numeric:tabular-nums;letter-spacing:.15em}
+.phone-managed-native-ticket{display:grid;gap:.5rem;min-width:0}.phone-managed-native-ticket[hidden]{display:none}.phone-managed-native-ticket p{margin:0;overflow-wrap:anywhere}.phone-managed-native-ticket button{white-space:normal}.phone-managed-native-ticket .phone-managed-native-pin{font-size:1.2rem;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:.15em}
