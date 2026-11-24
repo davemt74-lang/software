@@ -6,6 +6,7 @@ require_once __DIR__.'/phone-cloud-v100.php';
 require_once __DIR__.'/phone-sms-v110.php';
 require_once __DIR__.'/phone-caller-contacts-v1.php';
 require_once __DIR__.'/phone-caller-contacts-schema-v1.php';
+require_once __DIR__.'/agent-operator-auto-call-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -205,6 +206,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     elseif(!vp3_phone_package_v100($pdo,$scope['owner_user_id'])['voice'])$ready=['ready'=>false,'reason'=>'The account voice allowance is not active.'];
     $policy=function_exists('vp3_phone_recording_policy_v1')&&$selectedAgent>0?vp3_phone_recording_policy_v1($pdo,$scope['user'],$selectedAgent):null;
     return ['numbers'=>$numbers,'contacts'=>$contacts,'favorites'=>array_values(array_filter($contacts,static fn($c)=>$c['favorite'])),'calls'=>$calls,'voicemails'=>$voicemails,
+        'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
         'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
 }
@@ -248,6 +250,7 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
 {
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);$action=(string)($input['action']??'');
     if($action==='save_caller_contact')return vp3_phone_caller_contact_save_v1($pdo,$scope,$input);
+    if($action==='save_auto_call_policy')return vp3_operator_auto_call_save_v1($pdo,$scope,$input);
     if(in_array($action,['token','prepare_call','bind_call','cancel_prepared'],true)){require_once __DIR__.'/phone-browser-v1.php';return vp3_phone_browser_action_v1($pdo,$scope,$input);}
     if($action==='select_number'){$id=vp3_phone_workspace_id_v1($input['number_id']??null);vp3_phone_workspace_number_v1($pdo,$scope,$id);
         vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope,$id){$pdo->prepare('DELETE FROM phone_browser_preferences_v1 WHERE owner_user_id=? AND agent_id=?')->execute([$scope['owner_user_id'],$scope['agent_id']]);$pdo->prepare('INSERT INTO phone_browser_preferences_v1(owner_user_id,agent_id,selected_number_id) VALUES (?,?,?)')->execute([$scope['owner_user_id'],$scope['agent_id'],$id]);});return ['selected_number_id'=>$id];}
