@@ -841,6 +841,16 @@
         workspaceButton.href = map.href;
       }
     }
+    if (id === 'operator') {
+      workspaceButton = button('Open Phone',event => {
+        if (!event.isTrusted || specialistScope !== signature(scope(true)) ||
+          typeof window.VP3PhoneWorkspaceV1?.open !== 'function') return;
+        const trigger = specialistTrigger;
+        close(false);
+        window.VP3PhoneWorkspaceV1.open(trigger);
+      });
+      workspaceButton.hidden = typeof window.VP3PhoneWorkspaceV1?.open !== 'function';
+    }
     settingsButton = button('',openSpecialistSettings);
     settingsButton.className = 'vp3-specialist-settings-button';
     settingsButton.setAttribute('aria-label',selectedLabel+' settings');
@@ -848,7 +858,7 @@
     settingsButton.setAttribute('aria-controls','vp3ChatSpecialistSettings');
     settingsButton.setAttribute('aria-expanded','false');
     settingsButton.append(specialistSettingsIcon());
-    settingsButton.hidden = id === 'location' || ['curiosity','connected-sites','profile'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
+    settingsButton.hidden = ['location','operator'].includes(id) || ['curiosity','connected-sites','profile'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
     backButton = button('Back',() => specialistSettings ? closeSpecialistSettings() : showWorkspace(false));
     backButton.hidden = true;
     header.append(heading,workspaceButton,backButton,settingsButton,button('Close',() => close()));
@@ -1228,7 +1238,7 @@
   }
   function specialistRows(inbox,{specialistNames,specialistLabels}) {
     const rows = new Map();
-    for (const row of Array.isArray(snapshot?.specialists) ? snapshot.specialists.slice(0,16) : []) {
+    for (const row of Array.isArray(snapshot?.specialists) ? snapshot.specialists.slice(0,24) : []) {
       if (!Object.hasOwn(specialistNames,row?.id) || !Object.hasOwn(specialistLabels,row?.state)) continue;
       const expired = activeSpecialist(row.state) && row.lease_expires_at && !leaseCurrent(row.lease_expires_at);
       rows.set(row.id,{...row,state:expired ? 'interrupted' : row.state,progress:expired ? null : row.progress,entries:[]});
@@ -1259,7 +1269,7 @@
       if (!Object.hasOwn(specialistLabels,state)) continue;
       const row = rows.get(id);
       // Arrival state belongs to the exact open Chat. Its fresh read outranks an earlier rail poll.
-      if (id === 'location' && row) continue;
+      if (['location','operator'].includes(id) && row) continue;
       if (!row) rows.set(id,{id,state,progress:entry.progress,entries:entry.presence ? [] : [entry],label:entry.label,
         detail:entry.presence ? entry.detail : ''});
       else {
@@ -3065,7 +3075,7 @@
     controller = request;
     const timeout = setTimeout(() => request.abort(),10000);
     const selected = family(selectedSpecialist);
-    const view = specialistMode && (['gmail','tasks','media','curiosity','transcripts','coding','marketing','profile','location'].includes(selected) || selected === 'planning' && workspace) ? selected : '';
+    const view = specialistMode && (['gmail','tasks','media','curiosity','transcripts','coding','marketing','profile','location','operator'].includes(selected) || selected === 'planning' && workspace) ? selected : '';
     const list = officeWorkspace() ? officeList : null;
     const fullInventory = officeWorkspace() && !list;
     try {
@@ -3215,7 +3225,7 @@
   window.dispatchEvent(new Event('vp3:agent-activity-ready'));
   window.addEventListener('vp3:chat-context-ready',() => {
     window.dispatchEvent(new Event('vp3:agent-activity-ready'));
-    if (specialistMode && ['profile','location'].includes(family(selectedSpecialist)) && specialistScope !== signature(scope(true))) {
+    if (specialistMode && ['profile','location','operator'].includes(family(selectedSpecialist)) && specialistScope !== signature(scope(true))) {
       close(false);
       return;
     }
