@@ -75,6 +75,15 @@ function vp3_coordination_source_registry_v1(): array
                 return vp3_coordination_profile_sources_v1($pdo,$scope,$binding,$refs,$now);
             },
         ],
+        'operator'=>[
+            'specialist'=>'operator',
+            'sweep'=>'enabled',
+            'native_ref'=>'followup:[a-f0-9]{32}',
+            'read'=>static function(PDO $pdo,array $scope,array $binding,?array $refs,DateTimeImmutable $now): array {
+                require_once __DIR__.'/agent-operator-followups-v1.php';
+                return vp3_coordination_operator_sources_v1($pdo,$scope,$refs,$now);
+            },
+        ],
         'marketing'=>[
             'specialist'=>'marketing',
             'sweep'=>'enabled',
