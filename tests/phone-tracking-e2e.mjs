@@ -1273,7 +1273,9 @@ async function verifyManagedReviewUI(context){
     await page.evaluate(()=>{const {ownerUI,d,holderUI}=window.managedFixture;ownerUI.bind({...d,id:'c'.repeat(32)},true);holderUI.invalidate();});
     await own.getByRole('button',{name:'Twilio managed callback',exact:true}).click();
     assert.equal(await own.getByLabel('Managed destination number (international format)').inputValue(),'','switching devices clears managed destination draft');
-    assert.equal(await hold.isVisible(),true);assert.equal(await hold.locator('.phone-managed-holder').isVisible(),false);
+    // The empty parent may have zero layout height. Assert the sensitive child is actually hidden.
+    assert.equal(await hold.locator('.phone-managed-holder').isVisible(),false);
+    assert.equal(await hold.locator('.phone-managed-destination').textContent(),'');
     console.log('PASS Managed callback review UI: mode selection, exact approval, cancel, scoped draft clearing and no carrier dispatch.');
   }finally{await page.close();}
 }
