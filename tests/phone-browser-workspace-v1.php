@@ -838,8 +838,34 @@ c(vp3_operator_consent_state_v1($row,$bound,false,$at-1)==='review_required','fu
 $within=(new DateTimeImmutable('2026-11-23 10:00:00',new DateTimeZone('America/Phoenix')))->getTimestamp();
 $closing=(new DateTimeImmutable('2026-11-23 16:55:01',new DateTimeZone('America/Phoenix')))->getTimestamp();
 c(vp3_operator_admission_window_v1($autoSettings,$within)&&!vp3_operator_admission_window_v1($autoSettings,$closing),'entire maximum call duration must fit local calling hours');
-$history=vp3_operator_admission_history_v1($pdo,$policyScope,$bound,$autoSettings,time());
-c($history['today']>0&&!$history['within_limit']&&!$history['gap_ok'],'known recent outbound attempts consume the destination count and gap across the owner');
+// Deterministic local-day boundary, independent of the CI runner's clock.
+// Explicitly exercise the CASE expression's parameter type on both engines.
+$historyNow=(new DateTimeImmutable('2026-11-24 00:30:00',new DateTimeZone('America/Phoenix')))->getTimestamp();
+$historyDay=$historyNow-1800;$historyBound=$bound;$historyBound['contact']['destination_e164']='+12025550198';
+$pdo->beginTransaction();
+try{
+    $empty=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
+    c($empty===['today'=>0,'last_attempt_epoch'=>0,'within_limit'=>true,'gap_ok'=>true],'no matching outbound attempts is an empty known ledger');
+    $insertAttempt=$pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,provider_call_sid,state,created_epoch,updated_epoch,ended_epoch,intent_consumed_epoch) VALUES(?,?,?,?,?,?,?,?,'completed',?,?,?,?)");
+    $addAttempt=static function(int $index,int $owner,int $agent,int $line,string $direction,?string $provider,int $created,int $consumed)use($insertAttempt,$historyBound):void{
+        $insertAttempt->execute([substr(hash('sha256','operator-admission-fixture:'.$index),0,32),$owner,$agent,$line,'+16025550101',$historyBound['contact']['destination_e164'],$direction,$provider,$created,max($created,$consumed),max($created,$consumed),$consumed]);
+    };
+    $sid=static fn(int $index):string=>'CA'.substr(hash('sha256','operator-admission-fixture:'.$index),0,32);
+    $addAttempt(1,1,7,1,'outbound',$sid(1),$historyDay-60,0);
+    $beforeDay=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
+    c($beforeDay['today']===0&&$beforeDay['within_limit']&&!$beforeDay['gap_ok'],'previous local day is excluded from daily count but retains the minimum gap');
+    $addAttempt(2,1,9,3,'outbound',$sid(2),$historyDay-60,$historyDay);
+    $addAttempt(3,2,8,2,'outbound',$sid(3),$historyNow-10,0);
+    $addAttempt(4,1,7,1,'inbound',$sid(4),$historyNow-10,0);
+    $addAttempt(5,1,7,1,'outbound',null,$historyNow-10,0);
+    $history=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
+    c($history['today']===1&&$history['last_attempt_epoch']===$historyDay&&!$history['within_limit']&&!$history['gap_ok'],
+        'consumed attempt at local midnight across another assigned Agent counts exactly once; foreign, inbound and unsigned rows do not');
+    $addAttempt(6,1,7,1,'outbound',$sid(6),$historyNow+60,0);
+    $future=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
+    c($future['today']===1&&$future['last_attempt_epoch']===$historyNow+60&&!$future['within_limit']&&!$future['gap_ok'],
+        'future receipt blocks readiness without increasing the already-made daily count');
+}finally{$pdo->rollBack();}
 $pdo->exec("UPDATE phone_recording_policies_v1 SET revision=revision+1 WHERE owner_user_id=1 AND agent_id=7");
 $changed=api('GET',$admissionInput)['readiness'];
 c($changed['consent_state']==='review_required','changed recording policy invalidates consent binding');

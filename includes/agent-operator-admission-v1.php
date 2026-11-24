@@ -83,10 +83,18 @@ function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,ar
     // Across ALL owner's Agents and saved-contact aliases, not just selected line.
     // This is only the known browser ledger; future execution needs its own
     // durable reservation and carrier reconciliation before dispatch.
-    $q=$pdo->prepare("SELECT COALESCE(SUM(CASE WHEN ($epoch)>=? THEN 1 ELSE 0 END),0) AS today,
+    // A CASE expression has no column affinity in SQLite. Bind epoch
+    // boundaries as integers rather than PDO execute-array strings so the
+    // comparison is numeric on both SQLite and MySQL. Future receipts must
+    // still block through latest, but do not count as attempts already made.
+    $q=$pdo->prepare("SELECT COALESCE(SUM(CASE WHEN ($epoch)>=? AND ($epoch)<=? THEN 1 ELSE 0 END),0) AS today,
         COALESCE(MAX($epoch),0) AS latest FROM phone_browser_calls_v1 WHERE owner_user_id=? AND direction='outbound'
         AND peer_e164=? AND provider_call_sid IS NOT NULL AND provider_call_sid<>''");
-    $q->execute([$day,$scope['owner_user_id'],$bound['contact']['destination_e164']]);$r=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+    $q->bindValue(1,$day,PDO::PARAM_INT);
+    $q->bindValue(2,$now,PDO::PARAM_INT);
+    $q->bindValue(3,(int)$scope['owner_user_id'],PDO::PARAM_INT);
+    $q->bindValue(4,$bound['contact']['destination_e164'],PDO::PARAM_STR);
+    $q->execute();$r=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
     $latest=(int)$r['latest'];$today=(int)$r['today'];
     return ['today'=>$today,'last_attempt_epoch'=>$latest,'within_limit'=>$latest<=$now&&$today<$settings['max_calls_per_day'],
         'gap_ok'=>$latest===0||($latest<=$now&&$now-$latest>=$settings['min_gap_minutes']*60)];
