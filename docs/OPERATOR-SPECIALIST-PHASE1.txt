@@ -1,0 +1,9 @@
+OPERATOR SPECIALIST V1 — PHONE CALLING FOUNDATION
+
+Private, owner-authorized Chat only. Reuses existing assigned number, entitlement, browser calling and signed carrier receipt checks. Operator is a read-only specialist in the existing rail and Top of Mind. Its Open Phone button opens the canonical Phone drawer; it does not dial or change call state.
+
+Activity is exact to the saved Chat and Agent. Only verified browser-call receipts can supply activity. Prepared intents, terminal calls, other Chats, and revoked access cannot claim active work. An old or future carrier receipt cannot claim current activity. Carrier receipt freshness is bounded at five minutes and is not a continuous carrier heartbeat or a worker lease. No caller details, credentials, transcripts or recording content enter this status projection.
+
+Install via the normal Cloud deployment process. No new database schema or carrier configuration is required beyond the existing Phone workspace. In a permitted owner Chat, open the Operator icon, check the status, and open Phone. Test a manually placed and received call, completion, Chat switching, and a user without voice permission. Do not enable any new autonomous calling: Agent conversation intelligence, contact-level authorization, live participation, reports, Calendar scheduling, recording/consent enforcement and autonomous execution are future phases.
+
+Automated coverage is in the existing phone-browser-workspace PHP fixture (SQLite and MySQL), activity hub authorization fixture and activity hub browser journey. Hosted CI and actual device verification remain release gates.
