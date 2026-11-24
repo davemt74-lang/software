@@ -1,6 +1,5 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__.'/ai-settings.php';
 
 /** PS5C.3 enrollment only. No notification transport or arbitrary URL fetch. */
 function vp3_phone_push_install_v1(PDO $pdo,string $options):void
