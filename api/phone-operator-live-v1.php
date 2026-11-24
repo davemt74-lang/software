@@ -9,9 +9,9 @@ try{
     if(($_SERVER['REQUEST_METHOD']??'')!=='POST')vp3_phone_workspace_error_v1('method_not_allowed',405,'Live captions require POST.');
     if(!str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE']??'')),'application/json'))
         vp3_phone_workspace_error_v1('unsupported_media_type',415,'Live captions require JSON.');
-    if((int)($_SERVER['CONTENT_LENGTH']??0)>180000)vp3_phone_workspace_error_v1('request_too_large',413,'Caption chunk is too large.');
-    $body=file_get_contents('php://input',false,null,0,180001);
-    if($body===false||strlen($body)>180000)vp3_phone_workspace_error_v1('request_too_large',413,'Caption chunk is too large.');
+    if((int)($_SERVER['CONTENT_LENGTH']??0)>350000)vp3_phone_workspace_error_v1('request_too_large',413,'Caption chunk is too large.');
+    $body=file_get_contents('php://input',false,null,0,350001);
+    if($body===false||strlen($body)>350000)vp3_phone_workspace_error_v1('request_too_large',413,'Caption chunk is too large.');
     try{$input=json_decode($body,true,16,JSON_THROW_ON_ERROR);}catch(JsonException){$input=null;}
     if(!is_array($input)||array_is_list($input))vp3_phone_workspace_error_v1('operator_live_request',422,'Invalid caption request.');
     $pdo=db();$user=current_user();$csrf=(string)($_SESSION['csrf_token']??'');
