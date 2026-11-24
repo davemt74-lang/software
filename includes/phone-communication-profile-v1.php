@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/phone-information-exchange-v1.php';
+require_once __DIR__.'/phone-remote-dialer-v1.php';
 
 /** Communication preferences for one existing QR pairing. No execution grant. */
 function vp3_phone_communication_install_v1(PDO $pdo,string $options):void
