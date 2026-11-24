@@ -5,6 +5,7 @@ $directory=sys_get_temp_dir().'/vp3-phone-pipeline-'.bin2hex(random_bytes(8));mk
 define('STONEFELLOW_ROOT',$directory);
 require dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require dirname(__DIR__).'/includes/phone-recording-pipeline-v1.php';
+require_once dirname(__DIR__).'/includes/agent-operator-history-v1.php';
 function db():PDO{return $GLOBALS['pdo'];}
 function has_permission(string $permission,?array $user=null):bool{return empty($user['blocked']);}
 function subscription_has_entitlement(?array $user,string $key):bool{return !empty($user['is_active'])&&empty($user['blocked']);}
@@ -73,6 +74,15 @@ try{
     $message=$pdo->query('SELECT * FROM chat_messages WHERE id='.(int)$job['report_message_id'])->fetch();$context=json_decode($message['context_json'],true)['phone_v1'];
     check($context['voicemail_id']==='job-2'&&$context['recording_refs'][0]['session_id']===$session&&$context['report']['review_state']==='unreviewed','actual owner Chat report links canonical recording and unreviewed analysis');
     check(str_contains($message['message'],'Review and send the plan.')&&str_contains($message['message'],'When is the deadline?'),'post-call report contains saved actions and owner questions');
+    $operatorSource=['id'=>(int)$job['call_id'],'agent_id'=>7,'source_kind'=>'browser','public_id'=>$job['call_public_id']];
+    $operatorBefore=$counts;
+    $operatorEvidence=vp3_operator_recording_evidence_v1($pdo,$owner,0,$job,$operatorSource);
+    check($operatorEvidence===['state'=>'ready','transcript_saved'=>true,'report_saved'=>true]&&$counts===$operatorBefore,'Operator verifies saved transcript and canonical Chat report without another paid request');
+    check(vp3_operator_recording_evidence_v1($pdo,$other,0,$job,$operatorSource)===null&&vp3_operator_recording_evidence_v1($pdo,$owner,8,$job,$operatorSource)===null,'Operator recording evidence rejects foreign owner and Agent');
+    check(vp3_operator_recording_evidence_v1($pdo,$owner,0,$job,array_replace($operatorSource,['public_id'=>str_repeat('0',32)]))===null,'Operator does not infer a report from a similar caller');
+    $pdo->prepare('UPDATE chat_messages SET context_json=? WHERE id=?')->execute(['{}',(int)$job['report_message_id']]);
+    check(vp3_operator_recording_evidence_v1($pdo,$owner,0,$job,$operatorSource)['report_saved']===false,'Operator does not claim a report whose canonical binding was removed');
+    $pdo->prepare('UPDATE chat_messages SET context_json=? WHERE id=?')->execute([$message['context_json'],(int)$job['report_message_id']]);
     $before=$counts;$receipt($call=$newCall(3),3);$pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=2,agent_id=8 WHERE id=1');$result=vp3_phone_recording_worker_once_v1($pdo,$adapters);check(!$result['ok']&&$counts===$before,'assignment transfer fences new paid processing');
     check(is_file(vp3_phone_recording_audio_any_v1($pdo,$owner,'job-2')['path']),'historical media ownership survives number reassignment');denied(fn()=>vp3_phone_recording_audio_any_v1($pdo,$other,'job-2'),'new number owner cannot read old private media');
     $pdo->exec('UPDATE phone_cloud_numbers_v100 SET owner_user_id=1,agent_id=7 WHERE id=1');
@@ -91,6 +101,8 @@ try{
     denied(fn()=>vp3_phone_recording_mark_read_v1($pdo,$other,'legacy-2'),'legacy voicemail cannot cross owners');
     denied(fn()=>vp3_phone_recording_mark_read_v1($pdo,$owner,'job-2',8),'voicemail cannot cross scoped Agent');
     $pdo->exec('UPDATE artist_transcript_sessions_v172 SET discarded_at=CURRENT_TIMESTAMP WHERE id='.$session);denied(fn()=>vp3_phone_recording_audio_any_v1($pdo,$owner,'job-2'),'discarded canonical audio is never resurrected from provider');
+    $operatorRemoved=vp3_operator_recording_evidence_v1($pdo,$owner,0,$job,$operatorSource);
+    check(!$operatorRemoved['transcript_saved']&&!$operatorRemoved['report_saved'],'Operator hides removed transcript and derived report availability');
     $rows=vp3_phone_recording_workspace_v1($pdo,$owner);$view=array_values(array_filter($rows,static fn($r)=>$r['id']==='job-2'))[0];check($view['transcript']==='','discarded transcript is absent from workspace excerpt');
     // Re-delivery after an initial Chat insertion failure must recover without duplicating paid work.
     $pdo->exec($mysql?"CREATE TRIGGER fixture_chat_failure BEFORE INSERT ON chat_messages FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture delivery unavailable'":"CREATE TRIGGER fixture_chat_failure BEFORE INSERT ON chat_messages BEGIN SELECT RAISE(ABORT,'fixture delivery unavailable'); END");$call=$newCall(8);
