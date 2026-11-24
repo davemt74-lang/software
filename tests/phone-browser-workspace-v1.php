@@ -1012,6 +1012,9 @@ require_once dirname(__DIR__).'/includes/phone-managed-control-v1.php';
 c(vp3_managed_control_ready_v1($pdo),'managed control migration installed');
 vp3_managed_control_install_v1($pdo);
 $controlScope=vp3_phone_workspace_scope_v1($pdo,user(2),['agent_id'=>0,'conversation_id'=>21]);
+// Earlier revoked-access assertions intentionally disabled owner 1's package.
+// Restore the fixture so cross-account denial tests exercise call ownership.
+$pdo->exec('UPDATE users SET plan=1 WHERE id=1');
 $foreignControlScope=vp3_phone_workspace_scope_v1($pdo,user(1),['agent_id'=>0,'conversation_id'=>11]);
 $carrierAccount=(string)setting('phone_twilio_account_sid');
 $carrierEvidence=static function(string $sid,string $to,string $status,string $duration='',?string $parent=null)use($carrierAccount):array{
