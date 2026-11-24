@@ -23,6 +23,7 @@ function vp3_managed_callback_install_v1(PDO $pdo):void
         state VARCHAR(24) NOT NULL,created_epoch BIGINT NOT NULL,expires_epoch BIGINT NOT NULL,
         approved_epoch BIGINT NOT NULL DEFAULT 0,updated_epoch BIGINT NOT NULL
     )".$suffix);
+    if(!vp3_managed_callback_ready_v1($pdo))throw new RuntimeException('Managed callback upgrade incomplete.');
 }
 function vp3_managed_callback_ready_v1(PDO $pdo):bool
 {
@@ -108,6 +109,7 @@ function vp3_managed_callback_prepare_v1(PDO $pdo,array $user,array $input,int $
         $old=vp3_managed_callback_row_v1($pdo,$id,true);
         if($old){
             vp3_managed_callback_need_v1((int)$old['owner_user_id']===$owner,404);
+            vp3_managed_callback_need_v1(in_array($old['state'],['pending','approved'],true)&&(int)$old['expires_epoch']>$now);
             vp3_managed_callback_need_v1($old['device_id']===$device&&$old['profile_id']===$profile&&(int)$old['generation']===$generation
                 &&(int)$old['profile_revision']===$revision&&(int)$old['phone_revision']===$phoneRevision&&(int)$old['number_id']===$numberId
                 &&(int)$old['chat_agent_id']===$scope['agent_id']&&(int)$old['conversation_id']===$scope['conversation_id']
@@ -120,6 +122,8 @@ function vp3_managed_callback_prepare_v1(PDO $pdo,array $user,array $input,int $
         $holder=vp3_managed_callback_number_v1($p['destination']);
         $line=vp3_managed_callback_number_v1($n['phone_e164']);
         vp3_managed_callback_need_v1($destination!==$line&&$destination!==$holder&&$line!==$holder,422);
+        $q=$pdo->prepare("SELECT COUNT(*) FROM phone_browser_calls_v1 WHERE owner_user_id=? AND state IN ('prepared','dialing','ringing','answered') AND (state<>'prepared' OR intent_expires_epoch>?)");
+        $q->execute([$owner,$now]);vp3_managed_callback_need_v1((int)$q->fetchColumn()===0);$q->closeCursor();
         $q=$pdo->prepare("SELECT COUNT(*) FROM phone_managed_callback_requests_v1 WHERE owner_user_id=? AND state IN ('pending','approved') AND expires_epoch>?");
         $q->execute([$owner,$now]);vp3_managed_callback_need_v1((int)$q->fetchColumn()===0,409);$q->closeCursor();
         $q=$pdo->prepare('SELECT COUNT(*) FROM phone_managed_callback_requests_v1 WHERE owner_user_id=? AND created_epoch>?');
@@ -152,14 +156,16 @@ function vp3_managed_callback_holder_v1(PDO $pdo,int $owner,string $device,array
         vp3_managed_callback_prune_v1($pdo,$owner,$now);
         $row=vp3_managed_callback_row_v1($pdo,$id,true);
         vp3_managed_callback_need_v1(is_array($row)&&(int)$row['owner_user_id']===$owner&&hash_equals((string)$row['device_id'],$device),404);
-        vp3_managed_callback_need_v1($row['state']==='pending'&&(int)$row['expires_epoch']>$now);
-        vp3_managed_callback_current_v1($pdo,$row,$user,$now);
+        if($decision==='decline'&&$row['state']==='declined')return vp3_managed_callback_view_v1($row,$now,true);
+        vp3_managed_callback_need_v1(in_array($row['state'],['pending','approved'],true)&&(int)$row['expires_epoch']>$now);
+        if($decision==='approve')vp3_managed_callback_current_v1($pdo,$row,$user,$now);
         if($decision==='approve'){
             vp3_managed_callback_need_v1(($input['confirmed']??null)===true&&is_string($input['destination_e164']??null)
                 &&hash_equals((string)$row['destination_e164'],$input['destination_e164'])&&!array_key_exists('recording_enabled',$input),422);
+            if($row['state']==='approved')return vp3_managed_callback_view_v1($row,$now,true);
             $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='approved',approved_epoch=?,updated_epoch=? WHERE public_id=? AND state='pending'")->execute([$now,$now,$id]);
         }else{
-            $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='declined',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=? AND state='pending'")->execute([$now,$id]);
+            $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='declined',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=? AND state IN ('pending','approved')")->execute([$now,$id]);
         }
         return vp3_managed_callback_view_v1(vp3_managed_callback_row_v1($pdo,$id),$now,true);
     });
@@ -171,7 +177,7 @@ function vp3_managed_callback_plan_v1(array $row,int $now,string $answerUrl,stri
     foreach([$answerUrl,$statusUrl] as $url){
         $parts=parse_url($url);
         vp3_managed_callback_need_v1(is_array($parts)&&($parts['scheme']??'')==='https'&&!empty($parts['host'])
-            &&!isset($parts['user'],$parts['pass'])&&!isset($parts['fragment']),422);
+            &&!isset($parts['user'])&&!isset($parts['pass'])&&!isset($parts['fragment']),422);
     }
     $from=vp3_managed_callback_number_v1($row['line_e164']);$to=vp3_managed_callback_number_v1($row['holder_e164']);
     vp3_managed_callback_need_v1($from!==$to);
@@ -179,4 +185,29 @@ function vp3_managed_callback_plan_v1(array $row,int $now,string $answerUrl,stri
     // endpoint must bind the carrier SID and gather affirmative DTMF first.
     return ['From'=>$from,'To'=>$to,'Url'=>$answerUrl,'Method'=>'POST','StatusCallback'=>$statusUrl,
         'StatusCallbackMethod'=>'POST','StatusCallbackEvent'=>'completed','Timeout'=>20,'TimeLimit'=>240,'Record'=>'false'];
+}
+
+/** Owner cancels an unsent request; approval alone does not place a call. */
+function vp3_managed_callback_cancel_v1(PDO $pdo,array $user,string $id,int $now):array
+{
+    vp3_managed_callback_need_v1(vp3_managed_callback_ready_v1($pdo),503);
+    vp3_managed_callback_need_v1(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null,403);
+    vp3_managed_callback_id_v1($id);
+    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$user,$id,$now){
+        $owner=(int)($user['id']??0);
+        vp3_managed_callback_owner_lock_v1($pdo,$owner);
+        $r=vp3_managed_callback_row_v1($pdo,$id,true);
+        vp3_managed_callback_need_v1(is_array($r)&&(int)$r['owner_user_id']===$owner,404);
+        if($r['state']==='canceled')return vp3_managed_callback_view_v1($r,$now,false);
+        vp3_managed_callback_need_v1(in_array($r['state'],['pending','approved'],true));
+        $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='canceled',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=? AND state IN ('pending','approved')")->execute([$now,$id]);
+        return vp3_managed_callback_view_v1(vp3_managed_callback_row_v1($pdo,$id),$now,false);
+    });
+}
+
+/** Call only inside the current pairing/profile mutation transaction. */
+function vp3_managed_callback_revoke_v1(PDO $pdo,int $owner,string $device,int $now):void
+{
+    if(!vp3_managed_callback_ready_v1($pdo))return;
+    $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='canceled',holder_e164='',destination_e164='',updated_epoch=? WHERE owner_user_id=? AND device_id=? AND state IN ('pending','approved')")->execute([$now,$owner,$device]);
 }
