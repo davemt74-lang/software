@@ -971,4 +971,40 @@ $transportEvent('parent',$revokedPublic,$revokedNonce,array_replace($revokedForm
 c(readcall($revokedPublic)['state']==='canceled'&&vp3_managed_callback_row_v1($pdo,$t3['id'])['destination_e164']==='','signed parent termination resolves revoked unbridged call');
 unset($GLOBALS['settings']['phone_managed_callback_enabled_v1']);
 
+// PS5E.3: the owner/holder review boundaries reuse authenticated, immutable scope.
+require_once dirname(__DIR__).'/includes/phone-managed-ui-v1.php';
+$uiDevice=md5('managed-ui-device');$uiProfile=md5('managed-ui-profile');$uiId=md5('managed-ui-request');
+$insertDevice->execute([$uiDevice,$clock+3600]);$insertThread->execute([$uiDevice]);$insertProfile->execute([$uiDevice,$uiProfile,'+16025550147',$zone,$clock]);
+$uiArgs=['device_id'=>$uiDevice,'generation'=>1,'managed_request_id'=>$uiId,'profile_id'=>$uiProfile,
+    'profile_revision'=>1,'phone_revision'=>1,'number_id'=>2,'destination_e164'=>'+16025550148','confirmed'=>true];
+$uiRaw=vp3_managed_ui_device_v1($pdo,2,$uiDevice);
+$uiView=vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,false);
+c($uiView['available']&&$uiView['dispatch_enabled']===false&&array_column($uiView['lines'],'id')===[2],'map exposes only eligible assigned line, and review-only mode');
+c(vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,true)['lines']===[],'holder does not receive owner line inventory');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(1),'managed_prepare',$uiArgs,$clock),404,'foreign owner cannot prepare managed review');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_dispatch',$uiArgs,$clock),422,'review interface cannot invoke live dispatch');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',$uiArgs+['agent_id'=>1],$clock),422,'client may not supply alternate Chat scope');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',$uiArgs+['recording_enabled'=>true],$clock),422,'client may not enable recording');
+$beforeUI=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$uiSaved=vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',$uiArgs,$clock)['managed_callback'];
+c($uiSaved['request']['state']==='pending'&&!isset($uiSaved['request']['destination_e164'])&&$uiSaved['dispatch_enabled']===false,'owner prepares review, not a paid call');
+c((int)vp3_managed_callback_row_v1($pdo,$uiId)['conversation_id']===21,'review derives paired conversation server-side');
+$holderUI=vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,true);
+c($holderUI['request']['destination_e164']==='+16025550148','paired holder sees exact pending target');
+$uiResponse=['device_id'=>$uiDevice,'generation'=>1,'managed_request_id'=>$uiId,'decision'=>'approve','destination_e164'=>'+16025550148','confirmed'=>true];
+denies(fn()=>vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,vp3_managed_ui_device_v1($pdo,2,$device1),$uiResponse,$clock)),403,'holder action cannot use another paired device');
+denies(fn()=>vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,$uiRaw,array_replace($uiResponse,['destination_e164'=>'+16025550149']),$clock)),422,'holder cannot approve another destination');
+$uiApproved=vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,$uiRaw,$uiResponse,$clock))['managed_callback'];
+c($uiApproved['request']['state']==='approved'&&!isset($uiApproved['request']['destination_e164']),'holder approval is reflected without retaining destination in the view');
+$uiCancel=['device_id'=>$uiDevice,'generation'=>1,'managed_request_id'=>$uiId];
+c(vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_cancel',$uiCancel,$clock)['managed_callback']['request']['state']==='canceled','owner can cancel approved review');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$beforeUI,'review UI creates no carrier ledger or billable call');
+$uiId2=md5('managed-ui-request-two');
+$pdo->prepare('UPDATE phone_managed_callback_requests_v1 SET created_epoch=? WHERE public_id=?')->execute([$clock-61,$uiId]);
+vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',array_replace($uiArgs,['managed_request_id'=>$uiId2]),$clock);
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=2 WHERE profile_id=?')->execute([$uiProfile]);
+c(vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,true)['request']===null,'stale profile request is not disclosed to handset');
+denies(fn()=>vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,$uiRaw,array_replace($uiResponse,['managed_request_id'=>$uiId2]),$clock)),409,'stale holder consent cannot approve');
+vp3_managed_callback_revoke_v1($pdo,2,$uiDevice,$clock);
+
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
