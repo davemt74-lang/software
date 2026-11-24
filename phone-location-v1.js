@@ -337,6 +337,7 @@
     el('join').hidden = !secure || Boolean(device) || !claim || initial;
     if (claim?.name && el('name').value === '') el('name').value = claim.name;
     el('claim').disabled = actionBusy || navigator.onLine === false;
+    el('pair-cancel').hidden=!claim?.manual;el('pair-cancel').disabled=actionBusy;
     el('start').hidden = !connected || !device.allow_location || !gps || !owner || !available || queued || !!run || mobileActive(device);
     el('start').disabled = actionBusy;
     el('stop').hidden = !connected || queued || !(run || stoppable(device));
@@ -647,15 +648,19 @@
   }
   async function claimPhone(event) {
     event.preventDefault();
-    if (actionBusy || !secure || !claim || device) return;
+    if (actionBusy || !secure || !claim || device || dead || (claim.manual&&(!event.isTrusted||document.hidden))) return;
+    if(claim.expires<=now()){claim=null;write('sessionStorage','claim',null);info='This pairing code expired. Ask for a fresh code.';render();return;}
     const name = el('name').value.trim();
     if (!name) { el('name').focus(); return; }
     actionBusy = true; info = 'Sending your connection request…'; render();
     if (!claim.key) claim.key = Array.from(crypto.getRandomValues(new Uint8Array(32)), b=>b.toString(16).padStart(2,'0')).join('');
     claim.name = name; if(!claim.manual)write('sessionStorage','claim',claim);
+    const attempt=claim;
     queue(async () => {
       try {
-        const result = await request('claim',{invite:claim.invite,name,claim_key:claim.key});
+        if(dead||claim!==attempt||device||attempt.expires<=now())return;
+        const result = await request('claim',{invite:attempt.invite,name,claim_key:attempt.key});
+        if(dead||claim!==attempt){schedulePoll();return;}
         accept(result); claim = null; write('sessionStorage','claim',null); info = '';
       } catch (error) {
         if ([401,403,404,409,410].includes(error.status)) {
@@ -814,6 +819,10 @@
   }
   el('pair-entry').addEventListener('submit',enterPairingCode);
   el('join').addEventListener('submit',claimPhone);
+  el('pair-cancel').addEventListener('click',event=>{
+    if(!event.isTrusted||actionBusy||!claim?.manual)return;
+    claim=null;el('name').value='';el('pair-code').value='';info='';render();el('pair-code').focus();
+  });
   el('start').addEventListener('click',start);
   el('stop').addEventListener('click',() => finish('stop'));
   el('disconnect').addEventListener('click',() => finish('disconnect'));

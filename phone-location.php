@@ -70,6 +70,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <label for="phone-name">Phone name</label>
         <input id="phone-name" name="name" maxlength="48" autocomplete="off" placeholder="My iPhone" required>
         <button id="phone-claim" type="submit">Request connection</button>
+        <button id="phone-pair-cancel" class="secondary" type="button" hidden>Use a different pairing code</button>
       </form>
       <div id="phone-controls" hidden>
         <p id="phone-consent"></p>

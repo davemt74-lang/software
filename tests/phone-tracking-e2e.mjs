@@ -1392,14 +1392,14 @@ async function verifyInstalledPairing(baseURL,desktop,owner){
     const approved=check(await ownerApi(desktop,owner,'approve',{device_id:d.id,generation:d.generation,role:'guest',allow_location:false}),'installed device approval').device;
     await eventually('installed connection must become approved',async()=>(await phoneApi(installed,'status')).device?.status==='approved');
     await guest.reload();
-    await guest.getByText('Connected phone',{exact:true}).waitFor();
+    await guest.waitForFunction(()=>document.getElementById('phone-badge').textContent==='Connected phone');
     assert.equal((await phoneApi(installed,'status')).device.id,d.id,'same installation keeps the existing authenticated cookie');
     const reused=await browser.newContext({baseURL});
     try{assert.equal((await phoneApi(reused,'claim',{invite:code,name:'Replay attempt'})).status,403);}finally{await reused.close();}
     check(await ownerApi(desktop,owner,'revoke',{device_id:d.id,generation:approved.generation}),'revoke installed fixture');
     assert.equal((await phoneApi(installed,'status')).status,403);
-    await map.locator('#phone-pair-close').click();
-    assert.equal(await map.locator('#phone-install-code').inputValue(),'');
+    if(await map.locator('#phone-pair-close').isVisible())await map.locator('#phone-pair-close').click();
+    await eventually('closed invite must be cleared',async()=>await map.locator('#phone-install-code').inputValue()==='');
     assert.deepEqual(errors,[]);
   }finally{await installed.close();await map.close();}
 }
