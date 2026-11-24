@@ -37,6 +37,7 @@ $asset = static function (string $path): string {
 <script defer src="<?= e($asset('phone-camera-receiver-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-map-camera-v1.js')) ?>"></script>
 <script defer data-voice-capture-scope="<?= (int)$user['id'] ?>" src="<?= e($asset('voice-lease-v122.js')) ?>"></script>
+<script defer src="<?= e($asset('phone-information-ui-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
 <body class="phone-tracking-page">

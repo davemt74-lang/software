@@ -20,8 +20,9 @@ try {
     $method = $_SERVER['REQUEST_METHOD'] ?? '';
     if ($method === 'GET') {
         $action = $_GET['action'] ?? 'state';
-        if (!in_array($action,['state','history','places'],true)) throw new RuntimeException('Unknown action.',422);
+        if (!in_array($action,['state','history','places','information_list'],true)) throw new RuntimeException('Unknown action.',422);
         $input = [];
+        if ($action === 'information_list') $input=['device_id'=>$_GET['device_id']??null];
         if ($action === 'history') {
             $deviceId = $_GET['device_id'] ?? null;
             if (!is_string($deviceId) || !preg_match('/^[0-9a-f]{32}$/D',$deviceId)) throw new RuntimeException('Choose a phone.',422);
@@ -38,7 +39,7 @@ try {
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -50,6 +51,7 @@ try {
     if (!$pdo || !vp3_phone_schema_ready_v1($pdo)) throw new RuntimeException('Upgrade required.', 503);
     $owner = (int)$user['id'];
     $result = match ($action) {
+        'information_list','information_create','information_cancel' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
         'save_communication_grants' => vp3_phone_communication_owner_v1($pdo,$owner,$input),
         'history' => vp3_phone_history_read_v1($pdo,$owner,$input['device_id'],$input['before']),
         'places','save_place','delete_place' => vp3_phone_places_owner_v1($pdo,$owner,$action,$input),

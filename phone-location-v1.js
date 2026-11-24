@@ -251,7 +251,7 @@
     const max=field('Maximum calls per day','number',String(p.max_calls_per_day));max.min='1';max.max='3';max.required=true;
     const gap=field('Minimum minutes between calls','number',String(p.min_gap_minutes));gap.min='120';gap.max='10080';gap.required=true;
     const save=document.createElement('button');save.type='submit';save.textContent='Save communication preferences';save.disabled=commBusy;form.append(save);
-    const explanation=document.createElement('p');explanation.textContent='Saved preferences only. Automatic calls, information requests and relationship memory are not running yet. Existing GPS and camera permissions are separate.';form.append(explanation);
+    const explanation=document.createElement('p');explanation.textContent='Information exchange requires both users’ permission. Autonomous calls and relationship memory are not running yet. Existing GPS and camera permissions are separate.';form.append(explanation);
     form.onsubmit=event=>{
       event.preventDefault();
       if(!event.isTrusted||commBusy||actionBusy||pending||dead||!available||navigator.onLine===false||device?.status!=='approved'||device.communication?.revision!==p.revision)return;
@@ -264,13 +264,28 @@
         if(dead||pending||!available||navigator.onLine===false||device?.id!==body.device_id||device.generation!==body.generation||device.communication?.revision!==body.communication_revision){commNotice='Connection changed. Review the current settings.';return;}
         const result=await request('save_communication_profile',body);
         if(dead||pending||device?.id!==body.device_id)return;
-        accept(result);commNotice='Preferences saved. Calls remain disabled until the calling service is ready.';
+        accept(result);commNotice='Preferences saved. Autonomous calls remain disabled.';
       }catch(error){commNotice='Preferences could not be saved. Check the current connection and retry.';if([401,403,404].includes(error.status))reportFailure(error);else schedulePoll();}
       finally{commBusy=false;commSignature='';render();}});
     };
   }
 
+  const infoDetails=el('information'),infoHost=el('information-host');
+  const exchange=window.VP3PhoneInformationV1?.({holder:true,request,onChanged:()=>schedulePoll()});
+  if(exchange&&infoHost)infoHost.append(exchange.root);
+  function renderInformation(){
+    if(!infoDetails||!exchange)return;
+    const permitted=device?.status==='approved'&&available&&!pending&&!dead&&secure&&navigator.onLine!==false&&device.communication?.request_permission_saved===true;
+    infoDetails.hidden=!permitted;
+    if(!permitted)infoDetails.open=false;
+    el('information-summary').textContent='Information exchange'+(Number.isSafeInteger(device?.communication?.information_pending)?' ('+device.communication.information_pending+' open)':'');
+    exchange.bind(device,permitted,permitted&&infoDetails.open&&!el('connection').hidden);
+  }
+  infoDetails?.addEventListener('toggle',renderInformation);
+  el('tab-connection')?.addEventListener('click',()=>queueMicrotask(renderInformation));
+  el('tab-chat')?.addEventListener('click',()=>queueMicrotask(renderInformation));
   function render() {
+    renderInformation();
     renderCommunication();
     const connected = device?.status === 'approved';
     const queued = Boolean(pending && pending.id === device?.id);
@@ -792,6 +807,7 @@
   });
   window.addEventListener('pagehide',() => {
     dead = true;
+    exchange?.clear();
     if (run) {
       const old = cancelWatch();
       rememberEnd('stop',old.id,old.generation);
@@ -800,7 +816,7 @@
     }
   });
   window.addEventListener('pageshow',() => { dead = false; schedulePoll(); });
-  document.addEventListener('visibilitychange',() => { if (!document.hidden) schedulePoll(); });
+  document.addEventListener('visibilitychange',() => { if (document.hidden)exchange?.clear();else schedulePoll(); });
   setInterval(() => {
     if (document.hidden || dead) return;
     if (device || !available) schedulePoll();

@@ -8,6 +8,7 @@ require_once __DIR__.'/phone-tracking-places-v1.php';
 require_once __DIR__.'/phone-tracking-arrivals-v1.php';
 require_once __DIR__.'/phone-camera-v1.php';
 require_once __DIR__.'/phone-communication-profile-v1.php';
+require_once __DIR__.'/phone-information-exchange-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -80,6 +81,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_arrival_schema_v1($pdo,$options);
     vp3_phone_camera_schema_v1($pdo,$options);
     vp3_phone_communication_install_v1($pdo,$options);
+    vp3_phone_information_install_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -518,6 +520,8 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             if ($action === 'save_communication_profile') {
                 vp3_phone_communication_require_v1(is_string($input['device_id']??null)&&hash_equals($row['id'],$input['device_id']),403);
                 vp3_phone_communication_save_v1($pdo,$row,$input,$now,true);
+            } elseif (in_array($action,['information_list','information_accept','information_decline','information_ack','information_reply'],true)) {
+                $receipt=['information'=>vp3_phone_information_action_v1($pdo,$row,$action,$input,$now,true)];
             } elseif ($action === 'holder_save_place') {
                 $receipt = vp3_phone_holder_save_place_v1($pdo,$row,$input,$now);
             } elseif (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
