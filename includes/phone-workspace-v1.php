@@ -10,6 +10,7 @@ require_once __DIR__.'/agent-operator-auto-call-v1.php';
 require_once __DIR__.'/agent-operator-live-schema-v1.php';
 require_once __DIR__.'/agent-operator-owner-phone-chat-v1.php';
 require_once __DIR__.'/agent-operator-connected-call-v1.php';
+require_once __DIR__.'/phone-managed-control-schema-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
