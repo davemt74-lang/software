@@ -331,9 +331,13 @@
     el('preferences').textContent = 'Every ' + updateInterval(device) + ' seconds · ' +
       (highAccuracy(device) ? 'High accuracy' : 'Balanced accuracy');
     el('controls').hidden = !device && (initial || Boolean(claim));
+    if(claim?.manual && claim.expires<=now()&&!actionBusy){claim=null;el('pair-code').value='';}
+    el('pair-entry').hidden = !secure || Boolean(device) || Boolean(claim) || initial || !available;
+    el('pair-continue').disabled = actionBusy || navigator.onLine===false;
     el('join').hidden = !secure || Boolean(device) || !claim || initial;
     if (claim?.name && el('name').value === '') el('name').value = claim.name;
     el('claim').disabled = actionBusy || navigator.onLine === false;
+    el('pair-cancel').hidden=!claim?.manual;el('pair-cancel').disabled=actionBusy;
     el('start').hidden = !connected || !device.allow_location || !gps || !owner || !available || queued || !!run || mobileActive(device);
     el('start').disabled = actionBusy;
     el('stop').hidden = !connected || queued || !(run || stoppable(device));
@@ -343,7 +347,7 @@
     el('consent').textContent = connected && device.allow_location && owner
       ? 'Start sharing lets ' + owner + ' see this phone’s latest location, accuracy and update time. Keep this page open for updates.' : '';
     renderPermissions(connected && device.allow_location && !queued);
-    let message = 'Scan the QR code in VP3 Phone Tracking to connect this phone.';
+    let message = 'Scan the QR code or enter a fresh pairing code from VP3 Phone Tracking.';
     let gpsState = 'Off';
     if (!secure) message = 'Open this page over HTTPS to connect and share location.';
     else if (initial) message = 'Checking your connection…';
@@ -632,17 +636,31 @@
     queue(async () => { pollQueued = false; await poll(); });
   }
 
+  function enterPairingCode(event){
+    event.preventDefault();
+    if(!event.isTrusted||actionBusy||!secure||device||claim||initial||!available||document.hidden||navigator.onLine===false)return;
+    const code=el('pair-code').value.trim();
+    if(!secretPattern.test(code)){info='Enter the full 43-character pairing code.';render();return;}
+    // Never navigate with or persist the manually entered secret. The same
+    // approved QR claim endpoint and original holder proof are used.
+    claim={invite:code,expires:now()+300,manual:true};
+    el('pair-code').value='';info='';render();el('name').focus();
+  }
   async function claimPhone(event) {
     event.preventDefault();
-    if (actionBusy || !secure || !claim || device) return;
+    if (actionBusy || !secure || !claim || device || dead || (claim.manual&&(!event.isTrusted||document.hidden))) return;
+    if(claim.expires<=now()){claim=null;write('sessionStorage','claim',null);info='This pairing code expired. Ask for a fresh code.';render();return;}
     const name = el('name').value.trim();
     if (!name) { el('name').focus(); return; }
     actionBusy = true; info = 'Sending your connection request…'; render();
     if (!claim.key) claim.key = Array.from(crypto.getRandomValues(new Uint8Array(32)), b=>b.toString(16).padStart(2,'0')).join('');
-    claim.name = name; write('sessionStorage','claim',claim);
+    claim.name = name; if(!claim.manual)write('sessionStorage','claim',claim);
+    const attempt=claim;
     queue(async () => {
       try {
-        const result = await request('claim',{invite:claim.invite,name,claim_key:claim.key});
+        if(dead||claim!==attempt||device||attempt.expires<=now())return;
+        const result = await request('claim',{invite:attempt.invite,name,claim_key:attempt.key});
+        if(dead||claim!==attempt){schedulePoll();return;}
         accept(result); claim = null; write('sessionStorage','claim',null); info = '';
       } catch (error) {
         if ([401,403,404,409,410].includes(error.status)) {
@@ -799,7 +817,12 @@
     });
     monitor(session);
   }
+  el('pair-entry').addEventListener('submit',enterPairingCode);
   el('join').addEventListener('submit',claimPhone);
+  el('pair-cancel').addEventListener('click',event=>{
+    if(!event.isTrusted||actionBusy||!claim?.manual)return;
+    claim=null;el('name').value='';el('pair-code').value='';info='';render();el('pair-code').focus();
+  });
   el('start').addEventListener('click',start);
   el('stop').addEventListener('click',() => finish('stop'));
   el('disconnect').addEventListener('click',() => finish('disconnect'));
@@ -836,6 +859,8 @@
   });
   window.addEventListener('pagehide',() => {
     dead = true;
+    el('pair-code').value='';
+    if(claim?.manual){claim=null;write('sessionStorage','claim',null);}
     dialer?.invalidate();
     managedCall?.invalidate();
     exchange?.clear();

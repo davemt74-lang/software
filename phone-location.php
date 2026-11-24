@@ -6,7 +6,7 @@ header('Referrer-Policy: no-referrer');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Permissions-Policy: geolocation=(self), camera=(self), microphone=()');
-header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; media-src 'self' blob: mediastream:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; img-src 'self'; media-src 'self' blob: mediastream:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
 ?>
 <!doctype html>
 <html lang="en">
@@ -14,8 +14,14 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
   <meta name="referrer" content="no-referrer">
-  <title>Phone connection · VP3</title>
-  <link rel="stylesheet" href="phone-location-v1.css?v=11">
+  <title>VP3 Phone</title>
+  <meta name="theme-color" content="#111111">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="VP3 Phone">
+  <link rel="manifest" href="phone-app.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/phone-pwa/icon-180.png">
+  <script src="phone-pwa-v1.js?v=1" defer></script>
+  <link rel="stylesheet" href="phone-location-v1.css?v=12">
   <link rel="stylesheet" href="phone-remote-dialer-v1.css?v=1">
   <link rel="stylesheet" href="phone-managed-call-ui-v1.css?v=3">
   <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
@@ -28,7 +34,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-information-ui-v1.js?v=2" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
-  <script src="phone-location-v1.js?v=13" defer></script>
+  <script src="phone-location-v1.js?v=14" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -54,10 +60,17 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <div><dt>Location</dt><dd id="phone-gps"></dd></div>
         <div id="phone-preference-row" hidden><dt>Updates</dt><dd id="phone-preferences"></dd></div>
       </dl>
+      <form id="phone-pair-entry" hidden autocomplete="off">
+        <label for="phone-pair-code">Pairing code</label>
+        <input id="phone-pair-code" type="text" inputmode="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="43" pattern="[A-Za-z0-9_\-]{43}" placeholder="Paste the fresh code" required>
+        <p class="phone-install-note">Use a new code from the account owner's Connect Phone dialog. The owner must approve this new connection.</p>
+        <button id="phone-pair-continue" type="submit">Continue pairing</button>
+      </form>
       <form id="phone-join" hidden>
         <label for="phone-name">Phone name</label>
         <input id="phone-name" name="name" maxlength="48" autocomplete="off" placeholder="My iPhone" required>
         <button id="phone-claim" type="submit">Request connection</button>
+        <button id="phone-pair-cancel" class="secondary" type="button" hidden>Use a different pairing code</button>
       </form>
       <div id="phone-controls" hidden>
         <p id="phone-consent"></p>
@@ -99,6 +112,12 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <h2 id="phone-record-retained-title">Recording on this phone</h2>
         <p>Camera sharing ended. Save a copy before closing this page.</p>
         <div id="phone-record-retained-list"></div>
+      </section>
+      <section id="phone-install-panel" class="phone-permission" aria-labelledby="phone-install-title">
+        <h2 id="phone-install-title">Install VP3 Phone</h2>
+        <p id="phone-install-status" role="status">Checking installation…</p>
+        <p id="phone-install-help">Add this page to your Home Screen. Notification delivery is not enabled yet.</p>
+        <button id="phone-install-button" type="button" class="secondary" hidden>Install VP3 Phone</button>
       </section>
       <noscript>Enable JavaScript to pair or manage this phone.</noscript>
     </div>

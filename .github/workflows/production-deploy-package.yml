@@ -84,6 +84,13 @@ jobs:
           test -f _deploy/phone-workspace-v1.js
           test -f _deploy/phone-workspace-v1.css
           test -f _deploy/phone-recording-worker-v1.php
+          test -f _deploy/phone-app.webmanifest
+          test -f _deploy/phone-service-worker-v1.js
+          test -f _deploy/phone-pwa-v1.js
+          test -f _deploy/assets/phone-pwa/icon-180.png
+          test -f _deploy/assets/phone-pwa/icon-192.png
+          test -f _deploy/assets/phone-pwa/icon-512.png
+          python3 -m json.tool _deploy/phone-app.webmanifest >/dev/null
           test -f _deploy/docs/CLOUD-PHONE-WORKSPACE-DEPLOY.txt
           python3 -m json.tool _deploy/VP3_RELEASE.json >/dev/null
           grep -Fq '"commit": "'"${VP3_RELEASE_SHA}"'"' _deploy/VP3_RELEASE.json
