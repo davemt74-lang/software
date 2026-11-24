@@ -35,6 +35,8 @@ const integrity='sha384-'+createHash('sha384').update(sdk).digest('base64');
 const actualSdk=await fs.readFile(path.join(root,'assets/twilio-voice-2.18.5.min.js'));
 const actualIntegrity='sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8';
 assert.equal('sha384-'+createHash('sha384').update(actualSdk).digest('base64'),actualIntegrity,'The actual shipped SDK bytes match their pinned integrity');
+const emptyOwnerPhone=()=>({phone_e164:'',phone_revision:0,revision:0,updates_requested:false,hello_requested:false,last_test:null,execution_enabled:false});
+let ownerPhone=emptyOwnerPhone();
 let state=fixture(),authorized=true,apiCalls=[],tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
 const wav=Buffer.alloc(44+16000*2*4);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server=http.createServer((req,res)=>{
@@ -67,6 +69,25 @@ const server=http.createServer((req,res)=>{
    if(req.method==='POST'&&values.csrf_token!=='fixture-csrf'){res.statusCode=419;return res.end(JSON.stringify({ok:false}));}
    let result={};
    if(values.action==='state')result={state:structuredClone(state)};
+   if(values.action==='owner_phone_settings')result={owner_phone:structuredClone(ownerPhone)};
+   if(values.action==='save_owner_phone'){
+     assert.equal(Number(values.expected_revision),ownerPhone.revision);
+     ownerPhone={...emptyOwnerPhone(),phone_e164:values.phone_e164,phone_revision:ownerPhone.phone_revision+1,revision:ownerPhone.revision+1};
+     result={owner_phone:structuredClone(ownerPhone)};
+   }
+   if(values.action==='save_owner_call_preferences'){
+     assert.equal(Number(values.expected_revision),ownerPhone.revision);
+     Object.assign(ownerPhone,{updates_requested:values.updates_requested,hello_requested:values.hello_requested,revision:ownerPhone.revision+1});
+     result={owner_phone:structuredClone(ownerPhone)};
+   }
+   if(values.action==='prepare_owner_test'){
+     assert.equal(values.confirmed,true);assert.equal(values.phone_revision,ownerPhone.phone_revision);assert.equal(Object.hasOwn(values,'to_number'),false);assert.equal(Object.hasOwn(values,'recording_enabled'),false);
+     ownerPhone.last_test={call_id:outgoingId,state:'prepared',received:false,can_confirm:false};
+     result={call:{id:9,public_id:outgoingId,owner_test:true,peer_e164:ownerPhone.phone_e164,conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'prepared'},connect_params:{call_intent:'c'.repeat(64)}};
+   }
+   if(values.action==='confirm_owner_test'){
+     assert.equal(values.call_id,outgoingId);assert.equal(values.received,true);ownerPhone.last_test.received=true;ownerPhone.last_test.can_confirm=false;result={owner_phone:structuredClone(ownerPhone)};
+   }
    if(values.action==='token'){tokenStarted=true;if(tokenGate)await tokenGate;result={token:'fixture-token-'+String(apiCalls.length).padStart(20,'0'),identity:'fixture-number-1',expires_at:Math.floor(Date.now()/1000)+3600};}
    if(values.action==='prepare_call')result={call:{id:9,public_id:outgoingId,peer_e164:values.to_number,conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'preparing'},connect_params:{call_intent:'c'.repeat(64)}};
    if(values.action==='bind_call')result={call:{id:8,public_id:values.call_id,peer_e164:'+16025550444',conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'ringing'}};
@@ -112,7 +133,7 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
 let checks=0;const errors=[];let page,succeeded=false;
 async function fresh(suffix=''){
- state=fixture();authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];
+ state=fixture();ownerPhone=emptyOwnerPhone();authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];
  if(page)await page.close();page=await browser.newPage({viewport:{width:1360,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/'+suffix);await page.waitForFunction(()=>window.VP3PhoneWorkspaceV1);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByLabel('Selected phone number',{exact:true}).waitFor();return page;
 }
 async function check(name,run){await run();checks++;console.log('PASS '+name);}
@@ -370,6 +391,31 @@ try{
   await drawer.getByRole('button',{name:'Hang up',exact:true}).click();
   await page.evaluate(()=>{phoneFixture.remoteTone.stop();phoneFixture.remoteTrack.stop();void phoneFixture.remoteAudio.close();});
   assert.ok(captionCalls.some(row=>row.action==='stop'));
+ });
+ await check('private Chat phone setup saves settings and only explicitly starts a bounded owner test',async()=>{
+   await fresh();await page.getByRole('button',{name:'My phone in Chat',exact:true}).click();
+   const card=page.locator('[data-owner-phone-setup]');await card.getByLabel('Your personal phone number',{exact:true}).waitFor();
+   assert.equal(apiCalls.some(c=>['token','prepare_owner_test'].includes(c.action)),false);
+   await card.getByLabel('Your personal phone number',{exact:true}).fill('+16025550100');await card.getByRole('button',{name:'Save number',exact:true}).click();
+   await card.getByText('Private phone settings saved.',{exact:true}).waitFor();
+   await card.getByLabel('Call me with Chat Canvas updates',{exact:true}).check();
+   await card.getByRole('button',{name:'Save calling preferences',exact:true}).click();
+   await page.waitForFunction(()=>document.querySelector('[data-owner-phone-setup]')?.innerText.includes('Private phone settings saved.'));
+   assert.equal(ownerPhone.updates_requested,true);assert.equal(ownerPhone.execution_enabled,false);
+   const test=card.getByRole('button',{name:'Test call',exact:true});
+   assert.equal(await test.isDisabled(),true);
+   await card.getByLabel('This is my phone number. I want one test call (voice charges may apply).',{exact:true}).check();
+   await test.evaluate(el=>el.click());assert.equal(apiCalls.some(c=>c.action==='prepare_owner_test'),false);
+   await test.click();await page.waitForFunction(()=>window.phoneFixture?.connects.length===1);
+   assert.equal(apiCalls.filter(c=>c.action==='prepare_owner_test').length,1);
+   assert.equal(apiCalls.some(c=>c.action==='prepare_call'),false);
+   await page.getByRole('button',{name:'Hang up',exact:true}).click();await closeDrawer();
+   ownerPhone.last_test={call_id:outgoingId,state:'completed',received:false,can_confirm:true};
+   await card.getByRole('button',{name:'Refresh test status',exact:true}).click();
+   await card.getByRole('button',{name:'I received it',exact:true}).click();
+   await card.getByText('You confirmed receiving the test call.',{exact:true}).waitFor();
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:11,agent_id:2,ready:true}));
+   assert.equal(await card.count(),0,'context change removes private form');
  });
  if(actualState)await check('the unmodified PHP projection renders both voicemail namespaces and saved processing policy',async()=>{
   assert.ok(actualUi?.button&&actualUi?.config,'The actual PHP header and runtime configuration are mandatory with the real projection');
