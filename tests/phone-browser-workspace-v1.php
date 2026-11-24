@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_operator_voice_turns_v1','phone_operator_live_assist_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_operator_consent_reviews_v1','phone_operator_recipient_optouts_v1','phone_operator_voice_turns_v1','phone_operator_live_assist_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -796,6 +796,63 @@ $terminalLate=form($lateChild,['ParentCallSid'=>$lateParent,'CallStatus'=>'compl
 vp3_phone_browser_status_v1($pdo,$terminalLate,signature('status',$terminalLate,$latePublic),$latePublic);
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$liveBeforeMessages
     &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$liveBeforeJobs,'live assistance does not create another Chat message or recording job');
+// Autonomous calling readiness is review-only and never creates an executable call.
+require_once dirname(__DIR__).'/includes/agent-operator-admission-v1.php';
+$admissionPermission=action('save_auto_call_policy',array_replace($authorization,['expected_revision'=>4]))['policy'];
+c($admissionPermission['state']==='saved'&&$admissionPermission['revision']===5,'owner permission can be reviewed for autonomous calling');
+$admissionInput=['action'=>'operator_admission_preview','agent_id'=>0,'conversation_id'=>11,'contact_id'=>1,'number_id'=>1,'expected_revision'=>5];
+denies(fn()=>api('GET',$admissionInput),503,'readiness requires explicit migration');
+c(!vp3_operator_admission_schema_ready_v1($pdo),'missing readiness storage is not installed at runtime');
+vp3_operator_admission_install_v1($pdo);vp3_operator_admission_install_v1($pdo);
+c(vp3_operator_admission_schema_ready_v1($pdo)&&(int)$pdo->query('SELECT COUNT(*) FROM phone_operator_consent_reviews_v1')->fetchColumn()===0
+    &&(int)$pdo->query('SELECT COUNT(*) FROM phone_operator_recipient_optouts_v1')->fetchColumn()===0,'repeated upgrade grants no recipient consent');
+$admissionBefore=[];
+foreach(['phone_browser_calls_v1','phone_recording_jobs_v1','chat_messages','user_calendar_events'] as $table)
+    $admissionBefore[$table]=(int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn();
+$admission=api('GET',$admissionInput)['readiness'];
+$gateMap=static fn(array $result):array=>array_column($result['gates'],'status','id');
+c($admission['consent_state']==='not_recorded'&&!$admission['execution_enabled']&&$gateMap($admission)['recipient_review']==='blocked',
+    'owner Auto Call switch does not establish recipient agreement');
+c($gateMap($admission)['recipient_verification']==='unverified'&&$gateMap($admission)['spend_and_dispatch']==='off',
+    'independent consent verification and paid execution are not fabricated');
+$consentInput=['contact_id'=>1,'number_id'=>1,'expected_revision'=>5,'expected_consent_revision'=>0,'expected_destination'=>'+16025550999',
+    'expected_line'=>'+16025550101','decision'=>'attest','purpose'=>'follow_up','recipient_agreement_attested'=>true];
+denies(fn()=>api('GET',['action'=>'save_operator_consent']+$consentInput),405,'GET cannot alter consent');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['csrf_token'=>'forged'])),403,'consent review requires CSRF');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['recipient_agreement_attested'=>false])),422,'affirmative attestation is mandatory');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['purpose'=>'marketing'])),422,'unsupported outreach purpose is rejected');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['expected_revision'=>4])),409,'old owner policy revision is rejected');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['expected_destination'=>'+16025550998'])),409,'cannot attest to a substituted destination');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['contact_id'=>2])),404,'foreign contact is not reviewable');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['number_id'=>2])),404,'foreign line is not reviewable');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['agent_id'=>9,'conversation_id'=>13])),404,'different named Agent cannot use this assigned line');
+$attested=action('save_operator_consent',$consentInput)['readiness'];
+c($attested['consent_state']==='owner_attested'&&$attested['consent_revision']===1&&!$attested['execution_enabled']
+    &&$gateMap($attested)['recipient_verification']==='unverified','saved agreement is explicitly owner attested and does not authorize execution');
+denies(fn()=>action('save_operator_consent',$consentInput),409,'stale consent editor cannot overwrite current review');
+$bound=vp3_operator_admission_context_v1($pdo,$policyScope,$admissionInput);
+$row=vp3_operator_consent_row_v1($pdo,$policyScope,$bound);
+$at=(int)$row['attested_epoch'];
+c(vp3_operator_consent_state_v1($row,$bound,false,$at+VP3_OPERATOR_CONSENT_TTL_V1)==='expired','consent review expires after seven days');
+c(vp3_operator_consent_state_v1($row,$bound,false,$at-1)==='review_required','future consent timestamp is not treated as valid');
+$within=(new DateTimeImmutable('2026-11-23 10:00:00',new DateTimeZone('America/Phoenix')))->getTimestamp();
+$closing=(new DateTimeImmutable('2026-11-23 16:55:01',new DateTimeZone('America/Phoenix')))->getTimestamp();
+c(vp3_operator_admission_window_v1($autoSettings,$within)&&!vp3_operator_admission_window_v1($autoSettings,$closing),'entire maximum call duration must fit local calling hours');
+$history=vp3_operator_admission_history_v1($pdo,$policyScope,$bound,$autoSettings,time());
+c($history['today']>0&&!$history['within_limit']&&!$history['gap_ok'],'known recent outbound attempts consume the destination count and gap across the owner');
+$pdo->exec("UPDATE phone_recording_policies_v1 SET revision=revision+1 WHERE owner_user_id=1 AND agent_id=7");
+$changed=api('GET',$admissionInput)['readiness'];
+c($changed['consent_state']==='review_required','changed recording policy invalidates consent binding');
+$renewed=action('save_operator_consent',array_replace($consentInput,['expected_consent_revision'=>1]))['readiness'];
+c($renewed['consent_state']==='owner_attested'&&$renewed['consent_revision']===2,'new recording policy requires explicit new attestation');
+$withdraw=action('save_operator_consent',array_replace($consentInput,['decision'=>'withdraw','expected_consent_revision'=>2]))['readiness'];
+c($withdraw['consent_state']==='withdrawn'&&!$withdraw['can_attest']&&!$withdraw['execution_enabled'],'recipient withdrawal blocks destination');
+denies(fn()=>action('save_operator_consent',array_replace($consentInput,['expected_consent_revision'=>3])),409,'new owner attestation cannot undo recipient opt-out');
+$pdo->exec("UPDATE crm_contacts SET phone='+16025550999' WHERE id=1");
+c(vp3_operator_recipient_opted_out_v1($pdo,1,hash('sha256','+16025550999'))&&!vp3_operator_recipient_opted_out_v1($pdo,2,hash('sha256','+16025550999')),
+    'destination suppression is shared across the owner’s contact aliases and Agents without crossing owners');
+foreach($admissionBefore as $table=>$count)c((int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn()===$count,'readiness and recipient review never create '.$table.' records');
+c(vp3_operator_admission_execution_enabled_v1()===false,'there is no executable autonomous dialing capability');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
