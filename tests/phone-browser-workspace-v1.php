@@ -643,9 +643,10 @@ $caption=$liveApi($chunk,$liveNow+4);
 c($caption===['call_id'=>$livePublic,'seq'=>1,'text'=>'Fixture remote words <script> are data.','speaker'=>'remote_audio']&&$sent===1,'a current authorized audio chunk returns only a transient caption');
 denies(fn()=>$liveApi($chunk,$liveNow+8),409,'a previously reserved sequence cannot be billed again');
 $stop=['action'=>'stop','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken];
-denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+8,static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
+$stopDuringSpeech=static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
     $sent++;$liveApi($stop,$liveNow+8);return 'Late private result';
-}),409,'consent revoked while speech is pending suppresses the late result');
+};
+denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+8,$stopDuringSpeech),409,'consent revoked while speech is pending suppresses the late result');
 c($sent===2&&vp3_operator_live_row_v1($pdo,$liveCallId)['state']==='closed'&&(int)vp3_operator_live_row_v1($pdo,$liveCallId)['reserved_seconds']===8,'uncertain or stopped requests remain counted and cannot replay');
 c($liveApi($stop,$liveNow+9)['stopped'],'owner stop is idempotent');
 denies(fn()=>$liveApi(array_replace($chunk,['seq'=>3]),$liveNow+12),409,'stopped caption session cannot transmit audio');
@@ -662,9 +663,10 @@ vp3_phone_browser_status_v1($pdo,$liveForm2,signature('status',$liveForm2,$live2
 $liveNow2=time();$req2=array_replace($liveRequest,['call_id'=>$live2]);
 $grant2=$liveApi($req2,$liveNow2);
 $chunk2=array_replace($chunk,['call_id'=>$live2,'token'=>$grant2['token'],'seq'=>1]);
-denies(fn()=>$liveApi($chunk2,$liveNow2+4,static function(string $audio)use($pdo,&$sent):string{
+$revokeDuringSpeech=static function(string $audio)use($pdo,&$sent):string{
     $sent++;$pdo->exec('UPDATE phone_recording_policies_v1 SET revision=revision+1 WHERE owner_user_id=1 AND agent_id=7');return 'Revoked private result';
-}),409,'a changed recording/transcription policy fences an in-flight caption result');
+};
+denies(fn()=>$liveApi($chunk2,$liveNow2+4,$revokeDuringSpeech),409,'a changed recording/transcription policy fences an in-flight caption result');
 c(vp3_operator_live_row_v1($pdo,$liveCallId2)['state']==='closed','failed authority verification closes the session');
 $pdo->prepare("UPDATE phone_operator_live_sessions_v1 SET reserved_seconds=240 WHERE call_id=?")->execute([$liveCallId]);
 $live3=str_repeat('f',31).'5';$liveParent3='CA'.str_repeat('f',31).'5';$liveChild3='CA'.str_repeat('f',31).'6';
