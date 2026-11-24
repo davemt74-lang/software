@@ -191,6 +191,8 @@ try {
         && !vp3_phone_owner_v1($db, 2, 'state', [])['devices'], 'paired phone belongs only to its approving account');
     require_once __DIR__.'/phone-communication-profile-cases-v1.php';
     vp3_test_phone_communication_v1($db,1,2,$deviceId,$token,'phone_test_check');
+    require_once __DIR__.'/phone-information-exchange-cases-v1.php';
+    vp3_test_phone_information_v1($db,1,2,$deviceId,$token,'phone_test_check');
     // Restore the Phase 1 layout around a real approved phone and its existing approval receipt.
     $db->exec('ALTER TABLE vp3_phone_devices_v1 DROP COLUMN update_interval_seconds, DROP COLUMN accuracy_mode, DROP COLUMN preferences_version,
         DROP COLUMN holder_can_save_places, DROP COLUMN holder_place_version');

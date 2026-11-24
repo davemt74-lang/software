@@ -280,7 +280,7 @@
     if(!d){exchange?.bind(null,false,false);host.replaceChildren();profileDevice='';profileSignature='';return;}
     if(profileDevice!==d.id){profileDevice=d.id;profileTab=initialInformation&&linkedDevice===d.id?'information':'communication';profileSignature='';}
     exchange?.bind(d,available&&!document.hidden,profileTab==='information');
-    if(profileTab==='information'&&host.contains(exchange?.root)&&host.dataset.exchangeDevice===d.id)return;
+    if(profileTab==='information'&&exchange&&host.contains(exchange.root)&&host.dataset.exchangeDevice===d.id)return;
     const p=d.communication;
     const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[d.agent_chat,typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function'];
     const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra]);

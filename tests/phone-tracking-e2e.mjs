@@ -42,7 +42,7 @@ async function read(response) {
 
 async function ownerApi(context, user, action = 'state', values = {}) {
   const headers = { 'X-VP3-Working-Attention': user.binding };
-  if (['state', 'history', 'places'].includes(action)) {
+  if (['state', 'history', 'places','information_list'].includes(action)) {
     return read(await context.request.get(ownerEndpoint, { headers, params: { action, ...values } }));
   }
   return read(await context.request.post(ownerEndpoint, { headers,
@@ -386,6 +386,32 @@ async function browserJourney(baseURL, owner, other) {
   await communication.getByRole('button',{name:'Saved places',exact:true}).waitFor();
   await communication.getByRole('button',{name:'Communication',exact:true}).click();
   await screenshot(map,'owner-connected-user-communication');
+  await communication.getByRole('button',{name:'Information',exact:true}).click();
+  const panel=communication.locator('.phone-information-panel');
+  await panel.getByLabel('Information type',{exact:true}).selectOption('question');
+  await panel.getByLabel('Information message',{exact:true}).fill('What time is best for the private fixture review?');
+  await panel.getByRole('button',{name:'Send to phone',exact:true}).click();
+  await panel.getByText('What time is best for the private fixture review?',{exact:true}).waitFor();
+  const holderInbox=phone.locator('#phone-information');
+  await eventually('Phone did not receive open request count',async()=> (await holderInbox.locator('summary').innerText()).includes('(1 open)'));
+  await holderInbox.locator('summary').click();
+  await holderInbox.getByText('What time is best for the private fixture review?',{exact:true}).waitFor();
+  await holderInbox.getByRole('button',{name:'Accept request',exact:true}).click();
+  await holderInbox.getByLabel('Your response',{exact:true}).fill('Before noon <private fixture>');
+  await holderInbox.getByRole('button',{name:'Send response',exact:true}).click();
+  await holderInbox.getByText('Response: Before noon <private fixture>',{exact:true}).waitFor();
+  await panel.getByRole('button',{name:'Refresh exchange',exact:true}).click();
+  await panel.getByText('Response: Before noon <private fixture>',{exact:true}).waitFor();
+  assert.equal((await ownerApi(outsider,other,'information_list',{device_id:deviceId})).status,404);
+  const ownState=check(await ownerApi(desktop,owner),'count-only map state');
+  assert.ok(!JSON.stringify(ownState).includes('Before noon'),'ordinary map polls do not reveal request body or response');
+  const updates=check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'information Chat receipt').phone_updates;
+  const receipt=updates.find(u=>u.speech.includes('responded to an information request'));
+  assert.ok(receipt&&!JSON.stringify(updates).includes('Before noon'),'Chat receives only a scoped generic receipt, not the private response');
+  assert.ok(!check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'receipt replay').phone_updates.some(u=>u.speech.includes('responded to an information request')));
+  await screenshot(map,'owner-connected-information');
+  await holderInbox.locator('summary').click();
+  await communication.getByRole('button',{name:'Communication',exact:true}).click();
   await map.locator('#phone-detail [data-action=request_start]').click();
   await eventually('Phone missed start request', async () =>
     check(await phoneApi(handset, 'status'), 'phone read').device.location_state === 'requested');

@@ -114,6 +114,9 @@ function vp3_phone_information_scope_v1(PDO $pdo,array $d,array $input,int $now,
 function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array $input,int $now,bool $holder):array
 {
     $list=$action==='information_list';
+    // Never trust an unlisted action even if a direct internal caller bypasses HTTP.
+    $allowed=$holder?['information_list','information_accept','information_decline','information_ack','information_reply']:['information_list','information_create','information_cancel'];
+    vp3_phone_information_need_v1(in_array($action,$allowed,true),403);
     $p=vp3_phone_information_scope_v1($pdo,$d,$input,$now,$list);
     if($list)return vp3_phone_information_list_v1($pdo,$d,$p,$now);
     $id=vp3_phone_information_id_v1($input['exchange_id']??null);
