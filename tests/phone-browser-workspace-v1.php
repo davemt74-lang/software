@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_operator_live_assist_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -674,6 +674,60 @@ vp3_phone_browser_status_v1($pdo,$liveForm3,signature('status',$liveForm3,$live3
 denies(fn()=>$liveApi(array_replace($liveRequest,['call_id'=>$live3]),time()),429,'account speech allowance prevents new caption authorizations');
 $terminalForm3=form($liveChild3,['ParentCallSid'=>$liveParent3,'CallStatus'=>'completed']);vp3_phone_browser_status_v1($pdo,$terminalForm3,signature('status',$terminalForm3,$live3),$live3);
 $terminalForm2=form($liveChild2,['ParentCallSid'=>$liveParent2,'CallStatus'=>'completed']);vp3_phone_browser_status_v1($pdo,$terminalForm2,signature('status',$terminalForm2,$live2),$live2);
+// Independent local/remote capture and model suggestions are separately consented.
+$pdo->prepare('UPDATE phone_operator_live_sessions_v1 SET reserved_seconds=8 WHERE call_id=?')->execute([$liveCallId]);
+$dualPublic=str_repeat('f',31).'7';$dualParent='CA'.str_repeat('f',31).'7';$dualChild='CA'.str_repeat('f',31).'8';
+$insertLive->execute([$dualPublic,$dualParent,time(),time()]);$dualId=(int)$pdo->lastInsertId();
+$dualForm=form($dualChild,['ParentCallSid'=>$dualParent,'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$dualForm,signature('status',$dualForm,$dualPublic),$dualPublic);
+$dualNow=time();$dualRequest=array_replace($liveRequest,['call_id'=>$dualPublic,'capture_mode'=>'both','suggestions_attested'=>true]);
+denies(fn()=>$liveApi(array_replace($dualRequest,['capture_mode'=>'all']),$dualNow),422,'unsupported capture modes cannot obtain consent');
+denies(fn()=>$liveApi(array_replace($dualRequest,['suggestions_attested'=>'yes']),$dualNow),422,'suggestion consent must be an explicit boolean');
+$dualGrant=$liveApi($dualRequest,$dualNow);
+c($dualGrant['capture_mode']==='both'&&$dualGrant['suggestions_enabled']===true&&$dualGrant['expires_epoch']===$dualNow+60,'both sides receive explicit consent and a shorter aggregate speech budget');
+$localAudio=str_repeat("\x01\x00",64000);
+$dualChunk=array_replace($chunk,['call_id'=>$dualPublic,'token'=>$dualGrant['token'],'seq'=>1,'local_pcm'=>base64_encode($localAudio)]);
+$audioInputs=[];
+$dualSpeech=static function(string $audio)use(&$audioInputs,$fixturePcm,$localAudio):string{
+    $audioInputs[]=$audio;
+    return $audio===$fixturePcm?'Can we discuss the next step?':($audio===$localAudio?'I will confirm the details.':throw new RuntimeException('Unexpected track'));
+};
+$singleChunk=$dualChunk;unset($singleChunk['local_pcm']);
+denies(fn()=>$liveApi($singleChunk,$dualNow+4,$dualSpeech),409,'a dual authorization cannot silently become a single audio request');
+$dualCaption=$liveApi($dualChunk,$dualNow+4,$dualSpeech);
+c($audioInputs===[$fixturePcm,$localAudio]&&$dualCaption['text']==='Can we discuss the next step?'&&$dualCaption['local_text']==='I will confirm the details.','separate bounded audio sides retain their labels');
+c(count($dualCaption['receipts'])===2&&(int)vp3_operator_live_row_v1($pdo,$dualId)['reserved_seconds']===8,'both sides reserve eight speech seconds and return authenticated evidence');
+$assistRow=vp3_operator_live_assist_row_v1($pdo,$dualId);
+c(!str_contains(json_encode($dualCaption),$assistRow['receipt_secret'])&&!str_contains(json_encode($assistRow),'Can we discuss'),'caption evidence key and transcript text are never exposed from storage');
+$models=0;$modelEvidence=null;
+$model=static function(array $u,array $evidence,callable $guard)use(&$models,&$modelEvidence):string{
+    $guard();$models++;$modelEvidence=$evidence;return 'Which details would you like me to confirm first?';
+};
+$suggest=['action'=>'suggest','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$dualPublic,'token'=>$dualGrant['token'],'receipts'=>$dualCaption['receipts']];
+$suggestApi=static fn(array $input,int $at,callable $adapter):array=>vp3_operator_live_request_v1($pdo,user(),'POST',$input,'csrf-fixture',$dualSpeech,$at,$adapter);
+$forged=$suggest;$forged['receipts'][0]['text']='Altered caller words';
+denies(fn()=>$suggestApi($forged,$dualNow+5,$model),409,'edited transcript receipts never reach a model');
+$wrongSide=$suggest;$wrongSide['receipts'][0]['speaker']='local_audio';
+denies(fn()=>$suggestApi($wrongSide,$dualNow+5,$model),409,'a caller receipt cannot be relabeled as the owner');
+denies(fn()=>$suggestApi(array_replace($suggest,['conversation_id'=>12,'agent_id'=>7]),$dualNow+5,$model),404,'suggestions cannot cross private Chat boundaries');
+c($models===0,'forged evidence and foreign Chat requests never dispatch inference');
+$reply=$suggestApi($suggest,$dualNow+5,$model);
+c($reply['speech_enabled']===false&&$reply['based_on_seq']===1&&$models===1&&$reply['suggestion']==='Which details would you like me to confirm first?','owner request returns a private, non-speaking suggestion');
+c(count($modelEvidence['recent_captions'])===2&&count($modelEvidence['prior_call_metadata'])<=3
+    &&!str_contains(json_encode($modelEvidence),'+16025550999')&&!str_contains(json_encode($modelEvidence),'provider_call_sid'),'inference receives only recent captions and bounded metadata, not contact identifiers');
+denies(fn()=>$suggestApi($suggest,$dualNow+6,$model),429,'model requests are rate limited');
+$dualCaption2=$liveApi(array_replace($dualChunk,['seq'=>2]),$dualNow+28,$dualSpeech);
+$stopDual=array_replace($stop,['call_id'=>$dualPublic,'token'=>$dualGrant['token']]);
+denies(fn()=>$suggestApi($suggest,$dualNow+29,$model),409,'old caption evidence cannot consume another suggestion');
+denies(fn()=>$suggestApi(array_replace($suggest,['receipts'=>$dualCaption2['receipts']]),$dualNow+29,
+    static function(array $u,array $evidence,callable $guard)use($liveApi,$stopDual,$dualNow,&$models):string{
+        $guard();$models++;$liveApi($stopDual,$dualNow+29);return 'Late suggestion';
+    }),409,'stopping during inference fences the returned suggestion');
+c($models===2&&vp3_operator_live_row_v1($pdo,$dualId)['state']==='closed','revoked suggestions do not restart a session');
+$terminalDual=form($dualChild,['ParentCallSid'=>$dualParent,'CallStatus'=>'completed']);
+vp3_phone_browser_status_v1($pdo,$terminalDual,signature('status',$terminalDual,$dualPublic),$dualPublic);
+c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$liveBeforeMessages
+    &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$liveBeforeJobs,'live assistance does not create another Chat message or recording job');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
