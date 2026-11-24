@@ -466,7 +466,9 @@ try{
   assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),true);
   await caption.getByRole('button',{name:'Take over now',exact:true}).click();
   await caption.getByText('You took over. AI speech and live assistance stopped.',{exact:true}).waitFor();
-  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1);
+  assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),false,'Takeover clears the synthetic source immediately');
+  await page.waitForFunction(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value===1,{},{timeout:1500});
+  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1,'Human microphone returns after the audio render quantum');
   assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),false);
   assert.equal(await page.evaluate(()=>phoneFixture.calls.at(-1).status()),'open');
   assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.raw.getAudioTracks()[0].readyState),'live');
