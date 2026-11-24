@@ -51,6 +51,8 @@ function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
     vp3_managed_callback_install_v1($pdo);
     require_once __DIR__.'/phone-managed-transport-schema-v1.php';
     vp3_managed_transport_install_v1($pdo);
+    require_once __DIR__.'/phone-managed-control-schema-v1.php';
+    vp3_managed_control_install_v1($pdo);
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';$auto=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';$suffix=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_browser_calls_v1(id $auto,public_id CHAR(32) NOT NULL UNIQUE,
         owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,phone_number_id BIGINT NOT NULL,phone_e164 VARCHAR(20) NOT NULL,peer_e164 VARCHAR(20) NOT NULL DEFAULT '',
@@ -188,7 +190,15 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);$numbers=vp3_phone_workspace_numbers_v1($pdo,$scope);$contacts=vp3_phone_workspace_contacts_v1($pdo,$scope['owner_user_id']);
     $sql='SELECT * FROM phone_browser_calls_v1 WHERE owner_user_id=?';$args=[$scope['owner_user_id']];if($scope['agent_id']>0){$sql.=' AND agent_id=?';$args[]=$scope['agent_id'];}
     $q=$pdo->prepare($sql.' ORDER BY id DESC LIMIT 50');$q->execute($args);$calls=[];$active=null;
-    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){$card=vp3_phone_workspace_call_projection_v1($r);$calls[]=$card;if(!$active&&in_array($r['state'],['ringing','dialing','answered'],true)&&vp3_phone_browser_live_call_v1($pdo,$r))$active=$card;}
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){
+        $card=vp3_phone_workspace_call_projection_v1($r);
+        if(($r['transport_kind']??'')==='managed_callback'){
+            require_once __DIR__.'/phone-managed-control-v1.php';
+            $card['managed_control']=vp3_managed_control_view_v1($pdo,$scope,$r);
+        }
+        $calls[]=$card;
+        if(!$active&&in_array($r['state'],['ringing','dialing','answered'],true)&&vp3_phone_browser_live_call_v1($pdo,$r))$active=$card;
+    }
     $calls=array_merge($calls,vp3_phone_workspace_legacy_calls_v1($pdo,$scope));
     usort($calls,static fn(array $a,array $b):int=>strcmp($b['created_at'],$a['created_at'])?:strcmp($b['public_id'],$a['public_id']));$calls=array_slice($calls,0,50);
     $voicemails=[];
@@ -273,6 +283,10 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
 {
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);$action=(string)($input['action']??'');
     if(in_array($action,['owner_phone_settings','save_owner_phone','save_owner_call_preferences','confirm_owner_test'],true))return vp3_owner_phone_chat_action_v1($pdo,$scope,$input);
+    if(in_array($action,['managed_reconcile','managed_end'],true)){
+        require_once __DIR__.'/phone-managed-control-v1.php';
+        return vp3_managed_control_action_v1($pdo,$scope,$input);
+    }
     if($action==='save_caller_contact')return vp3_phone_caller_contact_save_v1($pdo,$scope,$input);
     if($action==='save_auto_call_policy')return vp3_operator_auto_call_save_v1($pdo,$scope,$input);
     if(in_array($action,['operator_calendar_preview','save_operator_calendar'],true)){
