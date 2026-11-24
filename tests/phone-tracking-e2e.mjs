@@ -73,6 +73,7 @@ async function screenshot(page, name) {
 }
 
 try {
+  {
   const dialerWindow={};
   runInNewContext(readFileSync(path.join(repo,'phone-remote-dialer-v1.js'),'utf8'),{window:dialerWindow,performance:{now:()=>1000}});
   const {canAuto,live,numberOK}=dialerWindow.VP3RemoteDialerV1;
@@ -85,6 +86,7 @@ try {
   assert.equal(canAuto({...d,dialer:{...d.dialer,auto_number:'+16025550137'}},1000,active),false);
   assert.equal(live({...d,dialer:{...d.dialer,request:{...d.dialer.request,expires_epoch:100}}},1000,1000),false);
   assert.equal(numberOK('+16025550138;123'),false);
+  }
 
   const [owner, other] = preparePhoneSite(repo, site, sessions, php);
   const port = await localPort();
