@@ -7,7 +7,7 @@ require_once __DIR__.'/agent-coordination-material-v1.php';
 require_once __DIR__.'/agent-profile-specialist-v1.php';
 require_once __DIR__.'/agent-product-marketing-summary-v1.php';
 
-const VP3_COORDINATION_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing','profile'];
+const VP3_COORDINATION_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','connected-sites','transcripts','marketing','profile','operator'];
 const VP3_COORDINATION_MARKETING_REPORT_V1='vp3.marketing-report.v1';
 const VP3_COORDINATION_MEDIA_REPORT_V1='vp3.media-report.v1';
 
@@ -406,6 +406,7 @@ function vp3_coordination_previous_v1(PDO $pdo,array $user,array $goal,int $runI
 function vp3_coordination_item_route_v1(array $settings,array $item): array
 {
     $trigger=$item['trigger']??null;
+    if($item['specialist']==='operator')return ['specialist'=>'operator','trigger'=>'followup_review','action'=>'watch'];
     if($item['specialist']==='casual')return ['specialist'=>'casual','trigger'=>$trigger,'action'=>'ask'];
     if(($item['specialist']??null)==='profile'&&($item['profile_source_kind']??null)==='commerce'
         &&vp3_profile_specialist_ref_kind_v1($item['ref']??null)==='commerce'){
