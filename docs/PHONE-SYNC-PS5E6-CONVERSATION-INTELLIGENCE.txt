@@ -1,0 +1,43 @@
+Phone Sync PS5E.6 — Private managed conversation intelligence
+
+This section extends the existing Operator/Transcription report system.
+Completed managed call cards in the exact private Chat and Phone drawer
+can open a read-only conversation review, original saved report, transcript
+link, and up to three canonical open follow-up suggestions. The report is
+historical unreviewed AI text, not a verified commitment or authority to
+create a task, send a message, place a call or run a paid model. The original
+Transcription evidence link remains the review/action authority.
+
+The review verifies the original owner/Agent/conversation, terminal call,
+recording receipt, per-call affirmative consent and immutable policy,
+canonical transcript identity and current source hash, and exact saved
+report delivery. Only modules included in the original processing consent
+may contribute new follow-up suggestions. No analysis is exposed through
+this view for transcription-only consent. Stale, removed, failed, unqueued,
+or unavailable evidence is represented explicitly.
+
+Connected-profile continuity is opt-in via the holder's current memory
+permission. It reads up to five prior terminal call outcomes from the past
+90 days for the same device, profile, holder phone revision and Chat.
+These are calls routed through that phone, not evidence of the identity
+of the person at the far-end destination. No raw transcript, carrier ID,
+telephone destination, or global personal-memory entry is added by the
+continuity read. Proactive Operator follow-up also requires this live
+permission. Its existing coordination adapter exposes only counts and
+source revisions, not private report text, and remains history-only.
+Managed recording sessions do not enter the general proactive
+Transcription processing path. Original report delivery cannot fall back
+to another conversation if the exact private Chat is gone.
+
+The review is explicit and read-only, stays in the existing single Phone
+drawer, clears on Chat switch/hidden page/close and expires after one
+minute. The UI uses literal text and same-origin source links.
+No new database tables or external processing engine. Synthetic PHP and
+browser regression fixtures cover queued reports, consent scope, original
+policy, stale source, current holder memory permission, source links and
+context clearing. No real provider calls or new speech/model requests.
+
+Release gate: #872, #873 and exact-head CI green. Live managed dispatch,
+recording startup/stop, carrier/device testing and worker deployment remain
+outstanding. This release does not enable autonomous Agent outreach,
+scheduled calls, automatic task creation, or new public sharing.
