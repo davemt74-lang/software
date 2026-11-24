@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/phone-information-files-v1.php';
 
 /** PS5A: bounded, explicit text exchange. No device sensor, file or model access. */
 const VP3_PHONE_INFO_TTL_V1=86400;
@@ -51,6 +52,8 @@ function vp3_phone_information_fence_v1(PDO $pdo,array $before,array $after,int 
 {
     if(!vp3_phone_information_ready_v1($pdo)||(int)$before['revision']===0)return;
     $scope=[(int)$before['owner_user_id'],$before['device_id'],$before['profile_id']];
+    // All file grants are revision-bound, including previously completed transfers.
+    vp3_phone_file_fence_v1($pdo,$before);
     // Every changed revision invalidates unfinished work, even if consent is
     // subsequently restored. Keep only metadata on canceled work.
     vp3_phone_sql_v1($pdo,"UPDATE vp3_phone_information_v1 SET state='canceled',version=version+1,message='',response='',updated_epoch=?,announced=1
@@ -89,8 +92,15 @@ function vp3_phone_information_list_v1(PDO $pdo,array $d,array $p,int $now):arra
     $rows=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_information_v1 WHERE owner_user_id=? AND device_id=? AND profile_id=?
         AND created_epoch>? ORDER BY created_epoch DESC,exchange_id DESC LIMIT 20',
         [(int)$d['owner_user_id'],$d['id'],$p['profile_id'],$now-VP3_PHONE_INFO_RETENTION_V1])->fetchAll(PDO::FETCH_ASSOC);
-    return ['profile_id'=>$p['profile_id'],'profile_revision'=>(int)$p['revision'],
-        'items'=>array_map(static fn(array $r)=>vp3_phone_information_view_v1($r,$p,$now),$rows)];
+    $available=vp3_phone_file_available_v1($pdo);
+    $items=[];
+    foreach($rows as $r){
+        $view=vp3_phone_information_view_v1($r,$p,$now);
+        $meta=$available?vp3_phone_file_metadata_v1($pdo,vp3_phone_file_scope_v1($r)):null;
+        $view['attachment']=vp3_phone_file_view_v1($r,$p,$now,$meta);
+        $items[]=$view;
+    }
+    return ['profile_id'=>$p['profile_id'],'profile_revision'=>(int)$p['revision'],'files_ready'=>$available,'items'=>$items];
 }
 /** Exact current authenticated pairing and both request/update permissions.
  * Generation guards the foreground UI only, not the lifetime of an exchange.
@@ -115,21 +125,33 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
 {
     $list=$action==='information_list';
     // Never trust an unlisted action even if a direct internal caller bypasses HTTP.
-    $allowed=$holder?['information_list','information_accept','information_decline','information_ack','information_reply']:['information_list','information_create','information_cancel'];
+    $allowed=$holder?['information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download']:['information_list','information_create','information_cancel','information_create_file','information_download'];
     vp3_phone_information_need_v1(in_array($action,$allowed,true),403);
     $p=vp3_phone_information_scope_v1($pdo,$d,$input,$now,$list);
     if($list)return vp3_phone_information_list_v1($pdo,$d,$p,$now);
     $id=vp3_phone_information_id_v1($input['exchange_id']??null);
     $scope=[(int)$d['owner_user_id'],$d['id'],$id];
     $r=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_information_v1 WHERE owner_user_id=? AND device_id=? AND exchange_id=?'.vp3_phone_lock_v1($pdo),$scope)->fetch(PDO::FETCH_ASSOC);
-    if($action==='information_create'){
+    if(in_array($action,['information_create','information_create_file'],true)){
         vp3_phone_information_need_v1(!$holder,403);
+        $file=null;
         $kind=$input['kind']??null;
-        vp3_phone_information_need_v1(in_array($kind,['update','question','availability','task'],true));
+        if($action==='information_create_file'){
+            vp3_phone_information_need_v1($kind==='file_share'&&($input['share_confirmed']??null)===true);
+            vp3_phone_information_need_v1(vp3_phone_file_available_v1($pdo),503);
+            $file=vp3_phone_file_parse_v1($input['file_base64']??null,false);
+        }else{
+            vp3_phone_information_need_v1(in_array($kind,['update','question','availability','task','photo_request','file_request'],true));
+            if(vp3_phone_file_request_kind_v1($kind))vp3_phone_information_need_v1(vp3_phone_file_available_v1($pdo),503);
+        }
         $text=vp3_phone_information_text_v1($input['message']??null);
         if($r){
             vp3_phone_information_need_v1($r['profile_id']===$p['profile_id']&&(int)$r['profile_revision']===(int)$p['revision']
                 &&$r['kind']===$kind&&hash_equals($r['message'],$text),409);
+            if($file!==null){
+                $old=vp3_phone_file_metadata_v1($pdo,$scope);
+                vp3_phone_information_need_v1($old!==null&&hash_equals($old['digest'],$file['digest'])&&(int)$old['expires_epoch']>$now,409);
+            }
             return vp3_phone_information_list_v1($pdo,$d,$p,$now);
         }
         // Account-serialized budget survives number/consent changes.
@@ -141,41 +163,55 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
         vp3_phone_information_need_v1(vp3_phone_information_pending_count_v1($pdo,$d,$p,$now)<4,429);
         vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_information_v1(owner_user_id,device_id,exchange_id,profile_id,profile_revision,version,kind,state,message,response,created_epoch,updated_epoch,expires_epoch,announced)
             VALUES(?,?,?,?,?,1,?,'pending',?,'',?,?,?,0)",[...$scope,$p['profile_id'],(int)$p['revision'],$kind,$text,$now,$now,$now+VP3_PHONE_INFO_TTL_V1]);
+        if($file!==null)vp3_phone_file_store_v1($pdo,$scope,$file,$now);
         return vp3_phone_information_list_v1($pdo,$d,$p,$now);
     }
     vp3_phone_information_need_v1($r!==false&&$r['profile_id']===$p['profile_id'],404);
+    if($action==='information_download'){
+        vp3_phone_information_need_v1(($input['version']??null)===(int)$r['version'],409);
+        return ['download'=>vp3_phone_file_download_v1($pdo,$r,$p,$now)];
+    }
     vp3_phone_information_need_v1((int)$r['profile_revision']===(int)$p['revision']&&(int)$r['expires_epoch']>$now,409);
     $version=$input['version']??null;
     vp3_phone_information_need_v1(is_int($version)&&$version>0);
-    $state=$r['state'];$response='';
+    $state=$r['state'];$response='';$file=null;
     switch($action){
         case 'information_cancel':
             vp3_phone_information_need_v1(!$holder,403);$next='canceled';$from=['pending','accepted'];break;
         case 'information_accept':
-            vp3_phone_information_need_v1($holder&&$r['kind']!=='update',403);$next='accepted';$from=['pending'];break;
+            vp3_phone_information_need_v1($holder&&!in_array($r['kind'],['update','file_share'],true),403);$next='accepted';$from=['pending'];break;
         case 'information_decline':
             vp3_phone_information_need_v1($holder,403);$next='declined';$from=['pending','accepted'];break;
         case 'information_ack':
-            vp3_phone_information_need_v1($holder&&$r['kind']==='update',403);$next='acknowledged';$from=['pending'];break;
+            vp3_phone_information_need_v1($holder&&in_array($r['kind'],['update','file_share'],true),403);$next='acknowledged';$from=['pending'];break;
         case 'information_reply':
-            vp3_phone_information_need_v1($holder&&$r['kind']!=='update',403);
+            vp3_phone_information_need_v1($holder&&in_array($r['kind'],['question','availability','task'],true),403);
             $response=vp3_phone_information_text_v1($input['response']??null);$next='completed';$from=['accepted'];break;
+        case 'information_attach_file':
+            vp3_phone_information_need_v1($holder&&vp3_phone_file_request_kind_v1($r['kind'])&&($input['share_confirmed']??null)===true,403);
+            vp3_phone_information_need_v1(vp3_phone_file_available_v1($pdo),503);
+            $file=vp3_phone_file_parse_v1($input['file_base64']??null,$r['kind']==='photo_request');
+            $next='completed';$from=['accepted'];break;
         default:throw new RuntimeException('Unknown information action.',422);
     }
     // Lost acknowledgements can repeat precisely the prior transition only.
-    if($state===$next&&(int)$r['version']===$version+1&&hash_equals((string)$r['response'],$response))
+    if($state===$next&&(int)$r['version']===$version+1&&hash_equals((string)$r['response'],$response)){
+        if($file!==null){$old=vp3_phone_file_metadata_v1($pdo,$scope);vp3_phone_information_need_v1($old!==null&&hash_equals($old['digest'],$file['digest'])&&(int)$old['expires_epoch']>$now,409);}
         return vp3_phone_information_list_v1($pdo,$d,$p,$now);
+    }
     vp3_phone_information_need_v1((int)$r['version']===$version&&in_array($state,$from,true),409);
     $q=vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_information_v1 SET state=?,version=version+1,response=?,message=?,updated_epoch=?,announced=?
         WHERE owner_user_id=? AND device_id=? AND exchange_id=? AND version=?',
         [$next,$response,$next==='canceled'?'':$r['message'],$now,$holder?0:1,...$scope,$version]);
     vp3_phone_information_need_v1($q->rowCount()===1,409);
+    if($file!==null)vp3_phone_file_store_v1($pdo,$scope,$file,$now);
+    if(in_array($next,['canceled','declined'],true))vp3_phone_file_drop_v1($pdo,$scope);
     return vp3_phone_information_list_v1($pdo,$d,$p,$now);
 }
 function vp3_phone_information_owner_v1(PDO $pdo,int $owner,string $action,array $input):array
 {
     vp3_phone_information_need_v1($owner>0&&(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null),403);
-    vp3_phone_information_need_v1(in_array($action,['information_list','information_create','information_cancel'],true),422);
+    vp3_phone_information_need_v1(in_array($action,['information_list','information_create','information_cancel','information_create_file','information_download'],true),422);
     $device=vp3_phone_information_id_v1($input['device_id']??null);
     return vp3_phone_transaction_v1($pdo,static function()use($pdo,$owner,$action,$input,$device){
         vp3_phone_account_v1($pdo,$owner,true);$d=vp3_phone_row_v1($pdo,$owner,$device);

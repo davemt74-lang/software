@@ -15,7 +15,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
-  <link rel="stylesheet" href="phone-location-v1.css?v=10">
+  <link rel="stylesheet" href="phone-location-v1.css?v=11">
   <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
@@ -23,8 +23,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
   <script src="phone-agent-chat-v1.js?v=4" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
-  <script src="phone-information-ui-v1.js?v=1" defer></script>
-  <script src="phone-location-v1.js?v=10" defer></script>
+  <script src="phone-information-ui-v1.js?v=2" defer></script>
+  <script src="phone-location-v1.js?v=11" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">

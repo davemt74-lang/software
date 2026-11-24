@@ -63,6 +63,8 @@ require_once __DIR__.'/phone-communication-profile-cases-v1.php';
 vp3_test_phone_communication_v1($db,11,12,$id,$token,'pt_assert');
 require_once __DIR__.'/phone-information-exchange-cases-v1.php';
 vp3_test_phone_information_v1($db,11,12,$id,$token,'pt_assert');
+require_once __DIR__.'/phone-information-file-cases-v1.php';
+vp3_test_phone_files_v1($db,11,12,$id,$token,'pt_assert');
 pt_assert($accepted['status']==='approved' && $accepted['role']==='owner' && $accepted['location_state']==='off' && $accepted['latitude']===null,'owner approval does not grant live location');
 pt_assert($accepted['preferences_version']===1 && $accepted['update_interval_seconds']===5 && $accepted['accuracy_mode']==='high',
     'newly paired phones report the original five-second, high-accuracy defaults');
@@ -167,6 +169,7 @@ $revokeCommand=$newCommand($ownerSaw);
 $revoke=$owner('revoke',$revokeCommand)['device'];
 pt_assert((int)$db->query('SELECT COUNT(*) FROM vp3_phone_communication_profiles_v1')->fetchColumn()===0,'disconnect deletes the private communication profile');
 pt_assert((int)$db->query('SELECT COUNT(*) FROM vp3_phone_information_v1')->fetchColumn()===0,'disconnect removes dependent private information exchange');
+pt_assert((int)$db->query('SELECT COUNT(*) FROM vp3_phone_information_files_v1')->fetchColumn()===0,'disconnect removes dependent file storage');
 pt_assert($revoke['status']==='revoked' && $revoke['generation']>$stopped['generation'] && $owner('state')['devices']===[],
     'owner disconnect still removes the same pairing after the holder stops GPS');
 pt_assert($owner('revoke',$revokeCommand)['duplicate'],'repeated disconnect is acknowledged once');

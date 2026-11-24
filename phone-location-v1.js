@@ -136,9 +136,11 @@
 
   async function request(action, data = {}, keepalive = false) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), action === 'chat_send' ? 90000 : 10000);
+    const timer = setTimeout(() => controller.abort(), action === 'chat_send' ? 90000 : ['information_attach_file','information_download'].includes(action)?30000:10000);
+    const target=new URL(endpoint);
+    if(action==='information_attach_file')target.searchParams.set('information_file','1');
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(target, {
         method:'POST', credentials:'same-origin', cache:'no-store', redirect:'error',
         referrerPolicy:'no-referrer', signal:controller.signal, keepalive,
         headers:{'Content-Type':'application/json','X-VP3-Phone':'1'},

@@ -354,6 +354,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_schema_ready_v1($schemaConnection)
         && vp3_phone_communication_ready_v1($schemaConnection)
         && vp3_phone_information_ready_v1($schemaConnection)
+        && vp3_phone_file_ready_v1($schemaConnection)
         && vp3_phone_camera_ready_v1($schemaConnection)
         && vp3_phone_camera_map_ready_v1($schemaConnection)
         && vp3_phone_record_ready_v1($schemaConnection)
