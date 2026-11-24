@@ -43,7 +43,10 @@ function vp3_managed_ui_projection_v1(PDO $pdo,array $d,int $now,bool $holder):?
         if(!$holder){
             foreach(vp3_phone_workspace_numbers_v1($pdo,$scope) as $n){
                 if($n['voice_enabled']&&$n['browser_enabled']&&preg_match('/\A\+[1-9][0-9]{7,14}\z/D',$n['phone_e164'])&&$n['phone_e164']!==$p['phone_e164']){
-                    $out['lines'][]=['id'=>(int)$n['id'],'phone_e164'=>$n['phone_e164'],'agent_name'=>(string)$n['agent_name']];
+                    require_once __DIR__.'/phone-managed-recording-v1.php';
+                    $policy=vp3_managed_recording_policy_v1($pdo,$user,$n);
+                    $out['lines'][]=['id'=>(int)$n['id'],'phone_e164'=>$n['phone_e164'],'agent_name'=>(string)$n['agent_name'],
+                        'recording_policy'=>$policy?['revision'=>$policy['revision'],'retain_audio'=>true,'transcribe'=>$policy['transcribe'],'analyze'=>$policy['analyze']]:null];
                 }
             }
         }
@@ -57,7 +60,7 @@ function vp3_managed_ui_projection_v1(PDO $pdo,array $d,int $now,bool $holder):?
         if((int)$row['generation']!==(int)$d['generation']||(int)$row['profile_revision']!==(int)$p['revision']||
             (int)$row['phone_revision']!==(int)$p['phone_revision']||(int)$row['conversation_id']!==$thread['conversation_id']||
             (int)$row['chat_agent_id']!==$thread['agent_id'])return $out;
-        $view=vp3_managed_callback_view_v1($row,$now,$holder);
+        $view=vp3_managed_callback_view_v1($row,$now,$holder,$pdo);
         if(in_array($view['state'],['pending','approved'],true)){
             try{vp3_managed_callback_current_v1($pdo,$row,$user,$now);}catch(VP3PhoneWorkspaceException){
                 $view['state']='unavailable';unset($view['destination_e164']);
@@ -92,7 +95,7 @@ function vp3_managed_ui_owner_action_v1(PDO $pdo,array $user,string $action,arra
     vp3_managed_callback_need_v1(in_array($action,['managed_prepare','managed_cancel','managed_reconcile','managed_end'],true),422);
     if(in_array($action,['managed_reconcile','managed_end'],true))return vp3_managed_ui_control_v1($pdo,$user,$action,$input,$now);
     $allowed=$action==='managed_prepare'
-        ?['request_id','managed_request_id','device_id','generation','profile_id','profile_revision','phone_revision','number_id','destination_e164','confirmed']
+        ?['request_id','managed_request_id','device_id','generation','profile_id','profile_revision','phone_revision','number_id','destination_e164','confirmed','recording_requested','recording_policy_revision']
         :['request_id','managed_request_id','device_id','generation'];
     vp3_managed_callback_need_v1(!array_diff(array_keys($input),$allowed),422);
     $owner=(int)($user['id']??0);$device=vp3_managed_callback_id_v1($input['device_id']??null);
@@ -116,11 +119,12 @@ function vp3_managed_ui_owner_action_v1(PDO $pdo,array $user,string $action,arra
 function vp3_managed_ui_holder_action_v1(PDO $pdo,array $d,array $input,int $now):array
 {
     require_once __DIR__.'/phone-managed-callback-v1.php';
-    vp3_managed_callback_need_v1(!array_diff(array_keys($input),['device_id','generation','managed_request_id','decision','destination_e164','confirmed']),422);
+    vp3_managed_callback_need_v1(!array_diff(array_keys($input),['device_id','generation','managed_request_id','decision','destination_e164','confirmed','recording_consent','recording_consent_revision']),422);
     vp3_managed_callback_need_v1(($d['device_status']??'')==='approved'&&(int)$d['expires_at']>$now&&($input['device_id']??null)===$d['id'],403);
     vp3_managed_callback_need_v1(is_int($input['generation']??null)&&$input['generation']===(int)$d['generation']);
     $args=['request_id'=>vp3_managed_callback_id_v1($input['managed_request_id']??null),'decision'=>$input['decision']??null,
         'destination_e164'=>$input['destination_e164']??null,'confirmed'=>$input['confirmed']??false];
+    foreach(['recording_consent','recording_consent_revision'] as $field)if(array_key_exists($field,$input))$args[$field]=$input[$field];
     vp3_managed_callback_holder_locked_v1($pdo,(int)$d['owner_user_id'],$d['id'],$args,$now);
     return ['managed_callback'=>vp3_managed_ui_projection_v1($pdo,$d,$now,true)];
 }
