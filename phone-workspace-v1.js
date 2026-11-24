@@ -445,7 +445,9 @@
   window.addEventListener('pagehide',dispose,{once:true});window.addEventListener('stonefellow:session-expired',revoke);window.addEventListener('stonefellow:logout',dispose);
   window.addEventListener('stonefellow:voice-lease-lost',()=>{if(active||callBusy)stopDevice('Microphone ownership changed. Phone audio has stopped.');});
   pollTimer=setInterval(()=>{if(document.visibilityState==='visible'&&(opened||deviceSession||cards.size))void refresh();},10000);
-  window.VP3PhoneWorkspaceV1=Object.freeze({open,close,bindMessage,contextChanged,refresh,dispose});
+  function openHistory(source=document.activeElement){open(source);if(opened)selectTab('calls');}
+  function openRecordings(source=document.activeElement){open(source);if(opened)selectTab('voicemail');}
+  window.VP3PhoneWorkspaceV1=Object.freeze({open,openHistory,openRecordings,close,bindMessage,contextChanged,refresh,dispose});
   layer.id='vp3PhoneWorkspace';
   window.dispatchEvent(new Event('vp3:phone-workspace-ready'));
   render();void refresh();
