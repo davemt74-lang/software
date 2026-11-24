@@ -416,7 +416,7 @@
       for(const gate of model.gates){const row=node('div');row.append(node('dt',null,admissionLabels[gate.id]),node('dd',null,({pass:'Local check passed',blocked:'Blocked',unverified:'Not verified',off:'Disabled'}[gate.status])+'. '+gate.detail));checks.append(row);}
       panel.append(checks);
       if(model.can_attest){
-        const label=node('label','vp3-phone-field','Agreed purpose'),select=node('select');select.dataset.phoneFocusKey='admission-purpose-'+key;
+        const label=node('label','vp3-phone-field','Agreed purpose'),select=node('select');select.setAttribute('aria-label','Agreed purpose');select.dataset.phoneFocusKey='admission-purpose-'+key;
         for(const [id,title] of Object.entries(admissionPurposes)){const opt=node('option',null,title);opt.value=id;select.append(opt);}select.value=draft.purpose;select.disabled=draft.saving;
         select.addEventListener('change',event=>{if(current(g)&&admissionDraft===draft){draft.purpose=select.value;draft.attested=false;render();}});label.append(select);panel.append(label);
         const checkLabel=node('label','vp3-phone-check'),check=node('input');check.type='checkbox';check.checked=draft.attested;check.disabled=draft.saving;
