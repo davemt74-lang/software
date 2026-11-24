@@ -39,7 +39,9 @@
         tracks[0]===output[0]&&output[0].readyState==='live'&&output[0].enabled!==false&&graph.track.readyState==='live'&&graph.track.enabled!==false;
     }
     setMic(graph,value){
-      const gain=graph.mic.gain;gain.cancelScheduledValues(this.context.currentTime);gain.setValueAtTime(value,this.context.currentTime);
+      // Clear the previous turn's automation, not just future events. AudioParam
+      // readback is updated by the render thread on the next audio quantum.
+      const gain=graph.mic.gain;gain.cancelScheduledValues(0);gain.value=value;gain.setValueAtTime(value,this.context.currentTime);
     }
     play(pcm,stream,onEnded){
       if(this.speaking||!this.matches(stream)||!(pcm instanceof Int16Array)||pcm.length<1600||pcm.length>320000)
