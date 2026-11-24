@@ -696,6 +696,23 @@ function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,in
         $checkpoint=vp3_coordination_scan_checkpoint_v1($user,$policy);
         foreach($checkpoint['specialists']??[] as $id=>$scan){
             if($id==='connected-sites')continue;
+            if($id==='operator'){
+                // The checkpoint is a historical scan, not a current source read.
+                // Do not expose it outside verified private Phone/Transcript access,
+                // or replace a live call status or blocked/unavailable state.
+                if($privateChat && isset($specialists['operator'])
+                    && $specialists['operator']['state']==='idle'
+                    && has_permission('artist_listening.access',$user)
+                    && in_array($scan['coverage']??null,['ready','limited'],true)) {
+                    $count=(int)($scan['found']??0);
+                    if($count>0) {
+                        $specialists['operator']['state']='checked';
+                        $specialists['operator']['detail']='The last check found '.$count
+                            .($count===1?' call report':' call reports').' with follow-ups to review. Open Operator Brain for current findings.';
+                    }
+                }
+                continue;
+            }
             $row=vp3_top_of_mind_specialist_scan_v1($id,$scan);
             $specialists[$id]=vp3_top_of_mind_prefer_work_v1($specialists[$id]??null,$row);
         }
