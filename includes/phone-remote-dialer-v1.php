@@ -67,7 +67,7 @@ function vp3_phone_dialer_view_v1(PDO $pdo,array $d,int $now,bool $holder):?arra
 {
     if(!vp3_phone_communication_active_v1($d,$now)||!vp3_phone_dialer_ready_v1($pdo))return null;
     $s=vp3_phone_dialer_settings_v1($pdo,$d);
-    $out=['revision'=>(int)$s['revision'],'enabled'=>(bool)$s['enabled'],'auto_enabled'=>$s['auto_number']!=='','request'=>null];
+    $out=['revision'=>(int)$s['revision'],'enabled'=>(bool)$s['enabled'],'auto_enabled'=>$s['auto_number']!=='','server_epoch'=>$now,'request'=>null];
     if($holder)$out['auto_number']=$s['auto_number'];
     if(!$out['enabled'])return $out;
     $r=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_dialer_requests_v1 WHERE owner_user_id=? AND device_id=? AND revision=? AND generation=? AND created_epoch>? ORDER BY created_epoch DESC,request_id DESC LIMIT 1',[...vp3_phone_dialer_scope_v1($d),(int)$s['revision'],(int)$d['generation'],$now-86400])->fetch(PDO::FETCH_ASSOC);
