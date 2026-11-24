@@ -8,6 +8,8 @@
   const streetDialog = byId('phone-street-consent');
   const revokeDialog = byId('phone-revoke-confirm');
   const pendingHost = byId('phone-pending');
+  const handoffHost=byId('phone-handoff-pending');
+  let handoffSignature='';
   const list = byId('phone-devices');
   const detail = byId('phone-detail');
   const summary = byId('phone-detail-summary');
@@ -480,10 +482,26 @@
       accuracy_mode:accuracySelect.value
     });
   });
+  function renderHandoffRequests(moves){
+    const sig=JSON.stringify(moves.map(d=>[d.id,d.generation,d.handoff,d.name]));
+    if(handoffSignature===sig)return;
+    handoffSignature=sig;handoffHost.replaceChildren();
+    for(const d of moves){
+      const h=d.handoff,card=element('section',undefined,'phone-pending-card');
+      card.dataset.handoffId=h.transfer_id;card.dataset.deviceId=d.id;
+      card.append(element('h3','Move '+d.name),element('p',h.state==='approved'?'Approved. Waiting for the new app to finish.':'Compare this code with the intended phone holder before approving.'));
+      card.append(element('p','Verification code: '+h.comparison_code));
+      const row=element('div',undefined,'phone-command-row');
+      if(h.state==='claimed')row.append(actionButton('handoff_approve','Approve move','phone-primary'));
+      row.append(actionButton('handoff_owner_cancel','Cancel move'));card.append(row);handoffHost.append(card);
+    }
+  }
   function renderPending(pending) {
     const review = byId('phone-review');
-    review.hidden = !pending.length;
-    review.textContent = 'Review requests ('+pending.length+')';
+    const moves=devices.filter(d=>d.status==='approved'&&['claimed','approved'].includes(d.handoff?.state)&&d.handoff.expires_epoch>seconds());
+    review.hidden = !(pending.length+moves.length);
+    review.textContent = 'Review requests ('+(pending.length+moves.length)+')';
+    renderHandoffRequests(moves);
     for (const card of Array.from(pendingHost.children)) {
       if (!pending.some(d => d.id === card.dataset.deviceId)) card.remove();
     }
@@ -769,6 +787,17 @@
       void refresh();
     }
   }
+  handoffHost.addEventListener('click',async event=>{
+    const button=event.target.closest('button[data-action]'),card=button?.closest('[data-handoff-id]');
+    if(!event.isTrusted||!card||writing||document.hidden||!available)return;
+    const d=devices.find(d=>d.id===card.dataset.deviceId&&d.handoff?.transfer_id===card.dataset.handoffId);
+    if(!d||d.handoff.expires_epoch<=seconds())return;
+    const action=button.dataset.action;
+    if(!['handoff_approve','handoff_owner_cancel'].includes(action))return;
+    if(action==='handoff_approve'&&!window.confirm('Does the intended holder show verification code '+d.handoff.comparison_code+'? The old session will disconnect after they finish. Holder sharing preferences will reset.'))return;
+    try{const result=await writeArchive(action,{device_id:d.id,generation:d.generation,transfer_id:d.handoff.transfer_id,comparison_code:d.handoff.comparison_code,confirmed:true});if(result)byId('phone-pair-status').textContent=action==='handoff_approve'?'Move approved. The holder must finish on the new app.':'Move canceled.';}
+    catch(_error){byId('phone-pair-status').textContent='Move was not confirmed. Refresh the request.';}
+  });
   pendingHost.addEventListener('click', event => {
     const button = event.target.closest('button[data-action]');
     if (!button) return;

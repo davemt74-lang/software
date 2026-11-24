@@ -34,7 +34,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-information-ui-v1.js?v=2" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
-  <script src="phone-location-v1.js?v=14" defer></script>
+  <script src="phone-handoff-v1.js?v=1" defer></script>
+  <script src="phone-location-v1.js?v=15" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -156,6 +157,31 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         </dl>
         <p>A request or notification is not permission to start a call, record, or turn on your camera or location. You can decline requests and disconnect.</p>
       </section>
+      <details id="phone-handoff-panel" class="phone-guide-section" hidden>
+        <summary>Move an existing connection</summary>
+        <p id="phone-handoff-help"></p>
+        <div id="phone-handoff-source" hidden>
+          <button id="phone-handoff-offer" type="button" class="secondary">Create move code</button>
+          <div id="phone-handoff-ticket" hidden>
+            <label for="phone-handoff-code">One-time move code</label>
+            <input id="phone-handoff-code" type="text" readonly autocomplete="off" spellcheck="false">
+            <button id="phone-handoff-copy" type="button" class="secondary">Copy code</button>
+          </div>
+          <button id="phone-handoff-cancel" type="button" class="text-button" hidden>Cancel move</button>
+        </div>
+        <form id="phone-handoff-target" autocomplete="off" hidden>
+          <label for="phone-handoff-entry">Move code from your old app</label>
+          <input id="phone-handoff-entry" type="text" maxlength="43" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+          <button id="phone-handoff-claim" type="submit" class="secondary">Request move</button>
+        </form>
+        <div id="phone-handoff-review" hidden>
+          <p>Tell the owner this verification code: <strong id="phone-handoff-compare"></strong></p>
+          <button id="phone-handoff-check" type="button" class="secondary">Check approval</button>
+          <button id="phone-handoff-finish" type="button" hidden>Finish move</button>
+          <button id="phone-handoff-abandon" type="button" class="text-button">Clear this request</button>
+        </div>
+        <p id="phone-handoff-status" role="status"></p>
+      </details>
       <button id="phone-info-back" type="button" class="secondary">Back to connection</button>
     </div>
   </section>
