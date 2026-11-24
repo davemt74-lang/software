@@ -70,7 +70,7 @@ function vp3_phone_communication_project_v1(PDO $pdo,array $d,int $now,bool $hol
 function vp3_phone_communication_delete_v1(PDO $pdo,array $d):void
 {
     vp3_phone_dialer_clear_v1($pdo,$d);
-    require_once __DIR__.'/phone-managed-callback-v1.php';
+    require_once __DIR__.'/phone-managed-callback-schema-v1.php';
     vp3_managed_callback_revoke_v1($pdo,(int)$d['owner_user_id'],$d['id'],time());
     if(vp3_phone_communication_ready_v1($pdo))vp3_phone_sql_v1($pdo,
         'DELETE FROM vp3_phone_communication_profiles_v1 WHERE owner_user_id=? AND device_id=?',
@@ -147,7 +147,7 @@ function vp3_phone_communication_save_v1(PDO $pdo,array $d,array $input,int $now
         vp3_phone_communication_require_v1($q->rowCount()===1,409);
     }
     vp3_phone_information_fence_v1($pdo,$before,$r,$now);
-    require_once __DIR__.'/phone-managed-callback-v1.php';
+    require_once __DIR__.'/phone-managed-callback-schema-v1.php';
     vp3_managed_callback_revoke_v1($pdo,(int)$d['owner_user_id'],$d['id'],$now);
     return vp3_phone_communication_view_v1($r,$holder);
 }
