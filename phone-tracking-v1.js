@@ -23,6 +23,7 @@
   let selectedId = '';
   let followId = '';
   let linkedDevice = new URLSearchParams(location.search).get('device_id');
+  const initialInformation=new URLSearchParams(location.search).get('profile')==='information';
   let resumeSelection = null;
   let choiceToRevoke = null;
   let requestNotice = null;
@@ -272,11 +273,14 @@
   }
   // The map remains the main workspace. These tabs are scoped to its selected phone.
   let profileTab='communication',profileDevice='',profileSignature='';
+  const exchange=window.VP3PhoneInformationV1?.({request,onChanged:()=>{void refresh();}});
   function renderCommunication(d){
     const host=byId('phone-communication-profile');if(!host)return;
     host.hidden=!d;
-    if(!d){host.replaceChildren();profileDevice='';profileSignature='';return;}
-    if(profileDevice!==d.id){profileDevice=d.id;profileTab='communication';profileSignature='';}
+    if(!d){exchange?.bind(null,false,false);host.replaceChildren();profileDevice='';profileSignature='';return;}
+    if(profileDevice!==d.id){profileDevice=d.id;profileTab=initialInformation&&linkedDevice===d.id?'information':'communication';profileSignature='';}
+    exchange?.bind(d,available&&!document.hidden,profileTab==='information');
+    if(profileTab==='information'&&host.contains(exchange?.root)&&host.dataset.exchangeDevice===d.id)return;
     const p=d.communication;
     const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[d.agent_chat,typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function'];
     const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra]);
@@ -288,7 +292,7 @@
     profileSignature=sig;host.dataset.profileRevision=String(p?.revision??'');host.replaceChildren();
     host.append(element('h3','Connected user'));
     const tabs=element('div',undefined,'phone-profile-tabs');tabs.setAttribute('aria-label','Connected user sections');
-    for(const [key,title] of [['communication','Communication'],['permissions','Permissions'],['activity','Activity']]){
+    for(const [key,title] of [['communication','Communication'],['permissions','Permissions'],['information','Information'],['activity','Activity']]){
       const b=element('button',title);b.type='button';b.setAttribute('aria-pressed',String(key===profileTab));
       b.addEventListener('click',()=>{profileTab=key;profileSignature='';renderCommunication(selected());});tabs.append(b);
     }
@@ -306,7 +310,7 @@
       const ready=p.call_permission_saved===true&&Number.isSafeInteger(d.agent_chat?.conversation_id)&&d.agent_chat.conversation_id>0&&typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function';
       const actions=element('div',undefined,'phone-command-row'),call=actionButton('open_connected_call','Call phone','phone-primary');call.disabled=!ready;actions.append(call);host.append(actions);
       host.append(element('p',ready?'Place a user-requested call with your assigned line. The Phone drawer will ask for confirmation.':!p.call_permission_saved?'Both calling permissions are required.':!d.agent_chat?.conversation_id?'Open the paired phone chat to establish its linked conversation.':'The assigned browser calling service is unavailable.','phone-detail-meta'));
-      host.append(element('p','Autonomous Agent calls and information-request execution remain disabled.','phone-detail-meta'));
+      host.append(element('p','Autonomous Agent calls remain disabled. Use Information to share updates or send requests.','phone-detail-meta'));
     }else if(profileTab==='permissions'){
       if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
       const form=element('form',undefined,'phone-profile-form');
@@ -322,6 +326,9 @@
       field('Future relationship memory',p.holder_memory?'Requested':'Off');field('Location permission',d.allow_location?'Allowed':'Off');
       field('Saved places',d.holder_can_save_places?'Owner allows':'Off');field('Camera',camera.liveCamera(d)?'Currently shared':'Not currently shared');host.append(facts);
       host.append(element('p','The phone holder chooses their own number and preferences. These new settings do not grant access to location, camera or private files.','phone-detail-meta'));
+    }else if(profileTab==='information'){
+      host.dataset.exchangeDevice=d.id;
+      if(exchange)host.append(exchange.root);else host.append(element('p','Information exchange is unavailable.','phone-detail-meta'));
     }else{
       field('Connection',connection(d));field('Last seen',timestamp(d.last_seen_at));field('Location',stateLabels[effectiveState(d)]);
       field('Location history',d.history_state==='active'?'Enabled · '+d.history_retention_days+' days':d.history_state==='requested'?'Awaiting holder':'Off');
@@ -486,7 +493,7 @@
       }
     }
     // A link from private Chat refers to one specific phone, even after access changes.
-    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && d.allow_location)?.id || '';
+    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && (initialInformation||d.allow_location))?.id || '';
     else if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
     if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
     camera.update(approved);
@@ -518,6 +525,7 @@
     }
   }
   function clearView() {
+    exchange?.clear();
     revision++;
     camera.close();
     devices = [];
@@ -536,7 +544,7 @@
   async function request(action, fields) {
     const url = new URL(root.dataset.endpoint, location.href);
     const opts = {credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'X-VP3-Working-Attention':root.dataset.binding, Accept:'application/json'}};
-    if (['state','history','places'].includes(action)) {
+    if (['state','history','places','information_list'].includes(action)) {
       url.searchParams.set('action',action);
       for (const [key,value] of Object.entries(fields || {})) url.searchParams.set(key,value);
     }

@@ -175,3 +175,15 @@ body.phone-tracking-page.vp3-orb-has-bar {
 
 .phone-connected-calls{margin:10px 0 0;padding:0;list-style:none;font-size:.86rem;color:var(--muted)}
 .phone-connected-calls li{padding:8px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+
+.phone-information-panel{display:grid;gap:10px;min-width:0;margin-block:12px}
+.phone-information-panel label{display:grid;gap:6px;font-weight:600;font-size:.9rem}
+.phone-information-panel :is(textarea,select){font:inherit;color:inherit;background:#fff;border:1px solid #bacdc2;border-radius:8px;padding:9px;min-width:0;width:100%;box-sizing:border-box}
+.phone-information-panel textarea{resize:vertical;min-height:64px}
+.phone-information-compose,.phone-information-items,.phone-information-item form{display:grid;gap:8px}
+.phone-information-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.phone-information-controls button{flex:1 1 auto}
+.phone-information-item{display:grid;gap:6px;padding:12px;border:1px solid #cddbd6;border-radius:10px;min-width:0;overflow-wrap:anywhere}
+.phone-information-item small,.phone-information-empty,.phone-information-status{font-size:.85rem;color:#4e635b}
+.phone-information-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.phone-information-panel [hidden]{display:none!important}
