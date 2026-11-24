@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-operator-owner-verification-v1.php';
 
 /**
  * Owner-private callback number and requested Agent outreach preferences.
@@ -12,7 +13,7 @@ final class VP3OperatorOwnerPhoneV1
     {
         try{
             $pdo->query('SELECT owner_user_id,phone_e164,phone_revision,revision,updates_requested,hello_requested,update_scope,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,max_duration_seconds,consent_epoch,updated_epoch FROM phone_operator_owner_preferences_v1 WHERE 1=0');
-            return true;
+            return VP3OwnerPhoneVerificationV1::ready($pdo);
         }catch(PDOException){return false;}
     }
 
@@ -41,6 +42,7 @@ final class VP3OperatorOwnerPhoneV1
             updated_epoch BIGINT NOT NULL,
             FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE CASCADE
         )".$suffix);
+        VP3OwnerPhoneVerificationV1::install($pdo);
         if(!self::ready($pdo))throw new RuntimeException('Owner phone preferences could not be installed.');
     }
 
@@ -63,6 +65,14 @@ final class VP3OperatorOwnerPhoneV1
         self::check($row!==false&&(int)$row['is_active']===1&&is_string($fingerprint)&&$fingerprint!==''
             &&hash_equals(hash('sha256',$owner.':'.$row['password_hash']),$fingerprint));
         return $owner;
+    }
+
+    /** Internal verification-only identity, never a public contact lookup. */
+    public static function verificationBinding(PDO $pdo,array $user,bool $lock=false):array
+    {
+        $owner=self::owner($pdo,$user,$lock);
+        $r=self::view(self::row($pdo,$owner,$lock));
+        return ['owner'=>$owner,'phone_e164'=>$r['phone_e164'],'phone_revision'=>$r['phone_revision']];
     }
 
     public static function defaults():array

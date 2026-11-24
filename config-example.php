@@ -69,6 +69,17 @@ return [
         'master_key_hex' => '',
     ],
 
+    // Dedicated Twilio Verify service for explicit Account SMS verification.
+    // No calls or SMS are enabled by default. Keep all secrets in private config.php.
+    'operator_owner_phone_verify' => [
+        'enabled' => false,
+        'account_sid' => '',
+        'service_sid' => '',
+        'api_key_sid' => '',
+        'api_key_secret' => '',
+        'rate_key_hex' => '', // stable independent 32-byte random key, hex encoded
+    ],
+
     // Optional OpenAI-compatible chat endpoint. Leave blank to use
     // VP3's built-in database/knowledge retrieval responses.
     'ai' => [

@@ -35,6 +35,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $action = (string)($_POST['action'] ?? 'profile');
 
+        if (in_array($action, ['operator_owner_verify_start','operator_owner_verify_check'], true)) {
+            try {
+                if (!in_array($_SERVER['HTTPS']??null,['on','1'],true)) throw new DomainException('Phone verification requires HTTPS.');
+                $provider=VP3OwnerPhoneVerifyProviderV1::configured();
+                if($provider===null)throw new DomainException('Phone verification is not yet configured.');
+                $verifier=new VP3OwnerPhoneVerificationV1($pdo,$provider);
+                $result=$action==='operator_owner_verify_start'
+                    ?$verifier->start($user,$_POST['phone_revision']??null)
+                    :$verifier->check($user,$_POST['phone_revision']??null,$_POST['verification_code']??null);
+                $message=match($result['state']){
+                    'verified'=>'Your phone number is verified. Autonomous calling is still disabled.',
+                    'pending'=>$action==='operator_owner_verify_start'?'Verification SMS requested. Enter the code.':'Code did not match. Try again.',
+                    'exhausted'=>'Code attempt limit reached. Wait before requesting another code.',
+                    default=>'Verification could not be confirmed. Wait before requesting another code.',
+                };
+                flash(in_array($result['state'],['verified','pending'],true)?'account_notice':'account_error',$message);
+            } catch (DomainException $error) {
+                flash('account_error',$error->getMessage());
+            } catch (Throwable) {
+                flash('account_error','Phone verification is temporarily unavailable.');
+            }
+            redirect(url('/account.php').'#agent-phone');
+        }
+
         if (in_array($action, ['operator_owner_phone_number','operator_owner_phone_preferences'], true)) {
             try {
                 $result=$action==='operator_owner_phone_number'
@@ -143,6 +167,10 @@ $notice = flash('account_notice');
 $error = flash('account_error');
 $ownerPhone=null;
 try {$ownerPhone=VP3OperatorOwnerPhoneV1::read($pdo,$user);}catch(Throwable){}
+$ownerPhoneVerification=null;
+if($ownerPhone!==null&&$ownerPhone['phone_e164']!==''&&in_array($_SERVER['HTTPS']??null,['on','1'],true)){
+    try{$verifyProvider=VP3OwnerPhoneVerifyProviderV1::configured();if($verifyProvider!==null)$ownerPhoneVerification=(new VP3OwnerPhoneVerificationV1($pdo,$verifyProvider))->status($user,(string)$ownerPhone['phone_revision']);}catch(Throwable){}
+}
 
 
 
@@ -445,9 +473,37 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
                       <small>Private. Include your country code. Clear this field and save to remove the number.</small>
                     </div>
                   </div>
-                  <p><?= $ownerPhone['phone_e164']!==''?'Verification required — no calls authorized.':'No personal number saved.' ?></p>
+                  <p><?= $ownerPhone['phone_e164']===''?'No personal number saved.':(($ownerPhoneVerification['verified']??false)?'Phone number verified — Agent calls remain disabled.':'Verification required — no calls authorized.') ?></p>
                   <button class="account-submit" type="submit">Save phone number</button>
                 </form>
+                <?php if($ownerPhone['phone_e164']!==''): ?>
+                  <?php if($ownerPhoneVerification===null): ?>
+                    <p>SMS verification is not available yet.</p>
+                  <?php elseif($ownerPhoneVerification['verified']): ?>
+                    <p>Number possession confirmed. Changing your number requires verification again.</p>
+                  <?php elseif($ownerPhoneVerification['can_check']): ?>
+                    <form method="post" class="account-form">
+                      <?= csrf_field() ?>
+                      <input type="hidden" name="action" value="operator_owner_verify_check">
+                      <input type="hidden" name="phone_revision" value="<?= (int)$ownerPhone['phone_revision'] ?>">
+                      <div class="account-field">
+                        <label for="owner_phone_verification_code">SMS verification code</label>
+                        <input id="owner_phone_verification_code" name="verification_code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{4,10}" maxlength="10" required>
+                      </div>
+                      <button class="account-submit" type="submit">Verify number</button>
+                    </form>
+                  <?php elseif($ownerPhoneVerification['can_send']): ?>
+                    <form method="post" class="account-form">
+                      <?= csrf_field() ?>
+                      <input type="hidden" name="action" value="operator_owner_verify_start">
+                      <input type="hidden" name="phone_revision" value="<?= (int)$ownerPhone['phone_revision'] ?>">
+                      <p>Send a verification SMS to the saved number. Message and provider charges may apply. Codes expire after 10 minutes; resend limits apply.</p>
+                      <button class="account-submit" type="submit">Send verification SMS</button>
+                    </form>
+                  <?php else: ?>
+                    <p>Verification is unresolved or the attempt limit was reached. Wait for the previous code to expire before requesting another.</p>
+                  <?php endif; ?>
+                <?php endif; ?>
                 <form method="post" class="account-form">
                   <?= csrf_field() ?>
                   <input type="hidden" name="action" value="operator_owner_phone_preferences">
@@ -505,7 +561,7 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
                     </div>
                     <button class="account-submit" type="submit">Save calling preferences</button>
                   </fieldset>
-                  <small>These are requested preferences only. Number ownership verification and the autonomous calling service are required before use. Calls outside your window, automatic redial, and recording are not authorized by these settings. Changing or removing your number clears both call preferences.</small>
+                  <small>These are requested preferences only. A verified number and the autonomous calling service are required before use. Calls outside your window, automatic redial, and recording are not authorized by these settings. Changing or removing your number clears both call preferences.</small>
                 </form>
               <?php endif; ?>
             </section>

@@ -697,10 +697,15 @@ jobs:
           php -l setup.php
           php -l upgrade.php
           php tests/agent-operator-owner-phone-v1.php
+          php -l includes/agent-operator-owner-verification-v1.php
+          php -l includes/agent-operator-owner-verify-provider-v1.php
+          php tests/agent-operator-owner-verification-v1.php
           node tests/agent-operator-owner-phone-contract-v1.mjs
       - name: Account private number and preferences on native MySQL
         env:
           VP3_OWNER_PHONE_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=operator_owner_ci
           VP3_OWNER_PHONE_TEST_USER: operator_owner_test
           VP3_OWNER_PHONE_TEST_PASSWORD: fixture-only-owner
-        run: php tests/agent-operator-owner-phone-v1.php
+        run: |
+          php tests/agent-operator-owner-phone-v1.php
+          php tests/agent-operator-owner-verification-v1.php
