@@ -5,6 +5,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-http-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-v1.php';
+require_once dirname(__DIR__).'/includes/phone-managed-ui-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-chat-v1.php';
 require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
 
@@ -39,7 +40,7 @@ try {
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_create_file','information_download','dialer_send','dialer_cancel'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_create_file','information_download','dialer_send','dialer_cancel','managed_prepare','managed_cancel'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -53,6 +54,7 @@ try {
     $result = match ($action) {
         'information_list','information_create','information_cancel','information_create_file','information_download' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
         'dialer_send','dialer_cancel' => vp3_phone_dialer_owner_v1($pdo,$owner,$action,$input),
+        'managed_prepare','managed_cancel' => vp3_managed_ui_owner_action_v1($pdo,$user,$action,$input,time()),
         'save_communication_grants' => vp3_phone_communication_owner_v1($pdo,$owner,$input),
         'history' => vp3_phone_history_read_v1($pdo,$owner,$input['device_id'],$input['before']),
         'places','save_place','delete_place' => vp3_phone_places_owner_v1($pdo,$owner,$action,$input),
