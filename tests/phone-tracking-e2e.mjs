@@ -396,6 +396,9 @@ async function browserJourney(baseURL, owner, other) {
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
   await verifyPhoneTabs(phone);
   await screenshot(phone, 'phone-before-consent');
+  // The owner request advances the GPS generation; wait for the actual phone UI,
+  // not just the independent HTTP test client, to observe that request.
+  await phone.getByText('The owner requested your location. Tap Start sharing to allow it.',{exact:true}).waitFor();
   await startWithFreshSensorReading(phone, handset, gps);
   device = await requireLiveFix('No real browser geolocation fix reached the owner', gps);
   assert.deepEqual([device.latitude, device.longitude, device.accuracy], [gps.latitude, gps.longitude, gps.accuracy]);
