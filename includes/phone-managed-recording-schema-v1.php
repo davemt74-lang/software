@@ -30,5 +30,5 @@ function vp3_managed_recording_revoke_v1(PDO $pdo,string $request,int $now):void
 function vp3_managed_recording_revoke_device_v1(PDO $pdo,int $owner,string $device,int $now):void
 {
     if(!vp3_managed_recording_ready_v1($pdo))return;
-    $pdo->prepare('UPDATE phone_managed_recording_consent_v1 SET revoked_epoch=?,updated_epoch=? WHERE owner_user_id=? AND revoked_epoch=0 AND request_id IN (SELECT public_id FROM phone_managed_callback_requests_v1 WHERE owner_user_id=? AND device_id=?)')->execute([$now,$now,$owner,$owner,$device]);
+    $pdo->prepare('UPDATE phone_managed_recording_consent_v1 SET revoked_epoch=?,updated_epoch=? WHERE owner_user_id=? AND revoked_epoch=0 AND request_id IN (SELECT public_id FROM phone_managed_callback_requests_v1 WHERE owner_user_id=? AND device_id=? AND state IN ('pending','approved','dispatch_claimed','revoked'))')->execute([$now,$now,$owner,$owner,$device]);
 }
