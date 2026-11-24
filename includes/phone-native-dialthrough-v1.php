@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-managed-transport-v1.php';
 require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
 require_once __DIR__.'/phone-managed-recording-v1.php';
@@ -40,7 +42,7 @@ function vp3_native_dialthrough_view_v1(array $row,array $native,int $now,bool $
 /** Authenticated holder only. Code returned once to this response, not polling. */
 function vp3_native_dialthrough_issue_v1(PDO $pdo,array $device,array $input,int $now):array
 {
-    vp3_managed_callback_need_v1($pdo->inTransaction()&&vp3_native_dialthrough_ready_v1($pdo)&&vp3_native_dialthrough_enabled_v1(),503);
+    vp3_managed_callback_need_v1(vp3_phone_transaction_active_v1($pdo)&&vp3_native_dialthrough_ready_v1($pdo)&&vp3_native_dialthrough_enabled_v1(),503);
     vp3_managed_callback_need_v1(!array_diff(array_keys($input),['device_id','generation','managed_request_id','confirmed'])
         &&($input['confirmed']??null)===true,422);
     vp3_managed_callback_need_v1(($device['device_status']??null)==='approved'&&(int)$device['expires_at']>$now

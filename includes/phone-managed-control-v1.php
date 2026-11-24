@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** PS5E.4: exact-SID provider reconciliation and one-shot parent hangup. */
 require_once __DIR__.'/phone-managed-transport-v1.php';
 require_once __DIR__.'/phone-managed-control-schema-v1.php';
@@ -151,7 +153,7 @@ function vp3_managed_control_apply_v1(PDO $pdo,array $scope,array $snapshot,?arr
 /** Owner initiated, bounded provider read or end. Tests inject the transport. */
 function vp3_managed_control_action_v1(PDO $pdo,array $scope,array $input,?callable $carrier=null,?int $clock=null):array
 {
-    vp3_managed_callback_need_v1(!$pdo->inTransaction());
+    vp3_managed_callback_need_v1(!vp3_phone_transaction_active_v1($pdo));
     $action=(string)($input['action']??'');$public=vp3_managed_callback_id_v1($input['call_id']??null);
     $now=$clock??time();
     $snapshot=vp3_managed_control_claim_v1($pdo,$scope,$public,$action,($input['confirmed']??false)===true,$now);

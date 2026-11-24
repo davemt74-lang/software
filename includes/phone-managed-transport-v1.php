@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** PS5E.2: private, one-use callback transport. No recording or autonomous execution. */
 require_once __DIR__.'/phone-managed-callback-v1.php';
 require_once __DIR__.'/phone-managed-transport-schema-v1.php';
@@ -123,7 +125,7 @@ function vp3_managed_transport_reserve_v1(PDO $pdo,array $user,string $id,bool $
 /** Explicit private dispatch only. No worker or web endpoint invokes this function in PS5E.2. */
 function vp3_managed_transport_dispatch_v1(PDO $pdo,array $user,string $id,bool $confirmed,?callable $carrier=null,?int $clock=null,bool $pilotRequired=false):array
 {
-    vp3_managed_callback_need_v1(!$pdo->inTransaction(),409);
+    vp3_managed_callback_need_v1(!vp3_phone_transaction_active_v1($pdo),409);
     $now=$clock??time();
     $pilotRequired=$pilotRequired||$carrier===null;
     $reserved=vp3_managed_transport_reserve_v1($pdo,$user,$id,$confirmed,$now,$pilotRequired);

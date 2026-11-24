@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-push-vapid-cache-v1.php';
 require_once __DIR__.'/phone-push-transport-v1.php';
 
@@ -10,7 +12,7 @@ require_once __DIR__.'/phone-push-transport-v1.php';
  */
 function vp3_phone_push_worker_fence_v1(PDO $pdo,array $subscription,array $vapid,array $payload,array $options,int $now):?array
 {
-    if($pdo->inTransaction())throw new LogicException('Phone push dispatch requires released source locks.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Phone push dispatch requires released source locks.');
     $hint=vp3_phone_push_delivery_event_v1($pdo,$payload['event_ref']);
     if(!$hint)return null;
     return vp3_phone_transaction_v1($pdo,static function()use($pdo,$subscription,$vapid,$payload,$options,$now,$hint):array{
@@ -47,7 +49,7 @@ function vp3_phone_push_worker_fence_v1(PDO $pdo,array $subscription,array $vapi
 function vp3_phone_push_worker_send_v1(PDO $pdo,#[\SensitiveParameter] array $subscription,#[\SensitiveParameter] array $vapid,
     #[\SensitiveParameter] string $payload,array $options=[],?callable $exchange=null):array
 {
-    if($pdo->inTransaction())throw new LogicException('Phone push transport cannot hold source locks.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Phone push transport cannot hold source locks.');
     $ready=vp3_phone_push_transport_ready_v1();
     if(!$ready['available'])return vp3_phone_push_transport_result_v1('failed',$ready['code']);
     try{
@@ -74,7 +76,7 @@ function vp3_phone_push_worker_send_v1(PDO $pdo,#[\SensitiveParameter] array $su
     }
     unset($vapid['config_revision']);
     $vapid['authorization']=$header['authorization'];
-    if($pdo->inTransaction())throw new LogicException('Phone push transport cannot hold source locks.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Phone push transport cannot hold source locks.');
     return $exchange===null?vp3_phone_push_transport_send_v1($subscription,$vapid,$payload,$fenced)
         :vp3_phone_push_transport_attempt_v1($subscription,$vapid,$payload,$fenced,$exchange);
 }

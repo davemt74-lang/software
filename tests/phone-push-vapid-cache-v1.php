@@ -17,7 +17,7 @@ function ppvc_vapid(PDO $pdo,string $key):array
 function ppvc_factory(PDO $pdo):callable
 {
     return static function(array $vapid,string $origin,int $now)use($pdo):array{
-        if(!$pdo->inTransaction())throw new LogicException('Minting must be serialized.');
+        if(!vp3_phone_transaction_active_v1($pdo))throw new LogicException('Minting must be serialized.');
         vp3_phone_sql_v1($pdo,'UPDATE push_vapid_fixture SET calls=calls+1 WHERE id=1',[]);
         $n=(int)$pdo->query('SELECT calls FROM push_vapid_fixture WHERE id=1')->fetchColumn();
         $payload=vp3_phone_push_b64_v1(json_encode(['aud'=>$origin,'sub'=>$vapid['subject'],'exp'=>$now+43200,'fixture'=>$n],JSON_THROW_ON_ERROR));
@@ -88,7 +88,7 @@ try{
     $get=static fn(array $v,string $o,int $t):array=>vp3_phone_push_vapid_cache_get_v1($pdo,$v,$o,$t,$factory,$key);
     $calls=static fn():int=>(int)$pdo->query('SELECT calls FROM push_vapid_fixture WHERE id=1')->fetchColumn();
     $h1=$get($vapid,$origin,$now);
-    ppd_check(!$pdo->inTransaction()&&$h1['issued_epoch']===$now&&$calls()===1,'local signing is serialized but cache returns after releasing the database transaction');
+    ppd_check(!vp3_phone_transaction_active_v1($pdo)&&$h1['issued_epoch']===$now&&$calls()===1,'local signing is serialized but cache returns after releasing the database transaction');
     $h2=$get($vapid,$origin,$now+30);
     ppd_check($h1===$h2&&$calls()===1,'repeated calls reuse byte-identical authorization rather than minting each notification');
     $stored=$pdo->query('SELECT * FROM vp3_phone_push_vapid_cache_v1')->fetch(PDO::FETCH_ASSOC);

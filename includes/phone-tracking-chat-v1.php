@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-tracking-v1.php';
 require_once __DIR__.'/phone-camera-chat-v1.php';
 require_once __DIR__.'/paired-phone-agent-v1.php';
@@ -12,7 +14,7 @@ require_once __DIR__.'/phone-tracking-local-approval-v1.php';
 /** Only content-free markers go into ordinary model history or shared Chat indexes. */
 function vp3_phone_chat_schema_v1(PDO $pdo): void
 {
-    if ($pdo->inTransaction()) throw new LogicException('Install Phone Tracking outside a transaction.');
+    if (vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Install Phone Tracking outside a transaction.');
     $options = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
         ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : '';
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_chat_turns_v1 (

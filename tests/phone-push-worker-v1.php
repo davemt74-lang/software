@@ -35,7 +35,7 @@ $prepare=static function(array $phone)use($pdo,$now):array{
 };
 $wires=[];
 $exchange=static function(array $wire)use($pdo,&$wires):array{
-    ppd_check(!$pdo->inTransaction(),'actual encrypted provider request starts outside database transactions');
+    ppd_check(!vp3_phone_transaction_active_v1($pdo),'actual encrypted provider request starts outside database transactions');
     $wires[]=$wire;return ppd_accepted();
 };
 $dispatch=static function(array $send)use($pdo,$exchange):array{

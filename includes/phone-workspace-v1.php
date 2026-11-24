@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** Owner phone workspace. A subscription alone never grants an assigned number. */
 require_once __DIR__.'/phone-cloud-v100.php';
 require_once __DIR__.'/phone-sms-v110.php';
@@ -24,7 +26,7 @@ function vp3_phone_workspace_error_v1(string $code='phone_unavailable',int $stat
 function vp3_phone_workspace_lock_v1(PDO $pdo): string{return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':'';}
 function vp3_phone_workspace_atomic_v1(PDO $pdo,callable $fn): mixed
 {
-    if($pdo->inTransaction())return $fn();
+    if(vp3_phone_transaction_active_v1($pdo))return $fn();
     $pdo->beginTransaction();try{$out=$fn();$pdo->commit();return $out;}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
 }
 function vp3_phone_workspace_id_v1(mixed $value,bool $zero=false): int
@@ -50,7 +52,7 @@ function vp3_phone_workspace_schema_ready_v1(PDO $pdo): bool
 }
 function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
 {
-    if($pdo->inTransaction())throw new RuntimeException('Phone schema must initialize outside a transaction.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new RuntimeException('Phone schema must initialize outside a transaction.');
     require_once __DIR__.'/phone-managed-callback-schema-v1.php';
     vp3_managed_callback_install_v1($pdo);
     require_once __DIR__.'/phone-managed-transport-schema-v1.php';

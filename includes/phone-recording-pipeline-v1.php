@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-voicemail-v1.php';
 
 /** Durable Cloud-only phone recordings. Webhooks enqueue; a server worker performs paid work. */
@@ -20,7 +22,7 @@ function vp3_phone_recording_schema_ready_v1(?PDO $pdo=null): bool
 }
 function vp3_phone_recording_ensure_schema_v1(PDO $pdo): void
 {
-    if($pdo->inTransaction())throw new RuntimeException('Install phone recording storage before a transaction.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new RuntimeException('Install phone recording storage before a transaction.');
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $id=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY';
     $tail=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
@@ -150,7 +152,7 @@ function vp3_phone_recording_authorize_v1(PDO $pdo,array $job,bool $paid=false):
 /** Local commit fences take short row locks; no provider request runs under these locks. */
 function vp3_phone_recording_lock_authority_v1(PDO $pdo,array $job,bool $paid): array
 {
-    if(!$pdo->inTransaction())throw new RuntimeException('Recording commit authority requires a transaction.');
+    if(!vp3_phone_transaction_active_v1($pdo))throw new RuntimeException('Recording commit authority requires a transaction.');
     if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
         foreach([['users','id',(int)$job['owner_user_id']],['phone_cloud_numbers_v100','id',(int)$job['phone_number_id']],['user_agents','id',(int)$job['agent_id']]] as [$table,$column,$id]){$q=$pdo->prepare('SELECT '.$column.' FROM '.$table.' WHERE '.$column.'=? FOR UPDATE');$q->execute([$id]);$q->fetchColumn();}
         if($paid){$q=$pdo->prepare('SELECT revision FROM phone_recording_policies_v1 WHERE owner_user_id=? AND agent_id=? FOR UPDATE');$q->execute([(int)$job['owner_user_id'],(int)$job['agent_id']]);$q->fetchColumn();}
@@ -496,7 +498,7 @@ function vp3_phone_recording_worker_once_v1(PDO $pdo,array $adapters=[]): array
 function vp3_phone_recording_reserve_speech_v1(PDO $pdo,array $job): void
 {
     $seconds=(int)$job['duration_seconds'];if($seconds<1||$seconds>3600)throw new RuntimeException('Phone speech processing requires a recording from one second to one hour.',422);
-    if($pdo->inTransaction())throw new RuntimeException('Speech reservation requires its own short transaction.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new RuntimeException('Speech reservation requires its own short transaction.');
     $pdo->beginTransaction();try{
         $q=$pdo->prepare('SELECT id FROM users WHERE id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$q->execute([(int)$job['owner_user_id']]);if(!$q->fetchColumn())throw new RuntimeException('Phone recording access changed.',403);
         $q=$pdo->prepare('SELECT reserved_epoch FROM phone_recording_speech_budget_v1 WHERE owner_user_id=? AND job_id=?');$q->execute([(int)$job['owner_user_id'],(int)$job['id']]);

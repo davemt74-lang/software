@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-push-delivery-v1.php';
 
 /** A local, pre-network failure. The worker can safely defer without claiming
@@ -14,7 +16,7 @@ final class PhonePushVapidCacheUnavailableV1 extends RuntimeException
 
 function vp3_phone_push_vapid_cache_install_v1(PDO $pdo,string $options=''):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install notification authorization cache outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install notification authorization cache outside transactions.');
     if($options===''&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql')$options=' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     // No FK: an additive delivery migration can be absent during a rolling
     // upgrade. Every cache read still validates both live configuration rows.
@@ -63,7 +65,7 @@ function vp3_phone_push_vapid_cache_header_v1(mixed $header,string $publicKey):b
  */
 function vp3_phone_push_vapid_cache_get_v1(PDO $pdo,#[\SensitiveParameter] array $vapid,string $origin,int $now,callable $factory,#[\SensitiveParameter] ?string $testKey=null):array
 {
-    if($pdo->inTransaction())throw new LogicException('Resolve notification authorization outside a source transaction.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Resolve notification authorization outside a source transaction.');
     if(!vp3_phone_push_vapid_cache_ready_v1($pdo)||!vp3_phone_push_delivery_ready_v1($pdo))
         throw new PhonePushVapidCacheUnavailableV1('vapid_cache_upgrade_required');
     if(array_diff(array_keys($vapid),['public_key','private_key','subject','config_revision'])

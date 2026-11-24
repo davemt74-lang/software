@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** Small private attachments in the existing information ledger. No public file URL. */
 const VP3_PHONE_FILE_MAX_V1=2097152;
 const VP3_PHONE_FILE_TTL_V1=604800;
@@ -8,7 +10,7 @@ const VP3_PHONE_FILE_TYPES_V1=['image/jpeg'=>'jpg','image/png'=>'png','applicati
 
 function vp3_phone_file_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install phone files outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install phone files outside transactions.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_information_files_v1(
         owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,exchange_id CHAR(32) NOT NULL,
         mime VARCHAR(32) NOT NULL,byte_count INTEGER NOT NULL,digest CHAR(64) NOT NULL,

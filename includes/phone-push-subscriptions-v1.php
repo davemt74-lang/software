@@ -1,10 +1,12 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** PS5C.3 enrollment only. No notification transport or arbitrary URL fetch. */
 function vp3_phone_push_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install phone push outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install phone push outside transactions.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_push_config_v1 (
         id SMALLINT PRIMARY KEY,enrollment_enabled SMALLINT NOT NULL DEFAULT 0,
         public_key VARCHAR(90) NOT NULL DEFAULT '',private_cipher TEXT NULL,

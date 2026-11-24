@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** Authenticated review UI and explicitly gated owner pilot dispatch. */
 require_once __DIR__.'/phone-managed-callback-schema-v1.php';
 
@@ -181,7 +183,7 @@ function vp3_managed_ui_pilot_dispatch_v1(PDO $pdo,array $user,array $input,int 
 function vp3_managed_ui_withdraw_locked_v1(PDO $pdo,array $d,array $input,int $now,bool $holder):array
 {
     require_once __DIR__.'/phone-managed-media-worker-v1.php';
-    vp3_managed_callback_need_v1($pdo->inTransaction()&&!array_diff(array_keys($input),['request_id','device_id','generation','managed_request_id','confirmed'])&&($input['confirmed']??null)===true,422);
+    vp3_managed_callback_need_v1(vp3_phone_transaction_active_v1($pdo)&&!array_diff(array_keys($input),['request_id','device_id','generation','managed_request_id','confirmed'])&&($input['confirmed']??null)===true,422);
     vp3_managed_callback_need_v1(($d['device_status']??'')==='approved'&&(int)$d['expires_at']>$now&&($input['device_id']??null)===$d['id']&&($input['generation']??null)===(int)$d['generation'],403);
     $id=vp3_managed_callback_id_v1($input['managed_request_id']??null);$owner=(int)$d['owner_user_id'];
     $row=vp3_managed_callback_row_v1($pdo,$id,true);

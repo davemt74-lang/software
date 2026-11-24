@@ -1,10 +1,12 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** One replacement authorization per approved pairing. No raw bearer persisted. */
 function vp3_phone_handoff_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install phone handoff outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install phone handoff outside transactions.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_handoffs_v1 (
         owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,
         public_id CHAR(32) NOT NULL UNIQUE,code_hash CHAR(64) NOT NULL UNIQUE,

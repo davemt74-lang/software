@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+
+require_once __DIR__.'/phone-transactions-v1.php';
 require_once __DIR__.'/phone-information-files-v1.php';
 
 /** PS5A: bounded, explicit text exchange. No device sensor, file or model access. */
@@ -7,7 +9,7 @@ const VP3_PHONE_INFO_TTL_V1=86400;
 const VP3_PHONE_INFO_RETENTION_V1=2592000;
 function vp3_phone_information_install_v1(PDO $pdo,string $options):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install information exchange outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install information exchange outside transactions.');
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_information_v1(
         owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,profile_id CHAR(32) NOT NULL,
         exchange_id CHAR(32) NOT NULL,profile_revision BIGINT NOT NULL,version BIGINT NOT NULL,

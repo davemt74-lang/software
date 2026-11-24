@@ -103,6 +103,7 @@ jobs:
           test -f _deploy/phone-push-worker-v1.php
           test -f _deploy/api/phone-push-receipt-v1.php
           test -f _deploy/includes/phone-push-delivery-v1.php
+          test -f _deploy/includes/phone-transactions-v1.php
           test -f _deploy/includes/phone-push-events-v1.php
           test -f _deploy/includes/phone-push-transport-v1.php
           test -f _deploy/includes/phone-push-vapid-cache-v1.php
@@ -493,7 +494,7 @@ jobs:
           test -f _deploy/upgrade.php
           # Phone Tracking must include both the owner and holder entry points.
           for path in phone-tracking.php phone-location.php phone-tracking-v1.js phone-tracking-archive-v1.js phone-location-v1.js \
-                      api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php \
+                      api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php includes/phone-transactions-v1.php \
                       includes/phone-camera-v1.php includes/phone-camera-chat-v1.php includes/phone-camera-http-v1.php includes/phone-camera-map-v1.php \
                       phone-agent-chat-v1.js includes/paired-phone-agent-v1.php includes/paired-phone-agent-model-v1.php \
                       phone-chat-owner-reply-v1.js api/phone-chat-reply-v1.php \

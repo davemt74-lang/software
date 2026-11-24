@@ -10,7 +10,7 @@ if(($argv[1]??'')==='client'){
     echo "READY\n";fflush(STDOUT);if(trim((string)fgets(STDIN))!=='GO')exit(2);
     if($job['action']==='run'){
         $result=ppd_run($pdo,$job['now'],$key,static function(array $sub,array $vapid,string $payload)use($pdo):array{
-            if($pdo->inTransaction())throw new LogicException('Transport held a transaction.');
+            if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Transport held a transaction.');
             $p=json_decode($payload,true,8,JSON_THROW_ON_ERROR);
             vp3_phone_sql_v1($pdo,'INSERT INTO push_fixture_sends(event_ref,sends) VALUES(?,1)',[$p['event_ref']]);
             return ppd_accepted();
@@ -72,7 +72,7 @@ try{
             vp3_phone_account_v1($pdo,1,true);$d=vp3_phone_row_v1($pdo,1,$a['device']['id']);
             $source=ppd_source($pdo,$a,$now,'private_chat',$rollbackId);
             $e=vp3_phone_push_delivery_enqueue_v1($pdo,$d,$source,$now,'ppd_source_current',$key);
-            ppd_check($pdo->inTransaction()&&$e['state']==='queued','enqueue joins the production source transaction under BEGIN IMMEDIATE/native PDO');
+            ppd_check(vp3_phone_transaction_active_v1($pdo)&&$e['state']==='queued','enqueue joins the production source transaction under BEGIN IMMEDIATE/native PDO');
             throw new RuntimeException('Fixture source write rolled back.',499);
         });
     }catch(RuntimeException $e){if($e->getCode()!==499)throw $e;}
@@ -107,7 +107,7 @@ try{
     ppd_reject(404,fn()=>vp3_phone_push_delivery_resolve_v1($pdo,ppd_row($pdo,$a),$queued['event_ref'],$now,'ppd_source_current',$key),'queued unsent event cannot be forged into an opened notification');
     $payload=null;
     $run=ppd_run($pdo,$now+2,$key,static function(array $sub,array $vapid,string $raw,array $options)use($pdo,$subA,&$payload,$queued):array{
-        ppd_check(!$pdo->inTransaction(),'provider network call has no database transaction');
+        ppd_check(!vp3_phone_transaction_active_v1($pdo),'provider network call has no database transaction');
         ppd_check($sub===$subA&&vp3_phone_push_point_v1($vapid['public_key'])&&isset($vapid['private_key'],$vapid['subject']),'bound subscription and VAPID secrets are decrypted only for transport');
         $payload=json_decode($raw,true,8,JSON_THROW_ON_ERROR);
         ppd_check(array_keys($payload)===['v','event_ref','receipt_token']&&$payload['v']===1&&$payload['event_ref']===$queued['event_ref'],'push contains only version, opaque event and event-only receipt capability');

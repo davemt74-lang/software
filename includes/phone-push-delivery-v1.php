@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-tracking-v1.php';
 require_once __DIR__.'/ai-settings.php';
 require_once __DIR__.'/phone-push-vapid-cache-v1.php';
@@ -17,7 +19,7 @@ const VP3_PHONE_PUSH_DELIVERY_WORKER_FRESH_V1 = 180;
 
 function vp3_phone_push_delivery_install_v1(PDO $pdo,string $options=''):void
 {
-    if($pdo->inTransaction())throw new LogicException('Install notification delivery outside transactions.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install notification delivery outside transactions.');
     $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
     if($mysql&&$options==='')$options=' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_push_delivery_config_v1 (
@@ -138,7 +140,7 @@ function vp3_phone_push_delivery_heartbeat_v1(PDO $pdo,int $now,array $health):v
  */
 function vp3_phone_push_delivery_capacity_skipped_v1(PDO $pdo,int $now):void
 {
-    if(!$pdo->inTransaction())throw new LogicException('Queue-capacity accounting requires the source transaction.');
+    if(!vp3_phone_transaction_active_v1($pdo))throw new LogicException('Queue-capacity accounting requires the source transaction.');
     vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_push_delivery_config_v1 SET capacity_skipped_count=CASE WHEN capacity_skipped_count<9007199254740990 THEN capacity_skipped_count+1 ELSE capacity_skipped_count END,last_skipped_epoch=CASE WHEN last_skipped_epoch<? THEN ? ELSE last_skipped_epoch END WHERE id=1',[$now,$now]);
 }
 
@@ -207,7 +209,7 @@ function vp3_phone_push_delivery_event_source_v1(array $e):array
  */
 function vp3_phone_push_delivery_context_v1(PDO $pdo,int $owner,string $device,int $now,?string $testKey=null):array
 {
-    if(!$pdo->inTransaction())throw new LogicException('Notification authority requires a transaction.');
+    if(!vp3_phone_transaction_active_v1($pdo))throw new LogicException('Notification authority requires a transaction.');
     $account=vp3_phone_authorized_owner_v1($pdo,$owner,true);
     $q=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_devices_v1 WHERE owner_user_id=? AND id=?'.vp3_phone_lock_v1($pdo),[$owner,$device]);
     $d=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
@@ -317,7 +319,7 @@ function vp3_phone_push_delivery_terminal_v1(PDO $pdo,array $e,string $state,str
  */
 function vp3_phone_push_delivery_claim_v1(PDO $pdo,int $now,callable $sourceCurrent,?string $testKey=null):?array
 {
-    vp3_phone_push_delivery_need_v1(!$pdo->inTransaction(),409);
+    vp3_phone_push_delivery_need_v1(!vp3_phone_transaction_active_v1($pdo),409);
     vp3_phone_push_delivery_need_v1(vp3_phone_push_delivery_ready_v1($pdo),503);
     $q=vp3_phone_sql_v1($pdo,"SELECT event_ref,owner_user_id,device_id FROM vp3_phone_push_outbox_v1
         WHERE (state IN ('queued','retry') AND (available_epoch<=? OR expires_epoch<=?))
@@ -348,7 +350,7 @@ function vp3_phone_push_delivery_claim_v1(PDO $pdo,int $now,callable $sourceCurr
 /** Final fence, immediately before leaving the transaction for transport. */
 function vp3_phone_push_delivery_prepare_v1(PDO $pdo,array $claim,int $now,callable $sourceCurrent,?string $testKey=null):?array
 {
-    vp3_phone_push_delivery_need_v1(!$pdo->inTransaction(),409);
+    vp3_phone_push_delivery_need_v1(!vp3_phone_transaction_active_v1($pdo),409);
     return vp3_phone_transaction_v1($pdo,static function()use($pdo,$claim,$now,$sourceCurrent,$testKey):array{
         $ctx=vp3_phone_push_delivery_context_v1($pdo,(int)$claim['owner_user_id'],$claim['device_id'],$now,$testKey);
         $e=vp3_phone_push_delivery_event_v1($pdo,$claim['event_ref'],true);
@@ -405,7 +407,7 @@ function vp3_phone_push_delivery_result_v1(mixed $result):array
 
 function vp3_phone_push_delivery_finish_v1(PDO $pdo,array $claim,mixed $result,int $now,?string $testKey=null):?array
 {
-    vp3_phone_push_delivery_need_v1(!$pdo->inTransaction(),409);
+    vp3_phone_push_delivery_need_v1(!vp3_phone_transaction_active_v1($pdo),409);
     $r=vp3_phone_push_delivery_result_v1($result);
     return vp3_phone_transaction_v1($pdo,static function()use($pdo,$claim,$r,$now,$testKey):array{
         $ctx=vp3_phone_push_delivery_context_v1($pdo,(int)$claim['owner_user_id'],$claim['device_id'],$now,$testKey);
@@ -443,7 +445,7 @@ function vp3_phone_push_delivery_finish_v1(PDO $pdo,array $claim,mixed $result,i
  */
 function vp3_phone_push_delivery_run_v1(PDO $pdo,int $limit,callable $sourceCurrent,callable $transport,int $now,?string $testKey=null,?callable $clock=null):array
 {
-    vp3_phone_push_delivery_need_v1(!$pdo->inTransaction(),409);
+    vp3_phone_push_delivery_need_v1(!vp3_phone_transaction_active_v1($pdo),409);
     vp3_phone_push_delivery_need_v1($limit>=1&&$limit<=25);
     $start=microtime(true);$clock??=static fn():int=>$now+(int)floor(microtime(true)-$start);
     $out=['processed'=>0,'attempted'=>0,'states'=>[]];
@@ -454,7 +456,7 @@ function vp3_phone_push_delivery_run_v1(PDO $pdo,int $limit,callable $sourceCurr
         if($claim['state']!=='claimed'){$out['states'][$claim['state']]=($out['states'][$claim['state']]??0)+1;continue;}
         $send=vp3_phone_push_delivery_prepare_v1($pdo,$claim,$clock(),$sourceCurrent,$testKey);
         if($send===null){$out['states']['fenced']=($out['states']['fenced']??0)+1;continue;}
-        if($pdo->inTransaction())throw new LogicException('Notification transport cannot hold database locks.');
+        if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Notification transport cannot hold database locks.');
         $out['attempted']++;
         try{$result=$transport($send['subscription'],$send['vapid'],$send['payload'],$send['options']);}
         catch(Throwable){$result=null;}

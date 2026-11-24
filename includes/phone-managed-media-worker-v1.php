@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** Dedicated media lifecycle driver. Only the Cloud CLI or a synthetic test calls it. */
 require_once __DIR__.'/phone-managed-recording-v1.php';
 require_once __DIR__.'/phone-managed-control-v1.php';
@@ -25,7 +27,7 @@ function vp3_managed_media_recording_evidence_v1(mixed $raw,string $account,arra
 /** Withdrawal is durable immediately, and does not falsely assert carrier termination. */
 function vp3_managed_media_withdraw_locked_v1(PDO $pdo,array $row,int $now):array
 {
-    vp3_managed_callback_need_v1($pdo->inTransaction()&&vp3_managed_recording_ready_v1($pdo),503);
+    vp3_managed_callback_need_v1(vp3_phone_transaction_active_v1($pdo)&&vp3_managed_recording_ready_v1($pdo),503);
     $c=vp3_managed_recording_row_v1($pdo,$row['public_id'],true);
     vp3_managed_callback_need_v1(is_array($c)&&(int)$c['owner_user_id']===(int)$row['owner_user_id'],404);
     vp3_managed_recording_revoke_v1($pdo,$row['public_id'],$now);
@@ -36,7 +38,7 @@ function vp3_managed_media_withdraw_locked_v1(PDO $pdo,array $row,int $now):arra
 /** Claim a single stop by exact recording SID; no Twilio.CURRENT or discovery by phone number. */
 function vp3_managed_media_stop_v1(PDO $pdo,string $public,?callable $carrier=null,?int $clock=null):array
 {
-    vp3_managed_callback_need_v1(!$pdo->inTransaction()&&vp3_managed_recording_ready_v1($pdo),503);
+    vp3_managed_callback_need_v1(!vp3_phone_transaction_active_v1($pdo)&&vp3_managed_recording_ready_v1($pdo),503);
     $now=$clock??time();vp3_managed_callback_id_v1($public);
     $hint=vp3_managed_transport_row_v1($pdo,$public);vp3_managed_callback_need_v1(is_array($hint),404);
     $snapshot=vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$hint,$public,$now){
