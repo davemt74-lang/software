@@ -533,7 +533,7 @@
     renderDetail(selected());
     dialerOwner?.bind(selected(),available&&!document.hidden);
     managedOwner?.bind(selected(),available&&!document.hidden);
-    if(openManagedFromLink&&selected()?.id===linkedDevice&&available){openManagedFromLink=false;managedOwner?.setMode('managed');}
+    if(openManagedFromLink&&selected()&&(!linkedDevice||selected().id===linkedDevice)&&available){openManagedFromLink=false;managedOwner?.setMode('managed');}
     renderPending(devices.filter(d => d.status === 'pending'));
     renderMarkers();
     archive.render(approved);
