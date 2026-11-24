@@ -9,7 +9,7 @@
   function render(){
     const active=installed();
     status.textContent=active?'Opened from your installed app.':'Opened in a browser.';
-    help.textContent=active?'Use this installed app for your connection. If its session is separate, enter a fresh pairing code from the owner. Notifications are not enabled in this release.':'On iPhone or iPad, use the browser Share menu and Add to Home Screen, then open VP3 Phone. On supported Android browsers, use Install app or Add to Home Screen. If the installed app has a separate session, pair it there using a fresh code. Notifications are not enabled yet.';
+    help.textContent=active?'Use this installed app for your connection. If it has a separate session, pair it with an owner-approved code.':'On Android, use Install app or Add to Home Screen if your browser offers it. Open the installed app to connect.';
     button.hidden=active||!prompt;button.disabled=busy||button.hidden;
     panel.dataset.workerState=workerState;
   }

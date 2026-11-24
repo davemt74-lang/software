@@ -1368,7 +1368,9 @@ async function verifyInstalledPairing(baseURL,desktop,owner){
   await guest.addInitScript(()=>Object.defineProperty(navigator,'standalone',{configurable:true,value:true}));
   try{
     await guest.goto('/phone-location.php');
+    await guest.locator('#phone-setup-guide').click();
     await guest.getByText('Opened from your installed app.',{exact:true}).waitFor();
+    await guest.locator('#phone-info-back').click();
     await guest.locator('#phone-pair-entry').waitFor();
     await guest.waitForFunction(()=>document.getElementById('phone-install-panel').dataset.workerState==='registered');
     const regs=await guest.evaluate(async()=>Array.from(await navigator.serviceWorker.getRegistrations(),r=>r.scope));
