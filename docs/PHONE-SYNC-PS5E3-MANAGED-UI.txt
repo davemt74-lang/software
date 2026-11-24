@@ -1,0 +1,30 @@
+Phone Sync PS5E.3 — Connected-phone calling modes and managed review
+
+Phone Tracking now offers Personal cellular (existing consent-bound dialer),
+Twilio managed callback review, and Browser call (existing Phone workspace).
+The managed mode lists eligible assigned Twilio numbers and lets the owner
+request review of one exact destination. The existing paired phone polls its
+own pending request and displays an approval/decline card above both tabs.
+Owner cancellation and holder decline work before dispatch. Approval alone
+places no call. Pending target data is holder-only, revision- and
+pairing-bound, and hidden on stale state, expiry, or lost foreground.
+
+The private Phone drawer in Agent Chat links to managed calling. The existing
+connected-phone drawer also links to the selected device's managed review.
+The server derives the paired conversation and does not accept a client-
+supplied owner, Agent, conversation, recording flag or carrier command.
+Status projections include existing canonical managed transport receipts,
+without carrier identifiers, nonce, target or holder number in the owner view.
+
+This release is REVIEW ONLY. No owner/holder dispatch route, background call,
+recording, transcript, remote hangup or automatic Agent call is exposed.
+Even the administrator transport switch cannot enable live dispatch through
+these UI actions. Personal cellular and existing browser calling are unchanged.
+Missing Phone migrations or line assignment must not break GPS, chat or camera.
+
+Acceptance tests: shared SQLite/MySQL authorization fixtures and real-browser
+mode mounting, synthetic review approval/cancel and device switch tests.
+No network carrier call. Merge after exact-head CI, and retain this safety gate
+until read-only uncertain-dispatch reconciliation, safe carrier hangup and
+physical phone/carrier acceptance are complete. Agent Chat lifecycle cards,
+recordings/transcripts/reports and push remain separate work.
