@@ -94,3 +94,10 @@
 .vp3-phone-auto-call-form .vp3-phone-actions{margin:2px 0 0}
 .vp3-phone-auto-call-form .vp3-phone-button{min-height:44px;max-width:100%;white-space:normal}
 @media(max-width:360px){.vp3-phone-auto-call-fields{grid-template-columns:minmax(0,1fr)}}
+
+/* Live caller captions remain inside the responsive active call card. */
+.vp3-phone-live-caption{display:grid;gap:10px;margin:14px 0 0;padding:12px;border:1px solid #dce3ec;border-radius:10px;background:#f9fbfe;min-width:0;overflow-wrap:anywhere}
+.vp3-phone-live-caption>p,.vp3-phone-caption-lines>p{margin:0}
+.vp3-phone-caption-lines{display:grid;gap:8px;min-width:0}
+.vp3-phone-caption-lines>p{padding:8px 10px;border-radius:8px;background:#fff;border:1px solid #e1e6ed}
+.vp3-phone-live-caption>.vp3-phone-button{justify-self:start;max-width:100%}

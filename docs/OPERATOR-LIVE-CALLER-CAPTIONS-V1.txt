@@ -1,0 +1,14 @@
+OPERATOR SPECIALIST — LIVE CALLER CAPTIONS V1
+
+This is the first live participation slice, not autonomous phone calling.
+Existing Phone / After calls transcription permission, carrier recording approval, Cloud speech configuration, and the explicit database upgrade are required. Only a private owner Chat's recent signed answered browser call can authorize a session.
+
+Ask everyone on the call for their affirmative agreement to live Cloud AI transcription before enabling captions. The owner must explicitly attest to that agreement. A carrier recording disclosure, saved Auto Call preference, and prior call are not substitutes for consent. If anybody declines or withdraws agreement, do not start or stop immediately.
+
+The browser reads only the remote audio track already provided by the pinned Voice SDK. No new microphone is opened, audio is not played into the call, and neither local mic nor an Agent voice is captured. A silent AudioWorklet down-samples to 16 kHz and emits four-second PCM chunks. One same-origin request is in flight at a time. Slow processing skips chunks rather than accumulating speech; the interface shows the gaps. The server verifies the exact owner/Agent/Chat/call, current voice and transcription permissions, consent-session token, sequence, receipt age, and bounded account allowance before each dispatch. It sends a short WAV to the existing Cloud speech provider, deletes the temporary file, and rechecks authority before returning text.
+
+Limits: one authorization per call, up to 120 seconds, within the first five minutes of a call receipt, 240 reserved audio seconds per owner over the conservative rolling hour. These limits are independent of the existing post-call recording budget. Live text is transient in the active Chat/Phone card; no caption transcript, independent Chat message or permanent audio is saved by this feature. Existing carrier recording and post-call processing are unchanged.
+
+Stop closes the derived audio graph, discards caption text, and revokes the session without ending the human call. Call termination, changed Chat, assignment/recording approval changes, changed transcription policy, expired authorization, and foreground loss fence capture. Already-dispatched speech may finish or incur cost; late results are not displayed and are not automatically retried. A stopped session cannot restart on the same call.
+
+Browser/fixture verification covers consent, exact signed call and owner scope, bounded PCM, silence of capture output, replay/budget checks, revocation during provider processing, and stopping independently of the carrier call. CI and actual-device/provider verification remain release gates. Both-sided transcription, AI response suggestions, authorized Agent speech, owner handoff and autonomous execution are separate future slices.

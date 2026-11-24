@@ -6,6 +6,7 @@ import {createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=process.cwd(),source=await fs.readFile(path.join(root,'phone-workspace-v1.js'),'utf8'),css=await fs.readFile(path.join(root,'phone-workspace-v1.css'),'utf8');
+const captureSource=await fs.readFile(path.join(root,'phone-operator-capture-v1.js'),'utf8');
 const shellStyles=new Map(await Promise.all(['chat.css','chat-header-ui.css','stonefellow-ui.css'].map(async file=>['/'+file,await fs.readFile(path.join(root,file),'utf8')])));
 const fixtureHead='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>*,*::before,*::after{box-sizing:border-box}body{margin:0}</style><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/chat-header-ui.css"><link rel="stylesheet" href="/phone-workspace-v1.css">';
 const headerShell=button=>'<header class="chat-topbar member-header"><div class="chat-topbar-title"><strong>Agent Chat</strong></div><div class="chat-topbar-actions member-header-actions"><div class="chat-top-menu">'+button+'</div></div></header>';
@@ -34,16 +35,31 @@ const integrity='sha384-'+createHash('sha384').update(sdk).digest('base64');
 const actualSdk=await fs.readFile(path.join(root,'assets/twilio-voice-2.18.5.min.js'));
 const actualIntegrity='sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8';
 assert.equal('sha384-'+createHash('sha384').update(actualSdk).digest('base64'),actualIntegrity,'The actual shipped SDK bytes match their pinned integrity');
-let state=fixture(),authorized=true,apiCalls=[],tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0;
+let state=fixture(),authorized=true,apiCalls=[],tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
 const wav=Buffer.alloc(44+16000*2*4);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
+ if(url.pathname==='/phone-operator-capture-v1.js'){res.setHeader('Content-Type','text/javascript');return res.end(captureSource);}
  if(url.pathname==='/phone-workspace-v1.js'){res.setHeader('Content-Type','text/javascript');return res.end(source);}
  if(url.pathname==='/phone-workspace-v1.css'){res.setHeader('Content-Type','text/css');return res.end(css);}
  if(shellStyles.has(url.pathname)){res.setHeader('Content-Type','text/css');return res.end(shellStyles.get(url.pathname));}
  if(url.pathname==='/assets/twilio-voice-2.18.5.min.js'){res.setHeader('Content-Type','text/javascript');if(url.searchParams.has('actual'))return res.end(actualSdk);scriptLoads++;return res.end(sdk);}
  if(url.pathname==='/sdk-smoke'){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><meta charset="utf-8"><script src="/assets/twilio-voice-2.18.5.min.js?actual=1" integrity="'+actualIntegrity+'" crossorigin="anonymous"></script>');}
  if(url.pathname==='/api/fixture-audio'){res.setHeader('Content-Type','audio/wav');return res.end(wav);}
+ if(url.pathname==='/api/phone-operator-live-v1.php'){
+  let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{
+   const input=JSON.parse(body);res.setHeader('Content-Type','application/json');
+   assert.equal(req.method,'POST');assert.equal(input.csrf_token,'fixture-csrf');assert.equal(input.call_id,outgoingId);
+   assert.equal(input.agent_id,2);assert.equal(input.conversation_id,10);
+   captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0});
+   const token='f'.repeat(64);let result={};
+   if(input.action==='start'){assert.equal(input.consent_attested,true);state.operator_live.state='authorized';result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+120,chunk_seconds:4,execution:'captions_only'};}
+   else if(input.action==='chunk'){assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,128000);result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:'Fixture caller <script>words</script>'};}
+   else if(input.action==='stop'){assert.equal(input.token,token);state.operator_live.state='closed';state.operator_live.eligible=false;result={call_id:outgoingId,stopped:true};}
+   else{res.statusCode=422;return res.end(JSON.stringify({ok:false}));}
+   res.end(JSON.stringify({ok:true,...result}));
+  });return;
+ }
  if(url.pathname==='/api/phone-workspace-v1.php'){
   let body='';req.on('data',c=>body+=c);req.on('end',async()=>{
    const values=req.method==='POST'?JSON.parse(body):Object.fromEntries(url.searchParams);apiCalls.push(values);res.setHeader('Content-Type','application/json');
@@ -90,7 +106,7 @@ const server=http.createServer((req,res)=>{
   });return;
  }
  const cid=url.searchParams.get('new')==='1'?0:10;
- res.setHeader('Content-Type','text/html');res.end(`${fixtureHead}${headerShell('<button class="chat-icon-button vp3-phone-header-button" data-phone-workspace-toggle aria-label="Phone"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z"/></svg></button>')}<div id="chatThread" class="chat-thread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-workspace-v1.js"></script>`);
+ res.setHeader('Content-Type','text/html');res.end(`${fixtureHead}${headerShell('<button class="chat-icon-button vp3-phone-header-button" data-phone-workspace-toggle aria-label="Phone"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z"/></svg></button>')}<div id="chatThread" class="chat-thread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',operator_live_endpoint:'/api/phone-operator-live-v1.php',operator_capture_url:'/phone-operator-capture-v1.js',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-workspace-v1.js"></script>`);
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
@@ -317,6 +333,43 @@ try{
    assert.equal((await message.innerText()).includes('Previous context caller'),false,'A stale save response does not rewrite an earlier private message');
    assert.equal((await page.locator('.vp3-phone-notice').innerText()).includes('Contact saved.'),false,'A stale response cannot announce a save in the new context');
   }finally{release?.();contactGate=null;}
+ });
+ await fresh();await enable();
+ await check('live caller captions require explicit consent, use the existing remote stream and stop without ending the human call',async()=>{
+  captionCalls=[];await call();await page.waitForFunction(()=>phoneFixture.calls.at(-1)?.status()==='open');
+  await page.evaluate(()=>{
+   const remoteAudio=new AudioContext({sampleRate:48000}),destination=remoteAudio.createMediaStreamDestination(),tone=remoteAudio.createOscillator();
+   tone.frequency.value=440;const gain=remoteAudio.createGain();gain.gain.value=.05;tone.connect(gain);gain.connect(destination);tone.start();
+   phoneFixture.remoteAudio=remoteAudio;phoneFixture.remoteTone=tone;phoneFixture.remoteTrack=destination.stream.getAudioTracks()[0];
+   phoneFixture.calls.at(-1).getRemoteStream=()=>destination.stream;
+   void remoteAudio.resume();
+  });
+  state.operator_live={available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
+  await caption.getByRole('button',{name:'Enable live caller captions',exact:true}).click();
+  assert.equal(await caption.getByRole('button',{name:'Start live captions',exact:true}).isDisabled(),true);
+  assert.equal(captionCalls.length,0,'Opening consent UI must not authorize capture');
+  await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
+  await caption.getByRole('button',{name:'Start live captions',exact:true}).click();
+  await caption.getByText('Live captions on · human call remains in control',{exact:true}).waitFor({timeout:15000});
+  await caption.getByText('Fixture caller <script>words</script>',{exact:true}).waitFor({timeout:20000});
+  const firstChunk=captionCalls.find(row=>row.action==='chunk');assert.equal(firstChunk.bytes,128000);assert.equal(firstChunk.seq,1);
+  assert.equal(captionCalls[0].consent_attested,true);
+  assert.equal(await caption.locator('script').count(),0,'Caption content is inert text');
+  const chatCard=await canonicalCall('liveCaptionCard',outgoingId);
+  assert.equal(await chatCard.getByText('Fixture caller <script>words</script>',{exact:true}).count(),1);
+  const claims=await page.evaluate(()=>phoneFixture.claims);
+  await caption.getByRole('button',{name:'Stop live captions',exact:true}).click();
+  await caption.getByText('Live captions stopped.',{exact:true}).waitFor();
+  assert.equal(await drawer.getByRole('button',{name:'Hang up',exact:true}).count(),1);
+  assert.equal(await page.evaluate(()=>phoneFixture.calls.at(-1).status()),'open');
+  assert.equal(await page.evaluate(()=>phoneFixture.remoteTrack.readyState),'live','Stop must not end the underlying carrier track');
+  assert.equal(await page.evaluate(()=>phoneFixture.claims),claims,'Caption capture cannot acquire another microphone lease');
+  assert.equal(await chatCard.getByText('Fixture caller <script>words</script>',{exact:true}).count(),0);
+  await drawer.getByRole('button',{name:'Hang up',exact:true}).click();
+  await page.evaluate(()=>{phoneFixture.remoteTone.stop();phoneFixture.remoteTrack.stop();void phoneFixture.remoteAudio.close();});
+  assert.ok(captionCalls.some(row=>row.action==='stop'));
  });
  if(actualState)await check('the unmodified PHP projection renders both voicemail namespaces and saved processing policy',async()=>{
   assert.ok(actualUi?.button&&actualUi?.config,'The actual PHP header and runtime configuration are mandatory with the real projection');

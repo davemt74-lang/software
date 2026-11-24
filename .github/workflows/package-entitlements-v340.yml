@@ -249,6 +249,7 @@ jobs:
           php tests/phone-sms-ph3a-runtime.php
           php tests/phone-sms-ph3b-runtime.php
           node tests/phone-workspace-v1.mjs
+          node tests/phone-operator-capture-v1.mjs
           PHP_BIN=php node tests/phone-workspace-release-v1.mjs --projection-only
       - name: PHP and JavaScript syntax
         run: |
@@ -258,6 +259,9 @@ jobs:
           php -l includes/bootstrap.php
           php -l includes/ai-direct-account-v1.php
           node --check phone-workspace-v1.js
+          node --check phone-operator-capture-v1.js
+          php -l includes/agent-operator-live-v1.php
+          php -l includes/agent-operator-live-schema-v1.php
           node --check chat.js
 
   phone-mysql:
