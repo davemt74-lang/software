@@ -85,6 +85,12 @@ const server=http.createServer((req,res)=>{
      ownerPhone.last_test={call_id:outgoingId,state:'prepared',received:false,can_confirm:false};
      result={call:{id:9,public_id:outgoingId,owner_test:true,peer_e164:ownerPhone.phone_e164,conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'prepared'},connect_params:{call_intent:'c'.repeat(64)}};
    }
+   if(values.action==='prepare_connected_call'){
+     assert.equal(values.confirmed,true);assert.equal(values.device_id,'4'.repeat(32));assert.equal(values.profile_id,'5'.repeat(32));
+     assert.equal(values.profile_revision,3);assert.equal(values.phone_revision,1);assert.equal(Number(values.conversation_id),10);
+     assert.equal(Object.hasOwn(values,'to_number'),false);assert.equal(Object.hasOwn(values,'recording_enabled'),false);
+     result={call:{id:9,public_id:outgoingId,connected_phone:true,peer_e164:'',peer_masked:'Ending in 0135',conversation_id:10,agent_id:2,state:'prepared'},connect_params:{call_intent:'c'.repeat(64)}};
+   }
    if(values.action==='confirm_owner_test'){
      assert.equal(values.call_id,outgoingId);assert.equal(values.received,true);ownerPhone.last_test.received=true;ownerPhone.last_test.can_confirm=false;result={owner_phone:structuredClone(ownerPhone)};
    }
@@ -432,6 +438,30 @@ try{
    await card.getByText('You confirmed receiving the test call.',{exact:true}).waitFor();
    await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:11,agent_id:2,ready:true}));
    assert.equal(await card.count(),0,'context change removes private form');
+ });
+ await check('connected profile opens the same Phone drawer and calls only after explicit confirmation',async()=>{
+   await fresh();await enable();await closeDrawer();
+   await page.evaluate(()=>{
+     const map=document.createElement('div');map.id='phone-workspace';document.body.append(map);
+     const device={id:'4'.repeat(32),name:'Field phone',status:'approved',agent_chat:{conversation_id:10,agent_id:2},
+       communication:{call_permission_saved:true,profile_id:'5'.repeat(32),revision:3,phone_revision:1,phone_masked:'Ending in 0135'}};
+     if(!VP3PhoneWorkspaceV1.openConnectedPhone(device))throw Error('Connected phone drawer unavailable');
+   });
+   const setup=page.locator('[data-connected-phone-call]');
+   await setup.getByText('Call Field phone',{exact:true}).waitFor();
+   assert.equal(apiCalls.some(c=>c.action==='prepare_connected_call'),false);
+   assert.equal(await setup.getByRole('button',{name:'Call connected phone',exact:true}).isDisabled(),true);
+   await setup.getByLabel('Place one call to this connected phone',{exact:true}).check();
+   await setup.getByRole('button',{name:'Call connected phone',exact:true}).evaluate(el=>el.click());
+   assert.equal(apiCalls.some(c=>c.action==='prepare_connected_call'),false);
+   await setup.getByRole('button',{name:'Call connected phone',exact:true}).click();
+   await page.waitForFunction(()=>window.phoneFixture?.connects.length===1);
+   assert.equal(apiCalls.filter(c=>c.action==='prepare_connected_call').length,1);
+   assert.equal(apiCalls.some(c=>c.action==='prepare_call'),false);
+   await page.getByRole('button',{name:'Hang up',exact:true}).click();
+   assert.equal(await setup.getByRole('button',{name:'Call connected phone',exact:true}).isDisabled(),true);
+   await setup.getByRole('button',{name:'Close connected phone setup',exact:true}).click();
+   assert.equal(await setup.count(),0);
  });
  if(actualState)await check('the unmodified PHP projection renders both voicemail namespaces and saved processing policy',async()=>{
   assert.ok(actualUi?.button&&actualUi?.config,'The actual PHP header and runtime configuration are mandatory with the real projection');

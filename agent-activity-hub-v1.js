@@ -2923,6 +2923,7 @@
         || seen.has(call.call_id) || !Number.isSafeInteger(call.contact_id) || call.contact_id<0
         || typeof call.contact_name!=='string' || call.contact_name.length>240
         || typeof call.peer_e164!=='string' || (call.peer_e164!=='' && !/^\+[1-9][0-9]{7,14}$/.test(call.peer_e164))
+        || (Object.hasOwn(call,'connected_profile_id')&&(!/^[a-f0-9]{32}$/.test(call.connected_profile_id)||call.peer_e164!==''||call.contact_id!==0||!/^Ending in [0-9]{4}$/.test(call.peer_masked)))
         || !['inbound','outbound'].includes(call.direction) || !Object.hasOwn(operatorCallStates,call.state)
         || typeof call.created_at!=='string' || (call.created_at!=='' && !Number.isFinite(Date.parse(call.created_at)))
         || !Number.isSafeInteger(call.duration_seconds) || call.duration_seconds<0 || call.duration_seconds>86400
@@ -3054,8 +3055,8 @@
   function renderOperatorHistory(current) {
     const history=operatorHistoryModel(snapshot?.operator_history);
     if (!history) {sections.replaceChildren();operatorRendered='';return;}
-    const contactKey=call=>call.contact_id>0?'contact:'+call.contact_id:call.peer_e164?'phone:'+call.peer_e164:'unknown:'+call.call_id;
-    const label=call=>call.contact_name||call.peer_e164||'Unknown caller';
+    const contactKey=call=>call.connected_profile_id?'connected:'+call.connected_profile_id:call.contact_id>0?'contact:'+call.contact_id:call.peer_e164?'phone:'+call.peer_e164:'unknown:'+call.call_id;
+    const label=call=>call.connected_profile_id?'Connected phone · '+call.peer_masked:call.contact_name||call.peer_e164||'Unknown caller';
     const contacts=new Map();
     for (const call of history.calls) if (!contacts.has(contactKey(call))) contacts.set(contactKey(call),label(call));
     if (operatorContact && !contacts.has(operatorContact)) operatorContact='';

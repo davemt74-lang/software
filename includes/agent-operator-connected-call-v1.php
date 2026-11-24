@@ -20,7 +20,7 @@ function vp3_connected_phone_window_v1(array $p,int $now):bool
 /** Caller owns the account transaction and has already locked the owner row. */
 function vp3_connected_phone_bound_v1(PDO $pdo,int $owner,int $agent,int $conversation,string $device,string $profile,int $revision,int $phoneRevision,int $now):array
 {
-    require_once __DIR__.'/phone-tracking-v1.php';
+    require_once __DIR__.'/phone-communication-profile-v1.php';
     if(!vp3_phone_communication_ready_v1($pdo))
         vp3_phone_workspace_error_v1('operator_connected_upgrade',503,'Upgrade Phone Tracking communication profiles.');
     if($owner<1||$agent<0||$conversation<1||$revision<1||$phoneRevision<1)

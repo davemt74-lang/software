@@ -93,7 +93,7 @@ function vp3_phone_browser_action_v1(PDO $pdo,array $scope,array $input): array
         $public=$input['call_id']??null;if(!is_string($public)||!preg_match('/^[a-f0-9]{32}$/D',$public)||$scope['conversation_id']<1)vp3_phone_workspace_error_v1('phone_call_unavailable',404,'Open this incoming call in an authorized Chat.');
         return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope,$public){
             $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=? AND owner_user_id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$public,$scope['owner_user_id']]);$call=$q->fetch(PDO::FETCH_ASSOC);
-            if(!$call||($scope['agent_id']>0&&(int)$call['agent_id']!==$scope['agent_id'])||!in_array($call['state'],['ringing','dialing','answered'],true))vp3_phone_workspace_error_v1('phone_call_unavailable',404,'This call is unavailable.');
+            if(!$call||(string)($call['paired_profile_id']??'')!==''||($scope['agent_id']>0&&(int)$call['agent_id']!==$scope['agent_id'])||!in_array($call['state'],['ringing','dialing','answered'],true))vp3_phone_workspace_error_v1('phone_call_unavailable',404,'This call is unavailable.');
             vp3_phone_browser_require_v1($pdo,$scope,(int)$call['phone_number_id']);
             if((string)$call['phone_e164']!==(string)vp3_phone_workspace_number_v1($pdo,$scope,(int)$call['phone_number_id'])['phone_e164'])vp3_phone_workspace_error_v1();
             $pdo->prepare('UPDATE phone_browser_calls_v1 SET conversation_id=?,chat_agent_id=?,updated_epoch=? WHERE id=?')->execute([$scope['conversation_id'],$scope['agent_id'],time(),$call['id']]);$call['conversation_id']=$scope['conversation_id'];$call['chat_agent_id']=$scope['agent_id'];
