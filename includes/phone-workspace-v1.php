@@ -8,6 +8,7 @@ require_once __DIR__.'/phone-caller-contacts-v1.php';
 require_once __DIR__.'/phone-caller-contacts-schema-v1.php';
 require_once __DIR__.'/agent-operator-auto-call-v1.php';
 require_once __DIR__.'/agent-operator-live-schema-v1.php';
+require_once __DIR__.'/agent-operator-admission-schema-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -213,6 +214,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     }
     return ['numbers'=>$numbers,'contacts'=>$contacts,'favorites'=>array_values(array_filter($contacts,static fn($c)=>$c['favorite'])),'calls'=>$calls,'voicemails'=>$voicemails,
         'operator_live'=>$liveCaption,
+        'operator_admission_available'=>$scope['conversation_id']>0&&vp3_operator_admission_schema_ready_v1($pdo)&&(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null),
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
         'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
@@ -258,6 +260,11 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);$action=(string)($input['action']??'');
     if($action==='save_caller_contact')return vp3_phone_caller_contact_save_v1($pdo,$scope,$input);
     if($action==='save_auto_call_policy')return vp3_operator_auto_call_save_v1($pdo,$scope,$input);
+    if(in_array($action,['operator_admission_preview','save_operator_consent'],true)){
+        require_once __DIR__.'/agent-operator-admission-v1.php';
+        require_once __DIR__.'/phone-recording-pipeline-v1.php';
+        return $action==='operator_admission_preview'?vp3_operator_admission_preview_v1($pdo,$scope,$input,time()):vp3_operator_consent_save_v1($pdo,$scope,$input,time());
+    }
     if(in_array($action,['operator_calendar_preview','save_operator_calendar'],true)){
         require_once __DIR__.'/agent-operator-calendar-v1.php';
         return $action==='operator_calendar_preview'
@@ -290,12 +297,12 @@ function vp3_phone_workspace_request_v1(PDO $pdo,?array $user,string $method,arr
     $action=$input['action']??($method==='GET'?'state':'');if(!is_string($action))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a supported phone action.');$input['action']=$action;
     if($method==='GET'){
         if($action==='state')return ['state'=>vp3_phone_workspace_state_v1($pdo,$user,$input)];
-        if(in_array($action,['recording_policy','operator_calendar_preview'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
+        if(in_array($action,['recording_policy','operator_calendar_preview','operator_admission_preview'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
         vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires POST.');
     }
     if($method!=='POST')vp3_phone_workspace_error_v1('method_not_allowed',405,'Use GET or POST for Phone.');
     if($csrf===''||!is_string($input['csrf_token']??null)||!hash_equals($csrf,$input['csrf_token']))vp3_phone_workspace_error_v1('csrf_failed',403,'Refresh this page before changing Phone.');
-    if(in_array($action,['state','recording_policy','operator_calendar_preview'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
+    if(in_array($action,['state','recording_policy','operator_calendar_preview','operator_admission_preview'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
     return vp3_phone_workspace_action_v1($pdo,$user,$input);
 }
 /** Existing Chat activity delivers each incoming call once into its validated current principal. */
