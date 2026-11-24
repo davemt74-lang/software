@@ -250,6 +250,7 @@ async function browserJourney(baseURL, owner, other) {
   for (const [context, user] of [[desktop, owner], [outsider, other]]) {
     await context.addCookies([{ name: 'PHPSESSID', value: user.session, url: baseURL }]);
   }
+  await verifyManagedReviewUI(desktop);
   const map = await desktop.newPage();
   const phone = await handset.newPage();
   const errors = [];
@@ -413,6 +414,18 @@ async function browserJourney(baseURL, owner, other) {
     const d=check(await phoneApi(handset,'status'),'dialer permission').device;
     return d.dialer?.enabled&&d.dialer.auto_number==='+16025550138';
   });
+  // PS5E.3: actual map mounts all three modes even without a Twilio assignment.
+  const modes=map.locator('#phone-dialer-owner-host');
+  await modes.getByRole('button',{name:'Twilio managed callback',exact:true}).click();
+  await modes.getByText('Managed callback review',{exact:true}).waitFor();
+  assert.equal(await modes.getByRole('button',{name:'Request managed callback approval',exact:true}).isVisible(),false);
+  const noManaged=check(await ownerApi(desktop,owner),'managed review status without carrier').devices.find(d=>d.id===deviceId);
+  assert.equal(noManaged.managed_callback.dispatch_enabled,false);
+  assert.equal(noManaged.managed_callback.available,false);
+  assert.equal((await ownerApi(desktop,owner,'managed_dispatch',{device_id:deviceId,generation:noManaged.generation})).status,422,'no live managed dispatch action exposed');
+  await modes.getByRole('button',{name:'Browser call',exact:true}).click();
+  await modes.getByText('Browser call to connected user',{exact:true}).waitFor();
+  await modes.getByRole('button',{name:'Personal cellular',exact:true}).click();
   const dialerMap=map.locator('#phone-dialer-owner-host');
   await dialerMap.getByLabel('Destination number (international format)',{exact:true}).fill('+16025550137');
   await dialerMap.getByLabel('Ask this connected phone to open its own dialer',{exact:true}).check();
@@ -1202,4 +1215,65 @@ async function verifyLinkedPhoneHistory(desktop, link, linkedId, remainingId, re
   } finally {
     await page.close();
   }
+}
+
+/** Production DOM component with synthetic API responses; no carrier or real phone number. */
+async function verifyManagedReviewUI(context){
+  const page=await context.newPage();
+  try{
+    await page.setViewportSize({width:390,height:844});
+    await page.setContent('<main id="owner"></main><main id="holder"></main>');
+    await page.addScriptTag({content:readFileSync(path.join(repo,'phone-managed-call-ui-v1.js'),'utf8')});
+    await page.addStyleTag({content:readFileSync(path.join(repo,'phone-managed-call-ui-v1.css'),'utf8')});
+    await page.evaluate(()=>{
+      const epoch=Math.floor(Date.now()/1000),device='a'.repeat(32),profile='b'.repeat(32);
+      const p={available:true,dispatch_enabled:false,server_epoch:epoch,reason:'review_only',request:null,lines:[{id:2,phone_e164:'+16025550102',agent_name:'Fixture Agent'}]};
+      const d={id:device,status:'approved',generation:1,communication:{profile_id:profile,revision:1,phone_revision:1,call_permission_saved:true},agent_chat:{conversation_id:21,agent_id:0},managed_callback:p};
+      const holderDevice={...d,managed_callback:{...p,lines:[]}};
+      const calls=[];let saved=null;
+      function refresh(){
+        const redacted=saved?{request_id:saved.request_id,state:saved.state,expires_epoch:epoch+120}:null;
+        d.managed_callback={...p,request:redacted};
+        holderDevice.managed_callback={...p,lines:[],request:redacted?{...redacted,...(saved.state==='pending'?{destination_e164:saved.destination_e164}:{})}:null};
+        ownerUI.bind(d,true);holderUI.bind(holderDevice,true);
+      }
+      const ownerUI=window.VP3ManagedCallUIV1.owner({directRoot:document.createElement('div'),openBrowser:()=>{},request:async(action,body)=>{
+        calls.push({action,body});
+        if(action==='managed_prepare')saved={request_id:body.managed_request_id,destination_e164:body.destination_e164,state:'pending'};
+        if(action==='managed_cancel')saved.state='canceled';
+        refresh();return {managed_callback:d.managed_callback};
+      }});
+      const holderUI=window.VP3ManagedCallUIV1.holder({request:async(action,body)=>{
+        calls.push({action,body});saved.state=body.decision==='approve'?'approved':'declined';refresh();return {device:holderDevice};
+      }});
+      document.getElementById('owner').append(ownerUI.root);
+      document.getElementById('holder').append(holderUI.root);
+      window.managedFixture={calls,ownerUI,holderUI,d,holderDevice,refresh};
+      refresh();
+    });
+    const own=page.locator('#owner'),hold=page.locator('#holder');
+    await own.getByRole('button',{name:'Twilio managed callback',exact:true}).click();
+    const send=own.getByRole('button',{name:'Request managed callback approval',exact:true});
+    await own.getByLabel('Managed destination number (international format)').fill('+16025550148');
+    assert.equal(await send.isEnabled(),false,'confirmation required before preparing');
+    await own.getByRole('checkbox').check();await send.click();
+    await hold.getByText('+16025550148',{exact:true}).waitFor();
+    assert.equal(await hold.getByRole('button',{name:'Approve managed request'}).isEnabled(),false);
+    await hold.getByRole('checkbox').check();await hold.getByRole('button',{name:'Approve managed request'}).click();
+    await own.getByText('Approved — no call has been placed',{exact:true}).waitFor();
+    assert.equal(await hold.getByText('+16025550148',{exact:true}).isVisible(),false,'pending destination removed after approval');
+    await own.getByRole('button',{name:'Cancel managed request'}).click();
+    await own.getByText('Canceled',{exact:true}).waitFor();
+    const sent=await page.evaluate(()=>window.managedFixture.calls);
+    assert.deepEqual(sent.map(x=>x.action),['managed_prepare','managed_respond','managed_cancel']);
+    assert.equal(sent[0].body.device_id,'a'.repeat(32));assert.equal(sent[1].body.destination_e164,'+16025550148');
+    assert.equal(sent[0].body.managed_request_id,sent[1].body.managed_request_id);
+    assert.ok(!JSON.stringify(sent).includes('recording_enabled'));
+    await own.getByLabel('Managed destination number (international format)').fill('+16025550149');
+    await page.evaluate(()=>{const {ownerUI,d,holderUI}=window.managedFixture;ownerUI.bind({...d,id:'c'.repeat(32)},true);holderUI.invalidate();});
+    await own.getByRole('button',{name:'Twilio managed callback',exact:true}).click();
+    assert.equal(await own.getByLabel('Managed destination number (international format)').inputValue(),'','switching devices clears managed destination draft');
+    assert.equal(await hold.isVisible(),true);assert.equal(await hold.locator('.phone-managed-holder').isVisible(),false);
+    console.log('PASS Managed callback review UI: mode selection, exact approval, cancel, scoped draft clearing and no carrier dispatch.');
+  }finally{await page.close();}
 }
