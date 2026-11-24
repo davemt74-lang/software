@@ -26,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_operator_live_assist_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['phone_operator_voice_turns_v1','phone_operator_live_assist_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -721,6 +721,38 @@ c($reply['speech_enabled']===false&&$reply['based_on_seq']===1&&$models===1&&$re
 c(count($modelEvidence['recent_captions'])===2&&count($modelEvidence['prior_call_metadata'])<=3
     &&!str_contains(json_encode($modelEvidence),'+16025550999')&&!str_contains(json_encode($modelEvidence),'provider_call_sid'),'inference receives only recent captions and bounded metadata, not contact identifiers');
 denies(fn()=>$suggestApi($suggest,$dualNow+6,$model),429,'model requests are rate limited');
+// Voice is a separately approved, exact suggestion, not a general speech tool.
+$voiceDispatches=0;
+$voiceAudio=static function(string $script)use(&$voiceDispatches):string{
+    $voiceDispatches++;
+    c($script===VP3_OPERATOR_VOICE_PREFIX_V1.'Which details would you like me to confirm first?','the fixed synthetic identity disclosure precedes the reviewed suggestion');
+    return str_repeat("\x01\x00",16000);
+};
+$voiceApi=static fn(array $input,int $at,?callable $adapter=null):array=>vp3_operator_live_request_v1($pdo,user(),'POST',$input,'csrf-fixture',$dualSpeech,$at,$model,$adapter??$voiceAudio);
+$voicePrepare=['action'=>'voice_prepare','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$dualPublic,'token'=>$dualGrant['token'],
+    'source_seq'=>1,'suggestion'=>$reply['suggestion'],'proof'=>$reply['speech_proof'],'voice_consent_attested'=>true];
+c(preg_match('/^[a-f0-9]{64}$/D',$reply['speech_proof'])===1,'private suggestion can be authenticated for an explicitly reviewed voice turn');
+denies(fn()=>$voiceApi(array_replace($voicePrepare,['voice_consent_attested'=>false]),$dualNow+6),422,'caption and model consent do not imply consent to Agent speech');
+denies(fn()=>$voiceApi(array_replace($voicePrepare,['suggestion'=>'Speak arbitrary words instead.']),$dualNow+6),409,'modified suggestion cannot dispatch speech');
+denies(fn()=>$voiceApi(array_replace($voicePrepare,['proof'=>str_repeat('0',64)]),$dualNow+6),409,'forged suggestion proof cannot dispatch speech');
+denies(fn()=>$voiceApi(array_replace($voicePrepare,['agent_id'=>7,'conversation_id'=>12]),$dualNow+6),404,'another Chat cannot synthesize this call suggestion');
+c($voiceDispatches===0,'rejected voice inputs cannot reach paid synthesis');
+$voiceReady=$voiceApi($voicePrepare,$dualNow+6);
+c($voiceDispatches===1&&$voiceReady['state']==='ready'&&$voiceReady['samples']===16000&&$voiceReady['sample_rate']===16000
+    &&strlen(base64_decode($voiceReady['pcm'],true))===32000,'prepared voice is bounded PCM, not permission to play');
+$voiceRow=vp3_operator_voice_row_v1($pdo,$dualId,1);
+c($voiceRow['token_hash']===hash('sha256',$voiceReady['turn_token'])&&!str_contains(json_encode($voiceRow),$voicePrepare['suggestion']),'voice storage keeps only a hashed turn token and metadata');
+denies(fn()=>$voiceApi($voicePrepare,$dualNow+7),409,'uncertain or repeated preparation cannot dispatch twice');
+denies(fn()=>$liveApi(array_replace($dualChunk,['seq'=>2]),$dualNow+8,$dualSpeech),409,'caption dispatch pauses during a reserved voice turn');
+$voiceClaim=['action'=>'voice_claim','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$dualPublic,'token'=>$dualGrant['token'],
+    'source_seq'=>1,'turn_token'=>$voiceReady['turn_token']];
+denies(fn()=>$voiceApi(array_replace($voiceClaim,['turn_token'=>str_repeat('1',64)]),$dualNow+8),409,'a mismatched turn token cannot claim outbound audio');
+$voicePlay=$voiceApi($voiceClaim,$dualNow+8);
+c($voicePlay['state']==='playing'&&$voicePlay['samples']===16000&&$voicePlay['start_by_epoch']===$dualNow+10,'separate one-use playback claim has a short start deadline');
+denies(fn()=>$voiceApi($voiceClaim,$dualNow+8),409,'the same voice audio cannot be claimed twice');
+$voiceFinish=array_replace($voiceClaim,['action'=>'voice_finish']);
+c($voiceApi($voiceFinish,$dualNow+10)['state']==='closed'&&$voiceApi($voiceFinish,$dualNow+11)['state']==='closed','finishing returns the turn to human control and is idempotent');
+denies(fn()=>$voiceApi($voicePrepare,$dualNow+12),409,'closing a turn does not authorize paid replay');
 $dualCaption2=$liveApi(array_replace($dualChunk,['seq'=>2]),$dualNow+28,$dualSpeech);
 $stopDual=array_replace($stop,['call_id'=>$dualPublic,'token'=>$dualGrant['token']]);
 denies(fn()=>$suggestApi($suggest,$dualNow+29,$model),409,'old caption evidence cannot consume another suggestion');
@@ -745,6 +777,23 @@ denies(fn()=>$liveApi($midChunk,$midNow+4,$stopMidSide),409,'revocation during t
 c($midDispatches===1&&(int)vp3_operator_live_row_v1($pdo,$midId)['reserved_seconds']===8,'dual frame reserves both sides before dispatch and never repeats uncertain speech');
 $terminalMid=form($midChild,['ParentCallSid'=>$midParent,'CallStatus'=>'completed']);
 vp3_phone_browser_status_v1($pdo,$terminalMid,signature('status',$terminalMid,$midPublic),$midPublic);
+// Stop during synthesis must suppress the pending output and spend the attempt.
+$latePublic=str_repeat('f',31).'b';$lateParent='CA'.str_repeat('f',31).'b';$lateChild='CA'.str_repeat('f',31).'c';
+$insertLive->execute([$latePublic,$lateParent,time(),time()]);$lateId=(int)$pdo->lastInsertId();
+$lateForm=form($lateChild,['ParentCallSid'=>$lateParent,'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$lateForm,signature('status',$lateForm,$latePublic),$latePublic);
+$lateNow=time();$lateGrant=$liveApi(array_replace($liveRequest,['call_id'=>$latePublic,'suggestions_attested'=>true]),$lateNow);
+$lateCaption=$liveApi(array_replace($chunk,['call_id'=>$latePublic,'token'=>$lateGrant['token']]),$lateNow+4,$dualSpeech);
+$lateSuggestion=$suggestApi(array_replace($suggest,['call_id'=>$latePublic,'token'=>$lateGrant['token'],'receipts'=>$lateCaption['receipts']]),$lateNow+5,$model);
+$latePrepare=array_replace($voicePrepare,['call_id'=>$latePublic,'token'=>$lateGrant['token'],'suggestion'=>$lateSuggestion['suggestion'],'proof'=>$lateSuggestion['speech_proof']]);
+$lateStop=array_replace($stop,['call_id'=>$latePublic,'token'=>$lateGrant['token']]);$latePaid=0;
+$stopDuringVoice=static function(string $script)use(&$latePaid,$liveApi,$lateStop,$lateNow):string{
+    $latePaid++;$liveApi($lateStop,$lateNow+6);return str_repeat("\x01\x00",16000);
+};
+denies(fn()=>$voiceApi($latePrepare,$lateNow+6,$stopDuringVoice),409,'owner takeover during synthesis fences returned audio');
+c($latePaid===1&&vp3_operator_voice_row_v1($pdo,$lateId,1)['state']==='closed','revoked synthesis remains a spent turn and cannot be played');
+$terminalLate=form($lateChild,['ParentCallSid'=>$lateParent,'CallStatus'=>'completed']);
+vp3_phone_browser_status_v1($pdo,$terminalLate,signature('status',$terminalLate,$latePublic),$latePublic);
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$liveBeforeMessages
     &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$liveBeforeJobs,'live assistance does not create another Chat message or recording job');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
