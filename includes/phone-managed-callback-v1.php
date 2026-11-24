@@ -134,7 +134,15 @@ function vp3_managed_callback_holder_v1(PDO $pdo,int $owner,string $device,array
     $id=vp3_managed_callback_id_v1($input['request_id']??null);
     $decision=$input['decision']??null;
     vp3_managed_callback_need_v1(in_array($decision,['approve','decline'],true),422);
-    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$owner,$device,$input,$id,$decision,$now){
+    return vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_callback_holder_locked_v1($pdo,$owner,$device,$input,$now));
+}
+/** Caller already holds the authenticated account/device transaction. */
+function vp3_managed_callback_holder_locked_v1(PDO $pdo,int $owner,string $device,array $input,int $now):array
+{
+        vp3_managed_callback_need_v1(vp3_managed_callback_ready_v1($pdo),503);
+        $id=vp3_managed_callback_id_v1($input['request_id']??null);
+        $decision=$input['decision']??null;
+        vp3_managed_callback_need_v1(in_array($decision,['approve','decline'],true),422);
         $user=vp3_managed_callback_owner_lock_v1($pdo,$owner);
         vp3_managed_callback_prune_v1($pdo,$owner,$now);
         $row=vp3_managed_callback_row_v1($pdo,$id,true);
@@ -151,7 +159,6 @@ function vp3_managed_callback_holder_v1(PDO $pdo,int $owner,string $device,array
             $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='declined',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=? AND state IN ('pending','approved')")->execute([$now,$id]);
         }
         return vp3_managed_callback_view_v1(vp3_managed_callback_row_v1($pdo,$id),$now,true);
-    });
 }
 /** Pure carrier command builder. No Twilio network request, no credential access. */
 function vp3_managed_callback_plan_v1(array $row,int $now,string $answerUrl,string $statusUrl):array

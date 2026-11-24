@@ -153,7 +153,12 @@
       const recordLabel=node('label','vp3-phone-check vp3-phone-record'),record=node('input');record.type='checkbox';record.checked=recordThisCall;record.dataset.phoneFocusKey='record-call';record.addEventListener('change',()=>{if(current(renderGeneration))recordThisCall=record.checked;});recordLabel.append(record,node('span',null,'Record this call'));dial.append(recordLabel,node('p','vp3-phone-empty vp3-phone-record','The person you call hears a recording notice. Your saved after-call settings control transcripts and reports.'));
     }
     dial.addEventListener('submit',event=>{event.preventDefault();if(current(renderGeneration))void placeCall(input.value,{record:recordThisCall});});if(!connectedDraft)host.append(dial);
-    if(document.getElementById('chatThread'))host.append(button('My phone in Chat',event=>{if(event.isTrusted){close();void openOwnerSetup();}}));
+    if(document.getElementById('chatThread')){
+      host.append(button('My phone in Chat',event=>{if(event.isTrusted){close();void openOwnerSetup();}}));
+      const link=node('a','vp3-phone-report','Connected-phone calling');
+      const target=new URL('phone-tracking.php',new URL(config.urlbase||'/',location.origin));
+      if(target.origin===location.origin&&!target.username&&!target.password){target.searchParams.set('profile','managed');link.href=target.href;host.append(link);}
+    }
     renderCurrentCall(host);renderPolicy(host);replacePhoneContent(sections.connections,...host.childNodes);
   }
   function renderConnectedDial(host,g){
@@ -170,7 +175,13 @@
     const update=()=>{call.disabled=!draft.confirmed||!canCall()||Boolean(active||callBusy||setupPending||pending.size);};
     confirm.addEventListener('change',()=>{draft.confirmed=confirm.checked;update();});update();
     const cancel=button('Close connected phone setup',()=>{if(connectedDraft===draft){connectedDraft=null;render();}});
-    cancel.disabled=Boolean(active||callBusy||setupPending||pending.size);card.append(label,call,cancel);host.append(card);
+    cancel.disabled=Boolean(active||callBusy||setupPending||pending.size);card.append(label,call,cancel);
+    const review=node('a','vp3-phone-report','Review a Twilio managed callback');
+    const target=new URL('phone-tracking.php',new URL(config.urlbase||'/',location.origin));
+    if(target.origin===location.origin&&!target.username&&!target.password&&publicId(draft.device_id)){
+      target.searchParams.set('device_id',draft.device_id);target.searchParams.set('profile','managed');review.href=target.href;card.append(review);
+    }
+    host.append(card);
   }
   function openConnectedPhone(device,source=document.activeElement){
     if(!authorized||disposed||!document.getElementById('phone-workspace'))return false;

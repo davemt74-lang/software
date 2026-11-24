@@ -288,6 +288,18 @@
   el('tab-chat')?.addEventListener('click',()=>queueMicrotask(renderInformation));
   const dialer=window.VP3RemoteDialerV1?.holder({request:dialerRequest});
   if(dialer){el('dialer-alert-host')?.append(dialer.alert);el('dialer-settings-host')?.append(dialer.prefs);}
+  const managedCall=window.VP3ManagedCallUIV1?.holder({request:managedHolderRequest});
+  if(managedCall)el('managed-alert-host')?.append(managedCall.root);
+  function managedHolderRequest(action,body){
+    return new Promise((resolve,reject)=>queue(async()=>{
+      try{
+        if(!dialerAvailable()||document.hidden||device.id!==body.device_id||device.generation!==body.generation||device.managed_callback?.request?.request_id!==body.managed_request_id)throw Error('Managed request changed.');
+        const result=await request(action,body);
+        if(device?.id!==body.device_id||pending||dead)throw Error('Connection changed.');
+        accept(result);render();resolve(result);
+      }catch(error){reject(error);schedulePoll();}
+    }));
+  }
   function dialerAvailable(){return secure&&!dead&&!pending&&available&&navigator.onLine!==false&&device?.status==='approved';}
   function dialerRequest(action,body,keepalive=false){
     return new Promise((resolve,reject)=>queue(async()=>{
@@ -301,6 +313,7 @@
   }
   function render() {
     dialer?.bind(device,dialerAvailable());
+    managedCall?.bind(device,dialerAvailable());
     renderInformation();
     renderCommunication();
     const connected = device?.status === 'approved';
@@ -824,6 +837,7 @@
   window.addEventListener('pagehide',() => {
     dead = true;
     dialer?.invalidate();
+    managedCall?.invalidate();
     exchange?.clear();
     if (run) {
       const old = cancelWatch();
@@ -833,7 +847,7 @@
     }
   });
   window.addEventListener('pageshow',() => { dead = false; schedulePoll(); });
-  document.addEventListener('visibilitychange',() => { if (document.hidden){exchange?.clear();dialer?.invalidate();}else schedulePoll(); });
+  document.addEventListener('visibilitychange',() => { if (document.hidden){exchange?.clear();dialer?.invalidate();managedCall?.invalidate();}else schedulePoll(); });
   setInterval(() => {
     if (document.hidden || dead) return;
     if (device || !available) schedulePoll();
