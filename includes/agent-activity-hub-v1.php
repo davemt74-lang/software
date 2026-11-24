@@ -935,6 +935,8 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         $operator = vp3_operator_specialist_status_v1($pdo,$fresh['user'],$fresh['principal'],$agentId,$conversationId,$now->getTimestamp());
         if ($operator === null) throw new RuntimeException('Operator Specialist is unavailable.',403);
         $attention['specialists'] = [$operator];
+        require_once __DIR__.'/agent-operator-history-v1.php';
+        $coordination['operator_history'] = vp3_operator_history_v1($pdo,$fresh['user'],$agentId,$conversationId);
     }
     if ($profileOnly) {
         require_once __DIR__.'/agent-profile-specialist-v1.php';

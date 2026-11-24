@@ -142,7 +142,7 @@ function vp3_phone_workspace_call_projection_v1(array $row): array
         'source_kind'=>'browser','browser_control'=>true];
 }
 /** The existing signed inbound receipt remains the historical owner authority. */
-function vp3_phone_workspace_legacy_calls_v1(PDO $pdo,array $scope): array
+function vp3_phone_workspace_legacy_calls_v1(PDO $pdo,array $scope,bool $terminalOnly=false): array
 {
     if(!table_exists('phone_voice_calls_v130'))return [];
     $duration=table_exists('phone_voice_recordings_v130')?'COALESCE((SELECT MAX(r.duration_seconds) FROM phone_voice_recordings_v130 r WHERE r.call_id=c.id AND r.owner_user_id=c.owner_user_id),0)':'0';
@@ -150,6 +150,7 @@ function vp3_phone_workspace_legacy_calls_v1(PDO $pdo,array $scope): array
         SELECT 1 FROM phone_browser_calls_v1 b WHERE b.owner_user_id=c.owner_user_id
         AND (b.voice_call_id=c.id OR b.provider_call_sid=c.provider_call_sid))";$args=[$scope['owner_user_id']];
     if($scope['agent_id']>0){$sql.=' AND c.agent_id=?';$args[]=$scope['agent_id'];}
+    if($terminalOnly)$sql.=" AND c.state IN ('completed','voicemail_ready')";
     $q=$pdo->prepare($sql.' ORDER BY c.created_at DESC,c.id DESC LIMIT 50');$q->execute($args);$rows=[];
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $call){
         $raw=(string)$call['created_at'];$created=DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$raw,new DateTimeZone('UTC'));
