@@ -24,7 +24,7 @@ try {
     }
     $multipart=strtolower(trim(explode(';',$_SERVER['CONTENT_TYPE']??'',2)[0]))==='multipart/form-data';
     if ($multipart && (int)($_SERVER['CONTENT_LENGTH']??0)>VP3_PHONE_RECORD_CHUNK_V1+16384) throw new RuntimeException('Recording chunk too large.',413);
-    $input = $multipart ? ['action'=>'camera_record_chunk'] : vp3_phone_http_json_v1(['camera_offer','camera_map_offer','camera_chat_offer']);
+    $input = $multipart ? ['action'=>'camera_record_chunk'] : (($_GET['information_file']??null)==='1'?vp3_phone_file_http_json_v1(['information_attach_file']):vp3_phone_http_json_v1(['camera_offer','camera_map_offer','camera_chat_offer']));
     $action = $input['action'] ?? null;
     unset($input['action']);
     $cameraAction = in_array($action, ['camera_status','camera_prepare','camera_start','camera_offer','camera_stop','camera_map_offer','camera_chat_offer'],true);
@@ -32,7 +32,7 @@ try {
     $recordAction=in_array($action,['camera_record_accept','camera_record_review','camera_record_decline'],true);
     if (!$multipart && !$recordAction && !$chatAction && !$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
         'accept_history','decline_history','stop_history','set_place_permission',
-        'accept_arrival','decline_arrival','stop_arrival','holder_save_place','save_communication_profile','information_list','information_accept','information_decline','information_ack','information_reply'], true)) {
+        'accept_arrival','decline_arrival','stop_arrival','holder_save_place','save_communication_profile','information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download'], true)) {
         throw new RuntimeException('Unknown action.', 422);
     }
     $pdo = db();

@@ -33,13 +33,13 @@ try {
             $input = ['device_id'=>$deviceId,'before'=>$before === null ? null : (int)$before];
         }
     } elseif ($method === 'POST') {
-        $input = vp3_phone_http_json_v1();
+        $input = ($_GET['information_file']??null)==='1'?vp3_phone_file_http_json_v1(['information_create_file']):vp3_phone_http_json_v1();
         if (!is_string($input['csrf_token'] ?? null) || !hash_equals(csrf_token(), $input['csrf_token'])) {
             throw new RuntimeException('Session expired.', 419);
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_create_file','information_download'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -51,7 +51,7 @@ try {
     if (!$pdo || !vp3_phone_schema_ready_v1($pdo)) throw new RuntimeException('Upgrade required.', 503);
     $owner = (int)$user['id'];
     $result = match ($action) {
-        'information_list','information_create','information_cancel' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
+        'information_list','information_create','information_cancel','information_create_file','information_download' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
         'save_communication_grants' => vp3_phone_communication_owner_v1($pdo,$owner,$input),
         'history' => vp3_phone_history_read_v1($pdo,$owner,$input['device_id'],$input['before']),
         'places','save_place','delete_place' => vp3_phone_places_owner_v1($pdo,$owner,$action,$input),
