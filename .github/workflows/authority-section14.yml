@@ -637,6 +637,7 @@ jobs:
           php -l tests/agent-operator-worker-authority-8a4.php
           php tests/agent-operator-worker-authority-8a4.php
           php tests/agent-operator-worker-race-8a4.php
+          php tests/agent-operator-paired-worker-8a4.php
       - name: MySQL wire authority checks
         env:
           VP3_WORKER_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=operator_worker_ci
@@ -645,3 +646,4 @@ jobs:
         run: |
           php tests/agent-operator-worker-authority-8a4.php
           php tests/agent-operator-worker-race-8a4.php
+          php tests/agent-operator-paired-worker-8a4.php

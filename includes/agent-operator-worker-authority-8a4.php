@@ -153,7 +153,7 @@ final class VP3OperatorWorkerAuthority8A4
             && hash_equals($r['key_fingerprint'],hash('sha256',$c['secret']));
     }
 
-    public function receive(string $body,string $mac,int $now): array
+    public function receive(string $body,string $mac,int $now,?callable $authorize=null): array
     {
         self::clock($now);
         $p=self::frame($body);
@@ -172,7 +172,10 @@ final class VP3OperatorWorkerAuthority8A4
         self::require($register?($p['sequence']===1 && $p['generation']===0):($p['sequence']>=2 && $p['generation']>=1));
         self::require(!$retire || $p['capabilities']===[]);
         $digest=hash('sha256',$body);
-        return $this->tx(function() use($p,$id,$c,$now,$digest,$register,$retire) {
+        return $this->tx(function() use($p,$id,$c,$now,$digest,$register,$retire,$authorize) {
+            // Internal production adapter rechecks paired authority under the same mutex.
+            // No public request may supply this callback.
+            if ($authorize!==null) $authorize();
             self::require(!$this->revoked($id));
             $r=$this->registration($id);
             if ($r!==null) {
