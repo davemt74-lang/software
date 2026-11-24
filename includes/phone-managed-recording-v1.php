@@ -40,7 +40,8 @@ function vp3_managed_recording_view_v1(?array $consent):array
         'retain_audio'=>!empty($p['retain_audio']),'transcribe'=>!empty($p['transcribe']),'analyze'=>!empty($p['analyze']),
         'holder_consented'=>(int)$consent['holder_epoch']>0,'parent_consented'=>(int)$consent['parent_epoch']>0,
         'destination_consented'=>(int)$consent['child_epoch']>0,
-        'state'=>(int)$consent['revoked_epoch']>0?'revoked':(string)$consent['start_state']];
+        'state'=>(int)$consent['revoked_epoch']>0?'revoked':(string)$consent['start_state'],
+        'stop_state'=>(string)($consent['stop_state']??'none')];
 }
 function vp3_managed_recording_request_v1(PDO $pdo,array $row,array $user,array $number,array $input,int $now):void
 {
@@ -223,13 +224,19 @@ function vp3_managed_recording_event_v1(PDO $pdo,array $row,array $t,array $call
 {
     $reject=['accepted'=>false,'xml'=>vp3_phone_browser_hangup_v1()];
     $c=vp3_managed_recording_row_v1($pdo,$row['public_id'],true);$record=$form['RecordingSid']??null;$status=$form['RecordingStatus']??null;
-    if(!$c||(int)$c['owner_user_id']!==(int)$call['owner_user_id']||(int)$c['revoked_epoch']>0
+    if(!$c||(int)$c['owner_user_id']!==(int)$call['owner_user_id']
         ||(int)$c['holder_epoch']===0||(int)$c['parent_epoch']===0||(int)$c['child_epoch']===0||(int)$c['start_epoch']===0
         ||!hash_equals((string)$call['provider_call_sid'],$sid)||!hash_equals((string)$call['provider_child_sid'],(string)$c['child_sid'])
-        ||!in_array($c['start_state'],['starting','started','uncertain','received','absent'],true)||!vp3_managed_recording_sid_v1($record)
+        ||!in_array($c['start_state'],['starting','started','uncertain','received','absent','discard_required'],true)||!vp3_managed_recording_sid_v1($record)
         ||($form['RecordingSource']??null)!=='StartCallRecordingAPI'||!in_array($status,['completed','absent','failed'],true))return $reject;
     if($status==='completed'&&(($form['RecordingChannels']??null)!=='2'||($form['RecordingTrack']??null)!=='both'
         ||!is_string($form['RecordingDuration']??null)||preg_match('/^\d{1,3}$/D',$form['RecordingDuration'])!==1||(int)$form['RecordingDuration']<1||(int)$form['RecordingDuration']>240))return $reject;
+    if((int)$c['revoked_epoch']>0){
+        // A signed terminal receipt may close a withdrawn recording, but may not enqueue processing.
+        if(!vp3_managed_recording_bind_sid_v1($pdo,$c,$record,$now))return $reject;
+        $pdo->prepare("UPDATE phone_managed_recording_consent_v1 SET start_state='discard_required',stop_state='terminal_verified',updated_epoch=? WHERE request_id=?")->execute([$now,$row['public_id']]);
+        return ['accepted'=>true,'queued'=>false,'xml'=>vp3_phone_browser_hangup_v1()];
+    }
     if(in_array($c['start_state'],['received','absent'],true)){
         if(!$c['recording_sid']||!hash_equals($c['recording_sid'],$record))return $reject;
         return ['accepted'=>true,'duplicate'=>true,'xml'=>vp3_phone_browser_hangup_v1()];

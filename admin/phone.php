@@ -10,6 +10,7 @@ require_once dirname(__DIR__).'/includes/phone-voice-stream-v150.php';
 require_once dirname(__DIR__).'/includes/phone-voice-readiness-v160.php';
 require_once dirname(__DIR__).'/includes/phone-setup-v170.php';
 require_once dirname(__DIR__).'/includes/phone-worker-health-v171.php';
+require_once dirname(__DIR__).'/includes/phone-managed-pilot-v1.php';
 require_login();require_permission('users.manage');
 $pdo=db();if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
 $ready=vp3_phone_schema_ready_v100($pdo);$error='';$connectionTest='';$streamReadiness=null;
@@ -20,6 +21,13 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
     else {
         try {
             $action=(string)($_POST['action']??'');
+            if($action==='managed_pilot_disable'){
+                vp3_managed_pilot_disable_v1(current_user());flash('notice','Managed live pilot disabled. Existing active calls can still be ended.');redirect(url('/admin/phone.php#managed-pilot'));
+            }
+            if($action==='managed_pilot_save'){
+                vp3_managed_pilot_configure_v1($pdo,current_user(),['number_id'=>(int)($_POST['number_id']??0),'device_id'=>(string)($_POST['device_id']??''),'destination_e164'=>trim((string)($_POST['destination_e164']??'')),'minutes'=>(int)($_POST['minutes']??0),'native'=>!empty($_POST['native']),'confirmed'=>($_POST['confirmed']??null)==='1'],time());
+                flash('notice','Temporary unrecorded pilot saved. No call was placed.');redirect(url('/admin/phone.php#managed-pilot'));
+            }
             if($action==='save_browser_voice'){
                 vp3_phone_browser_config_save_v1([
                     'api_key_sid'=>(string)($_POST['browser_api_key_sid']??''),
@@ -226,6 +234,7 @@ $setupPlan=vp3_phone_setup_plan_v170([
 $workerHealth=vp3_phone_worker_health_state_v171($pdo,time());
 $phoneBrowserState=vp3_phone_browser_config_state_v1();
 $phoneRecordingWorker=vp3_phone_recording_worker_health_v1();
+$managedPilot=vp3_managed_pilot_admin_status_v1(time());
 $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.php';
 ?>
 <style>
@@ -347,6 +356,22 @@ $adminTitle='Phone & Messaging';$adminActive='phone';require __DIR__.'/_header.p
         <p><strong>Live audio certification pending:</strong> <?= e(implode('; ',$streamReadiness['live_tests_pending'])) ?>.</p>
       </div>
     <?php endif; ?>
+  </section>
+  <section class="phone-card" id="managed-pilot">
+    <h2>Managed calling · supervised acceptance</h2>
+    <p>Only one approved connected phone and one agreed test destination may use this temporary pilot. Saving does not place a call. Recorded live calls remain disabled. The holder must approve each request and confirm on the phone. Both call legs may incur charges.</p>
+    <p><strong><?= $managedPilot['enabled']?'Temporary pilot configured':'Live pilot closed' ?></strong><?php if($managedPilot['enabled']): ?> · owner <?= (int)$managedPilot['owner_id'] ?> · assigned line #<?= (int)$managedPilot['number_id'] ?> · expires <?= e(gmdate('Y-m-d H:i:s',$managedPilot['expires_epoch']).' UTC') ?><?php endif; ?></p>
+    <p>Managed media worker: <?= e($managedPilot['media_worker']) ?> · recording processing worker: <?= e((string)$phoneRecordingWorker['state']) ?>. Worker observations do not certify real carrier audio or recording.</p>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="managed_pilot_save">
+      <label class="phone-field">Assigned line<select name="number_id" required><option value="">Choose a voice-enabled assigned number</option><?php foreach($numbers as $n):if(empty($n['owner_user_id'])||empty($n['voice_enabled']))continue; ?><option value="<?= (int)$n['id'] ?>"><?= e((string)$n['phone_e164'].' · '.(string)$n['owner_name']) ?></option><?php endforeach; ?></select></label>
+      <label class="phone-field">Approved connected device ID<input name="device_id" required pattern="[a-f0-9]{32}" autocomplete="off" placeholder="32-character device ID"></label>
+      <label class="phone-field">Agreed test destination<input name="destination_e164" type="tel" required autocomplete="off" pattern="\+[1-9][0-9]{7,14}" placeholder="+16025550100"></label>
+      <label class="phone-field">Pilot duration<select name="minutes"><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="60">60 minutes</option></select></label>
+      <label style="display:flex;gap:8px;align-items:center;margin:12px 0"><input style="width:20px;min-height:20px" type="checkbox" name="native" value="1"> Also permit native dial-through for this exact test</label>
+      <label style="display:flex;gap:8px;align-items:center;margin:12px 0"><input style="width:20px;min-height:20px" type="checkbox" name="confirmed" value="1" required> Both test participants agree and I authorize this bounded unrecorded carrier pilot.</label>
+      <button <?= $ready&&$state['configured']?'':'disabled' ?>>Save temporary pilot</button>
+    </form>
+    <form method="post" style="margin-top:10px"><?= csrf_field() ?><input type="hidden" name="action" value="managed_pilot_disable"><button class="phone-secondary">Disable pilot</button></form>
   </section>
   <section class="phone-card" id="browser-phone">
     <h2>Browser phone</h2>

@@ -16,10 +16,13 @@ function vp3_managed_recording_install_v1(PDO $pdo):void
         recording_sid VARCHAR(40) NULL UNIQUE,revoked_epoch BIGINT NOT NULL DEFAULT 0,
         updated_epoch BIGINT NOT NULL
     )".$suffix);
+    foreach(['stop_state'=>"VARCHAR(24) NOT NULL DEFAULT 'none'",'stop_epoch'=>'BIGINT NOT NULL DEFAULT 0'] as $field=>$definition){
+        try{$pdo->query('SELECT '.$field.' FROM phone_managed_recording_consent_v1 WHERE 1=0');}catch(PDOException){$pdo->exec('ALTER TABLE phone_managed_recording_consent_v1 ADD COLUMN '.$field.' '.$definition);}
+    }
 }
 function vp3_managed_recording_ready_v1(PDO $pdo):bool
 {
-    try{$pdo->query('SELECT request_id,owner_user_id,policy_json,policy_revision,consent_revision,owner_epoch,holder_epoch,parent_epoch,child_epoch,child_sid,start_state,start_epoch,recording_sid,revoked_epoch,updated_epoch FROM phone_managed_recording_consent_v1 WHERE 1=0');return true;}
+    try{$pdo->query('SELECT request_id,owner_user_id,policy_json,policy_revision,consent_revision,owner_epoch,holder_epoch,parent_epoch,child_epoch,child_sid,start_state,start_epoch,recording_sid,revoked_epoch,updated_epoch,stop_state,stop_epoch FROM phone_managed_recording_consent_v1 WHERE 1=0');return true;}
     catch(PDOException){return false;}
 }
 function vp3_managed_recording_revoke_v1(PDO $pdo,string $request,int $now):void

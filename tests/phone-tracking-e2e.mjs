@@ -1312,6 +1312,39 @@ async function verifyManagedReviewUI(context){
     const nativeCalls=await page.evaluate(()=>window.managedFixture.calls.slice(5));
     assert.deepEqual(nativeCalls.map(x=>x.action),['managed_prepare','managed_respond','native_dialthrough_issue']);
     assert.equal(nativeCalls[0].body.transport,'twilio_native');assert.equal(nativeCalls[2].body.confirmed,true);
-    console.log('PASS Managed callback and native dial-through review UI: no real carrier dispatch or native dialer navigation.');
+    // A simulated administrator-approved pilot exposes one explicit billable action only.
+    await page.evaluate(()=>{
+      const {d,ownerUI}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,dispatch_enabled:false,server_epoch:Math.floor(Date.now()/1000),
+        request:{request_id:'f'.repeat(32),state:'approved',transport:'twilio_callback',expires_epoch:Math.floor(Date.now()/1000)+120}};
+      ownerUI.bind(d,true);ownerUI.setMode('managed');
+    });
+    const pilot=own.getByRole('button',{name:'Start unrecorded pilot call',exact:true});
+    assert.equal(await pilot.isVisible(),false);
+    await page.evaluate(()=>{
+      const {d,ownerUI}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,dispatch_enabled:true};ownerUI.bind(d,true);
+    });
+    await pilot.waitFor();
+    page.once('dialog',dialog=>dialog.dismiss());
+    await pilot.click();
+    assert.equal(await page.evaluate(()=>window.managedFixture.calls.some(x=>x.action==='managed_pilot_dispatch')),false,'canceling confirmation sends no paid request');
+    page.once('dialog',dialog=>dialog.accept());
+    await pilot.click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_pilot_dispatch'));
+    const pilotBody=await page.evaluate(()=>window.managedFixture.calls.find(x=>x.action==='managed_pilot_dispatch').body);
+    assert.equal(pilotBody.managed_request_id,'f'.repeat(32));assert.equal(pilotBody.confirmed,true);
+    assert.equal(Object.hasOwn(pilotBody,'destination_e164'),false,'the UI cannot substitute the approved destination');
+    await page.evaluate(()=>{
+      const {d,ownerUI}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,dispatch_enabled:true,request:{request_id:'e'.repeat(32),state:'approved',transport:'twilio_callback',expires_epoch:Math.floor(Date.now()/1000)+120,
+        recording:{requested:true,state:'requested',revision:1}}};
+      ownerUI.bind(d,true);
+    });
+    assert.equal(await pilot.isVisible(),false,'recorded requests cannot use unrecorded pilot');
+    page.once('dialog',dialog=>dialog.accept());
+    await own.getByRole('button',{name:'Withdraw recording consent',exact:true}).click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_recording_withdraw'));
+    console.log('PASS Managed call review, native code and explicit pilot controls without actual carrier traffic.');
   }finally{await page.close();}
 }

@@ -590,7 +590,7 @@
       opts.body = JSON.stringify({...fields, action, csrf_token:root.dataset.csrf, request_id:crypto.randomUUID()});
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(),['managed_reconcile','managed_end'].includes(action)?50000:action==='information_create_file'||action==='information_download'?30000:10000);
+    const timer = setTimeout(() => controller.abort(),['managed_reconcile','managed_end','managed_pilot_dispatch'].includes(action)?50000:action==='information_create_file'||action==='information_download'?30000:10000);
     try {
       const response = await fetch(url,{...opts, signal:controller.signal});
       const data = await response.json();

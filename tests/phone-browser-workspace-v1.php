@@ -1167,7 +1167,13 @@ $recTransport=static function(string $method,string $resource,array $fields)use(
     c(str_ends_with($resource,'/Calls/'.$recParent.'/Recordings.json')&&$fields['RecordingChannels']==='dual'&&$fields['RecordingTrack']==='both'&&$fields['PlayBeep']==='true','one exact parent dual-channel recording request with audible beep');
     return ['sid'=>$recSid,'account_sid'=>setting('phone_twilio_account_sid'),'call_sid'=>$recParent,'source'=>'StartCallRecordingAPI','status'=>'in-progress','channels'=>2];
 };
-$started=vp3_managed_recording_start_v1($pdo,$recPublic,$recNonce,$recTransport,$clock);
+require_once dirname(__DIR__).'/includes/phone-managed-media-worker-v1.php';
+c(vp3_managed_media_tick_v1($pdo,$recTransport,$clock)['attempted']===0&&$recMethods===[],'automatic recording driver defaults disabled');
+$GLOBALS['settings']['phone_managed_media_driver_enabled_v1']='1';
+$driven=vp3_managed_media_tick_v1($pdo,$recTransport,$clock);
+$started=vp3_managed_recording_view_v1(vp3_managed_recording_row_v1($pdo,$recordRequest));
+c($driven['started']===1&&$driven['attempted']===1,'automatic driver consumes exact consented active call once');
+unset($GLOBALS['settings']['phone_managed_media_driver_enabled_v1']);
 c($started['state']==='started'&&$recMethods===['GET','GET','POST']&&(int)readcall($recPublic)['recording_enabled']===1,'verified consent and both exact active legs permit one recording command');
 denies(fn()=>vp3_managed_recording_start_v1($pdo,$recPublic,$recNonce,$recTransport,$clock),409,'recording start cannot be replayed');
 c($recMethods===['GET','GET','POST'],'no duplicate recording provider mutation');
@@ -1283,6 +1289,11 @@ $nv=$makeNative('valid','+16025550158','+16025550159');
 denies(fn()=>$nativeIssue($nv),503,'native pilot defaults disabled');
 $GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
 $GLOBALS['settings']['phone_native_dialthrough_enabled_v1']='1';
+$nativePilotFor=static function(array $v)use($nativeClock):void{
+    $GLOBALS['settings']['phone_managed_live_pilot_enabled_v1']='1';
+    $GLOBALS['settings']['phone_managed_pilot_scope_v1']=json_encode(['owner_user_id'=>2,'number_id'=>2,'device_id'=>$v['device'],'holder_e164'=>$v['holder'],'destination_e164'=>$v['destination'],'expires_epoch'=>$nativeClock+900],JSON_THROW_ON_ERROR);
+};
+$nativePilotFor($nv);
 denies(fn()=>$nativeIssue($nv),409,'pending owner review cannot issue native code');
 denies(fn()=>vp3_managed_callback_prepare_v1($pdo,user(2),array_replace($nv['args'],['transport'=>'twilio_callback']),$nativeClock),409,'native mode cannot be changed by retry');
 denies(fn()=>vp3_managed_callback_prepare_v1($pdo,user(2),$nv['args']+['recording_requested'=>true],$nativeClock),422,'native pilot refuses recording');
@@ -1320,17 +1331,67 @@ $nativeParentEvidence=['sid'=>$sid,'account_sid'=>setting('phone_twilio_account_
 c(vp3_managed_control_evidence_v1($nativeParentEvidence,(string)setting('phone_twilio_account_sid'),readcall($nativePublic))['state']==='answered','control evidence validates reversed native parent direction');
 $completeNative=form($sid,['From'=>$nv['holder'],'To'=>$nativeLine,'DialCallSid'=>$childNative,'DialCallStatus'=>'completed','DialCallDuration'=>'22']);
 c($nativeEvent('complete',$nativePublic,$nativeQuery['nonce'],$completeNative)['accepted']&&readcall($nativePublic)['state']==='completed'&&(int)readcall($nativePublic)['duration_seconds']===22,'native completion records destination duration, not parent time');
-$badNative=$makeNative('wrong-pin','+16025550160','+16025550161');$nativeApprove($badNative);$badTicket=$nativeIssue($badNative)['native_dialthrough_ticket'];
+$badNative=$makeNative('wrong-pin','+16025550160','+16025550161');$nativePilotFor($badNative);$nativeApprove($badNative);$badTicket=$nativeIssue($badNative)['native_dialthrough_ticket'];
 $badSid='CA'.md5('native-wrong');$nativeInbound($badSid,$badNative['holder']);
 $badNonce=vp3_native_dialthrough_nonce_v1($badNative['id'],$badSid);$badForm=form($badSid,['From'=>$badNative['holder'],'To'=>$nativeLine,'Digits'=>$badTicket['pin']==='00000000'?'11111111':'00000000']);
 c(!$nativeEvent('native_pin',$badNative['id'],$badNonce,$badForm)['accepted'],'incorrect PIN cannot bridge');
 c(vp3_native_dialthrough_row_v1($pdo,$badNative['id'])['pin_hash']===null&&vp3_managed_callback_row_v1($pdo,$badNative['id'])['state']==='canceled','incorrect code consumes request and clears secret');
 c(!$nativeEvent('native_pin',$badNative['id'],$badNonce,array_replace($badForm,['Digits'=>$badTicket['pin']]))['accepted'],'no second attempt after wrong code');
-$revNative=$makeNative('revoked','+16025550162','+16025550163');$nativeApprove($revNative);$revTicket=$nativeIssue($revNative)['native_dialthrough_ticket'];
+$revNative=$makeNative('revoked','+16025550162','+16025550163');$nativePilotFor($revNative);$nativeApprove($revNative);$revTicket=$nativeIssue($revNative)['native_dialthrough_ticket'];
 $revSid='CA'.md5('native-revoked');$nativeInbound($revSid,$revNative['holder']);$revNonce=vp3_native_dialthrough_nonce_v1($revNative['id'],$revSid);
 vp3_managed_callback_revoke_v1($pdo,2,$revNative['device'],$nativeClock);
 c(!$nativeEvent('native_pin',$revNative['id'],$revNonce,form($revSid,['From'=>$revNative['holder'],'To'=>$nativeLine,'Digits'=>$revTicket['pin']]))['accepted'],'pairing withdrawal before PIN blocks bridge');
 c(vp3_native_dialthrough_row_v1($pdo,$revNative['id'])['pin_hash']===null,'withdrawal erases PIN digest');
-unset($GLOBALS['settings']['phone_native_dialthrough_enabled_v1'],$GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+unset($GLOBALS['settings']['phone_native_dialthrough_enabled_v1'],$GLOBALS['settings']['phone_managed_callback_enabled_v1'],$GLOBALS['settings']['phone_managed_live_pilot_enabled_v1'],$GLOBALS['settings']['phone_managed_pilot_scope_v1']);
+
+
+// PS5E.8: public pilot boundary is narrower than transport test seams.
+$pilot=$makeManagedTransport('supervised-pilot','+16025550164','+16025550165');$approveManagedTransport($pilot);
+$pilotArgs=['device_id'=>$pilot['device'],'generation'=>1,'managed_request_id'=>$pilot['id'],'confirmed'=>true];
+$pilotPosts=0;$pilotPlan=[];$pilotParent='CA'.md5('supervised-pilot-parent');
+$pilotCarrier=static function(array $fields)use(&$pilotPosts,&$pilotPlan,$pilotParent):array{
+    $pilotPosts++;$pilotPlan=$fields;return ['sid'=>$pilotParent,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$fields['From'],'to'=>$fields['To']];
+};
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs,$clock,$pilotCarrier),403,'base transport flag alone never exposes paid pilot dispatch');
+c($pilotPosts===0,'disabled pilot sends no carrier command');
+denies(fn()=>vp3_managed_pilot_configure_v1($pdo,array_replace(user(2),['denied'=>1]),['number_id'=>2,'device_id'=>$pilot['device'],'destination_e164'=>$pilot['destination'],'minutes'=>15,'confirmed'=>true],$clock),403,'denied administrator cannot configure pilot');
+vp3_managed_pilot_configure_v1($pdo,user(2),['number_id'=>2,'device_id'=>$pilot['device'],'destination_e164'=>$pilot['destination'],'minutes'=>15,'confirmed'=>true],$clock);
+c($pilotPosts===0,'pilot configuration itself is not dispatch');
+$pilotView=vp3_managed_ui_projection_v1($pdo,vp3_managed_ui_device_v1($pdo,2,$pilot['device']),$clock,false);
+c($pilotView['dispatch_enabled']===true&&$pilotView['request']['pilot']['recording_available']===false,'only exact approved unrecorded pilot exposes dispatch');
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),array_replace($pilotArgs,['confirmed'=>false]),$clock,$pilotCarrier),422,'pilot still requires explicit billable action confirmation');
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs+['destination_e164'=>'+16025550199'],$clock,$pilotCarrier),422,'pilot action cannot replace destination');
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(1),$pilotArgs,$clock,$pilotCarrier),404,'pilot cannot cross owner accounts');
+$pilotDispatch=vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs,$clock,$pilotCarrier);
+$pilotPublic=$pilotDispatch['call']['public_id'];$pilotNonce=$transportNonce($pilotPlan);
+c($pilotPosts===1&&$pilotDispatch['dispatch_state']==='submitted'&&(int)vp3_managed_transport_row_v1($pdo,$pilotPublic)['pilot_required']===1,'one explicit pilot action reserves and submits the exact call');
+vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs,$clock,$pilotCarrier);
+c($pilotPosts===1,'pilot replay does not repeat billable POST');
+$pilotForm=form($pilotParent,['From'=>'+16025550102','To'=>$pilot['holder'],'CallStatus'=>'in-progress']);
+c($transportEvent('answer',$pilotPublic,$pilotNonce,$pilotForm)['accepted'],'approved pilot parent reaches confirmation');
+vp3_managed_pilot_disable_v1(user(2));
+c(!$transportEvent('confirm',$pilotPublic,$pilotNonce,$pilotForm+['Digits'=>'1'])['accepted'],'disabling pilot between answer and confirm prevents paid second leg');
+$transportEvent('parent',$pilotPublic,$pilotNonce,array_replace($pilotForm,['CallStatus'=>'completed']));
+c(readcall($pilotPublic)['state']==='canceled','parent-only pilot termination cannot be a completed destination call');
+unset($GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+
+// Existing recorded fixture: simulate lost recording completion state to
+// exercise withdrawal stop independently of the already tested report receipt.
+$pdo->prepare("UPDATE phone_managed_recording_consent_v1 SET start_state='started',stop_state='none',stop_epoch=0 WHERE request_id=?")->execute([$recordRequest]);
+$mediaCalls=[];
+$mediaCarrier=static function(string $method,string $resource,array $fields)use(&$mediaCalls,$recSid,$recParent,$pdo):array{
+    c(!$pdo->inTransaction(),'recording stop IO is outside transaction');$mediaCalls[]=$method;
+    c(str_ends_with($resource,'/Calls/'.$recParent.'/Recordings/'.$recSid.'.json'),'stop addresses exact known recording resource');
+    if($method==='POST')c($fields===['Status'=>'stopped'],'recording stop command cannot start or resume recording');
+    return ['sid'=>$recSid,'account_sid'=>setting('phone_twilio_account_sid'),'call_sid'=>$recParent,'source'=>'StartCallRecordingAPI','track'=>'both','channels'=>2,'status'=>$method==='GET'?'processing':'stopped'];
+};
+$stopped=vp3_managed_media_tick_v1($pdo,$mediaCarrier,$clock);
+c($stopped['stopped']===1&&$mediaCalls===['GET','POST'],'withdrawal driver stops exact recording even when start flag is off');
+vp3_managed_media_tick_v1($pdo,$mediaCarrier,$clock);
+c($mediaCalls===['GET','POST'],'verified stop is not repeated');
+$jobCount=(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn();
+$discard=$transportEvent('recording',$recPublic,$recNonce,$recForm);
+c($discard['accepted']&&$discard['queued']===false&&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$jobCount,'signed terminal receipt after withdrawal closes media without adding a processing job');
 
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
