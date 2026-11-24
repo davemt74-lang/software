@@ -206,9 +206,13 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     }
     $calls=array_merge($calls,vp3_phone_workspace_legacy_calls_v1($pdo,$scope));
     usort($calls,static fn(array $a,array $b):int=>strcmp($b['created_at'],$a['created_at'])?:strcmp($b['public_id'],$a['public_id']));$calls=array_slice($calls,0,50);
+    // Recording storage is an optional, explicit upgrade. A missing or partial
+    // recording migration must not hide the owner's assigned lines or history.
+    $recordingReady=function_exists('vp3_phone_recording_schema_ready_v1')&&vp3_phone_recording_schema_ready_v1($pdo);
+    $recordingReadiness=['ready'=>$recordingReady,'reason'=>$recordingReady?'':'Phone recordings need the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.'];
     $voicemails=[];
-    if(function_exists('vp3_phone_recording_workspace_v1'))$voicemails=vp3_phone_recording_workspace_v1($pdo,$scope['user'],$scope['agent_id']);
-    elseif(table_exists('phone_voice_recordings_v130')){
+    if($recordingReady&&function_exists('vp3_phone_recording_workspace_v1'))$voicemails=vp3_phone_recording_workspace_v1($pdo,$scope['user'],$scope['agent_id']);
+    elseif($recordingReady&&table_exists('phone_voice_recordings_v130')){
         $sql="SELECT r.id,r.call_id,r.created_at,r.duration_seconds,c.caller_e164,c.agent_id FROM phone_voice_recordings_v130 r JOIN phone_voice_calls_v130 c ON c.id=r.call_id AND c.owner_user_id=r.owner_user_id WHERE r.owner_user_id=? AND r.recording_status='completed'";$args=[$scope['owner_user_id']];if($scope['agent_id']>0){$sql.=' AND c.agent_id=?';$args[]=$scope['agent_id'];}$q=$pdo->prepare($sql.' ORDER BY r.id DESC LIMIT 50');$q->execute($args);
         foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r)$voicemails[]=['id'=>(int)$r['id'],'call_id'=>'legacy-'.(int)$r['call_id'],'peer_e164'=>(string)$r['caller_e164'],'audio_url'=>url('/api/phone-voice-audio-v130.php?id='.(int)$r['id']),'transcript'=>'','report_url'=>'','created_at'=>(string)$r['created_at'],'duration_seconds'=>(int)$r['duration_seconds'],'read'=>false];
     }
@@ -236,7 +240,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     if(!$voice)$ready=['ready'=>false,'reason'=>'Voice is not enabled for the selected assigned number.'];
     elseif(!$browser)$ready=['ready'=>false,'reason'=>'An administrator must enable browser calling for the selected assigned number.'];
     elseif(!vp3_phone_package_v100($pdo,$scope['owner_user_id'])['voice'])$ready=['ready'=>false,'reason'=>'The account voice allowance is not active.'];
-    $policy=function_exists('vp3_phone_recording_policy_v1')&&$selectedAgent>0?vp3_phone_recording_policy_v1($pdo,$scope['user'],$selectedAgent):null;
+    $policy=$recordingReady&&function_exists('vp3_phone_recording_policy_v1')&&$selectedAgent>0?vp3_phone_recording_policy_v1($pdo,$scope['user'],$selectedAgent):null;
     $liveCaption=['available'=>false,'eligible'=>false,'call_id'=>'','state'=>'off','reason'=>''];
     if(vp3_operator_live_schema_ready_v1($pdo)){
         require_once __DIR__.'/agent-operator-live-v1.php';
@@ -245,7 +249,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     return ['numbers'=>$numbers,'contacts'=>$contacts,'favorites'=>array_values(array_filter($contacts,static fn($c)=>$c['favorite'])),'calls'=>$calls,'voicemails'=>$voicemails,
         'operator_live'=>$liveCaption,
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
-        'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
+        'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
 }
 /** Insert one ordinary owner Chat delivery; credentials/media URLs never enter its context. */

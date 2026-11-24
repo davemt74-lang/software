@@ -17,13 +17,14 @@
   let context={conversation_id:principal(config.conversation_id??config.conversationId),agent_id:principal(config.agent_id??config.agentId),ready:true},generation=0,requestSequence=0;
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
   let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0,connectedDraft=null;
-  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,autoCallDraft=null,calendarDraft=null;
+  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,stateError='',autoCallDraft=null,calendarDraft=null;
   const layer=node('div','vp3-phone-workspace');layer.hidden=true;
   const backdrop=node('button','vp3-phone-backdrop');backdrop.type='button';backdrop.tabIndex=-1;backdrop.setAttribute('aria-label','Close phone workspace');
   const panel=node('aside','vp3-phone-panel');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','vp3PhoneTitle');panel.tabIndex=-1;
   const header=node('header','vp3-phone-header'),title=node('h2',null,'Phone');title.id='vp3PhoneTitle';
   const closeButton=button('Close',close,'vp3-phone-close');closeButton.setAttribute('aria-label','Close phone workspace');header.append(title,closeButton);
   const notice=node('p','vp3-phone-notice');notice.setAttribute('role','status');notice.setAttribute('aria-live','polite');
+  const recovery=node('div','vp3-phone-recovery'),retryButton=button('Retry',()=>void refresh());recovery.hidden=true;recovery.append(retryButton);
   const tabs=node('div','vp3-phone-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Phone workspace');
   const tabNames={connections:'Connections',contacts:'Contacts',calls:'Recent calls',voicemail:'Voicemail'};
   const tabButtons={};
@@ -34,18 +35,19 @@
   for(const key of Object.keys(tabNames)){
     const section=node('section','vp3-phone-section');section.id='vp3PhoneSection-'+key;section.setAttribute('role','tabpanel');section.setAttribute('aria-labelledby','vp3PhoneTab-'+key);section.tabIndex=0;sections[key]=section;body.append(section);
   }
-  panel.append(header,notice,tabs,body);layer.append(backdrop,panel);document.body.append(layer);
+  panel.append(header,notice,recovery,tabs,body);layer.append(backdrop,panel);document.body.append(layer);
 
   function button(label,handler,cls='vp3-phone-button'){
     const item=node('button',cls,label);item.type='button';item.addEventListener('click',handler);return item;
   }
   function current(g){return !disposed&&authorized&&g===generation;}
   function sessionCurrent(session){return Boolean(session)&&current(session.generation)&&deviceSession===session&&!session.closed;}
-  function say(message){statusText=text(message).slice(0,350);notice.textContent=statusText;}
+  function updateNotice(){notice.textContent=stateError+(stateError&&state?' Showing previously loaded data; retry to refresh.':'')||statusText;recovery.hidden=!stateError;retryButton.disabled=Boolean(fetching);}
+  function say(message){statusText=text(message).slice(0,350);updateNotice();}
   function selectedNumber(){return (state?.numbers||[]).find(item=>Number(item.id)===Number(state?.selected_number_id));}
   const enabled=value=>value===true||value===1||value==='1';
   function chatEligible(){const chat=window.STONEFELLOW_CHAT_CONTINUITY;return context.ready&&(positive(context.conversation_id)||Boolean(chat?.ensureConversation&&chat.isReady?.()&&!chat.isRestoring?.()&&!chat.isBusy?.()));}
-  function canCall(){const number=selectedNumber();return !!(number&&enabled(number.voice_enabled)&&enabled(number.browser_enabled)&&state?.readiness?.ready===true&&chatEligible());}
+  function canCall(){const number=selectedNumber();return !!(!stateError&&number&&enabled(number.voice_enabled)&&enabled(number.browser_enabled)&&state?.readiness?.ready===true&&chatEligible());}
   async function ensureContext(){
     if(!context.ready)return false;if(positive(context.conversation_id))return {generation,conversation_id:context.conversation_id,agent_id:context.agent_id};
     const chat=window.STONEFELLOW_CHAT_CONTINUITY,agent=context.agent_id;
@@ -66,6 +68,13 @@
   function callPeerName(info){return info?.connected_phone===true?'Connected phone · '+text(info.peer_masked||'Private number'):peerName(info?.peer_e164);}
   function callDuration(value){const seconds=Number(value);if(!Number.isSafeInteger(seconds)||seconds<0||seconds>86400)return '';return Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0');}
   function scopeBody(extra={}){return {...extra,conversation_id:context.conversation_id,agent_id:context.agent_id};}
+  function phoneError(message,status=0){const error=new Error(message);error.phonePublicMessage=message;error.status=status;return error;}
+  function requestErrorMessage(action,data,status){
+    if(data?.error==='phone_upgrade_required')return 'Phone needs the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.';
+    if(action==='state')return status===422?'Phone could not load this Chat context. Refresh the page and try again.':'Phone is temporarily unavailable. Retry to load your connections.';
+    const operatorError=['save_auto_call_policy','operator_calendar_preview','save_operator_calendar','owner_phone_settings','save_owner_phone','save_owner_call_preferences','prepare_owner_test','confirm_owner_test','prepare_connected_call'].includes(action)&&typeof data?.error==='string'&&data.error.startsWith('operator_')&&typeof data.message==='string';
+    return operatorError?data.message.slice(0,300):status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.';
+  }
   async function api(action,values={},method='POST',g=generation){
     if(!current(g))throw new DOMException('Phone context changed.','AbortError');
     const requestScope={conversation_id:context.conversation_id,agent_id:context.agent_id};
@@ -74,15 +83,17 @@
       const url=new URL(endpoint);const options={method,credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{Accept:'application/json'}};
       if(method==='GET'){for(const [key,value] of Object.entries(scopeBody({action,...values})))url.searchParams.set(key,String(value));}
       else{options.headers['Content-Type']='application/json';options.body=JSON.stringify(scopeBody({action,csrf_token:config.csrf,...values}));}
-      const response=await fetch(url.href,options);let data={};try{data=await response.json();}catch(_){throw new Error('Phone returned an invalid response.');}
+      const response=await fetch(url.href,options);
+      if(current(g)&&(response.status===401||response.status===403)){revoke();throw phoneError('Phone access is unavailable.',response.status);}
+      let data={};try{data=await response.json();}catch(error){if(error.name==='AbortError')throw error;throw phoneError('Phone returned an invalid response. Refresh the page or retry.');}
+      if(!data||typeof data!=='object'||Array.isArray(data))throw phoneError('Phone returned an invalid response. Refresh the page or retry.');
       if(!current(g)){if(['prepare_call','prepare_owner_test','prepare_connected_call'].includes(action)&&data.ok===true&&publicId(data.call?.public_id))await cancelPrepared({info:data.call,scope:requestScope,prepared:true});throw new DOMException('Phone context changed.','AbortError');}
-      if(response.status===401||response.status===403){revoke();throw new Error('Phone access is unavailable.');}
-      if(!response.ok||data.ok!==true){const operatorError=['save_auto_call_policy','operator_calendar_preview','save_operator_calendar','owner_phone_settings','save_owner_phone','save_owner_call_preferences','prepare_owner_test','confirm_owner_test','prepare_connected_call'].includes(action)&&typeof data.error==='string'&&data.error.startsWith('operator_')&&typeof data.message==='string';const error=new Error(operatorError?data.message.slice(0,300):response.status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.');error.status=response.status;throw error;}
+      if(!response.ok||data.ok!==true)throw phoneError(requestErrorMessage(action,data,response.status),response.status);
       return data;
     }finally{clearTimeout(timer);requests.delete(controller);}
   }
   function cleanState(raw){
-    if(!raw||!Array.isArray(raw.numbers)||!Array.isArray(raw.calls)||!Array.isArray(raw.voicemails))throw new Error('Phone state was not confirmed.');
+    if(!raw||!Array.isArray(raw.numbers)||!Array.isArray(raw.calls)||!Array.isArray(raw.voicemails))throw phoneError('Phone returned incomplete data. Retry to load your connections.');
     return {...raw,numbers:raw.numbers.filter(item=>positive(item?.id)).slice(0,30),contacts:(Array.isArray(raw.contacts)?raw.contacts:[]).filter(item=>positive(item?.id)).slice(0,250),favorites:(Array.isArray(raw.favorites)?raw.favorites:[]).filter(item=>positive(item?.id)).slice(0,100),calls:raw.calls.filter(item=>callKey(item?.public_id)||callKey(item?.call_id)).map(item=>({...item,public_id:callKey(item.public_id)||callKey(item.call_id)})).slice(0,60),voicemails:raw.voicemails.filter(item=>voicemailKey(item?.id)).map(item=>({...item,id:voicemailKey(item.id)})).slice(0,60)};
   }
   async function refresh(){
@@ -94,14 +105,20 @@
         const result=await api('state',{},'GET',g);if(!current(g)||sequence!==requestSequence)return;
         const next=cleanState(result.state);
         if(deviceSession&&(!next.numbers.some(item=>Number(item.id)===deviceSession.numberId&&item.browser_enabled&&item.voice_enabled)||Number(next.selected_number_id)!==deviceSession.numberId))stopDevice('Phone connection changed. Enable calls again.');
-        state=next;initialState=false;
+        const recovered=Boolean(stateError);state=next;initialState=false;stateError='';
         if(active?.captionSession?.phase==='listening'&&(next.operator_live?.eligible!==true||next.operator_live.call_id!==active.info.public_id))stopRemoteCaptions(active,'Live caption permission changed.');
         if(!state.numbers.length){revoke();return;}
         if(!deviceSession&&!active)say(state.readiness?.ready?'Select a number and enable calls in this browser.':state.readiness?.reason||'The phone connection is not ready.');
+        else if(recovered)say(active?'Phone status refreshed.':deviceSession?.phase==='registered'?'Browser ready for incoming calls.':'Connecting browser…');
         render();
-      }catch(error){if(current(g)&&error.name!=='AbortError')say(error.message);}
+      }catch(error){
+        if(!current(g)||sequence!==requestSequence)return;
+        initialState=false;
+        stateError=error.phonePublicMessage||(error.name==='AbortError'?'Phone took too long to respond. Retry to load your connections.':'Phone could not reach the server. Check your connection, then retry.');
+        render();
+      }
     })();
-    fetching=work;try{await work;}finally{if(fetching===work)fetching=null;}
+    fetching=work;updateNotice();try{await work;}finally{if(fetching===work){fetching=null;if(current(g))updateNotice();}}
   }
   function open(source=document.activeElement){
     if(disposed||!authorized)return;
@@ -130,7 +147,7 @@
   }
   function render(){
     const focused=document.activeElement,focusKey=layer.contains(focused)?focused?.dataset?.phoneFocusKey:'',selection=focusKey&&'selectionStart' in focused?[focused.selectionStart,focused.selectionEnd]:null,scroll=body.scrollTop;
-    notice.textContent=statusText;
+    updateNotice();
     renderConnections();renderContacts();renderCalls();renderVoicemails();renderCards();selectTab(activeTab);
     for(const audio of [...audioNodes])if(!audio.isConnected){try{audio.pause();audio.removeAttribute('src');audio.load();}catch(_){}audioNodes.delete(audio);}
     if(opened&&focusKey){const replacement=[...layer.querySelectorAll('[data-phone-focus-key]')].find(item=>item.dataset.phoneFocusKey===focusKey);if(replacement&&!replacement.disabled&&!replacement.closest('[hidden]')){replacement.focus({preventScroll:true});if(selection)try{replacement.setSelectionRange(...selection);}catch(_){}}}
@@ -141,7 +158,7 @@
     if(!state){listEmpty(host,initialState?'Loading assigned phone connections…':'Phone connections are unavailable.');replacePhoneContent(sections.connections,...host.childNodes);return;}
     const label=node('label','vp3-phone-field','Phone number'),select=node('select');select.setAttribute('aria-label','Selected phone number');select.dataset.phoneFocusKey='number';
     for(const number of state.numbers){const option=node('option',null,number.phone_e164+(number.agent_name?' · '+number.agent_name:''));option.value=String(number.id);select.append(option);}
-    select.value=String(state.selected_number_id||'');select.disabled=Boolean(active||callBusy||setupPending||pending.size);
+    select.value=String(state.selected_number_id||'');select.disabled=Boolean(stateError||active||callBusy||setupPending||pending.size);
     select.addEventListener('change',async()=>{const g=renderGeneration;if(!current(g))return;const id=Number(select.value);select.disabled=true;try{await api('select_number',{number_id:id},'POST',g);if(!current(g))return;stopDevice('Phone number changed. Enable calls for this number.');await refresh();}catch(error){if(current(g))say(error.message);}finally{if(current(g))render();}});
     label.append(select);host.append(label);
     const connection=node('div','vp3-phone-connection');connection.append(node('strong',null,deviceSession?.phase==='registered'?'Browser ready for incoming calls':deviceSession?'Connecting browser…':'Browser calls are off'));
@@ -150,7 +167,7 @@
     if(connectedDraft)renderConnectedDial(host,renderGeneration);
     const dial=node('form','vp3-phone-dial'),dialLabel=node('label','vp3-phone-field','Dial a phone number'),input=node('input');input.type='tel';input.autocomplete='tel';input.placeholder='+16025550123';input.required=true;input.maxLength=20;input.pattern='\\+[1-9][0-9]{7,14}';input.setAttribute('aria-label','Phone number to call');input.dataset.phoneFocusKey='dial';input.value=dialDraft;input.addEventListener('input',()=>{dialDraft=input.value.slice(0,20);});dialLabel.append(input);
     const send=node('button','vp3-phone-button vp3-phone-primary','Call');send.type='submit';send.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size);dial.append(dialLabel,send);
-    if(enabled(selectedNumber()?.recording_enabled)){
+    if(enabled(selectedNumber()?.recording_enabled)&&state.recording_readiness?.ready!==false){
       const recordLabel=node('label','vp3-phone-check vp3-phone-record'),record=node('input');record.type='checkbox';record.checked=recordThisCall;record.dataset.phoneFocusKey='record-call';record.addEventListener('change',()=>{if(current(renderGeneration))recordThisCall=record.checked;});recordLabel.append(record,node('span',null,'Record this call'));dial.append(recordLabel,node('p','vp3-phone-empty vp3-phone-record','The person you call hears a recording notice. Your saved after-call settings control transcripts and reports.'));
     }
     dial.addEventListener('submit',event=>{event.preventDefault();if(current(renderGeneration))void placeCall(input.value,{record:recordThisCall});});if(!connectedDraft)host.append(dial);
@@ -202,6 +219,7 @@
     return {enabled:raw.enabled===true,retain_audio:raw.retain_audio===true,transcribe:raw.transcribe===true,analyze:raw.analyze===true,modules:Array.isArray(raw.modules)?raw.modules.filter(value=>modules.includes(value)):[...modules]};
   }
   function renderPolicy(host){
+    if(state.recording_readiness?.ready===false){host.append(node('p','vp3-phone-empty','Phone recordings need the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.'));return;}
     const number=selectedNumber();if(!number)return;const g=generation,key=String(number.id);let draft=policyDrafts.get(key);
     if(!draft||!draft.dirty){draft={values:normalizePolicy(state.post_call_policy),dirty:false};policyDrafts.set(key,draft);}
     const form=node('form','vp3-phone-policy');form.append(node('h3',null,'After calls'),node('p','vp3-phone-empty','Recording plays a spoken disclosure. Choose what to save and include in your Chat reports.'));
@@ -434,7 +452,7 @@
     search.addEventListener('input',()=>{if(autoCallDraft||calendarDraft)return;contactQuery=search.value.slice(0,120);fill();});fill();
   }
   function renderCalls(){
-    const host=sections.calls;if(!state?.calls.length){host.replaceChildren();listEmpty(host,'No recent calls.');return;}
+    const host=sections.calls;if(!state?.calls.length){host.replaceChildren();listEmpty(host,state?'No recent calls.':'Recent calls are unavailable.');return;}
     const renderGeneration=generation,contents=[];for(const call of state.calls){if(call.transport_kind==='managed_callback'&&Number(call.conversation_id)===context.conversation_id){contents.push(callCard(call));continue;}const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||callPeerName(call)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);contents.push(row);}replacePhoneContent(host,...contents);
   }
   function voicemailCard(voicemail){
@@ -451,7 +469,14 @@
     const transcriptUrl=safeUrl(voicemail.transcript_url);if(transcriptUrl){const transcript=node('a','vp3-phone-report','Open transcript');transcript.href=transcriptUrl;card.append(transcript);}
     const reportUrl=safeUrl(voicemail.report_url);if(reportUrl){const report=node('a','vp3-phone-report',isCall?'Open call report':'Open voicemail report');report.href=reportUrl;card.append(report);}
   }
-  function renderVoicemails(){const contents=state?.voicemails.length?state.voicemails.map(voicemailCard):[node('p','vp3-phone-empty','No saved voicemail.')];replacePhoneContent(sections.voicemail,...contents);}
+  function renderVoicemails(){
+    if(state?.recording_readiness?.ready===false){
+      const contents=[node('p','vp3-phone-empty','Phone recordings need the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.')];
+      if(!stateError)contents.push(button('Retry',()=>void refresh()));
+      replacePhoneContent(sections.voicemail,...contents);return;
+    }
+    const contents=state?.voicemails.length?state.voicemails.map(voicemailCard):[node('p','vp3-phone-empty',state?'No saved voicemail.':'Voicemail is unavailable.')];replacePhoneContent(sections.voicemail,...contents);
+  }
   async function liveCaptionRequest(entry,session,action,fields={}){
     if(!liveEndpoint||!current(session.generation)||active!==entry||entry.captionSession!==session)throw new Error('Live caption context changed.');
     const controller=new AbortController();session.request=controller;const timer=setTimeout(()=>controller.abort(),25000);
@@ -942,7 +967,7 @@
     try{
       ticket=captureTicket();preparingTicket=ticket;const session=await enableDevice();if(!current(g)||operation!==callEpoch||!sessionCurrent(session)){ticket.release();return;}
       const callScope={conversation_id:context.conversation_id,agent_id:context.agent_id};setupPending++;setupOwned=true;
-      const prepared=await api(paired?'prepare_connected_call':ownerTest?'prepare_owner_test':'prepare_call',paired?{number_id:session.numberId,device_id:paired.device_id,profile_id:paired.profile_id,profile_revision:paired.profile_revision,phone_revision:paired.phone_revision,confirmed:true}:ownerTest?{number_id:session.numberId,phone_revision:options.ownerPhoneRevision,confirmed:true}:{number_id:session.numberId,to_number:destination,recording_enabled:Boolean(options.record===true&&enabled(selectedNumber()?.recording_enabled))},'POST',g);
+      const prepared=await api(paired?'prepare_connected_call':ownerTest?'prepare_owner_test':'prepare_call',paired?{number_id:session.numberId,device_id:paired.device_id,profile_id:paired.profile_id,profile_revision:paired.profile_revision,phone_revision:paired.phone_revision,confirmed:true}:ownerTest?{number_id:session.numberId,phone_revision:options.ownerPhoneRevision,confirmed:true}:{number_id:session.numberId,to_number:destination,recording_enabled:Boolean(options.record===true&&enabled(selectedNumber()?.recording_enabled)&&state.recording_readiness?.ready!==false)},'POST',g);
       receipt=publicId(prepared.call?.public_id)?{info:prepared.call,scope:callScope,prepared:true}:null;
       if(!current(g)||operation!==callEpoch||!sessionCurrent(session)){cancelPrepared(receipt);ticket.release();return;}
       if(!publicId(prepared.call?.public_id)||typeof prepared.connect_params?.call_intent!=='string'||prepared.connect_params.call_intent.length<16||prepared.connect_params.call_intent.length>512)throw new Error('The call destination was not confirmed.');
@@ -977,16 +1002,16 @@
   function clearAudio(){for(const audio of [...audioNodes]){audio.pause();audio.removeAttribute('src');audio.load();if(!audio.isConnected)audioNodes.delete(audio);}}
 
   function revoke(){
-    if(!authorized)return;connectedDraft=null;clearOwnerSetup();authorized=false;generation++;autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
+    if(!authorized)return;connectedDraft=null;clearOwnerSetup();authorized=false;generation++;stateError='';autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
     for(const item of document.querySelectorAll('[data-phone-workspace-toggle]'))item.hidden=true;
     for(const section of Object.values(sections))section.replaceChildren();renderCards();
   }
   function contextChanged(next={}){
     const normalized={conversation_id:principal(next.conversation_id),agent_id:principal(next.agent_id),ready:next.ready!==false};
     if(normalized.conversation_id===context.conversation_id&&normalized.agent_id===context.agent_id&&normalized.ready===context.ready)return;
-    clearManagedReview();connectedDraft=null;clearOwnerSetup();generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;render();void refresh();
+    clearManagedReview();connectedDraft=null;clearOwnerSetup();generation++;requestSequence++;stateError='';for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;render();void refresh();
   }
-  function dispose(){if(disposed)return;connectedDraft=null;clearOwnerSetup();generation++;autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
+  function dispose(){if(disposed)return;connectedDraft=null;clearOwnerSetup();generation++;stateError='';autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-phone-workspace-toggle]');if(trigger){event.preventDefault();opened?close():open(trigger);}});
   backdrop.addEventListener('click',close);closeButton.addEventListener('click',close);
   document.addEventListener('keydown',event=>{
