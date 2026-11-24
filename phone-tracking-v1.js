@@ -270,9 +270,75 @@
       if (focusedId === d.id) button.focus({preventScroll:true});
     }
   }
+  // The map remains the main workspace. These tabs are scoped to its selected phone.
+  let profileTab='communication',profileDevice='',profileSignature='';
+  function renderCommunication(d){
+    const host=byId('phone-communication-profile');if(!host)return;
+    host.hidden=!d;
+    if(!d){host.replaceChildren();profileDevice='';profileSignature='';return;}
+    if(profileDevice!==d.id){profileDevice=d.id;profileTab='communication';profileSignature='';}
+    const p=d.communication;
+    const sig=JSON.stringify([d.id,d.generation,p,profileTab,Boolean(d.agent_chat?.conversation_id),Boolean(camera.liveCamera(d)),d.last_seen_at,d.history_state,d.holder_can_save_places,d.allow_location,d.allow_saved_places,d.location_state,writing]);
+    if(sig===profileSignature)return;
+    // Do not overwrite an in-progress permission form on an unrelated GPS poll.
+    const focused=host.contains(document.activeElement)&&document.activeElement.closest('form');
+    const oldRev=host.dataset.profileRevision;
+    if(focused&&oldRev===String(p?.revision??'')&&profileTab==='permissions'&&!writing)return;
+    profileSignature=sig;host.dataset.profileRevision=String(p?.revision??'');host.replaceChildren();
+    host.append(element('h3','Connected user'));
+    const tabs=element('div',undefined,'phone-profile-tabs');tabs.setAttribute('aria-label','Connected user sections');
+    for(const [key,title] of [['communication','Communication'],['permissions','Permissions'],['activity','Activity']]){
+      const b=element('button',title);b.type='button';b.setAttribute('aria-pressed',String(key===profileTab));
+      b.addEventListener('click',()=>{profileTab=key;profileSignature='';renderCommunication(selected());});tabs.append(b);
+    }
+    host.append(tabs);
+    const facts=element('dl',undefined,'phone-info');
+    const field=(key,val)=>facts.append(element('dt',key),element('dd',String(val)));
+    if(profileTab==='communication'){
+      field('Personal number',p?.phone_saved?p.phone_masked:'Not saved');
+      field('Telephone calls',p?.call_permission_saved?'Both permissions saved':p?.owner_calls?'Awaiting phone holder':'Not allowed');
+      field('Proactive check-ins',p?.proactive_permission_saved?'Preference saved':'Off');
+      field('Information requests',p?.request_permission_saved?'Preference saved':'Off');
+      if(p){field('Calling hours',p.window_start+' – '+p.window_end+' · '+p.timezone);field('Call limit',p.max_calls_per_day+' per day · '+p.min_gap_minutes+' min between calls');}
+      host.append(facts);
+      const actions=element('div',undefined,'phone-command-row');
+      if(Number.isSafeInteger(d.agent_chat?.conversation_id)&&d.agent_chat.conversation_id>0&&Number.isSafeInteger(d.agent_chat.agent_id)&&d.agent_chat.agent_id>=0){
+        const a=element('a','Open phone chat'),u=new URL('chat.php',location.href);u.searchParams.set('agent',String(d.agent_chat.agent_id||'system'));u.searchParams.set('conversation_id',String(d.agent_chat.conversation_id));a.href=u.href;actions.append(a);
+      }
+      if(camera.liveCamera(d))actions.append(actionButton('open_stream','View live camera'));
+      host.append(actions,element('p','Calling and information-request execution are not enabled in this build. Existing chat and camera access remain available when authorized.','phone-detail-meta'));
+    }else if(profileTab==='permissions'){
+      if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
+      const form=element('form',undefined,'phone-profile-form');
+      const checks={};
+      for(const [key,label] of [['owner_calls','Allow telephone calls'],['owner_requests','Allow information requests']]){
+        const l=element('label',undefined,'phone-profile-check'),input=element('input');input.type='checkbox';input.checked=p[key]===true;input.disabled=writing;checks[key]=input;l.append(input,element('span',label));form.append(l);
+      }
+      const save=element('button','Save permissions','phone-primary');save.type='submit';save.disabled=writing;form.append(save);
+      form.addEventListener('submit',event=>{event.preventDefault();const current=selected();if(!event.isTrusted||!current||current.id!==d.id||current.communication?.revision!==p.revision||writing)return;
+        void mutate('save_communication_grants',current,{communication_revision:p.revision,owner_calls:checks.owner_calls.checked,owner_requests:checks.owner_requests.checked});});
+      host.append(form);
+      field('Holder call consent',p.holder_calls?'Saved':'Off');field('Holder information consent',p.holder_requests?'Saved':'Off');
+      field('Future relationship memory',p.holder_memory?'Requested':'Off');field('Location permission',d.allow_location?'Allowed':'Off');
+      field('Saved places',d.holder_can_save_places?'Owner allows':'Off');field('Camera',camera.liveCamera(d)?'Currently shared':'Not currently shared');host.append(facts);
+      host.append(element('p','The phone holder chooses their own number and preferences. These new settings do not grant access to location, camera or private files.','phone-detail-meta'));
+    }else{
+      field('Connection',connection(d));field('Last seen',timestamp(d.last_seen_at));field('Location',stateLabels[effectiveState(d)]);
+      field('Location history',d.history_state==='active'?'Enabled · '+d.history_retention_days+' days':d.history_state==='requested'?'Awaiting holder':'Off');
+      field('Live camera',camera.liveCamera(d)?'Sharing':'Not sharing');field('Phone chat',d.agent_chat?.conversation_id?'Linked':'Not linked');
+      host.append(facts);
+      const actions=element('div',undefined,'phone-command-row');
+      for(const [panel,label] of [['history','Location history'],['places','Saved places']]){
+        const b=element('button',label);b.type='button';b.addEventListener('click',()=>{if(selected()?.id===d.id)archive.openPanel(panel);});actions.append(b);
+      }
+      host.append(actions,element('p','Telephone history, relationship Brain and ongoing objectives will use this same profile when their services are implemented.','phone-detail-meta'));
+    }
+  }
+
   function renderDetail(d) {
     detail.hidden = !d;
     renderPreferences(d);
+    renderCommunication(d);
     const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.agent_chat,d.allow_location,d.holder_can_save_places,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId,camera.liveCamera(d)?.session_id] : []);
     if (signature === detailSignature) return;
     detailSignature = signature;
@@ -601,7 +667,7 @@
         const messages = {approve:device.name+' approved.',deny:'Connection request denied for '+device.name+'.',request_start:'',stop:'Sharing stopped for '+device.name+'.',revoke:device.name+' disconnected.'};
         message.textContent = status.textContent = action === 'set_holder_place_access'
           ? (result.device.holder_can_save_places ? 'Enabled' : 'Disabled')+' saved location creation for '+device.name+'.'
-          : messages[action];
+          : messages[action] || (action==='save_communication_grants'?'Communication permissions saved.':'Settings saved.');
       }
       delete status.dataset.failure;
       render();
@@ -617,6 +683,7 @@
       writing = false;
       savingPreferencesFor = '';
       renderPreferences(selected());
+      renderCommunication(selected());
       void refresh();
     }
   }

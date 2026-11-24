@@ -38,7 +38,7 @@ try {
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -50,6 +50,7 @@ try {
     if (!$pdo || !vp3_phone_schema_ready_v1($pdo)) throw new RuntimeException('Upgrade required.', 503);
     $owner = (int)$user['id'];
     $result = match ($action) {
+        'save_communication_grants' => vp3_phone_communication_owner_v1($pdo,$owner,$input),
         'history' => vp3_phone_history_read_v1($pdo,$owner,$input['device_id'],$input['before']),
         'places','save_place','delete_place' => vp3_phone_places_owner_v1($pdo,$owner,$action,$input),
         'approve','request_start' => isset($input['chat_origin']) ? vp3_phone_chat_map_command_v1($pdo,$user,$action,$input)
@@ -60,6 +61,7 @@ try {
         $result['devices']=vp3_paired_phone_owner_links_v1($pdo,$owner,$result['devices']);
         if (vp3_participant_scope_v1()===null) {
             $result['devices']=vp3_phone_camera_map_devices_v1($pdo,$owner,$result['devices']);
+            $result['devices']=vp3_phone_communication_map_v1($pdo,$owner,$result['devices'],time());
         }
     }
     if ($action === 'invite' && !empty($result['invite'])) {

@@ -15,7 +15,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
   <meta name="referrer" content="no-referrer">
   <title>Phone connection · VP3</title>
-  <link rel="stylesheet" href="phone-location-v1.css?v=8">
+  <link rel="stylesheet" href="phone-location-v1.css?v=9">
   <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
   <script src="phone-camera-ice-v1.js?v=1" defer></script>
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
@@ -23,7 +23,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
   <script src="phone-agent-chat-v1.js?v=3" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
-  <script src="phone-location-v1.js?v=8" defer></script>
+  <script src="phone-location-v1.js?v=9" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -56,6 +56,11 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <p id="phone-consent"></p>
         <button type="button" id="phone-start" hidden>Start sharing</button>
         <button type="button" id="phone-stop" hidden>Stop sharing</button>
+        <section id="phone-communication" class="phone-permission" aria-labelledby="phone-communication-title" hidden>
+          <h2 id="phone-communication-title">Communication preferences</h2>
+          <p id="phone-communication-feedback" role="status"></p>
+          <form id="phone-communication-form"></form>
+        </section>
         <section id="phone-history" class="phone-permission" aria-labelledby="phone-history-title" hidden>
           <h2 id="phone-history-title">Location history</h2>
           <p id="phone-history-status" role="status"></p>

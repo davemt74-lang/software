@@ -32,7 +32,7 @@ try {
     $recordAction=in_array($action,['camera_record_accept','camera_record_review','camera_record_decline'],true);
     if (!$multipart && !$recordAction && !$chatAction && !$cameraAction && !in_array($action, ['claim','status','start','fix','stop','denied','disconnect',
         'accept_history','decline_history','stop_history','set_place_permission',
-        'accept_arrival','decline_arrival','stop_arrival','holder_save_place'], true)) {
+        'accept_arrival','decline_arrival','stop_arrival','holder_save_place','save_communication_profile'], true)) {
         throw new RuntimeException('Unknown action.', 422);
     }
     $pdo = db();

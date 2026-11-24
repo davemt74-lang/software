@@ -225,7 +225,53 @@
       if (run) sendLatestFix(run);
     }
   }
+  let commSignature='',commBusy=false,commNotice='';
+  function renderCommunication(){
+    const section=el('communication'),form=el('communication-form'),feedback=el('communication-feedback');if(!section||!form||!feedback)return;
+    const p=device?.communication,ready=device?.status==='approved'&&available&&!pending&&secure&&!dead&&navigator.onLine!==false&&p&&typeof p.phone_e164==='string';
+    section.hidden=!ready;
+    if(!ready){form.replaceChildren();commSignature='';commNotice='';feedback.textContent='';return;}
+    feedback.textContent=commNotice;
+    const sig=device.id+'/'+p.revision+'/'+String(commBusy);
+    if(sig===commSignature)return;
+    commSignature=sig;form.replaceChildren();
+    const add=(label,input)=>{const l=document.createElement('label');l.textContent=label;l.append(input);form.append(l);return input;};
+    const field=(label,type,value)=>{const i=document.createElement('input');i.type=type;i.value=value;i.disabled=commBusy;return add(label,i);};
+    const number=field('My personal phone number','tel',p.phone_e164);number.autocomplete='tel';number.maxLength=64;number.placeholder='+1 602 555 0100';
+    const note=document.createElement('p');note.textContent='Only the approved account sees a masked number. Changing it clears call consent. No SMS verification is required.';form.append(note);
+    const check=(label,key,disabled)=>{const i=document.createElement('input');i.type='checkbox';i.checked=p[key]===true;i.disabled=commBusy||disabled;const l=document.createElement('label');l.className='phone-communication-check';l.append(i,document.createTextNode(label));form.append(l);return i;};
+    const calls=check('Allow telephone calls from this Agent','holder_calls',!p.owner_calls||!p.phone_saved);
+    const proactive=check('Allow proactive check-ins','holder_proactive',!p.owner_calls||!p.phone_saved);
+    const requests=check('Allow information requests','holder_requests',!p.owner_requests);
+    const memory=check('Allow future relationship memory','holder_memory',false);
+    calls.addEventListener('change',()=>{if(!calls.checked)proactive.checked=false;});
+    proactive.addEventListener('change',()=>{if(proactive.checked&&!calls.checked)proactive.checked=false;});
+    const zone=field('Time zone (IANA name)','text',p.timezone);zone.maxLength=80;zone.required=true;
+    const start=field('Earliest call','time',p.window_start),end=field('Latest call','time',p.window_end);start.required=end.required=true;
+    const max=field('Maximum calls per day','number',String(p.max_calls_per_day));max.min='1';max.max='3';max.required=true;
+    const gap=field('Minimum minutes between calls','number',String(p.min_gap_minutes));gap.min='120';gap.max='10080';gap.required=true;
+    const save=document.createElement('button');save.type='submit';save.textContent='Save communication preferences';save.disabled=commBusy;form.append(save);
+    const explanation=document.createElement('p');explanation.textContent='Saved preferences only. Automatic calls, information requests and relationship memory are not running yet. Existing GPS and camera permissions are separate.';form.append(explanation);
+    form.onsubmit=event=>{
+      event.preventDefault();
+      if(!event.isTrusted||commBusy||actionBusy||pending||dead||!available||navigator.onLine===false||device?.status!=='approved'||device.communication?.revision!==p.revision)return;
+      const body={device_id:device.id,generation:device.generation,communication_revision:p.revision,phone_e164:number.value,
+        holder_calls:calls.checked&&!calls.disabled,holder_proactive:calls.checked&&proactive.checked&&!proactive.disabled,
+        holder_requests:requests.checked&&!requests.disabled,holder_memory:memory.checked,
+        timezone:zone.value.trim(),window_start:start.value,window_end:end.value,max_calls_per_day:Number(max.value),min_gap_minutes:Number(gap.value)};
+      commBusy=true;commNotice='Saving…';renderCommunication();
+      queue(async()=>{try{
+        if(dead||pending||!available||navigator.onLine===false||device?.id!==body.device_id||device.generation!==body.generation||device.communication?.revision!==body.communication_revision){commNotice='Connection changed. Review the current settings.';return;}
+        const result=await request('save_communication_profile',body);
+        if(dead||pending||device?.id!==body.device_id)return;
+        accept(result);commNotice='Preferences saved. Calls remain disabled until the calling service is ready.';
+      }catch(error){commNotice='Preferences could not be saved. Check the current connection and retry.';if([401,403,404].includes(error.status))reportFailure(error);else schedulePoll();}
+      finally{commBusy=false;commSignature='';render();}});
+    };
+  }
+
   function render() {
+    renderCommunication();
     const connected = device?.status === 'approved';
     const queued = Boolean(pending && pending.id === device?.id);
     const paired = connected && pending?.action !== 'disconnect' ? device : null;

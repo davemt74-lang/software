@@ -7,6 +7,7 @@ require_once __DIR__.'/phone-tracking-history-v1.php';
 require_once __DIR__.'/phone-tracking-places-v1.php';
 require_once __DIR__.'/phone-tracking-arrivals-v1.php';
 require_once __DIR__.'/phone-camera-v1.php';
+require_once __DIR__.'/phone-communication-profile-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -78,6 +79,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_places_schema_v1($pdo);
     vp3_phone_arrival_schema_v1($pdo,$options);
     vp3_phone_camera_schema_v1($pdo,$options);
+    vp3_phone_communication_install_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -361,7 +363,7 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
             $generation=(int)$row['generation'];
             vp3_phone_owner_transition_v1($row,$action,$input,$now);
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
-            if ($action === 'revoke') vp3_phone_camera_disconnect_v1($pdo,$row);
+            if ($action === 'revoke') {vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
             if ($action === 'delete_history' || $action === 'revoke') vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_save_row_v1($pdo,$row);
             $expiry = $row['expires_at'];
@@ -505,6 +507,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_arrival_clear_v1($pdo,$row);
             vp3_phone_camera_disconnect_v1($pdo,$row);
+            vp3_phone_communication_delete_v1($pdo,$row);
             return [];
         }
         $receipt = [];
@@ -512,7 +515,10 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
         if ($action !== 'status') {
             $previousFix = $row['fix_at'];
             $generation=(int)$row['generation'];
-            if ($action === 'holder_save_place') {
+            if ($action === 'save_communication_profile') {
+                vp3_phone_communication_require_v1(is_string($input['device_id']??null)&&hash_equals($row['id'],$input['device_id']),403);
+                vp3_phone_communication_save_v1($pdo,$row,$input,$now,true);
+            } elseif ($action === 'holder_save_place') {
                 $receipt = vp3_phone_holder_save_place_v1($pdo,$row,$input,$now);
             } elseif (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
                 vp3_phone_arrival_holder_v1($pdo,$row,$action,$input,$now);
@@ -520,7 +526,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 vp3_phone_device_transition_v1($row,$action,$input,$now);
             }
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
-            if ($action === 'disconnect') vp3_phone_camera_disconnect_v1($pdo,$row);
+            if ($action === 'disconnect') {vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
             if ($action === 'fix' && ($previousFix === null || (int)$previousFix !== (int)$row['fix_at'])) {
                 vp3_phone_history_record_v1($pdo,$row,$input,$now);
                 vp3_phone_arrival_fix_v1($pdo,$row,$input,$now);
@@ -537,7 +543,9 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             $row['last_seen_at']=$now;
             vp3_phone_save_row_v1($pdo,$row);
         }
-        return ['device'=>vp3_phone_holder_public_v1($pdo,$row,$now),'owner_name'=>$ownerName] + $receipt;
+        $public=vp3_phone_holder_public_v1($pdo,$row,$now);
+        $public['communication']=vp3_phone_communication_project_v1($pdo,$row,$now,true);
+        return ['device'=>$public,'owner_name'=>$ownerName] + $receipt;
     });
     // Return no owner or device data, after committing the withdrawal.
     return $result ?: throw new RuntimeException('Phone connection unavailable.',403);

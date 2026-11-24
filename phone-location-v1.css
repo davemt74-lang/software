@@ -78,3 +78,8 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
   #phone-location[data-tab] .phone-brand-line { display: none; }
   .phone-tabs { margin-top: 0; }
 }
+
+#phone-communication-form{display:grid;gap:10px}
+#phone-communication-form .phone-communication-check{display:flex;align-items:center;gap:10px;font-size:.95rem}
+#phone-communication-form .phone-communication-check input{width:22px;height:22px;min-height:22px;margin:0;flex:none}
+#phone-communication-form label:not(.phone-communication-check) input{margin-bottom:0}

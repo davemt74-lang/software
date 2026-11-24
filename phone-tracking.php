@@ -74,6 +74,7 @@ require __DIR__.'/includes/member-header.php';
       <div id="phone-devices"></div>
       <article id="phone-detail" aria-label="Phone details" hidden>
         <div id="phone-detail-summary"></div>
+        <section id="phone-communication-profile" class="phone-connected-profile" aria-label="Connected user communication and activity" hidden></section>
         <form id="phone-preferences" hidden>
           <fieldset>
             <legend>Location settings</legend>
