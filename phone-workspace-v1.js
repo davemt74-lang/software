@@ -571,7 +571,7 @@
       if(key==='duration_minutes'){input.min='1';input.max='60';input.step='1';}if(key==='timezone'){input.maxLength=80;input.placeholder='America/Phoenix';}
       input.addEventListener('input',()=>{if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule&&!draft.saving)schedule[key]=type==='number'?Number(input.value):input.value;});label.append(input);form.append(label);
     }
-    const repeatLabel=node('label','vp3-phone-field','Repeat'),repeat=node('select');repeat.dataset.phoneFocusKey='contact-schedule-recurrence';
+    const repeatLabel=node('label','vp3-phone-field','Repeat'),repeat=node('select');repeat.setAttribute('aria-label','Repeat');repeat.dataset.phoneFocusKey='contact-schedule-recurrence';
     for(const [value,title] of [['none','One time'],['daily','Every day'],['weekly','Every week']]){const option=node('option',null,title);option.value=value;repeat.append(option);}repeat.value=schedule.recurrence;repeat.disabled=draft.saving;
     repeat.addEventListener('change',()=>{if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule&&!draft.saving)schedule.recurrence=repeat.value;});repeatLabel.append(repeat);form.append(repeatLabel);
     const notesLabel=node('label','vp3-phone-field','Call notes and objectives'),notes=node('textarea');notes.rows=4;notes.maxLength=2000;notes.value=schedule.objectives;notes.disabled=draft.saving;notes.dataset.phoneFocusKey='contact-schedule-objectives';notes.addEventListener('input',()=>{if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule&&!draft.saving)schedule.objectives=notes.value;});notesLabel.append(notes);form.append(notesLabel);
