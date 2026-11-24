@@ -351,6 +351,41 @@ async function browserJourney(baseURL, owner, other) {
   await map.locator('#phone-pending select[name=role]').selectOption('owner');
   await map.locator('#phone-pending [data-action=approve]').click();
   await map.locator('#phone-devices [data-device-id] button[data-focus]').first().click();
+  const communication=map.locator('#phone-communication-profile');
+  await communication.getByRole('button',{name:'Permissions',exact:true}).click();
+  await communication.getByLabel('Allow telephone calls',{exact:true}).check();
+  await communication.getByLabel('Allow information requests',{exact:true}).check();
+  await communication.getByRole('button',{name:'Save permissions',exact:true}).click();
+  await eventually('Map grants did not save',async()=>{
+    const d=check(await ownerApi(desktop,owner),'communication grant').devices.find(d=>d.id===deviceId);
+    return d?.communication?.owner_calls&&d.communication.owner_requests;
+  });
+  const holderForm=phone.locator('#phone-communication-form');
+  await holderForm.getByLabel('My personal phone number',{exact:true}).fill('+16025550129');
+  await holderForm.getByRole('button',{name:'Save communication preferences',exact:true}).click();
+  await eventually('Holder number did not save',async()=>{
+    const d=check(await phoneApi(handset,'status'),'holder communication read').device;
+    return d.communication?.phone_e164==='+16025550129';
+  });
+  await eventually('Holder call consent did not become available',async()=>await holderForm.getByLabel('Allow telephone calls from this Agent',{exact:true}).isEnabled());
+  await holderForm.getByLabel('Allow telephone calls from this Agent',{exact:true}).check();
+  await holderForm.getByLabel('Allow proactive check-ins',{exact:true}).check();
+  await holderForm.getByLabel('Allow information requests',{exact:true}).check();
+  await holderForm.getByRole('button',{name:'Save communication preferences',exact:true}).click();
+  await eventually('Holder consent did not save',async()=>{
+    const d=check(await ownerApi(desktop,owner),'communication consent').devices.find(d=>d.id===deviceId);
+    return d?.communication?.call_permission_saved&&d.communication.proactive_permission_saved&&d.communication.request_permission_saved;
+  });
+  await communication.getByRole('button',{name:'Communication',exact:true}).click();
+  await eventually('Map did not show masked number and both consents',async()=>{
+    const detail=await communication.innerText();return detail.includes('Ending in 0129')&&detail.includes('Both permissions saved');
+  });
+  assert.ok(!(await communication.innerText()).includes('+16025550129'),'map does not expose full phone number');
+  await communication.getByRole('button',{name:'Activity',exact:true}).click();
+  await communication.getByRole('button',{name:'Location history',exact:true}).waitFor();
+  await communication.getByRole('button',{name:'Saved places',exact:true}).waitFor();
+  await communication.getByRole('button',{name:'Communication',exact:true}).click();
+  await screenshot(map,'owner-connected-user-communication');
   await map.locator('#phone-detail [data-action=request_start]').click();
   await eventually('Phone missed start request', async () =>
     check(await phoneApi(handset, 'status'), 'phone read').device.location_state === 'requested');
@@ -361,6 +396,9 @@ async function browserJourney(baseURL, owner, other) {
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
   await verifyPhoneTabs(phone);
   await screenshot(phone, 'phone-before-consent');
+  // The owner request advances the GPS generation; wait for the actual phone UI,
+  // not just the independent HTTP test client, to observe that request.
+  await phone.getByText('The owner requested your location. Tap Start sharing to allow it.',{exact:true}).waitFor();
   await startWithFreshSensorReading(phone, handset, gps);
   device = await requireLiveFix('No real browser geolocation fix reached the owner', gps);
   assert.deepEqual([device.latitude, device.longitude, device.accuracy], [gps.latitude, gps.longitude, gps.accuracy]);
@@ -432,6 +470,9 @@ async function verifyPhoneTabs(phone) {
     assert.ok(position.bottom > 0 && position.top < position.height * .35,
       'The connected phone name should appear near the top of the iPhone viewport: ' + JSON.stringify(position));
   }
+  // The new preference journey deliberately scrolls to controls below the fold.
+  // Reselect Connection and verify that it restores the overview.
+  await connection.click();
   await verifyConnection();
   await screenshot(phone, 'phone-connection-tab');
   await chat.click();
