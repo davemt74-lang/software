@@ -232,7 +232,7 @@ function user_calendar_update_event_locked_v1300(PDO $pdo, array $user, int $eve
     $range = user_calendar_local_range_v1300($input, (string)$existing['timezone']);
     $options = user_calendar_options_v1340($input,$existing);
     user_calendar_validate_options_v1340($pdo,$options,$range);
-    if($options['recurrence']==='weekly'&&function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800($pdo)&&video_meeting_for_calendar_event_v1800($pdo,$eventId))throw new RuntimeException('Use a one-time event for a linked video meeting.');
+    if($options['recurrence']!=='none'&&function_exists('video_meeting_schema_ready_v1800')&&video_meeting_schema_ready_v1800($pdo)&&video_meeting_for_calendar_event_v1800($pdo,$eventId))throw new RuntimeException('Use a one-time event for a linked video meeting.');
     $title = trim((string)($input['title'] ?? ''));
     if ($title === '' || mb_strlen($title) > 190) throw new RuntimeException('Enter an event title up to 190 characters.');
     $description = trim((string)($input['description'] ?? ''));

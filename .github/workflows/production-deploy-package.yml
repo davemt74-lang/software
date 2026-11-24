@@ -78,11 +78,16 @@ jobs:
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php
+          test -f _deploy/includes/phone-contact-management-v1.php
+          test -f _deploy/includes/phone-contact-schedules-v1.php
           test -f _deploy/includes/phone-recording-pipeline-v1.php
+          test -f _deploy/includes/phone-voicemail-v1.php
           test -f _deploy/api/phone-workspace-v1.php
           test -f _deploy/api/phone-recording-audio-v1.php
+          test -f _deploy/api/phone-voicemail-greeting-v1.php
           test -f _deploy/phone-workspace-v1.js
           test -f _deploy/phone-workspace-v1.css
+          test -f _deploy/phone-voicemail-capture-v1.js
           test -f _deploy/phone-recording-worker-v1.php
           test -f _deploy/phone-app.webmanifest
           test -f _deploy/phone-service-worker-v1.js

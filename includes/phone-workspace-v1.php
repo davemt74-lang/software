@@ -13,6 +13,7 @@ require_once __DIR__.'/agent-operator-connected-call-v1.php';
 require_once __DIR__.'/phone-managed-control-schema-v1.php';
 require_once __DIR__.'/phone-managed-recording-schema-v1.php';
 require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
+require_once __DIR__.'/phone-voicemail-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -130,8 +131,9 @@ function vp3_phone_workspace_selected_v1(PDO $pdo,array $scope,array $numbers): 
 function vp3_phone_workspace_contacts_v1(PDO $pdo,int $owner): array
 {
     if(!vp3_phone_caller_contacts_table_v1($pdo,'crm_contacts'))return [];
-    $q=$pdo->prepare("SELECT c.id,c.name,c.phone,CASE WHEN f.contact_id IS NULL THEN 0 ELSE 1 END AS favorite FROM crm_contacts c LEFT JOIN phone_browser_favorites_v1 f ON f.contact_id=c.id AND f.owner_user_id=c.owner_user_id WHERE c.owner_user_id=? AND c.status<>'archived' AND c.phone<>'' ORDER BY c.name,c.id LIMIT 250");$q->execute([$owner]);$out=[];
-    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $c){$phone=vp3_phone_caller_contacts_e164_v1((string)$c['phone']);if($phone==='')continue;$out[]=['id'=>(int)$c['id'],'name'=>(string)$c['name'],'phone_e164'=>$phone,'favorite'=>(bool)$c['favorite']];}return $out;
+    $relationship=vp3_phone_contact_details_schema_ready_v1($pdo)?'c.relationship':"'' AS relationship";
+    $q=$pdo->prepare("SELECT c.id,c.name,c.phone,$relationship,CASE WHEN f.contact_id IS NULL THEN 0 ELSE 1 END AS favorite FROM crm_contacts c LEFT JOIN phone_browser_favorites_v1 f ON f.contact_id=c.id AND f.owner_user_id=c.owner_user_id WHERE c.owner_user_id=? AND c.status<>'archived' AND c.phone<>'' ORDER BY c.name,c.id LIMIT 250");$q->execute([$owner]);$out=[];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $c){$phone=vp3_phone_caller_contacts_e164_v1((string)$c['phone']);if($phone==='')continue;$out[]=['id'=>(int)$c['id'],'name'=>(string)$c['name'],'phone_e164'=>$phone,'relationship'=>(string)$c['relationship'],'favorite'=>(bool)$c['favorite']];}return $out;
 }
 /** Find prior owner receipts beyond the recent window without counting linked calls twice. */
 function vp3_phone_workspace_caller_first_v1(PDO $pdo,array $scope,array $phones): array
@@ -208,7 +210,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     usort($calls,static fn(array $a,array $b):int=>strcmp($b['created_at'],$a['created_at'])?:strcmp($b['public_id'],$a['public_id']));$calls=array_slice($calls,0,50);
     // Recording storage is an optional, explicit upgrade. A missing or partial
     // recording migration must not hide the owner's assigned lines or history.
-    $recordingReady=function_exists('vp3_phone_recording_schema_ready_v1')&&vp3_phone_recording_schema_ready_v1($pdo);
+    $recordingReady=function_exists('vp3_phone_recording_schema_ready_v1')&&vp3_phone_recording_schema_ready_v1($pdo)&&vp3_phone_voicemail_ready_v1($pdo);
     $recordingReadiness=['ready'=>$recordingReady,'reason'=>$recordingReady?'':'Phone recordings need the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.'];
     $voicemails=[];
     if($recordingReady&&function_exists('vp3_phone_recording_workspace_v1'))$voicemails=vp3_phone_recording_workspace_v1($pdo,$scope['user'],$scope['agent_id']);
@@ -232,7 +234,8 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
     // Keep callers relevant to this workspace visible even beyond the alphabetical cap.
     if($known){
         $ids=array_values(array_unique(array_column($known,'id')));$q=$pdo->prepare('SELECT contact_id FROM phone_browser_favorites_v1 WHERE owner_user_id=? AND contact_id IN ('.implode(',',array_fill(0,count($ids),'?')).')');$q->execute([$scope['owner_user_id'],...$ids]);$favorites=array_fill_keys(array_map('intval',$q->fetchAll(PDO::FETCH_COLUMN)),true);$book=[];
-        foreach($known as $contact)if(!isset($book[$contact['id']]))$book[$contact['id']]=$contact+['favorite'=>isset($favorites[$contact['id']])];
+        $details=array_column($contacts,null,'id');
+        foreach($known as $contact)if(!isset($book[$contact['id']]))$book[$contact['id']]=$contact+['favorite'=>isset($favorites[$contact['id']]),'relationship'=>(string)($details[$contact['id']]['relationship']??'')];
         foreach($contacts as $contact)if(!isset($book[$contact['id']]))$book[$contact['id']]=$contact;
         $contacts=array_slice(array_values($book),0,250);
     }
@@ -247,9 +250,9 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
         $liveCaption=vp3_operator_live_view_v1($pdo,$scope,$active,time());
     }
     return ['numbers'=>$numbers,'contacts'=>$contacts,'favorites'=>array_values(array_filter($contacts,static fn($c)=>$c['favorite'])),'calls'=>$calls,'voicemails'=>$voicemails,
-        'operator_live'=>$liveCaption,
+        'operator_live'=>$liveCaption,'voicemail_settings'=>$selected>0?vp3_phone_voicemail_settings_v1($pdo,$scope,$selected):['available'=>false],
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
-        'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
+        'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'contact_details_ready'=>vp3_phone_contact_details_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
 }
 /** Insert one ordinary owner Chat delivery; credentials/media URLs never enter its context. */
@@ -302,6 +305,14 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
         return vp3_managed_control_action_v1($pdo,$scope,$input);
     }
     if($action==='save_caller_contact')return vp3_phone_caller_contact_save_v1($pdo,$scope,$input);
+    if(in_array($action,['phone_contact_detail','save_phone_contact','save_phone_contact_schedule','cancel_phone_contact_schedule'],true)){
+        require_once __DIR__.'/phone-contact-management-v1.php';
+        if($action==='phone_contact_detail')return vp3_phone_contact_detail_v1($pdo,$scope,$input);
+        if($action==='save_phone_contact')return vp3_phone_contact_save_v1($pdo,$scope,$input);
+        require_once __DIR__.'/phone-contact-schedules-v1.php';
+        return $action==='save_phone_contact_schedule'?vp3_phone_contact_schedule_save_v1($pdo,$scope,$input,time()):vp3_phone_contact_schedule_cancel_v1($pdo,$scope,$input,time());
+    }
+    if(in_array($action,['save_voicemail_settings','use_default_voicemail_greeting','transcribe_voicemail','delete_voicemail','post_voicemail'],true))return vp3_phone_voicemail_action_v1($pdo,$scope,$input);
     if($action==='save_auto_call_policy')return vp3_operator_auto_call_save_v1($pdo,$scope,$input);
     if(in_array($action,['operator_calendar_preview','save_operator_calendar'],true)){
         require_once __DIR__.'/agent-operator-calendar-v1.php';
@@ -335,12 +346,12 @@ function vp3_phone_workspace_request_v1(PDO $pdo,?array $user,string $method,arr
     $action=$input['action']??($method==='GET'?'state':'');if(!is_string($action))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a supported phone action.');$input['action']=$action;
     if($method==='GET'){
         if($action==='state')return ['state'=>vp3_phone_workspace_state_v1($pdo,$user,$input)];
-        if(in_array($action,['recording_policy','operator_calendar_preview','owner_phone_settings','managed_review'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
+        if(in_array($action,['recording_policy','operator_calendar_preview','owner_phone_settings','managed_review','phone_contact_detail'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
         vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires POST.');
     }
     if($method!=='POST')vp3_phone_workspace_error_v1('method_not_allowed',405,'Use GET or POST for Phone.');
     if($csrf===''||!is_string($input['csrf_token']??null)||!hash_equals($csrf,$input['csrf_token']))vp3_phone_workspace_error_v1('csrf_failed',403,'Refresh this page before changing Phone.');
-    if(in_array($action,['state','recording_policy','operator_calendar_preview','owner_phone_settings','managed_review'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
+    if(in_array($action,['state','recording_policy','operator_calendar_preview','owner_phone_settings','managed_review','phone_contact_detail'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
     return vp3_phone_workspace_action_v1($pdo,$user,$input);
 }
 /** Existing Chat activity delivers each incoming call once into its validated current principal. */

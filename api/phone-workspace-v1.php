@@ -11,8 +11,9 @@ try{
     $method=(string)($_SERVER['REQUEST_METHOD']??'');$input=$_GET;
     if($method==='POST'){
         if(!str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE']??'')),'application/json'))vp3_phone_workspace_error_v1('unsupported_media_type',415,'Phone actions require JSON.');
-        if((int)($_SERVER['CONTENT_LENGTH']??0)>8192)vp3_phone_workspace_error_v1('request_too_large',413,'Phone request is too large.');
-        $body=file_get_contents('php://input',false,null,0,8193);if($body===false||strlen($body)>8192)vp3_phone_workspace_error_v1('request_too_large',413,'Phone request is too large.');
+        // Reviewed contact/schedule notes allow 2,000 Unicode characters, including JSON escapes.
+        if((int)($_SERVER['CONTENT_LENGTH']??0)>32768)vp3_phone_workspace_error_v1('request_too_large',413,'Phone request is too large.');
+        $body=file_get_contents('php://input',false,null,0,32769);if($body===false||strlen($body)>32768)vp3_phone_workspace_error_v1('request_too_large',413,'Phone request is too large.');
         try{$decoded=json_decode($body,false,32,JSON_THROW_ON_ERROR);}catch(JsonException){vp3_phone_workspace_error_v1('invalid_phone_request',422,'Phone requires a JSON object.');}
         if(!is_object($decoded))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Phone requires a JSON object.');
         $input=json_decode($body,true,32,JSON_THROW_ON_ERROR);
