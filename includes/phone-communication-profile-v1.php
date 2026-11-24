@@ -60,7 +60,10 @@ function vp3_phone_communication_view_v1(array $r,bool $holder):array
 function vp3_phone_communication_project_v1(PDO $pdo,array $d,int $now,bool $holder):?array
 {
     if(!vp3_phone_communication_active_v1($d,$now)||!vp3_phone_communication_ready_v1($pdo))return null;
-    return vp3_phone_communication_view_v1(vp3_phone_communication_row_v1($pdo,$d),$holder);
+    $row=vp3_phone_communication_row_v1($pdo,$d);
+    $view=vp3_phone_communication_view_v1($row,$holder);
+    $view['information_pending']=vp3_phone_information_pending_count_v1($pdo,$d,$row,$now);
+    return $view;
 }
 function vp3_phone_communication_delete_v1(PDO $pdo,array $d):void
 {
@@ -138,6 +141,7 @@ function vp3_phone_communication_save_v1(PDO $pdo,array $d,array $input,int $now
             array_merge($values,[(int)$d['owner_user_id'],$d['id'],(int)$before['revision']]));
         vp3_phone_communication_require_v1($q->rowCount()===1,409);
     }
+    vp3_phone_information_fence_v1($pdo,$before,$r,$now);
     return vp3_phone_communication_view_v1($r,$holder);
 }
 /** Private owner endpoint only. Never accept an owner identity from a request. */
