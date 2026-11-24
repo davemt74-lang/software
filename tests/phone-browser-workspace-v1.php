@@ -507,8 +507,8 @@ $pdo->exec("UPDATE crm_contacts SET phone='+16025550999' WHERE id=1");
 $pdo->exec('UPDATE phone_cloud_numbers_v100 SET voice_enabled=1 WHERE id=1');
 vp3_phone_browser_number_policy_set_v1($pdo,1,true,true);
 action('select_number',['number_id'=>1]);
-$settings=vp3_operator_auto_call_defaults_v1();$settings['timezone']='America/Phoenix';
-$authorization=['contact_id'=>1,'number_id'=>1,'enabled'=>true,'expected_revision'=>0,'expected_destination'=>'+16025550999','expected_line'=>'+16025550101','settings'=>$settings];
+$autoSettings=vp3_operator_auto_call_defaults_v1();$autoSettings['timezone']='America/Phoenix';
+$authorization=['contact_id'=>1,'number_id'=>1,'enabled'=>true,'expected_revision'=>0,'expected_destination'=>'+16025550999','expected_line'=>'+16025550101','settings'=>$autoSettings];
 $policyScope=vp3_phone_workspace_scope_v1($pdo,user(),['agent_id'=>0,'conversation_id'=>11]);
 $readPolicy=static fn():array=>vp3_operator_auto_call_book_v1($pdo,$policyScope,1,[['id'=>1]])['policies'][0];
 c($readPolicy()['state']==='off'&&$readPolicy()['execution_enabled']===false,'Auto Call defaults off and has no execution capability');
@@ -532,10 +532,10 @@ denies(fn()=>action('save_auto_call_policy',$authorization+['recording_required'
 denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['expected_destination'=>'+16025550888'])),409,'browser cannot supply another dial destination');
 denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['expected_line'=>'+16025550103'])),409,'browser cannot substitute another calling line');
 foreach (['timezone'=>'not/a/timezone','window_start'=>'25:00','window_end'=>'08:00','max_calls_per_day'=>4,'min_gap_minutes'=>0,'max_duration_seconds'=>901] as $field=>$invalid)
-    denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['settings'=>array_replace($settings,[$field=>$invalid])])),422,'invalid Auto Call limit '.$field.' rejected');
+    denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['settings'=>array_replace($autoSettings,[$field=>$invalid])])),422,'invalid Auto Call limit '.$field.' rejected');
 $stored=action('save_auto_call_policy',$authorization)['policy'];
 c($stored['state']==='saved'&&$stored['revision']===1&&$stored['enabled']&&$stored['recording_required']&&$stored['transcription_required']&&!$stored['execution_enabled'],'exact owner authorization persists mandatory recording and explicit execution-disabled state');
-c($stored['settings']===$settings&&$readPolicy()===$stored,'saved time zone, window and calling limits round trip');
+c($stored['settings']===$autoSettings&&$readPolicy()===$stored,'saved time zone, window and calling limits round trip');
 c(!str_contains(json_encode($stored),'provider_sid_hash'),'permission projection never exposes carrier identity fingerprints');
 denies(fn()=>action('save_auto_call_policy',$authorization),409,'stale editor cannot overwrite a newer permission');
 // Native Cloud Calendar fixtures exercise the released calendar writer and recurrence projection.
@@ -548,7 +548,7 @@ $now=time();
 $preview=vp3_operator_calendar_preview_v1($pdo,$policyScope,$previewInput,$now);
 c($preview['coverage']==='cloud_calendar_only'&&!$preview['execution_enabled']&&count($preview['slots'])===3,'preview provides three bounded calling options with honest coverage');
 c((int)$pdo->query('SELECT COUNT(*) FROM user_calendar_events')->fetchColumn()===0,'preview never creates a calendar event');
-foreach($preview['slots'] as $slot)c(vp3_operator_calendar_slot_v1($settings,$slot['start_epoch'],$slot['duration_seconds'],$now)===$slot,'suggested time honors contact policy timezone and duration');
+foreach($preview['slots'] as $slot)c(vp3_operator_calendar_slot_v1($autoSettings,$slot['start_epoch'],$slot['duration_seconds'],$now)===$slot,'suggested time honors contact policy timezone and duration');
 $firstSlot=$preview['slots'][0];$secondSlot=$preview['slots'][1];$thirdSlot=$preview['slots'][2];
 $insertEvent=$pdo->prepare("INSERT INTO user_calendar_events(owner_user_id,title,start_at_utc,end_at_utc,timezone,recurrence) VALUES (?,?,?,?,?,?)");
 $insertEvent->execute([1,'Calendar conflict',$firstSlot['start_at_utc'],$firstSlot['end_at_utc'],'America/Phoenix','none']);
