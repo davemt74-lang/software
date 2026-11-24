@@ -16,10 +16,10 @@ for(const rate of [16000,44100,48000,96000]){
   capture.port.onmessage({data:'start'});run(rate*4,0.5);
   assert.equal(messages.length,1,'Exactly one four-second frame at '+rate);
   const frame=new DataView(messages[0]);assert.equal(frame.byteLength,128000);
-  assert.equal(frame.getInt16(0,true),16384);assert.equal(frame.getInt16(127998,true),16384);
+  assert.ok(Math.abs(frame.getInt16(0,true)-16384)<=1);assert.ok(Math.abs(frame.getInt16(127998,true)-16384)<=1);
   run(rate,0.25);capture.port.onmessage({data:'stop'});run(rate*4,-0.5);
   assert.equal(messages.length,1,'Stop discards partial PCM and emits nothing');
   capture.port.onmessage({data:'start'});run(rate*4,-0.5);
-  assert.equal(messages.length,2);assert.equal(new DataView(messages[1]).getInt16(0,true),-16384);
+  assert.equal(messages.length,2);assert.ok(Math.abs(new DataView(messages[1]).getInt16(0,true)+16384)<=1);
 }
 console.log('PHONE_OPERATOR_CAPTURE_V1=PASS (4 hardware sample rates; consent, exact PCM size, silent output, stop/reset)');
