@@ -40,7 +40,7 @@ function vp3_managed_callback_row_v1(PDO $pdo,string $public,bool $lock=false):?
     $q=$pdo->prepare('SELECT * FROM phone_managed_callback_requests_v1 WHERE public_id=?'.($lock?vp3_phone_workspace_lock_v1($pdo):''));
     $q->execute([$public]);$row=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();return $row?:null;
 }
-function vp3_managed_callback_view_v1(array $row,int $now,bool $holder):array
+function vp3_managed_callback_view_v1(array $row,int $now,bool $holder,?PDO $pdo=null):array
 {
     $state=(string)$row['state'];
     if(in_array($state,['pending','approved'],true)&&(int)$row['expires_epoch']<=$now)$state='expired';
@@ -48,6 +48,10 @@ function vp3_managed_callback_view_v1(array $row,int $now,bool $holder):array
         'state'=>$state,'transport'=>'twilio_callback','recording_enabled'=>false,
         'expires_epoch'=>(int)$row['expires_epoch'],'approved_epoch'=>(int)$row['approved_epoch']];
     if($holder&&$state==='pending')$view['destination_e164']=(string)$row['destination_e164'];
+    if($pdo&&vp3_managed_recording_ready_v1($pdo)){
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        $c=vp3_managed_recording_row_v1($pdo,$row['public_id']);if($c)$view['recording']=vp3_managed_recording_view_v1($c);
+    }
     return $view;
 }
 function vp3_managed_callback_prune_v1(PDO $pdo,int $owner,int $now):void
@@ -76,6 +80,8 @@ function vp3_managed_callback_prepare_v1(PDO $pdo,array $user,array $input,int $
     vp3_managed_callback_need_v1(vp3_managed_callback_ready_v1($pdo),503);
     vp3_managed_callback_need_v1(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null,403);
     vp3_managed_callback_need_v1(($input['confirmed']??null)===true&&!array_key_exists('recording_enabled',$input)&&!array_key_exists('holder_e164',$input),422);
+    vp3_managed_callback_need_v1(is_bool($input['recording_requested']??false),422);
+    require_once __DIR__.'/phone-managed-recording-v1.php';
     $id=vp3_managed_callback_id_v1($input['request_id']??null);
     $device=vp3_managed_callback_id_v1($input['device_id']??null);
     $profile=vp3_managed_callback_id_v1($input['profile_id']??null);
@@ -97,8 +103,12 @@ function vp3_managed_callback_prepare_v1(PDO $pdo,array $user,array $input,int $
                 &&(int)$old['profile_revision']===$revision&&(int)$old['phone_revision']===$phoneRevision&&(int)$old['number_id']===$numberId
                 &&(int)$old['chat_agent_id']===$scope['agent_id']&&(int)$old['conversation_id']===$scope['conversation_id']
                 &&hash_equals((string)$old['destination_e164'],$destination));
-            vp3_managed_callback_current_v1($pdo,$old,$live,$now);
-            return vp3_managed_callback_view_v1($old,$now,false);
+            $a=vp3_managed_callback_current_v1($pdo,$old,$live,$now);
+            $c=vp3_managed_recording_row_v1($pdo,$id,true);
+            vp3_managed_callback_need_v1((bool)$c===($input['recording_requested']??false));
+            if($c){vp3_managed_callback_need_v1(($input['recording_policy_revision']??null)===(int)$c['policy_revision']);vp3_managed_recording_current_v1($pdo,$old,$c,$a);}
+            else vp3_managed_callback_need_v1(!isset($input['recording_policy_revision']),422);
+            return vp3_managed_callback_view_v1($old,$now,false,$pdo);
         }
         $n=vp3_phone_browser_require_v1($pdo,$scope,$numberId,true);
         $p=vp3_connected_phone_prepare_v1($pdo,$scope,['device_id'=>$device,'profile_id'=>$profile,'profile_revision'=>$revision,'phone_revision'=>$phoneRevision,'confirmed'=>true],$now);
@@ -120,7 +130,8 @@ function vp3_managed_callback_prepare_v1(PDO $pdo,array $user,array $input,int $
             'expires_epoch'=>$now+VP3_MANAGED_CALLBACK_TTL_V1,'approved_epoch'=>0,'updated_epoch'=>$now];
         vp3_managed_callback_current_v1($pdo,$row,$live,$now);
         $fields=array_keys($row);$pdo->prepare('INSERT INTO phone_managed_callback_requests_v1('.implode(',',$fields).') VALUES ('.implode(',',array_fill(0,count($fields),'?')).')')->execute(array_values($row));
-        return vp3_managed_callback_view_v1($row,$now,false);
+        vp3_managed_recording_request_v1($pdo,$row,$live,$n,$input,$now);
+        return vp3_managed_callback_view_v1($row,$now,false,$pdo);
     });
 }
 /**
@@ -147,18 +158,21 @@ function vp3_managed_callback_holder_locked_v1(PDO $pdo,int $owner,string $devic
         vp3_managed_callback_prune_v1($pdo,$owner,$now);
         $row=vp3_managed_callback_row_v1($pdo,$id,true);
         vp3_managed_callback_need_v1(is_array($row)&&(int)$row['owner_user_id']===$owner&&hash_equals((string)$row['device_id'],$device),404);
-        if($decision==='decline'&&$row['state']==='declined')return vp3_managed_callback_view_v1($row,$now,true);
+        if($decision==='decline'&&$row['state']==='declined')return vp3_managed_callback_view_v1($row,$now,true,$pdo);
         vp3_managed_callback_need_v1(in_array($row['state'],['pending','approved'],true)&&(int)$row['expires_epoch']>$now);
-        if($decision==='approve')vp3_managed_callback_current_v1($pdo,$row,$user,$now);
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        if($decision==='approve')$authority=vp3_managed_callback_current_v1($pdo,$row,$user,$now);
         if($decision==='approve'){
             vp3_managed_callback_need_v1(($input['confirmed']??null)===true&&is_string($input['destination_e164']??null)
                 &&hash_equals((string)$row['destination_e164'],$input['destination_e164'])&&!array_key_exists('recording_enabled',$input),422);
-            if($row['state']==='approved')return vp3_managed_callback_view_v1($row,$now,true);
+            vp3_managed_recording_holder_v1($pdo,$row,$authority,$input,$now);
+            if($row['state']==='approved')return vp3_managed_callback_view_v1($row,$now,true,$pdo);
             $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='approved',approved_epoch=?,updated_epoch=? WHERE public_id=? AND state='pending'")->execute([$now,$now,$id]);
         }else{
+            vp3_managed_recording_revoke_v1($pdo,$id,$now);
             $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='declined',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=? AND state IN ('pending','approved')")->execute([$now,$id]);
         }
-        return vp3_managed_callback_view_v1(vp3_managed_callback_row_v1($pdo,$id),$now,true);
+        return vp3_managed_callback_view_v1(vp3_managed_callback_row_v1($pdo,$id),$now,true,$pdo);
 }
 /** Pure carrier command builder. No Twilio network request, no credential access. */
 function vp3_managed_callback_plan_v1(array $row,int $now,string $answerUrl,string $statusUrl):array
@@ -188,9 +202,10 @@ function vp3_managed_callback_cancel_v1(PDO $pdo,array $user,string $id,int $now
         vp3_managed_callback_owner_lock_v1($pdo,$owner);
         $r=vp3_managed_callback_row_v1($pdo,$id,true);
         vp3_managed_callback_need_v1(is_array($r)&&(int)$r['owner_user_id']===$owner,404);
-        if($r['state']==='canceled')return vp3_managed_callback_view_v1($r,$now,false);
+        if($r['state']==='canceled')return vp3_managed_callback_view_v1($r,$now,false,$pdo);
         vp3_managed_callback_need_v1(in_array($r['state'],['pending','approved'],true));
+        vp3_managed_recording_revoke_v1($pdo,$id,$now);
         $pdo->prepare("UPDATE phone_managed_callback_requests_v1 SET state='canceled',holder_e164='',destination_e164='',updated_epoch=? WHERE public_id=? AND state IN ('pending','approved')")->execute([$now,$id]);
-        return vp3_managed_callback_view_v1(vp3_managed_callback_row_v1($pdo,$id),$now,false);
+        return vp3_managed_callback_view_v1(vp3_managed_callback_row_v1($pdo,$id),$now,false,$pdo);
     });
 }
