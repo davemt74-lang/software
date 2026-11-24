@@ -42,7 +42,7 @@ function vp3_operator_calendar_source_v1(array $bound,int $start,int $duration):
 {
     $contact=$bound['contact'];$line=$bound['line'];$policy=$bound['policy'];
     return VP3_OPERATOR_CALENDAR_PREFIX_V1.(int)$contact['id'].':'.(int)$line['agent_id'].':'
-        .hash('sha256',json_encode([$contact['public_id'],$line['id'],$policy['revision'],$start,$duration],JSON_THROW_ON_ERROR));
+        .hash('sha256',json_encode([(string)$contact['public_id'],(int)$line['id'],(int)$policy['revision'],$start,$duration],JSON_THROW_ON_ERROR));
 }
 
 function vp3_operator_calendar_slot_v1(array $settings,int $start,int $duration,int $now): ?array
@@ -134,7 +134,8 @@ function vp3_operator_calendar_preview_v1(PDO $pdo,array $scope,array $input,int
 function vp3_operator_calendar_save_v1(PDO $pdo,array $scope,array $input,int $now): array
 {
     if(array_diff(array_keys($input),['action','csrf_token','agent_id','conversation_id','contact_id','number_id','expected_revision','start_epoch','duration_seconds'])
-        ||!is_int($input['start_epoch']??null)||!is_int($input['duration_seconds']??null))
+        ||!is_int($input['start_epoch']??null)||$input['start_epoch']<1||$input['start_epoch']>4102444800
+        ||!is_int($input['duration_seconds']??null))
         vp3_phone_workspace_error_v1('operator_invalid_plan',422,'Choose a reviewed calling time.');
     require_once __DIR__.'/user-calendar-v1300.php';
     return section12_owner_transaction($pdo,$scope['owner_user_id'],static function()use($pdo,$scope,$input,$now):array {
