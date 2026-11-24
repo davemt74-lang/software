@@ -14,6 +14,7 @@
     'image-generator':'M4 4h16v16H4z M4 16l5-5 4 4 2-2 5 5 M15 8h.01',
     'email':'M3 6h18v12H3z M3 7l9 6 9-6',
     'gmail':'M3 6h18v12H3z M3 7l9 6 9-6',
+    operator:'M3 13v-1a9 9 0 0 1 18 0v1 M3 13h4v7H5a2 2 0 0 1-2-2z M21 13h-4v7h2a2 2 0 0 0 2-2z M17 20l-3 2h-3',
     location:'M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0z M14.5 10a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z',
     'gmail-inbox-review':'M3 6h18v12H3z M3 7l9 6 9-6',
     'development':'M8 7l-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16',
