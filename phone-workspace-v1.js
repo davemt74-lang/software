@@ -15,7 +15,7 @@
   let context={conversation_id:principal(config.conversation_id??config.conversationId),agent_id:principal(config.agent_id??config.agentId),ready:true},generation=0,requestSequence=0;
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
   let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0;
-  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,autoCallDraft=null;
+  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,autoCallDraft=null,calendarDraft=null;
   const layer=node('div','vp3-phone-workspace');layer.hidden=true;
   const backdrop=node('button','vp3-phone-backdrop');backdrop.type='button';backdrop.tabIndex=-1;backdrop.setAttribute('aria-label','Close phone workspace');
   const panel=node('aside','vp3-phone-panel');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','vp3PhoneTitle');panel.tabIndex=-1;
@@ -74,7 +74,7 @@
       const response=await fetch(url.href,options);let data={};try{data=await response.json();}catch(_){throw new Error('Phone returned an invalid response.');}
       if(!current(g)){if(action==='prepare_call'&&data.ok===true&&publicId(data.call?.public_id))await cancelPrepared({info:data.call,scope:requestScope,prepared:true});throw new DOMException('Phone context changed.','AbortError');}
       if(response.status===401||response.status===403){revoke();throw new Error('Phone access is unavailable.');}
-      if(!response.ok||data.ok!==true){const operatorError=action==='save_auto_call_policy'&&typeof data.error==='string'&&data.error.startsWith('operator_')&&typeof data.message==='string';const error=new Error(operatorError?data.message.slice(0,300):response.status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.');error.status=response.status;throw error;}
+      if(!response.ok||data.ok!==true){const operatorError=['save_auto_call_policy','operator_calendar_preview','save_operator_calendar'].includes(action)&&typeof data.error==='string'&&data.error.startsWith('operator_')&&typeof data.message==='string';const error=new Error(operatorError?data.message.slice(0,300):response.status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.');error.status=response.status;throw error;}
       return data;
     }finally{clearTimeout(timer);requests.delete(controller);}
   }
@@ -257,6 +257,85 @@
     });
     return form;
   }
+  function operatorAppointment(raw){
+    if(!raw||!positive(raw.event_id)||raw.execution_enabled!==false||typeof raw.title!=='string'||raw.title.length>380
+      ||typeof raw.label!=='string'||raw.label.length>160||!Number.isFinite(Date.parse(raw.start_at))||!Number.isFinite(Date.parse(raw.end_at))||Date.parse(raw.end_at)<=Date.parse(raw.start_at))return null;
+    const href=safeUrl(raw.url);if(!href)return null;const u=new URL(href);
+    if(!u.pathname.endsWith('/calendar-event.php')||u.searchParams.get('id')!==String(raw.event_id)||u.hash||[...u.searchParams.keys()].length!==1)return null;
+    return {...raw,url:href};
+  }
+  function operatorPlanModel(raw,policy){
+    if(!raw||raw.contact_id!==policy.contact_id||raw.number_id!==policy.number_id||raw.revision!==policy.revision||
+      raw.coverage!=='cloud_calendar_only'||raw.execution_enabled!==false||!Array.isArray(raw.slots)||raw.slots.length>3)return null;
+    const existing=raw.existing===null?null:operatorAppointment(raw.existing);
+    if(raw.existing!==null&&!existing||existing&&raw.slots.length)return null;
+    const seen=new Set();
+    for(const slot of raw.slots){
+      if(!Number.isSafeInteger(slot?.start_epoch)||slot.start_epoch<1||slot.start_epoch%900!==0||
+        !Number.isSafeInteger(slot.duration_seconds)||slot.duration_seconds<60||slot.duration_seconds>600||
+        slot.duration_seconds%60!==0||typeof slot.label!=='string'||!slot.label||slot.label.length>160||
+        typeof slot.timezone!=='string'||slot.timezone!==policy.settings.timezone||seen.has(slot.start_epoch))return null;
+      seen.add(slot.start_epoch);
+    }
+    return {...raw,existing};
+  }
+  async function readOperatorPlan(contact,policy,g){
+    const draft={key:autoCallKey(policy),revision:policy.revision,loading:true,saving:false,plan:null,selection:null,feedback:''};
+    calendarDraft=draft;render();
+    try{
+      const response=await api('operator_calendar_preview',{contact_id:policy.contact_id,number_id:policy.number_id,expected_revision:policy.revision},'GET',g);
+      if(!current(g)||calendarDraft!==draft)return;
+      const fresh=autoCallPolicy(contact);
+      if(!fresh||fresh.state!=='saved'||fresh.revision!==draft.revision||autoCallKey(fresh)!==draft.key){calendarDraft=null;return;}
+      const plan=operatorPlanModel(response.plan,fresh);if(!plan)throw new Error('The suggested calling times could not be verified.');
+      draft.plan=plan;draft.selection=plan.slots[0]?.start_epoch??null;
+    }catch(error){if(current(g)&&calendarDraft===draft)draft.feedback=error.message;}
+    finally{if(current(g)&&calendarDraft===draft){draft.loading=false;render();}}
+  }
+  function operatorCalendarEditor(contact,policy){
+    const g=generation,draft=calendarDraft,key=autoCallKey(policy);
+    const panel=node('section','vp3-phone-auto-call-form');
+    panel.setAttribute('aria-label','Plan a phone call');
+    panel.append(node('strong',null,'Plan a phone appointment'),node('p','vp3-phone-empty','Suggested times use your contact calling window and Cloud Calendar, including bookings and recurring events. Other calendars and the contact’s availability are not checked. Saving creates a reminder only; it does not dial or invite the contact.'));
+    if(draft.loading)panel.append(node('p','vp3-phone-empty','Checking Cloud Calendar…'));
+    if(draft.feedback){const status=node('p','vp3-phone-processing-error',draft.feedback);status.setAttribute('role','status');panel.append(status);}
+    if(draft.plan?.existing){
+      panel.append(node('p',null,draft.plan.existing.title),node('p','vp3-phone-meta',draft.plan.existing.label));
+      const link=node('a','vp3-phone-report','Open Calendar appointment');link.href=draft.plan.existing.url;panel.append(link);
+    }else if(draft.plan&&!draft.plan.slots.length)panel.append(node('p','vp3-phone-empty','No available time was found in the next seven days.'));
+    else if(draft.plan){
+      const fields=node('fieldset','vp3-phone-modules');fields.append(node('legend',null,'Suggested calling times'));
+      for(const slot of draft.plan.slots){
+        const label=node('label','vp3-phone-check'),radio=node('input');radio.type='radio';radio.name='operator-call-slot';radio.value=String(slot.start_epoch);
+        radio.checked=draft.selection===slot.start_epoch;radio.disabled=draft.saving;
+        radio.dataset.phoneFocusKey='operator-slot-'+slot.start_epoch;
+        radio.addEventListener('change',()=>{if(current(g)&&calendarDraft===draft&&!draft.saving){draft.selection=slot.start_epoch;}});
+        label.append(radio,node('span',null,slot.label));fields.append(label);
+      }
+      panel.append(fields);
+      const save=button('Save Calendar appointment',async event=>{
+        const slot=draft.plan.slots.find(item=>item.start_epoch===draft.selection),fresh=autoCallPolicy(contact);
+        if(!event.isTrusted||!current(g)||calendarDraft!==draft||draft.saving||!slot||
+          !fresh||fresh.state!=='saved'||fresh.revision!==draft.revision||autoCallKey(fresh)!==key)return;
+        draft.saving=true;draft.feedback='';render();
+        try{
+          const response=await api('save_operator_calendar',{contact_id:policy.contact_id,number_id:policy.number_id,expected_revision:draft.revision,
+            start_epoch:slot.start_epoch,duration_seconds:slot.duration_seconds},'POST',g);
+          if(!current(g)||calendarDraft!==draft)return;
+          const appointment=operatorAppointment(response.appointment);if(!appointment)throw new Error('Calendar save could not be confirmed. Refresh the plan before trying again.');
+          draft.plan={...draft.plan,slots:[],existing:appointment};draft.selection=null;
+          say('Phone appointment saved to Calendar. No call was placed.');
+        }catch(error){if(current(g)&&calendarDraft===draft)draft.feedback=error.message;}
+        finally{if(current(g)&&calendarDraft===draft){draft.saving=false;render();}}
+      });save.disabled=draft.saving||draft.selection===null;save.dataset.phoneFocusKey='operator-calendar-save';panel.append(save);
+    }
+    const actions=node('div','vp3-phone-actions');
+    const refreshPlan=button('Refresh suggestions',event=>{if(event.isTrusted&&current(g)&&calendarDraft===draft&&!draft.saving&&!draft.loading)void readOperatorPlan(contact,policy,g);});
+    refreshPlan.disabled=draft.saving||draft.loading;actions.append(refreshPlan);
+    const closePlan=button('Close plan',()=>{if(current(g)&&calendarDraft===draft&&!draft.saving){calendarDraft=null;render();}});
+    closePlan.disabled=draft.saving;actions.append(closePlan);panel.append(actions);
+    return panel;
+  }
   function contactRow(contact){
     const renderGeneration=generation;
     const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy');details.append(node('strong',null,contact.name||contact.phone_e164),node('span',null,contact.phone_e164));
@@ -265,7 +344,7 @@
     const policy=autoCallPolicy(contact);if(!policy)return row;
     const wrap=node('div','vp3-phone-contact-with-policy'),key=autoCallKey(policy);wrap.append(row);
     const openEditor=button('Agent Auto Call · '+({off:'Off',saved:'Permission saved',blocked:'Blocked',needs_review:'Review required'}[policy.state]),event=>{
-      if(!event.isTrusted||!current(renderGeneration)||!positive(context.conversation_id)||autoCallDraft?.saving)return;
+      if(!event.isTrusted||!current(renderGeneration)||!positive(context.conversation_id)||autoCallDraft?.saving||calendarDraft)return;
       const fresh=autoCallPolicy(contact);if(!fresh||autoCallKey(fresh)!==key)return;
       if(autoCallDraft?.key===key){autoCallDraft=null;render();return;}
       if(autoCallDraft)return;
@@ -275,9 +354,19 @@
     });
     openEditor.setAttribute('aria-label','Agent Auto Call for '+(contact.name||contact.phone_e164));
     openEditor.setAttribute('aria-expanded',String(autoCallDraft?.key===key));openEditor.dataset.phoneFocusKey='auto-call-open-'+key;
-    openEditor.disabled=!positive(context.conversation_id)||Boolean(autoCallDraft&&autoCallDraft.key!==key)||Boolean(autoCallDraft?.saving);
+    openEditor.disabled=!positive(context.conversation_id)||Boolean(autoCallDraft&&autoCallDraft.key!==key)||Boolean(autoCallDraft?.saving)||Boolean(calendarDraft);
     wrap.append(openEditor);
     if(autoCallDraft?.key===key)wrap.append(autoCallEditor(contact,policy));
+    if(policy.state==='saved'){
+      const planner=button('Plan a call',event=>{
+        const fresh=autoCallPolicy(contact);
+        if(!event.isTrusted||!current(renderGeneration)||autoCallDraft||calendarDraft||!fresh||fresh.state!=='saved'||autoCallKey(fresh)!==key||!positive(context.conversation_id))return;
+        void readOperatorPlan(contact,fresh,renderGeneration);
+      });
+      planner.setAttribute('aria-label','Plan a call with '+(contact.name||contact.phone_e164));planner.dataset.phoneFocusKey='operator-plan-'+key;
+      planner.disabled=Boolean(autoCallDraft||calendarDraft)||!positive(context.conversation_id);wrap.append(planner);
+      if(calendarDraft?.key===key)wrap.append(operatorCalendarEditor(contact,policy));
+    }
     return wrap;
   }
   function renderContacts(){
@@ -286,14 +375,15 @@
     if(state.auto_call?.available===false)host.append(node('p','vp3-phone-empty','Auto Call preferences are unavailable. Run the Cloud database upgrade if needed. Manual calling is unchanged.'));
     else if(state.auto_call?.available===true&&!positive(context.conversation_id))host.append(node('p','vp3-phone-empty','Open a saved private Chat to change Auto Call permissions.'));
     if(autoCallDraft&&!state.contacts.some(contact=>{const policy=autoCallPolicy(contact);return policy&&autoCallKey(policy)===autoCallDraft.key;}))autoCallDraft=null;
+    if(calendarDraft&&!state.contacts.some(contact=>{const policy=autoCallPolicy(contact);return policy?.state==='saved'&&autoCallKey(policy)===calendarDraft.key&&policy.revision===calendarDraft.revision;}))calendarDraft=null;
     const results=node('div','vp3-phone-contact-results');host.append(results);
     function fill(){results.replaceChildren();const query=contactQuery.trim().toLocaleLowerCase();const contacts=state.contacts.filter(item=>!query||(String(item.name)+' '+String(item.phone_e164)).toLocaleLowerCase().includes(query));
       const favoriteIds=new Set(state.favorites.map(item=>Number(item.id)));const favorites=contacts.filter(item=>item.favorite||favoriteIds.has(Number(item.id)));
       if(favorites.length){results.append(node('h3',null,'Favorites'));for(const item of favorites)results.append(contactRow({...item,favorite:true}));}
       results.append(node('h3',null,'Contacts'));for(const item of contacts.filter(item=>!favorites.includes(item)))results.append(contactRow(item));if(!contacts.length)listEmpty(results,'No matching phone contacts.');
     }
-    if(autoCallDraft)search.disabled=true;
-    search.addEventListener('input',()=>{if(autoCallDraft)return;contactQuery=search.value.slice(0,120);fill();});fill();
+    if(autoCallDraft||calendarDraft)search.disabled=true;
+    search.addEventListener('input',()=>{if(autoCallDraft||calendarDraft)return;contactQuery=search.value.slice(0,120);fill();});fill();
   }
   function renderCalls(){
     const host=sections.calls;host.replaceChildren();if(!state?.calls.length){listEmpty(host,'No recent calls.');return;}
@@ -522,16 +612,16 @@
   function clearAudio(){for(const audio of [...audioNodes]){audio.pause();audio.removeAttribute('src');audio.load();if(!audio.isConnected)audioNodes.delete(audio);}}
 
   function revoke(){
-    if(!authorized)return;authorized=false;generation++;autoCallDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
+    if(!authorized)return;authorized=false;generation++;autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
     for(const item of document.querySelectorAll('[data-phone-workspace-toggle]'))item.hidden=true;
     for(const section of Object.values(sections))section.replaceChildren();renderCards();
   }
   function contextChanged(next={}){
     const normalized={conversation_id:principal(next.conversation_id),agent_id:principal(next.agent_id),ready:next.ready!==false};
     if(normalized.conversation_id===context.conversation_id&&normalized.agent_id===context.agent_id&&normalized.ready===context.ready)return;
-    generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;render();void refresh();
+    generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;render();void refresh();
   }
-  function dispose(){if(disposed)return;generation++;autoCallDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
+  function dispose(){if(disposed)return;generation++;autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-phone-workspace-toggle]');if(trigger){event.preventDefault();opened?close():open(trigger);}});
   backdrop.addEventListener('click',close);closeButton.addEventListener('click',close);
   document.addEventListener('keydown',event=>{
