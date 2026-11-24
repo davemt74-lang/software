@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {createECDH,createHash,randomBytes} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
@@ -14,6 +15,10 @@ try {
   const device = {id:'d'.repeat(32),name:'Field phone',status:'pending',generation:1,allow_location:false,holder_can_save_places:false};
   const turns = [], sent = [], errors = [];
   let chatReads = 0;
+  const pushKey=createECDH('prime256v1');pushKey.generateKeys();
+  const publicKey=pushKey.getPublicKey().toString('base64url'),keyId=createHash('sha256').update(publicKey).digest('hex');
+  const pushSub={endpoint:'https://web.push.apple.com/Qsynthetic-notification-fixture',expirationTime:null,keys:{p256dh:publicKey,auth:randomBytes(16).toString('base64url')}};
+  const endpointHash=createHash('sha256').update(pushSub.endpoint).digest('hex'),pushActions=[];
   let camera = null;
   page.on('pageerror',error => errors.push(error.message));
   await page.route('https://phone.test/**',async route => {
@@ -26,6 +31,14 @@ try {
     const q = route.request().postDataJSON();
     switch (q.action) {
       case 'status': return route.fulfill({json:{ok:true,device,owner_name:'Studio'}});
+      case 'push_register':
+        assert.equal(q.device_id,device.id);assert.equal(q.confirmed,true);assert.equal(q.key_id,keyId);assert.equal(q.subscription_revision,0);assert.deepEqual(q.subscription,pushSub);
+        pushActions.push(q.action);device.push={...device.push,state:'registered',revision:1,endpoint_hash:endpointHash};
+        return route.fulfill({json:{ok:true,device,owner_name:'Studio',push:device.push}});
+      case 'push_disable':
+        assert.equal(q.device_id,device.id);assert.equal(q.subscription_revision,1);assert.equal(q.confirmed,true);
+        pushActions.push(q.action);device.push={...device.push,state:'off',revision:2};delete device.push.endpoint_hash;
+        return route.fulfill({json:{ok:true,device,owner_name:'Studio',push:device.push}});
       case 'camera_status': return route.fulfill({json:{ok:true,camera}});
       case 'camera_stop':
         assert.equal(q.session_id,camera.session_id);
@@ -67,6 +80,39 @@ try {
   assert.equal(await page.locator('#phone-chat-form').isVisible(),false,'Info does not need the composer');
   assert.equal(chatReads,0,'Info guide never requests private Chat');
   assert.equal(await page.locator('#phone-guide-notification-state').textContent(),'Background notifications are not enabled yet.');
+  // Synthetic browser API only. Never request actual browser/OS permission or contact a provider.
+  await page.evaluate(({publicKey,pushSub})=>{
+    let permission='default',sub=null,calls=0,unsubscribed=0;
+    Object.defineProperty(navigator,'standalone',{configurable:true,value:true});
+    Object.defineProperty(window,'Notification',{configurable:true,value:{get permission(){return permission;}}});
+    if(!('PushManager' in window))window.PushManager=function(){};
+    const registration={scope:location.origin+'/phone-location.php',active:{scriptURL:location.origin+'/phone-service-worker-v1.js'},pushManager:{
+      getSubscription:async()=>sub,
+      subscribe:options=>{calls++;if(!options.userVisibleOnly)throw Error('silent subscription');
+        const base64=btoa(String.fromCharCode(...options.applicationServerKey)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+        if(base64!==publicKey)throw Error('wrong VAPID key');permission='granted';
+        sub={endpoint:pushSub.endpoint,options:{userVisibleOnly:true,applicationServerKey:options.applicationServerKey.buffer},toJSON:()=>pushSub,
+          unsubscribe:async()=>{unsubscribed++;sub=null;return true;}};return Promise.resolve(sub);
+      }
+    }};
+    Object.defineProperty(navigator,'serviceWorker',{configurable:true,value:{getRegistration:async()=>registration}});
+    window.phonePushFixture={get calls(){return calls;},get unsubscribed(){return unsubscribed;}};
+  },{publicKey,pushSub});
+  device.push={state:'off',revision:0,enrollment_enabled:true,delivery_ready:false,key_id:keyId,application_server_key:publicKey};
+  await wake();
+  const enable=page.locator('#phone-push-enable');await enable.waitFor();
+  await page.waitForFunction(()=>!document.getElementById('phone-push-enable').disabled);
+  assert.equal(await page.evaluate(()=>window.phonePushFixture.calls),0,'opening Info never subscribes');
+  await enable.click();
+  await page.getByText('Notifications allowed · subscription saved.',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>window.phonePushFixture.calls),1);
+  assert.deepEqual(pushActions,['push_register']);
+  assert.ok((await page.locator('#phone-push-feedback').textContent()).includes('Background delivery is not active yet.'));
+  await page.locator('#phone-push-disable').click();
+  await page.getByText('VP3 notification subscription turned off.',{exact:true}).waitFor();
+  assert.deepEqual(pushActions,['push_register','push_disable']);
+  assert.equal(await page.evaluate(()=>window.phonePushFixture.unsubscribed),1);
+  assert.equal(await page.evaluate(()=>Object.values(localStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))||Object.values(sessionStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))),false);
   await page.locator('#phone-info-back').click();
   assert.equal(await connection.getAttribute('aria-selected'),'true');
   assert.equal(await page.locator('#phone-chat-form').isVisible(),true);

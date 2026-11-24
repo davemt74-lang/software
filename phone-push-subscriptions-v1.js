@@ -61,7 +61,7 @@
       if(feedback.textContent!==notice)feedback.textContent=notice;
     }
     async function inspect(force=false){
-      if(!d||d.status!=='approved'||!ready||!installed()||!supported()||document.hidden||info.hidden||busy||inspecting||(!force&&performance.now()-checkedAt<10000))return;
+      if(!d||d.status!=='approved'||!ready||!installed()||!supported()||document.hidden||info.hidden||busy||inspecting||(!force&&checkedAt>0&&performance.now()-checkedAt<10000))return;
       inspecting=true;checkedAt=performance.now();
       const v=version,p=view();
       try{
@@ -79,9 +79,10 @@
       version++;registration=null;local=null;localHash='';localKeyOK=false;observed=false;checkedAt=0;notice='';
     }
     function bind(next,available){
-      if((next?.id||null)!==(d?.id||null)||next?.status!==d?.status||next?.push?.key_id!==d?.push?.key_id)reset();
+      const changed=(next?.id||null)!==(d?.id||null)||next?.status!==d?.status||next?.push?.key_id!==d?.push?.key_id;
+      if(changed)reset();
       d=next;ready=Boolean(available);
-      render();void inspect();
+      render();void inspect(changed);
     }
     enable.addEventListener('click',async event=>{
       // Safari requires subscription initiation in the original user gesture.

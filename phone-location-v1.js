@@ -169,7 +169,7 @@
   })),onMoved:result=>{accept(result);info='Connection moved. Review your sharing and communication preferences.';render();schedulePoll();}});
   const push=window.VP3PhonePushSubscriptionsV1?.({request:(action,body)=>new Promise((resolve,reject)=>queue(async()=>{
     try{if(dead||document.hidden||!device||device.id!==body.device_id)throw Error('Phone connection changed');
-      const result=await request(action,body);if(!dead&&result.device?.id===device?.id)accept(result);resolve(result);
+      const result=await request(action,body);if(!dead&&result.device?.id===device?.id){accept(result);render();}resolve(result);
     }catch(error){reject(error);}
   }))});
   function discardDeferred(session) {
