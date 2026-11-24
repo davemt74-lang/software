@@ -528,6 +528,9 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 $receipt=['information'=>vp3_phone_information_action_v1($pdo,$row,$action,$input,$now,true)];
             } elseif (in_array($action,['dialer_preferences','dialer_claim','dialer_handled','dialer_decline'],true)) {
                 $receipt=vp3_phone_dialer_action_v1($pdo,$row,$action,$input,$now,true);
+            } elseif ($action === 'native_dialthrough_issue') {
+                require_once __DIR__.'/phone-native-dialthrough-v1.php';
+                $receipt=vp3_native_dialthrough_issue_v1($pdo,$row,$input,$now);
             } elseif ($action === 'managed_respond') {
                 $receipt=vp3_managed_ui_holder_action_v1($pdo,$row,$input,$now);
             } elseif ($action === 'holder_save_place') {

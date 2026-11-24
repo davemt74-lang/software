@@ -12,6 +12,7 @@ require_once __DIR__.'/agent-operator-owner-phone-chat-v1.php';
 require_once __DIR__.'/agent-operator-connected-call-v1.php';
 require_once __DIR__.'/phone-managed-control-schema-v1.php';
 require_once __DIR__.'/phone-managed-recording-schema-v1.php';
+require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -38,7 +39,7 @@ function vp3_phone_workspace_schema_ready_v1(PDO $pdo): bool
         if(!vp3_managed_callback_ready_v1($pdo))return false;
         require_once __DIR__.'/phone-managed-transport-schema-v1.php';
         if(!vp3_managed_transport_ready_v1($pdo))return false;
-        $pdo->query('SELECT id,public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,voice_call_id,provider_call_sid,provider_child_sid,intent_hash,intent_expires_epoch,intent_consumed_epoch,conversation_id,chat_agent_id,chat_message_id,state,recording_enabled,duration_seconds,created_epoch,updated_epoch,ended_epoch,fallback_claimed_epoch,owner_phone_revision,owner_test_received_epoch,paired_device_id,paired_profile_id,paired_profile_revision,paired_phone_revision,transport_kind FROM phone_browser_calls_v1 WHERE 1=0');
+        $pdo->query('SELECT id,public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,voice_call_id,provider_call_sid,provider_child_sid,intent_hash,intent_expires_epoch,intent_consumed_epoch,conversation_id,chat_agent_id,chat_message_id,state,recording_enabled,duration_seconds,created_epoch,updated_epoch,ended_epoch,fallback_claimed_epoch,owner_phone_revision,owner_test_received_epoch,paired_device_id,paired_profile_id,paired_profile_revision,paired_phone_revision,transport_kind,managed_parent_kind FROM phone_browser_calls_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,agent_id,selected_number_id FROM phone_browser_preferences_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,contact_id FROM phone_browser_favorites_v1 WHERE 1=0');
         $pdo->query('SELECT phone_number_id,owner_user_id,agent_id,browser_enabled,recording_enabled FROM phone_browser_numbers_v1 WHERE 1=0');
@@ -56,6 +57,7 @@ function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
     require_once __DIR__.'/phone-managed-control-schema-v1.php';
     vp3_managed_control_install_v1($pdo);
     vp3_managed_recording_install_v1($pdo);
+    vp3_native_dialthrough_install_v1($pdo);
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';$auto=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';$suffix=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_browser_calls_v1(id $auto,public_id CHAR(32) NOT NULL UNIQUE,
         owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,phone_number_id BIGINT NOT NULL,phone_e164 VARCHAR(20) NOT NULL,peer_e164 VARCHAR(20) NOT NULL DEFAULT '',
@@ -64,7 +66,7 @@ function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
         conversation_id BIGINT NULL,chat_agent_id BIGINT NOT NULL DEFAULT 0,chat_message_id BIGINT NULL,state VARCHAR(24) NOT NULL,
         recording_enabled SMALLINT NOT NULL DEFAULT 0,duration_seconds INTEGER NOT NULL DEFAULT 0,created_epoch BIGINT NOT NULL,updated_epoch BIGINT NOT NULL,ended_epoch BIGINT NULL,fallback_claimed_epoch BIGINT NOT NULL DEFAULT 0,owner_phone_revision BIGINT NOT NULL DEFAULT 0,owner_test_received_epoch BIGINT NOT NULL DEFAULT 0,paired_device_id CHAR(32) NULL,paired_profile_id CHAR(32) NULL,paired_profile_revision BIGINT NOT NULL DEFAULT 0,paired_phone_revision BIGINT NOT NULL DEFAULT 0)".$suffix);
     foreach(['owner_phone_revision'=>'BIGINT NOT NULL DEFAULT 0','owner_test_received_epoch'=>'BIGINT NOT NULL DEFAULT 0',
-        'paired_device_id'=>'CHAR(32) NULL','paired_profile_id'=>'CHAR(32) NULL','paired_profile_revision'=>'BIGINT NOT NULL DEFAULT 0','paired_phone_revision'=>'BIGINT NOT NULL DEFAULT 0','transport_kind'=>"VARCHAR(24) NOT NULL DEFAULT 'browser'"] as $field=>$definition){
+        'paired_device_id'=>'CHAR(32) NULL','paired_profile_id'=>'CHAR(32) NULL','paired_profile_revision'=>'BIGINT NOT NULL DEFAULT 0','paired_phone_revision'=>'BIGINT NOT NULL DEFAULT 0','transport_kind'=>"VARCHAR(24) NOT NULL DEFAULT 'browser'",'managed_parent_kind'=>"VARCHAR(16) NOT NULL DEFAULT 'callback'"] as $field=>$definition){
         try{$pdo->query('SELECT '.$field.' FROM phone_browser_calls_v1 WHERE 1=0');}catch(PDOException){$pdo->exec('ALTER TABLE phone_browser_calls_v1 ADD COLUMN '.$field.' '.$definition);}
     }
     $pdo->exec('CREATE TABLE IF NOT EXISTS phone_browser_preferences_v1(owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,selected_number_id BIGINT NOT NULL,PRIMARY KEY(owner_user_id,agent_id))'.$suffix);
@@ -162,7 +164,7 @@ function vp3_phone_workspace_call_projection_v1(array $row): array
         'peer_e164'=>$connected?'':(string)$row['peer_e164'],'phone_e164'=>(string)$row['phone_e164'],'state'=>(string)$row['state'],
         'agent_id'=>(int)$row['agent_id'],'number_id'=>(int)$row['phone_number_id'],'conversation_id'=>(int)($row['conversation_id']??0),
         'duration_seconds'=>(int)$row['duration_seconds'],'created_at'=>gmdate(DATE_ATOM,(int)$row['created_epoch']),'recording_enabled'=>(bool)$row['recording_enabled'],
-        'source_kind'=>'browser','browser_control'=>!$managed]+($managed?['transport_kind'=>'managed_callback']:[])+((int)($row['owner_phone_revision']??0)>0?['owner_test'=>true]:[])+($connected?['connected_phone'=>true,'peer_masked'=>'Ending in '.substr((string)$row['peer_e164'],-4),'connected_profile_id'=>(string)$row['paired_profile_id']]:[]);
+        'source_kind'=>'browser','browser_control'=>!$managed]+($managed?['transport_kind'=>'managed_callback']+(($row['managed_parent_kind']??'callback')==='native'?['managed_mode'=>'twilio_native']:[]):[])+((int)($row['owner_phone_revision']??0)>0?['owner_test'=>true]:[])+($connected?['connected_phone'=>true,'peer_masked'=>'Ending in '.substr((string)$row['peer_e164'],-4),'connected_profile_id'=>(string)$row['paired_profile_id']]:[]);
 }
 /** The existing signed inbound receipt remains the historical owner authority. */
 function vp3_phone_workspace_legacy_calls_v1(PDO $pdo,array $scope,bool $terminalOnly=false): array

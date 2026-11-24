@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/phone-managed-transport-v1.php';
 require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
+require_once __DIR__.'/phone-managed-recording-v1.php';
 
 /** A separate default-off pilot flag, in addition to the managed-call flag. */
 function vp3_native_dialthrough_enabled_v1():bool

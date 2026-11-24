@@ -64,9 +64,10 @@ function vp3_managed_control_resource_v1(string $account,string $sid):string
 function vp3_managed_control_evidence_v1(mixed $raw,string $account,array $call,?array $request=null):?array
 {
     $child=$request!==null;$sid=(string)$call[$child?'provider_child_sid':'provider_call_sid'];
-    $to=$child?(string)$request['destination_e164']:(string)$call['peer_e164'];
+    $native=!$child&&($call['managed_parent_kind']??'callback')==='native';
+    $to=$child?(string)$request['destination_e164']:(string)$call[$native?'phone_e164':'peer_e164'];
     if(!is_array($raw)||!vp3_managed_transport_sid_v1($sid)||!preg_match('/^\+[1-9][0-9]{7,14}$/D',$to))return null;
-    foreach(['sid'=>$sid,'account_sid'=>$account,'from'=>(string)$call['phone_e164'],'to'=>$to,'direction'=>$child?'outbound-dial':'outbound-api'] as $key=>$expected)
+    foreach(['sid'=>$sid,'account_sid'=>$account,'from'=>(string)$call[$native?'peer_e164':'phone_e164'],'to'=>$to,'direction'=>$child?'outbound-dial':($native?'inbound':'outbound-api')] as $key=>$expected)
         if(!is_string($raw[$key]??null)||!hash_equals($expected,$raw[$key]))return null;
     if($child&&(!is_string($raw['parent_call_sid']??null)||!hash_equals((string)$call['provider_call_sid'],$raw['parent_call_sid'])))return null;
     if(!$child&&!empty($raw['parent_call_sid']))return null;

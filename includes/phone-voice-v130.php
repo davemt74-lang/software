@@ -185,6 +185,12 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     $owner=(int)$number['owner_user_id'];$agent=(int)$number['agent_id'];
     if (!vp3_phone_package_v100($pdo,$owner)['voice']||!vp3_phone_agent_owned_v100($pdo,$owner,$agent))
         return ['accepted'=>false,'reason'=>'account_ineligible'];
+    require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
+    if(vp3_native_dialthrough_ready_v1($pdo)){
+        require_once __DIR__.'/phone-native-dialthrough-v1.php';
+        $native=vp3_native_dialthrough_inbound_v1($pdo,$number,$callSid,$caller,$to,time());
+        if($native!==null)return $native;
+    }
     $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1 LIMIT 1');
     $q->execute([$agent,$owner]);$agentName=(string)($q->fetchColumn()?:'');
     $pdo->beginTransaction();
