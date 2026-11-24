@@ -34,8 +34,9 @@ function vp3_managed_ui_projection_v1(PDO $pdo,array $d,int $now,bool $holder):?
         if(!$thread){$out['reason']='chat_required';return $out;}
         $scope=vp3_phone_workspace_scope_v1($pdo,$user,$thread);
         if(!vp3_phone_package_v100($pdo,$owner)['voice']){$out['reason']='voice_required';return $out;}
-        $p=vp3_phone_communication_row_v1($pdo,$d);
-        if(empty($p['owner_calls'])||empty($p['holder_calls'])||!preg_match('/\A\+[1-9][0-9]{7,14}\z/D',(string)$p['phone_e164'])){
+        $q=$pdo->prepare('SELECT * FROM vp3_phone_communication_profiles_v1 WHERE owner_user_id=? AND device_id=?');
+        $q->execute([$owner,$device]);$p=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+        if(!$p||empty($p['owner_calls'])||empty($p['holder_calls'])||!preg_match('/\A\+[1-9][0-9]{7,14}\z/D',(string)$p['phone_e164'])){
             $out['reason']='permission_required';return $out;
         }
         if(!vp3_phone_browser_config_state_v1()['ready']){$out['reason']='carrier_not_ready';return $out;}
