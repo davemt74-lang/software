@@ -308,6 +308,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && ($schemaConnection ??= db()) instanceof PDO
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
+        && vp3_managed_control_ready_v1($schemaConnection)
         && vp3_phone_recording_schema_ready_v1($schemaConnection)
         && vp3_operator_auto_call_schema_ready_v1($schemaConnection)
         && vp3_operator_live_schema_ready_v1($schemaConnection)
