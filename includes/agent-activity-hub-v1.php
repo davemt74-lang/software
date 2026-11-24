@@ -939,6 +939,8 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
         $coordination['operator_history'] = vp3_operator_history_v1($pdo,$fresh['user'],$agentId,$conversationId);
         require_once __DIR__.'/agent-operator-followups-v1.php';
         $coordination['operator_followups'] = vp3_operator_followup_queue_v1($pdo,$fresh,$now);
+        require_once __DIR__.'/agent-operator-calendar-v1.php';
+        $coordination['operator_calendar'] = vp3_operator_calendar_upcoming_v1($pdo,$fresh['user'],$agentId,$conversationId,$now->getTimestamp());
     }
     if ($profileOnly) {
         require_once __DIR__.'/agent-profile-specialist-v1.php';
