@@ -110,6 +110,7 @@
     render();panel.focus({preventScroll:true});void refresh();
   }
   function close(){
+    clearManagedReview();
     if(connectedDraft)connectedDraft.confirmed=false;
     opened=false;layer.hidden=true;document.body.classList.remove('vp3-phone-open');
     document.querySelectorAll('[data-phone-workspace-toggle]').forEach(item=>item.setAttribute('aria-expanded','false'));
@@ -433,8 +434,8 @@
     search.addEventListener('input',()=>{if(autoCallDraft||calendarDraft)return;contactQuery=search.value.slice(0,120);fill();});fill();
   }
   function renderCalls(){
-    const host=sections.calls;host.replaceChildren();if(!state?.calls.length){listEmpty(host,'No recent calls.');return;}
-    const renderGeneration=generation;for(const call of state.calls){const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||callPeerName(call)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);host.append(row);}
+    const host=sections.calls;if(!state?.calls.length){host.replaceChildren();listEmpty(host,'No recent calls.');return;}
+    const renderGeneration=generation,contents=[];for(const call of state.calls){if(call.transport_kind==='managed_callback'&&Number(call.conversation_id)===context.conversation_id){contents.push(callCard(call));continue;}const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||callPeerName(call)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);contents.push(row);}replacePhoneContent(host,...contents);
   }
   function voicemailCard(voicemail){
     const renderGeneration=generation;
@@ -596,6 +597,80 @@
     }catch(error){if(current(g))say(error.message||'Carrier result was not confirmed.');}
     finally{managedControlBusy.delete(id);if(current(g))render();}
   }
+
+  // One private, foreground, context-bound review; never persist report speech.
+  let managedReview=null,managedReviewTimer=0;
+  function clearManagedReview(){
+    clearTimeout(managedReviewTimer);managedReviewTimer=0;managedReview=null;
+    for(const el of document.querySelectorAll('[data-managed-conversation-review]'))el.remove();
+  }
+  function reviewCurrent(item){
+    return managedReview===item&&current(item.g)&&context.ready&&!document.hidden&&
+      context.conversation_id===item.conversation&&context.agent_id===item.agent;
+  }
+  async function reviewManagedCall(info,g){
+    if(!current(g)||document.hidden||!context.ready||info.transport_kind!=='managed_callback'||
+      info.state!=='completed'||Number(info.conversation_id)!==context.conversation_id||!publicId(info.public_id))return;
+    clearManagedReview();
+    const item={id:info.public_id,g,conversation:context.conversation_id,agent:context.agent_id,busy:true,data:null,error:''};
+    managedReview=item;render();
+    try{
+      const result=await api('managed_review',{call_id:item.id},'GET',g);
+      if(!reviewCurrent(item))return;
+      const data=result?.review;
+      if(!data||data.call_id!==item.id||data.execution_enabled!==false)throw new Error('Conversation evidence was not confirmed.');
+      item.data=data;
+    }catch(error){if(reviewCurrent(item))item.error='Conversation review could not be verified.';}
+    finally{
+      if(reviewCurrent(item)){
+        item.busy=false;render();
+        // Explicitly re-open after expiry rather than display stale consent or evidence.
+        managedReviewTimer=setTimeout(()=>{if(managedReview===item){clearManagedReview();if(current(g))render();}},60000);
+      }
+    }
+  }
+  function appendManagedReview(card,info,g){
+    const item=managedReview;
+    if(!item||item.id!==info.public_id||!reviewCurrent(item))return;
+    const host=node('section','vp3-phone-managed-review');host.dataset.managedConversationReview='1';
+    host.setAttribute('aria-label','Private conversation review');
+    host.append(node('h3',null,'Conversation intelligence'));
+    const closeReview=button('Close review',()=>{if(managedReview===item){clearManagedReview();render();}});
+    host.append(closeReview);
+    if(item.busy){host.append(node('p','vp3-phone-meta','Checking the original saved conversation evidence…'));card.append(host);return;}
+    if(item.error){host.append(node('p','vp3-phone-processing-error',item.error));card.append(host);return;}
+    const data=item.data||{},coverage=data.coverage;
+    const messages={no_report:'No saved report is confirmed.',queued:'Recording queued for processing.',processing:'Recording is being processed.',failed:'Recording processing needs review.',unavailable:'Saved evidence is unavailable.',consent_unavailable:'Original recording consent could not be verified.',transcription_off:'Transcription was not authorized for this call.',analysis_off:'Automatic analysis was not authorized for this call.',stale:'Transcript or saved analysis changed. Current report evidence is not confirmed.',ready:'Saved AI report · review before using any finding.'};
+    host.append(node('p','vp3-phone-meta',messages[coverage]||'Review evidence is unavailable.'));
+    const transcript=safeUrl(data.transcript_url);if(transcript){
+      const a=node('a','vp3-phone-report','Open source transcript');a.href=transcript;host.append(a);
+    }
+    if(coverage==='ready'&&typeof data.report?.text==='string'){
+      const report=node('p','vp3-phone-managed-report');report.textContent=data.report.text.slice(0,9000);host.append(report);
+      const items=Array.isArray(data.followups)?data.followups.slice(0,3):[];
+      host.append(node('h4',null,'Open follow-ups'));
+      if(!items.length)host.append(node('p','vp3-phone-meta','No open, source-linked follow-ups in the saved review.'));
+      for(const row of items){
+        const link=safeUrl(row?.source_url);if(!link||!['unreviewed','accepted'].includes(row.review_state))continue;
+        const box=node('div','vp3-phone-managed-finding');
+        box.append(node('strong',null,row.review_state==='accepted'?'Reviewed · still open':'Unreviewed suggestion'),node('p',null,row.text||''));
+        if(row.next_step)box.append(node('p','vp3-phone-meta',row.next_step));
+        const a=node('a','vp3-phone-report','Review original finding');a.href=link;box.append(a);host.append(box);
+      }
+      host.append(node('p','vp3-phone-meta','Open the original Transcription item to approve or create a task. No task or message is sent by this review.'));
+    }
+    host.append(node('h4',null,'Connected-profile continuity'));
+    const continuity=data.continuity;
+    if(continuity?.state==='available'){
+      host.append(node('p','vp3-phone-meta','Previous managed calls through this connected phone. This does not establish who answered the destination.'));
+      for(const previous of (Array.isArray(continuity.calls)?continuity.calls:[]).slice(0,5)){
+        host.append(node('p','vp3-phone-meta',[displayTime(previous.created_at),displayState(previous.state),callDuration(previous.duration_seconds)].filter(Boolean).join(' · ')));
+      }
+      if(!continuity.calls?.length)host.append(node('p','vp3-phone-meta','No earlier verified call in this profile and conversation.'));
+    }else host.append(node('p','vp3-phone-meta','Ongoing conversation context requires the connected user’s current memory permission.'));
+    card.append(host);
+  }
+
   function callCard(info,entry=null){
     const renderGeneration=generation;
     info={...info,...state?.calls.find(call=>call.public_id===info.public_id)};
@@ -635,7 +710,12 @@
     if(!contact&&callKey(id)&&/^\+[1-9]\d{7,14}$/.test(info.peer_e164||'')&&!draft){
       const addContact=button('Add to contacts',()=>{if(!current(renderGeneration)||state?.contact_write_ready===false)return;const focusHost=addContact.closest('.vp3-phone-chat-card')||sections.connections;contactDrafts.set(id,{name:'',saving:false,error:'',generation:renderGeneration});render();const field=[...focusHost.querySelectorAll('[data-phone-focus-key]')].find(input=>input.dataset.phoneFocusKey==='caller-name-'+id);field?.focus({preventScroll:true});});addContact.disabled=state?.contact_write_ready===false;addContact.dataset.phoneAddContact=id;actions.append(addContact);
     }
+    if(managed&&info.state==='completed'&&context.ready&&Number(info.conversation_id)===context.conversation_id){
+      const review=button('Review conversation',event=>{if(event.isTrusted)void reviewManagedCall(info,renderGeneration);});
+      review.disabled=managedReview?.id===id&&managedReview.busy;review.dataset.phoneFocusKey='managed-review-'+id;actions.append(review);
+    }
     if(actions.childNodes.length)card.append(actions);
+    if(managed)appendManagedReview(card,info,renderGeneration);
     renderRemoteCaptions(card,entry);
     if(!contact&&state?.contact_write_ready===false)card.append(node('p','vp3-phone-meta','An administrator needs to update Contacts before this caller can be saved.'));
     if(!contact&&draft?.generation===renderGeneration)appendContactForm(card,info,draft,renderGeneration);
@@ -904,7 +984,7 @@
   function contextChanged(next={}){
     const normalized={conversation_id:principal(next.conversation_id),agent_id:principal(next.agent_id),ready:next.ready!==false};
     if(normalized.conversation_id===context.conversation_id&&normalized.agent_id===context.agent_id&&normalized.ready===context.ready)return;
-    connectedDraft=null;clearOwnerSetup();generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;render();void refresh();
+    clearManagedReview();connectedDraft=null;clearOwnerSetup();generation++;requestSequence++;for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;render();void refresh();
   }
   function dispose(){if(disposed)return;connectedDraft=null;clearOwnerSetup();generation++;autoCallDraft=null;calendarDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-phone-workspace-toggle]');if(trigger){event.preventDefault();opened?close():open(trigger);}});
@@ -917,7 +997,7 @@
   tabs.addEventListener('keydown',event=>{const list=Object.values(tabButtons),index=list.indexOf(event.target);if(index<0||!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();selectTab(Object.keys(tabNames)[event.key==='Home'?0:event.key==='End'?list.length-1:(index+(event.key==='ArrowRight'?1:-1)+list.length)%list.length],true);});
   window.addEventListener('stonefellow:chat-context-changing',()=>contextChanged({...context,ready:false}));
   window.addEventListener('vp3:participant-selection-changed',()=>{const scope=window.STONEFELLOW_CHAT_CONTINUITY?.phoneCameraScope?.();contextChanged(scope?{conversation_id:scope.conversation,agent_id:scope.agent,ready:true}:{...context,ready:false});});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&active?.captionSession){stopRemoteCaptions(active,'Live captions stopped when Chat left the foreground.');render();}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearManagedReview();if(active?.captionSession)stopRemoteCaptions(active,'Live captions stopped when Chat left the foreground.');render();}});
   window.addEventListener('pagehide',dispose,{once:true});window.addEventListener('stonefellow:session-expired',revoke);window.addEventListener('stonefellow:logout',dispose);
   window.addEventListener('stonefellow:voice-lease-lost',()=>{if(active||callBusy)stopDevice('Microphone ownership changed. Phone audio has stopped.');});
   pollTimer=setInterval(()=>{if(document.visibilityState==='visible'&&(opened||deviceSession||cards.size))void refresh();},10000);
