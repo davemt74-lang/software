@@ -117,6 +117,7 @@ function vp3_operator_live_suggest_v1(PDO $pdo,array $scope,string $public,strin
     };
     [$id,$user,$evidence,$last]=vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$read,$public,$receipts,$now):array{
         [$fresh,$call,$session,$assist]=$read($now,false);
+        if(vp3_operator_voice_busy_v1($pdo,(int)$call['id'],$now))vp3_phone_workspace_error_v1('operator_voice_changed',409,'Finish the approved voice turn before another suggestion.');
         if((int)$assist['suggestion_attempts']>=2||(int)$assist['last_suggestion_epoch']>$now-20)
             vp3_phone_workspace_error_v1('operator_live_budget',429,'Wait before requesting another private suggestion; two are allowed per call.');
         $q=$pdo->prepare('SELECT COALESCE(SUM(a.suggestion_attempts),0) FROM phone_operator_live_assist_v1 a JOIN phone_operator_live_sessions_v1 s ON s.call_id=a.call_id WHERE s.owner_user_id=? AND s.consent_epoch>=?');
@@ -139,10 +140,11 @@ function vp3_operator_live_suggest_v1(PDO $pdo,array $scope,string $public,strin
         $reply=vp3_operator_live_caption_text_v1($reply);
         if($reply===''||mb_strlen($reply)>500)throw new RuntimeException('Invalid private suggestion.');
         return vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$read,$clock,$id,$public,$reply,$last,$evidence):array{
-            $read($clock?$clock():time(),true);
+            [,,,$assist]=$read($clock?$clock():time(),true);
             $q=$pdo->prepare('UPDATE phone_operator_live_assist_v1 SET suggestion_pending=0 WHERE call_id=? AND suggestion_pending=1 AND last_suggestion_seq=?');
             $q->execute([$id,$last]);if($q->rowCount()!==1)vp3_phone_workspace_error_v1('operator_live_changed',409,'Private suggestion permission changed.');
-            return ['call_id'=>$public,'based_on_seq'=>$last,'suggestion'=>$reply,'prior_call_count'=>count($evidence['prior_call_metadata']),'speech_enabled'=>false];
+            return ['call_id'=>$public,'based_on_seq'=>$last,'suggestion'=>$reply,'prior_call_count'=>count($evidence['prior_call_metadata']),'speech_enabled'=>false,
+                'speech_proof'=>vp3_operator_voice_proof_v1($assist,$public,$last,$reply)];
         });
     }catch(Throwable){
         // The attempt and source sequence remain spent, even after uncertain provider delivery.
