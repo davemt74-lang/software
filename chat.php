@@ -508,6 +508,11 @@ if ($pdoForAgent && has_permission('account.access',$user) && has_permission('ch
     if (vp3_participant_scope_v1() === null && schema_metadata_table_exists($pdoForAgent,'vp3_phone_arrival_rules_v1')) {
         $specialistPresence['location'] = 'unavailable';
     }
+    if (vp3_participant_scope_v1() === null && schema_metadata_table_exists($pdoForAgent,'phone_browser_calls_v1')) {
+        require_once __DIR__.'/includes/agent-operator-specialist-v1.php';
+        $operatorPresence = vp3_operator_call_status_v1($pdoForAgent,$user,(int)($activeUserAgent['id']??0),0,time());
+        if ($operatorPresence !== null) $specialistPresence['operator'] = $operatorPresence['state'];
+    }
     if (vp3_participant_scope_v1() === null
         && personal_capability_has_v242('profile_agent.access', $user)
         && personal_capability_has_v242('profile_chat.access', $user)) {
