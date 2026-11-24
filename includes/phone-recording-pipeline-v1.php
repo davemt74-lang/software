@@ -120,6 +120,11 @@ function vp3_phone_recording_authorize_v1(PDO $pdo,array $job,bool $paid=false):
     $user=vp3_phone_recording_owner_v1($pdo,(int)$job['owner_user_id']);$call=vp3_phone_recording_call_v1($pdo,$job);
     $q=$pdo->prepare('SELECT n.owner_user_id,n.agent_id,n.provider,n.voice_enabled,a.is_active FROM phone_cloud_numbers_v100 n JOIN user_agents a ON a.id=n.agent_id AND a.owner_user_id=n.owner_user_id WHERE n.id=?');$q->execute([(int)$job['phone_number_id']]);$number=$q->fetch(PDO::FETCH_ASSOC);
     if(!$number||(int)$number['owner_user_id']!==(int)$job['owner_user_id']||(int)$number['agent_id']!==(int)$job['agent_id']||empty($number['is_active'])||$number['provider']!=='twilio'||empty($number['voice_enabled'])||!vp3_phone_package_v100($pdo,(int)$user['id'])['voice'])throw new RuntimeException('This phone number is no longer assigned to this owner and Agent.',403);
+    if(($call['transport_kind']??'')==='managed_callback'){
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        $original=vp3_managed_recording_saved_policy_v1($pdo,$call,(string)$job['provider_recording_sid']);
+        if($original!==vp3_phone_recording_decode_v1($job['policy_json']))throw new RuntimeException('Managed recording processing consent changed.',409);
+    }
     if($paid){
         $snapshot=vp3_phone_recording_decode_v1($job['policy_json']);
         if((!empty($snapshot['retain_audio'])||!empty($snapshot['transcribe']))&&!has_permission('artist_listening.access',$user))throw new RuntimeException('Saved media permission changed.',403);
@@ -157,9 +162,16 @@ function vp3_phone_recording_receive_v1(PDO $pdo,array $call,array $form): array
         return ['accepted'=>true,'queued'=>false,'duplicate'=>true,'recording'=>vp3_phone_recording_public_v1(vp3_phone_recording_row_v1($pdo,(int)$existing['id']))];
     }
     $user=vp3_phone_recording_owner_v1($pdo,$owner);$policy=vp3_phone_recording_policy_v1($pdo,$user,$agent);$now=time();
+    $managed=($call['transport_kind']??'')==='managed_callback';
+    if($managed){
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        $original=vp3_managed_recording_saved_policy_v1($pdo,$call,$sid);
+        if($policy!==$original)throw new RuntimeException('Managed recording policy changed.',409);
+        $policy=$original;
+    }
     $public=bin2hex(random_bytes(16));$state=$status==='completed'?'queued':'failed';$seconds=(int)$duration;
     $fields=['public_id','owner_user_id','agent_id','phone_number_id','origin_kind','call_id','call_public_id','provider_call_sid','provider_account_sid','provider_recording_sid','phone_e164','peer_e164','duration_seconds','state','policy_json','conversation_id','error_code','last_error','created_epoch','updated_epoch'];
-    $args=[$public,$owner,$agent,(int)$call['phone_number_id'],$kind,(int)$call['id'],(string)($call['public_id']??('legacy-'.$call['id'])),$callSid,$account,$sid,(string)($call['phone_e164']??$call['called_e164']??''),(string)($call['peer_e164']??$call['caller_e164']??''),$seconds,$state,vp3_phone_recording_json_v1($policy),(int)($call['conversation_id']??0),$state==='failed'?'recording_unavailable':'',$state==='failed'?'The provider did not produce a recording.':'',$now,$now];
+    $args=[$public,$owner,$agent,(int)$call['phone_number_id'],$kind,(int)$call['id'],(string)($call['public_id']??('legacy-'.$call['id'])),$callSid,$account,$sid,(string)($call['phone_e164']??$call['called_e164']??''),$managed?'':(string)($call['peer_e164']??$call['caller_e164']??''),$seconds,$state,vp3_phone_recording_json_v1($policy),(int)($call['conversation_id']??0),$state==='failed'?'recording_unavailable':'',$state==='failed'?'The provider did not produce a recording.':'',$now,$now];
     try{$pdo->prepare('INSERT INTO phone_recording_jobs_v1 ('.implode(',',$fields).') VALUES ('.implode(',',array_fill(0,count($fields),'?')).')')->execute($args);}
     catch(PDOException $error){$q->execute([$sid]);if($q->fetchColumn())return vp3_phone_recording_receive_v1($pdo,$call,$form);throw $error;}
     $id=(int)$pdo->lastInsertId();$job=vp3_phone_recording_row_v1($pdo,$id);
@@ -242,7 +254,8 @@ function vp3_phone_recording_call_jobs_v1(PDO $pdo,array $user,string $kind,int 
 function vp3_phone_recording_retry_v1(PDO $pdo,array $user,int $id): array
 {
     $job=vp3_phone_recording_row_v1($pdo,$id);if((int)$job['owner_user_id']!==(int)$user['id'])throw new RuntimeException('Recording not found.',404);
-    vp3_phone_recording_authorize_v1($pdo,$job);
+    $authority=vp3_phone_recording_authorize_v1($pdo,$job);
+    if(($authority['call']['transport_kind']??'')==='managed_callback')vp3_phone_recording_authorize_v1($pdo,$job,true);
     if($job['state']!=='failed'||$job['error_code']==='recording_unavailable'||(int)$job['speech_dispatched']||(int)$job['analysis_dispatched'])throw new RuntimeException('This provider attempt needs review before any additional paid work. It will not replay automatically.',409);
     $policy=vp3_phone_recording_policy_v1($pdo,$user,(int)$job['agent_id']);
     $pdo->prepare("UPDATE phone_recording_jobs_v1 SET state='queued',stage='queued',policy_json=?,error_code='',last_error='',lease_token='',lease_until=0,updated_epoch=? WHERE id=? AND state='failed' AND speech_dispatched=0 AND analysis_dispatched=0")->execute([vp3_phone_recording_json_v1($policy),time(),$id]);
@@ -464,7 +477,11 @@ function vp3_phone_recording_worker_observe_v1(string $outcome): void
 function vp3_phone_recording_audio_v1(PDO $pdo,array $user,int $id): array
 {
     $user=vp3_phone_recording_owner_v1($pdo,(int)($user['id']??0));$job=vp3_phone_recording_row_v1($pdo,$id);
-    if((int)$job['owner_user_id']!==(int)$user['id'])throw new RuntimeException('Recording not found.',404);vp3_phone_recording_call_v1($pdo,$job);
+    if((int)$job['owner_user_id']!==(int)$user['id'])throw new RuntimeException('Recording not found.',404);$call=vp3_phone_recording_call_v1($pdo,$job);
+    if(($call['transport_kind']??'')==='managed_callback'){
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        vp3_managed_recording_saved_policy_v1($pdo,$call,(string)$job['provider_recording_sid']);
+    }
     if((int)$job['session_id']>0&&$job['recording_key']!==''){
         require_once __DIR__.'/artist-listening.php';
         $q=$pdo->prepare('SELECT metadata_json,discarded_at FROM artist_transcript_sessions_v172 WHERE id=? AND created_by_user_id=?');$q->execute([(int)$job['session_id'],(int)$user['id']]);$session=$q->fetch(PDO::FETCH_ASSOC);
