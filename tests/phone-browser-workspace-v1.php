@@ -13,6 +13,8 @@ $pdo=new PDO($dsn,$mysql?(getenv('VP3_PHONE_MYSQL_USER')?:'root'):null,$mysql?(g
 if($mysql)$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
 function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table): bool{$q=db()->prepare($GLOBALS['mysql']?'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?':"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return (bool)$q->fetchColumn();}
+function column_exists(string $table,string $column): bool{if($GLOBALS['mysql']){$q=db()->prepare('SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?');$q->execute([$table,$column]);return (bool)$q->fetchColumn();}return in_array($column,array_column(db()->query('PRAGMA table_info('.$table.')')->fetchAll(PDO::FETCH_ASSOC),'name'),true);}
+function agent_scheduling_schema_ready_v430(?PDO $pdo=null):bool{return table_exists('agent_scheduling_bookings');}
 function ddl(string $sql): void{if($GLOBALS['mysql'])$sql=str_replace(['INTEGER PRIMARY KEY AUTOINCREMENT','provider_call_sid TEXT','contact_e164 TEXT'],['INTEGER AUTO_INCREMENT PRIMARY KEY','provider_call_sid VARCHAR(40)','contact_e164 VARCHAR(20)'],$sql);db()->exec($sql);}
 function has_permission(string $key,?array $user=null): bool{return !empty($user['is_active'])&&empty($user['denied']);}
 function subscription_has_entitlement(?array $user,string $key): bool{return !empty($user['plan'])&&($key!=='phone.voice'||empty($GLOBALS['phone_fixture_voice_denied']));}
@@ -24,7 +26,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -532,6 +534,47 @@ c($stored['state']==='saved'&&$stored['revision']===1&&$stored['enabled']&&$stor
 c($stored['settings']===$settings&&$readPolicy()===$stored,'saved time zone, window and calling limits round trip');
 c(!str_contains(json_encode($stored),'provider_sid_hash'),'permission projection never exposes carrier identity fingerprints');
 denies(fn()=>action('save_auto_call_policy',$authorization),409,'stale editor cannot overwrite a newer permission');
+// Native Cloud Calendar fixtures exercise the released calendar writer and recurrence projection.
+$previewInput=['action'=>'operator_calendar_preview','agent_id'=>0,'conversation_id'=>11,'contact_id'=>1,'number_id'=>1,'expected_revision'=>1];
+denies(fn()=>api('GET',$previewInput),503,'planning requires installed native Calendar storage');
+ddl("CREATE TABLE user_calendar_events(id INTEGER PRIMARY KEY AUTOINCREMENT,owner_user_id INTEGER NOT NULL,created_by_user_id INTEGER NULL,created_by_agent_id INTEGER NULL,title VARCHAR(190) NOT NULL,description TEXT,location VARCHAR(500) NOT NULL DEFAULT '',start_at_utc DATETIME NOT NULL,end_at_utc DATETIME NOT NULL,timezone VARCHAR(80) NOT NULL DEFAULT 'UTC',all_day INTEGER NOT NULL DEFAULT 0,recurrence VARCHAR(16) NOT NULL DEFAULT 'none',agent_notifications INTEGER NOT NULL DEFAULT 0,source VARCHAR(32) NOT NULL DEFAULT 'user',source_reference VARCHAR(190) NOT NULL DEFAULT '',status VARCHAR(24) NOT NULL DEFAULT 'active')");
+ddl("CREATE TABLE agent_scheduling_bookings(id INTEGER PRIMARY KEY AUTOINCREMENT,owner_user_id INTEGER NOT NULL,status VARCHAR(24),start_at_utc DATETIME,end_at_utc DATETIME,event_title VARCHAR(190),guest_name VARCHAR(120),location_value VARCHAR(190),organizer_timezone VARCHAR(80),source VARCHAR(32),schedule_id INTEGER)");
+require_once dirname(__DIR__).'/includes/agent-operator-calendar-v1.php';
+$now=time();
+$preview=vp3_operator_calendar_preview_v1($pdo,$policyScope,$previewInput,$now);
+c($preview['coverage']==='cloud_calendar_only'&&!$preview['execution_enabled']&&count($preview['slots'])===3,'preview provides three bounded calling options with honest coverage');
+c((int)$pdo->query('SELECT COUNT(*) FROM user_calendar_events')->fetchColumn()===0,'preview never creates a calendar event');
+foreach($preview['slots'] as $slot)c(vp3_operator_calendar_slot_v1($settings,$slot['start_epoch'],$slot['duration_seconds'],$now)===$slot,'suggested time honors contact policy timezone and duration');
+$firstSlot=$preview['slots'][0];$secondSlot=$preview['slots'][1];$thirdSlot=$preview['slots'][2];
+$insertEvent=$pdo->prepare("INSERT INTO user_calendar_events(owner_user_id,title,start_at_utc,end_at_utc,timezone,recurrence) VALUES (?,?,?,?,?,?)");
+$insertEvent->execute([1,'Calendar conflict',$firstSlot['start_at_utc'],$firstSlot['end_at_utc'],'America/Phoenix','none']);
+$insertEvent->execute([1,'Weekly conflict',gmdate('Y-m-d H:i:s',$thirdSlot['start_epoch']-604800),gmdate('Y-m-d H:i:s',$thirdSlot['start_epoch']+$thirdSlot['duration_seconds']-604800),'America/Phoenix','weekly']);
+$insertEvent->execute([2,'Other owner',$secondSlot['start_at_utc'],$secondSlot['end_at_utc'],'America/Phoenix','none']);
+$pdo->prepare("INSERT INTO agent_scheduling_bookings(owner_user_id,status,start_at_utc,end_at_utc,event_title,organizer_timezone,source,schedule_id) VALUES(1,'pending',?,?,'Booking conflict','America/Phoenix','user',1)")->execute([$secondSlot['start_at_utc'],$secondSlot['end_at_utc']]);
+$updatedPreview=vp3_operator_calendar_preview_v1($pdo,$policyScope,$previewInput,$now);
+$blockedStarts=array_column($preview['slots'],'start_epoch');
+c(!array_intersect($blockedStarts,array_column($updatedPreview['slots'],'start_epoch')),'native events, recurring events and pending bookings exclude their occupied slots');
+$makePlan=static fn(array $slot):array=>['contact_id'=>1,'number_id'=>1,'expected_revision'=>1,'start_epoch'=>$slot['start_epoch'],'duration_seconds'=>$slot['duration_seconds']];
+denies(fn()=>action('save_operator_calendar',$makePlan($firstSlot)),409,'saving rechecks a newly occupied calendar slot');
+$slot=$updatedPreview['slots'][0];$saveInput=$makePlan($slot);
+denies(fn()=>api('GET',['action'=>'save_operator_calendar']+$saveInput),405,'GET cannot save a phone appointment');
+denies(fn()=>action('save_operator_calendar',array_replace($saveInput,['expected_revision'=>2])),409,'stale permission cannot save an appointment');
+denies(fn()=>action('save_operator_calendar',array_replace($saveInput,['number_id'=>2])),404,'foreign assigned line cannot save an appointment');
+denies(fn()=>action('save_operator_calendar',array_replace($saveInput,['csrf_token'=>'forged'])),403,'appointment requires owner CSRF');
+$planned=action('save_operator_calendar',$saveInput);$plannedEvent=$planned['appointment'];
+c($planned['created']&&!$plannedEvent['execution_enabled']&&$plannedEvent['event_id']>0,'explicit review creates a native reminder, not a call job');
+$event=user_calendar_event_v1300($pdo,1,$plannedEvent['event_id']);
+c($event['source']==='user'&&(int)$event['agent_notifications']===1&&$event['recurrence']==='none','planned call uses native Planning notifications without an autonomous execution source');
+c(!str_contains($event['source_reference'],'+1602555')&&!str_contains($event['description'],'+1602555'),'calendar storage contains no dial destination or provider credentials');
+$replay=action('save_operator_calendar',$saveInput);
+c(!$replay['created']&&$replay['appointment']['event_id']===$plannedEvent['event_id'],'exact calendar save retries do not duplicate the event');
+$existingPlan=api('GET',$previewInput)['plan'];
+c($existingPlan['existing']['event_id']===$plannedEvent['event_id']&&$existingPlan['slots']===[],'existing appointment is opened rather than double-booked');
+c(vp3_operator_calendar_upcoming_v1($pdo,user(),7,12,$now)['appointments'][0]['event_id']===$plannedEvent['event_id'],'Operator Brain sees planned appointments for its assigned Agent');
+c(vp3_operator_calendar_upcoming_v1($pdo,user(),9,13,$now)['appointments']===[]&&vp3_operator_calendar_upcoming_v1($pdo,user(2),0,21,$now)['appointments']===[],'Operator planned appointment visibility isolates Agent and owner');
+$pdo->prepare("UPDATE user_calendar_events SET status='cancelled' WHERE id=?")->execute([$plannedEvent['event_id']]);
+denies(fn()=>action('save_operator_calendar',$saveInput),409,'cancelled appointment cannot silently resurrect on replay');
+c(vp3_operator_calendar_upcoming_v1($pdo,user(),0,11,$now)['appointments']===[],'native cancellation removes the appointment from Operator Brain');
 $pdo->exec("UPDATE crm_contacts SET phone='+16025550699' WHERE id=1");
 c($readPolicy()['state']==='needs_review','changed primary contact number does not inherit authorization');
 denies(fn()=>action('save_auto_call_policy',array_replace($authorization,['expected_revision'=>1])),409,'previous destination cannot be reauthorized silently');
