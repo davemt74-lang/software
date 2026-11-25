@@ -1,0 +1,4 @@
+# Living development status
+2026-11-25: CD0 architectural discovery complete for planning; not full security/runtime audit. CD1A ready for engineering verification; CD1B–L planned. No SDK implementation, migrations, simulator backend, gateway or physical firmware created by planning. No production tests executed. Historical audit baselines in CD0 report.
+Next: recheck current main/open PRs, trace cross-file dependencies, settle shared contract location, define strict schemas and positive/negative fixtures. Then CD1B onward. Blockers: unresolved exact authority/announcement adapters, migration details, VPS config, physical hardware acceptance. No implementation scores assigned.
+Every related PR updates this file with phase, exact commit/PR, evidence/test results, score by scope, blockers, decisions, artifacts and next action. Never claim completion from documentation or mockups.
