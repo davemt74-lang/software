@@ -27,8 +27,8 @@ function vp3_operator_carrier_attempt_v1(PDO $pdo,int $owner,int $series,int $st
         $plan['fields']['Method']='POST';
         $plan['fields']['StatusCallback']=vp3_phone_browser_callback_v1('operator_answer',['event'=>'status']);
         $plan['fields']['StatusCallbackMethod']='POST';
-        $pdo->prepare("INSERT INTO phone_operator_carrier_attempts_v1(owner_user_id,event_id,start_epoch,started_epoch,state)
-            VALUES(?,?,?,?,'submitting')")->execute([...$key,$now]);
+        $pdo->prepare("INSERT INTO phone_operator_carrier_attempts_v1(owner_user_id,event_id,start_epoch,started_epoch,state,destination_hash)
+            VALUES(?,?,?,?,'submitting',?)")->execute([...$key,$now,hash('sha256',$plan['fields']['To'])]);
         $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET state='submitting',reason='carrier_submitting' WHERE ".$where)->execute($key);
         return ['plan'=>$plan,'account'=>$connection['account_sid']];
     });

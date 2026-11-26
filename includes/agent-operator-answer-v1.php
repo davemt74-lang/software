@@ -44,7 +44,7 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         if($event==='confirm'&&$row['reason']!=='answer_prompted')return $hangup;
         $update=$pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted' AND reason=?");
         $save=static fn(string $reason)=>$update->execute([$reason,$owner,$row['event_id'],$row['start_epoch'],$row['reason']]);
-        try{$current=vp3_operator_current_request_v1($pdo,$row,$now);}
+        try{$current=vp3_operator_current_request_v1($pdo,$row,$now,$sid);}
         catch(VP3PhoneWorkspaceException){$current=['reason'=>'access_changed'];}
         if($current['reason']!=='eligible'){
             $save('answer_permission_changed');

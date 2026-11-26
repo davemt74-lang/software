@@ -75,14 +75,12 @@ function vp3_operator_admission_window_v1(array $settings,int $now): bool
         &&strcmp($a->format('H:i:s'),$settings['window_start'].':00')>=0
         &&strcmp($b->format('H:i:s'),$settings['window_end'].':00')<=0;
 }
-function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,array $settings,int $now): array
+function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,array $settings,int $now,?string $answeredSid=null): array
 {
     $local=(new DateTimeImmutable('@'.$now))->setTimezone(new DateTimeZone($settings['timezone']));
     $day=$local->setTime(0,0)->getTimestamp();
     $epoch='CASE WHEN intent_consumed_epoch>0 THEN intent_consumed_epoch ELSE created_epoch END';
     // Across ALL owner's Agents and saved-contact aliases, not just selected line.
-    // This is only the known browser ledger; future execution needs its own
-    // durable reservation and carrier reconciliation before dispatch.
     // A CASE expression has no column affinity in SQLite. Bind epoch
     // boundaries as integers rather than PDO execute-array strings so the
     // comparison is numeric on both SQLite and MySQL. Future receipts must
@@ -96,10 +94,20 @@ function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,ar
     $q->bindValue(4,$bound['contact']['destination_e164'],PDO::PARAM_STR);
     $q->execute();$r=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
     $latest=(int)$r['latest'];$today=(int)$r['today'];
+    // Count the committed reservation even if the carrier response was lost. Older reservations
+    // without a destination apply conservatively until their daily cap and spacing have elapsed.
+    $q=$pdo->prepare("SELECT COALESCE(SUM(CASE WHEN started_epoch BETWEEN ? AND ? THEN 1 ELSE 0 END),0) AS today,
+        COALESCE(MAX(started_epoch),0) AS latest FROM phone_operator_carrier_attempts_v1
+        WHERE owner_user_id=? AND (destination_hash=? OR destination_hash='')
+        AND (provider_sid IS NULL OR provider_sid<>?)");
+    $q->execute([$day,$now,$scope['owner_user_id'],hash('sha256',$bound['contact']['destination_e164']),$answeredSid??'']);
+    $scheduled=$q->fetch(PDO::FETCH_ASSOC);
+    $today+=(int)$scheduled['today'];
+    $latest=max($latest,(int)$scheduled['latest']);
     return ['today'=>$today,'last_attempt_epoch'=>$latest,'within_limit'=>$latest<=$now&&$today<$settings['max_calls_per_day'],
         'gap_ok'=>$latest===0||($latest<=$now&&$now-$latest>=$settings['min_gap_minutes']*60)];
 }
-function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now): bool
+function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now,?string $answeredSid=null): bool
 {
     $q=$pdo->prepare("SELECT 1 FROM phone_browser_calls_v1 WHERE owner_user_id=? AND
         (state IN ('dialing','ringing','answered') OR (state='prepared' AND intent_expires_epoch>=?)) LIMIT 1");
@@ -108,7 +116,13 @@ function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now): bool
         $q=$pdo->prepare("SELECT 1 FROM phone_voice_calls_v130 WHERE owner_user_id=? AND state IN ('conversation_active','streaming_active') LIMIT 1");
         $q->execute([$owner]);$busy=(bool)$q->fetchColumn();$q->closeCursor();
     }
-    return !$busy;
+    if($busy)return false;
+    $q=$pdo->prepare("SELECT 1 FROM phone_operator_carrier_attempts_v1 a JOIN phone_operator_occurrences_v1 o
+        ON o.owner_user_id=a.owner_user_id AND o.event_id=a.event_id AND o.start_epoch=a.start_epoch
+        WHERE a.owner_user_id=? AND o.state IN ('submitting','submitted','uncertain') AND o.end_epoch>?
+        AND (a.provider_sid IS NULL OR a.provider_sid<>?) LIMIT 1");
+    $q->execute([$owner,$now,$answeredSid??'']);
+    return !$q->fetchColumn();
 }
 /** Read only the holder's choices for the current CRM pairing and exact destination. */
 function vp3_operator_holder_modes_v1(PDO $pdo,int $owner,int $contact,string $destination,int $now):array

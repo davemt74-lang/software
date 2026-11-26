@@ -94,6 +94,19 @@ c($read()['last_occurrence']['reason']==='carrier_'.$expected,'original private 
 echo "PASS single carrier attempt ($scenario), in-flight exclusion and retry handling\n";
 
 require_once dirname(__DIR__).'/includes/agent-operator-answer-v1.php';
+$destination=$plan['fields']['To'];
+$limits=fn(string $to,int $at)=>vp3_operator_admission_history_v1($pdo,$scope,['contact'=>['destination_e164'=>$to]],$callingPolicy,$at);
+c(vp3_operator_preview_request_v1($pdo,$row,$callTime)['reason']==='call_frequency','a fresh dispatch check sees the carrier reservation');
+$measured=$limits($destination,$callTime);
+c($measured['today']===1&&!$measured['within_limit']&&!$measured['gap_ok'],'all carrier outcomes count toward the daily limit and spacing');
+c($limits('+16025550189',$callTime)['within_limit'],'a different destination has its own history');
+c(!vp3_operator_admission_idle_v1($pdo,1,$callTime)&&vp3_operator_admission_idle_v1($pdo,1,$callTime+$duration),'an unresolved attempt occupies the owner phone for its call window');
+$pdo->beginTransaction();
+try{
+    $pdo->exec("UPDATE phone_operator_carrier_attempts_v1 SET destination_hash=''");
+    c(!$limits('+16025550189',$callTime)['within_limit']&&$limits('+16025550189',$callTime+86401)['gap_ok'],'older unbound attempts protect other destinations only through the applicable limits');
+}finally{$pdo->rollBack();}
+echo "PASS scheduled reservation daily cap, spacing and concurrent call exclusion ($scenario)\n";
 if($scenario!=='success')return;
 $carrierForm=['AccountSid'=>vp3_phone_twilio_state_v100()['account_sid'],'CallSid'=>'CA'.str_repeat('c',32),
     'From'=>$plan['fields']['From'],'To'=>$plan['fields']['To']];
@@ -146,6 +159,7 @@ $answer('answer');
 $answer('confirm',['Digits'=>'1']);
 $answer('status',['CallStatus'=>'completed']);
 c($read()['last_occurrence']['reason']==='answer_consented'&&$read()['last_occurrence']['state']==='ended','final status preserves the recipient decision');
+c(vp3_operator_admission_idle_v1($pdo,1,$callTime+5)&&!$limits($destination,$callTime+5)['within_limit'],'a finished call releases the owner phone while retaining the destination cap');
 echo "PASS signed carrier outcomes and hangup before consent\n";
 
 require_once dirname(__DIR__).'/includes/agent-operator-outcome-chat-v1.php';
