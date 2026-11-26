@@ -28,11 +28,11 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
     }
     if(preg_match('/^turn([1-8])$/D',$event,$match))
         return vp3_operator_conversation_turn_v1($pdo,(int)$owner,$sid,(int)$match[1],$form,$clock,$generator);
+    $now=$clock();
     if($event==='recording'){
         vp3_operator_recording_event_v1($pdo,(int)$owner,$sid,$form,$now);
         return $hangup;
     }
-    $now=$clock();
     $startRecording=false;
     $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup,&$startRecording){
         $query=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a

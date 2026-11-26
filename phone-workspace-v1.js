@@ -768,7 +768,7 @@
     const add=button('+ Scheduled call',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError){draft.schedule=newContactSchedule();render();}});add.disabled=blocked||draft.schedules.items.length>=20;section.append(add);
     const reasons={conversation_active:'Conversation in progress',conversation_completed:'Recipient ended the conversation by voice',
       conversation_silent:'Call ended while waiting for a spoken response',conversation_turn_limit:'Conversation reached its eight-turn limit',
-      conversation_reply_withheld:'Call authorization ended before the agent could reply',conversation_model_failed:'Agent could not generate a reply',conversation_ended:'Call ended during the conversation',ended_before_consent:'Call ended before the recipient confirmed',carrier_busy:'Recipient line was busy',carrier_no_answer:'Call went unanswered',carrier_failed:'Carrier could not complete the call',carrier_canceled:'Call canceled',answer_prompted:'Waiting for the recipient’s keypad response',answer_declined:'Recipient declined the conversation',answer_no_input:'No keypad response',answer_consented:'Recipient agreed to a recorded and transcribed conversation',answer_permission_changed:'Call ended because permission or availability changed',carrier_submitting:'Carrier submission pending confirmation',carrier_uncertain:'Carrier response uncertain. Check call history before retrying.',carrier_submitted:'Carrier accepted the call request',calendar_conflict:'Another Calendar event or booking overlaps the call',chat_unavailable:'Assigned Chat is unavailable',awaiting_dispatch_checks:'Prepared for dispatch checks',recipient_permission:'Blocked by recipient preferences',window_ended:'Missed call window',contact_or_line_changed:'Contact or line changed'};
+      conversation_reply_withheld:'Call authorization ended before the agent could reply',conversation_model_failed:'Agent could not generate a reply',conversation_ended:'Call ended during the conversation',ended_before_consent:'Call ended before the recipient confirmed',carrier_busy:'Recipient line was busy',carrier_no_answer:'Call went unanswered',carrier_failed:'Carrier could not complete the call',carrier_canceled:'Call canceled',answer_prompted:'Waiting for the recipient’s keypad response',answer_declined:'Recipient declined the conversation',answer_no_input:'No keypad response',answer_consented:'Recipient agreed to a recorded and transcribed conversation',answer_permission_changed:'Call ended because permission or availability changed',carrier_submitting:'Carrier submission pending confirmation',carrier_uncertain:'Carrier response uncertain. Check call history before retrying.',carrier_submitted:'Carrier accepted the call request',calendar_conflict:'Another Calendar event or booking overlaps the call',chat_unavailable:'Assigned Chat is unavailable',awaiting_dispatch_checks:'Prepared for dispatch checks',recipient_permission:'Blocked by recipient preferences',dispatch_window_expired:'Call window ended before dialing',window_ended:'Missed call window',contact_or_line_changed:'Contact or line changed'};
     if(Array.isArray(draft.schedules.history)&&draft.schedules.history.length){
       const history=node('details','vp3-phone-scheduled-history');
       history.append(node('summary',null,'Scheduled call history'));
@@ -1846,6 +1846,13 @@
     const pairs=[['Browser',deviceSession?.phase==='registered'?'Registered in this tab':'Unregistered in this tab'],
       ['Voicemail timeout',state.voicemail_settings?.ring_seconds?state.voicemail_settings.ring_seconds+' seconds':'Unavailable'],
       ['Recording worker',displayState(state.processing_worker?.state||'unknown')]];
+    const worker=state.schedule_worker;
+    if(worker){
+      const when=worker.last_observed_at&&displayTime(worker.last_observed_at);
+      const detail=worker.state==='stale'?'Last run is overdue':worker.state==='observed'?
+        (worker.outcome==='failed'?'Last run reported an error':'Running on schedule'):'No run observed';
+      pairs.push(['Scheduled call worker',[detail,when].filter(Boolean).join(' · ')]);
+    }
     for(const trace of (state.operator_trace||[]).slice(0,8)){
       const call=state.calls.find(row=>row.public_id===trace.call_id);
       const voicemail=state.voicemails.find(row=>row.call_id===trace.call_id&&row.kind==='voicemail');

@@ -52,6 +52,39 @@ function homeserver_agent_v025_surface(array $agentContext): array
     ];
 }
 
+/** Add current, server-resolved Gmail work facts through the shipped event contract. */
+function homeserver_agent_v025_gmail_surface(array $surface,array $user,array $principal,int $conversationId,
+    bool $knowledgeAllowed,array $projectKnowledge=[]): array
+{
+    // A browser-supplied event cannot impersonate this server-owned summary.
+    $events=array_values(array_filter(is_array($surface['events']??null)?$surface['events']:[],
+        static fn($event): bool=>is_array($event)&&($event['source']??'')!=='gmail_workspace_context'
+            &&($event['event_kind']??'')!=='gmail_workspace'
+            &&!str_starts_with((string)($event['id']??''),'gmail-workspace-')));
+    $surface['events']=$events;
+    if(!$knowledgeAllowed||$projectKnowledge||($surface['surface']??'chat')!=='chat'
+        ||$conversationId<1||(int)($surface['conversation_id']??0)!==$conversationId
+        ||!empty($surface['participants']['count'])
+        ||(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)
+        ||!function_exists('db'))return $surface;
+    $pdo=db();
+    if(!$pdo instanceof PDO)return $surface;
+    try{
+        if(!function_exists('agent_gmail_workspace_context_v1'))require_once __DIR__.'/agent-gmail-workspace-context-v1.php';
+        $workspace=agent_gmail_workspace_context_v1($pdo,$user,$principal,$conversationId);
+        $gmailEvents=agent_gmail_workspace_events_v1($workspace);
+        if($gmailEvents)$surface['events']=array_slice(array_merge($gmailEvents,$events),0,8);
+    }catch(Throwable $error){
+        // Unknown workspace state is never represented as an empty inbox or a
+        // successful send. Existing Chat routing remains available without it.
+        $surface['events']=array_slice(array_merge([['id'=>'gmail-workspace-unavailable','type'=>'event',
+            'event_kind'=>'gmail_workspace','title'=>'Gmail work state unavailable',
+            'summary'=>'The current Gmail workspace could not be verified. Open the Gmail specialist to refresh it; do not infer draft counts, sends, replies, or completion.',
+            'source'=>'gmail_workspace_context']],$events),0,8);
+    }
+    return $surface;
+}
+
 function homeserver_agent_v025_public_state(array $result): array
 {
     $delegation=is_array($result['delegation']??null)?$result['delegation']:[];
@@ -104,6 +137,7 @@ function homeserver_agent_v025_chat(
 
     $boundedHistory=homeserver_agent_v025_history($history);
     $surface=homeserver_agent_v025_surface($agentContext);
+    $surface=homeserver_agent_v025_gmail_surface($surface,$user,$principal,$conversationId,$knowledgeAllowed,$projectKnowledge);
     $payload=[
         'message'=>$query,
         'external_conversation_id'=>'vp3:'.$conversationId,

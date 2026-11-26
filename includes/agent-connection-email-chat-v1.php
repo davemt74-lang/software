@@ -1193,10 +1193,22 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
             $pdo,$user,$principal,$conversationId,$draft,null,$http,$model),$key,time());
     }
     if ($action === 'discard') {
+        $hasRevision = array_key_exists('edit_revision',$input);
+        if ($hasRevision && (!is_string($input['edit_revision']) || !preg_match('/\A[a-f0-9]{64}\z/D',$input['edit_revision']))) {
+            throw new DomainException('Choose the current email draft before discarding it.',422);
+        }
+        if ($hasRevision && !hash_equals(agent_connection_email_chat_review_hash_v1($draft,false),$input['edit_revision'])) {
+            throw new DomainException('This email draft changed. Review the latest version before discarding it.',409);
+        }
         if (in_array($status,['prepared','write_failed','write_queued','stale','source_check','answered','failed','expired'],true)) {
-            $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET status='discarded',message_enc=''
-                WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=? AND status=? AND message_enc=?")
-                ->execute([$id,$owner,$agent,$conversationId,$draft['status'],$draft['message_enc']]);
+            $discard = $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET status='discarded',message_enc=''
+                WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=? AND status=? AND message_enc=?
+                    AND recipient=? AND authorization_key=? AND expires_at=?");
+            $discard->execute([$id,$owner,$agent,$conversationId,$draft['status'],$draft['message_enc'],
+                $draft['recipient'],$draft['authorization_key'],$draft['expires_at']]);
+            if ($hasRevision && $discard->rowCount() !== 1) {
+                throw new DomainException('This email draft changed. Review the latest version before discarding it.',409);
+            }
         }
         return agent_connection_email_chat_public_draft_v1(agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversationId,$id),$key,$now);
     }
