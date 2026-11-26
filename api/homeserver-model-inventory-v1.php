@@ -29,7 +29,8 @@ if(!is_string($csrf)||$csrf===''||!hash_equals(csrf_token(),$csrf))
 
 // Bound explicit refreshes per signed-in session. Never poll from this endpoint.
 $owner=(int)$user['id'];
-if(session_status()!==PHP_SESSION_ACTIVE)
+$sessionId=session_id();
+if(session_status()!==PHP_SESSION_ACTIVE||$sessionId==='')
     vp3_inventory_api_v1(false,['error'=>'Session unavailable. Refresh the page.'],403);
 $last=$_SESSION['vp3_inventory_refresh_v1']??[];
 $now=time();
@@ -42,6 +43,19 @@ session_write_close();
 
 try{
     $view=vp3_homeserver_inventory_read_v1($owner);
+    // The relay wait releases the browser session lock. Reopen the original
+    // session without cookies before releasing private metadata: another tab
+    // may have logged out, switched accounts or invalidated its credentials.
+    $_SESSION=[];session_id($sessionId);
+    $opened=session_start(['read_and_close'=>true,'use_cookies'=>false,'use_trans_sid'=>false,'use_strict_mode'=>true,'cache_limiter'=>'']);
+    if(!$opened||!hash_equals($sessionId,session_id())){
+        $_SESSION=[];reset_current_user_cache();
+        throw new RuntimeException('Model inventory authorization changed.',403);
+    }
+    reset_current_user_cache();$fresh=current_user();
+    if(!$fresh||(int)$fresh['id']!==$owner||!has_permission('account.access',$fresh)||!has_permission('chat.access',$fresh)
+        ||!hash_equals(csrf_token(),$csrf))
+        throw new RuntimeException('Model inventory authorization changed.',403);
     vp3_inventory_api_v1(true,['inventory'=>$view,'checked_at'=>gmdate(DATE_ATOM)]);
 }catch(Throwable $error){
     $status=in_array($error->getCode(),[403,409],true)?(int)$error->getCode():503;

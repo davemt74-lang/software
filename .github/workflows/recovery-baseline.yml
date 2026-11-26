@@ -51,6 +51,7 @@ jobs:
           php tests/ai-service-policy-v1.php
           php tests/homeserver-model-inventory-v1.php
           node tests/homeserver-model-inventory-settings-v1.mjs
+          node tests/homeserver-model-inventory-api-v1.mjs
           php tests/coding-canvas-model-v1.php
           node tests/coding-canvas-settings-api.mjs
           php tests/ai-credential-recovery-page.php
@@ -355,6 +356,11 @@ jobs:
           fi
       - name: Test pairing, the installed agent name and disconnect in Chat
         run: node tests/connected-sites-browser.mjs
+
+      - name: Test HomeServer inventory on desktop and mobile
+        run: |
+          node tests/homeserver-model-inventory-browser-v1.mjs
+          VP3_INVENTORY_BROWSER=webkit node tests/homeserver-model-inventory-browser-v1.mjs
 
       - name: Test account-bound Phone Tracking and phone consent
         run: |

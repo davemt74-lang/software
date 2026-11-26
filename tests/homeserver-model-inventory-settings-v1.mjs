@@ -13,13 +13,16 @@ class Node {
 }
 const nodes=Object.fromEntries(['refresh','status','summary','list','default','count','time'].map(x=>['[data-inventory-'+x+']',new Node()]));
 const root=new Node();root.dataset={api:'/api/homeserver-model-inventory-v1.php',csrf:'fixture-csrf'};
-const pill=new Node(),device=new Node(),connection=new Node(),disconnect=new Node();
+const pill=new Node(),device=new Node(),connection=new Node(),disconnect=new Node(),claimForm=new Node(),claimRoot=new Node();
+claimRoot.querySelector=()=>claimForm;
 pill.dataset.state='loading';device.textContent='—';
 const ids={hsStatePill:pill,hsDeviceId:device,hsConnectCard:connection,hsDisconnect:disconnect};
 let observe,fetchCalls=[],pending=[];
 const window=new Node();
-const context={document:{querySelector:()=>root,getElementById:id=>ids[id],createElement:()=>new Node(),createDocumentFragment:()=>new Node()},
+const timers=new Map();let timerId=0;
+const context={document:{querySelector:selector=>selector==='[data-hs-device-claim]'?claimRoot:root,getElementById:id=>ids[id],createElement:()=>new Node(),createDocumentFragment:()=>new Node()},
     window,MutationObserver:class{constructor(fn){observe=fn;}observe(){}},AbortController,URLSearchParams,Date,
+    setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),
     fetch:(url,opts)=>{fetchCalls.push([url,opts]);return new Promise(resolve=>pending.push(resolve));}};
 vm.runInNewContext(fs.readFileSync('homeserver-model-inventory-v1.js','utf8'),context);
 const button=nodes['[data-inventory-refresh]'],status=nodes['[data-inventory-status]'],list=nodes['[data-inventory-list]'];
@@ -42,6 +45,24 @@ pending.shift()(response(snapshot));await run;
 assert.equal(list.hidden,true);assert.equal(nodes['[data-inventory-count]'].textContent,'0');
 run=button.handlers.click();pending.shift()(response({ok:true,inventory:{version:'vp3.local-model-inventory.v1',state:'unsupported',models:[]}}));await run;
 assert.match(status.textContent,/Update HomeServer/);
+assert.equal(nodes['[data-inventory-default]'].textContent,'Unknown');
+assert.equal(nodes['[data-inventory-count]'].textContent,'Not available');
+run=button.handlers.click();pending.shift()(response({ok:true,inventory:{...snapshot.inventory,state:'unreachable',models:[],configured_model_reported:false}}));await run;
+assert.match(nodes['[data-inventory-default]'].textContent,/discovery unavailable/);
+assert.doesNotMatch(nodes['[data-inventory-default]'].textContent,/not reported/);
+assert.equal(nodes['[data-inventory-count]'].textContent,'Not available');
+run=button.handlers.click();pending.shift()(response({ok:true,inventory:{...snapshot.inventory,models:[],configured_model_reported:false,truncated:true}}));await run;
+assert.match(nodes['[data-inventory-default]'].textContent,/not in returned list/);
+run=button.handlers.click();pending.shift()(response(snapshot));await run;
+claimForm.handlers.submit();assert.equal(list.hidden,true);
+claimRoot.setAttribute('aria-busy','true');observe();assert.equal(button.disabled,true);
+const beforeClaim=fetchCalls.length;await button.handlers.click();assert.equal(fetchCalls.length,beforeClaim);
+claimForm.hidden=true;claimRoot.setAttribute('aria-busy','false');observe();assert.equal(button.disabled,false);assert.equal(list.hidden,true);
+run=button.handlers.click();claimForm.handlers.submit();pending.shift()(response(snapshot));await run;
+assert.equal(list.hidden,true,'direct device-code pairing suppresses old inventory even for the same device');
+run=button.handlers.click();[...timers.values()].at(-1)();
+assert.match(status.textContent,/timed out/);assert.equal(button.disabled,false);assert.equal(fetchCalls.at(-1)[1].signal.aborted,true);
+pending.shift()(response(snapshot));await run;assert.equal(list.hidden,true);
 run=button.handlers.click();pending.shift()(response({ok:false,error:'PRIVATE ERROR'},503));await run;
 assert.doesNotMatch(status.textContent,/PRIVATE ERROR/);assert.equal(list.hidden,true);
 run=button.handlers.click();disconnect.handlers.click();pending.shift()(response(snapshot));await run;
