@@ -169,6 +169,11 @@ function vp3_top_of_mind_chat_context_v1(PDO $pdo,array $user,int $agentId,int $
     $context=['calendar'=>[],'music'=>null,'youtube_search'=>null,'artist_research'=>null,'topic_research'=>null];
     $gmail=vp3_top_of_mind_gmail_v1($pdo,$user,$agentId,new DateTimeImmutable('@'.$now));
     if($gmail!==null)$context['gmail_inbox']=$gmail;
+    if($principal!==null){
+        require_once __DIR__.'/agent-gmail-workspace-context-v1.php';
+        try{$context['gmail_workspace']=agent_gmail_workspace_context_v1($pdo,$user,$principal,$conversationId,$now);}
+        catch(PDOException $error){}
+    }
     if($conversationId>0&&$principal!==null){
         require_once __DIR__.'/agent-transcript-focus-v1.php';
         try{

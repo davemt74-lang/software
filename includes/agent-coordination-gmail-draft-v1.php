@@ -56,8 +56,17 @@ function vp3_coordination_gmail_draft_prepare_v1(PDO $pdo,array $user,array $goa
     $answer=$infer(json_encode($prompt,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),'vp3.initiative-draft.v1');
     $value=vp3_tool_json_object_v1($answer,['draft'],30000);
     $body=agent_connection_email_chat_text_v1($value['draft']??null,6000,true);
+    $item=$evidence[$goal['primary']];
+    $reason=is_string($item['summary']??null)&&trim($item['summary'])!==''
+        ? $item['summary'] : 'Prepared after your answer to: '.$question;
+    $metadata=agent_email_review_queue_source_metadata_v1([
+        'reason'=>agent_email_composer_text_v1(mb_substr($reason,0,1200),1200,true),
+        'priority'=>$item['priority']??'normal','deadline'=>$item['due_at']??null,
+    ]);
+    $created=time();
     $payload=['subject'=>$original['subject'],'body'=>$body,'reply'=>$original['reply'],
-        'soul_version'=>$soul['version'],'soul_revision'=>$soul['revision']];
+        'soul_version'=>$soul['version'],'soul_revision'=>$soul['revision'],
+        'composer'=>['version'=>2,'saved_at'=>$created,'created_at'=>$created,'origin'=>'organic_reply','source'=>$metadata]];
     $work=['type'=>'initiative_coordination','situation_id'=>$goal['coordination_id'],'state'=>'resolved',
         'title'=>'Gmail reply ready for review','summary'=>'I drafted a reply in the original Gmail thread.',
         'next_step'=>'Review the reply before sending.','question'=>'','evidence_revisions'=>$goal['sources'],'gmail_reply_draft_id'=>$id];
@@ -74,12 +83,15 @@ function vp3_coordination_gmail_draft_store_v1(PDO $pdo,array $user,array $goal,
     if($source!==$draft['source']||$connection['account_email']!==$draft['from']){
         throw new Vp3InitiativeSourcesChangedV1();
     }
+    $payload=$draft['payload'];
+    agent_email_composer_validate_v1(['expires_at'=>0],$payload);
+    if(($payload['composer']['version']??null)!==2)throw new Vp3InitiativeSourcesChangedV1();
     $insert=$pdo->prepare('INSERT INTO agent_connection_email_drafts_v1
         (id,owner_user_id,agent_id,conversation_id,user_message_id,connection_id,authorization_key,account_email,recipient,message_enc,status,expires_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,\'prepared\',?)');
+        VALUES (?,?,?,?,?,?,?,?,?,?,\'prepared\',0)');
     $insert->execute([$draft['id'],$owner,$agent,$binding['conversation_id'],$goal['followthrough']['reply_message_id'],
         $source['connection_id'],$source['authorization_key'],$draft['from'],$draft['to'],
-        ai_encrypt_secret(json_encode($draft['payload'],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)),time()+86400]);
+        ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))]);
 }
 
 function vp3_coordination_gmail_draft_action_v1(PDO $pdo,array $user,int $agent,int $conversation,string $id): array

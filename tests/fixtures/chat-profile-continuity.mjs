@@ -18,7 +18,11 @@ export const profileChatHelpers='let initializingConversationPa3=null;\n'+[
   'ensureConversationPa3','mountProfileHandoffPa3','mountProfileCallPa3c','mountProfileSpeechPa4a','mountProfileAttentionPa4b'
 ].map(chatFunction).join('');
 
-export const continuityExportHelpers=['stageSpecialistPrompt','parkCurrentProactiveReplyV1','showChatTurnNotice',
+// The extracted continuity object closes over the same email-action busy state
+// as the full Chat runtime. Keep its real declaration, including its idle value.
+const emailInstructionState=source.match(/^  let emailInstructionTurn = null;$/m);
+assert.ok(emailInstructionState,'Production Chat email instruction state exists');
+export const continuityExportHelpers=emailInstructionState[0]+'\n'+['stageSpecialistPrompt','parkCurrentProactiveReplyV1','showChatTurnNotice',
   'chatCanvasStatus','proactiveVoiceStatus','refreshGmailUpdatesV1','mediaCommandContext'].map(chatFunction).join('');
 
 const exportStart=source.indexOf('  const canonicalChatContinuity = {');
