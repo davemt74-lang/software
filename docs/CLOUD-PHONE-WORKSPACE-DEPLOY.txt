@@ -154,6 +154,11 @@ Check the same flow on a physical iPhone. Automated browser and injected-carrier
 checks do not establish hosted microphone quality or live carrier acceptance.
 
 Operator scheduled call occurrences
+  To check up to 100 currently due, prepared calls without dialing or consuming
+  an occurrence, run: php phone-operator-schedule-worker.php --preview-dispatch
+  The output contains counts by reason. An eligible result means the current
+  route, consent, known browser call history, Calendar and calling hours passed
+  rehearsal. It does not reserve a call or submit anything to Twilio.
   After running upgrade.php, configure the Cloud scheduler to run the CLI worker each minute:
       * * * * * php /full/path/to/vp3/phone-operator-schedule-worker.php
   Only explicitly assigned Calendar call series are considered. Open Phone > Contacts >

@@ -37,3 +37,36 @@ c(vp3_operator_occurrences_tick_v1($pdo,$future+1)['blocked']===1,'worker blocks
 c($read()['last_occurrence']['reason']==='calendar_conflict','the private schedule history explains the collision');
 c(array_sum(vp3_operator_occurrences_tick_v1($pdo,$future+1))===0,'a repeated worker tick cannot add a second outcome');
 echo "PASS scheduled call Calendar conflicts, adjacency and Chat revalidation\n";
+
+require_once dirname(__DIR__).'/includes/agent-operator-dispatch-preview-v1.php';
+$pdo->exec('DELETE FROM agent_scheduling_bookings');
+vp3_operator_auto_call_ensure_schema_v1($pdo);
+vp3_phone_recording_ensure_schema_v1($pdo);
+vp3_phone_browser_number_policy_set_v1($pdo,1,true,true);
+vp3_phone_recording_save_policy_v1($pdo,user(),7,['enabled'=>true,'retain_audio'=>true,'transcribe'=>true,'analyze'=>false]);
+$scope=vp3_phone_workspace_scope_v1($pdo,user(),['agent_id'=>0,'conversation_id'=>11]);
+$callTime=$future+7*86400;
+$pdo->prepare('UPDATE vp3_phone_devices_v1 SET expires_at=?')->execute([$callTime+86400]);
+$pdo->exec("UPDATE vp3_phone_communication_profiles_v1 SET window_start='00:00',window_end='23:59',timezone='UTC'");
+c(vp3_operator_occurrences_tick_v1($pdo,$callTime)['prepared']===1,'fixture prepares the following weekly occurrence');
+$preview=fn()=>vp3_operator_preview_due_v1($pdo,$callTime);
+c($preview()===['owner_permission'=>1],'preparation alone cannot authorize an outbound request');
+$settings=array_replace(vp3_operator_auto_call_defaults_v1(),['window_start'=>'00:00','window_end'=>'23:59']);
+$permission=['agent_id'=>0,'conversation_id'=>11,'contact_id'=>$id,'number_id'=>1,'expected_revision'=>0,
+    'expected_destination'=>$choice['expected_destination'],'expected_line'=>$choice['expected_line'],'settings'=>$settings,'enabled'=>true];
+vp3_operator_auto_call_save_v1($pdo,$scope,$permission);
+$attest=array_intersect_key($permission,array_flip(['agent_id','conversation_id','contact_id','number_id','expected_destination','expected_line']));
+$attest+=['decision'=>'attest','expected_revision'=>1,'expected_consent_revision'=>0,'purpose'=>'follow_up','recipient_agreement_attested'=>true];
+vp3_operator_consent_save_v1($pdo,$scope,$attest,$callTime);
+$q=$pdo->prepare('SELECT * FROM phone_operator_occurrences_v1 WHERE owner_user_id=1 AND event_id=? AND start_epoch=?');
+$q->execute([$eventId,$callTime]);
+$row=$q->fetch(PDO::FETCH_ASSOC);
+$plan=vp3_operator_preview_request_v1($pdo,$row,$callTime);
+c($plan['reason']==='eligible'&&$plan['fields']['To']===$choice['expected_destination']&&$plan['fields']['From']===$choice['expected_line']
+    &&$plan['fields']['TimeLimit']===$duration&&$plan['objectives']===$event['description'],'verified route, time limit and objectives reach the simulated carrier boundary');
+c($preview()===['eligible'=>1]&&$preview()===['eligible'=>1],'preview returns only counts and leaves the occurrence available');
+$pdo->exec("UPDATE vp3_phone_communication_profiles_v1 SET window_start='10:00',window_end='11:00'");
+c($preview()===['calling_window'=>1],'recipient local calling hours apply immediately');
+$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
+c($preview()===['recipient_permission'=>1],'recipient withdrawal after preparation prevents a carrier plan');
+echo "PASS scheduled outbound request preview, current consent and privacy\n";
