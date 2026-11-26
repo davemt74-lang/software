@@ -43,16 +43,21 @@
       // readback is updated by the render thread on the next audio quantum.
       const gain=graph.mic.gain;gain.cancelScheduledValues(0);gain.value=value;gain.setValueAtTime(value,this.context.currentTime);
     }
-    play(pcm,stream,onEnded){
+    play(pcm,stream,onEnded,alongsideHumans=false){
       if(this.speaking||!this.matches(stream)||!(pcm instanceof Int16Array)||pcm.length<1600||pcm.length>320000)
         throw new Error('The approved voice turn is unavailable.');
       const graph=this.graph,ctx=this.context,buffer=ctx.createBuffer(1,pcm.length,16000),samples=buffer.getChannelData(0);
       for(let i=0;i<pcm.length;i++)samples[i]=pcm[i]/32768;
       const source=ctx.createBufferSource();source.buffer=buffer;
-      const voice=ctx.createGain();voice.gain.value=.85;source.connect(voice);voice.connect(graph.destination);
+      const voice=ctx.createGain();voice.gain.value=.85;
       const turn={source,voice,graph};this.speaking=turn;
       source.onended=()=>{if(this.speaking===turn){this.stop();onEnded?.();}};
-      try{this.setMic(graph,0);source.start();}catch(error){this.stop();throw error;}
+      try{
+        source.connect(voice);voice.connect(graph.destination);
+        if(alongsideHumans)voice.connect(ctx.destination);
+        else this.setMic(graph,0);
+        source.start();
+      }catch(error){this.stop();throw error;}
     }
     stop(){
       const turn=this.speaking;this.speaking=null;

@@ -714,8 +714,8 @@ try{
   await page.evaluate(()=>{const d=phoneFixture.dualAudio;d.a.stop();d.b.stop();d.remote.stop();d.local.stop();void d.ctx.close();});
   assert.ok(captionCalls.some(row=>row.action==='stop'));
  });
- await fresh();
- await check('owner-approved synthetic voice requires review and a separate play click; takeover restores the live human track',async()=>{
+ for(const alongsideHumans of [false,true])await check(alongsideHumans?'both humans stay connected when the owner adds and removes an approved Agent voice response':'owner-approved synthetic voice requires review and a separate play click; takeover restores the live human track',async()=>{
+  await fresh();
   captionCalls=[];state.operator_live={available:true,assist_available:true,voice_available:true,eligible:false,call_id:'',state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   await page.getByRole('button',{name:'Prepare Agent voice for browser calls',exact:true}).click();
@@ -743,12 +743,12 @@ try{
   assert.equal(captionCalls.filter(c=>c.action==='voice_claim').length,0,'Preparation alone never plays audio');
   assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1);
   const claims=await page.evaluate(()=>phoneFixture.claims);
-  await caption.getByRole('button',{name:'Speak approved response',exact:true}).click();
+  await caption.getByRole('button',{name:alongsideHumans?'Add Agent for this response':'Speak approved response',exact:true}).click();
   await caption.getByText('Operator voice · AI speaking',{exact:true}).waitFor();
-  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),0,'The human and AI cannot transmit simultaneously');
+  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),alongsideHumans?1:0,'The selected playback mode controls human microphone gain');
   assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),true);
-  await caption.getByRole('button',{name:'Take over now',exact:true}).click();
-  await caption.getByText('You took over. AI speech and live assistance stopped.',{exact:true}).waitFor();
+  await caption.getByRole('button',{name:alongsideHumans?'Remove Agent':'Take over now',exact:true}).click();
+  await caption.getByText(alongsideHumans?'Agent removed. The human call continues.':'You took over. AI speech and live assistance stopped.',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),false,'Takeover clears the synthetic source immediately');
   await page.waitForFunction(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value===1,{},{timeout:1500});
   assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1,'Human microphone returns after the audio render quantum');

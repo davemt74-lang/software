@@ -10,7 +10,7 @@ function stream(t){return {getTracks:()=>[t],getAudioTracks:()=>[t]};}
 function audioNode(){return {connected:[],connect(dest){this.connected.push(dest);return dest;},disconnect(){this.connected=[];}};}
 function gain(){return Object.assign(audioNode(),{gain:{value:1,cancelScheduledValues(){},setValueAtTime(v){this.value=v;events.push('mic:'+v);}}});}
 let lastSource;
-const ctx={state:'running',currentTime:0,createMediaStreamSource(input){return Object.assign(audioNode(),{input});},createGain:gain,
+const ctx={destination:audioNode(),state:'running',currentTime:0,createMediaStreamSource(input){return Object.assign(audioNode(),{input});},createGain:gain,
   createMediaStreamDestination(){return Object.assign(audioNode(),{stream:stream(track())});},
   createBuffer(ch,length,rate){assert.equal(ch,1);assert.equal(rate,16000);const data=new Float32Array(length);return {getChannelData:()=>data};},
   createBufferSource(){return lastSource=Object.assign(audioNode(),{onended:null,start(){events.push('start');},stop(){events.push('stop');}});},
@@ -30,6 +30,14 @@ assert.equal(mixer.speaking,null);assert.equal(mixer.graph.mic.gain.value,1);lat
 assert.equal(completed,1,'late ended event cannot restore stale turn state');
 assert.equal(raw.readyState,'live','takeover does not stop original microphone');
 assert.equal(output.getTracks()[0].readyState,'live','takeover preserves the carrier output');
+mixer.play(pcm,output,()=>completed++,true);
+const shared=mixer.speaking,sharedEnd=shared.source.onended;
+assert.equal(mixer.graph.mic.gain.value,1,'the owner can speak throughout a shared response');
+assert.deepEqual(shared.voice.connected,[mixer.graph.destination,ctx.destination],'the agent reaches the caller and the owner');
+assert.deepEqual(mixer.graph.mic.connected,[mixer.graph.destination],'the owner microphone is never monitored locally');
+mixer.stop();sharedEnd();
+assert.equal(completed,1);assert.equal(shared.voice.connected.length,0);assert.ok(mixer.matches(output));
+assert.equal(raw.readyState,'live');assert.equal(output.getTracks()[0].readyState,'live');
 mixer.play(pcm,output,()=>completed++);ctx.state='suspended';ctx.onstatechange();
 assert.deepEqual(lost,['audio_context_lost']);assert.equal(mixer.speaking,null);
 ctx.state='running';await mixer.destroyProcessedStream(output);
