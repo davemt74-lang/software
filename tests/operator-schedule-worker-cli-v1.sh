@@ -18,7 +18,7 @@ cat > "$fixture/config.php" <<'PHP'
 return ['db'=>['dsn'=>'sqlite:'.__DIR__.'/schedule.sqlite']];
 PHP
 cd "$root"
-SCHEDULE_FIXTURE_DB="$fixture/schedule.sqlite" "$php_bin" -r '
+VP3_PHONE_MYSQL_DSN= SCHEDULE_FIXTURE_DB="$fixture/schedule.sqlite" "$php_bin" -r '
     require "tests/operator-schedule-calendar-v1.php";
     foreach(get_defined_vars() as $value){
         if($value instanceof PDOStatement)$value->closeCursor();
@@ -49,6 +49,23 @@ worker --dispatch > repeat.json
     if(readJson("prepare-health.json")["mode"]!=="prepare"||isset(readJson("prepare.json")["dispatch"])||
         readJson("preview.json")!==["preview"=>[]]||$health["mode"]!=="dispatch"||$health["outcome"]!=="completed"||
         readJson("dispatch.json")!==readJson("repeat.json")||readJson("repeat.json")["dispatch"]!==["submitted"=>0,"uncertain"=>0,"skipped"=>0,"errors"=>0])exit(1);
+'
+# A due occurrence whose assignment was withdrawn must stop before transport.
+"$php_bin" -r '
+    $db=new PDO("sqlite:schedule.sqlite");
+    file_put_contents("attempt-count", (string)$db->query("SELECT COUNT(*) FROM phone_operator_carrier_attempts_v1")->fetchColumn());
+    $db->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id) VALUES(1,1,?,?,1,?,?,?,?,11,0)")
+       ->execute([time()-5,time()+180,"prepared","awaiting_dispatch_checks",time(),1]);
+'
+worker --preview-dispatch > withdrawn-preview.json
+worker --dispatch > withdrawn-dispatch.json
+"$php_bin" -r '
+    $preview=json_decode(file_get_contents("withdrawn-preview.json"),true);
+    $dispatch=json_decode(file_get_contents("withdrawn-dispatch.json"),true);
+    $db=new PDO("sqlite:schedule.sqlite");
+    $attempts=$db->query("SELECT COUNT(*) FROM phone_operator_carrier_attempts_v1")->fetchColumn();
+    if($preview["preview"]!==["assignment_changed"=>1]||
+       $dispatch["dispatch"]!==["submitted"=>0,"uncertain"=>0,"skipped"=>1,"errors"=>0]||(int)$attempts!==(int)file_get_contents("attempt-count"))exit(1);
 '
 # Break the fixture deliberately. Failed previews must preserve the last real observation.
 cp "$heartbeat" dispatch-health.json
