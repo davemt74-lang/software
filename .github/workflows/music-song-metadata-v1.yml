@@ -6,20 +6,33 @@ on:
       - '**/music*.php'
       - '**/artist-music*.php'
       - '**/artist-media*.php'
+      - 'includes/artist-workspace-v181.php'
       - 'api/chat-create-v76.php'
+      - 'chat.php'
       - 'chat-legacy-v108.php'
       - 'chat.js'
+      - 'chat.css'
       - 'assets/css/music-*.css'
       - 'assets/js/music-*.js'
       - 'setup.php'
       - 'upgrade.php'
+      - 'schema.sql'
       - 'includes/bootstrap.php'
+      - 'includes/functions.php'
+      - 'includes/permissions.php'
+      - 'includes/stem-import-media.php'
+      - 'includes/stem-mp3-metadata-v1.php'
+      - 'stem-media-v34.php'
       - 'tests/music-*'
       - '.github/workflows/music-song-metadata-v1.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   metadata:

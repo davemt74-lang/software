@@ -29,6 +29,14 @@ The original cumulative gates retain the responsibilities below. The test allowl
 
 Future Gmail regressions should extend this gate rather than introduce another permanent workflow. Keep its reviewed filename in the consolidation allowlist. This gate supplements existing cumulative coverage and does not publish production deployment packages.
 
+## Music catalog and listening gate
+
+`music-song-metadata-v1.yml` is an intentional, path-filtered feature gate for the shared Music catalog, song metadata and listening integration. Its initial ML1 coverage runs real MySQL migration and transaction acceptance in an empty disposable database, actual HTTP audio/art uploads and repair, and the shared editor in desktop and phone-sized browser viewports. The MySQL DSN is configured explicitly so an absent-DSN `SKIP` cannot stand in for database verification.
+
+Keep the gate separate from Recovery Baseline's broad service/HTTP coverage so the MySQL service and browser setup run automatically only for relevant music, shared Chat, schema, permission and media dependencies. It also supports manual runs. Browser screenshots are review evidence; this workflow does not publish production deployment packages.
+
+Future Music listening, metadata and provider regressions should extend this same feature gate. ML1 is its initial coverage, not a reason to add a permanent workflow for each later phase or reactivate the archived social/music workflow. Keep the reviewed filename in the consolidation allowlist. The governance check also protects the path filter, configured native MySQL check and desktop/phone browser acceptance from accidental removal or advisory-only execution.
+
 ## Historical phases
 
 Historical YAML definitions are stored in `.github/workflow-archive/`. The test files they reference remain in `tests/`; they have not been deleted.

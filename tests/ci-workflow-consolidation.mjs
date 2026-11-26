@@ -17,6 +17,7 @@ const activeExpected=[
   "cognitive-loop-release-v2360.yml",
   "gmail-composer-v1.yml",
   "homeserver-runtime-journey.yml",
+  "music-song-metadata-v1.yml",
   "package-entitlements-v340.yml",
   "profile-commerce-secure-file-v1130.yml",
   "public-funnel-onboarding-continuity.yml",
@@ -45,6 +46,15 @@ assert.match(deploy,/push:\s*\n\s*branches:\s*\[main\]/,'Production Deploy must 
 const browser=fs.readFileSync(path.join(workflowDir,'browser-companion-transaction-control-v2280.yml'),'utf8');
 assert.doesNotMatch(browser,/\n\s{2}package:\s*\n/,'historical v22.80 workflow must not remain an artifact authority');
 assert.match(browser,/browser-companion-transaction-release-gate-v2280\.mjs/,'Browser cumulative regression release gate must remain');
+
+const music=fs.readFileSync(path.join(workflowDir,'music-song-metadata-v1.yml'),'utf8');
+assert.match(music,/pull_request:\s*\n\s+paths:/,'Music integration gate must remain path-filtered');
+assert.match(music,/\n\s+workflow_dispatch:/,'Music integration gate must remain manually runnable');
+assert.match(music,/image:\s*mysql:8\.0/,'Music integration gate must retain real MySQL acceptance');
+assert.match(music,/MUSIC_TEST_MYSQL_DSN:\s*['"]?mysql:/,'Music MySQL acceptance must receive a configured DSN instead of silently skipping');
+assert.match(music,/run:\s*php tests\/music-song-metadata-mysql-v1\.php/,'Music native MySQL migration and transaction checks must remain');
+assert.match(music,/run:\s*node tests\/music-song-metadata-browser-v1\.mjs/,'Music desktop and phone editor acceptance must remain');
+assert.doesNotMatch(music,/continue-on-error:\s*true/,'Music integration failures must not be downgraded to advisory checks');
 
 for(const name of archived){
   assert.ok(!active.includes(name),`historical workflow ${name} must not be both active and archived`);

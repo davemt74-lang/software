@@ -2,7 +2,7 @@
 
 ## Current state
 
-**ML0 is merged; ML1 implementation is prepared for review.** The user approved merging the planning package and building the first implementation phase on 2026-11-26. Planning PR [#925](https://github.com/davemt74-lang/software/pull/925) merged as `3ec69d03031e859f9cf155d1ad64cd9f16d5b631`; implementation uses the isolated branch `codex/vp3-music-ml1` based on that commit.
+**ML0 is merged; ML1 implementation is in PR [#930](https://github.com/davemt74-lang/software/pull/930).** The user approved merging the planning package and building the first implementation phase on 2026-11-26. Planning PR [#925](https://github.com/davemt74-lang/software/pull/925) merged as `3ec69d03031e859f9cf155d1ad64cd9f16d5b631`; implementation uses the isolated branch `codex/vp3-music-ml1` based on that commit. The implementation PR records its current candidate commit, checks and review evidence.
 
 ML1 introduces one catalog/metadata save contract for main Add Track and both library editors, structured song credits and identifiers, private notes, stable recording/work/file identities, reusable parties, revision conflicts, request receipts, safe archive/restore and additive migration. `/music-workspace.php` links directly to song creation and metadata editing. The existing audio repair path also records canonical asset versions.
 
@@ -27,8 +27,8 @@ Pinned source references appear in [source audit](SOURCE-AUDIT.md). Source inspe
 | CLI migration/report | Tested by the HTTP suite. Default report preserves exact database rows and SQLite file bytes; explicit migrate imports valid legacy mappings and is rerunnable. |
 | `node tests/music-file-repair-api.mjs` | Passed with real multipart replacement and canonical recording/asset/revision assertions. |
 | Existing music and Player checks | Music module PHP/JS, Player history API, ownership, artist media/profile/music and catalog checks passed locally. Source assertions were updated where hard deletion/global Artist permission was intentionally replaced by archive/workspace authority. |
-| MySQL runtime | Dedicated native-PDO MySQL acceptance test and CI service added. A local absent-DSN `SKIP` is not evidence of a MySQL pass; use the implementation PR's actual Music Metadata ML1 check. |
-| Desktop/phone browser form | Dedicated browser acceptance covers the shared renderer and Chat controller. Record actual completion with the implementation PR checks. A narrow viewport is not a physical-phone playback test. |
+| MySQL runtime | Dedicated native-PDO MySQL acceptance test and CI service added; native MySQL passed in the first implementation CI run. A local absent-DSN `SKIP` is not evidence of a MySQL pass; use [PR #930 checks](https://github.com/davemt74-lang/software/pull/930/checks) for the current candidate result. |
+| Desktop/phone browser form | Dedicated browser acceptance covers the shared renderer, real library navigation/styles and Chat controller. Current candidate completion and screenshot review are recorded with [PR #930](https://github.com/davemt74-lang/software/pull/930). A narrow viewport is not a physical-phone playback test. |
 | Live deployment/restore/media headers and physical iPhone/Android playback | Not performed. Deployment and later streaming milestones retain these gates. |
 
 The development runtime is PHP 8.4.27 with SQLite, mbstring and fileinfo. CI uses the repository's PHP 8.3 convention and a MySQL 8 service for the new database acceptance test. Authentication/session adapters in isolated fixtures are explicit; tests exercise the real catalog, metadata, authority, uploads and HTTP controllers, not a live signed-in deployment.
