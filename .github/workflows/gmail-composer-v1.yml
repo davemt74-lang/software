@@ -1,0 +1,126 @@
+name: Gmail Composer and Styled Email
+
+on:
+  pull_request:
+    paths:
+      - '*gmail*'
+      - '*email*'
+      - 'chat.js'
+      - 'chat.php'
+      - 'agent-activity-hub-v1.js'
+      - 'api/chat-email-v1.php'
+      - 'includes/*gmail*'
+      - 'includes/*email*'
+      - 'includes/agent-connections-v1.php'
+      - 'includes/agent-chat-runtime-v2160.php'
+      - 'includes/ai-settings.php'
+      - 'includes/agent-tool-json-v1.php'
+      - 'tests/*gmail*'
+      - 'tests/*email*'
+      - 'tests/fixtures/gmail-email-display-v1.php'
+      - '.github/workflows/gmail-composer-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - '*gmail*'
+      - '*email*'
+      - 'chat.js'
+      - 'chat.php'
+      - 'agent-activity-hub-v1.js'
+      - 'api/chat-email-v1.php'
+      - 'includes/*gmail*'
+      - 'includes/*email*'
+      - 'includes/agent-connections-v1.php'
+      - 'includes/agent-chat-runtime-v2160.php'
+      - 'includes/ai-settings.php'
+      - 'includes/agent-tool-json-v1.php'
+      - 'tests/*gmail*'
+      - 'tests/*email*'
+      - 'tests/fixtures/gmail-email-display-v1.php'
+      - '.github/workflows/gmail-composer-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gmail-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: gmail-fixture
+          MYSQL_DATABASE: gmail_fixture
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -pgmail-fixture"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=gmail_fixture;charset=utf8mb4
+      VP3_TEST_MYSQL_USER: root
+      VP3_TEST_MYSQL_PASS: gmail-fixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pdo_sqlite, mbstring, dom, curl, fileinfo
+          coverage: none
+      - name: Draft lifecycle, private attachments, and styled content
+        run: |
+          php tests/agent-email-composer-v1.php
+          php tests/agent-email-attachments-v1.php
+          php tests/agent-email-display-v1.php
+      - name: Existing Gmail send, writing, provider and inference boundaries
+        run: |
+          php tests/agent-connections-gmail-v1.php
+          php tests/agent-connection-email-writing-v1.php
+          php tests/agent-connection-gmail-v1.php
+          php tests/agent-connection-gmail-inbox-initial-summary-v1.php
+      - name: PHP syntax and production entry points
+        run: |
+          for file in api/chat-email-v1.php includes/agent-email-composer-v1.php includes/agent-email-attachments-v1.php includes/agent-email-display-v1.php includes/agent-connection-email-chat-v1.php includes/agent-connection-email-followup-v1.php includes/agent-connection-gmail-inbox-initial-v1.php includes/agent-connection-gmail-v1.php includes/agent-connections-v1.php includes/ai-settings.php includes/agent-chat-runtime-v2160.php chat.php; do
+            php -l "$file"
+          done
+  gmail-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      VP3_EMAIL_COMPOSER_SCREENSHOT: artifacts/gmail-composer-phone.png
+      VP3_EMAIL_DISPLAY_SCREENSHOTS: artifacts/email-display
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, mbstring, dom
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test runtime
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          bash tools/install-ci-chromium.sh
+      - name: Popup and canvas compose, image attachments, draft recovery, and send states
+        run: node tests/chat-email-composer-browser.mjs
+      - name: Formatted private email, styles, links, image controls, and phone layout
+        run: node tests/gmail-email-display-browser.mjs
+      - name: Existing Gmail specialist and inbox reader regression
+        run: |
+          node tests/chat-email-specialist-browser.mjs
+          node tests/gmail-inbox-initial-ui-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gmail-composer-and-email-screenshots
+          path: artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

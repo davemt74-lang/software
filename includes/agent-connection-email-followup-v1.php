@@ -146,14 +146,15 @@ function agent_connection_email_followup_open_v1(PDO $pdo, int $owner, int $agen
 {
     $item = agent_connection_email_followup_message_v1($pdo,$owner,$agent,$conversation,$chatMessageId);
     $access = agent_connections_access_v1($owner,$item['connection_id'],'followups',$http,$item['authorization_key']);
-    $message = agent_connection_gmail_read_v1($access['access_token'],$item['message_id'],$http);
+    $message = agent_connection_gmail_read_v1($access['access_token'],$item['message_id'],$http,true);
     if ($item !== agent_connection_email_followup_message_v1($pdo,$owner,$agent,$conversation,$chatMessageId)) {
         throw new DomainException('Gmail watch access changed while opening the message.',409);
     }
     if (array_intersect(['SENT','DRAFT','TRASH','SPAM'],$message['labels'])) {
         throw new DomainException('The watched message is no longer available as received mail.',404);
     }
-    return ['subject'=>$message['subject'],'from'=>$message['from'],'body'=>mb_substr($message['body'],0,6000)];
+    return ['subject'=>$message['subject'],'from'=>$message['from'],'body'=>mb_substr($message['body'],0,6000)]
+        + (isset($message['display']) ? ['display'=>$message['display']] : []);
 }
 
 /** Restore actions for new and older delivered notices without persisting mailbox IDs in Chat. */
