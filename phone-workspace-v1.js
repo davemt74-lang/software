@@ -1126,7 +1126,7 @@
   function addCaptionLine(session,side,value,seq){
     if(typeof value!=='string'||value.length>2400)throw new Error('The live caption result could not be verified.');
     if(value.trim())session.captions.push({side,text:text(value),seq});
-    while(session.captions.length>8)session.captions.shift();
+    // Capture is bounded to 30 single-track or 15 dual-track segments per session.
   }
   function readCaptionReceipts(session,result,seq){
     if(!session.assist)return;
@@ -1246,8 +1246,28 @@
     if(entry.captionNotice)panel.append(node('p','vp3-phone-meta',entry.captionNotice));
     if(session){
       panel.append(node('p','vp3-phone-meta',session.phase==='listening'?'Live captions on · human call remains in control':'Authorizing live captions…'));
-      if(session.captions.length){const list=node('div','vp3-phone-caption-lines');list.setAttribute('role','log');list.setAttribute('aria-live','polite');
-        for(const line of session.captions){const block=node('div','vp3-phone-caption-turn');block.append(node('strong',null,line.side==='local_audio'?'Your audio':'Caller audio'),node('p',null,line.text));list.append(block);}panel.append(list);}
+      if(session.captions.length){
+        if(session.captions.length>8){
+          const history=button(session.showEarlier?'Show recent captions':'Show earlier captions',()=>{
+            if(!captionCurrent(entry,session))return;
+            session.showEarlier=!session.showEarlier;
+            render();
+          });
+          history.setAttribute('aria-expanded',String(Boolean(session.showEarlier)));
+          history.dataset.phoneFocusKey='caption-history-'+entry.info.public_id;
+          panel.append(history);
+        }
+        const list=node('div','vp3-phone-caption-lines');
+        list.setAttribute('role','log');
+        list.setAttribute('aria-live','polite');
+        const visible=session.showEarlier?session.captions:session.captions.slice(-8);
+        for(const line of visible){
+          const block=node('div','vp3-phone-caption-turn');
+          block.append(node('strong',null,line.side==='local_audio'?'Your audio':'Caller audio'),node('p',null,line.text));
+          list.append(block);
+        }
+        panel.append(list);
+      }
       panel.append(node('p','vp3-phone-meta',session.mode==='both'?'Both audio sides · labels describe tracks, not verified people':'Caller audio only'));
       if(session.skipped)panel.append(node('p','vp3-phone-meta',session.skipped+' audio segments skipped while processing.'));
       if(session.assist){
@@ -1746,7 +1766,14 @@
     const accepted=()=>{if(!matches()){stopCall(call);return;}entry.phase='active';entry.prepared=false;recordThisCall=false;ownStream(entry);localStates.set(entry.info.public_id,'active');say('Call connected.');render();signalCallState();void refresh();};
     call.on('accept',accepted);
     call.on('ringing',()=>{if(matches()){entry.phase='ringing';render();}});
-    call.on('mute',muted=>{if(muted&&matches()&&entry.captionSession?.voiceTurn)takeOverVoice(entry,'AI voice stopped when the call was muted.');});
+    call.on('mute',muted=>{
+      if(!muted||!matches())return;
+      if(entry.captionSession?.voiceTurn)takeOverVoice(entry,'AI voice stopped when the call was muted.');
+      else if(entry.captionSession?.mode==='both'){
+        stopRemoteCaptions(entry,'Both-sided captions stopped when you muted your audio.');
+        render();
+      }
+    });
     for(const event of ['disconnect','cancel','reject','error'])call.on(event,()=>{if(active===entry){localStates.set(entry.info.public_id,event==='error'?'failed':'ended');active=null;releaseEntry(entry);callBusy=false;say(event==='error'?'The call ended with a connection problem.':'Call ended.');render();signalCallState();void refresh();}else if(!sessionCurrent(entry.session))stopCall(call);});
     if(call.status?.()==='open')accepted();
   }
