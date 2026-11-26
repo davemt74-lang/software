@@ -286,7 +286,7 @@ try{
   await page.locator('#phone-tab-agent').click();await card(id(1)).waitFor();assert.equal(await page.locator('.phone-agent-native-frame').count(),0,'Returning from a cleanly closed native view shows results, not a released blank composer.');
   await agent().getByRole('button',{name:'Review email for this call',exact:true}).click();await nativeFrame().getByLabel('Message',{exact:true}).waitFor();
   assert.equal(new URL(await page.locator('.phone-agent-native-frame').getAttribute('src')).searchParams.get('item_ref'),id(1),'The call banner opens its exact current email item.');
-  emailCall={...emailCall,revision:3,state:'ended',reason:'completed'};emailActiveCall=null;await wake();await agent().getByText('Email call ended',{exact:true}).waitFor();
+  emailCall={...emailCall,revision:3,state:'ended',reason:'completed'};emailActiveCall=null;await wake();await agent().locator('[data-email-call-detail]').filter({hasText:/^Email call ended$/}).waitFor();
   await nativeFrame().getByLabel('Message',{exact:true}).fill(original+'\nSaved on the phone.');await back().click();
   await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await card(id(1)).waitFor();assert.match(draft.body,/Saved on the phone/);assert.equal(emailRequests.filter(input=>input.action==='confirm').length,0);
   const savedBeforeDenial=draft.body;await card(id(1)).getByRole('button',{name:'Review email'}).click();await nativeFrame().getByLabel('Message',{exact:true}).fill('These unsaved edits must clear when access is lost.');await back().click();
