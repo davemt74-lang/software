@@ -161,11 +161,11 @@ Operator scheduled call occurrences
   rehearsal. It does not reserve a call or submit anything to Twilio.
   After running upgrade.php, configure the Cloud scheduler to run the CLI worker each minute:
       * * * * * php /full/path/to/vp3/phone-operator-schedule-worker.php
-  Only explicitly assigned Calendar call series are considered. Open Phone > Contacts >
+  The default command considers explicitly assigned Calendar call series. Open Phone > Contacts >
   Scheduled calls to see the last occurrence and its preparation status. Prepared means
   the scheduled time arrived and the preliminary line and recipient checks passed.
   The default command prepares calls and delivers outcomes to the original Agent Chat.
-  To place scheduled calls when the browser is closed, add --dispatch to that same cron
+  To place scheduled or agent-initiated calls with the browser closed, add --dispatch to that cron
   command after configuring the assigned Twilio line, public HTTPS callbacks, recording
   worker and the owner and recipient permissions. Remove --dispatch to stop new submissions.
   In Agent Chat, open ddd and inspect Operator > Scheduled call worker. Check the last
@@ -173,6 +173,12 @@ Operator scheduled call occurrences
   calls undialed. A preview leaves this status untouched. Older runs can show mode unknown.
   The recipient hears the recording and transcription disclosure and chooses whether to
   continue. An uncertain carrier receipt counts as an error and retains its reservation.
+  In a saved private Chat, open Phone > Contacts > Edit > Call agenda. Save the topics
+  and exact questions for this contact. Select the missed-call option if Operator
+  should look for a missed one-time call in this Chat. Enable initiation to let the
+  worker consider the agenda. The linked phone holder must allow spontaneous calls.
+  The worker defers during quiet hours or when Calendar, the phone line or call limits
+  block the call. A repeated worker run cannot dial again for the same saved agenda.
   When the connected-phone holder has enabled call memory, the Agent may receive up to
   four saved turns from earlier calls in the same Calendar series, contact, private Chat
   and Agent scope. Changing that memory grant while a reply is being generated discards

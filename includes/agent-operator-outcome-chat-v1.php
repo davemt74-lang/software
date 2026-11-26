@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/phone-workspace-v1.php';
 require_once __DIR__.'/section12-data.php';
+require_once __DIR__.'/user-calendar-v1300.php';
 
 /** Close prepared calls that waited past their dialing window. */
 function vp3_operator_expire_prepared_v1(PDO $pdo,int $now,int $limit=40):int
@@ -45,7 +46,7 @@ function vp3_operator_outcome_chat_tick_v1(PDO $pdo,int $now,int $limit=40):arra
                 $row=$q->fetch(PDO::FETCH_ASSOC);
                 if(!$row)return null;
                 $scope=vp3_phone_workspace_scope_v1($pdo,['id'=>$owner],['conversation_id'=>$row['conversation_id'],'agent_id'=>$row['chat_agent_id']]);
-                $labels=['dispatch_window_expired'=>'The scheduled call window ended before dialing.',
+                $labels=['dispatch_window_expired'=>'The call window ended before dialing.',
                     'answer_consented'=>'The recipient agreed to a recorded and transcribed conversation.',
                     'conversation_completed'=>'The recipient ended the conversation by voice.',
                     'conversation_silent'=>'The call ended while the agent was waiting for a spoken response.',
@@ -58,11 +59,14 @@ function vp3_operator_outcome_chat_tick_v1(PDO $pdo,int $now,int $limit=40):arra
                     'carrier_busy'=>'The recipient’s line was busy.','carrier_failed'=>'The carrier could not connect the call.',
                     'carrier_no_answer'=>'The call went unanswered.','carrier_canceled'=>'The call was canceled.',
                     'ended_before_consent'=>'The call ended before the recipient confirmed.'];
-                $label=$labels[$row['reason']]??'The scheduled call ended.';
+                $label=$labels[$row['reason']]??'The call ended.';
                 $contact=$pdo->prepare('SELECT name FROM crm_contacts WHERE owner_user_id=? AND id=?');
                 $contact->execute([$owner,$row['contact_id']]);
                 $name=trim(preg_replace("/[^\p{L}\p{M}\p{N} .’'-]+/u",' ',(string)$contact->fetchColumn())??'');
-                $title=$name===''?'Scheduled phone call':'Scheduled phone call with '.mb_substr($name,0,120);
+                $event=user_calendar_event_v1300($pdo,$owner,$key[1]);
+                $proactive=$event&&$event['source']==='agent'&&str_starts_with((string)$event['source_reference'],'operator-outreach:');
+                $title=$proactive?'Operator-initiated phone call':'Scheduled phone call';
+                if($name!=='')$title.=' with '.mb_substr($name,0,120);
                 $text=$title.' · '.gmdate('Y-m-d H:i \U\T\C',$key[2])."\n".$label;
                 $receipt='scheduled:'.$key[1].':'.$key[2];
                 vp3_phone_workspace_delivery_v1($pdo,['owner_user_id'=>$owner,'conversation_id'=>$scope['conversation_id'],

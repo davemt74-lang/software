@@ -156,6 +156,24 @@ function contactFixture(testOptions={}){
 }
 async function openContacts(b){await flush();await b.window.VP3PhoneWorkspaceV1.refresh();b.toggle.click();b.findButton('Contacts').click();}
 function setPhoneField(b,key,value,event='input'){const field=b.field(key);assert.ok(field,'Field '+key+' exists');field.value=value;field.emit(event);return b.field(key);}
+await test('Contact call agenda preserves questions and requires an explicit switch to initiate calls',async()=>{
+ const agenda={revision:0,topics:'',questions:'',enabled:false,review_missed:false,number_id:0};
+ const b=contactFixture({respond:({body,contact,reply})=>{
+   if(body.action==='phone_contact_detail')return reply({contact,agenda,editable:true,schedules:{available:true,execution_enabled:false,items:[]}});
+   if(body.action==='save_operator_agenda')return reply({agenda:{...body,revision:1}});
+ }});
+ await openContacts(b);b.findButton('Edit').click();await flush();b.findButton('Call agenda').click();
+ setPhoneField(b,'agenda-questions','Can we confirm Friday?');setPhoneField(b,'agenda-topics','Launch date');
+ assert.equal(b.field('agenda-enabled').checked,false);
+ b.field('agenda-review_missed').checked=true;b.field('agenda-review_missed').emit('change');
+ await b.window.VP3PhoneWorkspaceV1.refresh();
+ assert.equal(b.field('agenda-questions').value,'Can we confirm Friday?');
+ b.document.querySelector('.vp3-phone-agenda-form').emit('submit');await flush();
+ const post=b.calls.find(item=>item.action==='save_operator_agenda');
+ assert.equal(post.enabled,false);assert.equal(post.contact_id,7);assert.equal(post.questions,'Can we confirm Friday?');assert.equal(post.review_missed,true);
+ assert.equal(b.facts.connects,0);b.findButton('Call agenda').click();assert.equal(b.field('agenda-topics').value,'Launch date');
+ b.window.VP3PhoneWorkspaceV1.dispose();
+});
 await test('Contacts add saves personal fields once and keeps drafts and focus across polling',async()=>{
  const gate=deferred(),b=contactFixture({saveGate:gate});await openContacts(b);b.findButton('+ Contact').click();
  for(const [key,value] of [['name','New <script> contact'],['phone','+16025550812'],['email','ada@example.test'],['relationship','Family'],['notes','Owner private <img src=x>\nCall about the project.']])setPhoneField(b,'contact-detail-'+key,value);

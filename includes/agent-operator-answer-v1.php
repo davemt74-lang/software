@@ -77,7 +77,7 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         if(($form['From']??null)!==$current['fields']['From']||($form['To']??null)!==$current['fields']['To'])return $hangup;
         if($event!=='confirm'){
             if($row['reason']==='carrier_submitted')$save('answer_prompted');
-            return '<Response><Say>This is the VP3 AI phone agent calling for your scheduled conversation. '.
+            return '<Response><Say>This is the VP3 AI phone agent calling for '.(isset($current['opening'])?'a check-in':'your scheduled conversation').'. '.
                 'With your permission, this conversation will be recorded and transcribed.</Say>'.
                 '<Gather input="dtmf speech" numDigits="1" speechTimeout="auto" timeout="8" actionOnEmptyResult="true" method="POST" action="'.
                 vp3_phone_browser_xml_v1($url('confirm')).'"><Say>To continue, say I agree or press 1. To decline, say no or hang up.</Say></Gather><Hangup/></Response>';
@@ -92,7 +92,7 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         }
         $save('answer_consented');
         $startRecording=true;
-        return vp3_operator_conversation_gather_v1('Thank you. How can I help with today’s scheduled conversation?',1);
+        return vp3_operator_conversation_gather_v1('Thank you. '.($current['opening']??'How can I help with today’s scheduled conversation?'),1);
     });
     if($startRecording){
         $recording=vp3_operator_recording_start_v1($pdo,(int)$owner,$sid,$now,$recordingCarrier);

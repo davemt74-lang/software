@@ -10,7 +10,7 @@ const VP3_OPERATOR_CALL_PURPOSES_V1=[
     'requested_check_in'=>'Recipient-requested check-in',
 ];
 
-/** This release has no callable autonomous executor, not even for passed preflight. */
+/** The interactive readiness preview cannot dispatch an outbound call. */
 function vp3_operator_admission_execution_enabled_v1(): bool {return false;}
 
 function vp3_operator_admission_context_v1(PDO $pdo,array $scope,array $input,bool $lock=false): array
@@ -178,8 +178,8 @@ function vp3_operator_admission_projection_v1(PDO $pdo,array $scope,array $bound
         $add('cloud_calendar',$free?'pass':'blocked','Owner Cloud Calendar, recurring events and available booking projection only.');
     }catch(Throwable){$add('cloud_calendar','unverified','Cloud Calendar availability could not be confirmed.');}
     $localPass=!array_filter($gates,static fn(array $gate):bool=>$gate['status']!=='pass');
-    $add('recipient_verification','unverified','Independent recipient agreement and applicable calling/recording requirements are not verified by this release.');
-    $add('spend_and_dispatch','off','No autonomous carrier transport, paid reservation or call execution exists in this release.');
+    $add('recipient_verification','unverified','At execution the worker checks the linked recipient’s permission for the selected call mode.');
+    $add('spend_and_dispatch','off','This preview places no call. The Cloud dispatch worker checks the call agenda or assigned schedule, phone route, calling hours and current permissions.');
     return ['contact_id'=>(int)$bound['contact']['id'],'number_id'=>(int)$bound['line']['id'],'policy_revision'=>(int)$bound['policy']['revision'],
         'consent_revision'=>(int)($row['revision']??0),'consent_state'=>$consent,'purpose'=>$row['purpose']??'',
         'attested_at'=>$row?gmdate(DATE_ATOM,(int)$row['attested_epoch']):null,'expires_at'=>$row?gmdate(DATE_ATOM,(int)$row['expires_epoch']):null,
