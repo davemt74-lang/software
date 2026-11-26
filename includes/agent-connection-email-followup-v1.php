@@ -557,6 +557,15 @@ function agent_connection_email_followup_deliver_v1(PDO $pdo, array $watch, stri
         $pdo->prepare("UPDATE agent_connection_email_followups_v1 SET status='delivered',claim_key=NULL,next_check_at=NULL,reply_message_id=?,reply_chat_message_id=?
             WHERE owner_user_id=? AND operation_key=? AND claim_key=?")
             ->execute([$providerId,$messageId,$owner,$watch['operation_key'],$claim]);
+        require_once __DIR__.'/agent-email-followthrough-v1.php';
+        if (agent_email_followthrough_ready_v1($pdo)) {
+            $deadline=agent_email_followthrough_for_watch_v1($pdo,$watch,true);
+            if ($deadline && !$deadline['paused'] && $deadline['outcome']!=='resolved') {
+                $pdo->prepare("UPDATE agent_email_followthrough_v1 SET state_version=state_version+1,outcome='replied',check_state='verified',check_result='reply',checked_at=?,
+                    reply_message_id=?,reply_chat_message_id=?,updated_at=? WHERE id=? AND revision=?")
+                    ->execute([$now,$providerId,$messageId,$now,$deadline['id'],$deadline['revision']]);
+            }
+        }
         if (!$senderWatch && $inbox !== null) {
             agent_connection_gmail_inbox_project_matter_receipt_v1($pdo,static fn() =>
                 agent_email_matters_note_watched_reply_v1($pdo,$inbox,$watch,$reply));
@@ -601,8 +610,18 @@ function agent_connection_email_followup_sweep_v1(PDO $pdo, int $limit=5, ?calla
                 $messages = agent_connection_gmail_search_sender_v1($grant['access_token'],$watch['recipient_email'],10,$http,$after);
                 $reply = $messages[0] ?? null;
             } else {
-                $messages = agent_connection_gmail_thread_v1($grant['access_token'],$watch['thread_id'],$http);
-                $reply = agent_connection_email_followup_match_v1($watch,$messages);
+                require_once __DIR__.'/agent-email-followthrough-v1.php';
+                $deadline=agent_email_followthrough_for_watch_v1($pdo,$watch);
+                if ($deadline && ($deadline['paused'] || $deadline['outcome']==='resolved')) {
+                    agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,null);
+                    continue;
+                }
+                $messages = agent_connection_gmail_thread_v1($grant['access_token'],$watch['thread_id'],$http,$deadline!==null);
+                if ($deadline!==null) {
+                    $evidence=agent_email_followthrough_evidence_v1($watch,$messages);
+                    agent_email_followthrough_observe_v1($pdo,$watch,$claim,$evidence,$http);
+                    $reply=$evidence['result']==='reply'?$evidence['reply']:null;
+                } else $reply = agent_connection_email_followup_match_v1($watch,$messages);
             }
             if ($reply === null) {
                 agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,300);
@@ -610,6 +629,10 @@ function agent_connection_email_followup_sweep_v1(PDO $pdo, int $limit=5, ?calla
                 $counts['delivered']++;
             }
         } catch (Throwable $error) {
+            if (function_exists('agent_email_followthrough_observe_v1') && ($watch['sender_after_ms']??null)===null) {
+                try {agent_email_followthrough_observe_v1($pdo,$watch,$claim,['state'=>'unavailable','result'=>null,'digest'=>null],$http);}
+                catch (Throwable $ignored) {}
+            }
             agent_connection_email_followup_reschedule_v1($pdo,$watch,$claim,$error->getCode()===404?null:900);
             if (function_exists('agent_runtime_v125_trace')) {
                 agent_runtime_v125_trace('worker.email_followup.poll_failed',['error_class'=>get_class($error)]);

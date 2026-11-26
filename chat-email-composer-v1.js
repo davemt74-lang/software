@@ -61,7 +61,9 @@
   }
   const scopeKey = value => value ? owner+':'+value.agent_id+':'+value.conversation_id : '';
   const current = state => active === state && scopeKey(state.scope) === scopeKey(scope()) && state.shell.isConnected;
-  const valuesKey = values => JSON.stringify([values.to,values.subject,values.body,values.attachments.map(asset => asset.asset_id)]);
+  const followthrough = () => window.VP3EmailFollowthroughV1;
+  const followPolicy = value => followthrough()?.policy ? followthrough().policy(value) : null;
+  const valuesKey = values => JSON.stringify([values.to,values.subject,values.body,values.attachments.map(asset => asset.asset_id),values.followthrough || null]);
   const dirty = state => state.draft && valuesKey(state.values) !== state.saved;
   const memoryKey = state => scopeKey(state.scope)+':'+state.draft?.id;
   const shortText = (value,limit = 500) => typeof value === 'string' ? value.trim().slice(0,limit) : '';
@@ -122,6 +124,10 @@
       || value.to.length > 320 || value.subject.length > 1000 || value.body.length > 30000) throw new Error('The saved email could not be verified.');
     const attachments = (value.attachments || []).map(asset);
     if (attachments.some(value => !value) || attachments.length > 5) throw new Error('The email attachments could not be verified.');
+    if (value.followthrough !== undefined) {
+      if (!followthrough()?.policy) throw new Error('Response deadline controls are unavailable. Reload Chat before editing this email.');
+      followPolicy(value.followthrough);
+    }
     return {...value,attachments};
   }
   function checkedGeneration(value) {
@@ -160,7 +166,9 @@
     state.save.disabled = Boolean(busy || locked || state.imageWorking);
     const complete = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(state.values?.to.trim() || '')
       && Boolean(state.values?.subject.trim() || draft?.is_reply) && Boolean(state.values?.body.trim());
-    state.send.disabled = Boolean(busy || locked || !complete || state.sendUncertain || state.imageWorking || state.imageReview);
+    const verifyEditedSnapshot = draft?.status === 'prepared' && draft?.is_followup !== true && dirty(state);
+    state.send.disabled = Boolean(busy || locked || !complete || draft?.can_send === false && !verifyEditedSnapshot || draft?.followthrough_unavailable
+      || state.sendUncertain || state.imageWorking || state.imageReview);
     state.generate.disabled = Boolean(busy || locked || state.imageWorking || !state.instruction.value.trim());
     state.imageCreate.disabled = Boolean(busy || locked || state.imageWorking || state.imagePrompt.value.trim().length < 3);
     state.imagePrompt.disabled = Boolean(busy || locked || state.imageWorking || state.imageReview);
@@ -172,8 +180,13 @@
     state.imageRetry.disabled = Boolean(state.busy || state.checkingImage);
     state.generate.textContent = state.values?.body.trim() ? 'Revise with Agent' : 'Draft with Agent';
     state.changed.textContent = dirty(state) ? 'Unsaved changes' : draft ? 'Saved in this Chat' : '';
-    state.watch.disabled = Boolean(busy || locked || !draft?.watch_review_token);
-    state.watchLabel.hidden = !draft?.watch_review_token;
+    const following = state.values?.followthrough?.enabled === true;
+    state.watch.disabled = Boolean(busy || locked || !draft?.watch_review_token || following);
+    state.watchLabel.hidden = !draft?.watch_review_token || following;
+    if (state.followSettings) {
+      state.followSettings.root.hidden = draft?.status === 'sent' || draft?.is_followup === true || !draft?.watch_review_token && !following;
+      state.followSettings.setDisabled(busy || locked || draft?.is_followup === true || !draft?.watch_review_token);
+    }
     state.refresh.hidden = !draft;
     state.refresh.disabled = Boolean(busy);
     state.discard.disabled = Boolean(busy || !draft || !['prepared','write_failed','write_queued','stale','source_check','answered','failed','expired'].includes(draft.status));
@@ -193,7 +206,7 @@
     state.shell.setAttribute('aria-busy',String(Boolean(state.busy)));
   }
   function valuesFromDraft(draft) {
-    return {to:draft.to,subject:draft.subject,body:draft.body,attachments:[...draft.attachments]};
+    return {to:draft.to,subject:draft.subject,body:draft.body,attachments:[...draft.attachments],followthrough:followPolicy(draft.followthrough)};
   }
   function sameSavedVersion(state,draft) {
     if (!state.draft || draft.id !== state.draft.id || draft.from !== state.draft.from || draft.is_reply !== state.draft.is_reply
@@ -301,9 +314,10 @@
     state.saved = valuesKey(state.values);
     state.to.value = draft.to;state.subject.value = draft.subject;state.body.value = draft.body;
     state.from.textContent = draft.from || 'Connected Gmail account';
-    state.title.textContent = draft.is_reply ? 'Reply email' : 'Compose email';
+    state.title.textContent = draft.is_followup ? 'Follow-up email' : draft.is_reply ? 'Reply email' : 'Compose email';
     state.editor.hidden = false;state.list.hidden = true;
     state.watch.checked = Boolean(draft.watch_requested);
+    state.followSettings?.update(state.values.followthrough);
     const messages = {
       prepared:'',write_queued:'The Agent is preparing your draft…',writing:'The Agent is writing your email…',
       write_failed:'The Agent could not finish writing. Your saved text is kept; edit it or retry.',
@@ -315,10 +329,23 @@
       discarded:'Draft discarded.',expired:'This proposal expired. You can review its original email or discard it.'
     };
     state.notice.textContent = draft.connection_changed ? 'Gmail access changed. Check Connections before editing or sending.'
+      : draft.followthrough_unavailable ? 'This follow-up changed or paused. Check its response deadline and Gmail thread before sending.'
       : message || messages[draft.status] || '';
     state.latestMessage.replaceChildren();state.latestMessage.hidden = !draft.latest_reply?.excerpt;
     if (draft.latest_reply?.excerpt) state.latestMessage.append(node('summary','Latest Gmail message'),
       node('strong',draft.latest_reply.subject || ''),node('p',draft.latest_reply.excerpt));
+    state.followRecord?.dispose();state.followRecord = null;state.followRecordHost.hidden = true;
+    if (draft.followthrough_record && followthrough()?.mount && !draft.connection_changed) {
+      state.followRecordHost.hidden = false;
+      state.followRecord = followthrough().mount(state.followRecordHost,draft.followthrough_record,{
+        context:{owner_key:owner,...state.scope},isCurrent:() => current(state) && state.draft === draft,
+        onChange:item => { if (current(state)) state.draft.followthrough_record = item; },
+        openDraft:target => navigate(state,() => void openDraft(target,{surface:state.surface,replace:true})),
+        openReply:(target,trigger) => navigate(state,() => {
+          if (!current(state) || typeof window.VP3EmailFollowup?.open !== 'function') return;
+          const context = {owner_key:owner,...state.scope,...target};release(state,{rememberEdits:false});window.VP3EmailFollowup.open(context,trigger);
+        })});
+    }
     renderSource(state,draft);renderAttachments(state);resizeBody(state.body);controls(state);
   }
   async function api(state,action,input = {},{media = false,signal} = {}) {
@@ -355,7 +382,9 @@
     if (current(state) && error.name !== 'AbortError') setNotice(state,error.message || fallback || 'The request failed. Your text is kept.');
   }
   async function saveSnapshot(state) {
+    if (state.followSettings) state.values.followthrough = state.followSettings.validate();
     const fields = {to:state.values.to,subject:state.values.subject,body:state.values.body,attachment_ids:state.values.attachments.map(item => item.asset_id)};
+    if (state.values.followthrough) fields.followthrough = state.values.followthrough;
     const save = () => api(state,'compose_save',{draft_id:state.draft.id,review_token:state.draft.review_token,...fields});
     let result;
     try { result = await save(); }
@@ -383,13 +412,14 @@
   }
   async function send(state) {
     if (!current(state) || state.send.disabled || state.busy) return;
-    state.busy = true;const watch = state.watch.checked;controls(state);
+    state.busy = true;const watch = state.watch.checked || state.values.followthrough?.enabled === true;controls(state);
     let dispatched = false;
     try {
       setNotice(state,'Saving the exact email you reviewed…');
       await saveSnapshot(state);
       const token = watch ? state.draft.watch_review_token : state.draft.review_token;
-      if (!token || state.draft.can_send === false) throw new Error('Complete the recipient, subject and message before sending.');
+      if (state.draft.can_send === false || state.draft.followthrough_unavailable) throw new Error('This saved email cannot be sent yet. Review its current status before sending.');
+      if (!token) throw new Error('Complete the recipient, subject and message before sending.');
       setNotice(state,'Sending your reviewed email…');dispatched = true;
       const result = await api(state,'confirm',{draft_id:state.draft.id,review_token:token,confirmed:true,watch_replies:watch});
       state.sendUncertain = false;adopt(state,result.draft);
@@ -417,7 +447,7 @@
       let result = await api(state,'review',{draft_id:state.draft.id});
       adopt(state,result.draft);
       if (state.draft.status === 'sending' && !state.draft.connection_changed) {
-        const watch = Boolean(state.draft.watch_requested);
+        const watch = Boolean(state.draft.watch_requested || state.draft.followthrough?.enabled);
         const token = watch ? state.draft.watch_review_token : state.draft.review_token;
         if (token) {
           result = await api(state,'confirm',{draft_id:state.draft.id,confirmed:true,review_token:token,watch_replies:watch});
@@ -504,6 +534,7 @@
     if (rememberEdits || state.imageJob || state.imageReview) remember(state,{savedOnly:!rememberEdits});
     else if (state.draft) retained.delete(memoryKey(state));
     active = null;
+    state.followRecord?.dispose();state.followRecord = null;
     state.controller.abort();clearTimeout(state.writeTimer);clearTimeout(state.imageTimer);
     state.shell.remove();canvas.hidden = true;
     if (popup.open) popup.close();
@@ -683,7 +714,7 @@
   }
   function buildState(currentScope,surface) {
     const state = {scope:currentScope,surface,controller:new AbortController(),busy:false,uploading:false,imageWorking:false,
-      draft:null,values:{to:'',subject:'',body:'',attachments:[]},saved:'',scrollTop:thread.scrollTop,returnFocus:document.activeElement};
+      draft:null,values:{to:'',subject:'',body:'',attachments:[],followthrough:followPolicy()},saved:'',scrollTop:thread.scrollTop,returnFocus:document.activeElement};
     const shell = state.shell = node('section','','vp3-email-compose');
     shell.setAttribute('aria-labelledby','vp3EmailComposeTitle');
     const header = node('header','','vp3-email-compose-header');
@@ -700,6 +731,7 @@
     state.notice = node('p','Opening Gmail…','vp3-email-compose-notice');state.notice.setAttribute('role','status');state.notice.setAttribute('aria-live','polite');
     state.leave = node('section','','vp3-email-compose-leave');state.leave.hidden = true;state.leave.setAttribute('role','alert');
     state.conflict = node('section','','vp3-email-compose-leave');state.conflict.hidden = true;state.conflict.setAttribute('role','alert');
+    state.followRecordHost = node('div','','vp3-email-compose-followthrough');state.followRecordHost.hidden = true;
     const editor = state.editor = node('div','','vp3-email-compose-editor');editor.hidden = true;
     const from = node('p','','vp3-email-compose-from');from.append(node('strong','From '),state.from = node('span'));
     state.to = node('input');state.to.type = 'email';state.to.maxLength = 254;state.to.autocomplete = 'email';state.to.placeholder = 'name@example.com';
@@ -768,6 +800,10 @@
     state.instruction.addEventListener('input',() => { resizeBody(state.instruction);controls(state); });
     agentTools.append(field('Instructions',state.instruction),state.generate,node('small','The Agent saves a draft for your review. Sending remains your choice.'));
     editor.append(agentTools);
+    if (followthrough()?.settings) {
+      state.followSettings = followthrough().settings(undefined,{onChange:value => { if (current(state)) { state.values.followthrough = value;controls(state); } }});
+      editor.append(state.followSettings.root);
+    }
     state.watch = node('input');state.watch.type = 'checkbox';
     state.watchLabel = node('label','','vp3-email-compose-watch');state.watchLabel.append(state.watch,node('span','Watch for the first reply for 30 days'));editor.append(state.watchLabel);
     const actions = node('footer','','vp3-email-compose-actions');
@@ -782,7 +818,7 @@
     const secondary = node('div','','vp3-email-compose-secondary');secondary.append(state.retry,state.latest,state.checkSend,state.refresh,state.discard);
     actions.append(state.changed,state.save,state.send);editor.append(secondary,actions);
     state.list = node('section','','vp3-email-compose-list');state.list.hidden = true;
-    shell.append(header,state.notice,state.leave,state.conflict,editor,state.list);
+    shell.append(header,state.notice,state.leave,state.conflict,state.followRecordHost,editor,state.list);
     return state;
   }
   async function start(options = {}) {
@@ -838,6 +874,7 @@
         const matches = sameSavedVersion({draft:saved.draft,saved:saved.saved},draft);
         state.values = saved.values;state.saved = saved.saved;
         state.to.value = saved.values.to;state.subject.value = saved.values.subject;state.body.value = saved.values.body;
+        state.followSettings?.update(saved.values.followthrough);
         state.instruction.value = saved.instruction;state.imagePrompt.value = saved.imagePrompt;state.imageSize.value = saved.imageSize;
         state.imageJob = saved.imageJob;state.imageReview = saved.imageReview;
         state.notice.textContent = 'Your unsaved edits are restored. Save draft to keep them.';
@@ -897,8 +934,8 @@
     if (reason) content.append(node('p',reason,'vp3-email-compose-draft-reason'));
     if (shortText(item.blocked_reason)) content.append(node('p',blockedLabels[item.blocked_reason] || 'Review this draft’s status before continuing.','vp3-email-compose-draft-blocked'));
     const facts = node('div','','vp3-email-compose-draft-facts');
-    const kind = item.source?.kind === 'organic_reply' ? 'Agent prepared' : '';
-    if (!unavailable) facts.append(node('small',[item.is_reply ? 'Reply' : 'New email',kind].filter(Boolean).join(' · ')));
+    const kind = ['organic_reply','outbound_followup'].includes(item.source?.kind) ? 'Agent prepared' : '';
+    if (!unavailable) facts.append(node('small',[item.source?.kind === 'outbound_followup' ? 'Follow-up' : item.is_reply ? 'Reply' : 'New email',kind].filter(Boolean).join(' · ')));
     const deadline = displayTime(item.source?.deadline);
     if (deadline) facts.append(node('small','Due '+deadline,'vp3-email-compose-deadline'));
     const age = displayAge(item.age_seconds);
@@ -1002,6 +1039,9 @@
     const command = requested.replace(/^(?:(?:please\s+)|(?:(?:can|could|would) you\s+))+/iu,'').replace(/[.!?]+$/u,'').trim();
     if (/^(?:show|open|list|view|review)(?: me)?(?: my| the)?(?: gmail| email)? (?:drafts|draft queue|needs review(?: queue)?)$/iu.test(command))
       return Object.freeze({kind:'queue',requested});
+    if (/^(?:show|open|list|view)(?: me)?(?: my| the)?(?: gmail| email)? follow[ -]?ups$/iu.test(command)
+      || /^(?:show|open|list|view)(?: me)?(?: my| the)? overdue (?:gmail )?(?:emails?|mail|messages?)$/iu.test(command))
+      return Object.freeze({kind:'sent',section:'followups',requested});
     if (/^(?:show|open|list|view)(?: me)?(?: my| the)?(?: gmail)? sent (?:emails?|mail|messages?)$/iu.test(command))
       return Object.freeze({kind:'sent',requested});
     const selection = selectedDraft();
@@ -1046,7 +1086,8 @@
       }
       const ok = await open();
       return {handled:true,ok,message:match.kind === 'sent'
-        ? ok ? 'Opened Gmail Sent.' : 'Gmail Sent could not be opened. Your instruction is kept.'
+        ? ok ? match.section === 'followups' ? 'Opened follow-ups in Gmail Sent for this Chat.' : 'Opened Gmail Sent.'
+          : 'Gmail Sent could not be opened. Your instruction is kept.'
         : ok ? 'Opened the Gmail draft review queue.' : 'The draft review queue could not be opened. Your instruction is kept.'};
     }
     if (!sameSelection(match.selection)) return rejected('The selected draft changed. Review its current version, then repeat your instruction.');

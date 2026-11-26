@@ -204,7 +204,7 @@ function agent_connection_gmail_inbox_background_view_v1(
         require_once __DIR__.'/agent-email-matters-v1.php';
         if (agent_email_matters_ready_v1($pdo)) {
             $view['scan'] = agent_email_matters_scan_status_v1($pdo,$scope);
-            $view['matters'] = agent_email_matters_summary_v1($pdo,$scope,3);
+            $view['matters'] = agent_email_matters_summary_v1($pdo,$scope+['agent_id'=>$agentId],3);
         }
         if (agent_connection_gmail_inbox_triage_enabled_v1($pdo,$policy)) {
             $view['triage'] = ['generation'=>$scope['generation']]+agent_email_triage_summary_v1($pdo,$scope);

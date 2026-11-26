@@ -201,6 +201,15 @@ $GLOBALS['plan']=$cloud;
 rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-plan.v1',true,$deny),
     'a stopped live source cannot start Cloud inference');
 check_model($GLOBALS['cloudCalls']===[],'Cloud source refusal occurs before provider invocation');
+$GLOBALS['plan']=$auto;$GLOBALS['homeFailure']=true;$guardCalls=0;
+$homeBefore=count($GLOBALS['homeCalls']);$cloudBefore=count($GLOBALS['cloudCalls']);
+$singleGuard=static function()use(&$guardCalls):void{++$guardCalls;};
+rejects_model(fn()=>vp3_initiative_infer_v1($pdo,$user,17,'{}','vp3.initiative-draft.v1',true,
+    $singleGuard,['background'=>true,'gmail_followthrough_draft'=>true]),
+    'an uncertain HomeServer email follow-up dispatch does not fall back to Cloud');
+check_model($guardCalls===1&&count($GLOBALS['homeCalls'])===$homeBefore+1&&count($GLOBALS['cloudCalls'])===$cloudBefore,
+    'the same automatic follow-up claim permits only one model transport dispatch');
+$GLOBALS['homeCalls']=[];
 $GLOBALS['plan']=array_replace_recursive($home,['effective_preference'=>'auto','allow_vp3_fallback'=>true,
     'homeserver_cloud_allowed'=>true,'cloud'=>['ready'=>true]]);
 $GLOBALS['homeFailure']=true;$guardCalls=0;
