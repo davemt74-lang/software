@@ -1373,7 +1373,7 @@
   function operatorLimitField(parent,labelText,choices,value,changed,key){
     const label=node('label','vp3-phone-field',labelText),select=node('select');select.setAttribute('aria-label',labelText);select.dataset.phoneFocusKey=key;
     for(const [amount,title] of choices){const option=node('option',null,title);option.value=String(amount);select.append(option);}
-    select.value=String(value);select.addEventListener('change',event=>{if(event.isTrusted)changed(Number(select.value));});label.append(select);parent.append(label);
+    select.value=String(value);select.addEventListener('change',()=>changed(Number(select.value)));label.append(select);parent.append(label);
   }
   function renderParticipation(panel,entry,session){
     const controller=session.participation;
