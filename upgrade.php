@@ -314,6 +314,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_recording_schema_ready_v1($schemaConnection)
         && vp3_phone_voicemail_ready_v1($schemaConnection)
         && vp3_operator_auto_call_schema_ready_v1($schemaConnection)
+        && schema_metadata_table_exists($schemaConnection,'phone_operator_agendas_v1')
+        && schema_metadata_table_exists($schemaConnection,'phone_operator_outreach_uses_v1')
         && vp3_operator_live_schema_ready_v1($schemaConnection)
         && VP3OperatorOwnerPhoneV1::ready($schemaConnection)
         && vp3_phone_contact_details_schema_ready_v1($schemaConnection)

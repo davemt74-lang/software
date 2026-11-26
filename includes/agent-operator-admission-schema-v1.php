@@ -25,6 +25,16 @@ function vp3_operator_admission_install_v1(PDO $pdo): void
         owner_user_id BIGINT NOT NULL,destination_hash CHAR(64) NOT NULL,withdrawn_epoch BIGINT NOT NULL,
         PRIMARY KEY(owner_user_id,destination_hash)
     )".$suffix);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS phone_operator_agendas_v1 (
+        owner_user_id BIGINT NOT NULL,contact_id BIGINT NOT NULL,conversation_id BIGINT NOT NULL,chat_agent_id BIGINT NOT NULL,
+        number_id BIGINT NOT NULL,destination_hash CHAR(64) NOT NULL,topics TEXT NOT NULL,questions TEXT NOT NULL,review_missed SMALLINT NOT NULL,
+        enabled SMALLINT NOT NULL,revision BIGINT NOT NULL,checked_epoch BIGINT NOT NULL,
+        PRIMARY KEY(owner_user_id,contact_id,conversation_id,chat_agent_id)
+    )".$suffix);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS phone_operator_outreach_uses_v1 (
+        owner_user_id BIGINT NOT NULL,contact_id BIGINT NOT NULL,reason_hash CHAR(64) NOT NULL,event_id BIGINT NOT NULL,
+        agenda_revision BIGINT NOT NULL,purpose VARCHAR(32) NOT NULL,missed_event_id BIGINT NOT NULL,PRIMARY KEY(owner_user_id,contact_id,reason_hash),UNIQUE(owner_user_id,event_id)
+    )".$suffix);
     vp3_operator_schedule_assignment_install_v1($pdo,$suffix);
     if(!vp3_operator_admission_schema_ready_v1($pdo))throw new RuntimeException('Operator readiness storage could not be installed.');
 }

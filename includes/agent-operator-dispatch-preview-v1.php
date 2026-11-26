@@ -38,8 +38,27 @@ function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now,?string $a
         ||vp3_operator_admission_policy_block_v1($pdo,$scope,$bound)!=='')return ['reason'=>'route_or_recording_changed'];
     $withdrawn=vp3_operator_recipient_opted_out_v1($pdo,$owner,$bound['destination_hash']);
     $review=vp3_operator_consent_row_v1($pdo,$scope,$bound);
+    $mode='scheduled';
+    if($event['source']==='agent'&&str_starts_with((string)$event['source_reference'],'operator-outreach:')){
+        $mode='spontaneous';
+        $q=$pdo->prepare('SELECT a.*,u.missed_event_id FROM phone_operator_outreach_uses_v1 u JOIN phone_operator_agendas_v1 a ON
+            a.owner_user_id=u.owner_user_id AND a.contact_id=u.contact_id AND a.revision=u.agenda_revision
+            WHERE u.owner_user_id=? AND u.event_id=? AND u.contact_id=? AND u.purpose=? AND a.enabled=1
+            AND a.conversation_id=? AND a.chat_agent_id=? AND a.number_id=? AND a.destination_hash=?');
+        $q->execute([$owner,$id,$contact,$review['purpose']??'',$scope['conversation_id'],$scope['agent_id'],$line['id'],$bound['destination_hash']]);
+        $agenda=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$agenda)return ['reason'=>'agenda_changed'];
+        if((int)$agenda['missed_event_id']>0){
+            require_once __DIR__.'/agent-operator-outreach-v1.php';
+            $reason=vp3_operator_outreach_reason_v1($pdo,$agenda,$review['purpose'],$now,$answeredSid);
+            if((int)($reason['missed_event_id']??0)!==(int)$agenda['missed_event_id'])return ['reason'=>'agenda_changed'];
+        }
+        $firstQuestion=strtok($agenda['questions'],"\n");
+        $firstTopic=strtok($agenda['topics'],"\n");
+        $opening=$firstQuestion?:($firstTopic?'I’m calling about '.$firstTopic.'. Is now a good time to discuss it?':'Is now a good time to follow up on our missed call?');
+    }
     if(vp3_operator_consent_state_v1($review,$bound,$withdrawn,$now)!=='owner_attested'
-        ||!vp3_operator_holder_modes_v1($pdo,$owner,$contact,$to,$now)['scheduled'])return ['reason'=>'recipient_permission'];
+        ||!vp3_operator_holder_modes_v1($pdo,$owner,$contact,$to,$now)[$mode])return ['reason'=>'recipient_permission'];
     $query=$pdo->prepare('SELECT p.* FROM vp3_phone_communication_profiles_v1 p JOIN crm_contacts c
         ON c.owner_user_id=p.owner_user_id AND c.connected_phone_id=p.device_id WHERE c.owner_user_id=? AND c.id=? AND p.phone_e164=?');
     $query->execute([$owner,$contact,$to]);
@@ -59,7 +78,7 @@ function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now,?string $a
     return ['reason'=>'eligible','fields'=>['From'=>$line['phone_e164'],'To'=>$to,'TimeLimit'=>$seconds],
         'objectives'=>$event['description'],'conversation_id'=>(int)$assignment['conversation_id'],
         'agent_id'=>(int)$assignment['agent_id'],'number_id'=>(int)$assignment['number_id'],
-        'chat_agent_id'=>(int)$assignment['chat_agent_id']];
+        'chat_agent_id'=>(int)$assignment['chat_agent_id']]+($mode==='spontaneous'?['opening'=>$opening]:[]);
 }
 
 function vp3_operator_preview_due_v1(PDO $pdo,int $now):array
