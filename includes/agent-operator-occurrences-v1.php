@@ -52,8 +52,8 @@ function vp3_operator_occurrences_tick_v1(PDO $pdo,int $now,int $limit=40): arra
                 }
                 $q=$pdo->prepare('SELECT 1 FROM phone_operator_occurrences_v1 WHERE owner_user_id=? AND event_id=? AND start_epoch=?');
                 $q->execute([$owner,$id,$due]);$exists=(bool)$q->fetchColumn();$q->closeCursor();
-                if(!$exists)$pdo->prepare('INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch) VALUES(?,?,?,?,?,?,?,?)')
-                    ->execute([$owner,$id,$due,$end,$assignment['revision'],$state,$reason,$now]);
+                if(!$exists)$pdo->prepare('INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
+                    ->execute([$owner,$id,$due,$end,$assignment['revision'],$state,$reason,$now,$assignment['contact_id'],$assignment['conversation_id'],$assignment['chat_agent_id']]);
                 $advance->execute([vp3_operator_next_occurrence_v1($event,max($end,$now)),$owner,$id]);
                 return $exists?null:$state;
             });

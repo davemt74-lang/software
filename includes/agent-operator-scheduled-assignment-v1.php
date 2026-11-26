@@ -6,7 +6,7 @@ function vp3_operator_schedule_assignment_ready_v1(PDO $pdo): bool
     try{
         $pdo->query('SELECT owner_user_id,event_id,contact_id,agent_id,number_id,conversation_id,chat_agent_id,event_revision,destination_hash,line_binding,enabled,revision FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
         $pdo->query('SELECT next_due_epoch FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
-        $pdo->query('SELECT owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch FROM phone_operator_occurrences_v1 WHERE 1=0');
+        $pdo->query('SELECT owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id FROM phone_operator_occurrences_v1 WHERE 1=0');
         return true;
     }catch(PDOException){return false;}
 }
@@ -31,6 +31,21 @@ function vp3_operator_schedule_assignment_install_v1(PDO $pdo,string $suffix): v
         assignment_revision BIGINT NOT NULL,state VARCHAR(16) NOT NULL,reason VARCHAR(48) NOT NULL,observed_epoch BIGINT NOT NULL,
         PRIMARY KEY(owner_user_id,event_id,start_epoch)
     )".$suffix);
+    // Keep the original private Chat binding after a series is reassigned or cancelled.
+    foreach(['contact_id','conversation_id','chat_agent_id'] as $column){
+        if(schema_metadata_column_exists($pdo,'phone_operator_occurrences_v1',$column))continue;
+        try{$pdo->exec("ALTER TABLE phone_operator_occurrences_v1 ADD COLUMN ".$column." BIGINT NOT NULL DEFAULT 0");}
+        catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_occurrences_v1',$column))throw $e;}
+    }
+    // Historical rows can only be attributed when the exact original assignment still exists.
+    $match='a.owner_user_id=phone_operator_occurrences_v1.owner_user_id AND a.event_id=phone_operator_occurrences_v1.event_id
+        AND a.revision=phone_operator_occurrences_v1.assignment_revision AND a.conversation_id>0';
+    $sets=[];
+    foreach(['contact_id','conversation_id','chat_agent_id'] as $column){
+        $sets[]=$column.'=(SELECT a.'.$column.' FROM phone_operator_scheduled_assignments_v1 a WHERE '.$match.')';
+    }
+    $pdo->exec('UPDATE phone_operator_occurrences_v1 SET '.implode(',',$sets).' WHERE conversation_id=0 AND EXISTS
+        (SELECT 1 FROM phone_operator_scheduled_assignments_v1 a WHERE '.$match.')');
 }
 
 /** The user explicitly assigns one Calendar series. Assignment alone cannot place a call. */
