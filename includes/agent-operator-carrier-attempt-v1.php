@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/agent-operator-dispatch-preview-v1.php';
 require_once __DIR__.'/phone-managed-transport-v1.php';
+require_once __DIR__.'/agent-operator-recording-v1.php';
 
 /** Submit one prepared occurrence through the supplied carrier adapter. No web or cron entry point enables live submission. */
 function vp3_operator_carrier_attempt_v1(PDO $pdo,int $owner,int $series,int $start,callable $carrier,?int $clock=null):string
@@ -42,7 +43,7 @@ function vp3_operator_carrier_attempt_v1(PDO $pdo,int $owner,int $series,int $st
             &&($reply['account_sid']??null)===$reserved['account']&&($reply['from']??null)===$fields['From']
             &&($reply['to']??null)===$fields['To'])$sid=$reply['sid'];
     }catch(Throwable){ /* A timeout can arrive after carrier acceptance. Keep the claim. */ }
-    return section12_owner_transaction($pdo,$owner,static function()use($pdo,$sid,$key,$where){
+    return section12_owner_transaction($pdo,$owner,static function()use($pdo,$sid,$key,$where,$reserved,$clock){
         $state=$sid===null?'uncertain':'submitted';
         $update=$pdo->prepare("UPDATE phone_operator_carrier_attempts_v1 SET state=?,provider_sid=? WHERE ".$where." AND state='submitting'");
         try{
@@ -54,6 +55,10 @@ function vp3_operator_carrier_attempt_v1(PDO $pdo,int $owner,int $series,int $st
         }
         $pdo->prepare('UPDATE phone_operator_occurrences_v1 SET state=?,reason=? WHERE '.$where." AND state='submitting'")
             ->execute([$state,'carrier_'.$state,...$key]);
+        if($state==='submitted'){
+            $attempt=vp3_operator_recording_attempt_v1($pdo,$key[0],$sid,true);
+            vp3_operator_recording_bind_call_v1($pdo,$attempt,$reserved['plan'],$clock??time());
+        }
         return $state;
     });
 }

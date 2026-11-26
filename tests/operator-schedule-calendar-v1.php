@@ -111,11 +111,20 @@ echo "PASS scheduled reservation daily cap, spacing and concurrent call exclusio
 if($scenario!=='success')return;
 $carrierForm=['AccountSid'=>vp3_phone_twilio_state_v100()['account_sid'],'CallSid'=>'CA'.str_repeat('c',32),
     'From'=>$plan['fields']['From'],'To'=>$plan['fields']['To']];
-$answer=static function(string $stage,array $values=[],?string $signature=null,?callable $generator=null)use($carrierForm,$pdo,$callTime):string{
+$recordSid='RE'.str_repeat('d',32);$recordStarts=0;
+$recordCarrier=static function(string $method,string $resource,array $fields)use(&$recordStarts,$recordSid,$carrierForm):array{
+    ++$recordStarts;
+    c($method==='POST'&&str_ends_with($resource,'/Calls/'.$carrierForm['CallSid'].'/Recordings.json')
+        &&$fields['RecordingChannels']==='dual'&&$fields['RecordingTrack']==='both'&&$fields['PlayBeep']==='true'
+        &&str_contains($fields['RecordingStatusCallback'],'event=recording'),'consent starts one dual-channel recording with an audible notice');
+    return ['sid'=>$recordSid,'account_sid'=>$carrierForm['AccountSid'],'call_sid'=>$carrierForm['CallSid'],
+        'source'=>'StartCallRecordingAPI','status'=>'in-progress','channels'=>2];
+};
+$answer=static function(string $stage,array $values=[],?string $signature=null,?callable $generator=null,?callable $recording=null)use($carrierForm,$pdo,$callTime):string{
     $payload=array_replace($carrierForm,$values);
     $url=vp3_phone_browser_callback_v1('operator_answer',['event'=>$stage]);
     $signature??=vp3_phone_sms_twilio_signature_v110($url,$payload,'carrier-auth-token-fixture');
-    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$callTime+1,$generator);
+    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$callTime+1,$generator,$recording);
 };
 $hangup=vp3_phone_browser_hangup_v1();
 foreach([['answer',[],'bad signature'],['answer',['AccountSid'=>'AC'.str_repeat('d',32)],null]] as $invalid){
@@ -127,11 +136,11 @@ c(str_contains($answer('answer',$unknown),'event=retry')&&str_contains($answer('
     &&$answer('last',$unknown)===$hangup,'early callbacks wait briefly for the committed receipt and then stop');
 c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer',['To'=>'+16025550189'])===$hangup
     &&$read()['last_occurrence']['reason']==='carrier_submitted','wrong route and out-of-order responses cannot change history');
-foreach(['agree','decline','silence','withdrawn'] as $case){
+foreach(['decline','silence','withdrawn'] as $case){
     $pdo->beginTransaction();
     try{
         $prompt=$answer('answer');
-        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'responses transcribed')&&str_contains($prompt,'event=confirm')
+        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'recorded and transcribed')&&str_contains($prompt,'event=confirm')
             &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'keypad disclosure precedes capture and keeps objectives private');
         c($answer('answer')===$prompt,'answer retry can replay the pending prompt');
         if($case==='withdrawn')$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
@@ -139,16 +148,18 @@ foreach(['agree','decline','silence','withdrawn'] as $case){
         $response=$answer('confirm',$digits);
         $reason=match($case){'agree'=>'answer_consented','decline'=>'answer_declined','silence'=>'answer_no_input',default=>'answer_permission_changed'};
         c($read()['last_occurrence']['reason']===$reason,'original private call history records '.$case);
-        c(($case==='agree'?str_contains($response,'Thank you'):$response===$hangup)&&!str_contains($response,'<Record'),'only explicit permission is acknowledged');
+        c($response===$hangup&&!str_contains($response,'<Record'),'refusal or missing current permission cannot start recording');
         c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer')===$hangup
             &&$read()['last_occurrence']['reason']===$reason,'replays cannot reopen a completed consent decision');
     }finally{$pdo->rollBack();}
 }
 echo "PASS signed scheduled answer and recipient consent, refusal, silence, withdrawal and replay\n";
 
+$answer('answer');$consented=$answer('confirm',['Digits'=>'1'],null,null,$recordCarrier);
+c(str_contains($consented,'input="speech"')&&$recordStarts===1,'explicit recipient consent starts recording before speech capture');
+c($answer('confirm',['Digits'=>'1'],null,null,$recordCarrier)===$hangup&&$recordStarts===1,'consent replay cannot start a second recording');
 $pdo->beginTransaction();
 try{
-    $answer('answer');$consented=$answer('confirm',['Digits'=>'1']);
     c(str_contains($consented,'input="speech"')&&str_contains($consented,'event=turn1'),'consent begins a bounded speech turn');
     $generated=0;$model=static function(string $speech,array $history,array $current)use(&$generated,$plan):array{
         ++$generated;c($speech==='Hello there'&&$history===[]&&$current['objectives']===$plan['objectives'],'model receives only this call speech, history and approved objectives');
@@ -162,7 +173,6 @@ try{
 }finally{$pdo->rollBack();}
 $pdo->beginTransaction();
 try{
-    $answer('answer');$answer('confirm',['Digits'=>'1']);
     c(str_contains($answer('turn1',[]),'did not hear')&&$read()['last_occurrence']['reason']==='conversation_silent','speech timeout ends without model work');
 }finally{$pdo->rollBack();}
 echo "PASS objective-scoped scheduled speech turns, replay fencing and voice completion\n";
@@ -170,6 +180,8 @@ echo "PASS objective-scoped scheduled speech turns, replay fencing and voice com
 foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=>'carrier_no_answer','failed'=>'carrier_failed','canceled'=>'carrier_canceled'] as $status=>$reason){
     $pdo->beginTransaction();
     try{
+        $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET state='submitted',reason='carrier_submitted' WHERE owner_user_id=1 AND event_id=? AND start_epoch=?")
+            ->execute([$eventId,$callTime]);
         if($status==='completed')$answer('answer');
         $answer('status',['CallStatus'=>$status]);
         $answer('status',['CallStatus'=>'failed']);
@@ -177,8 +189,15 @@ foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=
         c($last['state']==='ended'&&$last['reason']===$reason&&$answer('confirm',['Digits'=>'1'])===$hangup,'terminal callbacks close the occurrence once: '.$status);
     }finally{$pdo->rollBack();}
 }
-$answer('answer');
-$answer('confirm',['Digits'=>'1']);
+$recordingForm=['RecordingSid'=>$recordSid,'RecordingStatus'=>'completed','RecordingSource'=>'StartCallRecordingAPI',
+    'RecordingChannels'=>'2','RecordingTrack'=>'both','RecordingDuration'=>'12'];
+$pdo->exec("UPDATE phone_operator_carrier_attempts_v1 SET recording_state='uncertain',recording_sid=NULL");
+$answer('recording',$recordingForm);
+c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid' AND state='queued'")->fetchColumn()===1,
+    'signed recording receipt recovers a lost start response and enters the existing transcription and report pipeline once');
+$answer('recording',$recordingForm);
+c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid'")->fetchColumn()===1,
+    'duplicate recording receipt is idempotent');
 $answer('status',['CallStatus'=>'completed']);
 c($read()['last_occurrence']['reason']==='answer_consented'&&$read()['last_occurrence']['state']==='ended','final status preserves the recipient decision');
 c(vp3_operator_admission_idle_v1($pdo,1,$callTime+5)&&!$limits($destination,$callTime+5)['within_limit'],'a finished call releases the owner phone while retaining the destination cap');

@@ -138,6 +138,10 @@ function vp3_phone_recording_authorize_v1(PDO $pdo,array $job,bool $paid=false):
         require_once __DIR__.'/phone-managed-recording-v1.php';
         $original=vp3_managed_recording_saved_policy_v1($pdo,$call,(string)$job['provider_recording_sid']);
         if($original!==vp3_phone_recording_decode_v1($job['policy_json']))throw new RuntimeException('Managed recording processing consent changed.',409);
+    }elseif(($call['transport_kind']??'')==='operator_scheduled'){
+        require_once __DIR__.'/agent-operator-recording-v1.php';
+        $original=vp3_operator_recording_saved_policy_v1($pdo,$call,(string)$job['provider_recording_sid']);
+        if($original!==vp3_phone_recording_decode_v1($job['policy_json']))throw new RuntimeException('Scheduled recording processing consent changed.',409);
     }
     if($paid){
         $snapshot=vp3_phone_recording_decode_v1($job['policy_json']);
@@ -179,11 +183,16 @@ function vp3_phone_recording_receive_v1(PDO $pdo,array $call,array $form): array
         return ['accepted'=>true,'queued'=>false,'duplicate'=>true,'recording'=>vp3_phone_recording_public_v1(vp3_phone_recording_row_v1($pdo,(int)$existing['id']))];
     }
     $user=vp3_phone_recording_owner_v1($pdo,$owner);$policy=($kind==='legacy'||!empty($call['voicemail_message']))?vp3_phone_voicemail_receipt_policy_v1($pdo,$call):vp3_phone_recording_policy_v1($pdo,$user,$agent);$now=time();
-    $managed=($call['transport_kind']??'')==='managed_callback';
+    $managed=($call['transport_kind']??'')==='managed_callback';$scheduled=($call['transport_kind']??'')==='operator_scheduled';
     if($managed){
         require_once __DIR__.'/phone-managed-recording-v1.php';
         $original=vp3_managed_recording_saved_policy_v1($pdo,$call,$sid);
         if($policy!==$original)throw new RuntimeException('Managed recording policy changed.',409);
+        $policy=$original;
+    }elseif($scheduled){
+        require_once __DIR__.'/agent-operator-recording-v1.php';
+        $original=vp3_operator_recording_saved_policy_v1($pdo,$call,$sid);
+        if($policy!==$original)throw new RuntimeException('Scheduled recording policy changed.',409);
         $policy=$original;
     }
     $public=bin2hex(random_bytes(16));$state=$status==='completed'?'queued':'failed';$seconds=(int)$duration;
