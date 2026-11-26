@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/transcription-review-proof-v1.php';
 
 /**
  * VP3 transcription intelligence item layer v302.
@@ -234,6 +235,7 @@ function transcription_intelligence_review_item_v302(
     }
     $modules[$appId]['result'][$sectionKey][$offset]['review_state'] = $reviewState;
     $modules[$appId]['result'][$sectionKey][$offset]['reviewed_at'] = $reviewState === 'unreviewed' ? '' : gmdate('c');
+    $modules[$appId]['result'][$sectionKey][$offset]['owner_review_proof_v1'] = transcription_review_proof_v1($sessionId,(string)($master['source_hash']??''),$appId,$sectionKey,$modules[$appId]['result'][$sectionKey][$offset]);
     $master['analysis'] = transcription_intelligence_persist_modules_v302($pdo,$sessionId,$modules);
     return $master;
 }
@@ -262,6 +264,7 @@ function transcription_intelligence_edit_item_v302(
     $item['user_edited'] = true;
     $item['review_state'] = 'accepted';
     $item['reviewed_at'] = gmdate('c');
+    $item['owner_review_proof_v1'] = transcription_review_proof_v1($sessionId,(string)($master['source_hash']??''),$appId,$sectionKey,$item);
     $master['analysis'] = transcription_intelligence_persist_modules_v302($pdo,$sessionId,$modules);
     return $master;
 }

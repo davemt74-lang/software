@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/phone-transactions-v1.php';
 
 require_once __DIR__.'/phone-voicemail-v1.php';
+require_once __DIR__.'/agent-operator-objectives-v1.php';
 
 /** Durable Cloud-only phone recordings. Webhooks enqueue; a server worker performs paid work. */
 const VP3_PHONE_RECORDING_PIPELINE_V1='phone-recording-pipeline-v1';
@@ -50,6 +51,7 @@ function vp3_phone_recording_ensure_schema_v1(PDO $pdo): void
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_recording_legacy_reads_v1 (owner_user_id BIGINT NOT NULL,recording_id BIGINT NOT NULL,read_epoch BIGINT NOT NULL,PRIMARY KEY(owner_user_id,recording_id))$tail");
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_recording_speech_budget_v1 (owner_user_id BIGINT NOT NULL,job_id BIGINT NOT NULL,seconds INTEGER NOT NULL,reserved_epoch BIGINT NOT NULL,PRIMARY KEY(owner_user_id,job_id))$tail");
     vp3_phone_voicemail_install_v1($pdo);
+    vp3_operator_objectives_install_v1($pdo);
 }
 function vp3_phone_recording_json_v1(array $value): string{return json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);}
 function vp3_phone_recording_decode_v1(mixed $value): array{$r=is_string($value)?json_decode($value,true):null;return is_array($r)?$r:[];}
@@ -431,6 +433,13 @@ function vp3_phone_recording_deliver_v1(PDO $pdo,array $job,array $call,array $a
     if(!function_exists('vp3_phone_workspace_delivery_v1'))throw new RuntimeException('Phone Chat delivery is unavailable.');
     if(!vp3_phone_voicemail_announce_allowed_v1($pdo,$job))return ['message_id'=>0,'conversation_id'=>(int)$job['conversation_id'],'suppressed'=>true];
     $view=vp3_phone_recording_public_v1($job);$text=vp3_phone_voicemail_job_v1($job)?vp3_phone_voicemail_text_v1($pdo,$job,$call):vp3_phone_recording_report_text_v1($analysis,$transcribed);
+    if($job['origin_kind']==='browser'&&!vp3_phone_voicemail_job_v1($job)&&$transcribed){
+        $agenda=vp3_operator_objectives_resolve_v1($pdo,$call);
+        if($agenda['state']==='bound'){
+            $questions=vp3_operator_objectives_questions_v1((string)$agenda['agenda']['questions']);
+            if($questions)$text.="\n\nCall agenda\n".count($questions).' saved questions. Open Phone → Recent calls → Review call agenda for source-linked progress. An answer is not proof a real-world objective is complete.';
+        }
+    }
     if((int)$job['session_id']>0)$text.="\n\nTranscript: ".url('/artist-listening.php?session='.(int)$job['session_id']);
     $event='phone-recording-report:'.$job['public_id'];
     // A newly requested transcript gets one new report even when an earlier

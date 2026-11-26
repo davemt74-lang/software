@@ -1,0 +1,77 @@
+VP3 Operator: saved call questions and source-linked review
+
+Scope
+Save one exact question per line in Phone > Contacts > Edit > Call agenda,
+from the saved private Chat that should own the call. Topics remain context.
+After a new recorded outbound call completes and its original Q&A/report are
+saved, open Phone > Recent calls > Review call agenda in that same Chat.
+
+The review distinguishes open questions, suggested answers, reviewed answers,
+conflicting findings and unverified questions. Evidence links open the original
+saved Q&A item and transcript. An answer is not proof that a real-world task or
+objective was completed. This phase does not place another call, create a task,
+send a message, infer semantic goal completion or invoke an additional model.
+
+Matching and review
+Up to 12 nonempty, deduplicated agenda lines are compared with the canonical
+Q&A questions. Matching ignores case, repeated whitespace and a trailing
+question mark. Paraphrases are deliberately left unverified. Full current
+master/module freshness, complete analyzed transcript-page coverage and a valid
+source-page locator are required. Multiple matching findings are a conflict.
+
+The existing Transcription Accept/Edit action signs the exact saved Q&A item,
+source transcript hash and review time with the installation's existing private
+credential key. Only a matching server proof earns the reviewed-answer label.
+Generated review flags, changed answers, copied item IDs or changed sources do
+not supply that proof. Historical accepted items without proof remain suggested
+here; accept them again in Transcription if appropriate. Restoring or rotating
+the credential key requires the same re-review. Reads never create a key.
+Regenerated findings may also need re-review. A rejected finding is not a
+reviewed answer. No existing Transcription workflow or acceptance flag is
+removed by this additive proof.
+
+Source identity and privacy
+At the first accepted carrier request, an additive metadata table freezes a
+reference to the current contact agenda and its hash/revision. It stores call,
+owner, Agent, Chat and contact references, not copied questions, answers, phone
+numbers or transcript text. A unique matching active contact/agenda is required.
+Missing and ambiguous agendas are recorded as such and never retrofitted.
+Editing the agenda, contact destination or call binding invalidates that review.
+Earlier calls are not backfilled; inbound caller ID, reachability tests and
+managed callbacks do not establish a saved-contact objective.
+
+Every read checks the active owner, exact private Chat/Agent, current contact,
+original recording/analysis policy, completed recorded call, canonical recording
+job/session, saved report delivery and current transcript evidence. Checks are
+repeated after evidence reads. Participant access does not grant this view.
+The private panel expires after 60 seconds and clears when its drawer, tab,
+foreground or Chat scope changes. It uses text nodes and same-origin links.
+
+Carry-forward and Top of Mind
+Earlier findings require the same agenda, contact, owner, Agent and Chat plus
+the connected recipient's current owner-call, holder-call and holder-memory
+permissions. Revoking that memory permission removes earlier-call findings.
+At most six candidate recording jobs from the last 90 days are examined and
+three valid calls contribute, with at most 12 distinct pending questions.
+Newest findings win; a reviewed answer suppresses older open copies. Memory
+permission is rechecked after earlier evidence is read.
+
+Question findings join the existing seven-day Operator follow-up source. Native
+Q&A duplicates are removed, existing limits remain, and Top of Mind receives
+the canonical count/revision as history-only context. The original call report
+gets a review pointer; there is no second Chat announcement, shadow report,
+new scheduler or independent inference loop. Existing human approval and
+recipient permissions still govern any later action.
+
+Deployment and verification
+Deploy the complete matching Cloud ZIP and run upgrade.php. The recording
+installer adds the reference table outside live call transactions and is
+rerunnable. Installations awaiting upgrade keep their existing calling paths;
+the new review capability remains unavailable until its table is ready.
+
+Acceptance is gated by the existing consolidated workflows: real signed carrier
+fixture lifecycle, SQLite and native MySQL objective/source/memory boundaries,
+the real canonical Transcription reader and Accept path, existing phone service
+regressions, and desktop/320px browser review/escape/scope-clearing behavior.
+Provider calls and transcripts in these tests are simulated. Actual carrier,
+iPhone, acoustic accuracy and installed worker acceptance remain live checks.

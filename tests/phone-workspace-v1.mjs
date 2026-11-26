@@ -341,4 +341,18 @@ await test('polled settings from another tab cannot advance an unsaved greeting 
  b.state.voicemail_settings={...voicemailSettings(),revision:3,rings:6,ring_seconds:36};await b.window.VP3PhoneWorkspaceV1.refresh();assert.equal(b.field('voicemail-rings').value,'6');b.findButton('Save greeting').click();await flush();
  assert.equal(b.calls.find(call=>call.action==='greeting_upload').expected_revision,'0','Upload remains bound to the greeting that the owner recorded and previewed');assert.match(b.document.querySelector('.vp3-phone-notice').textContent,/settings changed.*Record and review a new greeting/);assert.ok(b.findButton('Record again'));assert.equal(b.state.voicemail_settings.revision,3);b.window.VP3PhoneWorkspaceV1.dispose();
 });
+await test('ordinary Recent calls exposes its scoped agenda review and clears findings on Chat changes',async()=>{
+ const id='f'.repeat(32),b=setup({requestResponder:({body})=>body.action==='operator_objectives_review'?{ok:true,status:200,json:async()=>({ok:true,review:{view:'call_agenda',call_id:id,execution_enabled:false,coverage:'ready',topics:'Planning',questions:[{question:'Which day works?',state:'answer_suggested',answer:'Friday works.',source_url:'/artist-listening-evidence.php?session=1&plugin=qa&item=answer'}],continuity:{state:'permission_required',questions:[]}}})}:undefined});
+ b.state.operator_objectives_available=true;
+ b.state.calls=[{public_id:id,call_id:id,peer_e164:'+16025550122',state:'completed',source_kind:'browser',conversation_id:10,agent_id:2,number_id:1}];
+ await flush();await b.window.VP3PhoneWorkspaceV1.refresh();b.toggle.click();b.findButton('Recent calls').click();
+ const section=b.document.querySelector('#vp3PhoneSection-calls');
+ const review=section.querySelectorAll('button').find(button=>button.textContent==='Review call agenda');assert.ok(review);
+ review.emit('click',{isTrusted:true});await flush();
+ assert.match(section.textContent,/Answer suggestion · review needed/);assert.match(section.textContent,/Which day works\?/);
+ assert.equal(b.calls.filter(call=>call.action==='operator_objectives_review').length,1);assert.equal(b.facts.connects,0);assert.equal(b.facts.microphones,0);
+ b.window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});await flush();
+ assert.equal(b.document.querySelector('[data-managed-conversation-review]'),null);assert.equal(b.findButton('Review call agenda'),undefined);
+ b.window.VP3PhoneWorkspaceV1.dispose();
+});
 console.log('PHONE_WORKSPACE_DOM=PASS ('+count+' cases)');

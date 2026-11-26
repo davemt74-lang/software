@@ -134,6 +134,14 @@ const server=http.createServer((req,res)=>{
          {text:'Untrusted link',review_state:'accepted',source_url:'https://untrusted.invalid/secret'}],
        continuity:{state:'permission_required',calls:[]}}};
    }
+   if(values.action==='operator_objectives_review'){
+     assert.equal(req.method,'GET');assert.equal(values.call_id,'7'.repeat(32));assert.equal(Number(values.conversation_id),10);assert.equal(Number(values.agent_id),2);
+     result={review:{view:'call_agenda',call_id:values.call_id,coverage:'ready',execution_enabled:false,topics:'Review the launch <img src=x>',transcript_url:'/artist-listening.php?session=773',questions:[
+       {key:'a'.repeat(64),question:'Which day works? <img src=x>',state:'answer_suggested',answer:'Friday <script>literal</script>',source_url:'/artist-listening-evidence.php?session=773&plugin=qa&section=answered&item=qa1&page=1'},
+       {key:'b'.repeat(64),question:'Who will attend?',state:'open',answer:'',source_url:'/artist-listening-evidence.php?session=773&plugin=qa&section=unanswered&item=qa2&page=1'},
+       {key:'c'.repeat(64),question:'Which delivery date?',state:'unverified',answer:'',source_url:'https://untrusted.invalid/private'}],
+       continuity:{state:'available',questions:[{question:'Who will attend?',source_url:'/artist-listening-evidence.php?session=770&plugin=qa&section=unanswered&item=old-qa&page=1'}]}}};
+   }
    if(values.action==='owner_phone_settings')result={owner_phone:structuredClone(ownerPhone)};
    if(values.action==='save_owner_phone'){
      assert.equal(Number(values.expected_revision),ownerPhone.revision);
@@ -644,6 +652,27 @@ try{
    await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true}));
    assert.equal(await page.locator('[data-managed-conversation-review]').count(),0);
  });
+ await check('call agenda review is private, read-only, source-linked and usable at desktop and narrow phone widths',async()=>{
+  for(const viewport of [{width:1360,height:900},{width:320,height:740}]){
+   await fresh('',{viewport});await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+   const id='7'.repeat(32);state.operator_objectives_available=true;
+   state.calls=[historyCall(id,{transport_kind:'browser',direction:'outbound',conversation_id:10,recording_enabled:true})];
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());await page.getByRole('tab',{name:'Recent calls',exact:true}).click();
+   const row=page.locator('#vp3PhoneSection-calls .vp3-phone-call');await row.getByRole('button',{name:'Review call agenda',exact:true}).click();
+   const review=row.locator('[data-managed-conversation-review]');await review.getByText('Call agenda review',{exact:true}).waitFor();
+   await review.getByText('Answer suggestion · review needed',{exact:true}).waitFor();await review.getByText('Still open',{exact:true}).waitFor();
+   await review.getByText('No verified matching answer',{exact:true}).waitFor();
+   assert.ok((await review.innerText()).includes('Friday <script>literal</script>'));assert.equal(await review.locator('img,script').count(),0);
+   assert.equal(await review.getByRole('link',{name:'Review original Q&A item',exact:true}).count(),2);
+   assert.equal(await review.locator('a[href^="https://untrusted.invalid"]').count(),0);
+   assert.equal(apiCalls.filter(c=>c.action==='operator_objectives_review').length,1);
+   assert.equal(apiMethods.find(c=>c.action==='operator_objectives_review').method,'GET');
+   assert.equal(apiCalls.some(c=>['prepare_call','managed_dispatch','save_auto_call_policy','save_operator_agenda'].includes(c.action)),false);
+   const bounds=await page.locator('.vp3-phone-panel').evaluate(panel=>({width:panel.clientWidth,scroll:panel.scrollWidth}));assert.ok(bounds.scroll<=bounds.width+1);
+   await review.getByText('Call agenda review',{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-objectives-'+viewport.width+'.png')});
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true}));assert.equal(await page.locator('[data-managed-conversation-review]').count(),0);
+  }
+ });
  await check('contact editor and daily call reminders fit desktop and phone widths and preserve private details',async()=>{
   for(const viewport of [{width:1360,height:900},{width:390,height:844},{width:320,height:740}]){
    await fresh('',{viewport});state.contact_details_ready=true;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
@@ -905,7 +934,7 @@ try{
   await page.goto(origin+'/phone-fixture');await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByLabel('Selected phone number',{exact:true}).waitFor();
   const actualIcon=page.locator('[data-phone-workspace-toggle] svg');assert.equal(await actualIcon.getAttribute('width'),'18');assert.equal(await actualIcon.getAttribute('height'),'18');assert.equal(await page.locator('[data-phone-workspace-toggle]').getAttribute('aria-controls'),await page.locator('.vp3-phone-workspace').getAttribute('id'));
   assert.equal(await page.getByLabel('Selected phone number',{exact:true}).inputValue(),String(actualState.selected_number_id));
-  assert.ok(actualState.calls.some(row=>/^legacy-/.test(row.public_id||row.call_id)),'The actual ledger includes historical calls');await page.getByRole('tab',{name:'Recent calls',exact:true}).click();assert.equal(await page.locator('.vp3-phone-section:not([hidden]) .vp3-phone-row').count(),actualState.calls.length);await page.getByRole('tab',{name:'Connections',exact:true}).click();
+  assert.ok(actualState.calls.some(row=>/^legacy-/.test(row.public_id||row.call_id)),'The actual ledger includes historical calls');await page.getByRole('tab',{name:'Recent calls',exact:true}).click();assert.equal(await page.locator('#vp3PhoneSection-calls > article').count(),actualState.calls.length,'Every canonical call renders once, including private review cards');await page.getByRole('tab',{name:'Connections',exact:true}).click();
   assert.equal(await page.getByLabel('Enable Cloud transcription and analysis for recorded calls',{exact:true}).isChecked(),actualState.post_call_policy.enabled);
   for(const voicemail of actualState.voicemails)await page.evaluate(row=>{const host=document.createElement('article');host.className='message assistant';host.innerHTML='<div class="message-avatar">S</div><div class="message-body"><div class="message-role">Agent</div><div class="message-text">Saved voicemail.</div></div>';document.getElementById('chatThread').append(host);window.VP3PhoneWorkspaceV1.bindMessage(host,{kind:'voicemail',call_id:row.call_id,voicemail_id:row.id});},voicemail);
   await page.getByRole('tab',{name:'Voicemail',exact:true}).click();

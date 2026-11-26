@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/transcription-review-proof-v1.php';
 
 /** Extension-aware durable item/action adapter for v307 registry sections. */
 const VP3_TRANSCRIPTION_DEEPER_ITEMS_V307 = 'transcription-deeper-items-v307-20260907';
@@ -103,6 +104,7 @@ function transcription_deeper_review_item_v307(PDO $pdo,int $sessionId,array $ma
     if ($reviewState==='rejected' && function_exists('transcription_intelligence_remove_item_relations_v305')) transcription_intelligence_remove_item_relations_v305($modules,$itemId);
     $modules[$appId]['result'][$sectionKey][$offset]['review_state']=$reviewState;
     $modules[$appId]['result'][$sectionKey][$offset]['reviewed_at']=$reviewState==='unreviewed'?'':gmdate('c');
+    $modules[$appId]['result'][$sectionKey][$offset]['owner_review_proof_v1']=transcription_review_proof_v1($sessionId,(string)($master['source_hash']??''),$appId,$sectionKey,$modules[$appId]['result'][$sectionKey][$offset]);
     $master['analysis']=transcription_deeper_persist_modules_v307($pdo,$sessionId,$modules);
     return $master;
 }
@@ -121,6 +123,7 @@ function transcription_deeper_edit_item_v307(PDO $pdo,int $sessionId,array $mast
         if (function_exists('transcription_intelligence_remove_item_relations_v305')) transcription_intelligence_remove_item_relations_v305($modules,$itemId);
     }
     $item[$primary]=$text;$item['edited_text']=$text;$item['user_edited']=true;$item['review_state']='accepted';$item['reviewed_at']=gmdate('c');
+    $item['owner_review_proof_v1']=transcription_review_proof_v1($sessionId,(string)($master['source_hash']??''),$appId,$sectionKey,$item);
     $master['analysis']=transcription_deeper_persist_modules_v307($pdo,$sessionId,$modules);
     return $master;
 }
