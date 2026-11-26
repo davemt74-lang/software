@@ -68,5 +68,11 @@ function vp3_phone_http_error_v1(Throwable $error): void
         'This saved place was deleted.', 'History settings changed. Refresh this phone.',
         'Start sharing location on this phone before requesting location history.'
     ],true)) $message=$error->getMessage();
-    echo json_encode(['ok'=>false, 'error'=>$message]);
+    $result = ['ok'=>false, 'error'=>$message];
+    // Only the explicit, public migration condition gets a machine-readable code.
+    // Never forward arbitrary exception messages or database details.
+    if ($status === 503 && $error::class === RuntimeException::class && $error->getMessage() === 'Upgrade required.') {
+        $result['code'] = 'upgrade_required';
+    }
+    echo json_encode($result);
 }
