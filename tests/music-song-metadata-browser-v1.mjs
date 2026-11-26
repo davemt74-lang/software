@@ -159,6 +159,22 @@ try {
     const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
     return hit === node || node.contains(hit);
   });
+  const checkReadableCreateStatus = async state => {
+    const metrics = await page.locator('#chatCreateModalStatus').evaluate(status => {
+      const style = getComputedStyle(status);
+      const rgb = value => (value.match(/[\d.]+/g) || []).map(Number);
+      const foreground = rgb(style.color), background = rgb(style.backgroundColor);
+      const luminance = channels => channels.slice(0, 3).map(value => {
+        const channel = value / 255;
+        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+      }).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+      const fg = luminance(foreground), bg = luminance(background);
+      return {fontSize: parseFloat(style.fontSize), contrast: (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05),
+        opaque: (foreground[3] ?? 1) === 1 && (background[3] ?? 1) === 1, color: style.color, background: style.backgroundColor};
+    });
+    check(metrics.fontSize >= 14, `${state} create status uses at least 14px text: ${JSON.stringify(metrics)}`);
+    check(metrics.opaque && metrics.contrast >= 4.5, `${state} create status has at least 4.5:1 computed text contrast: ${JSON.stringify(metrics)}`);
+  };
   const exerciseNavigation = async () => {
     await page.getByRole('button', {name: 'Open VP3 navigation', exact: true}).click();
     await page.waitForFunction(() => document.body.classList.contains('chat-nav-open') && document.getElementById('chatSidebar').getBoundingClientRect().left >= -0.5);
@@ -281,6 +297,7 @@ try {
   const beforeRequest = await page.locator('[data-song-request-key]').inputValue();
   await page.locator('[data-song-save]').click();
   await page.getByText('This song changed. Your entered fields are kept.', {exact: true}).waitFor();
+  await checkReadableCreateStatus('Error');
   check(await page.locator('#chatCreateModalStatus').evaluate(status => status === document.activeElement), 'actual Chat submit controller focuses API errors');
   check(await page.locator('[name="title"]').inputValue() === 'Retained draft title' && await page.locator('[data-party-field="name"]').inputValue() === 'Draft performer' && await page.locator('[name="audio_file"]').evaluate(input => input.files.length) === 1 && await page.locator('[data-song-request-key]').inputValue() === beforeRequest, 'actual failed Chat save keeps text, metadata, file and request key');
   check(posts.length === 1 && posts[0].includes('music_metadata[performers][0][name]'), 'actual Chat FormData submits reindexed contributors');
@@ -289,6 +306,7 @@ try {
   failPost = false;
   await page.locator('[data-song-save]').click();
   await page.getByText('Song draft saved.', {exact: true}).waitFor();
+  await checkReadableCreateStatus('Success');
   check(await page.locator('[name="title"]').inputValue() === '' && await page.locator('[data-party-row]').count() === 0 && await page.locator('[data-song-workspace]').inputValue() === '' && await page.locator('[data-song-request-key]').inputValue() !== beforeRequest, 'successful Chat save resets draft details and renews the next request key');
   check(await page.locator('[data-song-save]').isDisabled() && (await page.locator('#chatCreateAdvanced').getAttribute('href')).includes('edit=9#editor'), 'saved song links to its authorized editor while the next song needs a workspace');
   check(errors.length === 0, 'no browser errors: ' + errors.join('; '));

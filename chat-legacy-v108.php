@@ -2948,7 +2948,8 @@ window.STONEFELLOW_PLAYER = {
 </script>
 <link rel="stylesheet" href="<?= e(url('/chat-v100.css?v=100')) ?>">
 <?php if ($chatCanCreateTrack): ?><script src="<?= e(url('/assets/js/music-song-metadata-form-v1.js?v=1')) ?>" defer></script><?php endif; ?>
-<script src="<?= e(url('/chat.js?v=101-music-ml1')) ?>"></script>
+<?php // Preserve chat.php's insertion anchor; its content hashes version both Chat JS and CSS. ?>
+<script src="<?= e(url('/chat.js?v=101')) ?>"></script>
 <script src="<?= e(url('/chat-v100.js?v=100')) ?>"></script>
 <script src="<?= e(url('/chat-media-v86.js?v=95')) ?>"></script>
 <script src="<?= e(url('/chat-media-v93.js?v=97')) ?>"></script>
