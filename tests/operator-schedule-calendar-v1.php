@@ -65,6 +65,13 @@ $plan=vp3_operator_preview_request_v1($pdo,$row,$callTime);
 c($plan['reason']==='eligible'&&$plan['fields']['To']===$choice['expected_destination']&&$plan['fields']['From']===$choice['expected_line']
     &&$plan['fields']['TimeLimit']===$duration&&$plan['objectives']===$event['description'],'verified route, time limit and objectives reach the simulated carrier boundary');
 c($preview()===['eligible'=>1]&&$preview()===['eligible'=>1],'preview returns only counts and leaves the occurrence available');
+$carrierSettings=$GLOBALS['settings'];
+foreach(['phone_voice_webhook_url_v130'=>'http://cloud.example/api/phone-voice-inbound-v130.php','phone_twilio_auth_token'=>''] as $key=>$invalid){
+    $GLOBALS['settings'][$key]=$invalid;
+    try{c($preview()===['carrier_unavailable'=>1],'preview reports an unusable carrier route before reserving a call');}
+    finally{$GLOBALS['settings']=$carrierSettings;}
+}
+c($preview()===['eligible'=>1],'restoring carrier settings makes the same prepared occurrence eligible');
 $pdo->exec("UPDATE vp3_phone_communication_profiles_v1 SET window_start='10:00',window_end='11:00'");
 c($preview()===['calling_window'=>1],'recipient local calling hours apply immediately');
 $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
@@ -89,12 +96,21 @@ try{
     }catch(PDOException){$missingUpgrade=true;}
     c($missingUpgrade&&$sentBeforeUpgrade===0,'missing speech turn storage blocks dispatch before any provider call');
 }finally{$pdo->exec('ALTER TABLE phone_voice_turns_upgrade_fixture RENAME TO phone_voice_turns_v140');}
+$GLOBALS['settings']['phone_twilio_account_sid']='AC'.str_repeat('d',32);
+$rotationSends=0;
+try{
+    vp3_operator_submit_scheduled_v1($plan,static function()use(&$rotationSends){++$rotationSends;return [];});
+    $rotationBlocked=false;
+}catch(RuntimeException){$rotationBlocked=true;}
+finally{$GLOBALS['settings']=$carrierSettings;}
+c($rotationBlocked&&$rotationSends===0,'account rotation after approval blocks the carrier submission');
+c($plan['fields']['Url']==='https://cloud.example/api/phone-operator-answer-v1.php?event=answer'
+    &&$plan['fields']['StatusCallback']==='https://cloud.example/api/phone-operator-answer-v1.php?event=status'
+    &&$plan['fields']['Method']==='POST'&&$plan['fields']['StatusCallbackMethod']==='POST','preview and submission bind the same verified callbacks');
 $sent=0;
 $scenario=$argv[1]??'success';
 $worker=vp3_operator_dispatch_tick_v1($pdo,function($request)use(&$sent,$plan,$pdo,$attempt,$unexpected,$scenario){
     ++$sent;
-    $plan['fields']+=['Url'=>'https://cloud.example/api/phone-operator-answer-v1.php?event=answer','Method'=>'POST',
-        'StatusCallback'=>'https://cloud.example/api/phone-operator-answer-v1.php?event=status','StatusCallbackMethod'=>'POST'];
     c(!vp3_phone_transaction_active_v1($pdo)&&$request===$plan,'mock carrier receives the approved objective outside a transaction');
     c($attempt($unexpected)==='submitting','a second worker cannot submit the in-flight occurrence');
     if($scenario==='timeout')throw new RuntimeException('Response lost after submission');

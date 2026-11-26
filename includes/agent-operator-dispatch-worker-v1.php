@@ -12,6 +12,7 @@ function vp3_operator_submit_scheduled_v1(array $plan, ?callable $http=null):arr
     }
     $http??='vp3_phone_twilio_http_v100';
     [$account]=vp3_phone_twilio_credentials_v100();
+    if($account!==($plan['account_sid']??null))throw new RuntimeException('The assigned carrier account changed before submission.');
     return $http('POST','/2010-04-01/Accounts/'.$account.'/Calls.json',$fields);
 }
 
