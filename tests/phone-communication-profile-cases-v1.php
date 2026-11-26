@@ -37,19 +37,24 @@ function vp3_test_phone_communication_v1(PDO $db,int $owner,int $other,string $i
     $reject(403,fn()=>$save(1,['device_id'=>str_repeat('0',32)]),'holder cannot edit another pairing');
     $reject(404,fn()=>vp3_phone_communication_owner_v1($db,$other,$base+['communication_revision'=>1,'owner_calls'=>true,'owner_requests'=>true]),'another owner cannot grant communication');
     $permitted=$grant(1,true,true);
+    $assert(!$permitted['holder_scheduled_agent']&&!$permitted['holder_spontaneous_agent'],'owner authorization cannot grant recorded agent calls');
     $assert($permitted['revision']===2&&!$permitted['call_permission_saved']&&!$permitted['request_permission_saved'],'owner grants wait for holder consent');
     $reject(409,fn()=>$save(1),'stale communication save is rejected');
-    $consented=$save(2,['holder_calls'=>true,'holder_proactive'=>true,'holder_requests'=>true,'holder_memory'=>true]);
+    $consented=$save(2,['holder_scheduled_agent'=>true,'holder_spontaneous_agent'=>true,'holder_calls'=>true,'holder_proactive'=>true,'holder_requests'=>true,'holder_memory'=>true]);
     $assert($consented['revision']===3&&$consented['call_permission_saved']&&$consented['proactive_permission_saved']
         &&$consented['request_permission_saved']&&$consented['holder_memory']&&!$consented['execution_enabled'],'independent consents are saved without execution');
     $same=$save(3,['holder_calls'=>true,'holder_proactive'=>true,'holder_requests'=>true,'holder_memory'=>true]);
+    $assert($same['holder_scheduled_agent']&&$same['holder_spontaneous_agent'],'a legacy save preserves explicit holder mode choices');
     $assert($same['revision']===3,'unchanged preferences do not advance revision');
     $changed=$save(3,['phone_e164'=>'+16025550130','holder_calls'=>true,'holder_proactive'=>true,'holder_requests'=>true]);
+    $assert(!$changed['holder_scheduled_agent']&&!$changed['holder_spontaneous_agent'],'changing destination clears both recorded AI call grants');
     $assert($changed['phone_revision']===2&&$changed['profile_id']===$profile&&!$changed['holder_calls']
         &&!$changed['holder_proactive']&&!$changed['call_permission_saved'],'changing number clears call consent and preserves profile identity');
-    $savedAgain=$save(4,['phone_e164'=>'+16025550130','holder_calls'=>true,'holder_proactive'=>true,'holder_requests'=>true]);
+    $savedAgain=$save(4,['holder_scheduled_agent'=>true,'holder_spontaneous_agent'=>false,'phone_e164'=>'+16025550130','holder_calls'=>true,'holder_proactive'=>true,'holder_requests'=>true]);
+    $assert($savedAgain['holder_scheduled_agent']&&!$savedAgain['holder_spontaneous_agent'],'the two AI call modes have independent grants');
     $assert($savedAgain['call_permission_saved'],'holder can explicitly consent for the new number');
     $off=$grant(5,false,false);
+    $assert(!$off['holder_scheduled_agent']&&!$off['holder_spontaneous_agent'],'revoking owner call permission clears recorded AI call grants');
     $assert(!$off['holder_calls']&&!$off['holder_proactive']&&!$off['holder_requests'],'owner revocation clears dependent holder consent');
     $on=$grant(6,true,true);
     $assert(!$on['call_permission_saved']&&!$on['request_permission_saved'],'re-enabling owner grant does not restore holder consent');

@@ -7,6 +7,7 @@ import {createHash} from 'node:crypto';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
 const root=process.cwd(),source=await fs.readFile(path.join(root,'phone-workspace-v1.js'),'utf8'),css=await fs.readFile(path.join(root,'phone-workspace-v1.css'),'utf8');
 const captureSource=await fs.readFile(path.join(root,'phone-operator-capture-v1.js'),'utf8');
+const mixerSource=await fs.readFile(path.join(root,'phone-operator-voice-mixer-v1.js'),'utf8');
 const shellStyles=new Map(await Promise.all(['chat.css','chat-header-ui.css','stonefellow-ui.css'].map(async file=>['/'+file,await fs.readFile(path.join(root,file),'utf8')])));
 const fixtureHead='<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><style>*,*::before,*::after{box-sizing:border-box}body{margin:0}</style><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/chat-header-ui.css"><link rel="stylesheet" href="/phone-workspace-v1.css">';
 const headerShell=button=>'<header class="chat-topbar member-header"><div class="chat-topbar-title"><strong>Agent Chat</strong></div><div class="chat-topbar-actions member-header-actions"><div class="chat-top-menu">'+button+'</div></div></header>';
@@ -22,10 +23,10 @@ const sdk=`(()=>{
  accept(){m.accepts++;this.state='open';this.emit('accept',this);}reject(){m.rejects++;this.state='closed';this.emit('reject');}disconnect(){this.state='closed';this.emit('disconnect');}
  }
  class Device{
- constructor(token,options){this.events={};this.token=token;this.options=options;this.destroyed=false;m.devices.push(this);}
+ constructor(token,options){this.events={};this.token=token;this.options=options;this.destroyed=false;this.audio={addProcessor:async(processor,remote)=>{if(remote||this.processor)throw Error('Wrong fixture processor');this.processor=processor;}};m.devices.push(this);}
  on(n,f){(this.events[n]??=[]).push(f);return this;}emit(n,...args){for(const f of this.events[n]||[])f(...args);}
  async register(){if(m.holdRegister)await new Promise(resolve=>m.releaseRegister=resolve);this.emit('registered');}
- async connect(options){m.connects.push(options);const call=new Call('${outgoingId}');if(m.holdConnect)await new Promise(resolve=>m.releaseConnect=()=>resolve());return call;}
+ async connect(options){m.connects.push(options);const call=new Call('${outgoingId}');if(this.processor){const ctx=this.processor.context,raw=ctx.createMediaStreamDestination(),remote=ctx.createMediaStreamDestination(),a=ctx.createOscillator(),b=ctx.createOscillator(),ga=ctx.createGain(),gb=ctx.createGain();a.frequency.value=220;b.frequency.value=440;ga.gain.value=.1;gb.gain.value=.05;a.connect(ga);ga.connect(raw);b.connect(gb);gb.connect(remote);a.start();b.start();call.stream=await this.processor.createProcessedStream(raw.stream);call.getRemoteStream=()=>remote.stream;m.voiceFixture={raw:raw.stream,remote:remote.stream,output:call.stream,processor:this.processor,a,b};}if(m.holdConnect)await new Promise(resolve=>m.releaseConnect=()=>resolve());return call;}
  updateToken(token){this.token=token;m.updates++;}disconnectAll(){}destroy(){this.destroyed=true;}
  }
  window.Twilio={Device};m.incoming=()=>{const call=new Call('${incomingId}','+16025550444',true);m.devices.at(-1).emit('incoming',call);return call;};
@@ -42,6 +43,7 @@ let state=fixture(),authorized=true,apiCalls=[],apiMethods=[],stateFailure=null,
 const wav=Buffer.alloc(44+16000*2*4);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
+ if(url.pathname==='/phone-operator-voice-mixer-v1.js'){res.setHeader('Content-Type','text/javascript');return res.end(mixerSource);}
  if(url.pathname==='/phone-operator-capture-v1.js'){res.setHeader('Content-Type','text/javascript');return res.end(captureSource);}
  if(url.pathname==='/phone-workspace-v1.js'){res.setHeader('Content-Type','text/javascript');return res.end(source);}
  if(url.pathname==='/phone-workspace-v1.css'){res.setHeader('Content-Type','text/css');return res.end(css);}
@@ -54,7 +56,7 @@ const server=http.createServer((req,res)=>{
    const input=JSON.parse(body);res.setHeader('Content-Type','application/json');
    assert.equal(req.method,'POST');assert.equal(input.csrf_token,'fixture-csrf');assert.equal(input.call_id,outgoingId);
    assert.equal(input.agent_id,2);assert.equal(input.conversation_id,10);
-   captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,capture_mode:input.capture_mode,suggestions_attested:input.suggestions_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0,localBytes:input.local_pcm?Buffer.from(input.local_pcm,'base64').length:0,receiptCount:input.receipts?.length||0});
+   captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,capture_mode:input.capture_mode,suggestions_attested:input.suggestions_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0,localBytes:input.local_pcm?Buffer.from(input.local_pcm,'base64').length:0,receiptCount:input.receipts?.length||0,voice_consent_attested:input.voice_consent_attested,source_seq:input.source_seq});
    const token='f'.repeat(64);let result={};
    if(input.action==='start'){assert.equal(input.consent_attested,true);state.operator_live.state='authorized';state.operator_live.fixtureMode=input.capture_mode||'remote';state.operator_live.fixtureAssist=input.suggestions_attested===true;result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+(state.operator_live.fixtureMode==='both'?60:120),chunk_seconds:4,execution:'captions_only'};if(state.operator_live.fixtureMode==='both'||state.operator_live.fixtureAssist)Object.assign(result,{capture_mode:state.operator_live.fixtureMode,suggestions_enabled:state.operator_live.fixtureAssist});}
    else if(input.action==='chunk'){
@@ -67,8 +69,15 @@ const server=http.createServer((req,res)=>{
    else if(input.action==='suggest'){
     assert.equal(input.token,token);assert.equal(state.operator_live.fixtureAssist,true);
     assert.ok(input.receipts.some(r=>r.speaker==='remote_audio')&&input.receipts.some(r=>r.speaker==='local_audio'));
-    result={call_id:outgoingId,based_on_seq:input.receipts.at(-1).seq,suggestion:'Ask which detail matters most.',prior_call_count:2,speech_enabled:false};
+    result={call_id:outgoingId,based_on_seq:input.receipts.at(-1).seq,suggestion:'Ask which detail matters most.',prior_call_count:2,speech_enabled:false,speech_proof:'d'.repeat(64)};
    }
+   else if(input.action==='voice_prepare'){
+    assert.equal(input.token,token);assert.equal(input.proof,'d'.repeat(64));assert.equal(input.voice_consent_attested,true);assert.equal(input.suggestion,'Ask which detail matters most.');
+    const samples=96000,pcm=Buffer.alloc(samples*2);for(let i=0;i<samples;i++)pcm.writeInt16LE(Math.round(10000*Math.sin(i*2*Math.PI*1000/16000)),i*2);
+    result={call_id:outgoingId,source_seq:input.source_seq,turn_token:'e'.repeat(64),script:"This is the VP3 AI assistant, relaying the owner's approved response. "+input.suggestion,pcm:pcm.toString('base64'),samples,sample_rate:16000,expires_epoch:Math.floor(Date.now()/1000)+15,state:'ready'};
+   }
+   else if(input.action==='voice_claim'){assert.equal(input.token,token);assert.equal(input.turn_token,'e'.repeat(64));result={call_id:outgoingId,source_seq:input.source_seq,state:'playing',samples:96000,start_by_epoch:Math.floor(Date.now()/1000)+2,expires_epoch:Math.floor(Date.now()/1000)+9};}
+   else if(input.action==='voice_finish'){result={call_id:outgoingId,source_seq:input.source_seq,state:'closed'};}
    else if(input.action==='stop'){assert.equal(input.token,token);state.operator_live.state='closed';state.operator_live.eligible=false;result={call_id:outgoingId,stopped:true};}
    else{res.statusCode=422;return res.end(JSON.stringify({ok:false}));}
    res.end(JSON.stringify({ok:true,...result}));
@@ -122,6 +131,24 @@ const server=http.createServer((req,res)=>{
    if(values.action==='bind_call')result={call:{id:8,public_id:values.call_id,peer_e164:'+16025550444',conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'ringing'}};
    if(values.action==='favorite'){state.contacts[0].favorite=values.favorite;state.favorites=values.favorite?[state.contacts[0]]:[];}
    if(values.action==='save_recording_policy'){state.post_call_policy={enabled:values.enabled,retain_audio:values.retain_audio,transcribe:values.transcribe,analyze:values.analyze,model_route:'account_cloud',modules:values.modules};result={policy:state.post_call_policy};}
+   if(['operator_admission_preview','save_operator_consent'].includes(values.action)){
+    const p=state.auto_call?.policies.find(item=>item.contact_id===Number(values.contact_id)&&item.number_id===Number(values.number_id));
+    assert.ok(p);assert.equal(p.revision,Number(values.expected_revision));
+    if(!state.fixtureConsent)state.fixtureConsent={revision:0,state:'not_recorded',purpose:''};
+    const consent=state.fixtureConsent;
+    if(values.action==='save_operator_consent'){
+      assert.equal(values.expected_consent_revision,consent.revision);assert.equal(values.expected_destination,p.destination_e164);assert.equal(values.expected_line,p.line_e164);
+      if(values.decision==='attest'){assert.equal(values.recipient_agreement_attested,true);consent.state='owner_attested';consent.purpose=values.purpose;}
+      else if(values.decision==='withdraw')consent.state='withdrawn';
+      else if(values.decision==='clear')consent.state='cleared';
+      consent.revision++;
+    }
+    const gates=['owner_policy','recipient_review','calling_window','daily_limit','minimum_gap','phone_idle','cloud_calendar','recipient_verification','spend_and_dispatch'].map(id=>({id,status:id==='spend_and_dispatch'?'off':id==='recipient_verification'?'unverified':id==='recipient_review'&&consent.state!=='owner_attested'?'blocked':'pass',detail:'Fixture readiness check.'}));
+    result={readiness:{contact_id:p.contact_id,number_id:p.number_id,policy_revision:p.revision,consent_revision:consent.revision,
+      consent_state:consent.state,purpose:consent.purpose,expires_at:consent.state==='owner_attested'?new Date(Date.now()+604800000).toISOString():null,
+      destination_e164:p.destination_e164,line_e164:p.line_e164,can_attest:consent.state!=='withdrawn',can_clear:consent.state==='owner_attested',
+      can_withdraw:consent.state!=='withdrawn',local_checks_pass:consent.state==='owner_attested',checked_at:new Date().toISOString(),execution_enabled:false,gates}};
+   }
    if(values.action==='operator_calendar_preview'){
     const p=state.auto_call?.policies.find(item=>item.contact_id===Number(values.contact_id)&&item.number_id===Number(values.number_id));
     if(!p||!p.enabled||p.revision!==Number(values.expected_revision)){res.statusCode=409;return res.end(JSON.stringify({ok:false,error:'operator_policy_changed',message:'Review current permission.'}));}
@@ -174,7 +201,7 @@ const server=http.createServer((req,res)=>{
   });return;
  }
  const cid=url.searchParams.get('new')==='1'?0:10;
- res.setHeader('Content-Type','text/html');res.end(`${fixtureHead}${headerShell('<button class="chat-icon-button vp3-phone-header-button" data-phone-workspace-toggle aria-label="Phone"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z"/></svg></button>')}<div id="chatThread" class="chat-thread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',operator_live_endpoint:'/api/phone-operator-live-v1.php',operator_capture_url:'/phone-operator-capture-v1.js',greeting_endpoint:'/api/phone-voicemail-greeting-v1.php',greeting_capture_url:'/phone-voicemail-capture-v1.js',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-workspace-v1.js"></script>`);
+ res.setHeader('Content-Type','text/html');res.end(`${fixtureHead}${headerShell('<button class="chat-icon-button vp3-phone-header-button" data-phone-workspace-toggle aria-label="Phone"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z"/></svg></button>')}<div id="chatThread" class="chat-thread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',operator_live_endpoint:'/api/phone-operator-live-v1.php',operator_capture_url:'/phone-operator-capture-v1.js',greeting_endpoint:'/api/phone-voicemail-greeting-v1.php',greeting_capture_url:'/phone-voicemail-capture-v1.js',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-operator-voice-mixer-v1.js"></script><script src="/phone-workspace-v1.js"></script>`);
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
@@ -296,6 +323,30 @@ try{
   assert.equal(appointment.contact_id,7);assert.equal(appointment.expected_revision,1);assert.equal(appointment.duration_seconds,600);
   assert.equal(appointment.csrf_token,'fixture-csrf');
   await planEditor.getByRole('button',{name:'Close plan',exact:true}).click();
+  state.operator_admission_available=true;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  await page.getByRole('button',{name:/^Auto Call readiness for Fixture contact/}).click();
+  const readiness=page.getByRole('region',{name:'Autonomous call readiness',exact:true});
+  await readiness.getByText('Recipient review: Not recorded',{exact:true}).waitFor();
+  assert.equal(await readiness.getByRole('button',{name:'Save recipient agreement review',exact:true}).isDisabled(),true);
+  assert.equal(apiCalls.filter(c=>c.action==='save_operator_consent').length,0,'Readiness preview never writes consent');
+  await readiness.getByLabel('Agreed purpose',{exact:true}).selectOption('appointment');
+  await readiness.getByLabel(/The recipient affirmatively agreed/).check();
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  assert.equal(await readiness.getByLabel('Agreed purpose',{exact:true}).inputValue(),'appointment');
+  assert.equal(await readiness.getByLabel(/The recipient affirmatively agreed/).isChecked(),true);
+  await readiness.getByRole('button',{name:'Save recipient agreement review',exact:true}).click();
+  await readiness.getByText('Recipient review: Owner attested',{exact:true}).waitFor();
+  assert.equal(await readiness.getByText('Autonomous execution',{exact:true}).count(),1);
+  const agreement=apiCalls.find(c=>c.action==='save_operator_consent');
+  assert.equal(agreement.expected_revision,1);assert.equal(agreement.expected_consent_revision,0);assert.equal(agreement.purpose,'appointment');assert.equal(agreement.csrf_token,'fixture-csrf');
+  assert.equal(await readiness.getByRole('button',{name:'Save recipient opt-out',exact:true}).isDisabled(),true);
+  await readiness.getByLabel(/The recipient withdrew permission/).check();
+  await readiness.getByRole('button',{name:'Save recipient opt-out',exact:true}).click();
+  await readiness.getByText('Recipient review: Recipient opted out',{exact:true}).waitFor();
+  assert.equal(await readiness.getByRole('button',{name:'Save recipient agreement review',exact:true}).count(),0);
+  assert.equal(apiCalls.filter(c=>c.action==='save_operator_consent').at(-1).decision,'withdraw');
+  assert.equal(await readiness.evaluate(n=>n.scrollWidth<=n.clientWidth+1),true,'Readiness fits compact drawer');
+  await readiness.getByRole('button',{name:'Close readiness',exact:true}).click();
   state.auto_call.policies[0].can_enable=false;state.auto_call.policies[0].state='blocked';state.auto_call.policies[0].reason='Recording approval changed.';
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   await launcher.click();await editor.getByLabel('Allow Agent Auto Call',{exact:true}).uncheck();
@@ -649,6 +700,52 @@ try{
   await drawer.getByRole('button',{name:'Hang up',exact:true}).click();
   await page.evaluate(()=>{const d=phoneFixture.dualAudio;d.a.stop();d.b.stop();d.remote.stop();d.local.stop();void d.ctx.close();});
   assert.ok(captionCalls.some(row=>row.action==='stop'));
+ });
+ await fresh();
+ await check('owner-approved synthetic voice requires review and a separate play click; takeover restores the live human track',async()=>{
+  captionCalls=[];state.operator_live={available:true,assist_available:true,voice_available:true,eligible:false,call_id:'',state:'off',reason:''};
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  await page.getByRole('button',{name:'Prepare Agent voice for browser calls',exact:true}).click();
+  await page.getByRole('button',{name:'Disable prepared Agent voice',exact:true}).waitFor();
+  await enable();await call();
+  await page.waitForFunction(()=>phoneFixture.voiceFixture?.processor.matches(phoneFixture.calls.at(-1).getLocalStream()));
+  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1,'Human audio is the initial passthrough');
+  assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),false);
+  state.operator_live={available:true,assist_available:true,voice_available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
+  await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
+  await caption.getByLabel(/Include both audio sides/).check();
+  await caption.getByLabel(/Everyone agrees that recent captions/).check();
+  await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
+  await caption.getByRole('button',{name:'Start live captions',exact:true}).click();
+  await caption.getByText('Fixture owner words',{exact:true}).first().waitFor({timeout:20000});
+  await caption.getByRole('button',{name:'Suggest a response',exact:true}).click();
+  await caption.getByRole('button',{name:'Review Agent voice response',exact:true}).click();
+  assert.equal(await caption.getByRole('button',{name:'Prepare approved voice',exact:true}).isDisabled(),true);
+  assert.equal(captionCalls.filter(c=>c.action==='voice_prepare').length,0);
+  await caption.getByLabel('Everyone agrees to hear this AI assistant, and I approve the exact script.',{exact:true}).check();
+  await caption.getByRole('button',{name:'Prepare approved voice',exact:true}).click();
+  await caption.getByRole('button',{name:'Speak approved response',exact:true}).waitFor({timeout:15000});
+  assert.equal(captionCalls.filter(c=>c.action==='voice_claim').length,0,'Preparation alone never plays audio');
+  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1);
+  const claims=await page.evaluate(()=>phoneFixture.claims);
+  await caption.getByRole('button',{name:'Speak approved response',exact:true}).click();
+  await caption.getByText('Operator voice · AI speaking',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),0,'The human and AI cannot transmit simultaneously');
+  assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),true);
+  await caption.getByRole('button',{name:'Take over now',exact:true}).click();
+  await caption.getByText('You took over. AI speech and live assistance stopped.',{exact:true}).waitFor();
+  assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),false,'Takeover clears the synthetic source immediately');
+  await page.waitForFunction(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value===1,{},{timeout:1500});
+  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1,'Human microphone returns after the audio render quantum');
+  assert.equal(await page.evaluate(()=>Boolean(phoneFixture.voiceFixture.processor.speaking)),false);
+  assert.equal(await page.evaluate(()=>phoneFixture.calls.at(-1).status()),'open');
+  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.raw.getAudioTracks()[0].readyState),'live');
+  assert.equal(await page.evaluate(()=>phoneFixture.claims),claims,'No additional microphone lease');
+  assert.equal(captionCalls.filter(c=>c.action==='voice_claim').length,1);
+  await drawer.getByRole('button',{name:'Hang up',exact:true}).click();
+  await page.evaluate(()=>{const d=phoneFixture.voiceFixture;try{d.a.stop();d.b.stop();}catch(_){}for(const track of d.remote.getTracks())track.stop();});
  });
  if(actualState)await check('the unmodified PHP projection renders both voicemail namespaces and saved processing policy',async()=>{
   assert.ok(actualUi?.button&&actualUi?.config,'The actual PHP header and runtime configuration are mandatory with the real projection');

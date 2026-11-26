@@ -237,6 +237,9 @@ jobs:
           php tests/phone-subscription-access-v1.php
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
+          php tests/operator-schedule-history-v1.php
+          php tests/operator-holder-modes-v1.php
+          php tests/operator-auto-call-migration.php
           php tests/phone-operator-suggestion-evidence.php
           php tests/phone-caller-contacts-schema-v1.php
           php tests/phone-contact-management-v1.php
@@ -257,6 +260,7 @@ jobs:
           node tests/phone-voicemail-capture-v1.mjs
           node tests/phone-voicemail-chat-v1.mjs
           node tests/phone-operator-capture-v1.mjs
+          node tests/phone-operator-voice-mixer-v1.mjs
           PHP_BIN=php node tests/phone-workspace-release-v1.mjs --projection-only
       - name: Private phone push queue, canonical sources and runtime guard
         run: |
@@ -282,6 +286,10 @@ jobs:
           node --check phone-workspace-v1.js
           node --check phone-operator-capture-v1.js
           node --check phone-voicemail-capture-v1.js
+          node --check phone-operator-voice-mixer-v1.js
+          php -l includes/agent-operator-voice-turns-v1.php
+          php -l includes/agent-operator-admission-v1.php
+          php -l includes/agent-operator-admission-schema-v1.php
           php -l includes/agent-operator-live-v1.php
           php -l includes/agent-operator-live-schema-v1.php
           node --check chat.js

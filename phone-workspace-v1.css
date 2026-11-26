@@ -132,3 +132,6 @@
 .vp3-phone-caption-turn>strong,.vp3-phone-suggestion>strong{font-size:11px;color:#475467}
 .vp3-phone-caption-turn>p,.vp3-phone-suggestion>p{margin:0}
 .vp3-phone-suggestion{border-color:#9baec7}
+
+.vp3-phone-live-caption .vp3-phone-suggestion .vp3-phone-danger{justify-self:start;width:100%;min-height:44px}
+.vp3-phone-live-caption .vp3-phone-suggestion .vp3-phone-primary{justify-self:start;width:100%;min-height:44px}
