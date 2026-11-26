@@ -96,7 +96,6 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_push_install_v1($pdo,$options);
     vp3_phone_push_delivery_install_v1($pdo,$options);
     vp3_phone_agent_workspace_install_v1($pdo);
-    require_once __DIR__.'/phone-agent-workspace-worker-v1.php';
     vp3_phone_agent_workspace_worker_install_v1($pdo);
 }
 

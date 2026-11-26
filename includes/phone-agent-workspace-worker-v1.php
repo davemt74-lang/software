@@ -5,26 +5,6 @@ require_once __DIR__.'/phone-agent-workspace-v1.php';
 require_once __DIR__.'/phone-agent-workspace-sources-v1.php';
 require_once __DIR__.'/phone-push-events-v1.php';
 
-/** Rotation metadata only; source content and delivery outcomes remain in their canonical stores. */
-function vp3_phone_agent_workspace_worker_install_v1(PDO $pdo): void
-{
-    if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Install Phone Agent ingestion outside a transaction.');
-    $tail=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':'';
-    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_agent_ingestion_v1 (
-        owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,
-        checked_epoch BIGINT NOT NULL DEFAULT 0,
-        PRIMARY KEY(owner_user_id,device_id),
-        FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE
-    )".$tail);
-}
-
-function vp3_phone_agent_workspace_worker_ready_v1(PDO $pdo): bool
-{
-    if(!vp3_phone_agent_workspace_ready_v1($pdo))return false;
-    try{$pdo->query('SELECT owner_user_id,device_id,checked_epoch FROM vp3_phone_agent_ingestion_v1 WHERE 1=0');return true;}
-    catch(PDOException){return false;}
-}
-
 /** A worker verifies a saved explicit owner enrollment without opening or manufacturing a session. */
 function vp3_phone_agent_workspace_worker_scope_v1(PDO $pdo,array $expected,int $now,bool $lock=false): array
 {

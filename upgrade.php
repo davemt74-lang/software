@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-v1.php';
-require_once __DIR__ . '/includes/phone-agent-workspace-worker-v1.php';
+require_once __DIR__ . '/includes/phone-agent-workspace-schema-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
