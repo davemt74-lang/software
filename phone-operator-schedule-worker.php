@@ -9,7 +9,6 @@ if(count($argv)>2||!in_array($option,['','--dispatch','--preview-dispatch'],true
 $mode=$option==='--dispatch'?'dispatch':'prepare';
 require __DIR__.'/includes/bootstrap.php';
 require_once __DIR__.'/includes/phone-workspace-v1.php';
-require_once __DIR__.'/includes/schema-metadata.php';
 require_once __DIR__.'/includes/agent-operator-occurrences-v1.php';
 require_once __DIR__.'/includes/phone-recording-pipeline-v1.php';
 $directory=STONEFELLOW_ROOT.'/private/phone-recordings-v1';
@@ -24,7 +23,7 @@ try{
     if($mode==='dispatch'){
         require_once __DIR__.'/includes/agent-operator-dispatch-worker-v1.php';
         require_once __DIR__.'/includes/agent-operator-outreach-v1.php';
-        if(schema_metadata_table_exists(db(),'phone_operator_agendas_v1')){
+        if(vp3_operator_outreach_schema_ready_v1(db())){
             $counts['outreach']=vp3_operator_outreach_tick_v1(db(),time());
             $counts['errors']+=$counts['outreach']['errors'];
         }

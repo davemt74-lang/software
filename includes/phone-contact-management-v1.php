@@ -5,7 +5,6 @@ declare(strict_types=1);
 require_once __DIR__.'/phone-caller-contacts-v1.php';
 require_once __DIR__.'/phone-caller-contacts-schema-v1.php';
 require_once __DIR__.'/section12-data.php';
-require_once __DIR__.'/schema-metadata.php';
 
 function vp3_phone_contact_private_v1(PDO $pdo,array $scope,array $input): array
 {
@@ -44,7 +43,7 @@ function vp3_phone_contact_detail_v1(PDO $pdo,array $scope,array $input): array
     $row=vp3_phone_contact_row_v1($pdo,$scope,$id);
     require_once __DIR__.'/phone-contact-schedules-v1.php';
     $agenda=null;
-    if($scope['conversation_id']&&schema_metadata_table_exists($pdo,'phone_operator_agendas_v1')){
+    if($scope['conversation_id']&&vp3_operator_outreach_schema_ready_v1($pdo)){
         require_once __DIR__.'/agent-operator-outreach-v1.php';
         $agenda=vp3_operator_agenda_view_v1(vp3_operator_agenda_row_v1($pdo,vp3_operator_agenda_key_v1($scope,$id)));
     }

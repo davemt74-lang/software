@@ -39,6 +39,20 @@ $counts=vp3_operator_dispatch_tick_v1($pdo,function($request)use(&$sent,$input){
     return ['sid'=>'CA'.str_repeat('d',32),'account_sid'=>vp3_phone_twilio_state_v100()['account_sid'],'from'=>$request['fields']['From'],'to'=>$request['fields']['To']];
 },$when);
 c($sent===1&&$counts['submitted']===1,'exactly one mock carrier call with browser closed');
+$sid='CA'.str_repeat('d',32);
+$carrier=['CallSid'=>$sid];
+$clock=static fn()=>$when+1;
+$consentPrompt=$answer('answer',$carrier,null,null,null,$clock);
+c(str_contains($consentPrompt,'VP3 AI')&&!str_contains($consentPrompt,'Which day'),'objectives stay private until consent');
+$rec=static fn()=>['sid'=>'RE'.str_repeat('e',32),'account_sid'=>vp3_phone_twilio_state_v100()['account_sid'],'call_sid'=>$sid,'source'=>'StartCallRecordingAPI','status'=>'in-progress','channels'=>2];
+$opening=$answer('confirm',$carrier+['Digits'=>'1'],null,null,$rec,$clock);
+c(str_contains($opening,'Which day works for you?'),'exact first question is spoken after consent and confirmed recording');
+$turn=$answer('turn1',$carrier+['SpeechResult'=>'Friday afternoon'],null,static function($speech,$history,$current)use($input){
+    c($speech==='Friday afternoon'&&str_contains($current['objectives'],$input['questions']),'model sees exact remaining questions and recipient response');
+    return ['ok'=>true,'answer'=>'Who will attend?'];
+},null,$clock);
+c(str_contains($turn,'Who will attend?'),'authorized second question reaches the voice response');
+echo "PASS signed answer, notice, recording and two exact questions through simulated speech callbacks\n";
 $input['enabled']=false;$input['expected_revision']=2;
 action('save_operator_agenda',$input);
 c(vp3_operator_current_request_v1($pdo,$receipt,$when,'CA'.str_repeat('d',32))['reason']==='agenda_changed','disabling agenda after submission stops conversation');

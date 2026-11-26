@@ -2,6 +2,15 @@
 declare(strict_types=1);
 require_once __DIR__.'/agent-operator-scheduled-assignment-v1.php';
 
+function vp3_operator_outreach_schema_ready_v1(PDO $pdo):bool
+{
+    try{
+        $pdo->query('SELECT owner_user_id,contact_id,conversation_id,chat_agent_id,number_id,destination_hash,topics,questions,review_missed,enabled,revision,checked_epoch FROM phone_operator_agendas_v1 WHERE 1=0');
+        $pdo->query('SELECT owner_user_id,contact_id,reason_hash,event_id,agenda_revision,purpose,missed_event_id FROM phone_operator_outreach_uses_v1 WHERE 1=0');
+        return true;
+    }catch(PDOException){return false;}
+}
+
 /** Owner attestation is NOT independent recipient verification or a dial grant. */
 function vp3_operator_admission_schema_ready_v1(PDO $pdo): bool
 {
