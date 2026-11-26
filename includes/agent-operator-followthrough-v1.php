@@ -35,11 +35,23 @@ function vp3_operator_followthrough_last_v1(PDO $pdo,array $scope,int $before):?
     $data=vp3_phone_recording_decode_v1($row['context_json']);$state=$data['transcript_context']['operator_followthrough_v1']??null;
     if(!is_array($state)||($state['version']??null)!==1)return ['message'=>$row,'phone'=>$data['phone_v1']??null];
     if(!is_string($state['display_hash']??null)||!hash_equals($state['display_hash'],hash('sha256',$row['message'])))throw new RuntimeException('The displayed follow-up changed.',409);
+    if(($state['kind']??'')==='proposal'||($state['kind']??'')==='list'&&!empty($state['selections'])){
+        $expected=vp3_operator_followthrough_seal_v1($state)['approval_proof']??'';
+        if($expected===''||!is_string($state['approval_proof']??null)||!hash_equals($expected,$state['approval_proof']))throw new RuntimeException('The follow-up payload changed.',409);
+    }
     return ['message'=>$row,'state'=>$state];
+}
+/** Existing credential key only; viewing/preparing a call must never create or replace a key. */
+function vp3_operator_followthrough_seal_v1(array $state):array
+{
+    unset($state['approval_proof']);$key=function_exists('ai_master_key')?ai_master_key(false):null;
+    if(is_string($key)&&strlen($key)===32)$state['approval_proof']=hash_hmac('sha256','vp3.operator-followthrough.v1:'.json_encode($state,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$key);
+    return $state;
 }
 function vp3_operator_followthrough_result_v1(string $answer,string $kind,array $state=[],array $sources=[],?array $receipt=null):array
 {
-    $state=['version'=>1,'kind'=>$kind]+$state;$state['display_hash']=hash('sha256',$answer);
+    $state=['version'=>1,'kind'=>$kind]+$state;$state['display_hash']=hash('sha256',$answer);$state=vp3_operator_followthrough_seal_v1($state);
+    if(($kind==='proposal'||$kind==='list'&&!empty($state['selections']))&&!isset($state['approval_proof']))return vp3_operator_followthrough_result_v1('Call follow-up approval is unavailable. Check the installation credential key, then reopen the findings.','blocked',[],[],vp3_tool_receipt_v1('transcripts.read','clarify','blocked','check_failed'));
     return ['handled'=>true,'answer'=>$answer,'actions'=>[],'sources'=>$sources,'transcript_context'=>['operator_followthrough_v1'=>$state],
         'tool_receipt'=>$receipt??vp3_tool_receipt_v1('transcripts.read',$kind==='list'?'read_analysis':'clarify',$kind==='list'?'read_complete':'clarification_required')];
 }
@@ -172,7 +184,7 @@ function vp3_operator_followthrough_confirm_v1(PDO $pdo,array $scope,array $last
             }
             $state['status']='completed';$state['receipt']=$effect;
         }
-        $data=vp3_phone_recording_decode_v1($fresh['message']['context_json']);$data['transcript_context']['operator_followthrough_v1']=$state;
+        $data=vp3_phone_recording_decode_v1($fresh['message']['context_json']);$data['transcript_context']['operator_followthrough_v1']=vp3_operator_followthrough_seal_v1($state);
         $pdo->prepare("UPDATE chat_messages SET context_json=? WHERE id=? AND conversation_id=? AND role='assistant'")->execute([json_encode($data,JSON_THROW_ON_ERROR),(int)$fresh['message']['id'],$scope['conversation_id']]);
         return vp3_operator_followthrough_result_v1($answer,$cancel?'cancelled':'result',isset($state['receipt'])?['receipt'=>$state['receipt']]:[],isset($snap)?[['source'=>'transcript:'.$snap['session']['id'],'title'=>'Original call finding','url'=>$snap['url']]]:[],$receipt);
     });

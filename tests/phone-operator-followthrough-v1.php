@@ -20,6 +20,7 @@ class OperatorFollowthroughPDO extends PDO {
 $GLOBALS['phone_fixture_pdo_class']=OperatorFollowthroughPDO::class;
 require __DIR__.'/phone-operator-question-preparation-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-followthrough-v1.php';
+vp3_operator_followthrough_stack_v1();
 require_once dirname(__DIR__).'/includes/agent-memory-lifecycle-v123.php';
 require_once dirname(__DIR__).'/includes/agent-task-lifecycle-v123.php';
 function personal_capability_has_v242($key,$user):bool{return empty($GLOBALS['followthrough_denied'][$key]);}
@@ -65,6 +66,8 @@ $r=followthrough_turn('No');c(followthrough_kind($r)==='cancelled'&&followthroug
 $r=followthrough_turn('Yes');c(!$r['tool_receipt']['changes_applied']&&followthrough_counts()===[0,0],'a declined proposal cannot be revived by a later yes');
 $r=followthrough_prepare_task();$pdo->prepare('UPDATE chat_messages SET message=? WHERE id=?')->execute(['A different visible question',$r['saved_message_id']]);
 $r=followthrough_turn('Yes');c(followthrough_kind($r)==='blocked'&&followthrough_counts()===[0,0],'editing visible proposal text invalidates its hidden approval payload');
+$r=followthrough_prepare_task();$q=$pdo->prepare('SELECT context_json FROM chat_messages WHERE id=?');$q->execute([$r['saved_message_id']]);$tampered=json_decode($q->fetchColumn(),true);$tampered['transcript_context']['operator_followthrough_v1']['title']='A hidden replacement';$pdo->prepare('UPDATE chat_messages SET context_json=? WHERE id=?')->execute([json_encode($tampered),$r['saved_message_id']]);
+$r=followthrough_turn('Yes');c(followthrough_kind($r)==='blocked'&&followthrough_counts()===[0,0],'the server proof binds hidden wording and schedule as well as visible text');
 $r=followthrough_prepare_task();$pdo->prepare("INSERT INTO chat_messages(conversation_id,role,message,context_json) VALUES(11,'assistant','An unrelated question','{}')")->execute();
 $r=followthrough_turn('Yes');c(empty($r['handled'])&&followthrough_counts()===[0,0],'an intervening unrelated assistant question owns the next reply');
 $pdo->exec("INSERT INTO chat_conversations(id,user_id,title,created_at,updated_at) VALUES(31,3,'No phone','2026-01-01','2026-01-01')");

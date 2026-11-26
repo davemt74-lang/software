@@ -24,7 +24,10 @@ Authority
 The current server-created owner message must match the request and be the latest
 owner turn. Replies bind to the last assistant question in that exact private
 Chat and Agent. The visible proposal/list text is hashed with its metadata;
-editing it or inserting another assistant question invalidates a bare yes.
+editing it or inserting another assistant question invalidates a bare yes. The
+installation's existing credential key signs the exact proposal/list payload;
+changed wording, schedule or references invalidate it. Reads never create a key.
+Unavailable or rotated keys require preparing the review again.
 Proposals expire after fifteen minutes. A proposed action, generated accepted
 flag or reviewed answer does not grant execution or establish real-world truth.
 The owner approves the exact task/reminder, independently of accepting a finding.
