@@ -692,8 +692,21 @@ try{
   assert.ok(captionCalls.some(row=>row.action==='suggest'&&row.receiptCount>=2));
   assert.equal(await page.evaluate(()=>phoneFixture.connects.length),originalConnects,'Suggestion never creates a carrier session');
   assert.equal(await page.evaluate(()=>phoneFixture.claims),claims,'Dual capture never opens an extra microphone lease');
-  await drawer.getByRole('button',{name:'Mute',exact:true}).click();
+  const history=caption.getByRole('button',{name:'Show earlier captions',exact:true});
+  await history.waitFor({timeout:40000});
+  const turns=caption.locator('.vp3-phone-caption-turn');
+  assert.equal(await turns.count(),8);
+  await history.click();
+  assert.ok(await turns.count()>=10,'Earlier pairs are available during this consented call');
+  assert.deepEqual(await turns.locator('strong').allTextContents().then(labels=>labels.slice(0,2)),['Caller audio','Your audio']);
+  await caption.getByRole('button',{name:'Show recent captions',exact:true}).click();
+  assert.equal(await turns.count(),8);
+  await page.evaluate(()=>{
+   const active=phoneFixture.calls.at(-1);
+   active.mute(true);active.emit('mute',true);active.mute(false);active.emit('mute',false);
+  });
   await caption.getByText('Both-sided captions stopped when you muted your audio.',{exact:true}).waitFor();
+  assert.equal(await turns.count(),0,'A quick SDK mute clears even the earlier transcript');
   assert.equal(await caption.getByText('Ask which detail matters most.',{exact:true}).count(),0);
   assert.equal(await page.evaluate(()=>phoneFixture.calls.at(-1).status()),'open');
   assert.equal(await page.evaluate(()=>phoneFixture.dualAudio.local.readyState),'live','Stopping derived capture does not stop the existing phone track');
