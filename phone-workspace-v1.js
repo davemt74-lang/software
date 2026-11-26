@@ -1895,6 +1895,14 @@
     const pairs=[['Browser',deviceSession?.phase==='registered'?'Registered in this tab':'Unregistered in this tab'],
       ['Voicemail timeout',state.voicemail_settings?.ring_seconds?state.voicemail_settings.ring_seconds+' seconds':'Unavailable'],
       ['Recording worker',displayState(state.processing_worker?.state||'unknown')]];
+    const why={prepared:'Call prepared for dispatch',owner_permission:'Owner permission is off',recipient_permission:'Recipient permission is unavailable',
+      no_reason:'No current reason to call',already_planned:'Agenda already used',contact_changed:'Contact number changed',route_or_recording_changed:'Line or recording settings changed',
+      calling_window:'Outside allowed calling hours',call_frequency:'Call frequency limit reached',phone_busy:'Phone already in use',calendar_conflict:'Calendar is busy',
+      chat_unavailable:'Private Chat unavailable',carrier_unavailable:'Carrier route unavailable',access_changed:'Access changed',changed:'Agenda changed',error:'Worker could not verify the decision'};
+    const review=state.outreach_review;
+    if(review&&Object.hasOwn(why,review.reason)&&typeof review.at==='string'&&Number.isFinite(Date.parse(review.at))){
+      pairs.push(['Last spontaneous call review',why[review.reason]+' · '+displayTime(review.at)]);
+    }
     if(state.schedule_worker)pairs.push(['Scheduled call worker',scheduleWorkerStatus(state.schedule_worker)]);
     for(const trace of (state.operator_trace||[]).slice(0,8)){
       const call=state.calls.find(row=>row.public_id===trace.call_id);

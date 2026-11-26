@@ -272,6 +272,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
         'operator_admission_available'=>$scope['conversation_id']>0&&vp3_operator_admission_schema_ready_v1($pdo)&&(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null),
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
         'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'contact_details_ready'=>vp3_phone_contact_details_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
+        'outreach_review'=>vp3_operator_outreach_last_review_v1($pdo,$scope),
         'schedule_worker'=>function_exists('vp3_phone_worker_health_v1')?vp3_phone_worker_health_v1(true):['state'=>'never_seen'],
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
 }

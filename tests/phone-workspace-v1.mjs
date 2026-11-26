@@ -156,6 +156,19 @@ function contactFixture(testOptions={}){
 }
 async function openContacts(b){await flush();await b.window.VP3PhoneWorkspaceV1.refresh();b.toggle.click();b.findButton('Contacts').click();}
 function setPhoneField(b,key,value,event='input'){const field=b.field(key);assert.ok(field,'Field '+key+' exists');field.value=value;field.emit(event);return b.field(key);}
+await test('ddd shows a bounded spontaneous decision in its original Chat',async()=>{
+ const b=setup();await flush();
+ b.state.outreach_review={reason:'calling_window',at:'2026-11-26T14:00:00Z',questions:'private text'};
+ await b.window.VP3PhoneWorkspaceV1.refresh();
+ const read=()=>b.window.VP3PhoneWorkspaceV1.operatorDiagnostics(10,2);
+ assert.match(JSON.stringify(read().pairs),/Outside allowed calling hours/);
+ assert.doesNotMatch(JSON.stringify(read()),/private text/);
+ assert.equal(b.window.VP3PhoneWorkspaceV1.operatorDiagnostics(11,2),null);
+ b.state.outreach_review.reason='unrecognized confidential detail';
+ await b.window.VP3PhoneWorkspaceV1.refresh();
+ assert.doesNotMatch(JSON.stringify(read()),/spontaneous call review|confidential detail/);
+ b.window.VP3PhoneWorkspaceV1.dispose();
+});
 await test('Contact call agenda preserves questions and requires an explicit switch to initiate calls',async()=>{
  const agenda={revision:0,topics:'',questions:'',enabled:false,review_missed:false,number_id:0};
  const b=contactFixture({respond:({body,contact,reply})=>{

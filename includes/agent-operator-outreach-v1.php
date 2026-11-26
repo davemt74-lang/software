@@ -97,14 +97,14 @@ function vp3_operator_outreach_prepare_v1(PDO $pdo,array $agenda,int $now):strin
     $scope=vp3_phone_workspace_scope_v1($pdo,['id'=>$owner],['conversation_id'=>$agenda['conversation_id'],'agent_id'=>$agenda['chat_agent_id']]);
     $number=vp3_phone_workspace_number_v1($pdo,$scope,(int)$agenda['number_id']);
     $policy=vp3_operator_auto_call_row_v1($pdo,$scope,$contact,(int)$number['agent_id']);
-    if(!$policy||!$policy['enabled'])return 'permission';
+    if(!$policy||!$policy['enabled'])return 'owner_permission';
     $bound=vp3_operator_admission_context_v1($pdo,$scope,['contact_id'=>$contact,'number_id'=>(int)$number['id'],'expected_revision'=>(int)$policy['revision']]);
     if(!hash_equals($agenda['destination_hash'],$bound['destination_hash']))return 'contact_changed';
     $review=vp3_operator_consent_row_v1($pdo,$scope,$bound);
     $withdrawn=vp3_operator_recipient_opted_out_v1($pdo,$owner,$bound['destination_hash']);
     if(vp3_operator_consent_state_v1($review,$bound,$withdrawn,$now)!=='owner_attested'
-        ||!vp3_operator_holder_modes_v1($pdo,$owner,$contact,$bound['contact']['destination_e164'],$now)['spontaneous']
-        ||vp3_operator_admission_policy_block_v1($pdo,$scope,$bound)!=='')return 'permission';
+        ||!vp3_operator_holder_modes_v1($pdo,$owner,$contact,$bound['contact']['destination_e164'],$now)['spontaneous'])return 'recipient_permission';
+    if(vp3_operator_admission_policy_block_v1($pdo,$scope,$bound)!=='')return 'route_or_recording_changed';
     $reason=vp3_operator_outreach_reason_v1($pdo,$agenda,$review['purpose'],$now);
     if(!$reason)return 'no_reason';
     $hash=$reason['fingerprint'];
@@ -138,6 +138,7 @@ function vp3_operator_outreach_tick_v1(PDO $pdo,int $now):array
         WHERE enabled=1 AND checked_epoch<? ORDER BY checked_epoch,owner_user_id,contact_id,conversation_id,chat_agent_id LIMIT 40');
     $q->execute([$now-60]);
     $counts=['prepared'=>0,'deferred'=>0,'errors'=>0];
+    $diagnostics=vp3_operator_outreach_diagnostics_ready_v1($pdo);
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $candidate){
         $key=vp3_operator_agenda_key_v1($candidate,(int)$candidate['contact_id']);
         $claim=$pdo->prepare('UPDATE phone_operator_agendas_v1 SET checked_epoch=? WHERE owner_user_id=? AND contact_id=? AND conversation_id=? AND chat_agent_id=? AND revision=? AND enabled=1 AND checked_epoch<?');
@@ -150,8 +151,18 @@ function vp3_operator_outreach_tick_v1(PDO $pdo,int $now):array
                 return vp3_operator_outreach_prepare_v1($pdo,$agenda,$now);
             });
             $counts[$state==='prepared'?'prepared':'deferred']++;
-        }catch(VP3OperatorOutreachDeferred|VP3PhoneWorkspaceException){$counts['deferred']++;}
-        catch(Throwable){$counts['errors']++;}
+        }catch(VP3OperatorOutreachDeferred $deferred){$state=$deferred->getMessage();$counts['deferred']++;}
+        catch(VP3PhoneWorkspaceException){$state='access_changed';$counts['deferred']++;}
+        catch(Throwable){$state='error';$counts['errors']++;}
+        if($diagnostics){
+            // A concurrent edit or a newer worker must keep its own result.
+            $decision=vp3_operator_outreach_decision_v1($state,$now);
+            try{
+                $pdo->prepare('UPDATE phone_operator_agendas_v1 SET decision=?,decision_epoch=? WHERE owner_user_id=? AND contact_id=?
+                    AND conversation_id=? AND chat_agent_id=? AND revision=? AND checked_epoch=? AND enabled=1')
+                    ->execute([$decision['reason'],$now,...$key,$candidate['revision'],$now]);
+            }catch(PDOException){$counts['errors']++;}
+        }
     }
     return $counts;
 }
