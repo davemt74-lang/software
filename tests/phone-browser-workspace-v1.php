@@ -9,7 +9,8 @@ require dirname(__DIR__).'/includes/phone-recording-pipeline-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-history-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-followups-v1.php';
 $dsn=getenv('VP3_PHONE_MYSQL_DSN')?:'sqlite::memory:';$mysql=str_starts_with($dsn,'mysql:');
-$pdo=new PDO($dsn,$mysql?(getenv('VP3_PHONE_MYSQL_USER')?:'root'):null,$mysql?(getenv('VP3_PHONE_MYSQL_PASSWORD')?:''):null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+$phoneFixturePDO=$GLOBALS['phone_fixture_pdo_class']??PDO::class;
+$pdo=new $phoneFixturePDO($dsn,$mysql?(getenv('VP3_PHONE_MYSQL_USER')?:'root'):null,$mysql?(getenv('VP3_PHONE_MYSQL_PASSWORD')?:''):null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
 if($mysql)$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
 function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table): bool{$q=db()->prepare($GLOBALS['mysql']?'SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?':"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return (bool)$q->fetchColumn();}

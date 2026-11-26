@@ -10,6 +10,15 @@ function vp3_transcript_reviewed_action_v1(PDO $pdo,array $user,array $principal
     $load=function()use($pdo,$user,$s,$id){$map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,$id));$st=artist_listening_v237_analysis_status($pdo,$id,$map);$m=$st['master'];if(!$m||empty($m['fresh']))throw new RuntimeException('Refresh the stale transcript analysis before reviewing or acting on it.');return $m;};
     $plugin=(string)($plan['plugin']??'');$item=(string)($plan['item_id']??'');if($plugin===''||$item==='')throw new RuntimeException('Choose an exact finding and its analysis module first.');
     if($op==='item_action'&&($plan['action']??'')==='reminder'){
+        $origin=json_decode((string)($s['metadata_json']??''),true);
+        $callReminder=false;
+        if(($origin['source']??'')==='phone_call_v1'&&($origin['phone_recording_v1']['call_kind']??'')==='browser'&&(int)($s['conversation_id']??0)===(int)($context['conversation_id']??0)){
+            $q=$pdo->prepare("SELECT 1 FROM phone_recording_jobs_v1 j JOIN phone_browser_calls_v1 c ON c.id=j.call_id AND c.owner_user_id=j.owner_user_id AND c.public_id=j.call_public_id WHERE j.owner_user_id=? AND j.session_id=? AND j.state='ready' AND j.report_message_id>0 AND c.transport_kind<>'managed_callback'");$q->execute([(int)$user['id'],$id]);$callReminder=(bool)$q->fetchColumn();$q->closeCursor();
+        }
+        if($callReminder){
+            require_once __DIR__.'/agent-operator-followthrough-v1.php';
+            return vp3_operator_followthrough_transcript_reminder_v1($pdo,$user,$principal,$s,$plan,$context);
+        }
         $m=$load();$snap=transcription_deeper_item_snapshot_v307($m,$plugin,$item);transcription_intelligence_require_accepted_v303($snap['item']);
         $schedule=$plan['schedule']??null;if(!is_array($schedule))throw new RuntimeException('What time and repeat schedule should this reminder use?');
         $schedule['title']=mb_substr($snap['text'],0,240);$normalized=reminder_schedule_v1($schedule,reminder_now_v1());

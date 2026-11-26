@@ -1,0 +1,72 @@
+Operator call follow-through in private Agent Chat
+
+Use
+After a new recorded browser or scheduled Operator call has current, complete
+saved analysis and its original report in the owning private Chat, ask:
+  Show call follow-ups.
+  Make follow-up 1 a task.
+  Remind me about follow-up 1 tomorrow at 3 PM in America/Phoenix.
+Operator shows the exact task or reminder proposal, its source link and, for a
+reminder, its timezone, time, recurrence and delivery. Reply yes to save, no to
+cancel, or ask to change it. Ask Show call follow-up status to read current saved
+outcomes. Tasks and reminders use the existing native tools and lifecycle.
+There are no new action buttons, dashboards, call grants or independent timers.
+
+The original call report gets a short conversational handoff hint. It does not
+create an extra announcement or action. Listing findings never runs inference.
+An explicit preparation request may invoke one bounded JSON interpretation;
+approval and cancellation do not infer or automatically retry. Reminders need
+a complete future schedule. Supported repeats are none, daily, weekdays and
+weekly; a new reminder is one-time unless the reviewed request specifies repeat.
+The existing reminder ledger owns occurrence deduplication and delivery spacing.
+
+Authority
+The current server-created owner message must match the request and be the latest
+owner turn. Replies bind to the last assistant question in that exact private
+Chat and Agent. The visible proposal/list text is hashed with its metadata;
+editing it or inserting another assistant question invalidates a bare yes.
+Proposals expire after fifteen minutes. A proposed action, generated accepted
+flag or reviewed answer does not grant execution or establish real-world truth.
+The owner approves the exact task/reminder, independently of accepting a finding.
+Saving the action does not change the finding's review state or complete a task.
+
+Every source read verifies the same owner, Chat and Agent, completed recorded
+browser call, original analysis policy, canonical recording/session, original
+delivered report, transcript hash, complete page coverage, current module/item
+and page locator. Managed callbacks keep their existing separate review path.
+Source and current owner authority are checked around interpretation and again
+under the existing owner/source transaction before writing. No call speech,
+answer, report body or contact details are copied into a second task database.
+
+Storage and recovery
+Existing Chat transcript_context holds reference-bound proposal state. The
+canonical task/reminder, source-item action receipt and original proposal update
+commit together. A failed source receipt rolls back the native record. A lost
+Chat acknowledgement recovers the saved receipt without another task or timer.
+Task and reminder receipts are shared with the existing Transcription actions;
+an existing record is reviewed/reused rather than blindly recreated. Deleted,
+changed or unavailable records require checking the native tool before retrying.
+This adds no new table or migration. Run the usual Cloud upgrade for the existing
+call-review, Task/List and Reminder prerequisites.
+
+Outcomes
+Status is read from canonical owner/Agent tasks and native reminders, never from
+the transcript narrative or a stale Chat success message. An occurrence marked
+done is distinguished from a completed task and from stopping a recurring series.
+Relevant record states can inform an already authorized next call under the
+existing exact agenda/contact/line/Chat and recipient-memory grant. Private task
+wording is not copied into the voice briefing. Source meaning changes, withdrawn
+memory or current record changes invalidate the earlier preparation fingerprint.
+Task completion does not answer a question, prove real-world completion, reset a
+spontaneous-call reason, grant another call or bypass calling hours/frequency.
+
+Verification
+The dedicated fixture uses real signed call/report provenance, canonical Q&A,
+native Brain task writes/lifecycle, native reminder creation/completion, source
+action receipts and actual owner Chat messages. It covers read-only proposals,
+decline, unrelated replies, modified visible text, source/permission changes,
+lost acknowledgement, rollback after native insertion, cross-entry duplication,
+status projection and future-call preparation. SQLite uses the existing native
+task SQL syntax adapter; the isolated MySQL job runs unmodified production SQL.
+Full repository checks and verified production packaging remain release gates.
+Live carrier and physical iPhone acceptance remain separate from fixture passes.

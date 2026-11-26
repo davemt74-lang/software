@@ -441,6 +441,8 @@ function vp3_phone_recording_deliver_v1(PDO $pdo,array $job,array $call,array $a
         }
     }
     if((int)$job['session_id']>0)$text.="\n\nTranscript: ".url('/artist-listening.php?session='.(int)$job['session_id']);
+    if($job['origin_kind']==='browser'&&($call['transport_kind']??'')!=='managed_callback'&&!vp3_phone_voicemail_job_v1($job)&&$transcribed&&!empty(vp3_phone_recording_decode_v1($job['policy_json'])['analyze']))
+        $text.="\n\nFor a task or reminder from this call, ask “show call follow-ups” in this Chat. You can review the exact proposal before saving.";
     $event='phone-recording-report:'.$job['public_id'];
     // A newly requested transcript gets one new report even when an earlier
     // audio-only report exists. Replayed completion uses the same source hash.
