@@ -131,7 +131,7 @@ foreach(['agree','decline','silence','withdrawn'] as $case){
     $pdo->beginTransaction();
     try{
         $prompt=$answer('answer');
-        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'recorded and transcribed')&&str_contains($prompt,'event=confirm')
+        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'responses transcribed')&&str_contains($prompt,'event=confirm')
             &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'keypad disclosure precedes capture and keeps objectives private');
         c($answer('answer')===$prompt,'answer retry can replay the pending prompt');
         if($case==='withdrawn')$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');

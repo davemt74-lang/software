@@ -58,7 +58,7 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
             if($row['reason']==='carrier_submitted')$save('answer_prompted');
             return '<Response><Gather input="dtmf" numDigits="1" timeout="8" actionOnEmptyResult="true" method="POST" action="'.
                 vp3_phone_browser_xml_v1($url('confirm')).'"><Say>This is the VP3 AI phone agent calling for your scheduled conversation. '.
-                'To agree to speak with the agent and have the conversation recorded and transcribed, press 1. To decline, press any other key or hang up.</Say></Gather><Hangup/></Response>';
+                'To agree to speak with the agent and have your responses transcribed, press 1. To decline, press any other key or hang up.</Say></Gather><Hangup/></Response>';
         }
         $digit=$form['Digits']??'';
         $save($digit==='1'?'answer_consented':($digit===''?'answer_no_input':'answer_declined'));
