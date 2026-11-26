@@ -164,4 +164,10 @@ Operator scheduled call occurrences
   Only explicitly assigned Calendar call series are considered. Open Phone > Contacts >
   Scheduled calls to see the last occurrence and its preparation status. Prepared means
   the scheduled time arrived and the preliminary line and recipient checks passed.
-  This worker does not place a carrier call. Browser calls and ordinary reminders stay available.
+  The default command prepares calls and delivers outcomes to the original Agent Chat.
+  To place scheduled calls when the browser is closed, add --dispatch to that same cron
+  command after configuring the assigned Twilio line, public HTTPS callbacks, recording
+  worker and the owner and recipient permissions. Remove --dispatch to stop new submissions.
+  The recipient hears the recording and transcription disclosure and chooses whether to
+  continue. An uncertain carrier receipt counts as an error and retains its reservation.
+  Check the original call history and the carrier log before taking further action.
