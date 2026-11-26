@@ -898,6 +898,13 @@ function vp3_top_of_mind_coordination_v1(array $health,array $specialists,int $n
             $inputs=is_array($last['inputs']??null)?array_values(array_intersect_key($names,array_flip($last['inputs']))):[];
             if($inputs)$detail.=' Reviewed '.implode(', ',$inputs).'.';
             if($waitingForReview)$detail.=' An open item is waiting for review.';
+            $cycle=$health['executive_cycle']??null;
+            if(is_array($cycle)&&is_int($cycle['assigned']??null)&&$cycle['assigned']>0){
+                $counts=$cycle['counts'];
+                $detail.=' '.$counts['prepared'].' of '.$cycle['assigned'].' assigned preparations finished.';
+                if($counts['failed']>0||$counts['unverified']>0)$detail.=' Assigned work needs outcome review.';
+                elseif($counts['waiting_owner']>0)$detail.=' Assigned work is waiting for your review.';
+            }
             if($awaitingRefresh)$detail.=' Waiting for a fresh assessment.';
             return ['phase'=>$awaitingRefresh?'waiting':'checked','detail'=>$detail,'checked_at'=>$last['at']];
         }

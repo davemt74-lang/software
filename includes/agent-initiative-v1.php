@@ -385,8 +385,9 @@ function vp3_initiative_transcript_research_fallback_v1(PDO $pdo,array $user,arr
         'focus'=>'Check whether public sources can answer this saved transcript question.','report'=>true];
 }
 
-function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array $payload,string $hash): bool
+function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array $payload,string $hash,?int &$queuedRun=null): bool
 {
+    $queuedRun=null;
     if(!is_array($payload['binding']??null))throw new RuntimeException('Initiative binding is invalid.',403);
     $live=vp3_initiative_access_v1($pdo,$user,$payload['binding']);
     $uid=(int)$user['id'];
@@ -464,6 +465,7 @@ function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array
         VALUES (?,?,'initiative','brain','agent_initiative',?,?,?,?,?,'approved','low',0,'not_required','cloud',?,3,60,UTC_TIMESTAMP())")
         ->execute([$uid,($agent=vp3_initiative_binding_agent_v1($payload['binding']))>0?$agent:null,$sourceKey,substr($hash,0,40),$dedupe,$label,json_encode($payload,JSON_THROW_ON_ERROR),$capability]);
     $run=(int)$pdo->lastInsertId();
+    $queuedRun=$run;
     if(agent_job_control_ready_v1900($pdo)){
         $priority=($payload['office_entry']??null)===true&&!isset($payload['followthrough'])?5:10;
         if(($payload['tool']??null)==='coordination.review')$priority=($payload['coordination_priority']??null)==='high'||isset($payload['followthrough'])?20:10;
@@ -690,6 +692,11 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user,?array $selected
     try{
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$policy);
+        require_once __DIR__.'/agent-ob1-executive-v1.php';
+        if(vp3_ob1_assessment_pending_v1($pdo,$live,$policy)){
+            $pdo->commit();
+            return;
+        }
         $last=agent_brain_v122_memory($live,'initiative_sweep','last-review');
         $previous=$last['metadata']??[];
         $liveRevision=vp3_initiative_live_revision_v1($pdo,$live,$policy);
@@ -721,6 +728,8 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user,?array $selected
                     if($row['kind']==='eyes_visit'){$payload['eyes_visit_ref']=$ref;break;}
                 }
                 if($engagementRevision!=='')$payload['engagement_revision']=$engagementRevision;
+                $executiveRevision=vp3_ob1_executive_revision_v1($pdo,$live,$policy);
+                if($executiveRevision!=='')$payload['executive_revision']=$executiveRevision;
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
                 $setupOnly=!array_diff(array_column($evidence,'kind'),['account_readiness','scheduling_readiness',
                     'calendar_readiness','product_readiness','business_readiness','creative_starter']);
@@ -770,6 +779,8 @@ function vp3_initiative_sweep_v1(PDO $pdo,int $limit): void
     if(!agent_brain_schema_ready()||!agent_job_engine_schema_ready_v1900($pdo))return;
     $limit=max(1,min(25,$limit));
     vp3_initiative_delivery_sweep_v1($pdo,$limit);
+    $databaseNow=vp3_initiative_sql_timestamp_v1($pdo->query('SELECT CURRENT_TIMESTAMP')->fetchColumn());
+    $changedBefore=gmdate('Y-m-d H:i:s',$databaseNow-30);
     $stmt=$pdo->prepare("SELECT p.user_id,COALESCE(p.user_agent_id,0) AS agent_id FROM agent_memory_items p
         JOIN users u ON u.id=p.user_id AND u.is_active=1
         LEFT JOIN agent_memory_items s ON s.user_id=p.user_id AND COALESCE(s.user_agent_id,0)=COALESCE(p.user_agent_id,0)
@@ -777,9 +788,11 @@ function vp3_initiative_sweep_v1(PDO $pdo,int $limit): void
         WHERE p.memory_type='initiative_policy' AND p.subject='owner-opt-in'
             AND p.is_active=1 AND JSON_VALID(p.metadata_json)
             AND JSON_UNQUOTE(JSON_EXTRACT(p.metadata_json,'$.enabled'))='true'
-            AND (s.id IS NULL OR s.last_seen_at<DATE_SUB(NOW(),INTERVAL 5 MINUTE))
+            AND (s.id IS NULL OR s.last_seen_at<DATE_SUB(NOW(),INTERVAL 5 MINUTE)
+                OR (s.last_seen_at<? AND JSON_EXTRACT(CASE WHEN JSON_VALID(s.metadata_json)
+                    THEN s.metadata_json ELSE '{}' END,'$.specialist_source_changed')=1))
         ORDER BY COALESCE(s.last_seen_at,p.last_seen_at),p.user_id LIMIT ".$limit);
-    $stmt->execute();
+    $stmt->execute([$changedBefore]);
     foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row){
         $owner=(int)$row['user_id'];$agentId=(int)$row['agent_id'];
         $user=agent_cognitive_loop_v310_user($owner);
@@ -1872,6 +1885,11 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 'owner_context'=>vp3_initiative_owner_context_v1($pdo,$live,$binding)];
             $request['specialists']=vp3_initiative_specialist_plan_context_v1($pdo,$live,$binding,$tools,$evidence);
             if($specialistReports)$request['specialist_reports']=$specialistReports;
+            if(!$canvasDiscovery){
+                require_once __DIR__.'/agent-ob1-executive-v1.php';
+                $cycle=vp3_ob1_executive_cycle_v1($pdo,$live,$binding);
+                if($cycle!==null)$request['executive_review']=$cycle;
+            }
             if($canvasDiscovery){
                 $request['budget']=array_replace($budget,['max_jobs'=>1,'max_opportunities'=>3]);
                 $request['canvas_review']='Review the available specialist findings, saved Canvas inventory and owner feedback. '
@@ -2005,7 +2023,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             }
             $fallback=$canvasDiscovery?null:vp3_initiative_transcript_research_fallback_v1($pdo,$live,$binding,$jobs,$evidence,$topicRefs);
             if($fallback!==null)$jobs[]=$fallback;
-            $admitted=0;$admissions=[];
+            $admitted=0;$admissions=[];$assignedRuns=[];
             foreach($jobs as $job){
                 $meetingPrep=$evidence[$job['primary']]['meeting_prep']??null;
                 if($meetingPrep!==null&&!vp3_initiative_meeting_prep_eligible_v1($pdo,(int)$live['id'],$agentId,$meetingPrep))continue;
@@ -2013,6 +2031,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 $work=['binding'=>$binding,'sources'=>$selected,'canonical_sources'=>array_intersect_key($canonicalSources,$selected),
                     'capability_sources'=>vp3_initiative_capability_source_map_v1($evidence,$job['refs']),
                     'tool'=>$job['tool'],'primary'=>$job['primary'],'focus'=>$job['focus'],'report'=>$job['report']];
+                if(!$canvasDiscovery)$work['ob1_assessment_run_id']=(int)$run['id'];
                 if($canvasDiscovery)$work['opportunity_lane']='app_suggestions';
                 if(($evidence[$job['primary']]['kind']??null)==='transcript_research'){
                     require_once __DIR__.'/agent-transcript-research-policy-v1.php';
@@ -2032,13 +2051,14 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 }else{
                     $hash=hash('sha256',json_encode([$binding,$job['tool'],$job['primary'],$selected],JSON_THROW_ON_ERROR));
                 }
-                $queued=vp3_initiative_enqueue_v1($pdo,$live,'initiative.prepare',$work,$hash);
-                if($queued)$admitted++;
+                $queued=vp3_initiative_enqueue_v1($pdo,$live,'initiative.prepare',$work,$hash,$childRun);
+                if($queued){$admitted++;$assignedRuns[]=$childRun;}
                 $admissions[vp3_initiative_brainstorm_identity_v1($job['tool'],$job['primary'],$selected)]=$queued?'queued':'existing';
             }
             $receipt=agent_worker_cloud_result_v1910($pdo,$live,$claim,true,'OB1 assessment recorded.',
                 ['effect_state'=>$admitted?'assignments_queued':($jobs?'existing_assignments':'idle'),'jobs'=>$admitted,
                     'initiative_tool_result'=>vp3_initiative_brainstorm_result_v1($opportunities,$evidence,$admissions,$finding,$ob1Inputs)]
+                +(!$canvasDiscovery?['ob1_assignment_run_ids'=>$assignedRuns]:[])
                 +(isset($evidence[$payload['eyes_visit_ref']??''])?['eyes_visit_ref'=>$payload['eyes_visit_ref']]:[])
                 +($discarded>0?['opportunities_discarded'=>$discarded]:[])
                 +($activityOmitted>0?['activity_sources_omitted'=>$activityOmitted]:[]));
@@ -2189,6 +2209,13 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
         }
         $summary=$reason==='assessment_sources_changed'?'The sources changed during assessment.':'Initiative work could not be verified.';
         $receipt=agent_worker_cloud_result_v1910($pdo,$user,$claim,false,$summary,$withheld,$reason,$retryable);
+        if(!$planning&&isset($payload['ob1_assessment_run_id'])&&!empty($receipt['receipt_id'])&&empty($receipt['duplicate'])){
+            try{vp3_initiative_brainstorm_wake_changed_v1($pdo,(int)$user['id'],$binding);}
+            catch(PDOException $error){
+                if(function_exists('agent_runtime_v125_trace'))agent_runtime_v125_trace('initiative.ob1_outcome_wake_unavailable',
+                    ['user_id'=>(int)$user['id'],'error_class'=>get_class($error)]);
+            }
+        }
         if($planning&&!$canvasDiscovery&&$reason==='assessment_sources_changed'&&empty($receipt['duplicate'])){
             try{vp3_initiative_brainstorm_wake_changed_v1($pdo,(int)$user['id'],$binding);}
             catch(PDOException $error){

@@ -129,6 +129,12 @@ function agent_workflow_public_json_v1400(string $json,bool $storeInitiativeDraf
             if($storeInitiativeDraft&&is_array($value))$safe[$key]=agent_workflow_initiative_result_v1400($value);
             continue;
         }
+        if($key==='ob1_assignment_run_ids'){
+            if($storeInitiativeDraft&&is_array($value)&&array_is_list($value)&&count($value)<=8
+                &&!array_filter($value,static fn(mixed $id):bool=>!is_int($id)||$id<1)
+                &&count(array_unique($value))===count($value))$safe[$key]=$value;
+            continue;
+        }
         if($key==='eyes_visit_ref'){
             require_once __DIR__.'/agent-live-context-v1.php';
             if($storeInitiativeDraft&&vp3_live_context_eyes_visit_ref_v1($value))$safe[$key]=$value;

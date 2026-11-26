@@ -102,13 +102,40 @@ regressions remain in coverage. Native MySQL and SQLite gates are included in th
 existing workflow. Production provider/device configuration still needs live
 installation acceptance; no real paid model or provider calls were used in tests.
 
-## Remaining build sections
+## Section 4: durable executive outcome review
 
-1. Extend OB1's durable executive loop to review objectives and returned ideas,
-   prioritize, assign, verify outcomes, advance or escalate, and schedule the next
-   review. Use meaningful-change wakeups and bounded periodic catch-up. The server
-   or HomeServer worker owns execution when the browser is closed.
+New OB1 assignments retain their supervising assessment. The same private,
+byte-matched assessment receipt records the exact newly admitted child IDs. No
+new queue, scheduler, table or copied specialist report is introduced. Legacy
+work retains its existing behavior and is not given invented parentage.
 
-Each section needs its own concrete acceptance evidence and current-main conflict
-review. Repository tests do not prove a particular live installation's scheduler,
-provider credentials or physical device behavior.
+OB1 receives bounded counts from canonical queued work, actual live leases,
+completed private preparations, verified failures, owner waits and unverified
+results. The review covers up to eight recent assessments and 25 recent terminal
+preparations. An idle newer assessment cannot hide unfinished work in that view.
+Top of Mind shows preparation progress and work that needs review. A completed
+preparation does not assert owner approval or completion of a real-world objective.
+All next actions still require current sources and the existing tool admission.
+
+Ready or running automatic general assessments share one executive turn for the
+exact owner/Agent/Chat/policy. Independent specialists keep their own canonical
+lanes. A delayed retry retains backoff without blocking a fresh ready assessment.
+Verified outcomes affect the next assessment identity; assessment rows, heartbeat
+and delivery changes cannot manufacture new outcome context. Failed child work
+wakes the existing review checkpoint. The server sweep recognizes meaningful
+source/outcome changes after the normal 30-second minimum and retains five-minute
+catch-up. Execution still depends on the installed server worker, whose observed
+health is reported separately. An open browser is not required by the sweep.
+
+The new end-to-end gate has 27 checks on SQLite and native MySQL after the existing
+107-check Canvas fixture. It runs actual planning and private execution, records
+exact admissions, verifies leases and receipts, rejects mismatched and empty
+completion payloads, protects owner/Chat boundaries, exposes a real failed child
+to the next OB1 model, preserves retry backoff, and queues an outcome review from
+the server sweep with a stale browser heartbeat. Repeating status reads and
+sweeps cannot run inference or duplicate the ready assessment. Runtime (106),
+Top of Mind (45), the assessment pipeline (57) and creative starters (31) remain
+regression gates. GitHub checks certify each published revision before merging.
+
+Repository tests do not prove a particular live installation's scheduler,
+provider credentials, paid provider output quality or physical device behavior.

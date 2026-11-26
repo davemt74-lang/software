@@ -464,6 +464,13 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
                 $health['assessment_read']='unavailable';
                 $health['assessment_diagnostic']=vp3_initiative_health_diagnostic_v1($error,'assessment_read',(int)$live['id'],$agentId,$cid);
             }
+            try{
+                require_once __DIR__.'/agent-ob1-executive-v1.php';
+                $cycle=vp3_ob1_executive_cycle_v1($pdo,$live,$policy);
+                if($cycle!==null)$health['executive_cycle']=$cycle;
+            }catch(Throwable $error){
+                $health['executive_cycle_read']='unavailable';
+            }
             $latest=true;
             $recent=vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy);
             $executing=vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy,executingOnly:true);
