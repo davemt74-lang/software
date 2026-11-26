@@ -164,13 +164,15 @@ await test('ddd shows a bounded spontaneous decision in its original Chat',async
  assert.match(JSON.stringify(read().pairs),/Outside allowed calling hours/);
  assert.doesNotMatch(JSON.stringify(read()),/private text/);
  assert.equal(b.window.VP3PhoneWorkspaceV1.operatorDiagnostics(11,2),null);
+ b.state.outreach_review.reason='brainstorm_unavailable';await b.window.VP3PhoneWorkspaceV1.refresh();
+ assert.match(JSON.stringify(read().pairs),/Private reason review unavailable/);
  b.state.outreach_review.reason='unrecognized confidential detail';
  await b.window.VP3PhoneWorkspaceV1.refresh();
  assert.doesNotMatch(JSON.stringify(read()),/spontaneous call review|confidential detail/);
  b.window.VP3PhoneWorkspaceV1.dispose();
 });
 await test('Contact call agenda preserves questions and requires an explicit switch to initiate calls',async()=>{
- const agenda={revision:0,topics:'',questions:'',enabled:false,review_missed:false,number_id:0};
+ const agenda={revision:0,topics:'',questions:'',enabled:false,review_missed:false,review_account:false,number_id:0};
  const b=contactFixture({respond:({body,contact,reply})=>{
    if(body.action==='phone_contact_detail')return reply({contact,agenda,editable:true,schedules:{available:true,execution_enabled:false,items:[]}});
    if(body.action==='save_operator_agenda')return reply({agenda:{...body,revision:1}});
@@ -179,11 +181,12 @@ await test('Contact call agenda preserves questions and requires an explicit swi
  setPhoneField(b,'agenda-questions','Can we confirm Friday?');setPhoneField(b,'agenda-topics','Launch date');
  assert.equal(b.field('agenda-enabled').checked,false);
  b.field('agenda-review_missed').checked=true;b.field('agenda-review_missed').emit('change');
+ b.field('agenda-review_account').checked=true;b.field('agenda-review_account').emit('change');
  await b.window.VP3PhoneWorkspaceV1.refresh();
  assert.equal(b.field('agenda-questions').value,'Can we confirm Friday?');
  b.document.querySelector('.vp3-phone-agenda-form').emit('submit');await flush();
  const post=b.calls.find(item=>item.action==='save_operator_agenda');
- assert.equal(post.enabled,false);assert.equal(post.contact_id,7);assert.equal(post.questions,'Can we confirm Friday?');assert.equal(post.review_missed,true);
+ assert.equal(post.enabled,false);assert.equal(post.contact_id,7);assert.equal(post.questions,'Can we confirm Friday?');assert.equal(post.review_missed,true);assert.equal(post.review_account,true);
  assert.equal(b.facts.connects,0);b.findButton('Call agenda').click();assert.equal(b.field('agenda-topics').value,'Launch date');
  b.window.VP3PhoneWorkspaceV1.dispose();
 });
