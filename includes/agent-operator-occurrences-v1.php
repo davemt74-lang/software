@@ -11,6 +11,19 @@ function vp3_operator_next_occurrence_v1(array $event,int $now): int
     return $rows?user_calendar_validate_utc_v1300($rows[0]['start_at_utc'])->getTimestamp():0;
 }
 
+/** Recheck the assigned private Chat and the remaining call window before preparing the receipt. */
+function vp3_operator_occurrence_calendar_reason_v1(PDO $pdo,array $assignment,int $due,int $end,int $now): string
+{
+    try{
+        $scope=vp3_phone_workspace_scope_v1($pdo,['id'=>(int)$assignment['owner_user_id']],[
+            'conversation_id'=>(int)$assignment['conversation_id'],'agent_id'=>(int)$assignment['chat_agent_id']
+        ]);
+    }catch(VP3PhoneWorkspaceException){return 'chat_unavailable';}
+    $assigned=['id'=>(int)$assignment['event_id'],'start'=>$due,'end'=>$end];
+    $ranges=vp3_operator_calendar_conflicts_v1($pdo,$scope,$now,$end,$assigned);
+    return vp3_operator_calendar_slot_free_v1($now,$end-$now,$ranges)?'awaiting_dispatch_checks':'calendar_conflict';
+}
+
 /** The worker records a due occurrence once. A receipt is never permission to dial. */
 function vp3_operator_occurrences_tick_v1(PDO $pdo,int $now,int $limit=40): array
 {
@@ -47,7 +60,8 @@ function vp3_operator_occurrences_tick_v1(PDO $pdo,int $now,int $limit=40): arra
                     if(hash_equals($assignment['line_binding'],hash('sha256',$route['provider_sid'].'|'.$route['phone_e164']))&&hash_equals($assignment['destination_hash'],hash('sha256',$destination))){
                         $modes=vp3_operator_holder_modes_v1($pdo,$owner,(int)$assignment['contact_id'],$destination,$now);
                         $allowed=$modes['scheduled']&&!vp3_operator_recipient_opted_out_v1($pdo,$owner,$assignment['destination_hash']);
-                        $state=$allowed?'prepared':'blocked';$reason=$allowed?'awaiting_dispatch_checks':'recipient_permission';
+                        $reason=$allowed?vp3_operator_occurrence_calendar_reason_v1($pdo,$assignment,$due,$end,$now):'recipient_permission';
+                        $state=$reason==='awaiting_dispatch_checks'?'prepared':'blocked';
                     }
                 }
                 $q=$pdo->prepare('SELECT 1 FROM phone_operator_occurrences_v1 WHERE owner_user_id=? AND event_id=? AND start_epoch=?');

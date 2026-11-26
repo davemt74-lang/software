@@ -61,7 +61,7 @@ function vp3_operator_calendar_slot_v1(array $settings,int $start,int $duration,
 }
 
 /** Uses native Calendar recurrence and pending/confirmed bookings. Cloud only. */
-function vp3_operator_calendar_conflicts_v1(PDO $pdo,array $scope,int $from,int $to): array
+function vp3_operator_calendar_conflicts_v1(PDO $pdo,array $scope,int $from,int $to,?array $assignedOccurrence=null): array
 {
     if(!vp3_operator_calendar_ready_v1($pdo))
         vp3_phone_workspace_error_v1('operator_calendar_unavailable',503,'Cloud Calendar availability could not be verified.');
@@ -73,6 +73,8 @@ function vp3_operator_calendar_conflicts_v1(PDO $pdo,array $scope,int $from,int 
         $start=user_calendar_validate_utc_v1300($event['start_at_utc'])->getTimestamp();
         $end=user_calendar_validate_utc_v1300($event['end_at_utc'])->getTimestamp();
         if($end<=$start)vp3_phone_workspace_error_v1('operator_calendar_unavailable',503,'A Cloud Calendar time could not be verified.');
+        if($assignedOccurrence!==null && ($event['kind']??'')==='event' && (int)$event['id']===$assignedOccurrence['id']
+            && $start===$assignedOccurrence['start'] && $end===$assignedOccurrence['end'])continue;
         $ranges[]=[$start,$end];
     }
     return $ranges;

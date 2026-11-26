@@ -766,7 +766,7 @@
     }
     if(!draft.schedules.items.length)section.append(node('p','vp3-phone-empty','No scheduled calls.'));
     const add=button('+ Scheduled call',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError){draft.schedule=newContactSchedule();render();}});add.disabled=blocked||draft.schedules.items.length>=20;section.append(add);
-    const reasons={awaiting_dispatch_checks:'Prepared for dispatch checks',recipient_permission:'Blocked by recipient preferences',window_ended:'Missed call window',contact_or_line_changed:'Contact or line changed'};
+    const reasons={calendar_conflict:'Another Calendar event or booking overlaps the call',chat_unavailable:'Assigned Chat is unavailable',awaiting_dispatch_checks:'Prepared for dispatch checks',recipient_permission:'Blocked by recipient preferences',window_ended:'Missed call window',contact_or_line_changed:'Contact or line changed'};
     if(Array.isArray(draft.schedules.history)&&draft.schedules.history.length){
       const history=node('details','vp3-phone-scheduled-history');
       history.append(node('summary',null,'Scheduled call history'));
