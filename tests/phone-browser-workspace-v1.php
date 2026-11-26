@@ -245,6 +245,7 @@ c(strpos($incoming,'This call will be recorded')<strpos($incoming,'<Dial'),'inco
 c($in['conversation_id']==11&&$in['agent_id']==9&&$in['chat_agent_id']==0,'incoming assigned Agent and owner MAIN Chat kept separately');
 denies(fn()=>action('bind_call',['call_id'=>$in['public_id'],'agent_id'=>7,'conversation_id'=>12]),404,'named Agent cannot bind another assigned Agent incoming call');
 c(action('bind_call',['call_id'=>$in['public_id']])['call']['public_id']===$in['public_id'],'owner MAIN can bind authorized incoming call');
+denies(fn()=>action('route_incoming',['call_id'=>$in['public_id'],'destination'=>'agent']),409,'an answer claim blocks a competing Agent handoff');
 c(status($in,'no-answer','3')['accepted'],'called leg failure recorded before Dial complete');
 $end=status($in,'no-answer','3',[],true);c($end['fallback']===true,'Dial complete still offers voicemail when terminal child status arrived first');
 c(empty(status($in,'no-answer','3',[],true)['fallback']),'replayed Dial complete cannot offer a second voicemail');
@@ -265,6 +266,29 @@ foreach($rows as $vm){action('mark_voicemail_read',['voicemail_id'=>$vm['id']]);
 c(count(array_filter(api('GET')['state']['voicemails'],fn($r)=>$r['read']))===2,'legacy and job voicemail read state persists');
 c(api('GET',['action'=>'recording_policy','number_id'=>3])['policy']['model_route']==='account_cloud','policy binds selected assigned Agent from MAIN');
 
+// Route the ringing caller through the same signed completion endpoint as Twilio.
+$hadModes=table_exists('phone_voice_modes_v140');$hadTurns=table_exists('phone_voice_turns_v140');
+ddl('CREATE TABLE IF NOT EXISTS phone_voice_modes_v140(phone_number_id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,mode VARCHAR(24))');
+ddl('CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY)');
+$pdo->exec('DELETE FROM phone_voice_modes_v140 WHERE phone_number_id=3');
+$sid='CA'.str_repeat('ca',16);
+$pdo->prepare('INSERT INTO phone_voice_calls_v130(provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164) VALUES (?,?,?,?,?,?,?)')->execute(['twilio',$sid,1,3,9,'+16025550888','+16025550103']);
+vp3_phone_browser_incoming_v1($pdo,$route,$sid);
+$hand=vp3_phone_browser_call_by_sid_v1($pdo,$sid);
+$choice=['call_id'=>$hand['public_id'],'destination'=>'agent'];
+denies(fn()=>action('route_incoming',$choice),409,'a line without Agent voice mode cannot handle a transferred call');
+$pdo->exec("INSERT INTO phone_voice_modes_v140 VALUES(3,1,9,'conversation')");
+c(action('route_incoming',$choice)['destination']==='agent'&&action('route_incoming',$choice)['call_id']===$hand['public_id'],'same Agent handoff request is idempotent');
+denies(fn()=>action('route_incoming',array_replace($choice,['destination'=>'voicemail'])),409,'conflicting voicemail choice loses');
+denies(fn()=>action('bind_call',['call_id'=>$hand['public_id']]),409,'second browser cannot answer after Agent selection');
+$endForm=form($sid,['DialCallSid'=>'CA'.str_repeat('cb',16),'DialCallStatus'=>'busy']);
+$_POST=$endForm;$_GET=['call'=>$hand['public_id']];$_SERVER['HTTP_X_TWILIO_SIGNATURE']=signature('complete',$endForm,$hand['public_id']);
+ob_start();vp3_phone_browser_endpoint_v1('complete');$agentXml=ob_get_clean();
+c(str_contains($agentXml,'<Gather')&&str_contains($agentXml,'an AI phone assistant')&&!str_contains($agentXml,'<Record'),'signed handoff opens Agent conversation after the browser declines');
+c(vp3_phone_voice_current_route_v131($pdo,$sid,1800,['conversation_active'])['accepted'],'Agent turn is bound to the original caller');
+$pdo->exec('DELETE FROM phone_voice_modes_v140 WHERE phone_number_id=3');
+if(!$hadModes)$pdo->exec('DROP TABLE phone_voice_modes_v140');
+if(!$hadTurns)$pdo->exec('DROP TABLE phone_voice_turns_v140');
 // Existing inbound routes must announce even when nobody registered a browser Device
 // and the caller hangs up before a recording callback ever arrives.
 $pdo->exec('DELETE FROM phone_browser_presence_v1');$priorMessages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();$priorBrowser=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
@@ -276,7 +300,7 @@ c($offline['accepted']&&str_contains($offline['twiml'],'<Record'),'offline brows
 c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$priorBrowser,'offline route reuses existing receipt without inventing browser call');
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$priorMessages+1,'call without any recording callback still announces once in Chat');
 $offlineMessage=$pdo->query('SELECT * FROM chat_messages ORDER BY id DESC LIMIT 1')->fetch();$offlineMarker=json_decode($offlineMessage['context_json'],true)['phone_v1'];
-c($offlineMarker===['kind'=>'call','call_id'=>$offlineId]&&str_contains($offlineMessage['message'],'+16025550777')&&str_contains($offlineMessage['message'],'+16025550101'),'offline announcement uses stable receipt reference and observed caller/called numbers');
+c($offlineMarker===['kind'=>'call','call_id'=>$offlineId,'browser_route'=>'no_registered_browser']&&str_contains($offlineMessage['message'],'+16025550777')&&str_contains($offlineMessage['message'],'+16025550101'),'offline announcement uses stable receipt reference and observed caller/called numbers');
 vp3_phone_voice_incoming_v130($pdo,$offlineForm,$offlineSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$priorMessages+1,'repeated signed offline callback cannot duplicate announcement');
 $legacyCalls=array_values(array_filter(api('GET')['state']['calls'],fn($r)=>$r['public_id']===$offlineId));
