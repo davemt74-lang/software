@@ -134,7 +134,8 @@ function vp3_operator_live_start_v1(PDO $pdo,array $scope,string $public,int $no
         $q->execute([(int)$call['id'],$mode,$suggestions?1:0,bin2hex(random_bytes(32))]);
         $grant=['call_id'=>$public,'token'=>$token,'expires_epoch'=>$expires,'chunk_seconds'=>4,'execution'=>'captions_only'];
         if($mode!=='remote'||$suggestions)$grant+=['capture_mode'=>$mode,'suggestions_enabled'=>$suggestions];
-        if($controls)$grant+=['session_seconds'=>$seconds,'audio_limit_seconds'=>$audioLimit,'max_sequences'=>intdiv($audioLimit,$mode==='both'?8:4)];
+        if($controls)$grant+=['session_seconds'=>$seconds,'audio_limit_seconds'=>$audioLimit,'max_sequences'=>intdiv($audioLimit,$mode==='both'?8:4),
+            'audio_seconds_remaining'=>min($audioLimit,max(0,VP3_OPERATOR_LIVE_HOUR_SECONDS_V1-vp3_operator_live_budget_v1($pdo,$scope['owner_user_id'],$now)))];
         return $grant;
     });
 }
@@ -219,6 +220,8 @@ function vp3_operator_live_chunk_v1(PDO $pdo,array $scope,string $public,string 
             $q->execute([$id,$seq]);
             if($q->rowCount()!==1)vp3_phone_workspace_error_v1('operator_live_changed',409,'Live caption permission changed.');
             $result=['call_id'=>$public,'seq'=>$seq,'text'=>$caption,'speaker'=>'remote_audio'];
+            if(array_key_exists('audio_limit_seconds',$row))$result['audio_seconds_remaining']=max(0,min((int)$row['audio_limit_seconds']-(int)$row['reserved_seconds'],
+                VP3_OPERATOR_LIVE_HOUR_SECONDS_V1-vp3_operator_live_budget_v1($pdo,$scope['owner_user_id'],$finished)));
             if($localCaption!==null)$result['local_text']=$localCaption;
             if(!empty($assist['suggestions_enabled'])){
                 $result['receipts']=[];

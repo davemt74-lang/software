@@ -231,10 +231,21 @@ denies(fn()=>part_request($ctx,['action'=>'participation_resume','expected_revis
 part_request($ctx,['action'=>'participation_stop'],122);
 denies(fn()=>part_request($ctx,['action'=>'participation_resume','expected_revision'=>3],123),409,'Remove Agent cannot be undone with Resume');
 
-$ctx=part_fixture(120);$last=[];
-for($seq=1;$seq<=30;$seq++)$last=part_captions($ctx,$seq,$seq===30?119:$seq*4);
+$ctx=part_fixture(120);
+for($seq=1;$seq<30;$seq++)part_captions($ctx,$seq,$seq*4);
+$audio=base64_encode(str_repeat("\0",128000));$last=part_request($ctx,['action'=>'chunk','seq'=>30,'pcm'=>$audio,'local_pcm'=>$audio],119);
+c($last['audio_seconds_remaining']===0,'the browser receives the actual exhausted processing allowance');
 c((int)vp3_operator_live_row_v1($pdo,$ctx['id'])['reserved_seconds']===240,'120 seconds of dual capture consumes the full 240 audio-second allowance');
 c(vp3_operator_live_budget_v1($pdo,1,$ctx['now']+119)===240,'the longer session does not bypass the hourly audio cap');
+
+$ctx=part_fixture(120);
+$q=$pdo->prepare('SELECT MIN(call_id) FROM phone_operator_live_sessions_v1 WHERE owner_user_id=1 AND call_id<>?');$q->execute([$ctx['id']]);$prior=(int)$q->fetchColumn();$q->closeCursor();
+c($prior>0,'the budget fixture includes an earlier owner session');
+$pdo->prepare('UPDATE phone_operator_live_sessions_v1 SET reserved_seconds=232,consent_epoch=? WHERE call_id=?')->execute([$ctx['now'],$prior]);
+$left=part_request($ctx,['action'=>'chunk','seq'=>1,'pcm'=>$audio,'local_pcm'=>$audio],4);
+c($left['audio_seconds_remaining']===0,'earlier call processing reduces the visible balance despite remaining session time');
+denies(fn()=>part_captions($ctx,2,8),409,'the hourly processing cap cannot be bypassed with a longer selected session');
+c($GLOBALS['partSttIndex']===2,'exhausted processing allowance prevents another pair of provider requests');
 
 $ctx=part_fixture();part_grant($ctx);part_request($ctx,['action'=>'participation_stop'],2);
 foreach(['decision_limit','response_limit','control_revision','resume_seq'] as $column)$pdo->exec('ALTER TABLE phone_operator_participation_v1 DROP COLUMN '.$column);

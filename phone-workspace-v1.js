@@ -1258,6 +1258,9 @@
     if(session.busy){session.skipped=Math.min(999,session.skipped+1);render();return;}
     if(!captionTracksCurrent(entry,session)){stopRemoteCaptions(entry,'Call audio changed. Live captions stopped.');render();return;}
     if(session.seq>session.maxSequences||Date.now()>=session.deadline){stopRemoteCaptions(entry,'Live caption allowance ended.');render();return;}
+    const cost=session.mode==='both'?8:4;
+    if(Number.isInteger(session.audioRemaining)&&session.audioRemaining<cost){stopRemoteCaptions(entry,'Caption processing allowance ended. The human call continues.');render();return;}
+    if(Number.isInteger(session.audioRemaining))session.audioRemaining-=cost;
     session.busy=true;const seq=session.seq++;
     try{
       const fields={token:session.token,seq,pcm:encodeCaptionPcm(session.mode==='both'?buffer?.remote:buffer)};
@@ -1267,6 +1270,11 @@
       if(result.call_id!==entry.info.public_id||result.seq!==seq||result.speaker!=='remote_audio'||typeof result.text!=='string'||result.text.length>2400)
         throw new Error('The live caption result could not be verified.');
       if(!captionTracksCurrent(entry,session)){stopRemoteCaptions(entry,'Call audio changed. Live captions stopped.');render();return;}
+      if(Number.isInteger(session.audioRemaining)){
+        if(!Number.isInteger(result.audio_seconds_remaining)||result.audio_seconds_remaining<0||result.audio_seconds_remaining>session.audioLimit-seq*cost)
+          throw new Error('The caption processing balance could not be verified.');
+        session.audioRemaining=result.audio_seconds_remaining;
+      }
       addCaptionLine(session,'remote_audio',result.text,seq);
       if(session.mode==='both')addCaptionLine(session,'local_audio',result.local_text,seq);
       else if('local_text' in result)throw new Error('Unexpected local caption.');
@@ -1330,6 +1338,9 @@
       if(view.controls_available===true){
         if(result.session_seconds!==seconds||result.audio_limit_seconds!==seconds*(mode==='both'?2:1)||result.max_sequences!==Math.floor(seconds/4))
           throw new Error('Live caption limits could not be verified.');
+        if(!Number.isInteger(result.audio_seconds_remaining)||result.audio_seconds_remaining<(mode==='both'?8:4)||result.audio_seconds_remaining>result.audio_limit_seconds)
+          throw new Error('The caption processing balance could not be verified.');
+        session.audioRemaining=result.audio_seconds_remaining;session.audioLimit=result.audio_limit_seconds;
         session.maxSequences=result.max_sequences;
       }
       session.deadline=Math.min(Date.now()+seconds*1000,result.expires_epoch*1000);
@@ -1426,6 +1437,8 @@
     if(session){
       panel.append(node('p','vp3-phone-meta',session.phase==='listening'?'Live captions on · human call remains in control':'Authorizing live captions…'));
       const participating=session.assist?renderParticipation(panel,entry,session):false;
+      if(Number.isInteger(session.audioRemaining))panel.append(node('p','vp3-phone-meta','Caption processing left: up to '+
+        Math.floor(session.audioRemaining/(session.mode==='both'?8:4))*4+' seconds for '+(session.mode==='both'?'both audio sides.':'caller audio.')));
       if(session.captions.length){
         if(session.captions.length>8){
           const history=button(session.showEarlier?'Show recent captions':'Show earlier captions',()=>{
@@ -1486,6 +1499,7 @@
         if(view.controls_available===true)operatorLimitField(panel,'Caption session limit',[[30,'30 seconds'],[60,'60 seconds'],[120,'120 seconds']],entry.captionSeconds??(entry.captionBoth?60:120),value=>{
           if(active===entry){entry.captionSeconds=value;entry.captionConsent=false;render();}
         },'operator-session-limit');
+        if(view.controls_available===true)panel.append(node('p','vp3-phone-meta','Hourly caption allowance: 240 seconds of audio in total. Both audio sides each use allowance. Earlier call processing reduces what remains.'));
         const actions=node('div','vp3-phone-actions'),start=button('Start live captions',event=>void startRemoteCaptions(entry,event),'vp3-phone-button vp3-phone-primary');
         start.disabled=!entry.captionConsent;start.dataset.phoneFocusKey='start-caption-'+entry.info.public_id;
         const cancel=button('Cancel',()=>{if(active===entry){entry.captionPrompt=false;entry.captionConsent=false;entry.captionBoth=false;entry.captionAssist=false;render();}});actions.append(start,cancel);panel.append(actions);

@@ -66,11 +66,12 @@ const server=http.createServer((req,res)=>{
     const seconds=input.session_seconds??(state.operator_live.fixtureMode==='both'?60:120);state.operator_live.fixtureExpires=Math.floor(Date.now()/1000)+seconds;
     result={call_id:outgoingId,token,expires_epoch:state.operator_live.fixtureExpires,chunk_seconds:4,execution:'captions_only'};
     if(state.operator_live.fixtureMode==='both'||state.operator_live.fixtureAssist)Object.assign(result,{capture_mode:state.operator_live.fixtureMode,suggestions_enabled:state.operator_live.fixtureAssist});
-    if(state.operator_live.controls_available)Object.assign(result,{session_seconds:seconds,audio_limit_seconds:seconds*(state.operator_live.fixtureMode==='both'?2:1),max_sequences:Math.floor(seconds/4)});
+    if(state.operator_live.controls_available)Object.assign(result,{session_seconds:seconds,audio_limit_seconds:seconds*(state.operator_live.fixtureMode==='both'?2:1),max_sequences:Math.floor(seconds/4),audio_seconds_remaining:seconds*(state.operator_live.fixtureMode==='both'?2:1)});
    }
    else if(input.action==='chunk'){
     assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,128000);
     result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:state.operator_live.fixtureConversation?'Agent, which day works?':'Fixture caller <script>words</script>'};
+    if(state.operator_live.controls_available)result.audio_seconds_remaining=120*(state.operator_live.fixtureMode==='both'?2:1)-input.seq*(state.operator_live.fixtureMode==='both'?8:4);
     if(state.operator_live.fixtureMode==='both'){assert.equal(Buffer.from(input.local_pcm,'base64').length,128000);result.local_text='Fixture owner words';}
     else assert.equal(input.local_pcm,undefined);
     if(state.operator_live.fixtureAssist)result.receipts=[{seq:input.seq,speaker:'remote_audio',text:result.text,proof:'a'.repeat(64)},...(result.local_text?[{seq:input.seq,speaker:'local_audio',text:result.local_text,proof:'b'.repeat(64)}]:[])];
@@ -844,6 +845,7 @@ try{
   assert.equal(captionCalls.find(c=>c.action==='participation_start').max_decisions,8);
   assert.equal(captionCalls.find(c=>c.action==='participation_start').max_responses,4);
   assert.match(await caption.locator('[data-operator-balance]').innerText(),/7 AI checks left · 3 speech reservations left/);
+  await caption.getByText('Caption processing left: up to 116 seconds for both audio sides.',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1);
   if(speaker==='caller'){
    await caption.getByRole('button',{name:'Remove Agent from conversation',exact:true}).scrollIntoViewIfNeeded();
