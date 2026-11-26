@@ -74,7 +74,7 @@ denies(fn()=>api('GET',['action'=>'save_phone_contact']+$new),405,'contact mutat
 denies(fn()=>action('phone_contact_detail',['contact_id'=>1]),405,'contact detail stays a read operation');
 denies(fn()=>api('POST',['action'=>'save_phone_contact','csrf_token'=>'forged']+$new),403,'contact save requires CSRF');
 denies(fn()=>action('save_phone_contact',$new+['owner_user_id'=>2]),422,'contact payload cannot select an owner');
-foreach([['phone'=>'6025550117'],['phone'=>'javascript:call()'],['name'=>"No\nline"],['relationship'=>str_repeat('x',81)],['notes'=>str_repeat('x',2001)],['notes'=>[1]],['phone'=>'+1'] ] as $bad)
+foreach([['email'=>'invalid'],['email'=>"a@example.test\r\nBcc:b@example.test"],['phone'=>'6025550117'],['phone'=>'javascript:call()'],['name'=>"No\nline"],['relationship'=>str_repeat('x',81)],['notes'=>str_repeat('x',2001)],['notes'=>[1]],['phone'=>'+1'] ] as $bad)
     denies(fn()=>action('save_phone_contact',array_replace($new,$bad)),422,'invalid contact fields are rejected');
 $saved=action('save_phone_contact',$new);$id=$saved['contact']['id'];
 c($saved['created']===true&&$saved['contact']['phone_e164']==='+16025550117'&&$saved['contact']['relationship']==='Friend'&&$saved['contact']['notes']===$new['notes'],'save creates a personal relationship and owner-private notes with canonical phone');
@@ -97,6 +97,14 @@ denies(fn()=>action('save_phone_contact',$edit),409,'stale contact revision cann
 $mine=detail(1)['contact'];
 action('save_phone_contact',['contact_id'=>1,'expected_revision'=>$mine['revision'],'name'=>'Mine edited','phone'=>$mine['phone_e164'],'relationship'=>'Family','notes'=>'Private family note']);
 c(person(1)['lifecycle_stage']==='customer'&&person(1)['relationship']==='Family'&&person(1)['email_normalized']==='mine@example.test','personal relationship edit preserves existing sales lifecycle and email');
+$emailEdit=$edit;
+$emailEdit['expected_revision']=detail($id)['contact']['revision'];
+denies(fn()=>action('save_phone_contact',$emailEdit+['email'=>'MINE@example.test']),409,'duplicate owner email is rejected');
+$result=action('save_phone_contact',$emailEdit+['email'=>'Ada+Phone@example.test']);
+c($result['contact']['email']==='Ada+Phone@example.test'&&person($id)['email_normalized']==='ada+phone@example.test','contact stores email and canonical lookup key');
+$emailEdit['expected_revision']=$result['contact']['revision'];
+action('save_phone_contact',$emailEdit+['email'=>'']);
+c(detail($id)['contact']['email']===''&&person($id)['email_normalized']===null,'clearing an email restores phone-only identity');
 $state=api('GET')['state'];
 c(!str_contains(json_encode($state),'Private family note')&&!str_contains(json_encode($state),'Shared project goals')&&!str_contains(json_encode($state),'Other owner private note'),'Phone list and call-card projection contain no private notes');
 c(array_values(array_filter($state['contacts'],fn($row)=>$row['id']===$id))[0]['relationship']==='Colleague','contact list uses the personal relationship column');

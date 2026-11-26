@@ -4,7 +4,7 @@ declare(strict_types=1);
 /** Shared owner-private caller identity. Reading never creates contacts or contacts schemas. */
 function vp3_phone_caller_contacts_table_v1(PDO $pdo,string $table): bool
 {
-    if(!in_array($table,['crm_contacts','crm_contact_phones'],true))return false;
+    if(!in_array($table,['crm_contacts','crm_contact_phones','crm_contact_emails'],true))return false;
     try{$pdo->query('SELECT 1 FROM '.$table.' WHERE 1=0');return true;}catch(PDOException){return false;}
 }
 function vp3_phone_caller_contacts_digits_v1(string $value): string

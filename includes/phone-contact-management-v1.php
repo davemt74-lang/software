@@ -32,7 +32,7 @@ function vp3_phone_contact_row_v1(PDO $pdo,array $scope,int $id): array
 function vp3_phone_contact_public_v1(array $row): array
 {
     return ['id'=>(int)$row['id'],'name'=>(string)$row['name'],'phone_e164'=>vp3_phone_caller_contacts_e164_v1((string)$row['phone']),
-        'relationship'=>(string)($row['relationship']??''),'notes'=>(string)($row['notes']??''),'revision'=>section12_revision($row)];
+        'email'=>(string)($row['email']??''),'relationship'=>(string)($row['relationship']??''),'notes'=>(string)($row['notes']??''),'revision'=>section12_revision($row)];
 }
 function vp3_phone_contact_detail_v1(PDO $pdo,array $scope,array $input): array
 {
@@ -45,23 +45,31 @@ function vp3_phone_contact_detail_v1(PDO $pdo,array $scope,array $input): array
     return ['contact'=>vp3_phone_contact_public_v1($row),'editable'=>vp3_phone_contact_details_schema_ready_v1($pdo),
         'schedules'=>vp3_phone_contact_schedule_book_v1($pdo,$scope,$id,time())];
 }
-/** Keep alternate channels; only the chosen canonical phone becomes primary. */
-function vp3_phone_contact_channel_v1(PDO $pdo,int $id,string $phone,string $now): void
+/** Preserve alternate channels while updating the selected primary address or number. */
+function vp3_phone_contact_channel_v1(PDO $pdo,int $id,string $phone,string $now,?string $email=null): void
 {
-    if(!vp3_phone_caller_contacts_table_v1($pdo,'crm_contact_phones'))return;
-    $pdo->prepare('UPDATE crm_contact_phones SET is_primary=0 WHERE contact_id=?')->execute([$id]);
-    $q=$pdo->prepare('SELECT id FROM crm_contact_phones WHERE contact_id=? AND phone_normalized=? LIMIT 1');
-    $q->execute([$id,substr($phone,1)]);$channel=(int)$q->fetchColumn();$q->closeCursor();
-    if($channel)$pdo->prepare('UPDATE crm_contact_phones SET phone=?,is_primary=1,updated_at=? WHERE id=? AND contact_id=?')->execute([$phone,$now,$channel,$id]);
-    else $pdo->prepare("INSERT INTO crm_contact_phones(contact_id,phone,phone_normalized,label,is_primary,created_at,updated_at) VALUES(?,?,?,'primary',1,?,?)")->execute([$id,$phone,substr($phone,1),$now,$now]);
+    $channels=[['crm_contact_phones','phone',$phone,substr($phone,1)]];
+    if($email!==null)$channels[]=['crm_contact_emails','email',$email,strtolower($email)];
+    foreach($channels as [$table,$column,$value,$key]){
+        if(!vp3_phone_caller_contacts_table_v1($pdo,$table))continue;
+        $pdo->prepare("UPDATE $table SET is_primary=0 WHERE contact_id=?")->execute([$id]);
+        if($key==='')continue;
+        $q=$pdo->prepare("SELECT id FROM $table WHERE contact_id=? AND {$column}_normalized=? LIMIT 1");
+        $q->execute([$id,$key]);$channel=(int)$q->fetchColumn();$q->closeCursor();
+        if($channel)$pdo->prepare("UPDATE $table SET $column=?,is_primary=1,updated_at=? WHERE id=? AND contact_id=?")->execute([$value,$now,$channel,$id]);
+        else $pdo->prepare("INSERT INTO $table(contact_id,$column,{$column}_normalized,label,is_primary,created_at,updated_at) VALUES(?,?,?,'primary',1,?,?)")->execute([$id,$value,$key,$now,$now]);
+    }
 }
 function vp3_phone_contact_save_v1(PDO $pdo,array $scope,array $input): array
 {
-    if(array_diff(array_keys($input),['action','csrf_token','agent_id','conversation_id','contact_id','expected_revision','name','phone','relationship','notes']))
+    if(array_diff(array_keys($input),['action','csrf_token','agent_id','conversation_id','contact_id','expected_revision','name','phone','email','relationship','notes']))
         vp3_phone_workspace_error_v1('phone_contact_invalid',422,'Choose supported contact fields.');
     $id=vp3_phone_workspace_id_v1($input['contact_id']??0,true);
     $name=vp3_phone_contact_text_v1($input['name']??null,'a contact name',120,true);
     $relationship=vp3_phone_contact_text_v1($input['relationship']??'','a relationship',80);
+    $email=array_key_exists('email',$input)?vp3_phone_contact_text_v1($input['email'],'an email address',190):null;
+    if($email!==null&&$email!==''&&!filter_var($email,FILTER_VALIDATE_EMAIL))
+        vp3_phone_workspace_error_v1('phone_contact_invalid',422,'Enter a valid email address.');
     $notes=vp3_phone_contact_text_v1($input['notes']??'','notes',2000,false,true);
     $raw=vp3_phone_contact_text_v1($input['phone']??null,'an international phone number',80,true);
     $phone=vp3_phone_caller_contacts_e164_v1($raw);
@@ -71,28 +79,36 @@ function vp3_phone_contact_save_v1(PDO $pdo,array $scope,array $input): array
         vp3_phone_workspace_error_v1('phone_contact_changed',409,'Reload this contact before saving.');
     if(!vp3_phone_contact_details_schema_ready_v1($pdo))
         vp3_phone_workspace_error_v1('phone_contacts_upgrade_required',503,'Run the Cloud database upgrade to edit phone contact details.');
-    return section12_owner_transaction($pdo,$scope['owner_user_id'],function()use($pdo,$scope,$input,$id,$name,$relationship,$notes,$phone,$expected):array{
+    return section12_owner_transaction($pdo,$scope['owner_user_id'],function()use($pdo,$scope,$input,$id,$name,$relationship,$notes,$phone,$email,$expected):array{
         $scope=vp3_phone_contact_private_v1($pdo,$scope,$input);$row=$id>0?vp3_phone_contact_row_v1($pdo,$scope,$id):null;
         if($row&&!hash_equals(section12_revision($row),$expected))vp3_phone_workspace_error_v1('phone_contact_changed',409,'This contact changed. Reload it before saving.');
         $known=vp3_phone_caller_contacts_lookup_v1($pdo,$scope['owner_user_id'],[$phone]);$match=$known[$phone]??null;
         if($match&&$id!==(int)$match['id']){
             $existing=vp3_phone_contact_row_v1($pdo,$scope,(int)$match['id']);
             if($id===0&&$existing['name']===$name&&vp3_phone_caller_contacts_e164_v1((string)$existing['phone'])===$phone
+                &&($email===null||$email===(string)$existing['email'])
                 &&(string)($existing['relationship']??'')===$relationship&&(string)($existing['notes']??'')===$notes)
                 return ['contact'=>vp3_phone_contact_public_v1($existing),'created'=>false];
             vp3_phone_workspace_error_v1('phone_contact_exists',409,'This number already belongs to a saved contact. Open that contact to edit it.');
         }
+        $address=$email??(string)($row['email']??'');
+        $normalized=$email===null&&$row?$row['email_normalized']:($address===''?null:strtolower($address));
+        if($normalized!==null){
+            $duplicate=$pdo->prepare('SELECT id FROM crm_contacts WHERE owner_user_id=? AND email_normalized=? AND id<>?');
+            $duplicate->execute([$scope['owner_user_id'],$normalized,$id]);
+            if($duplicate->fetchColumn())vp3_phone_workspace_error_v1('phone_contact_exists',409,'This email address belongs to another contact.');
+        }
         $now=gmdate('Y-m-d H:i:s');
         if($row){
-            $pdo->prepare("UPDATE crm_contacts SET name=?,phone=?,relationship=?,notes=?,updated_at=? WHERE id=? AND owner_user_id=? AND status<>'archived'")
-                ->execute([$name,$phone,$relationship,$notes,$now,$id,$scope['owner_user_id']]);
+            $pdo->prepare("UPDATE crm_contacts SET name=?,phone=?,email=?,email_normalized=?,relationship=?,notes=?,updated_at=? WHERE id=? AND owner_user_id=? AND status<>'archived'")
+                ->execute([$name,$phone,$address,$normalized,$relationship,$notes,$now,$id,$scope['owner_user_id']]);
         }else{
             $bytes=random_bytes(16);$bytes[6]=chr((ord($bytes[6])&15)|64);$bytes[8]=chr((ord($bytes[8])&63)|128);$hex=bin2hex($bytes);
             $public=substr($hex,0,8).'-'.substr($hex,8,4).'-'.substr($hex,12,4).'-'.substr($hex,16,4).'-'.substr($hex,20);
-            $pdo->prepare("INSERT INTO crm_contacts(public_id,owner_user_id,name,email,email_normalized,phone,company,source,status,lifecycle_stage,marketing_status,relationship,notes,created_at,updated_at) VALUES(?,?,?,'',NULL,?,'','phone_workspace','active','','unknown',?,?,?,?)")
-                ->execute([$public,$scope['owner_user_id'],$name,$phone,$relationship,$notes,$now,$now]);$id=(int)$pdo->lastInsertId();
+            $pdo->prepare("INSERT INTO crm_contacts(public_id,owner_user_id,name,email,email_normalized,phone,company,source,status,lifecycle_stage,marketing_status,relationship,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,'','phone_workspace','active','','unknown',?,?,?,?)")
+                ->execute([$public,$scope['owner_user_id'],$name,$address,$normalized,$phone,$relationship,$notes,$now,$now]);$id=(int)$pdo->lastInsertId();
         }
-        vp3_phone_contact_channel_v1($pdo,$id,$phone,$now);
+        vp3_phone_contact_channel_v1($pdo,$id,$phone,$now,$email);
         return ['contact'=>vp3_phone_contact_public_v1(vp3_phone_contact_row_v1($pdo,$scope,$id)),'created'=>$row===null];
     });
 }
