@@ -350,7 +350,7 @@ try{
   await voiceEnable().click();await voicePhrase().waitFor();heldVoiceClaim=hold();const oldClaim=heldVoiceClaim;voiceRequested=true;await oldClaim.started;
   await nativeFrame().getByRole('button',{name:'Saved images',exact:true}).click();
   const cancelledAttachment=cancelResponse();await nativeFrame().getByRole('button',{name:'Attach Attachment fixture',exact:true}).click();
-  await nativeFrame().locator('.vp3-email-compose-attachments').getByRole('button',{name:'Remove',exact:true}).click();await cancelledAttachment;
+  await nativeFrame().locator('.vp3-email-compose-attachments').getByRole('button',{name:'Remove Attachment fixture',exact:true}).click();await cancelledAttachment;
   oldClaim.release();await oldClaim.finished;await nativeFrame().getByText('The email changed. Voice approval was cancelled.',{exact:true}).waitFor();await readyToRearm();
   assert.equal(emailCallRequests.filter(input=>input.action==='voice_claim').length,1);assert.equal(voiceReview.state,'claimed');
   assert.equal(await nativeFrame().locator('.vp3-email-compose-attachments figure').count(),0);noVoiceSend();

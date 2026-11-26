@@ -3,9 +3,9 @@ declare(strict_types=1);
 require __DIR__.'/phone-browser-workspace-v1.php';
 
 // The inherited fixture is an isolated SQLite database or an explicitly disposable CI database.
-function part_fixture():array
+function part_fixture(?int $setupEpoch=null):array
 {
-    $pdo=db();$now=time();
+    $pdo=db();$now=$setupEpoch??time();
     $pdo->exec("UPDATE users SET is_active=1,plan=1,denied=0 WHERE id=1");
     $pdo->exec("UPDATE phone_cloud_numbers_v100 SET owner_user_id=1,agent_id=7,voice_enabled=1,status='ready' WHERE id=1");
     vp3_phone_browser_number_policy_set_v1($pdo,1,true,true);
@@ -18,6 +18,8 @@ function part_fixture():array
         ->execute([$public,$parent,$now,$now]);$id=(int)$pdo->lastInsertId();
     $form=form($child,['ParentCallSid'=>$parent,'CallStatus'=>'in-progress']);
     c(vp3_phone_browser_status_v1($pdo,$form,signature('status',$form,$public),$public)['accepted'],'a signed answered carrier receipt governs the conversation');
+    // The signed callback uses its own clock; scenario actions must follow its receipt.
+    $now=time();
     $GLOBALS['partModelCalls']=0;$GLOBALS['partSpeechCalls']=0;$GLOBALS['partSttIndex']=0;
     $GLOBALS['partModel']=static function(array $user,array $evidence,callable $guard):string{
         $guard();c(!vp3_phone_transaction_active_v1(db()),'conversation model IO is outside owner locks');
@@ -56,7 +58,11 @@ function part_decide(array $ctx,array $receipts,int $offset=4,array $previous=[]
 function part_prepare(array $ctx,array $decision,int $offset=4):array
 {return part_request($ctx,['action'=>'voice_prepare','source_seq'=>$decision['based_on_seq'],'suggestion'=>$decision['text'],'proof'=>$decision['proof'],'voice_consent_attested'=>false],$offset);}
 
-$before=$checks;$ctx=part_fixture();
+$before=$checks;$ctx=part_fixture(time()-2);
+$answered=readcall($ctx['public']);
+c((int)$answered['created_epoch']<(int)$answered['updated_epoch']&&$ctx['now']>=(int)$answered['updated_epoch'],'setup may predate the signed receipt while participation starts after it');
+$scope=vp3_phone_workspace_scope_v1($pdo,user(),['agent_id'=>0,'conversation_id'=>11]);
+denies(fn()=>vp3_operator_live_call_v1($pdo,$scope,$ctx['public'],(int)$answered['created_epoch']),409,'a scenario clock before the signed answer remains ineligible');
 c(vp3_operator_participation_ready_v1($pdo),'explicit live upgrade installs optional conversation storage');
 vp3_operator_participation_install_v1($pdo);
 c((int)$pdo->query('SELECT COUNT(*) FROM phone_operator_participation_v1')->fetchColumn()===0,'repeated installation never enables an Agent');
