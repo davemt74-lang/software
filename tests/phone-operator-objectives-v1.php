@@ -92,6 +92,9 @@ c(vp3_operator_objectives_row_v1($pdo,$changed['id'])['agenda_hash']!==vp3_opera
 $removed=objective_fixture();$r=objective_review($removed,null,static function(int $id)use($pdo,$removed):array{
     $pdo->prepare('DELETE FROM phone_browser_deliveries_v1 WHERE chat_message_id=?')->execute([(int)$removed['job']['report_message_id']]);return $removed['saved'];
 });c($r['questions']===[],'removed original delivery fences cached Q&A findings');
+$unrecorded=objective_fixture();$r=objective_review($unrecorded,null,static function(int $id)use($pdo,$unrecorded):array{
+    $pdo->prepare('UPDATE phone_browser_calls_v1 SET recording_enabled=0 WHERE id=?')->execute([$unrecorded['id']]);return $unrecorded['saved'];
+});c($r['questions']===[],'withdrawing the recorded-call binding during reading fences cached answers');
 $moved=objective_fixture();denies(fn()=>objective_review($moved,null,static function(int $id)use($pdo,$moved):array{
     $pdo->prepare('UPDATE phone_browser_calls_v1 SET conversation_id=12,chat_agent_id=7 WHERE id=?')->execute([$moved['id']]);return $moved['saved'];
 }),404,'reassigning a call during reading cannot move findings across Chats');

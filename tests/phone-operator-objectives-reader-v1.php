@@ -2,7 +2,7 @@
 declare(strict_types=1);
 require __DIR__.'/transcript-agent-intelligence-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-objectives-v1.php';
-function ai_master_key(bool $create=false):?string{return str_repeat('k',32);}
+function ai_master_key(bool $create=false):?string{if($create)throw new LogicException('A review must not create a credential key.');return empty($GLOBALS['objective_key_unavailable'])?str_repeat('k',32):null;}
 $before=$checks;$GLOBALS['denied']=[];$pdo->exec('UPDATE users SET is_active=1');
 $pdo->exec("UPDATE artist_transcript_sessions_v172 SET status='draft' WHERE id=1");
 $pdo->exec("UPDATE artist_transcript_segments_v172 SET transcript_text='Which day works? Friday works for the call.' WHERE id=1");
@@ -29,6 +29,24 @@ $tampered=$saved;$tampered['qa_items'][0]['answer']='A different answer';
 ck(vp3_operator_objectives_progress_v1($questions,$tampered,1)[0]['state']==='answer_suggested','editing an answer cannot reuse an earlier owner review proof');
 $tampered=$saved;$tampered['source_hash']=str_repeat('b',64);
 ck(vp3_operator_objectives_progress_v1($questions,$tampered,1)[0]['state']==='answer_suggested','an earlier transcript review proof cannot approve changed source evidence');
+$GLOBALS['objective_key_unavailable']=true;
+ck(vp3_operator_objectives_progress_v1($questions,$saved,1)[0]['state']==='answer_suggested','an unavailable private key does not manufacture review authority or create a replacement key');
+$GLOBALS['objective_key_unavailable']=false;
+foreach(['accepted','rejected','unreviewed'] as $state){
+    $master=artist_listening_v237_analysis_status($pdo,1,$map)['master'];
+    transcription_intelligence_review_item_v302($pdo,1,$master,'qa','call-answer',$state);
+    $current=vp3_operator_objectives_analysis_v1($pdo,$u,$job);
+    $item=$current['qa_items'][0];
+    ck(transcription_review_proven_v1(1,$hash,'qa','answered',$item)===($state==='accepted'),'canonical v302 '.$state.' state has only its exact owner review authority');
+}
+$master=artist_listening_v237_analysis_status($pdo,1,$map)['master'];
+transcription_deeper_edit_item_v307($pdo,1,$master,'qa','call-answer','Which day works?');
+$current=vp3_operator_objectives_analysis_v1($pdo,$u,$job);
+ck(transcription_review_proven_v1(1,$hash,'qa','answered',$current['qa_items'][0]),'the existing deeper Edit action supplies a bound owner review');
+$master=artist_listening_v237_analysis_status($pdo,1,$map)['master'];
+transcription_intelligence_edit_item_v302($pdo,1,$master,'qa','call-answer','Which day works?');
+$current=vp3_operator_objectives_analysis_v1($pdo,$u,$job);
+ck(transcription_review_proven_v1(1,$hash,'qa','answered',$current['qa_items'][0]),'the existing v302 Edit action supplies a bound owner review');
 $pdo->exec('DELETE FROM artist_transcript_page_analysis_v237 WHERE session_id=1 AND page_number=1');
 $partial=vp3_operator_objectives_analysis_v1($pdo,$u,$job);
 ck(!$partial['complete']&&vp3_operator_objectives_progress_v1($questions,$partial,1)[0]['state']==='unverified','partial canonical page coverage cannot imply a verified answer');
