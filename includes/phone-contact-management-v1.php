@@ -42,7 +42,12 @@ function vp3_phone_contact_detail_v1(PDO $pdo,array $scope,array $input): array
     $id=vp3_phone_workspace_id_v1($input['contact_id']??null);
     $row=vp3_phone_contact_row_v1($pdo,$scope,$id);
     require_once __DIR__.'/phone-contact-schedules-v1.php';
-    return ['contact'=>vp3_phone_contact_public_v1($row),'editable'=>vp3_phone_contact_details_schema_ready_v1($pdo),
+    $agenda=null;
+    if($scope['conversation_id']&&vp3_operator_outreach_schema_ready_v1($pdo)){
+        require_once __DIR__.'/agent-operator-outreach-v1.php';
+        $agenda=vp3_operator_agenda_view_v1(vp3_operator_agenda_row_v1($pdo,vp3_operator_agenda_key_v1($scope,$id)));
+    }
+    return ['agenda'=>$agenda,'contact'=>vp3_phone_contact_public_v1($row),'editable'=>vp3_phone_contact_details_schema_ready_v1($pdo),
         'connected_phone_id'=>(string)($row['connected_phone_id']??''),'connected_phones'=>vp3_phone_companion_devices_v1($pdo,$scope['owner_user_id']),
         'schedules'=>vp3_phone_contact_schedule_book_v1($pdo,$scope,$id,time())];
 }

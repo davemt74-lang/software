@@ -33,6 +33,7 @@
   document.body.append(dialog);
 
   let selected = null;
+  let participantActor = 0;
   let pending = null;
   let specialistRequest = null;
   let specialistTimer = 0;
@@ -52,7 +53,7 @@
   document.getElementById('chatComposerShell')?.prepend(compactStatus);
 
   function currentScope() {
-    if (window.VP3ParticipantContinuity?.selectedContext?.()) return null;
+    if (participantActor || window.VP3ParticipantContinuity?.selectedContext?.()) return null;
     const config = window.STONEFELLOW_CHAT;
     const chat = window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
     const agent = Number(chat?.agentId?.() ?? cfg.agentId);
@@ -495,6 +496,14 @@
     }
   }
 
+  window.VP3EmailFollowup = Object.freeze({open:(context,trigger = null) => {
+    const scope = currentScope();
+    if (!scope || String(context?.owner_key) !== cfg.ownerKey || context.agent_id !== scope.agent_id
+      || context.conversation_id !== scope.conversation_id || !Number.isSafeInteger(context.message_id) || context.message_id < 1) return false;
+    void openMessage(scope,context.message_id,'follow-up');
+    return true;
+  }});
+
   document.addEventListener('click', event => {
     const target = event.target.closest?.('[data-chat-email-review],[data-chat-email-followup],[data-chat-email-search]');
     if (!target || !document.getElementById('chatThread')?.contains(target)) return;
@@ -550,6 +559,11 @@
     if (dialog.open && !valid(selected)) dialog.close();
     clearSpecialist();
     refreshSpecialistSoon();
+  });
+  window.addEventListener('vp3:participant-task-context',event => {
+    participantActor = Number(event.detail?.participant_id) || 0;
+    if (dialog.open) dialog.close();
+    pending?.abort();pending = null;selected = null;clearSpecialist();
   });
   window.addEventListener('vp3:chat-context-ready', () => {
     refreshSpecialistSoon();

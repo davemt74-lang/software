@@ -238,6 +238,7 @@ jobs:
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
           php tests/operator-schedule-calendar-v1.php
+          php tests/operator-outreach-v1.php
           php tests/operator-schedule-calendar-v1.php timeout
           php tests/operator-schedule-calendar-v1.php mismatch
           bash tests/operator-schedule-worker-cli-v1.sh

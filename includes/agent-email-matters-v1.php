@@ -400,7 +400,7 @@ function agent_email_matters_view_v1(array $row): array
         'revision'=>(int)$row['revision']];
 }
 
-/** A watch owns its own claim and schedule. Project those separately from the matter deadline. */
+/** A watch owns its own claim, poll schedule and retention, independent of owner response deadlines. */
 function agent_email_matters_watch_views_v1(PDO $pdo,array $scope,array $rows): array
 {
     $operations = [];
@@ -432,6 +432,36 @@ function agent_email_matters_watch_views_v1(PDO $pdo,array $scope,array $rows): 
     return $views;
 }
 
+/** Saved response tracking is an additive view of the exact receipt, never a second lifecycle store. */
+function agent_email_matters_followthrough_views_v1(PDO $pdo,array $scope,array $rows): array
+{
+    $agent=$scope['agent_id'] ?? null;
+    if(!is_int($agent) || $agent<0 || agent_email_matters_bound_scope_v1($scope)===null)return [];
+    $operations=[];
+    foreach($rows as $row)if(is_string($row['last_operation_key'] ?? null))$operations[]=$row['last_operation_key'];
+    if(!$operations)return [];
+    require_once __DIR__.'/agent-email-followthrough-status-v1.php';
+    if(!agent_email_followthrough_ready_v1($pdo))return [];
+    $q=$pdo->prepare('SELECT * FROM agent_email_followthrough_v1 WHERE owner_user_id=? AND agent_id=? AND connection_id=? AND authorization_key=?
+        AND COALESCE(active_operation_key,operation_key) IN ('.implode(',',array_fill(0,count($operations),'?')).')');
+    $q->execute([(int)$scope['owner'],$agent,(int)$scope['policy']['connection_id'],$scope['policy']['authorization_key'],...$operations]);$views=[];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){
+        try{
+            $view=agent_email_followthrough_public_v1($pdo,$row);
+            if($view['outcome']==='replied'){
+                $connection=agent_connections_find_v1($pdo,(int)$scope['owner'],(int)$scope['policy']['connection_id']);
+                $reply=$view['reply_target'];$proof=$reply===null?[]:agent_connection_email_followup_delivered_v1($pdo,$connection,$agent,
+                    (int)$view['conversation_id'],[(int)$reply['message_id']]);
+                if($reply===null || !isset($proof[(int)$reply['message_id']]))continue;
+            }
+            $views[$row['active_operation_key'] ?? $row['operation_key']]=['response_followthrough'=>array_intersect_key($view,
+                array_flip(['followthrough_ref','revision','agent_id','conversation_id','outcome','paused','awaiting_new_deadline',
+                    'deadline_at','time_zone','priority','check','preparation']))];
+        }catch(DomainException|RuntimeException $error){if($error instanceof PDOException)throw $error;}
+    }
+    return $views;
+}
+
 function agent_email_matters_summary_v1(PDO $pdo,array $scope,int $limit=5): array
 {
     $counts = array_fill_keys(['needs_review','awaiting_reply','reply_received','followup_due','actioned','snoozed'],0);
@@ -453,13 +483,15 @@ function agent_email_matters_summary_v1(PDO $pdo,array $scope,int $limit=5): arr
     $query->execute([...$watchParams,...$bound]);
     $rows = $query->fetchAll(PDO::FETCH_ASSOC);
     $watchViews = agent_email_matters_watch_views_v1($pdo,$scope,$rows);
+    $followthroughViews = agent_email_matters_followthrough_views_v1($pdo,$scope,$rows);
     $mailboxViews = [];
     if (($scope['policy']['rules']['triage_enabled'] ?? false) === true) {
         require_once __DIR__.'/agent-connection-gmail-inbox-activity-v1.php';
         $mailboxViews = agent_connection_gmail_inbox_activity_views_v1($pdo,$scope,$rows);
     }
     $items = array_map(static fn(array $row): array => agent_email_matters_view_v1($row)
-        + ($watchViews[(string)$row['last_operation_key']] ?? []) + ($mailboxViews[$row['matter_id']] ?? []),$rows);
+        + ($watchViews[(string)$row['last_operation_key']] ?? []) + ($followthroughViews[(string)$row['last_operation_key']] ?? [])
+        + ($mailboxViews[$row['matter_id']] ?? []),$rows);
     $query = $pdo->prepare("SELECT $columns,stage FROM agent_email_matters_v1 m WHERE $where AND stage IN ('dismissed','resolved')
         ORDER BY updated_at DESC,matter_id ASC LIMIT 3");
     $query->execute($bound);
