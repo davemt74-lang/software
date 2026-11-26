@@ -1,0 +1,28 @@
+.vp3-email-followthrough-settings,.vp3-email-followthrough-list { min-width:0; margin:16px 0; }
+.vp3-email-followthrough-check { display:flex; align-items:flex-start; gap:9px; margin:12px 0; font-size:13px; line-height:1.5; }
+.vp3-email-followthrough-check input { flex:0 0 auto; width:17px; height:17px; margin-top:2px; }
+.vp3-email-followthrough-fields { padding:0 0 8px 26px; }
+.vp3-email-followthrough-field { display:grid; gap:6px; margin:12px 0; min-width:0; font-size:13px; }
+.vp3-email-followthrough-field > span { font-weight:600; }
+.vp3-email-followthrough-field input,.vp3-email-followthrough-field select,.vp3-email-followthrough-top select { box-sizing:border-box; width:100%; max-width:100%; min-width:0; padding:10px; border:1px solid #cdd5df; border-radius:8px; background:#fff; color:#18212e; font:inherit; }
+.vp3-email-followthrough-settings small,.vp3-email-followthrough-list small,.vp3-email-followthrough-card small { display:block; font-size:12px; line-height:1.5; color:#56677d; overflow-wrap:anywhere; }
+.vp3-email-followthrough-card { min-width:0; padding:14px 0; border-top:1px solid #dce3ed; overflow-wrap:anywhere; scroll-margin-top:160px; }
+.vp3-email-followthrough-card h4 { margin:8px 0 5px; font-size:14px; }
+.vp3-email-followthrough-card p { margin:6px 0; font-size:13px; line-height:1.5; }
+.vp3-email-followthrough-card[data-outcome="overdue"] > div > strong { color:#885714; }
+.vp3-email-followthrough-card[data-outcome="replied"] > div > strong,.vp3-email-followthrough-card[data-outcome="resolved"] > div > strong { color:#256345; }
+.vp3-email-followthrough-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.vp3-email-followthrough-actions button { white-space:normal; overflow-wrap:anywhere; }
+.vp3-email-followthrough-manage { margin-top:12px; }
+.vp3-email-followthrough-manage summary { cursor:pointer; font-size:13px; font-weight:600; }
+.vp3-email-followthrough-status:empty { display:none; }
+.vp3-email-followthrough-status { color:#445b78; }
+.vp3-email-followthrough-top { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.vp3-email-followthrough-top h3 { flex:1 0 100%; margin:0; font-size:15px; }
+.vp3-email-followthrough-top select { flex:1; width:auto; }
+.vp3-email-followthrough-list > small { margin-top:8px; }
+.vp3-email-followthrough-settings [hidden],.vp3-email-followthrough-card [hidden] { display:none!important; }
+@media(max-width:600px) {
+  .vp3-email-followthrough-fields { padding-left:0; }
+  .vp3-email-followthrough-actions button,.vp3-email-followthrough-top button,.vp3-email-followthrough-top select { min-height:40px; }
+}

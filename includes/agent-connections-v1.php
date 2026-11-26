@@ -50,6 +50,7 @@ function agent_connections_install_v1(PDO $pdo): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     require_once __DIR__.'/agent-connection-email-chat-v1.php';
     require_once __DIR__.'/agent-connection-email-followup-v1.php';
+    require_once __DIR__.'/agent-email-followthrough-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
     require_once __DIR__.'/agent-email-matters-v1.php';
@@ -59,6 +60,7 @@ function agent_connections_install_v1(PDO $pdo): void
     require_once __DIR__.'/agent-connection-gmail-github-notice-v1.php';
     agent_connection_email_draft_schema_v1($pdo);
     agent_connection_email_followup_install_v1($pdo);
+    agent_email_followthrough_install_v1($pdo);
     agent_connection_gmail_inbox_install_v1($pdo);
     agent_connection_gmail_inbox_receipts_install_v1($pdo);
     agent_connection_gmail_inbox_initial_install_v1($pdo);
@@ -342,7 +344,7 @@ function agent_connections_access_v1(int $ownerId, int $connectionId, string $ca
     }
 }
 
-function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null, ?array $reply = null, bool $reconcileOnly = false, ?callable $onReplyReviewRequired = null, array $attachments = []): array
+function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null, ?array $reply = null, bool $reconcileOnly = false, ?callable $onReplyReviewRequired = null, array $attachments = [], ?array $outboundFollowup = null): array
 {
     if (!preg_match('/\A[a-f0-9]{64}\z/D', $operationKey)) {
         throw new AgentConnectionExceptionV1('A reviewed send key is required.', 400);
@@ -354,6 +356,13 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
         $reply = agent_connection_gmail_reply_binding_v1($reply);
         $payload[] = $reply;
     }
+    if ($outboundFollowup !== null) {
+        if ($reply !== null) throw new AgentConnectionExceptionV1('Choose one exact email source.',409);
+        require_once __DIR__.'/agent-email-followthrough-source-v1.php';
+        $outboundFollowup = agent_email_followthrough_binding_v1($outboundFollowup);
+        $payload[] = ['outbound_followup'=>$outboundFollowup];
+    }
+    $mimeReply = $reply ?? ($outboundFollowup === null ? null : agent_email_followthrough_mime_reply_v1($outboundFollowup));
     if ($attachments !== []) {
         require_once __DIR__.'/agent-email-attachments-v1.php';
         $attachments = agent_email_attachments_manifest_v1($attachments);
@@ -362,7 +371,7 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
         $payload[] = ['attachments'=>$attachments];
     }
     $digest = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
-    $permission = $reply === null ? 'send' : 'reply';
+    $permission = $mimeReply === null ? 'send' : 'reply';
     $access = agent_connections_access_v1($ownerId,$connectionId,$permission,$http,$expectedAuthorizationKey);
     $grant = $access['authorization_key'];
     if ($expectedAuthorizationKey !== null && !hash_equals($grant, $expectedAuthorizationKey)) {
@@ -417,6 +426,15 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
                     $sourceError = $e;
                 }
             }
+            if ($created && $outboundFollowup !== null && $reviewStatus === null) {
+                try {
+                    $reviewStatus = agent_email_followthrough_send_source_v1($pdo,$ownerId,$connectionId,$grant,$token,
+                        $row['account_email'],$to,$subject,$outboundFollowup,$http);
+                } catch (AgentConnectionGmailExceptionV1 $e) {
+                    $reviewStatus = 'source_check';
+                    $sourceError = $e;
+                }
+            }
             if ($reviewStatus !== null) {
                 if ($onReplyReviewRequired !== null) {
                     // Commit the reply state and release only the claim that never reached Gmail.
@@ -440,7 +458,7 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
             try {
                 $dispatched = $created;
                 $verified = $created
-                    ? agent_connection_gmail_send_v1($token,$row['account_email'],$to,$subject,$body,$operationKey,$http,$reply,$attachmentParts)
+                    ? agent_connection_gmail_send_v1($token,$row['account_email'],$to,$subject,$body,$operationKey,$http,$mimeReply,$attachmentParts)
                     : agent_connection_gmail_find_sent_v1($token,$operationKey,$http);
             } catch (AgentConnectionGmailSendUnknownV1 $e) {
                 throw new AgentConnectionExceptionV1('Gmail delivery is unconfirmed. Check this review again to reconcile it.', 502, $e);
@@ -455,7 +473,7 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
                 $pdo->commit();
                 throw new AgentConnectionExceptionV1('Gmail rejected this send. Review a new draft to try again.', 422, $e);
             }
-            if (!$verified || ($reply !== null && $verified['thread_id'] !== $reply['thread_id'])) {
+            if (!$verified || ($mimeReply !== null && $verified['thread_id'] !== $mimeReply['thread_id'])) {
                 throw new AgentConnectionExceptionV1('Gmail delivery is still unconfirmed.', 502);
             }
             $send['provider_message_id'] = $verified['message_id'];
@@ -464,7 +482,7 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
             $update = $pdo->prepare("UPDATE agent_connection_sends_v1 SET status='sent',provider_message_id=?,provider_thread_id=?,sent_at=? WHERE id=?");
             $update->execute([$send['provider_message_id'],$send['provider_thread_id'],$send['sent_at'],(int)$send['id']]);
         }
-        if ($reply !== null && $send['provider_thread_id'] !== $reply['thread_id']) {
+        if ($mimeReply !== null && $send['provider_thread_id'] !== $mimeReply['thread_id']) {
             throw new AgentConnectionExceptionV1('Gmail delivery could not be verified in the original thread.', 502);
         }
         $receipt = [

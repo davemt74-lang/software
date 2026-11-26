@@ -711,7 +711,8 @@ function agent_connection_email_chat_advance_write_v1(PDO $pdo, array $user, arr
     $grant = $draft['authorization_key'];
     $authorize = static function () use ($pdo,$user,$principal,$conversation,$authority,$owner,$connectionId,$grant,$draft,$payload): array {
         $live = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation,$authority);
-        $connection = agent_connections_require_grant_v1($pdo,$owner,$connectionId,isset($payload['reply'])?'reply':'send',$grant);
+        $connection = agent_connections_require_grant_v1($pdo,$owner,$connectionId,
+            isset($payload['reply']) || isset($payload['outbound_followup']) ? 'reply' : 'send',$grant);
         if ($connection['account_email'] !== $draft['account_email'] || !agent_connection_gmail_ready_v1()) {
             throw new DomainException('Gmail access changed. Open the draft again.',409);
         }
@@ -924,7 +925,8 @@ function agent_connection_email_chat_payload_v1(array $draft): array
         $write = $decoded['write'];
         if (!is_array($write) || count($write) !== 4 || !in_array($write['kind']??null,['compose','compose_new','revise'],true)
             || ($write['kind'] === 'compose' && !isset($decoded['reply'])) || isset($decoded['auto_revision'])
-            || ($write['kind'] === 'compose_new' && isset($decoded['reply']))
+            || ($write['kind'] === 'compose_new' && (isset($decoded['reply']) || isset($decoded['outbound_followup'])))
+            || ($write['kind'] === 'compose' && isset($decoded['outbound_followup']))
             || !is_string($write['instruction']??null) || mb_strlen($write['instruction']) > 600
             || !is_string($write['attempt']??null) || !preg_match('/\A[a-f0-9]{32}\z/D',$write['attempt'])
             || !is_int($write['lease_until']??null) || $write['lease_until'] < 0) {
@@ -959,7 +961,7 @@ function agent_connection_email_chat_public_draft_base_v1(array $draft, string $
     $payload = agent_connection_email_chat_payload_v1($draft);
     $status = agent_connection_email_chat_draft_status_v1($draft,$payload,$now);
     if (isset($payload['auto_revision']) && $status !== 'sent') throw new DomainException('This email draft is unavailable for manual review.', 404);
-    $isReply = isset($payload['reply']);
+    $isReply = isset($payload['reply']) || isset($payload['outbound_followup']);
     $public = [
         'id'=>$draft['id'],'status'=>$status,'from'=>$draft['account_email'],'to'=>$draft['recipient'],
         'message_id'=>$draft['sent_message_id'], 'is_reply'=>$isReply,
@@ -988,12 +990,13 @@ function agent_connection_email_chat_public_draft_base_v1(array $draft, string $
         $public['connection_changed'] = true;
         return $public;
     }
-    if ($isReply && in_array($status,['prepared','write_queued','writing','write_failed'],true)
+    if (isset($payload['reply']) && in_array($status,['prepared','write_queued','writing','write_failed'],true)
         && agent_connection_email_chat_answered_v1(db(),['id'=>(int)$draft['owner_user_id']],
         (int)$draft['connection_id'],$draft['authorization_key'],$payload['reply']['message_id'])) {
         return array_replace($public,['status'=>'answered']);
     }
-    if (in_array($status,['stale','source_check'],true)) return $public + ['can_review_latest'=>$isReply];
+    if (in_array($status,['stale','source_check'],true)) return $public + [
+        'can_review_latest'=>isset($payload['reply']) || (isset($payload['outbound_followup']) && $status==='source_check')];
     if (isset($payload['write'])) $public['write_kind'] = $payload['write']['kind'];
     $expires = $now + 600;
     if (in_array($status,['prepared','write_failed'],true) || ($status === 'sending' && !$draft['watch_replies'])) {
@@ -1047,6 +1050,14 @@ function agent_connection_email_chat_dispatch_v1(PDO $pdo, array $draft, array $
         throw new DomainException('The approved email changed. Review the draft again.',409);
     }
     $payload = agent_connection_email_chat_payload_v1($current);
+    if (isset($payload['outbound_followup'])) {
+        require_once __DIR__.'/agent-email-followthrough-v1.php';
+        $bound=agent_email_followthrough_binding_current_v1($pdo,$owner,$agent,$conversation,$payload['outbound_followup'],true);
+        if ($bound['record']['generated_draft_id'] !== $current['id']
+            || (int)$bound['record']['user_message_id'] !== (int)$current['user_message_id']) {
+            throw new DomainException('This follow-up is no longer the current review draft.',409);
+        }
+    }
     if (isset($payload['reply']) && agent_connection_email_chat_answered_v1($pdo,$user,(int)$current['connection_id'],
         $current['authorization_key'],$payload['reply']['message_id'])) return 'answered';
     if (isset($payload['auto_revision'])) {
@@ -1065,7 +1076,8 @@ function agent_connection_email_chat_finish_v1(PDO $pdo, array $draft, array $re
     $id = (string)$draft['id'];
     $payload = agent_connection_email_chat_payload_v1($draft);
     $auto = isset($payload['auto_revision']);
-    if ((isset($payload['reply']) && ($receipt['thread_id'] ?? null) !== $payload['reply']['thread_id'])
+    $sourceThread=$payload['reply']['thread_id'] ?? $payload['outbound_followup']['thread_id'] ?? null;
+    if (($sourceThread !== null && ($receipt['thread_id'] ?? null) !== $sourceThread)
         || ($receipt['operation_key']??null) !== agent_connection_email_chat_operation_key_v1($id)
         || ($receipt['authorization_key']??null) !== $draft['authorization_key']
         || (int)($receipt['connection_id']??0) !== (int)$draft['connection_id']
@@ -1090,9 +1102,36 @@ function agent_connection_email_chat_finish_v1(PDO $pdo, array $draft, array $re
     }
     if ($row['status'] !== 'sending') throw new DomainException('The email review changed. Check Sent in Gmail.', 409);
 
-    $watch = !empty($row['watch_replies']) && agent_connection_email_followup_register_v1(
-        $pdo, $owner, $agent, $conversation, $receipt, ['draft_id'=>$id,'user_message_id'=>(int)$row['user_message_id']]
-    );
+    $watch=false;
+    if (!empty($row['watch_replies'])) {
+        $pdo->exec('SAVEPOINT vp3_email_watch_receipt');
+        try {
+            $watch=agent_connection_email_followup_register_v1($pdo,$owner,$agent,$conversation,$receipt,
+                ['draft_id'=>$id,'user_message_id'=>(int)$row['user_message_id']]);
+        } catch (Throwable $error) {
+            $pdo->exec('ROLLBACK TO SAVEPOINT vp3_email_watch_receipt');
+            if (function_exists('agent_runtime_v125_trace')) agent_runtime_v125_trace('gmail_watch.receipt_unavailable',['error_class'=>get_class($error)]);
+        } finally {$pdo->exec('RELEASE SAVEPOINT vp3_email_watch_receipt');}
+    }
+    $deadlineRegistered = false;
+    if (isset($payload['followthrough']) || isset($payload['outbound_followup'])) {
+        require_once __DIR__.'/agent-email-followthrough-v1.php';
+        // Follow-through is a local projection of an immutable verified send.
+        // A failed optional registration must not roll that receipt back.
+        $pdo->exec('SAVEPOINT vp3_email_followthrough_receipt');
+        try {
+            if ($watch && isset($payload['followthrough'])) {
+                $deadlineRegistered=agent_email_followthrough_register_v1($pdo,$row,$receipt,$payload['followthrough'])!==null;
+            }
+            if (isset($payload['outbound_followup']) && function_exists('agent_email_followthrough_note_sent_v1')) {
+                agent_email_followthrough_note_sent_v1($pdo,$row,$receipt);
+            }
+        } catch (Throwable $error) {
+            $pdo->exec('ROLLBACK TO SAVEPOINT vp3_email_followthrough_receipt');
+            $deadlineRegistered=false;
+            if (function_exists('agent_runtime_v125_trace')) agent_runtime_v125_trace('gmail_followthrough.receipt_unavailable',['error_class'=>get_class($error)]);
+        } finally {$pdo->exec('RELEASE SAVEPOINT vp3_email_followthrough_receipt');}
+    }
     if ($matterPolicy !== null) {
         agent_connection_gmail_inbox_project_matter_receipt_v1($pdo,static fn() =>
             agent_email_matters_note_send_v1($pdo,$matterPolicy,$receipt,$payload['reply']['message_id'] ?? null,$payload['subject']));
@@ -1100,13 +1139,15 @@ function agent_connection_email_chat_finish_v1(PDO $pdo, array $draft, array $re
     $context = json_encode([
         'source'=>'agent_connection_email','skip_brain_archive'=>!$auto,
         'tool_receipt'=>vp3_tool_receipt_v1('email.send','send','completed','',0,1),
-        'email_outcome'=>['draft_id'=>$id,'message_id'=>$receipt['message_id'],'watch_registered'=>$watch]
+        'email_outcome'=>['draft_id'=>$id,'message_id'=>$receipt['message_id'],'watch_registered'=>$watch,'response_deadline_registered'=>$deadlineRegistered]
             + ($auto ? ['mode'=>'auto_reply'] : []),
         'actions'=>$auto ? [agent_connection_email_chat_auto_review_action_v1($row)] : [],
     ], JSON_THROW_ON_ERROR);
     $message = $auto ? 'Gmail confirmed the automatic reply was sent.' : 'Gmail confirmed the email was sent.';
-    if ($watch) $message .= ' I’ll watch this thread for the first reply for 30 days.';
+    if ($deadlineRegistered) $message .= ' I’ll check this thread against your saved response deadline.';
+    elseif ($watch) $message .= ' I’ll watch this thread for the first reply for 30 days.';
     elseif ($row['watch_replies']) $message .= ' Reply watching is unavailable for this send.';
+    if (isset($payload['followthrough']) && !$deadlineRegistered) $message .= ' The response deadline could not be registered; check follow-ups in Sent.';
     $now = gmdate('Y-m-d H:i:s');
     $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at)
         VALUES (?,NULL,'assistant',?,?,?)")->execute([$conversation,$message,$context,$now]);
@@ -1124,6 +1165,19 @@ function agent_connection_email_chat_finish_v1(PDO $pdo, array $draft, array $re
 function agent_connection_email_chat_review_latest_v1(PDO $pdo,array $user,array $principal,int $conversationId,array $draft,array $payload,
     string $key,?callable $http): array
 {
+    if (isset($payload['outbound_followup']) && $draft['status']==='source_check') {
+        require_once __DIR__.'/agent-email-followthrough-v1.php';
+        $bound=agent_email_followthrough_binding_current_v1($pdo,(int)$draft['owner_user_id'],(int)$draft['agent_id'],
+            $conversationId,$payload['outbound_followup']);
+        $source=agent_email_followthrough_source_v1($pdo,$bound['record'],$bound['watch'],$http,false);
+        if ($source['outbound_followup']!==$payload['outbound_followup'] || $source['subject']!==$payload['subject']
+            || $source['to']!==$draft['recipient']) throw new DomainException('The original follow-up changed. Check its deadline.',409);
+        agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversationId);
+        $pdo->prepare("UPDATE agent_connection_email_drafts_v1 SET status='prepared' WHERE id=? AND owner_user_id=? AND status='source_check' AND message_enc=?")
+            ->execute([$draft['id'],$draft['owner_user_id'],$draft['message_enc']]);
+        return agent_connection_email_chat_public_draft_v1(agent_connection_email_chat_draft_v1($pdo,(int)$draft['owner_user_id'],
+            (int)$draft['agent_id'],$conversationId,$draft['id']),$key,time());
+    }
     if (!isset($payload['reply']) || !in_array(agent_connection_email_chat_draft_status_v1($draft,$payload,time()),['stale','source_check'],true)) {
         throw new DomainException('Open a current Gmail reply that needs a new review.',409);
     }
@@ -1218,7 +1272,7 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
             throw new DomainException('This email draft can no longer be edited.',409);
         }
         agent_connection_email_chat_record_v1($owner, (int)$draft['connection_id'], 'send', $draft['authorization_key']);
-        if (isset($payload['reply'])) {
+        if (isset($payload['reply']) || isset($payload['outbound_followup'])) {
             agent_connections_require_grant_v1($pdo,$owner,(int)$draft['connection_id'],'reply',$draft['authorization_key']);
             if ($action === 'revise' && ($input['subject'] ?? null) !== $payload['subject']) {
                 throw new DomainException('The subject must match the original Gmail thread.', 422);
@@ -1226,7 +1280,7 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
         }
         $next = 'prepared';
         if ($action === 'revise') {
-            if (!isset($payload['reply'])) $payload['subject'] = agent_connection_email_chat_text_v1($input['subject']??null,200);
+            if (!isset($payload['reply']) && !isset($payload['outbound_followup'])) $payload['subject'] = agent_connection_email_chat_text_v1($input['subject']??null,200);
             $payload['body'] = agent_connection_email_chat_text_v1($input['body']??null,6000,true);
             unset($payload['write']);
         } else {
@@ -1263,6 +1317,11 @@ function agent_connection_email_chat_action_v1(PDO $pdo, array $user, array $pri
         throw new DomainException('Add a valid recipient, subject, and message before sending.', 422);
     }
     if ($draft['status'] === 'prepared') {
+        if (isset($payload['followthrough'])) {
+            require_once __DIR__.'/agent-email-followthrough-v1.php';
+            agent_email_followthrough_settings_v1(array_diff_key($payload['followthrough'],array_flip(['version','user_message_id'])),true);
+            if (!$watch) throw new DomainException('Keep reply watching on for the saved response deadline.',422);
+        }
         if (!agent_email_composer_live_v1($draft,$now)) throw new DomainException('This email review expired. Prepare a new draft.', 409);
         $connection = agent_connection_email_chat_record_v1($owner, (int)$draft['connection_id'], 'send', $draft['authorization_key']);
         if ($watch && !agent_connection_email_chat_watch_allowed_v1($connection)) {
@@ -1303,7 +1362,7 @@ function agent_connection_email_chat_send_saved_v1(PDO $pdo, array $draft, ?call
                 $change->execute([$status,$draft['id'],$owner,$draft['message_enc']]);
                 if ($change->rowCount() !== 1) throw new DomainException('The approved email changed. Review the draft again.',409);
                 $row = array_replace($draft,['status'=>$status]);
-            },$payload['attachments'] ?? []);
+            },$payload['attachments'] ?? [],$payload['outbound_followup'] ?? null);
     } catch (Throwable $error) {
         if ($error instanceof AgentConnectionExceptionV1 && $error->getCode() === 409
             && in_array($row['status']??null,['stale','source_check','answered'],true)) return $row;
