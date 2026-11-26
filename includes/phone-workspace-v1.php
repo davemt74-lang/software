@@ -18,6 +18,7 @@ require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
 require_once __DIR__.'/phone-voicemail-v1.php';
 require_once __DIR__.'/phone-call-companion-v1.php';
 require_once __DIR__.'/agent-operator-admission-schema-v1.php';
+require_once __DIR__.'/agent-operator-objectives-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -273,6 +274,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
         'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'contact_details_ready'=>vp3_phone_contact_details_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'outreach_review'=>vp3_operator_outreach_last_review_v1($pdo,$scope),
+        'operator_objectives_available'=>vp3_operator_objectives_ready_v1($pdo),
         'schedule_worker'=>function_exists('vp3_phone_worker_health_v1')?vp3_phone_worker_health_v1(true):['state'=>'never_seen'],
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
 }
@@ -282,6 +284,7 @@ function vp3_phone_workspace_delivery_v1(PDO $pdo,array $call,string $kind,strin
     if(!in_array($kind,['call','voicemail','scheduled_outcome'],true)||!preg_match('/^[a-zA-Z0-9:_.-]{1,145}$/D',$eventKey))throw new InvalidArgumentException('Invalid phone delivery.');
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$call,$kind,$eventKey,$text,$extra){
         $owner=(int)$call['owner_user_id'];$q=$pdo->prepare('SELECT id FROM users WHERE id=? AND is_active=1'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$owner]);if(!$q->fetchColumn())vp3_phone_workspace_error_v1();
+        if($kind==='call')vp3_operator_objectives_bind_v1($pdo,$call,time());
         $q=$pdo->prepare('SELECT * FROM phone_browser_deliveries_v1 WHERE owner_user_id=? AND event_key=?');
         $q->execute([$owner,$eventKey]);
         $old=$q->fetch(PDO::FETCH_ASSOC);
@@ -331,6 +334,10 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
         require_once __DIR__.'/agent-operator-managed-intelligence-v1.php';
         if(array_diff(array_keys($input),['action','call_id','agent_id','conversation_id']))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose an existing managed call.');
         return ['review'=>vp3_managed_intelligence_review_v1($pdo,$scope,vp3_managed_callback_id_v1($input['call_id']??null),time())];
+    }
+    if($action==='operator_objectives_review'){
+        if(array_diff(array_keys($input),['action','call_id','agent_id','conversation_id'])||!is_string($input['call_id']??null))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose an existing call agenda.');
+        return ['review'=>vp3_operator_objectives_review_v1($pdo,$scope,$input['call_id'],time())];
     }
     if(in_array($action,['managed_reconcile','managed_end'],true)){
         require_once __DIR__.'/phone-managed-control-v1.php';
@@ -390,12 +397,12 @@ function vp3_phone_workspace_request_v1(PDO $pdo,?array $user,string $method,arr
     $action=$input['action']??($method==='GET'?'state':'');if(!is_string($action))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a supported phone action.');$input['action']=$action;
     if($method==='GET'){
         if($action==='state')return ['state'=>vp3_phone_workspace_state_v1($pdo,$user,$input)];
-        if(in_array($action,['recording_policy','operator_calendar_preview','operator_admission_preview','owner_phone_settings','managed_review','phone_contact_detail'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
+        if(in_array($action,['recording_policy','operator_calendar_preview','operator_admission_preview','owner_phone_settings','managed_review','operator_objectives_review','phone_contact_detail'],true))return vp3_phone_workspace_action_v1($pdo,$user,$input);
         vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires POST.');
     }
     if($method!=='POST')vp3_phone_workspace_error_v1('method_not_allowed',405,'Use GET or POST for Phone.');
     if($csrf===''||!is_string($input['csrf_token']??null)||!hash_equals($csrf,$input['csrf_token']))vp3_phone_workspace_error_v1('csrf_failed',403,'Refresh this page before changing Phone.');
-    if(in_array($action,['state','recording_policy','operator_calendar_preview','operator_admission_preview','owner_phone_settings','managed_review','phone_contact_detail'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
+    if(in_array($action,['state','recording_policy','operator_calendar_preview','operator_admission_preview','owner_phone_settings','managed_review','operator_objectives_review','phone_contact_detail'],true))vp3_phone_workspace_error_v1('method_not_allowed',405,'This phone action requires GET.');
     return vp3_phone_workspace_action_v1($pdo,$user,$input);
 }
 /** Existing Chat activity delivers each incoming call once into its validated current principal. */

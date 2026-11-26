@@ -1535,17 +1535,17 @@
     return managedReview===item&&current(item.g)&&context.ready&&!document.hidden&&
       context.conversation_id===item.conversation&&context.agent_id===item.agent;
   }
-  async function reviewManagedCall(info,g){
-    if(!current(g)||document.hidden||!context.ready||info.transport_kind!=='managed_callback'||
+  async function reviewManagedCall(info,g,agenda=false){
+    if(!current(g)||document.hidden||!context.ready||(!agenda&&info.transport_kind!=='managed_callback')||
       info.state!=='completed'||Number(info.conversation_id)!==context.conversation_id||!publicId(info.public_id))return;
     clearManagedReview();
-    const item={id:info.public_id,g,conversation:context.conversation_id,agent:context.agent_id,busy:true,data:null,error:''};
+    const item={id:info.public_id,g,conversation:context.conversation_id,agent:context.agent_id,agenda,busy:true,data:null,error:''};
     managedReview=item;render();
     try{
-      const result=await api('managed_review',{call_id:item.id},'GET',g);
+      const result=await api(agenda?'operator_objectives_review':'managed_review',{call_id:item.id},'GET',g);
       if(!reviewCurrent(item))return;
       const data=result?.review;
-      if(!data||data.call_id!==item.id||data.execution_enabled!==false)throw new Error('Conversation evidence was not confirmed.');
+      if(!data||data.call_id!==item.id||data.execution_enabled!==false||(agenda&&data.view!=='call_agenda'))throw new Error('Conversation evidence was not confirmed.');
       item.data=data;
     }catch(error){if(reviewCurrent(item))item.error='Conversation review could not be verified.';}
     finally{
@@ -1561,12 +1561,37 @@
     if(!item||item.id!==info.public_id||!reviewCurrent(item))return;
     const host=node('section','vp3-phone-managed-review');host.dataset.managedConversationReview='1';
     host.setAttribute('aria-label','Private conversation review');
-    host.append(node('h3',null,'Conversation intelligence'));
+    host.append(node('h3',null,item.agenda?'Call agenda review':'Conversation intelligence'));
     const closeReview=button('Close review',()=>{if(managedReview===item){clearManagedReview();render();}});
     host.append(closeReview);
     if(item.busy){host.append(node('p','vp3-phone-meta','Checking the original saved conversation evidence…'));card.append(host);return;}
     if(item.error){host.append(node('p','vp3-phone-processing-error',item.error));card.append(host);return;}
     const data=item.data||{},coverage=data.coverage;
+    if(item.agenda){
+      const messages={ready:'Current saved Q&A evidence. Review findings before using them.',partial:'Only part of the transcript has current analysis. Answers are not verified.',stale:'Transcript or Q&A evidence changed. Current answers are not confirmed.',
+        not_captured:'No agenda reference was captured when this call began.',none:'No saved agenda applied when this call began.',ambiguous:'More than one agenda matched this call. No agenda was selected.',agenda_changed:'The saved agenda changed after this call. Review the original transcript.',contact_changed:'The saved contact changed after this call.',call_changed:'The original call binding changed.',
+        analysis_off:'Q&A analysis was not authorized for this recording.',no_report:'No completed, saved call report is confirmed.',upgrade_required:'Run upgrade.php to enable call agenda review.',unavailable:'Current call evidence could not be verified.'};
+      host.append(node('p','vp3-phone-meta',messages[coverage]||messages.unavailable));
+      if(data.topics)host.append(node('h4',null,'Saved topics'),node('p',null,String(data.topics).slice(0,700)));
+      const labels={answer_reviewed:'Answer found · reviewed',answer_suggested:'Answer suggestion · review needed',open:'Still open',conflicting:'Conflicting findings · review needed',unverified:'No verified matching answer'};
+      for(const row of (Array.isArray(data.questions)?data.questions:[]).slice(0,12)){
+        if(!row||!Object.hasOwn(labels,row.state)||typeof row.question!=='string')continue;
+        const box=node('div','vp3-phone-managed-finding');box.append(node('strong',null,labels[row.state]),node('p',null,row.question.slice(0,700)));
+        if(typeof row.answer==='string'&&row.answer)box.append(node('p',null,row.answer.slice(0,700)));
+        const link=safeUrl(row.source_url);if(link){const a=node('a','vp3-phone-report','Review original Q&A item');a.href=link;box.append(a);}host.append(box);
+      }
+      const transcript=safeUrl(data.transcript_url);if(transcript){const a=node('a','vp3-phone-report','Open source transcript');a.href=transcript;host.append(a);}
+      host.append(node('p','vp3-phone-meta','An answer does not establish that a real-world objective is complete. Use the original Transcription item to review or prepare a follow-up.'));
+      if(data.continuity?.state==='available'){
+        host.append(node('h4',null,'Carried forward for review'));
+        for(const q of (Array.isArray(data.continuity.questions)?data.continuity.questions:[]).slice(0,12)){
+          if(typeof q.question!=='string')continue;const box=node('div','vp3-phone-managed-finding');box.append(node('p',null,q.question.slice(0,700)));
+          const link=safeUrl(q.source_url);if(link){const a=node('a','vp3-phone-report','Review earlier call finding');a.href=link;box.append(a);}host.append(box);
+        }
+        if(!data.continuity.questions?.length)host.append(node('p','vp3-phone-meta','No earlier, still-open matching question was verified.'));
+      }else host.append(node('p','vp3-phone-meta','Earlier-call carry-forward requires the connected recipient’s current memory permission.'));
+      card.append(host);return;
+    }
     const messages={no_report:'No saved report is confirmed.',queued:'Recording queued for processing.',processing:'Recording is being processed.',failed:'Recording processing needs review.',unavailable:'Saved evidence is unavailable.',consent_unavailable:'Original recording consent could not be verified.',transcription_off:'Transcription was not authorized for this call.',analysis_off:'Automatic analysis was not authorized for this call.',stale:'Transcript or saved analysis changed. Current report evidence is not confirmed.',ready:'Saved AI report · review before using any finding.'};
     host.append(node('p','vp3-phone-meta',messages[coverage]||'Review evidence is unavailable.'));
     const transcript=safeUrl(data.transcript_url);if(transcript){
@@ -1775,8 +1800,12 @@
       const review=button('Review conversation',event=>{if(event.isTrusted)void reviewManagedCall(info,renderGeneration);});
       review.disabled=managedReview?.id===id&&managedReview.busy;review.dataset.phoneFocusKey='managed-review-'+id;actions.append(review);
     }
+    if(!managed&&!readOnlyLegacy&&info.state==='completed'&&state?.operator_objectives_available===true&&context.ready&&Number(info.conversation_id)===context.conversation_id){
+      const review=button('Review call agenda',event=>{if(event.isTrusted)void reviewManagedCall(info,renderGeneration,true);});
+      review.disabled=managedReview?.id===id&&managedReview.busy;review.dataset.phoneFocusKey='agenda-review-'+id;actions.append(review);
+    }
     if(actions.childNodes.length)card.append(actions);
-    if(managed)appendManagedReview(card,info,renderGeneration);
+    if(managed||managedReview?.agenda)appendManagedReview(card,info,renderGeneration);
     renderRemoteCaptions(card,entry);
     if(!contact&&state?.contact_write_ready===false)card.append(node('p','vp3-phone-meta','An administrator needs to update Contacts before this caller can be saved.'));
     if(!contact&&draft?.generation===renderGeneration)appendContactForm(card,info,draft,renderGeneration);

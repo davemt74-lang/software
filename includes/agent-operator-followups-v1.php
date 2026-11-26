@@ -4,6 +4,7 @@ declare(strict_types=1);
 // Operator follow-up review uses the existing saved Transcription Intelligence.
 // It cannot place calls, run a model, create a task, or send a second Chat report.
 require_once __DIR__.'/agent-operator-history-v1.php';
+require_once __DIR__.'/agent-operator-objectives-v1.php';
 
 const VP3_OPERATOR_FOLLOWUP_WINDOW_V1=604800;
 const VP3_OPERATOR_FOLLOWUP_LIMIT_V1=8;
@@ -67,7 +68,7 @@ function vp3_operator_followup_items_v1(array $job,array $saved): array
  * A different Agent, discarded source, stale analysis, or removed delivery
  * cannot produce a candidate. The injectable reader is a server-test seam only.
  */
-function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable $now,?array $refs=null,?callable $read=null): array
+function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable $now,?array $refs=null,?callable $read=null,?callable $objectiveRead=null): array
 {
     $empty=['coverage'=>'unavailable','reports'=>[]];
     $cid=(int)($scope['conversation_id']??0);$agent=(int)($scope['agent_id']??-1);
@@ -103,7 +104,7 @@ function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable 
             require_once __DIR__.'/transcript-agent-v1.php';
             $read=static fn(int $session):array=>vp3_transcript_intelligence_v1($pdo,$user,$scope['principal'],$session,'research_candidates');
         }
-        $reports=[];
+        $reports=[];$seenQuestions=[];
         foreach ($jobs as $job) {
             try {
                 if (!preg_match('/^[a-f0-9]{32}$/D',(string)$job['public_id'])
@@ -121,6 +122,22 @@ function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable 
                 if (!is_array($saved)||empty($saved['fresh'])||($saved['source_hash']??null)!==$job['transcript_hash']) continue;
                 if($managedPolicy!==null)$saved=vp3_managed_intelligence_candidates_v1($saved,$managedPolicy);
                 $items=vp3_operator_followup_items_v1($job,$saved);
+                $agenda=vp3_operator_objectives_for_job_v1($pdo,$phone,$job,$objectiveRead);
+                $agendaItems=[];
+                foreach($agenda['questions'] as $question){
+                    if($question['state']==='unverified')continue;
+                    $identity=$agenda['agenda_fingerprint'].':'.$question['key'];
+                    $normalized=vp3_operator_objectives_key_v1($question['question']);
+                    $items=array_values(array_filter($items,static fn($i):bool=>vp3_operator_objectives_key_v1($i['text'])!==$normalized));
+                    if(isset($seenQuestions[$identity]))continue;$seenQuestions[$identity]=true;
+                    if($question['state']==='answer_reviewed')continue;
+                    $agendaItems[]=['key'=>hash('sha256','call-agenda:'.$identity),'session_id'=>(int)$job['session_id'],'text'=>$question['question'],
+                        'next_step'=>'Review the original call question and Q&A evidence before following up.',
+                        'review_state'=>$question['state']==='open'?$question['review_state']:'unreviewed',
+                        'source_url'=>$question['source_url']?:$agenda['transcript_url'],'revision'=>$question['revision']];
+                }
+                $items=array_slice(array_merge($agendaItems,$items),0,3);
+                if($agenda['coverage']==='partial')$coverage='limited';
                 if (!$items) continue;
                 $reports[]=['ref'=>'followup:'.$job['public_id'],'call_id'=>(string)$job['call_public_id'],
                     'created_at'=>gmdate(DATE_ATOM,(int)$job['created_epoch']),'items'=>$items];
@@ -140,9 +157,9 @@ function vp3_operator_followup_queue_v1(PDO $pdo,array $scope,DateTimeImmutable 
 }
 
 /** Existing proactive coordination sees only a count and revision, never call speech. */
-function vp3_coordination_operator_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now): array
+function vp3_coordination_operator_sources_v1(PDO $pdo,array $scope,?array $refs,DateTimeImmutable $now,?callable $read=null,?callable $objectiveRead=null): array
 {
-    $review=vp3_operator_followup_queue_v1($pdo,$scope,$now,$refs);
+    $review=vp3_operator_followup_queue_v1($pdo,$scope,$now,$refs,$read,$objectiveRead);
     $items=[];
     foreach ($review['reports'] as $report) {
         $ref='operator:'.$report['ref'];$count=count($report['items']);
