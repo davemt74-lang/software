@@ -27,6 +27,11 @@ try{
             $counts['outreach']=vp3_operator_outreach_tick_v1(db(),time());
             $counts['errors']+=$counts['outreach']['errors'];
         }
+        require_once __DIR__.'/includes/phone-agent-email-calls-schema-v1.php';
+        if(vp3_phone_agent_email_calls_ready_v1(db())){
+            require_once __DIR__.'/includes/phone-agent-email-call-sources-v1.php';
+            $counts['email_calls']=vp3_phone_agent_email_call_sweep_v1(db(),time());
+        }
         $counts['dispatch']=vp3_operator_dispatch_tick_v1(db(),'vp3_operator_submit_scheduled_v1');
         $counts['errors']+=$counts['dispatch']['errors']+$counts['dispatch']['uncertain'];
     }

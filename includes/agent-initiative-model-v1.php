@@ -127,22 +127,29 @@ function vp3_initiative_transient_route_current_v1(PDO $pdo,array $user,int $age
 function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string $prompt,string $protocol,bool $transientContext=false,?callable $beforeInference=null,array $job=[]): string
 {
     $GLOBALS['vp3_initiative_inference_last_v1']=[];
-    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1',VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1,'vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1','vp3.image-brainstorm.v1'],true)
+    if(!in_array($protocol,['vp3.initiative-plan.v1','vp3.initiative-draft.v1',VP3_INITIATIVE_OFFICE_REPORT_PROTOCOL_V1,'vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1','vp3.image-brainstorm.v1','vp3.phone-agent-email-call-decision.v1'],true)
         ||trim($prompt)===''||strlen($prompt)>200000){
         throw new InvalidArgumentException('Invalid initiative inference request.');
     }
     $background=!empty($job['background']);
     $gmailFollowthrough=($job['gmail_followthrough_draft']??false)===true;
+    $phoneEmailCall=($job['phone_agent_email_call_decision']??false)===true;
     if($gmailFollowthrough&&($protocol!=='vp3.initiative-draft.v1'||!$transientContext||!$background||$beforeInference===null)){
         throw new InvalidArgumentException('An email follow-up requires its current background dispatch claim.');
     }
-    unset($job['gmail_followthrough_draft']);
+    if(($phoneEmailCall||$protocol==='vp3.phone-agent-email-call-decision.v1')
+        &&(!$phoneEmailCall||$protocol!=='vp3.phone-agent-email-call-decision.v1'||!$transientContext||!$background
+            ||!($beforeInference instanceof Closure)||$gmailFollowthrough)){
+        throw new InvalidArgumentException('An owner email-call decision requires its current background dispatch claim.');
+    }
+    $guardedBackground=$gmailFollowthrough||$phoneEmailCall;
+    unset($job['gmail_followthrough_draft'],$job['phone_agent_email_call_decision']);
     $route=vp3_initiative_inference_health_v1($pdo,$user,$agentId,$background);
     if(empty($route['ready']))throw vp3_initiative_inference_blocked_v1($route);
     if($route['route']==='homeserver'){
-        if($gmailFollowthrough)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
+        if($guardedBackground)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
         if($beforeInference!==null)$beforeInference();
-        if($transientContext&&!$gmailFollowthrough)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
+        if($transientContext&&!$guardedBackground)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
         try{
             $run=homeserver_execution_v230_execute((int)$user['id'],'agent.infer.local',[
                 'messages'=>[
@@ -163,7 +170,7 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
             ];
         }catch(Throwable $e){
             $current=vp3_initiative_inference_health_v1($pdo,$user,$agentId,$background);
-            if($gmailFollowthrough||empty($route['cloud_fallback_allowed'])||empty($current['ready'])
+            if($guardedBackground||empty($route['cloud_fallback_allowed'])||empty($current['ready'])
                 ||($current['route']!=='vp3_cloud'&&empty($current['cloud_fallback_allowed']))){
                 if(empty($current['ready'])){
                     throw vp3_initiative_inference_blocked_v1($current,$e);
@@ -181,14 +188,14 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
     if($route['route']==='vp3_cloud'){
         // A permitted fallback is another inference attempt. A stopped or
         // revoked live source cannot travel to it on an old request snapshot.
-        if(!$gmailFollowthrough&&$beforeInference!==null)$beforeInference();
+        if(!$guardedBackground&&$beforeInference!==null)$beforeInference();
         if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud',$background);
         $control=['surface'=>'tool_json','protocol'=>$protocol];$dispatchFailure=null;
-        if($gmailFollowthrough){
+        if($guardedBackground){
             // Consume the persisted one-use claim after the usage reservation
             // lock, immediately before the single actual provider request.
-            $control['gmail_followthrough_draft']=true;
-            $control['before_gmail_followthrough_dispatch']=static function()use($pdo,$user,$agentId,$background,$beforeInference,&$dispatchFailure):bool{
+            $control[$phoneEmailCall?'phone_agent_email_call_decision':'gmail_followthrough_draft']=true;
+            $control[$phoneEmailCall?'before_phone_agent_email_call_dispatch':'before_gmail_followthrough_dispatch']=static function()use($pdo,$user,$agentId,$background,$beforeInference,&$dispatchFailure):bool{
                 try {
                     vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud',$background);
                     $beforeInference();

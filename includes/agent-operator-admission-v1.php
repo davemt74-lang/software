@@ -44,9 +44,10 @@ function vp3_operator_consent_row_v1(PDO $pdo,array $scope,array $bound,bool $lo
     $q=$pdo->prepare('SELECT * FROM phone_operator_consent_reviews_v1 WHERE owner_user_id=? AND contact_id=? AND agent_id=?'.($lock?vp3_phone_workspace_lock_v1($pdo):''));
     $q->execute([$scope['owner_user_id'],(int)$bound['contact']['id'],(int)$bound['line']['agent_id']]);$row=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();return $row?:null;
 }
-function vp3_operator_recipient_opted_out_v1(PDO $pdo,int $owner,string $hash): bool
+function vp3_operator_recipient_opted_out_v1(PDO $pdo,int $owner,string $hash,bool $lock=false): bool
 {
-    $q=$pdo->prepare('SELECT 1 FROM phone_operator_recipient_optouts_v1 WHERE owner_user_id=? AND destination_hash=?');
+    $q=$pdo->prepare('SELECT 1 FROM phone_operator_recipient_optouts_v1 WHERE owner_user_id=? AND destination_hash=?'
+        .($lock?vp3_phone_workspace_lock_v1($pdo):''));
     $q->execute([$owner,$hash]);$found=(bool)$q->fetchColumn();$q->closeCursor();return $found;
 }
 function vp3_operator_consent_state_v1(?array $row,array $bound,bool $withdrawn,int $now): string
@@ -75,7 +76,7 @@ function vp3_operator_admission_window_v1(array $settings,int $now): bool
         &&strcmp($a->format('H:i:s'),$settings['window_start'].':00')>=0
         &&strcmp($b->format('H:i:s'),$settings['window_end'].':00')<=0;
 }
-function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,array $settings,int $now,?string $answeredSid=null): array
+function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,array $settings,int $now,?string $answeredSid=null,?array $excludeAttempt=null): array
 {
     $local=(new DateTimeImmutable('@'.$now))->setTimezone(new DateTimeZone($settings['timezone']));
     $day=$local->setTime(0,0)->getTimestamp();
@@ -99,18 +100,19 @@ function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,ar
     // without a destination apply conservatively until their daily cap and spacing have elapsed.
     $q=$pdo->prepare("SELECT COALESCE(SUM(CASE WHEN started_epoch BETWEEN ? AND ? THEN 1 ELSE 0 END),0) AS today,
         COALESCE(MAX(started_epoch),0) AS latest FROM phone_operator_carrier_attempts_v1 a
-        WHERE owner_user_id=? AND (destination_hash=? OR destination_hash='')
+        WHERE owner_user_id=? AND state<>'blocked' AND (destination_hash=? OR destination_hash='')
         AND (provider_sid IS NULL OR provider_sid<>?)
         AND (provider_sid IS NULL OR destination_hash='' OR NOT EXISTS
-            (SELECT 1 FROM phone_browser_calls_v1 c WHERE c.provider_call_sid=a.provider_sid))");
-    $q->execute([$day,$now,$scope['owner_user_id'],hash('sha256',$bound['contact']['destination_e164']),$answeredSid??'']);
+            (SELECT 1 FROM phone_browser_calls_v1 c WHERE c.provider_call_sid=a.provider_sid))"
+        .($excludeAttempt!==null?' AND NOT(a.owner_user_id=? AND a.event_id=? AND a.start_epoch=?)':''));
+    $q->execute([$day,$now,$scope['owner_user_id'],hash('sha256',$bound['contact']['destination_e164']),$answeredSid??'',...($excludeAttempt??[])]);
     $scheduled=$q->fetch(PDO::FETCH_ASSOC);
     $today+=(int)$scheduled['today'];
     $latest=max($latest,(int)$scheduled['latest']);
     return ['today'=>$today,'last_attempt_epoch'=>$latest,'within_limit'=>$latest<=$now&&$today<$settings['max_calls_per_day'],
         'gap_ok'=>$latest===0||($latest<=$now&&$now-$latest>=$settings['min_gap_minutes']*60)];
 }
-function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now,?string $answeredSid=null): bool
+function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now,?string $answeredSid=null,?array $excludeAttempt=null): bool
 {
     $q=$pdo->prepare("SELECT 1 FROM phone_browser_calls_v1 WHERE owner_user_id=? AND
         ((state IN ('dialing','ringing','answered') AND (transport_kind<>'operator_scheduled' OR intent_expires_epoch>?))
@@ -124,8 +126,9 @@ function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now,?string $an
     $q=$pdo->prepare("SELECT 1 FROM phone_operator_carrier_attempts_v1 a JOIN phone_operator_occurrences_v1 o
         ON o.owner_user_id=a.owner_user_id AND o.event_id=a.event_id AND o.start_epoch=a.start_epoch
         WHERE a.owner_user_id=? AND o.state IN ('submitting','submitted','uncertain') AND o.end_epoch>?
-        AND (a.provider_sid IS NULL OR a.provider_sid<>?) LIMIT 1");
-    $q->execute([$owner,$now,$answeredSid??'']);
+        AND (a.provider_sid IS NULL OR a.provider_sid<>?)"
+        .($excludeAttempt!==null?' AND NOT(a.owner_user_id=? AND a.event_id=? AND a.start_epoch=?)':'').' LIMIT 1');
+    $q->execute([$owner,$now,$answeredSid??'',...($excludeAttempt??[])]);
     return !$q->fetchColumn();
 }
 /** Read only the holder's choices for the current CRM pairing and exact destination. */

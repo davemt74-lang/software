@@ -701,6 +701,18 @@
   function populateSpecialistSettings(view,current,key) {
     const settings = cfg.specialistSettings || {};
     const rulesEndpoint = localUrl(cfg.coordinationRulesEndpoint);
+    if (key === 'gmail' && localUrl(cfg.emailCallSettingsApi) && window.VP3EmailCallSettingsV1?.mount && !positive(current.cid)) {
+      view.body.append(node('p','Open a saved private Chat to set up Email calls.'));
+    } else if (key === 'gmail' && localUrl(cfg.emailCallSettingsApi) && window.VP3EmailCallSettingsV1?.mount) {
+      const content = node('section');
+      view.body.append(content);
+      const calls = window.VP3EmailCallSettingsV1.mount({host:content,endpoint:localUrl(cfg.emailCallSettingsApi),
+        context:{owner_key:String(current.owner),agent_id:current.agent,conversation_id:current.cid,csrf_token:cfg.csrf},
+        isCurrent:() => specialistSettings === view && signature(scope()) === signature(current) && !accessRejected,
+        onAccessChanged:() => { if (specialistSettings === view) close(false); }});
+      if (calls) {view.emailCalls=calls;view.cleanups.push(() => calls.dispose());}
+      else content.remove();
+    }
     if (key === 'profile') view.body.append(node('p',
       'Visitor, call and reviewed task notifications continue in their existing interfaces. Current Profile reports remain available here.'));
     if (ruleSpecialists.has(key) && rulesEndpoint) {
@@ -752,8 +764,11 @@
     view.body.remove();
   }
 
-  function closeSpecialistSettings() {
+  async function closeSpecialistSettings() {
     if (!specialistSettings) return;
+    const view = specialistSettings;
+    if (view.emailCalls && !await view.emailCalls.requestClose()) return;
+    if (specialistSettings !== view) return;
     disposeSpecialistSettings();
     delete host.dataset.settings;
     specialistContent.hidden = false;
@@ -1188,7 +1203,11 @@
       compose.title = 'Compose new email';
       header.append(compose);
     }
-    header.append(workspaceButton,backButton,settingsButton,button('Close',() => close()));
+    header.append(workspaceButton,backButton,settingsButton,button('Close',async () => {
+      const view = specialistSettings;
+      if (view?.emailCalls && !await view.emailCalls.requestClose()) return;
+      if (specialistSettings === view) close();
+    }));
     status = node('p','Loading activity…','vp3-agent-activity-status');
     status.setAttribute('role','status');
     verified = node('small');

@@ -26,6 +26,16 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         }
         return $hangup;
     }
+    $query=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a
+        ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id AND a.start_epoch=o.start_epoch
+        WHERE a.owner_user_id=? AND a.provider_sid=? AND a.state='submitted'");
+    $query->execute([(int)$owner,$sid]);$hint=$query->fetch(PDO::FETCH_ASSOC);$query->closeCursor();
+    $ownerEmail=$hint?vp3_operator_owner_email_occurrence_id_v1($pdo,$hint):null;
+    if($ownerEmail!==null){
+        require_once __DIR__.'/agent-operator-owner-email-v1.php';
+        if(!in_array($event,['status','recording'],true)
+            &&!vp3_operator_owner_email_refresh_call_v1($pdo,(int)$owner,$sid,$clock()))return $hangup;
+    }
     if(preg_match('/^turn([1-8])$/D',$event,$match))
         return vp3_operator_conversation_turn_v1($pdo,(int)$owner,$sid,(int)$match[1],$form,$clock,$generator);
     $now=$clock();
@@ -34,7 +44,7 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         return $hangup;
     }
     $startRecording=false;
-    $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup,&$startRecording){
+    $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup,$ownerEmail,&$startRecording){
         $query=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a
             ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id AND a.start_epoch=o.start_epoch
             WHERE a.owner_user_id=? AND a.provider_sid=? AND a.state='submitted' AND o.state='submitted'");
@@ -62,12 +72,17 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
                 ->execute([$reason,$owner,$row['event_id'],$row['start_epoch']]);
             if(!empty($row['event_id']))$pdo->prepare("UPDATE phone_browser_calls_v1 SET state=?,ended_epoch=?,updated_epoch=? WHERE owner_user_id=? AND provider_call_sid=? AND transport_kind='operator_scheduled'")
                 ->execute([$status==='completed'?'completed':str_replace('-','_',$status),$now,$now,$owner,$sid]);
+            if($ownerEmail!==null)vp3_operator_owner_email_sync_v1($pdo,(int)$owner,(int)$row['event_id'],(int)$row['start_epoch'],$now);
             return $hangup;
         }
         if(!in_array($row['reason'],['carrier_submitted','answer_prompted'],true))return $hangup;
         if($event==='confirm'&&$row['reason']!=='answer_prompted')return $hangup;
         $update=$pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted' AND reason=?");
-        $save=static fn(string $reason)=>$update->execute([$reason,$owner,$row['event_id'],$row['start_epoch'],$row['reason']]);
+        $save=static function(string $reason)use($update,$pdo,$owner,$row,$ownerEmail,$now):bool{
+            $saved=$update->execute([$reason,$owner,$row['event_id'],$row['start_epoch'],$row['reason']]);
+            if($ownerEmail!==null)vp3_operator_owner_email_sync_v1($pdo,(int)$owner,(int)$row['event_id'],(int)$row['start_epoch'],$now);
+            return $saved;
+        };
         try{$current=vp3_operator_current_request_v1($pdo,$row,$now,$sid);}
         catch(VP3PhoneWorkspaceException){$current=['reason'=>'access_changed'];}
         if($current['reason']!=='eligible'){
@@ -97,6 +112,7 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
     if($startRecording){
         $recording=vp3_operator_recording_start_v1($pdo,(int)$owner,$sid,$now,$recordingCarrier);
         if(($recording['state']??'')!=='started')return $hangup;
+        if($ownerEmail!==null&&!vp3_operator_owner_email_refresh_call_v1($pdo,(int)$owner,$sid,$clock()))return $hangup;
     }
     return $response;
 }

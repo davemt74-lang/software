@@ -736,6 +736,9 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
     $gmailFollowthrough=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.initiative-draft.v1'
         &&($turnControl['gmail_followthrough_draft']??false)===true;
+    $phoneEmailCall=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.phone-agent-email-call-decision.v1'
+        &&($turnControl['phone_agent_email_call_decision']??false)===true;
     $profileOwnerReply=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.profile-owner-reply-draft.v1';
     $beforeDispatch=match(true){
@@ -744,6 +747,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         $gmailReply=>$turnControl['before_gmail_reply_dispatch']??null,
         $gmailAnalysis=>$turnControl['before_gmail_analysis_dispatch']??null,
         $gmailFollowthrough=>$turnControl['before_gmail_followthrough_dispatch']??null,
+        $phoneEmailCall=>$turnControl['before_phone_agent_email_call_dispatch']??null,
         $profileOwnerReply=>$turnControl['before_profile_owner_reply_dispatch']??null,
         default=>null,
     };
@@ -751,6 +755,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
     if($gmailSummary)$budget=384;
     if($gmailReply||$gmailFollowthrough||$profileOwnerReply)$budget=1600;
     if($gmailAnalysis)$budget=900;
+    if($phoneEmailCall)$budget=128;
     if(($turnControl['surface']??'')==='profile_agent'&&isset($turnControl['profile_max_output_tokens'])){
         $budget=min($budget,max(64,(int)$turnControl['profile_max_output_tokens']));
     }
@@ -777,12 +782,12 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             $result=ai_curl_json('https://api.openai.com/v1/responses',
                 ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
                 ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$profileOwnerReply,$observer,$beforeDispatch);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$profileOwnerReply,$observer,$beforeDispatch);
         }else{
             $result=ai_curl_json('https://api.anthropic.com/v1/messages',
                 ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
                 ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$profileOwnerReply,$observer,$beforeDispatch);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$profileOwnerReply,$observer,$beforeDispatch);
         }
         $usage=[];$answer='';
         if(!empty($result['ok'])){
@@ -832,7 +837,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             'failure_code'=>'provider_response_empty','status'=>$result['status']??null,
             'stop_service_fallback'=>$meter?->active??false];
         $last['_legacy_usage_key']=$observedKey;
-        if($gmailFollowthrough||$profileOwnerReply||!empty($last['stop_service_fallback']))return $last;
+        if($gmailFollowthrough||$phoneEmailCall||$profileOwnerReply||!empty($last['stop_service_fallback']))return $last;
     }
     return $last;
 }
@@ -880,7 +885,7 @@ function ai_generate_chat_response(
     if(function_exists('vp3_ai_budget_remaining_v1')&&($remaining=vp3_ai_budget_remaining_v1())!==null&&$remaining<=0.005){
         return ['ok'=>false,'error'=>'The inference time budget was exhausted.','error_code'=>'inference_budget_exhausted'];
     }
-    $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-office-report.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1'],true);
+    $initiative=in_array($turnControl['protocol']??'',['vp3.initiative-plan.v1','vp3.initiative-draft.v1','vp3.initiative-office-report.v1','vp3.initiative-reply.v1','vp3.initiative-canvas.v1','vp3.artist-research.v1','vp3.topic-research.v1','vp3.transcript-research-plan.v1','vp3.phone-agent-email-call-decision.v1'],true);
     $developmentOutline=($turnControl['surface']??'')==='tool_json'&&($turnControl['protocol']??'')==='vp3.agent-development-outline.v1';
     $gmailSummary=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-inbox-initial-summary.v1';
@@ -891,13 +896,18 @@ function ai_generate_chat_response(
     $gmailFollowthrough=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.initiative-draft.v1'
         &&($turnControl['gmail_followthrough_draft']??false)===true;
+    $phoneEmailCall=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.phone-agent-email-call-decision.v1'
+        &&($turnControl['phone_agent_email_call_decision']??false)===true;
+    if(($turnControl['protocol']??'')==='vp3.phone-agent-email-call-decision.v1'&&!$phoneEmailCall)
+        return ai_v100_service_failure('Owner email-call decision access verification is unavailable.','service_usage_unavailable');
     $profileOwnerReply=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.profile-owner-reply-draft.v1';
     // Phone callers have no owner-session authority. Never run private Chat
     // context enrichment for this surface, including on a retry.
     if (($turnControl['surface']??'')==='phone_voice') $context=[];
     elseif (($turnControl['surface']??'')==='paired_phone_chat') { $context=[]; $visionImages=[]; }
-    elseif($gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$profileOwnerReply) $history=$context=$visionImages=[];
+    elseif($gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$profileOwnerReply) $history=$context=$visionImages=[];
     elseif($developmentOutline) $context=[];
     elseif(($turnControl['surface']??'')!=='cloud_mission'&&!$initiative
         && !$visionImages&&function_exists('chat_response_context'))$context=chat_response_context($query,$context);
@@ -939,6 +949,11 @@ function ai_generate_chat_response(
         ||($serviceContext['background']??null)!==true
         ||!(($turnControl['before_gmail_followthrough_dispatch']??null) instanceof Closure))){
         return ai_v100_service_failure('Email follow-up usage accounting or access verification is unavailable.','service_usage_unavailable');
+    }
+    if($phoneEmailCall&&(!$meter?->active||($serviceContext['service']??null)!=='initiative'
+        ||($serviceContext['background']??null)!==true
+        ||!(($turnControl['before_phone_agent_email_call_dispatch']??null) instanceof Closure))){
+        return ai_v100_service_failure('Owner email-call decision usage accounting or access verification is unavailable.','service_usage_unavailable');
     }
     $explicit=!empty($policy['configured']);
     $connection=$user&&function_exists('db')?db():null;
@@ -1021,7 +1036,7 @@ function ai_generate_chat_response(
                 $result['compute_source']='user_provider';
                 $result['system_tokens_charged']=false;
             }
-            if($gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$profileOwnerReply||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
+            if($gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$profileOwnerReply||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
         }
 
         if(!$meter?->active&&!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){
