@@ -472,7 +472,7 @@
   function phoneContactModel(raw){
     if(!raw||!positive(raw.id)||typeof raw.revision!=='string'||!/^[a-f0-9]{64}$/.test(raw.revision)
       ||typeof raw.name!=='string'||typeof raw.phone_e164!=='string'||typeof raw.relationship!=='string'||typeof raw.notes!=='string')return null;
-    return {id:Number(raw.id),revision:raw.revision,name:text(raw.name).slice(0,120),phone:raw.phone_e164.slice(0,80),relationship:text(raw.relationship).slice(0,80),notes:text(raw.notes).slice(0,2000)};
+    return {id:Number(raw.id),revision:raw.revision,name:text(raw.name).slice(0,120),phone:raw.phone_e164.slice(0,80),email:text(raw.email||'').slice(0,190),relationship:text(raw.relationship).slice(0,80),notes:text(raw.notes).slice(0,2000)};
   }
   function phoneScheduleModel(raw){
     if(!raw||!positive(raw.event_id)||raw.execution_enabled!==false||typeof raw.revision!=='string'||!/^[a-f0-9]{64}$/.test(raw.revision)
@@ -500,13 +500,14 @@
   }
   async function openPhoneContact(id){
     if(!current(generation)||!state||stateError||autoCallDraft||calendarDraft||phoneContactDraft?.saving)return;
-    const draft={id,fields:{name:'',phone:'',relationship:'',notes:''},model:null,editable:state.contact_details_ready===true,dirty:false,loading:false,saving:false,feedback:'',schedules:null,schedule:null,cancelId:0};
+    const draft={id,fields:{name:'',phone:'',email:'',relationship:'',notes:''},model:null,editable:state.contact_details_ready===true,dirty:false,loading:false,saving:false,feedback:'',schedules:null,schedule:null,cancelId:0};
     phoneContactDraft=draft;selectTab('contacts');render();if(id>0)await loadPhoneContact(draft);
   }
   function phoneDetailField(form,draft,key,labelText,type='text',limit=120){
     const label=node('label','vp3-phone-field',labelText),input=node(type==='textarea'?'textarea':'input');if(type!=='textarea')input.type=type;else input.rows=4;
     input.value=String(draft.fields[key]||'');input.maxLength=limit;input.disabled=draft.loading||draft.saving||!draft.editable;input.required=['name','phone'].includes(key);input.dataset.phoneFocusKey='contact-detail-'+key;
     if(key==='phone'){input.autocomplete='tel';input.placeholder='+1 602 555 0123';}
+    if(key==='email')input.autocomplete='email';
     if(key==='name')input.autocomplete='name';if(key==='relationship')input.placeholder='Friend, family, colleague, client…';
     const g=generation;input.addEventListener('input',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving){const firstChange=!draft.dirty;draft.fields[key]=input.value;draft.dirty=true;draft.feedback='';if(firstChange)render();}});label.append(input);form.append(label);
   }
@@ -517,7 +518,7 @@
     if(draft.feedback){const message=node('p','vp3-phone-processing-error',draft.feedback);message.setAttribute('role','status');host.append(message);}
     if(draft.id&&!draft.model){host.append(button('Retry contact',()=>void loadPhoneContact(draft)));return;}
     const form=node('form','vp3-phone-contact-editor');form.setAttribute('aria-label',draft.id?'Edit phone contact':'Add phone contact');
-    phoneDetailField(form,draft,'name','Name');phoneDetailField(form,draft,'phone','Phone number','tel',80);phoneDetailField(form,draft,'relationship','Relationship','text',80);phoneDetailField(form,draft,'notes','Private notes','textarea',2000);
+    phoneDetailField(form,draft,'name','Name');phoneDetailField(form,draft,'phone','Phone number','tel',80);phoneDetailField(form,draft,'email','Email','email',190);phoneDetailField(form,draft,'relationship','Relationship','text',80);phoneDetailField(form,draft,'notes','Private notes','textarea',2000);
     if(!draft.editable)form.append(node('p','vp3-phone-empty','Run the Cloud database upgrade to edit contact details.'));
     const actions=node('div','vp3-phone-actions'),save=node('button','vp3-phone-button vp3-phone-primary','Save contact');save.type='submit';save.disabled=!draft.editable||draft.saving||Boolean(stateError);actions.append(save);
     if(draft.id){const reload=button('Reload saved contact',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving)void loadPhoneContact(draft);});reload.disabled=draft.saving;actions.append(reload);}
@@ -525,7 +526,7 @@
       event.preventDefault();if(!current(g)||phoneContactDraft!==draft||draft.saving||!draft.editable||stateError)return;
       draft.saving=true;draft.feedback='';render();
       try{
-        const result=await api('save_phone_contact',{contact_id:draft.id,expected_revision:draft.model?.revision||'',name:draft.fields.name,phone:draft.fields.phone,relationship:draft.fields.relationship,notes:draft.fields.notes},'POST',g);
+        const result=await api('save_phone_contact',{contact_id:draft.id,expected_revision:draft.model?.revision||'',name:draft.fields.name,phone:draft.fields.phone,email:draft.fields.email,relationship:draft.fields.relationship,notes:draft.fields.notes},'POST',g);
         if(!current(g)||phoneContactDraft!==draft)return;const contact=phoneContactModel(result.contact);
         if(!contact||(draft.id&&contact.id!==draft.id))throw phoneError('The contact save could not be confirmed. Reload before trying again.');
         draft.id=contact.id;draft.model=contact;draft.fields={...contact};draft.dirty=false;say(result.created?'Contact added.':'Contact saved.');
@@ -616,7 +617,13 @@
   }
   function appendRecording(card,voicemail,renderGeneration,isCall=false){
     const audioUrl=safeUrl(voicemail.audio_url);if(audioUrl){const audio=node('audio');audioNodes.add(audio);audio.controls=true;audio.preload='none';audio.src=audioUrl;audio.dataset.phoneRecordingKey=voicemailKey(voicemail.id);audio.setAttribute('aria-label',isCall?'Play call recording':'Play voicemail');audio.addEventListener('play',()=>{if(!current(renderGeneration)){audio.pause();return;}if(!voicemail.read)void api('mark_voicemail_read',{voicemail_id:voicemailKey(voicemail.id)},'POST',renderGeneration).catch(()=>{});});card.append(audio);}
-    if(voicemail.transcript){const details=node('details'),summary=node('summary',null,'Transcript');details.append(summary,node('p',null,voicemail.transcript));card.append(details);}
+    if(voicemail.transcript){
+      card.append(node('strong',null,'Transcript'),node('p','vp3-phone-transcript',voicemail.transcript));
+    }else if(voicemail.transcription_requested===true){
+      const worker=state?.processing_worker?.state;
+      if(voicemail.state==='queued')card.append(node('p','vp3-phone-meta',worker==='stale'||worker==='never_seen'?'Transcription queued. Waiting for the recording worker.':'Transcription queued.'));
+      if(voicemail.state==='transcribing')card.append(node('p','vp3-phone-meta','Transcribing voicemail…'));
+    }
     const transcriptUrl=safeUrl(voicemail.transcript_url);if(transcriptUrl){const transcript=node('a','vp3-phone-report','Open transcript');transcript.href=transcriptUrl;card.append(transcript);}
     const reportUrl=safeUrl(voicemail.report_url);if(reportUrl){const report=node('a','vp3-phone-report',isCall?'Open call report':'Open voicemail report');report.href=reportUrl;card.append(report);}
   }
@@ -982,6 +989,31 @@
     if(safeUrl(recording?.report_url))addDetail('Call report','Available');
     card.append(details);if(recording)appendRecording(card,recording,renderGeneration,true);
     const actions=node('div','vp3-phone-actions');
+    if(contact&&(incoming||outgoing)){
+      const emailButton=button('Send Email',async()=>{
+        if(!current(renderGeneration)||emailButton.disabled)return;
+        emailButton.disabled=true;
+        try{
+          const result=await api('phone_contact_detail',{contact_id:contact.id},'GET',renderGeneration);
+          if(!current(renderGeneration)||Number(result.contact?.id)!==contact.id)return;
+          const address=result.contact.email;
+          if(typeof address==='string'&&address.length<=190&&/^[^\s@]+@[^\s@]+$/u.test(address)){
+            location.href='mailto:'+encodeURIComponent(address).replace('%40','@');
+          }else{
+            open(emailButton);
+            await openPhoneContact(contact.id);
+            if(current(renderGeneration)&&phoneContactDraft?.id===contact.id){
+              phoneContactDraft.feedback='Add an email address for this contact, then save.';
+              render();
+              panel.querySelector('[data-phone-focus-key="contact-detail-email"]')?.focus();
+            }
+          }
+        }catch(error){
+          if(current(renderGeneration)){open(emailButton);say(error.phonePublicMessage||'The contact email could not be loaded.');}
+        }finally{emailButton.disabled=false;}
+      });
+      actions.append(emailButton);
+    }
     if(entry?.incoming&&pending.get(id)===entry){const accept=button('Accept',()=>{if(current(renderGeneration))void acceptCall(id);},'vp3-phone-button vp3-phone-primary');accept.disabled=callBusy||setupPending>0||Boolean(active)||!positive(context.conversation_id);const decline=button('Decline',()=>{if(current(renderGeneration))declineCall(id);});decline.disabled=callBusy;actions.append(accept,decline);}
     if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
     if(managed&&!entry&&!terminal){

@@ -221,6 +221,7 @@ function vp3_phone_recording_public_v1(array $job): array
     $session=(int)$job['session_id'];$key=(string)$job['recording_key'];
     $voicemail=vp3_phone_voicemail_job_v1($job);if($job['state']==='deleted')return ['id'=>'job-'.(int)$job['id'],'call_id'=>$job['call_public_id'],'kind'=>'voicemail','state'=>'deleted','audio_url'=>'','transcript_url'=>'','report_url'=>'','recording_refs'=>[],'transcript'=>''];
     return ['id'=>'job-'.(int)$job['id'],'kind'=>$voicemail?'voicemail':'call_recording','can_delete'=>$voicemail,'can_post'=>$voicemail,'can_transcribe'=>$voicemail&&!(int)$job['speech_dispatched']&&!(int)$job['analysis_dispatched']&&!in_array($job['state'],['transcribing','analyzing'],true)&&$job['error_code']!=='recording_unavailable','public_id'=>$job['public_id'],'call_id'=>$job['call_public_id'],'state'=>$job['state'],'stage'=>$job['stage'],
+        'transcription_requested'=>$voicemail&&!empty(vp3_phone_recording_decode_v1($job['policy_json']??'{}')['transcribe']),
         'duration_seconds'=>(int)$job['duration_seconds'],'transcript_session_id'=>$session,'recording_refs'=>$session>0&&$key!==''?[['session_id'=>$session,'key'=>$key]]:[],
         'audio_url'=>$job['error_code']==='recording_unavailable'?'':url('/api/phone-recording-audio-v1.php?id=job-'.(int)$job['id']),'transcript_url'=>$session>0?url('/artist-listening.php?session='.$session):'',
         'report_message_id'=>(int)$job['report_message_id'],'conversation_id'=>(int)$job['conversation_id'],'error_code'=>$job['error_code'],'error'=>$job['last_error'],
