@@ -32,7 +32,7 @@ function vp3_operator_recording_bind_call_v1(PDO $pdo,array $attempt,array $plan
         ->execute([$public,(int)$attempt['owner_user_id'],(int)$attempt['event_id'],(int)$attempt['start_epoch']]);
     $q->execute([$sid]);$call=$q->fetch(PDO::FETCH_ASSOC);
     if(function_exists('vp3_phone_workspace_delivery_v1')){
-        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,'Scheduled Operator call submitted.');
+        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,isset($plan['opening'])?'Operator initiated a phone call.':'Scheduled Operator call submitted.');
         $pdo->prepare('UPDATE phone_browser_calls_v1 SET chat_message_id=? WHERE id=?')->execute([(int)$delivery['message_id'],(int)$call['id']]);
     }
     return $call;

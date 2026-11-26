@@ -487,7 +487,7 @@
   function admissionEditor(contact,policy){
     const draft=admissionDraft,g=generation,key=autoCallKey(policy),panel=node('section','vp3-phone-auto-call-form');
     panel.setAttribute('aria-label','Autonomous call readiness');
-    panel.append(node('strong',null,'Auto Call readiness'),node('p','vp3-phone-empty','Review the permissions for this contact and line. The Cloud worker checks these permissions again before dialing an assigned schedule.'));
+    panel.append(node('strong',null,'Auto Call readiness'),node('p','vp3-phone-empty','Review the permissions for this contact and line. The Cloud worker checks these permissions again before dialing from a call agenda or assigned schedule.'));
     if(draft.loading)panel.append(node('p','vp3-phone-meta','Checking current permission and known call limits…'));
     if(draft.feedback){const p=node('p','vp3-phone-processing-error',draft.feedback);p.setAttribute('role','status');panel.append(p);}
     const model=draft.model;
@@ -638,7 +638,7 @@
       const model=phoneContactModel(response.contact),schedules=phoneScheduleBook(response.schedules);
       if(!model||model.id!==draft.id||!schedules)throw phoneError('Contact details could not be confirmed. Reload the contact.');
       draft.devices=Array.isArray(response.connected_phones)?response.connected_phones.filter(d=>publicId(d.id)&&typeof d.device_name==='string'):[];draft.deviceId=publicId(response.connected_phone_id)?response.connected_phone_id:'';
-      draft.model=model;draft.fields={...model};draft.editable=response.editable===true;draft.schedules=schedules;draft.dirty=false;draft.schedule=null;draft.cancelId=0;
+      draft.agenda=response.agenda||null;draft.editingAgenda=false;draft.model=model;draft.fields={...model};draft.editable=response.editable===true;draft.schedules=schedules;draft.dirty=false;draft.schedule=null;draft.cancelId=0;
     }catch(error){if(current(g)&&phoneContactDraft===draft)draft.feedback=error.phonePublicMessage||'Contact details could not be loaded. Retry.';}
     finally{if(current(g)&&phoneContactDraft===draft){draft.loading=false;render();}}
   }
@@ -655,12 +655,47 @@
     if(key==='name')input.autocomplete='name';if(key==='relationship')input.placeholder='Friend, family, colleague, client…';
     const g=generation;input.addEventListener('input',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving){const firstChange=!draft.dirty;draft.fields[key]=input.value;draft.dirty=true;draft.feedback='';if(firstChange)render();}});label.append(input);form.append(label);
   }
+  function renderPhoneAgenda(host,draft){
+    const g=generation,fields=draft.agendaFields;
+    const form=node('form','vp3-phone-agenda-form');
+    form.append(node('h4',null,'Call agenda for '+draft.model.name));
+    form.append(node('p','vp3-phone-empty','Add topics or questions you want Operator to discuss with this person. A saved agenda can be used once for an agreed follow-up or requested check-in.'));
+    for(const [key,title] of [['topics','Conversation topics'],['questions','Specific questions']]){
+      const label=node('label','vp3-phone-field',title),input=node('textarea');
+      input.rows=3;input.maxLength=700;input.value=fields[key];input.disabled=draft.saving;input.dataset.phoneFocusKey='agenda-'+key;
+      input.addEventListener('input',()=>{fields[key]=input.value;});label.append(input);form.append(label);
+    }
+    for(const [key,title] of [['review_missed','Look for a missed one-time call with this contact to follow up on'],['enabled','Let Operator initiate calls when a reason and both parties’ permissions are current']]){
+      const label=node('label','vp3-phone-check'),input=node('input');input.type='checkbox';input.checked=fields[key];input.disabled=draft.saving;
+      input.dataset.phoneFocusKey='agenda-'+key;input.addEventListener('change',()=>{fields[key]=input.checked;render();});
+      label.append(input,node('span',null,title));form.append(label);
+    }
+    const line=Number(fields.number_id||state.selected_number_id);
+    const number=(state.numbers||[]).find(item=>Number(item.id)===line);
+    form.append(node('p','vp3-phone-empty','Calling line '+(number?.phone_e164||'unavailable')));
+    const save=node('button','vp3-phone-button vp3-phone-primary','Save call agenda');save.type='submit';save.disabled=draft.saving||(!number&&fields.enabled)||Boolean(stateError);
+    const cancel=button('Back to contact',()=>{draft.editingAgenda=false;draft.feedback='';render();});cancel.disabled=draft.saving;
+    form.append(save,cancel);host.append(form);
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();if(!current(g)||phoneContactDraft!==draft||draft.saving||(!number&&fields.enabled)||stateError)return;
+      draft.saving=true;draft.feedback='';render();
+      try{
+        const result=await api('save_operator_agenda',{contact_id:draft.id,number_id:line,expected_revision:fields.revision,
+          topics:fields.topics,questions:fields.questions,review_missed:fields.review_missed,enabled:fields.enabled},'POST',g);
+        if(!current(g)||phoneContactDraft!==draft)return;
+        if(!result.agenda||result.agenda.revision!==fields.revision+1)throw phoneError('Reload the contact to confirm its call agenda.');
+        draft.agenda=result.agenda;draft.editingAgenda=false;draft.feedback='Call agenda saved.';
+      }catch(error){if(current(g)&&phoneContactDraft===draft)draft.feedback=error.phonePublicMessage||'Call agenda could not be saved.';}
+      finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
+    });
+  }
   function renderPhoneContact(host){
     const draft=phoneContactDraft,g=generation;
     const back=button('Back to contacts',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving){phoneContactDraft=null;render();}});back.disabled=draft.saving;host.append(back,node('h3',null,draft.id?'Contact details':'New contact'));
     if(draft.loading){host.append(node('p','vp3-phone-empty','Loading contact…'));return;}
     if(draft.feedback){const message=node('p','vp3-phone-processing-error',draft.feedback);message.setAttribute('role','status');host.append(message);}
     if(draft.id&&!draft.model){host.append(button('Retry contact',()=>void loadPhoneContact(draft)));return;}
+    if(draft.editingAgenda){renderPhoneAgenda(host,draft);return;}
     const form=node('form','vp3-phone-contact-editor');form.setAttribute('aria-label',draft.id?'Edit phone contact':'Add phone contact');
     phoneDetailField(form,draft,'name','Name');phoneDetailField(form,draft,'phone','Phone number','tel',80);phoneDetailField(form,draft,'email','Email','email',190);phoneDetailField(form,draft,'relationship','Relationship','text',80);phoneDetailField(form,draft,'notes','Private notes','textarea',2000);
     if(!draft.editable)form.append(node('p','vp3-phone-empty','Run the Cloud database upgrade to edit contact details.'));
@@ -679,6 +714,10 @@
       finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
     });host.append(form);
     if(!draft.id){host.append(node('p','vp3-phone-empty','Save the contact to add scheduled calls.'));return;}
+    if(draft.agenda){
+      const edit=button('Call agenda',()=>{draft.agendaFields={...draft.agenda};draft.editingAgenda=true;draft.feedback='';render();});
+      edit.disabled=draft.saving||draft.dirty;host.append(edit);
+    }
     if(draft.devices?.length||draft.deviceId){
       const label=node('label','vp3-phone-field','Connected phone'),select=node('select');
       select.dataset.phoneFocusKey='contact-linked-phone';

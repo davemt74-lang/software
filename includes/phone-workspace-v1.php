@@ -335,6 +335,10 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
         require_once __DIR__.'/phone-managed-control-v1.php';
         return vp3_managed_control_action_v1($pdo,$scope,$input);
     }
+    if($action==='save_operator_agenda'){
+        require_once __DIR__.'/agent-operator-outreach-v1.php';
+        return vp3_operator_agenda_save_v1($pdo,$scope,$input);
+    }
     if($action==='assign_scheduled_operator')return vp3_operator_schedule_assign_v1($pdo,$scope,$input);
     if($action==='assign_contact_phone')return vp3_phone_companion_assign_v1($pdo,$scope,$input);
     if($action==='share_call_item')return vp3_phone_companion_share_v1($pdo,$scope,$input);
