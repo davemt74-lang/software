@@ -584,11 +584,13 @@ async function verifyFreshGmail(page,writes){
   await slideout.getByRole('tab',{name:'Opportunities',exact:true}).click();
   const finding=slideout.locator(`[data-coordination-finding="${replyContext.initiative_output.situation_id}"]`);
   await finding.getByText('Resolved',{exact:true}).waitFor();
+  const reloadTick=initiativeTick(page);
   await page.reload({waitUntil:'domcontentloaded'});
   await questionRow.waitFor();
   await resultRow.waitFor();
   assert.equal(await slideout.isVisible(),false);
-  const reloaded=await tick();
+  await fixtureJson(await reloadTick);
+  const reloaded=await state();
   assert.deepEqual(decisions(reloaded),decisions(after),'reload preserves the same question and result');
   assert.equal(reloaded.gmail.sent_count,0);
   assert.deepEqual(reloaded.gmail.drafts,after.gmail.drafts);
