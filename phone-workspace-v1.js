@@ -21,7 +21,7 @@
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
   let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0,connectedDraft=null,voiceArm=null;
   let restoredGeneration=-1;
-  let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,stateError='',autoCallDraft=null,calendarDraft=null,phoneContactDraft=null,admissionDraft=null;
+  let pollTimer=0,keepCallError=false,statusText='Checking phone connections…',contactQuery='',initialState=true,stateError='',autoCallDraft=null,calendarDraft=null,phoneContactDraft=null,admissionDraft=null;
   const layer=node('div','vp3-phone-workspace');layer.hidden=true;
   const backdrop=node('button','vp3-phone-backdrop');backdrop.type='button';backdrop.tabIndex=-1;backdrop.setAttribute('aria-label','Close phone workspace');
   const panel=node('aside','vp3-phone-panel');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','vp3PhoneTitle');panel.tabIndex=-1;
@@ -47,7 +47,7 @@
   function current(g){return !disposed&&authorized&&g===generation;}
   function sessionCurrent(session){return Boolean(session)&&current(session.generation)&&deviceSession===session&&!session.closed;}
   function updateNotice(){notice.textContent=stateError+(stateError&&state?' Showing previously loaded data; retry to refresh.':'')||statusText;recovery.hidden=!stateError;retryButton.disabled=Boolean(fetching);}
-  function say(message){statusText=text(message).slice(0,350);updateNotice();}
+  function say(message,callError=false){keepCallError=callError;statusText=text(message).slice(0,350);updateNotice();}
   function selectedNumber(){return (state?.numbers||[]).find(item=>Number(item.id)===Number(state?.selected_number_id));}
   const enabled=value=>value===true||value===1||value==='1';
   function chatEligible(){const chat=window.STONEFELLOW_CHAT_CONTINUITY;return context.ready&&(positive(context.conversation_id)||Boolean(chat?.ensureConversation&&chat.isReady?.()&&!chat.isRestoring?.()&&!chat.isBusy?.()));}
@@ -128,6 +128,7 @@
         const greetingNumber=greetingCapture?.number_id||greetingDraft?.number_id;
         if(greetingNumber&&(!next.numbers.some(item=>Number(item.id)===greetingNumber)||Number(next.selected_number_id)!==greetingNumber)){clearGreeting();voicemailDraft=null;}
         if(deviceSession&&(!next.numbers.some(item=>Number(item.id)===deviceSession.numberId&&item.browser_enabled&&item.voice_enabled)||Number(next.selected_number_id)!==deviceSession.numberId))stopDevice('Phone connection changed. Enable calls again.');
+        const readinessChanged=!state||state.readiness?.ready!==next.readiness?.ready||state.readiness?.reason!==next.readiness?.reason;
         const recovered=Boolean(stateError);state=next;initialState=false;stateError='';
         if(active?.captionSession?.phase==='listening'&&(next.operator_live?.eligible!==true||next.operator_live.call_id!==active.info.public_id||active.captionSession.voiceTurn&&next.operator_live.voice_available!==true))stopRemoteCaptions(active,'Live assistance permission changed.');
         if(voiceArm&&next.operator_live?.voice_available!==true){voiceArm.mixer.close();voiceArm=null;}
@@ -136,8 +137,9 @@
           restoredGeneration=g;
           void enableDevice().catch(()=>{});
         }
-        if(!deviceSession&&!active)say(state.readiness?.ready?'Select a number and enable calls in this browser.':state.readiness?.reason||'The phone connection is not ready.');
-        else if(recovered)say(active?'Phone status refreshed.':deviceSession?.phase==='registered'?'Browser ready for incoming calls.':'Connecting browser…');
+        if(!deviceSession&&!active){
+          if(!keepCallError||readinessChanged||recovered)say(state.readiness?.ready?'Select a number and enable calls in this browser.':state.readiness?.reason||'The phone connection is not ready.');
+        }else if(recovered)say(active?'Phone status refreshed.':deviceSession?.phase==='registered'?'Browser ready for incoming calls.':'Connecting browser…');
         render();
       }catch(error){
         if(!current(g)||sequence!==requestSequence)return;
@@ -363,7 +365,7 @@
         if(state?.auto_call?.available&&Array.isArray(state.auto_call.policies)){
           state.auto_call.policies=state.auto_call.policies.map(item=>item.contact_id===Number(contact.id)&&item.number_id===policy.number_id?result.policy:item);
         }
-        autoCallDraft=null;say(draft.enabled?'Auto Call permission saved. Autonomous dialing is off.':'Auto Call permission revoked.');render();void refresh();
+        autoCallDraft=null;say(draft.enabled?'Auto Call permission saved.':'Auto Call permission revoked.');render();void refresh();
       }catch(error){if(current(g)&&autoCallDraft===draft)draft.feedback=error.message;}
       finally{if(current(g)&&autoCallDraft===draft){draft.saving=false;render();}}
     });
@@ -485,7 +487,7 @@
   function admissionEditor(contact,policy){
     const draft=admissionDraft,g=generation,key=autoCallKey(policy),panel=node('section','vp3-phone-auto-call-form');
     panel.setAttribute('aria-label','Autonomous call readiness');
-    panel.append(node('strong',null,'Auto Call readiness'),node('p','vp3-phone-empty','Review only. No automatic calls can be placed. Owner attestation is not independent verification of the recipient’s consent.'));
+    panel.append(node('strong',null,'Auto Call readiness'),node('p','vp3-phone-empty','Review the permissions for this contact and line. The Cloud worker checks these permissions again before dialing an assigned schedule.'));
     if(draft.loading)panel.append(node('p','vp3-phone-meta','Checking current permission and known call limits…'));
     if(draft.feedback){const p=node('p','vp3-phone-processing-error',draft.feedback);p.setAttribute('role','status');panel.append(p);}
     const model=draft.model;
@@ -711,8 +713,16 @@
       date:raw?.date||tomorrow.getFullYear()+'-'+pad(tomorrow.getMonth()+1)+'-'+pad(tomorrow.getDate()),time:raw?.time||'09:00',timezone:raw?.timezone||timezone,
       recurrence:raw?.recurrence||'none',duration_minutes:raw?.duration_minutes||10,objectives:raw?.objectives||'',feedback:''};
   }
+  function scheduleWorkerStatus(worker){
+    if(!worker)return 'Cloud worker status unavailable';
+    if(worker.state!=='stale'&&worker.state!=='observed')return 'No run observed';
+    const lastRun=worker.state==='stale'?'Last run is overdue':'Recent run';
+    const mode=worker.mode==='dispatch'?'Last run allowed dialing':worker.mode==='prepare'?'Last run was preparation only':'Last run mode unknown';
+    return [lastRun,worker.outcome==='failed'&&'Last run reported an error',mode,worker.last_observed_at&&displayTime(worker.last_observed_at)].filter(Boolean).join(' · ');
+  }
   function renderContactSchedules(host,draft,g){
-    const section=node('section','vp3-phone-contact-schedules');section.append(node('h3',null,'Scheduled calls'),node('p','vp3-phone-empty','Calendar reminders for calls you place. Automatic dialing is not enabled.'));
+    const section=node('section','vp3-phone-contact-schedules');section.append(node('h3',null,'Scheduled calls'),node('p','vp3-phone-empty','Create a reminder, then assign it to Operator for a scheduled agent call.'));
+    section.append(node('p','vp3-phone-meta','Cloud schedule worker · '+scheduleWorkerStatus(state?.schedule_worker)));
     if(!draft.schedules?.available){section.append(node('p','vp3-phone-empty','Run the Cloud Calendar upgrade to manage scheduled calls.'));host.append(section);return;}
     const blocked=draft.saving||draft.dirty||Boolean(stateError);
     if(draft.dirty)section.append(node('p','vp3-phone-empty','Save the contact changes before editing a schedule.'));
@@ -724,7 +734,7 @@
       const cancel=button('Cancel schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError){draft.cancelId=schedule.event_id;render();}});edit.disabled=blocked||!schedule.editable;cancel.disabled=blocked;actions.append(edit,cancel);
       if(Number.isSafeInteger(schedule.assignment_revision)&&['off','review','assigned'].includes(schedule.operator_assignment)){
         const assigned=schedule.operator_assignment==='assigned',line=selectedNumber();
-        card.append(node('p','vp3-phone-meta',assigned?'Assigned to Operator. Automatic dialing is pending.':schedule.operator_assignment==='review'?'Schedule changed. Review the Operator assignment.':'Calendar reminder'));
+        card.append(node('p','vp3-phone-meta',assigned?'Assigned to Operator. Dialing requires current call permissions.':schedule.operator_assignment==='review'?'Schedule changed. Review the Operator assignment.':'Calendar reminder'));
         if(schedule.operator_assignment==='review'){
           const remove=button('Remove previous assignment',async event=>{
             if(!event.isTrusted||!current(g)||phoneContactDraft!==draft||draft.saving||draft.dirty)return;
@@ -802,7 +812,7 @@
       try{const result=await api('save_phone_contact_schedule',{contact_id:draft.id,contact_revision:draft.model.revision,number_id:Number(state.selected_number_id),
           event_id:schedule.event_id,expected_revision:schedule.expected_revision,mutation_id:schedule.mutation_id,date:schedule.date,time:schedule.time,timezone:schedule.timezone,recurrence:schedule.recurrence,duration_minutes:schedule.duration_minutes,objectives:schedule.objectives,confirmed:true},'POST',g);
         if(!current(g)||phoneContactDraft!==draft)return;const saved=phoneScheduleModel(result.schedule);if(!saved||result.execution_enabled!==false)throw phoneError('The schedule save could not be confirmed. Reload before trying again.');
-        say('Scheduled call saved to Calendar. You will place the call.');await loadPhoneContact(draft);
+        say('Call schedule saved to Calendar.');await loadPhoneContact(draft);
       }catch(error){if(current(g)&&phoneContactDraft===draft&&draft.schedule===schedule)schedule.feedback=error.phonePublicMessage||'The schedule could not be saved. Retry when connected.';}
       finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
     });host.append(form);
@@ -1774,7 +1784,7 @@
       entry.call=call;bindCall(entry);ownStream(entry);callBusy=false;render();
       if(ownerTest||paired)window.dispatchEvent(new CustomEvent('vp3:phone-workspace-event',{detail:{kind:'outgoing',call_id:entry.info.public_id,conversation_id:callScope.conversation_id,agent_id:callScope.agent_id}}));
       return true;
-    }catch(error){cancelPrepared(receipt);ticket?.release();if(preparingTicket===ticket)preparingTicket=null;if(current(g)&&operation===callEpoch){if(entry&&active===entry){active=null;releaseEntry(entry);}say(error.name==='NotAllowedError'?'Microphone access was not allowed.':error.message);render();}}
+    }catch(error){cancelPrepared(receipt);ticket?.release();if(preparingTicket===ticket)preparingTicket=null;if(current(g)&&operation===callEpoch){if(entry&&active===entry){active=null;releaseEntry(entry);}say(error.name==='NotAllowedError'?'Microphone access was not allowed.':error.message,true);render();}}
     finally{if(receipt?.cancelPromise)await receipt.cancelPromise;if(setupOwned)setupPending=Math.max(0,setupPending-1);if(preparingTicket===ticket)preparingTicket=null;if(current(g)&&operation===callEpoch)callBusy=false;if(current(g)){signalCallState();render();}}
   }
   function incomingCall(session,call){
@@ -1846,13 +1856,7 @@
     const pairs=[['Browser',deviceSession?.phase==='registered'?'Registered in this tab':'Unregistered in this tab'],
       ['Voicemail timeout',state.voicemail_settings?.ring_seconds?state.voicemail_settings.ring_seconds+' seconds':'Unavailable'],
       ['Recording worker',displayState(state.processing_worker?.state||'unknown')]];
-    const worker=state.schedule_worker;
-    if(worker){
-      const when=worker.last_observed_at&&displayTime(worker.last_observed_at);
-      const detail=worker.state==='stale'?'Last run is overdue':worker.state==='observed'?
-        (worker.outcome==='failed'?'Last run reported an error':'Running on schedule'):'No run observed';
-      pairs.push(['Scheduled call worker',[detail,when].filter(Boolean).join(' · ')]);
-    }
+    if(state.schedule_worker)pairs.push(['Scheduled call worker',scheduleWorkerStatus(state.schedule_worker)]);
     for(const trace of (state.operator_trace||[]).slice(0,8)){
       const call=state.calls.find(row=>row.public_id===trace.call_id);
       const voicemail=state.voicemails.find(row=>row.call_id===trace.call_id&&row.kind==='voicemail');

@@ -195,11 +195,30 @@ await test('existing private notes load only in contact detail and dirty fields 
  setPhoneField(b,'contact-detail-phone','+16025550813');assert.equal(b.findButton('+ Scheduled call').disabled,true);assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/Save the contact changes before editing a schedule/);
  b.document.querySelector('.vp3-phone-contact-editor').emit('submit');await flush();const saved=b.calls.find(call=>call.action==='save_phone_contact');assert.equal(saved.contact_id,7);assert.equal(saved.expected_revision,'a'.repeat(64));assert.equal(b.findButton('+ Scheduled call').disabled,false);b.findButton('Back to contacts').click();assert.doesNotMatch(b.document.querySelector('.vp3-phone-panel').textContent,/Private project note/);b.window.VP3PhoneWorkspaceV1.dispose();
 });
+await test('scheduled contact shows the last Cloud worker mode, errors and overdue runs',async()=>{
+ const b=contactFixture();
+ await openContacts(b);b.findButton('Edit').click();await flush();
+ const panel=b.document.querySelector('.vp3-phone-panel');
+ assert.match(panel.textContent,/Cloud worker status unavailable/);
+ for(const [state,mode,outcome,label] of [
+   ['observed','prepare','completed','Last run was preparation only'],
+   ['observed','dispatch','completed','Last run allowed dialing'],
+   ['stale','dispatch','failed','Last run is overdue · Last run reported an error · Last run allowed dialing'],
+   ['observed',undefined,'completed','Last run mode unknown'],
+   ['never_seen',undefined,'','No run observed']
+ ]){
+   b.state.schedule_worker={state,mode,outcome};
+   await b.window.VP3PhoneWorkspaceV1.refresh();
+   assert.ok(panel.textContent.includes(label),label);
+ }
+ assert.equal(b.calls.some(call=>call.action==='assign_scheduled_operator'),false);
+ b.window.VP3PhoneWorkspaceV1.dispose();
+});
 await test('daily and weekly contact schedules require explicit save and replay a stable request after failure',async()=>{
  let fail=true;const b=contactFixture({respond:({body})=>body.action==='save_phone_contact_schedule'&&fail?(fail=false,{ok:false,status:503,json:async()=>({ok:false,error:'phone_unavailable',message:'Internal SQL credential'})}):undefined});
  await openContacts(b);b.findButton('Edit').click();await flush();b.findButton('+ Scheduled call').click();
  setPhoneField(b,'contact-schedule-date','2026-12-03');setPhoneField(b,'contact-schedule-time','17:15');setPhoneField(b,'contact-schedule-timezone','UTC');setPhoneField(b,'contact-schedule-recurrence','daily','change');setPhoneField(b,'contact-schedule-duration_minutes','12');setPhoneField(b,'contact-schedule-objectives','Review project progress\nAgree the next step.');
- await b.window.VP3PhoneWorkspaceV1.refresh();assert.equal(b.field('contact-schedule-recurrence').value,'daily');assert.equal(b.field('contact-schedule-objectives').value,'Review project progress\nAgree the next step.');assert.equal(b.calls.some(call=>call.action==='save_phone_contact_schedule'),false);assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/Automatic dialing is not enabled/);
+ await b.window.VP3PhoneWorkspaceV1.refresh();assert.equal(b.field('contact-schedule-recurrence').value,'daily');assert.equal(b.field('contact-schedule-objectives').value,'Review project progress\nAgree the next step.');assert.equal(b.calls.some(call=>call.action==='save_phone_contact_schedule'),false);assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/assign it to Operator for a scheduled agent call/);
  b.document.querySelector('.vp3-phone-schedule-form').emit('submit');await flush();assert.equal(b.field('contact-schedule-time').value,'17:15');assert.doesNotMatch(b.document.querySelector('.vp3-phone-panel').textContent,/Internal SQL credential/);b.document.querySelector('.vp3-phone-schedule-form').emit('submit');await flush();
  const saves=b.calls.filter(call=>call.action==='save_phone_contact_schedule');assert.equal(saves.length,2);assert.equal(saves[0].mutation_id,saves[1].mutation_id);assert.equal(saves[1].confirmed,true);assert.equal(saves[1].contact_revision,'a'.repeat(64));assert.equal(saves[1].recurrence,'daily');assert.equal(saves[1].duration_minutes,12);assert.equal(saves[1].time,'17:15');assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/Every day/);assert.equal(b.facts.connects,0);
  b.findButton('Edit schedule').click();setPhoneField(b,'contact-schedule-recurrence','weekly','change');b.document.querySelector('.vp3-phone-schedule-form').emit('submit');await flush();const edit=b.calls.filter(call=>call.action==='save_phone_contact_schedule').at(-1);assert.equal(edit.event_id,12);assert.equal(edit.expected_revision,'c'.repeat(64));assert.equal(edit.recurrence,'weekly');assert.match(b.document.querySelector('.vp3-phone-panel').textContent,/Every week/);
