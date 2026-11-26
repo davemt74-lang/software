@@ -39,6 +39,11 @@ const draft={id:id(101),status:'prepared',from:'owner@example.test',to:'alex@exa
   attachments:[],is_reply:false,can_edit:true,can_send:true,review_token:'review-1',watch_review_token:'watch-review-1',edit_revision:hash(1),saved_at:time,watch_requested:false,
   followthrough:{enabled:false,deadline_at:null,time_zone:'UTC',prepare_if_overdue:false,priority:'normal'}};
 let draftRevision=1;
+let phoneLearning=false,phoneSoul={text:'Use clear, warm emails and include a practical next step.\n',version:0,revision:hash(800)};
+const phoneProposals=new Map();
+const phonePreference=()=>({draft_id:draft.id,eligible:phoneLearning&&!phoneProposals.has(draft.id),reason:phoneLearning?null:'generated_baseline_unavailable',
+  capture_id:phoneLearning?id(850):null,edit_revision:draft.edit_revision,soul_version:phoneSoul.version,soul_revision:phoneSoul.revision,proposal:phoneProposals.get(draft.id)||null});
+const phonePreferences=()=>({...phoneSoul,history:[{version:phoneSoul.version,current:true}],next_cursor:null});
 let emailCallPolicy={revision:0,urgent_enabled:false,drafts_enabled:false,grace_seconds:300,device_id:null,number_id:0},emailCall=null,emailActiveCall=null,emailCallItem=id(1);
 const envelope=()=>({ok:true,device_id:device.id,enrollment_revision:enrollmentRevision,scope_revision:scopeRevision()});
 const emailCallScope=()=>({device_id:device.id,enrollment_revision:enrollmentRevision,scope_revision:scopeRevision()});
@@ -169,6 +174,22 @@ await page.route('https://phone-agent.test/**',async route=>{
         display:{version:1,html:'<!doctype html><html><head><style>body{font:16px system-ui;background:#eff7f3;color:#174e46;padding:24px}h2{font-size:26px}td{padding:12px;border-bottom:1px solid #b9d8cb}</style></head><body><h2>Account review</h2><p>Please review the saved account update before Friday.</p><table><tr><td>Requested by</td><td>Alex</td></tr><tr><td>Next step</td><td>Review the details</td></tr></table></body></html>',remote_images:0,truncated:false}}});
     }
     assert.equal(input.draft_id,draft.id);
+    if(input.action==='preference_status')return ok({preference:phonePreference()});
+    if(input.action==='preferences_get')return ok({preferences:phonePreferences()});
+    if(input.action==='preferences_save'){
+      assert.equal(input.soul_revision,phoneSoul.revision);phoneSoul={text:input.text.trim()+'\n',version:phoneSoul.version+1,revision:hash(801+phoneSoul.version)};
+      return ok({preferences:phonePreferences()});
+    }
+    if(input.action==='preference_prepare'){
+      assert.equal(phoneLearning,true);assert.equal(input.capture_id,id(850));assert.equal(input.edit_revision,draft.edit_revision);assert.equal(phoneProposals.has(draft.id),false);
+      phoneProposals.set(draft.id,{id:id(860),revision:1,state:'ready',category:'length',preference:'Keep paragraphs short and finish with the next step.',reason:null,accepted_version:null});
+      return ok({preference:phonePreference()});
+    }
+    if(input.action==='preference_accept'){
+      const proposal=phoneProposals.get(draft.id);assert.ok(proposal);assert.equal(input.proposal_id,proposal.id);assert.equal(input.proposal_revision,proposal.revision);assert.equal(input.soul_revision,phoneSoul.revision);
+      phoneSoul={text:phoneSoul.text+'\n'+input.preference+'\n',version:phoneSoul.version+1,revision:hash(801+phoneSoul.version)};
+      Object.assign(proposal,{state:'accepted',preference:input.preference,accepted_version:phoneSoul.version,revision:proposal.revision+1});return ok({preference:phonePreference()});
+    }
     if(input.action==='review'&&heldReview){const gate=heldReview;heldReview=null;gate.start();await gate.promise;}
     if(input.action==='compose_save'){
       if(denySave){denySave=false;signedIn=false;return route.fulfill({status:403,json:{ok:false,error:'Workspace access changed.'}});}
@@ -293,10 +314,27 @@ try{
   denySave=true;await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
   assert.equal(await page.locator('.phone-agent-native-frame').count(),0,'Denied dirty Save-and-leave clears the private native view.');assert.equal(draft.body,savedBeforeDenial);assert.equal(emailRequests.filter(input=>input.action==='confirm').length,0);
   signedIn=true;await page.getByRole('button',{name:'Check sign-in'}).click();await page.getByRole('button',{name:'Open Agent',exact:true}).click();await card(id(1)).waitFor();
+  phoneLearning=true;
+  await card(id(1)).getByRole('button',{name:'Review email'}).click();await nativeFrame().getByLabel('Message',{exact:true}).waitFor();
+  const preferenceFrame=await page.locator('.phone-agent-native-frame').getAttribute('src');
+  const exactBeforePreference=await nativeFrame().locator('body').evaluate(()=>window.VP3EmailComposerV1.voiceReview.snapshot());assert.ok(exactBeforePreference);
+  const savedEmailBeforePreference=JSON.stringify(draft),phoneWriting=()=>nativeFrame().locator('.vp3-email-writing');
+  assert.equal(emailRequests.filter(input=>input.action==='preference_prepare').length,0,'Saving an edited phone draft does not infer a writing preference automatically.');
+  await phoneWriting().getByRole('button',{name:'Remember this writing preference',exact:true}).click();await phoneWriting().getByLabel('Preference for future emails',{exact:true}).fill('Use brief paragraphs and end with one useful next step.');
+  await back().click();await phoneWriting().getByRole('button',{name:'Keep editing preference',exact:true}).click();
+  assert.equal(await phoneWriting().getByLabel('Preference for future emails',{exact:true}).inputValue(),'Use brief paragraphs and end with one useful next step.');
+  await phoneWriting().getByRole('button',{name:'Save writing preference',exact:true}).scrollIntoViewIfNeeded();await bounds(true);await screenshot('agent-writing-preference-phone.png');
+  assert.equal(await phoneWriting().getByLabel('Preference for future emails',{exact:true}).evaluate(input=>getComputedStyle(input).fontSize),'16px');
+  await phoneWriting().getByRole('button',{name:'Save writing preference',exact:true}).click();await phoneWriting().getByText('Writing preference saved for future emails. This email is unchanged.',{exact:true}).waitFor();
+  assert.equal(await page.locator('.phone-agent-native-frame').getAttribute('src'),preferenceFrame);assert.equal(JSON.stringify(draft),savedEmailBeforePreference);
+  assert.deepEqual(await nativeFrame().locator('body').evaluate(()=>window.VP3EmailComposerV1.voiceReview.snapshot()),exactBeforePreference,'Learning a future style leaves the exact email review and voice edit generation unchanged.');
+  await phoneWriting().getByRole('button',{name:'Writing preferences',exact:true}).click();await phoneWriting().getByLabel('Email writing style',{exact:true}).fill('Unsaved account style changes are guarded on the phone too.');
+  await back().click();await phoneWriting().getByRole('button',{name:'Keep editing preference',exact:true}).click();
+  await back().click();await phoneWriting().getByRole('button',{name:'Discard preference edits',exact:true}).click();await card(id(1)).waitFor();
   await card(id(1)).getByRole('button',{name:'Review email'}).click();await nativeFrame().getByLabel('Message',{exact:true}).waitFor();
   await nativeFrame().getByRole('button',{name:'Send',exact:true}).scrollIntoViewIfNeeded();await bounds(true);await screenshot('agent-email-phone.png');
   await nativeFrame().getByRole('button',{name:'Send',exact:true}).click();await nativeFrame().getByText('Gmail confirmed your email was sent.',{exact:true}).waitFor();
-  assert.equal(emailRequests.filter(input=>input.action==='confirm').length,1);assert.equal(emailRequests.at(-2).action,'compose_save','Send saves the exact reviewed content before canonical confirmation.');
+  assert.equal(emailRequests.filter(input=>input.action==='confirm').length,1);assert.equal(emailRequests.filter(input=>['compose_save','confirm'].includes(input.action)).at(-2).action,'compose_save','Send saves the exact reviewed content before canonical confirmation.');
   assert.equal(rows[0].needs_action,false);assert.equal(await page.locator('.phone-agent-native-frame').count(),1,'A locally saved/sent source updates without remounting its native view.');
   await wake();await nativeFrame().getByLabel('Subject',{exact:true}).waitFor();await back().click();await card(id(3)).waitFor();
 
@@ -382,6 +420,12 @@ try{
   await voiceEnable().click();await nativeFrame().getByText('Say: “send email 1 2 3 4 5 6”',{exact:true}).waitFor();await armedPoll;
   assert.equal(voiceReview.state,'armed');assert.equal(emailRequests.filter(input=>input.action==='confirm').length,1,'An armed review cannot send without a server-accepted exact challenge.');
   assert.equal(emailCallRequests.filter(input=>input.action==='voice_claim').length,claimsBeforeSuccess);
+  const armedPreferenceSnapshot=await nativeFrame().locator('body').evaluate(()=>window.VP3EmailComposerV1.voiceReview.snapshot());
+  await phoneWriting().getByRole('button',{name:'Writing preferences',exact:true}).click();await phoneWriting().getByLabel('Email writing style',{exact:true}).fill('Write warm, concise emails and clearly explain the next action.');
+  const expectedStyleVersion=phoneSoul.version+1;await phoneWriting().getByRole('button',{name:'Save writing style',exact:true}).click();await phoneWriting().getByText('Current version '+expectedStyleVersion,{exact:true}).waitFor();
+  assert.equal(voiceReview.state,'armed','Saving a future writing style does not cancel or authorize the current exact voice challenge.');
+  assert.deepEqual(await nativeFrame().locator('body').evaluate(()=>window.VP3EmailComposerV1.voiceReview.snapshot()),armedPreferenceSnapshot);
+  await phoneWriting().getByRole('button',{name:'Close preferences',exact:true}).click();
   await nativeFrame().getByRole('button',{name:'Send',exact:true}).scrollIntoViewIfNeeded();
   assert.equal(await nativeFrame().getByRole('button',{name:'Send',exact:true}).evaluate(button=>{const box=button.getBoundingClientRect();return box.top>=0&&box.bottom<=innerHeight+1;}),true,'The call approval section does not make native Send unreachable.');
   const nativeNested=await nativeFrame().locator('body').evaluate(body=>[...body.querySelectorAll('*')].filter(node=>{
@@ -429,7 +473,8 @@ try{
   signedIn=false;await wake();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
   assert.equal(await page.locator('#phone-tab-agent').isVisible(),false);assert.equal(await page.locator('.phone-agent-native-frame').count(),0);assert.equal(await agent().locator('article').count(),0);
   assert.equal(await page.getByRole('tab',{name:'Chat',exact:true}).isVisible(),true,'Revoking owner workspace authority preserves the holder Chat surface.');
-  assert.deepEqual(errors,[]);console.log('Phone Agent browser: enrollment, privacy, explicit email-call settings, stable dirty forms, exact call review without remounting, filters, receipts, actual native bridge, dirty Gmail save/send, image, sandboxed canvas, push, scope races and phone/desktop layouts passed.');
+  assert.ok(emailRequests.filter(input=>input.action.startsWith('preference')).every(input=>[id(101),id(102)].includes(input.draft_id)),'Every native writing preference action remains bound to its exact draft.');
+  assert.deepEqual(errors,[]);console.log('Phone Agent browser: enrollment, privacy, explicit email-call settings, stable dirty forms, exact call review, explicit writing preference/management with dirty Back and unchanged voice review, filters, receipts, actual native bridge, dirty Gmail save/send, image, sandboxed canvas, push, scope races and phone/desktop layouts passed.');
 }catch(error){
   try{
     await screenshot('agent-failure.png');

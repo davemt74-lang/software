@@ -637,6 +637,7 @@ $initiativeWorkbenchRuntime = ($profileWorkspaceRuntime === ''
     . '<script src="'.e(url('/chat-marketing-activation-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-marketing-activation-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-media-commands-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-media-commands-v1.js'),0,12))).'" defer></script>';
 $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-email-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.css'),0,12))).'">'
+    . '<link rel="stylesheet" href="'.e(url('/email-writing-preferences-v1.css?v='.substr(hash_file('sha256',__DIR__.'/email-writing-preferences-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-email-composer-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-composer-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-email-followthrough-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-followthrough-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/gmail-email-display-v1.css?v='.substr(hash_file('sha256',__DIR__.'/gmail-email-display-v1.css'),0,12))).'">'
@@ -651,6 +652,7 @@ $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-emai
     . '<script src="'.e(url('/gmail-email-display-v1.js?v='.substr(hash_file('sha256',__DIR__.'/gmail-email-display-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-email-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-email-followthrough-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-followthrough-v1.js'),0,12))).'" defer></script>'
+    . '<script src="'.e(url('/email-writing-preferences-v1.js?v='.substr(hash_file('sha256',__DIR__.'/email-writing-preferences-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-email-composer-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-composer-v1.js'),0,12))).'" defer></script>';
 if (has_permission('account.access',$user)) {
     $initiativeWorkbenchRuntime .= '<script>window.VP3_GMAIL_INBOX_INITIAL_V1='.json_encode([

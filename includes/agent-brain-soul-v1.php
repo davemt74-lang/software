@@ -117,7 +117,7 @@ function agent_brain_soul_publish_v1(string $directory, int $version, string $co
 }
 
 /** Apply a save, reset, or restore against the revision shown by the editor. */
-function agent_brain_soul_update_v1(array $user, string $role, string $revision, string $action, string|int|null $value = null): int
+function agent_brain_soul_update_v1(array $user, string $role, string $revision, string $action, string|int|null $value = null, ?callable $beforePublish = null): int
 {
     $directory = agent_brain_soul_directory_v1($user, $role);
     if ($directory === '') throw new InvalidArgumentException('An account is required to edit an Agent Soul.');
@@ -160,6 +160,10 @@ function agent_brain_soul_update_v1(array $user, string $role, string $revision,
         }
         $version = $current['version'] + 1;
         if ($version > 9999999999) throw new RuntimeException('Agent Soul history reached its version limit.');
+        // Callers that coordinate a native review with immutable Soul history
+        // can recheck authority and record the exact publication intent while
+        // the revision lock is held. A rejected fence must publish no files.
+        if ($beforePublish !== null) $beforePublish($current, $version, $content);
         $files = agent_brain_soul_files_v1($directory);
         if ($files === []) {
             agent_brain_soul_publish_v1($directory, 0, $current['content']);

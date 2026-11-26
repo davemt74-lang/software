@@ -18,6 +18,8 @@ See the [inbox worker](../includes/agent-connection-gmail-inbox-v1.php), [reply 
 
 The initial build adds private Main and Email Soul revisions, uses the active Email Soul for model-written drafts, and records the revision with the draft. The editor previews saved text. It also adds exact urgent offers in private Chat, accepts spoken or typed responses, and reads the selected message through local device speech when explicitly requested.
 
+The draft writing preference release adds an explicit **Remember this writing preference** action after an owner saves wording changes to a generated draft. A single bounded suggestion is reviewed and edited by the owner before it is appended to the existing Email Soul. Gmail-local writing preferences provide editing, removal, saved-version previews, restore and reset. This works in the shared desktop composer and connected Phone Agent review. Ordinary draft saves do not invoke learning, and style changes do not alter existing email content or send approval. See [Gmail draft writing preferences](GMAIL-DRAFT-PREFERENCES-V1.txt) for the scope, deployment and acceptance gates.
+
 The Gmail worker records completed scan totals and open thread matters under the current mailbox grant. Canonical sends and matched reply watches advance those matters. Top of Mind projects the resulting state and supports snooze, dismiss, resolve, and reopen. Snooze sets a matter's next review time. Existing Inbox Review batches and reply-watch notices still use their own delivery policies. An explicit Gmail cursor restart keeps the open matters for the same grant and discards any incomplete count. The new matter tables are installed through Setup and Database Upgrade.
 
 ## Inbox triage implementation

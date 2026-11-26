@@ -19,7 +19,8 @@ require_once dirname(__DIR__,2).'/includes/agent-scheduling-v430.php';
 function db(): PDO { return $GLOBALS['pecPdo']; }
 function current_user(): array { return pec_user_v1((int)($_SESSION['user_id']??1)); }
 function setting(string $key,mixed $fallback=''): mixed { return $GLOBALS['pecSettings'][$key]??$fallback; }
-function url(string $path=''): string { return 'https://cloud.example/'.ltrim($path,'/'); }
+function url(string $path=''): string
+{ return (!empty($GLOBALS['pecRelativeUrls'])?'':'https://cloud.example').'/'.ltrim($path,'/'); }
 function csrf_token(): string { return $_SESSION['csrf_token']??''; }
 function has_permission(string $permission,?array $user=null): bool
 {

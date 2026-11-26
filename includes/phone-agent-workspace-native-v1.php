@@ -133,7 +133,9 @@ function vp3_phone_agent_native_action_v1(PDO $pdo,array $context,string $kind,a
             return;
         }
         vp3_phone_agent_workspace_need_v1(in_array($action,['review','review_latest','compose_source','compose_save',
-            'compose_generate','advance_write','retry_write','confirm','discard'],true)
+            'compose_generate','advance_write','retry_write','confirm','discard',
+            'preference_status','preference_prepare','preference_accept','preference_dismiss',
+            'preferences_get','preferences_save','preferences_restore','preferences_reset'],true)
             &&($input['draft_id']??null)===$target['draft_id'],403);
     } elseif ($kind==='canvas') {
         vp3_phone_agent_workspace_need_v1($item['source_kind']==='canvas'
