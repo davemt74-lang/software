@@ -50,6 +50,7 @@ jobs:
         run: |
           php tests/ai-service-policy-v1.php
           php tests/homeserver-model-inventory-v1.php
+          node tests/homeserver-model-inventory-settings-v1.mjs
           php tests/coding-canvas-model-v1.php
           node tests/coding-canvas-settings-api.mjs
           php tests/ai-credential-recovery-page.php
