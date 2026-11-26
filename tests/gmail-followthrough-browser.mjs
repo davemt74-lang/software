@@ -179,7 +179,23 @@ try{
   await editor().getByLabel('Reply expected by',{exact:true}).fill(future+'T16:00');
   await editor().getByLabel('Prepare a follow-up draft if overdue',{exact:true}).check();await editor().getByLabel('Follow-up priority',{exact:true}).selectOption('high');
   await editor().getByLabel('Reply expected by',{exact:true}).scrollIntoViewIfNeeded();await bounds(editor());await screenshot('composer-deadline-desktop.png');
-  await page.setViewportSize({width:390,height:844});await bounds(editor());await screenshot('composer-deadline-phone.png');
+  await page.setViewportSize({width:390,height:844});
+  await editor().getByRole('button',{name:'Send',exact:true}).scrollIntoViewIfNeeded();await bounds(editor());
+  for(const [name,control]of[
+    ['Time zone',editor().getByLabel('Time zone',{exact:true})],
+    ['Prepare follow-up',editor().getByLabel('Prepare a follow-up draft if overdue',{exact:true})],
+    ['Save draft',editor().getByRole('button',{name:'Save draft',exact:true})],
+    ['Send',editor().getByRole('button',{name:'Send',exact:true})]
+  ]){
+    const reachable=await control.evaluate(element=>{
+      const rect=element.getBoundingClientRect(),sheet=element.closest('dialog').getBoundingClientRect();
+      const hit=document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2);
+      return rect.width>0&&rect.height>0&&rect.top>=Math.max(0,sheet.top)&&rect.bottom<=Math.min(innerHeight,sheet.bottom)
+        &&rect.left>=0&&rect.right<=innerWidth&&Boolean(hit&&(hit===element||element.contains(hit)));
+    });
+    assert.equal(reachable,true,name+' is visible and reachable inside the phone sheet after scrolling to its primary actions.');
+  }
+  await screenshot('composer-deadline-phone.png');
   await editor().getByRole('button',{name:'Save draft',exact:true}).click();await editor().getByText('Draft saved in this Chat.',{exact:true}).waitFor();
   assert.deepEqual(drafts.get(originalId).followthrough,{enabled:true,deadline_at:deadline,time_zone:'America/Phoenix',prepare_if_overdue:true,priority:'high'});
   await editor().getByRole('button',{name:'Close',exact:true}).click();
@@ -295,12 +311,12 @@ try{
   const beforeExact=requests.length;await installUI(noticeQuery(exactItem.followthrough_ref));
   await page.waitForFunction(ref=>document.activeElement?.closest('.vp3-email-followthrough-card')?.dataset.followthrough===ref,exactItem.followthrough_ref);
   await popup().getByText('Opened from this notification',{exact:true}).waitFor();
-  assert.equal(await popup().getByRole('heading',{name:'Delivery confirmation',exact:true}).count(),1,'An exact notice target is pinned without replacing the saved list.');
+  assert.equal(await followCard().getByRole('heading',{name:'Delivery confirmation',exact:true}).count(),1,'An exact notice target is pinned without replacing the saved list.');
   assert.equal(requests.slice(beforeExact).filter(input=>input.action==='followthrough_get').length,1);
   assert.ok(requests.slice(beforeExact).every(input=>!['followthrough_update','followthrough_check','confirm','compose_save','compose_generate'].includes(input.action)),'Opening the exact notification only reads saved state.');
   await installUI(noticeQuery('9'.repeat(32)));
   await popup().getByText('This follow-up is unavailable in the current view. Showing saved follow-ups for this Chat.',{exact:true}).waitFor();
-  assert.equal(await popup().getByRole('heading',{name:'Delivery confirmation',exact:true}).count(),1,'An unavailable exact target leaves the current scoped list usable.');
+  assert.equal(await followCard().getByRole('heading',{name:'Delivery confirmation',exact:true}).count(),1,'An unavailable exact target leaves the current scoped list usable.');
   const beforeWrongChat=navigationReads();await installUI('?agent=7&conversation_id=43&gmail_followthrough='+reference);
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   assert.equal(navigationReads(),beforeWrongChat,'A notice for a different private Chat cannot load this Chat’s Gmail.');
