@@ -135,7 +135,10 @@ function music_catalog_write(PDO $pdo,int $workspaceId,array $user,string $kind,
                 if($kind==='track'){
                     // Archive retains catalog, favorites, playlists, history and asset identities.
                     if($action==='restore')music_song_metadata_v1_restore($pdo,$workspaceId,$id,$user);
-                    else music_song_metadata_v1_archive($pdo,$workspaceId,$id,$user);
+                    else {
+                        music_song_metadata_v1_archive($pdo,$workspaceId,$id,$user);
+                        if(function_exists('music_provider_v1_withdraw_recording'))music_provider_v1_withdraw_recording($pdo,$workspaceId,$id);
+                    }
                 }else{
                     $pdo->prepare("UPDATE artist_catalog_tracks_v181 SET album_id=NULL,album='' WHERE workspace_id=? AND album_id=?")->execute([$workspaceId,$id]);
                     if($sourceId>0){
@@ -175,6 +178,7 @@ function music_catalog_write(PDO $pdo,int $workspaceId,array $user,string $kind,
                     if($extra)$pdo->prepare('UPDATE tracks SET '.implode(',',$extra).' WHERE id=? AND workspace_id=?')->execute([...$params,(int)$backing['id'],$workspaceId]);
                     $track=artist_music_v185_track($pdo,$workspaceId,$id);
                     music_song_metadata_v1_save($pdo,$workspaceId,$user,$track,$input);
+                    if((!$published||$visibility!=='public')&&function_exists('music_provider_v1_withdraw_recording'))music_provider_v1_withdraw_recording($pdo,$workspaceId,$id);
                 }else{
                     $release=trim((string)($input['release_date']??''));
                     if($release!==''){$date=DateTime::createFromFormat('!Y-m-d',$release);if(!$date||$date->format('Y-m-d')!==$release)throw new RuntimeException('Choose a valid release date.',422);}

@@ -117,6 +117,11 @@ Top of Mind shows preparation progress and work that needs review. A completed
 preparation does not assert owner approval or completion of a real-world objective.
 All next actions still require current sources and the existing tool admission.
 
+Private Brainstorming and Curiosity aggregate jobs report through specialist
+status and do not consume the six actionable owner-agenda slots before source
+verification. Independent analysis cannot hide a completed Research result that
+is still awaiting its verified Chat delivery.
+
 Automatic general scheduling waits while an assessment is already running for the
 exact owner/Agent/Chat/policy. Unchanged queued snapshots retain their canonical
 dedupe; a fresh owner decision may queue a source-bound review behind existing

@@ -303,6 +303,10 @@ $pdo->exec('UPDATE agent_memory_items SET is_active=1 WHERE id=1002');
 foreach($chatContexts as $chatContext)$setContext->execute([$chatContext['context_json'],$chatContext['id']]);
 
 $attention = array_column(vp3_top_of_mind_v1($pdo,$user,17,170)['items'],'state','run_id');
+$analysts=array_values(array_filter(scope_runs(1,17,'initiative.prepare'),static fn(array $row):bool=>
+    (json_decode($row['goal'],true)['tool']??null)==='curiosity.analyze'));
+scope_check(count($analysts)===1&&$analysts[0]['status']==='approved'&&!isset($attention[$analysts[0]['id']]),
+    'The independent private analyst remains queued without consuming an actionable owner agenda slot');
 scope_check(($attention[$runId]??null)==='ready_to_report',
     'Top of Mind shows the verified transcript research result while private delivery is pending');
 
