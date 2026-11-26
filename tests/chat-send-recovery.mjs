@@ -19,7 +19,7 @@ const helpers=['bindStoredMessagePa3','initiativeIdentityMatchesV1','validInitia
  'showParkedReplyAfterSend','bindFoodMonsterResultIcon','bindGmailResultTime','bindPrivateGmailDisplayV1','applyInitiativeFollowthroughV1',
  'bindCoordinationReplyV1','bindInitiativeActionV1','bindMeetingActionV1','messageElement','addMessage','addTyping',
  'catchUpSourceLinks','publicResearchSourceLinks','attachAudioTracking'].map(chatFunction).join('');
-const sendOwner=['gmailReviewActionLabel','activeImageConflictV1','recoverBlockedImageDraftV1','sendMessage'].map(chatFunction).join('');
+const sendOwner=['gmailReviewActionLabel','activeImageConflictV1','recoverBlockedImageDraftV1','cancelEmailInstructionTurnV1','sendMessage'].map(chatFunction).join('');
 const initiativeIdentity=section('  const initiativePage =', '  const thread =');
 const initiativeState=section('  let initiativeReplyTarget =', '  const recoveryKey =');
 function fixture(){
@@ -31,7 +31,7 @@ function fixture(){
   document,window:{dispatchEvent(){},addEventListener(){},setTimeout(){}},navigator:{onLine:true},input:document.getElementById('chatInput'),
   send:document.getElementById('sendChatButton'),form:document.getElementById('chatForm'),welcome:document.getElementById('chatWelcome'),
   cfg:{userId:1,agentId:0,workingAttentionBinding:'fixture-session',csrf:'fixture',endpoint:'/api/chat.php'},thread,
-  busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,lastLoadedMessageId:0,
+  busy:false,contextReady:true,initialRestorePending:false,restoringConversation:0,conversationId:42,chatRevision:0,pendingSend:null,emailInstructionTurn:null,lastLoadedMessageId:0,
   composerDraftRevision:0,composerDraftOrigin:null,historyAuthority:0,historyParticipant:0,
   voiceMode:false,voiceSpeaking:false,
   setTimeout(fn,ms){const id=++sequence;timers.set(id,{fn,ms});return id;},clearTimeout:id=>timers.delete(id),
@@ -201,6 +201,136 @@ for(const kind of ['status_receipt','different_reason','missing_job','invalid_co
  f.reply(async()=>imageConflictResponse());await f.ctx.submit('Submitted automatic voice utterance');
  assert.equal(f.ctx.input.value,'');assert.equal(f.drafts.has(42),false);
  assert.equal(f.document.getElementById('chatRecoveryStatus'),null);assert.equal(f.calls,1);checks+=4;
+}
+// Selected email instructions use the composer contract, never a second model
+// turn. The main Chat owner preserves rejected text and isolates late results.
+for(const outcome of ['success','rejected','changed','network']){
+ const f=fixture();let handled=0;const match={kind:'revise',selection:{draft_id:'a'.repeat(32),edit_revision:'b'.repeat(64)}};
+ f.ctx.input.value='Make this draft shorter';
+ f.ctx.window.VP3EmailComposerV1={
+  matchInstruction:(text,scope)=>{assert.equal(text,f.ctx.input.value);assert.equal(scope.owner_key,'1');assert.equal(scope.conversation_id,42);checks+=3;return match;},
+  handleChatInstruction:async(text,scope,captured)=>{
+   handled++;assert.equal(captured,match);assert.equal(f.ctx.busy,true);assert.equal(f.ctx.input.disabled,true);checks+=3;
+   if(outcome==='network')throw new TypeError('Lost response');
+   return outcome==='changed'?{handled:false}:{handled:true,ok:outcome==='success',message:outcome==='success'?'The draft revision is queued.':'Your draft changed. Your instruction is kept.'};
+  }
+ };
+ await f.ctx.submit(f.ctx.input.value);
+ assert.equal(handled,1);assert.equal(f.calls,0);assert.equal(f.ctx.busy,false);assert.equal(f.ctx.input.disabled,false);
+ assert.equal(f.ctx.send.disabled,false);assert.equal(f.ctx.emailInstructionTurn,null);
+ assert.equal(f.ctx.input.value,outcome==='success'?'':'Make this draft shorter');
+ assert.equal(f.drafts.get(42),outcome==='success'?undefined:'Make this draft shorter');
+ assert.equal(f.messages.length,0,'A local email command is not fabricated as saved Chat history');
+ assert.match(f.notice.textContent,outcome==='success'?/revision is queued/:/kept/);checks+=10;
+}
+{
+ const f=fixture();let release,handled=0;const selected={kind:'save'};
+ f.ctx.input.value='Save this draft';
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>selected,handleChatInstruction:()=>{handled++;return new Promise(resolve=>{release=resolve;});}};
+ const first=f.ctx.submit(f.ctx.input.value);await Promise.resolve();
+ await f.ctx.submit('Discard this draft');assert.equal(handled,1,'An in-flight email instruction cannot run twice');
+ f.ctx.cancelEmailInstructionTurnV1();f.ctx.chatRevision++;f.ctx.conversationId=43;
+ f.ctx.input.value='New Chat draft';f.ctx.keepDraft(f.ctx.input.value,43);f.ctx.showChatTurnNotice('Current status');
+ f.ctx.busy=true;f.ctx.input.disabled=true;f.ctx.send.disabled=true; // A newer turn owns these controls.
+ release({handled:true,ok:true,message:'The old draft is saved.'});await first;
+ assert.equal(f.ctx.input.value,'New Chat draft');assert.equal(f.drafts.get(43),'New Chat draft');
+ assert.equal(f.notice.querySelector('.message-text').textContent,'Current status');assert.equal(f.ctx.busy,true);assert.equal(f.ctx.input.disabled,true);
+ assert.equal(f.calls,0);checks+=7;
+}
+{
+ const f=fixture();let handled=0;
+ f.ctx.input.value='Save this draft';f.ctx.navigator.onLine=false;
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>({kind:'save'}),handleChatInstruction:async()=>{handled++;return {handled:true,ok:true};}};
+ await f.ctx.submit(f.ctx.input.value);
+ assert.equal(handled,0);assert.equal(f.calls,0);assert.equal(f.drafts.get(42),'Save this draft');
+ assert.equal(f.ctx.busy,false);assert.match(f.notice.textContent,/offline/);checks+=5;
+}
+for(const unselected of ['ordinary','participant']){
+ const f=fixture();let handled=0,matched=0;
+ f.ctx.input.value='What is next?';
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>{matched++;return null;},handleChatInstruction:async()=>{handled++;}};
+ if(unselected==='participant')f.ctx.window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:22})};
+ f.reply(async()=>({ok:true,conversation_id:42,user_message_id:51,assistant_message_id:52,answer:'A normal Chat answer.'}));
+ await f.ctx.submit(f.ctx.input.value);
+ assert.equal(handled,0);assert.equal(matched,unselected==='participant'?0:1);assert.equal(f.calls,1);checks+=3;
+}
+for(const voiceFailure of ['offline','rejected','network']){
+ const f=fixture();let handled=0;
+ f.ctx.window.STONEFELLOW_CHAT_CONTINUITY={pendingVoiceSubmit:()=>true};
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>({kind:'save'}),handleChatInstruction:async()=>{
+  handled++;if(voiceFailure==='network')throw new TypeError('Lost response');
+  return {handled:true,ok:false,message:'Your instruction is kept.'};
+ }};
+ if(voiceFailure==='offline')f.ctx.navigator.onLine=false;
+ await f.ctx.submit('Save this draft');
+ assert.equal(f.ctx.input.value,'','A failed spoken command must not become a typed Chat draft');
+ assert.equal(f.drafts.has(42),false);assert.equal(f.calls,0);
+ assert.equal(handled,voiceFailure==='offline'?0:1);
+ assert.match(f.notice.querySelector('.message-text').textContent,/repeat the instruction|repeat your instruction/);
+ assert.doesNotMatch(f.notice.querySelector('.message-text').textContent,/instruction is kept/);checks+=6;
+}
+{
+ const f=fixture();let handled=0;f.ctx.input.value='Make this email shorter';
+ vm.runInContext('initiativeReplyTarget = {message_id:123};',f.ctx);
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>({kind:'revise'}),handleChatInstruction:async()=>{handled++;}};
+ await f.ctx.submit(f.ctx.input.value);
+ assert.equal(handled,0);assert.equal(f.calls,0);assert.equal(f.ctx.input.value,'Make this email shorter');
+ assert.match(f.notice.querySelector('.message-text').textContent,/Agent reply is selected/);checks+=4;
+}
+{
+ const f=fixture();f.ctx.input.value='A separate typed question';
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>({kind:'queue'}),handleChatInstruction:async()=>({handled:true,ok:true,message:'Opened the email queue.'})};
+ await f.ctx.submit('Open email drafts');
+ assert.equal(f.ctx.input.value,'A separate typed question');assert.equal(f.drafts.get(42),'A separate typed question');
+ assert.equal(f.calls,0);checks+=3;
+}
+for(const viewKind of ['queue','sent']){
+ const f=fixture();f.ctx.conversationId=0;f.ctx.input.value=viewKind==='sent'?'Show my sent emails':'Show my email drafts';let creates=0,handled=0;
+ f.ctx.initializingConversationPa3=null;f.ctx.window.clearTimeout=()=>{};
+ vm.runInContext(chatFunction('ensureConversationPa3'),f.ctx);
+ f.reply(async payload=>{assert.equal(payload.action,'new');creates++;return {ok:true,conversation_id:73};});
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>({kind:viewKind}),handleChatInstruction:async(text,scope)=>{
+  handled++;assert.equal(scope.conversation_id,73);assert.equal(f.ctx.busy,true);checks+=2;
+  return {handled:true,ok:true,message:'Opened the Gmail view.'};
+ }};
+ const pending=f.ctx.submit(f.ctx.input.value);
+ await f.ctx.submit(f.ctx.input.value);await pending;
+ assert.equal(creates,1);assert.equal(handled,1);assert.equal(f.calls,1,'Only the private Chat creation reaches the Chat API');
+ assert.equal(f.ctx.conversationId,73);assert.equal(f.ctx.input.value,'');assert.equal(f.ctx.busy,false);
+ assert.equal(f.ctx.emailInstructionTurn,null);checks+=7;
+}
+
+// The queue's cross-Chat handoff may navigate only within the live owner's
+// private agent. A late identity change cannot validate the destination.
+const emailNavigation=section('    openEmailReviewConversation:async target => {','    openConversation:async');
+for(const boundary of ['valid','owner','agent','participant','busy','late_owner','load_failure','late_load_failure']){
+ const f=fixture();let loads=0;
+ f.ctx.input.value='Original Chat draft';f.ctx.thread.dataset.view='email';
+ f.ctx.setChatCanvasView=view=>{f.ctx.thread.dataset.view=view;};
+ f.ctx.loadConversation=async id=>{
+  loads++;
+  if(boundary.endsWith('load_failure')){
+   f.ctx.chatRevision++;
+   if(boundary==='late_load_failure'){f.ctx.conversationId=99;f.ctx.input.value='New destination draft';}
+   throw new Error('History load timed out');
+  }
+  f.ctx.conversationId=id;if(boundary==='late_owner')f.ctx.cfg.userId=2;return true;
+ };
+ vm.runInContext('globalThis.navigateEmail = '+emailNavigation.replace(/^\s*openEmailReviewConversation:/,'').trim().replace(/,$/,'')+';',f.ctx);
+ const target={owner_key:'1',agent_id:0,conversation_id:43,draft_id:'a'.repeat(32)};
+ if(boundary==='owner')target.owner_key='2';
+ if(boundary==='agent')target.agent_id=7;
+ if(boundary==='participant')f.ctx.window.VP3ParticipantContinuity={selectedContext:()=>({participant_id:22})};
+ if(boundary==='busy')f.ctx.busy=true;
+ assert.equal(await f.ctx.navigateEmail(target),boundary==='valid');
+ assert.equal(loads,['valid','late_owner','load_failure','late_load_failure'].includes(boundary)?1:0);checks+=2;
+ if(boundary==='load_failure'){
+  assert.equal(f.ctx.thread.dataset.view,'chat');assert.equal(f.ctx.input.value,'Original Chat draft');
+  assert.match(f.notice.querySelector('.message-text').textContent,/current Chat and typed draft are kept/);checks+=3;
+ }
+ if(boundary==='late_load_failure'){
+  assert.equal(f.ctx.thread.dataset.view,'email');assert.equal(f.ctx.input.value,'New destination draft');assert.equal(f.notice,null);checks+=3;
+ }
 }
 console.log(`CHAT_SEND_RECOVERY=PASS (${checks} assertions; actual send owner; transport mocked)`);
 

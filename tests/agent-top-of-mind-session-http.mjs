@@ -12,6 +12,7 @@ import {fileURLToPath} from 'node:url';
 const source=fileURLToPath(new URL('../',import.meta.url));
 const temp=mkdtempSync(join(tmpdir(),'vp3-mind-session-'));
 const php=process.env.VP3_PHP_BINARY||'php',gate=join(temp,'brain-projection');
+const modelGuard=join(temp,'model-attempts');
 const probe=net.createServer();await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));
 const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
 const base='http://127.0.0.1:'+port;
@@ -21,7 +22,14 @@ copyFileSync(join(source,'api/initiative-research-status-v1.php'),join(temp,'api
 for(const name of ['agent-top-of-mind-v1','agent-eyes','agent-activity-situations-v1','agent-catch-up-v1','agent-initiative-research-status-v1']){
   writeFileSync(join(temp,'includes',name+'.php'),'<?php require_once '+JSON.stringify(join(source,'includes',name+'.php'))+';');
 }
-writeFileSync(join(temp,'includes/bootstrap.php'),'<?php session_start(); require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';');
+// Match the other read-only Top of Mind harness: real provider configuration
+// loads before the execution fixture can install its transport-only doubles.
+writeFileSync(join(temp,'includes/bootstrap.php'),[
+  '<?php require_once '+JSON.stringify(join(source,'tests/fixtures/initiative-ai-settings-v1.php'))+';',
+  'session_start(); require '+JSON.stringify(join(source,'tests/fixtures/initiative-chat-loop-http.php'))+';',
+  '$GLOBALS["imageFixtureSettingsObserver"]=static function():void{foreach(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $frame){',
+  'if(($frame["function"]??null)==="ai_generate_chat_response"){file_put_contents(getenv("VP3_MIND_SESSION_MODEL_GUARD"),"attempt\\n",FILE_APPEND|LOCK_EX);throw new LogicException("Top of Mind must not invoke a model.");}}};'
+].join('\n'));
 const projection=`{
   $gate=(string)getenv('VP3_MIND_SESSION_GATE');
   file_put_contents($gate.'.entered','1');$deadline=microtime(true)+8;
@@ -53,7 +61,8 @@ writeFileSync(join(temp,'router.php'),[
 ].join('\n'));
 let logs='',held;
 const server=spawn(php,['-S','127.0.0.1:'+port,'-t',temp,join(temp,'router.php')],{
-  env:{...process.env,PHP_CLI_SERVER_WORKERS:'2',VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'working.sqlite'),VP3_MIND_SESSION_GATE:gate},
+  env:{...process.env,PHP_CLI_SERVER_WORKERS:'2',VP3_IMAGE_TEST_DSN:'sqlite:'+join(temp,'working.sqlite'),
+    VP3_MIND_SESSION_GATE:gate,VP3_MIND_SESSION_MODEL_GUARD:modelGuard},
   detached:true,stdio:['ignore','pipe','pipe']
 });
 server.stdout.on('data',v=>{logs+=v;});server.stderr.on('data',v=>{logs+=v;});server.on('error',e=>{logs+=e.message;});
@@ -107,6 +116,7 @@ try{
     'X-VP3-Working-Attention':otherSession.binding}})).status,403);
   const counts=await fetch(base+'/counts',{headers}).then(r=>r.json());
   assert.deepEqual(counts,{models:0,runs:0});
+  assert.equal(existsSync(modelGuard),false,'read-only status must never enter the real model provider');
   console.log('PASS actual authenticated Brain GET releases its session before held projection; same-session actual Top of Mind API responds from a second PHP worker with exact owner/Agent/Chat binding');
   console.log('PASS invalid page binding cannot reach the held projection; the GETs perform zero inference and create no work');
   console.log('PASS actual research status GET is private, uncached and rejects wrong method, session, Agent and owner');

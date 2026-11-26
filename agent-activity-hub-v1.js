@@ -118,6 +118,8 @@
   let connectedSitesView = null;
   let imageStudioView = null;
   let profileView = null;
+  let gmailView = null;
+  let gmailNavigationEpoch = 0;
   let specialistMode = false;
   let workspace = false;
   let officeAllLoaded = false;
@@ -219,6 +221,13 @@
   }
   function clear() {
     stop();
+    gmailNavigationEpoch++;
+    if (gmailView) {
+      gmailView.request?.abort();
+      gmailView.navigation.remove();
+      gmailView.sentPanel.remove();
+      gmailView = null;
+    }
     connectedSitesView?.dispose();
     connectedSitesView = null;
     imageStudioView?.dispose();
@@ -747,6 +756,7 @@
     disposeSpecialistSettings();
     delete host.dataset.settings;
     specialistContent.hidden = false;
+    if (gmailView) gmailView.navigation.hidden = false;
     host.querySelector('h2').textContent = selectedLabel;
     workspaceButton.hidden = Boolean(connectedSitesView || profileView);
     backButton.hidden = true;
@@ -768,6 +778,11 @@
     specialistSettings = {body,scopeKey:signature(current),cleanups:[]};
     host.dataset.settings = 'true';
     specialistContent.hidden = true;
+    if (gmailView) {
+      if (gmailView.request) gmailView.message.textContent = 'Sent loading paused. Use Refresh Sent to continue.';
+      gmailView.request?.abort();gmailView.request = null;gmailView.requestSequence++;gmailSentControls(gmailView);
+      gmailView.navigation.hidden = true;
+    }
     host.append(body);
     const heading = host.querySelector('h2');
     heading.textContent = selectedLabel+' settings';
@@ -800,6 +815,257 @@
       || signature(current) !== signature(scope())) return;
     close(false);
     void canvas.open(sessionId ? {sessionId} : {});
+  }
+
+  const gmailMailboxRevision = /^[a-f0-9]{64}$/;
+  const gmailText = (value,limit = 1000) => typeof value === 'string' && value.length <= limit;
+  const gmailOpaque = (value,limit) => typeof value === 'string' && value.length > 0 && value.length <= limit && !/[\u0000-\u0020\u007f]/u.test(value);
+  const gmailTime = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(value) && Number.isFinite(Date.parse(value));
+  const gmailDate = value => gmailTime(value) ? new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}) : '';
+  function gmailCurrent(view) {
+    return view === gmailView && visible() && specialistMode && family(selectedSpecialist) === 'gmail' && !accessRejected
+      && !specialistSettings && signature(view.scope) === signature(scope());
+  }
+  function gmailSentControls(view) {
+    if (view !== gmailView) return;
+    const busy = Boolean(view.request);
+    view.sentPanel.setAttribute('aria-busy',String(busy));
+    view.refresh.disabled = busy || view.readAvailable === false;
+    view.previous.disabled = busy || view.page < 1;
+    view.next.disabled = busy || !view.nextCursor;
+    for (const control of view.rows.querySelectorAll('button')) control.disabled = busy;
+  }
+  function clearGmailSent(view,message = '') {
+    view.request?.abort();view.request = null;view.requestSequence++;
+    view.loaded = false;view.mailboxRevision = '';view.accountEmail = '';view.page = 0;view.cursors = [null];view.nextCursor = null;
+    view.rows.replaceChildren();view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;
+    view.meta.textContent = '';view.pageLabel.textContent = 'Page 1';view.message.textContent = message;
+    gmailSentControls(view);
+  }
+  function observeGmailWorkspace(current) {
+    const view = gmailView,info = snapshot?.gmail_workspace;
+    if (!view || !gmailCurrent(view)) return;
+    if (snapshot?.coverage?.gmail_workspace === 'unavailable') {
+      view.readAvailable = false;clearGmailSent(view,'Gmail access could not be verified. Check Connections before refreshing Sent.');return;
+    }
+    if (info === undefined) return;
+    const valid = info?.contract === 'vp3.gmail-workspace-context.v1' && info.owner_user_id === current.owner
+      && info.agent_id === current.agent && info.conversation_id === current.cid && typeof info.read_available === 'boolean'
+      && (info.read_available ? gmailMailboxRevision.test(info.mailbox_revision) : info.mailbox_revision === null || gmailMailboxRevision.test(info.mailbox_revision));
+    if (!valid) { view.readAvailable = false;clearGmailSent(view,'Gmail access could not be verified. Refresh Sent after checking Connections.');return; }
+    const previousRevision = view.observedMailboxRevision;
+    view.readAvailable = info.read_available;view.observedMailboxRevision = info.mailbox_revision;
+    if (!info.read_available || !info.mailbox_revision) {
+      clearGmailSent(view,'Gmail read access is unavailable. Check Gmail settings before opening Sent.');
+    } else if (view.mailboxRevision && info.mailbox_revision !== view.mailboxRevision
+      || previousRevision && previousRevision !== info.mailbox_revision && view.request) {
+      clearGmailSent(view,'The connected Gmail account changed. Refresh Sent to load its current messages.');
+    }
+    gmailSentControls(view);
+  }
+  function refreshGmailDraftButton(view) {
+    if (!gmailCurrent(view) || !view.drafts) return;
+    void window.VP3EmailComposerV1?.queueSummary?.().then(counts => {
+      if (!gmailCurrent(view) || !Number.isSafeInteger(counts?.pending) || counts.pending < 0) return;
+      view.drafts.textContent = 'View drafts · '+counts.pending+' pending';
+      view.drafts.setAttribute('aria-label','View drafts, '+counts.pending+' pending draft'+(counts.pending === 1 ? '' : 's'));
+    });
+  }
+  async function gmailSentRequest(view,action,fields) {
+    const email = window.VP3_CHAT_EMAIL_V1,endpoint = localUrl(email?.endpoint);
+    if (!gmailCurrent(view) || !positive(view.scope.cid) || !endpoint || String(email?.ownerKey) !== String(view.scope.owner)
+      || Number(email?.agentId) !== view.scope.agent || !email?.csrf) throw new Error('Open a private Agent Chat with Gmail access first.');
+    if (view.readAvailable === false) throw new Error('Gmail read access is unavailable. Check Gmail settings.');
+    view.request?.abort();
+    const request = new AbortController(),sequence = ++view.requestSequence;
+    view.request = request;gmailSentControls(view);
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true;request.abort(); },30000);
+    try {
+      const response = await fetch(endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',signal:request.signal,
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({action,owner_key:String(view.scope.owner),agent_id:view.scope.agent,
+          conversation_id:view.scope.cid,csrf_token:email.csrf,...fields})});
+      const result = await response.json().catch(() => null);
+      if (!gmailCurrent(view) || view.request !== request || sequence !== view.requestSequence || request.signal.aborted)
+        throw new DOMException('The Gmail view changed.','AbortError');
+      if (!response.ok || result?.ok !== true) {
+        const error = new Error(result?.error || 'Sent mail could not be loaded. Use Refresh Sent to try again.');
+        error.status = response.status;throw error;
+      }
+      return result;
+    } catch (error) {
+      if (gmailCurrent(view) && [401,403,404,409,419].includes(error.status))
+        clearGmailSent(view,error.status === 404
+          ? 'This Chat or sent email is no longer available. Refresh Sent to load current messages.'
+          : 'Gmail access or the saved message reference changed. Refresh Sent after checking Connections.');
+      if (timedOut && gmailCurrent(view)) throw new Error('Loading Sent took too long. Use Refresh Sent to try again.');
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      if (view.request === request) view.request = null;
+      gmailSentControls(view);
+    }
+  }
+  function checkedGmailSentPage(value) {
+    if (value?.scope !== 'gmail_sent' || !gmailText(value.account_email,254) || !value.account_email
+      || !gmailTime(value.checked_at) || !gmailMailboxRevision.test(value.mailbox_revision)
+      || !Array.isArray(value.items) || value.items.length > 20 || typeof value.has_more !== 'boolean'
+      || value.next_cursor !== null && !gmailOpaque(value.next_cursor,24000)
+      || value.has_more !== Boolean(value.next_cursor)) throw new Error('The Gmail Sent page could not be verified. Refresh Sent.');
+    for (const item of value.items) {
+      if (!gmailOpaque(item?.item_ref,4000) || !['subject','from','to','snippet'].every(key => gmailText(item[key]))
+        || !gmailTime(item.sent_at)) throw new Error('A sent message could not be verified. Refresh Sent.');
+    }
+    return value;
+  }
+  async function readGmailSentMessage(view,item,trigger) {
+    if (!gmailCurrent(view) || view.request || !view.loaded) return false;
+    view.listScrollTop = host.scrollTop;view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;
+    view.message.textContent = 'Opening the exact sent email…';
+    const sequence = view.requestSequence+1;
+    try {
+      const result = await gmailSentRequest(view,'sent_open',{item_ref:item.item_ref});
+      if (!gmailCurrent(view) || sequence !== view.requestSequence || view.readAvailable === false) return false;
+      const message = result.message;
+      if (!message || message.account_email !== view.accountEmail || message.mailbox_revision !== view.mailboxRevision
+        || view.observedMailboxRevision && message.mailbox_revision !== view.observedMailboxRevision) {
+        clearGmailSent(view,'The connected Gmail account changed. Refresh Sent to load its current messages.');return false;
+      }
+      if (!['subject','from','to'].every(key => gmailText(message[key])) || !gmailTime(message.sent_at)
+        || !gmailText(message.body,16000) || message.can_reply !== false) throw new Error('This sent email could not be verified. Refresh Sent.');
+      view.detail.replaceChildren();
+      const back = button('Back to Sent',() => {
+        if (!gmailCurrent(view)) return;
+        view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;host.scrollTop = view.listScrollTop || 0;
+        if (trigger?.isConnected) trigger.focus({preventScroll:true});
+      });
+      const title = node('h3',message.subject || '(No subject)');title.tabIndex = -1;
+      const headers = node('dl','','vp3-gmail-sent-headers');
+      for (const [label,value] of [['From',message.from],['To',message.to],['Sent',gmailDate(message.sent_at)]])
+        headers.append(node('dt',label),node('dd',value));
+      const body = node('div','','vp3-gmail-sent-reader');
+      view.detail.append(back,title,headers,body);view.list.hidden = true;view.detail.hidden = false;
+      if (!window.VP3GmailEmailDisplayV1?.mount(body,message)) body.append(node('p',message.body || 'No readable text in this email.','vp3-gmail-sent-body'));
+      view.message.textContent = '';host.scrollTop = 0;title.focus({preventScroll:true});positionSpecialist();return true;
+    } catch (error) {
+      if (gmailCurrent(view) && error.name !== 'AbortError' && ![401,403,404,409,419].includes(error.status)) view.message.textContent = error.message;
+      return false;
+    }
+  }
+  function renderGmailSentRows(view,items) {
+    view.rows.replaceChildren();
+    for (const item of items) {
+      const row = node('article','','vp3-gmail-sent-row');
+      row.append(node('h3',item.subject || '(No subject)'),node('p','To '+(item.to || 'Recipient unavailable')),
+        node('time',gmailDate(item.sent_at)),node('p',item.snippet,'vp3-gmail-sent-snippet'));
+      const open = button('Open email',() => void readGmailSentMessage(view,item,open));
+      open.setAttribute('aria-label','Open sent email '+(item.subject || '(No subject)'));row.append(open);view.rows.append(row);
+    }
+    if (!items.length) view.rows.append(node('p','No sent email was returned from this Gmail account.'));
+  }
+  async function loadGmailSent(view,{page = 0,refresh = false} = {}) {
+    if (!gmailCurrent(view) || view.request || !Number.isSafeInteger(page) || page < 0) return false;
+    const cursor = page === 0 ? null : view.cursors[page];
+    if (page > 0 && !gmailOpaque(cursor,24000)) return false;
+    if (refresh) clearGmailSent(view);
+    view.message.textContent = 'Loading sent mail from Gmail…';
+    const sequence = view.requestSequence+1;
+    try {
+      const result = await gmailSentRequest(view,'sent_list',{limit:10,cursor});
+      if (!gmailCurrent(view) || sequence !== view.requestSequence || view.readAvailable === false) return false;
+      const sent = checkedGmailSentPage(result.sent);
+      if (view.observedMailboxRevision && sent.mailbox_revision !== view.observedMailboxRevision
+        || page > 0 && (sent.mailbox_revision !== view.mailboxRevision || sent.account_email !== view.accountEmail)) {
+        clearGmailSent(view,'The connected Gmail account changed. Refresh Sent to load its current messages.');return false;
+      }
+      view.mailboxRevision = sent.mailbox_revision;view.accountEmail = sent.account_email;view.loaded = true;view.page = page;
+      view.nextCursor = sent.next_cursor;view.cursors[page+1] = sent.next_cursor;view.cursors.length = page+2;
+      view.meta.textContent = 'Sent from '+sent.account_email+' · Checked '+gmailDate(sent.checked_at);
+      view.pageLabel.textContent = 'Page '+(page+1);view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;
+      renderGmailSentRows(view,sent.items);view.message.textContent = '';host.scrollTop = 0;gmailSentControls(view);positionSpecialist();return true;
+    } catch (error) {
+      if (gmailCurrent(view) && error.name !== 'AbortError' && ![401,403,404,409,419].includes(error.status)) view.message.textContent = error.message;
+      return false;
+    }
+  }
+  async function selectGmailTab(view,tab,focus = false) {
+    if (!gmailCurrent(view) || !['inbox','sent'].includes(tab)) return false;
+    if (view.tab !== tab) host.scrollTop = 0;
+    view.tab = tab;
+    for (const [id,control] of Object.entries(view.tabs)) { control.tabIndex = id === tab ? 0 : -1;control.setAttribute('aria-selected',String(id === tab)); }
+    view.inbox.hidden = tab !== 'inbox';view.sentPanel.hidden = tab !== 'sent';
+    workspaceButton.textContent = tab === 'sent' ? 'Expand' : 'Full report';
+    if (focus) view.tabs[tab].focus({preventScroll:true});
+    if (tab === 'inbox') {
+      if (view.request) view.message.textContent = '';
+      view.request?.abort();view.request = null;view.requestSequence++;gmailSentControls(view);return true;
+    }
+    if (!positive(view.scope.cid)) return openGmailSent({owner_key:String(view.scope.owner),agent_id:view.scope.agent,conversation_id:0});
+    return view.loaded ? true : loadGmailSent(view);
+  }
+  function mountGmailMailbox(current,header) {
+    const view = {scope:current,tab:'inbox',request:null,requestSequence:0,loaded:false,readAvailable:null,page:0,cursors:[null],nextCursor:null,
+      mailboxRevision:'',observedMailboxRevision:null,accountEmail:'',tabs:{}};
+    gmailView = view;
+    const wrapper = node('div','','vp3-gmail-specialist-heading');wrapper.append(header);
+    view.navigation = node('div','','vp3-gmail-navigation');
+    if (typeof window.VP3EmailComposerV1?.openDrafts === 'function') {
+      view.drafts = button('View drafts',event => {
+        if (!event.isTrusted || !gmailCurrent(view)) return;
+        close(false);void window.VP3EmailComposerV1.openDrafts({surface:'popup'});
+      });
+      view.drafts.dataset.gmailReviewQueue = '';view.navigation.append(view.drafts);
+    }
+    const tabs = node('div','','vp3-gmail-mail-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Gmail views');
+    view.inbox = node('div');view.inbox.id = 'vp3GmailInboxPanel';view.inbox.setAttribute('role','tabpanel');view.inbox.setAttribute('aria-labelledby','vp3GmailInboxTab');
+    view.sentPanel = node('section','','vp3-gmail-sent-panel');view.sentPanel.id = 'vp3GmailSentPanel';view.sentPanel.hidden = true;
+    view.sentPanel.setAttribute('role','tabpanel');view.sentPanel.setAttribute('aria-labelledby','vp3GmailSentTab');
+    for (const [id,label,pane] of [['inbox','Inbox',view.inbox],['sent','Sent',view.sentPanel]]) {
+      const control = button(label,event => { if (event.isTrusted) void selectGmailTab(view,id); });
+      control.id = id === 'inbox' ? 'vp3GmailInboxTab' : 'vp3GmailSentTab';control.setAttribute('role','tab');
+      control.setAttribute('aria-controls',pane.id);control.setAttribute('aria-selected',String(id === 'inbox'));control.tabIndex = id === 'inbox' ? 0 : -1;
+      view.tabs[id] = control;tabs.append(control);
+    }
+    tabs.addEventListener('keydown',event => {
+      const current = Object.entries(view.tabs).find(([,control]) => control === event.target)?.[0];
+      if (!current || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+      event.preventDefault();void selectGmailTab(view,event.key === 'Home' ? 'inbox' : event.key === 'End' ? 'sent' : current === 'inbox' ? 'sent' : 'inbox',true);
+    });
+    view.navigation.append(tabs);wrapper.append(view.navigation);
+    const top = node('div','','vp3-gmail-sent-top');view.meta = node('small');
+    view.refresh = button('Refresh Sent',() => void loadGmailSent(view,{refresh:true}));top.append(view.meta,view.refresh);
+    view.message = node('p','','vp3-gmail-sent-status');view.message.setAttribute('role','status');
+    view.list = node('div');view.rows = node('div');view.rows.setAttribute('aria-label','Sent emails');
+    const pages = node('nav','','vp3-gmail-sent-pages');pages.setAttribute('aria-label','Sent email pages');
+    view.previous = button('Previous',() => void loadGmailSent(view,{page:view.page-1}));
+    view.next = button('Next',() => void loadGmailSent(view,{page:view.page+1}));view.pageLabel = node('span','Page 1');pages.append(view.previous,view.pageLabel,view.next);
+    view.list.append(view.rows,pages);view.detail = node('div','','vp3-gmail-sent-detail');view.detail.hidden = true;
+    view.sentPanel.append(top,view.message,view.list,view.detail);gmailSentControls(view);
+    view.inbox.append(status,coordinationHost,specialistsHost,sections);specialistContent.append(view.inbox,view.sentPanel);
+    host.append(wrapper,specialistContent);return view;
+  }
+  async function openGmailSent(context = null,trigger = null) {
+    let current = scope();
+    if (!current?.hasChat || context && (String(context.owner_key) !== String(current.owner) || context.agent_id !== current.agent || context.conversation_id !== current.cid)) return false;
+    const epoch = gmailNavigationEpoch,original = {...current},initialView = gmailView;
+    if (!current.cid) {
+      if (gmailView) gmailView.message.textContent = 'Opening a private Chat for Gmail…';
+      try {
+        const cid = Number(await continuity()?.ensureConversation?.());current = scope();
+        if (!current || !positive(cid) || current.cid !== cid || epoch !== gmailNavigationEpoch || current.owner !== original.owner
+          || current.agent !== original.agent || current.binding !== original.binding) return false;
+      } catch {
+        if (gmailView && gmailView === initialView && epoch === gmailNavigationEpoch) gmailView.message.textContent = 'A private Chat could not be opened. Try Sent again.';
+        return false;
+      }
+    }
+    if (gmailView && gmailCurrent(gmailView)) {
+      if (specialistSettings) closeSpecialistSettings();
+      return selectGmailTab(gmailView,'sent',true);
+    }
+    if (opened) close(false);
+    if (!openSpecialist('gmail',trigger,{label:'Gmail',focusReturn:trigger || document.getElementById('chatInput')})) return false;
+    return gmailView ? selectGmailTab(gmailView,'sent',true) : false;
   }
 
   function openSpecialist(key,trigger,{label,focusReturn,fullReport = false,selection} = {}) {
@@ -888,13 +1154,14 @@
     specialistsHost = node('div','','vp3-agent-activity-specialists');
     sections = node('div','','vp3-agent-activity-sections');
     specialistContent = node('div');
-    specialistContent.append(status,coordinationHost,specialistsHost,sections);
-    host.append(header,specialistContent);
+    if (id === 'gmail') mountGmailMailbox(scope(true),header);
+    else { specialistContent.append(status,coordinationHost,specialistsHost,sections);host.append(header,specialistContent); }
     document.body.append(host);
     specialistTrigger?.setAttribute('aria-controls',host.id);
     specialistTrigger?.setAttribute('aria-haspopup','dialog');
     specialistTrigger?.setAttribute('aria-expanded','true');
     opened = true;
+    if (gmailView) refreshGmailDraftButton(gmailView);
     if (profileWorkspace) {
       workspace = true;
       host.dataset.workspace = 'true';
@@ -1217,13 +1484,7 @@
     const settings = item?.actions.find(action => action.kind === 'url' && localUrl(action.href))?.href
       || localUrl(gmailCfg?.connectionsUrl);
     const controls = node('div','','vp3-email-report-controls');
-    if (typeof window.VP3EmailComposerV1?.openDrafts === 'function') {
-      controls.append(button('Drafts',event => {
-        if (!event.isTrusted || signature(current) !== signature(scope()) || !visible()) return;
-        close(false);
-        void window.VP3EmailComposerV1.openDrafts({surface:'popup'});
-      }));
-    }
+    if (gmailView) refreshGmailDraftButton(gmailView);
     const mayAnalyze = monitor && !['disabled','setup_required'].includes(monitor.analysis_state)
       && !['unavailable','restart_required'].includes(monitor.state)
       && (monitor.analysis_state || monitor.report?.running_report);
@@ -3215,6 +3476,7 @@
     if (!snapshot || !scope() || !sections) return;
     const current = scope();
     if (specialistMode) {
+      if (family(selectedSpecialist) === 'gmail') observeGmailWorkspace(current);
       renderCoordination();
       renderSpecialists();
       renderWorkspaceSources(current);
@@ -3447,7 +3709,7 @@
     void read();
     return true;
   }
-  window.VP3AgentActivityHub = Object.freeze({open,openSpecialist,close,
+  window.VP3AgentActivityHub = Object.freeze({open,openSpecialist,openGmailSent,close,
     openProfile:(selection={},trigger=null) => {
       if (!window.VP3ProfileWorkspaceV1?.mountWorkspace || !window.VP3_PROFILE_WORKSPACE_V1?.endpoint) return false;
       return openSpecialist('profile',trigger,{label:'Profile',focusReturn:trigger||document.getElementById('chatInput'),fullReport:true,selection});
@@ -3483,6 +3745,9 @@
   window.addEventListener('vp3:agent-orb-ready',mount);
   window.addEventListener('vp3:agent-activity-open',event => open(event.detail || {}));
   window.addEventListener('vp3:chat-specialists-changed',renderSpecialists);
+  window.addEventListener('vp3:chat-email-drafts-changed',() => {
+    if (visible() && specialistMode && family(selectedSpecialist) === 'gmail') { stop();void read(); }
+  });
   window.addEventListener('stonefellow:chat-context-changing',() => close(false));
   window.addEventListener('vp3:orb-conversation-changed',() => { if (!window.STONEFELLOW_CHAT) close(false); });
   window.addEventListener('vp3:participant-selection-changed',() => close(false));
@@ -3501,7 +3766,13 @@
     stop();
     if (visible() && specialistSettings && specialistSettings.scopeKey !== signature(scope())) close(false);
     else if (visible()) void read();
-    else abortOfficeRequests();
+    else {
+      abortOfficeRequests();
+      if (gmailView?.request) {
+        gmailView.request.abort();gmailView.request = null;gmailView.requestSequence++;
+        gmailView.message.textContent = 'Sent loading paused. Use Refresh Sent to continue.';gmailSentControls(gmailView);
+      }
+    }
   });
   window.addEventListener('resize',positionSpecialist);
   document.addEventListener('pointerdown',event => {
