@@ -516,22 +516,31 @@ function vp3_phone_recording_worker_tick_v1(PDO $pdo,int $limit=1,array $adapter
     $out=['completed'=>0,'failed'=>0,'results'=>[]];$cleanup=vp3_phone_voicemail_purge_once_v1($pdo,$adapters['delete']??null);if($cleanup){$out[$cleanup['ok']?'completed':'failed']++;$out['results'][]=$cleanup;}for($i=0;$i<max(1,min(3,$limit));$i++){$r=vp3_phone_recording_worker_once_v1($pdo,$adapters);if(($r['reason']??'')==='no_work')break;$out[$r['ok']?'completed':'failed']++;$out['results'][]=$r;}return $out;
 }
 /** A read-only CLI observation, never evidence that a queued job has completed. */
-function vp3_phone_recording_worker_health_v1(?int $clock=null): array
+function vp3_phone_worker_health_v1(bool $scheduler,?int $clock=null): array
 {
     $empty=['state'=>'never_seen','observation_scope'=>'server','last_observed_at'=>'','outcome'=>''];
-    $path=STONEFELLOW_ROOT.'/private/phone-recordings-v1/worker-health.json';
+    $path=STONEFELLOW_ROOT.'/private/phone-recordings-v1/'.($scheduler?'schedule-worker-health.json':'worker-health.json');
     if(is_link($path)||!is_file($path))return $empty;
     $size=@filesize($path);if($size===false||$size>2048)return $empty;
     $raw=@file_get_contents($path);$data=is_string($raw)?json_decode($raw,true):null;$now=$clock??time();
-    if(!is_array($data)||($data['source']??'')!=='phone_recording_cli'||!is_int($data['observed_epoch']??null)||$data['observed_epoch']<1||$data['observed_epoch']>$now||!in_array($data['outcome']??'', ['processing','idle','completed','failed'],true))return $empty;
-    return ['state'=>$now-$data['observed_epoch']<=1200?'observed':'stale','observation_scope'=>'server','last_observed_at'=>gmdate(DATE_ATOM,$data['observed_epoch']),'outcome'=>$data['outcome']];
+    if(!is_array($data)||($data['source']??'')!==($scheduler?'phone_schedule_cli':'phone_recording_cli')||!is_int($data['observed_epoch']??null)||$data['observed_epoch']<1||$data['observed_epoch']>$now||!in_array($data['outcome']??'', ['processing','idle','completed','failed'],true))return $empty;
+    return ['state'=>$now-$data['observed_epoch']<=($scheduler?180:1200)?'observed':'stale','observation_scope'=>'server','last_observed_at'=>gmdate(DATE_ATOM,$data['observed_epoch']),'outcome'=>$data['outcome']];
+}
+function vp3_phone_worker_observe_v1(bool $scheduler,string $outcome): void
+{
+    if(PHP_SAPI!=='cli'||!in_array($outcome,['processing','idle','completed','failed'],true))return;
+    $path=STONEFELLOW_ROOT.'/private/phone-recordings-v1/'.($scheduler?'schedule-worker-health.json':'worker-health.json');if(is_link($path)||!is_dir(dirname($path)))return;
+    $temporary=$path.'.'.bin2hex(random_bytes(6)).'.tmp';$json=vp3_phone_recording_json_v1(['source'=>$scheduler?'phone_schedule_cli':'phone_recording_cli','observed_epoch'=>time(),'outcome'=>$outcome]);
+    if(file_put_contents($temporary,$json,LOCK_EX)===strlen($json)){@chmod($temporary,0600);if(!rename($temporary,$path))@unlink($temporary);}else @unlink($temporary);
+}
+
+function vp3_phone_recording_worker_health_v1(?int $clock=null): array
+{
+    return vp3_phone_worker_health_v1(false,$clock);
 }
 function vp3_phone_recording_worker_observe_v1(string $outcome): void
 {
-    if(PHP_SAPI!=='cli'||!in_array($outcome,['processing','idle','completed','failed'],true))return;
-    $path=STONEFELLOW_ROOT.'/private/phone-recordings-v1/worker-health.json';if(is_link($path)||!is_dir(dirname($path)))return;
-    $temporary=$path.'.'.bin2hex(random_bytes(6)).'.tmp';$json=vp3_phone_recording_json_v1(['source'=>'phone_recording_cli','observed_epoch'=>time(),'outcome'=>$outcome]);
-    if(file_put_contents($temporary,$json,LOCK_EX)===strlen($json)){@chmod($temporary,0600);if(!rename($temporary,$path))@unlink($temporary);}else @unlink($temporary);
+    vp3_phone_worker_observe_v1(false,$outcome);
 }
 /** Historical playback stays with the immutable receipt owner after number transfer. */
 function vp3_phone_recording_audio_v1(PDO $pdo,array $user,int $id): array

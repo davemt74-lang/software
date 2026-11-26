@@ -126,6 +126,11 @@ try{
     check(vp3_phone_recording_row_v1($pdo,12)['error_code']==='interrupted_review'&&!is_file(vp3_phone_recording_source_path_v1($expired)),'expired worker is fenced and its temporary audio removed');
     check(vp3_phone_recording_worker_health_v1()['state']==='never_seen','worker status read does not invent an observation');
     vp3_phone_recording_worker_observe_v1('completed');$health=vp3_phone_recording_worker_health_v1();check($health['state']==='observed'&&$health['outcome']==='completed'&&vp3_phone_recording_worker_health_v1(time()+1201)['state']==='stale','CLI worker observation persists and ages honestly');
+    check(vp3_phone_worker_health_v1(true)['state']==='never_seen','the recording worker cannot make the call scheduler appear healthy');
+    vp3_phone_worker_observe_v1(true,'failed');
+    $schedule=vp3_phone_worker_health_v1(true);
+    check($schedule['state']==='observed'&&$schedule['outcome']==='failed'&&vp3_phone_recording_worker_health_v1()['outcome']==='completed','scheduler failures retain a separate operational receipt');
+    check(vp3_phone_worker_health_v1(true,strtotime($schedule['last_observed_at'])+181)['state']==='stale','the once-per-minute scheduler shows overdue after three minutes');
     check(!glob($directory.'/private/phone-recordings-v1/*/*/source.mp3'),'worker temporary audio is removed on every success or failure');
     echo 'PHONE_RECORDING_PIPELINE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
 }finally{
