@@ -12,6 +12,11 @@ function vp3_operator_live_schema_ready_v1(PDO $pdo): bool
         return vp3_operator_live_assist_ready_v1($pdo)&&vp3_operator_voice_ready_v1($pdo);
     } catch(PDOException) {return false;}
 }
+function vp3_operator_live_controls_ready_v1(PDO $pdo):bool
+{
+    try{$pdo->query('SELECT audio_limit_seconds FROM phone_operator_live_sessions_v1 WHERE 1=0');return vp3_operator_participation_ready_v1($pdo);}
+    catch(PDOException){return false;}
+}
 function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
 {
     if($pdo->inTransaction())throw new RuntimeException('Install live caption preferences outside a transaction.');
@@ -23,6 +28,7 @@ function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
         consent_epoch BIGINT NOT NULL,expires_epoch BIGINT NOT NULL,reserved_seconds INTEGER NOT NULL DEFAULT 0,
         next_seq INTEGER NOT NULL DEFAULT 1,pending_seq INTEGER NOT NULL DEFAULT 0,last_dispatch_epoch BIGINT NOT NULL DEFAULT 0
     )".$suffix);
+    vp3_operator_metadata_column_v1($pdo,'phone_operator_live_sessions_v1','audio_limit_seconds','INTEGER NOT NULL DEFAULT 120');
     vp3_operator_live_assist_install_v1($pdo);
     vp3_operator_voice_install_v1($pdo);
     vp3_operator_participation_install_v1($pdo);
