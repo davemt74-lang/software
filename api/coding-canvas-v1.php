@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/coding-canvas-jobs-v1.php';
 require_once dirname(__DIR__).'/includes/coding-canvas-command-grants-v1.php';
 

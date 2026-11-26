@@ -136,7 +136,10 @@
           headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...context,csrf_token:cfg.csrf,...fields})});
         const result = await response.json().catch(() => null);
         if (!current() || request !== controller || controller.signal.aborted) throw new DOMException('The private Gmail view changed.','AbortError');
-        if (!response.ok || result?.ok !== true) throw Object.assign(new Error(typeof result?.error === 'string' ? result.error : 'The follow-up could not be verified. Refresh it before continuing.'),{status:response.status});
+        if (!response.ok || result?.ok !== true) {
+          if (cfg.fixedDraftId && [401,403,419].includes(response.status)) window.dispatchEvent(new Event('vp3:phone-agent-access-changed'));
+          throw Object.assign(new Error(typeof result?.error === 'string' ? result.error : 'The follow-up could not be verified. Refresh it before continuing.'),{status:response.status});
+        }
         return result;
       } catch (error) { if (timeout && current()) throw new Error('The follow-up check took too long. Refresh its saved status before trying again.');throw error; }
       finally { clearTimeout(timer);if (request === controller) request = null; }

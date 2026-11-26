@@ -1065,6 +1065,7 @@ function agent_connection_email_chat_dispatch_v1(PDO $pdo, array $draft, array $
         agent_connection_gmail_autosend_authorize_v1($pdo,$user,(int)$current['connection_id'],$current['authorization_key'],
             $current['recipient'],$payload['auto_revision']);
     }
+    if (defined('VP3_PHONE_AGENT_NATIVE_V1')) vp3_phone_agent_native_execution_current_v1($pdo);
     return null;
 }
 
@@ -1351,6 +1352,7 @@ function agent_connection_email_chat_send_saved_v1(PDO $pdo, array $draft, ?call
     $id = $draft['id'];
     $row = null;
     try {
+        if (defined('VP3_PHONE_AGENT_NATIVE_V1')) vp3_phone_agent_native_execution_current_v1($pdo);
         agent_connections_send_v1($owner,(int)$draft['connection_id'],$draft['recipient'],$payload['subject'],$payload['body'],
             agent_connection_email_chat_operation_key_v1($id),$draft['authorization_key'],
             static function(PDO $db,array $receipt) use ($draft,&$row): void {

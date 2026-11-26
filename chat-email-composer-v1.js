@@ -49,6 +49,9 @@
         && (!file || url.pathname.endsWith('/'+file)) ? url.href : '';
     } catch { return ''; }
   }
+  function privateAccessChanged(response) {
+    if (cfg.fixedDraftId && [401,403,419].includes(response.status)) window.dispatchEvent(new Event('vp3:phone-agent-access-changed'));
+  }
   function scope(allowEmpty = false) {
     const live = window.STONEFELLOW_CHAT;
     const chat = runtime();
@@ -340,8 +343,8 @@
       state.followRecord = followthrough().mount(state.followRecordHost,draft.followthrough_record,{
         context:{owner_key:owner,...state.scope},isCurrent:() => current(state) && state.draft === draft,
         onChange:item => { if (current(state)) state.draft.followthrough_record = item; },
-        openDraft:target => navigate(state,() => void openDraft(target,{surface:state.surface,replace:true})),
-        openReply:(target,trigger) => navigate(state,() => {
+        openDraft:cfg.fixedDraftId ? undefined : target => navigate(state,() => void openDraft(target,{surface:state.surface,replace:true})),
+        openReply:cfg.fixedDraftId ? undefined : (target,trigger) => navigate(state,() => {
           if (!current(state) || typeof window.VP3EmailFollowup?.open !== 'function') return;
           const context = {owner_key:owner,...state.scope,...target};release(state,{rememberEdits:false});window.VP3EmailFollowup.open(context,trigger);
         })});
@@ -370,6 +373,7 @@
         const error = new Error(data?.error || 'The request could not be confirmed. Your text is kept.');
         if (!media && (response.status === 403 || response.status === 409 && ['review','review_latest','compose_source'].includes(action)))
           clearSource(state,'Source access or the saved draft changed. Reload the saved draft before reading its original email.');
+        privateAccessChanged(response);
         error.status = response.status;throw error;
       }
       return data;
@@ -477,7 +481,9 @@
       if (result.draft?.status !== 'discarded') throw new Error('This draft can no longer be discarded. Reload its current status.');
       retained.delete(memoryKey(state));
       window.dispatchEvent(new Event('vp3:chat-email-drafts-changed'));
-      await openDrafts({surface:state.surface,replace:true});return true;
+      if (cfg.fixedDraftId) adopt(state,result.draft);
+      else await openDrafts({surface:state.surface,replace:true});
+      return true;
     } catch (error) { failure(state,error);return false; }
     finally { state.busy = false;controls(state); }
   }
@@ -530,6 +536,7 @@
   }
   function release(state,{rememberEdits = true,returnToChat = true} = {}) {
     if (active !== state) return;
+    if (state.closeResolve) {state.closeResolve(false);state.closeResolve = null;}
     rememberEdits ||= state.keepEditsOnRelease === true;
     if (rememberEdits || state.imageJob || state.imageReview) remember(state,{savedOnly:!rememberEdits});
     else if (state.draft) retained.delete(memoryKey(state));
@@ -556,6 +563,36 @@
       button('Keep editing',() => { state.leave.hidden = true;state.body.focus(); }),
       button('Discard edits',() => { state.leave.hidden = true;retained.delete(memoryKey(state));action(); }));
     state.leave.querySelector('button')?.focus();return false;
+  }
+  function requestClose() {
+    const state = active;
+    if (!state || !current(state)) return Promise.resolve(true);
+    if (state.closePromise) return state.closePromise;
+    if (state.busy || state.uploading || state.imageWorking) {
+      setNotice(state,state.imageWorking ? 'Wait for your image or cancel its request before leaving this email.' : 'Wait for the current email action to finish.');
+      return Promise.resolve(false);
+    }
+    if (!dirty(state)) {release(state,{rememberEdits:false,returnToChat:false});return Promise.resolve(true);}
+    state.closePromise = new Promise(resolve => {state.closeResolve = resolve;});
+    const finish = allowed => {
+      const resolve = state.closeResolve;if (!resolve) return;
+      state.closeResolve = null;state.closePromise = null;
+      state.leave.hidden = true;
+      if (allowed) release(state,{rememberEdits:false,returnToChat:false});
+      else state.body.focus();
+      resolve?.(allowed);
+    };
+    state.leave.hidden = false;state.leave.replaceChildren(node('p','Save your changes before leaving this email?'));
+    const leaveButtons = [button('Save draft and leave',async () => {
+      if (!state.closeResolve || state.busy) return;
+      leaveButtons.forEach(value => {value.disabled = true;});
+      const saved = await save(state);
+      if (saved && current(state)) finish(true);
+      else leaveButtons.forEach(value => {value.disabled = false;});
+    }),button('Keep editing',() => {if (!state.busy) finish(false);}),button('Discard edits',() => {if (!state.busy) finish(true);})];
+    state.leave.append(...leaveButtons);
+    state.leave.querySelector('button')?.focus();
+    return state.closePromise;
   }
   function changeSurface(state,surface) {
     if (!current(state)) return false;
@@ -600,7 +637,7 @@
         headers:{'X-VP3-Media-Owner':owner},body:form});
       const data = await response.json().catch(() => null);
       if (!current(state)) throw new DOMException('The Chat context changed.','AbortError');
-      if (!response.ok || data?.ok !== true) throw new Error(data?.error || 'The image upload failed. Your email is kept.');
+      if (!response.ok || data?.ok !== true) {privateAccessChanged(response);throw new Error(data?.error || 'The image upload failed. Your email is kept.');}
       return data;
     };
     try {
@@ -629,7 +666,7 @@
       const response = await fetch(url,{credentials:'same-origin',cache:'no-store',signal:state.controller.signal,headers:{'X-VP3-Media-Owner':owner}});
       const result = await response.json().catch(() => null);
       if (!current(state)) return;
-      if (!response.ok || result?.ok !== true || !Array.isArray(result.assets)) throw new Error(result?.error || 'Saved images could not be loaded.');
+      if (!response.ok || result?.ok !== true || !Array.isArray(result.assets)) {privateAccessChanged(response);throw new Error(result?.error || 'Saved images could not be loaded.');}
       state.library.replaceChildren();
       const grid = node('div','','vp3-email-compose-image-grid');
       for (const candidate of result.assets.slice(0,40)) {
@@ -727,6 +764,7 @@
     state.surfaceButton = button(surface === 'canvas' ? 'Pop out' : 'Open in canvas',() => changeSurface(state,state.surface === 'canvas' ? 'popup' : 'canvas'));
     state.closeButton = button('Close',() => navigate(state,() => release(state,{rememberEdits:false})));
     toolbar.append(state.listButton,state.newButton,state.surfaceButton,state.closeButton);
+    if (cfg.fixedDraftId) toolbar.hidden = true;
     header.append(heading,toolbar);
     state.notice = node('p','Opening Gmail…','vp3-email-compose-notice');state.notice.setAttribute('role','status');state.notice.setAttribute('aria-live','polite');
     state.leave = node('section','','vp3-email-compose-leave');state.leave.hidden = true;state.leave.setAttribute('role','alert');
@@ -845,6 +883,7 @@
     finally { opening = false; }
   }
   async function openCompose(options = {}) {
+    if (cfg.fixedDraftId) return false;
     const state = await start(options);if (!state) return false;
     state.busy = true;controls(state);
     try {
@@ -859,6 +898,7 @@
   async function openDraft(selection,options = {}) {
     const input = typeof selection === 'string' ? {draft_id:selection} : selection || {};
     if (!draftId.test(input.draft_id || '')) return false;
+    if (cfg.fixedDraftId && input.draft_id !== cfg.fixedDraftId) return false;
     const currentScope = scope();
     if (!currentScope || input.agent_id !== undefined && Number(input.agent_id) !== currentScope.agent_id
       || input.conversation_id !== undefined && Number(input.conversation_id) !== currentScope.conversation_id) return false;
@@ -984,6 +1024,7 @@
     } finally { state.busy = false;controls(state); }
   }
   async function openDrafts(options = {}) {
+    if (cfg.fixedDraftId) return false;
     const state = await start(options);if (!state) return false;
     state.title.textContent = 'Drafts';state.list.hidden = false;
     state.queuePage = 0;state.queueCursors = [null];state.queueNextCursor = null;
@@ -1139,5 +1180,6 @@
     if (active?.surface === 'canvas' && thread.dataset.view !== 'email') release(active,{returnToChat:false});
   });
   window.addEventListener('resize',() => { if (active) resizeBody(active.body); });
-  window.VP3EmailComposerV1 = Object.freeze({openCompose,openDraft,openDrafts,queueSummary,selectedDraft,matchInstruction,handleChatInstruction});
+  window.VP3EmailComposerV1 = Object.freeze({openCompose,openDraft,openDrafts,queueSummary,selectedDraft,matchInstruction,handleChatInstruction,
+    requestClose,isDirty:() => Boolean(active && current(active) && dirty(active))});
 })();

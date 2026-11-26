@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require dirname(__DIR__).'/includes/bootstrap.php';
+require_once dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/agent-chat-runtime-v2160.php';
 
 header('Content-Type: application/json; charset=UTF-8');

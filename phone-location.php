@@ -6,7 +6,7 @@ header('Referrer-Policy: no-referrer');
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Permissions-Policy: geolocation=(self), camera=(self), microphone=()');
-header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; img-src 'self'; media-src 'self' blob: mediastream:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
+header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; img-src 'self'; media-src 'self' blob: mediastream:; frame-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'");
 ?>
 <!doctype html>
 <html lang="en">
@@ -21,7 +21,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="manifest" href="phone-app.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/phone-pwa/icon-180.png">
   <script src="phone-pwa-v1.js?v=2" defer></script>
-  <link rel="stylesheet" href="phone-location-v1.css?v=13">
+  <link rel="stylesheet" href="phone-location-v1.css?v=14">
+  <link rel="stylesheet" href="phone-agent-workspace-v1.css?v=1">
   <link rel="stylesheet" href="phone-remote-dialer-v1.css?v=1">
   <link rel="stylesheet" href="phone-managed-call-ui-v1.css?v=3">
   <link rel="stylesheet" href="phone-camera-app-v1.css?v=2">
@@ -29,14 +30,16 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
   <script src="phone-recording-holder-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
-  <script src="phone-agent-chat-v1.js?v=6" defer></script>
+  <script src="phone-agent-chat-v1.js?v=7" defer></script>
+  <script src="phone-agent-workspace-media-v1.js?v=1" defer></script>
+  <script src="phone-agent-workspace-v1.js?v=1" defer></script>
   <script src="phone-save-place-v1.js?v=1" defer></script>
   <script src="phone-information-ui-v1.js?v=4" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
   <script src="phone-handoff-v1.js?v=1" defer></script>
-  <script src="phone-push-subscriptions-v1.js?v=2" defer></script>
-  <script src="phone-location-v1.js?v=18" defer></script>
+  <script src="phone-push-subscriptions-v1.js?v=3" defer></script>
+  <script src="phone-location-v1.js?v=19" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php">
@@ -44,6 +47,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
     <div class="phone-header-inner">
       <div class="phone-brand-line"><b class="brand">VP3</b><span>Phone connection</span></div>
       <div class="phone-tabs" id="phone-tabs" role="tablist" aria-label="Connected phone" hidden>
+        <button type="button" role="tab" id="phone-tab-agent" aria-controls="phone-agent" aria-selected="false" tabindex="-1" hidden>AGENT<span id="phone-agent-unread" class="phone-agent-unread" hidden></span></button>
         <button type="button" role="tab" id="phone-tab-connection" aria-controls="phone-connection" aria-selected="true">Connection</button>
         <button type="button" role="tab" id="phone-tab-chat" aria-controls="phone-chat" aria-selected="false" tabindex="-1">Chat</button>
         <button type="button" role="tab" id="phone-tab-info" aria-controls="phone-info" aria-selected="false" tabindex="-1">Info</button>
@@ -63,6 +67,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <div><dt>Location</dt><dd id="phone-gps"></dd></div>
         <div id="phone-preference-row" hidden><dt>Updates</dt><dd id="phone-preferences"></dd></div>
       </dl>
+      <section id="phone-agent-enrollment" class="phone-permission" aria-labelledby="phone-agent-enrollment-title" hidden></section>
       <form id="phone-pair-entry" hidden autocomplete="off">
         <label for="phone-pair-code">Pairing code</label>
         <input id="phone-pair-code" type="text" inputmode="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="43" pattern="[A-Za-z0-9_\-]{43}" placeholder="Paste the fresh code" required>
@@ -120,6 +125,9 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       <noscript>Enable JavaScript to pair or manage this phone.</noscript>
     </div>
   </section>
+  <section id="phone-agent" role="tabpanel" aria-labelledby="phone-tab-agent" tabindex="0" hidden>
+    <div id="phone-agent-workspace" class="phone-agent-workspace"></div>
+  </section>
   <section id="phone-chat" role="tabpanel" aria-labelledby="phone-tab-chat" hidden>
     <div class="phone-chat-history" id="phone-chat-history" tabindex="0" aria-label="Chat history" role="region">
       <h1 id="phone-chat-title">Chat</h1>
@@ -159,6 +167,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       <section class="phone-guide-section" aria-labelledby="phone-guide-requests-title">
         <h2 id="phone-guide-requests-title">Agent requests</h2>
         <dl class="phone-guide-requests">
+          <div><dt>Agent</dt><dd>On your enrolled owner phone, review your Main Agent’s results and email drafts. Reading an item does not approve it.</dd></div>
           <div><dt>Chat</dt><dd>Send a private message and see replies.</dd></div>
           <div><dt>Calls</dt><dd>Review the destination and choose whether to approve. Carrier charges may apply.</dd></div>
           <div><dt>Location &amp; camera</dt><dd>You decide when to share or stop.</dd></div>

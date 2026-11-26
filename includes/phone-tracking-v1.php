@@ -16,6 +16,7 @@ require_once __DIR__.'/phone-handoff-v1.php';
 require_once __DIR__.'/phone-push-subscriptions-v1.php';
 require_once __DIR__.'/phone-push-delivery-v1.php';
 require_once __DIR__.'/phone-push-events-v1.php';
+require_once __DIR__.'/phone-agent-workspace-schema-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -94,6 +95,9 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_handoff_install_v1($pdo,$options);
     vp3_phone_push_install_v1($pdo,$options);
     vp3_phone_push_delivery_install_v1($pdo,$options);
+    vp3_phone_agent_workspace_install_v1($pdo);
+    require_once __DIR__.'/phone-agent-workspace-worker-v1.php';
+    vp3_phone_agent_workspace_worker_install_v1($pdo);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool

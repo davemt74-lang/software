@@ -1,0 +1,120 @@
+name: Connected Phone Agent Workspace
+
+on:
+  pull_request:
+    paths:
+      - '*phone*'
+      - 'phone-agent-*'
+      - 'includes/phone-*'
+      - 'api/phone-*'
+      - 'includes/paired-phone-*'
+      - 'chat-email-composer-v1.js'
+      - 'chat-email-followthrough-v1.js'
+      - 'includes/agent-connection-email-chat-v1.php'
+      - 'includes/agent-image-generation-v1.php'
+      - 'api/chat-email-v1.php'
+      - 'api/coding-canvas-v1.php'
+      - 'api/media-library*.php'
+      - 'agent-worker-v1910.php'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/phone-agent-*'
+      - 'tests/fixtures/phone-agent-*'
+      - '.github/workflows/phone-agent-workspace-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - '*phone*'
+      - 'phone-agent-*'
+      - 'includes/phone-*'
+      - 'api/phone-*'
+      - 'includes/paired-phone-*'
+      - 'chat-email-composer-v1.js'
+      - 'chat-email-followthrough-v1.js'
+      - 'includes/agent-connection-email-chat-v1.php'
+      - 'includes/agent-image-generation-v1.php'
+      - 'api/chat-email-v1.php'
+      - 'api/coding-canvas-v1.php'
+      - 'api/media-library*.php'
+      - 'agent-worker-v1910.php'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/phone-agent-*'
+      - 'tests/fixtures/phone-agent-*'
+      - '.github/workflows/phone-agent-workspace-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  private-workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: phone-agent-fixture
+          MYSQL_DATABASE: phone_agent_fixture
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -pphone-agent-fixture"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    env:
+      VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_agent_fixture;charset=utf8mb4
+      VP3_TEST_MYSQL_USER: root
+      VP3_TEST_MYSQL_PASS: phone-agent-fixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pdo_sqlite, mbstring, dom, curl, fileinfo
+          coverage: none
+      - name: Native owner, device, sources, receipts, and background notification boundaries
+        run: |
+          for file in tests/phone-agent-workspace-*.php; do php "$file"; done
+      - name: Production PHP entry points
+        run: |
+          for file in includes/phone-agent-workspace-*.php api/phone-agent-workspace-v1.php api/phone-location-v1.php phone-location.php includes/phone-tracking-v1.php includes/phone-push-events-v1.php includes/phone-push-delivery-v1.php agent-worker-v1910.php setup.php upgrade.php; do php -l "$file"; done
+
+  phone-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      VP3_PHONE_AGENT_SCREENSHOT_DIR: artifacts/phone-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite, mbstring, dom
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser runtime
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          bash tools/install-ci-chromium.sh
+      - name: Phone Agent state and native item review
+        run: |
+          for file in tests/phone-agent-workspace-*.mjs; do node "$file"; done
+      - name: Existing connected-phone Chat, push, and navigation
+        run: |
+          node tests/phone-agent-chat-holder-v1.mjs
+          node tests/phone-push-service-worker-v1.mjs
+          node tests/phone-push-delivery-ui-v1.mjs
+      - name: Save phone screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: connected-phone-agent-screenshots
+          path: artifacts/phone-agent/
+          if-no-files-found: warn
+          retention-days: 14

@@ -290,6 +290,7 @@ function vp3_image_queue_work_v1(PDO $pdo,array $user,array $principal,array $co
 
 function vp3_image_queue_workspace_v1(PDO $pdo,array $user,array $plan,string $request,?array $profileReference=null): array
 {
+    if (defined('VP3_PHONE_AGENT_NATIVE_V1')) vp3_phone_agent_native_execution_current_v1($pdo);
     if(!preg_match('/\A[a-f0-9]{32}\z/',$request))throw new InvalidArgumentException('Review this image request again.');
     $user=vp3_image_workspace_owner_v1($pdo,$user);
     vp3_image_queue_ready_v1($pdo,$user,false);
@@ -319,6 +320,7 @@ function vp3_image_admit_v1(PDO $pdo,array $user,int $cid,int $aid,?int $turn,st
     $pdo->beginTransaction();try{
         // One owner lock serializes concurrent admission without a separate queue.
         vp3_image_lock_owner_v1($pdo,$uid);
+        if (defined('VP3_PHONE_AGENT_NATIVE_V1')) vp3_phone_agent_native_execution_current_v1($pdo);
         if($workspace)vp3_image_workspace_owner_v1($pdo,$user);
         elseif($edit)vp3_image_lock_conversation_v1($pdo,$uid,$cid,$aid);
         $q=$pdo->prepare('SELECT * FROM agent_image_generations_v1 WHERE owner_user_id=? AND '.($turn===null?'generation_id=?':'user_message_id=?'));
@@ -442,6 +444,7 @@ function vp3_image_execute_v1(PDO $pdo,array $user,array $claim,?callable $trans
         if($icon)vp3_coding_canvas_icon_job_source_v1($pdo,$user,$row,$config);
         if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim,true))throw new RuntimeException('execution_cancelled');
         $route=vp3_image_route_v1($pdo,$user,$config);
+        if (defined('VP3_PHONE_AGENT_NATIVE_V1')) vp3_phone_agent_native_execution_current_v1($pdo);
         $q=$pdo->prepare("UPDATE agent_image_generations_v1 SET provider_started_at=? WHERE generation_id=? AND owner_user_id=? AND provider_started_at=''");$q->execute([gmdate('Y-m-d H:i:s'),$row['generation_id'],(int)$user['id']]);if($q->rowCount()!==1)throw new RuntimeException('provider_outcome_unconfirmed');
         $pdo->commit();
         $sent=true;$startedAt=microtime(true);
@@ -528,6 +531,7 @@ function vp3_image_recover_expired_v1(PDO $pdo,array $user,array $row): array
 
 function vp3_image_tick_v1(PDO $pdo,array $user,array $row,?callable $transport=null): array
 {
+    if (defined('VP3_PHONE_AGENT_NATIVE_V1')) vp3_phone_agent_native_execution_current_v1($pdo);
     $user=vp3_image_authority_v1($pdo,$user,$row);$run=vp3_image_run_v1($pdo,$user,$row);agent_job_recover_expired_v1900($pdo,$user,1,(int)$run['id']);
     $claim=agent_job_claim_run_v1900($pdo,$user,(int)$row['run_id'],'cloud',agent_worker_cloud_worker_id_v1910((int)$user['id']),300);if($claim)vp3_image_execute_v1($pdo,$user,$claim,$transport);
     return vp3_image_view_v1($pdo,$user,vp3_image_row_v1($pdo,$user,$row['generation_id']));

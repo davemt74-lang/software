@@ -8,8 +8,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
   const main = get('location');
   const history = get('chat-history'), empty = get('chat-empty'), tabs = get('tabs');
   const connection = get('connection'), info = get('info'), connectionTab = get('tab-connection'), chatTab = get('tab-chat'), infoTab = get('tab-info');
-  const tabItems = [['connection',connectionTab,connection],['chat',chatTab,chat],['info',infoTab,info]];
+  const agent = get('agent'), agentTab = get('tab-agent'), agentUnread = get('agent-unread');
+  const tabItems = [['agent',agentTab,agent],['connection',connectionTab,connection],['chat',chatTab,chat],['info',infoTab,info]].filter(([,tab,panel])=>tab&&panel);
   let selectedTab = 'connection';
+  let agentEnabled = false, navigated = false, navigationVersion = 0;
   let deviceId = null, online = false, generation = 0, nextPoll = 0, polling = false;
   let turns = [], outgoing = null, sending = false, lastTranscript = '';
   let followReplies = true;
@@ -25,6 +27,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
   }
   function selectTab(view) {
     if(view==='chat'&&!deviceId)view='connection';
+    if(view==='agent'&&(!deviceId||!agentEnabled))view='connection';
     if(view!=='chat'){notificationRequest=null;focusNotification=false;}
     selectedTab=view;
     for(const [key,tab,panel] of tabItems){
@@ -33,32 +36,39 @@ window.VP3PhoneAgentChat = function (request, apps) {
     }
     if(deviceId)main.dataset.tab=view;
     else delete main.dataset.tab;
-    form.hidden=view==='info';
-    get('dock-help').hidden=view==='info';
+    form.hidden=view==='info'||view==='agent';
+    get('dock-help').hidden=view==='info'||view==='agent';
     closeApps();
     sizeViewport();
     if(view==='chat'){
       if(followReplies)history.scrollTop=history.scrollHeight;
       nextPoll=0;void refresh();
     }else if(view==='connection')connection.scrollTop=0;
-    else info.scrollTop=0;
+    else if(view==='info')info.scrollTop=0;
+    apps.onTabChange?.(view);
   }
-  for(const [key,tab] of tabItems)tab.addEventListener('click',()=>selectTab(key));
-  function openGuide(){
-    selectTab('info');
-    get('info-title').focus({preventScroll:true});
+  async function navigateTab(view,{focus=false}={}){
+    const version=++navigationVersion;
+    if(selectedTab==='agent'&&view!=='agent'&&(await apps.leaveAgent?.())===false)return false;
+    if(version!==navigationVersion||view==='agent'&&!agentEnabled)return false;
+    navigated=true;selectTab(view);
+    if(focus)tabItems.find(([key])=>key===selectedTab)?.[1].focus({preventScroll:true});
+    return true;
   }
+  for(const [key,tab] of tabItems)tab.addEventListener('click',()=>void navigateTab(key));
+  async function openGuide(){if(await navigateTab('info'))get('info-title').focus({preventScroll:true});}
   for(const id of ['setup-guide','footer-guide'])get(id).addEventListener('click',openGuide);
-  get('info-back').addEventListener('click',()=>{
-    selectTab('connection');(deviceId?connectionTab:get('setup-guide')).focus({preventScroll:true});
+  get('info-back').addEventListener('click',async()=>{
+    if(await navigateTab('connection'))(deviceId?connectionTab:get('setup-guide')).focus({preventScroll:true});
   });
   tabs.addEventListener('keydown',event=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
     event.preventDefault();
-    let index=tabItems.findIndex(([,tab])=>tab===event.target);
-    if(index<0)index=tabItems.findIndex(([key])=>key===selectedTab);
-    const next=event.key==='Home'?0:event.key==='End'?tabItems.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabItems.length)%tabItems.length;
-    selectTab(tabItems[next][0]);tabItems[next][1].focus();
+    const visible=tabItems.filter(([,tab])=>!tab.hidden);
+    let index=visible.findIndex(([,tab])=>tab===event.target);
+    if(index<0)index=visible.findIndex(([key])=>key===selectedTab);
+    const next=event.key==='Home'?0:event.key==='End'?visible.length-1:(index+(event.key==='ArrowRight'?1:-1)+visible.length)%visible.length;
+    void navigateTab(visible[next][0],{focus:true});
   });
   history.addEventListener('scroll', () => {
     if (!chat.hidden) followReplies = history.scrollHeight - history.clientHeight - history.scrollTop < 96;
@@ -240,6 +250,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
     const reconnected = reachable && !online;
     if (changed) {
       generation++;
+      navigationVersion++;navigated=false;agentEnabled=false;
+      if(agentTab)agentTab.hidden=true;
+      if(agentUnread){agentUnread.hidden=true;agentUnread.textContent='';}
+      delete main.dataset.agentReady;
       deviceId = id;
       notificationRequest=null;focusNotification=false;
       turns = [];
@@ -274,7 +288,16 @@ window.VP3PhoneAgentChat = function (request, apps) {
   function openNotification(requestId){
     if(!deviceId||!online||typeof requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(requestId))return;
     notificationRequest=requestId;focusNotification=true;lastTranscript='';followReplies=false;
-    selectTab('chat');render();
+    void navigateTab('chat').then(opened=>{if(opened)render();});
   }
-  return {bind,openInfo:openGuide,openConnection:()=>selectTab('connection'),openNotification};
+  function setAgent({enabled=false,unread=0,countsComplete=true,defaultView=false}={}){
+    agentEnabled=enabled===true&&Boolean(deviceId)&&Boolean(agentTab);
+    if(agentTab){agentTab.hidden=!agentEnabled;agentTab.setAttribute('aria-label',unread>0?'Agent, '+(countsComplete?'':'at least ')+unread+' unread':'Agent');}
+    if(agentUnread){agentUnread.hidden=!agentEnabled||!Number.isSafeInteger(unread)||unread<1;agentUnread.textContent=unread>99?'99+':String(unread)+(countsComplete?'':'+');}
+    if(agentEnabled)main.dataset.agentReady='true';else delete main.dataset.agentReady;
+    if(!agentEnabled&&selectedTab==='agent'){navigationVersion++;selectTab('connection');}
+    else if(agentEnabled&&defaultView&&!navigated&&selectedTab==='connection')selectTab('agent');
+  }
+  return {bind,setAgent,selectedTab:()=>selectedTab,openAgent:()=>navigateTab('agent'),openInfo:openGuide,
+    openConnection:()=>navigateTab('connection'),openNotification};
 };
