@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/phone-transactions-v1.php';
+require_once __DIR__.'/phone-agent-email-calls-schema-v1.php';
 require_once __DIR__.'/extension-device-auth-v2000.php';
 require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/phone-tracking-history-v1.php';
@@ -97,6 +98,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_push_delivery_install_v1($pdo,$options);
     vp3_phone_agent_workspace_install_v1($pdo);
     vp3_phone_agent_workspace_worker_install_v1($pdo);
+    vp3_phone_agent_email_calls_install_v1($pdo);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool

@@ -62,6 +62,8 @@ $before=$checks;$fixtureStart=time()-1;$ctx=part_fixture(null,$fixtureStart);
 $receipt=readcall($ctx['public']);
 c((int)$receipt['created_epoch']===$fixtureStart&&(int)$receipt['updated_epoch']>$fixtureStart,'a seeded earlier creation clock crosses the signed receipt boundary without waiting');
 c($ctx['now']===(int)$receipt['updated_epoch']&&(int)vp3_operator_live_row_v1($pdo,$ctx['id'])['consent_epoch']===$ctx['now'],'live consent starts at the persisted accepted receipt clock');
+$scope=vp3_phone_workspace_scope_v1($pdo,user(),['agent_id'=>0,'conversation_id'=>11]);
+denies(fn()=>vp3_operator_live_call_v1($pdo,$scope,$ctx['public'],(int)$receipt['created_epoch']),409,'a scenario clock before the signed answer remains ineligible');
 c(vp3_operator_participation_ready_v1($pdo),'explicit live upgrade installs optional conversation storage');
 vp3_operator_participation_install_v1($pdo);
 c((int)$pdo->query('SELECT COUNT(*) FROM phone_operator_participation_v1')->fetchColumn()===0,'repeated installation never enables an Agent');

@@ -279,6 +279,8 @@ function vp3_phone_assign_v100(PDO $pdo, int $numberId, int $userId, int $agentI
         vp3_operator_auto_call_revoke_line_v1($pdo,$numberId);
         require_once __DIR__.'/agent-operator-live-schema-v1.php';
         vp3_operator_live_revoke_line_v1($pdo,$numberId);
+        require_once __DIR__.'/phone-agent-email-calls-schema-v1.php';
+        vp3_phone_agent_email_calls_revoke_line_v1($pdo,$numberId);
         $pdo->prepare('UPDATE phone_cloud_requests_v100 SET status=\'fulfilled\'
           WHERE owner_user_id=? AND agent_id=? AND phone_e164=(SELECT phone_e164 FROM phone_cloud_numbers_v100 WHERE id=?) AND status=\'pending\'')
           ->execute([$userId,$agentId,$numberId]);

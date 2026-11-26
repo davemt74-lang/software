@@ -1,0 +1,181 @@
+GMAIL — OWNER PHONE CALLS AND EXACT REVIEW V1
+
+What this release adds
+
+Gmail can ask Operator to call the account owner about an important incoming
+email or an Agent-prepared draft that still needs review. The call opens the
+same saved work item in the connected phone's private AGENT tab. Ordinary
+phone calls, schedules, Operator call controls and the native Gmail composer
+continue to use their existing implementations.
+
+The channel is off until the owner explicitly enables it. Push permission,
+pairing, an "owner" device label, a saved number and general Account update
+preferences do not separately authorize this email-call channel.
+
+Set up the channel
+
+1. Install the complete deploy package and run the normal authenticated
+   upgrade.php flow. The existing phone installer also covers fresh setup.php
+   installations. Runtime requests only check readiness; they do not migrate
+   tables.
+2. Pair and approve the connected phone. Sign in as its owning account and
+   enable its private AGENT workspace. Main Agent is the initial selection;
+   another private Agent can be selected explicitly. The email-call channel
+   uses that phone enrollment's selected Agent and its authorized saved work.
+3. In Account > Agent phone, save the owner's main international number and
+   enable requested Agent updates. Set the existing time zone, calling hours,
+   daily maximum, minimum gap and maximum duration.
+4. In the same connected phone's communication settings, use that same number
+   and allow spontaneous Agent calls, including recording and transcription.
+   Both owner and holder calling choices must remain enabled. The assigned
+   Agent calling line must have current voice, recording and transcription
+   configuration. The owner destination is not a new CRM contact.
+5. Open Gmail specialist > Settings > Email calls, or the phone's Connection
+   settings. Choose the connected phone and assigned calling line. Select
+   Urgent incoming email and/or Agent-prepared email drafts ready for review.
+   Confirm the recorded/transcribed AI-call permission, then Save email calls.
+6. Keep the existing Operator schedule worker running with --dispatch. The
+   existing Cloud Agent and Web Push workers continue to handle the AGENT feed
+   and optional push notifications. Do not install a second dialer or duplicate
+   the Operator schedule worker. The application does not depend on an open
+   desktop browser to prepare or dispatch these calls.
+
+The default grace period is five minutes, adjustable from one to sixty
+minutes. New consent/category/device/route selections do not backfill calls
+for older work. Turning both categories off needs no fresh call consent and
+remains possible when the route or recipient configuration is unavailable.
+
+When an interruption is eligible
+
+The source must still be current, actionable, authorized and unreviewed after
+the chosen grace period. Important arrivals use canonical Gmail classification.
+Drafts must be complete Agent-prepared replies or source-bound follow-ups;
+ordinary manual saves, incomplete drafts, failed writing, old historical
+arrivals and uncertain/sending/terminal drafts do not trigger a new call.
+
+Reading, acknowledging or snoozing the corresponding work on a currently
+authorized owner phone suppresses a new interruption. Seeing a notification
+or merely displaying a push is a different receipt. Reading during an already
+active call does not cancel the exact review. An incoming email and its
+Agent-prepared reply share one owner-wide review episode. Reindexing, another
+phone, another projection, body-only saves and receipt changes do not create
+another call episode.
+
+The selected Agent makes a bounded usefulness decision from typed current
+facts and the owner's call preferences. It can skip, defer or request a call;
+it cannot choose another phone, email, recipient or send action. The normal
+metering and model routing apply, with at most one model dispatch for those
+meaningful facts. A cached defer leaves the item in the app; it is not future
+permission to call. No invented user Chat turn is created by this decision.
+
+Before deciding, admitting and submitting a call, the adapter checks the
+exact Gmail message/thread through the existing provider boundary. Failed,
+ambiguous, changed, superseded or already-answered sources remain in the app
+without a call. Only native identifiers, evidence hashes and observation times
+are stored by the call feature. Email bodies and Gmail tokens are not copied
+into a second mailbox, Calendar objective, call agenda or voice model prompt.
+
+Operator applies the current owner and connected-phone calling windows and
+frequency limits, Calendar availability, existing active/uncertain-call rules,
+and assigned-line/recording checks. Consent and control revisions are checked
+again under the owner lock, including immediately before carrier submission.
+The existing carrier ledger allows one attempt for the review episode.
+Timeouts or uncertain carrier outcomes never cause an automatic redial. A
+known pre-transport veto is recorded separately and does not consume a daily
+dial allowance; that review episode is still not retried automatically.
+
+During the call
+
+The existing signed carrier callbacks, disclosure, affirmative recipient
+consent and confirmed recording are required. The opening is generic: it asks
+the owner to open the exact pending review in AGENT. The active-call banner
+opens that canonical item, respecting unsaved email navigation choices.
+
+Important incoming messages open their native formatted reader. Drafts open
+the existing native Gmail composer, including its source, recipient, subject,
+body, attachments, save/send controls and reply-watching choice. Call-progress
+updates have a separate revision and do not refresh or replace a dirty email.
+
+Optional voice confirmation
+
+Voice confirmation requires the exact draft to remain open in the signed-in
+owner's phone review. It is not an offline voice-only Gmail permission.
+
+1. Review the saved recipient, subject, message, attachments and reply-watching
+   choice. Voice approval applies to the unchanged saved version linked to this
+   call. If you revise and save it, review the revision and use manual Send.
+2. During that email's active recorded call, select Enable voice approval.
+3. Say the exact one-time phrase displayed in the phone review. It expires
+   after at most two minutes or when the call ends.
+4. Keep the review visible. It claims the recorded intent once and submits the
+   normal canonical Gmail confirmation for that exact native review token.
+   The phone displays Gmail's actual result. If the outcome is uncertain,
+   use the existing Check send status action; no voice polling loop retries it.
+
+A generic yes, I agree, DTMF1, caller ID, carrier answer receipt or a different
+call cannot approve an email. Three incorrect exact-phrase attempts cancel
+the grant. Editing, replacing attachments, changing the watching choice,
+switching scope/session, hiding/closing the review, expiry, cancellation,
+permission withdrawal or a changed source invalidates the prior review.
+Saving a changed canonical draft ends that original call's voice eligibility;
+the owner can review the revised email and use the normal manual Send control.
+An unsaved edit that is discarded still cancels its old challenge; explicitly
+enabling a new challenge requires the original saved version to remain current.
+
+The carrier callback only records an intent. It has no owner session, native
+Gmail review token or send capability. The still-open authenticated phone
+performs the send with its real session, CSRF and exact paired-device scope.
+The native Gmail path rechecks the call-bound grant at its execution boundary,
+then retains its existing source/current-thread checks, duplicate-send ledger
+and reconciliation behavior. A client-reported success is never send evidence.
+Completion requires the same reviewed content and watching choice, together
+with its matching native Gmail send receipt. Sending a later edited version
+does not mark an earlier voice review as completed. A stalled call-status
+request times out; cancellation and local phrase expiry remain available.
+
+Stopping or changing permission
+
+Disable both email categories to stop this channel. Account update-call off,
+connected-phone consent withdrawal, disconnect/expiry, credential/password
+rotation, owner/Agent/private-Chat access changes and enrollment changes also
+block it. Saying "stop calling me" in the signed active call uses the existing
+destination opt-out and stops further Operator calls to that recipient. A new
+phone number, recreated communication profile or reassigned
+carrier line requires new exact email-call consent. Moving a line away and
+back cannot silently restore the old permission. The Account and communication
+profile's storage-only verified/execution_enabled fields remain unchanged.
+
+Call outcomes stay in the native Operator history and source Chat even if
+Gmail is later disconnected. History proves the exact native call rather than
+matching a phone number to a guessed CRM contact. It does not expose email
+content merely to explain that a Gmail-review call occurred.
+
+Deployment and scope
+
+Use the full production ZIP. Preserve installation-owned config.php, private/
+and uploads/. Development files and local secrets are excluded from the ZIP.
+Run upgrade.php before enabling the channel, and retain the existing Operator
+--dispatch worker configuration. Review the visible readiness message before
+saving permissions. The feature does not change mobile OS installation or
+notification requirements; use VP3 Phone's existing Info/setup guidance.
+
+This release uses unreviewed work and explicit call permissions. It does not
+claim that browser visibility proves the owner is away from home, and it does
+not place a call solely because a browser closed. Phone delivery depends on
+the configured server worker, carrier and the saved live permissions. Routine
+development/release verification uses deterministic provider substitutes and
+does not call real phones, send real email, push to a real device or run paid
+inference.
+
+Acceptance gates
+
+1. Independent explicit owner consent; new accounts and categories start off.
+2. Current real owner/device/enrollment/Agent/Chat/number/recipient authority.
+3. Canonical Gmail eligibility, exact provider freshness and reviewed-item suppression.
+4. Bounded metered usefulness decision with no alternate model/provider retry.
+5. Owner-wide review-episode dedupe and immutable native carrier attempt.
+6. Existing Operator windows, limits, Calendar, recording and lifecycle preserved.
+7. Exact mobile review with dirty-edit preservation and independent call status.
+8. Call-bound one-time voice intent; real owner native Gmail send and reconciliation.
+9. Native authority/race/legacy tests and actual browser phone/desktop layout checks.
+10. Green exact PR/merge checks and a verified full production deploy archive.

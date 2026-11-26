@@ -225,6 +225,10 @@ function vp3_phone_agent_native_execution_current_v1(PDO $pdo): void
         $context=$saved['context'];$context['scope']['now']=max($context['scope']['now'],time());
         vp3_phone_agent_workspace_scope_current_v1($pdo,$context['scope'],$transaction);
         vp3_phone_agent_native_response_current_v1($pdo,$context,$saved['kind']);
+        if(isset($saved['voice_review'])){
+            require_once __DIR__.'/phone-agent-email-call-review-v1.php';
+            vp3_phone_agent_email_call_review_execution_v1($pdo,$context,$saved['voice_review'],$saved['voice_input'],time());
+        }
     } catch (PDOException $error) {
         // MariaDB snapshot isolation can reject a current locking read after
         // a peer changes the enrollment. Abort this action; never retry it.
@@ -269,6 +273,13 @@ function vp3_phone_agent_native_dispatch_v1(string $kind): never
         }
         vp3_phone_agent_native_action_v1($pdo,$context,$kind,$input);
         $GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']=['context'=>$context,'kind'=>$kind];
+        if(array_key_exists('voice_review',$_GET)){
+            vp3_phone_agent_workspace_need_v1($kind==='email'&&($input['action']??null)==='confirm'
+                &&is_string($_GET['voice_review'])&&preg_match('/^[a-f0-9]{32}$/D',$_GET['voice_review'])===1,422);
+            require_once __DIR__.'/phone-agent-email-call-review-v1.php';
+            vp3_phone_agent_email_call_review_execution_v1($pdo,$context,$_GET['voice_review'],$input,time());
+            $GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']+=['voice_review'=>$_GET['voice_review'],'voice_input'=>$input];
+        }
         if ($kind==='email'&&$context['resolved']['item']['source_kind']==='gmail_attention') {
             header('Content-Type: application/json; charset=UTF-8');
             header('Cache-Control: private, no-store, max-age=0');

@@ -34,6 +34,9 @@ try {
         'conversationId'=>$target['conversation_id'],'binding'=>$context['scope']['scope_revision'],'target'=>$target,
         'csrf'=>csrf_token(),'emailEndpoint'=>$endpoint('email'),'canvasEndpoint'=>$endpoint('canvas'),
         'imageEndpoint'=>$endpoint('image'),'mediaEndpoint'=>$endpoint('media'),
+        'callSettingsEndpoint'=>url('/api/phone-location-v1.php').'?workspace_calls=1',
+        'deviceId'=>$context['scope']['device']['id'],'enrollmentRevision'=>(int)$context['scope']['enrollment']['revision'],
+        'itemRef'=>$item['item_ref'],
         'connectionsUrl'=>url('/connections.php'),'basePath'=>rtrim(url('/'),'/')];
 } catch(Throwable $error) {
     $code=(int)$error->getCode();http_response_code(in_array($code,[401,403,404,405,409,422,503],true)?$code:503);
