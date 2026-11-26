@@ -8,7 +8,7 @@ require_once __DIR__.'/phone-voice-v130.php';
 
 function vp3_phone_browser_callback_v1(string $kind,array $query=[]): string
 {
-    $files=['voice'=>'phone-browser-voice-v1.php','status'=>'phone-browser-status-v1.php','complete'=>'phone-browser-complete-v1.php','recording'=>'phone-browser-recording-v1.php','disclosure'=>'phone-browser-disclosure-v1.php'];
+    $files=['voice'=>'phone-browser-voice-v1.php','status'=>'phone-browser-status-v1.php','complete'=>'phone-browser-complete-v1.php','recording'=>'phone-browser-recording-v1.php','disclosure'=>'phone-browser-disclosure-v1.php','operator_answer'=>'phone-operator-answer-v1.php'];
     if(!isset($files[$kind]))throw new InvalidArgumentException('Invalid phone callback.');
     $base=vp3_phone_voice_validate_url_v130(vp3_phone_voice_callback_url_v130());
     $url=substr($base,0,-strlen('phone-voice-inbound-v130.php')).$files[$kind];
