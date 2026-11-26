@@ -1391,6 +1391,21 @@
     card.append(host);
   }
 
+  function callMessageWithLinks(message){
+    const paragraph=node('p');
+    for(const [index,line] of text(message).split('\n').entries()){
+      if(index)paragraph.append(node('br'));
+      let url;
+      if(/^https?:\/\/[^\s]+$/i.test(line)){
+        try{url=new URL(line);}catch{}
+      }
+      if(url&&!url.username&&!url.password){
+        const link=node('a',null,line);
+        link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';paragraph.append(link);
+      }else paragraph.append(node('span',null,line));
+    }
+    return paragraph;
+  }
   function renderCallResearch(card,info,entry,g){
     if(!entry||entry!==active||entry.phase!=='active'||!window.VP3CallResearch)return;
     const available=()=>current(g)&&active===entry&&entry.phase==='active'&&!stateError&&state?.calls.some(call=>call.public_id===info.public_id&&call.state==='answered');
@@ -1410,7 +1425,7 @@
     section.append(research);
     const shared=state?.companion_cards?.[info.public_id];
     for(const finding of entry.findings||[]){
-      section.append(node('strong',null,'Private research finding'),node('p',null,finding));
+      section.append(node('strong',null,'Private research finding'),callMessageWithLinks(finding));
       if(shared)appendShareDraftButton(section,info.public_id,shared,finding,'Review finding for phone');
     }
     card.append(section);
@@ -1425,8 +1440,6 @@
       const field=Array.from(document.querySelectorAll('[data-phone-focus-key]')).find(el=>el.dataset.phoneFocusKey==='companion-'+id&&el.getClientRects().length);
       field?.focus();
     });
-    choose.disabled=new TextEncoder().encode(message).length>1000;
-    if(choose.disabled)choose.title='This item exceeds the phone message limit.';
     section.append(choose);
   }
   function renderCallCompanion(card,info,g){
@@ -1435,14 +1448,17 @@
     const section=node('section','vp3-phone-companion');
     section.append(node('strong',null,'Shared with '+text(link.name).slice(0,48)));
     for(const item of link.items||[]){
-      section.append(node('p',null,item.message),node('small','vp3-phone-meta',item.state==='acknowledged'?'Acknowledged on phone':'Available on phone'));
+      section.append(callMessageWithLinks(item.message),node('small','vp3-phone-meta',item.state==='acknowledged'?'Acknowledged on phone':'Available on phone'));
     }
     if(info.state==='answered'){
       let draft=companionDrafts.get(id);
       if(!draft||draft.device!==link.device_id){draft={device:link.device_id,text:'',key:'',busy:false,error:''};companionDrafts.set(id,draft);}
       const field=node('textarea');field.dataset.phoneFocusKey='companion-'+id;field.setAttribute('aria-label','Link or note to share');field.placeholder='Link or note to share';field.maxLength=1000;field.value=draft.text;field.disabled=draft.busy;
+      const lengthNotice=node('small','vp3-phone-meta');
+      lengthNotice.setAttribute('aria-live','polite');
+      const byteLength=()=>new TextEncoder().encode(draft.text.trim()).length;
       const send=button('Share to phone',async()=>{
-        if(!current(g)||draft.busy||!draft.text.trim()||companionDrafts.get(id)!==draft)return;
+        if(!current(g)||draft.busy||!draft.text.trim()||byteLength()>1000||companionDrafts.get(id)!==draft)return;
         draft.key||=crypto.randomUUID().replace(/-/g,'');draft.busy=true;draft.error='';render();
         try{
           const result=await api('share_call_item',{call_id:id,contact_id:link.contact_id,device_id:draft.device,exchange_id:draft.key,message:draft.text.trim()},'POST',g);
@@ -1451,8 +1467,14 @@
         }catch(error){if(current(g))draft.error=error.phonePublicMessage||'Could not share this item.';}
         finally{if(current(g)&&companionDrafts.get(id)===draft){draft.busy=false;render();}}
       });
-      field.addEventListener('input',()=>{draft.text=field.value;draft.key='';send.disabled=!draft.text.trim();});
-      send.disabled=draft.busy||!draft.text.trim();section.append(field,send);
+      const updateShare=()=>{
+        const bytes=byteLength();
+        send.disabled=draft.busy||bytes===0||bytes>1000;
+        lengthNotice.hidden=bytes<=1000;
+        lengthNotice.textContent=bytes>1000?'Shorten this draft by '+(bytes-1000)+' bytes to share it.':'';
+      };
+      field.addEventListener('input',()=>{draft.text=field.value;draft.key='';updateShare();});
+      updateShare();section.append(field,lengthNotice,send);
       if(draft.error)section.append(node('p','vp3-phone-processing-error',draft.error));
     }
     if(info.state==='answered'||link.items?.length)card.append(section);
