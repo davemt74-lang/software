@@ -110,6 +110,24 @@ function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now): bool
     }
     return !$busy;
 }
+/** Read only the holder's choices for the current CRM pairing and exact destination. */
+function vp3_operator_holder_modes_v1(PDO $pdo,int $owner,int $contact,string $destination,int $now):array
+{
+    $none=['scheduled'=>false,'spontaneous'=>false];
+    if($destination==='')return $none;
+    try{
+        $q=$pdo->prepare("SELECT p.agent_call_consent,p.holder_proactive
+            FROM crm_contacts c JOIN vp3_phone_devices_v1 d ON d.owner_user_id=c.owner_user_id AND d.id=c.connected_phone_id
+            JOIN vp3_phone_communication_profiles_v1 p ON p.owner_user_id=d.owner_user_id AND p.device_id=d.id
+            WHERE c.owner_user_id=? AND c.id=? AND c.status<>'archived' AND d.device_status='approved'
+            AND d.expires_at>? AND p.phone_e164=? AND p.phone_revision>0 AND p.owner_calls=1 AND p.holder_calls=1");
+        $q->execute([$owner,$contact,$now,$destination]);
+        $row=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$row)return $none;
+        $modes=(int)$row['agent_call_consent'];
+        return ['scheduled'=>(bool)($modes&1),'spontaneous'=>(bool)($modes&2)&&(bool)$row['holder_proactive']];
+    }catch(PDOException){return $none;}
+}
 function vp3_operator_admission_projection_v1(PDO $pdo,array $scope,array $bound,int $now): array
 {
     $row=vp3_operator_consent_row_v1($pdo,$scope,$bound);
@@ -149,6 +167,7 @@ function vp3_operator_admission_projection_v1(PDO $pdo,array $scope,array $bound
         'attested_at'=>$row?gmdate(DATE_ATOM,(int)$row['attested_epoch']):null,'expires_at'=>$row?gmdate(DATE_ATOM,(int)$row['expires_epoch']):null,
         'destination_e164'=>$bound['contact']['destination_e164'],'line_e164'=>$bound['line']['phone_e164'],
         'can_attest'=>$block===''&&!$withdrawn,'can_clear'=>$row!==null&&(bool)$row['enabled'],'can_withdraw'=>$bound['destination_valid']&&!$withdrawn,
+        'holder_modes'=>vp3_operator_holder_modes_v1($pdo,$scope['owner_user_id'],(int)$bound['contact']['id'],$bound['contact']['destination_e164'],$now),
         'known_attempts_today'=>$history['today'],'local_checks_pass'=>$localPass,'checked_at'=>gmdate(DATE_ATOM,$now),
         'execution_enabled'=>vp3_operator_admission_execution_enabled_v1(),'gates'=>$gates];
 }

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/phone-transactions-v1.php';
+require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/phone-information-exchange-v1.php';
 require_once __DIR__.'/phone-remote-dialer-v1.php';
 
@@ -14,19 +15,23 @@ function vp3_phone_communication_install_v1(PDO $pdo,string $options):void
         revision BIGINT NOT NULL,phone_revision BIGINT NOT NULL DEFAULT 0,phone_e164 VARCHAR(20) NOT NULL DEFAULT '',
         owner_calls SMALLINT NOT NULL DEFAULT 0,owner_requests SMALLINT NOT NULL DEFAULT 0,
         holder_calls SMALLINT NOT NULL DEFAULT 0,holder_proactive SMALLINT NOT NULL DEFAULT 0,
-        holder_requests SMALLINT NOT NULL DEFAULT 0,holder_memory SMALLINT NOT NULL DEFAULT 0,
+        agent_call_consent SMALLINT NOT NULL DEFAULT 0,holder_requests SMALLINT NOT NULL DEFAULT 0,holder_memory SMALLINT NOT NULL DEFAULT 0,
         timezone VARCHAR(80) NOT NULL DEFAULT 'UTC',window_start CHAR(5) NOT NULL DEFAULT '09:00',
         window_end CHAR(5) NOT NULL DEFAULT '17:00',max_calls_per_day INTEGER NOT NULL DEFAULT 1,
         min_gap_minutes INTEGER NOT NULL DEFAULT 240,updated_epoch BIGINT NOT NULL,
         PRIMARY KEY(owner_user_id,device_id),
         FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE
     )".$options);
+    if(!schema_metadata_column_exists($pdo,'vp3_phone_communication_profiles_v1','agent_call_consent')){
+        try{$pdo->exec('ALTER TABLE vp3_phone_communication_profiles_v1 ADD COLUMN agent_call_consent SMALLINT NOT NULL DEFAULT 0');}
+        catch(PDOException $error){if(!schema_metadata_column_exists($pdo,'vp3_phone_communication_profiles_v1','agent_call_consent'))throw $error;}
+    }
     if(!vp3_phone_communication_ready_v1($pdo))throw new RuntimeException('Communication profile upgrade incomplete.');
 }
 function vp3_phone_communication_ready_v1(PDO $pdo):bool
 {
     try{
-        $pdo->query('SELECT owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,owner_calls,owner_requests,holder_calls,holder_proactive,holder_requests,holder_memory,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch FROM vp3_phone_communication_profiles_v1 WHERE 1=0');
+        $pdo->query('SELECT owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,owner_calls,owner_requests,holder_calls,holder_proactive,agent_call_consent,holder_requests,holder_memory,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch FROM vp3_phone_communication_profiles_v1 WHERE 1=0');
         return true;
     }catch(PDOException){return false;}
 }
@@ -41,7 +46,7 @@ function vp3_phone_communication_row_v1(PDO $pdo,array $d,bool $lock=false):arra
     return $r!==false?$r:[
         'owner_user_id'=>(int)$d['owner_user_id'],'device_id'=>$d['id'],'profile_id'=>'','revision'=>0,
         'phone_revision'=>0,'phone_e164'=>'','owner_calls'=>0,'owner_requests'=>0,'holder_calls'=>0,
-        'holder_proactive'=>0,'holder_requests'=>0,'holder_memory'=>0,'timezone'=>'UTC',
+        'holder_proactive'=>0,'agent_call_consent'=>0,'holder_requests'=>0,'holder_memory'=>0,'timezone'=>'UTC',
         'window_start'=>'09:00','window_end'=>'17:00','max_calls_per_day'=>1,'min_gap_minutes'=>240,'updated_epoch'=>0];
 }
 function vp3_phone_communication_view_v1(array $r,bool $holder):array
@@ -56,6 +61,8 @@ function vp3_phone_communication_view_v1(array $r,bool $holder):array
         'call_permission_saved'=>$phone!==''&&(bool)$r['owner_calls']&&(bool)$r['holder_calls'],
         'proactive_permission_saved'=>$phone!==''&&(bool)$r['owner_calls']&&(bool)$r['holder_calls']&&(bool)$r['holder_proactive'],
         'request_permission_saved'=>(bool)$r['owner_requests']&&(bool)$r['holder_requests'],
+        'holder_scheduled_agent'=>(bool)((int)($r['agent_call_consent']??0)&1),
+        'holder_spontaneous_agent'=>(bool)((int)($r['agent_call_consent']??0)&2),
         'execution_enabled'=>false,'identity_verified'=>false];
     if($holder)$out['phone_e164']=$phone;
     else $out['phone_masked']=$phone===''?'':'Ending in '.substr($phone,-4);
@@ -114,6 +121,13 @@ function vp3_phone_communication_save_v1(PDO $pdo,array $d,array $input,int $now
             &&is_string($start)&&is_string($end)&&preg_match('/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/D',$start)===1
             &&preg_match('/\A(?:[01][0-9]|2[0-3]):[0-5][0-9]\z/D',$end)===1&&strcmp($start,$end)<0
             &&is_int($max)&&$max>=1&&$max<=3&&is_int($gap)&&$gap>=120&&$gap<=10080);
+        // Older clients omit these fields. Preserve affirmative grants only while their prerequisites still hold.
+        $modes=(int)($r['agent_call_consent']??0);
+        foreach(['holder_scheduled_agent'=>1,'holder_spontaneous_agent'=>2] as $field=>$bit){
+            if(array_key_exists($field,$input)){
+                $modes=vp3_phone_communication_bool_v1($input,$field)?($modes|$bit):($modes&~$bit);
+            }
+        }
         // Saving a new number never transfers calling consent from another number.
         if($phone!==$r['phone_e164']){
             $r['phone_e164']=$phone;$r['phone_revision']=(int)$r['phone_revision']+1;$calls=$proactive=0;
@@ -121,6 +135,7 @@ function vp3_phone_communication_save_v1(PDO $pdo,array $d,array $input,int $now
         vp3_phone_communication_require_v1(!$calls||($phone!==''&&(bool)$r['owner_calls']));
         vp3_phone_communication_require_v1(!$proactive||$calls);
         vp3_phone_communication_require_v1(!$requests||(bool)$r['owner_requests']);
+        $r['agent_call_consent']=$calls?($proactive?$modes:($modes&1)):0;
         $r=array_replace($r,['holder_calls'=>$calls,'holder_proactive'=>$proactive,'holder_requests'=>$requests,
             'holder_memory'=>$memory,'timezone'=>$zone,'window_start'=>$start,'window_end'=>$end,
             'max_calls_per_day'=>$max,'min_gap_minutes'=>$gap]);
@@ -128,11 +143,11 @@ function vp3_phone_communication_save_v1(PDO $pdo,array $d,array $input,int $now
         $r['owner_calls']=vp3_phone_communication_bool_v1($input,'owner_calls');
         $r['owner_requests']=vp3_phone_communication_bool_v1($input,'owner_requests');
         // Re-enabling requires new holder consent.
-        if(!$r['owner_calls']){$r['holder_calls']=0;$r['holder_proactive']=0;}
+        if(!$r['owner_calls']){$r['holder_calls']=0;$r['holder_proactive']=0;$r['agent_call_consent']=0;}
         if(!$r['owner_requests'])$r['holder_requests']=0;
     }
     $keys=['phone_revision','phone_e164','owner_calls','owner_requests','holder_calls','holder_proactive',
-        'holder_requests','holder_memory','timezone','window_start','window_end','max_calls_per_day','min_gap_minutes'];
+        'agent_call_consent','holder_requests','holder_memory','timezone','window_start','window_end','max_calls_per_day','min_gap_minutes'];
     $changed=false;
     foreach($keys as $key)if((string)$before[$key]!== (string)$r[$key]){$changed=true;break;}
     if(!$changed)return vp3_phone_communication_view_v1($before,$holder);

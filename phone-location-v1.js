@@ -265,6 +265,16 @@
     const check=(label,key,disabled)=>{const i=document.createElement('input');i.type='checkbox';i.checked=p[key]===true;i.disabled=commBusy||disabled;const l=document.createElement('label');l.className='phone-communication-check';l.append(i,document.createTextNode(label));form.append(l);return i;};
     const calls=check('Allow telephone calls from this Agent','holder_calls',!p.owner_calls||!p.phone_saved);
     const proactive=check('Allow proactive check-ins','holder_proactive',!p.owner_calls||!p.phone_saved);
+    const scheduled=check('Allow scheduled AI voice calls with recording and transcription','holder_scheduled_agent',!calls.checked);
+    const spontaneous=check('Allow unscheduled AI voice check-ins with recording and transcription','holder_spontaneous_agent',!calls.checked||!proactive.checked);
+    const updateAgentOptions=()=>{
+      scheduled.disabled=commBusy||!calls.checked;
+      spontaneous.disabled=commBusy||!calls.checked||!proactive.checked;
+      if(scheduled.disabled&&!commBusy)scheduled.checked=false;
+      if(spontaneous.disabled&&!commBusy)spontaneous.checked=false;
+    };
+    calls.addEventListener('change',updateAgentOptions);
+    proactive.addEventListener('change',updateAgentOptions);
     const requests=check('Allow information requests','holder_requests',!p.owner_requests);
     const memory=check('Allow future relationship memory','holder_memory',false);
     calls.addEventListener('change',()=>{if(!calls.checked)proactive.checked=false;});
@@ -280,6 +290,7 @@
       if(!event.isTrusted||commBusy||actionBusy||pending||dead||!available||navigator.onLine===false||device?.status!=='approved'||device.communication?.revision!==p.revision)return;
       const body={device_id:device.id,generation:device.generation,communication_revision:p.revision,phone_e164:number.value,
         holder_calls:calls.checked&&!calls.disabled,holder_proactive:calls.checked&&proactive.checked&&!proactive.disabled,
+        holder_scheduled_agent:scheduled.checked&&!scheduled.disabled,holder_spontaneous_agent:spontaneous.checked&&!spontaneous.disabled,
         holder_requests:requests.checked&&!requests.disabled,holder_memory:memory.checked,
         timezone:zone.value.trim(),window_start:start.value,window_end:end.value,max_calls_per_day:Number(max.value),min_gap_minutes:Number(gap.value)};
       commBusy=true;commNotice='Saving…';renderCommunication();
