@@ -33,8 +33,8 @@ function vp3_operator_auto_call_ensure_schema_v1(PDO $pdo): void
 /** An explicit number reassignment invalidates every prior owner grant, even if it returns later. */
 function vp3_operator_auto_call_revoke_line_v1(PDO $pdo,int $numberId): void
 {
-    vp3_operator_admission_install_v1($pdo);
-    if (!vp3_operator_auto_call_schema_ready_v1($pdo)) return;
+    require_once __DIR__.'/schema-metadata.php';
+    if(!schema_metadata_table_exists($pdo,'phone_operator_contact_policies_v1'))return;
     $pdo->prepare('UPDATE phone_operator_contact_policies_v1 SET enabled=0,revision=revision+1,updated_epoch=? WHERE number_id=? AND enabled=1')
         ->execute([time(),$numberId]);
 }
