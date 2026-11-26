@@ -55,7 +55,7 @@ function objective_review(array $ctx,?array $saved=null,?callable $reader=null):
     return vp3_operator_objectives_review_v1(db(),$ctx['scope'],$ctx['public'],time(),$reader);
 }
 
-$before=$checks;$ctx=objective_fixture();
+$before=$checks;vp3_operator_objectives_install_v1($pdo);$ctx=objective_fixture();
 $row=vp3_operator_objectives_row_v1($pdo,$ctx['id']);
 c($row['source_state']==='bound'&&(int)$row['contact_id']===$ctx['contact'],'saved contact agenda is referenced at real carrier acceptance');
 c(!str_contains(json_encode($row),'Which day')&&!str_contains(json_encode($row),'Friday')&&!str_contains(json_encode($row),$ctx['peer']),'new metadata stores no questions, answers, transcript or phone number');
