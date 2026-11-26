@@ -5,6 +5,15 @@ require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/phone-recording-pipeline-v1.php';
 require_once __DIR__.'/phone-browser-v1.php';
 
+/** Detect the typed source using native Calendar metadata without loading private work adapters. */
+function vp3_operator_owner_email_occurrence_id_v1(PDO $pdo,array $row): ?string
+{
+    if((int)($row['contact_id']??-1)!==0)return null;
+    $event=user_calendar_event_v1300($pdo,(int)$row['owner_user_id'],(int)$row['event_id']);
+    if(!$event||$event['source']!=='agent'||!str_starts_with((string)$event['source_reference'],'operator-owner-email:'))return null;
+    return substr($event['source_reference'],strlen('operator-owner-email:'));
+}
+
 /** Build an outbound request from current grants. This preview never submits or consumes it. */
 function vp3_operator_preview_request_v1(PDO $pdo,array $row,int $now):array
 {
@@ -36,6 +45,10 @@ function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now,?string $a
     if(!$assignment||!$assignment['enabled']||(int)$assignment['revision']!==(int)$row['assignment_revision']
         ||!$event||$event['status']!=='active'||!hash_equals($assignment['event_revision'],section12_revision($event))){
         return ['reason'=>'assignment_changed'];
+    }
+    if($event['source']==='agent'&&str_starts_with((string)$event['source_reference'],'operator-owner-email:')){
+        require_once __DIR__.'/agent-operator-owner-email-v1.php';
+        return vp3_operator_owner_email_plan_v1($pdo,$row,$now,$answeredSid)??['reason'=>'source_changed'];
     }
     $scope=vp3_phone_workspace_scope_v1($pdo,['id'=>$owner],['conversation_id'=>$assignment['conversation_id'],'agent_id'=>$assignment['chat_agent_id']]);
     $contact=(int)$assignment['contact_id'];

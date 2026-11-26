@@ -89,15 +89,21 @@ function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $
             return ['kind'=>'ready','reply'=>(string)$latest['response_text']];
         }
         if($latest&&$latest['state']!=='ready')return ['kind'=>'hangup'];
+        if(isset($context['current']['owner_email_request_id'])
+            &&vp3_operator_owner_email_withdraw_v1($pdo,$context,$speech,$clock()))
+            return ['kind'=>'end','reason'=>'conversation_opted_out'];
         if($speech===''||preg_match('/^\s*(?:goodbye|bye|hang up|end call|stop call)[.! ]*$/iu',$speech)){
             $reason=$speech===''?'conversation_silent':'conversation_completed';
             $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")->execute([$reason,...$key]);
+            if(isset($context['current']['owner_email_request_id']))vp3_operator_owner_email_sync_v1($pdo,$key[0],(int)$key[1],(int)$key[2],$clock());
             return ['kind'=>'end','reason'=>$reason];
         }
         $q=$pdo->prepare("INSERT INTO phone_voice_turns_v140(call_sid,step_number,owner_user_id,agent_id,speech_hash,speech_text,state) VALUES (?,?,?,?,?,?,'processing')");
         $q->execute([$sid,$step,$owner,$context['current']['agent_id'],$hash,$speech]);
         $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason='conversation_active' WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")->execute($key);
-        $memory=vp3_operator_conversation_memory_v1($pdo,$context,$clock());
+        $ownerEmail=isset($context['current']['owner_email_request_id']);
+        if($ownerEmail)vp3_operator_owner_email_sync_v1($pdo,$key[0],(int)$key[1],(int)$key[2],$clock());
+        $memory=$ownerEmail?[]:vp3_operator_conversation_memory_v1($pdo,$context,$clock());
         $history=vp3_operator_conversation_prior_v1($pdo,$memory,$owner,$clock());
         $prior=$pdo->prepare("SELECT speech_text,response_text FROM phone_voice_turns_v140 WHERE call_sid=? AND step_number<? AND state='ready' ORDER BY step_number DESC LIMIT 4");
         $prior->execute([$sid,$step]);
@@ -106,11 +112,19 @@ function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $
             'memory_token'=>$memory&&$history?$memory['token']:'','current'=>$context['current']];
     });
     if($prepared['kind']==='hangup')return $hangup;
-    if($prepared['kind']==='end')return vp3_phone_voice_end_v140($prepared['reason']==='conversation_silent'?'I did not hear a response. Goodbye.':'Thank you. Goodbye.');
+    if($prepared['kind']==='end')return vp3_phone_voice_end_v140(match($prepared['reason']){
+        'conversation_silent'=>'I did not hear a response. Goodbye.',
+        'conversation_opted_out'=>'I will stop calling this number. Goodbye.',
+        default=>'Thank you. Goodbye.',
+    });
     $reply=$prepared['reply']??'';
     if($prepared['kind']==='generate'){
-        try{$result=$generator?$generator($prepared['speech'],$prepared['history'],$prepared['current']):
-            vp3_phone_voice_ai_v140($pdo,$owner,$prepared['current']['agent_id'],$prepared['speech'],$prepared['history'],$prepared['current']['objectives']);}
+        try{
+            $result=isset($prepared['current']['owner_email_request_id'])
+                ?vp3_operator_owner_email_reply_v1($pdo,$prepared['current'],$sid,$step,$prepared['speech'],$clock())
+                :($generator?$generator($prepared['speech'],$prepared['history'],$prepared['current']):
+                    vp3_phone_voice_ai_v140($pdo,$owner,$prepared['current']['agent_id'],$prepared['speech'],$prepared['history'],$prepared['current']['objectives']));
+        }
         catch(Throwable){$result=['ok'=>false];}
         $reply=mb_strimwidth(trim((string)($result['answer']??'')),0,650,'…');
         $hasReply=!empty($result['ok'])&&$reply!=='';

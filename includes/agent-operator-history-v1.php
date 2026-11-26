@@ -6,6 +6,24 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-operator-specialist-v1.php';
 require_once __DIR__.'/phone-recording-pipeline-v1.php';
 
+/** A historical owner call is proved by its native receipt, never guessed from its number. */
+function vp3_operator_history_owner_email_v1(PDO $pdo,array $call): bool
+{
+    if(($call['transport_kind']??'')!=='operator_scheduled')return false;
+    require_once __DIR__.'/phone-agent-email-calls-schema-v1.php';
+    if(!vp3_phone_agent_email_calls_ready_v1($pdo))return false;
+    $q=$pdo->prepare("SELECT r.id,e.source_reference FROM phone_agent_email_call_requests_v1 r
+        JOIN phone_operator_carrier_attempts_v1 a ON a.owner_user_id=r.owner_user_id AND a.event_id=r.event_id AND a.start_epoch=r.start_epoch
+        JOIN phone_operator_occurrences_v1 o ON o.owner_user_id=a.owner_user_id AND o.event_id=a.event_id AND o.start_epoch=a.start_epoch
+        JOIN user_calendar_events e ON e.owner_user_id=r.owner_user_id AND e.id=r.event_id
+        WHERE r.owner_user_id=? AND a.provider_sid=? AND a.call_public_id=? AND a.state='submitted'
+            AND o.contact_id=0 AND r.conversation_id=? AND r.selected_agent_id=? AND r.number_id=? AND e.source='agent'");
+    $q->execute([(int)$call['owner_user_id'],$call['provider_call_sid'],$call['public_id'],
+        (int)$call['conversation_id'],(int)$call['chat_agent_id'],(int)$call['phone_number_id']]);
+    $row=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+    return $row!==false&&$row['source_reference']==='operator-owner-email:'.$row['id'];
+}
+
 /** Verify the saved recording source, not an inferred match by caller number. */
 function vp3_operator_recording_evidence_v1(PDO $pdo,array $user,int $agentId,array $job,array $call): ?array
 {
@@ -89,6 +107,9 @@ function vp3_operator_history_v1(PDO $pdo,array $user,int $agentId,int $cid): ar
         $out=[];
         foreach ($calls as $call) {
             $peer=(string)$call['peer_e164'];$contact=$known[$peer]??null;
+            $ownerEmail=$call['source_kind']==='browser'&&isset($browserById[$call['id']])
+                &&vp3_operator_history_owner_email_v1($pdo,$browserById[$call['id']]);
+            if($ownerEmail)$contact=['id'=>0,'name'=>'You'];
             $recording=['state'=>$recordingReady?'none':'unavailable','transcript_saved'=>false,'report_saved'=>false];
             if ($recordingReady) {
                 try {
@@ -135,7 +156,7 @@ function vp3_operator_history_v1(PDO $pdo,array $user,int $agentId,int $cid): ar
                 'peer_e164'=>preg_match('/^\+[1-9][0-9]{7,14}$/D',$peer)?$peer:'',
                 'direction'=>$call['direction']==='outbound'?'outbound':'inbound','state'=>$call['state'],
                 'created_at'=>$call['created_at'],'duration_seconds'=>max(0,min(86400,(int)$call['duration_seconds'])),
-                'recording'=>$recording]+(($call['transport_kind']??'')==='managed_callback'?['transport_kind'=>'managed_callback']+(($call['managed_mode']??'')==='twilio_native'?['managed_mode'=>'twilio_native']:[]):[])+(!empty($call['connected_phone'])?['connected_profile_id'=>$call['connected_profile_id'],'peer_masked'=>$call['peer_masked']]:[]);
+                'recording'=>$recording]+($ownerEmail?['purpose'=>'gmail_review']:[])+(($call['transport_kind']??'')==='managed_callback'?['transport_kind'=>'managed_callback']+(($call['managed_mode']??'')==='twilio_native'?['managed_mode'=>'twilio_native']:[]):[])+(!empty($call['connected_phone'])?['connected_profile_id'=>$call['connected_profile_id'],'peer_masked'=>$call['peer_masked']]:[]);
         }
         return ['coverage'=>'ready','recording_coverage'=>$recordingCoverage,'calls'=>$out];
     } catch (Throwable $error) {return $empty;}

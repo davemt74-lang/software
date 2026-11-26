@@ -62,6 +62,8 @@ jobs:
             "phone_push_worker_minimum_php": "8.2",
             "phone_push_delivery_default": "off",
             "phone_agent_workspace": "owner-private-v1",
+            "phone_agent_email_calls": "owner-consented-v1",
+            "phone_agent_email_call_delivery_default": "off",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -535,6 +537,17 @@ jobs:
                       phone-agent-item-v1.js phone-agent-item-v1.css docs/PHONE-AGENT-WORKSPACE-V1.txt; do
             test -s "_deploy/$path"
           done
+
+          for path in api/agent-email-calls-v1.php agent-email-call-settings-v1.js agent-email-call-settings-v1.css \
+                      includes/phone-agent-email-calls-schema-v1.php includes/phone-agent-email-calls-settings-v1.php \
+                      includes/phone-agent-email-call-decisions-schema-v1.php includes/phone-agent-email-call-sources-v1.php \
+                      includes/phone-agent-email-call-review-v1.php includes/agent-operator-owner-email-v1.php \
+                      docs/GMAIL-OWNER-PHONE-CALLS-V1.txt; do
+            test -s "_deploy/$path"
+          done
+          grep -q 'workspace_calls' _deploy/api/phone-location-v1.php
+          grep -q 'voice_review' _deploy/includes/phone-agent-workspace-native-v1.php
+          grep -q 'emailCallSettingsApi' _deploy/includes/agent-orb.php
 
           # Production updates must never touch local secrets or user/runtime data.
           test ! -e _deploy/config.php

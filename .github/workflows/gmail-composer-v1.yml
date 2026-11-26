@@ -21,6 +21,11 @@ on:
       - 'agent-activity-hub-v1.css'
       - 'agent-top-of-mind-v1.js'
       - 'api/chat-email-v1.php'
+      - 'api/agent-email-calls-v1.php'
+      - 'includes/agent-orb.php'
+      - 'includes/agent-operator-*.php'
+      - 'phone-operator-schedule-worker.php'
+      - 'tests/fixtures/phone-agent-email-call-*'
       - 'includes/*gmail*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
@@ -63,6 +68,11 @@ on:
       - 'agent-activity-hub-v1.css'
       - 'agent-top-of-mind-v1.js'
       - 'api/chat-email-v1.php'
+      - 'api/agent-email-calls-v1.php'
+      - 'includes/agent-orb.php'
+      - 'includes/agent-operator-*.php'
+      - 'phone-operator-schedule-worker.php'
+      - 'tests/fixtures/phone-agent-email-call-*'
       - 'includes/*gmail*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
@@ -145,6 +155,11 @@ jobs:
           php tests/profile-owner-drafts-provider-v1.php
           php tests/paired-phone-provider-v1.php
           php tests/agent-initiative-model-v1.php
+      - name: Owner email-call consent, canonical sources, native Operator and exact voice review
+        run: |
+          for file in tests/phone-agent-email-call*.php; do php "$file"; done
+          php tests/agent-operator-owner-email-v1.php
+          for file in includes/phone-agent-email-call*.php includes/agent-operator-owner-email-v1.php api/agent-email-calls-v1.php; do php -l "$file"; done
       - name: PHP syntax and production entry points
         run: |
           for file in includes/agent-email-followthrough-v1.php includes/agent-email-followthrough-source-v1.php includes/agent-email-followthrough-draft-v1.php includes/agent-email-followthrough-notice-v1.php includes/agent-email-followthrough-status-v1.php; do
@@ -163,6 +178,7 @@ jobs:
       VP3_GMAIL_SENT_SCREENSHOT_DIR: artifacts/gmail-sent
       VP3_GMAIL_FOLLOWTHROUGH_SCREENSHOT_DIR: artifacts/gmail-followthrough
       VP3_PHONE_AGENT_SCREENSHOT_DIR: artifacts/phone-agent
+      VP3_EMAIL_CALLS_SCREENSHOT_DIR: artifacts/email-calls
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -183,6 +199,8 @@ jobs:
         run: node tests/gmail-followthrough-browser.mjs
       - name: Connected Phone Agent native review, dirty navigation, private canvases and push targets
         run: |
+          node tests/agent-email-call-settings-state-v1.mjs
+          node tests/agent-email-call-settings-browser-v1.mjs
           node tests/phone-agent-workspace-state-v1.mjs
           node tests/phone-agent-workspace-browser-v1.mjs
       - name: Selected email instructions and private Chat recovery

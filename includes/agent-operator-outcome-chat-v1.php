@@ -8,7 +8,7 @@ require_once __DIR__.'/user-calendar-v1300.php';
 function vp3_operator_expire_prepared_v1(PDO $pdo,int $now,int $limit=40):int
 {
     $where="state='prepared' AND end_epoch<=?";
-    $scan=$pdo->prepare("SELECT owner_user_id,event_id,start_epoch FROM phone_operator_occurrences_v1
+    $scan=$pdo->prepare("SELECT owner_user_id,event_id,start_epoch,contact_id FROM phone_operator_occurrences_v1
         WHERE ".$where." AND EXISTS (SELECT 1 FROM users u WHERE u.id=phone_operator_occurrences_v1.owner_user_id AND u.is_active=1)
         ORDER BY end_epoch,owner_user_id,event_id,start_epoch LIMIT ".max(1,min(100,$limit)));
     $scan->execute([$now]);
@@ -18,9 +18,17 @@ function vp3_operator_expire_prepared_v1(PDO $pdo,int $now,int $limit=40):int
     $missed=0;
     foreach($candidates as $row){
         $owner=(int)$row['owner_user_id'];
-        $missed+=section12_owner_transaction($pdo,$owner,static function()use($update,$owner,$row,$now){
+        $missed+=section12_owner_transaction($pdo,$owner,static function()use($pdo,$update,$owner,$row,$now){
             $update->execute([$now,$owner,$row['event_id'],$row['start_epoch'],$now]);
-            return $update->rowCount();
+            $changed=$update->rowCount();
+            if($changed&&(int)$row['contact_id']===0){
+                $event=user_calendar_event_v1300($pdo,$owner,(int)$row['event_id']);
+                if($event&&$event['source']==='agent'&&str_starts_with((string)$event['source_reference'],'operator-owner-email:')){
+                    require_once __DIR__.'/agent-operator-owner-email-v1.php';
+                    vp3_operator_owner_email_sync_v1($pdo,$owner,(int)$row['event_id'],(int)$row['start_epoch'],$now);
+                }
+            }
+            return $changed;
         });
     }
     return $missed;
@@ -49,6 +57,7 @@ function vp3_operator_outcome_chat_tick_v1(PDO $pdo,int $now,int $limit=40):arra
                 $labels=['dispatch_window_expired'=>'The call window ended before dialing.',
                     'answer_consented'=>'The recipient agreed to a recorded and transcribed conversation.',
                     'conversation_completed'=>'The recipient ended the conversation by voice.',
+                    'conversation_opted_out'=>'The recipient asked the agent to stop calling this number. Future calls to this number are blocked.',
                     'conversation_silent'=>'The call ended while the agent was waiting for a spoken response.',
                     'conversation_turn_limit'=>'The conversation reached its eight-turn limit.',
                     'conversation_reply_withheld'=>'The agent stopped before speaking because the call was no longer authorized to continue.',
@@ -60,12 +69,20 @@ function vp3_operator_outcome_chat_tick_v1(PDO $pdo,int $now,int $limit=40):arra
                     'carrier_no_answer'=>'The call went unanswered.','carrier_canceled'=>'The call was canceled.',
                     'ended_before_consent'=>'The call ended before the recipient confirmed.'];
                 $label=$labels[$row['reason']]??'The call ended.';
-                $contact=$pdo->prepare('SELECT name FROM crm_contacts WHERE owner_user_id=? AND id=?');
-                $contact->execute([$owner,$row['contact_id']]);
-                $name=trim(preg_replace("/[^\p{L}\p{M}\p{N} .’'-]+/u",' ',(string)$contact->fetchColumn())??'');
                 $event=user_calendar_event_v1300($pdo,$owner,$key[1]);
+                $ownerEmail=(int)$row['contact_id']===0&&$event&&$event['source']==='agent'
+                    &&str_starts_with((string)$event['source_reference'],'operator-owner-email:');
+                $name='';
+                if($ownerEmail){
+                    require_once __DIR__.'/agent-operator-owner-email-v1.php';
+                    vp3_operator_owner_email_sync_v1($pdo,$owner,$key[1],$key[2],$now);
+                }else{
+                    $contact=$pdo->prepare('SELECT name FROM crm_contacts WHERE owner_user_id=? AND id=?');
+                    $contact->execute([$owner,$row['contact_id']]);
+                    $name=trim(preg_replace("/[^\p{L}\p{M}\p{N} .’'-]+/u",' ',(string)$contact->fetchColumn())??'');
+                }
                 $proactive=$event&&$event['source']==='agent'&&str_starts_with((string)$event['source_reference'],'operator-outreach:');
-                $title=$proactive?'Operator-initiated phone call':'Scheduled phone call';
+                $title=$ownerEmail?'Gmail review phone call':($proactive?'Operator-initiated phone call':'Scheduled phone call');
                 if($name!=='')$title.=' with '.mb_substr($name,0,120);
                 $text=$title.' · '.gmdate('Y-m-d H:i \U\T\C',$key[2])."\n".$label;
                 $receipt='scheduled:'.$key[1].':'.$key[2];

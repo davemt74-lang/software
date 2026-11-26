@@ -89,11 +89,12 @@ real owner session. No new durable owner bearer token is issued to the phone.
 
 Scope of phone calls
 
-This release supplies the private mobile destination needed by future Agent
-phone interruptions. It does not enable automatic owner calls or voice-only
-email approval. Any call escalation must use the same item identity, explicit
-owner interruption preferences and verified phone/session authority; answering
-a call or a generic "yes" is not an email send approval.
+The subsequent Gmail owner-call integration is documented in
+GMAIL-OWNER-PHONE-CALLS-V1.txt. It adds a separately enabled email-call channel
+through the existing Operator engine, linked to this same private item.
+Optional voice confirmation requires the exact email to remain open in the
+authenticated owner review. Answering a call or a generic "yes" is not an email
+send approval, and an app-closed carrier callback cannot send Gmail.
 
 Acceptance gates
 
