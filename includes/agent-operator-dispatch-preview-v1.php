@@ -12,7 +12,7 @@ function vp3_operator_preview_request_v1(PDO $pdo,array $row,int $now):array
 }
 
 /** Revalidate the route and grants for an occurrence whose lifecycle state the caller verified. */
-function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now):array
+function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now,?string $answeredSid=null):array
 {
     $owner=(int)$row['owner_user_id'];
     $id=(int)$row['event_id'];
@@ -50,10 +50,10 @@ function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now):array
     foreach([$policy,$holder] as $settings){
         $settings['max_duration_seconds']=$seconds;
         if(!vp3_operator_admission_window_v1($settings,$now))return ['reason'=>'calling_window'];
-        $history=vp3_operator_admission_history_v1($pdo,$scope,$bound,$settings,$now);
+        $history=vp3_operator_admission_history_v1($pdo,$scope,$bound,$settings,$now,$answeredSid);
         if(!$history['gap_ok']||!$history['within_limit'])return ['reason'=>'call_frequency'];
     }
-    if(!vp3_operator_admission_idle_v1($pdo,$owner,$now))return ['reason'=>'phone_busy'];
+    if(!vp3_operator_admission_idle_v1($pdo,$owner,$now,$answeredSid))return ['reason'=>'phone_busy'];
     $calendar=vp3_operator_occurrence_calendar_reason_v1($pdo,$assignment,(int)$row['start_epoch'],$end,$now);
     if($calendar!=='awaiting_dispatch_checks')return ['reason'=>$calendar];
     return ['reason'=>'eligible','fields'=>['From'=>$line['phone_e164'],'To'=>$to,'TimeLimit'=>$seconds],
