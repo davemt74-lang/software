@@ -92,6 +92,11 @@ $r=followthrough_turn('Show call follow-ups',null,null,true,2,21);c(!str_contain
 
 $proposal=followthrough_prepare_task('PRIVATE-OWNER-TODO');
 $r=followthrough_turn('Yes',null,null,false);$taskId=(int)($r['tool_receipt']['record_id']??0);
+if(empty($r['tool_receipt']['changes_applied'])){
+    $debugLast=vp3_operator_followthrough_last_v1($pdo,$scope,$r['owner_message_id']);
+    $debug=vp3_operator_followthrough_confirm_v1($pdo,$scope,$debugLast,['id'=>$r['owner_message_id']],'Yes');
+    throw new RuntimeException('Unexpected task response: '.json_encode([$r,$debug,followthrough_counts()],JSON_THROW_ON_ERROR));
+}
 c(($r['tool_receipt']['capability']??'')==='tasks.lists'&&$r['tool_receipt']['changes_applied']&&followthrough_counts()===[1,0]&&$taskId>0,'approval creates one real canonical Brain task through the existing kernel');
 $q=$pdo->prepare('SELECT subject,metadata_json FROM agent_memory_items WHERE id=?');$q->execute([$taskId]);$task=$q->fetch(PDO::FETCH_ASSOC);c($task['subject']==='PRIVATE-OWNER-TODO'&&str_contains($task['metadata_json'],$ctx['job']['public_id']),'task retains the approved wording and its exact call evidence reference');
 $r=followthrough_turn('Yes');c(!$r['tool_receipt']['changes_applied']&&followthrough_counts()===[1,0],'a lost Chat acknowledgement recovers the original approval without a second task');
@@ -118,7 +123,7 @@ $r=followthrough_turn('Yes');c(!$r['tool_receipt']['changes_applied']&&followthr
 $q=$pdo->prepare('SELECT * FROM agent_reminders_v1 WHERE id=?');$q->execute([$reminderId]);$reminder=$q->fetch(PDO::FETCH_ASSOC);
 c($reminder['recurrence']==='none'&&$reminder['delivery']==='chat'&&$reminder['conversation_id']==11,'default call follow-up is one occurrence in the original Chat');
 $pdo->prepare("INSERT INTO agent_reminder_occurrences_v1(reminder_id,owner_user_id,scheduled_at,wake_at,status) VALUES(?,1,?,?,'pending')")->execute([$reminderId,$reminder['next_at'],$reminder['next_at']]);
-$finished=reminder_execute_v1($pdo,1,'cloud:11','fixture:complete-followup','done',['operation'=>'complete','id'=>$reminderId],[],11,new DateTimeImmutable('+2 days'));
+$finished=reminder_execute_v1($pdo,1,'cloud:11','fixture:complete-followup','done',['operation'=>'complete','id'=>$reminderId],[$reminder],11,new DateTimeImmutable('+2 days'));
 $out=vp3_operator_followthrough_outcomes_v1($pdo,$scope,time());$byKind=array_column($out,null,'kind');
 c($finished['tool_receipt']['changes_applied']&&$byKind['reminder']['status']==='occurrence_done'&&$byKind['agent_task']['status']==='completed','native reminder completion stays distinct from task completion');
 $r=followthrough_turn('Show call follow-up status');c(str_contains($r['answer'],'occurrence done')&&str_contains($r['answer'],'does not complete its task'),'Chat reports verified domain outcomes with the completion distinction');
