@@ -42,7 +42,8 @@ try{
   assert.equal(new URL(ui.config?.endpoint).origin,'https://cloud.example','The rendered UI and actual media links share their real fixture origin.');
   console.log('PASS real PHP Phone projection includes assigned numbers, browser/legacy call history, both voicemail namespaces and persisted Cloud choice');
   if(!process.argv.includes('--projection-only')){
-    run(process.execPath,['tests/phone-workspace-v1-browser.mjs'],{env:{...process.env,PHONE_WORKSPACE_STATE_FIXTURE:stateFile,PHONE_WORKSPACE_UI_FIXTURE:uiFile}});
+    // The real-audio conversation checks now also exercise explicit pause/resume controls.
+    run(process.execPath,['tests/phone-workspace-v1-browser.mjs'],{timeout:240000,env:{...process.env,PHONE_WORKSPACE_STATE_FIXTURE:stateFile,PHONE_WORKSPACE_UI_FIXTURE:uiFile}});
   }
 }finally{
   fs.rmSync(temp,{recursive:true,force:true});

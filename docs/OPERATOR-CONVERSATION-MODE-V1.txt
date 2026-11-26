@@ -28,14 +28,41 @@ foreground loss, permission loss and call/device teardown end assistance.
 
 Limits and continuity
 
-This first version uses the current two-sided caption session, up to 60 seconds.
-It does not extend the call receipt or caption authorization. The total call
-allowance is four model decisions and two speech reservations. Earlier reviewed
-suggestions/responses count toward these limits. The existing rolling-hour
+Session controls offer 30, 60 or 120 seconds before captions start. The default
+remains 60 seconds for two audio sides and 120 for caller-only captions. The
+signed carrier receipt can shorten the chosen duration. These controls never
+extend its existing five-minute freshness window or authorize captions to
+restart on the same call. Each four-second frame reserves four audio-seconds
+per side. A chosen 120-second two-sided session can use up to 240 audio-seconds;
+the shared rolling-hour cap remains 240, including uncertain requests.
+
+The conversation setup separately offers two, four or eight AI checks and one,
+two or four speech reservations. Defaults remain four and two. The total call
+limit includes earlier reviewed suggestions and speech reservations. Existing rolling-hour
 limits remain eight model attempts and eight speech reservations. Model checks
 are spaced at least eight seconds apart; audio uploads never accumulate a
 backlog during inference or speech. A wait decision does not synthesize audio.
 An uncertain paid request stays spent and is not automatically retried.
+
+The conversation panel displays remaining seconds, checks and speech
+reservations. Counts reflect the lower of the per-call and hourly balance,
+not a dollar balance or a guarantee that the provider will be available.
+The caption panel separately shows available processing seconds from the
+server's lower call/hourly audio allowance; both sides each consume allowance.
+Speech is counted when synthesis is requested, including speech interrupted,
+discarded or never played. The limits cannot be raised after granting consent.
+Changing a setup limit clears its previous consent confirmation.
+
+Pause Agent immediately stops local synthetic audio and fences server model,
+synthesis and playback work. The human call and separately authorized captions
+continue. The deadline and spent balance do not reset or freeze. Resume Agent
+rechecks the same live scope, permissions, original expiry, pending operations,
+remaining allowance and an exact control revision. Earlier authenticated Agent
+context remains available, but only new captions after resume can trigger a
+response. A late inference result leaves the grant paused; a late synthesis
+result cannot be claimed even after a rapid pause/resume. Resume waits for a
+pending model request to finish. Lost/uncertain control results remove the
+Agent rather than automatically retrying. Remove Agent is final for this call.
 
 Subsequent decisions use recent server-authenticated human captions and earlier
 authenticated Agent responses from this exact grant. Earlier responses are
@@ -72,6 +99,8 @@ Use the complete production Cloud ZIP and run the authenticated upgrade.php
 flow. The live installer adds optional conversation metadata explicitly;
 live requests never run DDL. Missing conversation storage leaves the reviewed
 call and caption features available but does not enable automatic replies.
+The additive, rerunnable upgrade adds only duration/budget/control metadata;
+it preserves existing call, grant and reservation rows and does not opt anyone in.
 
 Tests cover explicit consent, exact scope and tokens, signed caption/response
 evidence, inference and synthesis revocation, replay and spend limits, late
@@ -79,3 +108,15 @@ results, quiet-gap gating, natural completion, either-side interruption and
 human-track preservation. Tests use isolated databases, synthetic audio and
 deterministic model/speech substitutes. Physical Twilio, Cloud speech, iPhone
 playback and real acoustic interruption remain acceptance work.
+
+Scope and scoring
+
+This phase implements session duration, per-call spending ceilings, visible
+allowance and pause/resume. Financial provider rates are not inferred from
+counts. Call-objective progress and follow-through remain a subsequent build
+using the canonical agenda, after-call reports, recurring memory and Top of
+Mind paths. No objective is marked answered from activity detection or an
+unverified playback receipt. Automated release acceptance is scored only after
+the exact candidate's database, browser and regression workflows pass. Physical
+carrier, configured model/speech services and iPhone acoustic acceptance remain
+separate from automated acceptance; this build cannot substantiate overall 10/10.

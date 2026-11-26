@@ -58,12 +58,20 @@ const server=http.createServer((req,res)=>{
    const input=JSON.parse(body);res.setHeader('Content-Type','application/json');
    assert.equal(req.method,'POST');assert.equal(input.csrf_token,'fixture-csrf');assert.equal(input.call_id,outgoingId);
    assert.equal(input.agent_id,2);assert.equal(input.conversation_id,10);
-   captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,capture_mode:input.capture_mode,suggestions_attested:input.suggestions_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0,localBytes:input.local_pcm?Buffer.from(input.local_pcm,'base64').length:0,receiptCount:input.receipts?.length||0,voice_consent_attested:input.voice_consent_attested,source_seq:input.source_seq});
+   captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,capture_mode:input.capture_mode,suggestions_attested:input.suggestions_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0,localBytes:input.local_pcm?Buffer.from(input.local_pcm,'base64').length:0,receiptCount:input.receipts?.length||0,voice_consent_attested:input.voice_consent_attested,source_seq:input.source_seq,session_seconds:input.session_seconds,max_decisions:input.max_decisions,max_responses:input.max_responses});
    const token='f'.repeat(64);let result={};
-   if(input.action==='start'){if(captionStartGate){captionStartGate.seen=true;await captionStartGate.promise;}assert.equal(input.consent_attested,true);state.operator_live.state='authorized';state.operator_live.fixtureMode=input.capture_mode||'remote';state.operator_live.fixtureAssist=input.suggestions_attested===true;result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+(state.operator_live.fixtureMode==='both'?60:120),chunk_seconds:4,execution:'captions_only'};if(state.operator_live.fixtureMode==='both'||state.operator_live.fixtureAssist)Object.assign(result,{capture_mode:state.operator_live.fixtureMode,suggestions_enabled:state.operator_live.fixtureAssist});}
+   if(input.action==='start'){
+    if(captionStartGate){captionStartGate.seen=true;await captionStartGate.promise;}
+    assert.equal(input.consent_attested,true);state.operator_live.state='authorized';state.operator_live.fixtureMode=input.capture_mode||'remote';state.operator_live.fixtureAssist=input.suggestions_attested===true;
+    const seconds=input.session_seconds??(state.operator_live.fixtureMode==='both'?60:120);state.operator_live.fixtureExpires=Math.floor(Date.now()/1000)+seconds;
+    result={call_id:outgoingId,token,expires_epoch:state.operator_live.fixtureExpires,chunk_seconds:4,execution:'captions_only'};
+    if(state.operator_live.fixtureMode==='both'||state.operator_live.fixtureAssist)Object.assign(result,{capture_mode:state.operator_live.fixtureMode,suggestions_enabled:state.operator_live.fixtureAssist});
+    if(state.operator_live.controls_available)Object.assign(result,{session_seconds:seconds,audio_limit_seconds:seconds*(state.operator_live.fixtureMode==='both'?2:1),max_sequences:Math.floor(seconds/4),audio_seconds_remaining:seconds*(state.operator_live.fixtureMode==='both'?2:1)});
+   }
    else if(input.action==='chunk'){
     assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,128000);
     result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:state.operator_live.fixtureConversation?'Agent, which day works?':'Fixture caller <script>words</script>'};
+    if(state.operator_live.controls_available)result.audio_seconds_remaining=120*(state.operator_live.fixtureMode==='both'?2:1)-input.seq*(state.operator_live.fixtureMode==='both'?8:4);
     if(state.operator_live.fixtureMode==='both'){assert.equal(Buffer.from(input.local_pcm,'base64').length,128000);result.local_text='Fixture owner words';}
     else assert.equal(input.local_pcm,undefined);
     if(state.operator_live.fixtureAssist)result.receipts=[{seq:input.seq,speaker:'remote_audio',text:result.text,proof:'a'.repeat(64)},...(result.local_text?[{seq:input.seq,speaker:'local_audio',text:result.local_text,proof:'b'.repeat(64)}]:[])];
@@ -84,7 +92,9 @@ const server=http.createServer((req,res)=>{
    else if(input.action==='voice_finish'){result={call_id:outgoingId,source_seq:input.source_seq,state:'closed'};}
    else if(input.action==='participation_start'){
     assert.equal(input.token,token);assert.equal(input.consent_attested,true);state.operator_live.fixtureConversation=true;state.operator_live.participation_state='active';
-    result={call_id:outgoingId,participation_token:'1'.repeat(64),mode:input.mode,state:'listening',max_decisions:4,max_responses:2,decisions_used:0,responses_used:0,minimum_gap:8,expires_epoch:Math.floor(Date.now()/1000)+45};
+    state.operator_live.fixtureDecisions=input.max_decisions??4;state.operator_live.fixtureResponses=input.max_responses??2;state.operator_live.fixtureRevision=0;
+    result={call_id:outgoingId,participation_token:'1'.repeat(64),mode:input.mode,state:'listening',max_decisions:state.operator_live.fixtureDecisions,max_responses:state.operator_live.fixtureResponses,decisions_used:0,responses_used:0,minimum_gap:8,expires_epoch:state.operator_live.fixtureExpires};
+    if(state.operator_live.controls_available)Object.assign(result,{control_revision:0,hour_decisions_remaining:8,hour_responses_remaining:8});
    }
    else if(input.action==='participation_decide'){
     assert.equal(input.token,token);assert.equal(input.participation_token,'1'.repeat(64));
@@ -92,6 +102,14 @@ const server=http.createServer((req,res)=>{
    }
    else if(input.action==='participation_stop'){
     assert.equal(input.token,token);assert.equal(input.participation_token,'1'.repeat(64));state.operator_live.participation_state='closed';result={call_id:outgoingId,stopped:true};
+   }
+   else if(['participation_pause','participation_resume'].includes(input.action)){
+    assert.equal(input.participation_token,'1'.repeat(64));assert.equal(input.expected_revision,state.operator_live.fixtureRevision);
+    const paused=input.action==='participation_pause';state.operator_live.participation_state=paused?'paused':'active';
+    const decisions=captionCalls.filter(c=>c.action==='participation_decide').length,responses=captionCalls.filter(c=>c.action==='voice_prepare').length;
+    result={call_id:outgoingId,state:paused?'paused':'listening',control_revision:++state.operator_live.fixtureRevision,expires_epoch:state.operator_live.fixtureExpires,
+      max_decisions:state.operator_live.fixtureDecisions,max_responses:state.operator_live.fixtureResponses,decisions_used:decisions,responses_used:responses,
+      hour_decisions_remaining:8-decisions,hour_responses_remaining:8-responses,resume_seq:Math.max(0,...captionCalls.map(c=>c.seq||0))};
    }
    else if(input.action==='stop'){assert.equal(input.token,token);state.operator_live.state='closed';state.operator_live.eligible=false;result={call_id:outgoingId,stopped:true};}
    else{res.statusCode=422;return res.end(JSON.stringify({ok:false}));}
@@ -793,20 +811,24 @@ try{
   await page.evaluate(()=>{const d=phoneFixture.voiceFixture;try{d.a.stop();d.b.stop();}catch(_){}for(const track of d.remote.getTracks())track.stop();});
  });
  for(const speaker of ['caller','owner'])await check(speaker+' interrupts an automatically approved conversation without another microphone or playback click',async()=>{
-  await fresh();captionCalls=[];
-  state.operator_live={available:true,assist_available:true,voice_available:true,participation_available:true,eligible:false,call_id:'',state:'off',reason:''};
+  await fresh('',{viewport:speaker==='owner'?{width:320,height:740}:{width:1360,height:900}});captionCalls=[];
+  state.operator_live={available:true,assist_available:true,voice_available:true,participation_available:true,controls_available:true,eligible:false,call_id:'',state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   await page.getByRole('button',{name:'Prepare Agent voice for browser calls',exact:true}).click();
   await page.getByRole('button',{name:'Disable prepared Agent voice',exact:true}).waitFor();await enable();await call();
   await page.waitForFunction(()=>phoneFixture.voiceFixture?.processor.matches(phoneFixture.calls.at(-1).getLocalStream()));
   await page.evaluate(()=>{phoneFixture.voiceFixture.a.stop();phoneFixture.voiceFixture.b.stop();});
   const claims=await page.evaluate(()=>phoneFixture.claims);
-  state.operator_live={available:true,assist_available:true,voice_available:true,participation_available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
+  state.operator_live={available:true,assist_available:true,voice_available:true,participation_available:true,controls_available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
   await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
   await caption.getByLabel(/Include both audio sides/).check();await caption.getByLabel(/Everyone agrees that recent captions/).check();
+  await caption.getByLabel('Caption session limit',{exact:true}).selectOption('120');
+  assert.equal(await caption.getByRole('button',{name:'Start live captions',exact:true}).isDisabled(),true,'Changing limits requires the consent confirmation again');
   await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
+  await caption.getByRole('button',{name:'Start live captions',exact:true}).scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-caption-limits-'+speaker+'.png')});
   let releaseStart;captionStartGate={seen:false,promise:new Promise(resolve=>releaseStart=resolve),resolve:()=>releaseStart()};
   await caption.getByRole('button',{name:'Start live captions',exact:true}).click();
   for(let i=0;!captionStartGate.seen;i++){if(i>100)throw Error('Caption grant request did not start');await new Promise(resolve=>setTimeout(resolve,10));}
@@ -814,11 +836,20 @@ try{
   captionStartGate.resolve();captionStartGate=null;
   await caption.getByRole('button',{name:'Conversation mode',exact:true}).click();
   assert.equal(await caption.getByRole('button',{name:'Let Agent join conversation',exact:true}).isDisabled(),true);
+  await caption.getByLabel('AI checks for this call',{exact:true}).selectOption('8');
+  await caption.getByLabel('Speech reservations for this call',{exact:true}).selectOption('4');
+  await caption.getByRole('button',{name:'Let Agent join conversation',exact:true}).scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-conversation-limits-'+speaker+'.png')});
   await caption.getByLabel('Everyone agrees to automatic AI replies and Cloud processing for this conversation.',{exact:true}).check();
   await caption.getByRole('button',{name:'Let Agent join conversation',exact:true}).click();
   await caption.getByText('Agent is speaking. Either person can interrupt.',{exact:true}).waitFor({timeout:20000});
   assert.equal(captionCalls.filter(row=>row.action==='voice_claim').length,1,'Session consent reaches playback without a per-response click');
   assert.equal(captionCalls.filter(row=>row.action==='suggest').length,0,'The manual suggestion path is not used for automatic participation');
+  assert.equal(captionCalls.find(c=>c.action==='start').session_seconds,120);
+  assert.equal(captionCalls.find(c=>c.action==='participation_start').max_decisions,8);
+  assert.equal(captionCalls.find(c=>c.action==='participation_start').max_responses,4);
+  assert.match(await caption.locator('[data-operator-balance]').innerText(),/7 AI checks left · 3 speech reservations left/);
+  await caption.getByText('Caption processing left: up to 116 seconds for both audio sides.',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.graph.mic.gain.value),1);
   if(speaker==='caller'){
    await caption.getByRole('button',{name:'Remove Agent from conversation',exact:true}).scrollIntoViewIfNeeded();
@@ -835,10 +866,21 @@ try{
   assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.raw.getAudioTracks()[0].readyState),'live');
   assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.remote.getAudioTracks()[0].readyState),'live');
   assert.equal(await page.evaluate(()=>phoneFixture.claims),claims);
+  await caption.getByRole('button',{name:'Pause Agent',exact:true}).click();
+  await caption.getByText('Agent paused. Captions and the session clock continue.',{exact:true}).waitFor();
+  const usedWhilePaused=captionCalls.filter(row=>row.action==='voice_prepare').length;
+  const pausedAudio=await page.evaluate(()=>{const f=phoneFixture.voiceFixture;return {speaking:Boolean(f.processor.speaking),microphoneGain:f.processor.graph.mic.gain.value,
+   owner:f.raw.getAudioTracks()[0].readyState,caller:f.remote.getAudioTracks()[0].readyState,call:phoneFixture.calls.at(-1).status()};});
+  assert.deepEqual(pausedAudio,{speaking:false,microphoneGain:1,owner:'live',caller:'live',call:'open'});
+  assert.match(await caption.locator('[data-operator-balance]').innerText(),/7 AI checks left · 3 speech reservations left/);
   if(speaker==='owner'){
    await page.setViewportSize({width:320,height:740});await caption.getByRole('button',{name:'Remove Agent from conversation',exact:true}).scrollIntoViewIfNeeded();
    await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-conversation-mobile.png')});
+   const layout=await drawer.evaluate(panel=>({width:panel.clientWidth,scroll:panel.scrollWidth}));assert.ok(layout.scroll<=layout.width+1,'Session controls fit the phone drawer');
   }
+  await caption.getByRole('button',{name:'Resume Agent',exact:true}).click();
+  await caption.getByText('Agent resumed. Ask a new question as Agent or VP3.',{exact:true}).waitFor();
+  assert.equal(captionCalls.filter(row=>row.action==='voice_prepare').length,usedWhilePaused,'Resume cannot replay an earlier caption');
   await caption.getByRole('button',{name:'Remove Agent from conversation',exact:true}).click();
   await caption.getByText('Agent removed. The human call and captions continue.',{exact:true}).waitFor();
   const paid=captionCalls.filter(row=>row.action==='voice_prepare').length;await page.waitForTimeout(300);
