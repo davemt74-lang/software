@@ -325,7 +325,8 @@ jobs:
 
   connected-sites-browser:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Slow hosted-runner package mirrors can consume over 30 minutes before tests start.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -340,7 +341,16 @@ jobs:
         run: |
           npm install --no-save --ignore-scripts playwright@1.62.1 jsqr@1.4.0 pngjs@7.0.0
           bash tools/install-ci-chromium.sh
-          ./node_modules/.bin/playwright install --with-deps webkit
+          # Try the pinned browser with the runner's existing libraries first.
+          # If launch fails, install its full dependencies and require launch again.
+          ./node_modules/.bin/playwright install webkit
+          check_webkit_launch() {
+            node --input-type=module -e "import { webkit } from 'playwright'; const browser = await webkit.launch({headless:true,timeout:30000}); try { const page = await browser.newPage(); await page.goto('about:blank'); } finally { await browser.close(); }"
+          }
+          if ! check_webkit_launch; then
+            ./node_modules/.bin/playwright install-deps webkit
+            check_webkit_launch
+          fi
       - name: Test pairing, the installed agent name and disconnect in Chat
         run: node tests/connected-sites-browser.mjs
 

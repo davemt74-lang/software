@@ -1258,7 +1258,7 @@
     ['connected-sites','Connected Sites'],['canvas','Canvas Apps'],['research','Research'],
     ['coding','Coding'],['image-generator','Image Generator'],['mission','Missions'],
     ['marketing','Marketing'],['commerce','Commerce'],['development','Agent Development'],['app-suggestions','App Suggestions'],
-    ['eyes','Agent Eyes'],['brainstorm','ob1']
+    ['eyes','Agent Eyes'],['operator','Operator'],['brainstorm','ob1']
   ];
   const debugOpportunityLanes = {research:'research',mission:'missions','app-suggestions':'app_suggestions','image-generator':'media_images'};
   const debugCoverage = {ready:'Checked',limited:'Partially checked',unconfigured:'Source inactive',unavailable:'Could not check'};
@@ -1269,7 +1269,7 @@
   const debugActivityColors = {
     gmail:'#bf3b36',planning:'#82501b',tasks:'#2459a4',transcripts:'#7441aa',media:'#197254',profile:'#35647e',curiosity:'#a13e75',
     'connected-sites':'#11747e',canvas:'#5148a2',research:'#2c6c81',coding:'#38632c','image-generator':'#b04724',
-    mission:'#59486c',marketing:'#ae4c5a',commerce:'#775919',development:'#46556d','app-suggestions':'#675cc1',eyes:'#256d56',brainstorm:'#176984',
+    mission:'#59486c',marketing:'#ae4c5a',commerce:'#775919',development:'#46556d','app-suggestions':'#675cc1',eyes:'#256d56',operator:'#316a82',brainstorm:'#176984',
   };
   const debugActivityLine = {
     flat:'M0 13 H96',waiting:'M0 13 H36 L40 11 L44 15 L48 13 H96',
@@ -1344,6 +1344,11 @@
 
   function debugSpecialistActivity(current,id,clock) {
     const view = (state,label,expires = null,intensity = 0) => ({state,label,expires,intensity});
+    if(id==='operator'){
+      const phone=window.VP3PhoneWorkspaceV1?.operatorDiagnostics?.(current.conversationId,pageAgent);
+      if(!phone)return view('inactive','Phone status unavailable');
+      return {...view(phone.working?'working':phone.registered?'checked':'waiting',phone.working?'Call in progress':phone.registered?'Browser registered':'Browser offline'),details:phone.pairs};
+    }
     const {snapshot} = current;
     if (current.conversationId === 0) return view('inactive','Save this Chat');
     if (current.readFailed) return view('stale','Latest read unavailable');
@@ -1581,6 +1586,7 @@
   function debugSpecialistStatus(current,id,failures = [],signal = null) {
     const {snapshot,conversationId} = current;
     if (conversationId === 0) return {status:'Save this Chat',tone:'muted',summary:''};
+    if(id==='operator')return {status:signal?.label||'Phone status unavailable',tone:debugJobTone[signal?.state]||'muted',summary:'Incoming routing and voicemail',pairs:signal?.details||[],groups:[]};
     if (!snapshot) return {status:current.request ? 'Checking…' : 'Status unavailable',tone:'muted',summary:''};
     const engagement = snapshot.engagement || {};
     const marketing = id === 'marketing' ? marketingDebugDetails(snapshot.marketing) : null;
@@ -1754,6 +1760,7 @@
 
   async function refreshInitiativeDebug(current, automatic = false) {
     if (!canRefreshInitiativeDebug(current) || current.request || !requireCurrentConfiguration()) return;
+    if(current.selected==='operator')void window.VP3PhoneWorkspaceV1?.refresh?.();
     const requestedAt = performance.now();
     if (automatic && current.refreshDue && requestedAt < current.refreshDue) return;
     window.clearTimeout(current.refreshTimer);
@@ -1879,6 +1886,7 @@
       tile.append(name,state,description);
       tile.addEventListener('click',() => {
         current.selected = id;
+        if(id==='operator')void window.VP3PhoneWorkspaceV1?.refresh?.().then(()=>{if(initiativeDebug===current)updateInitiativeDebug();});
         updateInitiativeDebug();
         if (window.matchMedia('(max-width: 58rem)').matches) {
           current.detail.title.scrollIntoView({block:'start'});

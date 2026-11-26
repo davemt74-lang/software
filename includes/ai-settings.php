@@ -80,7 +80,7 @@ function ai_saved_encrypted_credentials_exist(): bool
             $settings=$pdo->prepare("SELECT 1 FROM settings WHERE setting_key=? AND setting_value<>'' LIMIT 1");
             $settings->execute(['profile_calls_livekit_config_pa3c']);
             if($settings->fetchColumn())return true;
-            foreach(['user_llm_credentials','profile_calls_pa3c','vp3_gelato_connections_v1','vp3_stoneward_connections_v1','agent_connections_v1','agent_connection_email_drafts_v1'] as $table){
+            foreach(['user_llm_credentials','profile_calls_pa3c','vp3_gelato_connections_v1','vp3_stoneward_connections_v1','agent_connections_v1','agent_connection_email_drafts_v1','vp3_phone_push_config_v1','vp3_phone_push_subscriptions_v1'] as $table){
                 $stmt=$pdo->prepare($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
                     ?"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?"
                     :'SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');
@@ -93,6 +93,8 @@ function ai_saved_encrypted_credentials_exist(): bool
                         'vp3_stoneward_connections_v1'=>"SELECT 1 FROM vp3_stoneward_connections_v1 WHERE token_ciphertext<>'' LIMIT 1",
                         'agent_connections_v1'=>"SELECT 1 FROM agent_connections_v1 WHERE access_token_enc<>'' OR refresh_token_enc<>'' LIMIT 1",
                         'agent_connection_email_drafts_v1'=>"SELECT 1 FROM agent_connection_email_drafts_v1 WHERE message_enc<>'' LIMIT 1",
+                        'vp3_phone_push_config_v1'=>"SELECT 1 FROM vp3_phone_push_config_v1 WHERE private_cipher<>'' LIMIT 1",
+                        'vp3_phone_push_subscriptions_v1'=>"SELECT 1 FROM vp3_phone_push_subscriptions_v1 WHERE subscription_cipher<>'' LIMIT 1",
                     });
                     if($encrypted&&$encrypted->fetchColumn())return true;
                 }

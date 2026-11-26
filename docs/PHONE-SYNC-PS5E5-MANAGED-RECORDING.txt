@@ -1,0 +1,46 @@
+Phone Sync PS5E.5 — Managed recording consent and private processing
+
+The managed review form optionally requests recording using the selected
+line's current saved post-call policy. Recording is off by default. The
+initial integration requires consent to retain private audio; transcription
+and reports follow the exact saved policy, not new request-side flags.
+The connected holder must explicitly agree to the listed services. Policy
+revision or permission changes invalidate further admission. An unrecorded
+request cannot be silently converted to a recorded request, or vice versa.
+
+The first Twilio call is always created with Record=false. If recording is
+requested, the parent leg hears a distinct consent prompt and must press 1.
+The destination leg then receives its own signed pre-connection consent
+whisper. Decline/no response prevents the recorded connection. No Dial record
+attribute is used. Both affirmative consent receipts bind to exact legs.
+The internal start function separately verifies active parent and child
+carrier identities, rechecks consent and claims a one-use start before
+requesting dual-channel recording with an audible beep. An uncertain POST
+is not automatically retried.
+
+A signed recording receipt must match the nonce, parent, child consent,
+recording start claim, source and immutable recording SID. A completed
+recording must be dual-channel, both tracks, and within the bounded call
+duration. The receipt enters the existing private recording job pipeline
+with the original consented policy, masked peer metadata, and existing
+audio/transcript/report UI. Later policy changes cannot expand processing
+or allow a retry with a different policy. Ordinary browser recording
+callbacks cannot bypass the managed consent path. No new transcription
+engine or AI provider has been added.
+
+Cloud upgrade installs the optional consent table. All existing unrecorded
+paths remain available. Synthetic tests exercise request/holder consent,
+signed parent/destination prompts, exact provider reads, one recording
+mutation, signed receipt and immutable policy job admission. No live carrier,
+speech or model requests are made by the new tests.
+
+IMPORTANT: phone_managed_recording_enabled_v1 defaults off. Live managed
+dispatch remains unexposed. The internal recording start command has no
+public/worker invocation in this slice. A separate verified real-time driver,
+recording-stop/revocation handling for in-flight media, retention/deletion
+policy and actual handset/carrier test are required before production
+recording is enabled. Consent revocation blocks further processing; it does
+not by itself prove that a carrier recording has stopped. Native hangup
+remains the available holder stop mechanism. The full report/Top of Mind
+experience requires existing processing worker and further integration.
+Release gate: parent #872 and exact-head CI green.

@@ -1,0 +1,168 @@
+VP3 Phone — PS5C.4 background notification delivery
+==================================================
+
+WHAT THIS RELEASE ADDS
+
+Approved, subscribed phones can receive visible Web Push alerts for an owner's
+private reply to that specific phone and a new information request addressed to
+that phone. The Info tab includes Send test notification and separate delivery
+status. Existing enrollment remains opt-in; delivery is off until an administrator
+enables it. Merely deploying the release does not send notifications.
+
+The notification preview is always generic: VP3 Phone / Open VP3 Phone to check
+your updates. It carries no message body, name, phone number, contact, location,
+voicemail transcript or action URL. Opening an alert authenticates the existing
+phone session and checks current source permissions before opening its exact
+Chat turn or information request. Expired or withdrawn sources show an unavailable
+message. Push does not initiate calls, capture sensors or silently run requests.
+
+An owner-role paired phone is still a holder connection. It does not automatically
+gain access to the owner's private voicemail, contacts or unrelated Agent Chat.
+Those owner-inbox alerts need a separately scoped owner-device grant in a later
+phase. This release does not add them implicitly.
+
+DEPLOYMENT
+
+1. Back up the database and existing runtime files. Deploy the complete release
+   archive to the installation root. Preserve config.php, .env, private/ and
+   uploads/, especially the original private/ai-key.php credential encryption key.
+   Do not replace those paths with files from a different installation.
+
+2. Run VP3's database upgrade. The migration adds a default-off delivery settings
+   row, an outbox and an encrypted authorization cache; it preserves existing
+   paired phones and subscriptions. The
+   main Phone status/Chat endpoints still work before this optional upgrade.
+
+3. The web app and queue remain compatible with PHP 8.1. The notification sender
+   uses maintained minishlink/web-push 11.0.0 and requires PHP 8.2 or newer plus
+   curl, json, mbstring and openssl. The exact production dependency bundle is
+   included under vendor/web-push-v1; Composer is not needed on shared hosting.
+   The sender must have HTTPS egress to the browser's push provider and working
+   DNS and certificate validation. Do not disable TLS verification.
+
+4. In Admin > Phone > Connected phone notifications, prepare enrollment if it
+   has not already been enabled. This creates VAPID credentials only when none
+   exist, using VP3's existing credential protection. Preserve the same database
+   and credential key on later deployments. An unreadable key is a setup failure,
+   never a reason to generate a replacement key automatically.
+
+5. Enter a push service contact, such as mailto:admin@example.com, or an HTTPS
+   contact URL. Enable Background delivery separately. Pausing new enrollment
+   preserves current subscriptions and their delivery permission. Disabling
+   delivery cancels queued work; re-enabling does not replay those old alerts.
+
+6. Add a once-per-minute cPanel cron entry using the actual PHP 8.2+ CLI path for
+   the account and the absolute application path:
+
+       /path/to/php82 /path/to/VP3/phone-push-worker-v1.php
+
+   Paths vary by hosting plan; use the version/path shown by your host. The web
+   PHP selector does not prove which PHP binary cron will use. Admin Phone shows
+   the runtime actually observed by the worker. PHP 8.1 or missing dependencies
+   cause preflight failure before a job is claimed or an attempt is consumed.
+
+   Each tick handles at most three candidates and does bounded cleanup. A local
+   process lock avoids overlapping cron runs; database leases also coordinate
+   separate hosts. Provider HTTP requests have a three-second connect timeout
+   and an eight-second overall budget including elapsed DNS time. The native
+   DNS call itself uses the host resolver's timeout. Where the host provides a
+   process timeout command, a 55-second timeout around the cron command supplies
+   a hard wall-clock bound even if DNS stalls. Never include secrets in cron.
+
+7. Check Admin Phone for a recently observed worker and delivery readiness.
+   A worker heartbeat becomes stale after three minutes. Readiness is a setup
+   signal; it does not prove that an individual device has received an alert.
+
+PHONE CHECK
+
+On iPhone or iPad, install the site on the Home Screen and open the installed
+VP3 Phone app. Web Push requires iOS/iPadOS 16.4 or later. Use the Info tab's
+installation guide, then pair or use the existing owner-approved installation
+handoff. A moved connection keeps its private Chat identity but clears the old
+notification subscription; the holder enables notifications again in the new
+installation. Opening Info never prompts for notification permission itself.
+
+From Info, choose Enable notifications. The permission/subscription request starts
+inside that button gesture. Once the exact local subscription and server worker
+are ready, choose Send test notification. Leave the app open for one test, then
+repeat with the installed app in the background and the screen locked. Tap the
+alert to return to the correct app. Allow about one cron interval plus provider
+delivery time. Inspect device notification settings if permission is blocked.
+
+STATUS MEANINGS
+
+Subscription saved: VP3 stored this installation's protected push subscription.
+Queued: the test is waiting for a worker.
+Push service accepted: the provider accepted the request; device display is not
+  yet confirmed.
+Installation reported showing: the service worker reported that showNotification
+  completed. This is a client observation, not proof that a person saw the alert.
+Opened: the app received the tap reference and authenticated its current source.
+Retry: a safe retry is scheduled with bounded backoff.
+Uncertain: the request may have reached the provider; it is not automatically
+  repeated merely to obtain a cleaner status.
+Failed, expired or cancelled: the event will not be sent again. Review setup and
+  use a new explicit test when appropriate.
+
+The test button reuses its request ID after a lost response, avoiding duplicate
+tests. New tests have a 30-second per-device cooldown and limits of 10 per device
+and 30 per account in an hour. Changing GPS sharing does not change notification
+permission. Turning notifications off first removes the server grant and then
+removes the exact local subscription when available.
+
+DELIVERY AND PRIVACY RULES
+
+The queue binds every event to the current account, device credential,
+subscription revision, VAPID identity, delivery configuration revision and exact
+source. It checks those bindings at enqueue, claim, immediately before send and
+on opening. Revocation, disconnect, installation move and subscription replacement
+invalidate queued old work. A push already accepted by an external provider cannot
+be recalled; its preview remains generic and its tap still requires current access.
+
+Credentials are decrypted only immediately before transport and are never copied
+into the outbox, logs or notification. Only recognized HTTPS Apple, Google FCM and
+Mozilla push endpoints are accepted. All resolved addresses must be public, the
+chosen address is pinned for the request, TLS is verified, redirects and proxies
+are disabled, and response sizes are bounded. Provider response bodies are not
+stored. HTTP 404/410 removes only the exact expired subscription, never a newer
+replacement. Network uncertainty is not treated as provider acceptance.
+
+VAPID authentication headers are generated and verified by the maintained
+library, encrypted in a bounded cache, and reused across cron processes until
+shortly before their 12-hour expiry. They are bound to the provider origin,
+signing key, current contact and delivery configuration. Token generation is
+serialized and is never repeated more often than hourly for that origin/key.
+Changing the contact within that hour safely defers a new send. Re-enabling the
+same configuration reuses its valid token instead of silently signing another.
+The worker checks the current device/source again after retrieving the cached
+header and releases the transaction before making a provider request.
+
+At most 64 pending unexpired events are retained per device. When this optional
+queue is full, the primary Chat reply/request is saved and an administrator-visible
+skip counter advances. Unexpected queue/database errors roll back with the source
+so an exact retry can recover. Terminal event metadata is eligible for bounded
+cleanup seven days after its expiry. Active event references remain available for
+idempotency and are not recycled. Private content is never cached by the service
+worker and there is no fetch interception or silent background activity.
+
+VALIDATION BOUNDARY
+
+Automated tests use synthetic keys and provider responses. They exercise queue
+transactions, native MySQL/MariaDB concurrency, grants, source ownership, actual
+shipped JavaScript, Web Push encryption and VAPID verification. No production
+notification is sent by the tests. A physical iPhone/Home Screen install and real
+provider delivery must still be checked on the deployed installation. Browser
+fixtures and a provider-accepted result are not a substitute for that check.
+
+PRIMARY REFERENCES
+
+Apple Web Push guide:
+https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers
+WebKit Home Screen Web Push:
+https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/
+Maintained PHP Web Push library:
+https://github.com/web-push-libs/web-push-php
+Encryption protocol:
+https://www.rfc-editor.org/rfc/rfc8291
+VAPID protocol:
+https://www.rfc-editor.org/rfc/rfc8292

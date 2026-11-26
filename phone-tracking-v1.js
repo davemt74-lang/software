@@ -8,6 +8,8 @@
   const streetDialog = byId('phone-street-consent');
   const revokeDialog = byId('phone-revoke-confirm');
   const pendingHost = byId('phone-pending');
+  const handoffHost=byId('phone-handoff-pending');
+  let handoffSignature='';
   const list = byId('phone-devices');
   const detail = byId('phone-detail');
   const summary = byId('phone-detail-summary');
@@ -23,6 +25,9 @@
   let selectedId = '';
   let followId = '';
   let linkedDevice = new URLSearchParams(location.search).get('device_id');
+  const initialInformation=new URLSearchParams(location.search).get('profile')==='information';
+  const initialManaged=new URLSearchParams(location.search).get('profile')==='managed';
+  let openManagedFromLink=initialManaged;
   let resumeSelection = null;
   let choiceToRevoke = null;
   let requestNotice = null;
@@ -270,9 +275,119 @@
       if (focusedId === d.id) button.focus({preventScroll:true});
     }
   }
+  // The map remains the main workspace. These tabs are scoped to its selected phone.
+  let profileTab='communication',profileDevice='',profileSignature='';
+  const exchange=window.VP3PhoneInformationV1?.({request,onChanged:()=>{void refresh();}});
+  const dialerOwner=window.VP3RemoteDialerV1?.owner({request:dialerOwnerRequest});
+  const managedOwner=window.VP3ManagedCallUIV1?.owner({request:managedOwnerRequest,directRoot:dialerOwner?.root,openBrowser:(d,source)=>{
+    if(window.VP3PhoneWorkspaceV1?.openConnectedPhone?.(d,source)!==true)status.textContent='Review the current connected phone and assigned line before calling.';
+  }});
+  if(managedOwner)byId('phone-dialer-owner-host')?.append(managedOwner.root);
+  else if(dialerOwner)byId('phone-dialer-owner-host')?.append(dialerOwner.root);
+  async function managedOwnerRequest(action,fields){
+    const d=selected();
+    if(!available||writing||document.hidden||!d||d.id!==fields.device_id||d.generation!==fields.generation)throw Error('Selected phone changed.');
+    writing=true;const version=++revision;
+    try{
+      const result=await request(action,fields);
+      if(version!==revision||document.hidden)throw Error('View changed.');
+      const index=devices.findIndex(x=>x.id===d.id&&x.generation===d.generation&&x.communication?.revision===d.communication?.revision);
+      if(index<0)throw Error('Connected profile changed.');
+      devices[index]={...devices[index],managed_callback:result.managed_callback};render();return result;
+    }finally{writing=false;void refresh();}
+  }
+  async function dialerOwnerRequest(action,fields){
+    const d=selected();
+    if(!available||writing||document.hidden||!d||d.id!==fields.device_id||d.generation!==fields.generation||d.dialer?.revision!==fields.dialer_revision)throw Error('Selected phone changed.');
+    writing=true;const version=++revision;
+    try{
+      const result=await request(action,fields);
+      if(version!==revision||document.hidden)throw Error('View changed.');
+      const index=devices.findIndex(x=>x.id===d.id&&x.generation===d.generation&&x.dialer?.revision===d.dialer.revision);
+      if(index<0||result.dialer?.revision!==d.dialer.revision)throw Error('Dialer changed.');
+      devices[index]={...devices[index],dialer:result.dialer};render();return result;
+    }finally{writing=false;void refresh();}
+  }
+  function renderCommunication(d){
+    const host=byId('phone-communication-profile');if(!host)return;
+    host.hidden=!d;
+    if(!d){exchange?.bind(null,false,false);host.replaceChildren();profileDevice='';profileSignature='';return;}
+    if(profileDevice!==d.id){profileDevice=d.id;profileTab=initialInformation&&linkedDevice===d.id?'information':'communication';profileSignature='';}
+    exchange?.bind(d,available&&!document.hidden,profileTab==='information');
+    if(profileTab==='information'&&exchange&&host.contains(exchange.root)&&host.dataset.exchangeDevice===d.id)return;
+    const p=d.communication;
+    const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[d.agent_chat,typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function'];
+    const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra,d.push]);
+    if(sig===profileSignature)return;
+    // Do not overwrite an in-progress permission form on an unrelated GPS poll.
+    const focused=host.contains(document.activeElement)&&document.activeElement.closest('form');
+    const oldRev=host.dataset.profileRevision;
+    if(focused&&oldRev===String(p?.revision??'')&&profileTab==='permissions'&&!writing)return;
+    profileSignature=sig;host.dataset.profileRevision=String(p?.revision??'');host.replaceChildren();
+    host.append(element('h3','Connected user'));
+    const tabs=element('div',undefined,'phone-profile-tabs');tabs.setAttribute('aria-label','Connected user sections');
+    for(const [key,title] of [['communication','Communication'],['permissions','Permissions'],['information','Information'],['activity','Activity']]){
+      const b=element('button',title);b.type='button';b.setAttribute('aria-pressed',String(key===profileTab));
+      b.addEventListener('click',()=>{profileTab=key;profileSignature='';renderCommunication(selected());});tabs.append(b);
+    }
+    host.append(tabs);
+    const facts=element('dl',undefined,'phone-info');
+    const field=(key,val)=>facts.append(element('dt',key),element('dd',String(val)));
+    if(profileTab==='communication'){
+      if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
+      field('Personal number',p?.phone_saved?p.phone_masked:'Not saved');
+      field('Telephone calls',p?.call_permission_saved?'Both permissions saved':p?.owner_calls?'Awaiting phone holder':'Not allowed');
+      field('Proactive check-ins',p?.proactive_permission_saved?'Preference saved':'Off');
+      field('Information requests',p?.request_permission_saved?'Preference saved':'Off');
+      if(p){field('Calling hours',p.window_start+' – '+p.window_end+' · '+p.timezone);field('Call limit',p.max_calls_per_day+' per day · '+p.min_gap_minutes+' min between calls');}
+      host.append(facts);
+      const ready=p.call_permission_saved===true&&Number.isSafeInteger(d.agent_chat?.conversation_id)&&d.agent_chat.conversation_id>0&&typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function';
+      const actions=element('div',undefined,'phone-command-row'),call=actionButton('open_connected_call','Call phone','phone-primary');call.disabled=!ready;actions.append(call);host.append(actions);
+      host.append(element('p',ready?'Place a user-requested call with your assigned line. The Phone drawer will ask for confirmation.':!p.call_permission_saved?'Both calling permissions are required.':!d.agent_chat?.conversation_id?'Open the paired phone chat to establish its linked conversation.':'The assigned browser calling service is unavailable.','phone-detail-meta'));
+      host.append(element('p','Autonomous Agent calls remain disabled. Use Information to share updates or send requests.','phone-detail-meta'));
+    }else if(profileTab==='permissions'){
+      if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
+      const form=element('form',undefined,'phone-profile-form');
+      const checks={};
+      for(const [key,label] of [['owner_calls','Allow telephone calls'],['owner_requests','Allow information requests']]){
+        const l=element('label',undefined,'phone-profile-check'),input=element('input');input.type='checkbox';input.checked=p[key]===true;input.disabled=writing;checks[key]=input;l.append(input,element('span',label));form.append(l);
+      }
+      const save=element('button','Save permissions','phone-primary');save.type='submit';save.disabled=writing;form.append(save);
+      form.addEventListener('submit',event=>{event.preventDefault();const current=selected();if(!event.isTrusted||!current||current.id!==d.id||current.communication?.revision!==p.revision||writing)return;
+        void mutate('save_communication_grants',current,{communication_revision:p.revision,owner_calls:checks.owner_calls.checked,owner_requests:checks.owner_requests.checked});});
+      host.append(form);
+      field('Holder call consent',p.holder_calls?'Saved':'Off');field('Holder information consent',p.holder_requests?'Saved':'Off');
+      field('Future relationship memory',p.holder_memory?'Requested':'Off');field('Location permission',d.allow_location?'Allowed':'Off');
+      field('Saved places',d.holder_can_save_places?'Owner allows':'Off');field('Camera',camera.liveCamera(d)?'Currently shared':'Not currently shared');host.append(facts);
+      host.append(element('p','The phone holder chooses their own number and preferences. These new settings do not grant access to location, camera or private files.','phone-detail-meta'));
+    }else if(profileTab==='information'){
+      host.dataset.exchangeDevice=d.id;
+      if(exchange)host.append(exchange.root);else host.append(element('p','Information exchange is unavailable.','phone-detail-meta'));
+    }else{
+      field('Connection',connection(d));field('Last seen',timestamp(d.last_seen_at));field('Location',stateLabels[effectiveState(d)]);
+      field('Push notifications',d.push?.state==='registered'?'Subscription saved · delivery pending':d.push?.state==='unavailable'?'Needs attention':'Not enrolled');
+      field('Location history',d.history_state==='active'?'Enabled · '+d.history_retention_days+' days':d.history_state==='requested'?'Awaiting holder':'Off');
+      field('Live camera',camera.liveCamera(d)?'Sharing':'Not sharing');field('Phone chat',d.agent_chat?.conversation_id?'Linked':'Not linked');
+      host.append(facts);
+      const actions=element('div',undefined,'phone-command-row');
+      for(const [panel,label] of [['history','Location history'],['places','Saved places']]){
+        const b=element('button',label);b.type='button';b.addEventListener('click',()=>{if(selected()?.id===d.id)archive.openPanel(panel);});actions.append(b);
+      }
+      host.append(actions,element('h3','Recent telephone activity'));
+      const calls=p?.recent_calls;
+      if(Array.isArray(calls)&&calls.length){
+        const rows=element('ul',undefined,'phone-connected-calls');
+        for(const call of calls.slice(0,5))rows.append(element('li',timestamp(call.created_epoch)+' · '+String(call.state||'unknown').replaceAll('_',' ')+' · '+Math.max(0,Number(call.duration_seconds)||0)+' sec'));
+        host.append(rows);
+      }else host.append(element('p',Array.isArray(calls)?'No connected-phone call reservations yet.':'Connected-phone call history is unavailable.','phone-detail-meta'));
+      host.append(element('p','Relationship Brain and ongoing objectives remain a separate build.','phone-detail-meta'));
+    }
+  }
+
   function renderDetail(d) {
     detail.hidden = !d;
     renderPreferences(d);
+    renderCommunication(d);
     const signature = JSON.stringify(d ? [d.id,d.name,d.role,d.agent_chat,d.allow_location,d.holder_can_save_places,d.generation,d.latitude,d.longitude,d.accuracy,d.fix_at,d.expires_at,connection(d),effectiveState(d),followId,camera.liveCamera(d)?.session_id] : []);
     if (signature === detailSignature) return;
     detailSignature = signature;
@@ -368,10 +483,26 @@
       accuracy_mode:accuracySelect.value
     });
   });
+  function renderHandoffRequests(moves){
+    const sig=JSON.stringify(moves.map(d=>[d.id,d.generation,d.handoff,d.name]));
+    if(handoffSignature===sig)return;
+    handoffSignature=sig;handoffHost.replaceChildren();
+    for(const d of moves){
+      const h=d.handoff,card=element('section',undefined,'phone-pending-card');
+      card.dataset.handoffId=h.transfer_id;card.dataset.deviceId=d.id;
+      card.append(element('h3','Move '+d.name),element('p',h.state==='approved'?'Approved. Waiting for the new app to finish.':'Compare this code with the intended phone holder before approving.'));
+      card.append(element('p','Verification code: '+h.comparison_code));
+      const row=element('div',undefined,'phone-command-row');
+      if(h.state==='claimed')row.append(actionButton('handoff_approve','Approve move','phone-primary'));
+      row.append(actionButton('handoff_owner_cancel','Cancel move'));card.append(row);handoffHost.append(card);
+    }
+  }
   function renderPending(pending) {
     const review = byId('phone-review');
-    review.hidden = !pending.length;
-    review.textContent = 'Review requests ('+pending.length+')';
+    const moves=devices.filter(d=>d.status==='approved'&&['claimed','approved'].includes(d.handoff?.state)&&d.handoff.expires_epoch>seconds());
+    review.hidden = !(pending.length+moves.length);
+    review.textContent = 'Review requests ('+(pending.length+moves.length)+')';
+    renderHandoffRequests(moves);
     for (const card of Array.from(pendingHost.children)) {
       if (!pending.some(d => d.id === card.dataset.deviceId)) card.remove();
     }
@@ -413,12 +544,15 @@
       }
     }
     // A link from private Chat refers to one specific phone, even after access changes.
-    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && d.allow_location)?.id || '';
+    if (linkedDevice !== null) selectedId = approved.find(d => d.id === linkedDevice && (initialInformation||initialManaged||d.allow_location))?.id || '';
     else if (!approved.some(d => d.id === selectedId)) selectedId = approved[0]?.id || '';
     if (!devices.some(d => d.id === followId && hasPoint(d))) followId = '';
     camera.update(approved);
     renderList(approved);
     renderDetail(selected());
+    dialerOwner?.bind(selected(),available&&!document.hidden);
+    managedOwner?.bind(selected(),available&&!document.hidden);
+    if(openManagedFromLink&&selected()&&(!linkedDevice||selected().id===linkedDevice)&&available){openManagedFromLink=false;managedOwner?.setMode('managed');}
     renderPending(devices.filter(d => d.status === 'pending'));
     renderMarkers();
     archive.render(approved);
@@ -429,6 +563,8 @@
     byId('phone-qr').replaceChildren();
     byId('phone-join').removeAttribute('href');
     byId('phone-join').hidden = true;
+    byId('phone-install-code').value='';byId('phone-install-code-box').open=false;byId('phone-install-code-box').hidden=true;
+    byId('phone-copy-install-status').textContent='';
     byId('phone-expiry').textContent = '';
     byId('phone-invite-box').hidden = true;
   }
@@ -445,6 +581,7 @@
     }
   }
   function clearView() {
+    exchange?.clear();
     revision++;
     camera.close();
     devices = [];
@@ -463,17 +600,18 @@
   async function request(action, fields) {
     const url = new URL(root.dataset.endpoint, location.href);
     const opts = {credentials:'same-origin',cache:'no-store',redirect:'error',headers:{'X-VP3-Working-Attention':root.dataset.binding, Accept:'application/json'}};
-    if (['state','history','places'].includes(action)) {
+    if (['state','history','places','information_list'].includes(action)) {
       url.searchParams.set('action',action);
       for (const [key,value] of Object.entries(fields || {})) url.searchParams.set(key,value);
     }
     else {
       opts.method = 'POST';
+      if(action==='information_create_file')url.searchParams.set('information_file','1');
       opts.headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify({...fields, action, csrf_token:root.dataset.csrf, request_id:crypto.randomUUID()});
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(),10000);
+    const timer = setTimeout(() => controller.abort(),['managed_reconcile','managed_end','managed_pilot_dispatch'].includes(action)?50000:action==='information_create_file'||action==='information_download'?30000:10000);
     try {
       const response = await fetch(url,{...opts, signal:controller.signal});
       const data = await response.json();
@@ -544,6 +682,7 @@
       const join = byId('phone-join');
       join.href = url.href;
       join.hidden = false;
+      byId('phone-install-code').value=url.hash.slice('#invite='.length);byId('phone-install-code-box').hidden=false;
       // The local encoder returns rectangles derived from its boolean matrix only.
       try {
         byId('phone-qr').innerHTML = window.LuckyQR.svg(url.href);
@@ -567,6 +706,12 @@
   byId('phone-pair-close').addEventListener('click', () => pairing.close());
   pairing.addEventListener('close', () => { eraseInvite(); byId('phone-pair-status').textContent = ''; });
   byId('phone-refresh-invite').addEventListener('click',newInvite);
+  byId('phone-copy-install-code').addEventListener('click',async event=>{
+    const field=byId('phone-install-code'),notice=byId('phone-copy-install-status'),version=inviteVersion;
+    if(!event.isTrusted||document.hidden||!pairing.open||!byId('phone-install-code-box').open||!expires||expires<=seconds()||!/^[A-Za-z0-9_-]{43}$/.test(field.value))return;
+    try{await navigator.clipboard.writeText(field.value);if(version===inviteVersion&&pairing.open)notice.textContent='Copied. Paste this code only into the intended VP3 Phone app.';}
+    catch(_error){if(version===inviteVersion&&pairing.open){field.focus();field.select();notice.textContent='Select and copy the code, then paste it into VP3 Phone.';}}
+  });
   function updateDevice(index, device) {
     // Mutation receipts omit camera status. Its shorter lease still comes from the last map refresh.
     devices[index] = {live_camera:devices[index].live_camera, ...device};
@@ -601,7 +746,7 @@
         const messages = {approve:device.name+' approved.',deny:'Connection request denied for '+device.name+'.',request_start:'',stop:'Sharing stopped for '+device.name+'.',revoke:device.name+' disconnected.'};
         message.textContent = status.textContent = action === 'set_holder_place_access'
           ? (result.device.holder_can_save_places ? 'Enabled' : 'Disabled')+' saved location creation for '+device.name+'.'
-          : messages[action];
+          : messages[action] || (action==='save_communication_grants'?'Communication permissions saved.':'Settings saved.');
       }
       delete status.dataset.failure;
       render();
@@ -617,6 +762,7 @@
       writing = false;
       savingPreferencesFor = '';
       renderPreferences(selected());
+      renderCommunication(selected());
       void refresh();
     }
   }
@@ -642,6 +788,17 @@
       void refresh();
     }
   }
+  handoffHost.addEventListener('click',async event=>{
+    const button=event.target.closest('button[data-action]'),card=button?.closest('[data-handoff-id]');
+    if(!event.isTrusted||!card||writing||document.hidden||!available)return;
+    const d=devices.find(d=>d.id===card.dataset.deviceId&&d.handoff?.transfer_id===card.dataset.handoffId);
+    if(!d||d.handoff.expires_epoch<=seconds())return;
+    const action=button.dataset.action;
+    if(!['handoff_approve','handoff_owner_cancel'].includes(action))return;
+    if(action==='handoff_approve'&&!window.confirm('Does the intended holder show verification code '+d.handoff.comparison_code+'? The old session will disconnect after they finish. Holder sharing preferences will reset.'))return;
+    try{const result=await writeArchive(action,{device_id:d.id,generation:d.generation,transfer_id:d.handoff.transfer_id,comparison_code:d.handoff.comparison_code,confirmed:true});if(result)byId('phone-pair-status').textContent=action==='handoff_approve'?'Move approved. The holder must finish on the new app.':'Move canceled.';}
+    catch(_error){byId('phone-pair-status').textContent='Move was not confirmed. Refresh the request.';}
+  });
   pendingHost.addEventListener('click', event => {
     const button = event.target.closest('button[data-action]');
     if (!button) return;
@@ -654,7 +811,9 @@
     const action = event.target.closest('button[data-action]')?.dataset.action;
     const d = selected();
     if (!d || !action || writing) return;
-    if (action === 'open_stream') {
+    if (action === 'open_connected_call') {
+      if(event.isTrusted&&window.VP3PhoneWorkspaceV1?.openConnectedPhone?.(d,event.target.closest('button'))!==true)status.textContent='Review the current connected phone and assigned line before calling.';
+    } else if (action === 'open_stream') {
       camera.open(d,false);
     } else if (action === 'follow') {
       followId = followId === d.id ? '' : d.id;

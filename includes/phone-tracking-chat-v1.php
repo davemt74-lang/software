@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-tracking-v1.php';
 require_once __DIR__.'/phone-camera-chat-v1.php';
 require_once __DIR__.'/paired-phone-agent-v1.php';
@@ -12,7 +14,7 @@ require_once __DIR__.'/phone-tracking-local-approval-v1.php';
 /** Only content-free markers go into ordinary model history or shared Chat indexes. */
 function vp3_phone_chat_schema_v1(PDO $pdo): void
 {
-    if ($pdo->inTransaction()) throw new LogicException('Install Phone Tracking outside a transaction.');
+    if (vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Install Phone Tracking outside a transaction.');
     $options = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
         ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : '';
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_chat_turns_v1 (
@@ -218,8 +220,8 @@ function vp3_phone_chat_actions_v1(string $mapLink,int $aid,int $cid,?string $de
     }
     $path='/phone-tracking.php?'.http_build_query(array_filter(['agent'=>$aid,'conversation_id'=>$cid,
         'connect'=>$mapLink==='connect'?1:null,'panel'=>in_array($mapLink,['history','places'],true)?$mapLink:null,
-        'device_id'=>$deviceId],static fn($v)=>$v!==null));
-    $label=match($mapLink) {'connect'=>'Show phone QR code','history'=>'Open location history','places'=>'Open saved places',default=>'Open tracking map'};
+        'device_id'=>$deviceId,'profile'=>$mapLink==='information'?'information':null],static fn($v)=>$v!==null));
+    $label=match($mapLink) {'connect'=>'Show phone QR code','history'=>'Open location history','places'=>'Open saved places','information'=>'Open phone information exchange',default=>'Open tracking map'};
     return [['type'=>'open_url','label'=>$label,'url'=>url($path)]];
 }
 
@@ -617,7 +619,8 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
     $cameraPending=vp3_phone_camera_pending_v1($pdo,$uid,$aid,$cid);
     $pairedPending=vp3_paired_phone_pending_v1($pdo,$uid,$aid,$cid);
     $recordPending=vp3_phone_record_pending_v1($pdo,$uid,$aid,$cid);
-    if (!$recordPending && !$pairedPending && !$localPending && !$cameraPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
+    $informationPending=(bool)vp3_phone_information_announcements_v1($pdo,$uid,$aid,$cid,false);
+    if (!$informationPending && !$recordPending && !$pairedPending && !$localPending && !$cameraPending && !vp3_phone_sql_v1($pdo,$sql,[$uid,$aid,$cid])->fetchColumn() && !vp3_phone_arrival_pending_v1($pdo,$uid,$aid,$cid)) return [];
     vp3_phone_chat_authorize_v1($pdo,$user,$principal,$input,$cid);
     $eligible=static function(int $offerId) use($pdo,$user,$principal,$input,$cid): bool {
         try {
@@ -649,6 +652,7 @@ function vp3_phone_chat_updates_v1(PDO $pdo,array $user,array $principal,array $
                 $updates[]=vp3_phone_chat_announcement_v1($row);
             }
         }
+        if ($informationPending) $updates=array_merge($updates,vp3_phone_information_announcements_v1($pdo,$uid,$aid,$cid,true));
         if ($pairedPending) $updates=array_merge($updates,vp3_paired_phone_owner_updates_v1($pdo,$uid,$aid,$cid));
         if ($cameraPending) $updates=array_merge($updates,vp3_phone_camera_chat_updates_v1($pdo,$uid,$aid,$cid));
         if ($recordPending) $updates=array_merge($updates,vp3_phone_record_announcements_v1($pdo,$uid,$aid,$cid));

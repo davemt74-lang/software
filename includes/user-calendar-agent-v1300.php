@@ -110,6 +110,7 @@ function user_calendar_agent_options_v1340(string $query,array $existing=[]): ar
 {
     $options=user_calendar_options_v1340([], $existing);
     if(preg_match('/\b(?:weekly|every week|every (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i',$query))$options['recurrence']='weekly';
+    if(preg_match('/\b(?:daily|every day|each day)\b/i',$query))$options['recurrence']='daily';
     if(preg_match('/\b(?:one[ -]time|does not repeat|stop repeating)\b/i',$query))$options['recurrence']='none';
     if(preg_match('/\b(?:include|enable|turn on) agent notifications\b|\b(?:make|mark)(?: it| this)?(?: an?)? priority\b/i',$query))$options['agent_notifications']=1;
     if(preg_match('/\b(?:exclude|disable|turn off|no) agent notifications\b/i',$query))$options['agent_notifications']=0;
@@ -153,14 +154,14 @@ function user_calendar_agent_manage_v1340(PDO $pdo,array $user,string $query,int
         }
         $input=array_merge($input,user_calendar_agent_options_v1340($query,$event));
         if(!$date&&!$time&&$input['recurrence']===($event['recurrence']??'none')&&(int)$input['agent_notifications']===(int)($event['agent_notifications']??0)){
-            $result['answer']='What should change? Give a new date/time, One time or Every week, or enable/disable agent notifications.';return $result;
+            $result['answer']='What should change? Give a new date/time, One time, Every day or Every week, or enable/disable agent notifications.';return $result;
         }
         user_calendar_validate_options_v1340($pdo,user_calendar_options_v1340($input),user_calendar_local_range_v1300($input,(string)$event['timezone']));
     }
     $result['tool_receipt']=vp3_tool_receipt_v1('calendar.manage','prepare','clarification_required','confirmation_required');
     $pending=$input+['operation'=>$operation,'event_id'=>$id];
     user_calendar_agent_set_pending_v1300($user,$conversationId,$pending);
-    $result['answer']=($operation==='cancel'?'Remove':'Update').' calendar event #'.$id.' “'.(string)$event['title'].'”'.(($event['recurrence']??'none')==='weekly'?' and its entire weekly series':'').'?'.($operation==='update'?' New schedule: '.$input['date'].' '.$input['start_time'].' · '.$input['timezone'].' · '.($input['recurrence']==='weekly'?'Every week':'One time').' · agent notifications '.(!empty($input['agent_notifications'])?'on':'off').'.':'').' Confirm?';
+    $result['answer']=($operation==='cancel'?'Remove':'Update').' calendar event #'.$id.' “'.(string)$event['title'].'”'.(['daily'=>' and its entire daily series','weekly'=>' and its entire weekly series'][$event['recurrence']??'none']??'').'?'.($operation==='update'?' New schedule: '.$input['date'].' '.$input['start_time'].' · '.$input['timezone'].' · '.(['daily'=>'Every day','weekly'=>'Every week'][$input['recurrence']]??'One time').' · agent notifications '.(!empty($input['agent_notifications'])?'on':'off').'.':'').' Confirm?';
     return $result;
 }
 
@@ -249,7 +250,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
             foreach(array_slice($events,0,12) as $event){
                 $label=user_calendar_agent_label_v1300($event,$timezone);
                 $kind=(string)$event['kind']==='booking'?'Booking':'Event';
-                $lines[]='• '.$label.' — '.(string)$event['title'].' ('.$kind.((string)$event['kind']==='event'?' #'.(int)$event['id']:'').(($event['recurrence']??'none')==='weekly'?' · weekly':'').(!empty($event['agent_notifications'])?' · agent priority':'').')';
+                $lines[]='• '.$label.' — '.(string)$event['title'].' ('.$kind.((string)$event['kind']==='event'?' #'.(int)$event['id']:'').(['daily'=>' · daily','weekly'=>' · weekly'][$event['recurrence']??'none']??'').(!empty($event['agent_notifications'])?' · agent priority':'').')';
             }
             $result['answer']=($date?'Here’s your calendar for '.$start->format('l, F j').':':'Here’s your upcoming calendar:')."\n".implode("\n",$lines);
         }
@@ -278,7 +279,7 @@ function user_calendar_agent_query_v1300(string $query,array $user,int $conversa
         user_calendar_agent_set_pending_v1300($user,$conversationId,$pending);
         $start=DateTimeImmutable::createFromFormat('!Y-m-d H:i',$date.' '.$startTime,new DateTimeZone($timezone));
         $when=$start?$start->format('D, M j · g:i A T'):$date.' '.$startTime;
-        $result['answer']='I can add “'.$title.'” to your calendar for '.$when.' ('.$duration.' minutes).'.($pending['recurrence']==='weekly'?' Repeats every week.':'').(!empty($pending['agent_notifications'])?' Agent notifications on.':'').' Confirm?';
+        $result['answer']='I can add “'.$title.'” to your calendar for '.$when.' ('.$duration.' minutes).'.(['daily'=>' Repeats every day.','weekly'=>' Repeats every week.'][$pending['recurrence']]??'').(!empty($pending['agent_notifications'])?' Agent notifications on.':'').' Confirm?';
         $result['tool_receipt']=vp3_tool_receipt_v1('calendar.manage','prepare','clarification_required','confirmation_required');
         agent_tool_log($user,'calendar.event.prepare',$query,'pending',['title'=>$title,'date'=>$date,'start_time'=>$startTime,'duration_minutes'=>$duration,'agent_id'=>$agentId],$conversationId);
         return $result;

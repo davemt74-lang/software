@@ -189,6 +189,14 @@ try {
     $device = $state()[0];
     phone_test_check(count($state()) === 1 && $device['status'] === 'approved'
         && !vp3_phone_owner_v1($db, 2, 'state', [])['devices'], 'paired phone belongs only to its approving account');
+    require_once __DIR__.'/phone-communication-profile-cases-v1.php';
+    vp3_test_phone_communication_v1($db,1,2,$deviceId,$token,'phone_test_check');
+    require_once __DIR__.'/phone-information-exchange-cases-v1.php';
+    vp3_test_phone_information_v1($db,1,2,$deviceId,$token,'phone_test_check');
+    require_once __DIR__.'/phone-information-file-cases-v1.php';
+    vp3_test_phone_files_v1($db,1,2,$deviceId,$token,'phone_test_check');
+    require_once __DIR__.'/phone-remote-dialer-cases-v1.php';
+    vp3_test_phone_dialer_v1($db,1,2,$deviceId,$token,'phone_test_check');
     // Restore the Phase 1 layout around a real approved phone and its existing approval receipt.
     $db->exec('ALTER TABLE vp3_phone_devices_v1 DROP COLUMN update_interval_seconds, DROP COLUMN accuracy_mode, DROP COLUMN preferences_version,
         DROP COLUMN holder_can_save_places, DROP COLUMN holder_place_version');
@@ -627,10 +635,14 @@ try {
     phone_test_check(!vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_map_v1 WHERE session_id=?',[$sessionId])->fetchColumn()
         && !vp3_phone_sql_v1($db,'SELECT 1 FROM vp3_phone_camera_viewers_v1 WHERE session_id=?',[$sessionId])->fetchColumn(),
         'stopping sharing also removes the private Map and Chat viewers and their signaling');
+    require_once __DIR__.'/phone-handoff-cases-v1.php';
+    vp3_test_phone_handoff_v1($db,1,2,'phone_test_check');
+    require_once __DIR__.'/phone-push-cases-v1.php';
+    vp3_test_phone_push_v1($db,1,2,'phone_test_check');
     $db->exec('DELETE FROM users WHERE id=1');
     $tables = [
         'vp3_phone_invites_v1', 'vp3_phone_devices_v1', 'vp3_phone_requests_v1',
-        'vp3_phone_history_points_v1', 'vp3_phone_places_v1', 'vp3_phone_camera_sessions_v1',
+        'vp3_phone_history_points_v1', 'vp3_phone_places_v1', 'vp3_phone_camera_sessions_v1','vp3_phone_handoffs_v1','vp3_phone_push_subscriptions_v1',
     ];
     foreach ($tables as $table) {
         phone_test_check(!(int)$db->query("SELECT COUNT(*) FROM $table WHERE owner_user_id=1")->fetchColumn(),

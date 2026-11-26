@@ -18,10 +18,11 @@ function vp3_phone_workspace_runtime_v1(array $user,int $agentId=0,int $conversa
     if(!$pdo instanceof PDO||!vp3_phone_workspace_available_v1($pdo,$user))return '';
     $GLOBALS['VP3_PHONE_WORKSPACE_RUNTIME_V1']=true;
     $root=dirname(__DIR__);
-    $build=substr(hash('sha256',hash_file('sha256',$root.'/phone-workspace-v1.js').hash_file('sha256',$root.'/phone-workspace-v1.css').hash_file('sha256',$root.'/phone-operator-capture-v1.js').hash_file('sha256',$root.'/phone-operator-voice-mixer-v1.js')),0,12);
+    $build=substr(hash('sha256',hash_file('sha256',$root.'/phone-workspace-v1.js').hash_file('sha256',$root.'/phone-workspace-v1.css').hash_file('sha256',$root.'/phone-operator-capture-v1.js').hash_file('sha256',$root.'/phone-voicemail-capture-v1.js').hash_file('sha256',$root.'/phone-operator-voice-mixer-v1.js')),0,12);
     $config=['endpoint'=>url('/api/phone-workspace-v1.php'),'urlbase'=>url('/'),'csrf'=>csrf_token(),
         'operator_live_endpoint'=>url('/api/phone-operator-live-v1.php'),'operator_capture_url'=>url('/phone-operator-capture-v1.js?v='.$build),
         'build'=>$build,'owner_id'=>(int)$user['id'],'agent_id'=>max(0,$agentId),'conversation_id'=>max(0,$conversationId),
+        'greeting_endpoint'=>url('/api/phone-voicemail-greeting-v1.php'),'greeting_capture_url'=>url('/phone-voicemail-capture-v1.js?v='.$build),
         'sdk_url'=>url('/assets/twilio-voice-2.18.5.min.js'),
         'sdk_integrity'=>'sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8'];
     return '<link rel="stylesheet" data-phone-workspace-v1 href="'.e(url('/phone-workspace-v1.css?v='.$build)).'">'

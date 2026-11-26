@@ -4,7 +4,7 @@ declare(strict_types=1);
 /** Shared owner-private caller identity. Reading never creates contacts or contacts schemas. */
 function vp3_phone_caller_contacts_table_v1(PDO $pdo,string $table): bool
 {
-    if(!in_array($table,['crm_contacts','crm_contact_phones'],true))return false;
+    if(!in_array($table,['crm_contacts','crm_contact_phones','crm_contact_emails'],true))return false;
     try{$pdo->query('SELECT 1 FROM '.$table.' WHERE 1=0');return true;}catch(PDOException){return false;}
 }
 function vp3_phone_caller_contacts_digits_v1(string $value): string
@@ -78,9 +78,10 @@ function vp3_phone_caller_contact_save_v1(PDO $pdo,array $scope,array $input): a
         $scope=vp3_phone_workspace_scope_v1($pdo,$scope['user'],$input);
         if(str_starts_with($ref,'legacy-')){
             $q=$pdo->prepare("SELECT caller_e164 AS peer_e164,agent_id FROM phone_voice_calls_v130 WHERE id=? AND owner_user_id=? AND provider='twilio'".vp3_phone_workspace_lock_v1($pdo));$q->execute([(int)substr($ref,7),$scope['owner_user_id']]);
-        }else{$q=$pdo->prepare('SELECT peer_e164,agent_id FROM phone_browser_calls_v1 WHERE public_id=? AND owner_user_id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$ref,$scope['owner_user_id']]);}
+        }else{$q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=? AND owner_user_id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$ref,$scope['owner_user_id']]);}
         $call=$q->fetch(PDO::FETCH_ASSOC);
         if(!$call||($scope['agent_id']>0&&(int)$call['agent_id']!==$scope['agent_id']))vp3_phone_workspace_error_v1('phone_call_unavailable',404,'This call is unavailable.');
+        if((string)($call['paired_profile_id']??'')!=='')vp3_phone_workspace_error_v1('operator_connected_private',403,'Manage this connected phone in Phone Tracking.');
         $phone=(string)$call['peer_e164'];if(!preg_match('/^\+[1-9][0-9]{7,14}$/D',$phone))vp3_phone_workspace_error_v1('phone_contact_number_unavailable',422,'This caller has no phone number to save.');
         $known=vp3_phone_caller_contacts_lookup_v1($pdo,$scope['owner_user_id'],[$phone]);
         if(isset($known[$phone]))return ['contact'=>$known[$phone],'created'=>false];

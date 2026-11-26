@@ -1,12 +1,21 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
 require_once __DIR__.'/extension-device-auth-v2000.php';
 require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/phone-tracking-history-v1.php';
 require_once __DIR__.'/phone-tracking-places-v1.php';
 require_once __DIR__.'/phone-tracking-arrivals-v1.php';
 require_once __DIR__.'/phone-camera-v1.php';
+require_once __DIR__.'/phone-communication-profile-v1.php';
+require_once __DIR__.'/phone-information-exchange-v1.php';
+require_once __DIR__.'/phone-remote-dialer-v1.php';
+require_once __DIR__.'/phone-managed-ui-v1.php';
+require_once __DIR__.'/phone-handoff-v1.php';
+require_once __DIR__.'/phone-push-subscriptions-v1.php';
+require_once __DIR__.'/phone-push-delivery-v1.php';
+require_once __DIR__.'/phone-push-events-v1.php';
 
 const VP3_PHONE_INVITE_SECONDS_V1 = 300;
 const VP3_PHONE_FRESH_SECONDS_V1 = 60;
@@ -16,7 +25,7 @@ const VP3_PHONE_MAX_DAYS_V1 = 90;
 /** Explicit installation only. Live requests do not create or alter tables. */
 function vp3_phone_schema_v1(PDO $pdo): void
 {
-    if ($pdo->inTransaction()) throw new LogicException('Install Phone Tracking outside a transaction.');
+    if (vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Install Phone Tracking outside a transaction.');
     $options = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql'
         ? ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci' : '';
     // The same defaults apply to new and already-paired phones.
@@ -78,6 +87,13 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_places_schema_v1($pdo);
     vp3_phone_arrival_schema_v1($pdo,$options);
     vp3_phone_camera_schema_v1($pdo,$options);
+    vp3_phone_communication_install_v1($pdo,$options);
+    vp3_phone_information_install_v1($pdo,$options);
+    vp3_phone_file_install_v1($pdo,$options);
+    vp3_phone_dialer_install_v1($pdo,$options);
+    vp3_phone_handoff_install_v1($pdo,$options);
+    vp3_phone_push_install_v1($pdo,$options);
+    vp3_phone_push_delivery_install_v1($pdo,$options);
 }
 
 function vp3_phone_schema_ready_v1(PDO $pdo): bool
@@ -105,26 +121,6 @@ function vp3_phone_sql_v1(PDO $pdo, string $sql, array $params): PDOStatement
 function vp3_phone_lock_v1(PDO $pdo): string
 {
     return $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'mysql' ? ' FOR UPDATE' : '';
-}
-
-/** All mutations lock in the same order: account, then invite/device/receipt. */
-function vp3_phone_transaction_v1(PDO $pdo, callable $work): array
-{
-    // The Chat coordinator can own the transaction so the command and its receipt commit together.
-    if ($pdo->inTransaction()) return $work();
-    $sqlite = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite';
-    if ($sqlite) $pdo->exec('BEGIN IMMEDIATE');
-    else $pdo->beginTransaction();
-    try {
-        $result = $work();
-        if ($sqlite) $pdo->exec('COMMIT');
-        else $pdo->commit();
-        return $result;
-    } catch (Throwable $e) {
-        if ($sqlite) $pdo->exec('ROLLBACK');
-        elseif ($pdo->inTransaction()) $pdo->rollBack();
-        throw $e;
-    }
 }
 
 function vp3_phone_authorized_owner_v1(PDO $pdo, int $owner, bool $lock): ?string
@@ -361,7 +357,7 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
             $generation=(int)$row['generation'];
             vp3_phone_owner_transition_v1($row,$action,$input,$now);
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
-            if ($action === 'revoke') vp3_phone_camera_disconnect_v1($pdo,$row);
+            if ($action === 'revoke') {vp3_phone_push_revoke_v1($pdo,$row,$now);vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
             if ($action === 'delete_history' || $action === 'revoke') vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_save_row_v1($pdo,$row);
             $expiry = $row['expires_at'];
@@ -505,6 +501,9 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             vp3_phone_history_delete_v1($pdo,$row);
             vp3_phone_arrival_clear_v1($pdo,$row);
             vp3_phone_camera_disconnect_v1($pdo,$row);
+            vp3_phone_communication_delete_v1($pdo,$row);
+            vp3_phone_handoff_revoke_v1($pdo,$row);
+            vp3_phone_push_revoke_v1($pdo,$row,$now);
             return [];
         }
         $receipt = [];
@@ -512,7 +511,27 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
         if ($action !== 'status') {
             $previousFix = $row['fix_at'];
             $generation=(int)$row['generation'];
-            if ($action === 'holder_save_place') {
+            if (in_array($action,['push_register','push_disable'],true)) {
+                $receipt=vp3_phone_push_holder_v1($pdo,$row,$action,$input,$now);
+            } elseif (in_array($action,['push_test','push_resolve'],true)) {
+                $receipt=vp3_phone_push_delivery_holder_v1($pdo,$row,$action,$input,$now);
+            } elseif (in_array($action,['handoff_offer','handoff_cancel'],true)) {
+                $receipt=vp3_phone_handoff_holder_v1($pdo,$row,$action,$input,$now);
+            } elseif ($action === 'save_communication_profile') {
+                vp3_phone_communication_require_v1(is_string($input['device_id']??null)&&hash_equals($row['id'],$input['device_id']),403);
+                vp3_phone_communication_save_v1($pdo,$row,$input,$now,true);
+            } elseif (in_array($action,['information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download'],true)) {
+                $receipt=['information'=>vp3_phone_information_action_v1($pdo,$row,$action,$input,$now,true)];
+            } elseif (in_array($action,['dialer_preferences','dialer_claim','dialer_handled','dialer_decline'],true)) {
+                $receipt=vp3_phone_dialer_action_v1($pdo,$row,$action,$input,$now,true);
+            } elseif ($action === 'managed_recording_withdraw') {
+                $receipt=vp3_managed_ui_withdraw_holder_v1($pdo,$row,$input,$now);
+            } elseif ($action === 'native_dialthrough_issue') {
+                require_once __DIR__.'/phone-native-dialthrough-v1.php';
+                $receipt=vp3_native_dialthrough_issue_v1($pdo,$row,$input,$now);
+            } elseif ($action === 'managed_respond') {
+                $receipt=vp3_managed_ui_holder_action_v1($pdo,$row,$input,$now);
+            } elseif ($action === 'holder_save_place') {
                 $receipt = vp3_phone_holder_save_place_v1($pdo,$row,$input,$now);
             } elseif (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
                 vp3_phone_arrival_holder_v1($pdo,$row,$action,$input,$now);
@@ -520,7 +539,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 vp3_phone_device_transition_v1($row,$action,$input,$now);
             }
             if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
-            if ($action === 'disconnect') vp3_phone_camera_disconnect_v1($pdo,$row);
+            if ($action === 'disconnect') {vp3_phone_push_revoke_v1($pdo,$row,$now);vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
             if ($action === 'fix' && ($previousFix === null || (int)$previousFix !== (int)$row['fix_at'])) {
                 vp3_phone_history_record_v1($pdo,$row,$input,$now);
                 vp3_phone_arrival_fix_v1($pdo,$row,$input,$now);
@@ -537,7 +556,13 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
             $row['last_seen_at']=$now;
             vp3_phone_save_row_v1($pdo,$row);
         }
-        return ['device'=>vp3_phone_holder_public_v1($pdo,$row,$now),'owner_name'=>$ownerName] + $receipt;
+        $public=vp3_phone_holder_public_v1($pdo,$row,$now);
+        $public['communication']=vp3_phone_communication_project_v1($pdo,$row,$now,true);
+        $public['dialer']=vp3_phone_dialer_view_v1($pdo,$row,$now,true);
+        $public['managed_callback']=vp3_managed_ui_projection_v1($pdo,$row,$now,true);
+        $public['handoff']=vp3_phone_handoff_view_v1($pdo,$row,$now);
+        $public['push']=vp3_phone_push_view_v1($pdo,$row,$now);
+        return ['device'=>$public,'owner_name'=>$ownerName] + $receipt;
     });
     // Return no owner or device data, after committing the withdrawal.
     return $result ?: throw new RuntimeException('Phone connection unavailable.',403);

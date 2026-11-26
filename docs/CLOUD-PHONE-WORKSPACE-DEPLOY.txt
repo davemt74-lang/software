@@ -12,6 +12,11 @@ INSTALL
    Preserve config.php, .env, private/ and uploads/.
 2. Sign in as an administrator and run upgrade.php. It installs phone workspace,
    recording, speech-budget and historical SMS ownership migration storage.
+   Owner voicemail controls additionally install per-line preferences, private
+   greeting bytes, short-lived call-bound greeting grants, consent receipts and
+   durable deletion tombstones. Run the upgrade even if older Phone calls work.
+   A partial voicemail upgrade leaves Connections, Contacts and Recent calls
+   available while Voicemail requests the database upgrade.
    It also enables shared CRM contacts with a name and phone number and no email.
    Run this upgrade before using Add to contacts in a call card or active-call panel.
    Existing assignments remain unchanged. Fresh setup.php installs the same schema.
@@ -80,6 +85,48 @@ AUTOMATIC TRANSCRIPTS AND REPORTS
     suggested actions automatically. Server worker observation means only that
     the process ran; the UI does not claim a provider was verified by that signal.
 
+OWNER VOICEMAIL CONTROLS
+13. Open Phone > Voicemail in the owner's private Chat workspace. Each assigned
+    number has independent preferences. Choose 2–10 approximate rings; the UI
+    also shows the estimated 12–60 seconds. Twilio's Dial timeout includes an
+    additional five-second buffer, which the incoming browser timeout accounts
+    for. Carrier ringback cadence varies, so an exact ring count is not promised.
+    When browser calling is unavailable, the existing fallback can answer at once.
+    Outgoing calls and managed call/disclosure flows retain their existing timing.
+14. Select Record greeting, permit the microphone, then Stop and preview it.
+    Save greeting is a separate action; an unsaved recording is discarded when
+    leaving the tab, closing Phone or changing Chat/number. Greetings are 1–60
+    seconds of mono 16 kHz PCM audio and use the existing microphone ownership
+    lease. Use standard greeting removes the saved personal greeting. Callers
+    still hear the recording notice before the voicemail Record instruction.
+    Greeting preview requires the private owner session. Carrier playback uses
+    a short-lived grant bound to the current incoming call and greeting; changing
+    the greeting or number assignment invalidates that grant.
+15. Automatic voicemail transcription starts off. Enable it per number, or use
+    Transcribe voicemail on an individual existing message. Both use the same
+    phone-recording-worker-v1.php cron command in step 10 and existing speech
+    quotas; no new scheduler is required. Voicemail does not enable call recording
+    or automatic call analysis. The worker observation appears next to these
+    settings so an unobserved/stale worker is not mistaken for finished work.
+16. Post new voicemail in Agent Chat controls automatic text announcements and
+    saved transcript reports. Their original caller and call receipt are retained;
+    an existing incoming Agent conversation is reused. Post voicemail to Chat
+    explicitly posts the saved message/transcript in the current private Chat.
+    Reports are deduplicated. These are ordinary assistant text posts with Phone
+    cards; they do not start a new text-to-speech path or place a call.
+17. Delete voicemail requires an in-card confirmation. It revokes playback,
+    discards its canonical transcript/audio, and replaces its related Phone posts
+    in Chat with Voice message deleted. Durable tombstones fence duplicate carrier
+    callbacks and late workers. The existing worker retries private file cleanup
+    and the authenticated provider DELETE until confirmed. Deleting voicemail
+    does not delete separate call recordings or other owners' records.
+
+Carrier behavior references:
+https://www.twilio.com/docs/voice/twiml/dial
+https://help.twilio.com/articles/223132587-Is-it-possible-to-hangup-a-call-after-a-certain-number-of-rings-
+https://www.twilio.com/docs/voice/twiml/play
+https://www.twilio.com/docs/voice/twiml/record
+
 RELEASE VALIDATION
 Automated checks cover actual PHP/SQLite state projections, isolated MySQL
 persistence/migrations, signed carrier callbacks, single-use dial intent replay,
@@ -99,3 +146,9 @@ no phone icon and cannot call its APIs.
 Confirm paid package access and an explicit admin grant both work only alongside
 a real assignment, and that removing the allowance blocks a new call. Carrier,
 real microphone/audio quality and production credentials need this live check.
+For voicemail, save and preview a personal greeting, call the assigned number
+with the browser available and unavailable, verify the estimated timeout and
+spoken recording notice, leave a message, transcribe it, inspect the correct Chat,
+then delete it and verify playback/transcript/Chat redaction and provider cleanup.
+Check the same flow on a physical iPhone. Automated browser and injected-carrier
+checks do not establish hosted microphone quality or live carrier acceptance.

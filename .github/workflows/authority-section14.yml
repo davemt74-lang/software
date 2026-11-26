@@ -606,3 +606,101 @@ jobs:
           name: profile-workspace-browser-evidence
           path: artifacts/profile-specialist-workspace/
           if-no-files-found: ignore
+  worker-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-root-password
+          MYSQL_DATABASE: operator_worker_ci
+          MYSQL_USER: operator_test
+          MYSQL_PASSWORD: test-worker-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: pdo_sqlite, pdo_mysql
+      - name: Syntax and SQLite wire authority checks
+        run: |
+          php -l includes/agent-operator-worker-authority-8a4.php
+          php -l tests/agent-operator-worker-authority-8a4.php
+          php tests/agent-operator-worker-authority-8a4.php
+          php tests/agent-operator-worker-race-8a4.php
+          php tests/agent-operator-paired-worker-8a4.php
+      - name: MySQL wire authority checks
+        env:
+          VP3_WORKER_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=operator_worker_ci
+          VP3_WORKER_TEST_USER: operator_test
+          VP3_WORKER_TEST_PASSWORD: test-worker-password
+        run: |
+          php tests/agent-operator-worker-authority-8a4.php
+          php tests/agent-operator-worker-race-8a4.php
+          php tests/agent-operator-paired-worker-8a4.php
+
+      - name: Check out exact HomeServer reporting implementation for interoperability
+        uses: actions/checkout@v4
+        with:
+          repository: davemt74-lang/otro
+          ref: 0b059239c489655f1c65dbe857c58a73bdf0b3c3
+          path: .operator-interop-homeserver
+          persist-credentials: false
+          sparse-checkout: |
+            telephony
+          sparse-checkout-cone-mode: true
+      - name: Cross-runtime Python/PHP loopback TLS acceptance
+        env:
+          VP3_INTEROP_HOMESERVER: ${{ github.workspace }}/.operator-interop-homeserver
+        run: |
+          php -l tests/fixtures/operator-worker-interop-8a4.php
+          python3 -B tests/operator-worker-interop-8a4.py
+
+  owner-phone-preferences:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: fixture-only-root
+          MYSQL_DATABASE: operator_owner_ci
+          MYSQL_USER: operator_owner_test
+          MYSQL_PASSWORD: fixture-only-owner
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          extensions: pdo_sqlite, pdo_mysql
+      - name: Account private number and preferences on SQLite
+        run: |
+          php -l account.php
+          php -l includes/agent-operator-owner-phone-v1.php
+          php -l setup.php
+          php -l upgrade.php
+          php tests/agent-operator-owner-phone-v1.php
+          node tests/agent-operator-owner-phone-contract-v1.mjs
+      - name: Account private number and preferences on native MySQL
+        env:
+          VP3_OWNER_PHONE_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=operator_owner_ci
+          VP3_OWNER_PHONE_TEST_USER: operator_owner_test
+          VP3_OWNER_PHONE_TEST_PASSWORD: fixture-only-owner
+        run: php tests/agent-operator-owner-phone-v1.php

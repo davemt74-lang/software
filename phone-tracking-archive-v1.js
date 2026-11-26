@@ -354,5 +354,5 @@ window.vp3PhoneArchiveV1 = function ({
   });
   dialog.addEventListener('close',() => { if (!dialog.open) deleteTarget = null; });
   syncTabs();
-  return {render,refresh,clear,hasMapData:() => Boolean(points.length || places.length)};
+  return {render,refresh,clear,openPanel,hasMapData:() => Boolean(points.length || places.length)};
 };

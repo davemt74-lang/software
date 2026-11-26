@@ -78,3 +78,49 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
   #phone-location[data-tab] .phone-brand-line { display: none; }
   .phone-tabs { margin-top: 0; }
 }
+
+#phone-communication-form{display:grid;gap:10px}
+#phone-communication-form .phone-communication-check{display:flex;align-items:center;gap:10px;font-size:.95rem}
+#phone-communication-form .phone-communication-check input{width:22px;height:22px;min-height:22px;margin:0;flex:none}
+#phone-communication-form label:not(.phone-communication-check) input{margin-bottom:0}
+
+.phone-information-panel{display:grid;gap:10px;min-width:0;margin-block:12px}
+.phone-information-panel label{display:grid;gap:6px;font-weight:600;font-size:.9rem}
+.phone-information-panel :is(textarea,select){font:inherit;color:inherit;background:#fff;border:1px solid #bacdc2;border-radius:8px;padding:9px;min-width:0;width:100%;box-sizing:border-box}
+.phone-information-panel textarea{resize:vertical;min-height:64px}
+.phone-information-compose,.phone-information-items,.phone-information-item form{display:grid;gap:8px}
+.phone-information-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.phone-information-controls button{flex:1 1 auto}
+.phone-information-item{display:grid;gap:6px;padding:12px;border:1px solid #cddbd6;border-radius:10px;min-width:0;overflow-wrap:anywhere}
+.phone-information-item small,.phone-information-empty,.phone-information-status{font-size:.85rem;color:#4e635b}
+.phone-information-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.phone-information-panel [hidden]{display:none!important}
+
+#phone-information summary{font-weight:700;cursor:pointer;min-height:44px;padding:10px 0} #phone-information .phone-information-panel h3{font-size:1rem}
+
+.phone-information-file{display:grid;gap:8px;min-width:0}.phone-information-file input[type=file]{max-width:100%;font:inherit}.phone-information-file .phone-information-confirm{display:flex;gap:8px;align-items:center}.phone-information-confirm input[type=checkbox]{width:20px;height:20px;min-height:20px;flex:none;margin:0}.phone-information-file small{font-size:.8rem;line-height:1.4;color:#4e635b}
+
+#phone-pair-code{font-family:ui-monospace,monospace;font-size:1rem}.phone-install-note,#phone-install-help{font-size:.9rem;color:#466058;overflow-wrap:anywhere}#phone-install-status{font-weight:650}
+
+/* Info is a single scrollable, text-first guide; no additional nested scroll areas. */
+.phone-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+#phone-location[data-tab] #phone-info{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+#phone-location[data-tab="info"] #phone-chat-status{display:none}
+#phone-location[data-tab="info"] #phone-dock{padding-block:0;border-top:0;min-height:env(safe-area-inset-bottom)}
+.phone-guide{max-width:34rem;margin-inline:auto;padding:.6rem max(1rem,env(safe-area-inset-right)) 1.2rem max(1rem,env(safe-area-inset-left));min-width:0}
+.phone-guide h1{font-size:1.4rem;margin:0 0 .5rem}
+.phone-guide h2{font-size:1rem;margin:0 0 .5rem}
+.phone-guide p,.phone-guide li,.phone-guide dd{font-size:.88rem;line-height:1.5}
+.phone-guide p{margin:.35rem 0 .65rem}
+.phone-guide-section{padding:1rem 0;border-top:1px solid #dce4e1}
+.phone-guide ol{padding-left:1.3rem;margin:.5rem 0 .8rem}
+.phone-guide li{padding:.14rem 0}
+.phone-guide-status,#phone-install-status{font-weight:650;color:#36564d}
+.phone-guide-requests{margin:.4rem 0 .6rem;padding:0;border:0}
+.phone-guide-requests div{display:grid;grid-template-columns:1fr;gap:0;padding:.3rem 0}
+.phone-guide-requests dt{font-size:.87rem;font-weight:650;color:inherit}
+.phone-guide-requests dd{font-weight:400;text-align:left;color:#466058}
+.phone-guide-footer{display:flex;gap:.25rem;align-items:center;justify-content:center;flex-wrap:wrap;margin:.1rem 0 0;font-size:.75rem;color:#466058;text-align:center}
+.phone-guide-link{width:auto;min-height:32px;padding:3px 5px;background:transparent;color:#174e46;text-decoration:underline;text-underline-offset:2px;border:0;font-size:.75rem}
+#phone-setup-help .phone-guide-link{min-height:44px}
+@media(max-height:430px){#phone-location:not([data-tab="info"]) #phone-dock-help{display:none}}

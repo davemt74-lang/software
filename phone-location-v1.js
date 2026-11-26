@@ -136,9 +136,11 @@
 
   async function request(action, data = {}, keepalive = false) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), action === 'chat_send' ? 90000 : 10000);
+    const timer = setTimeout(() => controller.abort(), action === 'chat_send' ? 90000 : ['information_attach_file','information_download'].includes(action)?30000:10000);
+    const target=new URL(endpoint);
+    if(action==='information_attach_file')target.searchParams.set('information_file','1');
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(target, {
         method:'POST', credentials:'same-origin', cache:'no-store', redirect:'error',
         referrerPolicy:'no-referrer', signal:controller.signal, keepalive,
         headers:{'Content-Type':'application/json','X-VP3-Phone':'1'},
@@ -157,6 +159,27 @@
     camera: () => camera?.open(),
     savePlace: () => savedPlace?.open()
   });
+  const handoff=window.VP3PhoneHandoffV1?.({request:(action,body)=>new Promise((resolve,reject)=>queue(async()=>{
+    try{
+      if(dead||document.hidden)throw Error('Phone page not active');
+      const result=await request(action,body);
+      if(['handoff_offer','handoff_cancel'].includes(action)&&result.device)accept(result);
+      resolve(result);
+    }catch(error){reject(error);}
+  })),onMoved:result=>{accept(result);info='Connection moved. Review your sharing and communication preferences.';render();schedulePoll();}});
+  const push=window.VP3PhonePushSubscriptionsV1?.({request:(action,body)=>new Promise((resolve,reject)=>queue(async()=>{
+    try{if(dead||document.hidden||!device||device.id!==body.device_id)throw Error('Phone connection changed');
+      const result=await request(action,body);if(!dead&&result.device?.id===device?.id){accept(result);render();}resolve(result);
+    }catch(error){reject(error);}
+  })),onUnavailable:()=>chat?.openInfo(),onResolved:notification=>{
+    if(dead||pending||notification.device_id!==device?.id)return;
+    const target=notification.target;
+    if(target.tab==='info')chat?.openInfo();
+    else if(target.tab==='chat')chat?.openNotification(target.request_id);
+    else if(target.tab==='requests'&&device?.communication?.request_permission_saved===true){
+      chat?.openConnection();infoDetails.open=true;renderInformation();exchange?.openNotification(target.exchange_id);
+    }
+  }});
   function discardDeferred(session) {
     clearTimeout(session.timer);
     session.timer = null;
@@ -225,8 +248,98 @@
       if (run) sendLatestFix(run);
     }
   }
+  let commSignature='',commBusy=false,commNotice='';
+  function renderCommunication(){
+    const section=el('communication'),form=el('communication-form'),feedback=el('communication-feedback');if(!section||!form||!feedback)return;
+    const p=device?.communication,ready=device?.status==='approved'&&available&&!pending&&secure&&!dead&&navigator.onLine!==false&&p&&typeof p.phone_e164==='string';
+    section.hidden=!ready;
+    if(!ready){form.replaceChildren();commSignature='';commNotice='';feedback.textContent='';return;}
+    feedback.textContent=commNotice;
+    const sig=device.id+'/'+p.revision+'/'+String(commBusy);
+    if(sig===commSignature)return;
+    commSignature=sig;form.replaceChildren();
+    const add=(label,input)=>{const l=document.createElement('label');l.textContent=label;l.append(input);form.append(l);return input;};
+    const field=(label,type,value)=>{const i=document.createElement('input');i.type=type;i.value=value;i.disabled=commBusy;return add(label,i);};
+    const number=field('My personal phone number','tel',p.phone_e164);number.autocomplete='tel';number.maxLength=64;number.placeholder='+1 602 555 0100';
+    const note=document.createElement('p');note.textContent='Only the approved account sees a masked number. Changing it clears call consent. No SMS verification is required.';form.append(note);
+    const check=(label,key,disabled)=>{const i=document.createElement('input');i.type='checkbox';i.checked=p[key]===true;i.disabled=commBusy||disabled;const l=document.createElement('label');l.className='phone-communication-check';l.append(i,document.createTextNode(label));form.append(l);return i;};
+    const calls=check('Allow telephone calls from this Agent','holder_calls',!p.owner_calls||!p.phone_saved);
+    const proactive=check('Allow proactive check-ins','holder_proactive',!p.owner_calls||!p.phone_saved);
+    const requests=check('Allow information requests','holder_requests',!p.owner_requests);
+    const memory=check('Allow future relationship memory','holder_memory',false);
+    calls.addEventListener('change',()=>{if(!calls.checked)proactive.checked=false;});
+    proactive.addEventListener('change',()=>{if(proactive.checked&&!calls.checked)proactive.checked=false;});
+    const zone=field('Time zone (IANA name)','text',p.timezone);zone.maxLength=80;zone.required=true;
+    const start=field('Earliest call','time',p.window_start),end=field('Latest call','time',p.window_end);start.required=end.required=true;
+    const max=field('Maximum calls per day','number',String(p.max_calls_per_day));max.min='1';max.max='3';max.required=true;
+    const gap=field('Minimum minutes between calls','number',String(p.min_gap_minutes));gap.min='120';gap.max='10080';gap.required=true;
+    const save=document.createElement('button');save.type='submit';save.textContent='Save communication preferences';save.disabled=commBusy;form.append(save);
+    const explanation=document.createElement('p');explanation.textContent='Information exchange requires both users’ permission. Autonomous calls and relationship memory are not running yet. Existing GPS and camera permissions are separate.';form.append(explanation);
+    form.onsubmit=event=>{
+      event.preventDefault();
+      if(!event.isTrusted||commBusy||actionBusy||pending||dead||!available||navigator.onLine===false||device?.status!=='approved'||device.communication?.revision!==p.revision)return;
+      const body={device_id:device.id,generation:device.generation,communication_revision:p.revision,phone_e164:number.value,
+        holder_calls:calls.checked&&!calls.disabled,holder_proactive:calls.checked&&proactive.checked&&!proactive.disabled,
+        holder_requests:requests.checked&&!requests.disabled,holder_memory:memory.checked,
+        timezone:zone.value.trim(),window_start:start.value,window_end:end.value,max_calls_per_day:Number(max.value),min_gap_minutes:Number(gap.value)};
+      commBusy=true;commNotice='Saving…';renderCommunication();
+      queue(async()=>{try{
+        if(dead||pending||!available||navigator.onLine===false||device?.id!==body.device_id||device.generation!==body.generation||device.communication?.revision!==body.communication_revision){commNotice='Connection changed. Review the current settings.';return;}
+        const result=await request('save_communication_profile',body);
+        if(dead||pending||device?.id!==body.device_id)return;
+        accept(result);commNotice='Preferences saved. Autonomous calls remain disabled.';
+      }catch(error){commNotice='Preferences could not be saved. Check the current connection and retry.';if([401,403,404].includes(error.status))reportFailure(error);else schedulePoll();}
+      finally{commBusy=false;commSignature='';render();}});
+    };
+  }
+
+  const infoDetails=el('information'),infoHost=el('information-host');
+  const exchange=window.VP3PhoneInformationV1?.({holder:true,request,onChanged:()=>schedulePoll()});
+  if(exchange&&infoHost)infoHost.append(exchange.root);
+  function renderInformation(){
+    if(!infoDetails||!exchange)return;
+    const permitted=device?.status==='approved'&&available&&!pending&&!dead&&secure&&navigator.onLine!==false&&device.communication?.request_permission_saved===true;
+    infoDetails.hidden=!permitted;
+    if(!permitted)infoDetails.open=false;
+    el('information-summary').textContent='Information exchange'+(Number.isSafeInteger(device?.communication?.information_pending)?' ('+device.communication.information_pending+' open)':'');
+    exchange.bind(device,permitted,permitted&&infoDetails.open&&!el('connection').hidden);
+  }
+  infoDetails?.addEventListener('toggle',renderInformation);
+  el('tab-connection')?.addEventListener('click',()=>queueMicrotask(renderInformation));
+  el('tab-chat')?.addEventListener('click',()=>queueMicrotask(renderInformation));
+  const dialer=window.VP3RemoteDialerV1?.holder({request:dialerRequest});
+  if(dialer){el('dialer-alert-host')?.append(dialer.alert);el('dialer-settings-host')?.append(dialer.prefs);}
+  const managedCall=window.VP3ManagedCallUIV1?.holder({request:managedHolderRequest});
+  if(managedCall)el('managed-alert-host')?.append(managedCall.root);
+  function managedHolderRequest(action,body){
+    return new Promise((resolve,reject)=>queue(async()=>{
+      try{
+        if(!dialerAvailable()||document.hidden||device.id!==body.device_id||device.generation!==body.generation||device.managed_callback?.request?.request_id!==body.managed_request_id)throw Error('Managed request changed.');
+        const result=await request(action,body);
+        if(device?.id!==body.device_id||pending||dead)throw Error('Connection changed.');
+        accept(result);render();resolve(result);
+      }catch(error){reject(error);schedulePoll();}
+    }));
+  }
+  function dialerAvailable(){return secure&&!dead&&!pending&&available&&navigator.onLine!==false&&device?.status==='approved';}
+  function dialerRequest(action,body,keepalive=false){
+    return new Promise((resolve,reject)=>queue(async()=>{
+      try{
+        if(!dialerAvailable()||device.id!==body.device_id||device.generation!==body.generation||device.dialer?.revision!==body.dialer_revision||(!keepalive&&document.hidden))throw Error('Dialer scope changed.');
+        const result=await request(action,body,keepalive);
+        if(device?.id!==body.device_id||pending||dead)throw Error('Connection changed.');
+        accept(result);render();resolve(result);
+      }catch(error){reject(error);schedulePoll();}
+    }));
+  }
   function render() {
+    dialer?.bind(device,dialerAvailable());
+    managedCall?.bind(device,dialerAvailable());
+    renderInformation();
+    renderCommunication();
     const connected = device?.status === 'approved';
+    handoff?.bind(device,secure&&available&&!initial&&!dead&&navigator.onLine!==false&&!pending&&!claim&&!actionBusy);
+    push?.bind(device,secure&&available&&!initial&&!dead&&navigator.onLine!==false&&!pending&&!claim&&!actionBusy);
     const queued = Boolean(pending && pending.id === device?.id);
     const paired = connected && pending?.action !== 'disconnect' ? device : null;
     camera?.bind(paired?.id || null, owner);
@@ -241,9 +354,13 @@
     el('preferences').textContent = 'Every ' + updateInterval(device) + ' seconds · ' +
       (highAccuracy(device) ? 'High accuracy' : 'Balanced accuracy');
     el('controls').hidden = !device && (initial || Boolean(claim));
+    if(claim?.manual && claim.expires<=now()&&!actionBusy){claim=null;el('pair-code').value='';}
+    el('pair-entry').hidden = !secure || Boolean(device) || Boolean(claim) || initial || !available;
+    el('pair-continue').disabled = actionBusy || navigator.onLine===false;
     el('join').hidden = !secure || Boolean(device) || !claim || initial;
     if (claim?.name && el('name').value === '') el('name').value = claim.name;
     el('claim').disabled = actionBusy || navigator.onLine === false;
+    el('pair-cancel').hidden=!claim?.manual;el('pair-cancel').disabled=actionBusy;
     el('start').hidden = !connected || !device.allow_location || !gps || !owner || !available || queued || !!run || mobileActive(device);
     el('start').disabled = actionBusy;
     el('stop').hidden = !connected || queued || !(run || stoppable(device));
@@ -253,7 +370,7 @@
     el('consent').textContent = connected && device.allow_location && owner
       ? 'Start sharing lets ' + owner + ' see this phone’s latest location, accuracy and update time. Keep this page open for updates.' : '';
     renderPermissions(connected && device.allow_location && !queued);
-    let message = 'Scan the QR code in VP3 Phone Tracking to connect this phone.';
+    let message = 'Scan the QR code or enter a fresh pairing code from VP3 Phone Tracking.';
     let gpsState = 'Off';
     if (!secure) message = 'Open this page over HTTPS to connect and share location.';
     else if (initial) message = 'Checking your connection…';
@@ -542,17 +659,31 @@
     queue(async () => { pollQueued = false; await poll(); });
   }
 
+  function enterPairingCode(event){
+    event.preventDefault();
+    if(!event.isTrusted||actionBusy||!secure||device||claim||initial||!available||document.hidden||navigator.onLine===false)return;
+    const code=el('pair-code').value.trim();
+    if(!secretPattern.test(code)){info='Enter the full 43-character pairing code.';render();return;}
+    // Never navigate with or persist the manually entered secret. The same
+    // approved QR claim endpoint and original holder proof are used.
+    claim={invite:code,expires:now()+300,manual:true};
+    el('pair-code').value='';info='';render();el('name').focus();
+  }
   async function claimPhone(event) {
     event.preventDefault();
-    if (actionBusy || !secure || !claim || device) return;
+    if (actionBusy || !secure || !claim || device || dead || (claim.manual&&(!event.isTrusted||document.hidden))) return;
+    if(claim.expires<=now()){claim=null;write('sessionStorage','claim',null);info='This pairing code expired. Ask for a fresh code.';render();return;}
     const name = el('name').value.trim();
     if (!name) { el('name').focus(); return; }
     actionBusy = true; info = 'Sending your connection request…'; render();
     if (!claim.key) claim.key = Array.from(crypto.getRandomValues(new Uint8Array(32)), b=>b.toString(16).padStart(2,'0')).join('');
-    claim.name = name; write('sessionStorage','claim',claim);
+    claim.name = name; if(!claim.manual)write('sessionStorage','claim',claim);
+    const attempt=claim;
     queue(async () => {
       try {
-        const result = await request('claim',{invite:claim.invite,name,claim_key:claim.key});
+        if(dead||claim!==attempt||device||attempt.expires<=now())return;
+        const result = await request('claim',{invite:attempt.invite,name,claim_key:attempt.key});
+        if(dead||claim!==attempt){schedulePoll();return;}
         accept(result); claim = null; write('sessionStorage','claim',null); info = '';
       } catch (error) {
         if ([401,403,404,409,410].includes(error.status)) {
@@ -709,7 +840,12 @@
     });
     monitor(session);
   }
+  el('pair-entry').addEventListener('submit',enterPairingCode);
   el('join').addEventListener('submit',claimPhone);
+  el('pair-cancel').addEventListener('click',event=>{
+    if(!event.isTrusted||actionBusy||!claim?.manual)return;
+    claim=null;el('name').value='';el('pair-code').value='';info='';render();el('pair-code').focus();
+  });
   el('start').addEventListener('click',start);
   el('stop').addEventListener('click',() => finish('stop'));
   el('disconnect').addEventListener('click',() => finish('disconnect'));
@@ -746,6 +882,11 @@
   });
   window.addEventListener('pagehide',() => {
     dead = true;
+    el('pair-code').value='';
+    if(claim?.manual){claim=null;write('sessionStorage','claim',null);}
+    dialer?.invalidate();
+    managedCall?.invalidate();
+    exchange?.clear();
     if (run) {
       const old = cancelWatch();
       rememberEnd('stop',old.id,old.generation);
@@ -754,7 +895,7 @@
     }
   });
   window.addEventListener('pageshow',() => { dead = false; schedulePoll(); });
-  document.addEventListener('visibilitychange',() => { if (!document.hidden) schedulePoll(); });
+  document.addEventListener('visibilitychange',() => { if (document.hidden){exchange?.clear();dialer?.invalidate();managedCall?.invalidate();}else schedulePoll(); });
   setInterval(() => {
     if (document.hidden || dead) return;
     if (device || !available) schedulePoll();

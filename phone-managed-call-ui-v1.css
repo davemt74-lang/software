@@ -1,0 +1,18 @@
+.phone-managed-modes{min-width:0;display:grid;gap:.8rem}
+.phone-managed-modes h3,.phone-managed-panel h4{margin:0}
+.phone-managed-mode-tabs{display:flex;flex-wrap:wrap;gap:.4rem;min-width:0}
+.phone-managed-mode-tabs button{flex:1 1 8rem;min-width:0;padding:.65rem .75rem;border:1px solid #c3d5cc;border-radius:.55rem;background:#f6faf8;color:#183d33;font:inherit;font-size:.9rem;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
+.phone-managed-mode-tabs button[aria-pressed=true]{background:#183d33;border-color:#183d33;color:white}
+.phone-managed-panel{display:grid;gap:.65rem;min-width:0}
+.phone-managed-panel p,.phone-managed-holder p{margin:.2rem 0;overflow-wrap:anywhere}
+.phone-managed-panel form{display:grid;gap:.65rem;min-width:0}
+.phone-managed-panel select{max-width:100%;min-width:0;width:100%;padding:.55rem;box-sizing:border-box}
+.phone-managed-panel .phone-dialer-label{align-items:flex-start}
+.phone-managed-panel .phone-dialer-label input[type=checkbox],.phone-managed-holder .phone-dialer-label input[type=checkbox]{flex:0 0 22px}
+.phone-managed-panel .phone-dialer-label span,.phone-managed-holder .phone-dialer-label span{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
+.phone-managed-destination{font-size:1.2rem;font-weight:650;font-variant-numeric:tabular-nums}
+.phone-managed-holder .phone-permission-buttons{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.6rem}
+.phone-managed-holder .phone-permission-buttons button{flex:1 1 9rem;min-width:0;white-space:normal}
+.phone-managed-modes[hidden],.phone-managed-modes [hidden],.phone-managed-holder[hidden],.phone-managed-holder [hidden]{display:none!important}
+
+.phone-managed-native-ticket{display:grid;gap:.5rem;min-width:0}.phone-managed-native-ticket[hidden]{display:none}.phone-managed-native-ticket p{margin:0;overflow-wrap:anywhere}.phone-managed-native-ticket button{white-space:normal}.phone-managed-native-ticket .phone-managed-native-pin{font-size:1.2rem;font-weight:650;font-variant-numeric:tabular-nums;letter-spacing:.15em}

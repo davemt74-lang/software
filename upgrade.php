@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
@@ -307,10 +308,15 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && ($schemaConnection ??= db()) instanceof PDO
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
+        && vp3_managed_control_ready_v1($schemaConnection)
+        && vp3_managed_recording_ready_v1($schemaConnection)
+        && vp3_native_dialthrough_ready_v1($schemaConnection)
         && vp3_phone_recording_schema_ready_v1($schemaConnection)
+        && vp3_phone_voicemail_ready_v1($schemaConnection)
         && vp3_operator_auto_call_schema_ready_v1($schemaConnection)
         && vp3_operator_live_schema_ready_v1($schemaConnection)
-        && vp3_phone_caller_contacts_schema_ready_v1($schemaConnection)
+        && VP3OperatorOwnerPhoneV1::ready($schemaConnection)
+        && vp3_phone_contact_details_schema_ready_v1($schemaConnection)
         && vp3_ai_service_usage_ready_v1($schemaConnection)
         && vp3_coding_canvas_ready_v1($schemaConnection)
         && vp3_coding_canvas_visibility_ready_v1($schemaConnection)
@@ -350,6 +356,13 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_initiative_youtube_playlist_ready_v1($schemaConnection)
         && vp3_profile_call_activity_schema_ready_pa3c($schemaConnection)
         && vp3_phone_schema_ready_v1($schemaConnection)
+        && vp3_phone_communication_ready_v1($schemaConnection)
+        && vp3_phone_information_ready_v1($schemaConnection)
+        && vp3_phone_file_ready_v1($schemaConnection)
+        && vp3_phone_dialer_ready_v1($schemaConnection)
+        && vp3_phone_handoff_ready_v1($schemaConnection)
+        && vp3_phone_push_ready_v1($schemaConnection)
+        && vp3_phone_push_delivery_ready_v1($schemaConnection)
         && vp3_phone_camera_ready_v1($schemaConnection)
         && vp3_phone_camera_map_ready_v1($schemaConnection)
         && vp3_phone_record_ready_v1($schemaConnection)
@@ -467,6 +480,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_phone_recording_ensure_schema_v1($pdo);
             vp3_operator_auto_call_ensure_schema_v1($pdo);
             vp3_operator_live_ensure_schema_v1($pdo);
+            VP3OperatorOwnerPhoneV1::install($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();

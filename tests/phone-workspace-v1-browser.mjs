@@ -36,7 +36,10 @@ const integrity='sha384-'+createHash('sha384').update(sdk).digest('base64');
 const actualSdk=await fs.readFile(path.join(root,'assets/twilio-voice-2.18.5.min.js'));
 const actualIntegrity='sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8';
 assert.equal('sha384-'+createHash('sha384').update(actualSdk).digest('base64'),actualIntegrity,'The actual shipped SDK bytes match their pinned integrity');
-let state=fixture(),authorized=true,apiCalls=[],tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
+const emptyOwnerPhone=()=>({phone_e164:'',phone_revision:0,revision:0,updates_requested:false,hello_requested:false,last_test:null,execution_enabled:false});
+let ownerPhone=emptyOwnerPhone();
+let contactDetail=null,contactSchedules=[];
+let state=fixture(),authorized=true,apiCalls=[],apiMethods=[],stateFailure=null,tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
 const wav=Buffer.alloc(44+16000*2*4);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
@@ -82,11 +85,47 @@ const server=http.createServer((req,res)=>{
  }
  if(url.pathname==='/api/phone-workspace-v1.php'){
   let body='';req.on('data',c=>body+=c);req.on('end',async()=>{
-   const values=req.method==='POST'?JSON.parse(body):Object.fromEntries(url.searchParams);apiCalls.push(values);res.setHeader('Content-Type','application/json');
+   const values=req.method==='POST'?JSON.parse(body):Object.fromEntries(url.searchParams);apiCalls.push(values);apiMethods.push({action:values.action,method:req.method});res.setHeader('Content-Type','application/json');
    if(!authorized){res.statusCode=403;return res.end(JSON.stringify({ok:false,error:'Phone access unavailable'}));}
    if(req.method==='POST'&&values.csrf_token!=='fixture-csrf'){res.statusCode=419;return res.end(JSON.stringify({ok:false}));}
    let result={};
+   if(values.action==='state'&&stateFailure){res.statusCode=stateFailure.status;return res.end(JSON.stringify({ok:false,error:stateFailure.code,message:stateFailure.message}));}
    if(values.action==='state')result={state:structuredClone(state)};
+   if(values.action==='managed_review'){
+     assert.equal(req.method,'GET');assert.equal(values.call_id,'6'.repeat(32));
+     assert.equal(Number(values.conversation_id),10);assert.equal(Number(values.agent_id),2);
+     result={review:{call_id:values.call_id,coverage:'ready',execution_enabled:false,outcome:'completed',duration_seconds:35,
+       transcript_url:'/artist-listening.php?session=772',
+       report:{text:'Key findings\nFixture report <img src=x onerror=alert(1)>\nActions & follow-ups\nConfirm timing.',review_state:'unreviewed',historical:true},
+       followups:[{text:'Confirm timing.',next_step:'Review the source.',review_state:'unreviewed',source_url:'/artist-listening-evidence.php?session=772&plugin=actions&section=items&item=fixture'},
+         {text:'Untrusted link',review_state:'accepted',source_url:'https://untrusted.invalid/secret'}],
+       continuity:{state:'permission_required',calls:[]}}};
+   }
+   if(values.action==='owner_phone_settings')result={owner_phone:structuredClone(ownerPhone)};
+   if(values.action==='save_owner_phone'){
+     assert.equal(Number(values.expected_revision),ownerPhone.revision);
+     ownerPhone={...emptyOwnerPhone(),phone_e164:values.phone_e164,phone_revision:ownerPhone.phone_revision+1,revision:ownerPhone.revision+1};
+     result={owner_phone:structuredClone(ownerPhone)};
+   }
+   if(values.action==='save_owner_call_preferences'){
+     assert.equal(Number(values.expected_revision),ownerPhone.revision);
+     Object.assign(ownerPhone,{updates_requested:values.updates_requested,hello_requested:values.hello_requested,revision:ownerPhone.revision+1});
+     result={owner_phone:structuredClone(ownerPhone)};
+   }
+   if(values.action==='prepare_owner_test'){
+     assert.equal(values.confirmed,true);assert.equal(values.phone_revision,ownerPhone.phone_revision);assert.equal(Object.hasOwn(values,'to_number'),false);assert.equal(Object.hasOwn(values,'recording_enabled'),false);
+     ownerPhone.last_test={call_id:outgoingId,state:'prepared',received:false,can_confirm:false};
+     result={call:{id:9,public_id:outgoingId,owner_test:true,peer_e164:ownerPhone.phone_e164,conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'prepared'},connect_params:{call_intent:'c'.repeat(64)}};
+   }
+   if(values.action==='prepare_connected_call'){
+     assert.equal(values.confirmed,true);assert.equal(values.device_id,'4'.repeat(32));assert.equal(values.profile_id,'5'.repeat(32));
+     assert.equal(values.profile_revision,3);assert.equal(values.phone_revision,1);assert.equal(Number(values.conversation_id),10);
+     assert.equal(Object.hasOwn(values,'to_number'),false);assert.equal(Object.hasOwn(values,'recording_enabled'),false);
+     result={call:{id:9,public_id:outgoingId,connected_phone:true,peer_e164:'',peer_masked:'Ending in 0135',conversation_id:10,agent_id:2,state:'prepared'},connect_params:{call_intent:'c'.repeat(64)}};
+   }
+   if(values.action==='confirm_owner_test'){
+     assert.equal(values.call_id,outgoingId);assert.equal(values.received,true);ownerPhone.last_test.received=true;ownerPhone.last_test.can_confirm=false;result={owner_phone:structuredClone(ownerPhone)};
+   }
    if(values.action==='token'){tokenStarted=true;if(tokenGate)await tokenGate;result={token:'fixture-token-'+String(apiCalls.length).padStart(20,'0'),identity:'fixture-number-1',expires_at:Math.floor(Date.now()/1000)+3600};}
    if(values.action==='prepare_call')result={call:{id:9,public_id:outgoingId,peer_e164:values.to_number,conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'preparing'},connect_params:{call_intent:'c'.repeat(64)}};
    if(values.action==='bind_call')result={call:{id:8,public_id:values.call_id,peer_e164:'+16025550444',conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'ringing'}};
@@ -122,18 +161,36 @@ const server=http.createServer((req,res)=>{
     for(const row of [...state.calls,...state.voicemails,...(state.active_call?[state.active_call]:[])])if(row.peer_e164===contact.phone_e164){row.contact_id=contact.id;row.contact_name=contact.name;}
     result={contact};
    }
+   if(values.action==='phone_contact_detail'){
+    assert.equal(req.method,'GET');assert.equal(Number(values.contact_id),contactDetail.id);
+    result={contact:structuredClone(contactDetail),editable:true,schedules:{available:true,items:structuredClone(contactSchedules),execution_enabled:false}};
+   }
+   if(values.action==='save_phone_contact'){
+    contactDetail={id:values.contact_id||18,name:values.name,phone_e164:values.phone,relationship:values.relationship,notes:values.notes,revision:'b'.repeat(64)};
+    state.contacts=[{id:contactDetail.id,name:contactDetail.name,phone_e164:contactDetail.phone_e164,relationship:contactDetail.relationship,favorite:false}];
+    result={contact:structuredClone(contactDetail),created:values.contact_id===0};
+   }
+   if(values.action==='save_phone_contact_schedule'){
+    assert.equal(values.contact_id,contactDetail.id);assert.equal(values.contact_revision,contactDetail.revision);assert.equal(values.confirmed,true);
+    const schedule={event_id:values.event_id||91,revision:'c'.repeat(64),date:values.date,time:values.time,timezone:values.timezone,recurrence:values.recurrence,duration_minutes:values.duration_minutes,editable:true,objectives:values.objectives,next_label:'Thu, Dec 3, 5:15 PM UTC',url:'/calendar-event.php?id=91',execution_enabled:false};
+    contactSchedules=[schedule];result={schedule,created:values.event_id===0,execution_enabled:false};
+   }
+   if(values.action==='cancel_phone_contact_schedule'){
+    assert.equal(values.contact_id,contactDetail.id);assert.equal(values.event_id,91);assert.equal(values.expected_revision,'c'.repeat(64));assert.equal(values.confirmed,true);
+    contactSchedules=[];result={event_id:91,cancelled:true,execution_enabled:false};
+   }
    res.end(JSON.stringify({ok:true,...result}));
   });return;
  }
  const cid=url.searchParams.get('new')==='1'?0:10;
- res.setHeader('Content-Type','text/html');res.end(`${fixtureHead}${headerShell('<button class="chat-icon-button vp3-phone-header-button" data-phone-workspace-toggle aria-label="Phone"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z"/></svg></button>')}<div id="chatThread" class="chat-thread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',operator_live_endpoint:'/api/phone-operator-live-v1.php',operator_capture_url:'/phone-operator-capture-v1.js',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-operator-voice-mixer-v1.js"></script><script src="/phone-workspace-v1.js"></script>`);
+ res.setHeader('Content-Type','text/html');res.end(`${fixtureHead}${headerShell('<button class="chat-icon-button vp3-phone-header-button" data-phone-workspace-toggle aria-label="Phone"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z"/></svg></button>')}<div id="chatThread" class="chat-thread"></div><script>window.VP3_PHONE_WORKSPACE_V1=${JSON.stringify({endpoint:'/api/phone-workspace-v1.php',operator_live_endpoint:'/api/phone-operator-live-v1.php',operator_capture_url:'/phone-operator-capture-v1.js',greeting_endpoint:'/api/phone-voicemail-greeting-v1.php',greeting_capture_url:'/phone-voicemail-capture-v1.js',urlbase:'/',csrf:'fixture-csrf',owner_id:1,agent_id:2,conversation_id:cid,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity})};window.currentConversation=${cid};window.STONEFELLOW_CHAT_CONTINUITY={conversationId:()=>window.currentConversation,isReady:()=>true,isRestoring:()=>false,isBusy:()=>false,ensureConversation:async()=>{window.currentConversation=12;window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});return 12;}};</script><script src="/phone-operator-voice-mixer-v1.js"></script><script src="/phone-workspace-v1.js"></script>`);
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
 let checks=0;const errors=[];let page,succeeded=false;
-async function fresh(suffix=''){
- state=fixture();authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];
- if(page)await page.close();page=await browser.newPage({viewport:{width:1360,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/'+suffix);await page.waitForFunction(()=>window.VP3PhoneWorkspaceV1);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByLabel('Selected phone number',{exact:true}).waitFor();return page;
+async function fresh(suffix='',options={}){
+ state=fixture();ownerPhone=emptyOwnerPhone();contactDetail=null;contactSchedules=[];authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];apiMethods=[];stateFailure=options.stateFailure||null;
+ if(page)await page.close();page=await browser.newPage({viewport:options.viewport||{width:1360,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/'+suffix);await page.waitForFunction(()=>window.VP3PhoneWorkspaceV1);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByRole(options.stateFailure?'button':'combobox',{name:options.stateFailure?'Retry':'Selected phone number',exact:true}).waitFor();if(options.stateFailure)await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Retry'&&!button.disabled&&!button.closest('[hidden]')));return page;
 }
 async function check(name,run){await run();checks++;console.log('PASS '+name);}
 async function enable(){await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).click();await page.waitForFunction(()=>window.phoneFixture?.devices.length&&document.querySelector('.vp3-phone-notice')?.textContent==='Ready for incoming calls.');}
@@ -153,6 +210,34 @@ try{
  await check('the actual bundled Twilio SDK loads with pinned integrity and no device registration or capture',async()=>{
   page=await browser.newPage();page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(()=>{window.sdkSmokeCapture=0;const get=navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);if(get)navigator.mediaDevices.getUserMedia=(...args)=>{window.sdkSmokeCapture++;return get(...args);};});
   await page.goto(base+'/sdk-smoke');await page.waitForFunction(()=>typeof window.Twilio?.Device==='function');assert.equal(await page.evaluate(()=>window.sdkSmokeCapture),0);assert.equal(apiCalls.length,0);
+ });
+ await check('failed Phone loading has actionable recovery on desktop and mobile without enabling calls',async()=>{
+  for(const scenario of [
+   {viewport:{width:1360,height:900},code:'phone_upgrade_required'},
+   {viewport:{width:320,height:740},code:'phone_unavailable'},
+  ]){
+   await fresh('',{viewport:scenario.viewport,stateFailure:{status:503,code:scenario.code,message:'SQLSTATE private service <img src=x onerror=alert(1)> https://private.invalid/token'}});
+   const panel=page.locator('.vp3-phone-panel'),retry=panel.getByRole('button',{name:'Retry',exact:true});
+   assert.equal(await retry.count(),1);assert.equal(await retry.isEnabled(),true);
+   const text=await panel.innerText();assert.doesNotMatch(text,/Loading assigned phone connections|Loading contacts|Loading recent calls|Loading voicemail/);assert.doesNotMatch(text,/SQLSTATE|private service|private\.invalid/);
+   if(scenario.code==='phone_upgrade_required'){assert.match(text,/Cloud database upgrade/);assert.match(text,/upgrade\.php/);}
+   assert.equal(await panel.locator('img,script,a[href^="https://private.invalid"]').count(),0);
+   const layout=await panel.evaluate(node=>({width:node.clientWidth,scroll:node.scrollWidth}));assert.ok(layout.scroll<=layout.width+1,'Recovery fits the '+scenario.viewport.width+'px drawer');
+   const hit=await retry.evaluate(button=>{const box=button.getBoundingClientRect(),at=document.elementFromPoint(box.x+box.width/2,box.y+box.height/2);return (at===button||button.contains(at))&&box.height>=38&&box.width>60;});assert.equal(hit,true,'Retry is visible and receives pointer input');
+   if(scenario.viewport.width===320){await fs.mkdir(path.join(root,'tests/artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-recovery-mobile.png')});}
+   const originalUrl=page.url(),requestCount=apiCalls.length;stateFailure=null;await retry.click();await page.getByLabel('Selected phone number',{exact:true}).waitFor();
+   assert.equal(page.url(),originalUrl);assert.equal(await page.getByLabel('Selected phone number',{exact:true}).inputValue(),'1');assert.equal(await retry.isVisible(),false);
+   assert.ok(apiCalls.length>requestCount);assert.ok(apiCalls.every(call=>call.action==='state'));assert.ok(apiMethods.every(call=>call.method==='GET'));
+   assert.equal(await page.evaluate(()=>window.phoneFixture?.connects.length||0),0);assert.equal(scriptLoads,0,'Loading and retrying never load the voice SDK');
+  }
+ });
+ await check('a temporary refresh failure labels retained data and disables calling until Retry succeeds',async()=>{
+  await fresh();await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  stateFailure={status:503,code:'phone_unavailable'};await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  const panel=page.locator('.vp3-phone-panel');assert.match(await panel.innerText(),/cached|previously loaded|last (?:confirmed|loaded|saved)|may be out of date/i);
+  assert.equal(await page.getByLabel('Selected phone number',{exact:true}).inputValue(),'1');assert.equal(await page.locator('.vp3-phone-dial button').isEnabled(),false);assert.equal(await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).isEnabled(),false);
+  stateFailure=null;await panel.getByRole('button',{name:'Retry',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.vp3-phone-dial button').disabled);
+  assert.equal(await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).isEnabled(),true);assert.ok(apiMethods.every(call=>call.action==='state'&&call.method==='GET'));
  });
  await fresh();
  await check('assigned workspace has no token or SDK activity until the owner enables calls',async()=>{assert.equal(scriptLoads,0);assert.equal(apiCalls.some(c=>c.action==='token'),false);assert.equal(await page.locator('.vp3-phone-panel').isVisible(),true);assert.equal(await page.getByText(/purchase|subscribe|sign up/i).count(),0);});
@@ -230,14 +315,14 @@ try{
   assert.equal(apiCalls.some(c=>['prepare_call','token'].includes(c.action)),false,'Contact authorization never starts a carrier session');
   await page.setViewportSize({width:1360,height:900});
  });
- await check('saved voicemail uses authenticated audio and safe transcript/report links',async()=>{await page.getByRole('tab',{name:'Voicemail',exact:true}).click();assert.equal(await page.locator('.vp3-phone-voicemail audio').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail a').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail script').count(),0);await page.locator('.vp3-phone-voicemail summary').first().click();assert.match(await page.locator('.vp3-phone-voicemail').first().innerText(),/<script>unsafe/);await page.locator('audio').evaluate(async audio=>{audio.muted=true;audio.loop=true;window.savedVoicemailAudio=audio;await audio.play();});await page.evaluate(()=>window.VP3PhoneWorkspaceV1.refresh());assert.equal(await page.locator('audio').evaluate(audio=>audio===window.savedVoicemailAudio&&!audio.paused),true,'Polling preserves active playback');});
+ await check('saved voicemail uses authenticated audio and safe transcript/report links',async()=>{await page.getByRole('tab',{name:'Voicemail',exact:true}).click();assert.equal(await page.locator('.vp3-phone-voicemail audio').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail a').count(),1);assert.equal(await page.locator('.vp3-phone-voicemail script').count(),0);assert.equal(await page.locator('.vp3-phone-voicemail .vp3-phone-transcript').first().isVisible(),true);assert.match(await page.locator('.vp3-phone-voicemail').first().innerText(),/<script>unsafe/);await page.locator('audio').evaluate(async audio=>{audio.muted=true;audio.loop=true;window.savedVoicemailAudio=audio;await audio.play();});await page.evaluate(()=>window.VP3PhoneWorkspaceV1.refresh());assert.equal(await page.locator('audio').evaluate(audio=>audio===window.savedVoicemailAudio&&!audio.paused),true,'Polling preserves active playback');});
  await check('absent, null and blank media/transcript/report URLs never become same-page links',async()=>{await page.locator('audio').evaluateAll(nodes=>nodes.forEach(audio=>audio.pause()));const previous=structuredClone(state.voicemails);state.voicemails=[undefined,null,'','   '].map((missing,index)=>({id:'job-'+(70+index),call_id:'fixture_call_'+index,peer_e164:'+16025550222',transcript:'Fixture without media URL',audio_url:missing,transcript_url:missing,report_url:missing}));await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await page.locator('.vp3-phone-voicemail audio').count(),0);assert.equal(await page.locator('.vp3-phone-voicemail a').count(),0);state.voicemails=previous;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());});
  await check('drawer focus and Escape restore the header button',async()=>{await page.keyboard.press('Escape');assert.equal(await page.locator('.vp3-phone-panel').isVisible(),false);assert.equal(await page.getByRole('button',{name:'Phone',exact:true}).evaluate(n=>n===document.activeElement),true);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByRole('tab',{name:'Connections',exact:true}).click();});
  await check('after-call settings are explicit, persisted and keep unsaved edits across polling',async()=>{assert.equal(await page.getByLabel('Enable Cloud transcription and analysis for recorded calls',{exact:true}).isChecked(),false);await page.getByLabel('Enable Cloud transcription and analysis for recorded calls',{exact:true}).check();await page.getByLabel('Create transcripts',{exact:true}).check();await page.getByLabel('Create a call report',{exact:true}).check();await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await page.getByLabel('Enable Cloud transcription and analysis for recorded calls',{exact:true}).isChecked(),true);await page.getByRole('button',{name:'Save after-call settings',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.vp3-phone-notice').textContent==='After-call settings saved.');const saved=apiCalls.find(c=>c.action==='save_recording_policy');assert.equal(saved.number_id,1);assert.equal(saved.enabled,true);assert.deepEqual(saved.modules,['basic','qa','actions','decisions','followup']);});
  await check('polling preserves focused dial text and caret',async()=>{const field=page.getByLabel('Phone number to call',{exact:true});await field.fill('+16025550555');await field.evaluate(n=>n.setSelectionRange(4,4));await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await field.evaluate(n=>n===document.activeElement&&n.selectionStart===4),true);assert.equal(await field.inputValue(),'+16025550555');});
  await check('browser registration loads the pinned client without taking the microphone',async()=>{await enable();assert.equal(scriptLoads,1);assert.equal(await page.evaluate(()=>phoneFixture.claims),0);assert.equal(await page.locator('script[src*="twilio-voice-2.18.5"]').getAttribute('integrity'),integrity);});
- await check('incoming calls announce in Chat; Decline takes no microphone or bind action',async()=>{await closeDrawer();await page.evaluate(()=>phoneFixture.incoming());await page.locator('#chatThread').getByRole('button',{name:'Accept',exact:true}).waitFor();await page.locator('#chatThread').getByRole('button',{name:'Decline',exact:true}).click();assert.equal(await page.evaluate(()=>phoneFixture.rejects),1);assert.equal(await page.evaluate(()=>phoneFixture.claims),0);assert.equal(apiCalls.some(c=>c.action==='bind_call'),false);});
- await check('Accept binds the exact current conversation and releases microphone on remote end',async()=>{await closeDrawer();await page.evaluate(()=>phoneFixture.incoming());await page.locator('#chatThread').getByRole('button',{name:'Accept',exact:true}).click();await page.locator('#chatThread').getByRole('button',{name:'Hang up',exact:true}).waitFor();assert.equal(await page.evaluate(()=>phoneFixture.accepts),1);assert.equal(apiCalls.find(c=>c.action==='bind_call').call_id,incomingId);await page.evaluate(()=>phoneFixture.calls.at(-1).emit('disconnect'));await page.waitForFunction(()=>phoneFixture.releases===1);assert.equal(await page.evaluate(()=>phoneFixture.calls.at(-1).stream.getTracks().every(t=>t.readyState==='ended')),true);});
+ await check('incoming calls announce in Chat; Decline takes no microphone or bind action',async()=>{await closeDrawer();await page.evaluate(()=>phoneFixture.incoming());await page.locator('#chatThread').getByRole('button',{name:'Answer',exact:true}).waitFor();await page.locator('#chatThread').getByRole('button',{name:'Decline',exact:true}).click();assert.equal(await page.evaluate(()=>phoneFixture.rejects),1);assert.equal(await page.evaluate(()=>phoneFixture.claims),0);assert.equal(apiCalls.some(c=>c.action==='bind_call'),false);});
+ await check('Accept binds the exact current conversation and releases microphone on remote end',async()=>{await closeDrawer();await page.evaluate(()=>phoneFixture.incoming());await page.locator('#chatThread').getByRole('button',{name:'Answer',exact:true}).click();await page.locator('#chatThread').getByRole('button',{name:'Hang up',exact:true}).waitFor();assert.equal(await page.evaluate(()=>phoneFixture.accepts),1);assert.equal(apiCalls.find(c=>c.action==='bind_call').call_id,incomingId);await page.evaluate(()=>phoneFixture.calls.at(-1).emit('disconnect'));await page.waitForFunction(()=>phoneFixture.releases===1);assert.equal(await page.evaluate(()=>phoneFixture.calls.at(-1).stream.getTracks().every(t=>t.readyState==='ended')),true);});
  await check('outgoing calls send only an opaque server intent to the SDK and explicit recording choice',async()=>{await showDrawer();await page.getByLabel('Record this call',{exact:true}).check();await call();assert.equal(apiCalls.filter(c=>c.action==='prepare_call').at(-1).recording_enabled,true);assert.deepEqual(await page.evaluate(()=>phoneFixture.connects.at(-1)),{params:{call_intent:'c'.repeat(64)}});await page.locator('.vp3-phone-section:not([hidden])').getByRole('button',{name:'Hang up',exact:true}).click();assert.equal(await page.evaluate(()=>phoneFixture.claims===phoneFixture.releases),true);});
  await check('microphone ownership conflict prevents call preparation',async()=>{const before=apiCalls.filter(c=>c.action==='prepare_call').length;await page.evaluate(()=>phoneFixture.denied=true);await page.getByLabel('Phone number to call',{exact:true}).fill('+16025550555');await page.locator('.vp3-phone-dial button').click();await page.waitForFunction(()=>document.querySelector('.vp3-phone-notice').textContent.includes('Another browser surface'));assert.equal(apiCalls.filter(c=>c.action==='prepare_call').length,before);assert.match(await page.locator('.vp3-phone-notice').innerText(),/Another browser surface/);await page.evaluate(()=>phoneFixture.denied=false);});
  await fresh();await enable();
@@ -294,7 +379,7 @@ try{
   state.calls=[historyCall(incomingId,{peer_e164:peer,state:'ringing',duration_seconds:0}),historyCall('f'.repeat(32),{id:89,peer_e164:peer,created_at:'2026-11-23T13:00:00Z'})];state.active_call=state.calls[0];
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());await closeDrawer();await page.evaluate(()=>phoneFixture.incoming());const message=await canonicalCall('activeCallerCard',incomingId),card=message.locator('.vp3-phone-call');
   assert.ok((await card.innerText()).includes('Seen in recent calls'));assert.equal(await card.locator('.vp3-phone-peer-name').innerText(),peer,'Prior calls do not invent a person’s name');
-  await card.getByRole('button',{name:'Accept',exact:true}).click();await card.getByRole('button',{name:'Hang up',exact:true}).waitFor();
+  await card.getByRole('button',{name:'Answer',exact:true}).click();await card.getByRole('button',{name:'Hang up',exact:true}).waitFor();
   assert.equal(await card.locator('dt').allTextContents().then(labels=>labels.includes('Call duration')),false,'A ringing or browser-connected call does not claim a completed duration');
   await card.getByRole('button',{name:'Add to contacts',exact:true}).click();const field=card.getByLabel('Contact name',{exact:true});
   assert.equal(await field.getAttribute('maxlength'),'120');await field.fill(name);await field.evaluate(input=>input.setSelectionRange(4,4));
@@ -367,7 +452,7 @@ try{
   state.operator_live={available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
-  await caption.getByRole('button',{name:'Enable live caller captions',exact:true}).click();
+  await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
   assert.equal(await caption.getByRole('button',{name:'Start live captions',exact:true}).isDisabled(),true);
   assert.equal(captionCalls.length,0,'Opening consent UI must not authorize capture');
   await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
@@ -391,6 +476,149 @@ try{
   await page.evaluate(()=>{phoneFixture.remoteTone.stop();phoneFixture.remoteTrack.stop();void phoneFixture.remoteAudio.close();});
   assert.ok(captionCalls.some(row=>row.action==='stop'));
  });
+ await check('private Chat phone setup saves settings and only explicitly starts a bounded owner test',async()=>{
+   await fresh();await page.getByRole('button',{name:'My phone in Chat',exact:true}).click();
+   const card=page.locator('[data-owner-phone-setup]');await card.getByLabel('Your personal phone number',{exact:true}).waitFor();
+   assert.equal(apiCalls.some(c=>['token','prepare_owner_test'].includes(c.action)),false);
+   await card.getByLabel('Your personal phone number',{exact:true}).fill('+16025550100');await card.getByRole('button',{name:'Save number',exact:true}).click();
+   await card.getByText('Private phone settings saved.',{exact:true}).waitFor();
+   await card.getByLabel('Call me with Chat Canvas updates',{exact:true}).check();
+   await card.getByRole('button',{name:'Save calling preferences',exact:true}).click();
+   await page.waitForFunction(()=>document.querySelector('[data-owner-phone-setup]')?.innerText.includes('Private phone settings saved.'));
+   assert.equal(ownerPhone.updates_requested,true);assert.equal(ownerPhone.execution_enabled,false);
+   const test=card.getByRole('button',{name:'Test call',exact:true});
+   assert.equal(await test.isDisabled(),true);
+   await card.getByLabel('This is my phone number. I want one test call (voice charges may apply).',{exact:true}).check();
+   await test.evaluate(el=>el.click());assert.equal(apiCalls.some(c=>c.action==='prepare_owner_test'),false);
+   // The real Chat page installs the microphone lease before the Twilio SDK.
+   // With no lease, the new shortcut must fail closed without requesting a call.
+   await test.click();
+   await page.locator('.vp3-phone-panel .vp3-phone-notice').getByText('Microphone ownership is unavailable.',{exact:true}).waitFor();
+   assert.equal(apiCalls.some(c=>['token','prepare_owner_test'].includes(c.action)),false);
+   await closeDrawer();
+   await page.evaluate(()=>{
+     window.StonefellowVoiceLeaseV122={acquireCapture(){
+       let live=true;const streams=new Set();
+       return {isCurrent:()=>live,ownStream:s=>{if(!live){s.getTracks().forEach(t=>t.stop());return false;}streams.add(s);return true;},
+         release(){if(!live)return;live=false;for(const s of streams)s.getTracks().forEach(t=>t.stop());}};
+     }};
+   });
+   await card.getByLabel('This is my phone number. I want one test call (voice charges may apply).',{exact:true}).check();
+   await test.click();
+   try{await page.waitForFunction(()=>window.phoneFixture?.connects.length===1);}
+   catch(e){console.error('Owner test diagnostic:',JSON.stringify({actions:apiCalls.map(c=>c.action),notice:await page.locator('.vp3-phone-panel .vp3-phone-notice').innerText(),errors}));throw e;}
+   assert.equal(apiCalls.filter(c=>c.action==='prepare_owner_test').length,1);
+   assert.equal(apiCalls.some(c=>c.action==='prepare_call'),false);
+   await page.getByRole('button',{name:'Hang up',exact:true}).click();await closeDrawer();
+   ownerPhone.last_test={call_id:outgoingId,state:'completed',received:false,can_confirm:true};
+   await card.getByRole('button',{name:'Refresh test status',exact:true}).click();
+   await card.getByRole('button',{name:'I received it',exact:true}).click();
+   await card.getByText('You confirmed receiving the test call.',{exact:true}).waitFor();
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:11,agent_id:2,ready:true}));
+   assert.equal(await card.count(),0,'context change removes private form');
+ });
+ await check('connected profile opens the same Phone drawer and calls only after explicit confirmation',async()=>{
+   await fresh();await enable();await closeDrawer();
+   await page.evaluate(()=>{
+     const map=document.createElement('div');map.id='phone-workspace';document.body.append(map);
+     const device={id:'4'.repeat(32),name:'Field phone',status:'approved',agent_chat:{conversation_id:10,agent_id:2},
+       communication:{call_permission_saved:true,profile_id:'5'.repeat(32),revision:3,phone_revision:1,phone_masked:'Ending in 0135'}};
+     if(!VP3PhoneWorkspaceV1.openConnectedPhone(device))throw Error('Connected phone drawer unavailable');
+   });
+   const setup=page.locator('[data-connected-phone-call]');
+   await setup.getByText('Call Field phone',{exact:true}).waitFor();
+   assert.equal(apiCalls.some(c=>c.action==='prepare_connected_call'),false);
+   assert.equal(await setup.getByRole('button',{name:'Call connected phone',exact:true}).isDisabled(),true);
+   await setup.getByLabel('Place one call to this connected phone',{exact:true}).check();
+   await setup.getByRole('button',{name:'Call connected phone',exact:true}).evaluate(el=>el.click());
+   assert.equal(apiCalls.some(c=>c.action==='prepare_connected_call'),false);
+   await setup.getByRole('button',{name:'Call connected phone',exact:true}).click();
+   await page.waitForFunction(()=>window.phoneFixture?.connects.length===1);
+   assert.equal(apiCalls.filter(c=>c.action==='prepare_connected_call').length,1);
+   assert.equal(apiCalls.some(c=>c.action==='prepare_call'),false);
+   await page.getByRole('button',{name:'Hang up',exact:true}).click();
+   assert.equal(await setup.getByRole('button',{name:'Call connected phone',exact:true}).isDisabled(),true);
+   await setup.getByRole('button',{name:'Close connected phone setup',exact:true}).click();
+   assert.equal(await setup.count(),0);
+ });
+ await check('managed call review is read-only, literal text, source-linked and cleared on Chat switch',async()=>{
+   await fresh();
+   const id='6'.repeat(32);
+   state.calls=[historyCall(id,{transport_kind:'managed_callback',direction:'outbound',connected_phone:true,peer_e164:'',peer_masked:'Ending in 0156',conversation_id:10,browser_control:false})];
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+   await page.getByRole('tab',{name:'Recent calls',exact:true}).click();
+   const row=page.locator('#vp3PhoneSection-calls .vp3-phone-call');
+   await row.getByRole('button',{name:'Review conversation',exact:true}).click();
+   const review=row.locator('[data-managed-conversation-review]');
+   await review.getByText('Conversation intelligence',{exact:true}).waitFor();
+   await review.getByText('Confirm timing.',{exact:true}).waitFor();
+   assert.ok((await review.innerText()).includes('Fixture report <img src=x onerror=alert(1)>'));
+   assert.equal(await review.locator('img,script').count(),0);
+   assert.equal(await review.getByRole('link',{name:'Review original finding',exact:true}).count(),1);
+   assert.equal(await review.locator('a[href^="https://untrusted.invalid"]').count(),0);
+   assert.equal(apiCalls.filter(c=>c.action==='managed_review').length,1);
+   assert.equal(apiCalls.some(c=>['prepare_call','managed_dispatch','save_auto_call_policy'].includes(c.action)),false);
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true}));
+   assert.equal(await page.locator('[data-managed-conversation-review]').count(),0);
+ });
+ await check('contact editor and daily call reminders fit desktop and phone widths and preserve private details',async()=>{
+  for(const viewport of [{width:1360,height:900},{width:390,height:844},{width:320,height:740}]){
+   await fresh('',{viewport});state.contact_details_ready=true;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+   await page.getByRole('tab',{name:'Contacts',exact:true}).click();await page.getByRole('button',{name:'+ Contact',exact:true}).click();
+   const editor=page.getByRole('form',{name:'Add phone contact',exact:true});
+   await editor.getByLabel('Name',{exact:true}).fill('Ada <img src=x>');await editor.getByLabel('Phone number',{exact:true}).fill('+16025550812');
+   await editor.getByLabel('Relationship',{exact:true}).fill('Friend');await editor.getByLabel('Private notes',{exact:true}).fill('Private project note <script>\nDiscuss next steps.');
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await editor.getByLabel('Private notes',{exact:true}).inputValue(),'Private project note <script>\nDiscuss next steps.');
+   const layout=await page.locator('.vp3-phone-panel').evaluate(node=>({width:node.clientWidth,scroll:node.scrollWidth,background:getComputedStyle(node).backgroundColor}));assert.ok(layout.scroll<=layout.width+1);assert.equal(layout.background,'rgb(255, 255, 255)');
+   await editor.getByRole('button',{name:'Save contact',exact:true}).click();await page.getByRole('button',{name:'+ Scheduled call',exact:true}).waitFor();
+   assert.equal(apiCalls.filter(call=>call.action==='save_phone_contact').length,1);assert.equal(apiCalls.find(call=>call.action==='save_phone_contact').relationship,'Friend');
+   await page.getByRole('button',{name:'+ Scheduled call',exact:true}).click();const schedule=page.getByRole('form',{name:'Scheduled call',exact:true});
+   await schedule.getByLabel('First call date',{exact:true}).fill('2026-12-03');await schedule.getByLabel('Call time',{exact:true}).fill('17:15');await schedule.getByLabel('Time zone',{exact:true}).fill('UTC');
+   await schedule.getByLabel('Repeat',{exact:true}).selectOption('daily');await schedule.getByLabel('Call notes and objectives',{exact:true}).fill('Review progress\nAgree the next step.');
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await schedule.getByLabel('Repeat',{exact:true}).inputValue(),'daily');
+   assert.match(await page.locator('.vp3-phone-panel').innerText(),/Automatic dialing is not enabled/);assert.equal(apiCalls.some(call=>call.action==='save_phone_contact_schedule'),false);
+   await schedule.getByLabel('Repeat',{exact:true}).scrollIntoViewIfNeeded();await fs.mkdir(path.join(root,'tests/artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-contact-schedule-'+viewport.width+'.png')});
+   assert.equal(await page.locator('.vp3-phone-panel').evaluate(node=>node.scrollWidth<=node.clientWidth+1),true);
+   await schedule.getByRole('button',{name:'Save scheduled call',exact:true}).click();await page.getByText('Every day',{exact:true}).waitFor();
+   const saved=apiCalls.find(call=>call.action==='save_phone_contact_schedule');assert.equal(saved.time,'17:15');assert.equal(saved.recurrence,'daily');assert.equal(saved.confirmed,true);assert.equal(saved.contact_revision,'b'.repeat(64));
+   assert.equal(await page.locator('.vp3-phone-panel img,.vp3-phone-panel script').count(),0);assert.equal(await page.locator('#chatThread').innerText(),'');
+   await page.getByRole('button',{name:'Cancel schedule',exact:true}).click();assert.equal(apiCalls.some(call=>call.action==='cancel_phone_contact_schedule'),false);await page.getByRole('button',{name:'Confirm cancellation',exact:true}).click();await page.getByText('No scheduled calls.',{exact:true}).waitFor();
+   await page.getByRole('button',{name:'Back to contacts',exact:true}).click();assert.doesNotMatch(await page.locator('.vp3-phone-panel').innerText(),/Private project note/);assert.ok(apiCalls.every(call=>!['token','prepare_call','save_auto_call_policy'].includes(call.action)));
+  }
+ });
+ await check('voicemail settings and trusted greeting capture fit desktop and narrow mobile drawers',async()=>{
+  for(const viewport of [{width:1360,height:900},{width:320,height:740}]){
+   await fresh('',{viewport});state.voicemail_settings={available:true,number_id:1,revision:0,rings:4,ring_seconds:24,transcribe:false,announce:true,greeting:{present:false,duration_seconds:0,preview_url:''}};
+   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());await page.getByRole('tab',{name:'Voicemail',exact:true}).click();
+   const settings=page.locator('.vp3-phone-voicemail-settings');await settings.getByRole('combobox',{name:'Approximate rings before voicemail',exact:true}).waitFor();
+   assert.match(await settings.innerText(),/Rings are approximate/);assert.match(await settings.innerText(),/waiting for the server worker/);
+   await page.evaluate(()=>{
+    const stats=window.vmCapture={claims:0,releases:0,microphones:0,closed:0,tracks:[],node:null};
+    window.StonefellowVoiceLeaseV122={acquireCapture(){stats.claims++;let live=true;return {isCurrent:()=>live,ownStream:()=>live,release(){if(live){live=false;stats.releases++;}}};}};
+    window.AudioContext=class{constructor(){this.destination={};this.audioWorklet={addModule:async()=>{}};}resume(){return Promise.resolve();}close(){stats.closed++;return Promise.resolve();}createMediaStreamSource(){return {connect(){},disconnect(){}};}};
+    window.AudioWorkletNode=class{constructor(){this.port={onmessage:null};stats.node=this;}connect(){}disconnect(){}};
+    Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:async()=>{stats.microphones++;const track={readyState:'live',stop(){this.readyState='ended';}};stats.tracks.push(track);return {getTracks:()=>[track]};}}});
+   });
+   const record=settings.getByRole('button',{name:'Record greeting',exact:true});await record.evaluate(button=>button.click());assert.equal(await page.evaluate(()=>vmCapture.claims),0,'Scripted clicks cannot start the microphone');
+   await record.click();await settings.getByRole('button',{name:'Stop recording greeting',exact:true}).waitFor();await page.waitForFunction(()=>window.vmCapture.node?.port.onmessage&&window.vmCapture.microphones===1);
+   await page.evaluate(()=>{for(let i=0;i<10;i++)vmCapture.node.port.onmessage({data:new ArrayBuffer(3200)});});
+   await settings.getByRole('button',{name:'Stop recording greeting',exact:true}).click();await settings.getByRole('button',{name:'Save greeting',exact:true}).waitFor();
+   assert.deepEqual(await page.evaluate(()=>({claims:vmCapture.claims,releases:vmCapture.releases,microphones:vmCapture.microphones,closed:vmCapture.closed,ended:vmCapture.tracks.every(track=>track.readyState==='ended')})),{claims:1,releases:1,microphones:1,closed:1,ended:true});
+   assert.ok((await settings.locator('audio').getAttribute('src')).startsWith('blob:'));
+   let uploads=0;await page.route('**/api/phone-voicemail-greeting-v1.php',async route=>{
+    uploads++;assert.equal(route.request().method(),'POST');assert.match(route.request().headers()['content-type'],/^multipart\/form-data; boundary=/);assert.ok(route.request().postDataBuffer().includes(Buffer.from('RIFF')));
+    state.voicemail_settings={...state.voicemail_settings,revision:1,greeting:{present:true,duration_seconds:1,preview_url:'/api/fixture-audio'}};
+    return route.fulfill({json:{ok:true,voicemail_settings:state.voicemail_settings}});
+   });
+   assert.equal(uploads,0);await settings.getByRole('button',{name:'Save greeting',exact:true}).click();await settings.getByText('Your recorded greeting is active.',{exact:true}).waitFor();assert.equal(uploads,1);
+   await settings.getByRole('button',{name:'Record greeting',exact:true}).click();await settings.getByRole('button',{name:'Cancel greeting',exact:true}).click();
+   assert.equal(await page.evaluate(()=>vmCapture.claims===vmCapture.releases&&vmCapture.tracks.every(track=>track.readyState==='ended')),true,'Cancel releases the current recording');
+   const bounds=await page.locator('.vp3-phone-panel').evaluate(node=>({width:node.clientWidth,scroll:node.scrollWidth}));assert.ok(bounds.scroll<=bounds.width+1,'Voicemail controls fit '+viewport.width+'px');
+   const buttons=await settings.locator('button').evaluateAll(nodes=>nodes.map(node=>({width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height})));assert.ok(buttons.every(button=>button.height>=44&&button.width<=viewport.width),'Greeting actions retain mobile touch targets');
+   await settings.scrollIntoViewIfNeeded();await fs.mkdir(path.join(root,'tests/artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-voicemail-'+(viewport.width===320?'mobile':'desktop')+'.png')});
+   assert.equal(apiCalls.some(call=>['prepare_call','save_recording_policy','transcribe_voicemail'].includes(call.action)),false,'Greeting capture cannot create calls or paid transcripts');
+  }
+ });
  await fresh();await enable();
  await check('both-sided captions and private suggestions use separate consent and never inject Agent speech',async()=>{
   captionCalls=[];await call();await page.waitForFunction(()=>phoneFixture.calls.at(-1)?.status()==='open');
@@ -404,7 +632,7 @@ try{
   state.operator_live={available:true,assist_available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
-  await caption.getByRole('button',{name:'Enable live caller captions',exact:true}).click();
+  await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
   assert.equal(await caption.getByLabel(/Include both audio sides/).isChecked(),false);
   assert.equal(await caption.getByLabel(/Everyone agrees that recent captions/).isChecked(),false);
   await caption.getByLabel(/Include both audio sides/).check();
@@ -444,7 +672,7 @@ try{
   state.operator_live={available:true,assist_available:true,voice_available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
-  await caption.getByRole('button',{name:'Enable live caller captions',exact:true}).click();
+  await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
   await caption.getByLabel(/Include both audio sides/).check();
   await caption.getByLabel(/Everyone agrees that recent captions/).check();
   await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();

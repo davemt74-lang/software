@@ -237,10 +237,15 @@ jobs:
           php tests/phone-subscription-access-v1.php
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
+          php tests/phone-operator-suggestion-evidence.php
           php tests/phone-caller-contacts-schema-v1.php
+          php tests/phone-contact-management-v1.php
+          php tests/calendar-recurrence-v1340.php
+          php tests/calendar-event-v1340-page.php
           php tests/phone-browser-load-v1.php
           php tests/phone-workspace-integration-v1.php
           php tests/phone-recording-pipeline-v1.php
+          php tests/phone-voicemail-v1.php
           php tests/phone-recording-speech-v1.php
           php tests/phone-recording-audio-http-v1.php
           php tests/ai-direct-authority-scope-v1.php
@@ -249,9 +254,25 @@ jobs:
           php tests/phone-sms-ph3a-runtime.php
           php tests/phone-sms-ph3b-runtime.php
           node tests/phone-workspace-v1.mjs
+          node tests/phone-voicemail-capture-v1.mjs
+          node tests/phone-voicemail-chat-v1.mjs
           node tests/phone-operator-capture-v1.mjs
           node tests/phone-operator-voice-mixer-v1.mjs
           PHP_BIN=php node tests/phone-workspace-release-v1.mjs --projection-only
+      - name: Private phone push queue, canonical sources and runtime guard
+        run: |
+          php tests/phone-sqlite-transactions-v1.php
+          php tests/phone-push-delivery-v1.php
+          php tests/phone-push-events-v1.php
+          php tests/phone-push-vapid-cache-v1.php
+          php tests/phone-push-transport-v1.php
+          node tests/phone-push-delivery-ui-v1.mjs
+          node tests/phone-push-service-worker-v1.mjs
+          if php -r 'exit(PHP_VERSION_ID >= 80200 ? 0 : 1);'; then
+            node tests/phone-push-transport-crypto-v1.mjs
+            php tests/phone-push-worker-v1.php
+          fi
+          node tests/phone-push-http-v1.mjs
       - name: PHP and JavaScript syntax
         run: |
           git ls-files -z '*phone*.php' | xargs -0 -n1 php -l
@@ -261,6 +282,7 @@ jobs:
           php -l includes/ai-direct-account-v1.php
           node --check phone-workspace-v1.js
           node --check phone-operator-capture-v1.js
+          node --check phone-voicemail-capture-v1.js
           node --check phone-operator-voice-mixer-v1.js
           php -l includes/agent-operator-voice-turns-v1.php
           php -l includes/agent-operator-live-v1.php
@@ -291,7 +313,7 @@ jobs:
           coverage: none
       - name: Create isolated disposable databases
         run: |
-          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306",getenv("VP3_PHONE_MYSQL_USER"),getenv("VP3_PHONE_MYSQL_PASSWORD")); foreach(["phone_assignment_test","phone_workspace_test","phone_pipeline_test","phone_subscription_test"] as $name){$p->exec("CREATE DATABASE ".$name." CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");}'
+          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306",getenv("VP3_PHONE_MYSQL_USER"),getenv("VP3_PHONE_MYSQL_PASSWORD")); foreach(["phone_assignment_test","phone_workspace_test","phone_pipeline_test","phone_subscription_test","phone_contacts_test","phone_voicemail_test"] as $name){$p->exec("CREATE DATABASE ".$name." CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");}'
       - name: Upgrade historical SMS assignment ownership on MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_assignment_test;charset=utf8mb4
@@ -304,10 +326,26 @@ jobs:
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_pipeline_test;charset=utf8mb4
         run: php tests/phone-recording-pipeline-v1.php
+      - name: Contact ownership and Calendar schedules on MySQL
+        env:
+          VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_contacts_test;charset=utf8mb4
+        run: php tests/phone-contact-management-v1.php
       - name: Real monthly subscriptions and explicit admin grants on MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_subscription_test;charset=utf8mb4
         run: php tests/phone-subscription-access-v1.php
+      - name: Private voicemail settings greetings and deletion on MySQL
+        env:
+          VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_voicemail_test;charset=utf8mb4
+        run: php tests/phone-voicemail-v1.php
+      - name: Private phone push leases and revocation on native MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: fixture_password
+        run: |
+          php tests/phone-push-delivery-v1.php
+          php tests/phone-push-vapid-cache-v1.php
 
   phone-browser:
     runs-on: ubuntu-24.04

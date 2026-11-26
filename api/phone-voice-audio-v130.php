@@ -22,6 +22,7 @@ $q=$pdo->prepare('SELECT provider_recording_sid FROM phone_voice_recordings_v130
 $q->execute([$recordId,(int)$user['id']]);
 $sid=(string)($q->fetchColumn()?:'');
 if (!preg_match('/^RE[a-f0-9]{32}$/iD',$sid)) {http_response_code(404);exit;}
+if(vp3_phone_voicemail_deleted_v1($pdo,$sid)){http_response_code(404);exit;}
 if (!function_exists('curl_init')) {http_response_code(503);exit;}
 try {
     [$account,$token]=vp3_phone_twilio_credentials_v100();

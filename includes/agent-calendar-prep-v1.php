@@ -24,7 +24,7 @@ function vp3_calendar_prep_details_v1(PDO $pdo, array $user, array $principal, a
         'open_items'=>[], 'completed_items'=>[], 'unknown_items'=>[], 'items_truncated'=>false];
     if ($verifiedLineage !== null) $result['actionable_items'] = [];
 
-    if (!table_exists('video_meetings') || ($event['recurrence'] ?? 'none') === 'weekly') return $result;
+    if (!table_exists('video_meetings') || ($event['recurrence'] ?? 'none') !== 'none') return $result;
     require_once __DIR__.'/video-meetings-v1800.php';
     $meeting = $booking ? video_meeting_for_booking_v1800($pdo, $id) : video_meeting_for_calendar_event_v1800($pdo, $id);
     if (!$meeting || (int)$meeting['owner_user_id'] !== $owner || !in_array($meeting['status'], ['scheduled','ready','live'], true)
@@ -216,7 +216,7 @@ function vp3_calendar_prep_meeting_evidence_v1(PDO $pdo,array $user,array $princ
 {
     $empty=['meeting_id'=>0,'actionable_items'=>[],'prior_transcript'=>['status'=>'not_linked']];
     if (!table_exists('video_meetings')||($event['kind']??'event')!=='event'
-        || ($event['recurrence']??'none')==='weekly'||!empty($event['all_day'])) return $empty;
+        || ($event['recurrence']??'none')!=='none'||!empty($event['all_day'])) return $empty;
     require_once __DIR__.'/video-meetings-v1800.php';
     require_once __DIR__.'/video-meetings-homeserver-v1801.php';
     require_once __DIR__.'/agent-catch-up-meeting-prep-v1.php';
@@ -227,7 +227,7 @@ function vp3_calendar_prep_meeting_evidence_v1(PDO $pdo,array $user,array $princ
     $now=($now??new DateTimeImmutable('now',new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));
     $calendar=user_calendar_event_v1300($pdo,$owner,(int)$event['id']);
     if (!$calendar||($calendar['status']??'')!=='active'||!empty($calendar['all_day'])
-        || ($calendar['recurrence']??'none')==='weekly'
+        || ($calendar['recurrence']??'none')!=='none'
         || (string)$calendar['start_at_utc']!==(string)$event['start_at_utc']
         || (string)$calendar['end_at_utc']!==(string)$event['end_at_utc']) return $empty;
     $meeting=video_meeting_for_calendar_event_v1800($pdo,(int)$calendar['id']);
@@ -271,7 +271,7 @@ function vp3_calendar_prep_next_v1(PDO $pdo,array $user,int $agentId,int $conver
     if (!video_meeting_schema_ready_v1800($pdo)) throw new RuntimeException('Meeting storage is unavailable.',503);
     $now=($now??new DateTimeImmutable('now',new DateTimeZone('UTC')))->setTimezone(new DateTimeZone('UTC'));
     $agent=$agentId>0?'m.organizer_agent_id=?':'m.organizer_agent_id IS NULL';
-    $oneTime=user_calendar_recurrence_schema_ready_v1340($pdo)?"AND c.recurrence<>'weekly'":'';
+    $oneTime=user_calendar_recurrence_schema_ready_v1340($pdo)?"AND c.recurrence='none'":'';
     $q=$pdo->prepare("SELECT c.id FROM video_meetings m
         JOIN user_calendar_events c ON c.id=m.calendar_event_id AND c.owner_user_id=m.owner_user_id
         WHERE m.owner_user_id=? AND m.status IN ('scheduled','ready') AND m.start_at_utc>? AND m.start_at_utc<?

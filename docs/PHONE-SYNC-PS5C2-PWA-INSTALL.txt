@@ -1,0 +1,34 @@
+Phone Sync PS5C.2A — installable connected-phone foundation
+
+The existing /phone-location.php becomes VP3 Phone, with a standalone
+manifest, same-origin branded PNG icons and an installation guide.
+The service worker scope is /phone-location.php, not the main app or its
+APIs. The worker has no fetch handler, caches, sensors, push handlers or
+subscription operations. All existing phone authority remains server-side.
+
+If the installed app already has the valid pairing cookie, the existing
+connection works unchanged. If the OS creates a separate cookie context,
+the owner opens Connect Phone, creates a fresh five-minute QR invite and
+chooses Pair an installed VP3 Phone app instead. Copy the code to the
+intended holder; enter it in the installed app, name the phone, submit
+and wait for the ordinary owner approval. Manual entry uses the original
+claim endpoint and one-use proof; no token in a URL or script-readable
+storage. The manually entered invite is kept in memory until use/expiry/
+page exit. Existing QR behavior is unchanged. No new app identity may
+inherit an old device's private connection without explicit authority.
+If cookie contexts differ, this creates a new pairing; disconnect the
+obsolete connection only after confirming the new one. Automatic existing
+pairing transfer is intentionally not implemented.
+
+For iOS use Safari Share / Add to Home Screen, then open VP3 Phone.
+Supported Android browsers may offer an install button. Installation
+support and OS push permission are separate. No notification subscription,
+push transport, badge delivery or background GPS/video is enabled here.
+
+Regression coverage: actual HTTP manifest, same-origin scope, icon sizes,
+real server manual pairing, pending/approved lifecycle, memory-only
+manual invite, replay rejection, revocation and reopening. Simulated
+standalone mode is not actual iOS installation; physical iPhone testing
+remains required. Next PS5C.2B: explicit dual-approved existing-device
+handoff if isolated session migration is needed, then PS5C.3 subscriptions.
+No live settings or deployment change by installing this release.

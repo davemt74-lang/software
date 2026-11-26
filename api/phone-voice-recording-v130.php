@@ -31,6 +31,7 @@ try {
                 $browserQuery->execute([(string)$_POST['CallSid']]);$browserCall=$browserQuery->fetch(PDO::FETCH_ASSOC);
                 if($browserCall)$savedCall=$browserCall+['source_kind'=>'browser'];
             }
+            $savedCall['voicemail_message']=true;
             vp3_phone_recording_receive_v1($pdo,$savedCall,$_POST);
         }
     }

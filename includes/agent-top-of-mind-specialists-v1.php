@@ -709,6 +709,8 @@ function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,in
                         $specialists['operator']['state']='checked';
                         $specialists['operator']['detail']='The last check found '.$count
                             .($count===1?' call report':' call reports').' with follow-ups to review. Open Operator Brain for current findings.';
+                        if(isset($specialists['operator']['operator_worker']))
+                            $specialists['operator']['detail'].=' '.vp3_operator_worker_detail_8a4($specialists['operator']['operator_worker']);
                     }
                 }
                 continue;

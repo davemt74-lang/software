@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_permission('account.access');
+require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
+header('Cache-Control: no-store, private');
 
 $pdo = db();
 $user = current_user();
@@ -32,6 +34,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         $action = (string)($_POST['action'] ?? 'profile');
+
+        if (in_array($action, ['operator_owner_phone_number','operator_owner_phone_preferences'], true)) {
+            try {
+                $result=$action==='operator_owner_phone_number'
+                    ?VP3OperatorOwnerPhoneV1::saveNumber($pdo,$user,$_POST,time())
+                    :VP3OperatorOwnerPhoneV1::savePreferences($pdo,$user,$_POST,time());
+                flash('account_notice',$action==='operator_owner_phone_number'
+                    ?'Personal phone number saved. You can test it from private Agent Chat.'
+                    :'Agent calling preferences saved. Autonomous calling remains off until the calling service is ready.');
+            } catch (DomainException $error) {
+                flash('account_error',$error->getMessage());
+            } catch (Throwable) {
+                flash('account_error','Phone settings could not be saved. Please try again.');
+            }
+            redirect(url('/account.php').'#agent-phone');
+        }
 
         if ($action === 'profile') {
             $displayName = trim((string)($_POST['display_name'] ?? ''));
@@ -123,6 +141,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $user = current_user();
 $notice = flash('account_notice');
 $error = flash('account_error');
+$ownerPhone=null;
+try {$ownerPhone=VP3OperatorOwnerPhoneV1::read($pdo,$user);}catch(Throwable){}
+
 
 
 $accountNotificationCount = notification_unread_count($user);
@@ -326,6 +347,7 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
         <div class="account-canvas-grid">
           <nav class="account-canvas-nav" aria-label="Account sections">
             <a href="#profile">Profile & Photo</a>
+            <a href="#agent-phone">Phone &amp; Agent Calls</a>
             <a href="#security">Security</a>
             <a href="#agent-brain">Agent Brain</a>
             <a href="#access">Your Access</a>
@@ -400,6 +422,92 @@ $accountActiveConnectedSites = count(array_filter($accountConnectedSites, static
 
                 <button class="account-submit" type="submit">Save Profile</button>
               </form>
+            </section>
+
+            <section class="account-panel" id="agent-phone">
+              <div class="account-panel-head">
+                <span>Private account contact</span>
+                <h2>Phone &amp; Agent Calls</h2>
+                <p>Let your Agent call you with Chat Canvas updates or a friendly check-in. This is your personal callback number, not your assigned VP3 phone line or public profile number.</p>
+              </div>
+              <?php if ($ownerPhone===null): ?>
+                <p>Phone preferences are unavailable. Install the latest Cloud database upgrade or sign in again.</p>
+              <?php else: ?>
+                <form method="post" class="account-form">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="operator_owner_phone_number">
+                  <input type="hidden" name="expected_revision" value="<?= (int)$ownerPhone['revision'] ?>">
+                  <div class="account-fields">
+                    <div class="account-field full">
+                      <label for="owner_phone_e164">Your phone number</label>
+                      <input id="owner_phone_e164" name="phone_e164" type="tel" autocomplete="tel" inputmode="tel" maxlength="64"
+                        placeholder="+1 602 555 0100" value="<?= e($ownerPhone['phone_e164']) ?>">
+                      <small>Private. Include your country code. Clear this field and save to remove the number.</small>
+                    </div>
+                  </div>
+                  <p><?= $ownerPhone['phone_e164']!==''?'Saved number — test the connection in private Agent Chat.':'No personal number saved.' ?></p>
+                  <button class="account-submit" type="submit">Save phone number</button>
+                </form>
+                <form method="post" class="account-form">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="operator_owner_phone_preferences">
+                  <input type="hidden" name="expected_revision" value="<?= (int)$ownerPhone['revision'] ?>">
+                  <fieldset <?= $ownerPhone['phone_e164']===''?'disabled':'' ?>>
+                    <legend>When may your Agent call you?</legend>
+                    <label class="account-remove-photo">
+                      <input type="checkbox" name="updates_requested" value="1" <?= $ownerPhone['updates_requested']?'checked':'' ?>>
+                      Call me with Chat Canvas updates
+                    </label>
+                    <label class="account-remove-photo">
+                      <input type="checkbox" name="hello_requested" value="1" <?= $ownerPhone['hello_requested']?'checked':'' ?>>
+                      Call just to say hello or check in
+                    </label>
+                    <div class="account-fields">
+                      <div class="account-field">
+                        <label for="owner_call_update_scope">Which updates?</label>
+                        <select id="owner_call_update_scope" name="update_scope">
+                          <option value="important" <?= $ownerPhone['update_scope']==='important'?'selected':'' ?>>Important updates and decisions</option>
+                          <option value="eligible" <?= $ownerPhone['update_scope']==='eligible'?'selected':'' ?>>Any eligible updates (grouped)</option>
+                        </select>
+                      </div>
+                      <div class="account-field">
+                        <label for="owner_call_timezone">Time zone</label>
+                        <select id="owner_call_timezone" name="timezone">
+                          <?php foreach (array_unique(array_merge(['UTC'],DateTimeZone::listIdentifiers())) as $zone): ?>
+                            <option value="<?= e($zone) ?>" <?= $ownerPhone['timezone']===$zone?'selected':'' ?>><?= e($zone) ?></option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div class="account-field">
+                        <label for="owner_call_start">Earliest call</label>
+                        <input type="time" id="owner_call_start" name="window_start" required value="<?= e($ownerPhone['window_start']) ?>">
+                      </div>
+                      <div class="account-field">
+                        <label for="owner_call_end">Latest call</label>
+                        <input type="time" id="owner_call_end" name="window_end" required value="<?= e($ownerPhone['window_end']) ?>">
+                      </div>
+                      <div class="account-field">
+                        <label for="owner_call_max">Maximum calls per day</label>
+                        <input type="number" id="owner_call_max" name="max_calls_per_day" min="1" max="3" required value="<?= (int)$ownerPhone['max_calls_per_day'] ?>">
+                      </div>
+                      <div class="account-field">
+                        <label for="owner_call_gap">Minimum minutes between calls</label>
+                        <input type="number" id="owner_call_gap" name="min_gap_minutes" min="120" max="10080" required value="<?= (int)$ownerPhone['min_gap_minutes'] ?>">
+                      </div>
+                      <div class="account-field">
+                        <label for="owner_call_duration">Maximum call duration</label>
+                        <select id="owner_call_duration" name="max_duration_seconds">
+                          <?php foreach ([60,120,180,240,300] as $seconds): ?>
+                            <option value="<?= $seconds ?>" <?= $ownerPhone['max_duration_seconds']===$seconds?'selected':'' ?>><?= (int)($seconds/60) ?> min</option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                    </div>
+                    <button class="account-submit" type="submit">Save calling preferences</button>
+                  </fieldset>
+                  <small>These are requested preferences only. A successful connection test is not identity verification. Autonomous calling remains disabled until the calling service and permission checks are ready. Calls outside your window, automatic redial, and recording are not authorized by these settings. Changing or removing your number clears both call preferences.</small>
+                </form>
+              <?php endif; ?>
             </section>
 
             <section class="account-panel" id="security">
