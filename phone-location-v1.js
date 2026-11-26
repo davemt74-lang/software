@@ -148,7 +148,10 @@
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || result.ok !== true) {
-        const error = new Error('Phone action unavailable'); error.status = response.status; throw error;
+        const error = new Error('Phone action unavailable');
+        error.status = response.status;
+        if (response.status === 503 && result.code === 'upgrade_required') error.code = 'upgrade_required';
+        throw error;
       }
       return result;
     } finally { clearTimeout(timer); }
