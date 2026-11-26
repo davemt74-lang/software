@@ -291,6 +291,8 @@ jobs:
           node tests/chat-media-http.mjs
           node tests/music-module-runtime.mjs
           php tests/music-module-integrity.php
+          php tests/music-song-metadata-v1.php
+          node tests/music-song-metadata-api-v1.mjs
           node tests/player-catalog-v190.mjs
           php tests/player-catalog-v190.php
           node tests/artist-music-v185.mjs

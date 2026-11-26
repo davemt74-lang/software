@@ -585,6 +585,15 @@
   async function submitCreateForm(
     form
   ) {
+    if (form.dataset.submitting === '1') return;
+    if (form.dataset.chatCreateForm === 'track') {
+      if (!window.VP3MusicMetadataFormV1?.prepare(form)) {
+        setCreateModalStatus('Choose an authorized Music Workspace and load its song details before saving.', 'error');
+        createModalStatus?.focus();
+        return;
+      }
+    }
+    form.dataset.submitting = '1';
     const submit =
       form.querySelector(
         'button[type="submit"]'
@@ -642,6 +651,7 @@
       );
 
       form.reset();
+      if (form.dataset.chatCreateForm === 'track') window.VP3MusicMetadataFormV1?.resetAfterSuccess(form);
 
       const type =
         String(
@@ -658,7 +668,7 @@
           String(data.open_url);
         createAdvanced.textContent =
           type === 'track'
-            ? 'Open Stem Studio ↗'
+            ? 'Edit song details ↗'
             : type === 'album'
               ? 'Edit Album / Tracks ↗'
               : 'Open ↗';
@@ -705,9 +715,11 @@
           : 'Could not create content.',
         'error'
       );
+      createModalStatus?.focus();
     } finally {
+      delete form.dataset.submitting;
       if (submit) {
-        submit.disabled = false;
+        submit.disabled = form.dataset.chatCreateForm === 'track' && !!window.VP3MusicMetadataFormV1?.isBlocked(form);
         submit.textContent =
           originalText;
       }
