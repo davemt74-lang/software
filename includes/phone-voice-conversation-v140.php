@@ -101,7 +101,7 @@ function vp3_phone_voice_end_v140(string $spoken): string
 }
 
 /** Reuses Cloud inference and token charging, with an isolated phone-only prompt. */
-function vp3_phone_voice_ai_v140(PDO $pdo,int $ownerId,int $agentId,string $speech,array $history): array
+function vp3_phone_voice_ai_v140(PDO $pdo,int $ownerId,int $agentId,string $speech,array $history,string $objectives=''): array
 {
     $q=$pdo->prepare('SELECT * FROM users WHERE id=? LIMIT 1');$q->execute([$ownerId]);
     $user=$q->fetch(PDO::FETCH_ASSOC);
@@ -110,6 +110,7 @@ function vp3_phone_voice_ai_v140(PDO $pdo,int $ownerId,int $agentId,string $spee
     if (!$user||!$name) return ['ok'=>false];
     return ai_generate_chat_response($speech,$history,[],$user,'phone_voice',[
         'surface'=>'phone_voice','phone_agent_name'=>(string)$name,'phone_max_output_tokens'=>220,
+        'phone_objectives'=>mb_strimwidth(trim($objectives),0,1200,'…'),
     ]);
 }
 

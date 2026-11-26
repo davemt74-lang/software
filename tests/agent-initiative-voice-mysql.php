@@ -190,7 +190,10 @@ try{
         if(!is_dir($gate)||!preg_match('/\A[1-9][0-9]*\z/D',$index))throw new RuntimeException('Invalid native voice process barrier.');
         $GLOBALS['voiceNativePhaseFile']=$gate.'/phase-'.$index;
         $config=json_decode((string)file_get_contents($gate.'/config-'.$index.'.json'),true,32,JSON_THROW_ON_ERROR);
-        file_put_contents($gate.'/ready-'.$index,json_encode(['connection_id'=>(int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn()],JSON_THROW_ON_ERROR));
+        $ready=$gate.'/ready-'.$index;
+        $payload=json_encode(['connection_id'=>(int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn()],JSON_THROW_ON_ERROR);
+        if(file_put_contents($ready.'.tmp',$payload)!==strlen($payload)||!rename($ready.'.tmp',$ready))
+            throw new RuntimeException('Could not publish the completed worker handshake.');
         voice_mysql_wait(static fn()=>is_file($gate.'/go-'.$index),'worker.go');voice_mysql_phase('worker.claim');
         try{$result=['ok'=>true,'response'=>voice_mysql_call('voice_claim',$config)];}
         catch(RuntimeException $error){$result=['ok'=>false,'code'=>(int)$error->getCode()];}

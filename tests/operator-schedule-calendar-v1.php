@@ -94,6 +94,7 @@ c($read()['last_occurrence']['reason']==='carrier_'.$expected,'original private 
 echo "PASS single carrier attempt ($scenario), in-flight exclusion and retry handling\n";
 
 require_once dirname(__DIR__).'/includes/agent-operator-answer-v1.php';
+ddl("CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY AUTOINCREMENT,call_sid TEXT,step_number INTEGER,owner_user_id INTEGER,agent_id INTEGER,speech_hash TEXT,speech_text TEXT,response_text TEXT,state TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(call_sid,step_number))");
 $destination=$plan['fields']['To'];
 $limits=fn(string $to,int $at)=>vp3_operator_admission_history_v1($pdo,$scope,['contact'=>['destination_e164'=>$to]],$callingPolicy,$at);
 c(vp3_operator_preview_request_v1($pdo,$row,$callTime)['reason']==='call_frequency','a fresh dispatch check sees the carrier reservation');
@@ -110,11 +111,11 @@ echo "PASS scheduled reservation daily cap, spacing and concurrent call exclusio
 if($scenario!=='success')return;
 $carrierForm=['AccountSid'=>vp3_phone_twilio_state_v100()['account_sid'],'CallSid'=>'CA'.str_repeat('c',32),
     'From'=>$plan['fields']['From'],'To'=>$plan['fields']['To']];
-$answer=static function(string $stage,array $values=[],?string $signature=null)use($carrierForm,$pdo,$callTime):string{
+$answer=static function(string $stage,array $values=[],?string $signature=null,?callable $generator=null)use($carrierForm,$pdo,$callTime):string{
     $payload=array_replace($carrierForm,$values);
     $url=vp3_phone_browser_callback_v1('operator_answer',['event'=>$stage]);
     $signature??=vp3_phone_sms_twilio_signature_v110($url,$payload,'carrier-auth-token-fixture');
-    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$callTime+1);
+    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$callTime+1,$generator);
 };
 $hangup=vp3_phone_browser_hangup_v1();
 foreach([['answer',[],'bad signature'],['answer',['AccountSid'=>'AC'.str_repeat('d',32)],null]] as $invalid){
@@ -130,7 +131,7 @@ foreach(['agree','decline','silence','withdrawn'] as $case){
     $pdo->beginTransaction();
     try{
         $prompt=$answer('answer');
-        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'recorded and transcribed')&&str_contains($prompt,'event=confirm')
+        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'responses transcribed')&&str_contains($prompt,'event=confirm')
             &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'keypad disclosure precedes capture and keeps objectives private');
         c($answer('answer')===$prompt,'answer retry can replay the pending prompt');
         if($case==='withdrawn')$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
@@ -144,6 +145,27 @@ foreach(['agree','decline','silence','withdrawn'] as $case){
     }finally{$pdo->rollBack();}
 }
 echo "PASS signed scheduled answer and recipient consent, refusal, silence, withdrawal and replay\n";
+
+$pdo->beginTransaction();
+try{
+    $answer('answer');$consented=$answer('confirm',['Digits'=>'1']);
+    c(str_contains($consented,'input="speech"')&&str_contains($consented,'event=turn1'),'consent begins a bounded speech turn');
+    $generated=0;$model=static function(string $speech,array $history,array $current)use(&$generated,$plan):array{
+        ++$generated;c($speech==='Hello there'&&$history===[]&&$current['objectives']===$plan['objectives'],'model receives only this call speech, history and approved objectives');
+        return ['ok'=>true,'answer'=>'Hello. What would you like to cover?'];
+    };
+    $turn=$answer('turn1',['SpeechResult'=>'Hello there'],null,$model);
+    c($generated===1&&str_contains($turn,'event=turn2')&&str_contains($turn,'What would you like'),'successful reply advances one turn');
+    c($answer('turn1',['SpeechResult'=>'Hello there'],null,$model)===$turn&&$generated===1,'exact carrier replay returns the saved response without another model call');
+    c($answer('turn1',['SpeechResult'=>'changed replay'])===$hangup&&$generated===1,'conflicting turn replay stops without model work');
+    c(str_contains($answer('turn2',['SpeechResult'=>'goodbye']),'Thank you')&&$read()['last_occurrence']['reason']==='conversation_completed','recipient can end the conversation by voice');
+}finally{$pdo->rollBack();}
+$pdo->beginTransaction();
+try{
+    $answer('answer');$answer('confirm',['Digits'=>'1']);
+    c(str_contains($answer('turn1',[]),'did not hear')&&$read()['last_occurrence']['reason']==='conversation_silent','speech timeout ends without model work');
+}finally{$pdo->rollBack();}
+echo "PASS objective-scoped scheduled speech turns, replay fencing and voice completion\n";
 
 foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=>'carrier_no_answer','failed'=>'carrier_failed','canceled'=>'carrier_canceled'] as $status=>$reason){
     $pdo->beginTransaction();
