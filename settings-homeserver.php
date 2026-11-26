@@ -105,6 +105,20 @@ if (!$user) redirect(url('/login.php'));
           <div class="hs-card-head"><div><small>Authorized capabilities</small><h2>Available to VP3</h2><p>HomeServer remains the source of truth. VP3 receives only the scopes and capability projection authorized for this pairing.</p></div></div>
           <div class="hs-chips" id="hsCapabilities"><span>None reported</span></div>
         </section>
+        <section class="hs-card" data-hs-model-inventory data-api="<?= e(url('/api/homeserver-model-inventory-v1.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
+          <div class="hs-card-head">
+            <div><small>Model management</small><h2>Model Inventory</h2><p>Discover models reported by your paired HomeServer. Discovery does not verify local execution or authorize specialist assignments.</p></div>
+            <button class="hs-button quiet" type="button" data-inventory-refresh disabled>Refresh models</button>
+          </div>
+          <p class="hs-action-note" data-inventory-status role="status" aria-live="polite">Connect HomeServer to discover models.</p>
+          <dl class="hs-info-grid" data-inventory-summary hidden>
+            <div><dt>Configured Ollama model</dt><dd data-inventory-default>—</dd></div>
+            <div><dt>Discovered models</dt><dd data-inventory-count>0</dd></div>
+            <div><dt>Last checked</dt><dd data-inventory-time>—</dd></div>
+          </dl>
+          <div data-inventory-list hidden></div>
+        </section>
+
         <section class="hs-card" id="hsReleaseAcceptanceCard" hidden>
           <div class="hs-card-head">
             <div><small>HomeServer 2.4</small><h2>Unified release acceptance</h2><p>Run a zero-token, read-only final v2.4 check across continuity, reconciliation, native authority, privacy, retained v2.3 execution safety, and Windows release packaging.</p></div>
@@ -128,5 +142,6 @@ if (!$user) redirect(url('/login.php'));
 <script src="<?= e(url('/member-shell-v77.js')) ?>"></script>
 <script src="<?= e(url('/homeserver-settings-v1210.js?v=continuity-permissions-20261007')) ?>" defer></script>
 <script src="<?= e(url('/homeserver-device-code-v1.js?v=1')) ?>" defer></script>
+<script src="<?= e(url('/homeserver-model-inventory-v1.js?v=1')) ?>" defer></script>
 </body>
 </html>
