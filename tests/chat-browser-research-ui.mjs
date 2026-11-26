@@ -65,7 +65,9 @@ try{
   const add=page.getByRole('button',{name:'Add finding to call card'});
   await add.click();assert.match(await page.evaluate(()=>window.findings[0]),/Friday[\s\S]*https:\/\/one.example\/times/);
   assert.equal(await page.locator('#chatInput').inputValue(),draft,'Opening call research preserves the typed draft');
-  await page.getByRole('button',{name:'Refresh research'}).click();await add.waitFor();
+  await page.getByRole('button',{name:'Refresh research'}).click();
+  // The previous finding remains visible and disabled until the refreshed answer renders.
+  await page.getByRole('button',{name:'Add finding to call card',disabled:false}).waitFor();
   await page.evaluate(()=>window.callActive=false);await add.click();
   assert.equal(await page.evaluate(()=>window.findings.length),1,'A stale call target cannot receive a result');
  }
