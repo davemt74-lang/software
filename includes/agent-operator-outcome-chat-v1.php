@@ -26,6 +26,7 @@ function vp3_operator_outcome_chat_tick_v1(PDO $pdo,int $now,int $limit=40):arra
                     'conversation_completed'=>'The recipient ended the conversation by voice.',
                     'conversation_silent'=>'The call ended while the agent was waiting for a spoken response.',
                     'conversation_turn_limit'=>'The conversation reached its eight-turn limit.',
+                    'conversation_reply_withheld'=>'The agent stopped before speaking because the call was no longer authorized to continue.',
                     'conversation_model_failed'=>'The agent could not generate a reply and ended the call.',
                     'conversation_ended'=>'The call ended during the conversation.',
                     'answer_declined'=>'The recipient declined the conversation.','answer_no_input'=>'The recipient gave no keypad response.',

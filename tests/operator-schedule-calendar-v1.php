@@ -146,11 +146,11 @@ $recordCarrier=static function(string $method,string $resource,array $fields)use
     return ['sid'=>$recordSid,'account_sid'=>$carrierForm['AccountSid'],'call_sid'=>$carrierForm['CallSid'],
         'source'=>'StartCallRecordingAPI','status'=>'in-progress','channels'=>2];
 };
-$answer=static function(string $stage,array $values=[],?string $signature=null,?callable $generator=null,?callable $recording=null)use($carrierForm,$pdo,$callTime):string{
+$answer=static function(string $stage,array $values=[],?string $signature=null,?callable $generator=null,?callable $recording=null,?callable $clock=null)use($carrierForm,$pdo,$callTime):string{
     $payload=array_replace($carrierForm,$values);
     $url=vp3_phone_browser_callback_v1('operator_answer',['event'=>$stage]);
     $signature??=vp3_phone_sms_twilio_signature_v110($url,$payload,'carrier-auth-token-fixture');
-    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$callTime+1,$generator,$recording);
+    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$clock??($callTime+1),$generator,$recording);
 };
 $hangup=vp3_phone_browser_hangup_v1();
 foreach([['answer',[],'bad signature'],['answer',['AccountSid'=>'AC'.str_repeat('d',32)],null]] as $invalid){
@@ -204,6 +204,27 @@ try{
     c(str_contains($answer('turn1',[]),'did not hear')&&$read()['last_occurrence']['reason']==='conversation_silent','speech timeout ends without model work');
 }finally{$pdo->rollBack();}
 echo "PASS objective-scoped scheduled speech turns, replay fencing and voice completion\n";
+
+foreach(['window_elapsed','consent_withdrawn'] as $change){
+    $pdo->beginTransaction();
+    try{
+        $at=$callTime+1;
+        $clock=static function()use(&$at){return $at;};
+        $generator=static function()use($pdo,$change,&$at,$row){
+            if($change==='window_elapsed')$at=(int)$row['end_epoch'];
+            else $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
+            return ['ok'=>true,'answer'=>'Late model reply'];
+        };
+        $response=$answer('turn1',['SpeechResult'=>'Status update'],null,$generator,null,$clock);
+        $stored=$pdo->prepare('SELECT state,response_text FROM phone_voice_turns_v140 WHERE call_sid=? AND step_number=1');
+        $stored->execute([$carrierForm['CallSid']]);
+        c($response===$hangup&&$stored->fetch(PDO::FETCH_ASSOC)===['state'=>'withheld','response_text'=>null],
+            'late speech is neither spoken nor retained after '.$change);
+        $answer('status',['CallStatus'=>'completed']);
+        c($read()['last_occurrence']['reason']==='conversation_reply_withheld','call history records why the reply was withheld');
+    }finally{$pdo->rollBack();}
+}
+echo "PASS live permission and time-window checks after a delayed model response\n";
 
 require_once dirname(__DIR__).'/includes/agent-operator-outcome-chat-v1.php';
 foreach(['failed'=>'conversation_model_failed','limit'=>'conversation_turn_limit','ended'=>'conversation_ended'] as $case=>$expectedReason){

@@ -6,8 +6,9 @@ require_once __DIR__.'/agent-operator-conversation-v1.php';
 require_once __DIR__.'/agent-operator-recording-v1.php';
 
 /** The answer URL is a public carrier callback. Only the accepted SID may change its own receipt. */
-function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signature,int $now,?callable $generator=null,?callable $recordingCarrier=null):string
+function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signature,int|callable|null $now=null,?callable $generator=null,?callable $recordingCarrier=null):string
 {
+    $clock=is_int($now)?static fn()=>$now:($now??'time');
     $url=static fn(string $step)=>vp3_phone_browser_callback_v1('operator_answer',['event'=>$step]);
     if(!in_array($event,['answer','retry','last','confirm','status','recording'],true)&&!preg_match('/^turn[1-8]$/D',$event))throw new InvalidArgumentException('Unknown answer event.');
     $sid=vp3_phone_browser_verify_v1($form,$signature,$url($event));
@@ -26,11 +27,12 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         return $hangup;
     }
     if(preg_match('/^turn([1-8])$/D',$event,$match))
-        return vp3_operator_conversation_turn_v1($pdo,(int)$owner,$sid,(int)$match[1],$form,$now,$generator);
+        return vp3_operator_conversation_turn_v1($pdo,(int)$owner,$sid,(int)$match[1],$form,$clock,$generator);
     if($event==='recording'){
         vp3_operator_recording_event_v1($pdo,(int)$owner,$sid,$form,$now);
         return $hangup;
     }
+    $now=$clock();
     $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup){
         $query=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a
             ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id AND a.start_epoch=o.start_epoch
@@ -49,6 +51,7 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
                 $turn->execute([$sid,$owner]);
                 $last=$turn->fetch(PDO::FETCH_ASSOC);
                 $reason=match(true){
+                    ($last['state']??'')==='withheld'=>'conversation_reply_withheld',
                     ($last['state']??'')==='failed'=>'conversation_model_failed',
                     ($last['state']??'')==='ready'&&(int)$last['step_number']===8=>'conversation_turn_limit',
                     default=>'conversation_ended',
