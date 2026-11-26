@@ -342,7 +342,7 @@ function agent_connections_access_v1(int $ownerId, int $connectionId, string $ca
     }
 }
 
-function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null, ?array $reply = null, bool $reconcileOnly = false, ?callable $onReplyReviewRequired = null): array
+function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, string $subject, string $body, string $operationKey, ?string $expectedAuthorizationKey = null, ?callable $onVerified = null, ?callable $http = null, ?callable $beforeDispatch = null, ?array $reply = null, bool $reconcileOnly = false, ?callable $onReplyReviewRequired = null, array $attachments = []): array
 {
     if (!preg_match('/\A[a-f0-9]{64}\z/D', $operationKey)) {
         throw new AgentConnectionExceptionV1('A reviewed send key is required.', 400);
@@ -353,6 +353,13 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
     if ($reply !== null) {
         $reply = agent_connection_gmail_reply_binding_v1($reply);
         $payload[] = $reply;
+    }
+    if ($attachments !== []) {
+        require_once __DIR__.'/agent-email-attachments-v1.php';
+        $attachments = agent_email_attachments_manifest_v1($attachments);
+        // Preserve every legacy text-only digest. A manifest change can never
+        // reuse an existing send claim, even when the message text is identical.
+        $payload[] = ['attachments'=>$attachments];
     }
     $digest = hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
     $permission = $reply === null ? 'send' : 'reply';
@@ -425,10 +432,15 @@ function agent_connections_send_v1(int $ownerId, int $connectionId, string $to, 
                     default=>'The current Gmail thread could not be verified. Open the review again before sending.',
                 },409,$sourceError);
             }
+            // File availability is required only for the first provider send.
+            // An uncertain or completed send keeps its receipt identity even
+            // if an image has since been removed from the private library.
+            $attachmentParts = $created && $attachments !== []
+                ? agent_email_attachments_parts_v1($pdo, $ownerId, $attachments) : [];
             try {
                 $dispatched = $created;
                 $verified = $created
-                    ? agent_connection_gmail_send_v1($token,$row['account_email'],$to,$subject,$body,$operationKey,$http,$reply)
+                    ? agent_connection_gmail_send_v1($token,$row['account_email'],$to,$subject,$body,$operationKey,$http,$reply,$attachmentParts)
                     : agent_connection_gmail_find_sent_v1($token,$operationKey,$http);
             } catch (AgentConnectionGmailSendUnknownV1 $e) {
                 throw new AgentConnectionExceptionV1('Gmail delivery is unconfirmed. Check this review again to reconcile it.', 502, $e);

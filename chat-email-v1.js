@@ -460,7 +460,8 @@
       details.append(headers);
       const body = message.body || 'This message has no readable text.';
       const renderBody = window.VP3GmailInboxInitialV1?.renderMessageBody;
-      if (renderBody) renderBody(details,body,message.links,'vp3-chat-email-message-body');
+      if (renderBody) renderBody(details,body,message.links,'vp3-chat-email-message-body',message.display,message.subject);
+      else if (window.VP3GmailEmailDisplayV1?.mount(details,message)) { /* Formatted private reader. */ }
       else {
         const text = element('p',body);
         text.className = 'vp3-chat-email-message-body';
@@ -515,6 +516,10 @@
     }
     const draft = target.dataset.chatEmailReview;
     if (!/^[a-f0-9]{32}$/.test(draft)) return;
+    if (typeof window.VP3EmailComposerV1?.openDraft === 'function') {
+      void window.VP3EmailComposerV1.openDraft({...scope,draft_id:draft},{surface:'canvas'});
+      return;
+    }
     pending?.abort();
     pending = null;
     title.textContent = 'Review Gmail draft';

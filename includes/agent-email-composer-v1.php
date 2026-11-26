@@ -1,0 +1,241 @@
+<?php
+declare(strict_types=1);
+
+require_once __DIR__.'/agent-connection-email-chat-v1.php';
+require_once __DIR__.'/agent-email-attachments-v1.php';
+
+/** Explicitly saved drafts have no retention deadline. Review approvals still expire in ten minutes. */
+function agent_email_composer_live_v1(array $draft, int $now): bool
+{
+    return (int)$draft['expires_at'] === 0 || (int)$draft['expires_at'] > $now;
+}
+
+function agent_email_composer_text_v1(mixed $value, int $limit, bool $multiline=false): string
+{
+    if (!is_string($value) || !mb_check_encoding($value,'UTF-8')) throw new DomainException('Enter valid email text.',422);
+    $value = str_replace(["\r\n","\r"],"\n",trim($value));
+    if (mb_strlen($value) > $limit || preg_match($multiline ? '/[\x00-\x08\x0B-\x1F\x7F]/' : '/[\x00-\x1F\x7F]/',$value)) {
+        throw new DomainException('Use a subject of up to 200 characters and a message of up to 6,000 characters.',422);
+    }
+    return $value;
+}
+
+function agent_email_composer_recipient_v1(mixed $value): string
+{
+    $value = agent_email_composer_text_v1($value,254);
+    if ($value !== '' && !filter_var($value,FILTER_VALIDATE_EMAIL)) throw new DomainException('Enter one valid recipient email address.',422);
+    return $value;
+}
+
+function agent_email_composer_complete_v1(array $draft, array $payload): bool
+{
+    try {
+        if (agent_email_composer_recipient_v1($draft['recipient']) === '') return false;
+        if (!isset($payload['reply']) && agent_email_composer_text_v1($payload['subject'],200) === '') return false;
+        return agent_email_composer_text_v1($payload['body'],6000,true) !== '';
+    } catch (DomainException $error) { return false; }
+}
+
+function agent_email_composer_validate_v1(array $draft, array &$payload): void
+{
+    if (isset($payload['composer'])) {
+        $saved = $payload['composer'];
+        if (!is_array($saved) || array_keys($saved) !== ['version','saved_at'] || $saved['version'] !== 1
+            || !is_int($saved['saved_at']) || $saved['saved_at'] < 1 || (int)$draft['expires_at'] !== 0) {
+            throw new DomainException('The saved email draft is unavailable.',503);
+        }
+    } elseif ((int)$draft['expires_at'] === 0) {
+        throw new DomainException('The saved email lifecycle is unavailable.',503);
+    }
+    if (array_key_exists('attachments',$payload)) {
+        if (!is_array($payload['attachments'])) throw new DomainException('The saved email attachments are unavailable.',503);
+        $payload['attachments'] = agent_email_attachments_manifest_v1($payload['attachments']);
+    }
+}
+
+function agent_email_composer_public_v1(array $draft, array $payload, array $public): array
+{
+    // Unlike the short-lived review token, this fingerprint changes only when
+    // the persisted approved snapshot changes. It carries no plaintext content.
+    $public['edit_revision'] = agent_connection_email_chat_review_hash_v1($draft,false);
+    $privateAvailable = empty($public['connection_changed']) || empty($public['is_reply']);
+    $public['attachments'] = $privateAvailable ? agent_email_attachments_public_v1($payload['attachments'] ?? []) : [];
+    $public['saved_at'] = isset($payload['composer']) ? gmdate(DATE_ATOM,$payload['composer']['saved_at']) : null;
+    $public['persistent'] = isset($payload['composer']);
+    $public['can_edit'] = empty($public['connection_changed']) && isset($public['review_token'])
+        && in_array($public['status'],['prepared','write_failed'],true) && !isset($payload['auto_revision']);
+    $public['can_send'] = $public['can_edit'] && $public['status'] === 'prepared'
+        && agent_email_composer_complete_v1($draft,$payload);
+    return $public;
+}
+
+/** The connection is checked before locking Chat, matching the existing send ledger's lock order. */
+function agent_email_composer_connection_v1(PDO $pdo, array $user): array
+{
+    $summary = agent_connections_summary_v1((int)$user['id']);
+    if (empty($summary['schema_ready']) || !table_exists('agent_connection_email_drafts_v1')) {
+        throw new DomainException('Run Database Upgrade to save Gmail drafts.',503);
+    }
+    if (empty($summary['provider_ready']) || empty($summary['connection']['id'])) {
+        throw new DomainException('Connect Gmail in Connections to compose an email.',409);
+    }
+    return agent_connections_require_grant_v1($pdo,(int)$user['id'],(int)$summary['connection']['id'],'send');
+}
+
+/** Idempotent composer creation. The generic Chat marker carries no recipient, body, or attachment bytes. */
+function agent_email_composer_create_v1(PDO $pdo, array $user, array $principal, int $conversation, array $input,
+    string $key, ?int $userMessage=null, string $instruction=''): array
+{
+    $user = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
+    $request = $input['request_id'] ?? null;
+    if (!is_string($request) || !preg_match('/\A[a-f0-9]{32}\z/D',$request)) throw new DomainException('Choose a new email request.',422);
+    $to = agent_email_composer_recipient_v1($input['to'] ?? '');
+    $subject = agent_email_composer_text_v1($input['subject'] ?? '',200);
+    $body = agent_email_composer_text_v1($input['body'] ?? '',6000,true);
+    $instruction = agent_email_composer_text_v1($instruction,600,true);
+    $owner = (int)$user['id'];
+    $agent = (int)($principal['agent_id'] ?? 0);
+    $id = substr(hash('sha256',json_encode(['vp3-email-composer-v1',$owner,$agent,$conversation,$request],JSON_THROW_ON_ERROR)),0,32);
+    $draft = agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$principal,$conversation,$userMessage,$owner,$agent,$id,$to,$subject,$body,$instruction): array {
+        agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
+        $connection = agent_email_composer_connection_v1($pdo,$user);
+        if (!vp3_agent_chat_conversation_v380($pdo,$conversation,$owner,$agent > 0 ? ['id'=>$agent] : null,$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql')) {
+            throw new DomainException('Open the original private Chat to compose an email.',403);
+        }
+        $existing = $pdo->prepare('SELECT * FROM agent_connection_email_drafts_v1 WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=?');
+        $existing->execute([$id,$owner,$agent,$conversation]);
+        if ($saved = $existing->fetch(PDO::FETCH_ASSOC)) return $saved;
+        $now = time();
+        if ($userMessage === null) {
+            $context = json_encode(['source'=>'agent_email_composer','skip_brain_archive'=>true],JSON_THROW_ON_ERROR);
+            $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at) VALUES (?,?,'user',?,?,?)")
+                ->execute([$conversation,$owner,'Compose a new email.',$context,gmdate('Y-m-d H:i:s',$now)]);
+            $userMessage = (int)$pdo->lastInsertId();
+            $pdo->prepare('UPDATE chat_conversations SET updated_at=? WHERE id=? AND user_id=?')
+                ->execute([gmdate('Y-m-d H:i:s',$now),$conversation,$owner]);
+        }
+        if ($userMessage < 1) throw new DomainException('Use a saved Agent Chat to prepare an email.',422);
+        $payload = ['subject'=>$subject,'body'=>$body,'attachments'=>[], 'composer'=>['version'=>1,'saved_at'=>$now]];
+        $status = 'prepared';
+        if ($instruction !== '') {
+            $payload['write'] = agent_connection_email_chat_write_request_v1('compose_new',$instruction);
+            $status = 'write_queued';
+        }
+        $encoded = ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+        $pdo->prepare('INSERT INTO agent_connection_email_drafts_v1
+            (id,owner_user_id,agent_id,conversation_id,user_message_id,connection_id,authorization_key,account_email,recipient,message_enc,status,expires_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,0)')->execute([$id,$owner,$agent,$conversation,$userMessage,
+                (int)$connection['id'],$connection['authorization_key'],$connection['account_email'],$to,$encoded,$status]);
+        return agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$id);
+    });
+    return agent_connection_email_chat_public_draft_v1($draft,$key,time());
+}
+
+function agent_email_composer_list_v1(PDO $pdo, array $user, array $principal, int $conversation, string $key): array
+{
+    $user = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
+    if (!table_exists('agent_connection_email_drafts_v1')) throw new DomainException('Run Database Upgrade to save Gmail drafts.',503);
+    $summary = agent_connections_summary_v1((int)$user['id']);
+    $connection = $summary['connection'] ?? null;
+    $ready = !empty($summary['provider_ready']) && ($connection['status'] ?? '') === 'connected' && !empty($connection['permissions']['send']);
+    $query = $pdo->prepare("SELECT * FROM agent_connection_email_drafts_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=?
+        AND status NOT IN ('sent','discarded','drafting') AND (expires_at=0 OR expires_at>?) ORDER BY user_message_id DESC LIMIT 50");
+    $query->execute([(int)$user['id'],(int)($principal['agent_id'] ?? 0),$conversation,time()]);
+    $drafts = [];
+    foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $draft) {
+        try {
+            $public = agent_connection_email_chat_public_draft_v1($draft,$key,time());
+            if (!empty($public['connection_changed']) && !empty($public['is_reply'])) continue;
+            $drafts[] = array_intersect_key($public,array_flip(['id','status','from','to','subject','is_reply','saved_at','persistent','can_edit','can_send']))
+                + ['attachment_count'=>count($public['attachments'])];
+        } catch (DomainException $error) { continue; }
+    }
+    usort($drafts,static fn(array $a,array $b): int => strcmp($b['saved_at'] ?? '',$a['saved_at'] ?? ''));
+    return ['drafts'=>$drafts,'from'=>$ready ? $connection['account_email'] : '', 'can_send'=>$ready];
+}
+
+/** Save/requeue one exact revision; source-derived reply addresses and subjects cannot be redirected. */
+function agent_email_composer_change_v1(PDO $pdo, array $user, array $principal, int $conversation, array $input, string $key): array
+{
+    $user = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
+    $id = $input['draft_id'] ?? null;
+    if (!is_string($id)) throw new DomainException('Choose a saved email draft.',422);
+    $owner = (int)$user['id'];
+    $agent = (int)($principal['agent_id'] ?? 0);
+    $draft = agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$id);
+    $payload = agent_connection_email_chat_payload_v1($draft);
+    $status = agent_connection_email_chat_draft_status_v1($draft,$payload,time());
+    if (isset($payload['auto_revision']) || !in_array($status,['prepared','write_failed'],true)) {
+        throw new DomainException('This email draft can no longer be edited.',409);
+    }
+    if (isset($payload['reply']) && agent_connection_email_chat_answered_v1($pdo,$user,(int)$draft['connection_id'],$draft['authorization_key'],$payload['reply']['message_id'])) {
+        return agent_connection_email_chat_public_draft_v1(array_replace($draft,['status'=>'answered']),$key,time());
+    }
+    initiative_workbench_confirm_v1($input + ['confirmed'=>true],$key,agent_connection_email_chat_review_hash_v1($draft,false),time());
+    $next = 'prepared';
+    $recipient = $draft['recipient'];
+    if ($input['action'] === 'compose_save') {
+        $recipient = agent_email_composer_recipient_v1($input['to'] ?? null);
+        $subject = agent_email_composer_text_v1($input['subject'] ?? null,200);
+        $body = agent_email_composer_text_v1($input['body'] ?? null,6000,true);
+        if (isset($payload['reply']) && ($recipient !== $draft['recipient'] || $subject !== $payload['subject'])) {
+            throw new DomainException('Keep the original Gmail reply recipient and subject.',422);
+        }
+        if (!is_array($input['attachment_ids'] ?? null) || !array_is_list($input['attachment_ids'])) throw new DomainException('Choose valid email attachments.',422);
+        $payload['subject'] = $subject;
+        $payload['body'] = $body;
+        unset($payload['write']);
+    } elseif ($input['action'] === 'compose_generate') {
+        $instruction = agent_email_composer_text_v1($input['instruction'] ?? null,600,true);
+        if ($instruction === '') throw new DomainException('Tell the Email Specialist what to write.',422);
+        $kind = isset($payload['reply']) ? (trim($payload['body']) === '' ? 'compose' : 'revise') : 'compose_new';
+        $payload['write'] = agent_connection_email_chat_write_request_v1($kind,$instruction);
+        $next = 'write_queued';
+    } else throw new DomainException('Choose a valid email composer action.',422);
+    $payload['composer'] = ['version'=>1,'saved_at'=>time()];
+    $row = agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$principal,$conversation,$draft,$payload,$recipient,$next,$input,$owner,$agent): array {
+        agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
+        $connection = agent_connections_require_grant_v1($pdo,$owner,(int)$draft['connection_id'],isset($payload['reply'])?'reply':'send',$draft['authorization_key']);
+        if ($connection['account_email'] !== $draft['account_email'] || !agent_connection_gmail_ready_v1()) {
+            throw new DomainException('Gmail access changed. Reopen the saved draft.',409);
+        }
+        if ($input['action'] === 'compose_save') $payload['attachments'] = agent_email_attachments_freeze_v1($pdo,$owner,$input['attachment_ids']);
+        $encoded = ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
+        $replace = $pdo->prepare('UPDATE agent_connection_email_drafts_v1 SET message_enc=?,recipient=?,status=?,expires_at=0,watch_replies=0
+            WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=? AND status=? AND message_enc=? AND recipient=? AND expires_at=?');
+        $replace->execute([$encoded,$recipient,$next,$draft['id'],$owner,$agent,$conversation,$draft['status'],$draft['message_enc'],$draft['recipient'],$draft['expires_at']]);
+        if ($replace->rowCount() !== 1) throw new DomainException('This email draft changed. Open the latest saved version.',409);
+        return agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$draft['id']);
+    });
+    return agent_connection_email_chat_public_draft_v1($row,$key,time());
+}
+
+/** New-mail inference sees only explicitly saved text and the owner's direction, never Chat context or file bytes. */
+function agent_email_composer_write_v1(PDO $pdo, array $user, int $agent, int $conversation, string $attempt,
+    array $payload, Closure $current, ?callable $model, ?array &$soulUsed=null): array
+{
+    if ($model === null) {
+        $route = vp3_agent_runtime_plan_v420($pdo,$user,$agent,'chat');
+        if (($route['route'] ?? '') !== 'vp3_cloud' || empty($route['cloud']['ready'])) return [];
+        $model = static fn(string $data,array $service,array $control): array => ai_v100_with_service_context($service,
+            static fn() => ai_generate_chat_response($data,[],[],$user,'main_ai',$control));
+    }
+    require_once __DIR__.'/agent-brain-v82.php';
+    $soul = agent_brain_soul_profile_v1($user,'email');
+    $soulUsed = ['soul_version'=>$soul['version'],'soul_revision'=>$soul['revision']];
+    $data = json_encode(['owner_instruction'=>$payload['write']['instruction'],'email_soul'=>$soul['content'],
+        'current_draft'=>['subject'=>$payload['subject'],'body'=>$payload['body']]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+    $dispatched = false;
+    $before = static function () use ($current,&$dispatched): bool {
+        if ($dispatched || !$current()) return false;
+        $dispatched = true;
+        return true;
+    };
+    $protocol = 'vp3.email-draft.v1';
+    $result = $model($data,['service'=>'conversation','stage'=>$protocol,'agent_id'=>$agent,'conversation_id'=>$conversation,'job_key'=>'gmail-compose:'.$attempt],
+        ['surface'=>'tool_json','protocol'=>$protocol,'before_gmail_reply_dispatch'=>$before]);
+    if (empty($result['ok'])) return [];
+    $value = vp3_tool_json_object_v1((string)($result['answer'] ?? ''),['subject','body'],45000);
+    return ['subject'=>agent_connection_email_chat_text_v1($value['subject'] ?? null,200),
+        'body'=>agent_connection_email_chat_text_v1($value['body'] ?? null,6000,true)];
+}

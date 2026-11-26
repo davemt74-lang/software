@@ -172,7 +172,7 @@
     return visible;
   }
 
-  function renderOpenedEmail(panel,text,links,proof,bodyClass = '') {
+  function renderOpenedEmail(panel,text,links,proof,bodyClass = '',display = null,subject = '') {
     const approved = new Map();
     for (const entry of Array.isArray(links) ? links.slice(0,30) : []) {
       const url = httpLink(entry?.url);
@@ -180,20 +180,31 @@
       const label = typeof entry.label === 'string' && [...entry.label].length <= 160 ? entry.label : '';
       approved.set(url.href,{url:entry.url,label,token:label && itemRef(entry.token) ? entry.token : null});
     }
-    const body = node('p','',bodyClass);
-    const visible = appendTextLinks(body,text,proof,approved,true);
-    panel.append(body);
-    const extras = [...approved].filter(([url]) => !visible.has(url));
-    if (extras.length) {
-      const list = node('ul','','gmail-review-source-links');
-      list.setAttribute('aria-label','Links in this email');
-      for (const [,entry] of extras) {
-        const row = node('li');
-        row.append(gmailLink(entry.url,entry.label || entry.url,entry.token ? proof : null,entry));
-        list.append(row);
+    const renderPlain = host => {
+      const body = node('p','',bodyClass);
+      const visible = appendTextLinks(body,text,proof,approved,true);
+      host.append(body);
+      const extras = [...approved].filter(([url]) => !visible.has(url));
+      if (extras.length) {
+        const list = node('ul','','gmail-review-source-links');
+        list.setAttribute('aria-label','Links in this email');
+        for (const [,entry] of extras) {
+          const row = node('li');
+          row.append(gmailLink(entry.url,entry.label || entry.url,entry.token ? proof : null,entry));
+          list.append(row);
+        }
+        host.append(list);
       }
-      panel.append(list);
-    }
+    };
+    const formatted = window.VP3GmailEmailDisplayV1?.mount(panel,{body:text,display,subject},{renderPlain,
+      onLink:(event,value) => {
+        const receipt = approved.get(value);
+        if (!event.isTrusted || !receipt?.token || !proof || !thread?.contains(panel)
+            || chatTarget() !== proof.conversation_id) return;
+        void send({action:'record_link_open',...proof,url:receipt.url,link_token:receipt.token,link_label:receipt.label},undefined,true)
+          .catch(() => {});
+      }});
+    if (!formatted) renderPlain(panel);
   }
 
   function renderGmailPostLinks(row) {
@@ -371,7 +382,7 @@
       panel.replaceChildren(node('strong',message.subject || '(No subject)'),node('small',message.from));
       const ref = itemRef(payload.item_ref) ? payload.item_ref : itemRef(message.item_ref) ? message.item_ref : null;
       const proof = ref ? linkScope({conversation_id:payload.conversation_id,message_id:payload.chat_message_id},ref) : null;
-      renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof);
+      renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof,'',message.display,message.subject);
       if (message.answered_in_gmail === true) {
         panel.append(node('small','Already replied in Gmail.'));
         return;
@@ -1369,7 +1380,7 @@
     }
     for (const row of thread.querySelectorAll('[data-gmail-content-post="true"]')) renderGmailPostLinks(row);
     window.VP3GmailInboxInitialV1 = Object.freeze({openTriageItem,openArrivedItem,openReportedItem,
-      renderMessageBody:(panel,text,links,bodyClass) => renderOpenedEmail(panel,text,links,null,bodyClass)});
+      renderMessageBody:(panel,text,links,bodyClass,display,subject) => renderOpenedEmail(panel,text,links,null,bodyClass,display,subject)});
   }
   listenForReviewChanges();
   render();
