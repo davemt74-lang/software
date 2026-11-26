@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/phone-browser-workspace-v1.php';
 
 // The inherited fixture is an isolated SQLite database or an explicitly disposable CI database.
-function part_fixture(?int $createdAt=null):array
+function part_fixture(?int $seconds=null,?int $createdAt=null):array
 {
     $pdo=db();$now=$createdAt??time();
     $pdo->exec("UPDATE users SET is_active=1,plan=1,denied=0 WHERE id=1");
@@ -32,20 +32,20 @@ function part_fixture(?int $createdAt=null):array
         $GLOBALS['partSpeechCalls']++;return str_repeat("\0",64000);
     };
     $ctx=['public'=>$public,'id'=>$id,'now'=>$now];
-    $grant=part_request($ctx,['action'=>'start','consent_attested'=>true,'capture_mode'=>'both','suggestions_attested'=>true],0);
+    $grant=part_request($ctx,['action'=>'start','consent_attested'=>true,'capture_mode'=>'both','suggestions_attested'=>true]+($seconds===null?[]:['session_seconds'=>$seconds]),0);
     $ctx['token']=$grant['token'];return $ctx;
 }
 function part_request(array $ctx,array $input,int $offset=4,int $owner=1):array
 {
     $base=['csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$ctx['public']];
     if($input['action']!=='start')$base['token']=$ctx['token'];
-    if(isset($ctx['grant'])&&in_array($input['action'],['participation_decide','participation_stop','voice_prepare','voice_claim'],true))$base['participation_token']=$ctx['grant'];
+    if(isset($ctx['grant'])&&in_array($input['action'],['participation_decide','participation_stop','participation_pause','participation_resume','voice_prepare','voice_claim'],true))$base['participation_token']=$ctx['grant'];
     $stt=static function(string $pcm):string{$side=$GLOBALS['partSttIndex']++%2;return $side===0?'Agent, what should we do next?':'';};
     return vp3_operator_live_request_v1(db(),user($owner),'POST',array_replace($base,$input),'csrf-fixture',$stt,$ctx['now']+$offset,$GLOBALS['partModel']??null,$GLOBALS['partSpeech']??null);
 }
-function part_grant(array &$ctx,string $mode='addressed'):array
+function part_grant(array &$ctx,string $mode='addressed',int $decisions=4,int $responses=2):array
 {
-    $grant=part_request($ctx,['action'=>'participation_start','consent_attested'=>true,'mode'=>$mode],1);
+    $grant=part_request($ctx,['action'=>'participation_start','consent_attested'=>true,'mode'=>$mode,'max_decisions'=>$decisions,'max_responses'=>$responses],1);
     $ctx['grant']=$grant['participation_token'];return $grant;
 }
 function part_captions(array $ctx,int $seq=1,int $offset=4):array
@@ -58,7 +58,7 @@ function part_decide(array $ctx,array $receipts,int $offset=4,array $previous=[]
 function part_prepare(array $ctx,array $decision,int $offset=4):array
 {return part_request($ctx,['action'=>'voice_prepare','source_seq'=>$decision['based_on_seq'],'suggestion'=>$decision['text'],'proof'=>$decision['proof'],'voice_consent_attested'=>false],$offset);}
 
-$before=$checks;$fixtureStart=time()-1;$ctx=part_fixture($fixtureStart);
+$before=$checks;$fixtureStart=time()-1;$ctx=part_fixture(null,$fixtureStart);
 $receipt=readcall($ctx['public']);
 c((int)$receipt['created_epoch']===$fixtureStart&&(int)$receipt['updated_epoch']>$fixtureStart,'a seeded earlier creation clock crosses the signed receipt boundary without waiting');
 c($ctx['now']===(int)$receipt['updated_epoch']&&(int)vp3_operator_live_row_v1($pdo,$ctx['id'])['consent_epoch']===$ctx['now'],'live consent starts at the persisted accepted receipt clock');
@@ -165,3 +165,93 @@ denies(fn()=>part_request($ctx,$input),422,'outside conversation mode each respo
 $approved=part_request($ctx,array_replace($input,['voice_consent_attested'=>true]));
 c($approved['state']==='ready'&&$GLOBALS['partSpeechCalls']===1,'the original reviewed-response path still works without a conversation grant');
 echo 'PHONE_OPERATOR_PARTICIPATION_PHP=PASS ('.($checks-$before).' additional checks)'.PHP_EOL;
+
+// Session-controls acceptance uses the same authority/provider boundaries on SQLite and native MySQL.
+$before=$checks;
+foreach([30,60,120] as $duration){
+    $ctx=part_fixture($duration);$live=vp3_operator_live_row_v1($pdo,$ctx['id']);
+    c((int)$live['expires_epoch']===$ctx['now']+$duration&&(int)$live['audio_limit_seconds']===$duration*2,'chosen wall time and both audio sides have separate server limits');
+}
+denies(fn()=>part_request($ctx,['action'=>'start','consent_attested'=>true,'session_seconds'=>31],0),422,'arbitrary durations cannot enlarge the server cap');
+denies(fn()=>part_request($ctx,['action'=>'start','consent_attested'=>true,'session_seconds'=>'120'],0),422,'duration cannot be coerced from a string');
+denies(fn()=>part_grant($ctx,'addressed',9,4),422,'model allowance cannot exceed eight');
+denies(fn()=>part_grant($ctx,'addressed',8,5),422,'speech allowance cannot exceed four');
+$grant=part_grant($ctx,'addressed',8,4);$history=[];
+c($grant['max_decisions']===8&&$grant['max_responses']===4&&$grant['expires_epoch']===$ctx['now']+120,'explicit larger grant retains the existing caption deadline');
+for($seq=1;$seq<=4;$seq++){
+    $at=4+($seq-1)*8;$decision=part_decide($ctx,part_captions($ctx,$seq,$at),$at,$history);$voice=part_prepare($ctx,$decision,$at);
+    part_request($ctx,['action'=>'voice_finish','source_seq'=>$seq,'turn_token'=>$voice['turn_token']],$at+1);
+    $history[]=['seq'=>$seq,'text'=>$decision['text'],'proof'=>$decision['proof']];
+}
+c($GLOBALS['partModelCalls']===4&&$GLOBALS['partSpeechCalls']===4,'four chosen speech reservations are available without per-turn approval');
+denies(fn()=>part_decide($ctx,part_captions($ctx,5,36),36,$history),429,'a fifth speech reservation is blocked before model work');
+$balance=vp3_operator_participation_balance_v1($pdo,vp3_operator_participation_row_v1($pdo,$ctx['id']),$ctx['now']+36);
+c($balance['responses_used']===4&&$balance['hour_responses_remaining']===4,'discarded or completed speech remains spent in both balances');
+
+$ctx=part_fixture(120);part_grant($ctx);$receipts=part_captions($ctx);$decision=part_decide($ctx,$receipts);$voice=part_prepare($ctx,$decision);
+part_request($ctx,['action'=>'voice_claim','source_seq'=>1,'turn_token'=>$voice['turn_token']]);
+$paused=part_request($ctx,['action'=>'participation_pause','expected_revision'=>0],5);
+c($paused['state']==='paused'&&$paused['control_revision']===1&&$paused['responses_used']===1&&$paused['decisions_used']===1,'pause reports the charged balance and a new control revision');
+c(vp3_operator_voice_row_v1($pdo,$ctx['id'],1)['state']==='closed'&&readcall($ctx['public'])['state']==='answered','pause closes synthetic speech without closing the human call');
+denies(fn()=>part_decide($ctx,$receipts,6),409,'paused grants cannot invoke a model');
+denies(fn()=>part_prepare($ctx,$decision,6),409,'paused grants cannot synthesize');
+denies(fn()=>part_request($ctx,['action'=>'suggest','receipts'=>$receipts],6),409,'reviewed mode cannot bypass a paused conversation');
+denies(fn()=>part_request($ctx,['action'=>'participation_resume','expected_revision'=>0],6),409,'another tab cannot replay a stale control');
+denies(fn()=>part_request($ctx,['action'=>'participation_pause','expected_revision'=>1],6),409,'duplicate pause does not reset the grant');
+part_captions($ctx,2,8);
+$resumed=part_request($ctx,['action'=>'participation_resume','expected_revision'=>1],9);
+c($resumed['state']==='listening'&&$resumed['control_revision']===2&&$resumed['resume_seq']===2&&$resumed['expires_epoch']===$ctx['now']+120,'resume preserves time, spend and the caption barrier');
+denies(fn()=>part_decide($ctx,$receipts,12),409,'captions from before resume cannot trigger a new reply');
+denies(fn()=>part_prepare($ctx,$decision,12),409,'a prepared decision from before pause cannot become new speech');
+$next=part_decide($ctx,part_captions($ctx,3,12),12,[['seq'=>1,'text'=>$decision['text'],'proof'=>$decision['proof']]]);
+c(count($GLOBALS['partEvidence']['previous_agent_responses'])===1&&$next['state']==='speak','verified earlier context survives pause and resume');
+
+$ctx=part_fixture(120);part_grant($ctx);$receipts=part_captions($ctx);
+$GLOBALS['partModel']=static function()use($ctx):string{
+    $GLOBALS['partModelCalls']++;part_request($ctx,['action'=>'participation_pause','expected_revision'=>0],5);
+    denies(fn()=>part_request($ctx,['action'=>'participation_resume','expected_revision'=>1],6),409,'resume waits for an outstanding model reservation');
+    return '{"action":"speak","text":"A late response."}';
+};
+denies(fn()=>part_decide($ctx,$receipts),409,'a model result returning after pause is fenced');
+c(vp3_operator_participation_row_v1($pdo,$ctx['id'])['state']==='paused'&&$GLOBALS['partSpeechCalls']===0,'a late result leaves the grant paused and triggers no synthesis');
+$resumed=part_request($ctx,['action'=>'participation_resume','expected_revision'=>1],7);
+c($resumed['decisions_used']===1&&$resumed['responses_used']===0,'the uncertain model request remains spent on resume');
+
+$ctx=part_fixture(120);part_grant($ctx);$decision=part_decide($ctx,part_captions($ctx));
+$GLOBALS['partSpeech']=static function()use($ctx):string{
+    $GLOBALS['partSpeechCalls']++;part_request($ctx,['action'=>'participation_pause','expected_revision'=>0],5);
+    part_request($ctx,['action'=>'participation_resume','expected_revision'=>1],6);
+    return str_repeat("\0",64000);
+};
+denies(fn()=>part_prepare($ctx,$decision),409,'pause and rapid resume cannot restore an in-flight synthesis result');
+$row=vp3_operator_participation_row_v1($pdo,$ctx['id']);
+c($row['state']==='active'&&(int)$row['control_revision']===2&&vp3_operator_voice_row_v1($pdo,$ctx['id'],1)['state']==='closed','resume remains active while the old synthesis stays unusable');
+part_request($ctx,['action'=>'participation_pause','expected_revision'=>2],7);
+denies(fn()=>part_request($ctx,['action'=>'participation_resume','expected_revision'=>3],121),409,'a paused grant still expires on its original deadline');
+part_request($ctx,['action'=>'participation_stop'],122);
+denies(fn()=>part_request($ctx,['action'=>'participation_resume','expected_revision'=>3],123),409,'Remove Agent cannot be undone with Resume');
+
+$ctx=part_fixture(120);
+for($seq=1;$seq<30;$seq++)part_captions($ctx,$seq,$seq*4);
+$audio=base64_encode(str_repeat("\0",128000));$last=part_request($ctx,['action'=>'chunk','seq'=>30,'pcm'=>$audio,'local_pcm'=>$audio],119);
+c($last['audio_seconds_remaining']===0,'the browser receives the actual exhausted processing allowance');
+c((int)vp3_operator_live_row_v1($pdo,$ctx['id'])['reserved_seconds']===240,'120 seconds of dual capture consumes the full 240 audio-second allowance');
+c(vp3_operator_live_budget_v1($pdo,1,$ctx['now']+119)===240,'the longer session does not bypass the hourly audio cap');
+
+$ctx=part_fixture(120);
+$q=$pdo->prepare('SELECT MIN(call_id) FROM phone_operator_live_sessions_v1 WHERE owner_user_id=1 AND call_id<>?');$q->execute([$ctx['id']]);$prior=(int)$q->fetchColumn();$q->closeCursor();
+c($prior>0,'the budget fixture includes an earlier owner session');
+$pdo->prepare('UPDATE phone_operator_live_sessions_v1 SET reserved_seconds=232,consent_epoch=? WHERE call_id=?')->execute([$ctx['now'],$prior]);
+$left=part_request($ctx,['action'=>'chunk','seq'=>1,'pcm'=>$audio,'local_pcm'=>$audio],4);
+c($left['audio_seconds_remaining']===0,'earlier call processing reduces the visible balance despite remaining session time');
+denies(fn()=>part_captions($ctx,2,8),409,'the hourly processing cap cannot be bypassed with a longer selected session');
+c($GLOBALS['partSttIndex']===2,'exhausted processing allowance prevents another pair of provider requests');
+
+$ctx=part_fixture();part_grant($ctx);part_request($ctx,['action'=>'participation_stop'],2);
+foreach(['decision_limit','response_limit','control_revision','resume_seq'] as $column)$pdo->exec('ALTER TABLE phone_operator_participation_v1 DROP COLUMN '.$column);
+$pdo->exec('ALTER TABLE phone_operator_live_sessions_v1 DROP COLUMN audio_limit_seconds');
+$pdo->exec('ALTER TABLE phone_operator_live_sessions_v1 DROP COLUMN controls_enabled');
+c(!vp3_operator_live_controls_ready_v1($pdo),'an old metadata schema does not advertise new controls');
+vp3_operator_live_ensure_schema_v1($pdo);vp3_operator_live_ensure_schema_v1($pdo);
+c(vp3_operator_live_controls_ready_v1($pdo)&&vp3_operator_participation_row_v1($pdo,$ctx['id'])['state']==='closed','additive upgrade is rerunnable and preserves prior grants');
+echo 'PHONE_OPERATOR_SESSION_CONTROLS=PASS ('.($checks-$before).' additional checks)'.PHP_EOL;

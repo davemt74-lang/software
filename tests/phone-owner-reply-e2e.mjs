@@ -150,6 +150,26 @@ try {
   const ownerApi=ownerContext?.request || await request.newContext({baseURL:origin,extraHTTPHeaders:{Cookie:'PHPSESSID='+owner.session}});
   const first=await pair(origin,ownerApi,owner,'Studio iPhone');
   const second=await pair(origin,ownerApi,owner,'Crew Android');
+  // Simulate an installed phone/camera deployment that has not installed the new owner-reply table.
+  // The real HTTP path must identify the missing upgrade without exposing SQL or invalidating the pairing.
+  const schemaProbe=(sql)=>execFileSync(php,['-r',"(new PDO('sqlite:'.$argv[1]))->exec($argv[2]);",path.join(root,'data.sqlite'),sql]);
+  schemaProbe('ALTER TABLE vp3_paired_phone_owner_replies_v1 RENAME TO missing_phone_owner_replies');
+  try {
+    const holderHeaders={'X-VP3-Phone':'1'};
+    const active=await post(first.api,holder,{action:'status'});
+    assert.equal(active.device.status,'approved');
+    for (const data of [{action:'chat_status',device_id:first.id},
+      {action:'chat_send',device_id:first.id,request_id:randomUUID(),message:'Upgrade probe'}]) {
+      const rejected=await first.api.post(holder,{headers:holderHeaders,data});
+      assert.equal(rejected.status(),503);
+      const detail=await rejected.json();
+      assert.equal(detail.ok,false);
+      assert.equal(detail.code,'upgrade_required');
+      assert.ok(!JSON.stringify(detail).includes('vp3_paired_phone_owner_replies_v1'));
+    }
+  } finally {
+    schemaProbe('ALTER TABLE missing_phone_owner_replies RENAME TO vp3_paired_phone_owner_replies_v1');
+  }
   const selected=await sendFromFooter(first,prompt);
   const other=await sendFromFooter(second,secondPrompt);
   checkWaiting(selected.data.turns,selected.request_id,prompt);

@@ -62,6 +62,7 @@ function vp3_operator_live_view_v1(PDO $pdo,array $scope,?array $active,int $now
     $view['available']=true;$view['assist_available']=true;
     $view['voice_available']=vp3_operator_voice_ready_v1($pdo)&&vp3_operator_live_speech_key_v1()!=='';
     $view['participation_available']=$view['voice_available']&&vp3_operator_participation_ready_v1($pdo);
+    $view['controls_available']=vp3_operator_live_controls_ready_v1($pdo);
     if(!$active)return $view;
     try {
         $call=vp3_operator_live_call_v1($pdo,$scope,(string)$active['public_id'],$now);
@@ -104,12 +105,17 @@ function vp3_operator_live_budget_v1(PDO $pdo,int $owner,int $now): int
     $q=$pdo->prepare('SELECT COALESCE(SUM(reserved_seconds),0) FROM phone_operator_live_sessions_v1 WHERE owner_user_id=? AND consent_epoch>=?');
     $q->execute([$owner,$now-3600-VP3_OPERATOR_LIVE_SECONDS_V1]);$seconds=(int)$q->fetchColumn();$q->closeCursor();return $seconds;
 }
-function vp3_operator_live_start_v1(PDO $pdo,array $scope,string $public,int $now,bool $attested,bool $serviceReady,string $mode='remote',bool $suggestions=false): array
+function vp3_operator_live_start_v1(PDO $pdo,array $scope,string $public,int $now,bool $attested,bool $serviceReady,string $mode='remote',bool $suggestions=false,?int $seconds=null): array
 {
     if(!$attested)vp3_phone_workspace_error_v1('operator_live_consent_required',422,'Confirm that everyone agreed to separate live Cloud AI transcription.');
     if(!$serviceReady)vp3_phone_workspace_error_v1('operator_live_service_unavailable',503,'The Cloud speech service is not configured.');
     if(!in_array($mode,['remote','both'],true))vp3_phone_workspace_error_v1('operator_live_request',422,'Choose a supported capture mode.');
-    return vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$public,$now,$mode,$suggestions):array{
+    if($seconds!==null&&!in_array($seconds,[30,60,120],true))vp3_phone_workspace_error_v1('operator_live_request',422,'Choose a 30, 60 or 120 second caption session.');
+    $controls=vp3_operator_live_controls_ready_v1($pdo);
+    if($seconds!==null&&!$controls)vp3_phone_workspace_error_v1('operator_upgrade_required',503,'Run the Cloud session controls upgrade.');
+    $requestedControls=$seconds!==null;
+    $seconds??=$mode==='both'?60:120;
+    return vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$public,$now,$mode,$suggestions,$seconds,$controls,$requestedControls):array{
         $scope=vp3_operator_live_lock_owner_v1($pdo,$scope);
         $call=vp3_operator_live_call_v1($pdo,$scope,$public,$now,true);
         if(vp3_operator_live_row_v1($pdo,(int)$call['id'],true))
@@ -119,14 +125,18 @@ function vp3_operator_live_start_v1(PDO $pdo,array $scope,string $public,int $no
         if($busy)vp3_phone_workspace_error_v1('operator_live_busy',409,'Another live caption session is authorized.');
         if(vp3_operator_live_budget_v1($pdo,$scope['owner_user_id'],$now)+($mode==='both'?8:4)>VP3_OPERATOR_LIVE_HOUR_SECONDS_V1)
             vp3_phone_workspace_error_v1('operator_live_budget',429,'Live caption processing allowance has been reached.');
-        $token=bin2hex(random_bytes(32));$expires=min($now+($mode==='both'?60:VP3_OPERATOR_LIVE_SECONDS_V1),(int)$call['created_epoch']+300,(int)$call['updated_epoch']+300);
+        $token=bin2hex(random_bytes(32));$expires=min($now+$seconds,(int)$call['created_epoch']+300,(int)$call['updated_epoch']+300);
         if($expires<$now+8)vp3_phone_workspace_error_v1('operator_live_call_changed',409,'The recent call receipt window is ending.');
         $q=$pdo->prepare("INSERT INTO phone_operator_live_sessions_v1(call_id,owner_user_id,agent_id,chat_agent_id,conversation_id,number_id,policy_revision,token_hash,state,consent_epoch,expires_epoch) VALUES(?,?,?,?,?,?,?,?,'active',?,?)");
         $q->execute([(int)$call['id'],$scope['owner_user_id'],(int)$call['agent_id'],$scope['agent_id'],$scope['conversation_id'],(int)$call['phone_number_id'],$call['live_policy_revision'],hash('sha256',$token),$now,$expires]);
+        $audioLimit=$seconds*($mode==='both'?2:1);
+        if($controls)$pdo->prepare('UPDATE phone_operator_live_sessions_v1 SET audio_limit_seconds=?,controls_enabled=? WHERE call_id=?')->execute([$audioLimit,(int)$requestedControls,(int)$call['id']]);
         $q=$pdo->prepare('INSERT INTO phone_operator_live_assist_v1(call_id,capture_mode,suggestions_enabled,receipt_secret) VALUES(?,?,?,?)');
         $q->execute([(int)$call['id'],$mode,$suggestions?1:0,bin2hex(random_bytes(32))]);
         $grant=['call_id'=>$public,'token'=>$token,'expires_epoch'=>$expires,'chunk_seconds'=>4,'execution'=>'captions_only'];
         if($mode!=='remote'||$suggestions)$grant+=['capture_mode'=>$mode,'suggestions_enabled'=>$suggestions];
+        if($requestedControls)$grant+=['session_seconds'=>$seconds,'audio_limit_seconds'=>$audioLimit,'max_sequences'=>intdiv($audioLimit,$mode==='both'?8:4),
+            'audio_seconds_remaining'=>min($audioLimit,max(0,VP3_OPERATOR_LIVE_HOUR_SECONDS_V1-vp3_operator_live_budget_v1($pdo,$scope['owner_user_id'],$now)))];
         return $grant;
     });
 }
@@ -176,7 +186,7 @@ function vp3_operator_live_chunk_v1(PDO $pdo,array $scope,string $public,string 
         if(vp3_operator_voice_busy_v1($pdo,$id,$now)||!$assist||$assist['capture_mode']!==$mode||(int)$assist['suggestion_pending']!==0
             ||!vp3_operator_live_session_matches_v1($row,$call,$scope,$token,$now)||(int)$row['next_seq']!==$seq
             ||(int)$row['pending_seq']!==0||(int)$row['last_dispatch_epoch']>$now-3
-            ||(int)$row['consent_epoch']>$now-3||(int)$row['reserved_seconds']+$cost>VP3_OPERATOR_LIVE_SECONDS_V1
+            ||(int)$row['consent_epoch']>$now-3||(int)$row['reserved_seconds']+$cost>(int)($row['audio_limit_seconds']??VP3_OPERATOR_LIVE_SECONDS_V1)
             ||vp3_operator_live_budget_v1($pdo,$scope['owner_user_id'],$now)+$cost>VP3_OPERATOR_LIVE_HOUR_SECONDS_V1)
             vp3_phone_workspace_error_v1('operator_live_changed',409,'Live caption permission, sequence or allowance changed. Stop captions.');
         $q=$pdo->prepare('UPDATE phone_operator_live_sessions_v1 SET next_seq=next_seq+1,pending_seq=?,reserved_seconds=reserved_seconds+?,last_dispatch_epoch=? WHERE call_id=? AND state=\'active\' AND next_seq=? AND pending_seq=0');
@@ -211,6 +221,8 @@ function vp3_operator_live_chunk_v1(PDO $pdo,array $scope,string $public,string 
             $q->execute([$id,$seq]);
             if($q->rowCount()!==1)vp3_phone_workspace_error_v1('operator_live_changed',409,'Live caption permission changed.');
             $result=['call_id'=>$public,'seq'=>$seq,'text'=>$caption,'speaker'=>'remote_audio'];
+            if(!empty($row['controls_enabled']))$result['audio_seconds_remaining']=max(0,min((int)$row['audio_limit_seconds']-(int)$row['reserved_seconds'],
+                VP3_OPERATOR_LIVE_HOUR_SECONDS_V1-vp3_operator_live_budget_v1($pdo,$scope['owner_user_id'],$finished)));
             if($localCaption!==null)$result['local_text']=$localCaption;
             if(!empty($assist['suggestions_enabled'])){
                 $result['receipts']=[];
@@ -249,14 +261,15 @@ function vp3_operator_live_request_v1(PDO $pdo,?array $user,string $method,array
     if($csrf===''||!is_string($input['csrf_token']??null)||!hash_equals($csrf,$input['csrf_token']))
         vp3_phone_workspace_error_v1('csrf_failed',403,'Refresh Chat before using live captions.');
     $action=$input['action']??null;$public=$input['call_id']??null;
-    if(!is_string($public)||!in_array($action,['start','chunk','stop','suggest','voice_prepare','voice_claim','voice_finish','participation_start','participation_decide','participation_stop'],true))
+    if(!is_string($public)||!in_array($action,['start','chunk','stop','suggest','voice_prepare','voice_claim','voice_finish','participation_start','participation_decide','participation_stop','participation_pause','participation_resume'],true))
         vp3_phone_workspace_error_v1('operator_live_request',422,'Choose a supported live caption action.');
     $fields=['action','csrf_token','agent_id','conversation_id','call_id'];
-    $extra=match($action){'start'=>['consent_attested','capture_mode','suggestions_attested'],'chunk'=>['token','seq','pcm','local_pcm'],'stop'=>['token'],'suggest'=>['token','receipts'],'voice_prepare'=>['token','source_seq','suggestion','proof','voice_consent_attested'],
+    $extra=match($action){'start'=>['consent_attested','capture_mode','suggestions_attested','session_seconds'],'chunk'=>['token','seq','pcm','local_pcm'],'stop'=>['token'],'suggest'=>['token','receipts'],'voice_prepare'=>['token','source_seq','suggestion','proof','voice_consent_attested'],
         'voice_claim','voice_finish'=>['token','source_seq','turn_token','participation_token'],
-        'participation_start'=>['token','consent_attested','mode'],
+        'participation_start'=>['token','consent_attested','mode','max_decisions','max_responses'],
         'participation_decide'=>['token','participation_token','receipts','previous'],
-        'participation_stop'=>['token','participation_token']};
+        'participation_stop'=>['token','participation_token'],
+        'participation_pause','participation_resume'=>['token','participation_token','expected_revision']};
     if($action==='voice_prepare')$extra[]='participation_token';
     if(array_diff(array_keys($input),[...$fields,...$extra]))vp3_phone_workspace_error_v1('operator_live_request',422,'Unsupported live caption input.');
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);vp3_operator_live_private_v1($scope);
@@ -265,22 +278,30 @@ function vp3_operator_live_request_v1(PDO $pdo,?array $user,string $method,array
     if($action==='start'){
         $mode=$input['capture_mode']??'remote';$assist=$input['suggestions_attested']??false;
         if(!is_string($mode)||!is_bool($assist))vp3_phone_workspace_error_v1('operator_live_request',422,'Choose explicit capture and assistance preferences.');
+        $seconds=$input['session_seconds']??null;
+        if(array_key_exists('session_seconds',$input)&&!is_int($seconds))vp3_phone_workspace_error_v1('operator_live_request',422,'Choose a whole session duration.');
         return vp3_operator_live_start_v1($pdo,$scope,$public,$now,($input['consent_attested']??null)===true,
-            $speech!==null||vp3_operator_live_speech_key_v1()!=='',$mode,$assist);
+            $speech!==null||vp3_operator_live_speech_key_v1()!=='',$mode,$assist,$seconds);
     }
     $token=$input['token']??null;
     if(!is_string($token)||!preg_match('/^[a-f0-9]{64}$/D',$token))vp3_phone_workspace_error_v1('operator_live_request',422,'Invalid caption permission.');
     if($action==='stop')return vp3_operator_live_stop_v1($pdo,$scope,$public,$token,$now);
     if($action==='participation_start'){
         if(!is_bool($input['consent_attested']??null)||!is_string($input['mode']??null))vp3_phone_workspace_error_v1('operator_live_request',422,'Choose explicit conversation permission.');
-        return vp3_operator_participation_start_v1($pdo,$scope,$public,$token,$input['consent_attested'],$input['mode'],$now);
+        $decisions=$input['max_decisions']??4;$responses=$input['max_responses']??2;
+        if(!is_int($decisions)||!is_int($responses))vp3_phone_workspace_error_v1('operator_live_request',422,'Choose whole conversation allowances.');
+        return vp3_operator_participation_start_v1($pdo,$scope,$public,$token,$input['consent_attested'],$input['mode'],$now,$decisions,$responses);
     }
     $participationToken=$input['participation_token']??null;
     if(array_key_exists('participation_token',$input)&&(!is_string($participationToken)||!preg_match('/^[a-f0-9]{64}$/D',$participationToken)))
         vp3_phone_workspace_error_v1('operator_live_request',422,'Invalid conversation permission.');
-    if(in_array($action,['participation_decide','participation_stop'],true)){
+    if(in_array($action,['participation_decide','participation_stop','participation_pause','participation_resume'],true)){
         if($participationToken===null)vp3_phone_workspace_error_v1('operator_live_request',422,'Conversation permission is required.');
         if($action==='participation_stop')return vp3_operator_participation_stop_v1($pdo,$scope,$public,$token,$participationToken,$now);
+        if(in_array($action,['participation_pause','participation_resume'],true)){
+            if(!is_int($input['expected_revision']??null)||$input['expected_revision']<0)vp3_phone_workspace_error_v1('operator_live_request',422,'Use the current conversation controls.');
+            return vp3_operator_participation_control_v1($pdo,$scope,$public,$token,$participationToken,$action==='participation_pause',$input['expected_revision'],$now);
+        }
         return vp3_operator_participation_decide_v1($pdo,$scope,$public,$token,$participationToken,$input['receipts']??null,$input['previous']??[],$now,$suggestionModel,$clock===null?null:static fn():int=>$clock);
     }
     if($action==='suggest')return vp3_operator_live_suggest_v1($pdo,$scope,$public,$token,$input['receipts']??null,$now,$suggestionModel,$clock===null?null:static fn():int=>$clock);
