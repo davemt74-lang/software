@@ -76,8 +76,10 @@ ppd_check(vp3_phone_push_delivery_event_v1($pdo,$send3['claim']['event_ref'])['s
 $fourth=$make('Source withdrawn during lookup','region2.push.apple.com');$device=ppd_row($pdo,$fourth);$id=$device['id'];$profile=bin2hex(random_bytes(16));$exchangeId=bin2hex(random_bytes(16));
 vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,owner_requests,holder_requests,updated_epoch) VALUES(?,?,?,1,1,1,?)',[1,$id,$profile,$now]);
 vp3_phone_information_owner_v1($pdo,1,'information_create',['device_id'=>$id,'generation'=>(int)$device['generation'],'profile_id'=>$profile,'profile_revision'=>1,'exchange_id'=>$exchangeId,'kind'=>'question','message'=>'Synthetic private request']);
-$claim4=vp3_phone_push_delivery_claim_v1($pdo,$now,'vp3_phone_push_source_current_v1');
-$send4=vp3_phone_push_delivery_prepare_v1($pdo,$claim4,$now,'vp3_phone_push_source_current_v1');
+$claimTime=time(); // The canonical request was enqueued using the live clock.
+$claim4=vp3_phone_push_delivery_claim_v1($pdo,$claimTime,'vp3_phone_push_source_current_v1');
+ppd_check(is_array($claim4)&&isset($claim4['event_ref']),'newly queued canonical request is due at claim time');
+$send4=vp3_phone_push_delivery_prepare_v1($pdo,$claim4,$claimTime,'vp3_phone_push_source_current_v1');
 ppd_check(($send4['vapid']['config_revision']??null)===(int)$claim4['config_revision'],'canonical request preparation includes the current cache configuration revision');
 $pdo->exec("CREATE TRIGGER ppw_cancel_source_after_cache AFTER INSERT ON vp3_phone_push_vapid_cache_v1 WHEN NEW.origin='https://region2.push.apple.com' BEGIN UPDATE vp3_phone_information_v1 SET state='canceled',version=2 WHERE device_id=".$pdo->quote($id).' AND exchange_id='.$pdo->quote($exchangeId).'; END');
 $blockedSource=$dispatch($send4);$pdo->exec('DROP TRIGGER ppw_cancel_source_after_cache');
