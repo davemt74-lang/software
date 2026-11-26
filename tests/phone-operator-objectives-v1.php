@@ -101,7 +101,10 @@ $unrecorded=objective_fixture();$r=objective_review($unrecorded,null,static func
 $moved=objective_fixture();denies(fn()=>objective_review($moved,null,static function(int $id)use($pdo,$moved):array{
     $pdo->prepare('UPDATE phone_browser_calls_v1 SET conversation_id=12,chat_agent_id=7 WHERE id=?')->execute([$moved['id']]);return $moved['saved'];
 }),404,'reassigning a call during reading cannot move findings across Chats');
-$disabled=objective_fixture();denies(fn()=>objective_review($disabled,null,static function(int $id)use($pdo,$disabled):array{$pdo->exec('UPDATE users SET is_active=0 WHERE id=1');return $disabled['saved'];}),403,'account deactivation is rechecked after reading');
+$disabled=objective_fixture();try{
+    objective_review($disabled,null,static function(int $id)use($pdo,$disabled):array{$pdo->exec('UPDATE users SET is_active=0 WHERE id=1');return $disabled['saved'];});
+    throw new LogicException('A deactivated owner read succeeded.');
+}catch(RuntimeException $e){c($e->getCode()===403,'account deactivation is rechecked after reading');}
 $pdo->exec('UPDATE users SET is_active=1 WHERE id=1');
 
 $missing=objective_fixture(null,false);c(objective_review($missing)['coverage']==='none','a call with no starting agenda is recorded as such');

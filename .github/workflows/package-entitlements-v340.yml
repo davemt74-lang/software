@@ -246,8 +246,8 @@ jobs:
           php tests/operator-auto-call-migration.php
           php tests/phone-operator-suggestion-evidence.php
           php tests/phone-operator-participation-v1.php
-          php tests/phone-operator-objectives-v1.php
           php tests/phone-operator-objectives-reader-v1.php
+          php tests/phone-operator-objectives-v1.php
           php tests/phone-caller-contacts-schema-v1.php
           php tests/phone-contact-management-v1.php
           php tests/calendar-recurrence-v1340.php
