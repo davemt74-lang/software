@@ -40,7 +40,7 @@ assert.equal('sha384-'+createHash('sha384').update(actualSdk).digest('base64'),a
 const emptyOwnerPhone=()=>({phone_e164:'',phone_revision:0,revision:0,updates_requested:false,hello_requested:false,last_test:null,execution_enabled:false});
 let ownerPhone=emptyOwnerPhone();
 let contactDetail=null,contactSchedules=[];
-let state=fixture(),authorized=true,apiCalls=[],apiMethods=[],stateFailure=null,tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[];
+let state=fixture(),authorized=true,apiCalls=[],apiMethods=[],stateFailure=null,tokenGate=null,tokenStarted=false,contactGate=null,contactStarted=false,scriptLoads=0,captionCalls=[],captionStartGate=null;
 const wav=Buffer.alloc(44+16000*2*4);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
@@ -54,13 +54,13 @@ const server=http.createServer((req,res)=>{
  if(url.pathname==='/sdk-smoke'){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><meta charset="utf-8"><script src="/assets/twilio-voice-2.18.5.min.js?actual=1" integrity="'+actualIntegrity+'" crossorigin="anonymous"></script>');}
  if(url.pathname==='/api/fixture-audio'){res.setHeader('Content-Type','audio/wav');return res.end(wav);}
  if(url.pathname==='/api/phone-operator-live-v1.php'){
-  let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{
+  let body='';req.on('data',chunk=>body+=chunk);req.on('end',async()=>{
    const input=JSON.parse(body);res.setHeader('Content-Type','application/json');
    assert.equal(req.method,'POST');assert.equal(input.csrf_token,'fixture-csrf');assert.equal(input.call_id,outgoingId);
    assert.equal(input.agent_id,2);assert.equal(input.conversation_id,10);
    captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,capture_mode:input.capture_mode,suggestions_attested:input.suggestions_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0,localBytes:input.local_pcm?Buffer.from(input.local_pcm,'base64').length:0,receiptCount:input.receipts?.length||0,voice_consent_attested:input.voice_consent_attested,source_seq:input.source_seq});
    const token='f'.repeat(64);let result={};
-   if(input.action==='start'){assert.equal(input.consent_attested,true);state.operator_live.state='authorized';state.operator_live.fixtureMode=input.capture_mode||'remote';state.operator_live.fixtureAssist=input.suggestions_attested===true;result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+(state.operator_live.fixtureMode==='both'?60:120),chunk_seconds:4,execution:'captions_only'};if(state.operator_live.fixtureMode==='both'||state.operator_live.fixtureAssist)Object.assign(result,{capture_mode:state.operator_live.fixtureMode,suggestions_enabled:state.operator_live.fixtureAssist});}
+   if(input.action==='start'){if(captionStartGate){captionStartGate.seen=true;await captionStartGate.promise;}assert.equal(input.consent_attested,true);state.operator_live.state='authorized';state.operator_live.fixtureMode=input.capture_mode||'remote';state.operator_live.fixtureAssist=input.suggestions_attested===true;result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+(state.operator_live.fixtureMode==='both'?60:120),chunk_seconds:4,execution:'captions_only'};if(state.operator_live.fixtureMode==='both'||state.operator_live.fixtureAssist)Object.assign(result,{capture_mode:state.operator_live.fixtureMode,suggestions_enabled:state.operator_live.fixtureAssist});}
    else if(input.action==='chunk'){
     assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,128000);
     result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:state.operator_live.fixtureConversation?'Agent, which day works?':'Fixture caller <script>words</script>'};
@@ -227,6 +227,7 @@ async function fresh(suffix='',options={}){
 }
 async function check(name,run){
  try{await run();}catch(error){
+  captionStartGate?.resolve();
   if(name.includes('automatically approved conversation'))console.error('Conversation fixture failure:',JSON.stringify({
    captions:await page.locator('.vp3-phone-live-caption').innerText().catch(()=>''),actions:captionCalls.map(row=>row.action),pageErrors:errors}));
   throw error;
@@ -806,7 +807,11 @@ try{
   await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
   await caption.getByLabel(/Include both audio sides/).check();await caption.getByLabel(/Everyone agrees that recent captions/).check();
   await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
+  let releaseStart;captionStartGate={seen:false,promise:new Promise(resolve=>releaseStart=resolve),resolve:()=>releaseStart()};
   await caption.getByRole('button',{name:'Start live captions',exact:true}).click();
+  for(let i=0;!captionStartGate.seen;i++){if(i>100)throw Error('Caption grant request did not start');await new Promise(resolve=>setTimeout(resolve,10));}
+  assert.equal(await caption.getByRole('button',{name:'Conversation mode',exact:true}).count(),0,'Conversation setup cannot appear before its caption grant is ready');
+  captionStartGate.resolve();captionStartGate=null;
   await caption.getByRole('button',{name:'Conversation mode',exact:true}).click();
   assert.equal(await caption.getByRole('button',{name:'Let Agent join conversation',exact:true}).isDisabled(),true);
   await caption.getByLabel('Everyone agrees to automatic AI replies and Cloud processing for this conversation.',{exact:true}).check();

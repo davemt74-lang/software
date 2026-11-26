@@ -1339,7 +1339,7 @@
   }
   function hashParticipation(token){return typeof token==='string'&&/^[a-f0-9]{64}$/.test(token);}
   function startParticipation(entry,session,event){
-    if(!event.isTrusted||!captionCurrent(entry,session)||session.participation||!session.participationConsent||session.busy||session.voiceTurn||
+    if(!event.isTrusted||!captionCurrent(entry,session)||session.phase!=='listening'||session.participation||!session.participationConsent||session.busy||session.voiceTurn||
       session.mode!=='both'||!session.assist||!session.rawLocal||!voiceMixerCurrent(entry)||state?.operator_live?.participation_available!==true||
       typeof window.VP3OperatorParticipationV1?.create!=='function')return;
     session.voiceParticipant=false;session.suggestion=null;session.voiceConsent=false;session.voiceReview=false;
@@ -1368,7 +1368,7 @@
       }
       panel.append(box);return status.phase!=='closed';
     }
-    if(state?.operator_live?.participation_available!==true||session.mode!=='both'||!session.assist||!session.rawLocal||
+    if(session.phase!=='listening'||state?.operator_live?.participation_available!==true||session.mode!=='both'||!session.assist||!session.rawLocal||
       !voiceMixerCurrent(entry)||typeof window.VP3OperatorParticipationV1?.create!=='function')return false;
     const open=button(session.participationPrompt?'Cancel conversation setup':'Conversation mode',event=>{
       if(event.isTrusted&&captionCurrent(entry,session)&&!session.busy&&!session.voiceTurn){session.participationPrompt=!session.participationPrompt;session.participationConsent=false;render();}
@@ -1394,6 +1394,7 @@
     if(entry.captionNotice)panel.append(node('p','vp3-phone-meta',entry.captionNotice));
     if(session){
       panel.append(node('p','vp3-phone-meta',session.phase==='listening'?'Live captions on · human call remains in control':'Authorizing live captions…'));
+      const participating=session.assist?renderParticipation(panel,entry,session):false;
       if(session.captions.length){
         if(session.captions.length>8){
           const history=button(session.showEarlier?'Show recent captions':'Show earlier captions',()=>{
@@ -1419,7 +1420,6 @@
       panel.append(node('p','vp3-phone-meta',session.mode==='both'?'Both audio sides · labels describe tracks, not verified people':'Caller audio only'));
       if(session.skipped)panel.append(node('p','vp3-phone-meta',session.skipped+' audio segments skipped while processing.'));
       if(session.assist){
-        const participating=renderParticipation(panel,entry,session);
         if(!participating){
         const suggest=button(session.suggestionPending?'Preparing suggestion…':'Suggest a response',event=>void requestPrivateSuggestion(entry,session,event));
         suggest.disabled=session.phase!=='listening'||session.busy||session.suggestionAttempts>=2||Date.now()<session.nextSuggestionAt||!session.receipts.some(r=>r.speaker==='remote_audio')||(session.receipts.at(-1)?.seq||0)<=session.lastSuggestionSeq;
@@ -1703,7 +1703,13 @@
         actions.append(button('Decline',()=>{if(current(renderGeneration)&&!callBusy)declineCall(id);}));
       }
     }
-    if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){if(!muted&&entry.captionSession?.voiceTurn)takeOverVoice(entry,'AI voice stopped when you muted the call.');else if(!muted&&entry.captionSession?.mode==='both')stopRemoteCaptions(entry,'Both-sided captions stopped when you muted your audio.');entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
+    if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){if(!muted&&entry.captionSession?.voiceTurn)takeOverVoice(entry,'AI voice stopped when you muted the call.');else if(!muted&&entry.captionSession?.mode==='both')stopRemoteCaptions(entry,'Both-sided captions stopped when you muted your audio.');entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}
+      const participation=entry.captionSession?.participation;
+      if(participation&&participation.snapshot.phase!=='closed'){
+        const remove=button('Remove Agent',event=>{if(event.isTrusted&&current(renderGeneration)&&active===entry)participation.stop();},'vp3-phone-button vp3-phone-danger');
+        remove.dataset.phoneFocusKey='operator-conversation-quick-remove-'+entry.info.public_id;actions.append(remove);
+      }
+    }
     if(managed&&!entry&&!terminal){
       if(control?.can_reconcile===true){const check=button('Check carrier status',event=>{if(event.isTrusted&&current(renderGeneration))void runManagedControl('managed_reconcile',id,renderGeneration);});check.disabled=managedControlBusy.has(id);actions.append(check);}
       if(control?.can_end===true){const end=button('End managed call',event=>{if(event.isTrusted&&current(renderGeneration)&&window.confirm('End this managed call and block any pending destination connection?'))void runManagedControl('managed_end',id,renderGeneration);},'vp3-phone-button vp3-phone-danger');end.disabled=managedControlBusy.has(id);actions.append(end);}
