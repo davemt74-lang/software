@@ -4,7 +4,6 @@ declare(strict_types=1);
 require_once __DIR__.'/phone-agent-workspace-schema-v1.php';
 require_once __DIR__.'/phone-tracking-v1.php';
 require_once __DIR__.'/agent-chat-boundary-v380.php';
-require_once __DIR__.'/user-agent-system-v236.php';
 require_once __DIR__.'/participant-updates-v1.php';
 
 const VP3_PHONE_AGENT_KINDS_V1=['gmail_draft','gmail_attention','agent_result','image','canvas'];
