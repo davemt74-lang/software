@@ -68,13 +68,43 @@ receives a bounded promotion without outranking urgent specialist follow-through
 The existing supervisor, tools, source, Top of Mind and live-context gates remain
 part of the consolidated CI. Release certification still requires GitHub checks.
 
+## Section 3: useful creations with little context
+
+A general creative starter is discoverable when the account has only setup or
+conversation context. Capability grants determine available options, and each
+executor still enforces its configured model, budget, queue capacity and review
+rules. Starter, light-context and contextual modes guide creative exploration
+without claiming a personal preference. Current owner conversation can also ground
+an image concept directly.
+
+Brainstorming can propose image concepts, playable playlists and small functional
+Canvas workflows from that context. OB1 independently admits the selected work.
+Image concepts retain the existing generation authorization. Canvas proposals use
+normal owner review or the existing Auto Build preference. `playlist.prepare`
+reuses consented YouTube search, quota accounting, video verification and the
+existing Chat player. Its generic public query is fixed by the server; no private
+account context becomes a provider query. Unplayable candidates are discarded.
+
+Typed private results remain source-bound. Pending playlists move to the existing
+Chat result ledger on delivery and remain verifiable after newer messages arrive.
+Delivery uses normal controls and Media spacing, and neither reload nor retry
+regenerates the results. Withdrawing YouTube consent removes the playlist while
+unrelated generic image/Canvas source context remains valid. Status reads do not
+start inference, generation, a provider search or a Chat post.
+
+The end-to-end regression creates a separate empty owner/Agent namespace, runs
+Brainstorming and the actual OB1 assessment, prepares all three outputs, delivers
+them once, restores the playable playlist from Chat history, advances an exact
+Canvas proposal with an owner reply, and runs the metered Coding worker to save a
+real private app draft with interaction and state code. The canonical 107-check
+Canvas fixture and existing source, runtime, tools, Top of Mind and live-context
+regressions remain in coverage. Native MySQL and SQLite gates are included in the
+existing workflow. Production provider/device configuration still needs live
+installation acceptance; no real paid model or provider calls were used in tests.
+
 ## Remaining build sections
 
-1. Add opportunities that need little history: image concepts, playable playlist
-   preparation and functional Canvas proposals. Reuse actual executors, grants and
-   configured generation budgets. Treat generic starters as generic; use current
-   conversation when available and retain the exact context behind each proposal.
-2. Extend OB1's durable executive loop to review objectives and returned ideas,
+1. Extend OB1's durable executive loop to review objectives and returned ideas,
    prioritize, assign, verify outcomes, advance or escalate, and schedule the next
    review. Use meaningful-change wakeups and bounded periodic catch-up. The server
    or HomeServer worker owns execution when the browser is closed.

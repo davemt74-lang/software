@@ -239,6 +239,7 @@ jobs:
           php tests/agent-initiative-brainstorm-v1.php
           php tests/agent-initiative-brainstorm-pipeline-v1.php
           php tests/agent-initiative-brainstorm-specialist-v1.php
+          php tests/agent-initiative-creative-starters-v1.php
           php tests/agent-initiative-opportunity-sources-v1.php
           php tests/agent-initiative-opportunity-view-v1.php
           node tests/agent-working-browser.mjs
@@ -544,6 +545,7 @@ jobs:
           php tests/agent-coordination-rules-v1.php
           php tests/agent-initiative-brainstorm-pipeline-v1.php
           php tests/agent-initiative-brainstorm-specialist-v1.php
+          php tests/agent-initiative-creative-starters-v1.php
           php tests/agent-initiative-opportunity-view-v1.php
           php tests/agent-initiative-opportunity-sources-v1.php
           php tests/ai-usage-report-v1.php mysql

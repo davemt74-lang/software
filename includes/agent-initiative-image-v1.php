@@ -10,8 +10,9 @@ function vp3_initiative_image_refs_v1(array $evidence): array
     return array_keys(array_filter($evidence,static function(array $source):bool{
         $kind=$source['kind']??null;
         if(!empty($source['meeting_prep'])||trim((string)($source['title']??''))==='')return false;
+        if($kind==='creative_starter')return in_array('image.prepare',$source['starter_tools']??[],true);
         if($kind==='specialist_finding')return ($source['specialist']??null)==='media';
-        return in_array($kind,['task','open_task','task_list','song_history','artist_interest','topic_interest','specialist_result','youtube_play_analysis','media_image_play',
+        return in_array($kind,['chat_history','task','open_task','task_list','song_history','artist_interest','topic_interest','specialist_result','youtube_play_analysis','media_image_play',
             'product_content','curiosity_finding'],true);
     }));
 }

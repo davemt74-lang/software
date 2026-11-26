@@ -14,7 +14,7 @@ function vp3_initiative_tool_specialist_v1(string $tool): ?string
         'tasks.read', 'tasks.lists.read' => 'tasks',
         'calendar.read', 'reminders.read' => 'planning',
         'artist.research', 'topic.research', 'knowledge.search' => 'research',
-        'youtube.playback_offer' => 'media',
+        'youtube.playback_offer', 'playlist.prepare' => 'media',
         'connected-sites.scan' => 'connected-sites',
         'canvas.prepare' => 'coding',
         'image.prepare', 'workbench.screen.review' => 'image-generator',

@@ -162,6 +162,8 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
         'ready'=>true,'reason'=>'ready','description'=>'Prepare a substantive private analysis or next step using the verified situation sources. Do not claim an external action was performed.']];
     require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
     $catalog+=vp3_brainstorm_catalog_v1($evidence);
+    require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
+    $catalog+=vp3_starter_playlist_catalog_v1($evidence);
     $checkinReady=table_exists('chat_messages');
     $catalog['chat.check_in']=['id'=>'chat.check_in','capability'=>'initiative.prepare','mode'=>'private',
         'ready'=>$checkinReady,'reason'=>$checkinReady?'ready':'upgrade_required',
@@ -186,6 +188,7 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $canvasFeedback=vp3_initiative_canvas_feedback_v1($pdo,$scope['user'],$scope['agent_id'],$evidence);
     $canvasRefs=[];
     foreach($evidence as $ref=>$source){
+        if(($source['kind']??null)==='creative_starter'&&!in_array('canvas.prepare',$source['starter_tools']??[],true))continue;
         if(isset($source['meeting_prep'])||in_array($source['kind']??'',['transcript_research','youtube_interest_checkin'],true)
             ||($canvasFeedback[$ref]['disposition']??'')==='suppress'
             ||!vp3_initiative_canvas_media_allowed_v1($pdo,(int)$scope['user']['id'],$source))continue;
@@ -408,6 +411,11 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
     vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)($binding['agent_id']??0));
     try{
         $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);$output=$toolResult['output']??null;
+        if($tool==='playlist.prepare'){
+            require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
+            vp3_starter_playlist_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);
+            return;
+        }
         if($tool==='brainstorm.explore'){
             require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
             vp3_brainstorm_result_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);
@@ -548,6 +556,17 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
         if(isset($entry['source_refs'])&&!in_array($job['primary'],$entry['source_refs'],true))throw new RuntimeException('This tool does not accept the selected source.',409);
         vp3_initiative_brainstorm_tool_scope_v1($job,$catalog);
         vp3_initiative_result_job_v1($job,$evidence);
+        if($tool==='playlist.prepare'){
+            $authorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):void{
+                if($checkLease)$checkLease();
+                $current=[];
+                $verified=vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence,$current);
+                $catalog=vp3_initiative_tools_catalog_v1($pdo,$verified['user'],$binding,$current);
+                if(empty($catalog['playlist.prepare']['ready']))throw new Vp3InitiativeSourcesChangedV1();
+            };
+            return vp3_starter_playlist_prepare_v1($pdo,$scope,$binding,$job,$evidence,$authorize,
+                $researchTransport['youtube_http']??null,$workflow);
+        }
         if($tool==='brainstorm.explore'){
             if($model===null)throw new RuntimeException('Brainstorming inference is unavailable.',503);
             if($checkLease)$checkLease();

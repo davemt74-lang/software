@@ -157,6 +157,10 @@ function agent_workflow_initiative_result_v1400(array $value): array
         require_once __DIR__.'/agent-coordination-work-v1.php';
         return vp3_coordination_result_normalize_v1($value)??[];
     }
+    if(($output['type']??null)==='initiative_starter_playlist'){
+        require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
+        return vp3_starter_playlist_tool_result_v1($value)??[];
+    }
     if(($output['type']??null)==='initiative_brainstorm_report'){
         require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
         return vp3_brainstorm_tool_result_v1($value)??[];

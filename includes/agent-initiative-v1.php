@@ -63,6 +63,9 @@ function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedToo
             ||!is_string($job['focus']??null)||!is_bool($job['report']??null)){
             throw new Vp3InitiativePlanValidationV1('invalid_job','Invalid initiative assignment.');
         }
+        if($job['tool']==='playlist.prepare'&&$job['report']!==true){
+            throw new Vp3InitiativePlanValidationV1('invalid_job','A playable playlist must report to its saved Chat.');
+        }
         if($job['tool']==='chat.check_in'){
             if($hasCheckIn||$job['report']!==true)throw new Vp3InitiativePlanValidationV1('invalid_job','Invalid initiative check-in.');
             $hasCheckIn=true;
@@ -240,6 +243,8 @@ function vp3_initiative_evidence_scoped_v1(PDO $pdo,array $user,DateTimeImmutabl
                 &&($evidence['task:'.$match[1]]['capability_tool']??null)==='tasks.read')unset($evidence[$ref]);
         }
     }
+    require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
+    $evidence+=vp3_creative_starter_evidence_v1($pdo,$user,$binding,$selectedRefs,$evidence);
     if($includeBrainstorm&&$selectedRefs!==null
         &&array_filter($selectedRefs,static fn(string $ref):bool=>str_starts_with($ref,'brainstorm-context:'))){
         require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
@@ -718,7 +723,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user,?array $selected
                 if($engagementRevision!=='')$payload['engagement_revision']=$engagementRevision;
                 $hash=hash('sha256',json_encode($payload,JSON_THROW_ON_ERROR));
                 $setupOnly=!array_diff(array_column($evidence,'kind'),['account_readiness','scheduling_readiness',
-                    'calendar_readiness','product_readiness','business_readiness']);
+                    'calendar_readiness','product_readiness','business_readiness','creative_starter']);
                 if(!vp3_initiative_brainstorm_pending_v1($pdo,$live,$payload,$setupOnly)){
                     vp3_initiative_enqueue_v1($pdo,$live,'initiative.plan',$payload,$hash);
                 }elseif($setupOnly&&$reportKeys){
@@ -1604,6 +1609,10 @@ function vp3_initiative_report_gate_v1(PDO $pdo,array $user,int $cid,?int $agent
 
 function vp3_initiative_suggestion_delivery_ready_v1(PDO $pdo,array $user,array $goal): bool
 {
+    if(($goal['tool']??null)==='playlist.prepare'){
+        require_once __DIR__.'/agent-media-entertainment-v1.php';
+        return vp3_media_offer_gate_v1($pdo,$user,(int)$goal['binding']['conversation_id'])==='ready';
+    }
     $specialist=$goal['coordination_route']['specialist']??null;
     if($specialist==='media'){
         require_once __DIR__.'/agent-media-entertainment-v1.php';
@@ -1631,6 +1640,11 @@ function vp3_initiative_suggestion_delivery_ready_v1(PDO $pdo,array $user,array 
 /** Persist the invitation in the same transaction that posts it. */
 function vp3_initiative_suggestion_record_v1(PDO $pdo,array $user,array $goal,int $messageId,array $evidence): void
 {
+    if(($goal['tool']??null)==='playlist.prepare'){
+        require_once __DIR__.'/agent-media-entertainment-v1.php';
+        vp3_media_record_offer_v1($pdo,(int)$user['id']);
+        return;
+    }
     $specialist=$goal['coordination_route']['specialist']??null;
     $binding=$goal['binding'];
     if($specialist==='casual'){
@@ -1810,6 +1824,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             'artist.research','topic.research'=>'Researching the selected source.',
             'canvas.prepare'=>'Brainstorming a private Canvas concept.',
             'brainstorm.explore'=>'Exploring ideas across specialist briefs.',
+            'playlist.prepare'=>'Preparing a verified starter playlist.',
             'image.prepare'=>'Preparing an image concept.',
             'coordination.review'=>'Coordinating specialist findings.',
             default=>'Preparing a verified private next step.',
