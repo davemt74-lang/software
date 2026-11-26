@@ -250,6 +250,7 @@ c($GLOBALS['partSttIndex']===2,'exhausted processing allowance prevents another 
 $ctx=part_fixture();part_grant($ctx);part_request($ctx,['action'=>'participation_stop'],2);
 foreach(['decision_limit','response_limit','control_revision','resume_seq'] as $column)$pdo->exec('ALTER TABLE phone_operator_participation_v1 DROP COLUMN '.$column);
 $pdo->exec('ALTER TABLE phone_operator_live_sessions_v1 DROP COLUMN audio_limit_seconds');
+$pdo->exec('ALTER TABLE phone_operator_live_sessions_v1 DROP COLUMN controls_enabled');
 c(!vp3_operator_live_controls_ready_v1($pdo),'an old metadata schema does not advertise new controls');
 vp3_operator_live_ensure_schema_v1($pdo);vp3_operator_live_ensure_schema_v1($pdo);
 c(vp3_operator_live_controls_ready_v1($pdo)&&vp3_operator_participation_row_v1($pdo,$ctx['id'])['state']==='closed','additive upgrade is rerunnable and preserves prior grants');

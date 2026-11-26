@@ -727,7 +727,7 @@ try{
       window.cleanupInitiativeSettings=window.VP3_COGNITIVE_PRESENTATION.mountInitiativeSettings(host);
     });
     const settings=page.locator('#specialist-initiative-settings');
-    await settings.getByRole('heading',{name:'Opportunity assessment'}).waitFor();
+    await settings.getByRole('heading',{name:'OB1 coordination'}).waitFor();
     await settings.getByRole('button',{name:'Pause Initiative',exact:true}).click();
     await status.getByRole('button',{name:'Resume',exact:true}).waitFor();
     assert.deepEqual(await page.evaluate(()=>window.initiativeOrbJobs),[]);

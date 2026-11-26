@@ -92,7 +92,7 @@ function vp3_initiative_runtime_job_specialist_v1(array $run): ?string
     }
     return match($goal['opportunity_lane']??null){
         'app_suggestions'=>'app-suggestions','research'=>'research','missions'=>'mission',
-        default=>($run['capability_key']??null)==='initiative.plan'?'brainstorm':vp3_initiative_goal_specialist_v1($goal),
+        default=>($run['capability_key']??null)==='initiative.plan'?'ob1':vp3_initiative_goal_specialist_v1($goal),
     };
 }
 
@@ -100,7 +100,7 @@ function vp3_initiative_runtime_job_specialist_v1(array $run): ?string
 function vp3_initiative_runtime_job_phase_v1(array $run): string
 {
     return match($run['progress_message']??null){
-        'Coordinating specialist findings.','Checking the plan and assigning eligible next steps.'=>'coordinating',
+        'Assessing priorities across specialists.','Coordinating specialist findings.','Checking the plan and assigning eligible next steps.'=>'coordinating',
         'Brainstorming useful opportunities.','Brainstorming a private Canvas concept.'=>'brainstorming',
         'Researching the selected source.'=>'researching',
         'Presenting the verified result.'=>'presenting',

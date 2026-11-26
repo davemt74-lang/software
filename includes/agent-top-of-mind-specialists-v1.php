@@ -193,7 +193,7 @@ function vp3_top_of_mind_prefer_work_v1(?array $current,array $candidate): array
 }
 
 const VP3_TOP_OF_MIND_ENGAGEMENT_SPECIALISTS_V1=['gmail','planning','tasks','media','canvas','curiosity','research',
-    'image-generator','coding','mission','connected-sites','brainstorm','development','transcripts','marketing','commerce','profile'];
+    'image-generator','coding','mission','connected-sites','ob1','brainstorm','development','transcripts','marketing','commerce','profile'];
 const VP3_TOP_OF_MIND_ENGAGEMENT_PAGE_SIZE_V1=8;
 
 /** These exact source names retain the originating specialist for casual or starter questions. */
@@ -736,7 +736,7 @@ function vp3_top_of_mind_specialists_v1(PDO $pdo,array $user,array $principal,in
     }
     foreach($items as $item){
         $id=$item['specialist_id']??'';
-        if($id==='brainstorm'||!in_array($id,VP3_TOP_OF_MIND_ENGAGEMENT_SPECIALISTS_V1,true))continue;
+        if($id==='ob1'||!in_array($id,VP3_TOP_OF_MIND_ENGAGEMENT_SPECIALISTS_V1,true))continue;
         $state=match($item['state']){'ready_to_report'=>'ready','working','queued','waiting_owner','completed','failed','interrupted','paused'=>$item['state'],default=>''};
         if($state==='')continue;
         $current=$specialists[$id]??null;
@@ -840,7 +840,7 @@ function vp3_top_of_mind_coordination_v1(array $health,array $specialists,int $n
     $acting=null;
     foreach($health['active_jobs']??[] as $job){
         if(($job['expiresAt']??0)<=$now*1000)continue;
-        $ob1=($job['kind']??null)==='assessment'&&($job['specialist']??'brainstorm')==='brainstorm';
+        $ob1=($job['kind']??null)==='assessment'&&($job['specialist']??'ob1')==='ob1';
         $phase=$ob1?(in_array($job['phase']??null,['reviewing','coordinating','presenting'],true)
             ?$job['phase']:($job['coordination_phase']??'analyzing')):'acting';
         $active=['phase'=>$phase,'detail'=>match($phase){

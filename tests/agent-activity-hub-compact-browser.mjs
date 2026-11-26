@@ -307,7 +307,7 @@ try {
       openArrivedItem:(ref,cid)=>{window.calls.push(['arrived',ref,cid]);return true;}};
     window.VP3TaskNotes={open:value=>window.calls.push(value)};
     window.VP3AgentOrb={activityHost:()=>document.getElementById('vp3AgentActivityHub'),
-      activitySpecialists:()=>[{key:'brainstorm',state:'running',label:'Opportunity Agent',status:'Working'}],
+      activitySpecialists:()=>[{key:'ob1',state:'running',label:'OB1',status:'Working'}],
       positionActivity:()=>{},prepareActivity:()=>{}};
   });
   for (const file of ['agent-orb.css','agent-top-of-mind-v1.css','agent-activity-hub-v1.css','chat-specialist-rail-v1.css']) await page.addStyleTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
@@ -384,7 +384,7 @@ try {
   assert.equal(await specialist('tasks').evaluate(element=>element.classList.contains('selected')),true,'Rail selection survives the first status load');
   assert.equal(await hub.getByRole('region',{name:'Agent coordination'}).locator('span').textContent(),'Analyzing');
   assert.equal(await hub.getByRole('region',{name:'Agent coordination'}).getByText('Planning has a workshop checklist ready. <img src=x>',{exact:true}).count(),1);
-  assert.equal(await specialist('brainstorm').count(),0,'An Initiative assessment is shown once in Agent coordination');
+  assert.equal(await specialist('ob1').count(),0,'An Initiative assessment is shown once in Agent coordination');
   assert.equal(await specialist('planning').getByRole('progressbar').evaluate(element=>element.value),55,'Measured progress is shown as measured');
   assert.equal(await specialist('research').getByRole('progressbar').getAttribute('data-indeterminate'),'','Active work without measurements stays indeterminate');
   assert.equal(await specialist('tasks').getByRole('progressbar').count(),0,'Waiting is a static status');
@@ -549,7 +549,7 @@ try {
   assert.equal(await page.evaluate(()=>window.calls.at(-1)),'listening');
   await specialist('tasks').getByRole('button',{name:'View in Chat',exact:true}).click();
   assert.deepEqual(await page.evaluate(()=>window.calls.at(-1)),['chat',42,{messageId:12}],'The saved result opens its exact Chat message');
-  await page.evaluate(()=>window.VP3AgentActivityHub.open({specialist:'brainstorm'}));
+  await page.evaluate(()=>window.VP3AgentActivityHub.open({specialist:'ob1'}));
   await hub.getByRole('region',{name:'Agent coordination'}).locator('span').waitFor();
   assert.equal(await hub.getByRole('region',{name:'Agent coordination'}).evaluate(element=>element.classList.contains('selected')),true);
   await hub.getByRole('button',{name:'Close',exact:true}).click();
