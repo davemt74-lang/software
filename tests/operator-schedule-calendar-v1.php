@@ -262,10 +262,14 @@ foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=
 $recordingForm=['RecordingSid'=>$recordSid,'RecordingStatus'=>'completed','RecordingSource'=>'StartCallRecordingAPI',
     'RecordingChannels'=>'2','RecordingTrack'=>'both','RecordingDuration'=>'12'];
 $pdo->exec("UPDATE phone_operator_carrier_attempts_v1 SET recording_state='uncertain',recording_sid=NULL");
-$answer('recording',$recordingForm);
+$payload=array_merge($carrierForm,$recordingForm);
+$receiptUrl=vp3_phone_browser_callback_v1('operator_answer',['event'=>'recording']);
+$receiptSignature=vp3_phone_sms_twilio_signature_v110($receiptUrl,$payload,'carrier-auth-token-fixture');
+// Match the webhook entry point, which supplies no test clock.
+vp3_operator_answer_v1($pdo,'recording',$payload,$receiptSignature);
 c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid' AND state='queued'")->fetchColumn()===1,
     'signed recording receipt recovers a lost start response and enters the existing transcription and report pipeline once');
-$answer('recording',$recordingForm);
+$answer('recording',$recordingForm,null,null,null,static fn()=>$callTime+2);
 c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid'")->fetchColumn()===1,
     'duplicate recording receipt is idempotent');
 $answer('status',['CallStatus'=>'completed']);
