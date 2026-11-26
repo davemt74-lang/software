@@ -71,25 +71,36 @@ $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0'
 c($preview()===['recipient_permission'=>1],'recipient withdrawal after preparation prevents a carrier plan');
 echo "PASS scheduled outbound request preview, current consent and privacy\n";
 
-require_once dirname(__DIR__).'/includes/agent-operator-carrier-attempt-v1.php';
+require_once dirname(__DIR__).'/includes/agent-operator-dispatch-worker-v1.php';
 $attempt=fn(callable $send)=>vp3_operator_carrier_attempt_v1($pdo,1,$eventId,$callTime,$send,$callTime);
 $unexpected=static function(){throw new LogicException('Unexpected adapter invocation');};
+$noCalls=static function(){throw new LogicException('Unexpected provider call');};
+c(vp3_operator_dispatch_tick_v1($pdo,$noCalls,$callTime)===['submitted'=>0,'uncertain'=>0,'skipped'=>1,'errors'=>0],
+    'worker skips a due occurrence after the recipient withdraws');
 c($attempt($unexpected)==='recipient_permission','withdrawal blocks reservation before simulated transport');
 $pdo->exec("UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=1,window_start='00:00',window_end='23:59'");
 $sent=0;
 $scenario=$argv[1]??'success';
-$result=$attempt(function($request)use(&$sent,$plan,$pdo,$attempt,$unexpected,$scenario){
+$worker=vp3_operator_dispatch_tick_v1($pdo,function($request)use(&$sent,$plan,$pdo,$attempt,$unexpected,$scenario){
     ++$sent;
     $plan['fields']+=['Url'=>'https://cloud.example/api/phone-operator-answer-v1.php?event=answer','Method'=>'POST',
         'StatusCallback'=>'https://cloud.example/api/phone-operator-answer-v1.php?event=status','StatusCallbackMethod'=>'POST'];
     c(!vp3_phone_transaction_active_v1($pdo)&&$request===$plan,'mock carrier receives the approved objective outside a transaction');
     c($attempt($unexpected)==='submitting','a second worker cannot submit the in-flight occurrence');
     if($scenario==='timeout')throw new RuntimeException('Response lost after submission');
-    return ['sid'=>'CA'.str_repeat('c',32),'account_sid'=>vp3_phone_twilio_state_v100()['account_sid'],
-        'from'=>$request['fields']['From'],'to'=>$scenario==='mismatch'?'wrong destination':$request['fields']['To']];
-});
+    $request['fields']['PrivateObjective']='fixture-private';
+    return vp3_operator_submit_scheduled_v1($request,static function($method,$path,$fields)use($plan,$scenario){
+        $account=vp3_phone_twilio_state_v100()['account_sid'];
+        c($method==='POST'&&$path==='/2010-04-01/Accounts/'.$account.'/Calls.json'&&$fields===$plan['fields'],
+            'carrier receives the seven expected fields and no private context');
+        return ['sid'=>'CA'.str_repeat('c',32),'account_sid'=>$account,'from'=>$fields['From'],
+            'to'=>$scenario==='mismatch'?'wrong destination':$fields['To']];
+    });
+},$callTime);
 $expected=$scenario==='success'?'submitted':'uncertain';
-c($result===$expected&&$attempt($unexpected)===$expected&&$sent===1,'terminal outcome fences replay');
+c($worker[$expected]===1&&array_sum($worker)===1&&array_sum(vp3_operator_dispatch_tick_v1($pdo,$unexpected,$callTime))===0,
+    'a repeated scheduled worker tick cannot dial an already claimed occurrence');
+c($attempt($unexpected)===$expected&&$sent===1,'terminal outcome fences replay');
 c($read()['last_occurrence']['reason']==='carrier_'.$expected,'original private schedule history shows the submission outcome');
 echo "PASS single carrier attempt ($scenario), in-flight exclusion and retry handling\n";
 

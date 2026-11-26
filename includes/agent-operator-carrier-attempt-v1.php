@@ -4,7 +4,7 @@ require_once __DIR__.'/agent-operator-dispatch-preview-v1.php';
 require_once __DIR__.'/phone-managed-transport-v1.php';
 require_once __DIR__.'/agent-operator-recording-v1.php';
 
-/** Submit one prepared occurrence through the supplied carrier adapter. No web or cron entry point enables live submission. */
+/** Submit one prepared occurrence through the supplied carrier adapter. */
 function vp3_operator_carrier_attempt_v1(PDO $pdo,int $owner,int $series,int $start,callable $carrier,?int $clock=null):string
 {
     if(vp3_phone_transaction_active_v1($pdo))throw new LogicException('Carrier submission requires its own committed reservation.');

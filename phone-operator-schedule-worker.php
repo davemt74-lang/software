@@ -10,7 +10,16 @@ try{
         echo json_encode(['preview'=>vp3_operator_preview_due_v1(db(),time())],JSON_THROW_ON_ERROR).PHP_EOL;
         exit(0);
     }
+    if(count($argv)>2||!in_array($argv[1]??'',['','--dispatch'],true)){
+        fwrite(STDERR,"Usage: php phone-operator-schedule-worker.php [--preview-dispatch|--dispatch]\n");
+        exit(2);
+    }
     $counts=vp3_operator_occurrences_tick_v1(db(),time());
+    if(($argv[1]??'')==='--dispatch'){
+        require_once __DIR__.'/includes/agent-operator-dispatch-worker-v1.php';
+        $counts['dispatch']=vp3_operator_dispatch_tick_v1(db(),'vp3_operator_submit_scheduled_v1');
+        $counts['errors']+=$counts['dispatch']['errors']+$counts['dispatch']['uncertain'];
+    }
     require_once __DIR__.'/includes/agent-operator-outcome-chat-v1.php';
     $notices=vp3_operator_outcome_chat_tick_v1(db(),time());
     $counts['chat_delivered']=$notices['delivered'];
