@@ -654,7 +654,8 @@ try{
  });
  await check('call agenda review is private, read-only, source-linked and usable at desktop and narrow phone widths',async()=>{
   for(const viewport of [{width:1360,height:900},{width:320,height:740}]){
-   await fresh('',{viewport});const id='7'.repeat(32);state.operator_objectives_available=true;
+   await fresh('',{viewport});await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+   const id='7'.repeat(32);state.operator_objectives_available=true;
    state.calls=[historyCall(id,{transport_kind:'browser',direction:'outbound',conversation_id:10,recording_enabled:true})];
    await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());await page.getByRole('tab',{name:'Recent calls',exact:true}).click();
    const row=page.locator('#vp3PhoneSection-calls .vp3-phone-call');await row.getByRole('button',{name:'Review call agenda',exact:true}).click();
