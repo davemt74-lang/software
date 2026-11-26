@@ -92,7 +92,7 @@
     }
     if(action==='route_incoming'&&['phone_agent_unavailable','phone_call_changed','phone_call_unavailable'].includes(data?.error))return text(data.message).slice(0,250);
     if(action==='state')return status===422?'Phone could not load this Chat context. Refresh the page and try again.':'Phone is temporarily unavailable. Retry to load your connections.';
-    if(['phone_contact_detail','save_phone_contact','save_phone_contact_schedule','cancel_phone_contact_schedule'].includes(action)&&typeof data?.error==='string'&&data.error.startsWith('phone_contact')&&typeof data.message==='string')return data.message.slice(0,300);
+    if(['assign_scheduled_operator','phone_contact_detail','save_phone_contact','save_phone_contact_schedule','cancel_phone_contact_schedule'].includes(action)&&typeof data?.error==='string'&&data.error.startsWith('phone_contact')&&typeof data.message==='string')return data.message.slice(0,300);
     const operatorError=['save_auto_call_policy','operator_calendar_preview','save_operator_calendar','owner_phone_settings','save_owner_phone','save_owner_call_preferences','prepare_owner_test','confirm_owner_test','prepare_connected_call'].includes(action)&&typeof data?.error==='string'&&data.error.startsWith('operator_')&&typeof data.message==='string';
     return operatorError?data.message.slice(0,300):status===409?'This call changed. Refresh its status before trying again.':'The phone request could not be confirmed.';
   }
@@ -722,6 +722,33 @@
       if(schedule.objectives)card.append(node('p','vp3-phone-schedule-objectives',schedule.objectives));
       const actions=node('div','vp3-phone-actions'),edit=button('Edit schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError&&schedule.editable){draft.schedule=newContactSchedule(schedule);draft.cancelId=0;render();}});
       const cancel=button('Cancel schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError){draft.cancelId=schedule.event_id;render();}});edit.disabled=blocked||!schedule.editable;cancel.disabled=blocked;actions.append(edit,cancel);
+      if(Number.isSafeInteger(schedule.assignment_revision)&&['off','review','assigned'].includes(schedule.operator_assignment)){
+        const assigned=schedule.operator_assignment==='assigned',line=selectedNumber();
+        card.append(node('p','vp3-phone-meta',assigned?'Assigned to Operator. Automatic dialing is pending.':schedule.operator_assignment==='review'?'Schedule changed. Review the Operator assignment.':'Calendar reminder'));
+        if(schedule.operator_assignment==='review'){
+          const remove=button('Remove previous assignment',async event=>{
+            if(!event.isTrusted||!current(g)||phoneContactDraft!==draft||draft.saving||draft.dirty)return;
+            await changeAssignment(false);
+          });
+          remove.disabled=blocked;actions.append(remove);
+        }
+        const changeAssignment=async enable=>{
+          draft.saving=true;render();
+          try{
+            const result=await api('assign_scheduled_operator',{event_id:schedule.event_id,contact_id:draft.id,expected_revision:schedule.revision,
+              assignment_revision:schedule.assignment_revision,number_id:line?.id,expected_destination:draft.model.phone,expected_line:line?.phone_e164,enabled:enable},'POST',g);
+            if(result.assigned!==enable)throw phoneError('The assignment could not be confirmed.');
+            if(current(g)&&phoneContactDraft===draft)await loadPhoneContact(draft);
+          }catch(error){if(current(g)&&phoneContactDraft===draft)draft.feedback=error.phonePublicMessage||'Reload the contact to check its Operator assignment.';}
+          finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
+        };
+        const assign=button(assigned?'Remove Operator assignment':'Assign schedule to Operator',async event=>{
+          if(!event.isTrusted||!current(g)||phoneContactDraft!==draft||draft.saving||draft.dirty)return;
+          if(!assigned&&!window.confirm('Assign every occurrence of this schedule to Operator, calling '+draft.model.phone+' from '+line.phone_e164+'?'))return;
+          await changeAssignment(!assigned);
+        });
+        assign.disabled=blocked||(!assigned&&(!line||!schedule.objectives));actions.append(assign);
+      }
       if(!schedule.editable)card.append(node('p','vp3-phone-empty','This event has additional Calendar details. Open it in Calendar to edit.'));
       const link=node('a','vp3-phone-report','Open in Calendar');link.href=schedule.url;card.append(actions,link);
       if(draft.cancelId===schedule.event_id){
