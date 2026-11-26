@@ -53,6 +53,7 @@ jobs:
           node tests/homeserver-model-inventory-settings-v1.mjs
           node tests/homeserver-model-inventory-api-v1.mjs
           php tests/coding-canvas-model-v1.php
+          php tests/agent-specialist-model-v1.php
           node tests/coding-canvas-settings-api.mjs
           php tests/ai-credential-recovery-page.php
           php tests/cloud-provider-preservation.php
