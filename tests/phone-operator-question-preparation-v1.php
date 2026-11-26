@@ -87,8 +87,8 @@ $pdo->exec("UPDATE phone_voice_calls_v130 SET state='completed' WHERE owner_user
 $pdo->exec('DELETE FROM phone_operator_carrier_attempts_v1');$pdo->exec('DELETE FROM phone_operator_occurrences_v1');$pdo->exec('DELETE FROM phone_operator_scheduled_assignments_v1');$pdo->exec('DELETE FROM user_calendar_events');$pdo->exec('DELETE FROM agent_scheduling_bookings');
 ddl("CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY AUTOINCREMENT,call_sid VARCHAR(40),step_number INTEGER,owner_user_id INTEGER,agent_id INTEGER,speech_hash TEXT,speech_text TEXT,response_text TEXT,state VARCHAR(24),created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(call_sid,step_number))");
 $pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=?,updated_epoch=?,ended_epoch=?,intent_consumed_epoch=? WHERE id=?')->execute([$now-7200,$now-7180,$now-7180,$now-7200,$ctx['id']]);
-$settings=array_replace(vp3_operator_auto_call_defaults_v1(),['window_start'=>'00:00','window_end'=>'23:59','max_calls_per_day'=>3,'min_gap_minutes'=>60]);
-$permission=['agent_id'=>0,'conversation_id'=>11,'contact_id'=>$ctx['contact'],'number_id'=>1,'expected_revision'=>0,'expected_destination'=>$ctx['peer'],'expected_line'=>$line['phone_e164'],'settings'=>$settings,'enabled'=>true];
+$callingSettings=array_replace(vp3_operator_auto_call_defaults_v1(),['window_start'=>'00:00','window_end'=>'23:59','max_calls_per_day'=>3,'min_gap_minutes'=>60]);
+$permission=['agent_id'=>0,'conversation_id'=>11,'contact_id'=>$ctx['contact'],'number_id'=>1,'expected_revision'=>0,'expected_destination'=>$ctx['peer'],'expected_line'=>$line['phone_e164'],'settings'=>$callingSettings,'enabled'=>true];
 vp3_operator_auto_call_save_v1($pdo,$ctx['scope'],$permission);
 $attest=array_intersect_key($permission,array_flip(['agent_id','conversation_id','contact_id','number_id','expected_destination','expected_line']));$attest+=['decision'=>'attest','expected_revision'=>1,'expected_consent_revision'=>0,'purpose'=>'follow_up','recipient_agreement_attested'=>true];
 vp3_operator_consent_save_v1($pdo,$ctx['scope'],$attest,$now);
