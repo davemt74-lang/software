@@ -1,12 +1,13 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-operator-live-assist-v1.php';
 
 /** Optional metadata-only live caption session storage; install explicitly. */
 function vp3_operator_live_schema_ready_v1(PDO $pdo): bool
 {
     try {
         $pdo->query('SELECT call_id,owner_user_id,agent_id,chat_agent_id,conversation_id,number_id,policy_revision,token_hash,state,consent_epoch,expires_epoch,reserved_seconds,next_seq,pending_seq,last_dispatch_epoch FROM phone_operator_live_sessions_v1 WHERE 1=0');
-        return true;
+        return vp3_operator_live_assist_ready_v1($pdo);
     } catch(PDOException) {return false;}
 }
 function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
@@ -20,6 +21,7 @@ function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
         consent_epoch BIGINT NOT NULL,expires_epoch BIGINT NOT NULL,reserved_seconds INTEGER NOT NULL DEFAULT 0,
         next_seq INTEGER NOT NULL DEFAULT 1,pending_seq INTEGER NOT NULL DEFAULT 0,last_dispatch_epoch BIGINT NOT NULL DEFAULT 0
     )".$suffix);
+    vp3_operator_live_assist_install_v1($pdo);
     if(!vp3_operator_live_schema_ready_v1($pdo))throw new RuntimeException('Live caption metadata installation failed.');
     if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_phone_operator_live_owner_v1 ON phone_operator_live_sessions_v1(owner_user_id,consent_epoch)');
