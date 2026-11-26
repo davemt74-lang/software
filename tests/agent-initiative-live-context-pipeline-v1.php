@@ -296,7 +296,7 @@ $models=count($GLOBALS['scopeInference']);
 $GLOBALS['scopeBeforeRoute']=static function()use($preflightClaim):void{
     $q=db()->prepare('SELECT progress_message FROM agent_workflow_runs WHERE id=?');
     $q->execute([$preflightClaim['run_id']]);
-    if($q->fetchColumn()!=='Brainstorming useful opportunities.')return;
+    if($q->fetchColumn()!=='Assessing priorities across specialists.')return;
     unset($GLOBALS['scopeBeforeRoute']);
     db()->exec("UPDATE agent_activity_state SET details_json='{' WHERE user_id=1");
 };

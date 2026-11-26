@@ -1800,7 +1800,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             default=>'Preparing a verified private next step.',
         };
         $inferenceStage=$planning
-            ?($canvasDiscovery?'Brainstorming a private Canvas concept.':'Brainstorming useful opportunities.')
+            ?($canvasDiscovery?'Brainstorming a private Canvas concept.':'Assessing priorities across specialists.')
             :$workStage;
         $infer=static function(string $prompt,string $protocol)use($pdo,&$live,$binding,$payload,$run,$provider,$checkLease,$stage,$inferenceStage,$model,$beforeInference):string{
             if($pdo->inTransaction())throw new RuntimeException('Initiative inference cannot hold a database transaction.');

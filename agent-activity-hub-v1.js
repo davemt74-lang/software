@@ -10,7 +10,7 @@
     {title:'Continue',ids:['recording','history','youtube','songs']},
     {title:'Agent work',ids:['missions','canvases','suggestions','gmail_outcomes']}
   ];
-  const workspaceSources = {planning:['calendar','appointments'],coding:['canvas_suggestions','canvases'],mission:['missions'],brainstorm:['suggestions'],marketing:['marketing']};
+  const workspaceSources = {planning:['calendar','appointments'],coding:['canvas_suggestions','canvases'],mission:['missions'],ob1:['suggestions'],brainstorm:['suggestions'],marketing:['marketing']};
   const canvasSuggestionStates = {considered:'Idea',queued:'Proposal queued',working:'Preparing a proposal',pending:'Ready to post in Chat',
     proposal_ready:'Awaiting your review',discussed:'Discussed in Chat',draft_queued:'Private draft requested',
     draft_ready:'Private draft ready',draft_failed:'Draft generation failed'};
@@ -145,7 +145,7 @@
     catch { return ''; }
   }
   const leaseCurrent = value => Date.parse(value) > Date.now();
-  const coordinationInReview = () => ['brainstorming','planning','analyzing'].includes(snapshot?.coordination?.phase)
+  const coordinationInReview = () => ['brainstorming','planning','analyzing','reviewing','coordinating'].includes(snapshot?.coordination?.phase)
     && (!snapshot.coordination.lease_expires_at || leaseCurrent(snapshot.coordination.lease_expires_at));
   function scope(allowPending = false) {
     const chat = window.STONEFELLOW_CHAT;
@@ -726,11 +726,11 @@
       if (url && positive(current.cid)) mountSettingsFrame(view,current,url,
         {tab:'settings',agent:current.agent,conversation_id:current.cid},'Scheduling settings',`${url}?tab=settings`);
     }
-    if (key === 'coding' || key === 'brainstorm' || key === 'mission') {
+    if (key === 'coding' || key === 'ob1' || key === 'mission') {
       const content = node('section','','vp3-agent-activity-native-controls');
       view.body.append(content);
       const cleanup = key === 'coding' ? window.VP3CodingAgentSettings?.mount?.(content)
-        : key === 'brainstorm' ? window.VP3_COGNITIVE_PRESENTATION?.mountInitiativeSettings?.(content)
+        : key === 'ob1' ? window.VP3_COGNITIVE_PRESENTATION?.mountInitiativeSettings?.(content)
           : window.VP3AgentMissionsV1?.mountSettings?.(content);
       if (typeof cleanup === 'function') view.cleanups.push(cleanup);
       else content.remove();
@@ -1614,7 +1614,7 @@
       || recentListeningItems(1).length)) {
       rows.set('media',{id:'media',state:'checked',progress:null,entries:[]});
     }
-    if (coordinationInReview()) rows.delete('brainstorm');
+    if (coordinationInReview()) rows.delete('ob1');
     return rows;
   }
   function renderSpecialists() {
@@ -1633,7 +1633,7 @@
         if (value) specialistsHost.querySelector(`[data-${attribute}="${CSS.escape(value)}"]`)?.focus({preventScroll:true});
       }
       if (!revealSpecialist) return;
-      const target = selected === 'brainstorm' && coordinationInReview() ? coordinationHost : specialistsHost.querySelector('.selected');
+      const target = selected === 'ob1' && coordinationInReview() ? coordinationHost : specialistsHost.querySelector('.selected');
       if (target) {
         revealSpecialist = false;
         target.scrollIntoView({block:'nearest'});
@@ -1734,7 +1734,7 @@
         const copy = itemCopy(title,entryStatus,'specialist:'+entry.key+':status');
         if (entry.detail) copy.append(itemDetail(entry.detail,'specialist:'+entry.key+':detail',entry.label || name));
         const actions = node('div','','vp3-agent-activity-actions');
-        if (entry.canView === true && entry.key !== 'brainstorm' && (specialistMode || entry.key !== 'connected-sites')) actions.append(button(entry.viewLabel || 'View in Chat',event => {
+        if (entry.canView === true && entry.key !== 'ob1' && (specialistMode || entry.key !== 'connected-sites')) actions.append(button(entry.viewLabel || 'View in Chat',event => {
           if (!event.isTrusted || signature(current) !== signature(scope())) return;
           const viewed = specialistMode ? window.VP3ChatSpecialists?.view?.(entry.key)
             : window.VP3AgentOrb?.viewActivitySpecialist?.(entry.key) ?? window.VP3ChatSpecialists?.view?.(entry.key);
@@ -1761,8 +1761,8 @@
   }
   function renderCoordination() {
     coordinationHost.replaceChildren();
-    if (specialistMode && family(selectedSpecialist) !== 'brainstorm') return;
-    coordinationHost.classList.toggle('selected',family(selectedSpecialist) === 'brainstorm' && coordinationInReview());
+    if (specialistMode && family(selectedSpecialist) !== 'ob1') return;
+    coordinationHost.classList.toggle('selected',family(selectedSpecialist) === 'ob1' && coordinationInReview());
     const coordination = snapshot?.coordination;
     const coordinationLabels = window.VP3TopOfMindFeedV1?.coordinationLabels;
     if (!coordinationLabels || !Object.hasOwn(coordinationLabels,coordination?.phase)) return;
@@ -1770,7 +1770,7 @@
     const phase = expired ? 'waiting' : coordination.phase;
     const detail = expired ? 'Waiting for the next verified update.' : coordination.detail;
     coordinationHost.dataset.phase = phase;
-    coordinationHost.append(node('strong',specialistMode ? 'Current assessment' : 'ob1 coordination'),node('span',coordinationLabels[phase]));
+    coordinationHost.append(node('strong',specialistMode ? 'Current assessment' : 'OB1 coordination'),node('span',coordinationLabels[phase]));
     if (typeof detail === 'string' && detail) coordinationHost.append(node('small',detail.slice(0,400)));
     if (!expired && (specialistMode || !snapshot.summary?.overview) && typeof coordination.finding === 'string' && coordination.finding) {
       coordinationHost.append(node('small',coordination.finding.slice(0,500)));
