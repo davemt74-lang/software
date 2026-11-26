@@ -618,7 +618,7 @@ try{
    await schedule.getByLabel('First call date',{exact:true}).fill('2026-12-03');await schedule.getByLabel('Call time',{exact:true}).fill('17:15');await schedule.getByLabel('Time zone',{exact:true}).fill('UTC');
    await schedule.getByLabel('Repeat',{exact:true}).selectOption('daily');await schedule.getByLabel('Call notes and objectives',{exact:true}).fill('Review progress\nAgree the next step.');
    await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());assert.equal(await schedule.getByLabel('Repeat',{exact:true}).inputValue(),'daily');
-   assert.match(await page.locator('.vp3-phone-panel').innerText(),/Automatic dialing is not enabled/);assert.equal(apiCalls.some(call=>call.action==='save_phone_contact_schedule'),false);
+   assert.match(await page.locator('.vp3-phone-panel').innerText(),/assign it to Operator for a scheduled agent call/);assert.equal(apiCalls.some(call=>call.action==='save_phone_contact_schedule'),false);
    await schedule.getByLabel('Repeat',{exact:true}).scrollIntoViewIfNeeded();await fs.mkdir(path.join(root,'tests/artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-contact-schedule-'+viewport.width+'.png')});
    assert.equal(await page.locator('.vp3-phone-panel').evaluate(node=>node.scrollWidth<=node.clientWidth+1),true);
    await schedule.getByRole('button',{name:'Save scheduled call',exact:true}).click();await page.getByText('Every day',{exact:true}).waitFor();
