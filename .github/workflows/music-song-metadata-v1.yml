@@ -118,12 +118,16 @@ jobs:
           MUSIC_TEST_MYSQL_PASSWORD: music-test-only
         run: php tests/music-listening-mysql-v1.php
       - name: Install browser fixture runtime
+        id: browser_runtime
+        if: ${{ !cancelled() }}
         run: |
           npm install --no-save --ignore-scripts --package-lock=false playwright@1.62.1
           npx playwright install --with-deps chromium
       - name: Desktop and phone metadata editor
+        if: ${{ !cancelled() && steps.browser_runtime.outcome == 'success' }}
         run: node tests/music-song-metadata-browser-v1.mjs
       - name: Native player listening recovery
+        if: ${{ !cancelled() && steps.browser_runtime.outcome == 'success' }}
         run: node tests/music-listening-browser-v1.mjs
       - name: Save music browser review images
         if: always()

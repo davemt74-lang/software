@@ -34,7 +34,9 @@ try {
     $foreignKeys = (int)$pdo->query("SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
         WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME IN ('music_listening_sessions_v1','music_listening_receipts_v1')")->fetchColumn();
     music_song_test_check($foreignKeys>=2,'MySQL native listening FK constraints were not installed.');
-    music_song_test_check($pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES)===false,'MySQL fixture unexpectedly used emulated statements.');
+    // PDO MySQL can return integer 0 for a disabled boolean driver attribute.
+    // Accept only its two false representations; emulation must remain off.
+    music_song_test_check(in_array($pdo->getAttribute(PDO::ATTR_EMULATE_PREPARES),[false,0],true),'MySQL fixture unexpectedly used emulated statements.');
     echo "MUSIC_LISTENING_MYSQL_V1=PASS native MySQL DDL/unsigned FKs, strict prepares, migration/rerun, timing bounds, exact receipts, sequence/account authority, actual trigger rollback/savepoints, history and asset-version preservation\n";
 } finally {
     if ($pdo->inTransaction()) $pdo->rollBack();
