@@ -234,6 +234,7 @@ jobs:
           node tests/agent-presence-browser.mjs
       - name: Connected Initiative in normal Agent Chat
         run: |
+          php tests/agent-initiative-roles-v1.php
           php tests/agent-initiative-brainstorm-v1.php
           php tests/agent-initiative-brainstorm-pipeline-v1.php
           php tests/agent-initiative-opportunity-sources-v1.php

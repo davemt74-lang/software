@@ -62,7 +62,7 @@ const server=http.createServer((req,res)=>{
       window.foreground='idle';window.listenCalls=0;window.stopCalls=0;window.sent=0;window.selected=null;window.hubOpened=[];window.specialistOpened=[];
       window.VP3ParticipantContinuity={selectedContext:()=>window.selected,snapshot:()=>null,clearSelection:()=>{},setSelection:value=>{window.selected=value;},updatePresence:()=>{}};
       window.VP3AgentActivityHub={open:options=>{window.hubOpened.push(options);return true;},
-        openSpecialist:key=>{window.specialistOpened.push(key);return key!=='brainstorm';}};
+        openSpecialist:key=>{window.specialistOpened.push(key);return key!=='ob1';}};
       window.VP3_ORB_CONFIG={ownerKey:'1',agentId:7,workingAttentionBinding:'private-session',shape:'orbit',topOfMindEndpoint:${url.searchParams.has('work')?"'/api/top-of-mind'":"''"}};
       ${url.searchParams.has('configured')?`window.VP3_CHAT_SPECIALIST_PRESENCE={owner_user_id:${url.searchParams.get('configured')==='other'?2:1},agent_id:7,states:{media:'idle',research:'idle','image-generator':'idle',coding:'idle',development:'paused',mission:'idle'}};`:''}
       ${chat?`window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'private-session'};
@@ -123,18 +123,18 @@ try{
     }
   });
   await check('A real assessment opens current work in the shared rail and closes when it stops',async()=>{
-    const specialist=main.locator('[data-chat-specialist="brainstorm"]');
-    const panel=main.getByRole('dialog',{name:'Opportunity Agent'});
+    const specialist=main.locator('[data-chat-specialist="ob1"]');
+    const panel=main.getByRole('dialog',{name:'OB1'});
     await specialist.waitFor();
     assert.deepEqual(await main.evaluate(()=>VP3ChatSpecialists.snapshot().map(item=>[item.key,item.label,item.status,item.detail,item.canView])),[
-      ['brainstorm','Opportunity Agent','Working','Brainstorming useful opportunities',false]
+      ['ob1','OB1','Working','Brainstorming useful opportunities',false]
     ]);
     assert.equal(await main.locator('.vp3-chat-specialist-panel').count(),0);
     assert.equal(await main.evaluate(()=>hubOpened.length),0);
     await specialist.click();
     await panel.waitFor();
     assert.equal(await specialist.getAttribute('aria-expanded'),'true');
-    assert.match(await panel.textContent(),/Top of Mind brainstorm/);
+    assert.match(await panel.textContent(),/Specialist coordination/);
     assert.match(await panel.textContent(),/Brainstorming useful opportunities/);
     assert.deepEqual(await main.evaluate(()=>hubOpened),[]);
     await main.evaluate(job=>VP3AgentOrb.setJobs('initiative',[job]),{
@@ -143,7 +143,7 @@ try{
     await panel.getByText('Reviewing the current plan',{exact:true}).waitFor();
     assert.equal(await panel.getByText('Brainstorming useful opportunities',{exact:true}).count(),0);
     assert.equal(await panel.getByRole('button',{name:'Open Top of Mind'}).count(),0);
-    assert.deepEqual(await main.evaluate(()=>specialistOpened),['brainstorm']);
+    assert.deepEqual(await main.evaluate(()=>specialistOpened),['ob1']);
     await panel.getByRole('button',{name:'Close',exact:true}).click();
     await specialist.click();
     await main.evaluate(()=>{
@@ -161,6 +161,21 @@ try{
     assert.equal(await main.evaluate(()=>listenCalls),listensBefore);
     assert.equal(await main.locator('#vp3AgentChatPopup').isVisible(),false);
   });
+  await check('Creative specialist assessments do not impersonate OB1 or remove Brainstorming work',async()=>{
+    await main.evaluate(()=>VP3ChatSpecialists.update('brainstorm',{
+      label:'Brainstorming',status:'Working',detail:'Exploring a useful image idea.'
+    }));
+    for(const specialist of ['app-suggestions','research','brainstorm']){
+      await main.evaluate(job=>VP3AgentOrb.setJobs('initiative',[job]),{...activeJob(),specialist});
+      assert.equal(await main.evaluate(()=>VP3AgentOrb.isWorking()),true);
+      assert.equal(await main.locator('[data-chat-specialist="ob1"]').count(),0);
+      assert.equal(await main.locator('[data-chat-specialist="brainstorm"]').count(),1);
+    }
+    await main.evaluate(()=>{
+      VP3ChatSpecialists.remove('brainstorm');
+      VP3AgentOrb.setJobs('initiative',[]);
+    });
+  });
   await check('Terminal, expired, invalid and paused work cannot leave a Working dot behind',async()=>{
     await main.evaluate(()=>{
       window.foreground='listening';
@@ -171,7 +186,7 @@ try{
     await main.waitForFunction(()=>!VP3AgentOrb.isWorking());
     assert.equal(await main.evaluate(()=>VP3AgentOrb.isWorking()),false);
     assert.equal(await main.locator('[data-orb-voice-state]').textContent(),'Listening');
-    assert.equal(await main.locator('[data-chat-specialist="brainstorm"]').count(),0);
+    assert.equal(await main.locator('[data-chat-specialist="ob1"]').count(),0);
     await main.evaluate(()=>VP3AgentOrb.setJobs('initiative',[
       {id:'workflow:31',kind:'assessment',expiresAt:Date.now()-1},
       {id:'image:wrong-source',expiresAt:Date.now()+10000},
@@ -190,8 +205,8 @@ try{
       try{
         await page.evaluate(job=>VP3AgentOrb.setJobs('initiative',[job]),activeJob());
         await page.locator('[data-working="true"]').waitFor();
-        await page.locator('[data-chat-specialist="brainstorm"]').click();
-        const panel=page.getByRole('dialog',{name:'Opportunity Agent'});
+        await page.locator('[data-chat-specialist="ob1"]').click();
+        const panel=page.getByRole('dialog',{name:'OB1'});
         await panel.waitFor();
         await page.evaluate(kind=>{
           if(kind==='participant'){window.selected={participant_id:8};dispatchEvent(new Event('vp3:participant-selection-changed'));}
@@ -203,7 +218,7 @@ try{
         await panel.waitFor({state:'detached'});
         await page.evaluate(job=>VP3AgentOrb.setJobs('initiative',[job]),activeJob());
         assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),false);
-        assert.equal(await page.locator('[data-chat-specialist="brainstorm"]').count(),0);
+        assert.equal(await page.locator('[data-chat-specialist="ob1"]').count(),0);
       }finally{await page.close();}
     }
   });
@@ -221,10 +236,10 @@ try{
       assert.equal(await page.locator('[data-orb-voice-state]').textContent(),'Listening · Working');
       await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();
       assert.equal(await page.evaluate(()=>VP3AgentOrb.isWorking()),true);
-      assert.equal(await page.evaluate(()=>VP3AgentOrb.activitySpecialists().some(item=>item.key==='brainstorm')),true);
+      assert.equal(await page.evaluate(()=>VP3AgentOrb.activitySpecialists().some(item=>item.key==='ob1')),true);
       await frame.evaluate(()=>dispatchEvent(new Event('stonefellow:chat-context-changing')));
       await page.waitForFunction(()=>!VP3AgentOrb.isWorking());
-      assert.equal(await page.evaluate(()=>VP3AgentOrb.activitySpecialists().some(item=>item.key==='brainstorm')),false);
+      assert.equal(await page.evaluate(()=>VP3AgentOrb.activitySpecialists().some(item=>item.key==='ob1')),false);
       for(const patch of [{epoch:0},{agent_id:8},{ownerKey:'2'},{working_attention_binding:'other'},{participant:true}]){
         await frame.evaluate(patch=>parent.postMessage({channel:'vp3-orb',kind:'jobs',ownerKey:'1',source:'initiative',jobs:[{id:'workflow:90',kind:'assessment',expiresAt:Date.now()+30000}],activity_context:{ownerKey:'1',agent_id:7,conversation_id:42,working_attention_binding:'private-session',ready:true,participant:false,epoch:1,...patch}},location.origin),patch);
         await page.waitForTimeout(30);
@@ -472,7 +487,7 @@ try{
         await page.clock.fastForward(2600);
         await page.waitForFunction(()=>!VP3AgentOrb.isWorking());
         assert.equal(await page.locator('[data-orb-work-tracks]').count(),0);
-        assert.equal(await page.evaluate(()=>VP3ChatSpecialists.snapshot().some(item=>item.key==='brainstorm')),false);
+        assert.equal(await page.evaluate(()=>VP3ChatSpecialists.snapshot().some(item=>item.key==='ob1')),false);
         if(mode==='forbidden'){
           const before=workRequests.length;
           await page.clock.fastForward(8100);
