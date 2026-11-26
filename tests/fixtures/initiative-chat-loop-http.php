@@ -88,6 +88,11 @@ function ai_generate_chat_response(string $prompt,array $history,array $context,
     db()->prepare('INSERT INTO fixture_model_calls(protocol,prompt) VALUES(?,?)')->execute([$protocol,$prompt]);
     if(str_contains($prompt,'SYSTEM SECRET')||str_contains($prompt,'FOREIGN SECRET'))throw new RuntimeException('Private fixture evidence crossed the principal boundary.');
     $input=json_decode($prompt,true,32,JSON_THROW_ON_ERROR);
+    if($protocol==='vp3.initiative-plan.v1'&&($input['role']??null)==='brainstorm'){
+        // Independent creative work returns ideas privately; this host fixture
+        // supplies no additional idea and must never impersonate the OB1 planner.
+        return ['ok'=>true,'answer'=>'{"jobs":[],"opportunities":[]}'];
+    }
     if(getenv('VP3_INITIATIVE_HTTP_GMAIL_FRESH')==='1'){
         return ['ok'=>true,'answer'=>json_encode(initiative_http_gmail_model_v1($protocol,$input),JSON_THROW_ON_ERROR)];
     }
@@ -284,6 +289,16 @@ function initiative_http_checkin_scenario_v1():never
 {
     $body=json_decode((string)file_get_contents('php://input'),true,16,JSON_THROW_ON_ERROR);
     if($_SERVER['REQUEST_METHOD']!=='POST'||!hash_equals(csrf_token(),(string)($body['csrf_token']??''))){http_response_code(419);exit;}
+    if(isset($body['age_delivery_run_id'])){
+        // Advancing Chromium timers does not advance the PHP retry clock.
+        $q=db()->prepare("UPDATE agent_workflow_actions SET updated_at=? WHERE owner_user_id=1 AND run_id=?
+            AND capability_key='initiative.prepare' AND status='completed'
+            AND JSON_EXTRACT(result_json,'$.initiative_delivery')='pending'
+            AND JSON_EXTRACT(result_json,'$.initiative_tool_result.output.type')='initiative_chat_check_in'");
+        $q->execute([gmdate('Y-m-d H:i:s',time()-31),(int)$body['age_delivery_run_id']]);
+        if($q->rowCount()!==1)throw new RuntimeException('The exact pending check-in retry was not aged.');
+        header('Content-Type:application/json');echo '{"ok":true}';exit;
+    }
     db()->exec("UPDATE fixture_controls SET scenario='check_in' WHERE id=1;
         UPDATE agent_memory_items SET memory_text='The launch now needs an owner decision about the promotion plan.' WHERE id=100");
     header('Content-Type:application/json');echo '{"ok":true}';exit;

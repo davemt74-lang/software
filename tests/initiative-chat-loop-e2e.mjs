@@ -735,7 +735,10 @@ try{
 }
 
 async function verifyBrainLoop(page,writes,responses,errors){
-  const brainCalls = state => state.model_calls.filter(row=>JSON.parse(row.prompt).response_kind!=='office_entry_review');
+  const brainCalls = state => state.model_calls.filter(row=>{
+    const input=JSON.parse(row.prompt);
+    return input.response_kind!=='office_entry_review'&&input.role!=='brainstorm';
+  });
   const unopened=await page.request.get(base),markup=await unopened.text();
   const rendered=JSON.parse(markup.match(/window\.STONEFELLOW_CHAT=(.*?);window\.VP3_COGNITIVE_PRESENTATION_V510=/)[1]);
   const pureHealth=await page.request.get(base+'/api/cognitive-presentation-v510.php?action=state&agent_id=7&conversation_id=11&include_working_attention=0&include_live_context=1&include_initiative_runtime=1',{
@@ -810,10 +813,22 @@ async function verifyBrainLoop(page,writes,responses,errors){
   assert.equal(writes.some(write=>write.action==='initiative_setting'),false,'core activation uses accepted activity, not an Enable mutation');
   assert.deepEqual(state.policy.knowledge_scope,{mode:'off',folder_id:0});
   assert.deepEqual(brainCalls(state).map(row=>row.protocol),['vp3.initiative-plan.v1','vp3.initiative-draft.v1']);
-  const brainRuns=state.runs.filter(row=>JSON.parse(row.goal).office_entry!==true);
+  const brainRuns=state.runs.filter(row=>{
+    const goal=JSON.parse(row.goal);return goal.office_entry!==true&&goal.tool!=='brainstorm.explore';
+  });
   const brainReceipts=state.receipts.filter(row=>brainRuns.some(run=>run.id===row.run_id));
   assert.equal(brainRuns.length,2);assert.ok(brainRuns.every(row=>row.agent_id===7&&row.status==='completed'));
   assert.equal(brainReceipts.length,2);assert.ok(brainReceipts.every(row=>row.status==='completed'));
+  const creativeRuns=state.runs.filter(row=>JSON.parse(row.goal).tool==='brainstorm.explore');
+  assert.ok(creativeRuns.length<=1,'Independent creative work shares canonical unchanged-context dedupe.');
+  for(const run of creativeRuns.filter(row=>row.status==='completed')){
+    const receipt=state.receipts.find(row=>row.run_id===run.id&&row.status==='completed');
+    assert.ok(receipt,'A completed creative check retains its canonical receipt.');
+    const result=JSON.parse(receipt.result_json);
+    assert.equal(result.initiative_delivery,'private');
+    assert.equal(result.initiative_tool_result.output.type,'initiative_brainstorm_report');
+    assert.deepEqual(result.initiative_tool_result.output.ideas,[]);
+  }
   assert.equal(state.reports.length,1);
   const stored=state.reports[0],context=JSON.parse(stored.context_json);
   assert.equal(stored.conversation_id,11);assert.ok(stored.message.length>490);
@@ -873,15 +888,18 @@ async function verifyBrainLoop(page,writes,responses,errors){
   assert.equal((await fixtureJson(await checkinPrepared)).reason,'completed');
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
   assert.equal(brainCalls(state).length,4);
-  const pendingCheckin=state.actions.map(row=>JSON.parse(row.result_json||'{}'))
-    .find(result=>result.initiative_tool_result?.output?.type==='initiative_chat_check_in');
-  assert.ok(pendingCheckin,'the real check-in tool prepared a revision-bound result');
+  const pendingCheckinRow=state.actions.find(row=>JSON.parse(row.result_json||'{}').initiative_tool_result?.output?.type==='initiative_chat_check_in');
+  assert.ok(pendingCheckinRow,'the real check-in tool prepared a revision-bound result');
+  const pendingCheckin=JSON.parse(pendingCheckinRow.result_json);
   assert.equal(pendingCheckin.initiative_delivery,'pending');
   assert.equal(state.reports.length,1,'the explicitly deferred check-in remains private during the owner draft');
   await page.getByRole('button',{name:'Send',exact:true}).click();
   await page.getByText('I have saved your new direction.',{exact:true}).waitFor();
   deferCheckinDelivery=false;
+  await fixtureJson(await page.request.post(base+'/fixture-checkin',{data:{csrf_token:'fixture',age_delivery_run_id:pendingCheckinRow.run_id}}));
+  const revalidatedCheckin=initiativeTick(page);
   await page.clock.fastForward(17000);
+  await fixtureJson(await revalidatedCheckin);
   state=await page.evaluate(async()=>fetch('/fixture-state').then(r=>r.json()));
   const withheldCheckin=state.actions.map(row=>JSON.parse(row.result_json||'{}'))
     .find(result=>result.initiative_tool_result?.output?.type==='initiative_chat_check_in');
