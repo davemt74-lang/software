@@ -11,10 +11,10 @@
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const labels={working:'Working',queued:'Queued',interrupted:'Interrupted — worker lease expired',failed:'Failed',superseded:'Sources changed. Waiting for the next review.',cancelled:'Cancelled',paused:'Paused',unknown:'Status unknown',unverified:'Completion not verified',withheld:'Withheld — source or conversation changed',waiting_owner:'Waiting for your review',ready_to_report:'Prepared — waiting to report',completed:'Completed private preparation',assessed:'Assessment complete'};
   const specialistNames={gmail:'Gmail',planning:'Planning & Scheduling',tasks:'Tasks & Lists',
-    media:'Media & Entertainment',curiosity:'Curiosity',transcripts:'Transcriptions',canvas:'Canvas Apps',casual:'Casual check-ins',research:'Research',brainstorm:'Opportunity assessment','image-generator':'Image Generator',
+    media:'Media & Entertainment',curiosity:'Curiosity',transcripts:'Transcriptions',canvas:'Canvas Apps',casual:'Casual check-ins',research:'Research',ob1:'OB1',brainstorm:'Brainstorming','image-generator':'Image Generator',
     coding:'Coding Agent',development:'Agent Development',mission:'Missions','connected-sites':'Connected Sites',
     marketing:'Marketing',commerce:'Commerce',profile:'Profile',location:'Location Specialist',operator:'Operator Specialist'};
-  const handoffNames={...specialistNames,brainstorm:'ob1',transcripts:'Transcripts',commerce:'Commerce'};
+  const handoffNames={...specialistNames,ob1:'OB1',transcripts:'Transcripts',commerce:'Commerce'};
   function handoffLabel(handoff){
     const known=id=>typeof id==='string'&&Object.hasOwn(handoffNames,id);
     if(!known(handoff?.to)||!Array.isArray(handoff.from)||!handoff.from.length||handoff.from.length>5
@@ -31,7 +31,7 @@
   const coordinationLabels={brainstorming:'Brainstorming',planning:'Planning',acting:'Acting',analyzing:'Analyzing',
     reviewing:'Reviewing',coordinating:'Coordinating',
     presenting:'Presenting',checked:'Checked',waiting:'Waiting',idle:'Idle',paused:'Paused',unavailable:'Unavailable'};
-  const localSpecialists=['research','brainstorm','image-generator','coding','development','mission','connected-sites','transcripts'];
+  const localSpecialists=['research','ob1','brainstorm','image-generator','coding','development','mission','connected-sites','transcripts'];
   const localState={running:'working',working:'working',thinking:'thinking',queued:'queued',paused:'paused',
     ready:'ready',completed:'completed',failed:'failed',waiting_specialist:'waiting_specialist',waiting_owner:'waiting_owner'};
   const activeSpecialist=state=>state==='thinking'||state==='working';
@@ -670,7 +670,7 @@
           specialists.delete('brainstorm');
           for(const item of snapshot.items)if(item.kind==='assessment'&&item.state==='working')groupedRuns.add(item.run_id);
           markup+=`<section class="agent-top-of-mind-context agent-top-of-mind-coordination" aria-label="Agent coordination">
-            <strong>ob1 coordination</strong><span>${coordinationLabels[coordination.phase]}</span>
+            <strong>OB1 coordination</strong><span>${coordinationLabels[coordination.phase]}</span>
             ${typeof coordination.detail==='string'&&coordination.detail?`<small>${esc(coordination.detail)}</small>`:''}
             ${typeof coordination.finding==='string'&&coordination.finding?`<small>${esc(coordination.finding)}</small>`:''}</section>`;
         }

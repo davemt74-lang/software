@@ -148,13 +148,13 @@ $model=static function(string $prompt,string $protocol)use(&$calls,&$duplicate,$
     runtime_check($activeJobs===
         [['id'=>'workflow:'.$lease['id'],'expiresAt'=>$expiresAt*1000,
             'kind'=>$protocol==='vp3.initiative-plan.v1'?'assessment':'preparation',
-            'step'=>$protocol==='vp3.initiative-plan.v1'?'Brainstorming useful opportunities':'Preparing a private next step',
-            'coordination_phase'=>$protocol==='vp3.initiative-plan.v1'?'brainstorming':'acting']],
+            'step'=>$protocol==='vp3.initiative-plan.v1'?'Coordinating specialist findings':'Preparing a private next step',
+            'coordination_phase'=>$protocol==='vp3.initiative-plan.v1'?'planning':'acting']],
         'read-only status projects the exact active workflow lease and safe actual work kind');
-    runtime_check(($executing['active_jobs'][0]['phase']??null)===($protocol==='vp3.initiative-plan.v1'?'brainstorming':'preparing')
+    runtime_check(($executing['active_jobs'][0]['phase']??null)===($protocol==='vp3.initiative-plan.v1'?'coordinating':'preparing')
         &&strtotime($executing['active_jobs'][0]['at']??'')>0
         &&array_keys($executing['active_jobs'][0])===['id','expiresAt','kind','step','coordination_phase','phase','at','specialist']
-        &&($protocol!=='vp3.initiative-plan.v1'||$executing['active_jobs'][0]['specialist']==='brainstorm'),
+        &&($protocol!=='vp3.initiative-plan.v1'||$executing['active_jobs'][0]['specialist']==='ob1'),
         'the active-work projection includes its current phase and real timestamp');
     if($protocol==='vp3.initiative-plan.v1'){
         runtime_check($executing['latest_assessment_run']['run_id']===(int)$lease['id']
