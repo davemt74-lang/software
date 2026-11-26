@@ -51,6 +51,7 @@ function agent_connections_install_v1(PDO $pdo): void
     require_once __DIR__.'/agent-connection-email-chat-v1.php';
     require_once __DIR__.'/agent-connection-email-followup-v1.php';
     require_once __DIR__.'/agent-email-followthrough-v1.php';
+    require_once __DIR__.'/agent-email-preferences-schema-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-v1.php';
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
     require_once __DIR__.'/agent-email-matters-v1.php';
@@ -61,6 +62,7 @@ function agent_connections_install_v1(PDO $pdo): void
     agent_connection_email_draft_schema_v1($pdo);
     agent_connection_email_followup_install_v1($pdo);
     agent_email_followthrough_install_v1($pdo);
+    agent_email_preferences_install_v1($pdo);
     agent_connection_gmail_inbox_install_v1($pdo);
     agent_connection_gmail_inbox_receipts_install_v1($pdo);
     agent_connection_gmail_inbox_initial_install_v1($pdo);

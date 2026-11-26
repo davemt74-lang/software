@@ -211,6 +211,10 @@
       state.queueNext.disabled = Boolean(busy || !state.queueNextCursor);
       for (const control of state.queueRows.querySelectorAll('button')) control.disabled = Boolean(busy || control.dataset.emailUnavailable === 'true');
     }
+    if (state.writingPreferences) {
+      state.writingPreferences.root.hidden = state.editor.hidden;
+      state.writingPreferences.updateDraft(state.draft,{dirty:Boolean(dirty(state)),busy:Boolean(busy || state.imageWorking || locked)});
+    }
     state.shell.setAttribute('aria-busy',String(Boolean(state.busy)));
   }
   function valuesFromDraft(draft) {
@@ -589,6 +593,7 @@
     else if (state.draft) retained.delete(memoryKey(state));
     active = null;
     state.followRecord?.dispose();state.followRecord = null;
+    state.writingPreferences?.dispose();state.writingPreferencesClient?.dispose();
     state.controller.abort();clearTimeout(state.writeTimer);clearTimeout(state.imageTimer);
     state.shell.remove();canvas.hidden = true;
     if (popup.open) popup.close();
@@ -600,6 +605,10 @@
   }
   function navigate(state,action) {
     if (!current(state) || state.busy || state.uploading) return false;
+    if (state.writingPreferences?.isDirty() || state.writingPreferences?.isBusy()) {
+      void state.writingPreferences.requestClose().then(allowed => {if (allowed && current(state)) navigate(state,action);});
+      return false;
+    }
     if (!dirty(state)) { action();return true; }
     state.leave.hidden = false;state.leave.replaceChildren(node('p','Save your changes before leaving this email?'));
     const preserve = state.imageWorking
@@ -614,6 +623,8 @@
   function requestClose() {
     const state = active;
     if (!state || !current(state)) return Promise.resolve(true);
+    if (state.writingPreferences?.isDirty() || state.writingPreferences?.isBusy())
+      return state.writingPreferences.requestClose().then(allowed => allowed ? requestClose() : false);
     if (state.closePromise) return state.closePromise;
     if (state.busy || state.uploading || state.imageWorking) {
       setNotice(state,state.imageWorking ? 'Wait for your image or cancel its request before leaving this email.' : 'Wait for the current email action to finish.');
@@ -909,7 +920,7 @@
   }
   async function start(options = {}) {
     if (opening) return null;
-    if (active && (active.busy || active.uploading || dirty(active)) && !options.replace) {
+    if (active && (active.busy || active.uploading || dirty(active) || active.writingPreferences?.isDirty() || active.writingPreferences?.isBusy()) && !options.replace) {
       setNotice(active,'Finish or save the email you are editing before opening another draft.');return null;
     }
     opening = true;
@@ -926,7 +937,16 @@
         || options.conversation_id !== undefined && Number(options.conversation_id) !== currentScope.conversation_id) return null;
       if (active) release(active,{rememberEdits:!options.replace,returnToChat:false});
       const state = buildState(currentScope,options.surface === 'canvas' ? 'canvas' : 'popup');
-      active = state;popup.append(state.shell);changeSurface(state,state.surface);return state;
+      active = state;popup.append(state.shell);changeSurface(state,state.surface);
+      const preferences = window.VP3EmailWritingPreferencesV1;
+      if (preferences?.createClient && preferences?.mountComposer) {
+        const client = state.writingPreferencesClient = preferences.createClient({endpoint:cfg.endpoint,
+          context:{owner_key:owner,...state.scope,csrf_token:cfg.csrf},fixedDraftId:cfg.fixedDraftId,isCurrent:() => current(state),
+          onAccessChanged:() => {state.writingPreferences?.dispose();state.writingPreferences = null;privateAccessChanged({status:403});}});
+        state.writingPreferences = preferences.mountComposer({host:state.shell,request:client.request,isCurrent:() => current(state),
+          onDirtyChange:() => window.dispatchEvent(new Event('vp3:email-preferences-dirty'))});
+      }
+      return state;
     } catch { return null; }
     finally { opening = false; }
   }
@@ -1210,7 +1230,7 @@
   }
   popup.addEventListener('cancel',event => { event.preventDefault();if (active) navigate(active,() => release(active,{rememberEdits:false})); });
   popup.addEventListener('close',() => { if (!popup.open && active?.surface === 'popup') release(active); });
-  window.addEventListener('beforeunload',event => { if (active && dirty(active)) { event.preventDefault();event.returnValue = ''; } });
+  window.addEventListener('beforeunload',event => { if (active && (dirty(active) || active.writingPreferences?.isDirty())) { event.preventDefault();event.returnValue = ''; } });
   for (const name of ['stonefellow:chat-context-changing','vp3:participant-selection-changed']) window.addEventListener(name,() => {
     clearQueueSummary();
     if (active) release(active,{returnToChat:false});
@@ -1229,6 +1249,6 @@
   });
   window.addEventListener('resize',() => { if (active) resizeBody(active.body); });
   window.VP3EmailComposerV1 = Object.freeze({openCompose,openDraft,openDrafts,queueSummary,selectedDraft,matchInstruction,handleChatInstruction,
-    requestClose,isDirty:() => Boolean(active && current(active) && dirty(active)),
+    requestClose,isDirty:() => Boolean(active && current(active) && (dirty(active) || active.writingPreferences?.isDirty())),
     ...(cfg.fixedDraftId && cfg.callReviewEnabled === true ? {voiceReview:Object.freeze({snapshot:voiceReviewSnapshot,matches:voiceReviewMatches,send:voiceReviewSend})} : {})});
 })();

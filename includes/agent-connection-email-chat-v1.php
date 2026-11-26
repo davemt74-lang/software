@@ -757,7 +757,12 @@ function agent_connection_email_chat_advance_write_v1(PDO $pdo, array $user, arr
         $finished = $soulUsed + $finished;
         if (isset($finished['composer'])) $finished['composer']['saved_at'] = time();
         unset($finished['write']);
-        agent_connection_email_chat_write_replace_v1($pdo,$active,$finished,'prepared');
+        agent_commerce_atomic_pa2($pdo,static function() use($pdo,$active,$finished,$payload,$read): void {
+            if (agent_connection_email_chat_write_replace_v1($pdo,$active,$finished,'prepared')!==null) {
+                require_once __DIR__.'/agent-email-preferences-v1.php';
+                agent_email_preferences_capture_generated_v1($pdo,$read(),$payload['write']['attempt']);
+            }
+        });
     } catch (Throwable $error) {
         $payload['write']['lease_until'] = 0;
         agent_connection_email_chat_write_replace_v1($pdo,$active,$payload,'write_failed');

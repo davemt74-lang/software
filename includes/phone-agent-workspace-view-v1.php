@@ -54,6 +54,7 @@ $asset=static fn(string $file):string=>url('/'.$file.'?v='.substr(hash_file('sha
   <title><?= e($payload['title']??'Private Agent item') ?></title>
   <link rel="stylesheet" href="<?= e($asset('chat-email-composer-v1.css')) ?>">
   <link rel="stylesheet" href="<?= e($asset('chat-email-followthrough-v1.css')) ?>">
+  <link rel="stylesheet" href="<?= e($asset('email-writing-preferences-v1.css')) ?>">
   <link rel="stylesheet" href="<?= e($asset('gmail-email-display-v1.css')) ?>">
   <link rel="stylesheet" href="<?= e($asset('phone-agent-item-v1.css')) ?>">
   <?php if($clientPayload!==null): ?>
@@ -63,6 +64,7 @@ $asset=static fn(string $file):string=>url('/'.$file.'?v='.substr(hash_file('sha
   <?php if($payload!==null): ?>
   <script src="<?= e($asset('gmail-email-display-v1.js')) ?>" defer></script>
   <script src="<?= e($asset('chat-email-followthrough-v1.js')) ?>" defer></script>
+  <script src="<?= e($asset('email-writing-preferences-v1.js')) ?>" defer></script>
   <script src="<?= e($asset('chat-email-composer-v1.js')) ?>" defer></script>
   <script src="<?= e($asset('coding-canvas-runtime-v1.js')) ?>" defer></script>
   <?php endif; ?>

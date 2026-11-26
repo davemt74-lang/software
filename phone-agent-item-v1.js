@@ -67,6 +67,7 @@
   function changed() {post('changed');queueMicrotask(() => post('dirty',{value:Boolean(window.VP3EmailComposerV1?.isDirty?.())}));}
   for (const name of ['vp3:chat-email-drafts-changed','vp3:chat-email-watch-changed','vp3:email-followthrough-changed']) window.addEventListener(name,changed);
   for (const name of ['input','change']) document.addEventListener(name,() => queueMicrotask(() => post('dirty',{value:Boolean(window.VP3EmailComposerV1?.isDirty?.())})));
+  window.addEventListener('vp3:email-preferences-dirty',() => post('dirty',{value:Boolean(window.VP3EmailComposerV1?.isDirty?.())}));
   window.addEventListener('message',async event => {
     if (closed || event.source !== window.parent || event.origin !== location.origin || event.data?.channel !== cfg.channel
       || event.data.type !== 'request_close' || !Number.isSafeInteger(event.data.id)) return;

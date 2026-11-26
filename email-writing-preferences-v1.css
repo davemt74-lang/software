@@ -1,0 +1,66 @@
+.vp3-email-writing {
+  box-sizing:border-box; min-width:0; color:#243249; font:inherit; font-size:14px; line-height:1.5;
+}
+.vp3-email-writing *, .vp3-email-writing *::before, .vp3-email-writing *::after { box-sizing:border-box; }
+.vp3-email-writing [hidden] { display:none !important; }
+.vp3-email-compose > .vp3-email-writing { padding:0 22px 22px; }
+.vp3-email-writing h3 { margin:0; color:#18212e; font-size:16px; line-height:1.4; }
+.vp3-email-writing h4 { margin:0; color:#344155; font-size:14px; line-height:1.4; }
+.vp3-email-writing p { margin:8px 0; overflow-wrap:anywhere; }
+.vp3-email-writing small { display:block; color:#617087; font-size:12px; line-height:1.5; }
+.vp3-email-writing button, .vp3-email-writing a {
+  appearance:none; display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  width:auto; min-height:44px; max-width:100%; padding:10px 14px; border:1px solid #cdd5df; border-radius:8px;
+  background:#fff; color:#243249; font:inherit; font-size:13px; font-weight:600; line-height:1.4;
+  text-decoration:none; cursor:pointer; overflow-wrap:anywhere;
+}
+.vp3-email-writing button:hover, .vp3-email-writing a:hover { background:#f3f6fa; }
+.vp3-email-writing button:disabled { opacity:.55; cursor:default; }
+.vp3-email-compose .vp3-email-writing button { min-height:44px; }
+.vp3-email-writing button:focus-visible, .vp3-email-writing a:focus-visible,
+.vp3-email-writing textarea:focus-visible, .vp3-email-writing summary:focus-visible {
+  outline:2px solid #386bc1; outline-offset:3px;
+}
+.vp3-email-writing button.vp3-email-writing-primary { border-color:#233d64; color:#fff; background:#233d64; }
+.vp3-email-writing button.vp3-email-writing-primary:hover { background:#1a3152; }
+.vp3-email-writing button.vp3-email-writing-link { border-color:transparent; background:transparent; color:#365d91; }
+.vp3-email-writing button.vp3-email-writing-link:hover { background:#f1f5fa; }
+.vp3-email-writing-head, .vp3-email-writing-actions {
+  display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+}
+.vp3-email-writing-head { justify-content:space-between; gap:10px 14px; }
+.vp3-email-writing-actions { margin-top:12px; }
+.vp3-email-writing-panel {
+  min-width:0; margin-top:12px; padding:16px; border:1px solid #dce4ef; border-radius:10px; background:#f8fafc;
+}
+.vp3-email-writing-panel > :first-child { margin-top:0; }
+.vp3-email-writing-panel > :last-child { margin-bottom:0; }
+.vp3-email-writing-field { display:grid; gap:7px; margin:14px 0; min-width:0; }
+.vp3-email-writing-field > span { color:#344155; font-size:13px; font-weight:600; }
+.vp3-email-writing textarea {
+  display:block; width:100%; max-width:100%; min-width:0; min-height:100px; overflow:hidden; resize:none;
+  border:1px solid #cdd5df; border-radius:8px; padding:11px 12px; background:#fff; color:#18212e;
+  font:inherit; font-size:14px; line-height:1.5;
+}
+.vp3-email-writing textarea[readonly] { background:#f3f6fa; }
+.vp3-email-compose .vp3-email-writing textarea { resize:none; overflow:hidden; }
+.vp3-email-writing-status { margin:10px 0 0; color:#506176; }
+.vp3-email-writing-status:empty { display:none; }
+.vp3-email-writing-status[data-error="true"] { color:#925324; }
+.vp3-email-writing-conflict, .vp3-email-writing-leave {
+  margin-top:12px; padding:14px; border:1px solid #e7c98e; border-radius:9px; background:#fff9ed;
+}
+.vp3-email-writing-preview { margin:12px 0; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; }
+.vp3-email-writing-history { margin-top:16px; padding-top:16px; border-top:1px solid #dce4ef; }
+.vp3-email-writing-history summary { min-height:44px; padding:10px 0; font-weight:600; cursor:pointer; }
+.vp3-email-writing-versions { display:grid; gap:8px; margin:10px 0; padding:0; list-style:none; }
+.vp3-email-writing-versions li { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px 14px; }
+.vp3-email-writing-versions button { justify-content:flex-start; }
+.vp3-email-writing-version-meta { color:#617087; font-size:12px; }
+@media(max-width:600px) {
+  .vp3-email-compose > .vp3-email-writing { padding:0 14px 16px; }
+  .vp3-email-writing-panel { padding:14px; }
+  .vp3-email-writing-actions > button { flex:1 1 auto; }
+  .vp3-email-writing-head { align-items:flex-start; }
+  .vp3-email-writing textarea, .vp3-email-compose .vp3-email-writing textarea { font-size:16px; }
+}

@@ -10,11 +10,14 @@ header('X-Content-Type-Options: nosniff');
 
 try {
     if (($_SERVER['REQUEST_METHOD']??'') !== 'POST') throw new DomainException('Use POST for email review.',405);
-    $raw = file_get_contents('php://input', false, null, 0, 50001);
-    if (!is_string($raw) || strlen($raw)>50000) throw new DomainException('Email review request is too large.',413);
+    $raw = file_get_contents('php://input', false, null, 0, 100001);
+    if (!is_string($raw) || strlen($raw)>100000) throw new DomainException('Email review request is too large.',413);
     $input = json_decode($raw,true,8,JSON_THROW_ON_ERROR);
+    if (strlen($raw)>50000 && (!is_array($input) || ($input['action']??null)!=='preferences_save')) {
+        throw new DomainException('Email review request is too large.',413);
+    }
     if (!is_array($input) || array_is_list($input)
-        || array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','draft_id','csrf_token','confirmed','review_token','watch_replies','subject','body','sender','enabled','watchlist_key','instruction','message_id','item_ref','request_id','to','attachment_ids','queue_scope','filter','limit','cursor','edit_revision','followthrough','followthrough_ref','expected_revision','operation','deadline_at','time_zone','prepare_if_overdue','priority'])) {
+        || array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','draft_id','csrf_token','confirmed','review_token','watch_replies','subject','body','sender','enabled','watchlist_key','instruction','message_id','item_ref','request_id','to','attachment_ids','queue_scope','filter','limit','cursor','edit_revision','followthrough','followthrough_ref','expected_revision','operation','deadline_at','time_zone','prepare_if_overdue','priority','capture_id','proposal_id','proposal_revision','soul_revision','preference','text','version'])) {
         throw new DomainException('Choose an email review action.',422);
     }
     $user = current_user();
@@ -30,6 +33,59 @@ try {
     }
     $pdo = db();
     if (!$pdo) throw new DomainException('Email review storage is unavailable.',503);
+    if (in_array($input['action']??null,['preference_status','preference_prepare','preference_accept','preference_dismiss',
+        'preferences_get','preferences_save','preferences_restore','preferences_reset'],true)) {
+        $action=$input['action'];
+        $settings=str_starts_with($action,'preferences_');
+        $fields=['action','owner_key','agent_id','conversation_id','csrf_token','draft_id',...match($action) {
+            'preference_status'=>[],
+            'preference_prepare'=>['capture_id','edit_revision'],
+            'preference_accept'=>['proposal_id','proposal_revision','soul_revision','preference'],
+            'preference_dismiss'=>['proposal_id','proposal_revision'],
+            'preferences_get'=>['version','cursor'],
+            'preferences_save'=>['soul_revision','text'],
+            'preferences_restore'=>['soul_revision','version'],
+            'preferences_reset'=>['soul_revision'],
+        }];
+        if (array_diff(array_keys($input),$fields)
+            || ((!$settings || array_key_exists('draft_id',$input))
+                && (!is_string($input['draft_id']??null) || preg_match('/^[a-f0-9]{32}$/D',$input['draft_id'])!==1))) {
+            throw new DomainException('Choose a valid email writing preference action.',422);
+        }
+        $_SESSION['agent_connection_email_review_v1']??=bin2hex(random_bytes(32));
+        try {$activeAgent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agent);}
+        catch (RuntimeException $error) {
+            if ($error instanceof PDOException || $error->getCode()!==0) throw $error;
+            throw new DomainException('This private Agent Chat is no longer available.',403,$error);
+        }
+        $principal=vp3_agent_chat_principal_v380($user,$activeAgent);
+        require_once dirname(__DIR__).'/includes/agent-email-preferences-v1.php';
+        require_once dirname(__DIR__).'/includes/agent-email-preferences-http-v1.php';
+        $current=agent_email_preferences_http_current_v1($pdo,$user,$principal,$conversation);
+        session_write_close();
+        $current();
+        if (in_array($action,['preference_prepare','preference_accept'],true)) ignore_user_abort(true);
+        $options=array_diff_key($input,array_flip(['action','owner_key','agent_id','conversation_id','csrf_token']));
+        if ($settings) {
+            if (isset($input['draft_id'])) agent_email_preferences_scope_v1($pdo,$user,$principal,$conversation,$input['draft_id']);
+            $result=$action==='preferences_get'
+                ? agent_email_preferences_settings_get_v1($user,$options,$current)
+                : agent_email_preferences_settings_update_v1($pdo,$user,$action,$options,$current);
+        } else {
+            $result=match($action) {
+                'preference_status'=>agent_email_preferences_status_v1($pdo,$user,$principal,$conversation,$input['draft_id'],$current),
+                'preference_prepare'=>agent_email_preferences_prepare_v1($pdo,$user,$principal,$conversation,$options,$current),
+                'preference_accept'=>agent_email_preferences_accept_v1($pdo,$user,$principal,$conversation,$options,$current),
+                'preference_dismiss'=>agent_email_preferences_dismiss_v1($pdo,$user,$principal,$conversation,$options,$current),
+            };
+        }
+        $current();
+        echo json_encode(['ok'=>true,$settings?'preferences':'preference'=>$result],JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+        exit;
+    }
+    if (array_intersect(array_keys($input),['capture_id','proposal_id','proposal_revision','soul_revision','preference','text','version'])) {
+        throw new DomainException('Choose a valid email writing preference action.',422);
+    }
     if (in_array($input['action']??null,['followthrough_list','followthrough_get','followthrough_update','followthrough_check'],true)) {
         $fields=['action','owner_key','agent_id','conversation_id','csrf_token',...match($input['action']) {
             'followthrough_list'=>['filter','limit','cursor'],
