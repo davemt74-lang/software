@@ -80,6 +80,8 @@ $sent=0;
 $scenario=$argv[1]??'success';
 $result=$attempt(function($request)use(&$sent,$plan,$pdo,$attempt,$unexpected,$scenario){
     ++$sent;
+    $plan['fields']+=['Url'=>'https://cloud.example/api/phone-operator-answer-v1.php?event=answer','Method'=>'POST',
+        'StatusCallback'=>'https://cloud.example/api/phone-operator-answer-v1.php?event=status','StatusCallbackMethod'=>'POST'];
     c(!vp3_phone_transaction_active_v1($pdo)&&$request===$plan,'mock carrier receives the approved objective outside a transaction');
     c($attempt($unexpected)==='submitting','a second worker cannot submit the in-flight occurrence');
     if($scenario==='timeout')throw new RuntimeException('Response lost after submission');
@@ -90,3 +92,58 @@ $expected=$scenario==='success'?'submitted':'uncertain';
 c($result===$expected&&$attempt($unexpected)===$expected&&$sent===1,'terminal outcome fences replay');
 c($read()['last_occurrence']['reason']==='carrier_'.$expected,'original private schedule history shows the submission outcome');
 echo "PASS single carrier attempt ($scenario), in-flight exclusion and retry handling\n";
+
+require_once dirname(__DIR__).'/includes/agent-operator-answer-v1.php';
+if($scenario!=='success')return;
+$carrierForm=['AccountSid'=>vp3_phone_twilio_state_v100()['account_sid'],'CallSid'=>'CA'.str_repeat('c',32),
+    'From'=>$plan['fields']['From'],'To'=>$plan['fields']['To']];
+$answer=static function(string $stage,array $values=[],?string $signature=null)use($carrierForm,$pdo,$callTime):string{
+    $payload=array_replace($carrierForm,$values);
+    $url=vp3_phone_browser_callback_v1('operator_answer',['event'=>$stage]);
+    $signature??=vp3_phone_sms_twilio_signature_v110($url,$payload,'carrier-auth-token-fixture');
+    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$callTime+1);
+};
+$hangup=vp3_phone_browser_hangup_v1();
+foreach([['answer',[],'bad signature'],['answer',['AccountSid'=>'AC'.str_repeat('d',32)],null]] as $invalid){
+    try{$answer(...$invalid);$rejected=false;}catch(RuntimeException $e){$rejected=true;}
+    c($rejected,'signature and carrier account must match');
+}
+$unknown=['CallSid'=>'CA'.str_repeat('e',32)];
+c(str_contains($answer('answer',$unknown),'event=retry')&&str_contains($answer('retry',$unknown),'event=last')
+    &&$answer('last',$unknown)===$hangup,'early callbacks wait briefly for the committed receipt and then stop');
+c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer',['To'=>'+16025550189'])===$hangup
+    &&$read()['last_occurrence']['reason']==='carrier_submitted','wrong route and out-of-order responses cannot change history');
+foreach(['agree','decline','silence','withdrawn'] as $case){
+    $pdo->beginTransaction();
+    try{
+        $prompt=$answer('answer');
+        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'recorded and transcribed')&&str_contains($prompt,'event=confirm')
+            &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'keypad disclosure precedes capture and keeps objectives private');
+        c($answer('answer')===$prompt,'answer retry can replay the pending prompt');
+        if($case==='withdrawn')$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
+        $digits=match($case){'decline'=>['Digits'=>'2'],'silence'=>[],default=>['Digits'=>'1']};
+        $response=$answer('confirm',$digits);
+        $reason=match($case){'agree'=>'answer_consented','decline'=>'answer_declined','silence'=>'answer_no_input',default=>'answer_permission_changed'};
+        c($read()['last_occurrence']['reason']===$reason,'original private call history records '.$case);
+        c(($case==='agree'?str_contains($response,'Thank you'):$response===$hangup)&&!str_contains($response,'<Record'),'only explicit permission is acknowledged');
+        c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer')===$hangup
+            &&$read()['last_occurrence']['reason']===$reason,'replays cannot reopen a completed consent decision');
+    }finally{$pdo->rollBack();}
+}
+echo "PASS signed scheduled answer and recipient consent, refusal, silence, withdrawal and replay\n";
+
+foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=>'carrier_no_answer','failed'=>'carrier_failed','canceled'=>'carrier_canceled'] as $status=>$reason){
+    $pdo->beginTransaction();
+    try{
+        if($status==='completed')$answer('answer');
+        $answer('status',['CallStatus'=>$status]);
+        $answer('status',['CallStatus'=>'failed']);
+        $last=$read()['last_occurrence'];
+        c($last['state']==='ended'&&$last['reason']===$reason&&$answer('confirm',['Digits'=>'1'])===$hangup,'terminal callbacks close the occurrence once: '.$status);
+    }finally{$pdo->rollBack();}
+}
+$answer('answer');
+$answer('confirm',['Digits'=>'1']);
+$answer('status',['CallStatus'=>'completed']);
+c($read()['last_occurrence']['reason']==='answer_consented'&&$read()['last_occurrence']['state']==='ended','final status preserves the recipient decision');
+echo "PASS signed carrier outcomes and hangup before consent\n";

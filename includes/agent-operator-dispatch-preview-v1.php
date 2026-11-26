@@ -1,15 +1,23 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/agent-operator-occurrences-v1.php';
+require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/phone-recording-pipeline-v1.php';
 
 /** Build an outbound request from current grants. This preview never submits or consumes it. */
 function vp3_operator_preview_request_v1(PDO $pdo,array $row,int $now):array
 {
+    if($row['state']!=='prepared')return ['reason'=>'outside_occurrence'];
+    return vp3_operator_current_request_v1($pdo,$row,$now);
+}
+
+/** Revalidate the route and grants for an occurrence whose lifecycle state the caller verified. */
+function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now):array
+{
     $owner=(int)$row['owner_user_id'];
     $id=(int)$row['event_id'];
     $end=(int)$row['end_epoch'];
-    if($row['state']!=='prepared'||$now<(int)$row['start_epoch']||$now>=$end)return ['reason'=>'outside_occurrence'];
+    if($now<(int)$row['start_epoch']||$now>=$end)return ['reason'=>'outside_occurrence'];
     $query=$pdo->prepare('SELECT * FROM phone_operator_scheduled_assignments_v1 WHERE owner_user_id=? AND event_id=?');
     $query->execute([$owner,$id]);
     $assignment=$query->fetch(PDO::FETCH_ASSOC);
