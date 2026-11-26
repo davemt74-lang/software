@@ -34,7 +34,8 @@ function vp3_operator_question_preparation_v1(PDO $pdo,array $scope,array $line,
             if($review['coverage']!=='ready')continue;$calls++;
             foreach($review['questions'] as $item){
                 if($item['state']==='unverified'||isset($findings[$item['key']]))continue;
-                $findings[$item['key']]=['state'=>$item['state'],'revision'=>$item['revision'],'source_url'=>$item['source_url']?:$review['transcript_url'],
+                $findings[$item['key']]=['state'=>$item['state'],'revision'=>$item['revision'],'source_url'=>$item['source_url']?:
+                    ((string)parse_url(url('/artist-listening.php'),PHP_URL_PATH).'?session='.(int)$job['session_id']),
                     'call_id'=>$job['call_public_id']];
             }
         }
