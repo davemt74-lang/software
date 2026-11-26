@@ -1258,7 +1258,7 @@
     ['connected-sites','Connected Sites'],['canvas','Canvas Apps'],['research','Research'],
     ['coding','Coding'],['image-generator','Image Generator'],['mission','Missions'],
     ['marketing','Marketing'],['commerce','Commerce'],['development','Agent Development'],['app-suggestions','App Suggestions'],
-    ['eyes','Agent Eyes'],['operator','Operator'],['brainstorm','ob1']
+    ['eyes','Agent Eyes'],['operator','Operator'],['ob1','OB1'],['brainstorm','Brainstorming']
   ];
   const debugOpportunityLanes = {research:'research',mission:'missions','app-suggestions':'app_suggestions','image-generator':'media_images'};
   const debugCoverage = {ready:'Checked',limited:'Partially checked',unconfigured:'Source inactive',unavailable:'Could not check'};
@@ -1269,7 +1269,7 @@
   const debugActivityColors = {
     gmail:'#bf3b36',planning:'#82501b',tasks:'#2459a4',transcripts:'#7441aa',media:'#197254',profile:'#35647e',curiosity:'#a13e75',
     'connected-sites':'#11747e',canvas:'#5148a2',research:'#2c6c81',coding:'#38632c','image-generator':'#b04724',
-    mission:'#59486c',marketing:'#ae4c5a',commerce:'#775919',development:'#46556d','app-suggestions':'#675cc1',eyes:'#256d56',operator:'#316a82',brainstorm:'#176984',
+    mission:'#59486c',marketing:'#ae4c5a',commerce:'#775919',development:'#46556d','app-suggestions':'#675cc1',eyes:'#256d56',operator:'#316a82',ob1:'#176984',brainstorm:'#176984',
   };
   const debugActivityLine = {
     flat:'M0 13 H96',waiting:'M0 13 H36 L40 11 L44 15 L48 13 H96',
@@ -1277,7 +1277,7 @@
   };
   const debugRefreshInterval = 12000;
   const debugSnapshotMaxAge = 40000;
-  const debugActionableSpecialists = new Set(['gmail','planning','tasks','media','brainstorm']);
+  const debugActionableSpecialists = new Set(['gmail','planning','tasks','media','ob1','brainstorm']);
   const debugJobPhases = {analyzing:'Analyzing',researching:'Researching',brainstorming:'Brainstorming',coordinating:'Coordinating',
     presenting:'Presenting',reviewing:'Reviewing',preparing:'Preparing',monitoring:'Monitoring'};
   const debugJobDestinations = {chat:'Agent Chat',top_of_mind:'Top of Mind',private_preparation:'Private preparation',
@@ -1368,7 +1368,7 @@
     const assignment = engagement.specialist_assignments?.[id] || opportunity?.assignment;
     const assignmentExpiry = debugActivityDate(assignment?.lease_expires_at);
     const jobs = Array.isArray(snapshot.initiative?.active_jobs) ? snapshot.initiative.active_jobs.filter(job =>
-      (job?.specialist || (job?.kind === 'assessment' ? 'brainstorm' : null)) === id && Number.isSafeInteger(job.expiresAt)) : [];
+      (job?.specialist || (job?.kind === 'assessment' ? 'ob1' : null)) === id && Number.isSafeInteger(job.expiresAt)) : [];
     const liveJobs = jobs.filter(job => job.expiresAt > clock.now);
     const job = liveJobs[0];
     const handoff = engagement.specialist_handoffs?.[id];
@@ -1390,7 +1390,7 @@
       return projected?.state === 'working' ? {...projected,...signal} : signal;
     }
     if (projected) return projected;
-    if (id === 'brainstorm') {
+    if (id === 'ob1') {
       const assessment = snapshot.initiative?.latest_assessment_run;
       if (assessment?.status === 'queued') return view('waiting','Assessment queued');
       if (assessment?.status === 'retry_scheduled') return view('waiting','Assessment retry scheduled');
@@ -1419,7 +1419,7 @@
     if (['cooldown','idle_spacing','owner_turn_pending','quiet_chat_required','recent_proactive_post','playing','higher_priority'].includes(waitingGate)) {
       return view('waiting','Waiting for next step');
     }
-    if (id === 'brainstorm' && snapshot.initiative?.last_assessment) return view('checked','Assessment saved');
+    if (id === 'ob1' && snapshot.initiative?.last_assessment) return view('checked','Assessment saved');
     if (id === 'marketing' && snapshot.marketing?.coverage === 'unavailable') return view('error','Could not verify');
     if (id === 'marketing' && ['ready','limited'].includes(snapshot.marketing?.coverage)) return view('checked','Campaigns checked');
     if (scan?.coverage === 'unconfigured' || (id === 'marketing' && snapshot.marketing?.coverage === 'unconfigured')) {
@@ -1637,9 +1637,9 @@
     if (match) return item(match.reason === 'transcript_history' ? 'In Transcriptions' : 'Waiting to post','muted',findings);
     if (['failed','unavailable','paused'].includes(assignment?.status)) return item(work,debugWorkTone[assignment.status],step);
     if (blockedStage) return item('Needs attention','warning',blockedStage.label.slice(0,80));
-    if (id === 'brainstorm') {
+    if (id === 'ob1') {
       const active = snapshot.initiative?.active_jobs?.some?.(job => job.kind === 'assessment'
-        && (!job.specialist || job.specialist === 'brainstorm'));
+        && (!job.specialist || job.specialist === 'ob1'));
       return item(active ? 'Assessing' : snapshot.initiative?.last_assessment ? 'Assessed' : 'No assessment verified',
         active ? 'working' : 'muted');
     }
@@ -1976,7 +1976,7 @@
       && conversation === liveConversation();
     const section = document.createElement('section');
     const heading = document.createElement('h4');
-    heading.textContent = 'Opportunity assessment';
+    heading.textContent = 'OB1 coordination';
     const status = document.createElement('p');
     status.setAttribute('role','status');
     const detail = document.createElement('p');
@@ -1992,8 +1992,8 @@
       const allowed = current();
       const view = allowed ? initiativeRuntimeStatus() : null;
       const label = view?.label || (allowed && conversation === null
-        ? 'Opportunity assessment becomes available after this Chat is saved.'
-        : 'Opportunity assessment status is unavailable.');
+        ? 'OB1 coordination becomes available after this Chat is saved.'
+        : 'OB1 coordination status is unavailable.');
       if (status.textContent !== label) status.textContent = label;
       const explanation = view?.detail || '';
       if (detail.textContent !== explanation) detail.textContent = explanation;

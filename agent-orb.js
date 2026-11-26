@@ -11,16 +11,17 @@
       const active={id,expiresAt:Math.min(expiresAt,now+120000)};
       if(['initiative','initiative_work'].includes(source)&&/^workflow:[1-9]\d{0,19}$/.test(id)&&['assessment','preparation'].includes(job.kind)){
         active.kind=job.kind;
+        if(typeof job.specialist==='string'&&/^[a-z][a-z0-9-]{0,47}$/.test(job.specialist))active.specialist=job.specialist;
         if(typeof job.step==='string')active.step=job.step.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,240);
       }
       return [active];
     });
   }
-  function syncBrainstormSpecialist(jobs){
-    const assessments=jobs.filter(job=>job.kind==='assessment');
-    if(!assessments.length){window.VP3ChatSpecialists?.remove('brainstorm');return;}
-    window.VP3ChatSpecialists?.update('brainstorm',{
-      label:'Opportunity Agent',title:'Top of Mind brainstorm',status:'Working',
+  function syncCoordinatorSpecialist(jobs){
+    const assessments=jobs.filter(job=>job.kind==='assessment'&&(!job.specialist||job.specialist==='ob1'));
+    if(!assessments.length){window.VP3ChatSpecialists?.remove('ob1');return;}
+    window.VP3ChatSpecialists?.update('ob1',{
+      label:'OB1',title:'Specialist coordination',status:'Working',
       detail:assessments[0].step||'Reviewing Top of Mind for useful opportunities.'
     });
   }
@@ -294,7 +295,7 @@
           for(const job of current){active.push(job);nextExpiry=Math.min(nextExpiry,job.expiresAt);}
         }
         working=active.length>0;
-        syncBrainstormSpecialist(hasChatWorkPoll?jobSnapshots.get('initiative_work')||[]:active);
+        syncCoordinatorSpecialist(hasChatWorkPoll?jobSnapshots.get('initiative_work')||[]:active);
         if(Number.isFinite(nextExpiry))jobExpiryTimer=setTimeout(refreshEmbeddedJobs,Math.max(1,nextExpiry-Date.now()));
       }
       function contextChanged(){activityEpoch++;jobSnapshots.clear();refreshEmbeddedJobs();announce();}
@@ -528,7 +529,7 @@
       working=ids.size>0;
       root.dataset.working=String(working);
       renderStateLabel();
-      syncBrainstormSpecialist(hasChatWorkPoll?jobSnapshots.get('initiative_work')||[]:activeJobs);
+      syncCoordinatorSpecialist(hasChatWorkPoll?jobSnapshots.get('initiative_work')||[]:activeJobs);
       const visible=Array.from(ids).sort().slice(0,4).join(',');
       if(visible!==orbVisual.dataset.orbJobIds){
         if(visible)orbVisual.dataset.orbJobIds=visible;
