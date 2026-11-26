@@ -23,6 +23,7 @@ on:
       - 'includes/agent-tool-json-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
+      - 'tests/agent-top-of-mind-session-http.mjs'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   push:
@@ -48,6 +49,7 @@ on:
       - 'includes/agent-tool-json-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
+      - 'tests/agent-top-of-mind-session-http.mjs'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   workflow_dispatch:
@@ -133,6 +135,7 @@ jobs:
         run: |
           node tests/chat-send-recovery.mjs
           node tests/chat-email-review-queue-browser.mjs
+          node tests/agent-top-of-mind-session-http.mjs
       - name: Formatted private email, styles, links, image controls, and phone layout
         run: node tests/gmail-email-display-browser.mjs
       - name: Visible draft entry and live Gmail Sent mailbox
