@@ -1065,14 +1065,18 @@
       render();
     }catch(error){if(captionCurrent(entry,session)&&session.voiceTurn===turn)takeOverVoice(entry,error.message||'Voice preparation stopped. Human control restored.');}
   }
-  async function finishVoiceTurn(entry,session,turn){
+  async function finishVoiceTurn(entry,session,turn,removed=false){
     if(!captionCurrent(entry,session)||session.voiceTurn!==turn)return;
     entry.session.voiceMixer?.stop();clearTimeout(turn.timer);clearInterval(turn.poll);turn.pcm?.fill(0);turn.pcm=null;turn.state='finishing';render();
     try{
       const result=await liveCaptionRequest(entry,session,'voice_finish',{token:session.token,source_seq:turn.seq,turn_token:turn.token});
       if(!captionCurrent(entry,session)||session.voiceTurn!==turn)return;
       if(result.call_id!==entry.info.public_id||result.source_seq!==turn.seq||result.state!=='closed')throw new Error('Voice turn closure was not verified.');
-      session.voiceTurn=null;session.suggestion=null;session.busy=false;session.voiceNotice=turn.alongsideHumans?'Agent response finished. The human call continues.':'Approved turn finished locally. You are speaking again.';
+      session.voiceTurn=null;session.suggestion=null;session.busy=false;
+      if(removed)session.voiceParticipant=false;
+      session.voiceNotice=removed?'Agent removed. The human call and captions continue.':
+        session.voiceParticipant?'Agent response finished. The Agent remains in this call for another approved response.':
+        'Approved turn finished locally. You are speaking again.';
       session.worklet.port.postMessage('start');render();
     }catch(error){if(captionCurrent(entry,session))takeOverVoice(entry,'Voice turn closure was uncertain. Human control restored.');}
   }
@@ -1087,7 +1091,7 @@
         result.state!=='playing'||!Number.isSafeInteger(result.start_by_epoch)||!Number.isSafeInteger(result.expires_epoch)||
         Date.now()>result.start_by_epoch*1000||Date.now()+turn.samples/16>result.expires_epoch*1000)
         throw new Error('The approved voice playback permission expired.');
-      turn.state='playing';
+      turn.state='playing';if(alongsideHumans)session.voiceParticipant=true;
       entry.session.voiceMixer.play(turn.pcm,entry.call.getLocalStream(),()=>void finishVoiceTurn(entry,session,turn),alongsideHumans);
       turn.pcm.fill(0);turn.pcm=null;
       turn.timer=setTimeout(()=>{if(captionCurrent(entry,session)&&session.voiceTurn===turn)takeOverVoice(entry,'Voice turn time limit reached. Human control restored.');},Math.max(0,result.expires_epoch*1000-Date.now()));
@@ -1095,18 +1099,45 @@
       render();
     }catch(error){if(captionCurrent(entry,session)&&session.voiceTurn===turn)takeOverVoice(entry,error.message||'Voice turn stopped. Human control restored.');}
   }
+  function removeVoiceParticipant(entry,session,event){
+    if(!event.isTrusted||!captionCurrent(entry,session)||!session.voiceParticipant)return;
+    const turn=session.voiceTurn;
+    if(turn){
+      if(!['ready','playing'].includes(turn.state))return;
+      void finishVoiceTurn(entry,session,turn,true);return;
+    }
+    session.voiceParticipant=false;session.voiceNotice='Agent removed. The human call and captions continue.';render();
+  }
   function renderVoiceTurn(panel,entry,session){
     if(session.voiceNotice)panel.append(node('p','vp3-phone-meta',session.voiceNotice));
+    if(session.voiceParticipant&&!session.voiceTurn){
+      const presence=node('section','vp3-phone-suggestion');
+      presence.append(node('strong',null,'Operator voice · In this call'),
+        node('p','vp3-phone-meta','Both people stay connected. Every new Agent response still requires review and approval.'));
+      const remove=button('Remove Agent from call',event=>removeVoiceParticipant(entry,session,event),'vp3-phone-button vp3-phone-danger');
+      remove.dataset.phoneFocusKey='operator-voice-remove';presence.append(remove);panel.append(presence);
+    }
     const turn=session.voiceTurn;
     if(turn){
       const box=node('section','vp3-phone-suggestion');box.append(node('strong',null,'Operator voice · '+({preparing:'Preparing',ready:'Ready for your approval',claiming:'Authorizing playback',playing:'AI speaking',finishing:'Returning to owner'}[turn.state]||'Working')));
       box.append(node('p',null,turn.script));
       if(turn.state==='ready'){
-        const play=button('Speak approved response',event=>void speakVoiceTurn(entry,session,event),'vp3-phone-button vp3-phone-primary');play.dataset.phoneFocusKey='operator-voice-play';box.append(play);
-        const join=button('Add Agent for this response',event=>void speakVoiceTurn(entry,session,event,true));
-        join.dataset.phoneFocusKey='operator-voice-join';box.append(join,node('p','vp3-phone-meta','Both people can hear the approved response and speak throughout.'));
+        if(session.voiceParticipant){
+          const play=button('Speak approved Agent response',event=>void speakVoiceTurn(entry,session,event,true),'vp3-phone-button vp3-phone-primary');
+          play.dataset.phoneFocusKey='operator-voice-play';box.append(play);
+        }else{
+          const play=button('Speak approved response',event=>void speakVoiceTurn(entry,session,event),'vp3-phone-button vp3-phone-primary');play.dataset.phoneFocusKey='operator-voice-play';box.append(play);
+          const join=button('Add Agent to call',event=>void speakVoiceTurn(entry,session,event,true));
+          join.dataset.phoneFocusKey='operator-voice-join';box.append(join,node('p','vp3-phone-meta','Both people stay connected. The Agent remains available for future approved responses until you remove it.'));
+        }
       }
-      const takeover=button(turn.alongsideHumans?'Remove Agent':'Take over now',event=>{if(event.isTrusted&&captionCurrent(entry,session))takeOverVoice(entry,turn.alongsideHumans?'Agent removed. The human call continues.':undefined);},'vp3-phone-button vp3-phone-danger');takeover.dataset.phoneFocusKey='operator-voice-takeover';box.append(takeover);panel.append(box);return;
+      const participant=session.voiceParticipant||turn.alongsideHumans;
+      const takeover=button(participant?'Remove Agent from call':'Take over now',event=>{
+        if(participant)removeVoiceParticipant(entry,session,event);
+        else if(event.isTrusted&&captionCurrent(entry,session))takeOverVoice(entry);
+      },'vp3-phone-button vp3-phone-danger');
+      takeover.disabled=participant&&!['ready','playing'].includes(turn.state);
+      takeover.dataset.phoneFocusKey='operator-voice-takeover';box.append(takeover);panel.append(box);return;
     }
     if(!canReviewVoice(entry,session))return;
     const review=button(session.voiceReview?'Cancel voice review':'Review Agent voice response',event=>{
@@ -1257,7 +1288,7 @@
     const session={generation,scope:{conversation_id:context.conversation_id,agent_id:context.agent_id},phase:'starting',captions:[],receipts:[],
       skipped:0,seq:1,busy:false,startSent:false,track:tracks[0],localTrack:localTracks[0],mode,assist,token:'',
       suggestionAttempts:0,lastSuggestionSeq:0,nextSuggestionAt:0,suggestionPending:false,suggestion:null,suggestionError:'',
-      voiceTurn:null,voiceUsedSeq:0,voiceReview:false,voiceConsent:false,voiceNotice:''};
+      voiceTurn:null,voiceUsedSeq:0,voiceReview:false,voiceConsent:false,voiceNotice:'',voiceParticipant:false};
     entry.captionSession=session;entry.captionPrompt=false;entry.captionConsent=false;entry.captionBoth=false;entry.captionAssist=false;entry.captionNotice='';render();
     try{
       session.context=new Audio();
