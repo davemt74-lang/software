@@ -240,6 +240,7 @@ jobs:
           php tests/operator-schedule-calendar-v1.php
           php tests/operator-schedule-calendar-v1.php timeout
           php tests/operator-schedule-calendar-v1.php mismatch
+          bash tests/operator-schedule-worker-cli-v1.sh
           php tests/operator-holder-modes-v1.php
           php tests/operator-auto-call-migration.php
           php tests/phone-operator-suggestion-evidence.php
