@@ -415,12 +415,12 @@ function agent_connection_gmail_body_parts_v1(array $part, array &$plain, array 
     }
 }
 
-function agent_connection_gmail_read_v1(string $accessToken, string $messageId, ?callable $http = null): array
+function agent_connection_gmail_read_v1(string $accessToken, string $messageId, ?callable $http = null, bool $withDisplay = false): array
 {
-    return agent_connection_gmail_read_message_v1(agent_connection_gmail_get_v1($accessToken, $messageId, true, $http));
+    return agent_connection_gmail_read_message_v1(agent_connection_gmail_get_v1($accessToken, $messageId, true, $http), $withDisplay);
 }
 
-function agent_connection_gmail_read_message_v1(array $message): array
+function agent_connection_gmail_read_message_v1(array $message, bool $withDisplay = false): array
 {
     $plain = $html = [];
     agent_connection_gmail_body_parts_v1((array)($message['payload'] ?? []), $plain, $html);
@@ -432,7 +432,15 @@ function agent_connection_gmail_read_message_v1(array $message): array
     }
     $body = trim(preg_replace('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', '', $body) ?? '');
     $result = agent_connection_gmail_message_v1($message);
-    return $result + ['body' => mb_substr($body === '' ? $result['snippet'] : $body, 0, 8000)];
+    $result['body'] = mb_substr($body === '' ? $result['snippet'] : $body, 0, 8000);
+    // Only an exact private email reader opts in to presentation markup. Worker
+    // assessments, Chat history and AI context retain their existing text view.
+    if ($withDisplay && $html) {
+        require_once __DIR__.'/agent-email-display-v1.php';
+        $display = agent_email_display_v1(implode("\n", $html));
+        if ($display !== null) $result['display'] = $display;
+    }
+    return $result;
 }
 
 /** Accept only the printable RFC dot-atom form safe to put in one MIME header line. */
@@ -577,9 +585,37 @@ function agent_connection_gmail_rfc_message_id_v1(string $operationKey): string
     return '<vp3-' . hash('sha256', $operationKey) . '@vp3.me>';
 }
 
+/** Parts are private bytes resolved from a reviewed owner attachment manifest. */
+function agent_connection_gmail_attachment_parts_v1(array $parts): array
+{
+    if (!array_is_list($parts) || count($parts) > 5) {
+        throw new AgentConnectionGmailExceptionV1('Attach up to five JPEG, PNG or WebP images.', 400);
+    }
+    $total = 0;
+    foreach ($parts as $part) {
+        if (!is_array($part) || count($part) !== 3 || array_diff(array_keys($part), ['name','mime','bytes'])
+            || !is_string($part['name'] ?? null)
+            || !preg_match('/\A[A-Za-z0-9][A-Za-z0-9 _.-]{0,119}\.(?:jpg|png|webp)\z/D', $part['name'])
+            || !in_array($part['mime'] ?? null, ['image/jpeg','image/png','image/webp'], true)
+            || !is_string($part['bytes'] ?? null) || $part['bytes'] === '') {
+            throw new AgentConnectionGmailExceptionV1('Choose valid image attachments before sending.', 400);
+        }
+        $total += strlen($part['bytes']);
+        if ($total > 10 * 1024 * 1024) {
+            throw new AgentConnectionGmailExceptionV1('Keep the combined email images at 10 MB or less.', 400);
+        }
+        $extension = match ($part['mime']) {'image/jpeg'=>'jpg', 'image/png'=>'png', 'image/webp'=>'webp'};
+        $image = @getimagesizefromstring($part['bytes']);
+        if (!str_ends_with($part['name'], '.'.$extension) || !$image || ($image['mime'] ?? '') !== $part['mime']) {
+            throw new AgentConnectionGmailExceptionV1('An attached image type could not be verified.', 400);
+        }
+    }
+    return $parts;
+}
+
 function agent_connection_gmail_send_v1(
     string $accessToken, string $from, string $to, string $subject, string $body, string $operationKey,
-    ?callable $http = null, ?array $reply = null
+    ?callable $http = null, ?array $reply = null, array $attachments = []
 ): array {
     if (!filter_var($from, FILTER_VALIDATE_EMAIL) || !filter_var($to, FILTER_VALIDATE_EMAIL)
         || preg_match('/[\x00-\x1f\x7f]/', $from . $to . $subject) !== 0
@@ -587,6 +623,7 @@ function agent_connection_gmail_send_v1(
         || trim($body) === '' || strlen($body) > 80000 || !mb_check_encoding($body, 'UTF-8')) {
         throw new AgentConnectionGmailExceptionV1('Enter a valid recipient, subject, and message.', 400);
     }
+    $attachments = agent_connection_gmail_attachment_parts_v1($attachments);
     $rfcId = agent_connection_gmail_rfc_message_id_v1($operationKey);
     $subject = mb_encode_mimeheader($subject, 'UTF-8', 'B', "\r\n", strlen('Subject: '));
     $normalizedBody = preg_replace('/\r\n|\r|\n/', "\r\n", $body) ?? $body;
@@ -600,10 +637,24 @@ function agent_connection_gmail_send_v1(
         $headers[] = 'References: ' . implode("\r\n ", $reply['references']);
         $request['threadId'] = $reply['thread_id'];
     }
-    $mime = implode("\r\n", [
-        ...$headers, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64',
-        '', chunk_split(base64_encode($normalizedBody)),
-    ]);
+    if ($attachments === []) {
+        $mime = implode("\r\n", [
+            ...$headers, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64',
+            '', chunk_split(base64_encode($normalizedBody)),
+        ]);
+    } else {
+        $boundary = 'vp3-mixed-'.hash('sha256', $operationKey);
+        $mime = implode("\r\n", [...$headers, 'MIME-Version: 1.0',
+            'Content-Type: multipart/mixed; boundary="'.$boundary.'"', '', '']);
+        $mime .= '--'.$boundary."\r\nContent-Type: text/plain; charset=UTF-8\r\n"
+            ."Content-Transfer-Encoding: base64\r\n\r\n".chunk_split(base64_encode($normalizedBody));
+        foreach ($attachments as $attachment) {
+            $mime .= '--'.$boundary."\r\nContent-Type: ".$attachment['mime'].'; name="'.$attachment['name']."\"\r\n"
+                .'Content-Disposition: attachment; filename="'.$attachment['name']."\"\r\n"
+                ."Content-Transfer-Encoding: base64\r\n\r\n".chunk_split(base64_encode($attachment['bytes']));
+        }
+        $mime .= '--'.$boundary."--\r\n";
+    }
     $request['raw'] = rtrim(strtr(base64_encode($mime), '+/', '-_'), '=');
     try {
         $sent = agent_connection_gmail_api_v1($accessToken, '/messages/send', $request, $http);

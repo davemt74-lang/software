@@ -2274,6 +2274,34 @@
     time.textContent = (Number.isFinite(posted) ? 'Posted ' : 'Result ')+date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
   }
 
+  function bindPrivateGmailDisplayV1(element, data) {
+    const message = data.gmail_message_display_v1;
+    if (!data.private_email_read || message?.display?.version !== 1
+        || !['subject','from','body'].every(key => typeof message[key] === 'string')
+        || Number(data.conversation_id) !== conversationId || Number(data.agent_id) !== Number(cfg.agentId || 0)) return;
+    const host = element.querySelector('.message-text');
+    if (!host || !window.VP3GmailEmailDisplayV1) return;
+    const content = document.createElement('div');
+    content.className = 'vp3-private-gmail-display';
+    const subject = document.createElement('strong');
+    subject.textContent = message.subject || '(No subject)';
+    const sender = document.createElement('p');
+    sender.textContent = 'From: ' + message.from;
+    content.append(subject, sender);
+    if (!window.VP3GmailEmailDisplayV1.mount(content,message)) return;
+    if (data.gmail_conversation_offer) {
+      const offer = document.createElement('p');
+      offer.textContent = 'Want me to draft a reply?';
+      content.append(offer);
+    }
+    if (message.answered_in_gmail === true) {
+      const answered = document.createElement('p');
+      answered.textContent = 'You already replied to this message in Gmail.';
+      content.append(answered);
+    }
+    host.replaceChildren(content);
+  }
+
   function bindGmailReviewProjectionV1(element,context) {
     if(context.gmail_content_post_v1)element.dataset.gmailContentPost='true';
     if(context.gmail_routine_digest_v1)element.dataset.gmailRoutinePost='true';
@@ -5136,6 +5164,7 @@
       return;
     }
     const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 32;
+    let liveEmailDraft = null;
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
       if(message.context_json){try{context=normalizeContext(JSON.parse(message.context_json));}catch(error){}}
@@ -5200,6 +5229,9 @@
       const messageId=Number(message.id);
       if(!stored&&message.role==='assistant'&&Number.isSafeInteger(messageId)&&messageId>afterId){
         queueProactiveVoice(messageId,context,renderedMessage,revision);
+        const draft = context.actions?.find(action => action.type === 'email_review' && action.sent !== true
+          && action.conversation_id === targetId && /^[a-f0-9]{32}$/.test(String(action.id || '')));
+        if (draft) liveEmailDraft = draft;
       }
       lastLoadedMessageId=Math.max(lastLoadedMessageId,Number(message.id||0));
     });
@@ -5208,6 +5240,12 @@
       if (atEnd) thread.scrollTop = thread.scrollHeight;
       window.dispatchEvent(new Event('vp3:chat-history-updated'));
       void refreshHistory();
+    }
+    if (liveEmailDraft && current() && !document.hidden && !busy && !initialRestorePending && !restoringConversation
+        && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()
+        && thread.dataset.view === 'chat' && !input.value.trim() && !initiativeReplyTarget) {
+      void window.VP3EmailComposerV1?.openDraft({draft_id:liveEmailDraft.id,agent_id:Number(cfg.agentId || 0),conversation_id:targetId},
+        {surface:'canvas',automatic:true});
     }
   }
 
@@ -5595,7 +5633,12 @@
         bindConnectedSitePlayback(reply,data.connected_site_playback_v1,data.connected_site_queue_v1);
       }
       if(!existingReply)bindGmailResultTime(reply,data);
-      if (openGmailDraft && gmailAction && !gmailAction.startsWith('Auto reply ')) {
+      if(!existingReply)bindPrivateGmailDisplayV1(reply,data);
+      const openComposedEmail = window.VP3EmailComposerV1 && !existingReply && data.replayed !== true
+        && Number(data.conversation_id) === conversationId && Number(data.agent_id) === Number(cfg.agentId || 0)
+        && Array.isArray(data.actions) && data.actions.some(action => action.type === 'email_review'
+          && action.conversation_id === conversationId && action.sent !== true);
+      if (openComposedEmail || openGmailDraft && gmailAction && !gmailAction.startsWith('Auto reply ')) {
         gmailDraft = reply.querySelector('[data-chat-email-review]');
       }
       if (data.tool_receipt?.capability === 'email.followups' && data.tool_receipt.status === 'completed'
@@ -6031,6 +6074,7 @@
     marketingFollowthroughDestination:()=>!initialMarketingFollowthroughCancelled&&initiativeIdentityMatchesV1()?initialMarketingFollowthroughDestination:null,
     showChatView:() => setChatCanvasView('chat'),
     showCodingCanvasView:() => setChatCanvasView('coding'),
+    showEmailCanvasView:() => setChatCanvasView('email'),
     showMarketingCanvasView:() => setChatCanvasView('marketing'),
     showPlayerView:() => setChatCanvasView('player'),
     mountAgentGreeting:text => {

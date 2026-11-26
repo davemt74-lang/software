@@ -867,7 +867,19 @@
     settingsButton.hidden = ['location','operator'].includes(id) || ['curiosity','connected-sites','profile'].includes(id) && !localUrl(cfg.coordinationRulesEndpoint);
     backButton = button('Back',() => specialistSettings ? closeSpecialistSettings() : showWorkspace(false));
     backButton.hidden = true;
-    header.append(heading,workspaceButton,backButton,settingsButton,button('Close',() => close()));
+    header.append(heading);
+    if (id === 'gmail' && typeof window.VP3EmailComposerV1?.openCompose === 'function') {
+      const compose = button('+',event => {
+        if (!event.isTrusted || specialistScope !== signature(scope(true))) return;
+        close(false);
+        void window.VP3EmailComposerV1.openCompose({surface:'popup'});
+      });
+      compose.className = 'vp3-gmail-compose-button';
+      compose.setAttribute('aria-label','Compose new email');
+      compose.title = 'Compose new email';
+      header.append(compose);
+    }
+    header.append(workspaceButton,backButton,settingsButton,button('Close',() => close()));
     status = node('p','Loading activity…','vp3-agent-activity-status');
     status.setAttribute('role','status');
     verified = node('small');
@@ -1205,6 +1217,13 @@
     const settings = item?.actions.find(action => action.kind === 'url' && localUrl(action.href))?.href
       || localUrl(gmailCfg?.connectionsUrl);
     const controls = node('div','','vp3-email-report-controls');
+    if (typeof window.VP3EmailComposerV1?.openDrafts === 'function') {
+      controls.append(button('Drafts',event => {
+        if (!event.isTrusted || signature(current) !== signature(scope()) || !visible()) return;
+        close(false);
+        void window.VP3EmailComposerV1.openDrafts({surface:'popup'});
+      }));
+    }
     const mayAnalyze = monitor && !['disabled','setup_required'].includes(monitor.analysis_state)
       && !['unavailable','restart_required'].includes(monitor.state)
       && (monitor.analysis_state || monitor.report?.running_report);

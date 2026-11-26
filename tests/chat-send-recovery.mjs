@@ -16,7 +16,7 @@ function chatFunction(name){
 }
 const presenter=section('  function recoveryStatus(', '  function leaveChat(');
 const helpers=['bindStoredMessagePa3','initiativeIdentityMatchesV1','validInitiativeReplyV1','initiativeReplyForSendV1',
- 'showParkedReplyAfterSend','bindFoodMonsterResultIcon','bindGmailResultTime','applyInitiativeFollowthroughV1',
+ 'showParkedReplyAfterSend','bindFoodMonsterResultIcon','bindGmailResultTime','bindPrivateGmailDisplayV1','applyInitiativeFollowthroughV1',
  'bindCoordinationReplyV1','bindInitiativeActionV1','bindMeetingActionV1','messageElement','addMessage','addTyping',
  'catchUpSourceLinks','publicResearchSourceLinks','attachAudioTracking'].map(chatFunction).join('');
 const sendOwner=['gmailReviewActionLabel','activeImageConflictV1','recoverBlockedImageDraftV1','sendMessage'].map(chatFunction).join('');
