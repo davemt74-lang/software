@@ -160,6 +160,8 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);
     $catalog=['work.prepare_private'=>['id'=>'work.prepare_private','capability'=>'initiative.prepare','mode'=>'private',
         'ready'=>true,'reason'=>'ready','description'=>'Prepare a substantive private analysis or next step using the verified situation sources. Do not claim an external action was performed.']];
+    require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
+    $catalog+=vp3_brainstorm_catalog_v1($evidence);
     $checkinReady=table_exists('chat_messages');
     $catalog['chat.check_in']=['id'=>'chat.check_in','capability'=>'initiative.prepare','mode'=>'private',
         'ready'=>$checkinReady,'reason'=>$checkinReady?'ready':'upgrade_required',
@@ -406,6 +408,11 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
     vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)($binding['agent_id']??0));
     try{
         $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);$output=$toolResult['output']??null;
+        if($tool==='brainstorm.explore'){
+            require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
+            vp3_brainstorm_result_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);
+            return;
+        }
         if($tool==='image.prepare'){
             vp3_initiative_image_result_current_v1($goal,$toolResult);
             return;
@@ -541,6 +548,11 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
         if(isset($entry['source_refs'])&&!in_array($job['primary'],$entry['source_refs'],true))throw new RuntimeException('This tool does not accept the selected source.',409);
         vp3_initiative_brainstorm_tool_scope_v1($job,$catalog);
         vp3_initiative_result_job_v1($job,$evidence);
+        if($tool==='brainstorm.explore'){
+            if($model===null)throw new RuntimeException('Brainstorming inference is unavailable.',503);
+            if($checkLease)$checkLease();
+            return vp3_brainstorm_prepare_v1($job,$evidence,$model);
+        }
         if($tool==='image.prepare'){
             if($checkLease)$checkLease();
             return vp3_initiative_image_prepare_v1($job,$evidence,$model);

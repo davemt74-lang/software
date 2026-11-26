@@ -35,17 +35,42 @@ assessment schema (59), full assessment pipeline (57 additional assertions), wor
 UI (18) and compact Activity Hub browser suites. The live-context regression (279)
 also passes with network functions disabled. GitHub checks remain the release gate.
 
+## Section 2: independent creative work and specialist inputs
+
+Brainstorming now runs as `brainstorm.explore` on the canonical Initiative queue.
+The bounded opportunity scheduler gives it an independent low-priority lane. One
+pending assignment per owner/Agent and a stable context hash prevent duplicate
+model work. All registered specialists have a brief with permitted current source
+references, verified reports, ready capabilities, or an explicit context gap.
+Image and Coding executor results can contribute after their original sources and
+matching action/receipt are verified. Empty or unavailable context is not a claim
+that a specialist worked or that the owner has a preference.
+
+The private aggregate reference is accepted only by Brainstorming. Its job stores
+hashes, and its model receives the bounded current briefs. It may return up to
+three ideas and zero assignments. Dedicated mailbox and call-content boundaries
+remain intact; transient sensing and recursive creative reports are excluded.
+OB1 receives the verified ideas under their original source references, and makes
+its own governed assignment decision. Existing source-change wakeups prompt a
+bounded reassessment. Top of Mind and the debugger distinguish creative work from
+OB1 supervision and can show input contributors beyond the original four domains.
+
+Section 2 acceptance: autonomous canonical scheduling; distinct worker identity;
+complete brief coverage; private domain boundaries; source checks around inference;
+byte-matched canonical receipts; unchanged-context suppression; actual OB1 model
+handoff and admission; stale/malformed/cross-owner rejection; SQLite/MySQL and
+existing runtime/UI regression coverage. The new end-to-end gate has 22 additional
+checks after the 107-check Canvas fixture and runs in SQLite and native MySQL.
+The existing supervisor, tools, source, Top of Mind and live-context gates remain
+part of the consolidated CI. Release certification still requires GitHub checks.
+
 ## Remaining build sections
 
-1. Give Brainstorming its own canonical assignment, source-bound result and
-   specialist briefs. Every registered specialist can contribute permitted context
-   or explicit unavailable/empty status. Preserve dedicated Email and Operator
-   privacy boundaries and avoid recursive self-generated evidence.
-2. Add opportunities that need little history: image concepts, playable playlist
+1. Add opportunities that need little history: image concepts, playable playlist
    preparation and functional Canvas proposals. Reuse actual executors, grants and
    configured generation budgets. Treat generic starters as generic; use current
    conversation when available and retain the exact context behind each proposal.
-3. Extend OB1's durable executive loop to review objectives and returned ideas,
+2. Extend OB1's durable executive loop to review objectives and returned ideas,
    prioritize, assign, verify outcomes, advance or escalate, and schedule the next
    review. Use meaningful-change wakeups and bounded periodic catch-up. The server
    or HomeServer worker owns execution when the browser is closed.

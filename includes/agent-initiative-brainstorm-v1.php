@@ -87,13 +87,13 @@ function vp3_initiative_brainstorm_inputs_v1(array $evidence,array $reports): ar
         if(($source['ref']??null)!==$ref||!is_string($source['revision']??null)
             ||!preg_match('/\A[a-f0-9]{64}\z/D',$source['revision']))continue;
         $specialist=vp3_initiative_source_specialist_v1($source);
-        if(!in_array($specialist,['gmail','planning','tasks','media'],true))continue;
+        if(!isset(vp3_initiative_specialist_catalog_v1([])[$specialist]))continue;
         $inputs[$specialist]??=['sources'=>0,'reports'=>0];
         $inputs[$specialist]['sources']++;
     }
     foreach($reports as $report){
         $specialist=($report['specialist']??null)==='email'?'gmail':($report['specialist']??null);
-        if(!in_array($specialist,['gmail','planning','tasks','media'],true))continue;
+        if(!isset(vp3_initiative_specialist_catalog_v1([])[$specialist]))continue;
         $inputs[$specialist]??=['sources'=>0,'reports'=>0];
         $inputs[$specialist]['reports']++;
     }
@@ -246,7 +246,8 @@ function vp3_initiative_brainstorm_tool_result_v1(array $value): ?array
     }
     if(array_key_exists('ob1_inputs',$output)){
         $inputs=$output['ob1_inputs'];
-        if(!is_array($inputs)||!$inputs||array_diff(array_keys($inputs),['gmail','planning','tasks','media']))return null;
+        require_once __DIR__.'/agent-initiative-specialist-registry-v1.php';
+        if(!is_array($inputs)||!$inputs||array_diff(array_keys($inputs),array_keys(vp3_initiative_specialist_catalog_v1([]))))return null;
         foreach($inputs as $counts){
             if(!is_array($counts)||array_keys($counts)!==['sources','reports']
                 ||!is_int($counts['sources'])||$counts['sources']<0||$counts['sources']>512

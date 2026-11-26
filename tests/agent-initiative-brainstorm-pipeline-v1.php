@@ -57,6 +57,13 @@ function brainstorm_pipeline_model(?callable $during=null): Closure
 }
 
 if (defined('VP3_BRAINSTORM_PIPELINE_FIXTURE')) return;
+// This suite isolates the supervisor's assessments. The creative worker is tested separately.
+vp3_initiative_in_scope_v1($owner,7,static function()use($owner):void{
+    $policy=vp3_initiative_policy_v1($owner,7);
+    agent_brain_v122_upsert_system_memory($owner,'initiative_sweep','opportunity-scheduling','Creative check isolated by the assessment fixture.',
+        ['conversation_id'=>$policy['conversation_id'],'revision'=>$policy['revision'],
+            'lanes'=>['brainstorm'=>['checked_at'=>time(),'state'=>'no_opportunity']]]);
+});
 
 // Model a completed prior five-minute slot using the same real source snapshot
 // that the due scheduler will inspect now. Time itself is not a source change.

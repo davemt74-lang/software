@@ -554,7 +554,7 @@ function vp3_top_of_mind_transcripts_status_v1(PDO $pdo,array $user,int $agentId
 function vp3_top_of_mind_opportunity_checks_v1(array $checks,int $now): array
 {
     $rows=[];
-    foreach(['app_suggestions'=>'coding','research'=>'research','missions'=>'mission'] as $lane=>$id){
+    foreach(['app_suggestions'=>'coding','research'=>'research','missions'=>'mission','brainstorm'=>'brainstorm'] as $lane=>$id){
         $check=$checks[$lane]??[];
         $state=$check['state']??null;
         $at=$check['checked_at']??null;

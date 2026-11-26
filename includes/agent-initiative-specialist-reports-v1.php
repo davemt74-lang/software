@@ -90,9 +90,9 @@ function vp3_initiative_specialist_research_reports_v1(PDO $pdo,array $user,arra
 }
 
 /** Private planning context only. This reads bounded facts and never schedules, delivers, or grants a tool. */
-function vp3_initiative_specialist_reports_v1(PDO $pdo,array $user,array $binding,array $evidence,array &$authority,bool $completedOnly=false): array
+function vp3_initiative_specialist_reports_v1(PDO $pdo,array $user,array $binding,array $evidence,array &$authority,bool $completedOnly=false,bool $includeBrainstorm=true): array
 {
-    $reports=[];$authority=['research'=>[],'gmail'=>null,'tasks'=>[],'report_keys'=>[]];$now=time();
+    $reports=[];$authority=['research'=>[],'gmail'=>null,'tasks'=>[],'report_keys'=>[],'brainstorm'=>null];$now=time();
     try{$reports=vp3_initiative_specialist_research_reports_v1($pdo,$user,$binding,$evidence,$now,$authority['research'],$authority['report_keys'],$completedOnly);}
     catch(RuntimeException|JsonException $error){$authority['research']=[];$authority['report_keys']=[];}
     try{
@@ -127,6 +127,15 @@ function vp3_initiative_specialist_reports_v1(PDO $pdo,array $user,array $bindin
                 'summary'=>vp3_top_of_mind_text_v1($source['detail'],750)];
         }
     }
+    if($includeBrainstorm){
+        require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
+        $creative=vp3_brainstorm_report_v1($pdo,$user,$binding);
+        if($creative!==null){
+            $reports[]=$creative['report'];
+            $authority['brainstorm']=array_intersect_key($creative,array_flip(['run_id','key']));
+            $authority['report_keys'][$creative['key']]=$creative['report'];
+        }
+    }
     return $reports;
 }
 
@@ -151,6 +160,13 @@ function vp3_initiative_specialist_reports_current_v1(PDO $pdo,array $user,array
     $sources=vp3_initiative_specialist_research_sources_v1($pdo,$user,$binding,array_keys($authority['research']),time());
     foreach($authority['research'] as $ref=>$revision){
         if(($sources[$ref]['revision']??null)!==$revision)throw new Vp3InitiativeSourcesChangedV1();
+    }
+    if(!empty($authority['brainstorm'])){
+        require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
+        $current=vp3_brainstorm_report_v1($pdo,$user,$binding);
+        if($current===null||array_intersect_key($current,array_flip(['run_id','key']))!==$authority['brainstorm']){
+            throw new Vp3InitiativeSourcesChangedV1();
+        }
     }
     if(!empty($authority['tasks'])){
         require_once __DIR__.'/agent-initiative-task-reports-v1.php';

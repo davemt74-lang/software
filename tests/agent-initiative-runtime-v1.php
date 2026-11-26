@@ -94,7 +94,14 @@ function runtime_enable(array $user,int $agentId,int $cid):array
     $watch=array_map(static fn(array $triggers):array=>array_fill_keys(array_keys($triggers),'watch'),$rules['rules']);
     vp3_coordination_rule_settings_v1(db(),$user,$agentId,$cid,$rules['revision'],$watch);
     initiative_fixture_morning_brief_reviewed($user,$agentId);
-    return vp3_initiative_policy_v1($user,$agentId);
+    $policy=vp3_initiative_policy_v1($user,$agentId);
+    // This suite isolates general work; the independent creative worker has its own pipeline gate.
+    vp3_initiative_in_scope_v1($user,$agentId,static function()use($user,$policy):void{
+        agent_brain_v122_upsert_system_memory($user,'initiative_sweep','opportunity-scheduling','Creative check isolated by the runtime fixture.',
+            ['conversation_id'=>$policy['conversation_id'],'revision'=>$policy['revision'],
+                'lanes'=>['brainstorm'=>['checked_at'=>time(),'state'=>'no_opportunity']]]);
+    });
+    return $policy;
 }
 register_shutdown_function(static fn()=>@unlink($fixtureFile));
 $user=['id'=>1,'is_active'=>1];
@@ -132,7 +139,7 @@ runtime_check(($failedScan['coordination']??null)==='failed'
     &&($scanCheck['failure']??null)===['phase'=>'queue_check','code'=>'storage_schema','sqlstate'=>'42S22','database_code'=>1054]
     &&!str_contains(json_encode($failedScan),'PRIVATE SQL error text'),
     'a failed specialist queue query keeps its bounded error when the same tick completes another step');
-$pdo->exec("DELETE FROM agent_memory_items WHERE memory_type='initiative_sweep'");
+$pdo->exec("DELETE FROM agent_memory_items WHERE memory_type='initiative_sweep' AND subject<>'opportunity-scheduling'");
 initiative_fixture_morning_brief_reviewed($user,0);
 $pdo->exec('DELETE FROM agent_workflow_runs');
 $pdo->exec('DELETE FROM agent_workflow_receipts');

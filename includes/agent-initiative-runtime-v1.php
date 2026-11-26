@@ -101,7 +101,7 @@ function vp3_initiative_runtime_job_phase_v1(array $run): string
 {
     return match($run['progress_message']??null){
         'Assessing priorities across specialists.','Coordinating specialist findings.','Checking the plan and assigning eligible next steps.'=>'coordinating',
-        'Brainstorming useful opportunities.','Brainstorming a private Canvas concept.'=>'brainstorming',
+        'Exploring ideas across specialist briefs.','Brainstorming useful opportunities.','Brainstorming a private Canvas concept.'=>'brainstorming',
         'Researching the selected source.'=>'researching',
         'Presenting the verified result.'=>'presenting',
         'Reviewing specialist findings.','Connecting current specialist findings.'=>'reviewing',
@@ -182,7 +182,7 @@ function vp3_initiative_runtime_assessment_v1(array $row): ?array
     $discarded=filter_var($result['opportunities_discarded']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>8]]);
     $activityOmitted=filter_var($result['activity_sources_omitted']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>8]]);
     $inputs=[];
-    foreach(['gmail','planning','tasks','media'] as $family){
+    foreach(array_keys(vp3_initiative_specialist_catalog_v1([])) as $family){
         $count=$result['initiative_tool_result']['output']['ob1_inputs'][$family]??null;
         if(is_array($count)&&((is_int($count['sources']??null)&&$count['sources']>0)
             ||(is_int($count['reports']??null)&&$count['reports']>0)))$inputs[]=$family;
