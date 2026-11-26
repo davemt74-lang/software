@@ -45,7 +45,7 @@ function render(data){
     for(const model of inv.models){
         if(!model||typeof model.model!=='string'||model.model.length>160)throw new Error('invalid');
         const row=document.createElement('div');row.className='hs-info-grid';
-        const cell=document.createElement('div');
+        const cell=document.createElement('div');cell.style.gridColumn='1 / -1';cell.style.overflowWrap='anywhere';
         const title=document.createElement('strong');title.textContent=model.model;
         const note=document.createElement('p');note.className='hs-action-note';
         note.textContent=(model.configured_default===true?'Configured default · ':'')+'Reported · Execution unverified · Not eligible for routing';
