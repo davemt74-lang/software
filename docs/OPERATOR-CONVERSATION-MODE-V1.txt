@@ -1,0 +1,81 @@
+OPERATOR — CONSENTED CONVERSATION MODE V1
+
+Behavior
+
+In an existing answered browser call, the owner can explicitly enable a short
+Agent conversation. Everyone first agrees to live Cloud transcription and
+private AI processing of both audio sides, then separately agrees to automatic
+Agent replies. Reviewed-response mode remains available as before.
+
+Prepare Agent voice before enabling browser calls. During the answered call,
+start both-sided live captions and AI assistance. Open Conversation mode,
+confirm everyone's agreement, and choose Let Agent join conversation.
+The default mode answers when addressed as Agent, assistant or VP3. The owner
+can separately allow brief helpful contributions. The Agent waits for a quiet
+gap. Each automatic response identifies the VP3 AI assistant and reaches both
+people while their existing audio paths remain live. No extra microphone is
+opened and no second carrier call is placed.
+
+Either human's audio can interrupt Agent speech locally. The Agent stops its
+audio before waiting for server cleanup, then listens for new context.
+"Agent, stop" at the start of a newly verified caption ends automatic replies
+without another model or synthesis request. This command removes participation;
+the separate live-caption and carrier-recording controls still govern those
+features. Physical recognition accuracy remains part of handset acceptance.
+Remove Agent from conversation or Escape ends this permission immediately while the
+human call and captions continue. Stop live captions, mute, a changed Chat,
+foreground loss, permission loss and call/device teardown end assistance.
+
+Limits and continuity
+
+This first version uses the current two-sided caption session, up to 60 seconds.
+It does not extend the call receipt or caption authorization. The total call
+allowance is four model decisions and two speech reservations. Earlier reviewed
+suggestions/responses count toward these limits. The existing rolling-hour
+limits remain eight model attempts and eight speech reservations. Model checks
+are spaced at least eight seconds apart; audio uploads never accumulate a
+backlog during inference or speech. A wait decision does not synthesize audio.
+An uncertain paid request stays spent and is not automatically retried.
+
+Subsequent decisions use recent server-authenticated human captions and earlier
+authenticated Agent responses from this exact grant. Earlier responses are
+explicitly described as possibly interrupted, not as proof of delivery or a
+human commitment. The model has no action tools, email authority or access to
+other private content. Existing carrier recording, after-call transcription,
+report generation and recurring-call memory remain the canonical durable paths.
+This release does not introduce a second saved live transcript or copy private
+call agendas into a new memory store.
+
+Authority and audio
+
+Conversation permission is independent of caption permission and exact-script
+review. A separate opaque token is stored only as a hash and bound to the live
+call, owner, private Chat, assigned Agent/line, consent, mode and expiry. It
+cannot be restarted to reset budgets. Every model, synthesis and playback
+boundary rechecks current authority. Removal closes all outstanding speech
+reservations; a late model or synthesis result cannot restore participation.
+Provider work runs outside owner and PHP session locks.
+
+The original call-owned owner microphone is captured, rather than the mixed
+outbound stream that contains Agent speech. The interruption worklet has silent
+output. During model and speech work it emits local activity metadata only;
+it does not emit PCM frames. A sustained energy threshold of about 120 ms
+ignores short isolated transients. This is activity detection, not verified
+speaker identity. Acoustic echo/noise behavior and end-to-end carrier latency
+still require physical handset acceptance. Network-based permission changes
+take effect through current server checks and the foreground refresh loop;
+they are not an instantaneous remote audio cutoff.
+
+Deployment and verification
+
+Use the complete production Cloud ZIP and run the authenticated upgrade.php
+flow. The live installer adds optional conversation metadata explicitly;
+live requests never run DDL. Missing conversation storage leaves the reviewed
+call and caption features available but does not enable automatic replies.
+
+Tests cover explicit consent, exact scope and tokens, signed caption/response
+evidence, inference and synthesis revocation, replay and spend limits, late
+results, quiet-gap gating, natural completion, either-side interruption and
+human-track preservation. Tests use isolated databases, synthetic audio and
+deterministic model/speech substitutes. Physical Twilio, Cloud speech, iPhone
+playback and real acoustic interruption remain acceptance work.

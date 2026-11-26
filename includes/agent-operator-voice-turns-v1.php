@@ -38,22 +38,23 @@ function vp3_operator_voice_busy_v1(PDO $pdo,int $id,int $now): bool
     $q=$pdo->prepare("SELECT 1 FROM phone_operator_voice_turns_v1 WHERE call_id=? AND state IN ('rendering','ready','playing') AND expires_epoch>? LIMIT 1");
     $q->execute([$id,$now]);$busy=(bool)$q->fetchColumn();$q->closeCursor();return $busy;
 }
-function vp3_operator_voice_authority_v1(PDO $pdo,array $scope,string $public,string $token,int $now): array
+function vp3_operator_voice_authority_v1(PDO $pdo,array $scope,string $public,string $token,int $now,?string $participationToken=null): array
 {
     $scope=vp3_operator_live_lock_owner_v1($pdo,$scope);
     $call=vp3_operator_live_call_v1($pdo,$scope,$public,$now,true);
     $id=(int)$call['id'];$session=vp3_operator_live_row_v1($pdo,$id,true);$assist=vp3_operator_live_assist_row_v1($pdo,$id,true);
+    vp3_operator_participation_check_v1($pdo,$id,$participationToken,$now);
     if(!vp3_operator_live_session_matches_v1($session,$call,$scope,$token,$now)||!$assist||!(bool)$assist['suggestions_enabled']
         ||(int)$session['pending_seq']!==0||(int)$assist['suggestion_pending']!==0)
         vp3_phone_workspace_error_v1('operator_voice_changed',409,'Live voice authority changed. Return to the human call.');
     return [$scope,$call,$session,$assist];
 }
-function vp3_operator_voice_script_v1(string $suggestion): string
+function vp3_operator_voice_script_v1(string $suggestion,bool $participating=false): string
 {
     if($suggestion===''||strlen($suggestion)>720||preg_match('//u',$suggestion)!==1||mb_strlen($suggestion)>180
         ||preg_match('/[\p{Cc}\p{Cf}<>]/u',$suggestion))
         vp3_phone_workspace_error_v1('operator_voice_request',422,'Only short, plain-text reviewed suggestions can be spoken.');
-    return VP3_OPERATOR_VOICE_PREFIX_V1.$suggestion;
+    return ($participating?VP3_OPERATOR_PARTICIPATION_PREFIX_V1:VP3_OPERATOR_VOICE_PREFIX_V1).$suggestion;
 }
 function vp3_operator_voice_render_v1(string $script,string $key): string
 {
@@ -78,20 +79,22 @@ function vp3_operator_voice_render_v1(string $script,string $key): string
         throw new RuntimeException('A verified PCM voice result was not returned.');
     return $raw;
 }
-function vp3_operator_voice_prepare_v1(PDO $pdo,array $scope,string $public,string $token,int $seq,string $suggestion,string $proof,bool $consent,int $now,?callable $speech=null,?callable $clock=null): array
+function vp3_operator_voice_prepare_v1(PDO $pdo,array $scope,string $public,string $token,int $seq,string $suggestion,string $proof,bool $consent,int $now,?callable $speech=null,?callable $clock=null,?string $participationToken=null): array
 {
-    if(!$consent)vp3_phone_workspace_error_v1('operator_voice_consent_required',422,'Confirm everyone agreed to an AI voice turn and review the exact script.');
-    $script=vp3_operator_voice_script_v1($suggestion);
+    if(!$consent&&$participationToken===null)vp3_phone_workspace_error_v1('operator_voice_consent_required',422,'Confirm everyone agreed to an AI voice turn and review the exact script.');
+    $script=vp3_operator_voice_script_v1($suggestion,$participationToken!==null);
     if(!preg_match('/^[a-f0-9]{64}$/D',$proof))vp3_phone_workspace_error_v1('operator_voice_request',422,'Invalid reviewed suggestion.');
     $key=$speech===null?vp3_operator_live_speech_key_v1():'';
     if($speech===null&&$key==='')vp3_phone_workspace_error_v1('operator_voice_unavailable',503,'Configure the Cloud speech service first.');
     if(!vp3_operator_voice_ready_v1($pdo))vp3_phone_workspace_error_v1('operator_upgrade_required',503,'Run the Cloud voice turn upgrade.');
     $turn=bin2hex(random_bytes(32));$turnHash=hash('sha256',$turn);
-    $id=vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$public,$token,$seq,$suggestion,$proof,$now,$turnHash):int{
-        [$fresh,$call,$session,$assist]=vp3_operator_voice_authority_v1($pdo,$scope,$public,$token,$now);
+    $id=vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$public,$token,$seq,$suggestion,$proof,$now,$turnHash,$participationToken):int{
+        [$fresh,$call,$session,$assist]=vp3_operator_voice_authority_v1($pdo,$scope,$public,$token,$now,$participationToken);
         $id=(int)$call['id'];
+        $grant=$participationToken!==null?vp3_operator_participation_check_v1($pdo,$id,$participationToken,$now):null;
+        $expectedProof=$grant?vp3_operator_participation_proof_v1($assist,$public,$seq,$suggestion,$grant['token_hash']):vp3_operator_voice_proof_v1($assist,$public,$seq,$suggestion);
         if($seq!==(int)$assist['last_suggestion_seq']||(int)$assist['last_suggestion_epoch']<$now-45
-            ||!hash_equals(vp3_operator_voice_proof_v1($assist,$public,$seq,$suggestion),$proof))
+            ||!hash_equals($expectedProof,$proof))
             vp3_phone_workspace_error_v1('operator_voice_evidence_changed',409,'The approved suggestion is not current.');
         if((int)$session['expires_epoch']<$now+15||vp3_operator_voice_busy_v1($pdo,$id,$now)||vp3_operator_voice_row_v1($pdo,$id,$seq,true))
             vp3_phone_workspace_error_v1('operator_voice_changed',409,'A voice turn is already reserved or the call permission is ending.');
@@ -102,8 +105,8 @@ function vp3_operator_voice_prepare_v1(PDO $pdo,array $scope,string $public,stri
         $q->execute([$id,$seq,$fresh['owner_user_id'],$turnHash,$now,min((int)$session['expires_epoch'],$now+20)]);
         return $id;
     });
-    $read=static function(int $at)use($pdo,$scope,$public,$token,$id,$seq,$turnHash):array{
-        [,,$session,$assist]=vp3_operator_voice_authority_v1($pdo,$scope,$public,$token,$at);
+    $read=static function(int $at)use($pdo,$scope,$public,$token,$id,$seq,$turnHash,$participationToken):array{
+        [,,$session,$assist]=vp3_operator_voice_authority_v1($pdo,$scope,$public,$token,$at,$participationToken);
         $row=vp3_operator_voice_row_v1($pdo,$id,$seq,true);
         if(!$row||$row['state']!=='rendering'||(int)$row['expires_epoch']<=$at||!hash_equals($row['token_hash'],$turnHash)
             ||(int)$assist['last_suggestion_seq']!==$seq)
@@ -131,10 +134,10 @@ function vp3_operator_voice_prepare_v1(PDO $pdo,array $scope,string $public,stri
         vp3_phone_workspace_error_v1('operator_voice_interrupted',409,'Voice preparation stopped. Its synthesis request may have been charged.');
     }
 }
-function vp3_operator_voice_claim_v1(PDO $pdo,array $scope,string $public,string $token,int $seq,string $turn,int $now): array
+function vp3_operator_voice_claim_v1(PDO $pdo,array $scope,string $public,string $token,int $seq,string $turn,int $now,?string $participationToken=null): array
 {
-    return vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$public,$token,$seq,$turn,$now):array{
-        [, $call,$session,$assist]=vp3_operator_voice_authority_v1($pdo,$scope,$public,$token,$now);
+    return vp3_phone_workspace_atomic_v1($pdo,static function()use($pdo,$scope,$public,$token,$seq,$turn,$now,$participationToken):array{
+        [, $call,$session,$assist]=vp3_operator_voice_authority_v1($pdo,$scope,$public,$token,$now,$participationToken);
         $id=(int)$call['id'];$row=vp3_operator_voice_row_v1($pdo,$id,$seq,true);
         if(!$row||$row['state']!=='ready'||(int)$row['expires_epoch']<=$now||!hash_equals($row['token_hash'],hash('sha256',$turn))
             ||(int)$assist['last_suggestion_seq']!==$seq)
