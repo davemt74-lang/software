@@ -95,11 +95,12 @@ function runtime_enable(array $user,int $agentId,int $cid):array
     vp3_coordination_rule_settings_v1(db(),$user,$agentId,$cid,$rules['revision'],$watch);
     initiative_fixture_morning_brief_reviewed($user,$agentId);
     $policy=vp3_initiative_policy_v1($user,$agentId);
-    // This suite isolates general work; the independent creative worker has its own pipeline gate.
+    // This suite isolates general work; independent creative/analyst workers have their own pipeline gates.
     vp3_initiative_in_scope_v1($user,$agentId,static function()use($user,$policy):void{
         agent_brain_v122_upsert_system_memory($user,'initiative_sweep','opportunity-scheduling','Creative check isolated by the runtime fixture.',
             ['conversation_id'=>$policy['conversation_id'],'revision'=>$policy['revision'],
-                'lanes'=>['brainstorm'=>['checked_at'=>time(),'state'=>'no_opportunity']]]);
+                'lanes'=>['brainstorm'=>['checked_at'=>time(),'state'=>'no_opportunity'],
+                    'curiosity_analysis'=>['checked_at'=>time(),'state'=>'no_opportunity']]]);
     });
     return $policy;
 }

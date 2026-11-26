@@ -143,6 +143,7 @@ function canvas_pipeline_email_prepare(array $owner, string $ref): int
     return $prepared;
 }
 
+if(defined('VP3_CURIOSITY_EMAIL_PIPELINE_FIXTURE'))return;
 $enabled = vp3_initiative_chat_v1($pdo,$owner,$principal,['conversation_id'=>11],'on',null);
 // This fixture exercises the email app lane; unrelated Curiosity questions stay in its report.
 $emailRules=vp3_coordination_rule_settings_v1($pdo,$owner,7,11);

@@ -166,7 +166,7 @@ function vp3_initiative_followthrough_sources_v1(PDO $pdo,array $user,array $pri
     $output=$saved['output']??null;
     if($meetingResearch && $tool==='topic.research'){
         vp3_initiative_tools_result_current_v1($pdo,$user,$old,$goal,$saved);
-    }elseif(!vp3_initiative_capability_definition_v1((string)$tool)&&!in_array($tool,['work.prepare_private','chat.check_in','brain.read','knowledge.search','missions.prepare','canvas.prepare','image.prepare',
+    }elseif(!vp3_initiative_capability_definition_v1((string)$tool)&&!in_array($tool,['work.prepare_private','chat.check_in','brain.read','knowledge.search','missions.prepare','canvas.prepare','image.prepare','playlist.prepare',
         'workbench.product.review','workbench.marketing.review','workbench.screen.review','workbench.mission.review'],true))throw new RuntimeException('Proposal tool evidence is unavailable.',503);
     if(vp3_initiative_capability_definition_v1((string)$tool)){
         vp3_initiative_capability_result_current_v1($pdo,[...$scope,'verification_only'=>true],$old,$goal,$saved);
@@ -191,6 +191,9 @@ function vp3_initiative_followthrough_sources_v1(PDO $pdo,array $user,array $pri
     }elseif($tool==='image.prepare'){
         require_once __DIR__.'/agent-initiative-image-v1.php';
         vp3_initiative_image_result_current_v1($goal,$saved);
+    }elseif($tool==='playlist.prepare'){
+        require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
+        vp3_starter_playlist_current_v1($pdo,$user,$old,$goal,$saved);
     }elseif(in_array($tool,['brain.read','knowledge.search'],true)){
         if(!is_array($output)||($output['type']??'')!=='initiative_record_read'||($output['tool']??'')!==$tool
             ||!is_array($output['source_revisions']??null))throw new RuntimeException('Proposal read evidence changed.',409);

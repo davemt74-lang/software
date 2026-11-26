@@ -53,7 +53,7 @@ function vp3_initiative_runtime_runs_v1(PDO $pdo,int $uid,int $agentId,array $po
     $agedCutoff=time()-120;
     $priority=$pending?"CASE
         WHEN ".$value('$.followthrough')." IS NOT NULL THEN 0
-        WHEN $lane='brainstorm' THEN CASE WHEN ($oldest+0)<=$agedCutoff THEN 8 ELSE 10 END
+        WHEN $lane IN ('brainstorm','curiosity_analysis') THEN CASE WHEN ($oldest+0)<=$agedCutoff THEN 8 ELSE 10 END
         WHEN ($oldest+0)<=$agedCutoff THEN 1
         WHEN r.source_key LIKE 'coordination:%' AND ".$value('$.coordination_route.specialist')."='casual' THEN 9
         WHEN r.source_key LIKE 'connected-sites-scan:%' THEN 9
@@ -106,7 +106,7 @@ function vp3_initiative_runtime_job_phase_v1(array $run): string
         'Researching the selected source.'=>'researching',
         'Presenting the verified result.'=>'presenting',
         'Reviewing specialist findings.','Connecting current specialist findings.'=>'reviewing',
-        'Analyzing current sources and specialist reports.'=>'analyzing',
+        'Analyzing current sources and specialist reports.','Analyzing specialist data and observed email activity.'=>'analyzing',
         default=>'preparing',
     };
 }

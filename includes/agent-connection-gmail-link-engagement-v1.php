@@ -22,6 +22,17 @@ function vp3_gmail_chat_link_tokens_v1(array $item,array $scope,int $agentId,int
     return $item;
 }
 
+/** A mailbox panel uses the native item grant; Chat links retain their exact saved post. */
+function vp3_gmail_curiosity_link_origin_v1(PDO $pdo,array $user,int $agent,int $cid,int $mid,?string $ref): array
+{
+    if($agent!==0||$cid!==0||$mid!==0)return vp3_gmail_chat_link_source_v1($pdo,$user,$agent,$cid,$mid,$ref);
+    if($ref===null)throw new RuntimeException('Choose an exact mailbox item.',422);
+    $scope=agent_connection_gmail_inbox_bound_scope_v1($pdo,$user);
+    if(($scope['state']??null)!=='ready'||empty($scope['provider_ready']))throw new RuntimeException('Gmail access changed.',403);
+    agent_connection_gmail_inbox_item_v1($pdo,$user,$ref);
+    return ['scope'=>$scope,'item_ref'=>$ref,'kind'=>'mailbox','fields'=>[]];
+}
+
 /** Private and action links remain browser navigation only. */
 function vp3_gmail_curiosity_link_identity_v1(string $url): ?array
 {
@@ -91,11 +102,16 @@ function vp3_gmail_curiosity_record_link_v1(PDO $pdo,array $user,int $agentId,in
     ?string $itemRef,string $url,?string $token,string $label='',?callable $transport=null): bool
 {
     $target=vp3_gmail_curiosity_link_identity_v1($url);
-    if($target===null)return false;
+    // Remember a verified navigation without retaining its URL or fetching private/action targets.
+    if($target===null){
+        if(!agent_connection_gmail_link_url_v1($url))return false;
+        $target=['id'=>'navigation:'.hash('sha256',$url)];
+    }
     $owner=vp3_curiosity_private_scope_v1($pdo,$user,$agentId,$cid)['user'];
+    if($cid===0&&$token===null)throw new RuntimeException('A signed mailbox link is required.',403);
     $source=$token===null
         ?agent_connection_gmail_link_source_v1($pdo,$owner,$agentId,$cid,$mid,$itemRef,$url)
-        :vp3_gmail_chat_link_source_v1($pdo,$owner,$agentId,$cid,$mid,$itemRef);
+        :vp3_gmail_curiosity_link_origin_v1($pdo,$owner,$agentId,$cid,$mid,$itemRef);
     $scope=$source['scope'];
     $signed=$token!==null&&$itemRef!==null
         &&hash_equals(vp3_gmail_chat_link_token_v1($scope,$agentId,$cid,$mid,$itemRef,$url,$label),$token);
@@ -139,7 +155,7 @@ function vp3_gmail_curiosity_record_link_v1(PDO $pdo,array $user,int $agentId,in
             $live=agent_connection_gmail_inbox_bound_scope_v1($pdo,$owner,true);
             if(($live['state']??'')!=='ready'||!hash_equals($scopeRef,agent_connection_gmail_inbox_update_scope_ref_v1($live)))return false;
             vp3_curiosity_private_scope_v1($pdo,$owner,$agentId,$cid);
-            $source=vp3_gmail_chat_link_source_v1($pdo,$owner,$agentId,$cid,$mid,$itemRef);
+            $source=vp3_gmail_curiosity_link_origin_v1($pdo,$owner,$agentId,$cid,$mid,$itemRef);
             if(!hash_equals($scopeRef,agent_connection_gmail_inbox_update_scope_ref_v1($source['scope'])))return false;
             $saved=agent_brain_v122_memory($owner,'initiative_sweep',$subject)['metadata']??[];
             if(($saved['clicked_at']??null)!==$observation['clicked_at'])return false;

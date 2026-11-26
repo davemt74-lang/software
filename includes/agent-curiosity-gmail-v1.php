@@ -5,7 +5,7 @@ require_once __DIR__.'/agent-connection-gmail-link-source-v1.php';
 require_once __DIR__.'/agent-memory-scope-v410.php';
 
 /** Read recent reviewed link activity only for the same private Chat and current Gmail grant. */
-function vp3_gmail_curiosity_link_observations_v1(PDO $pdo,array $user,int $agentId,int $cid,int $since,int $limit=24): array
+function vp3_gmail_curiosity_link_observations_v1(PDO $pdo,array $user,int $agentId,int $cid,int $since,int $limit=24,bool $includeUnlabeled=false): array
 {
     if($cid<1||!agent_brain_schema_ready())return [];
     $scope=agent_connection_gmail_inbox_bound_scope_v1($pdo,$user);
@@ -39,7 +39,7 @@ function vp3_gmail_curiosity_link_observations_v1(PDO $pdo,array $user,int $agen
             ||!is_string($target)||preg_match('/\A[a-f0-9]{64}\z/D',$target)!==1||isset($observations[$target]))continue;
         $title=is_string($row['title']??null)?mb_strcut($row['title'],0,280,'UTF-8'):'';
         $excerpt=is_string($row['excerpt']??null)?mb_strcut($row['excerpt'],0,700,'UTF-8'):'';
-        if($title===''&&$excerpt==='')continue;
+        if($title===''&&$excerpt===''&&!$includeUnlabeled)continue;
         $origin=$message.'|'.$item;
         if(!array_key_exists($origin,$verified)){
             try{
@@ -49,7 +49,7 @@ function vp3_gmail_curiosity_link_observations_v1(PDO $pdo,array $user,int $agen
             }catch(RuntimeException|JsonException $error){$verified[$origin]=null;}
         }
         if($verified[$origin]!==$kind)continue;
-        $observations[$target]=['message_id'=>$message,'clicked_at'=>$row['clicked_at'],'target_hash'=>$target,
+        $observations[$target]=['message_id'=>$message,'item_ref'=>$item,'clicked_at'=>$row['clicked_at'],'target_hash'=>$target,
             'title'=>$title,'excerpt'=>$excerpt];
     }
     return array_values($observations);
