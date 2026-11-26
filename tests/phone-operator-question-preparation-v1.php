@@ -81,6 +81,9 @@ vp3_operator_auto_call_ensure_schema_v1($pdo);$now=time();
 // Preparation consumes the already consented saved Q&A above; this fixture does not start analysis.
 vp3_phone_recording_save_policy_v1($pdo,user(),7,['enabled'=>true,'retain_audio'=>true,'transcribe'=>true,'analyze'=>false]);
 $pdo->exec("UPDATE phone_browser_calls_v1 SET state='completed',ended_epoch=created_epoch+20 WHERE state IN ('prepared','dialing','ringing','answered')");
+// The broad prerequisite fixture leaves a legacy Agent conversation active.
+// Finish that earlier simulated call before preparing this independent scenario.
+$pdo->exec("UPDATE phone_voice_calls_v130 SET state='completed' WHERE owner_user_id=1 AND state IN ('conversation_active','streaming_active')");
 $pdo->exec('DELETE FROM phone_operator_carrier_attempts_v1');$pdo->exec('DELETE FROM phone_operator_occurrences_v1');$pdo->exec('DELETE FROM phone_operator_scheduled_assignments_v1');$pdo->exec('DELETE FROM user_calendar_events');$pdo->exec('DELETE FROM agent_scheduling_bookings');
 ddl("CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY AUTOINCREMENT,call_sid VARCHAR(40),step_number INTEGER,owner_user_id INTEGER,agent_id INTEGER,speech_hash TEXT,speech_text TEXT,response_text TEXT,state VARCHAR(24),created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(call_sid,step_number))");
 $pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=?,updated_epoch=?,ended_epoch=?,intent_consumed_epoch=? WHERE id=?')->execute([$now-7200,$now-7180,$now-7180,$now-7200,$ctx['id']]);
