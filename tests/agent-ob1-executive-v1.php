@@ -38,7 +38,7 @@ $assign=static function()use(&$modelCalls,$ref):string{
 $beforeChildren=count(canvas_pipeline_runs('initiative.prepare'));
 $planClaim=canvas_pipeline_claim($plan);
 canvas_pipeline_check(vp3_ob1_assessment_pending_v1($pdo,$owner,$binding,true),
-    'An exact active general assessment reserves the executive inference turn');
+    'An exact active general assessment blocks additional automatic scheduling');
 canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,$planClaim,$assign,null,false)['ok'],
     'The canonical supervisor commits a real assignment cycle');
 $children=canvas_pipeline_runs('initiative.prepare');$child=end($children);$childId=(int)$child['id'];
