@@ -31,6 +31,13 @@ async function test(name,run){await run();count++;console.log('PASS '+name);}
 await test('nothing processes or speaks before explicit conversation start',async()=>{
  const f=fixture();f.c.observe(f.receipts(1));await f.advance(2000);assert.equal(f.calls.length,0);assert.equal(f.plays.length,0);
 });
+await test('browser timers retain the window receiver through conversation callbacks',async()=>{
+ const window={};
+ vm.runInNewContext('function setTimeout(){if(this!==globalThis)throw Error("Illegal timer receiver");return 1;} function clearTimeout(){if(this!==globalThis)throw Error("Illegal timer receiver");}'+source,{window,Date,console});
+ const now=Date.now();const c=window.VP3OperatorParticipationV1.create({callId:'a'.repeat(32),deadline:now+60000,current:()=>true,
+  capture(){},stopVoice(){},revoke:async()=>{},request:async()=>({call_id:'a'.repeat(32),participation_token:'f'.repeat(64),mode:'addressed',state:'listening',max_decisions:4,max_responses:2,decisions_used:0,responses_used:0,minimum_gap:8,expires_epoch:Math.floor(now/1000)+60})});
+ await c.start();assert.equal(c.snapshot.phase,'listening');c.stop();assert.equal(c.snapshot.phase,'closed');
+});
 await test('default mode waits for an address and a quiet gap, then speaks without another click',async()=>{
  const f=fixture();await f.c.start();f.c.observe(f.receipts(1,'Friday works.'));await f.advance(1000);assert.equal(f.calls.length,1);
  f.c.activity();f.c.observe(f.receipts(2));await f.advance(899);assert.equal(f.plays.length,0);await f.advance(1);
@@ -58,6 +65,17 @@ await test('a wait decision uses no speech service',async()=>{
  const f=fixture({request:(action,fields)=>action==='participation_decide'?{call_id:'a'.repeat(32),based_on_seq:fields.receipts.at(-1).seq,state:'wait'}:undefined});
  await f.c.start('helpful');f.c.observe(f.receipts(1,'Friday works.'));await f.advance(900);
  assert.equal(f.c.snapshot.phase,'listening');assert.equal(f.calls.some(x=>x.action==='voice_prepare'),false);f.c.stop();
+});
+await test('existing paid reservations remain spent when conversation mode starts',async()=>{
+ const f=fixture({request:(action,fields)=>action==='participation_start'?{call_id:'a'.repeat(32),participation_token:'f'.repeat(64),mode:fields.mode,state:'listening',max_decisions:4,max_responses:2,decisions_used:3,responses_used:1,minimum_gap:8,expires_epoch:1800000060}:undefined});
+ await f.c.start();assert.equal(f.c.snapshot.decisions,3);assert.equal(f.c.snapshot.responses,1);
+ f.c.observe(f.receipts(1));await f.advance(900);f.end();await flush();
+ assert.equal(f.c.snapshot.phase,'closed');assert.equal(f.plays.length,1);assert.equal(f.c.snapshot.responses,2);
+});
+await test('a verified participant stop closes conversation without speech',async()=>{
+ const f=fixture({request:(action,fields)=>action==='participation_decide'?{call_id:'a'.repeat(32),based_on_seq:fields.receipts.at(-1).seq,state:'stopped'}:undefined});
+ await f.c.start();f.c.observe(f.receipts(1,'Agent, stop.'));await f.advance(900);
+ assert.equal(f.c.snapshot.phase,'closed');assert.equal(f.plays.length,0);assert.equal(f.calls.some(x=>x.action==='voice_prepare'),false);
 });
 await test('a late start grant is revoked after Remove instead of restoring the Agent',async()=>{
  const gate=deferred(),f=fixture({request:action=>action==='participation_start'?gate.promise:undefined});

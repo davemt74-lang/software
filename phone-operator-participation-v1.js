@@ -5,7 +5,8 @@
   const hash=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
   class Conversation {
     constructor(options){
-      this.options=options;this.now=options.now||Date.now;this.set=options.setTimeout||setTimeout;this.clear=options.clearTimeout||clearTimeout;
+      this.options=options;this.now=options.now||Date.now;
+      this.set=options.setTimeout||((fn,ms)=>setTimeout(fn,ms));this.clear=options.clearTimeout||(id=>clearTimeout(id));
       this.phase='off';this.message='';this.token='';this.mode='addressed';this.deadline=options.deadline;
       this.decisions=0;this.responses=0;this.lastSeq=0;this.nextAt=0;this.lastActivity=this.now();this.activityVersion=0;
       this.receipts=[];this.previous=[];this.turn=null;this.timers=new Set();this.pumpTimer=null;
@@ -25,6 +26,7 @@
           if(hash(grant?.participation_token))void this.options.revoke(grant.participation_token);
           return;
         }
+        if(hash(grant?.participation_token))this.token=grant.participation_token;
         if(grant.call_id!==this.options.callId||!hash(grant.participation_token)||grant.mode!==mode||grant.state!=='listening'
           ||grant.max_decisions!==4||grant.max_responses!==2||grant.minimum_gap!==8||!Number.isSafeInteger(grant.expires_epoch))
           throw Error('The Agent conversation permission could not be verified.');
@@ -78,8 +80,9 @@
       try{
         const decision=await this.options.request('participation_decide',{participation_token:this.token,receipts,previous:this.previous});
         if(!this.alive())return;
-        if(decision.call_id!==this.options.callId||decision.based_on_seq!==seq||!['wait','speak'].includes(decision.state))
+        if(decision.call_id!==this.options.callId||decision.based_on_seq!==seq||!['wait','speak','stopped'].includes(decision.state))
           throw Error('The Agent response decision could not be verified.');
+        if(decision.state==='stopped'){this.stop('Agent removed at a participant’s request. The human call and captions continue.');return;}
         if(decision.state==='wait'||version!==this.activityVersion){this.listen();return;}
         if(typeof decision.text!=='string'||!decision.text.trim()||Array.from(decision.text).length>180||/[\p{Cc}\p{Cf}<>]/u.test(decision.text)||!hash(decision.proof))
           throw Error('The Agent response could not be verified.');

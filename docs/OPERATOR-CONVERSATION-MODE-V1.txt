@@ -17,8 +17,12 @@ people while their existing audio paths remain live. No extra microphone is
 opened and no second carrier call is placed.
 
 Either human's audio can interrupt Agent speech locally. The Agent stops its
-audio before waiting for server cleanup, then listens for new context. Remove
-Agent from conversation or Escape ends this permission immediately while the
+audio before waiting for server cleanup, then listens for new context.
+"Agent, stop" at the start of a newly verified caption ends automatic replies
+without another model or synthesis request. This command removes participation;
+the separate live-caption and carrier-recording controls still govern those
+features. Physical recognition accuracy remains part of handset acceptance.
+Remove Agent from conversation or Escape ends this permission immediately while the
 human call and captions continue. Stop live captions, mute, a changed Chat,
 foreground loss, permission loss and call/device teardown end assistance.
 

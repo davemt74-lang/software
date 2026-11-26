@@ -99,6 +99,12 @@ denies(fn()=>part_grant($ctx),409,'removal cannot reset the call grant');
 $ctx=part_fixture();part_grant($ctx,'helpful');$receipts=part_captions($ctx);
 $GLOBALS['partModel']=static function()use($ctx):string{$GLOBALS['partModelCalls']++;return '{"action":"wait"}';};
 c(part_decide($ctx,$receipts)['state']==='wait'&&$GLOBALS['partSpeechCalls']===0,'a wait decision does not synthesize audio');
+$ctx=part_fixture();part_grant($ctx);
+$assist=vp3_operator_live_assist_row_v1($pdo,$ctx['id']);
+$pdo->prepare('UPDATE phone_operator_live_sessions_v1 SET next_seq=2 WHERE call_id=?')->execute([$ctx['id']]);
+$stopReceipt=vp3_operator_live_caption_receipt_v1($assist,$ctx['public'],1,'local_audio','Agent, stop.');
+c(part_decide($ctx,[$stopReceipt])['state']==='stopped'&&$GLOBALS['partModelCalls']===0&&$GLOBALS['partSpeechCalls']===0,'either audio side can revoke participation without another paid decision');
+c(vp3_operator_participation_row_v1($pdo,$ctx['id'])['state']==='closed'&&vp3_operator_live_row_v1($pdo,$ctx['id'])['state']==='active','spoken removal closes participation without changing separate caption permission');
 $ctx=part_fixture();part_grant($ctx);$receipts=part_captions($ctx);
 $GLOBALS['partModel']=static function(array $user,array $evidence,callable $guard)use($pdo,$ctx):string{
     $GLOBALS['partModelCalls']++;vp3_operator_participation_close_v1($pdo,$ctx['id']);$guard();return '{"action":"speak","text":"Hello."}';
@@ -115,4 +121,42 @@ denies(fn()=>part_decide($ctx,$receipts,61),409,'expired conversation permission
 c($GLOBALS['partModelCalls']===0,'expiry is checked before provider work');
 part_request($ctx,['action'=>'stop'],62);
 c(vp3_operator_participation_row_v1($pdo,$ctx['id'])['state']==='closed','stopping live captions also revokes conversation permission');
+
+$ctx=part_fixture();part_grant($ctx);$receipts=part_captions($ctx);
+$assist=vp3_operator_live_assist_row_v1($pdo,$ctx['id']);
+$ownerReceipt=vp3_operator_live_caption_receipt_v1($assist,$ctx['public'],1,'local_audio','Agent, which day works?');
+c(part_decide($ctx,[$ownerReceipt])['state']==='speak','the owner can address the Agent while the other audio side is silent');
+
+$ctx=part_fixture();part_grant($ctx,'helpful');
+$GLOBALS['partModel']=static function():string{$GLOBALS['partModelCalls']++;return '{"action":"wait"}';};
+for($seq=1;$seq<=4;$seq++){ $offset=4+($seq-1)*8;c(part_decide($ctx,part_captions($ctx,$seq,$offset),$offset)['state']==='wait','wait decision consumes its bounded model reservation'); }
+$receipts=part_captions($ctx,5,36);
+denies(fn()=>part_decide($ctx,$receipts,36),429,'four wait decisions cannot become unlimited automatic inference');
+c($GLOBALS['partModelCalls']===4&&$GLOBALS['partSpeechCalls']===0,'the fifth model request is blocked before provider work');
+
+$ctx=part_fixture();part_grant($ctx);$receipts=part_captions($ctx);$fake=$ctx['id']+100000;
+$pdo->prepare("INSERT INTO phone_operator_live_sessions_v1(call_id,owner_user_id,agent_id,chat_agent_id,conversation_id,number_id,policy_revision,token_hash,state,consent_epoch,expires_epoch) SELECT ?,owner_user_id,agent_id,chat_agent_id,conversation_id,number_id,policy_revision,token_hash,'closed',consent_epoch,expires_epoch FROM phone_operator_live_sessions_v1 WHERE call_id=?")
+    ->execute([$fake,$ctx['id']]);
+$pdo->prepare('INSERT INTO phone_operator_live_assist_v1(call_id,receipt_secret,suggestion_attempts) VALUES(?,?,8)')->execute([$fake,bin2hex(random_bytes(32))]);
+denies(fn()=>part_decide($ctx,$receipts),429,'hourly model reservations from another call remain authoritative');
+c($GLOBALS['partModelCalls']===0,'the shared hourly model limit is checked before inference');
+
+$ctx=part_fixture();part_grant($ctx);$receipts=part_captions($ctx);
+for($seq=1;$seq<=8;$seq++)$pdo->prepare("INSERT INTO phone_operator_voice_turns_v1(call_id,source_seq,owner_user_id,token_hash,state,created_epoch,expires_epoch) VALUES(?,?,1,?,'closed',?,?)")
+    ->execute([$ctx['id']+100000,$seq,bin2hex(random_bytes(32)),$ctx['now'],$ctx['now']+20]);
+denies(fn()=>part_decide($ctx,$receipts),429,'hourly speech reservations prevent unnecessary conversation inference');
+c($GLOBALS['partModelCalls']===0&&$GLOBALS['partSpeechCalls']===0,'the exhausted speech budget causes no additional paid work');
+
+$ctx=part_fixture();part_grant($ctx);$decision=part_decide($ctx,part_captions($ctx));$voice=part_prepare($ctx,$decision);
+vp3_phone_recording_save_policy_v1($pdo,user(),7,['enabled'=>false,'retain_audio'=>false,'transcribe'=>false,'analyze'=>false]);
+denies(fn()=>part_request($ctx,['action'=>'voice_claim','source_seq'=>1,'turn_token'=>$voice['turn_token']]),409,'withdrawn live transcription policy blocks a prepared automatic response');
+
+$ctx=part_fixture();$receipts=part_captions($ctx);
+$GLOBALS['partModel']=static fn():string=>'Which day works?';
+$GLOBALS['partSpeech']=static function(string $script):string{$GLOBALS['partSpeechCalls']++;c(str_starts_with($script,VP3_OPERATOR_VOICE_PREFIX_V1),'reviewed responses retain their original disclosure');return str_repeat("\0",64000);};
+$manual=part_request($ctx,['action'=>'suggest','receipts'=>$receipts]);
+$input=['action'=>'voice_prepare','source_seq'=>1,'suggestion'=>$manual['suggestion'],'proof'=>$manual['speech_proof'],'voice_consent_attested'=>false];
+denies(fn()=>part_request($ctx,$input),422,'outside conversation mode each response still requires explicit script approval');
+$approved=part_request($ctx,array_replace($input,['voice_consent_attested'=>true]));
+c($approved['state']==='ready'&&$GLOBALS['partSpeechCalls']===1,'the original reviewed-response path still works without a conversation grant');
 echo 'PHONE_OPERATOR_PARTICIPATION_PHP=PASS ('.($checks-$before).' additional checks)'.PHP_EOL;

@@ -1374,7 +1374,7 @@
       if(event.isTrusted&&captionCurrent(entry,session)&&!session.busy&&!session.voiceTurn){session.participationPrompt=!session.participationPrompt;session.participationConsent=false;render();}
     });open.disabled=session.busy||Boolean(session.voiceTurn);open.dataset.phoneFocusKey='operator-conversation-setup';panel.append(open);
     if(!session.participationPrompt)return false;
-    const box=node('section','vp3-phone-suggestion');box.append(node('p',null,'Let the Agent answer when addressed as Agent or VP3. It waits for a pause, and either person can interrupt. This uses the current caption session: up to 60 seconds, four AI checks and two spoken replies in total. Service charges may apply.'));
+    const box=node('section','vp3-phone-suggestion');box.append(node('p',null,'Let the Agent answer when addressed as Agent or VP3. It waits for a pause, and either person can interrupt. Say Agent, stop to end automatic replies. This uses the current caption session: up to 60 seconds, four AI checks and two spoken replies in total. Service charges may apply.'));
     const consent=node('label','vp3-phone-check'),check=node('input');check.type='checkbox';check.checked=session.participationConsent===true;
     check.dataset.phoneFocusKey='operator-conversation-consent';check.addEventListener('change',event=>{if(event.isTrusted&&captionCurrent(entry,session)){session.participationConsent=check.checked;render();}});
     consent.append(check,node('span',null,'Everyone agrees to automatic AI replies and Cloud processing for this conversation.'));box.append(consent);

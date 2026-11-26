@@ -103,7 +103,13 @@ function vp3_operator_participation_decide_v1(PDO $pdo,array $scope,string $publ
         if($spoken>=2||$spokenHour>=8)vp3_phone_workspace_error_v1('operator_live_budget',429,'The Agent speech allowance is already used.');
         $source=vp3_operator_live_suggestion_evidence_v1($assist,$session,$public,$receipts,false);
         $addressed=false;
-        foreach($source['turns'] as $turn)if($turn['seq']===$source['last_seq']&&preg_match('/\b(?:vp3|agent|assistant)\b/iu',$turn['caption']))$addressed=true;
+        foreach($source['turns'] as $turn)if($turn['seq']===$source['last_seq']){
+            if(preg_match('/^(?:hey[, ]+)?(?:vp3|agent|assistant)[,.:]?\s+(?:please\s+)?(?:stop|leave(?:\s+the\s+call)?|be\s+quiet)\b/iu',trim($turn['caption']))){
+                vp3_operator_participation_close_v1($pdo,$id);vp3_operator_voice_close_call_v1($pdo,$id);
+                return [$id,$fresh['user'],['withdrawn'=>true],$source['last_seq'],$grant['mode']];
+            }
+            if(preg_match('/\b(?:vp3|agent|assistant)\b/iu',$turn['caption']))$addressed=true;
+        }
         if($grant['mode']==='addressed'&&!$addressed)
             return [$id,$fresh['user'],null,$source['last_seq'],$grant['mode']];
         $history=vp3_operator_participation_history_v1($pdo,$assist,$grant,$public,$previous);
@@ -114,6 +120,7 @@ function vp3_operator_participation_decide_v1(PDO $pdo,array $scope,string $publ
             'prior_call_metadata'=>vp3_operator_live_history_context_v1($pdo,$call,$now),'mode'=>$grant['mode']],$source['last_seq'],$grant['mode']];
     });
     if($evidence===null)return ['call_id'=>$public,'based_on_seq'=>$last,'state'=>'wait'];
+    if(!empty($evidence['withdrawn']))return ['call_id'=>$public,'based_on_seq'=>$last,'state'=>'stopped'];
     $guard=static function()use($pdo,$read,$clock):void{vp3_phone_workspace_atomic_v1($pdo,static fn()=>$read($clock?$clock():time(),true));};
     try{
         $guard();

@@ -225,7 +225,14 @@ async function fresh(suffix='',options={}){
  state=fixture();ownerPhone=emptyOwnerPhone();contactDetail=null;contactSchedules=[];authorized=true;tokenGate=null;tokenStarted=false;contactGate=null;contactStarted=false;apiCalls=[];apiMethods=[];stateFailure=options.stateFailure||null;
  if(page)await page.close();page=await browser.newPage({viewport:options.viewport||{width:1360,height:900}});page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/'+suffix);await page.waitForFunction(()=>window.VP3PhoneWorkspaceV1);await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByRole(options.stateFailure?'button':'combobox',{name:options.stateFailure?'Retry':'Selected phone number',exact:true}).waitFor();if(options.stateFailure)await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(button=>button.textContent==='Retry'&&!button.disabled&&!button.closest('[hidden]')));return page;
 }
-async function check(name,run){await run();checks++;console.log('PASS '+name);}
+async function check(name,run){
+ try{await run();}catch(error){
+  if(name.includes('automatically approved conversation'))console.error('Conversation fixture failure:',JSON.stringify({
+   captions:await page.locator('.vp3-phone-live-caption').innerText().catch(()=>''),actions:captionCalls.map(row=>row.action),pageErrors:errors}));
+  throw error;
+ }
+ checks++;console.log('PASS '+name);
+}
 async function enable(){await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).click();await page.waitForFunction(()=>window.phoneFixture?.devices.length&&document.querySelector('.vp3-phone-notice')?.textContent==='Ready for incoming calls.');}
 async function showDrawer(){if(!await page.locator('.vp3-phone-panel').isVisible())await page.getByRole('button',{name:'Phone',exact:true}).click();await page.getByRole('tab',{name:'Connections',exact:true}).click();}
 async function closeDrawer(){if(await page.locator('.vp3-phone-panel').isVisible())await page.locator('.vp3-phone-header').getByRole('button',{name:'Close phone workspace',exact:true}).click();}
