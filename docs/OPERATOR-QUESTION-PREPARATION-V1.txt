@@ -1,0 +1,60 @@
+Operator question preparation from reviewed call results
+
+Behavior
+An already authorized scheduled or spontaneous contact call may use current,
+complete Q&A from up to three recent recorded calls to order the owner's saved
+questions. Unanswered findings lead, followed by conflicting findings and answers
+that still need review. An exact answer accepted or edited through Transcription
+is omitted from the next question list. Generated accepted flags do not count.
+The current scheduled owner objective is preserved, including an explicit request
+to revisit an earlier answer. A participant may also ask to revisit it.
+
+This uses existing call, agenda and recording stores. No new migration, scheduler,
+inference request, spontaneous reason identity or quota reset is introduced.
+Permissions, calling windows, cadence, phone occupancy and Calendar checks run
+before preparation. Reviewed answers alone cannot authorize another call. A
+questions-only spontaneous agenda with everything reviewed defers before a
+carrier reservation. Topics or a still-valid missed-call source remain separate
+reasons. Already connected calls may finish under the existing turn/time limits.
+
+Evidence and privacy
+Sources must match the same owner, saved private Chat, Agent, assigned line,
+contact, destination and exact current agenda revision. Recording and Q&A policy,
+original report delivery, transcript hash, full page coverage and canonical item
+locators are verified by the existing call-review reader. Cross-call use also
+requires the recipient's current approved connected-phone memory permission.
+The newest matching finding wins; a newer call with no matching evidence does
+not reopen an earlier reviewed answer. At most six jobs and three valid calls
+from the last 90 days are considered. Agenda edits establish a new context.
+
+Only current owner-authored pending questions, topics and fixed guidance enter
+the new preparation. Historical answer text is not copied into the briefing.
+Existing separately permitted recurring conversation memory keeps its own gate.
+Preparation is re-read after recording-start I/O and after model generation. A
+changed evidence fingerprint or withdrawn grant withholds late speech. Existing
+exactly-once carrier and model-turn receipts prevent paid retries.
+
+Explanation
+The original private call announcement contains a fixed reason, pending/reviewed
+counts and a link to the earlier canonical finding. The same receipt appears in
+the call card and Recent calls. ddd displays only the fixed reason, counts and
+time. No additional announcement is created. This historical explanation is
+never accepted as execution evidence; every future call re-reads canonical data.
+Missing optional review storage retains ordinary calling behavior. A changed
+scope or grant during preparation defers the current decision.
+
+Verification
+The dedicated PHP fixture exercises signed outbound call acceptance and the real
+canonical Q&A/owner Accept stores, native scheduled admission, simulated carrier
+acceptance, private Chat receipt projection, spoken consent, post-consent
+recording, model objectives, late withdrawal and replay fencing. It also covers
+unreviewed/conflicting/stale/partial findings and all-reviewed spontaneous
+deferral. It runs on PHP 8.1/8.3 SQLite and a dedicated native MySQL database.
+Phone DOM and real browser coverage verify literal summaries, source links,
+diagnostic privacy, Chat teardown and desktop/320px layouts. Existing recurring,
+consent, browser-closed dispatch and package workflows remain required.
+
+Acceptance boundary
+Provider/model fixtures do not prove live carrier audio or physical iPhone
+behavior. Those checks remain a separate authorized hosted acceptance step.
+No real recipient is called by this test suite.

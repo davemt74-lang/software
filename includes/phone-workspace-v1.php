@@ -19,6 +19,7 @@ require_once __DIR__.'/phone-voicemail-v1.php';
 require_once __DIR__.'/phone-call-companion-v1.php';
 require_once __DIR__.'/agent-operator-admission-schema-v1.php';
 require_once __DIR__.'/agent-operator-objectives-v1.php';
+require_once __DIR__.'/agent-operator-question-preparation-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -238,7 +239,10 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
         }
         return $row+['contact_id'=>(int)($contact['id']??0),'contact_name'=>(string)($contact['name']??''),'caller_familiar'=>$prior];
     };
-    $calls=array_map($identity,$calls);$callByRef=array_column($calls,null,'call_id');
+    $preparations=vp3_operator_question_receipts_v1($pdo,$scope,time());
+    $calls=array_map(static function(array $call)use($identity,$preparations):array{
+        $call=$identity($call);if(isset($preparations[$call['public_id']]))$call['question_preparation']=$preparations[$call['public_id']];return $call;
+    },$calls);$callByRef=array_column($calls,null,'call_id');
     $voicemails=array_map(static function(array $row)use($identity,$callByRef):array{$row=$identity($row);if(isset($callByRef[$row['call_id']??'']))$row['caller_familiar']=$callByRef[$row['call_id']]['caller_familiar'];return $row;},$voicemails);if($active)$active=$identity($active);
     // Keep callers relevant to this workspace visible even beyond the alphabetical cap.
     if($known){
@@ -274,6 +278,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
         'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'contact_details_ready'=>vp3_phone_contact_details_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'outreach_review'=>vp3_operator_outreach_last_review_v1($pdo,$scope),
+        'question_preparation_review'=>$preparations?reset($preparations):null,
         'operator_objectives_available'=>vp3_operator_objectives_ready_v1($pdo),
         'schedule_worker'=>function_exists('vp3_phone_worker_health_v1')?vp3_phone_worker_health_v1(true):['state'=>'never_seen'],
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
@@ -301,7 +306,7 @@ function vp3_phone_workspace_delivery_v1(PDO $pdo,array $call,string $kind,strin
         if(!$q->fetchColumn()){if($strictChat)vp3_phone_workspace_error_v1($scopeError,409,'The original call conversation is unavailable.');$aid=0;$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE user_id=? AND user_agent_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1');$q->execute([$owner]);$cid=(int)$q->fetchColumn();
             if(!$cid){$pdo->prepare("INSERT INTO chat_conversations(user_id,user_agent_id,title,created_at,updated_at) VALUES (?,NULL,'Phone',?,?)")->execute([$owner,gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);$cid=(int)$pdo->lastInsertId();}}
         $context=['phone_v1'=>['kind'=>$kind,'call_id'=>(string)$call['public_id']]];
-        foreach(['voicemail_id','transcript_session_id','recording_refs','report','status','browser_route'] as $key)if(array_key_exists($key,$extra))$context['phone_v1'][$key]=$extra[$key];
+        foreach(['voicemail_id','transcript_session_id','recording_refs','report','status','browser_route','question_preparation'] as $key)if(array_key_exists($key,$extra))$context['phone_v1'][$key]=$extra[$key];
         $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at) VALUES (?,NULL,'assistant',?,?,?)")->execute([$cid,$text,json_encode($context,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES),gmdate('Y-m-d H:i:s')]);$mid=(int)$pdo->lastInsertId();
         $pdo->prepare('INSERT INTO phone_browser_deliveries_v1(owner_user_id,event_key,chat_message_id,conversation_id,chat_agent_id) VALUES (?,?,?,?,?)')->execute([$owner,$eventKey,$mid,$cid,$aid]);
         $pdo->prepare('UPDATE chat_conversations SET updated_at=? WHERE id=? AND user_id=?')->execute([gmdate('Y-m-d H:i:s'),$cid,$owner]);return ['message_id'=>$mid,'conversation_id'=>$cid,'chat_agent_id'=>$aid];

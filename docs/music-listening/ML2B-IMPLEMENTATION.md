@@ -4,7 +4,7 @@
 
 ML2B adds a versioned provider API and **Sites & streaming** management from Music Workspace. An authorized artist can register a standalone site, prove control of its HTTPS origin, explicitly select public recordings, and let visitors stream the canonical VP3 audio without a VP3 account or third-party cookies. The provider records anonymous, bounded listening evidence and delivery usage separately.
 
-The implementation starts from main `180743e41ad40c249af6d27c64e0a7ba9cc932cf`, including merged ML1 #930 and ML2A #936 and the subsequent Brainstorming and call-review changes. The implementation PR records the exact candidate, applicable CI, reviewed browser artifacts, merge and packaged release. Local passing tests are not a claim about an unrun MySQL/browser check or a live host.
+The implementation starts from main `180743e41ad40c249af6d27c64e0a7ba9cc932cf`, including merged ML1 #930 and ML2A #936 and the subsequent Brainstorming and call-review changes. Release integration also includes main `98fda3927659560050b3a7e279ffae6b314c2e0c`, preserving Operator question preparation from PR #940 and its package guard. The implementation PR records the exact combined candidate, applicable CI, reviewed browser artifacts, merge and packaged release. Local passing tests are not a claim about an unrun MySQL/browser check or a live host.
 
 Stoneward's **Import Music from VP3** UI and source adapter remain ML2C. The combined recording pilot, deployed Apache/CDN behavior and physical-device playback remain ML2D. This phase does not activate private/paid visitor access, downloads, a royalty rate, financial accrual, payments, an artist analytics dashboard or managed website provisioning.
 

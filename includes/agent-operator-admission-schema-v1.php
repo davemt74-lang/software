@@ -23,7 +23,7 @@ function vp3_operator_outreach_last_review_v1(PDO $pdo,array $scope):?array
 /** Only fixed decision codes may enter app diagnostics. */
 function vp3_operator_outreach_decision_v1(string $state,int $now):array
 {
-    $reasons=['prepared','owner_permission','recipient_permission','no_reason','brainstorm_unavailable','already_planned','contact_changed','route_or_recording_changed',
+    $reasons=['prepared','owner_permission','recipient_permission','no_reason','brainstorm_unavailable','already_planned','contact_changed','route_or_recording_changed','questions_reviewed','question_preparation_changed',
         'calling_window','call_frequency','phone_busy','calendar_conflict','chat_unavailable','carrier_unavailable','access_changed','changed','error'];
     return ['reason'=>in_array($state,$reasons,true)?$state:'error','at'=>gmdate(DATE_ATOM,$now)];
 }
