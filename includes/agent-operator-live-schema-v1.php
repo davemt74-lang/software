@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/agent-operator-live-assist-v1.php';
 require_once __DIR__.'/agent-operator-voice-turns-v1.php';
+require_once __DIR__.'/agent-operator-participation-v1.php';
 
 /** Optional metadata-only live caption session storage; install explicitly. */
 function vp3_operator_live_schema_ready_v1(PDO $pdo): bool
@@ -24,6 +25,7 @@ function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
     )".$suffix);
     vp3_operator_live_assist_install_v1($pdo);
     vp3_operator_voice_install_v1($pdo);
+    vp3_operator_participation_install_v1($pdo);
     if(!vp3_operator_live_schema_ready_v1($pdo))throw new RuntimeException('Live caption metadata installation failed.');
     if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_phone_operator_live_owner_v1 ON phone_operator_live_sessions_v1(owner_user_id,consent_epoch)');
@@ -38,6 +40,7 @@ function vp3_operator_live_ensure_schema_v1(PDO $pdo): void
 function vp3_operator_live_revoke_line_v1(PDO $pdo,int $numberId): void
 {
     if(!vp3_operator_live_schema_ready_v1($pdo))return;
+    if(vp3_operator_participation_ready_v1($pdo))$pdo->prepare("UPDATE phone_operator_participation_v1 SET state='closed' WHERE call_id IN (SELECT call_id FROM phone_operator_live_sessions_v1 WHERE number_id=?)")->execute([$numberId]);
     $pdo->prepare("UPDATE phone_operator_voice_turns_v1 SET state='closed' WHERE call_id IN (SELECT call_id FROM phone_operator_live_sessions_v1 WHERE number_id=?) AND state<>'closed'")->execute([$numberId]);
     $pdo->prepare("UPDATE phone_operator_live_sessions_v1 SET state='closed',pending_seq=0 WHERE number_id=? AND state='active'")->execute([$numberId]);
 }

@@ -36,5 +36,21 @@ for(const rate of [16000,44100,48000,96000]){
   assert.equal(remote.byteLength,128000);assert.equal(local.byteLength,128000);
   assert.ok(Math.abs(remote.getInt16(0,true)-8192)<=1);assert.ok(Math.abs(local.getInt16(0,true)+24576)<=1);
   dual.port.onmessage({data:'stop'});runPair(rate*4);assert.equal(messages.length,1);
+  messages.length=0;
+  const observer=new Processor({processorOptions:{mode:'both'}});
+  const monitor=(seconds,r,l)=>{for(let remaining=Math.round(rate*seconds);remaining>0;){
+    const size=Math.min(128,remaining),out=new Float32Array(size).fill(1);remaining-=size;
+    observer.process([[new Float32Array(size).fill(r)],[new Float32Array(size).fill(l)]],[[out]]);
+    assert.ok(out.every(value=>value===0),'Interruption monitoring is silent');
+  }};
+  observer.port.onmessage({data:'observe'});observer.port.onmessage({data:'watch'});
+  monitor(4,0,0);assert.equal(messages.length,0,'Silence is not an interruption');
+  for(let i=0;i<4;i++){monitor(.05,.2,0);monitor(.1,0,0);}
+  assert.equal(messages.length,0,'Short isolated transients do not interrupt');
+  monitor(.2,.1,0);assert.ok(messages.length>0&&messages.every(m=>m.activity===true),'Caller activity emits only local interruption metadata');
+  messages.length=0;monitor(.2,0,-.1);assert.ok(messages.length>0&&messages.every(m=>m.activity===true),'Owner activity independently interrupts');
+  messages.length=0;observer.port.onmessage({data:'observe_off'});observer.port.onmessage({data:'start'});monitor(4,.2,-.2);
+  assert.equal(messages.length,1);assert.equal(messages[0].remote.byteLength,128000);assert.equal(messages[0].local.byteLength,128000);
+  observer.port.onmessage({data:'stop'});messages.length=0;monitor(4,.2,.2);assert.equal(messages.length,0,'Stop also disables interruption observation');
 }
 console.log('PHONE_OPERATOR_CAPTURE_V1=PASS (4 hardware sample rates; remote and dual consent, independent aligned PCM, silent output, stop/reset)');
