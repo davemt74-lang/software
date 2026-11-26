@@ -108,6 +108,8 @@ $line=vp3_phone_workspace_number_v1($pdo,$ctx['scope'],1);$prep=vp3_operator_que
 c($prep['state']==='ready'&&count($prep['followthrough'])===1&&str_contains($brief['objectives'],'task waiting: 1')&&!str_contains(json_encode($prep),'PRIVATE-OWNER-TODO'),'next-call preparation receives verified record states without copying private task wording');
 $done=agent_task_v123_update(user(),$taskId,'completed');c($done&&vp3_operator_followthrough_outcomes_v1($pdo,$scope,time())[0]['status']==='completed','completion is read from the canonical task, not inferred from call prose');
 $completedPrep=vp3_operator_question_preparation_v1($pdo,$ctx['scope'],$line,$ctx['contact'],$ctx['peer'],time());c($prep['fingerprint']!==$completedPrep['fingerprint'],'a native task-state change alters the same preparation fingerprint fenced after model generation');
+$noise=$pdo->prepare("INSERT INTO chat_messages(conversation_id,role,message,context_json) VALUES(11,'assistant','Ordinary conversation','{}')");for($i=0;$i<300;$i++)$noise->execute();
+$afterConversation=vp3_operator_followthrough_outcomes_v1($pdo,$scope,time());c(count($afterConversation)===1&&$afterConversation[0]['status']==='completed','ordinary conversation cannot push an earlier saved follow-up out of the bounded receipt lookup');
 
 // Reminder preparation can ask for missing time, accept a conversational answer and still require approval.
 followthrough_turn('Show call follow-ups');

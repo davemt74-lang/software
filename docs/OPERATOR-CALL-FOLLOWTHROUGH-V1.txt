@@ -56,6 +56,8 @@ Outcomes
 Status is read from canonical owner/Agent tasks and native reminders, never from
 the transcript narrative or a stale Chat success message. An occurrence marked
 done is distinguished from a completed task and from stopping a recurring series.
+The bounded lookup selects follow-up records so ordinary Chat traffic cannot
+hide earlier saved outcomes; source evidence retains the existing 90-day scope.
 Relevant record states can inform an already authorized next call under the
 existing exact agenda/contact/line/Chat and recipient-memory grant. Private task
 wording is not copied into the voice briefing. Source meaning changes, withdrawn

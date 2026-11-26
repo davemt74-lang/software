@@ -258,7 +258,8 @@ function vp3_operator_followthrough_chat_v1(PDO $pdo,array $user,array $principa
 function vp3_operator_followthrough_outcomes_v1(PDO $pdo,array $scope,int $now,?array $filter=null):array
 {
     $scope+=['principal'=>$scope['agent_id']>0?['kind'=>'user_agent','agent_id'=>$scope['agent_id'],'owner_user_id'=>$scope['owner_user_id'],'viewer_user_id'=>$scope['owner_user_id']]:['kind'=>'system','viewer_user_id'=>$scope['owner_user_id']]];
-    $q=$pdo->prepare("SELECT context_json FROM chat_messages WHERE conversation_id=? AND role='assistant' ORDER BY id DESC LIMIT 256");$q->execute([$scope['conversation_id']]);$messages=$q->fetchAll(PDO::FETCH_COLUMN);$q->closeCursor();$out=[];
+    // Bound follow-up receipts, not ordinary conversation: busy Chats must retain earlier saved outcomes.
+    $q=$pdo->prepare("SELECT context_json FROM chat_messages WHERE conversation_id=? AND role='assistant' AND context_json LIKE ? ORDER BY id DESC LIMIT 256");$q->execute([$scope['conversation_id'],'%"operator_followthrough_v1"%']);$messages=$q->fetchAll(PDO::FETCH_COLUMN);$q->closeCursor();$out=[];
     $seen=[];foreach($messages as $raw){$s=vp3_phone_recording_decode_v1($raw)['transcript_context']['operator_followthrough_v1']??[];
         if(!(($s['kind']??'')==='proposal'&&($s['status']??'')==='completed'||($s['kind']??'')==='result')||!is_array($s['receipt']??null))continue;
         $identity=($s['receipt']['action']??'').':'.(int)($s['receipt']['record_id']??0);if(isset($seen[$identity]))continue;$seen[$identity]=true;
