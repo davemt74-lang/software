@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/agent-operator-scheduled-assignment-v1.php';
 
 /** Owner attestation is NOT independent recipient verification or a dial grant. */
 function vp3_operator_admission_schema_ready_v1(PDO $pdo): bool
@@ -7,7 +8,7 @@ function vp3_operator_admission_schema_ready_v1(PDO $pdo): bool
     try {
         $pdo->query('SELECT owner_user_id,contact_id,agent_id,revision,enabled,binding_hash,purpose,attested_epoch,expires_epoch FROM phone_operator_consent_reviews_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,destination_hash,withdrawn_epoch FROM phone_operator_recipient_optouts_v1 WHERE 1=0');
-        return true;
+        return vp3_operator_schedule_assignment_ready_v1($pdo);
     }catch(PDOException){return false;}
 }
 function vp3_operator_admission_install_v1(PDO $pdo): void
@@ -24,5 +25,6 @@ function vp3_operator_admission_install_v1(PDO $pdo): void
         owner_user_id BIGINT NOT NULL,destination_hash CHAR(64) NOT NULL,withdrawn_epoch BIGINT NOT NULL,
         PRIMARY KEY(owner_user_id,destination_hash)
     )".$suffix);
+    vp3_operator_schedule_assignment_install_v1($pdo,$suffix);
     if(!vp3_operator_admission_schema_ready_v1($pdo))throw new RuntimeException('Operator readiness storage could not be installed.');
 }
