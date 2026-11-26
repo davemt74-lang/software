@@ -54,10 +54,21 @@ const server=http.createServer((req,res)=>{
    const input=JSON.parse(body);res.setHeader('Content-Type','application/json');
    assert.equal(req.method,'POST');assert.equal(input.csrf_token,'fixture-csrf');assert.equal(input.call_id,outgoingId);
    assert.equal(input.agent_id,2);assert.equal(input.conversation_id,10);
-   captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0});
+   captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,capture_mode:input.capture_mode,suggestions_attested:input.suggestions_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0,localBytes:input.local_pcm?Buffer.from(input.local_pcm,'base64').length:0,receiptCount:input.receipts?.length||0});
    const token='f'.repeat(64);let result={};
-   if(input.action==='start'){assert.equal(input.consent_attested,true);state.operator_live.state='authorized';result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+120,chunk_seconds:4,execution:'captions_only'};}
-   else if(input.action==='chunk'){assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,128000);result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:'Fixture caller <script>words</script>'};}
+   if(input.action==='start'){assert.equal(input.consent_attested,true);state.operator_live.state='authorized';state.operator_live.fixtureMode=input.capture_mode||'remote';state.operator_live.fixtureAssist=input.suggestions_attested===true;result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+(state.operator_live.fixtureMode==='both'?60:120),chunk_seconds:4,execution:'captions_only'};if(state.operator_live.fixtureMode==='both'||state.operator_live.fixtureAssist)Object.assign(result,{capture_mode:state.operator_live.fixtureMode,suggestions_enabled:state.operator_live.fixtureAssist});}
+   else if(input.action==='chunk'){
+    assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,128000);
+    result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:'Fixture caller <script>words</script>'};
+    if(state.operator_live.fixtureMode==='both'){assert.equal(Buffer.from(input.local_pcm,'base64').length,128000);result.local_text='Fixture owner words';}
+    else assert.equal(input.local_pcm,undefined);
+    if(state.operator_live.fixtureAssist)result.receipts=[{seq:input.seq,speaker:'remote_audio',text:result.text,proof:'a'.repeat(64)},...(result.local_text?[{seq:input.seq,speaker:'local_audio',text:result.local_text,proof:'b'.repeat(64)}]:[])];
+   }
+   else if(input.action==='suggest'){
+    assert.equal(input.token,token);assert.equal(state.operator_live.fixtureAssist,true);
+    assert.ok(input.receipts.some(r=>r.speaker==='remote_audio')&&input.receipts.some(r=>r.speaker==='local_audio'));
+    result={call_id:outgoingId,based_on_seq:input.receipts.at(-1).seq,suggestion:'Ask which detail matters most.',prior_call_count:2,speech_enabled:false};
+   }
    else if(input.action==='stop'){assert.equal(input.token,token);state.operator_live.state='closed';state.operator_live.eligible=false;result={call_id:outgoingId,stopped:true};}
    else{res.statusCode=422;return res.end(JSON.stringify({ok:false}));}
    res.end(JSON.stringify({ok:true,...result}));
@@ -432,7 +443,7 @@ try{
   state.operator_live={available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
-  await caption.getByRole('button',{name:'Enable live caller captions',exact:true}).click();
+  await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
   assert.equal(await caption.getByRole('button',{name:'Start live captions',exact:true}).isDisabled(),true);
   assert.equal(captionCalls.length,0,'Opening consent UI must not authorize capture');
   await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
@@ -598,6 +609,46 @@ try{
    await settings.scrollIntoViewIfNeeded();await fs.mkdir(path.join(root,'tests/artifacts'),{recursive:true});await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-voicemail-'+(viewport.width===320?'mobile':'desktop')+'.png')});
    assert.equal(apiCalls.some(call=>['prepare_call','save_recording_policy','transcribe_voicemail'].includes(call.action)),false,'Greeting capture cannot create calls or paid transcripts');
   }
+ });
+ await fresh();await enable();
+ await check('both-sided captions and private suggestions use separate consent and never inject Agent speech',async()=>{
+  captionCalls=[];await call();await page.waitForFunction(()=>phoneFixture.calls.at(-1)?.status()==='open');
+  await page.evaluate(()=>{
+   const ctx=new AudioContext({sampleRate:48000}),remote=ctx.createMediaStreamDestination(),local=ctx.createMediaStreamDestination();
+   const a=ctx.createOscillator(),b=ctx.createOscillator(),ga=ctx.createGain(),gb=ctx.createGain();ga.gain.value=.05;gb.gain.value=.04;
+   a.frequency.value=440;b.frequency.value=880;a.connect(ga);ga.connect(remote);b.connect(gb);gb.connect(local);a.start();b.start();
+   const call=phoneFixture.calls.at(-1);call.getRemoteStream=()=>remote.stream;call.getLocalStream=()=>local.stream;
+   phoneFixture.dualAudio={ctx,a,b,remote:remote.stream.getAudioTracks()[0],local:local.stream.getAudioTracks()[0]};void ctx.resume();
+  });
+  state.operator_live={available:true,assist_available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
+  await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
+  assert.equal(await caption.getByLabel(/Include both audio sides/).isChecked(),false);
+  assert.equal(await caption.getByLabel(/Everyone agrees that recent captions/).isChecked(),false);
+  await caption.getByLabel(/Include both audio sides/).check();
+  await caption.getByLabel(/Everyone agrees that recent captions/).check();
+  assert.equal(await caption.getByRole('button',{name:'Start live captions',exact:true}).isDisabled(),true,'Both options do not replace base consent');
+  await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
+  await caption.getByRole('button',{name:'Start live captions',exact:true}).click();
+  await caption.getByText('Fixture owner words',{exact:true}).first().waitFor({timeout:20000});
+  assert.ok(captionCalls.some(row=>row.capture_mode==='both'&&row.suggestions_attested===true));
+  assert.ok(captionCalls.some(row=>row.bytes===128000&&row.localBytes===128000));
+  assert.equal(captionCalls.filter(row=>row.action==='suggest').length,0,'Captions do not automatically dispatch model requests');
+  const originalConnects=await page.evaluate(()=>phoneFixture.connects.length),claims=await page.evaluate(()=>phoneFixture.claims);
+  await caption.getByRole('button',{name:'Suggest a response',exact:true}).click();
+  await caption.getByText('Ask which detail matters most.',{exact:true}).waitFor({timeout:15000});
+  assert.ok(captionCalls.some(row=>row.action==='suggest'&&row.receiptCount>=2));
+  assert.equal(await page.evaluate(()=>phoneFixture.connects.length),originalConnects,'Suggestion never creates a carrier session');
+  assert.equal(await page.evaluate(()=>phoneFixture.claims),claims,'Dual capture never opens an extra microphone lease');
+  await drawer.getByRole('button',{name:'Mute',exact:true}).click();
+  await caption.getByText('Both-sided captions stopped when you muted your audio.',{exact:true}).waitFor();
+  assert.equal(await caption.getByText('Ask which detail matters most.',{exact:true}).count(),0);
+  assert.equal(await page.evaluate(()=>phoneFixture.calls.at(-1).status()),'open');
+  assert.equal(await page.evaluate(()=>phoneFixture.dualAudio.local.readyState),'live','Stopping derived capture does not stop the existing phone track');
+  await drawer.getByRole('button',{name:'Hang up',exact:true}).click();
+  await page.evaluate(()=>{const d=phoneFixture.dualAudio;d.a.stop();d.b.stop();d.remote.stop();d.local.stop();void d.ctx.close();});
+  assert.ok(captionCalls.some(row=>row.action==='stop'));
  });
  if(actualState)await check('the unmodified PHP projection renders both voicemail namespaces and saved processing policy',async()=>{
   assert.ok(actualUi?.button&&actualUi?.config,'The actual PHP header and runtime configuration are mandatory with the real projection');

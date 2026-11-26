@@ -128,3 +128,7 @@
 .vp3-phone-greeting-actions,.vp3-phone-voicemail-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
 .vp3-phone-voicemail-settings .vp3-phone-button,.vp3-phone-voicemail-actions .vp3-phone-button{min-height:44px;max-width:100%;white-space:normal}
 .vp3-phone-voicemail-actions{margin:12px 0}
+.vp3-phone-caption-turn,.vp3-phone-suggestion{display:grid;gap:5px;padding:10px;border:1px solid #dce3ec;border-radius:8px;background:#fff;min-width:0;overflow-wrap:anywhere}
+.vp3-phone-caption-turn>strong,.vp3-phone-suggestion>strong{font-size:11px;color:#475467}
+.vp3-phone-caption-turn>p,.vp3-phone-suggestion>p{margin:0}
+.vp3-phone-suggestion{border-color:#9baec7}
