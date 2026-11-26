@@ -79,6 +79,20 @@ window.VP3PhoneAgentChat = function (request, apps) {
     if (notice.textContent !== message) notice.textContent = message;
     notice.hidden = !message;
   }
+  function chatFailure(error) {
+    if (error?.status === 503 && error.code === 'upgrade_required') {
+      return 'Chat needs a VP3 database upgrade. Ask the account owner to run upgrade.php, then retry.';
+    }
+    switch (error?.status) {
+      case 401: case 419: return 'Your phone session changed. Check the connection before retrying.';
+      case 403: case 404: return 'Chat access is unavailable. Ask the account owner to check this phone and its conversation.';
+      case 409: return 'The phone message or connection changed. Check the connection before retrying.';
+      case 400: case 413: case 415: case 422: return 'The server rejected the message request. Check the connection and message.';
+      case 429: return 'Chat is temporarily rate limited. Try again shortly.';
+      case 503: return 'Chat is temporarily unavailable. Ask the account owner to check the VP3 server and database.';
+      default: return '';
+    }
+  }
   function controls() {
     send.disabled = !deviceId || !online || sending || !!outgoing || !input.value.trim();
   }
@@ -147,7 +161,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
       const text = replied ? turn.reply :
         turn.state === 'awaiting_owner' ? 'Sent. Waiting for the owner to reply.' :
         turn.state === 'failed' ? (turn.failure_message || 'The agent could not reply.') :
-        turn.state === 'unconfirmed' ? 'Delivery could not be confirmed.' :
+        turn.state === 'unconfirmed' ? (turn.failure_message || 'Delivery could not be confirmed.') :
         outgoing?.request_id === id ? 'Sending…' : 'Waiting for a reply…';
       const reply = bubble(replied ? (turn.reply_author === 'owner' ? 'Owner' : 'Agent') : 'Message status',text,false);
       if (retryable) {
@@ -189,8 +203,8 @@ window.VP3PhoneAgentChat = function (request, apps) {
       if (generation !== version) return;
       accept(result);
       if (online) status('');
-    } catch {
-      if (generation === version && online) status('Could not refresh Chat.');
+    } catch (error) {
+      if (generation === version && online) status(chatFailure(error) || 'Could not refresh Chat. Check your connection.');
     } finally {
       if (generation === version) polling = false;
     }
@@ -212,9 +226,12 @@ window.VP3PhoneAgentChat = function (request, apps) {
       if (generation !== version) return;
       accept(result);
       if (outgoing) outgoing.state = 'unconfirmed';
-    } catch {
+    } catch (error) {
       if (generation !== version) return;
-      outgoing.state = 'unconfirmed';
+      if (outgoing) {
+        outgoing.state = 'unconfirmed';
+        outgoing.failure_message = chatFailure(error) || 'Delivery could not be confirmed. Check your connection and retry.';
+      }
     } finally {
       if (generation === version) {
         sending = false;

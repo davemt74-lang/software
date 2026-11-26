@@ -76,6 +76,7 @@ try {
         assert.equal(q.device_id,device.id);
         sent.push(q);
         if (sent.length === 1) return route.abort(); // Lost before the server committed.
+        if (sent.length === 2) return route.fulfill({status:503,json:{ok:false,code:'upgrade_required',error:'Do not expose arbitrary server text'}});
         const previous = turns.findIndex(turn => turn.request_id === q.request_id);
         const turn = {request_id:q.request_id,message:q.message,state:'awaiting_owner',reply:null};
         if (previous < 0) turns.push(turn);
@@ -190,10 +191,18 @@ try {
   assert.equal(await chat.getAttribute('aria-selected'),'true','sending from Connection opens the conversation');
   assert.equal(await page.locator('#phone-controls').isVisible(),false);
   await page.getByRole('button',{name:'Retry delivery'}).click();
+  await page.getByText('Chat needs a VP3 database upgrade. Ask the account owner to run upgrade.php, then retry.').waitFor();
+  assert.equal(await page.getByText('Do not expose arbitrary server text').count(),0);
+  await connection.click();
+  await apps.click();
+  assert.equal(await page.locator('#phone-app-camera').isEnabled(),true,'a chat failure does not disable Camera');
+  await apps.click();
+  await chat.click();
+  await page.getByRole('button',{name:'Retry delivery'}).click();
   await page.getByText('Sent. Waiting for the owner to reply.').waitFor();
-  assert.equal(sent.length,2);
-  assert.equal(sent[0].request_id,sent[1].request_id);
-  assert.equal(sent[0].message,sent[1].message);
+  assert.equal(sent.length,3);
+  assert.ok(sent.every(q=>q.request_id===sent[0].request_id),'all attempts retain the same request ID');
+  assert.ok(sent.every(q=>q.message===sent[0].message),'all attempts retain the original message');
   assert.equal(await page.locator('.phone-bubble.mine').count(),1);
   turns.push({request_id:'old-auto-turn',message:'What about earlier?',state:'replied',
     reply:'Previous agent message.',owner_reply:'A personal follow-up.'});
