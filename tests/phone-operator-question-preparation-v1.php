@@ -78,7 +78,8 @@ c($real['state']==='ready'&&$real['reviewed_count']===1&&array_column($real['que
 
 // Native scheduled occurrence and permissions, with provider/model calls replaced at their real boundaries.
 vp3_operator_auto_call_ensure_schema_v1($pdo);$now=time();
-vp3_phone_recording_save_policy_v1($pdo,user(),7,['enabled'=>true,'retain_audio'=>true,'transcribe'=>true,'analyze'=>true,'modules'=>['qa']]);
+// Preparation consumes the already consented saved Q&A above; this fixture does not start analysis.
+vp3_phone_recording_save_policy_v1($pdo,user(),7,['enabled'=>true,'retain_audio'=>true,'transcribe'=>true,'analyze'=>false]);
 $pdo->exec("UPDATE phone_browser_calls_v1 SET state='completed',ended_epoch=created_epoch+20 WHERE state IN ('prepared','dialing','ringing','answered')");
 $pdo->exec('DELETE FROM phone_operator_carrier_attempts_v1');$pdo->exec('DELETE FROM phone_operator_occurrences_v1');$pdo->exec('DELETE FROM phone_operator_scheduled_assignments_v1');$pdo->exec('DELETE FROM user_calendar_events');$pdo->exec('DELETE FROM agent_scheduling_bookings');
 ddl("CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY AUTOINCREMENT,call_sid VARCHAR(40),step_number INTEGER,owner_user_id INTEGER,agent_id INTEGER,speech_hash TEXT,speech_text TEXT,response_text TEXT,state VARCHAR(24),created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(call_sid,step_number))");
