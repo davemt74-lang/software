@@ -2,12 +2,13 @@
 declare(strict_types=1);
 require_once __DIR__.'/phone-browser-v1.php';
 require_once __DIR__.'/agent-operator-dispatch-preview-v1.php';
+require_once __DIR__.'/agent-operator-conversation-v1.php';
 
 /** The answer URL is a public carrier callback. Only the accepted SID may change its own receipt. */
-function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signature,int $now):string
+function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signature,int $now,?callable $generator=null):string
 {
     $url=static fn(string $step)=>vp3_phone_browser_callback_v1('operator_answer',['event'=>$step]);
-    if(!in_array($event,['answer','retry','last','confirm','status'],true))throw new InvalidArgumentException('Unknown answer event.');
+    if(!in_array($event,['answer','retry','last','confirm','status'],true)&&!preg_match('/^turn[1-8]$/D',$event))throw new InvalidArgumentException('Unknown answer event.');
     $sid=vp3_phone_browser_verify_v1($form,$signature,$url($event));
     $query=$pdo->prepare("SELECT owner_user_id FROM phone_operator_carrier_attempts_v1 WHERE provider_sid=? AND state='submitted'");
     $query->execute([$sid]);
@@ -23,6 +24,8 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         }
         return $hangup;
     }
+    if(preg_match('/^turn([1-8])$/D',$event,$match))
+        return vp3_operator_conversation_turn_v1($pdo,(int)$owner,$sid,(int)$match[1],$form,$now,$generator);
     return section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup){
         $query=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a
             ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id AND a.start_epoch=o.start_epoch
@@ -59,6 +62,6 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         }
         $digit=$form['Digits']??'';
         $save($digit==='1'?'answer_consented':($digit===''?'answer_no_input':'answer_declined'));
-        return $digit==='1'?'<Response><Say>Thank you. Your choice has been saved. Goodbye.</Say><Hangup/></Response>':$hangup;
+        return $digit==='1'?vp3_operator_conversation_gather_v1('Thank you. How can I help with today’s scheduled conversation?',1):$hangup;
     });
 }

@@ -25,6 +25,8 @@ check(parts.live.includes('vp3_phone_voice_current_route_v131')
   &&parts.live.includes('vp3_phone_voice_live_config_v140'),
   'tenant revalidated for every turn');
 check(parts.ai.includes("===\'phone_voice\'")
+  &&parts.ai.includes('phone_objectives')
+  &&parts.ai.includes('limited call purpose')
   &&parts.ai.includes('This caller is NOT the VP3 account owner')
   &&parts.ai.includes("if (($turnControl['surface']??'')==='phone_voice') $context=[]"),
   'unauthenticated caller gets a separate private-data-free model prompt');

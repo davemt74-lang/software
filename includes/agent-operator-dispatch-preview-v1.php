@@ -57,7 +57,8 @@ function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now,?string $a
     $calendar=vp3_operator_occurrence_calendar_reason_v1($pdo,$assignment,(int)$row['start_epoch'],$end,$now);
     if($calendar!=='awaiting_dispatch_checks')return ['reason'=>$calendar];
     return ['reason'=>'eligible','fields'=>['From'=>$line['phone_e164'],'To'=>$to,'TimeLimit'=>$seconds],
-        'objectives'=>$event['description'],'conversation_id'=>(int)$assignment['conversation_id']];
+        'objectives'=>$event['description'],'conversation_id'=>(int)$assignment['conversation_id'],
+        'agent_id'=>(int)$assignment['agent_id']];
 }
 
 function vp3_operator_preview_due_v1(PDO $pdo,int $now):array
