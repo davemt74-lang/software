@@ -73,12 +73,13 @@
         if(document.hidden||!ready)return;
         pendingEvent=null;
         const receipt=testResult(result,expected);
-        if(!receipt||receipt.event_ref!==ref||receipt.opened_epoch<1||!result.target||!['info','chat','requests'].includes(result.target.tab))throw Error('Notification source unavailable');
+        if(!receipt||receipt.event_ref!==ref||receipt.opened_epoch<1||!result.target||!['info','chat','requests','agent'].includes(result.target.tab))throw Error('Notification source unavailable');
         const target={tab:result.target.tab};
-        const fields=target.tab==='chat'?['tab','request_id']:target.tab==='requests'?['tab','exchange_id']:['tab'];
+        const fields=target.tab==='chat'?['tab','request_id']:target.tab==='requests'?['tab','exchange_id']:target.tab==='agent'?['tab','item_ref']:['tab'];
         if(Object.keys(result.target).some(key=>!fields.includes(key)))throw Error('Invalid notification source');
         if(target.tab==='chat'){if(typeof result.target.request_id!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(result.target.request_id))throw Error('Invalid notification source');target.request_id=result.target.request_id;}
         if(target.tab==='requests'){if(!reference(result.target.exchange_id))throw Error('Invalid notification source');target.exchange_id=result.target.exchange_id;}
+        if(target.tab==='agent'){if(!reference(result.target.item_ref))throw Error('Invalid notification source');target.item_ref=result.target.item_ref;}
         testNotice=result.target.tab==='info'?'Notification opened in VP3 Phone.':'';render();
         onResolved({event_ref:ref,device_id:expected.device_id,subscription_revision:expected.subscription_revision,state:receipt.state,opened_epoch:receipt.opened_epoch,target});
       }catch(_error){if(v===version&&current(expected)){pendingEvent=null;testNotice='This notification is no longer available. Review the current connection in VP3 Phone.';render();onUnavailable();}}

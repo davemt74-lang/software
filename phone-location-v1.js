@@ -155,10 +155,14 @@
   }
   const camera = window.VP3PhoneCameraHolder?.(request);
   const savedPlace = window.VP3PhoneSavedPlace?.(request);
+  let agentWorkspace = null;
   const chat = window.VP3PhoneAgentChat?.(request, {
     camera: () => camera?.open(),
-    savePlace: () => savedPlace?.open()
+    savePlace: () => savedPlace?.open(),
+    leaveAgent: () => agentWorkspace?.leave() ?? true,
+    onTabChange: view => agentWorkspace?.setVisible(view === 'agent')
   });
+  agentWorkspace = window.VP3PhoneAgentWorkspaceV1?.({shell:chat});
   const handoff=window.VP3PhoneHandoffV1?.({request:(action,body)=>new Promise((resolve,reject)=>queue(async()=>{
     try{
       if(dead||document.hidden)throw Error('Phone page not active');
@@ -171,13 +175,15 @@
     try{if(dead||document.hidden||!device||device.id!==body.device_id)throw Error('Phone connection changed');
       const result=await request(action,body);if(!dead&&result.device?.id===device?.id){accept(result);render();}resolve(result);
     }catch(error){reject(error);}
-  })),onUnavailable:()=>chat?.openInfo(),onResolved:notification=>{
+  })),onUnavailable:()=>chat?.openInfo(),onResolved:async notification=>{
     if(dead||pending||notification.device_id!==device?.id)return;
     const target=notification.target;
     if(target.tab==='info')chat?.openInfo();
     else if(target.tab==='chat')chat?.openNotification(target.request_id);
+    else if(target.tab==='agent')await agentWorkspace?.openNotification(target.item_ref);
     else if(target.tab==='requests'&&device?.communication?.request_permission_saved===true){
-      chat?.openConnection();infoDetails.open=true;renderInformation();exchange?.openNotification(target.exchange_id);
+      if(await chat?.openConnection()===false||dead||pending||notification.device_id!==device?.id)return;
+      infoDetails.open=true;renderInformation();exchange?.openNotification(target.exchange_id);
     }
   }});
   function discardDeferred(session) {
@@ -356,6 +362,7 @@
     camera?.bind(paired?.id || null, owner);
     savedPlace?.bind(paired, owner, available && !queued && navigator.onLine !== false);
     chat?.bind(paired?.id || null, available && navigator.onLine !== false);
+    agentWorkspace?.bind(paired,secure&&available&&!initial&&!dead&&navigator.onLine!==false&&!queued&&!claim);
     const gps = Boolean(secure && navigator.geolocation);
     el('label').textContent = device?.name || 'Connect this phone';
     el('badge').textContent = device ? (connected ? 'Connected phone' : 'Pending approval') : 'Phone Tracking';

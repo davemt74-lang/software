@@ -3,6 +3,16 @@ name: Gmail Composer and Styled Email
 on:
   pull_request:
     paths:
+      - 'phone-agent-*'
+      - 'phone-location*'
+      - 'phone-push-*'
+      - 'includes/phone-*'
+      - 'api/phone-*'
+      - 'includes/agent-image-generation-v1.php'
+      - 'agent-worker-v1910.php'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/phone-agent-workspace-*'
       - '*gmail*'
       - '*email*'
       - 'chat.js'
@@ -35,6 +45,16 @@ on:
   push:
     branches: [main]
     paths:
+      - 'phone-agent-*'
+      - 'phone-location*'
+      - 'phone-push-*'
+      - 'includes/phone-*'
+      - 'api/phone-*'
+      - 'includes/agent-image-generation-v1.php'
+      - 'agent-worker-v1910.php'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/phone-agent-workspace-*'
       - '*gmail*'
       - '*email*'
       - 'chat.js'
@@ -112,6 +132,10 @@ jobs:
           php tests/agent-email-composer-v1.php
           php tests/agent-email-attachments-v1.php
           php tests/agent-email-display-v1.php
+      - name: Private Phone Agent enrollment, native sources, receipts and background push
+        run: |
+          for file in tests/phone-agent-workspace-*.php; do php "$file"; done
+          for file in includes/phone-agent-workspace-*.php api/phone-agent-workspace-v1.php api/phone-location-v1.php phone-location.php; do php -l "$file"; done
       - name: Existing Gmail send, writing, provider and inference boundaries
         run: |
           php tests/agent-connections-gmail-v1.php
@@ -138,6 +162,7 @@ jobs:
       VP3_EMAIL_REVIEW_SCREENSHOT_DIR: artifacts/email-review
       VP3_GMAIL_SENT_SCREENSHOT_DIR: artifacts/gmail-sent
       VP3_GMAIL_FOLLOWTHROUGH_SCREENSHOT_DIR: artifacts/gmail-followthrough
+      VP3_PHONE_AGENT_SCREENSHOT_DIR: artifacts/phone-agent
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -156,6 +181,10 @@ jobs:
         run: node tests/chat-email-composer-browser.mjs
       - name: Response deadlines, verified outcomes, pause, resolve and follow-up review
         run: node tests/gmail-followthrough-browser.mjs
+      - name: Connected Phone Agent native review, dirty navigation, private canvases and push targets
+        run: |
+          node tests/phone-agent-workspace-state-v1.mjs
+          node tests/phone-agent-workspace-browser-v1.mjs
       - name: Selected email instructions and private Chat recovery
         run: |
           node tests/chat-send-recovery.mjs

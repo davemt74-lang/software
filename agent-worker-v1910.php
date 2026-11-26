@@ -169,6 +169,13 @@ function agent_worker_runner_cycle_v1910(PDO $pdo,string $executor,int $ownerLim
         }
         catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.gmail_inbox.sweep_failed',['error_class'=>get_class($e)]);}
     }
+    if(($executor==='all'||$executor==='cloud')&&table_exists('vp3_phone_agent_enrollments_v1')){
+        try{
+            require_once __DIR__.'/includes/phone-agent-workspace-worker-v1.php';
+            $counts['phone_agent_workspace']=vp3_phone_agent_workspace_sweep_v1($pdo,time(),min(10,max(1,$ownerLimit)));
+        }
+        catch(Throwable $e){$counts['failed']++;agent_runtime_v125_trace('worker.phone_agent_workspace.sweep_failed',['error_class'=>get_class($e)]);}
+    }
     if(($executor==='all'||$executor==='cloud')&&table_exists('agent_connection_gmail_github_v1')){
         try{
             require_once __DIR__.'/includes/agent-connection-gmail-github-v1.php';

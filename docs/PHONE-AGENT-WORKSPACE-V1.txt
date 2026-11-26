@@ -1,0 +1,113 @@
+CONNECTED PHONE — AGENT WORKSPACE V1
+
+What this release adds
+
+The connected owner's phone has an AGENT tab for private Agent results,
+important incoming Gmail, email drafts awaiting review, generated images and
+saved private canvases. The tab is the default landing view after the owner
+explicitly enables it. Existing Chat, Connection and Info tabs remain available.
+
+Phone setup
+
+1. Pair and approve the phone through the existing Connected Phone flow.
+2. Open VP3 Phone in the same browser/application context in which the owner
+   signs in. A paired-device label saying "owner" is not a sign-in.
+3. In Connection, sign in to the owning account if necessary and enable the
+   private Agent workspace. Main Agent is selected initially; another private
+   Agent can be selected explicitly.
+4. Enable Agent notifications if wanted. Complete the existing phone push
+   subscription/permission setup separately. Notifications contain a generic
+   invitation to open VP3 Phone, never an email subject, recipient or body.
+
+The owner must have a current authenticated web session to open private items
+or approve an email. Pairing alone never opens the owner's mailbox or canvases.
+Logging out, password changes, device expiry/revocation, credential rotation,
+enrollment changes and Agent changes invalidate the current private scope.
+
+Using the tab
+
+All, Needs you, For you and History filter the same source-backed work items.
+The feed spans currently authorized private Chats of the selected Agent, with
+bounded saved-source coverage. Completed results require a native completion
+receipt; this feed does not label every Chat answer as a completed result or
+copy the entire Gmail mailbox.
+Mark read, Acknowledge and Snooze record separate phone receipts; none sends an
+email, changes a Gmail read label, resolves a Gmail matter or proves delivery.
+The tab never runs model inference, scans Gmail or makes calls merely to load
+its feed.
+
+Email drafts open the existing Gmail composer on the exact saved draft. The
+owner can edit a new-mail draft's recipient, subject and body, attach an owned
+saved/uploaded image, generate an image with the normal native review, save the
+draft or send the exact reviewed version. Canonical replies and follow-ups keep
+their source-bound recipient and subject. Existing stale-draft, token expiry,
+source-change, send reconciliation and response deadline checks remain authoritative. Leaving
+unsaved edits offers Save draft and leave, Keep editing or Discard edits.
+
+Important-email cards come from the current saved Gmail classification and
+mailbox grant. They identify the mailbox as their origin. Their selected-Agent
+Chat is a discussion destination, not a claim that the email originated in that
+Chat. The native reader preserves formatted email styling with the existing
+sanitization and explicit remote-image choice.
+
+Images use the original private generation and owned asset. Canvases use their
+original private version, runtime sandbox and app-data permissions. Opening a
+phone Canvas does not publish it. Active apps save state with native revision
+checks; saved previews do not overwrite the active app's data. Generated code
+cannot access the parent owner session or unrestricted network.
+
+Results, drafts, images and canvases keep their original Agent/Chat provenance.
+Open original Chat returns to that private conversation. The mailbox-wide
+important-email action instead says Discuss with your Agent. A conversation
+is created only when the owner explicitly enrolls/selects an Agent and none
+exists; background reads never create conversations.
+
+Deployment
+
+Extract the complete production ZIP into the existing installation, preserving
+the installation's config.php, private/ and uploads/ directories. The archive
+excludes these local files, secrets, tests and development tooling. Run the
+normal authenticated upgrade.php flow before using the new tab. setup.php and
+upgrade.php install the workspace index, explicit owner enrollment, per-device
+receipts and bounded background sweep metadata through the existing phone
+installer. Live requests do not run schema migrations.
+
+Keep the normal Cloud Agent worker and existing Web Push delivery worker
+scheduled. The Cloud Agent worker indexes a bounded number of current opted-in
+owner enrollments and queues eligible opaque notification events. The existing
+Web Push worker remains responsible for delivery. Old visible work is
+backfilled silently when notifications are enabled. Push display/open receipts
+are separate from item reading, acknowledgment and email approval.
+Read and acknowledged items suppress queued delivery; snooze suppresses it until
+the deadline. A native source edit has a new semantic revision. Saved source
+timestamps, rather than indexing or polling time, determine the notification
+cutover, and historical important-email records remain quiet.
+
+The device cookie retains its existing exact API path. Private viewer and
+native action routes are dispatched through that path and also require the
+real owner session. No new durable owner bearer token is issued to the phone.
+
+Scope of phone calls
+
+This release supplies the private mobile destination needed by future Agent
+phone interruptions. It does not enable automatic owner calls or voice-only
+email approval. Any call escalation must use the same item identity, explicit
+owner interruption preferences and verified phone/session authority; answering
+a call or a generic "yes" is not an email send approval.
+
+Acceptance gates
+
+1. Explicit owner enrollment; paired guests and role labels cannot enter.
+2. Exact account/device/credential/Agent/Chat checks on every private request.
+3. Source-backed feed with deterministic IDs and bounded, scoped pagination.
+4. Distinct read/acknowledge/snooze receipts with stale-version rejection.
+5. Exact native Gmail review/save/send and unsaved-edit protection.
+6. Formatted important email with current mailbox classification and grant.
+7. Native images and isolated private canvases, with canonical app state.
+8. Opted-in background pushes, opaque payloads and exact-item routing.
+9. Existing holder Chat/Connection/Info preserved and one visible scroll area.
+10. Native database, browser, package and exact-commit deployment verification.
+
+Tests use isolated database/browser fixtures and deterministic provider
+substitutes. Release verification does not send real emails, call phones,
+deliver push messages to real devices or incur provider generation charges.

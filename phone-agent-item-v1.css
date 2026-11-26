@@ -1,0 +1,33 @@
+:root { color-scheme:light; font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:#17202e; background:#fff; }
+* { box-sizing:border-box; }
+html,body { margin:0; min-width:0; width:100%; }
+body { padding:0; overflow-x:hidden; }
+[hidden] { display:none !important; }
+#phoneAgentItem { min-width:0; width:100%; }
+#phoneAgentItemStatus { margin:0; padding:16px; overflow-wrap:anywhere; color:#5d6878; }
+#chatThread,#chatEmailCanvasV1 { width:100%; max-width:none; min-width:0; margin:0; padding:0; overflow:visible; }
+.vp3-email-compose { border-radius:0; }
+.vp3-email-compose-header { padding:16px; border-radius:0; }
+.vp3-email-compose-editor,.vp3-email-compose-list { padding:0 16px 24px; }
+.vp3-email-compose-notice,.vp3-email-compose-followthrough { padding-left:16px; padding-right:16px; }
+.vp3-email-compose input[type="text"],.vp3-email-compose input[type="email"],.vp3-email-compose textarea,.vp3-email-compose select { font-size:16px; }
+.vp3-email-compose button { min-height:44px; }
+.vp3-email-compose-actions { position:static; }
+.vp3-email-compose-actions > button { flex:1 1 120px; }
+.vp3-email-compose-attachment button { min-height:40px; }
+#phoneAgentItemContent { min-width:0; padding:16px; overflow-wrap:anywhere; }
+#phoneAgentItemContent h1 { margin:0 0 14px; font-size:20px; line-height:1.3; }
+.phone-agent-email-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+.phone-agent-images { display:grid; gap:20px; }
+.phone-agent-images figure { margin:0; min-width:0; }
+.phone-agent-images img { display:block; width:100%; height:auto; max-height:75dvh; object-fit:contain; border-radius:10px; background:#f4f6f8; }
+.phone-agent-images figcaption { padding:9px 0; font-size:13px; color:#657083; }
+.phone-agent-images a { display:inline-flex; align-items:center; min-height:44px; padding:8px 14px; border:1px solid #d4dae3; border-radius:8px; color:#233d64; text-decoration:none; }
+body.phone-agent-canvas,body.phone-agent-canvas #phoneAgentItem { height:100dvh; min-height:0; overflow:hidden; }
+body.phone-agent-canvas #phoneAgentItem { display:flex; flex-direction:column; }
+body.phone-agent-canvas #phoneAgentItemContent { flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); padding:0; overflow:hidden; }
+body.phone-agent-canvas #phoneAgentItemContent header { padding:10px 16px; border-bottom:1px solid #e4e8ee; }
+body.phone-agent-canvas #phoneAgentItemContent h1 { margin:0; font-size:16px; }
+body.phone-agent-canvas #phoneAgentItemContent header p { margin:4px 0 0; font-size:12px; color:#657083; }
+.phone-agent-canvas-frame { display:block; width:100%; height:100%; min-height:0; border:0; background:#fff; }
+@media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }

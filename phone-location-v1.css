@@ -104,6 +104,11 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
 
 /* Info is a single scrollable, text-first guide; no additional nested scroll areas. */
 .phone-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+#phone-location[data-agent-ready="true"] .phone-tabs{grid-template-columns:repeat(4,minmax(0,1fr))}
+#phone-location[data-agent-ready="true"] .phone-tabs [role="tab"]{font-size:.8rem;padding-inline:.3rem;min-width:0}
+#phone-location[data-tab] #phone-agent{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
+#phone-location[data-tab="agent"] #phone-chat-status{display:none}
+#phone-location[data-tab="agent"] #phone-dock{padding-block:0;border-top:0;min-height:env(safe-area-inset-bottom)}
 #phone-location[data-tab] #phone-info{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}
 #phone-location[data-tab="info"] #phone-chat-status{display:none}
 #phone-location[data-tab="info"] #phone-dock{padding-block:0;border-top:0;min-height:env(safe-area-inset-bottom)}

@@ -11,6 +11,13 @@ function vp3_phone_push_source_target_v1(PDO $pdo,array $d,array $source,int $no
         ||!is_int($source['expires_epoch']??null)||$source['expires_epoch']<=$now)return null;
     $type=$source['type']??null;$id=$source['id']??null;$revision=$source['revision']??null;
     if($type==='test')return is_string($id)&&preg_match('/^[a-f0-9]{32}$/D',$id)===1&&$revision===1?['tab'=>'info']:null;
+    if($type==='agent_item'){
+        require_once __DIR__.'/phone-agent-workspace-v1.php';
+        // This opaque navigation target never grants private content access.
+        // The owner-only workspace API independently requires the real session.
+        return vp3_phone_agent_workspace_push_current_v1($pdo,$d,$source,$now)
+            ?['tab'=>'agent','item_ref'=>$id]:null;
+    }
     if($type==='private_chat'){
         if(!is_string($id)||preg_match('/^[1-9][0-9]{0,18}$/D',$id)!==1||$revision!==1)return null;
         require_once __DIR__.'/paired-phone-agent-v1.php';

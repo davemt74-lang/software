@@ -61,6 +61,7 @@ jobs:
             "phone_push_section": "PS5C.4",
             "phone_push_worker_minimum_php": "8.2",
             "phone_push_delivery_default": "off",
+            "phone_agent_workspace": "owner-private-v1",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -520,6 +521,16 @@ jobs:
                       includes/phone-tracking-local-research-v1.php includes/phone-tracking-local-approval-v1.php includes/phone-tracking-local-offers-v1.php \
                       includes/phone-tracking-history-v1.php includes/phone-tracking-places-v1.php \
                       assets/phone-map/leaflet.js assets/phone-map/leaflet.css assets/phone-map/qr.js assets/phone-map/world.json; do
+            test -s "_deploy/$path"
+          done
+
+          # Owner Phone Agent views share the exact native sources and actions.
+          for path in api/phone-agent-workspace-v1.php \
+                      includes/phone-agent-workspace-schema-v1.php includes/phone-agent-workspace-v1.php \
+                      includes/phone-agent-workspace-sources-v1.php includes/phone-agent-workspace-worker-v1.php \
+                      includes/phone-agent-workspace-native-v1.php includes/phone-agent-workspace-view-v1.php \
+                      phone-agent-workspace-v1.js phone-agent-workspace-v1.css phone-agent-workspace-media-v1.js \
+                      phone-agent-item-v1.js phone-agent-item-v1.css docs/PHONE-AGENT-WORKSPACE-V1.txt; do
             test -s "_deploy/$path"
           done
 

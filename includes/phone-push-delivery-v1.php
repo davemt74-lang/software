@@ -196,7 +196,7 @@ function vp3_phone_push_delivery_view_v1(PDO $pdo,array $d,int $now,?string $tes
 function vp3_phone_push_delivery_source_v1(array $source,int $now):array
 {
     vp3_phone_push_delivery_need_v1(!array_diff(array_keys($source),['type','id','revision','expires_epoch'])
-        &&in_array($source['type']??null,['test','private_chat','agent_request'],true)
+        &&in_array($source['type']??null,['test','private_chat','agent_request','agent_item'],true)
         &&is_string($source['id']??null)&&preg_match('/^[A-Za-z0-9._:-]{1,96}$/D',$source['id'])===1
         &&is_int($source['revision']??null)&&$source['revision']>0&&$source['revision']<=9007199254740990
         &&is_int($source['expires_epoch']??null)&&$source['expires_epoch']>$now&&$source['expires_epoch']<=$now+86400);

@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-v1.php';
+require_once __DIR__ . '/includes/phone-agent-workspace-schema-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
 require_once __DIR__ . '/includes/ai-service-usage-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
@@ -365,6 +366,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_handoff_ready_v1($schemaConnection)
         && vp3_phone_push_ready_v1($schemaConnection)
         && vp3_phone_push_delivery_ready_v1($schemaConnection)
+        && vp3_phone_agent_workspace_ready_v1($schemaConnection)
+        && vp3_phone_agent_workspace_worker_ready_v1($schemaConnection)
         && vp3_phone_camera_ready_v1($schemaConnection)
         && vp3_phone_camera_map_ready_v1($schemaConnection)
         && vp3_phone_record_ready_v1($schemaConnection)
