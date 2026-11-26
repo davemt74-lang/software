@@ -50,7 +50,16 @@ await page.route('https://compose.test/api/chat-email-v1.php',async route => {
     assert.match(input.request_id,/^[a-f0-9]{32}$/);
     return ok({draft:publicDraft(makeDraft(input.conversation_id,{to:input.to || '',subject:input.subject || '',body:input.body || ''}))});
   }
-  if (input.action === 'compose_list') return ok({drafts:[...drafts.values()].filter(d => d.cid === input.conversation_id && d.status !== 'discarded').map(publicDraft),from:'owner@example.test',can_send:true});
+  if (input.action === 'compose_list') {
+    const all = [...drafts.values()].filter(d => input.queue_scope === 'agent' || d.cid === input.conversation_id);
+    const pending = all.filter(d => !['sent','discarded','answered'].includes(d.status));
+    const rows = input.filter === 'all' ? all : pending;
+    const counts = {pending:pending.length,total:all.length,sent:all.filter(d=>d.status==='sent').length,
+      discarded:all.filter(d=>d.status==='discarded').length,answered:all.filter(d=>d.status==='answered').length};
+    return ok({drafts:rows.slice(0,input.limit || 20).map(d=>({...publicDraft(d),conversation_id:d.cid,conversation_title:'Email Chat',
+      target:{agent_id:7,conversation_id:d.cid,draft_id:d.id},source:{kind:'manual',reason:'',priority:'normal',deadline:null}})),
+      counts,scope:input.queue_scope || 'chat',filter:input.filter || 'pending',next_cursor:null,from:'owner@example.test',can_send:true});
+  }
   const draft = drafts.get(input.draft_id);
   assert.ok(draft);assert.equal(draft.cid,input.conversation_id,'Draft reads and writes stay in their original Chat.');
   if (input.action === 'compose_save') {
@@ -174,7 +183,7 @@ try {
   await editor().getByRole('button',{name:'Save draft',exact:true}).click();
   await editor().getByText('Draft saved in this Chat.',{exact:true}).waitFor();
   assert.deepEqual(first.attachments.map(a=>a.asset_id),[1,2]);
-  await editor().getByRole('button',{name:'Drafts',exact:true}).click();
+  await editor().getByRole('button',{name:'View drafts',exact:true}).click();
   await editor().getByText('A partial draft',{exact:true}).waitFor();
   await editor().locator('article').filter({hasText:'A partial draft'}).getByRole('button',{name:'Open draft'}).click();
   await editor().getByRole('button',{name:'Remove Fixture image 2'}).waitFor();

@@ -1076,6 +1076,11 @@ function vp3_agent_activity_hub_v1(PDO $pdo, array $user, int $agentId, int $con
             $coverage['summary'] = in_array($error->getCode(), [403, 409], true) ? 'forbidden' : 'unavailable';
         }
     }
+    if($gmailOnly){
+        require_once __DIR__.'/agent-gmail-workspace-context-v1.php';
+        try{$coordination['gmail_workspace']=agent_gmail_workspace_context_v1($pdo,$fresh['user'],$fresh['principal'],$conversationId,$now->getTimestamp());}
+        catch(PDOException $error){$coverage['gmail_workspace']='unavailable';}
+    }
     return [
         'contract'=>'vp3.agent.activity.v1', 'owner_user_id'=>(int)$scope['user']['id'],
         'agent_id'=>$agentId, 'agent_name'=>vp3_agent_activity_text_v1($fresh['principal']['display_name'] ?? 'Agent', 120),

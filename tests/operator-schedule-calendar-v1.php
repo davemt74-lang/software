@@ -297,3 +297,23 @@ c(count($posted)===1&&(int)$posted[0]['conversation_id']===11&&$posted[0]['role'
     &&str_contains($posted[0]['message'],'agreed')&&!str_contains($posted[0]['message'],$plan['objectives'])
     &&!str_contains($posted[0]['context_json'],$carrierForm['CallSid']),'the original Chat receives the outcome without objectives or provider identifiers');
 echo "PASS server-side scheduled call outcome delivery, scope changes, recovery and deduplication\n";
+
+$lateStart=$callTime+900;
+$lateEnd=$lateStart+60;
+$pdo->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id)
+    VALUES(?,?,?,?,?,'prepared','awaiting_dispatch_checks',?,?,11,0)")->execute([1,$eventId,$lateStart,$lateEnd,1,$lateStart,$id]);
+$expire=static fn(int $at)=>vp3_operator_expire_prepared_v1($pdo,$at);
+$expire($lateEnd-1);
+$pending=$pdo->prepare('SELECT state,reason FROM phone_operator_occurrences_v1 WHERE owner_user_id=1 AND event_id=? AND start_epoch=?');
+$pending->execute([$eventId,$lateStart]);
+c($pending->fetchColumn()==='prepared','a prepared call remains eligible throughout its window');
+c($expire($lateEnd)===1&&$expire($lateEnd)===0,'expiration closes a prepared call exactly once at the boundary');
+$pending->execute([$eventId,$lateStart]);
+c($pending->fetch(PDO::FETCH_ASSOC)===['state'=>'missed','reason'=>'dispatch_window_expired'],'private schedule history records the missed dispatch');
+$deliver($lateEnd);
+$deliver($lateEnd+1);
+$messages->execute(['scheduled:'.$eventId.':'.$lateStart]);
+$missed=$messages->fetchAll(PDO::FETCH_ASSOC);
+c(count($missed)===1&&(int)$missed[0]['conversation_id']===11&&str_contains($missed[0]['message'],'before dialing'),'the original Chat receives one clear missed-call outcome');
+c($read()['last_occurrence']['state']==='missed','the contact schedule shows the missed occurrence');
+echo "PASS expired prepared calls reach closed-browser history and private Chat once\n";

@@ -50,7 +50,7 @@ try {
     $pdo->exec("CREATE TABLE users (id INT UNSIGNED PRIMARY KEY,is_active INT NOT NULL); INSERT INTO users VALUES (1,1),(2,1);
         CREATE TABLE settings (setting_key VARCHAR(190) PRIMARY KEY,setting_value TEXT NOT NULL);
         CREATE TABLE chat_conversations (id BIGINT UNSIGNED PRIMARY KEY,user_id INT UNSIGNED NOT NULL,user_agent_id BIGINT UNSIGNED NULL,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+            title VARCHAR(190) NOT NULL DEFAULT '',updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
         INSERT INTO chat_conversations (id,user_id,user_agent_id) VALUES (11,1,NULL),(12,1,NULL),(21,2,NULL);
         CREATE TABLE chat_messages (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,conversation_id BIGINT UNSIGNED NOT NULL,
             user_id INT UNSIGNED NULL,role VARCHAR(20),message TEXT,context_json TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP)");

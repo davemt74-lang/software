@@ -179,6 +179,7 @@
   let busy = false;
   let chatRevision = 0, pendingSend = null, restoringConversation = 0, lastParticipantQuestion = null;
   let youtubeLocalTurn = null;
+  let emailInstructionTurn = null;
   let initialRestorePending = true, contextReady = false;
   let composerDraftOrigin = null;
   let composerDraftRevision = 0;
@@ -330,6 +331,7 @@
     chatRevision++;
     conversationMessageSync?.controller.abort();
     cancelYoutubeLocalTurn();
+    cancelEmailInstructionTurnV1();
     if (pendingSend) { clearTimeout(pendingSend.timer); pendingSend.controller.abort(); pendingSend.typing?.remove(); pendingSend = null; busy = false; send.disabled = false; input.disabled=false; showStop(); }
     window.dispatchEvent(new CustomEvent('stonefellow:chat-context-changing',{detail:{preserveTranscriptSource:options.preserveInitiativeReply===true,initialRestore:options.initialRestore===true}}));
     recoveryStatus();
@@ -340,12 +342,14 @@
     thread.querySelectorAll('[data-vp3-youtube-private]').forEach(row => row.remove());
   }
   window.addEventListener('vp3:participant-selection-changed',()=>{
+    cancelEmailInstructionTurnV1();
     showChatTurnNotice();
     clearPrivateYoutubeHistory();
     clearConnectedSitePlayback(thread,false);
     renderParkedInitiativeRepliesV1();
   });
   window.addEventListener('vp3:participant-task-context',()=>{
+    cancelEmailInstructionTurnV1();
     showChatTurnNotice();
     clearPrivateYoutubeHistory();
     clearConnectedSitePlayback(thread,false);
@@ -5385,14 +5389,92 @@
     recoveryStatus('Your image prompt is kept. After the earlier request is resolved, press Send to try again.');
   }
 
+  function cancelEmailInstructionTurnV1() {
+    if (!emailInstructionTurn) return;
+    emailInstructionTurn = null;
+    busy = false;send.disabled = false;input.disabled = false;
+  }
+
   async function sendMessage(message, inputMode = 'text', openGmailDraft = false) {
-    if (busy || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
+    if (busy || emailInstructionTurn || !contextReady || initialRestorePending || restoringConversation || !message.trim()) return;
     const voiceSubmission=inputMode==='voice'||window.STONEFELLOW_CHAT_CONTINUITY?.pendingVoiceSubmit?.()===true;
     let imageReference=null;
     try{imageReference=window.VP3ImageComposer?.requestContext?.(conversationId)||null;}
     catch(error){recoveryStatus(error.message);return;}
     if(initiativePosts.size&&!initiativeIdentityMatchesV1()){
       clearInitiativeReplyV1(true);recoveryStatus('The account or session changed. Refresh Chat before replying to an Agent update.');return;
+    }
+    const emailComposer = window.VP3EmailComposerV1;
+    const emailScope = {owner_key:String(cfg.userId),agent_id:Number(cfg.agentId || 0),conversation_id:Number(conversationId || 0)};
+    const emailInstruction = !imageReference && !historyParticipant
+      && !window.VP3ParticipantContinuity?.selectedContext?.()
+      && typeof emailComposer?.handleChatInstruction === 'function'
+      ? emailComposer.matchInstruction?.(message,emailScope) : null;
+    if (emailInstruction) {
+      if (initiativeReplyTarget) {
+        showChatTurnNotice(voiceSubmission
+          ? 'An Agent reply is selected. Finish or close that reply, then repeat your instruction for the email draft.'
+          : 'An Agent reply is selected. Finish or close that reply before applying an instruction to the email draft. Your text is kept.');
+        return;
+      }
+      const revision = chatRevision, authority = historyAuthority, original = input.value, inputRevision = composerDraftRevision;
+      const turn = {revision,authority};
+      const currentEmailIdentity = () => emailInstructionTurn === turn && revision === chatRevision && authority === historyAuthority
+        && emailScope.owner_key === String(window.STONEFELLOW_CHAT?.userId)
+        && emailScope.agent_id === Number(window.STONEFELLOW_CHAT?.agentId || 0)
+        && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.();
+      const currentEmailTurn = () => currentEmailIdentity() && emailScope.conversation_id === Number(conversationId || 0);
+      if (navigator.onLine === false) {
+        keepDraft(original,emailScope.conversation_id);
+        showChatTurnNotice(voiceSubmission && !original.trim()
+          ? 'You are offline. Your email draft is kept; repeat the instruction when you reconnect.'
+          : 'You are offline. Your email instruction is kept.');
+        return;
+      }
+      emailInstructionTurn = turn;send.disabled = true;input.disabled = true;
+      if (inputMode === 'voice') stopVoiceRecognition();
+      try {
+        if (['queue','sent'].includes(emailInstruction.kind) && emailScope.conversation_id === 0) {
+          // Chat initialization owns its own async lock and requires busy=false.
+          // The email turn token prevents a competing submit during that wait.
+          const ensured = await ensureConversationPa3();
+          if (!currentEmailIdentity()) return;
+          if (!Number.isSafeInteger(ensured) || ensured < 1 || ensured !== Number(conversationId || 0)) {
+            showChatTurnNotice('The private Chat could not be opened. Your text is kept; try opening the Gmail view again.');
+            return;
+          }
+          emailScope.conversation_id = ensured;
+        }
+        if (!currentEmailTurn()) return;
+        busy = true;
+        // The match includes the selected draft revision captured before any
+        // await. A changed selection must never fall through to a model turn.
+        const result = await emailComposer.handleChatInstruction(message,emailScope,emailInstruction);
+        if (!currentEmailTurn()) return;
+        const completed = result?.handled === true && result.ok === true;
+        if (completed && input.value === original && composerDraftRevision === inputRevision && original.trim() === message.trim()) {
+          input.value = '';autoSize();keepDraft('',emailScope.conversation_id);
+        } else keepDraft(input.value,emailScope.conversation_id);
+        const notice = !completed && voiceSubmission && !input.value.trim()
+          ? 'The email instruction was not completed. Your draft is kept; check the editor, then repeat your instruction.'
+          : result?.handled === true && typeof result.message === 'string' && result.message
+          ? result.message.slice(0,500) : 'The selected email draft changed. Your instruction is kept; reopen the draft and try again.';
+        showChatTurnNotice(notice);
+        if (inputMode === 'voice' && voiceMode) await speakAgentResponse(notice);
+      } catch (error) {
+        if (!currentEmailTurn()) return;
+        keepDraft(input.value,emailScope.conversation_id);
+        showChatTurnNotice(voiceSubmission && !input.value.trim()
+          ? 'The email change could not be completed. Your draft is kept; check the editor, then repeat your instruction.'
+          : 'The email change could not be completed. Your instruction is kept; check the open draft before trying again.');
+      } finally {
+        if (emailInstructionTurn === turn) {
+          const resumeVoice = currentEmailTurn() && inputMode === 'voice' && voiceMode && !voiceSpeaking;
+          cancelEmailInstructionTurnV1();
+          if (resumeVoice) window.setTimeout(startVoiceRecognition,220);
+        }
+      }
+      return;
     }
     if(!imageReference&&!initiativeReplyTarget&&!historyParticipant&&!window.VP3ParticipantContinuity?.selectedContext()
       &&/^(?:please\s+)?(?:call me|test (?:my )?phone(?: number)?|connect my phone|sync my phone|set up my phone)[.!?]*$/i.test(message.trim())
@@ -6116,7 +6198,7 @@
     isRestoring:() => initialRestorePending || restoringConversation > 0,
     isInitialRestorePending:() => initialRestorePending,
     isReady:() => contextReady,
-    isBusy:() => busy || initialRestorePending || restoringConversation > 0,
+    isBusy:() => busy || emailInstructionTurn !== null || initialRestorePending || restoringConversation > 0,
     chatCanvasStatus,
     proactiveVoiceStatus,
     composerDraftOrigin:() => composerDraftOrigin?.text===input.value ? composerDraftOrigin.kind : null,
@@ -6125,6 +6207,36 @@
           || restoringConversation > 0 || initiativeReplyTarget || input.value.trim()) return false;
       void sendMessage(command,'text',true);
       return true;
+    },
+    openEmailReviewConversation:async target => {
+      if (!target || !/^[a-f0-9]{32}$/.test(String(target.draft_id || ''))
+          || !Number.isSafeInteger(target.conversation_id) || target.conversation_id < 1
+          || !Number.isSafeInteger(target.agent_id) || target.agent_id < 0) return false;
+      const owner = String(cfg.userId), agent = Number(cfg.agentId || 0), authority = historyAuthority;
+      const current = () => String(target.owner_key) === owner && target.agent_id === agent
+        && String(window.STONEFELLOW_CHAT?.userId) === owner && Number(window.STONEFELLOW_CHAT?.agentId || 0) === agent
+        && authority === historyAuthority && historyParticipant <= 0
+        && !window.VP3ParticipantContinuity?.selectedContext?.();
+      if (!current() || busy || emailInstructionTurn || !contextReady || initialRestorePending || restoringConversation || initiativeReplyTarget) return false;
+      if (target.conversation_id !== Number(conversationId || 0)) {
+        const origin = Number(conversationId || 0), revision = chatRevision;
+        try {
+          if (await loadConversation(target.conversation_id) !== true) return false;
+        } catch (error) {
+          if (current() && Number(conversationId || 0) === origin && chatRevision === revision+1
+              && !busy && !restoringConversation) {
+            setChatCanvasView('chat');
+            showChatTurnNotice('The original Chat could not be opened. Your current Chat and typed draft are kept; try opening the email again.');
+          }
+          return false;
+        }
+      }
+      if (current() && initiativeReplyTarget) {
+        showChatTurnNotice('This Chat has an Agent reply in progress. Finish that reply before opening the email draft.');
+        return false;
+      }
+      return current() && contextReady && !busy && !restoringConversation
+        && Number(conversationId || 0) === target.conversation_id;
     },
     openConversation:async (id, options = {}) => {
       const target = Number(id);
