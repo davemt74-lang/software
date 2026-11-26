@@ -51,8 +51,10 @@ function vp3_operator_objectives_bind_v1(PDO $pdo,array $announced,int $now):voi
         ||!in_array($call['state'],['dialing','ringing','answered'],true)||(int)$call['created_epoch']>$now||(int)$call['created_epoch']<$now-300
         ||!preg_match('/^CA[a-f0-9]{32}$/iD',(string)$call['provider_call_sid'])
         ||(string)($call['paired_profile_id']??'')!==''||(int)($call['owner_phone_revision']??0)>0)return;
-    $q=$pdo->prepare('SELECT 1 FROM chat_conversations WHERE id=? AND user_id=? AND COALESCE(user_agent_id,0)=?');
-    $q->execute([(int)$call['conversation_id'],(int)$call['owner_user_id'],(int)$call['chat_agent_id']]);if(!$q->fetchColumn())return;$q->closeCursor();
+    $q=$pdo->prepare('SELECT user_agent_id FROM chat_conversations WHERE id=? AND user_id=?');
+    $q->execute([(int)$call['conversation_id'],(int)$call['owner_user_id']]);$chat=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+    // Normalize the nullable Main Chat namespace in PHP, avoiding driver-specific expression affinity.
+    if(!$chat||(int)($chat['user_agent_id']??0)!==(int)$call['chat_agent_id'])return;
     $rows=[];$overflow=false;
     try{
         $q=$pdo->prepare("SELECT a.*,c.phone contact_phone FROM phone_operator_agendas_v1 a JOIN crm_contacts c ON c.id=a.contact_id AND c.owner_user_id=a.owner_user_id
