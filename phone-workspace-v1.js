@@ -19,7 +19,7 @@
   const cards=new Set(),requests=new Set(),pending=new Map(),localStates=new Map(),audioNodes=new Set(),policyDrafts=new Map(),contactDrafts=new Map();
   let context={conversation_id:principal(config.conversation_id??config.conversationId),agent_id:principal(config.agent_id??config.agentId),ready:true},generation=0,requestSequence=0;
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
-  let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0,connectedDraft=null;
+  let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0,connectedDraft=null,voiceArm=null;
   let restoredGeneration=-1;
   let pollTimer=0,statusText='Checking phone connections…',contactQuery='',initialState=true,stateError='',autoCallDraft=null,calendarDraft=null,phoneContactDraft=null;
   const layer=node('div','vp3-phone-workspace');layer.hidden=true;
@@ -129,7 +129,8 @@
         if(greetingNumber&&(!next.numbers.some(item=>Number(item.id)===greetingNumber)||Number(next.selected_number_id)!==greetingNumber)){clearGreeting();voicemailDraft=null;}
         if(deviceSession&&(!next.numbers.some(item=>Number(item.id)===deviceSession.numberId&&item.browser_enabled&&item.voice_enabled)||Number(next.selected_number_id)!==deviceSession.numberId))stopDevice('Phone connection changed. Enable calls again.');
         const recovered=Boolean(stateError);state=next;initialState=false;stateError='';
-        if(active?.captionSession?.phase==='listening'&&(next.operator_live?.eligible!==true||next.operator_live.call_id!==active.info.public_id))stopRemoteCaptions(active,'Live caption permission changed.');
+        if(active?.captionSession?.phase==='listening'&&(next.operator_live?.eligible!==true||next.operator_live.call_id!==active.info.public_id||active.captionSession.voiceTurn&&next.operator_live.voice_available!==true))stopRemoteCaptions(active,'Live assistance permission changed.');
+        if(voiceArm&&next.operator_live?.voice_available!==true){voiceArm.mixer.close();voiceArm=null;}
         if(!state.numbers.length){revoke();return;}
         if(!deviceSession&&restoredGeneration!==g&&positive(context.conversation_id)&&canCall()&&registrationPreference(next.selected_number_id)){
           restoredGeneration=g;
@@ -140,6 +141,7 @@
         render();
       }catch(error){
         if(!current(g)||sequence!==requestSequence)return;
+        if(active?.captionSession?.voiceTurn)stopRemoteCaptions(active,'Voice permission could not be refreshed. Human control restored.');
         initialState=false;
         stateError=error.phonePublicMessage||(error.name==='AbortError'?'Phone took too long to respond. Retry to load your connections.':'Phone could not reach the server. Check your connection, then retry.');
         render();
@@ -200,7 +202,13 @@
           if(sessionCurrent(session))registrationPreference(session.numberId,true);
         }catch{}
       }
-    });enable.disabled=!deviceSession&&!canCall();connection.append(enable);host.append(connection);
+    });enable.disabled=!deviceSession&&(!canCall()||Boolean(voiceArm?.pending));connection.append(enable);host.append(connection);
+    if(state.operator_live?.voice_available===true&&window.VP3OperatorVoiceMixerV1?.create){
+      const arm=button(deviceSession?.voiceMixer?'Agent voice path prepared':voiceArm?'Disable prepared Agent voice':'Prepare Agent voice for browser calls',event=>void toggleVoiceArm(event,renderGeneration));
+      arm.disabled=Boolean(deviceSession||active||callBusy||setupPending||pending.size||voiceArm?.pending);
+      arm.dataset.phoneFocusKey='operator-voice-arm';
+      host.append(arm,node('p','vp3-phone-meta','Optional: prepare the outbound audio path before enabling browser calls. Human audio stays in control; each AI voice turn still requires consent and explicit approval.'));
+    }
     if(!chatEligible()){host.append(node('p','vp3-phone-empty','Open an owner Chat conversation to make or accept a call.'));const link=node('a','vp3-phone-report','Open Chat');link.href=new URL('chat.php',new URL(config.urlbase||'/',location.origin)).href;host.append(link);}
     if(connectedDraft)renderConnectedDial(host,renderGeneration);
     const dial=node('form','vp3-phone-dial'),dialLabel=node('label','vp3-phone-field','Dial a phone number'),input=node('input');input.type='tel';input.autocomplete='tel';input.placeholder='+16025550123';input.required=true;input.maxLength=20;input.pattern='\\+[1-9][0-9]{7,14}';input.setAttribute('aria-label','Phone number to call');input.dataset.phoneFocusKey='dial';input.value=dialDraft;input.addEventListener('input',()=>{dialDraft=input.value.slice(0,20);});dialLabel.append(input);
@@ -793,6 +801,124 @@
     }
     if(pendingAction?.busy)actions.append(node('p','vp3-phone-empty','Updating voicemail…'));card.append(actions);
   }
+  const voicePrefix="This is the VP3 AI assistant, relaying the owner's approved response. ";
+  async function toggleVoiceArm(event,g){
+    if(!event.isTrusted||!current(g)||deviceSession||active||callBusy||pending.size||state?.operator_live?.voice_available!==true)return;
+    if(voiceArm){voiceArm.mixer.close();voiceArm=null;render();return;}
+    const Audio=window.AudioContext||window.webkitAudioContext;
+    if(typeof Audio!=='function'||typeof window.VP3OperatorVoiceMixerV1?.create!=='function')return;
+    let arm;
+    try{
+      const audio=new Audio();
+      const mixer=window.VP3OperatorVoiceMixerV1.create(audio,reason=>{
+        if(deviceSession?.voiceMixer!==mixer)return;
+        if(reason==='audio_context_lost'||reason==='input_lost')stopDevice('The prepared phone audio path was interrupted. Reconnect browser calls.');
+        else if(active){stopRemoteCaptions(active,'Agent audio path changed. Human control restored.');render();}
+      });
+      arm={mixer,pending:true,generation:g};voiceArm=arm;render();
+      await audio.resume();
+      if(!current(g)||voiceArm!==arm||audio.state!=='running'){mixer.close();if(voiceArm===arm)voiceArm=null;return;}
+      arm.pending=false;say('Agent voice path prepared. Enable browser calls when ready.');render();
+    }catch(error){arm?.mixer.close();if(voiceArm===arm)voiceArm=null;if(current(g)){say('Agent voice preparation unavailable. Manual phone calling is unchanged.');render();}}
+  }
+  function voiceMixerCurrent(entry){
+    return Boolean(entry&&active===entry&&entry.phase==='active'&&sessionCurrent(entry.session)&&entry.ticket?.isCurrent()&&
+      entry.call?.isMuted?.()!==true&&entry.session.voiceMixer?.matches(entry.call?.getLocalStream?.()));
+  }
+  function canReviewVoice(entry,session){
+    const suggestion=session.suggestion;
+    return captionCurrent(entry,session)&&session.phase==='listening'&&state?.operator_live?.voice_available===true&&
+      voiceMixerCurrent(entry)&&!session.busy&&!session.voiceTurn&&suggestion&&typeof suggestion.proof==='string'&&/^[a-f0-9]{64}$/.test(suggestion.proof)&&
+      Array.from(suggestion.text).length<=180&&!/[<>]/.test(suggestion.text)&&suggestion.seq>session.voiceUsedSeq&&session.deadline>Date.now()+15000;
+  }
+  function takeOverVoice(entry,reason='You took over. AI speech and live assistance stopped.'){
+    // Local source stops synchronously before any server request; do not mute
+    // or disconnect the existing human call.
+    entry?.session?.voiceMixer?.stop();
+    if(entry?.captionSession)stopRemoteCaptions(entry,reason);
+    render();
+  }
+  function decodeVoicePcm(raw,samples){
+    if(!Number.isSafeInteger(samples)||samples<1600||samples>320000||typeof raw!=='string'||raw.length!==Math.ceil(samples*2/3)*4)
+      throw new Error('The prepared voice audio is invalid.');
+    const binary=atob(raw);if(binary.length!==samples*2)throw new Error('The prepared voice audio is invalid.');
+    const pcm=new Int16Array(samples);
+    for(let i=0;i<samples;i++){const n=binary.charCodeAt(i*2)|(binary.charCodeAt(i*2+1)<<8);pcm[i]=n>32767?n-65536:n;}
+    return pcm;
+  }
+  async function prepareVoiceTurn(entry,session,event){
+    if(!event.isTrusted||!canReviewVoice(entry,session)||session.voiceConsent!==true)return;
+    const suggestion=session.suggestion;
+    const turn={state:'preparing',seq:suggestion.seq,script:voicePrefix+suggestion.text,token:'',pcm:null,samples:0,timer:0,poll:0};
+    session.voiceTurn=turn;session.voiceConsent=false;session.voiceReview=false;session.voiceUsedSeq=turn.seq;session.busy=true;
+    // Discard partial caption frames and pause the caption worklet until the
+    // approved turn is finished; AI audio must not masquerade as owner speech.
+    session.worklet.port.postMessage('stop');render();
+    try{
+      const result=await liveCaptionRequest(entry,session,'voice_prepare',{token:session.token,source_seq:turn.seq,
+        suggestion:suggestion.text,proof:suggestion.proof,voice_consent_attested:true});
+      if(!captionCurrent(entry,session)||session.voiceTurn!==turn)return;
+      if(!voiceMixerCurrent(entry)||result.call_id!==entry.info.public_id||result.source_seq!==turn.seq||result.script!==turn.script||
+        result.state!=='ready'||result.sample_rate!==16000||typeof result.turn_token!=='string'||!/^[a-f0-9]{64}$/.test(result.turn_token)||
+        !Number.isSafeInteger(result.expires_epoch)||result.expires_epoch*1000<=Date.now())throw new Error('The approved voice turn could not be verified.');
+      turn.pcm=decodeVoicePcm(result.pcm,result.samples);turn.samples=result.samples;turn.token=result.turn_token;turn.expires=result.expires_epoch*1000;turn.state='ready';
+      turn.timer=setTimeout(()=>{if(captionCurrent(entry,session)&&session.voiceTurn===turn)takeOverVoice(entry,'Prepared voice expired. Human control restored.');},Math.max(0,turn.expires-Date.now()));
+      render();
+    }catch(error){if(captionCurrent(entry,session)&&session.voiceTurn===turn)takeOverVoice(entry,error.message||'Voice preparation stopped. Human control restored.');}
+  }
+  async function finishVoiceTurn(entry,session,turn){
+    if(!captionCurrent(entry,session)||session.voiceTurn!==turn)return;
+    entry.session.voiceMixer?.stop();clearTimeout(turn.timer);clearInterval(turn.poll);turn.pcm?.fill(0);turn.pcm=null;turn.state='finishing';render();
+    try{
+      const result=await liveCaptionRequest(entry,session,'voice_finish',{token:session.token,source_seq:turn.seq,turn_token:turn.token});
+      if(!captionCurrent(entry,session)||session.voiceTurn!==turn)return;
+      if(result.call_id!==entry.info.public_id||result.source_seq!==turn.seq||result.state!=='closed')throw new Error('Voice turn closure was not verified.');
+      session.voiceTurn=null;session.suggestion=null;session.busy=false;session.voiceNotice='Approved turn finished locally. You are speaking again.';
+      session.worklet.port.postMessage('start');render();
+    }catch(error){if(captionCurrent(entry,session))takeOverVoice(entry,'Voice turn closure was uncertain. Human control restored.');}
+  }
+  async function speakVoiceTurn(entry,session,event){
+    const turn=session.voiceTurn;
+    if(!event.isTrusted||!captionCurrent(entry,session)||!voiceMixerCurrent(entry)||turn?.state!=='ready'||Date.now()>=turn.expires)return;
+    clearTimeout(turn.timer);turn.state='claiming';render();
+    try{
+      const result=await liveCaptionRequest(entry,session,'voice_claim',{token:session.token,source_seq:turn.seq,turn_token:turn.token});
+      if(!captionCurrent(entry,session)||session.voiceTurn!==turn)return;
+      if(!voiceMixerCurrent(entry)||result.call_id!==entry.info.public_id||result.source_seq!==turn.seq||result.samples!==turn.samples||
+        result.state!=='playing'||!Number.isSafeInteger(result.start_by_epoch)||!Number.isSafeInteger(result.expires_epoch)||
+        Date.now()>result.start_by_epoch*1000||Date.now()+turn.samples/16>result.expires_epoch*1000)
+        throw new Error('The approved voice playback permission expired.');
+      turn.state='playing';
+      entry.session.voiceMixer.play(turn.pcm,entry.call.getLocalStream(),()=>void finishVoiceTurn(entry,session,turn));
+      turn.pcm.fill(0);turn.pcm=null;
+      turn.timer=setTimeout(()=>{if(captionCurrent(entry,session)&&session.voiceTurn===turn)takeOverVoice(entry,'Voice turn time limit reached. Human control restored.');},Math.max(0,result.expires_epoch*1000-Date.now()));
+      turn.poll=setInterval(()=>{if(captionCurrent(entry,session)&&session.voiceTurn===turn){if(!voiceMixerCurrent(entry))takeOverVoice(entry,'Voice audio changed. Human control restored.');else void refresh();}},2000);
+      render();
+    }catch(error){if(captionCurrent(entry,session)&&session.voiceTurn===turn)takeOverVoice(entry,error.message||'Voice turn stopped. Human control restored.');}
+  }
+  function renderVoiceTurn(panel,entry,session){
+    if(session.voiceNotice)panel.append(node('p','vp3-phone-meta',session.voiceNotice));
+    const turn=session.voiceTurn;
+    if(turn){
+      const box=node('section','vp3-phone-suggestion');box.append(node('strong',null,'Operator voice · '+({preparing:'Preparing',ready:'Ready for your approval',claiming:'Authorizing playback',playing:'AI speaking',finishing:'Returning to owner'}[turn.state]||'Working')));
+      box.append(node('p',null,turn.script));
+      if(turn.state==='ready'){
+        const play=button('Speak approved response',event=>void speakVoiceTurn(entry,session,event),'vp3-phone-button vp3-phone-primary');play.dataset.phoneFocusKey='operator-voice-play';box.append(play);
+      }
+      const takeover=button('Take over now',event=>{if(event.isTrusted&&captionCurrent(entry,session))takeOverVoice(entry);},'vp3-phone-button vp3-phone-danger');takeover.dataset.phoneFocusKey='operator-voice-takeover';box.append(takeover);panel.append(box);return;
+    }
+    if(!canReviewVoice(entry,session))return;
+    const review=button(session.voiceReview?'Cancel voice review':'Review Agent voice response',event=>{
+      if(event.isTrusted&&canReviewVoice(entry,session)){session.voiceReview=!session.voiceReview;session.voiceConsent=false;render();}
+    });review.dataset.phoneFocusKey='operator-voice-review';panel.append(review);
+    if(!session.voiceReview)return;
+    const box=node('section','vp3-phone-suggestion');box.append(node('strong',null,'Exact synthetic voice script'),node('p',null,voicePrefix+session.suggestion.text),
+      node('p','vp3-phone-meta','Ask everyone for agreement to this AI voice turn. Preparation sends this script to the Cloud speech service and may incur a charge. Playback requires a second explicit click.'));
+    const label=node('label','vp3-phone-check'),check=node('input');check.type='checkbox';check.checked=session.voiceConsent===true;check.dataset.phoneFocusKey='operator-voice-consent';
+    check.addEventListener('change',event=>{if(event.isTrusted&&captionCurrent(entry,session)){session.voiceConsent=check.checked;render();}});
+    label.append(check,node('span',null,'Everyone agrees to hear this AI assistant, and I approve the exact script.'));box.append(label);
+    const prepare=button('Prepare approved voice',event=>void prepareVoiceTurn(entry,session,event));prepare.disabled=!session.voiceConsent;prepare.dataset.phoneFocusKey='operator-voice-prepare';box.append(prepare);panel.append(box);
+  }
   async function liveCaptionRequest(entry,session,action,fields={}){
     if(!liveEndpoint||!current(session.generation)||active!==entry||entry.captionSession!==session)throw new Error('Live caption context changed.');
     const controller=new AbortController();session.request=controller;const timer=setTimeout(()=>controller.abort(),38000);
@@ -817,6 +943,8 @@
     if(!entry)return;const session=entry.captionSession;
     entry.captionPrompt=false;entry.captionConsent=false;entry.captionBoth=false;entry.captionAssist=false;
     if(!session)return;
+    entry.session?.voiceMixer?.stop();
+    if(session.voiceTurn){clearTimeout(session.voiceTurn.timer);clearInterval(session.voiceTurn.poll);session.voiceTurn.pcm?.fill(0);session.voiceTurn.pcm=null;session.voiceTurn=null;}
     entry.captionSession=null;entry.captionNotice=reason;entry.captionClosed=Boolean(session.startSent);
     session.phase='closed';session.request?.abort();clearTimeout(session.timer);
     // This is a derived remote stream; do not stop or mute the actual phone tracks.
@@ -881,7 +1009,7 @@
         typeof result.suggestion!=='string'||!result.suggestion.trim()||result.suggestion.length>1000||
         !Number.isInteger(result.prior_call_count)||result.prior_call_count<0||result.prior_call_count>3)
         throw new Error('The response suggestion could not be verified.');
-      session.suggestion={text:result.suggestion,prior:result.prior_call_count,seq:last};
+      session.suggestion={text:result.suggestion,prior:result.prior_call_count,seq:last,proof:typeof result.speech_proof==='string'?result.speech_proof:''};session.voiceReview=false;session.voiceConsent=false;
     }catch(error){if(captionCurrent(entry,session))session.suggestionError=error.message||'Private suggestion unavailable.';}
     finally{if(captionCurrent(entry,session)){session.busy=false;session.suggestionPending=false;render();}}
   }
@@ -927,7 +1055,8 @@
     }
     const session={generation,scope:{conversation_id:context.conversation_id,agent_id:context.agent_id},phase:'starting',captions:[],receipts:[],
       skipped:0,seq:1,busy:false,startSent:false,track:tracks[0],localTrack:localTracks[0],mode,assist,token:'',
-      suggestionAttempts:0,lastSuggestionSeq:0,nextSuggestionAt:0,suggestionPending:false,suggestion:null,suggestionError:''};
+      suggestionAttempts:0,lastSuggestionSeq:0,nextSuggestionAt:0,suggestionPending:false,suggestion:null,suggestionError:'',
+      voiceTurn:null,voiceUsedSeq:0,voiceReview:false,voiceConsent:false,voiceNotice:''};
     entry.captionSession=session;entry.captionPrompt=false;entry.captionConsent=false;entry.captionBoth=false;entry.captionAssist=false;entry.captionNotice='';render();
     try{
       session.context=new Audio();
@@ -979,6 +1108,7 @@
         suggest.dataset.phoneFocusKey='suggest-response-'+entry.info.public_id;panel.append(suggest);
         if(session.suggestion){const note=node('div','vp3-phone-suggestion');note.append(node('strong',null,'Private suggestion · review before saying'),node('p',null,session.suggestion.text),node('p','vp3-phone-meta','Based on captions through segment '+session.suggestion.seq+' and '+session.suggestion.prior+' prior call records. Not sent or spoken.'));panel.append(note);}
         if(session.suggestionError)panel.append(node('p','vp3-phone-meta',session.suggestionError));
+        renderVoiceTurn(panel,entry,session);
       }
       const stop=button('Stop live captions',event=>{if(event.isTrusted&&active===entry){stopRemoteCaptions(entry);render();}});stop.dataset.phoneFocusKey='stop-caption-'+entry.info.public_id;panel.append(stop);
     }else if(view?.call_id===entry.info.public_id&&view.eligible===true&&view.state==='off'&&!entry.captionClosed){
@@ -1192,7 +1322,7 @@
         actions.append(button('Decline',()=>{if(current(renderGeneration)&&!callBusy)declineCall(id);}));
       }
     }
-    if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){if(!muted&&entry.captionSession?.mode==='both')stopRemoteCaptions(entry,'Both-sided captions stopped when you muted your audio.');entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
+    if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){if(!muted&&entry.captionSession?.voiceTurn)takeOverVoice(entry,'AI voice stopped when you muted the call.');else if(!muted&&entry.captionSession?.mode==='both')stopRemoteCaptions(entry,'Both-sided captions stopped when you muted your audio.');entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
     if(managed&&!entry&&!terminal){
       if(control?.can_reconcile===true){const check=button('Check carrier status',event=>{if(event.isTrusted&&current(renderGeneration))void runManagedControl('managed_reconcile',id,renderGeneration);});check.disabled=managedControlBusy.has(id);actions.append(check);}
       if(control?.can_end===true){const end=button('End managed call',event=>{if(event.isTrusted&&current(renderGeneration)&&window.confirm('End this managed call and block any pending destination connection?'))void runManagedControl('managed_end',id,renderGeneration);},'vp3-phone-button vp3-phone-danger');end.disabled=managedControlBusy.has(id);actions.append(end);}
@@ -1377,10 +1507,14 @@
     const preparedScope=await ensureContext();if(!preparedScope||preparedScope.generation!==generation)return null;
     if(deviceSession)return deviceSession.ready||Promise.resolve(deviceSession);
     if(!canCall()){say('Select a ready phone number and open a Chat conversation first.');return Promise.resolve(null);}
-    const session={generation,identity:'',numberId:Number(selectedNumber().id),device:null,phase:'connecting',closed:false,refreshing:false};deviceSession=session;say('Connecting this browser for calls…');render();
+    if(voiceArm?.pending)throw new Error('Finish preparing Agent voice first.');
+    const mixer=voiceArm&&voiceArm.generation===generation&&state?.operator_live?.voice_available===true?voiceArm.mixer:null;
+    if(voiceArm&&!mixer)voiceArm.mixer.close();voiceArm=null;
+    const session={generation,identity:'',numberId:Number(selectedNumber().id),device:null,phase:'connecting',closed:false,refreshing:false,voiceMixer:mixer};deviceSession=session;say('Connecting this browser for calls…');render();
     session.ready=(async()=>{try{
       const [sdk,auth]=await Promise.all([loadSdk(),credentials(session.numberId,session.generation)]);if(!sessionCurrent(session))return null;
       session.identity=auth.identity;const device=new sdk.Device(auth.token,{logLevel:0,allowIncomingWhileBusy:false,tokenRefreshMs:30000,closeProtection:true});session.device=device;
+      if(session.voiceMixer){if(typeof device.audio?.addProcessor!=='function')throw new Error('The pinned phone SDK does not support Agent voice preparation.');await device.audio.addProcessor(session.voiceMixer,false);if(!sessionCurrent(session)){session.voiceMixer.close();try{device.destroy();}catch(_){}return null;}}
       device.on('registered',()=>{if(sessionCurrent(session)){session.phase='registered';say('Ready for incoming calls.');render();}});
       device.on('unregistered',()=>{if(sessionCurrent(session)){session.phase='unregistered';say('Browser calls are disconnected. Turn them off and enable them again.');render();}});
       device.on('incoming',call=>{if(sessionCurrent(session))incomingCall(session,call);else stopCall(call,true);});
@@ -1406,9 +1540,10 @@
   }
   function releaseEntry(entry){if(!entry)return;stopRemoteCaptions(entry,'Call ended.');if(entry.prepared&&entry.phase!=='active')cancelPrepared(entry);stopCall(entry.call,entry.incoming&&entry.phase==='ringing');entry.ticket?.release();entry.ticket=null;}
   function stopDevice(message='Browser calls are off.'){
-    callEpoch++;preparingTicket?.release();preparingTicket=null;const session=deviceSession;deviceSession=null;if(session)session.closed=true;
+    callEpoch++;preparingTicket?.release();preparingTicket=null;if(voiceArm){voiceArm.mixer.close();voiceArm=null;}const session=deviceSession;deviceSession=null;if(session)session.closed=true;
     const owned=active,ringing=[...pending.values()];active=null;pending.clear();releaseEntry(owned);for(const entry of ringing)releaseEntry(entry);callBusy=false;
     if(session?.device){try{session.device.disconnectAll();}catch(_){}try{session.device.destroy();}catch(_){}}
+    session?.voiceMixer?.close();
     say(message);render();signalCallState();
   }
   function captureTicket(){
@@ -1416,13 +1551,14 @@
     const ticket=lease.acquireCapture('phone-workspace');if(!ticket)throw new Error('Another browser surface is using the microphone. Stop it there before calling.');return ticket;
   }
   function signalCallState(){window.dispatchEvent(new CustomEvent('vp3:phone-call-state',{detail:{busy:Boolean(active||callBusy||setupPending),source:'phone-workspace-v1'}}));}
-  function ownStream(entry){const stream=entry.call?.getLocalStream?.();if(stream)entry.ticket?.ownStream(stream);}
+  function ownStream(entry){const stream=entry.call?.getLocalStream?.();if(stream)entry.ticket?.ownStream(stream);const original=entry.session?.voiceMixer?.originalStream;if(original&&original!==stream)entry.ticket?.ownStream(original);}
   function bindCall(entry){
     const call=entry.call;
     const matches=()=>active===entry&&sessionCurrent(entry.session)&&(!entry.ticket||entry.ticket.isCurrent());
     const accepted=()=>{if(!matches()){stopCall(call);return;}entry.phase='active';entry.prepared=false;recordThisCall=false;ownStream(entry);localStates.set(entry.info.public_id,'active');say('Call connected.');render();signalCallState();void refresh();};
     call.on('accept',accepted);
     call.on('ringing',()=>{if(matches()){entry.phase='ringing';render();}});
+    call.on('mute',muted=>{if(muted&&matches()&&entry.captionSession?.voiceTurn)takeOverVoice(entry,'AI voice stopped when the call was muted.');});
     for(const event of ['disconnect','cancel','reject','error'])call.on(event,()=>{if(active===entry){localStates.set(entry.info.public_id,event==='error'?'failed':'ended');active=null;releaseEntry(entry);callBusy=false;say(event==='error'?'The call ended with a connection problem.':'Call ended.');render();signalCallState();void refresh();}else if(!sessionCurrent(entry.session))stopCall(call);});
     if(call.status?.()==='open')accepted();
   }
@@ -1502,6 +1638,7 @@
   document.addEventListener('click',event=>{const trigger=event.target.closest?.('[data-phone-workspace-toggle]');if(trigger){event.preventDefault();opened?close():open(trigger);}});
   backdrop.addEventListener('click',close);closeButton.addEventListener('click',close);
   document.addEventListener('keydown',event=>{
+    if(event.key==='Escape'&&active?.captionSession?.voiceTurn){event.preventDefault();takeOverVoice(active);return;}
     if(!opened)return;if(event.key==='Escape'){event.preventDefault();close();return;}
     if(event.key!=='Tab')return;const focusable=[...panel.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href],audio[controls],[tabindex="0"]')].filter(item=>!item.closest('[hidden]'));
     if(!focusable.length){event.preventDefault();panel.focus();return;}const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&(document.activeElement===first||document.activeElement===panel)){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}

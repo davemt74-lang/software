@@ -279,6 +279,7 @@ function vp3_phone_browser_status_v1(PDO $pdo,array $form,string $signature,stri
         if(($rank[$current]??4)===4||$rank[$next]<($rank[$current]??0))return ['accepted'=>true,'duplicate'=>true,'call'=>$call,'fallback'=>vp3_phone_browser_fallback_v1($pdo,$call,$complete)];
         $duration=(string)($form['DialCallDuration']??$form['CallDuration']??'0');if(!preg_match('/^[0-9]{1,6}$/D',$duration))return ['accepted'=>false];$now=time();
         $pdo->prepare('UPDATE phone_browser_calls_v1 SET state=?,provider_child_sid=COALESCE(provider_child_sid,?),duration_seconds=?,ended_epoch=?,updated_epoch=? WHERE id=?')->execute([$next,$child?:null,max((int)$call['duration_seconds'],min((int)$duration,86400)),$rank[$next]===4?$now:null,$now,$call['id']]);
+        if($rank[$next]===4)vp3_operator_voice_close_call_v1($pdo,(int)$call['id']);
         $call['state']=$next;$call['provider_child_sid']=$call['provider_child_sid']?:$child;$call['duration_seconds']=max((int)$call['duration_seconds'],min((int)$duration,86400));
         return ['accepted'=>true,'state'=>$next,'call'=>$call,'fallback'=>vp3_phone_browser_fallback_v1($pdo,$call,$complete)];
     });
