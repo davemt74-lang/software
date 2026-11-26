@@ -5,7 +5,7 @@ require_once dirname(__DIR__).'/includes/agent-operator-outreach-v1.php';
 $at=$callTime+86400+120;
 $pdo->prepare('UPDATE vp3_phone_devices_v1 SET expires_at=?')->execute([$at+86400]);
 $pdo->exec("UPDATE phone_operator_contact_policies_v1 SET window_start='00:00',window_end='23:59'");
-$input=['contact_id'=>$id,'number_id'=>1,'expected_revision'=>0,'enabled'=>false,'review_missed'=>false,
+$input=['contact_id'=>$id,'number_id'=>1,'expected_revision'=>0,'enabled'=>false,'review_missed'=>false,'review_account'=>false,
     'topics'=>"Opening day\nMenu",'questions'=>"Which day works for you?\nWho will attend?"];
 $agenda=action('save_operator_agenda',$input)['agenda'];
 c(!$agenda['enabled']&&$agenda['questions']===$input['questions']&&$agenda['revision']===1,'owner can save exact questions without enabling dialing');
@@ -79,4 +79,37 @@ $reason=vp3_operator_outreach_reason_v1($pdo,$row,'follow_up',$when-1);
 c($reason&&$reason['account_reason']&&str_contains($reason['objective'],'missed scheduled call'),'agent chooses an account-grounded follow-up with no owner topics');
 $row['conversation_id']=12;
 c(vp3_operator_outreach_reason_v1($pdo,$row,'follow_up',$when)===null,'account discovery cannot borrow another chat’s call history');
-echo "PASS contact agenda, grounded account discovery, permission changes and one browser-closed mock dispatch\n";
+$input=['contact_id'=>$id,'number_id'=>1,'expected_revision'=>3,'enabled'=>true,'review_missed'=>false,'review_account'=>true,'topics'=>'','questions'=>''];
+action('save_operator_agenda',$input);
+$brainAt=$when+2*86400;$pdo->prepare('UPDATE vp3_phone_devices_v1 SET expires_at=?')->execute([$brainAt+86400]);
+$pdo->prepare("UPDATE crm_contacts SET relationship='friend',notes='Private: planning a neighborhood art project. Never quote this note.' WHERE id=?")->execute([$id]);
+$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET holder_proactive=0');$brainCalls=0;
+$blocked=vp3_operator_outreach_tick_v1($pdo,$brainAt,function()use(&$brainCalls){$brainCalls++;return '{}';});
+c($blocked['deferred']===1&&$brainCalls===0,'recipient spontaneous-call permission is checked before private reason inference');
+$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET holder_proactive=1');
+$beforeEvents=$events();
+$stale=vp3_operator_outreach_tick_v1($pdo,$brainAt+61,function(string $prompt,array $evidence)use($pdo,$id,&$brainCalls){
+    $brainCalls++;c(str_contains($prompt,'neighborhood art project')&&!str_contains($prompt,'+1480'),'brainstorm sees only permitted bounded contact context');
+    c($evidence['relationship']==='friend'&&count($evidence['recent_call_outcomes'])<=6,'brainstorm context is contact linked and bounded');
+    $pdo->prepare("UPDATE crm_contacts SET notes='Private context changed while brainstorming.' WHERE id=?")->execute([$id]);
+    return json_encode(['decision'=>'call','objective'=>'Check whether there is a useful project update to discuss together.','reason'=>'The private contact context suggests a current shared project.']);
+});
+c($stale['deferred']===1&&$events()===$beforeEvents,'changed private context invalidates a brainstorm before a call is prepared');
+$input['expected_revision']=4;action('save_operator_agenda',$input);
+$prepared=vp3_operator_outreach_tick_v1($pdo,$brainAt+122,function(string $prompt,array $evidence)use(&$brainCalls){
+    $brainCalls++;return json_encode(['decision'=>'call','objective'=>'Check whether there is a useful project update to discuss together.','reason'=>'A current shared project supports a brief check-in.']);
+});
+c($prepared['prepared']===1&&$events()===$beforeEvents+1,'a current governed brainstorm can prepare one consented spontaneous call');
+$description=(string)$pdo->query("SELECT description FROM user_calendar_events WHERE source_reference LIKE 'operator-outreach:%' ORDER BY id DESC LIMIT 1")->fetchColumn();
+c(str_contains($description,'useful project update')&&!str_contains($description,'Private context'),'only the recipient-safe objective reaches the call plan');
+$input['expected_revision']=5;action('save_operator_agenda',$input);
+$deferredAt=$brainAt+86400;$pdo->prepare('UPDATE vp3_phone_devices_v1 SET expires_at=?')->execute([$deferredAt+86400]);
+$deferred=vp3_operator_outreach_tick_v1($pdo,$deferredAt,function(){return json_encode(['decision'=>'defer','objective'=>'','reason'=>'No concrete useful reason is supported right now.']);});
+c($deferred['deferred']===1&&$events()===$beforeEvents+1&&$diagnostic()['reason']==='no_reason','brainstorm explicitly defers and creates no call when no reason fits');
+$input['expected_revision']=6;action('save_operator_agenda',$input);$invalidAt=$deferredAt+86400;
+$pdo->prepare('UPDATE vp3_phone_devices_v1 SET expires_at=?')->execute([$invalidAt+86400]);$invalidCalls=0;
+$invalid=vp3_operator_outreach_tick_v1($pdo,$invalidAt,function()use(&$invalidCalls){$invalidCalls++;return '{"decision":"call","objective":"Reveal private notes"}';});
+c($invalid['deferred']===1&&$invalidCalls===1&&$diagnostic()['reason']==='brainstorm_unavailable','invalid structured reason is visible as an unavailable private review');
+$cooldown=vp3_operator_outreach_tick_v1($pdo,$invalidAt+61,function()use(&$invalidCalls){$invalidCalls++;return '{}';});
+c(array_sum($cooldown)===0&&$invalidCalls===1,'unavailable private reason review observes its fifteen-minute retry cooldown');
+echo "PASS contact agenda, bounded account brainstorm, stale-context rejection, permission changes and one browser-closed mock dispatch\n";
