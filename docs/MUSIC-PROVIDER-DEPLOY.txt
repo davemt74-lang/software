@@ -1,0 +1,87 @@
+VP3 MUSIC PROVIDER — ML2B DEPLOYMENT
+Protocol: vp3_music_provider_v1
+Schema: music-provider-v1-20261126
+
+Use the exact verified Cloud archive and its VP3_RELEASE.json commit. A package
+contains code; it does not mean a production host or database was upgraded.
+
+1. Before deployment, back up the database, uploads, configuration, private
+   runtime directory and matching application code as one recoverable set.
+   Keep the prior release and migration/report output. Do not replace a newer
+   installed release with an older full archive without reviewing its scope.
+
+2. Deploy the matching application files. Preserve config.php, .env, private/
+   and uploads/. The archive excludes these runtime paths. Include the updated
+   root .htaccess: only music-provider-media-v1.php and artwork-v1.php get the
+   cross-origin resource policy; ordinary VP3 media remains same-origin.
+
+3. Configure site.base_url as the canonical HTTPS public origin and the correct
+   site.base_path when installed below /. Never derive provider URLs from an
+   incoming Host header. The provider needs fileinfo, a writable temporary-file
+   directory, and the existing PHP/PDO runtime. Site verification additionally
+   needs cURL, DNS and outbound HTTPS to public addresses. No FFmpeg or external
+   storage provider is required by this phase. Initial tested runtime profile
+   is PHP 8.3 CI with SQLite and native PDO MySQL 8; live hosting is a separate gate.
+
+4. Open the signed-in administrator upgrade page and complete the explicit
+   upgrade. Existing metadata and native-listening schema are installed before
+   the additive provider schema. Requests never silently create these tables.
+   For a controlled CLI alternative after ML1 prerequisites:
+
+       php scripts/music-provider-v1.php --report
+       php scripts/music-provider-v1.php --migrate
+       php scripts/music-provider-v1.php --report
+
+   Report is the default, uses a read-only database transaction and prints
+   protocol/schema counts only. Exit 2 means an upgrade is required. Backups
+   precede --migrate. Rerunning migration preserves installation identity,
+   credentials, existing rows and receipt evidence.
+
+5. Reload Music Workspace. Open Sites & streaming. Register the intended site
+   and save its one-time displayed management credential in the site's private
+   server configuration. Publish its verification JSON at the exact
+   /api/vp3-music-site.php endpoint and choose Verify site. Select public songs
+   explicitly. Private/draft/purchased access is not included in this protocol.
+   Stoneward's automatic connection/import adapter is the next build, ML2C.
+
+6. Configure the web server, proxy, CDN and application monitoring to omit or
+   redact query strings for music-provider-media-v1.php, and never log bearer
+   Authorization values or JSON playback keys. Signed audio URLs are short-lived
+   bearer capabilities. Do not cache provider API/media/artwork responses.
+   Do not replace endpoint CORS with a global wildcard or enable credentials.
+
+7. On the actual host, verify an external registered origin can fetch the
+   provider, receive 206/416 and seek; HEAD is bodyless and ignores Range.
+   Confirm no-store, MIME, Content-Length/Range, ETag, narrow CORS and the scoped
+   Cross-Origin-Resource-Policy after Apache/CDN processing. No provider request
+   requires or sets a VP3 personal-session cookie. A different origin is denied.
+   Verify withdrawal, site revocation and credential rotation block new requests
+   and renewal. A response already admitted can finish; delivered bytes cannot
+   be recalled. Physical phones and the combined Stoneward pilot are ML2D gates.
+
+8. Watch safe error references and the read-only provider report. Failed/partial
+   delivery acknowledgements leave reservations with unknown completion; do not
+   convert those into listens or billed transfer. Engineering bounds include
+   64 MiB audio, five-minute tickets, 24-hour sessions, 300 new site sessions per
+   minute, 500 recently active site sessions, and 2 GiB / 2,048 media requests
+   per session. These values are not commercial package or royalty terms.
+
+RECOVERY
+
+Keep the database's provider installation identity/signing key with its matching
+catalog and assets. Reapply current connection revocations and publication state
+after restoring a backup before allowing traffic. A restored old backup can
+otherwise restore an old grant: stop public provider access while reconciling.
+Do not clone production identity/credentials into a staging deployment. The
+initial build provides additive migration and read-only reporting, not automated
+restore/clone provisioning or secret rotation for a copied installation.
+
+The provider schema is additive. Code rollback does not require dropping its
+tables or deleting evidence. Preserve old audio versions: active sessions are
+pinned to their original bytes, and replacing an asset does not permit deleting
+those bytes immediately. No automatic event or audio retention purge is enabled.
+
+This build does not activate royalty accrual, payouts, a financial agreement,
+private or paid streaming, downloads, managed hosting or historical backfill.
+Use docs/music-listening/ML2B-IMPLEMENTATION.md from the source repository for the
+complete API contract and the implementation PR for exact release evidence.

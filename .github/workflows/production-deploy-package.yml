@@ -64,6 +64,9 @@ jobs:
             "phone_agent_workspace": "owner-private-v1",
             "music_catalog_schema": "music-song-metadata-v1-20261126",
             "music_listening_protocol": "native_listening_v1",
+            "music_provider_protocol": "vp3_music_provider_v1",
+            "music_provider_schema": "music-provider-v1-20261126",
+            "music_provider_upgrade_note": "docs/MUSIC-PROVIDER-DEPLOY.txt",
             "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
@@ -96,6 +99,20 @@ jobs:
           test -f _deploy/scripts/music-song-metadata-v1.php
           test -f _deploy/scripts/music-listening-v1.php
           test -f _deploy/docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt
+          test -f _deploy/includes/music-provider-v1.php
+          test -f _deploy/includes/music-provider-management-v1.php
+          test -f _deploy/includes/music-provider-playback-v1.php
+          test -f _deploy/includes/music-provider-bootstrap-v1.php
+          test -f _deploy/includes/music-provider-http-v1.php
+          test -f _deploy/api/music-provider-v1.php
+          test -f _deploy/api/music-provider-manage-v1.php
+          test -f _deploy/api/music-provider-media-v1.php
+          test -f _deploy/api/music-provider-artwork-v1.php
+          test -f _deploy/music-sites.php
+          test -f _deploy/assets/js/music-provider-sites-v1.js
+          test -f _deploy/assets/css/music-provider-sites-v1.css
+          test -f _deploy/scripts/music-provider-v1.php
+          test -f _deploy/docs/MUSIC-PROVIDER-DEPLOY.txt
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php

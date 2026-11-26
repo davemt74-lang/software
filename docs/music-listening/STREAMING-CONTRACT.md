@@ -1,6 +1,6 @@
 # VP3 Music Provider and Stoneward Streaming Contract
 
-**Status: external provider/client contract remains PROPOSED.** ML1 implements the song metadata foundation. [ML2A](ML2A-IMPLEMENTATION.md) implements a versioned native measurement path on the existing playback API, with its own stated coverage limits. That native path does not announce the external provider operations below, deployed Stoneward integration, contractual royalty obligations, or completed joint acceptance. No application change is authorized by this specification alone.
+**Status: product integration contract, partially implemented.** ML1 implements metadata and [ML2A](ML2A-IMPLEMENTATION.md) implements native measurement. [ML2B](ML2B-IMPLEMENTATION.md) now owns the exact implemented `vp3_music_provider_v1` routes, selected public catalog scope, manual site verification, visitor sessions, ranges, receipts and revocation. The broader consumer/private-entitlement/hosting behaviors below remain proposed until their phase ships. A provider implementation does not establish deployed Stoneward integration, royalty obligations or completed joint acceptance. No application change is authorized by this specification alone.
 
 Read with [MASTER-SPECIFICATION.md](MASTER-SPECIFICATION.md), [SOURCE-AUDIT.md](SOURCE-AUDIT.md), [DELIVERY-PLAN.md](DELIVERY-PLAN.md), [DEVELOPMENT-STATUS.md](DEVELOPMENT-STATUS.md), and the project [README.md](README.md). Evidence snapshots are VP3 `2b69d47b04bb2bcdd74402189b820eef22ed1235` and Stoneward `253d1267c95ffefbcf3a79173429abbbba0c33fc`; later implementation must recheck current source.
 
@@ -50,7 +50,7 @@ A metadata edit preserves recording identity. A technical re-encode creates a ne
 
 ## 5. Proposed interface surface
 
-The operation names below are illustrative contract shapes, **not existing PHP routes or final URL commitments**. ML2B must select a versioned route convention and document the supported protocol/capabilities before ML2C depends on it.
+The operation names below describe the integration model. [ML2B's route and request contract](ML2B-IMPLEMENTATION.md#routes-and-request-contract) is authoritative for implemented PHP endpoints and capabilities; discovery does not advertise unimplemented operations. In particular, provider selection retries return stored receipts, while Stoneward's local import/status receipt remains ML2C work.
 
 | Operation | Caller and response |
 | --- | --- |
