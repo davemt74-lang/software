@@ -57,6 +57,12 @@ Header always set X-Content-Type-Options "nosniff"
 Header always set X-Frame-Options "SAMEORIGIN"
 Header always set Referrer-Policy "same-origin"
 Header always set Cross-Origin-Resource-Policy "same-origin"
+# Only provider readers expose explicitly selected public music cross-origin.
+# Their PHP controllers still check site grants, publication and media tickets.
+<FilesMatch "^music-provider-(?:media|artwork)-v1\.php$">
+Header always set Cross-Origin-Resource-Policy "cross-origin"
+Header always set Referrer-Policy "no-referrer"
+</FilesMatch>
 Header always set Permissions-Policy "microphone=(self), camera=(self)"
 <Files "VP3_RELEASE.json">
 Header always set Cache-Control "no-cache, must-revalidate"

@@ -2,7 +2,9 @@
 
 ## Current state
 
-**ML0 and ML1 are merged; ML2A native listening is implemented in PR [#936](https://github.com/davemt74-lang/software/pull/936).** The user approved the planning merge and first implementation, then requested continued scoring and building on 2026-11-26. Planning PR [#925](https://github.com/davemt74-lang/software/pull/925) merged as `3ec69d03031e859f9cf155d1ad64cd9f16d5b631`. Catalog/metadata PR [#930](https://github.com/davemt74-lang/software/pull/930) merged as `b554101b6ad9d66f497416244e18f745c7489510`. Implementation PRs record their exact candidate commits, applicable checks and release evidence; a source merge does not mean production was migrated or deployed.
+**ML0, ML1 and ML2A are merged; ML2B provider implementation is the current build.** The user approved the prior builds and requested continued development on 2026-11-26. Planning PR [#925](https://github.com/davemt74-lang/software/pull/925) merged as `3ec69d03031e859f9cf155d1ad64cd9f16d5b631`. Catalog/metadata PR [#930](https://github.com/davemt74-lang/software/pull/930) merged as `b554101b6ad9d66f497416244e18f745c7489510`. Native listening PR [#936](https://github.com/davemt74-lang/software/pull/936) merged as `55045785c4fb9f4e85926275ff54d31f062b116f`. Its final candidate had 19 successful workflows, 49 successful jobs and four expected conditional skips; its merge tree matched the fully tested candidate. Post-merge Music and exact source/package verification passed. No production migration or live deployment was performed.
+
+ML2B starts from refreshed main `180743e41ad40c249af6d27c64e0a7ba9cc932cf`, including the subsequent Brainstorming/call-review changes. It adds Sites & streaming management, verified site registrations, hash-only scoped credentials, explicit selected public catalog/manifest, cookie-independent visitor sessions, immutable audio snapshots/range delivery, renewal and event receipts, anonymous safe page attribution, current revocation, separate byte usage and additive schema/reporting. [ML2B implementation](ML2B-IMPLEMENTATION.md) owns its actual contract, engineering decisions and release limits. Its implementation PR records the exact release candidate, current CI/browser results, actual merge and source-verified Cloud package; earlier snapshots do not substitute for that final gate.
 
 Integration was subsequently refreshed against main `5dc2767bcf1edc6be3704182b87da1c39b740fd9` (Operator conversation mode, PR #928). Its new phone participation test exposed a fixture clock crossing a second boundary between call creation and the signed answered receipt. The fixture now uses the persisted receipt clock and includes an explicit earlier-clock case; production freshness checks are unchanged.
 
@@ -54,8 +56,8 @@ The original documentation checks resolved 40 relative links and 49 pinned sourc
 |---|---|
 | ML0 — Audit and specification | Merged in #925. Product/financial open decisions remain identified. |
 | ML1 — Shared catalog, metadata, identity and authority | Merged in #930 as `b554101b`; all 19 candidate workflows passed and the actual merge tree was verified. Production migration/deployment not performed. |
-| ML2A — Native listening measurement and receipts | Implemented in #936; real service/API/client, native MySQL and browser acceptance evidence is available. The PR records the exact release candidate, remaining shared integration gates and merge/package state. |
-| ML2B — VP3 catalog/streaming provider | Not started |
+| ML2A — Native listening measurement and receipts | Merged in #936 as `55045785`; complete candidate checks and post-merge Music/package verification passed. Live host/device acceptance remains separate. |
+| ML2B — VP3 catalog/streaming provider | Implemented; SQLite/real HTTP acceptance available. Use its implementation PR's exact candidate CI, browser review, merge and package evidence for release state. |
 | ML2C — Stoneward import/source adapter | Not started |
 | ML2D — Combined one-recording pilot | Not started |
 | ML3 — Music Workspace analytics | Not started |
@@ -68,6 +70,6 @@ A phase score applies only to evidence actually collected. Local database/browse
 
 ## Release procedure and next build
 
-ML1 is merged. For ML2A, use PR #936's actual candidate and completed applicable checks for the release decision; do not count an earlier passing snapshot or an unrun shared browser case as the final gate. Verified releases include a Cloud deployment ZIP and the explicit upgrade procedure; production migration and host smoke checks require the actual deployment. The next product build is ML2B–ML2D: VP3 streaming provider, Stoneward import/source adapter, and the combined one-recording pilot. ML3 consumes that measurement for artist dashboards; financial and managed-hosting phases retain their separate requirements.
+ML1 and ML2A are merged. ML2B's implementation PR owns its final candidate checks and release decision; a local MySQL/browser SKIP or an earlier passing snapshot is not that gate. Verified releases include a Cloud deployment ZIP and the explicit [provider upgrade procedure](../MUSIC-PROVIDER-DEPLOY.txt). Production migration, host smoke and restore checks require the actual deployment. After ML2B, the next product build is ML2C Stoneward import/source adapter, then ML2D's combined one-recording pilot. ML3 consumes that measurement for artist dashboards; financial and managed-hosting phases retain their separate requirements.
 
 Update this file after each implementation PR with its exact PR/commit and new evidence. Keep commercial decisions in [rights and earnings](RIGHTS-AND-EARNINGS.md) and streaming semantics in [streaming contract](STREAMING-CONTRACT.md).

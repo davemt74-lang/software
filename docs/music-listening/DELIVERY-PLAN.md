@@ -139,6 +139,12 @@ ML2A also chooses operational bounds of 24 hours per native session, 10,000 acce
 
 ## Review, scoring and release workflow
 
+### ML2B initial provider decisions — 2026-11-26
+
+D-02 is resolved for the initial provider operation: explicit selected public, published, unarchived recordings only. Private/paid visitor entitlement and downloads are not advertised. D-03 uses five-minute delivery tickets within a 24-hour session, current authority checks on each request, no-store responses and immutable per-request snapshots up to 64 MiB. Withdrawal stops new requests; an already admitted response and delivered bytes cannot be recalled. Retained audio is not automatically deleted.
+
+D-06 selects `vp3_music_provider_v1`, explicit paginated refresh, exact retry receipts, and manual origin challenge/bootstrap for custom sites. Stoneward automates that setup in ML2C. D-01 is bounded to the tested PHP/MySQL/SQLite profile and public default-443 HTTPS origins, with actual-host acceptance still pending. D-08 presently covers public player/Agent/embed/canvas session descriptors at the provider boundary; actual Stoneward consumers require their ML2C adapters. D-05 raw-event/asset retention and D-10 commercial allowances remain open. The engineering request/transfer caps in [ML2B implementation](ML2B-IMPLEMENTATION.md) are not purchased plan limits or financial policy.
+
 For each phase, maintain a short checklist covering actual behavior, authority, data lifecycle, replay/recovery, compatibility, interface/accessibility, migration and the required deployment evidence. Mark each item **passed**, **failed**, **not run** or **not applicable with reason**. A 10/10 claim applies only to the named scope with its mandatory checks passed and material blockers resolved. An unavailable runtime or unperformed physical-device test remains a gap in any scope that requires it.
 
 Implementation PRs should explain the concrete problem, resulting behavior, source/contract changes, tests and remaining live evidence. Linked VP3/Stoneward PRs must identify compatible revisions. Avoid changing unrelated shared Agent/Chat systems merely to complete a music feature. Use isolated branches/worktrees and coordinate shared-file edits.

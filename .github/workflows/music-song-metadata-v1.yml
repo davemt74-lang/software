@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '**/music*.php'
+      - '.htaccess'
       - '**/artist-music*.php'
       - '**/artist-media*.php'
       - 'includes/artist-workspace-v181.php'
@@ -33,6 +34,7 @@ on:
     branches: [main]
     paths:
       - '**/music*.php'
+      - '.htaccess'
       - '**/artist-music*.php'
       - '**/artist-media*.php'
       - 'includes/artist-workspace-v181.php'
@@ -105,6 +107,12 @@ jobs:
           node tests/music-listening-api-v1.mjs
           node tests/music-listening-client-v1.mjs
           node tests/player-history-api.mjs
+      - name: Provider site grants, streaming and actual HTTP authority
+        run: |
+          php tests/music-provider-management-v1.php
+          php tests/music-provider-playback-v1.php
+          php tests/music-provider-concurrency-v1.php
+          node tests/music-provider-api-v1.mjs
       - name: MySQL migration and transaction acceptance
         env:
           MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
@@ -117,6 +125,15 @@ jobs:
           MUSIC_TEST_MYSQL_USER: root
           MUSIC_TEST_MYSQL_PASSWORD: music-test-only
         run: php tests/music-listening-mysql-v1.php
+      - name: MySQL provider grants and playback transactions
+        env:
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: |
+          php tests/music-provider-management-mysql-v1.php
+          php tests/music-provider-playback-mysql-v1.php
+          php tests/music-provider-concurrency-v1.php
       - name: Install browser fixture runtime
         id: browser_runtime
         if: ${{ !cancelled() }}
@@ -129,6 +146,9 @@ jobs:
       - name: Native player listening recovery
         if: ${{ !cancelled() && steps.browser_runtime.outcome == 'success' }}
         run: node tests/music-listening-browser-v1.mjs
+      - name: Music sites and external-origin streaming browser
+        if: ${{ !cancelled() && steps.browser_runtime.outcome == 'success' }}
+        run: node tests/music-provider-browser-v1.mjs
       - name: Save music browser review images
         if: always()
         uses: actions/upload-artifact@v4
@@ -137,4 +157,5 @@ jobs:
           path: |
             artifacts/music-song-metadata-v1/
             artifacts/music-listening-v1/
+            artifacts/music-provider-v1/
           if-no-files-found: ignore
