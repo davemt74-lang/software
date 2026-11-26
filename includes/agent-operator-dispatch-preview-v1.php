@@ -3,12 +3,23 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-operator-occurrences-v1.php';
 require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/phone-recording-pipeline-v1.php';
+require_once __DIR__.'/phone-browser-v1.php';
 
 /** Build an outbound request from current grants. This preview never submits or consumes it. */
 function vp3_operator_preview_request_v1(PDO $pdo,array $row,int $now):array
 {
     if($row['state']!=='prepared')return ['reason'=>'outside_occurrence'];
-    return vp3_operator_current_request_v1($pdo,$row,$now);
+    $plan=vp3_operator_current_request_v1($pdo,$row,$now);
+    if($plan['reason']!=='eligible')return $plan;
+    $connection=vp3_phone_twilio_state_v100();
+    if(!$connection['configured'])return ['reason'=>'carrier_unavailable'];
+    try{
+        $answer=vp3_phone_browser_callback_v1('operator_answer',['event'=>'answer']);
+        $status=vp3_phone_browser_callback_v1('operator_answer',['event'=>'status']);
+    }catch(InvalidArgumentException){return ['reason'=>'carrier_unavailable'];}
+    $plan['account_sid']=$connection['account_sid'];
+    $plan['fields']+=['Url'=>$answer,'Method'=>'POST','StatusCallback'=>$status,'StatusCallbackMethod'=>'POST'];
+    return $plan;
 }
 
 /** Revalidate the route and grants for an occurrence whose lifecycle state the caller verified. */
