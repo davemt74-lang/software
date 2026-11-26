@@ -1849,7 +1849,9 @@
       const when=worker.last_observed_at&&displayTime(worker.last_observed_at);
       const detail=worker.state==='stale'?'Last run is overdue':worker.state==='observed'?
         (worker.outcome==='failed'?'Last run reported an error':'Running on schedule'):'No run observed';
-      pairs.push(['Scheduled call worker',[detail,when].filter(Boolean).join(' · ')]);
+      const mode=worker.state==='never_seen'?'':worker.mode==='dispatch'?'Last run allowed dialing':
+        worker.mode==='prepare'?'Last run was preparation only':'Last run mode unknown';
+      pairs.push(['Scheduled call worker',[detail,mode,when].filter(Boolean).join(' · ')]);
     }
     for(const trace of (state.operator_trace||[]).slice(0,8)){
       const call=state.calls.find(row=>row.public_id===trace.call_id);

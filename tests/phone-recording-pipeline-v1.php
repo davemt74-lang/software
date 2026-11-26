@@ -131,6 +131,14 @@ try{
     $schedule=vp3_phone_worker_health_v1(true);
     check($schedule['state']==='observed'&&$schedule['outcome']==='failed'&&vp3_phone_recording_worker_health_v1()['outcome']==='completed','scheduler failures retain a separate operational receipt');
     check(vp3_phone_worker_health_v1(true,strtotime($schedule['last_observed_at'])+181)['state']==='stale','the once-per-minute scheduler shows overdue after three minutes');
+    check($schedule['mode']==='unknown','older scheduler observations have unknown mode');
+    foreach(['prepare','dispatch'] as $mode){
+        vp3_phone_worker_observe_v1(true,'completed',$mode);
+        check(vp3_phone_worker_health_v1(true)['mode']===$mode,'scheduler reports last invocation mode '.$mode);
+    }
+    vp3_phone_worker_observe_v1(true,'failed','unsupported');
+    check(vp3_phone_worker_health_v1(true)['mode']==='unknown','unrecognized modes are withheld');
+    check(!isset(vp3_phone_worker_health_v1(false)['mode']),'recording worker projection is unchanged');
     check(!glob($directory.'/private/phone-recordings-v1/*/*/source.mp3'),'worker temporary audio is removed on every success or failure');
     echo 'PHONE_RECORDING_PIPELINE_V1=PASS ('.$checks.' checks)'.PHP_EOL;
 }finally{
