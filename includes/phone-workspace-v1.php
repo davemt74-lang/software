@@ -68,7 +68,7 @@ function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
         intent_hash CHAR(64) NULL UNIQUE,intent_expires_epoch BIGINT NOT NULL DEFAULT 0,intent_consumed_epoch BIGINT NOT NULL DEFAULT 0,
         conversation_id BIGINT NULL,chat_agent_id BIGINT NOT NULL DEFAULT 0,chat_message_id BIGINT NULL,state VARCHAR(24) NOT NULL,
         recording_enabled SMALLINT NOT NULL DEFAULT 0,duration_seconds INTEGER NOT NULL DEFAULT 0,created_epoch BIGINT NOT NULL,updated_epoch BIGINT NOT NULL,ended_epoch BIGINT NULL,fallback_claimed_epoch BIGINT NOT NULL DEFAULT 0,owner_phone_revision BIGINT NOT NULL DEFAULT 0,owner_test_received_epoch BIGINT NOT NULL DEFAULT 0,paired_device_id CHAR(32) NULL,paired_profile_id CHAR(32) NULL,paired_profile_revision BIGINT NOT NULL DEFAULT 0,paired_phone_revision BIGINT NOT NULL DEFAULT 0)".$suffix);
-    foreach(['owner_phone_revision'=>'BIGINT NOT NULL DEFAULT 0','owner_test_received_epoch'=>'BIGINT NOT NULL DEFAULT 0',
+    foreach(['incoming_choice'=>"VARCHAR(12) NOT NULL DEFAULT ''",'owner_phone_revision'=>'BIGINT NOT NULL DEFAULT 0','owner_test_received_epoch'=>'BIGINT NOT NULL DEFAULT 0',
         'paired_device_id'=>'CHAR(32) NULL','paired_profile_id'=>'CHAR(32) NULL','paired_profile_revision'=>'BIGINT NOT NULL DEFAULT 0','paired_phone_revision'=>'BIGINT NOT NULL DEFAULT 0','transport_kind'=>"VARCHAR(24) NOT NULL DEFAULT 'browser'",'managed_parent_kind'=>"VARCHAR(16) NOT NULL DEFAULT 'callback'"] as $field=>$definition){
         try{$pdo->query('SELECT '.$field.' FROM phone_browser_calls_v1 WHERE 1=0');}catch(PDOException){$pdo->exec('ALTER TABLE phone_browser_calls_v1 ADD COLUMN '.$field.' '.$definition);}
     }
@@ -168,6 +168,8 @@ function vp3_phone_workspace_call_projection_v1(array $row): array
         'peer_e164'=>$connected?'':(string)$row['peer_e164'],'phone_e164'=>(string)$row['phone_e164'],'state'=>(string)$row['state'],
         'agent_id'=>(int)$row['agent_id'],'number_id'=>(int)$row['phone_number_id'],'conversation_id'=>(int)($row['conversation_id']??0),
         'duration_seconds'=>(int)$row['duration_seconds'],'created_at'=>gmdate(DATE_ATOM,(int)$row['created_epoch']),'recording_enabled'=>(bool)$row['recording_enabled'],
+        'agent_conversation_active'=>($row['incoming_choice']??'')==='agent'&&($row['parent_voice_state']??'')==='conversation_active',
+        'incoming_choice'=>(string)($row['incoming_choice']??''),'incoming_routing_available'=>array_key_exists('incoming_choice',$row),
         'source_kind'=>'browser','browser_control'=>!$managed]+($managed?['transport_kind'=>'managed_callback']+(($row['managed_parent_kind']??'callback')==='native'?['managed_mode'=>'twilio_native']:[]):[])+((int)($row['owner_phone_revision']??0)>0?['owner_test'=>true]:[])+($connected?['connected_phone'=>true,'peer_masked'=>'Ending in '.substr((string)$row['peer_e164'],-4),'connected_profile_id'=>(string)$row['paired_profile_id']]:[]);
 }
 /** The existing signed inbound receipt remains the historical owner authority. */
@@ -197,7 +199,9 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
 {
     require_once __DIR__.'/phone-browser-v1.php';
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);$numbers=vp3_phone_workspace_numbers_v1($pdo,$scope);$contacts=vp3_phone_workspace_contacts_v1($pdo,$scope['owner_user_id']);
-    $sql='SELECT * FROM phone_browser_calls_v1 WHERE owner_user_id=?';$args=[$scope['owner_user_id']];if($scope['agent_id']>0){$sql.=' AND agent_id=?';$args[]=$scope['agent_id'];}
+    $parentState=table_exists('phone_voice_calls_v130')?
+        "(SELECT v.state FROM phone_voice_calls_v130 v WHERE v.id=b.voice_call_id AND v.owner_user_id=b.owner_user_id AND v.provider_call_sid=b.provider_call_sid)":'NULL';
+    $sql="SELECT b.*, $parentState AS parent_voice_state FROM phone_browser_calls_v1 b WHERE b.owner_user_id=?";$args=[$scope['owner_user_id']];if($scope['agent_id']>0){$sql.=' AND b.agent_id=?';$args[]=$scope['agent_id'];}
     $q=$pdo->prepare($sql.' ORDER BY id DESC LIMIT 50');$q->execute($args);$calls=[];$active=null;
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){
         $card=vp3_phone_workspace_call_projection_v1($r);
@@ -251,8 +255,18 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
         require_once __DIR__.'/agent-operator-live-v1.php';
         $liveCaption=vp3_operator_live_view_v1($pdo,$scope,$active,time());
     }
+    $trace=[];
+    if($scope['conversation_id']>0&&vp3_phone_voicemail_owner_private_v1()){
+        $q=$pdo->prepare("SELECT d.chat_message_id,m.context_json FROM phone_browser_deliveries_v1 d JOIN chat_messages m ON m.id=d.chat_message_id AND m.conversation_id=d.conversation_id WHERE d.owner_user_id=? AND d.chat_agent_id=? AND d.conversation_id=? AND d.event_key LIKE 'call:%' ORDER BY d.chat_message_id DESC LIMIT 8");
+        $q->execute([$scope['owner_user_id'],$scope['agent_id'],$scope['conversation_id']]);
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $delivery){
+            $phone=json_decode((string)$delivery['context_json'],true)['phone_v1']??[];
+            if(($phone['kind']??'')!=='call'||!is_string($phone['call_id']??null))continue;
+            $trace[]=['call_id'=>$phone['call_id'],'message_id'=>(int)$delivery['chat_message_id'],'browser_route'=>$phone['browser_route']??''];
+        }
+    }
     return ['numbers'=>$numbers,'contacts'=>$contacts,'favorites'=>array_values(array_filter($contacts,static fn($c)=>$c['favorite'])),'calls'=>$calls,'voicemails'=>$voicemails,
-        'operator_live'=>$liveCaption,'voicemail_settings'=>$selected>0?vp3_phone_voicemail_settings_v1($pdo,$scope,$selected):['available'=>false],
+        'operator_trace'=>$trace,'operator_live'=>$liveCaption,'voicemail_settings'=>$selected>0?vp3_phone_voicemail_settings_v1($pdo,$scope,$selected):['available'=>false],
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
         'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'contact_details_ready'=>vp3_phone_contact_details_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
@@ -268,21 +282,21 @@ function vp3_phone_workspace_delivery_v1(PDO $pdo,array $call,string $kind,strin
         if(!$q->fetchColumn()){if($managed)vp3_phone_workspace_error_v1('managed_report_scope_changed',409,'The managed call’s original conversation is unavailable.');$aid=0;$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE user_id=? AND user_agent_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1');$q->execute([$owner]);$cid=(int)$q->fetchColumn();
             if(!$cid){$pdo->prepare("INSERT INTO chat_conversations(user_id,user_agent_id,title,created_at,updated_at) VALUES (?,NULL,'Phone',?,?)")->execute([$owner,gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);$cid=(int)$pdo->lastInsertId();}}
         $context=['phone_v1'=>['kind'=>$kind,'call_id'=>(string)$call['public_id']]];
-        foreach(['voicemail_id','transcript_session_id','recording_refs','report','status'] as $key)if(array_key_exists($key,$extra))$context['phone_v1'][$key]=$extra[$key];
+        foreach(['voicemail_id','transcript_session_id','recording_refs','report','status','browser_route'] as $key)if(array_key_exists($key,$extra))$context['phone_v1'][$key]=$extra[$key];
         $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json,created_at) VALUES (?,NULL,'assistant',?,?,?)")->execute([$cid,$text,json_encode($context,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES),gmdate('Y-m-d H:i:s')]);$mid=(int)$pdo->lastInsertId();
         $pdo->prepare('INSERT INTO phone_browser_deliveries_v1(owner_user_id,event_key,chat_message_id,conversation_id,chat_agent_id) VALUES (?,?,?,?,?)')->execute([$owner,$eventKey,$mid,$cid,$aid]);
         $pdo->prepare('UPDATE chat_conversations SET updated_at=? WHERE id=? AND user_id=?')->execute([gmdate('Y-m-d H:i:s'),$cid,$owner]);return ['message_id'=>$mid,'conversation_id'=>$cid,'chat_agent_id'=>$aid];
     });
 }
 /** Announce an accepted legacy route even when there is no browser Device or recording. */
-function vp3_phone_workspace_legacy_incoming_v1(PDO $pdo,array $route,string $sid): array
+function vp3_phone_workspace_legacy_incoming_v1(PDO $pdo,array $route,string $sid,string $browserReason='browser_unavailable'): array
 {
     if(empty($route['accepted'])||!vp3_phone_workspace_schema_ready_v1($pdo))return [];
     require_once __DIR__.'/phone-voice-v130.php';
     $current=vp3_phone_voice_current_route_v131($pdo,$sid,14400,['voicemail_offered','conversation_active','streaming_active']);
     if(empty($current['accepted']))return [];
     foreach(['owner_user_id','phone_number_id','agent_id'] as $key)if((int)($route[$key]??0)!==(int)$current[$key])return [];
-    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$current,$sid){
+    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$current,$sid,$browserReason){
         $q=$pdo->prepare('SELECT * FROM users WHERE id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([(int)$current['owner_user_id']]);$user=$q->fetch(PDO::FETCH_ASSOC);if(!$user)return [];
         $q=$pdo->prepare("SELECT * FROM phone_voice_calls_v130 WHERE provider='twilio' AND provider_call_sid=?".vp3_phone_workspace_lock_v1($pdo));$q->execute([$sid]);$call=$q->fetch(PDO::FETCH_ASSOC);if(!$call||!vp3_phone_workspace_available_v1($pdo,$user))return [];
         $q=$pdo->prepare('SELECT id FROM phone_browser_calls_v1 WHERE owner_user_id=? AND (voice_call_id=? OR provider_call_sid=?) LIMIT 1'.vp3_phone_workspace_lock_v1($pdo));$q->execute([(int)$call['owner_user_id'],(int)$call['id'],$sid]);if($q->fetchColumn())return [];
@@ -290,7 +304,7 @@ function vp3_phone_workspace_legacy_incoming_v1(PDO $pdo,array $route,string $si
         $q=$pdo->prepare('SELECT conversation_id,chat_agent_id FROM phone_browser_presence_v1 WHERE owner_user_id=? AND last_epoch>?');$q->execute([(int)$call['owner_user_id'],time()-300]);$presence=$q->fetch(PDO::FETCH_ASSOC);
         if($presence&&((int)$presence['chat_agent_id']===0||(int)$presence['chat_agent_id']===(int)$call['agent_id'])){$call['conversation_id']=(int)$presence['conversation_id'];$call['chat_agent_id']=(int)$presence['chat_agent_id'];}
         $peer=(string)$call['caller_e164'];$text='Incoming phone call'.($peer!==''?' from '.$peer:' from a private caller').' to '.(string)$call['called_e164'].'.';
-        return vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$call['public_id'],$text);
+        return vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$call['public_id'],$text,['browser_route'=>$browserReason]);
     });
 }
 function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
@@ -322,7 +336,7 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
             ?['plan'=>vp3_operator_calendar_preview_v1($pdo,$scope,$input,time())]
             :vp3_operator_calendar_save_v1($pdo,$scope,$input,time());
     }
-    if(in_array($action,['token','prepare_call','prepare_owner_test','prepare_connected_call','bind_call','cancel_prepared'],true)){require_once __DIR__.'/phone-browser-v1.php';return vp3_phone_browser_action_v1($pdo,$scope,$input);}
+    if(in_array($action,['token','prepare_call','prepare_owner_test','prepare_connected_call','bind_call','route_incoming','cancel_prepared'],true)){require_once __DIR__.'/phone-browser-v1.php';return vp3_phone_browser_action_v1($pdo,$scope,$input);}
     if($action==='select_number'){$id=vp3_phone_workspace_id_v1($input['number_id']??null);vp3_phone_workspace_number_v1($pdo,$scope,$id);
         vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope,$id){$pdo->prepare('DELETE FROM phone_browser_preferences_v1 WHERE owner_user_id=? AND agent_id=?')->execute([$scope['owner_user_id'],$scope['agent_id']]);$pdo->prepare('INSERT INTO phone_browser_preferences_v1(owner_user_id,agent_id,selected_number_id) VALUES (?,?,?)')->execute([$scope['owner_user_id'],$scope['agent_id'],$id]);});return ['selected_number_id'=>$id];}
     if($action==='favorite'){$id=vp3_phone_workspace_id_v1($input['contact_id']??null);if(!is_bool($input['favorite']??null))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a favorite state.');

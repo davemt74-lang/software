@@ -26,6 +26,18 @@ function vp3_phone_browser_endpoint_v1(string $kind): void
                 $route=vp3_phone_voice_current_route_v131($pdo,(string)$result['call']['provider_call_sid']);
                 if(!empty($route['accepted'])){
                     $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1');$q->execute([(int)$route['agent_id'],(int)$route['owner_user_id']]);$name=$q->fetchColumn();
+                    if($name!==false&&($result['call']['incoming_choice']??'')==='agent'){
+                        require_once __DIR__.'/phone-voice-conversation-v140.php';
+                        if(vp3_phone_voice_live_config_v140($pdo,$route)){
+                            $sid=(string)$result['call']['provider_call_sid'];
+                            $start=$pdo->prepare("UPDATE phone_voice_calls_v130 SET state='conversation_active' WHERE provider='twilio' AND provider_call_sid=? AND state='voicemail_offered' AND owner_user_id=? AND agent_id=? AND phone_number_id=?");
+                            $start->execute([$sid,$route['owner_user_id'],$route['agent_id'],$route['phone_number_id']]);
+                            if($start->rowCount()===1){
+                                echo vp3_phone_voice_gather_v140((string)$name,vp3_phone_voice_callback_url_v130(),'Hello. I am '.$name.', an AI phone assistant. How can I help?',1);
+                                return;
+                            }
+                        }
+                    }
                     if($name!==false){echo vp3_phone_voicemail_twiml_v1($pdo,$route,(string)$result['call']['provider_call_sid'],(string)$name,vp3_phone_voice_callback_url_v130());return;}
                 }
             }

@@ -83,6 +83,9 @@ try{
  c(vp3_phone_voicemail_ready_v1($pdo),'explicit recording installer includes voicemail schema');
  $defaults=vp3_phone_voicemail_settings_v1($pdo,$scope,1);
  c($defaults['revision']===0&&$defaults['rings']===4&&$defaults['ring_seconds']===24&&!$defaults['transcribe']&&$defaults['announce']&&!$defaults['greeting']['present'],'voicemail defaults are separate from call recording consent');
+ $pdo->prepare("INSERT INTO phone_recording_policies_v1(owner_user_id,agent_id,enabled,retain_audio,transcribe,`analyze`,modules_json,model_route,revision,created_epoch,updated_epoch) VALUES(1,7,1,1,1,0,'[]','account_cloud',1,?,?)")->execute([time(),time()]);
+ c(vp3_phone_voicemail_settings_v1($pdo,$scope,1)['transcribe'],'unconfigured voicemail inherits enabled Cloud speech processing');
+ $pdo->exec('DELETE FROM phone_recording_policies_v1 WHERE owner_user_id=1 AND agent_id=7');
  bad(fn()=>vp3_phone_voicemail_save_settings_v1($pdo,$scope,['number_id'=>1,'expected_revision'=>0,'rings'=>1,'transcribe'=>false,'announce'=>true]),'one exact ring cannot be requested');
  bad(fn()=>vp3_phone_voicemail_save_settings_v1($pdo,$scope,['number_id'=>1,'expected_revision'=>0,'rings'=>11,'transcribe'=>false,'announce'=>true]),'ring timeout is bounded');
  bad(fn()=>vp3_phone_voicemail_save_settings_v1($pdo,$scope,['number_id'=>1,'expected_revision'=>0,'rings'=>4,'transcribe'=>'false','announce'=>true]),'voicemail preferences require booleans');

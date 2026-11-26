@@ -33,7 +33,14 @@ function vp3_phone_voicemail_install_v1(PDO $pdo): void
 function vp3_phone_voicemail_raw_v1(PDO $pdo,int $owner,int $agent,int $number): array
 {
     $q=$pdo->prepare('SELECT * FROM phone_voicemail_settings_v1 WHERE phone_number_id=? AND owner_user_id=? AND agent_id=?');$q->execute([$number,$owner,$agent]);
-    return $q->fetch(PDO::FETCH_ASSOC)?:['phone_number_id'=>$number,'owner_user_id'=>$owner,'agent_id'=>$agent,'revision'=>0,'rings'=>4,'transcribe'=>0,'announce'=>1,'greeting_sha256'=>'','greeting_seconds'=>0,'greeting_wav'=>null];
+    $row=$q->fetch(PDO::FETCH_ASSOC);
+    if($row)return $row;
+    $automatic=false;
+    if(function_exists('vp3_phone_recording_policy_v1')&&table_exists('phone_recording_policies_v1')){
+        $policy=vp3_phone_recording_policy_v1($pdo,['id'=>$owner],$agent);
+        $automatic=$policy['enabled']&&$policy['transcribe'];
+    }
+    return ['phone_number_id'=>$number,'owner_user_id'=>$owner,'agent_id'=>$agent,'revision'=>0,'rings'=>4,'transcribe'=>(int)$automatic,'announce'=>1,'greeting_sha256'=>'','greeting_seconds'=>0,'greeting_wav'=>null];
 }
 function vp3_phone_voicemail_settings_v1(PDO $pdo,array $scope,int $numberId): array
 {

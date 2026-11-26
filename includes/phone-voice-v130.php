@@ -226,14 +226,15 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     }
     $route=vp3_phone_voice_current_route_v131($pdo,$callSid,14400,['voicemail_offered','conversation_active','streaming_active']);
     if (!$route['accepted']) return $route;
+    $browserReason='browser_unavailable';
     if(function_exists('vp3_phone_browser_incoming_v1')&&vp3_phone_workspace_schema_ready_v1($pdo)){
         $browserTwiml=null;
-        try{$browserTwiml=vp3_phone_browser_incoming_v1($pdo,$route,$callSid);}
+        try{$browserTwiml=vp3_phone_browser_incoming_v1($pdo,$route,$callSid,$browserReason);}
         catch(Throwable){error_log('Phone browser incoming projection is temporarily unavailable.');}
         if($browserTwiml!==null)return ['accepted'=>true,'twiml'=>$browserTwiml];
     }
     if(function_exists('vp3_phone_workspace_legacy_incoming_v1')){
-        try{vp3_phone_workspace_legacy_incoming_v1($pdo,$route,$callSid);}
+        try{vp3_phone_workspace_legacy_incoming_v1($pdo,$route,$callSid,$browserReason);}
         catch(Throwable){error_log('Phone incoming Chat projection is temporarily unavailable.');}
     }
     if (function_exists('vp3_phone_stream_route_v150') && vp3_phone_stream_route_v150($pdo,$route)) {
