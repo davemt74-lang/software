@@ -344,16 +344,28 @@ foreach(['rejected','unknown','empty'] as $scenario){
     }
 }
 $GLOBALS['gmailSummaryScenario']='followthrough';$callCount=count($GLOBALS['gmailSummaryDispatch']);$held=false;
+$pausedFailure=new DomainException('The owner paused this follow-up.',409);
 try{
-    $followthrough(static function()use($pdo,&$held):void{
+    $followthrough(static function()use($pdo,&$held,$pausedFailure):void{
         $held=(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===1;
-        throw new DomainException('The owner paused this follow-up.',409);
+        throw $pausedFailure;
     });
     throw new LogicException('A paused follow-up reached inference.');
-}catch(RuntimeException $error){
-    check_gmail_summary($held&&count($GLOBALS['gmailSummaryDispatch'])===$callCount
+}catch(DomainException|RuntimeException $error){
+    check_gmail_summary($error===$pausedFailure&&$held&&count($GLOBALS['gmailSummaryDispatch'])===$callCount
         &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
-        'pausing an automatic email follow-up during usage reservation prevents the actual provider request');
+        'pausing during usage reservation prevents dispatch, releases usage and preserves the exact control failure');
+}
+foreach([new DomainException('The email thread changed. Check it before preparing a follow-up.',409),
+    new AgentConnectionGmailExceptionV1('Gmail could not complete the provider request.',503)] as $sourceFailure){
+    try{
+        $followthrough(static function()use($sourceFailure):void{throw $sourceFailure;});
+        throw new LogicException('Unverified source reached inference.');
+    }catch(DomainException|RuntimeException $error){
+        check_gmail_summary($error===$sourceFailure&&count($GLOBALS['gmailSummaryDispatch'])===$callCount
+            &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
+            'the real Cloud dispatch wrapper preserves source failure so the worker can withdraw obsolete no-reply evidence');
+    }
 }
 foreach([[],['service'=>'conversation'],['service'=>'initiative','background'=>false]] as $wrongContext){
     $blocked=ai_v100_with_service_context($wrongContext,static fn()=>ai_generate_chat_response($followthroughPrompt,[],[],$owner,'main_ai',

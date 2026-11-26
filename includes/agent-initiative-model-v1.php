@@ -183,21 +183,30 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
         // revoked live source cannot travel to it on an old request snapshot.
         if(!$gmailFollowthrough&&$beforeInference!==null)$beforeInference();
         if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud',$background);
-        $control=['surface'=>'tool_json','protocol'=>$protocol];
+        $control=['surface'=>'tool_json','protocol'=>$protocol];$dispatchFailure=null;
         if($gmailFollowthrough){
             // Consume the persisted one-use claim after the usage reservation
             // lock, immediately before the single actual provider request.
             $control['gmail_followthrough_draft']=true;
-            $control['before_gmail_followthrough_dispatch']=static function()use($pdo,$user,$agentId,$background,$beforeInference):bool{
-                vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud',$background);
-                $beforeInference();
-                return true;
+            $control['before_gmail_followthrough_dispatch']=static function()use($pdo,$user,$agentId,$background,$beforeInference,&$dispatchFailure):bool{
+                try {
+                    vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud',$background);
+                    $beforeInference();
+                    return true;
+                } catch (Throwable $error) {
+                    // The transport must close its handle and release reserved
+                    // usage first. Preserve the source/control cause for the
+                    // worker, which withdraws superseded no-reply evidence.
+                    $dispatchFailure=$error;
+                    throw $error;
+                }
             };
         }
         $call=static fn()=>ai_generate_chat_response($prompt,[],[],$user,'main_ai',$control);
         $result=function_exists('ai_v100_with_service_context')
             ?ai_v100_with_service_context(['service'=>'initiative','agent_id'=>$agentId,'stage'=>$protocol]+$job,$call)
             :$call();
+        if($dispatchFailure!==null)throw $dispatchFailure;
         if(empty($result['ok']))throw vp3_initiative_provider_failure_v1($result);
         $answer=is_string($result['answer']??null)?trim($result['answer']):'';
         $GLOBALS['vp3_initiative_inference_last_v1']=['route'=>'vp3_cloud','agent_id'=>$agentId,

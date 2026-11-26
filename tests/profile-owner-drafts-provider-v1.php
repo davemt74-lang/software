@@ -6,6 +6,14 @@ declare(strict_types=1);
 // real usage ledger; only physical cURL is simulated.
 require __DIR__.'/agent-connection-gmail-inbox-initial-summary-v1.php';
 
+// These independent protocol suites share the real ledger and broker fixture,
+// but each needs its own admission window. Keep the real 30/minute limiter;
+// isolate only this temporary owner's previous Gmail test admissions.
+$profileRateWindow=ai_v100_runtime_dir().'/rate-'.(int)$owner['id'].'-chat.json';
+if(is_file($profileRateWindow)&&!unlink($profileRateWindow)){
+    throw new RuntimeException('Unable to isolate the Profile provider test admission window.');
+}
+
 $profileChecks=0;
 function pod_wire_check(bool $ok,string $message): void
 {global $profileChecks;if(!$ok)throw new RuntimeException($message);$profileChecks++;echo 'PASS Profile draft transport: '.$message.PHP_EOL;}

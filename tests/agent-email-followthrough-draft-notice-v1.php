@@ -79,6 +79,29 @@ $retry=ft_claim(ft_row($race['row']['id']));ft_prepare($retry);
 ft_check($GLOBALS['ft_dispatches']===$first+1 && agent_email_followthrough_preparation_v1($pdo,$retry['row'])===['state'=>'unavailable','reason'=>'dispatch_uncertain'],
     'resuming after cancelled inference reports uncertainty and preserves the consumed dispatch');
 
+$preDispatchReply=ft_seed('pre_dispatch_reply');$first=$GLOBALS['ft_dispatches'];$dispatchGateReturned=false;
+$chatBefore=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();
+$noticesBefore=(int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn();
+ft_prepare($preDispatchReply,static function($prompt,$protocol,$before,$job,$transient)use($preDispatchReply,&$dispatchGateReturned):string{
+    $w=$preDispatchReply['watch'];
+    $GLOBALS['ft_mail'][$w['thread_id']][]=ft_message('before_dispatch_reply',$w['thread_id'],$w['recipient_email'],$w['account_email'],
+        'The recipient replied before inference.', ['INBOX'],'<'.$w['sent_message_id'].'@example.test>',time()-1);
+    $before();$dispatchGateReturned=true;return '{"draft":"This source must never reach model dispatch."}';
+});
+$preDispatchRow=ft_row($preDispatchReply['row']['id']);
+ft_check(!$dispatchGateReturned && $GLOBALS['ft_dispatches']===$first && $preDispatchRow['generated_draft_id']===null
+    && $preDispatchRow['draft_attempt_state']==='blocked' && $preDispatchRow['draft_attempt_reason']==='source_changed',
+    'an exact reply immediately before the dispatch guard blocks inference with its original source-change reason');
+ft_check($preDispatchRow['outcome']==='waiting' && $preDispatchRow['check_state']==='unavailable'
+    && $preDispatchRow['check_result']===null && $preDispatchRow['checked_at']===null && $preDispatchRow['evidence_digest']===null,
+    'pre-dispatch source rejection withdraws every field of the older no-reply observation');
+ft_reject(409,static fn()=>agent_email_followthrough_notice_v1($pdo,$preDispatchReply['row'],$preDispatchReply['watch'],$preDispatchReply['claim']),
+    'the same worker pass cannot announce overdue or draft readiness after a pre-dispatch reply');
+ft_check((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$chatBefore
+    && (int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn()===$noticesBefore
+    && ft_row($preDispatchRow['id'])['notice_message_id']===null,
+    'pre-dispatch reply rejection leaves no Chat milestone or notification behind');
+
 $replyRace=ft_seed('reply_race');
 ft_prepare($replyRace,static function($prompt,$protocol,$before,$job,$transient)use($replyRace):string{
     $before();$GLOBALS['ft_dispatches']++;$w=$replyRace['watch'];
