@@ -23,7 +23,7 @@ function vp3_curiosity_live_screen_v1(PDO $pdo,array $user,array $binding): ?arr
     }
     if(!$screens)return null;
     return ['ref'=>$source['ref'],'revision'=>hash('sha256',json_encode([$source['ref'],
-        $source['processing_policy_revision'],$screens],JSON_THROW_ON_ERROR)),
+        $source['screen_source_revision'],$source['processing_policy_revision'],$screens],JSON_THROW_ON_ERROR)),
         'screens'=>$screens,'state'=>'fresh_shared_observation','ephemeral'=>true,'preferences_confirmed'=>false];
 }
 

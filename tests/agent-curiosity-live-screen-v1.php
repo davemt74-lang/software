@@ -28,6 +28,10 @@ $oldRevision=vp3_curiosity_analysis_snapshot_v1(db(),$user,$binding)['revision']
 $packet['eyes']=null;$packet['microphone']=null;live_store($packet,(int)floor(microtime(true)*1000));
 curiosity_live_check(vp3_curiosity_analysis_snapshot_v1(db(),$user,$binding)['revision']===$oldRevision,
     'Unrelated camera or microphone changes cannot manufacture new email-page analysis');
+$packet['screens'][0]['session_id']='33333333-3333-4333-8333-333333333333';
+live_store($packet,(int)floor(microtime(true)*1000));
+curiosity_live_check(vp3_curiosity_analysis_snapshot_v1(db(),$user,$binding)['revision']!==$oldRevision,
+    'An identical-looking replacement share has its own source authority');
 try{
     vp3_curiosity_live_screen_v1(db(),$user,array_replace($binding,['conversation_id'=>180,'agent_id'=>18]));
     throw new RuntimeException('A sibling Agent unexpectedly received shared-screen access.');
@@ -69,6 +73,18 @@ $failed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$late),static fun
 },null,false);
 curiosity_live_check(!$failed['ok']&&vp3_curiosity_analysis_report_v1(db(),$user,$binding)===null,
     'Stopping sharing during inference fences the late result before its private receipt commits');
+$packet=$publish('A THIRD_CURRENT_EMAIL_PAGE');
+curiosity_live_check(vp3_curiosity_analysis_schedule_v1(db(),$user,$binding)==='queued',
+    'A new shared-page source can receive its own analysis');
+$rows=array_filter(scope_runs(1,17,'initiative.prepare'),static fn(array $row):bool=>(json_decode($row['goal'],true)['tool']??null)==='curiosity.analyze');
+$replacement=(int)end($rows)['id'];
+$failed=vp3_initiative_execute_v1(db(),$user,scope_claim($user,$replacement),static function()use($packet):string{
+    $packet['screens'][0]['session_id']='44444444-4444-4444-8444-444444444444';
+    live_store($packet,(int)floor(microtime(true)*1000));
+    return json_encode(['draft'=>'An identical-looking replacement must not authenticate the previous screen analysis.']);
+},null,false);
+curiosity_live_check(!$failed['ok']&&vp3_curiosity_analysis_report_v1(db(),$user,$binding)===null,
+    'Replacing a share during inference fences the prior result even when the visible description is identical');
 $publish();db()->exec("UPDATE agent_compute_preferences SET preference='homeserver_only' WHERE user_id=1");
 curiosity_live_check(vp3_curiosity_live_screen_v1(db(),$user,$binding)===null,
     'An unavailable transient local route cannot silently authorize Cloud processing of the shared page');
