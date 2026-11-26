@@ -146,11 +146,11 @@ $recordCarrier=static function(string $method,string $resource,array $fields)use
     return ['sid'=>$recordSid,'account_sid'=>$carrierForm['AccountSid'],'call_sid'=>$carrierForm['CallSid'],
         'source'=>'StartCallRecordingAPI','status'=>'in-progress','channels'=>2];
 };
-$answer=static function(string $stage,array $values=[],?string $signature=null,?callable $generator=null,?callable $recording=null)use($carrierForm,$pdo,$callTime):string{
+$answer=static function(string $stage,array $values=[],?string $signature=null,?callable $generator=null,?callable $recording=null,?callable $clock=null)use($carrierForm,$pdo,$callTime):string{
     $payload=array_replace($carrierForm,$values);
     $url=vp3_phone_browser_callback_v1('operator_answer',['event'=>$stage]);
     $signature??=vp3_phone_sms_twilio_signature_v110($url,$payload,'carrier-auth-token-fixture');
-    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$callTime+1,$generator,$recording);
+    return vp3_operator_answer_v1($pdo,$stage,$payload,$signature,$clock??($callTime+1),$generator,$recording);
 };
 $hangup=vp3_phone_browser_hangup_v1();
 foreach([['answer',[],'bad signature'],['answer',['AccountSid'=>'AC'.str_repeat('d',32)],null]] as $invalid){
@@ -187,6 +187,8 @@ c($answer('confirm',['Digits'=>'1'],null,null,$recordCarrier)===$hangup&&$record
 $pdo->beginTransaction();
 try{
     c(str_contains($consented,'input="speech"')&&str_contains($consented,'event=turn1'),'consent begins a bounded speech turn');
+    c($answer('turn5',[])===$hangup&&$read()['last_occurrence']['reason']==='answer_consented',
+        'a late or skipped silence callback cannot close the current conversation');
     $generated=0;$model=static function(string $speech,array $history,array $current)use(&$generated,$plan):array{
         ++$generated;c($speech==='Hello there'&&$history===[]&&$current['objectives']===$plan['objectives'],'model receives only this call speech, history and approved objectives');
         return ['ok'=>true,'answer'=>'Hello. What would you like to cover?'];
@@ -203,6 +205,48 @@ try{
 }finally{$pdo->rollBack();}
 echo "PASS objective-scoped scheduled speech turns, replay fencing and voice completion\n";
 
+foreach(['window_elapsed','consent_withdrawn'] as $change){
+    $pdo->beginTransaction();
+    try{
+        $at=$callTime+1;
+        $clock=static function()use(&$at){return $at;};
+        $generator=static function()use($pdo,$change,&$at,$row){
+            if($change==='window_elapsed')$at=(int)$row['end_epoch'];
+            else $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
+            return ['ok'=>true,'answer'=>'Late model reply'];
+        };
+        $response=$answer('turn1',['SpeechResult'=>'Status update'],null,$generator,null,$clock);
+        $stored=$pdo->prepare('SELECT state,response_text FROM phone_voice_turns_v140 WHERE call_sid=? AND step_number=1');
+        $stored->execute([$carrierForm['CallSid']]);
+        c($response===$hangup&&$stored->fetch(PDO::FETCH_ASSOC)===['state'=>'withheld','response_text'=>null],
+            'late speech is neither spoken nor retained after '.$change);
+        $answer('status',['CallStatus'=>'completed']);
+        c($read()['last_occurrence']['reason']==='conversation_reply_withheld','call history records why the reply was withheld');
+    }finally{$pdo->rollBack();}
+}
+echo "PASS live permission and time-window checks after a delayed model response\n";
+
+require_once dirname(__DIR__).'/includes/agent-operator-outcome-chat-v1.php';
+foreach(['failed'=>'conversation_model_failed','limit'=>'conversation_turn_limit','ended'=>'conversation_ended'] as $case=>$expectedReason){
+    $pdo->beginTransaction();
+    try{
+        $turns=$case==='limit'?8:1;
+        for($i=1;$i<=$turns;++$i){
+            $answer('turn'.$i,['SpeechResult'=>'Status update'],null,static fn()=>['ok'=>$case!=='failed','answer'=>'Understood.']);
+        }
+        $answer('status',['CallStatus'=>'completed']);
+        c($read()['last_occurrence']['reason']===$expectedReason,'signed completion classifies the last saved turn: '.$case);
+        c(vp3_operator_outcome_chat_tick_v1($pdo,$callTime+3)['delivered']===1,'ended speech outcome reaches the original private Chat');
+        $message=$pdo->query('SELECT message FROM chat_messages WHERE conversation_id=11 ORDER BY id DESC LIMIT 1')->fetchColumn();
+        $expectedLabel=match($case){'failed'=>'could not generate','limit'=>'eight-turn limit',default=>'during the conversation'};
+        c(str_contains($message,$expectedLabel)&&!str_contains($message,'Status update'),'private notice describes the outcome without copying speech');
+        c(!empty(vp3_operator_recording_saved_policy_v1($pdo,['transport_kind'=>'operator_scheduled','owner_user_id'=>1,
+            'provider_call_sid'=>$carrierForm['CallSid'],'public_id'=>$pdo->query('SELECT call_public_id FROM phone_operator_carrier_attempts_v1')->fetchColumn()],$recordSid)['transcribe']),
+            'post-call recording policy still recognizes consent for the saved outcome');
+    }finally{$pdo->rollBack();}
+}
+echo "PASS closed-browser chat and call history for model failure, turn limit and mid-call hangup\n";
+
 foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=>'carrier_no_answer','failed'=>'carrier_failed','canceled'=>'carrier_canceled'] as $status=>$reason){
     $pdo->beginTransaction();
     try{
@@ -218,10 +262,14 @@ foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=
 $recordingForm=['RecordingSid'=>$recordSid,'RecordingStatus'=>'completed','RecordingSource'=>'StartCallRecordingAPI',
     'RecordingChannels'=>'2','RecordingTrack'=>'both','RecordingDuration'=>'12'];
 $pdo->exec("UPDATE phone_operator_carrier_attempts_v1 SET recording_state='uncertain',recording_sid=NULL");
-$answer('recording',$recordingForm);
+$payload=array_merge($carrierForm,$recordingForm);
+$receiptUrl=vp3_phone_browser_callback_v1('operator_answer',['event'=>'recording']);
+$receiptSignature=vp3_phone_sms_twilio_signature_v110($receiptUrl,$payload,'carrier-auth-token-fixture');
+// Match the webhook entry point, which supplies no test clock.
+vp3_operator_answer_v1($pdo,'recording',$payload,$receiptSignature);
 c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid' AND state='queued'")->fetchColumn()===1,
     'signed recording receipt recovers a lost start response and enters the existing transcription and report pipeline once');
-$answer('recording',$recordingForm);
+$answer('recording',$recordingForm,null,null,null,static fn()=>$callTime+2);
 c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid'")->fetchColumn()===1,
     'duplicate recording receipt is idempotent');
 $answer('status',['CallStatus'=>'completed']);
@@ -249,3 +297,23 @@ c(count($posted)===1&&(int)$posted[0]['conversation_id']===11&&$posted[0]['role'
     &&str_contains($posted[0]['message'],'agreed')&&!str_contains($posted[0]['message'],$plan['objectives'])
     &&!str_contains($posted[0]['context_json'],$carrierForm['CallSid']),'the original Chat receives the outcome without objectives or provider identifiers');
 echo "PASS server-side scheduled call outcome delivery, scope changes, recovery and deduplication\n";
+
+$lateStart=$callTime+900;
+$lateEnd=$lateStart+60;
+$pdo->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id)
+    VALUES(?,?,?,?,?,'prepared','awaiting_dispatch_checks',?,?,11,0)")->execute([1,$eventId,$lateStart,$lateEnd,1,$lateStart,$id]);
+$expire=static fn(int $at)=>vp3_operator_expire_prepared_v1($pdo,$at);
+$expire($lateEnd-1);
+$pending=$pdo->prepare('SELECT state,reason FROM phone_operator_occurrences_v1 WHERE owner_user_id=1 AND event_id=? AND start_epoch=?');
+$pending->execute([$eventId,$lateStart]);
+c($pending->fetchColumn()==='prepared','a prepared call remains eligible throughout its window');
+c($expire($lateEnd)===1&&$expire($lateEnd)===0,'expiration closes a prepared call exactly once at the boundary');
+$pending->execute([$eventId,$lateStart]);
+c($pending->fetch(PDO::FETCH_ASSOC)===['state'=>'missed','reason'=>'dispatch_window_expired'],'private schedule history records the missed dispatch');
+$deliver($lateEnd);
+$deliver($lateEnd+1);
+$messages->execute(['scheduled:'.$eventId.':'.$lateStart]);
+$missed=$messages->fetchAll(PDO::FETCH_ASSOC);
+c(count($missed)===1&&(int)$missed[0]['conversation_id']===11&&str_contains($missed[0]['message'],'before dialing'),'the original Chat receives one clear missed-call outcome');
+c($read()['last_occurrence']['state']==='missed','the contact schedule shows the missed occurrence');
+echo "PASS expired prepared calls reach closed-browser history and private Chat once\n";

@@ -16,7 +16,7 @@ foreach($_POST as $key=>$value){
 }
 if($bytes>12000){http_response_code(413);return;}
 try{
-    $response=vp3_operator_answer_v1(db(),$event,$_POST,(string)($_SERVER['HTTP_X_TWILIO_SIGNATURE']??''),time());
+    $response=vp3_operator_answer_v1(db(),$event,$_POST,(string)($_SERVER['HTTP_X_TWILIO_SIGNATURE']??''));
     if(in_array($event,['status','recording'],true))http_response_code(204);
     else echo $response;
 }catch(InvalidArgumentException){http_response_code(422);}

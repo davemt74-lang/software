@@ -6,8 +6,9 @@ require_once __DIR__.'/agent-operator-conversation-v1.php';
 require_once __DIR__.'/agent-operator-recording-v1.php';
 
 /** The answer URL is a public carrier callback. Only the accepted SID may change its own receipt. */
-function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signature,int $now,?callable $generator=null,?callable $recordingCarrier=null):string
+function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signature,int|callable|null $now=null,?callable $generator=null,?callable $recordingCarrier=null):string
 {
+    $clock=is_int($now)?static fn()=>$now:($now??'time');
     $url=static fn(string $step)=>vp3_phone_browser_callback_v1('operator_answer',['event'=>$step]);
     if(!in_array($event,['answer','retry','last','confirm','status','recording'],true)&&!preg_match('/^turn[1-8]$/D',$event))throw new InvalidArgumentException('Unknown answer event.');
     $sid=vp3_phone_browser_verify_v1($form,$signature,$url($event));
@@ -26,7 +27,8 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         return $hangup;
     }
     if(preg_match('/^turn([1-8])$/D',$event,$match))
-        return vp3_operator_conversation_turn_v1($pdo,(int)$owner,$sid,(int)$match[1],$form,$now,$generator);
+        return vp3_operator_conversation_turn_v1($pdo,(int)$owner,$sid,(int)$match[1],$form,$clock,$generator);
+    $now=$clock();
     if($event==='recording'){
         vp3_operator_recording_event_v1($pdo,(int)$owner,$sid,$form,$now);
         return $hangup;
@@ -44,6 +46,17 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
             $status=$form['CallStatus']??'';
             if(!isset($outcomes[$status]))return $hangup;
             $reason=in_array($row['reason'],['carrier_submitted','answer_prompted'],true)?$outcomes[$status]:$row['reason'];
+            if($reason==='conversation_active'&&$status==='completed'){
+                $turn=$pdo->prepare('SELECT step_number,state FROM phone_voice_turns_v140 WHERE call_sid=? AND owner_user_id=? ORDER BY step_number DESC LIMIT 1');
+                $turn->execute([$sid,$owner]);
+                $last=$turn->fetch(PDO::FETCH_ASSOC);
+                $reason=match(true){
+                    ($last['state']??'')==='withheld'=>'conversation_reply_withheld',
+                    ($last['state']??'')==='failed'=>'conversation_model_failed',
+                    ($last['state']??'')==='ready'&&(int)$last['step_number']===8=>'conversation_turn_limit',
+                    default=>'conversation_ended',
+                };
+            }
             $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET state='ended',reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")
                 ->execute([$reason,$owner,$row['event_id'],$row['start_epoch']]);
             if(!empty($row['event_id']))$pdo->prepare("UPDATE phone_browser_calls_v1 SET state=?,ended_epoch=?,updated_epoch=? WHERE owner_user_id=? AND provider_call_sid=? AND transport_kind='operator_scheduled'")

@@ -26,6 +26,7 @@ try{
         $counts['errors']+=$counts['dispatch']['errors']+$counts['dispatch']['uncertain'];
     }
     require_once __DIR__.'/includes/agent-operator-outcome-chat-v1.php';
+    $counts['missed']+=vp3_operator_expire_prepared_v1(db(),time());
     $notices=vp3_operator_outcome_chat_tick_v1(db(),time());
     $counts['chat_delivered']=$notices['delivered'];
     $counts['chat_deferred']=$notices['deferred'];

@@ -27,26 +27,27 @@ function vp3_operator_conversation_context_v1(PDO $pdo,int $owner,string $sid,in
     catch(VP3PhoneWorkspaceException){return [];}
     return $current['reason']==='eligible'?['row'=>$row,'current'=>$current]:[];
 }
-function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $step,array $form,int $now,?callable $generator=null):string
+function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $step,array $form,callable $clock,?callable $generator=null):string
 {
     $hangup=vp3_phone_browser_hangup_v1();
     if(isset($form['SpeechResult'])&&!is_string($form['SpeechResult']))throw new InvalidArgumentException('Invalid carrier speech text.');
     $speech=trim((string)($form['SpeechResult']??''));
     if(mb_strlen($speech)>1200)$speech=mb_substr($speech,0,1200);
-    $prepared=section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid,$step,$speech,$now){
-        $context=vp3_operator_conversation_context_v1($pdo,$owner,$sid,$now,true);if(!$context)return ['kind'=>'hangup'];
+    $prepared=section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid,$step,$speech,$clock){
+        $context=vp3_operator_conversation_context_v1($pdo,$owner,$sid,$clock(),true);if(!$context)return ['kind'=>'hangup'];
         $row=$context['row'];$key=[$owner,$row['event_id'],$row['start_epoch']];
-        if($speech===''||preg_match('/^\s*(?:goodbye|bye|hang up|end call|stop call)[.! ]*$/iu',$speech)){
-            $reason=$speech===''?'conversation_silent':'conversation_completed';
-            $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")->execute([$reason,...$key]);
-            return ['kind'=>'end','reason'=>$reason];
-        }
         $hash=hash('sha256',$speech);$q=$pdo->prepare('SELECT * FROM phone_voice_turns_v140 WHERE call_sid=? ORDER BY step_number DESC LIMIT 1');
         $q->execute([$sid]);$latest=$q->fetch(PDO::FETCH_ASSOC);$last=$latest?(int)$latest['step_number']:0;
         if($step>$last+1||$step<$last)return ['kind'=>'hangup'];
         if($step===$last){
             if(!hash_equals((string)$latest['speech_hash'],$hash)||$latest['state']!=='ready')return ['kind'=>'hangup'];
             return ['kind'=>'ready','reply'=>(string)$latest['response_text']];
+        }
+        if($latest&&$latest['state']!=='ready')return ['kind'=>'hangup'];
+        if($speech===''||preg_match('/^\s*(?:goodbye|bye|hang up|end call|stop call)[.! ]*$/iu',$speech)){
+            $reason=$speech===''?'conversation_silent':'conversation_completed';
+            $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")->execute([$reason,...$key]);
+            return ['kind'=>'end','reason'=>$reason];
         }
         $q=$pdo->prepare("INSERT INTO phone_voice_turns_v140(call_sid,step_number,owner_user_id,agent_id,speech_hash,speech_text,state) VALUES (?,?,?,?,?,?,'processing')");
         $q->execute([$sid,$step,$owner,$context['current']['agent_id'],$hash,$speech]);
@@ -64,16 +65,16 @@ function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $
             vp3_phone_voice_ai_v140($pdo,$owner,$prepared['current']['agent_id'],$prepared['speech'],$prepared['history'],$prepared['current']['objectives']);}
         catch(Throwable){$result=['ok'=>false];}
         $reply=mb_strimwidth(trim((string)($result['answer']??'')),0,650,'…');
-        if(empty($result['ok'])||$reply===''){
-            $pdo->prepare("UPDATE phone_voice_turns_v140 SET state='failed' WHERE call_sid=? AND step_number=? AND state='processing'")->execute([$sid,$step]);
-            return vp3_phone_voice_end_v140('The assistant is unavailable. Goodbye.');
-        }
-        $saved=section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid,$step,$now,$reply){
-            if(!vp3_operator_conversation_context_v1($pdo,$owner,$sid,$now,true))return false;
-            $q=$pdo->prepare("UPDATE phone_voice_turns_v140 SET response_text=?,state='ready' WHERE call_sid=? AND step_number=? AND state='processing'");
-            $q->execute([$reply,$sid,$step]);return $q->rowCount()===1;
+        $hasReply=!empty($result['ok'])&&$reply!=='';
+        $saved=section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid,$step,$clock,$reply,$hasReply){
+            $authorized=(bool)vp3_operator_conversation_context_v1($pdo,$owner,$sid,$clock(),true);
+            $state=$authorized?($hasReply?'ready':'failed'):'withheld';
+            $q=$pdo->prepare("UPDATE phone_voice_turns_v140 SET response_text=?,state=? WHERE owner_user_id=? AND call_sid=? AND step_number=? AND state='processing'");
+            $q->execute([$state==='ready'?$reply:null,$state,$owner,$sid,$step]);
+            return $authorized&&$q->rowCount()===1;
         });
         if(!$saved)return $hangup;
+        if(!$hasReply)return vp3_phone_voice_end_v140('The assistant is unavailable. Goodbye.');
     }
     return $step===8?vp3_phone_voice_end_v140($reply.' Thank you. Goodbye.'):vp3_operator_conversation_gather_v1($reply,$step+1);
 }
