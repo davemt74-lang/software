@@ -1,2 +1,4 @@
 # Repository agent guidance
 For Connected Devices SDK / Device OS work, start with [the canonical project documentation](docs/connected-devices/README.md) and [living status](docs/connected-devices/DEVELOPMENT-STATUS.md). Follow existing project conventions and scoped instructions; this reference does not authorize implementation or override other requirements.
+
+For VP3 music listening, song metadata, Music Workspace or Stoneward streaming integration work, start with [the music project documentation](docs/music-listening/README.md) and [development status](docs/music-listening/DEVELOPMENT-STATUS.md). The package distinguishes audited behavior, proposed contracts and unresolved product policies; follow the relevant phase handoff and existing repository conventions. This reference does not expand the active task's authorization.
