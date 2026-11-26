@@ -13,7 +13,11 @@ class OperatorFollowthroughPDO extends PDO {
     }
     public function prepare(string $sql,array $options=[]):PDOStatement|false{
         if($this->failMasterWrite&&str_contains($sql,'UPDATE artist_transcript_master_analysis_v237 SET analysis_json'))throw new PDOException('Injected source-receipt failure');
-        if($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){$sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);}
+        if($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
+            // Check the real fixture indexes while preserving production MySQL introspection.
+            if($sql==='SELECT 1 FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name=? AND index_name=? LIMIT 1')$sql="SELECT 1 FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=? LIMIT 1";
+            $sql=preg_replace('/ON DUPLICATE KEY UPDATE/i','ON CONFLICT DO UPDATE SET',$sql);$sql=preg_replace('/VALUES\((\w+)\)/i','excluded.$1',$sql);
+        }
         return parent::prepare($sql,$options);
     }
 }
@@ -92,11 +96,6 @@ $r=followthrough_turn('Show call follow-ups',null,null,true,2,21);c(!str_contain
 
 $proposal=followthrough_prepare_task('PRIVATE-OWNER-TODO');
 $r=followthrough_turn('Yes',null,null,false);$taskId=(int)($r['tool_receipt']['record_id']??0);
-if(empty($r['tool_receipt']['changes_applied'])){
-    $debugLast=vp3_operator_followthrough_last_v1($pdo,$scope,$r['owner_message_id']);
-    $debug=vp3_operator_followthrough_confirm_v1($pdo,$scope,$debugLast,['id'=>$r['owner_message_id']],'Yes');
-    throw new RuntimeException('Unexpected task response: '.json_encode([$r,$debug,followthrough_counts()],JSON_THROW_ON_ERROR));
-}
 c(($r['tool_receipt']['capability']??'')==='tasks.lists'&&$r['tool_receipt']['changes_applied']&&followthrough_counts()===[1,0]&&$taskId>0,'approval creates one real canonical Brain task through the existing kernel');
 $q=$pdo->prepare('SELECT subject,metadata_json FROM agent_memory_items WHERE id=?');$q->execute([$taskId]);$task=$q->fetch(PDO::FETCH_ASSOC);c($task['subject']==='PRIVATE-OWNER-TODO'&&str_contains($task['metadata_json'],$ctx['job']['public_id']),'task retains the approved wording and its exact call evidence reference');
 $r=followthrough_turn('Yes');c(!$r['tool_receipt']['changes_applied']&&followthrough_counts()===[1,0],'a lost Chat acknowledgement recovers the original approval without a second task');
