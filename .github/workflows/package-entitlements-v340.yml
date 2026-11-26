@@ -238,6 +238,8 @@ jobs:
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
           php tests/operator-schedule-calendar-v1.php
+          php tests/operator-schedule-calendar-v1.php timeout
+          php tests/operator-schedule-calendar-v1.php mismatch
           php tests/operator-holder-modes-v1.php
           php tests/operator-auto-call-migration.php
           php tests/phone-operator-suggestion-evidence.php
