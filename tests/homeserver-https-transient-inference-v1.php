@@ -10,6 +10,7 @@ final class TransientRelaySQLite extends PDO
     public ?array $metadataFailure=null;
     public mixed $beforeOwnerLock=null;
     public ?array $autoResponse=null;
+    public mixed $afterAutoResponse=null;
 
     public function __construct(){parent::__construct('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);}
     public function exec(string $statement): int|false
@@ -46,6 +47,7 @@ final class TransientRelaySQLite extends PDO
             $session=homeserver_https_v1300_session(1);
             homeserver_https_v1300_poll($session,[]);
             homeserver_https_v1300_poll($session,['results'=>[['request_id'=>$id]+$response]]);
+            if($this->afterAutoResponse!==null){$callback=$this->afterAutoResponse;$this->afterAutoResponse=null;$callback($this);}
         }
         return $committed;
     }
@@ -307,4 +309,11 @@ $pdo->autoResponse=['ok'=>true,'status'=>200,'payload'=>['model_inventory'=>$inv
 htThrows(fn()=>vp3_homeserver_inventory_read_v1(1),'could not be refreshed');
 htCheck(htCount()===1,'cleanup failure never returns inventory success');
 $pdo->denyDelete=false;
+$pdo=htReset();
+$pdo->autoResponse=['ok'=>true,'status'=>200,'payload'=>['model_inventory'=>$inventory]];
+$pdo->afterAutoResponse=static function(PDO $db):void{
+    $db->prepare('UPDATE homeserver_https_sessions SET session_token_hash=? WHERE user_id=1')->execute([hash('sha256','replacement')]);
+};
+htThrows(fn()=>vp3_homeserver_inventory_read_v1(1),'pairing is unavailable or changed');
+htCheck(htCount()===0,'session replacement after delivery prevents private inventory release and cleans the old response');
 echo 'HOMESERVER_MODEL_INVENTORY_READ_V1=PASS'.PHP_EOL;
