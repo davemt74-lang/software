@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {speechFixture,speechItem} from './fixtures/profile-speech-pa4a.mjs';
 import {FixtureCustomEvent} from './fixtures/profile-calls-pa3c.mjs';
 let checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;console.log('PASS '+label);};
@@ -19,6 +20,19 @@ const sent=f=>f.requests.filter(r=>r.action==='doorbell_reply');
   f.audio[0].finish();await f.settle();check(f.urls.size===0&&f.requests.some(r=>r.action==='owner_report'&&r.status==='ended'),'ended media revokes its Blob URL and reports only client playback evidence');
   check(echo.length===2&&echo[0].state==='start'&&echo[1].state==='end'&&echo.every(event=>event.source==='profile-speech-pa4a'),'actual voice IIFE receives matched proactive echo lifecycle without stopping its own visitor playback');
   await click(f);const claims=f.requests.filter(r=>r.action==='owner_claim');check(f.providerCalls===1&&f.audio.length===2&&claims.length===2&&claims[0].request_id!==claims[1].request_id,'explicit terminal replay uses a new cache-linked claim and one new permit without another synthesis');await f.stop();
+}
+{
+  const f=await speechFixture();
+  vm.runInContext('emailInstructionTurn={revision:1,authority:1};',f.context);
+  await click(f);
+  check(f.requests.every(r=>r.action!=='owner_claim')&&f.providerCalls===0&&f.audio.length===0
+    &&f.speech(81).textContent.includes('Speech is paused'),
+    'an active email instruction defers visitor playback before any speech claim or synthesis');
+  vm.runInContext('emailInstructionTurn=null;',f.context);
+  await click(f);
+  check(f.requests.filter(r=>r.action==='owner_claim').length===1&&f.providerCalls===1&&f.audio.length===1&&!f.audio[0].paused,
+    'explicit visitor Play resumes after the email instruction releases the canonical Chat busy state');
+  await f.stop();
 }
 {
   const f=await speechFixture();const held=f.hold('owner_audio');void click(f);await f.settle();held.work.reject(new Error('Lost completed audio response'));await f.settle();await f.refresh();await click(f);

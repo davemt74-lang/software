@@ -319,10 +319,14 @@ foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=
 $recordingForm=['RecordingSid'=>$recordSid,'RecordingStatus'=>'completed','RecordingSource'=>'StartCallRecordingAPI',
     'RecordingChannels'=>'2','RecordingTrack'=>'both','RecordingDuration'=>'12'];
 $pdo->exec("UPDATE phone_operator_carrier_attempts_v1 SET recording_state='uncertain',recording_sid=NULL");
-$answer('recording',$recordingForm);
+$payload=array_merge($carrierForm,$recordingForm);
+$receiptUrl=vp3_phone_browser_callback_v1('operator_answer',['event'=>'recording']);
+$receiptSignature=vp3_phone_sms_twilio_signature_v110($receiptUrl,$payload,'carrier-auth-token-fixture');
+// Match the webhook entry point, which supplies no test clock.
+vp3_operator_answer_v1($pdo,'recording',$payload,$receiptSignature);
 c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid' AND state='queued'")->fetchColumn()===1,
     'signed recording receipt recovers a lost start response and enters the existing transcription and report pipeline once');
-$answer('recording',$recordingForm);
+$answer('recording',$recordingForm,null,null,null,static fn()=>$callTime+2);
 c((int)$pdo->query("SELECT COUNT(*) FROM phone_recording_jobs_v1 WHERE provider_recording_sid='$recordSid'")->fetchColumn()===1,
     'duplicate recording receipt is idempotent');
 $answer('status',['CallStatus'=>'completed']);
@@ -350,3 +354,23 @@ c(count($posted)===1&&(int)$posted[0]['conversation_id']===11&&$posted[0]['role'
     &&str_contains($posted[0]['message'],'agreed')&&!str_contains($posted[0]['message'],$plan['objectives'])
     &&!str_contains($posted[0]['context_json'],$carrierForm['CallSid']),'the original Chat receives the outcome without objectives or provider identifiers');
 echo "PASS server-side scheduled call outcome delivery, scope changes, recovery and deduplication\n";
+
+$lateStart=$callTime+900;
+$lateEnd=$lateStart+60;
+$pdo->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id)
+    VALUES(?,?,?,?,?,'prepared','awaiting_dispatch_checks',?,?,11,0)")->execute([1,$eventId,$lateStart,$lateEnd,1,$lateStart,$id]);
+$expire=static fn(int $at)=>vp3_operator_expire_prepared_v1($pdo,$at);
+$expire($lateEnd-1);
+$pending=$pdo->prepare('SELECT state,reason FROM phone_operator_occurrences_v1 WHERE owner_user_id=1 AND event_id=? AND start_epoch=?');
+$pending->execute([$eventId,$lateStart]);
+c($pending->fetchColumn()==='prepared','a prepared call remains eligible throughout its window');
+c($expire($lateEnd)===1&&$expire($lateEnd)===0,'expiration closes a prepared call exactly once at the boundary');
+$pending->execute([$eventId,$lateStart]);
+c($pending->fetch(PDO::FETCH_ASSOC)===['state'=>'missed','reason'=>'dispatch_window_expired'],'private schedule history records the missed dispatch');
+$deliver($lateEnd);
+$deliver($lateEnd+1);
+$messages->execute(['scheduled:'.$eventId.':'.$lateStart]);
+$missed=$messages->fetchAll(PDO::FETCH_ASSOC);
+c(count($missed)===1&&(int)$missed[0]['conversation_id']===11&&str_contains($missed[0]['message'],'before dialing'),'the original Chat receives one clear missed-call outcome');
+c($read()['last_occurrence']['state']==='missed','the contact schedule shows the missed occurrence');
+echo "PASS expired prepared calls reach closed-browser history and private Chat once\n";

@@ -8,15 +8,22 @@ on:
       - 'chat.js'
       - 'chat.php'
       - 'agent-activity-hub-v1.js'
+      - 'agent-activity-hub-v1.css'
       - 'api/chat-email-v1.php'
       - 'includes/*gmail*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
       - 'includes/agent-chat-runtime-v2160.php'
+      - 'includes/agent-capability-awareness-v1.php'
+      - 'includes/agent-surface-context-v131.php'
+      - 'includes/agent-top-of-mind-v1.php'
+      - 'includes/agent-activity-hub-v1.php'
+      - 'includes/homeserver-agent-v025.php'
       - 'includes/ai-settings.php'
       - 'includes/agent-tool-json-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
+      - 'tests/agent-top-of-mind-session-http.mjs'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   push:
@@ -27,15 +34,22 @@ on:
       - 'chat.js'
       - 'chat.php'
       - 'agent-activity-hub-v1.js'
+      - 'agent-activity-hub-v1.css'
       - 'api/chat-email-v1.php'
       - 'includes/*gmail*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
       - 'includes/agent-chat-runtime-v2160.php'
+      - 'includes/agent-capability-awareness-v1.php'
+      - 'includes/agent-surface-context-v131.php'
+      - 'includes/agent-top-of-mind-v1.php'
+      - 'includes/agent-activity-hub-v1.php'
+      - 'includes/homeserver-agent-v025.php'
       - 'includes/ai-settings.php'
       - 'includes/agent-tool-json-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
+      - 'tests/agent-top-of-mind-session-http.mjs'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   workflow_dispatch:
@@ -73,8 +87,12 @@ jobs:
           php-version: '8.3'
           extensions: pdo_mysql, pdo_sqlite, mbstring, dom, curl, fileinfo
           coverage: none
-      - name: Draft lifecycle, private attachments, and styled content
+      - name: Review queue, draft lifecycle, private attachments, and styled content
         run: |
+          php tests/agent-email-review-queue-v1.php
+          php tests/agent-email-sent-v1.php
+          php tests/agent-gmail-workspace-context-v1.php
+          php tests/agent-gmail-homeserver-context-v1.php
           php tests/agent-email-composer-v1.php
           php tests/agent-email-attachments-v1.php
           php tests/agent-email-display-v1.php
@@ -86,7 +104,7 @@ jobs:
           php tests/agent-connection-gmail-inbox-initial-summary-v1.php
       - name: PHP syntax and production entry points
         run: |
-          for file in api/chat-email-v1.php includes/agent-email-composer-v1.php includes/agent-email-attachments-v1.php includes/agent-email-display-v1.php includes/agent-connection-email-chat-v1.php includes/agent-connection-email-followup-v1.php includes/agent-connection-gmail-inbox-initial-v1.php includes/agent-connection-gmail-v1.php includes/agent-connections-v1.php includes/ai-settings.php includes/agent-chat-runtime-v2160.php chat.php; do
+          for file in api/chat-email-v1.php includes/agent-email-review-queue-v1.php includes/agent-email-sent-v1.php includes/agent-gmail-workspace-context-v1.php includes/agent-email-composer-v1.php includes/agent-coordination-gmail-draft-v1.php includes/agent-email-attachments-v1.php includes/agent-email-display-v1.php includes/agent-connection-email-chat-v1.php includes/agent-connection-email-followup-v1.php includes/agent-connection-gmail-inbox-initial-v1.php includes/agent-connection-gmail-v1.php includes/agent-connections-v1.php includes/agent-capability-awareness-v1.php includes/agent-surface-context-v131.php includes/agent-top-of-mind-v1.php includes/agent-activity-hub-v1.php includes/homeserver-agent-v025.php includes/ai-settings.php includes/agent-chat-runtime-v2160.php chat.php; do
             php -l "$file"
           done
   gmail-browser:
@@ -95,6 +113,8 @@ jobs:
     env:
       VP3_EMAIL_COMPOSER_SCREENSHOT: artifacts/gmail-composer-phone.png
       VP3_EMAIL_DISPLAY_SCREENSHOTS: artifacts/email-display
+      VP3_EMAIL_REVIEW_SCREENSHOT_DIR: artifacts/email-review
+      VP3_GMAIL_SENT_SCREENSHOT_DIR: artifacts/gmail-sent
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -111,8 +131,15 @@ jobs:
           bash tools/install-ci-chromium.sh
       - name: Popup and canvas compose, image attachments, draft recovery, and send states
         run: node tests/chat-email-composer-browser.mjs
+      - name: Selected email instructions and private Chat recovery
+        run: |
+          node tests/chat-send-recovery.mjs
+          node tests/chat-email-review-queue-browser.mjs
+          node tests/agent-top-of-mind-session-http.mjs
       - name: Formatted private email, styles, links, image controls, and phone layout
         run: node tests/gmail-email-display-browser.mjs
+      - name: Visible draft entry and live Gmail Sent mailbox
+        run: node tests/gmail-sent-browser.mjs
       - name: Existing Gmail specialist and inbox reader regression
         run: |
           node tests/chat-email-specialist-browser.mjs
