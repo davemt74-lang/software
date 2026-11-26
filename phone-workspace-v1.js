@@ -665,7 +665,10 @@
       input.rows=3;input.maxLength=700;input.value=fields[key];input.disabled=draft.saving;input.dataset.phoneFocusKey='agenda-'+key;
       input.addEventListener('input',()=>{fields[key]=input.value;});label.append(input);form.append(label);
     }
-    for(const [key,title] of [['review_missed','Look for a missed one-time call with this contact to follow up on'],['enabled','Let Operator initiate calls when a reason and both parties’ permissions are current']]){
+    for(const [key,title] of [
+      ['review_missed','Look for a missed one-time call with this contact to follow up on'],
+      ['review_account','Privately review this contact’s relationship, notes and recent call outcomes for a useful reason'],
+      ['enabled','Let Operator initiate calls when a reason and both parties’ permissions are current']]){
       const label=node('label','vp3-phone-check'),input=node('input');input.type='checkbox';input.checked=fields[key];input.disabled=draft.saving;
       input.dataset.phoneFocusKey='agenda-'+key;input.addEventListener('change',()=>{fields[key]=input.checked;render();});
       label.append(input,node('span',null,title));form.append(label);
@@ -681,7 +684,7 @@
       draft.saving=true;draft.feedback='';render();
       try{
         const result=await api('save_operator_agenda',{contact_id:draft.id,number_id:line,expected_revision:fields.revision,
-          topics:fields.topics,questions:fields.questions,review_missed:fields.review_missed,enabled:fields.enabled},'POST',g);
+          topics:fields.topics,questions:fields.questions,review_missed:fields.review_missed,review_account:fields.review_account,enabled:fields.enabled},'POST',g);
         if(!current(g)||phoneContactDraft!==draft)return;
         if(!result.agenda||result.agenda.revision!==fields.revision+1)throw phoneError('Reload the contact to confirm its call agenda.');
         draft.agenda=result.agenda;draft.editingAgenda=false;draft.feedback='Call agenda saved.';
@@ -1978,7 +1981,7 @@
       ['Voicemail timeout',state.voicemail_settings?.ring_seconds?state.voicemail_settings.ring_seconds+' seconds':'Unavailable'],
       ['Recording worker',displayState(state.processing_worker?.state||'unknown')]];
     const why={prepared:'Call prepared for dispatch',owner_permission:'Owner permission is off',recipient_permission:'Recipient permission is unavailable',
-      no_reason:'No current reason to call',already_planned:'Agenda already used',contact_changed:'Contact number changed',route_or_recording_changed:'Line or recording settings changed',
+      no_reason:'No current reason to call',brainstorm_unavailable:'Private reason review unavailable',already_planned:'Agenda already used',contact_changed:'Contact number changed',route_or_recording_changed:'Line or recording settings changed',
       calling_window:'Outside allowed calling hours',call_frequency:'Call frequency limit reached',phone_busy:'Phone already in use',calendar_conflict:'Calendar is busy',
       chat_unavailable:'Private Chat unavailable',carrier_unavailable:'Carrier route unavailable',access_changed:'Access changed',changed:'Agenda changed',error:'Worker could not verify the decision'};
     const review=state.outreach_review;
