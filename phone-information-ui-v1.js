@@ -121,11 +121,17 @@
         card.append(make('strong',(i.call_companion===true?'Call companion':kinds[i.kind])+' · '+labels[i.state]));
         if(i.message){
           const message=make('p',i.message,'phone-information-text');
-          if(i.call_companion===true&&/^https?:\/\/[^\s]+$/i.test(i.message)){
-            try{
-              const url=new URL(i.message);
-              if(!url.username&&!url.password){const link=make('a',i.message);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';message.replaceChildren(link);}
-            }catch{}
+          if(i.call_companion===true){
+            message.replaceChildren();
+            i.message.split('\n').forEach((line,index)=>{
+              if(index)message.append(document.createElement('br'));
+              try{
+                if(!/^https?:\/\/[^\s]+$/i.test(line))throw Error();
+                const url=new URL(line);
+                if(url.username||url.password)throw Error();
+                const link=make('a',line);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';message.append(link);
+              }catch{message.append(document.createTextNode(line));}
+            });
           }
           card.append(message);
         }
