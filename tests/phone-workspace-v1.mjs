@@ -31,7 +31,7 @@ function setup(testOptions={}){
  class AudioWorkletNode{constructor(){this.port={onmessage:null};facts.worklets.push(this);}connect(){}disconnect(){}}
  window.AudioContext=AudioContext;window.AudioWorkletNode=AudioWorkletNode;
  const navigator={mediaDevices:{getUserMedia:async()=>{facts.microphones++;const track={readyState:'live',stop(){this.readyState='ended';}};tracks.push(track);const stream={getTracks:()=>[track]};if(testOptions.microphoneGate)await testOptions.microphoneGate.promise;return stream;}}};
- const sandbox={window,document,navigator,AudioWorkletNode,ArrayBuffer,DataView,Uint8Array,Blob,FormData,location:{href:'https://fixture.test/chat.php',origin:'https://fixture.test'},URL,Date,Number,String,Boolean,Map,Set,Promise,Object,Array,RegExp,JSON,fetch,AbortController,DOMException,CustomEvent:class{constructor(type,opts={}){this.type=type;this.detail=opts.detail;}},Event:class{constructor(type){this.type=type;}},setTimeout:schedule,clearTimeout:unschedule,setInterval:()=>1,clearInterval(){},console};
+ const sandbox={window,document,navigator,crypto:globalThis.crypto,AudioWorkletNode,ArrayBuffer,DataView,Uint8Array,Blob,FormData,location:{href:'https://fixture.test/chat.php',origin:'https://fixture.test'},URL,Date,Number,String,Boolean,Map,Set,Promise,Object,Array,RegExp,JSON,fetch,AbortController,DOMException,CustomEvent:class{constructor(type,opts={}){this.type=type;this.detail=opts.detail;}},Event:class{constructor(type){this.type=type;}},setTimeout:schedule,clearTimeout:unschedule,setInterval:()=>1,clearInterval(){},console};
  vm.runInNewContext(source,sandbox);return {location:sandbox.location,window,document,toggle,thread,state,calls,devices,facts,tracks,setAuthorized:(v,status=403)=>{authorized=v;authorizationStatus=status;},setStateResponder:v=>stateResponder=v,setRequestResponder:v=>requestResponder=v,expireRequestTimers:()=>{for(const [id,timer] of [...timers])if(timer.ms===15000){timers.delete(id);timer.fn();}},setPrepareGate:v=>prepareGate=v,setRegisterGate:v=>registerGate=v,setContactGate:v=>contactGate=v,findButton:label=>document.querySelectorAll('button').find(n=>n.textContent===label),field:key=>document.querySelectorAll('[data-phone-focus-key]').find(n=>n.dataset.phoneFocusKey===key)};
 }
 let count=0;async function test(name,fn){await fn();count++;console.log('PASS '+name);}
@@ -175,6 +175,20 @@ await test('incoming and outgoing call cards open a draft addressed to the match
   assert.equal(b.location.href,'mailto:ada%2Bcalls@example.test');
   assert.equal(b.facts.connects,0);b.window.VP3PhoneWorkspaceV1.dispose();
  }
+});
+await test('active call can share a note with its linked handset without touching call audio',async()=>{
+ const id='e'.repeat(32),device='b'.repeat(32),b=setup({requestResponder:({body,state})=>{
+   if(body.action!=='share_call_item')return undefined;
+   state.companion_cards[id].items.push({message:body.message,state:'pending'});
+   return {ok:true,status:200,json:async()=>({ok:true,shared:true,exchange_id:body.exchange_id})};
+ }});
+ b.state.calls=[{public_id:id,state:'answered',direction:'inbound',conversation_id:10,contact_id:7,contact_name:'Ada',peer_e164:'+16025550177'}];
+ b.state.companion_cards={[id]:{device_id:device,contact_id:7,name:'Ada’s phone',items:[]}};
+ await flush();await b.window.VP3PhoneWorkspaceV1.refresh();
+ const host=b.document.createElement('div');b.thread.append(host);b.window.VP3PhoneWorkspaceV1.bindMessage(host,{kind:'call',call_id:id});
+ setPhoneField(b,'companion-'+id,'Meet at the entrance');b.findButton('Share to phone').click();await flush();
+ const sent=b.calls.filter(row=>row.action==='share_call_item');assert.equal(sent.length,1);assert.equal(sent[0].device_id,device);
+ assert.match(host.textContent,/Meet at the entrance/);assert.equal(b.facts.connects,0);assert.equal(b.facts.microphones,0);b.window.VP3PhoneWorkspaceV1.dispose();
 });
 await test('existing private notes load only in contact detail and dirty fields block schedule changes',async()=>{
  const b=contactFixture();await openContacts(b);assert.doesNotMatch(b.document.querySelector('.vp3-phone-panel').textContent,/Private project note/);b.findButton('Edit').click();await flush();assert.equal(b.field('contact-detail-notes').value,'Private project note');assert.equal(b.field('contact-detail-relationship').value,'Friend');assert.doesNotMatch(b.thread.textContent,/Private project note/);

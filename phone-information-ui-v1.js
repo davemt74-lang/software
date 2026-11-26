@@ -118,8 +118,17 @@
       for(const i of items){
         const card=make('article',undefined,'phone-information-item');
         card.dataset.exchangeId=i.exchange_id;
-        card.append(make('strong',kinds[i.kind]+' · '+labels[i.state]));
-        if(i.message)card.append(make('p',i.message,'phone-information-text'));
+        card.append(make('strong',(i.call_companion===true?'Call companion':kinds[i.kind])+' · '+labels[i.state]));
+        if(i.message){
+          const message=make('p',i.message,'phone-information-text');
+          if(i.call_companion===true&&/^https?:\/\/[^\s]+$/i.test(i.message)){
+            try{
+              const url=new URL(i.message);
+              if(!url.username&&!url.password){const link=make('a',i.message);link.href=url.href;link.target='_blank';link.rel='noopener noreferrer';message.replaceChildren(link);}
+            }catch{}
+          }
+          card.append(message);
+        }
         if(i.response)card.append(make('p','Response: '+i.response,'phone-information-text'));
         if(i.attachment){const f=i.attachment;card.append(make('p',f.filename+' · '+Math.ceil(f.bytes/1024)+' KiB · Unscanned file','phone-information-text'));const get=make('button','Download file');get.type='button';get.addEventListener('click',event=>{if(event.isTrusted)void download(i);});card.append(get);}
         card.append(make('small',new Date(i.created_epoch*1000).toLocaleString()));
