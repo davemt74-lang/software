@@ -43,6 +43,7 @@ export async function musicProviderFixture({install = true} = {}) {
     for (const name of [
       'tests/music-song-metadata-v1.php', 'tests/fixtures/music-listening-v1.php',
       'tests/fixtures/stem-mp3-metadata-v1.json', 'chat.css', 'music-sites.php', 'api/music-song-metadata-v1.php',
+      'member-shell-v77.js', 'chat-header-ui.css', 'stonefellow-ui.css', 'member-page-scroll.css', 'agent-ui-v034.css',
     ]) {
       const target = path.join(root, name);
       fs.mkdirSync(path.dirname(target), {recursive: true});
@@ -71,10 +72,22 @@ require STONEFELLOW_ROOT . '/tests/fixtures/music-listening-v1.php';
 require_once STONEFELLOW_ROOT . '/includes/music-provider-v1.php';
 require_once STONEFELLOW_ROOT . '/includes/music-provider-http-v1.php';
 `);
-    // The complete music page and its controller/CSS run unchanged. The shared
-    // member header/sidebar otherwise boot unrelated Agent, phone and notices.
-    fs.writeFileSync(path.join(root, 'includes/workspace-sidebar-v82.php'), '<aside id="chatSidebar" class="chat-sidebar"><a href="/music-sites.php?workspace=1">Music sites</a></aside>');
-    fs.writeFileSync(path.join(root, 'includes/member-header.php'), '<?php ?><header class="member-header"><h2><?= e($memberHeaderTitle ?? "Music sites") ?></h2></header>');
+    // The complete music page/controller/CSS and canonical shell controller and
+    // layout assets run unchanged. Minimal shared chrome retains production
+    // navigation IDs/structure while isolating unrelated Agent, phone/notices.
+    fs.writeFileSync(path.join(root, 'includes/workspace-sidebar-v82.php'), `<link rel="stylesheet" href="/agent-ui-v034.css">
+<aside id="chatSidebar" class="chat-sidebar workspace-main-sidebar" data-shell-active="music_workspace">
+  <div class="chat-sidebar-top"><a class="chat-brand" href="/music-sites.php?workspace=1">VP3</a><button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close menu">×</button></div>
+  <div class="chat-sidebar-sections"><nav class="chat-sidebar-nav" aria-label="VP3 workspace navigation"><a class="chat-sidebar-nav-link active" href="/music-sites.php?workspace=1" aria-current="page"><span>♫</span><strong>Music sites</strong></a></nav></div>
+</aside>`);
+    fs.writeFileSync(path.join(root, 'includes/member-header.php'), `<?php ?>
+<header class="chat-topbar member-header" data-member-header data-shell-active="music_workspace">
+  <button class="chat-icon-button mobile-only" id="openChatSidebar" type="button" aria-label="Open VP3 navigation" aria-controls="chatSidebar">☰</button>
+  <div class="chat-topbar-title member-header-title"><strong><?= e($memberHeaderTitle ?? "Music sites") ?></strong><span><?= e($memberHeaderSubtitle ?? "") ?></span></div>
+</header>
+<link rel="stylesheet" data-member-header-ui href="/chat-header-ui.css">
+<link rel="stylesheet" data-member-page-scroll href="/member-page-scroll.css">
+<script data-member-shell-runtime src="/member-shell-v77.js" defer></script>`);
     fs.writeFileSync(path.join(root, '_test-session.php'), `<?php
 require __DIR__ . '/includes/bootstrap.php';
 header('Content-Type: application/json');

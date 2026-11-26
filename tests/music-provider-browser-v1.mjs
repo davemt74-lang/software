@@ -242,9 +242,48 @@ try {
   await editor.waitForFunction(() => document.getElementById('musicProviderStatus').textContent.includes('Song selection saved'));
   check(!await editor.locator('#musicProviderRetry').isVisible(), 'Successful save left a stale retry control');
   await editor.setViewportSize({width: 390, height: 844});
+  // The production shell animates from its desktop sidebar to the closed phone
+  // drawer. Observe its settled bounds instead of photographing that transition.
+  const waitNavigation = async open => {
+    try {
+      await editor.waitForFunction(open => {
+        const sidebar = document.getElementById('chatSidebar');
+        const backdrop = document.getElementById('chatSidebarBackdrop');
+        const bounds = sidebar.getBoundingClientRect();
+        return document.body.classList.contains('chat-nav-open') === open
+          && (open ? bounds.left >= -1 && bounds.right > 0 : bounds.right <= 0)
+          && [...sidebar.getAnimations(), ...backdrop.getAnimations()].every(animation => animation.playState !== 'running');
+      }, open);
+    } catch (error) {
+      await editor.screenshot({path: path.join(artifactDirectory, 'sites-mobile-navigation-failure.png'), fullPage: true});
+      throw error;
+    }
+  };
+  await waitNavigation(false);
+  for (const closeMethod of ['button', 'backdrop', 'escape']) {
+    await editor.locator('#openChatSidebar').click();
+    await waitNavigation(true);
+    equal(await editor.evaluate(() => document.activeElement.id), 'closeChatSidebar', 'Opening navigation did not focus its close control');
+    if (closeMethod === 'button') await editor.locator('#closeChatSidebar').click();
+    else if (closeMethod === 'backdrop') await editor.locator('#chatSidebarBackdrop').click({position: {x: 380, y: 120}});
+    else await editor.keyboard.press('Escape');
+    await waitNavigation(false);
+    equal(await editor.evaluate(() => document.activeElement.id), 'openChatSidebar', closeMethod + ' did not restore navigation focus');
+  }
+  for (const control of ['musicProviderDetailTitle', 'musicProviderSaveSelection']) {
+    const target = editor.locator('#' + control);
+    await target.scrollIntoViewIfNeeded();
+    check(await target.evaluate(node => {
+      const bounds = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+      return node === hit || node.contains(hit);
+    }), 'Closed navigation obstructs ' + control);
+  }
   const phoneLayout = await editor.evaluate(() => ({
     viewport: innerWidth,
     documentWidth: document.documentElement.scrollWidth,
+    sidebarRight: document.getElementById('chatSidebar').getBoundingClientRect().right,
+    navigationOpen: document.body.classList.contains('chat-nav-open'),
     overflow: [...document.querySelectorAll('body *')].flatMap(node => {
       const bounds = node.getBoundingClientRect();
       if (!bounds.width || !bounds.height || bounds.right <= innerWidth + 1) return [];
@@ -283,7 +322,7 @@ try {
   equal(foreignPage.status(), 403, 'Music site page exposed a foreign workspace');
   await producer.close();
   await owner.close();
-  console.log(`MUSIC_PROVIDER_BROWSER_V1=PASS ${checks} actual owner UI desktop/390px, lost-response retry, revision/CSRF/role controls, HTTPS cross-origin PHP/CORS/audio, cookie-free ranges, renewal, receipts and revocation checks`);
+  console.log(`MUSIC_PROVIDER_BROWSER_V1=PASS ${checks} actual owner UI desktop/390px, settled shell navigation/focus/no-obstruction, lost-response retry, revision/CSRF/role controls, HTTPS cross-origin PHP/CORS/audio, cookie-free ranges, renewal, receipts and revocation checks`);
 } finally {
   await browser?.close();
   if (proxy) {
