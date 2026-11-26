@@ -692,12 +692,19 @@ c($sent===0,'rejected caption inputs do not send paid speech requests');
 $caption=$liveApi($chunk,$liveNow+4);
 c($caption===['call_id'=>$livePublic,'seq'=>1,'text'=>'Fixture remote words <script> are data.','speaker'=>'remote_audio']&&$sent===1,'a current authorized audio chunk returns only a transient caption');
 denies(fn()=>$liveApi($chunk,$liveNow+8),409,'a previously reserved sequence cannot be billed again');
+$dualChunk=array_replace($chunk,['seq'=>2,'pcm'=>base64_encode($fixturePcm.$fixturePcm)]);
+$dual=$liveApi($dualChunk,$liveNow+8,static function(string $audio):array{
+    $header=vp3_operator_live_wav_v1($audio);
+    c(unpack('v',substr($header,22,2))[1]===2&&strlen($header)===256044,'two captured tracks use interleaved stereo WAV');
+    return ['remote_audio'=>'Hello','local_audio'=>'Hi'];
+});
+c($dual['text']==='Hello'&&$dual['local_text']==='Hi'&&(int)vp3_operator_live_row_v1($pdo,$liveCallId)['reserved_seconds']===12,'both voices retain their source identity and reserve both channels');
 $stop=['action'=>'stop','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken];
 $stopDuringSpeech=static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
-    $sent++;$liveApi($stop,$liveNow+8);return 'Late private result';
+    $sent++;$liveApi($stop,$liveNow+12);return 'Late private result';
 };
-denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+8,$stopDuringSpeech),409,'consent revoked while speech is pending suppresses the late result');
-c($sent===2&&vp3_operator_live_row_v1($pdo,$liveCallId)['state']==='closed'&&(int)vp3_operator_live_row_v1($pdo,$liveCallId)['reserved_seconds']===8,'uncertain or stopped requests remain counted and cannot replay');
+denies(fn()=>$liveApi(array_replace($chunk,['seq'=>3]),$liveNow+12,$stopDuringSpeech),409,'consent revoked while speech is pending suppresses the late result');
+c($sent===2&&vp3_operator_live_row_v1($pdo,$liveCallId)['state']==='closed'&&(int)vp3_operator_live_row_v1($pdo,$liveCallId)['reserved_seconds']===16,'uncertain or stopped requests remain counted and cannot replay');
 c($liveApi($stop,$liveNow+9)['stopped'],'owner stop is idempotent');
 denies(fn()=>$liveApi(array_replace($chunk,['seq'=>3]),$liveNow+12),409,'stopped caption session cannot transmit audio');
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$liveBeforeMessages

@@ -822,15 +822,16 @@
     // This is a derived remote stream; do not stop or mute the actual phone tracks.
     if(session.track&&session.trackEnded)session.track.removeEventListener('ended',session.trackEnded);
     if(session.worklet){session.worklet.port.onmessage=null;try{session.worklet.port.postMessage('stop');session.worklet.port.close();session.worklet.disconnect();}catch(_){}}
-    try{session.source?.disconnect();}catch(_){}
+    try{session.source?.disconnect();session.localSource?.disconnect();session.localGain?.disconnect();}catch(_){}
+    session.localTrack?.removeEventListener('ended',session.trackEnded);
     if(session.context){session.context.onstatechange=null;try{void session.context.close().catch(()=>{});}catch(_){}}
     session.captions.length=0;stopCaptionReceipt(entry,session,session.token);
   }
   function captionCurrent(entry,session){
     return current(session.generation)&&active===entry&&entry.captionSession===session&&entry.phase==='active'&&sessionCurrent(entry.session);
   }
-  function encodeCaptionPcm(buffer){
-    if(!(buffer instanceof ArrayBuffer)||buffer.byteLength!==128000)throw new Error('Invalid caption audio frame.');
+  function encodeCaptionPcm(buffer,channels){
+    if(!(buffer instanceof ArrayBuffer)||buffer.byteLength!==128000*channels)throw new Error('Invalid caption audio frame.');
     const bytes=new Uint8Array(buffer),parts=[];
     for(let offset=0;offset<bytes.length;offset+=8192)parts.push(String.fromCharCode(...bytes.subarray(offset,offset+8192)));
     return btoa(parts.join(''));
@@ -842,12 +843,17 @@
     if(session.seq>30||Date.now()>=session.deadline){stopRemoteCaptions(entry,'Live caption allowance ended.');render();return;}
     session.busy=true;const seq=session.seq++;
     try{
-      const pcm=encodeCaptionPcm(buffer);
+      const pcm=encodeCaptionPcm(buffer,session.channels);
       const result=await liveCaptionRequest(entry,session,'chunk',{token:session.token,seq,pcm});
       if(!captionCurrent(entry,session))return;
       if(result.call_id!==entry.info.public_id||result.seq!==seq||result.speaker!=='remote_audio'||typeof result.text!=='string'||result.text.length>2400)
         throw new Error('The live caption result could not be verified.');
-      if(result.text.trim()){session.captions.push(text(result.text));if(session.captions.length>8)session.captions.shift();}
+      if(session.channels===2&&(typeof result.local_text!=='string'||result.local_text.length>2400))
+        throw new Error('The local speaker transcript could not be verified.');
+      for(const [speaker,line] of [['Caller',result.text],['You',result.local_text]]){
+        if(line?.trim())session.captions.push({speaker,line:text(line)});
+      }
+      session.captions=session.captions.slice(-20);
       render();
     }catch(error){if(captionCurrent(entry,session)){stopRemoteCaptions(entry,error.message||'Live captions stopped.');render();}}
     finally{session.busy=false;}
@@ -861,7 +867,9 @@
     if(typeof Audio!=='function'||typeof window.AudioWorkletNode!=='function'||tracks.length!==1||tracks[0].readyState!=='live'){
       entry.captionNotice='A supported live remote audio stream is not available. Manual calling is unchanged.';entry.captionPrompt=false;entry.captionConsent=false;render();return;
     }
-    const session={generation,scope:{conversation_id:context.conversation_id,agent_id:context.agent_id},phase:'starting',captions:[],
+    const local=entry.call?.getLocalStream?.(),localTrack=local?.getAudioTracks?.()[0];
+    const channels=localTrack?.readyState==='live'&&localTrack!==tracks[0]?2:1;
+    const session={channels,localTrack:channels===2?localTrack:null,generation,scope:{conversation_id:context.conversation_id,agent_id:context.agent_id},phase:'starting',captions:[],
       skipped:0,seq:1,busy:false,startSent:false,track:tracks[0],token:''};
     entry.captionSession=session;entry.captionPrompt=false;entry.captionConsent=false;entry.captionNotice='';render();
     try{
@@ -870,11 +878,16 @@
       await session.context.resume();await session.context.audioWorklet.addModule(captureAsset);
       if(!captionCurrent(entry,session)||session.context.state!=='running'||session.track.readyState!=='live')throw new Error('The remote call audio is not available.');
       session.source=session.context.createMediaStreamSource(remote);
-      session.worklet=new AudioWorkletNode(session.context,'vp3-operator-remote-capture-v1',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:1,channelCountMode:'explicit'});
+      session.worklet=new AudioWorkletNode(session.context,'vp3-operator-remote-capture-v1',{numberOfInputs:channels,numberOfOutputs:1,outputChannelCount:[1],channelCount:1,channelCountMode:'explicit',processorOptions:{channels}});
       session.worklet.port.onmessage=message=>{if(captionCurrent(entry,session)&&session.phase==='listening')void sendRemoteCaption(entry,session,message.data);};
       session.worklet.onprocessorerror=()=>{if(captionCurrent(entry,session)){stopRemoteCaptions(entry,'Remote caption capture stopped.');render();}};
       session.trackEnded=()=>{if(captionCurrent(entry,session)){stopRemoteCaptions(entry,'Remote call audio ended.');render();}};
       session.track.addEventListener('ended',session.trackEnded,{once:true});
+      if(session.localTrack){
+        session.localTrack.addEventListener('ended',session.trackEnded,{once:true});
+        session.localSource=session.context.createMediaStreamSource(new MediaStream([session.localTrack]));
+        session.localGain=session.context.createGain();
+      }
       // The explicit consent confirmation was made before any audio capture.
       session.startSent=true;
       const result=await liveCaptionRequest(entry,session,'start',{consent_attested:true});
@@ -886,7 +899,13 @@
       if(session.deadline<=Date.now()||session.context.state!=='running'||session.track.readyState!=='live')throw new Error('Live caption authorization expired.');
       session.phase='listening';session.timer=setTimeout(()=>{if(captionCurrent(entry,session)){stopRemoteCaptions(entry,'Live caption time limit reached.');render();}},session.deadline-Date.now());
       session.context.onstatechange=()=>{if(captionCurrent(entry,session)&&session.context.state!=='running'){stopRemoteCaptions(entry,'Browser audio processing stopped.');render();}};
-      session.source.connect(session.worklet);session.worklet.connect(session.context.destination);
+      session.source.connect(session.worklet);
+      if(session.localGain){
+        session.localGain.gain.value=entry.call.isMuted?.()===true?0:1;
+        session.localSource.connect(session.localGain);
+        session.localGain.connect(session.worklet,0,1);
+      }
+      session.worklet.connect(session.context.destination);
       // Worklet output is always silent: do not duplicate or inject audio.
       session.worklet.port.postMessage('start');render();
     }catch(error){if(captionCurrent(entry,session)){stopRemoteCaptions(entry,error.message||'Live captions are unavailable.');render();}}
@@ -895,18 +914,22 @@
     if(!entry||entry!==active||entry.phase!=='active'||!liveEndpoint||!captureAsset)return;
     const view=state?.operator_live,session=entry.captionSession;
     if(view?.available!==true&&!session&&!entry.captionNotice)return;
-    const panel=node('section','vp3-phone-live-caption');panel.append(node('strong',null,'Operator · Live caller captions'));
-    panel.append(node('p','vp3-phone-meta','Remote side only. Short Cloud speech segments may be delayed or missed. Processing uses your speech allowance and may incur provider charges. No live caption text or audio is saved by this feature.'));
+    const panel=node('section','vp3-phone-live-caption');panel.append(node('strong',null,'Operator · Live transcription'));
+    panel.append(node('p','vp3-phone-meta','Each available side of the call uses your Cloud speech allowance. These live captions stay in this call view.'));
     if(entry.captionNotice)panel.append(node('p','vp3-phone-meta',entry.captionNotice));
     if(session){
       panel.append(node('p','vp3-phone-meta',session.phase==='listening'?'Live captions on · human call remains in control':'Authorizing live captions…'));
+      panel.append(node('p','vp3-phone-meta',session.channels===2?'Transcribing both speakers':'Transcribing caller audio only'));
       if(session.captions.length){const list=node('div','vp3-phone-caption-lines');list.setAttribute('role','log');list.setAttribute('aria-live','polite');
-        for(const line of session.captions)list.append(node('p',null,line));panel.append(list);}
+        for(const turn of session.captions){
+          const row=node('p');row.append(node('strong',null,turn.speaker+' '),node('span',null,turn.line));list.append(row);
+        }
+        panel.append(list);}
       if(session.skipped)panel.append(node('p','vp3-phone-meta',session.skipped+' audio segments skipped while processing.'));
       const stop=button('Stop live captions',event=>{if(event.isTrusted&&active===entry){stopRemoteCaptions(entry);render();}});stop.dataset.phoneFocusKey='stop-caption-'+entry.info.public_id;panel.append(stop);
     }else if(view?.call_id===entry.info.public_id&&view.eligible===true&&view.state==='off'&&!entry.captionClosed){
       if(!entry.captionPrompt){
-        const start=button('Enable live caller captions',event=>{if(event.isTrusted&&active===entry){entry.captionPrompt=true;entry.captionConsent=false;render();}});
+        const start=button('Live transcription',event=>{if(event.isTrusted&&active===entry){entry.captionPrompt=true;entry.captionConsent=false;render();}});
         start.dataset.phoneFocusKey='enable-caption-'+entry.info.public_id;panel.append(start);
       }else{
         panel.append(node('p',null,'Ask everyone on the call whether they agree to live AI transcription using the Cloud speech service. A recording notice alone is not consent to this feature.'));
@@ -1105,7 +1128,7 @@
         actions.append(button('Decline',()=>{if(current(renderGeneration)&&!callBusy)declineCall(id);}));
       }
     }
-    if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){entry.call.mute(!muted);render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
+    if(entry&&entry===active){const hangup=button('Hang up',()=>{if(current(renderGeneration))endActive('Call ended.');},'vp3-phone-button vp3-phone-danger');actions.append(hangup);if(entry.call){const muted=entry.call.isMuted?.()===true;const mute=button(muted?'Unmute':'Mute',()=>{if(current(renderGeneration)&&active===entry){entry.call.mute(!muted);if(entry.captionSession?.localGain)entry.captionSession.localGain.gain.value=entry.call.isMuted?.()===true?0:1;render();}});mute.setAttribute('aria-pressed',String(muted));actions.append(mute);}}
     if(managed&&!entry&&!terminal){
       if(control?.can_reconcile===true){const check=button('Check carrier status',event=>{if(event.isTrusted&&current(renderGeneration))void runManagedControl('managed_reconcile',id,renderGeneration);});check.disabled=managedControlBusy.has(id);actions.append(check);}
       if(control?.can_end===true){const end=button('End managed call',event=>{if(event.isTrusted&&current(renderGeneration)&&window.confirm('End this managed call and block any pending destination connection?'))void runManagedControl('managed_end',id,renderGeneration);},'vp3-phone-button vp3-phone-danger');end.disabled=managedControlBusy.has(id);actions.append(end);}

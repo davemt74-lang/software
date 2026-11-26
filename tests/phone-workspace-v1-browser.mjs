@@ -57,7 +57,7 @@ const server=http.createServer((req,res)=>{
    captionCalls.push({action:input.action,seq:input.seq,consent_attested:input.consent_attested,bytes:input.pcm?Buffer.from(input.pcm,'base64').length:0});
    const token='f'.repeat(64);let result={};
    if(input.action==='start'){assert.equal(input.consent_attested,true);state.operator_live.state='authorized';result={call_id:outgoingId,token,expires_epoch:Math.floor(Date.now()/1000)+120,chunk_seconds:4,execution:'captions_only'};}
-   else if(input.action==='chunk'){assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,128000);result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:'Fixture caller <script>words</script>'};}
+   else if(input.action==='chunk'){assert.equal(input.token,token);assert.equal(Buffer.from(input.pcm,'base64').length,256000);result={call_id:outgoingId,seq:input.seq,speaker:'remote_audio',text:'Fixture caller <script>words</script>',local_text:'Local speaker fixture'};}
    else if(input.action==='stop'){assert.equal(input.token,token);state.operator_live.state='closed';state.operator_live.eligible=false;result={call_id:outgoingId,stopped:true};}
    else{res.statusCode=422;return res.end(JSON.stringify({ok:false}));}
    res.end(JSON.stringify({ok:true,...result}));
@@ -426,20 +426,22 @@ try{
    const remoteAudio=new AudioContext({sampleRate:48000}),destination=remoteAudio.createMediaStreamDestination(),tone=remoteAudio.createOscillator();
    tone.frequency.value=440;const gain=remoteAudio.createGain();gain.gain.value=.05;tone.connect(gain);gain.connect(destination);tone.start();
    phoneFixture.remoteAudio=remoteAudio;phoneFixture.remoteTone=tone;phoneFixture.remoteTrack=destination.stream.getAudioTracks()[0];
+   const local=remoteAudio.createMediaStreamDestination();gain.connect(local);
    phoneFixture.calls.at(-1).getRemoteStream=()=>destination.stream;
+   phoneFixture.calls.at(-1).getLocalStream=()=>local.stream;
    void remoteAudio.resume();
   });
   state.operator_live={available:true,eligible:true,call_id:outgoingId,state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   const drawer=page.locator('.vp3-phone-panel'),caption=drawer.locator('.vp3-phone-live-caption');
-  await caption.getByRole('button',{name:'Enable live caller captions',exact:true}).click();
+  await caption.getByRole('button',{name:'Live transcription',exact:true}).click();
   assert.equal(await caption.getByRole('button',{name:'Start live captions',exact:true}).isDisabled(),true);
   assert.equal(captionCalls.length,0,'Opening consent UI must not authorize capture');
   await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
   await caption.getByRole('button',{name:'Start live captions',exact:true}).click();
   await caption.getByText('Live captions on · human call remains in control',{exact:true}).waitFor({timeout:15000});
   await caption.getByText('Fixture caller <script>words</script>',{exact:true}).waitFor({timeout:20000});
-  const firstChunk=captionCalls.find(row=>row.action==='chunk');assert.equal(firstChunk.bytes,128000);assert.equal(firstChunk.seq,1);
+  const firstChunk=captionCalls.find(row=>row.action==='chunk');assert.equal(firstChunk.bytes,256000);await caption.getByText('Local speaker fixture',{exact:true}).waitFor();assert.equal(firstChunk.seq,1);
   assert.equal(captionCalls[0].consent_attested,true);
   assert.equal(await caption.locator('script').count(),0,'Caption content is inert text');
   const chatCard=await canonicalCall('liveCaptionCard',outgoingId);
