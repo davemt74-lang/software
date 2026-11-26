@@ -4,6 +4,7 @@ declare(strict_types=1);
 function vp3_operator_schedule_assignment_ready_v1(PDO $pdo): bool
 {
     try{
+        $pdo->query('SELECT owner_user_id,event_id,start_epoch,started_epoch,state,provider_sid FROM phone_operator_carrier_attempts_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,event_id,contact_id,agent_id,number_id,conversation_id,chat_agent_id,event_revision,destination_hash,line_binding,enabled,revision FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
         $pdo->query('SELECT next_due_epoch FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id FROM phone_operator_occurrences_v1 WHERE 1=0');
@@ -20,6 +21,11 @@ function vp3_operator_schedule_assignment_install_v1(PDO $pdo,string $suffix): v
         enabled SMALLINT NOT NULL,revision BIGINT NOT NULL,next_due_epoch BIGINT NOT NULL DEFAULT 0,PRIMARY KEY(owner_user_id,event_id)
     )".$suffix);
     require_once __DIR__.'/schema-metadata.php';
+    $pdo->exec("CREATE TABLE IF NOT EXISTS phone_operator_carrier_attempts_v1 (
+        owner_user_id BIGINT NOT NULL,event_id BIGINT NOT NULL,start_epoch BIGINT NOT NULL,
+        started_epoch BIGINT NOT NULL,state VARCHAR(16) NOT NULL,provider_sid VARCHAR(40) NULL UNIQUE,
+        PRIMARY KEY(owner_user_id,event_id,start_epoch)
+    )".$suffix);
     if(!schema_metadata_column_exists($pdo,'phone_operator_scheduled_assignments_v1','next_due_epoch')){
         try{$pdo->exec('ALTER TABLE phone_operator_scheduled_assignments_v1 ADD COLUMN next_due_epoch BIGINT NOT NULL DEFAULT 0');}
         catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_scheduled_assignments_v1','next_due_epoch'))throw $e;}

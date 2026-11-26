@@ -51,9 +51,9 @@ $pdo->exec("UPDATE vp3_phone_communication_profiles_v1 SET window_start='00:00',
 c(vp3_operator_occurrences_tick_v1($pdo,$callTime)['prepared']===1,'fixture prepares the following weekly occurrence');
 $preview=fn()=>vp3_operator_preview_due_v1($pdo,$callTime);
 c($preview()===['owner_permission'=>1],'preparation alone cannot authorize an outbound request');
-$settings=array_replace(vp3_operator_auto_call_defaults_v1(),['window_start'=>'00:00','window_end'=>'23:59']);
+$callingPolicy=array_replace(vp3_operator_auto_call_defaults_v1(),['window_start'=>'00:00','window_end'=>'23:59']);
 $permission=['agent_id'=>0,'conversation_id'=>11,'contact_id'=>$id,'number_id'=>1,'expected_revision'=>0,
-    'expected_destination'=>$choice['expected_destination'],'expected_line'=>$choice['expected_line'],'settings'=>$settings,'enabled'=>true];
+    'expected_destination'=>$choice['expected_destination'],'expected_line'=>$choice['expected_line'],'settings'=>$callingPolicy,'enabled'=>true];
 vp3_operator_auto_call_save_v1($pdo,$scope,$permission);
 $attest=array_intersect_key($permission,array_flip(['agent_id','conversation_id','contact_id','number_id','expected_destination','expected_line']));
 $attest+=['decision'=>'attest','expected_revision'=>1,'expected_consent_revision'=>0,'purpose'=>'follow_up','recipient_agreement_attested'=>true];
@@ -70,3 +70,23 @@ c($preview()===['calling_window'=>1],'recipient local calling hours apply immedi
 $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
 c($preview()===['recipient_permission'=>1],'recipient withdrawal after preparation prevents a carrier plan');
 echo "PASS scheduled outbound request preview, current consent and privacy\n";
+
+require_once dirname(__DIR__).'/includes/agent-operator-carrier-attempt-v1.php';
+$attempt=fn(callable $send)=>vp3_operator_carrier_attempt_v1($pdo,1,$eventId,$callTime,$send,$callTime);
+$unexpected=static function(){throw new LogicException('Unexpected adapter invocation');};
+c($attempt($unexpected)==='recipient_permission','withdrawal blocks reservation before simulated transport');
+$pdo->exec("UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=1,window_start='00:00',window_end='23:59'");
+$sent=0;
+$scenario=$argv[1]??'success';
+$result=$attempt(function($request)use(&$sent,$plan,$pdo,$attempt,$unexpected,$scenario){
+    ++$sent;
+    c(!vp3_phone_transaction_active_v1($pdo)&&$request===$plan,'mock carrier receives the approved objective outside a transaction');
+    c($attempt($unexpected)==='submitting','a second worker cannot submit the in-flight occurrence');
+    if($scenario==='timeout')throw new RuntimeException('Response lost after submission');
+    return ['sid'=>'CA'.str_repeat('c',32),'account_sid'=>vp3_phone_twilio_state_v100()['account_sid'],
+        'from'=>$request['fields']['From'],'to'=>$scenario==='mismatch'?'wrong destination':$request['fields']['To']];
+});
+$expected=$scenario==='success'?'submitted':'uncertain';
+c($result===$expected&&$attempt($unexpected)===$expected&&$sent===1,'terminal outcome fences replay');
+c($read()['last_occurrence']['reason']==='carrier_'.$expected,'original private schedule history shows the submission outcome');
+echo "PASS single carrier attempt ($scenario), in-flight exclusion and retry handling\n";
