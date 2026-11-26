@@ -70,6 +70,7 @@
 .vp3-email-compose-agent small { margin-top:8px; }
 .vp3-email-compose-watch { display:flex; align-items:center; gap:8px; margin:14px 0; font-size:13px; }
 .vp3-email-compose-watch input { width:16px; height:16px; }
+.vp3-email-compose-followthrough { padding:0 22px; }
 .vp3-email-compose-actions {
   display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; padding:15px 0 0;
   margin-top:14px; border-top:1px solid #e5e9ef; background:#fff;
@@ -122,6 +123,7 @@
   .vp3-email-compose-header .vp3-email-compose-toolbar { width:100%; }
   .vp3-email-compose button { padding:8px 10px; min-height:40px; }
   .vp3-email-compose-editor,.vp3-email-compose-list { padding:0 14px 16px; }
+  .vp3-email-compose-followthrough { padding:0 14px; }
   .vp3-email-compose-notice { padding:10px 14px; }
   .vp3-email-compose-leave { margin:10px 14px; }
   .vp3-email-compose-attachments { grid-template-columns:repeat(2,minmax(0,1fr)); }

@@ -224,6 +224,7 @@
     gmailNavigationEpoch++;
     if (gmailView) {
       gmailView.request?.abort();
+      gmailView.followthroughList?.dispose();gmailView.followthroughRecord?.dispose();
       gmailView.navigation.remove();
       gmailView.sentPanel.remove();
       gmailView = null;
@@ -782,6 +783,7 @@
       if (gmailView.request) gmailView.message.textContent = 'Sent loading paused. Use Refresh Sent to continue.';
       gmailView.request?.abort();gmailView.request = null;gmailView.requestSequence++;gmailSentControls(gmailView);
       gmailView.navigation.hidden = true;
+      clearGmailFollowthrough(gmailView);
     }
     host.append(body);
     const heading = host.querySelector('h2');
@@ -835,10 +837,38 @@
     view.next.disabled = busy || !view.nextCursor;
     for (const control of view.rows.querySelectorAll('button')) control.disabled = busy;
   }
+  function clearGmailFollowthrough(view) {
+    view.followthroughList?.dispose();view.followthroughList = null;
+    view.followthroughRecord?.dispose();view.followthroughRecord = null;
+  }
+  function gmailFollowthroughOptions(view) {
+    return {context:{owner_key:String(view.scope.owner),agent_id:view.scope.agent,conversation_id:view.scope.cid},
+      isCurrent:() => gmailCurrent(view) && view.tab === 'sent' && view.readAvailable !== false && view.followAvailable !== false,
+      mailboxRevision:() => view.observedMailboxRevision || view.mailboxRevision || null,
+      openDraft:target => {
+        if (!gmailCurrent(view) || !window.VP3EmailComposerV1?.openDraft) return;
+        close(false);void window.VP3EmailComposerV1.openDraft(target,{surface:'canvas'});
+      },openReply:(target,trigger) => {
+        if (!gmailCurrent(view) || !window.VP3EmailFollowup?.open) return;
+        const context = {owner_key:String(view.scope.owner),...target};close(false);window.VP3EmailFollowup.open(context,trigger);
+      }};
+  }
+  function syncGmailFollowthrough(view,refresh = false) {
+    const ui = window.VP3EmailFollowthroughV1;
+    if (!ui?.mountList || !view.followthroughHost) return;
+    if (!gmailCurrent(view) || view.tab !== 'sent' || !positive(view.scope.cid) || view.readAvailable === false || view.followAvailable === false) {
+      clearGmailFollowthrough(view);return;
+    }
+    if (!view.followthroughList) {
+      view.followthroughList = ui.mountList(view.followthroughHost,gmailFollowthroughOptions(view));
+      void view.followthroughList.refresh();
+    } else if (refresh) void view.followthroughList.refresh();
+  }
   function clearGmailSent(view,message = '') {
     view.request?.abort();view.request = null;view.requestSequence++;
     view.loaded = false;view.mailboxRevision = '';view.accountEmail = '';view.page = 0;view.cursors = [null];view.nextCursor = null;
     view.rows.replaceChildren();view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;
+    clearGmailFollowthrough(view);if (view.followthroughHost) view.followthroughHost.hidden = false;
     view.meta.textContent = '';view.pageLabel.textContent = 'Page 1';view.message.textContent = message;
     gmailSentControls(view);
   }
@@ -855,6 +885,9 @@
     if (!valid) { view.readAvailable = false;clearGmailSent(view,'Gmail access could not be verified. Refresh Sent after checking Connections.');return; }
     const previousRevision = view.observedMailboxRevision;
     view.readAvailable = info.read_available;view.observedMailboxRevision = info.mailbox_revision;
+    view.followAvailable = info.capabilities?.followups?.available !== false;
+    const followRevision = view.followthroughList?.mailboxRevision?.();
+    if (followRevision && followRevision !== info.mailbox_revision) clearGmailFollowthrough(view);
     if (!info.read_available || !info.mailbox_revision) {
       clearGmailSent(view,'Gmail read access is unavailable. Check Gmail settings before opening Sent.');
     } else if (view.mailboxRevision && info.mailbox_revision !== view.mailboxRevision
@@ -862,6 +895,7 @@
       clearGmailSent(view,'The connected Gmail account changed. Refresh Sent to load its current messages.');
     }
     gmailSentControls(view);
+    syncGmailFollowthrough(view);
   }
   function refreshGmailDraftButton(view) {
     if (!gmailCurrent(view) || !view.drafts) return;
@@ -920,6 +954,7 @@
   }
   async function readGmailSentMessage(view,item,trigger) {
     if (!gmailCurrent(view) || view.request || !view.loaded) return false;
+    view.followthroughRecord?.dispose();view.followthroughRecord = null;
     view.listScrollTop = host.scrollTop;view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;
     view.message.textContent = 'Opening the exact sent email…';
     const sequence = view.requestSequence+1;
@@ -936,6 +971,7 @@
       view.detail.replaceChildren();
       const back = button('Back to Sent',() => {
         if (!gmailCurrent(view)) return;
+        view.followthroughRecord?.dispose();view.followthroughRecord = null;view.followthroughHost.hidden = false;
         view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;host.scrollTop = view.listScrollTop || 0;
         if (trigger?.isConnected) trigger.focus({preventScroll:true});
       });
@@ -944,7 +980,10 @@
       for (const [label,value] of [['From',message.from],['To',message.to],['Sent',gmailDate(message.sent_at)]])
         headers.append(node('dt',label),node('dd',value));
       const body = node('div','','vp3-gmail-sent-reader');
-      view.detail.append(back,title,headers,body);view.list.hidden = true;view.detail.hidden = false;
+      const followup = node('div');
+      view.detail.append(back,title,headers,followup,body);view.list.hidden = true;view.detail.hidden = false;view.followthroughHost.hidden = true;
+      if (message.followthrough_record && window.VP3EmailFollowthroughV1?.mount && view.followAvailable !== false)
+        view.followthroughRecord = window.VP3EmailFollowthroughV1.mount(followup,message.followthrough_record,gmailFollowthroughOptions(view));
       if (!window.VP3GmailEmailDisplayV1?.mount(body,message)) body.append(node('p',message.body || 'No readable text in this email.','vp3-gmail-sent-body'));
       view.message.textContent = '';host.scrollTop = 0;title.focus({preventScroll:true});positionSpecialist();return true;
     } catch (error) {
@@ -982,6 +1021,7 @@
       view.nextCursor = sent.next_cursor;view.cursors[page+1] = sent.next_cursor;view.cursors.length = page+2;
       view.meta.textContent = 'Sent from '+sent.account_email+' · Checked '+gmailDate(sent.checked_at);
       view.pageLabel.textContent = 'Page '+(page+1);view.detail.replaceChildren();view.detail.hidden = true;view.list.hidden = false;
+      view.followthroughRecord?.dispose();view.followthroughRecord = null;view.followthroughHost.hidden = false;syncGmailFollowthrough(view);
       renderGmailSentRows(view,sent.items);view.message.textContent = '';host.scrollTop = 0;gmailSentControls(view);positionSpecialist();return true;
     } catch (error) {
       if (gmailCurrent(view) && error.name !== 'AbortError' && ![401,403,404,409,419].includes(error.status)) view.message.textContent = error.message;
@@ -997,15 +1037,17 @@
     workspaceButton.textContent = tab === 'sent' ? 'Expand' : 'Full report';
     if (focus) view.tabs[tab].focus({preventScroll:true});
     if (tab === 'inbox') {
+      clearGmailFollowthrough(view);
       if (view.request) view.message.textContent = '';
       view.request?.abort();view.request = null;view.requestSequence++;gmailSentControls(view);return true;
     }
     if (!positive(view.scope.cid)) return openGmailSent({owner_key:String(view.scope.owner),agent_id:view.scope.agent,conversation_id:0});
+    syncGmailFollowthrough(view);
     return view.loaded ? true : loadGmailSent(view);
   }
   function mountGmailMailbox(current,header) {
     const view = {scope:current,tab:'inbox',request:null,requestSequence:0,loaded:false,readAvailable:null,page:0,cursors:[null],nextCursor:null,
-      mailboxRevision:'',observedMailboxRevision:null,accountEmail:'',tabs:{}};
+      mailboxRevision:'',observedMailboxRevision:null,accountEmail:'',followAvailable:null,tabs:{}};
     gmailView = view;
     const wrapper = node('div','','vp3-gmail-specialist-heading');wrapper.append(header);
     view.navigation = node('div','','vp3-gmail-navigation');
@@ -1040,7 +1082,8 @@
     view.previous = button('Previous',() => void loadGmailSent(view,{page:view.page-1}));
     view.next = button('Next',() => void loadGmailSent(view,{page:view.page+1}));view.pageLabel = node('span','Page 1');pages.append(view.previous,view.pageLabel,view.next);
     view.list.append(view.rows,pages);view.detail = node('div','','vp3-gmail-sent-detail');view.detail.hidden = true;
-    view.sentPanel.append(top,view.message,view.list,view.detail);gmailSentControls(view);
+    view.followthroughHost = node('div','','vp3-gmail-followthrough-host');
+    view.sentPanel.append(view.followthroughHost,top,view.message,view.list,view.detail);gmailSentControls(view);
     view.inbox.append(status,coordinationHost,specialistsHost,sections);specialistContent.append(view.inbox,view.sentPanel);
     host.append(wrapper,specialistContent);return view;
   }
@@ -3747,6 +3790,12 @@
   window.addEventListener('vp3:chat-specialists-changed',renderSpecialists);
   window.addEventListener('vp3:chat-email-drafts-changed',() => {
     if (visible() && specialistMode && family(selectedSpecialist) === 'gmail') { stop();void read(); }
+  });
+  window.addEventListener('vp3:email-followthrough-changed',event => {
+    const view = gmailView,context = event.detail;
+    if (!view || !gmailCurrent(view) || String(context?.owner_key) !== String(view.scope.owner)
+      || context.agent_id !== view.scope.agent || context.conversation_id !== view.scope.cid) return;
+    queueMicrotask(() => { if (gmailCurrent(view)) syncGmailFollowthrough(view,true); });stop();void read();
   });
   window.addEventListener('stonefellow:chat-context-changing',() => close(false));
   window.addEventListener('vp3:orb-conversation-changed',() => { if (!window.STONEFELLOW_CHAT) close(false); });
