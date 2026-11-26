@@ -719,6 +719,10 @@
     if(draft.schedule){renderContactScheduleForm(section,draft,g);host.append(section);return;}
     for(const schedule of draft.schedules.items){
       const card=node('article','vp3-phone-scheduled-call');card.append(node('strong',null,({none:'One time',daily:'Every day',weekly:'Every week'})[schedule.recurrence]),node('p','vp3-phone-meta',schedule.next_label||'No upcoming occurrence'));
+      if(schedule.last_occurrence){
+        const last=schedule.last_occurrence,labels={awaiting_dispatch_checks:'Prepared for dispatch checks',recipient_permission:'Blocked by recipient preferences',window_ended:'Missed call window',contact_or_line_changed:'Contact or line changed'};
+        if(labels[last.reason])card.append(node('p','vp3-phone-meta',new Date(Number(last.start_epoch)*1000).toLocaleString()+' · '+labels[last.reason]));
+      }
       if(schedule.objectives)card.append(node('p','vp3-phone-schedule-objectives',schedule.objectives));
       const actions=node('div','vp3-phone-actions'),edit=button('Edit schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError&&schedule.editable){draft.schedule=newContactSchedule(schedule);draft.cancelId=0;render();}});
       const cancel=button('Cancel schedule',()=>{if(current(g)&&phoneContactDraft===draft&&!draft.saving&&!draft.dirty&&!stateError){draft.cancelId=schedule.event_id;render();}});edit.disabled=blocked||!schedule.editable;cancel.disabled=blocked;actions.append(edit,cancel);

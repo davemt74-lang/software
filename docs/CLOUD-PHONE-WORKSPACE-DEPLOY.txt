@@ -152,3 +152,11 @@ spoken recording notice, leave a message, transcribe it, inspect the correct Cha
 then delete it and verify playback/transcript/Chat redaction and provider cleanup.
 Check the same flow on a physical iPhone. Automated browser and injected-carrier
 checks do not establish hosted microphone quality or live carrier acceptance.
+
+Operator scheduled call occurrences
+  After running upgrade.php, configure the Cloud scheduler to run the CLI worker each minute:
+      * * * * * php /full/path/to/vp3/phone-operator-schedule-worker.php
+  Only explicitly assigned Calendar call series are considered. Open Phone > Contacts >
+  Scheduled calls to see the last occurrence and its preparation status. Prepared means
+  the scheduled time arrived and the preliminary line and recipient checks passed.
+  This worker does not place a carrier call. Browser calls and ordinary reminders stay available.
