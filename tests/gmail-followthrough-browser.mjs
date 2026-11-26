@@ -144,6 +144,10 @@ const followCard=()=>popup().locator('.vp3-email-followthrough-card').filter({vi
 const followRequests=()=>requests.filter(input=>input.action.startsWith('followthrough_'));
 async function openSent(){assert.equal(await page.evaluate(context=>window.VP3AgentActivityHub.openGmailSent(context),context),true);await followCard().getByRole('heading',{name:'Delivery confirmation',exact:true}).waitFor();}
 async function manage(){await followCard().getByText('Manage follow-up',{exact:true}).click();}
+async function settledFollowups(){await page.waitForFunction(()=>{
+  const host=document.querySelector('#vp3ChatSpecialistActivity'),reload=host?.querySelector('.vp3-email-followthrough-top button');
+  return Boolean(reload)&&!reload.disabled&&![...host.querySelectorAll('.vp3-email-followthrough-card')].some(card=>card.getAttribute('aria-busy')==='true');
+});}
 async function screenshot(name){const directory=process.env.VP3_GMAIL_FOLLOWTHROUGH_SCREENSHOT_DIR;if(!directory)return;await fs.mkdir(directory,{recursive:true});await page.screenshot({path:path.join(directory,name),fullPage:true});}
 async function bounds(locator){
   const result=await locator.evaluate(el=>({left:el.getBoundingClientRect().left,right:el.getBoundingClientRect().right,width:el.clientWidth,scroll:el.scrollWidth,
@@ -203,7 +207,7 @@ try{
   await manage();await followCard().getByRole('button',{name:'Change deadline',exact:true}).click();await followCard().getByLabel('Reply expected by',{exact:true}).fill(later+'T11:30');
   const beforeEditRefresh=followRequests().length;await popup().getByRole('button',{name:'Refresh follow-ups',exact:true}).click();
   assert.equal(followRequests().length,beforeEditRefresh);assert.match(await followCard().getByLabel('Reply expected by',{exact:true}).inputValue(),new RegExp('^'+later+'T11:30'));
-  await followCard().getByRole('button',{name:'Save deadline',exact:true}).click();await followCard().getByText('Waiting for reply',{exact:true}).waitFor();
+  await followCard().getByRole('button',{name:'Save deadline',exact:true}).click();await settledFollowups();await followCard().getByText('Waiting for reply',{exact:true}).waitFor();
   assert.equal(item.deadline_at,later+'T18:30:00Z');
   await manage();await followCard().getByRole('button',{name:'Check Gmail now',exact:true}).click();
   await followCard().getByText('The current reply outcome could not be verified. Check Gmail again before following up.',{exact:true}).waitFor();
@@ -242,7 +246,7 @@ try{
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:9}})));
   assert.equal(await page.locator('#vp3ChatEmailReview').evaluate(el=>el.open),false,'The exact reply reader closes on participant task context.');
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:0}})));await openSent();
-  await manage();await followCard().getByRole('button',{name:'Mark resolved',exact:true}).click();
+  await manage();await followCard().getByRole('button',{name:'Mark resolved',exact:true}).click();await settledFollowups();
   await popup().getByLabel('Follow-up filter',{exact:true}).selectOption('all');await followCard().getByText('Marked resolved by you.',{exact:true}).waitFor();
   item={...item,outcome:'waiting',awaiting_new_deadline:true,paused:false,revision:item.revision+1,state_version:item.state_version+1,draft_target:null,reply_target:null,check:{state:'never_checked',result:null,checked_at:null}};capabilities();
   await popup().getByRole('button',{name:'Refresh follow-ups',exact:true}).click();await followCard().getByText('Follow-up sent · waiting for reply',{exact:true}).waitFor();
