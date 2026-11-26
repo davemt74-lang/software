@@ -332,4 +332,8 @@ try{
   assert.equal(requests.filter(input=>['compose_generate','advance_write'].includes(input.action)).length,0,'Follow-through navigation never starts model work.');
   assert.deepEqual(errors,[]);
   console.log('Gmail follow-through browser: saved deadline/timezone/priority, dirty edits, exact reviewed send, scoped Sent controls, verified outcomes, monotonic late-response protection, paginated records, exact private notification navigation, preparation explanations, reply reader, privacy and mobile single-scroll layout passed.');
+}catch(error){
+  await screenshot('followthrough-failure.png').catch(()=>{});
+  console.error('Follow-through failure view:',(await page.locator('body').innerText().catch(()=>'' )).slice(0,6000));
+  throw error;
 }finally{await browser.close();}

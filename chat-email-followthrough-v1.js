@@ -17,7 +17,10 @@
     if (className) element.className = className;return element;
   };
   const button = (text,action) => { const element = node('button',text);element.type = 'button';element.addEventListener('click',action);return element; };
-  const field = (text,input) => { const element = node('label','','vp3-email-followthrough-field');element.append(node('span',text),input);return element; };
+  const field = (text,input) => {
+    const element = node('label','','vp3-email-followthrough-field');input.setAttribute('aria-label',text);
+    element.append(node('span',text),input);return element;
+  };
   const validTime = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|\+00:00)$/.test(value) && Number.isFinite(Date.parse(value));
   const validZone = value => {
     if (typeof value !== 'string' || value.length > 80 || !value) return false;
