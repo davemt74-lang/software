@@ -5,7 +5,7 @@ require_once __DIR__.'/agent-initiative-specialist-registry-v1.php';
 require_once __DIR__.'/agent-initiative-runtime-v1.php';
 
 /** Canonical child work only; the executive view owns no queue or copied report. */
-function vp3_ob1_executive_rows_v1(PDO $pdo,array $user,array $binding,?int $assessment=null): array
+function vp3_ob1_executive_rows_v1(PDO $pdo,array $user,array $binding,?int $assessment=null,?array $runIds=null): array
 {
     if(!agent_job_engine_schema_ready_v1900($pdo))return [];
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
@@ -15,6 +15,11 @@ function vp3_ob1_executive_rows_v1(PDO $pdo,array $user,array $binding,?int $ass
     };
     $parent=$json('$.ob1_assessment_run_id');
     $filter=$assessment===null?"$parent IS NOT NULL AND r.status IN ('completed','failed')":"CAST($parent AS CHAR)=?";
+    if($assessment===null)$filter.=' AND a.completed_at<=?';
+    if($runIds!==null){
+        if(!$runIds||count($runIds)>8||array_filter($runIds,static fn(mixed $id):bool=>!is_int($id)||$id<1))return [];
+        $filter.=' AND r.id IN ('.implode(',',array_fill(0,count($runIds),'?')).')';
+    }
     $q=$pdo->prepare("SELECT r.id,r.goal,r.status,r.current_action_id,r.lease_expires_at,r.next_attempt_at,
         supervisor.goal AS supervisor_goal,
         a.id AS action_id,a.status AS action_status,a.attempt_count,a.completed_at,a.result_json,a.error_class,
@@ -38,6 +43,8 @@ function vp3_ob1_executive_rows_v1(PDO $pdo,array $user,array $binding,?int $ass
     $params=[(int)$user['id'],(string)vp3_initiative_binding_agent_v1($binding),
         (string)$binding['conversation_id'],$binding['revision']];
     if($assessment!==null)$params[]=(string)$assessment;
+    else $params[]=gmdate('Y-m-d H:i:s',time()-30);
+    if($runIds!==null)$params=array_merge($params,$runIds);
     $q->execute($params);
     return array_values(array_filter($q->fetchAll(PDO::FETCH_ASSOC),static function(array $row)use($binding,$assessment):bool{
         $goal=json_decode((string)$row['goal'],true);
@@ -84,19 +91,20 @@ function vp3_ob1_executive_revision_v1(PDO $pdo,array $user,array $binding): str
     return $rows?hash('sha256',json_encode($rows,JSON_THROW_ON_ERROR)):'';
 }
 
-/** Serialize ready/running automatic assessments; delayed retries retain their backoff. */
-function vp3_ob1_assessment_pending_v1(PDO $pdo,array $user,array $binding): bool
+/** Detect exact pending work; scheduling serializes inference while fresh owner decisions may queue. */
+function vp3_ob1_assessment_pending_v1(PDO $pdo,array $user,array $binding,bool $executingOnly=false): bool
 {
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $value=static function(string $path)use($sqlite):string{
         $sql="JSON_EXTRACT(CASE WHEN JSON_VALID(r.goal) THEN r.goal ELSE '{}' END,'$path')";
         return $sqlite?$sql:"JSON_UNQUOTE($sql)";
     };
+    $states=$executingOnly?"'executing'":"'approved','queued','executing'";
     $q=$pdo->prepare("SELECT r.goal FROM agent_workflow_runs r WHERE r.owner_user_id=?
         AND CAST(COALESCE(r.agent_id,0) AS CHAR)=? AND r.source_kind='agent_initiative'
         AND r.workflow_type='initiative'
         AND r.capability_key='initiative.plan' AND r.execution_target='cloud'
-        AND r.status IN ('approved','queued','executing') AND ".$value('$.opportunity_lane')." IS NULL
+        AND r.status IN ($states) AND ".$value('$.opportunity_lane')." IS NULL
         AND (r.status='executing' OR r.next_attempt_at IS NULL OR r.next_attempt_at<=UTC_TIMESTAMP())
         AND CAST(".$value('$.binding.conversation_id')." AS CHAR)=? AND ".$value('$.binding.revision')."=?
         ORDER BY r.id DESC LIMIT 25");
@@ -122,7 +130,7 @@ function vp3_ob1_executive_cycle_v1(PDO $pdo,array $user,array $binding): ?array
         $ids=json_decode((string)$row['result_json'],true)['ob1_assignment_run_ids']??null;
         if(!is_array($ids)||!array_is_list($ids)||!$ids||count($ids)!==$assessment['queued']
             ||count(array_unique($ids))!==count($ids)||array_filter($ids,static fn(mixed $id):bool=>!is_int($id)||$id<1))continue;
-        $children=vp3_ob1_executive_rows_v1($pdo,$user,$binding,(int)$row['id']);
+        $children=vp3_ob1_executive_rows_v1($pdo,$user,$binding,(int)$row['id'],$ids);
         $children=array_values(array_filter($children,static fn(array $child):bool=>in_array((int)$child['id'],$ids,true)));
         $counts=array_fill_keys(['queued','working','prepared','failed','unverified','waiting_owner','cancelled'],0);
         $specialists=[];

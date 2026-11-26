@@ -14,15 +14,16 @@ $evidence=brainstorm_pipeline_evidence();
 $ref=array_key_first(array_filter($evidence,static fn(array $row):bool=>$row['kind']==='task'));
 canvas_pipeline_check($ref!==null,'Executive review starts from a real authorized task source');
 $enqueue=static function(string $key)use($pdo,$owner,$binding,$ref):int{
-    $current=brainstorm_pipeline_evidence();$source=$current[$ref];
-    vp3_initiative_enqueue_v1($pdo,$owner,'initiative.plan',['binding'=>$binding,
-        'sources'=>[$ref=>$source['revision']],'canonical_sources'=>[$ref=>$source['canonical_source_revision']??$source['revision']]],
+    $current=brainstorm_pipeline_evidence();$payload=brainstorm_pipeline_payload($current);
+    $revision=vp3_ob1_executive_revision_v1($pdo,$owner,$binding);
+    if($revision!=='')$payload['executive_revision']=$revision;
+    vp3_initiative_enqueue_v1($pdo,$owner,'initiative.plan',$payload,
         hash('sha256','executive-regression-'.$key));
     $rows=canvas_pipeline_runs('initiative.plan');return (int)end($rows)['id'];
 };
 $plan=$enqueue('first');
 canvas_pipeline_check(vp3_ob1_assessment_pending_v1($pdo,$owner,$binding),
-    'An automatic general assessment reserves the ready executive turn');
+    'An automatic general assessment is visible on the existing canonical queue');
 $beforePlans=count(canvas_pipeline_runs('initiative.plan'));
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
 vp3_initiative_schedule_v1($pdo,$owner,7,false);
@@ -35,7 +36,10 @@ $assign=static function()use(&$modelCalls,$ref):string{
         'focus'=>'Prepare a focused next step for the current objective','report'=>false]]],JSON_THROW_ON_ERROR);
 };
 $beforeChildren=count(canvas_pipeline_runs('initiative.prepare'));
-canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($plan),$assign,null,false)['ok'],
+$planClaim=canvas_pipeline_claim($plan);
+canvas_pipeline_check(vp3_ob1_assessment_pending_v1($pdo,$owner,$binding,true),
+    'An exact active general assessment reserves the executive inference turn');
+canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,$planClaim,$assign,null,false)['ok'],
     'The canonical supervisor commits a real assignment cycle');
 $children=canvas_pipeline_runs('initiative.prepare');$child=end($children);$childId=(int)$child['id'];
 canvas_pipeline_check(count($children)===$beforeChildren+1&&json_decode($child['goal'],true)['ob1_assessment_run_id']===$plan,
@@ -60,6 +64,9 @@ canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,$claim,static functi
 $ready=vp3_ob1_executive_cycle_v1($pdo,$owner,$binding);
 canvas_pipeline_check($ready['state']==='prepared'&&$ready['counts']['prepared']===1&&$ready['counts']['failed']===0,
     'A completed preparation is distinct from approval or success of the owner objective');
+$preparedRevision=vp3_ob1_executive_revision_v1($pdo,$owner,$binding);
+canvas_pipeline_check($preparedRevision===$revision,'A newly completed outcome respects its own 30-second review floor');
+$pdo->prepare('UPDATE agent_workflow_actions SET completed_at=? WHERE run_id=?')->execute([gmdate('Y-m-d H:i:s',time()-31),$childId]);
 $preparedRevision=vp3_ob1_executive_revision_v1($pdo,$owner,$binding);
 canvas_pipeline_check($preparedRevision!==$revision,'A verified returned outcome changes the next executive assessment identity');
 $q=$pdo->prepare('SELECT id,result_json FROM agent_workflow_receipts WHERE run_id=? ORDER BY id DESC LIMIT 1');
@@ -111,6 +118,7 @@ $blocked=vp3_ob1_executive_cycle_v1($pdo,$owner,$binding);
 canvas_pipeline_check(!$failed['ok']&&$blocked['assessment_run_id']===$failedPlan&&$blocked['state']==='needs_review'
     &&$blocked['counts']['failed']===1,'A verified failed preparation remains a blocker for OB1 outcome review');
 $checkpoint=vp3_initiative_in_scope_v1($owner,7,static fn()=>agent_brain_v122_memory($GLOBALS['owner'],'initiative_sweep','last-review'));
+$pdo->prepare('UPDATE agent_workflow_actions SET completed_at=? WHERE run_id=?')->execute([gmdate('Y-m-d H:i:s',time()-31),$failedChild]);
 canvas_pipeline_check(!empty($checkpoint['metadata']['specialist_source_changed'])
     &&vp3_ob1_executive_revision_v1($pdo,$owner,$binding)!==$preparedRevision,
     'A child failure wakes the existing bounded review checkpoint with a different terminal outcome revision');

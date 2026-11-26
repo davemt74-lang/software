@@ -117,24 +117,27 @@ Top of Mind shows preparation progress and work that needs review. A completed
 preparation does not assert owner approval or completion of a real-world objective.
 All next actions still require current sources and the existing tool admission.
 
-Ready or running automatic general assessments share one executive turn for the
-exact owner/Agent/Chat/policy. Independent specialists keep their own canonical
-lanes. A delayed retry retains backoff without blocking a fresh ready assessment.
-Verified outcomes affect the next assessment identity; assessment rows, heartbeat
+Running automatic general assessments share one executive inference turn for the
+exact owner/Agent/Chat/policy. Unchanged queued snapshots retain their canonical
+dedupe; a fresh owner decision may queue a source-bound review behind existing
+work. Independent specialists keep their own canonical lanes. A delayed retry
+retains backoff without blocking a fresh ready assessment. Verified outcomes
+affect the next assessment identity after their own 30-second review floor; assessment rows, heartbeat
 and delivery changes cannot manufacture new outcome context. Failed child work
 wakes the existing review checkpoint. The server sweep recognizes meaningful
 source/outcome changes after the normal 30-second minimum and retains five-minute
 catch-up. Execution still depends on the installed server worker, whose observed
 health is reported separately. An open browser is not required by the sweep.
 
-The new end-to-end gate has 27 checks on SQLite and native MySQL after the existing
+The new end-to-end gate has 29 checks on SQLite and native MySQL after the existing
 107-check Canvas fixture. It runs actual planning and private execution, records
 exact admissions, verifies leases and receipts, rejects mismatched and empty
 completion payloads, protects owner/Chat boundaries, exposes a real failed child
 to the next OB1 model, preserves retry backoff, and queues an outcome review from
 the server sweep with a stale browser heartbeat. Repeating status reads and
 sweeps cannot run inference or duplicate the ready assessment. Runtime (106),
-Top of Mind (45), the assessment pipeline (57) and creative starters (31) remain
+Top of Mind (45), owner check-ins (114), semantic reassessment, the assessment
+pipeline (57) and creative starters (31) remain
 regression gates. GitHub checks certify each published revision before merging.
 
 Repository tests do not prove a particular live installation's scheduler,

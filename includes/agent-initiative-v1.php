@@ -693,7 +693,7 @@ function vp3_initiative_schedule_scoped_v1(PDO $pdo,array $user,?array $selected
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$policy);
         require_once __DIR__.'/agent-ob1-executive-v1.php';
-        if(vp3_ob1_assessment_pending_v1($pdo,$live,$policy)){
+        if(vp3_ob1_assessment_pending_v1($pdo,$live,$policy,true)){
             $pdo->commit();
             return;
         }
