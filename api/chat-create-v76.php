@@ -131,7 +131,7 @@ $permission =
 
 if (
     $permission === '' ||
-    !has_permission($permission)
+    ($type !== 'track' && !has_permission($permission))
 ) {
     chat_create_json(
         false,
@@ -159,231 +159,37 @@ $uploadedPaths = [];
 
 try {
     if ($type === 'track') {
-        $title = trim(
-            (string)($_POST['title'] ?? '')
-        );
-        $albumId = max(
-            0,
-            (int)($_POST['album_id'] ?? 0)
-        );
-        $album = trim(
-            (string)($_POST['album'] ?? 'Stonefellow')
-        );
-
-        if ($albumId > 0) {
-            $albumCheck = $pdo->prepare(
-                'SELECT title
-                 FROM albums
-                 WHERE id=?
-                 LIMIT 1'
-            );
-            $albumCheck->execute([$albumId]);
-            $managedAlbumTitle = trim(
-                (string)($albumCheck->fetchColumn() ?: '')
-            );
-
-            if ($managedAlbumTitle === '') {
-                throw new RuntimeException(
-                    'Choose a valid album.'
-                );
-            }
-
-            $album = $managedAlbumTitle;
+        if (!music_workspace_resources_v330_schema_ready($pdo) || !music_song_metadata_v1_schema_ready($pdo)) {
+            chat_create_json(false, 'Install the Music Metadata database upgrade before adding songs.', ['upgrade_required'=>true], 503);
         }
-
-        $duration = trim(
-            (string)($_POST['duration'] ?? '')
-        );
-        $description = trim(
-            (string)($_POST['description'] ?? '')
-        );
-        $credits = trim(
-            (string)($_POST['credits'] ?? '')
-        );
-        $genre = trim(
-            (string)($_POST['genre'] ?? '')
-        );
-        $mood = trim(
-            (string)($_POST['mood'] ?? '')
-        );
-        $energy = trim(
-            (string)($_POST['energy'] ?? '')
-        );
-        $tempo = max(
-            0,
-            min(
-                300,
-                (int)($_POST['tempo_bpm'] ?? 0)
-            )
-        );
-        $keywords = trim(
-            (string)($_POST['keywords'] ?? '')
-        );
-        $sortOrder = (int)(
-            $_POST['sort_order'] ?? 0
-        );
-        $visibility =
-            chat_create_visibility('public');
-        $published =
-            chat_create_published();
-
-        if ($title === '') {
-            throw new RuntimeException(
-                'Track title is required.'
-            );
+        $workspaceValue = $_POST['workspace_id'] ?? '';
+        if (!is_scalar($workspaceValue) || !preg_match('/^[1-9]\d{0,9}$/', (string)$workspaceValue)) {
+            throw new RuntimeException('Choose the Music Workspace for this song.', 422);
         }
-
-        if (
-            !in_array(
-                $energy,
-                ['', 'low', 'medium', 'high'],
-                true
-            )
-        ) {
-            throw new RuntimeException(
-                'Select a valid energy level.'
-            );
+        $workspaceId = (int)$workspaceValue;
+        if (!music_workspace_resources_v330_can_manage($pdo, $workspaceId, 'tracks', $user)) {
+            throw new RuntimeException('You cannot add songs to this Music Workspace.', 403);
         }
-
-        if (strlen($keywords) > 500) {
-            $keywords = substr(
-                $keywords,
-                0,
-                500
-            );
+        if (!is_string($_POST['request_key'] ?? null) || trim($_POST['request_key']) === '') {
+            throw new RuntimeException('The save request is missing. Reload Add Track and try again.', 422);
         }
-
-        $audioPath =
-            chat_create_upload(
-                'audio_file',
-                ['mp3','m4a','wav','ogg'],
-                [
-                    'audio/mpeg',
-                    'audio/mp4',
-                    'audio/x-m4a',
-                    'audio/wav',
-                    'audio/x-wav',
-                    'audio/ogg',
-                    'application/octet-stream',
-                ],
-                (int)(
-                    $config['uploads']['max_audio_bytes'] ??
-                    26214400
-                ),
-                'audio'
-            );
-
-        if (!$audioPath) {
-            throw new RuntimeException(
-                'Choose an MP3, M4A, WAV or OGG audio file.'
-            );
-        }
-
-        $uploadedPaths[] = $audioPath;
-
-        $coverPath =
-            chat_create_upload(
-                'cover_file',
-                ['jpg','jpeg','png','webp'],
-                [
-                    'image/jpeg',
-                    'image/png',
-                    'image/webp',
-                ],
-                (int)(
-                    $config['uploads']['max_image_bytes'] ??
-                    5242880
-                ),
-                'covers'
-            );
-
-        if ($coverPath) {
-            $uploadedPaths[] = $coverPath;
-        } else {
-            $coverPath =
-                '/images/stonefellow-studio.png';
-        }
-
-        $ownerId =
-            (int)($user['id'] ?? 0);
-
-        $stmt = $pdo->prepare(
-            'INSERT INTO tracks
-             (
-                owner_user_id,
-                producer_user_id,
-                album_id,
-                title,
-                album,
-                duration,
-                lyrics,
-                credits,
-                description,
-                genre,
-                mood,
-                energy,
-                tempo_bpm,
-                keywords,
-                audio_path,
-                cover_path,
-                sort_order,
-                is_published,
-                visibility
-             )
-             VALUES
-             (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
-        );
-
-        $stmt->execute([
-            $ownerId ?: null,
-            null,
-            $albumId ?: null,
-            $title,
-            $album !== ''
-                ? $album
-                : 'Stonefellow',
-            $duration,
-            '',
-            $credits,
-            $description,
-            $genre,
-            $mood,
-            $energy,
-            $tempo ?: null,
-            $keywords,
-            $audioPath,
-            $coverPath,
-            $sortOrder,
-            $published,
-            $visibility,
+        // Album IDs are workspace catalog IDs. Never infer ownership from a global album.
+        $input = $_POST;
+        $input['id'] = 0;
+        $catalogId = music_catalog_write($pdo, $workspaceId, $user, 'track', 'save', $input, $_FILES);
+        $track = artist_music_v185_track($pdo, $workspaceId, $catalogId);
+        $recording = music_song_metadata_v1_get($pdo, $workspaceId, $catalogId, $user);
+        $createdId = (int)$track['source_track_id'];
+        chat_create_json(true, (int)$track['is_published'] === 1 ? 'Song saved and published.' : 'Song draft saved.', [
+            'type'=>'track',
+            'id'=>$createdId,
+            'catalog_track_id'=>$catalogId,
+            'recording_id'=>$recording['recording_id'] ?? null,
+            'metadata_revision'=>$recording['revision'] ?? 0,
+            'revision'=>music_catalog_revision($track),
+            'open_url'=>url('/music-library.php?workspace='.$workspaceId.'&tab=tracks&edit='.$catalogId.'#editor'),
+            'refresh_view'=>'tracks',
         ]);
-
-        $createdId =
-            (int)$pdo->lastInsertId();
-
-        if ($published === 1) {
-            player_notify_new_release(
-                'track',
-                $createdId,
-                $title,
-                url('/chat.php?view=player')
-            );
-        }
-
-        chat_create_json(
-            true,
-            'Track created.',
-            [
-                'type'=>'track',
-                'id'=>$createdId,
-                'open_url'=>
-                    url(
-                        '/admin/stems.php?track='
-                        . $createdId
-                    ),
-                'refresh_view'=>'tracks',
-            ]
-        );
     }
 
     if ($type === 'album') {
@@ -1605,10 +1411,13 @@ try {
         );
     }
 
-    chat_create_json(
-        false,
-        $e->getMessage(),
-        [],
-        422
-    );
+    $status = (int)$e->getCode();
+    if (!in_array($status, [403,404,409,422,503], true)) $status = 422;
+    $message = $e->getMessage();
+    if ($e instanceof PDOException || !($e instanceof RuntimeException)) {
+        error_log('Chat content save failed: '.$e->getMessage());
+        $status = 500;
+        $message = 'The song could not be saved. Your changes have not been applied; please try again.';
+    }
+    chat_create_json(false, $message, ['conflict'=>$status === 409], $status);
 }

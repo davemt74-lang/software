@@ -1,0 +1,74 @@
+name: Music Metadata ML1
+
+on:
+  pull_request:
+    paths:
+      - '**/music*.php'
+      - '**/artist-music*.php'
+      - '**/artist-media*.php'
+      - 'api/chat-create-v76.php'
+      - 'chat-legacy-v108.php'
+      - 'chat.js'
+      - 'assets/css/music-*.css'
+      - 'assets/js/music-*.js'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'includes/bootstrap.php'
+      - 'tests/music-*'
+      - '.github/workflows/music-song-metadata-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: music-test-only
+          MYSQL_DATABASE: vp3_music_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -pmusic-test-only"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql, pdo_sqlite, fileinfo
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Service transactions and real HTTP uploads
+        run: |
+          php tests/music-song-metadata-v1.php
+          node tests/music-song-metadata-api-v1.mjs
+          node tests/music-file-repair-api.mjs
+      - name: MySQL migration and transaction acceptance
+        env:
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: php tests/music-song-metadata-mysql-v1.php
+      - name: Install browser fixture runtime
+        run: |
+          npm install --no-save --ignore-scripts --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Desktop and phone metadata editor
+        run: node tests/music-song-metadata-browser-v1.mjs
+      - name: Save browser review images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-metadata-editor-review
+          path: artifacts/music-song-metadata-v1/
+          if-no-files-found: ignore

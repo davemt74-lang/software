@@ -20,4 +20,5 @@ try{
 }catch(DomainException $e){music_file_repair_response(['ok'=>false,'error'=>$e->getMessage()],403);}
 catch(UnexpectedValueException $e){music_file_repair_response(['ok'=>false,'error'=>$e->getMessage()],409);}
 catch(PDOException $e){error_log('Audio replacement database write failed.');music_file_repair_response(['ok'=>false,'error'=>'Audio could not be saved. The existing song has been kept.'],500);}
+catch(RuntimeException $e){$status=in_array((int)$e->getCode(),[403,404,409,422,503],true)?(int)$e->getCode():422;music_file_repair_response(['ok'=>false,'error'=>$e->getMessage()],$status);}
 catch(Throwable $e){music_file_repair_response(['ok'=>false,'error'=>$e->getMessage()],422);}
