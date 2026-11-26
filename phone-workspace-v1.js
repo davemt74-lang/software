@@ -516,6 +516,11 @@
       panel.append(node('p','vp3-phone-meta','Snapshot checked '+displayTime(model.checked_at)+'. Refresh to re-evaluate.'));
       const checks=node('dl','vp3-phone-call-details');
       for(const gate of model.gates){const row=node('div');row.append(node('dt',null,admissionLabels[gate.id]),node('dd',null,({pass:'Local check passed',blocked:'Blocked',unverified:'Not verified',off:'Disabled'}[gate.status])+'. '+gate.detail));checks.append(row);}
+      if(model.holder_modes){
+        for(const [key,label] of [['scheduled','Scheduled AI calls'],['spontaneous','Unscheduled AI calls']]){
+          const row=node('div');row.append(node('dt',null,label),node('dd',null,model.holder_modes[key]===true?'Allowed by the connected phone holder, including recording and transcription.':'No matching phone holder permission.'));checks.append(row);
+        }
+      }
       panel.append(checks);
       if(model.can_attest){
         const label=node('label','vp3-phone-field','Agreed purpose'),select=node('select');select.setAttribute('aria-label','Agreed purpose');select.dataset.phoneFocusKey='admission-purpose-'+key;
