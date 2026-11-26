@@ -4,6 +4,7 @@ require_once __DIR__.'/agent-operator-occurrences-v1.php';
 require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/phone-recording-pipeline-v1.php';
 require_once __DIR__.'/phone-browser-v1.php';
+require_once __DIR__.'/agent-operator-question-preparation-v1.php';
 
 /** Detect the typed source using native Calendar metadata without loading private work adapters. */
 function vp3_operator_owner_email_occurrence_id_v1(PDO $pdo,array $row): ?string
@@ -99,10 +100,20 @@ function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now,?string $a
     if(!vp3_operator_admission_idle_v1($pdo,$owner,$now,$answeredSid))return ['reason'=>'phone_busy'];
     $calendar=vp3_operator_occurrence_calendar_reason_v1($pdo,$assignment,(int)$row['start_epoch'],$end,$now);
     if($calendar!=='awaiting_dispatch_checks')return ['reason'=>$calendar];
-    return ['reason'=>'eligible','fields'=>['From'=>$line['phone_e164'],'To'=>$to,'TimeLimit'=>$seconds],
+    $plan=['reason'=>'eligible','fields'=>['From'=>$line['phone_e164'],'To'=>$to,'TimeLimit'=>$seconds],
         'objectives'=>$event['description'],'conversation_id'=>(int)$assignment['conversation_id'],
         'agent_id'=>(int)$assignment['agent_id'],'number_id'=>(int)$assignment['number_id'],
         'chat_agent_id'=>(int)$assignment['chat_agent_id'],'contact_id'=>$contact]+($mode==='spontaneous'?['opening'=>$opening]:[]);
+    // Question progress changes preparation, never permission, cadence or the number of calls.
+    $preparation=vp3_operator_question_preparation_v1($pdo,$scope,$line,$contact,$to,$now);
+    if($preparation['state']==='changed')return ['reason'=>'question_preparation_changed'];
+    if($preparation['state']==='ready'){
+        $missed=$mode==='spontaneous'&&(int)($agenda['missed_event_id']??0)>0;
+        if($mode==='spontaneous'&&$answeredSid===null&&$preparation['pending_count']===0&&$preparation['topics']===''&&!$missed)
+            return ['reason'=>'questions_reviewed'];
+        $plan=array_replace($plan,vp3_operator_question_brief_v1($preparation,$event['description'],$mode==='spontaneous',$missed));
+    }
+    return $plan;
 }
 
 function vp3_operator_preview_due_v1(PDO $pdo,int $now):array

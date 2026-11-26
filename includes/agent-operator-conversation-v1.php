@@ -109,6 +109,7 @@ function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $
         $prior->execute([$sid,$step]);
         foreach(array_reverse($prior->fetchAll(PDO::FETCH_ASSOC)) as $item){$history[]=['role'=>'user','message'=>$item['speech_text']];$history[]=['role'=>'assistant','message'=>$item['response_text']];}
         return ['kind'=>'generate','speech'=>$speech,'history'=>array_slice($history,-8),
+            'question_fingerprint'=>(string)($context['current']['question_preparation']['fingerprint']??''),
             'memory_token'=>$memory&&$history?$memory['token']:'','current'=>$context['current']];
     });
     if($prepared['kind']==='hangup')return $hangup;
@@ -128,10 +129,11 @@ function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $
         catch(Throwable){$result=['ok'=>false];}
         $reply=mb_strimwidth(trim((string)($result['answer']??'')),0,650,'…');
         $hasReply=!empty($result['ok'])&&$reply!=='';
-        $memoryToken=$prepared['memory_token'];
-        $saved=section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid,$step,$clock,$reply,$hasReply,$memoryToken){
+        $memoryToken=$prepared['memory_token'];$questionFingerprint=$prepared['question_fingerprint'];
+        $saved=section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid,$step,$clock,$reply,$hasReply,$memoryToken,$questionFingerprint){
             $context=vp3_operator_conversation_context_v1($pdo,$owner,$sid,$clock(),true);
             $authorized=(bool)$context;
+            if($authorized&&!hash_equals($questionFingerprint,(string)($context['current']['question_preparation']['fingerprint']??'')))$authorized=false;
             if($authorized&&$memoryToken!==''){
                 $memory=vp3_operator_conversation_memory_v1($pdo,$context,$clock());
                 $authorized=is_string($memory['token']??null)&&hash_equals($memoryToken,$memory['token']);

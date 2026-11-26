@@ -656,9 +656,13 @@ try{
   for(const viewport of [{width:1360,height:900},{width:320,height:740}]){
    await fresh('',{viewport});await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
    const id='7'.repeat(32);state.operator_objectives_available=true;
-   state.calls=[historyCall(id,{transport_kind:'browser',direction:'outbound',conversation_id:10,recording_enabled:true})];
+   const receipt={kind:'operator_question_preparation_v1',reason:'open_question',pending_count:1,reviewed_count:1,fingerprint:'a'.repeat(64),source_url:'/artist-listening-evidence.php?session=1&item=qa-open',prepared_epoch:1795737600,answer:'PRIVATE RECEIPT ANSWER <img src=x>'};
+   state.calls=[historyCall(id,{transport_kind:'browser',direction:'outbound',conversation_id:10,recording_enabled:true,question_preparation:receipt})];state.question_preparation_review=receipt;
    await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());await page.getByRole('tab',{name:'Recent calls',exact:true}).click();
    const row=page.locator('#vp3PhoneSection-calls .vp3-phone-call');await row.getByRole('button',{name:'Review call agenda',exact:true}).click();
+   const preparation=row.getByRole('region',{name:'Call question preparation',exact:true});await preparation.getByText(/Reviewed answers omitted: 1/).waitFor();
+   assert.equal(await preparation.getByRole('link',{name:'Review earlier call finding',exact:true}).count(),1);assert.ok(!(await preparation.innerText()).includes('PRIVATE RECEIPT ANSWER'));
+   const diagnostic=await page.evaluate(()=>JSON.stringify(VP3PhoneWorkspaceV1.operatorDiagnostics(10,2)));assert.ok(diagnostic.includes('Last call question preparation'));assert.ok(!diagnostic.includes('PRIVATE RECEIPT ANSWER'));
    const review=row.locator('[data-managed-conversation-review]');await review.getByText('Call agenda review',{exact:true}).waitFor();
    await review.getByText('Answer suggestion · review needed',{exact:true}).waitFor();await review.getByText('Still open',{exact:true}).waitFor();
    await review.getByText('No verified matching answer',{exact:true}).waitFor();

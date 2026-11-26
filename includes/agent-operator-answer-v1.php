@@ -43,8 +43,8 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         vp3_operator_recording_event_v1($pdo,(int)$owner,$sid,$form,$now);
         return $hangup;
     }
-    $startRecording=false;
-    $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup,$ownerEmail,&$startRecording){
+    $startRecording=false;$questionFingerprint='';
+    $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup,$ownerEmail,&$startRecording,&$questionFingerprint){
         $query=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a
             ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id AND a.start_epoch=o.start_epoch
             WHERE a.owner_user_id=? AND a.provider_sid=? AND a.state='submitted' AND o.state='submitted'");
@@ -107,12 +107,17 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         }
         $save('answer_consented');
         $startRecording=true;
-        return vp3_operator_conversation_gather_v1('Thank you. '.($current['opening']??'How can I help with today’s scheduled conversation?'),1);
+        $questionFingerprint=(string)($current['question_preparation']['fingerprint']??'');
+        return vp3_operator_conversation_gather_v1('Thank you. '.($current['question_opening']??$current['opening']??'How can I help with today’s scheduled conversation?'),1);
     });
     if($startRecording){
         $recording=vp3_operator_recording_start_v1($pdo,(int)$owner,$sid,$now,$recordingCarrier);
         if(($recording['state']??'')!=='started')return $hangup;
         if($ownerEmail!==null&&!vp3_operator_owner_email_refresh_call_v1($pdo,(int)$owner,$sid,$clock()))return $hangup;
+        if($ownerEmail===null){
+            $current=section12_owner_transaction($pdo,(int)$owner,fn()=>vp3_operator_conversation_context_v1($pdo,(int)$owner,$sid,$clock(),true));
+            if(!$current||!hash_equals($questionFingerprint,(string)($current['current']['question_preparation']['fingerprint']??'')))return $hangup;
+        }
     }
     return $response;
 }

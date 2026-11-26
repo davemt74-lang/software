@@ -355,4 +355,14 @@ await test('ordinary Recent calls exposes its scoped agenda review and clears fi
  assert.equal(b.document.querySelector('[data-managed-conversation-review]'),null);assert.equal(b.findButton('Review call agenda'),undefined);
  b.window.VP3PhoneWorkspaceV1.dispose();
 });
+await test('question preparation appears once per call card and ddd keeps only fixed counts and reasons',async()=>{
+ const b=setup(),id='6'.repeat(32),receipt={kind:'operator_question_preparation_v1',reason:'open_question',pending_count:1,reviewed_count:1,fingerprint:'b'.repeat(64),source_url:'/artist-listening-evidence.php?session=7&item=open',prepared_epoch:1795737600,answer:'PRIVATE ANSWER <img src=x>'};
+ b.state.calls=[{public_id:id,call_id:id,peer_e164:'+16025550122',state:'dialing',conversation_id:10,direction:'outbound',question_preparation:receipt}];b.state.question_preparation_review=receipt;
+ await flush();await b.window.VP3PhoneWorkspaceV1.refresh();b.toggle.click();b.findButton('Recent calls').click();
+ const section=b.document.querySelector('#vp3PhoneSection-calls');assert.match(section.textContent,/An unanswered finding leads this question list/);assert.match(section.textContent,/Reviewed answers omitted: 1/);
+ assert.equal(section.querySelectorAll('a').filter(a=>a.textContent==='Review earlier call finding').length,1);assert.doesNotMatch(section.textContent,/PRIVATE ANSWER|<img/);
+ const diagnostics=JSON.stringify(b.window.VP3PhoneWorkspaceV1.operatorDiagnostics(10,2));assert.match(diagnostics,/Last call question preparation/);assert.doesNotMatch(diagnostics,/PRIVATE ANSWER|artist-listening|16025550122/);
+ await flush();b.state.calls[0].question_preparation.source_url='https://evil.test/artist-listening-evidence.php';await b.window.VP3PhoneWorkspaceV1.refresh();assert.equal(section.querySelectorAll('a').length,0);
+ b.window.VP3PhoneWorkspaceV1.contextChanged({conversation_id:12,agent_id:2,ready:true});assert.equal(b.window.VP3PhoneWorkspaceV1.operatorDiagnostics(10,2),null);assert.doesNotMatch(section.textContent,/unanswered finding/);assert.equal(b.facts.connects,0);assert.equal(b.facts.microphones,0);b.window.VP3PhoneWorkspaceV1.dispose();
+});
 console.log('PHONE_WORKSPACE_DOM=PASS ('+count+' cases)');
