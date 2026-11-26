@@ -1,4 +1,4 @@
-name: Music Metadata ML1
+name: Music Catalog and Listening
 
 on:
   pull_request:
@@ -8,6 +8,9 @@ on:
       - '**/artist-media*.php'
       - 'includes/artist-workspace-v181.php'
       - 'api/chat-create-v76.php'
+      - 'api/playback.php'
+      - 'api/player-library-v76.php'
+      - 'includes/player-v76.php'
       - 'chat.php'
       - 'chat-legacy-v108.php'
       - 'chat.js'
@@ -24,6 +27,36 @@ on:
       - 'includes/stem-mp3-metadata-v1.php'
       - 'stem-media-v34.php'
       - 'tests/music-*'
+      - 'tests/player-history-api.mjs'
+      - '.github/workflows/music-song-metadata-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/music*.php'
+      - '**/artist-music*.php'
+      - '**/artist-media*.php'
+      - 'includes/artist-workspace-v181.php'
+      - 'api/playback.php'
+      - 'api/player-library-v76.php'
+      - 'api/chat-create-v76.php'
+      - 'includes/player-v76.php'
+      - 'chat.php'
+      - 'chat-legacy-v108.php'
+      - 'chat.js'
+      - 'chat.css'
+      - 'assets/css/music-*.css'
+      - 'assets/js/music-*.js'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'schema.sql'
+      - 'includes/bootstrap.php'
+      - 'includes/functions.php'
+      - 'includes/permissions.php'
+      - 'includes/stem-import-media.php'
+      - 'includes/stem-mp3-metadata-v1.php'
+      - 'stem-media-v34.php'
+      - 'tests/music-*'
+      - 'tests/player-history-api.mjs'
       - '.github/workflows/music-song-metadata-v1.yml'
   workflow_dispatch:
 
@@ -37,7 +70,7 @@ concurrency:
 jobs:
   metadata:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     services:
       mysql:
         image: mysql:8.0
@@ -66,22 +99,38 @@ jobs:
           php tests/music-song-metadata-v1.php
           node tests/music-song-metadata-api-v1.mjs
           node tests/music-file-repair-api.mjs
+      - name: Native listening receipts and HTTP authority
+        run: |
+          php tests/music-listening-v1.php
+          node tests/music-listening-api-v1.mjs
+          node tests/music-listening-client-v1.mjs
+          node tests/player-history-api.mjs
       - name: MySQL migration and transaction acceptance
         env:
           MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
           MUSIC_TEST_MYSQL_USER: root
           MUSIC_TEST_MYSQL_PASSWORD: music-test-only
         run: php tests/music-song-metadata-mysql-v1.php
+      - name: MySQL listening transactions and receipts
+        env:
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: php tests/music-listening-mysql-v1.php
       - name: Install browser fixture runtime
         run: |
           npm install --no-save --ignore-scripts --package-lock=false playwright@1.62.1
           npx playwright install --with-deps chromium
       - name: Desktop and phone metadata editor
         run: node tests/music-song-metadata-browser-v1.mjs
-      - name: Save browser review images
+      - name: Native player listening recovery
+        run: node tests/music-listening-browser-v1.mjs
+      - name: Save music browser review images
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: music-metadata-editor-review
-          path: artifacts/music-song-metadata-v1/
+          path: |
+            artifacts/music-song-metadata-v1/
+            artifacts/music-listening-v1/
           if-no-files-found: ignore

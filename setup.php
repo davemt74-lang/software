@@ -82,6 +82,7 @@ try {
     artist_media_v182_ensure_schema($pdo);
     artist_music_v185_ensure_schema($pdo);
     music_song_metadata_v1_install($pdo);
+    music_listening_v1_install($pdo);
     password_reset_ensure_schema();
     user_agent_system_ensure_schema_v236($pdo);
     vp3_phone_ensure_schema_v100($pdo);

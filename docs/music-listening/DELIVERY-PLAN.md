@@ -131,6 +131,12 @@ The user requirements in the master specification are established. The items her
 
 Record the selected value, date, rationale, affected version and evidence when closing an item. If new evidence changes an existing decision, retain the prior decision and migration implications. Never treat an unselected value as a silent operational default.
 
+### ML2A compatibility decisions — 2026-11-26
+
+D-04 is partially resolved for the native implementation: `legacy_10s_80pct_v1` explicitly retains the existing 10-second qualified-play and 80%-of-duration accumulated-listening meanings. Position progress is separate; unavailable server-probed duration leaves completion unknown. This preserves compatibility without assigning a financial qualification rule. Artist reporting timezone, unique-listener scope and later provider reporting remain to be selected for their phases.
+
+ML2A also chooses operational bounds of 24 hours per native session, 10,000 accepted event receipts and 30 accepted seconds per event. Client retry/queue limits and cookie initialization are documented in [ML2A implementation](ML2A-IMPLEMENTATION.md). These bounds do not close D-05: no automatic raw-event deletion or retained-audio purge policy has been selected. Native recording/asset attribution is a catalog snapshot with unverified delivery; D-03's provider asset/ticket lifetime remains ML2B work.
+
 ## Review, scoring and release workflow
 
 For each phase, maintain a short checklist covering actual behavior, authority, data lifecycle, replay/recovery, compatibility, interface/accessibility, migration and the required deployment evidence. Mark each item **passed**, **failed**, **not run** or **not applicable with reason**. A 10/10 claim applies only to the named scope with its mandatory checks passed and material blockers resolved. An unavailable runtime or unperformed physical-device test remains a gap in any scope that requires it.

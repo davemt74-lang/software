@@ -74,7 +74,7 @@ try {
     // The actual custom-player handler must start audible audio with no
     // volume preference, rather than just testing native audio.play().
     const volume=source.slice(source.indexOf('  let playerVolume = 1;'),source.indexOf('  let conversationId ='));
-    const decorate=source.slice(source.indexOf('  function decorateAudioPlayer('),source.indexOf('  function audioListenedDelta('));
+    const decorate=source.slice(source.indexOf('  function decorateAudioPlayer('),source.indexOf('  function nativeMusicStartContext('));
     const requestPlay=source.slice(source.indexOf('  function requestAudioPlay('),source.indexOf('  function clearConnectedSitePlayback('));
     const custom=`<audio class="chat-audio-player" src="/media.php?track=1&type=audio&fixture_user=11"></audio><script>const audioState=new WeakMap(),audioFeedbackHosts=new WeakMap(),connectedSiteAudioStates=new WeakMap(),PLAYER_VOLUME_KEY='test-no-saved-volume';function updateInlinePlayer(){}function playQueueOffset(){}${volume}${errorUi}${requestPlay}${decorate}const audio=document.querySelector('audio');audioState.set(audio,{});decorateAudioPlayer(audio);</script>`;
     fs.writeFileSync(path.join(root,'custom.html'),custom);

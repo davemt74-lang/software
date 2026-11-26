@@ -36,6 +36,7 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 const browser = await chromium.launch({headless:true,...(executablePath ? {executablePath} : {})});
 const errors = [], calls = [];
 let recent = [], historyStatus = 200, historyOwner = 11;
+const listeningSessions = new Map();
 const media = {id:9,title:'Last song <img>',album:'Studio',audio:'/song.wav',cover:'/cover.svg',detail:'/track.php?id=9'};
 const secondMedia = {...media,id:19,title:'Second native track',detail:'/track.php?id=19'};
 let mediaTurn = null, nextAssistantMessageId = 2;
@@ -73,9 +74,17 @@ async function fixture(options) {
     }
     if (path === '/api/playback.php') {
       const track = recent.find(row => row.id === body.track_id);
-      if (track) track.last_position_seconds = Number(body.position) || 0;
-      else if (body.action === 'start') recent = [{...savedTrack(),last_position_seconds:Number(body.position) || 0}];
-      return route.fulfill({json:{ok:true,session_token:'session',session_id:7}});
+      if (track) track.last_position_seconds = Number(body.position_ms) / 1000 || 0;
+      else if (body.action === 'start') recent = [{...savedTrack(),last_position_seconds:Number(body.position_ms) / 1000 || 0}];
+      let session = listeningSessions.get(body.play_id);
+      if (!session) {
+        const id = listeningSessions.size + 1;
+        session = {session_id:id,session_token:id.toString(16).padStart(64,'0')};
+        listeningSessions.set(body.play_id,session);
+      }
+      const seq = body.action === 'start' ? 0 : body.seq;
+      return route.fulfill({json:{ok:true,protocol:'native_listening_v1',...session,play_id:body.play_id,user_id:11,
+        accepted_seq:seq,next_seq:seq+1,accepted_played_ms:body.cumulative_played_ms||0,state:body.state||'pending'}});
     }
     if (body.action === 'load') return route.fulfill({json:{ok:true,messages:body.source_message_id
       ? [{id:body.source_message_id,role:'assistant',message:'Selected saved source'},{id:1000,role:'assistant',message:'Latest conversation'}]
@@ -97,6 +106,7 @@ async function boot(page, view = 'chat') {
     window.STONEFELLOW_PLAYER = {tracks:{},albums:{},playlists:{}};
   }, view);
   await page.addStyleTag({content:await read('chat.css')});
+  await page.addScriptTag({content:await read('assets/js/music-listening-v1.js')});
   await page.addScriptTag({content:await read('chat.js')});
 }
 

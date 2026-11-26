@@ -1,0 +1,60 @@
+VP3 Cloud: song metadata and native listening upgrade
+
+The source commit is recorded in VP3_RELEASE.json. This package includes the ML1
+song metadata foundation and the ML2A native playback receipt protocol. It does
+not activate an external streaming provider, Stoneward import, royalties or payouts.
+
+Before upgrading
+1. Back up the complete database, uploads and matching deployed code together.
+   Verify that the backup can be read; pause catalog writes during the upgrade.
+2. Preserve config.php, .env, private/ and uploads/. Deployment ZIPs omit these
+   runtime files deliberately. Do not replace them with empty directories.
+   For source-page attribution, configure site.base_url as the canonical HTTPS
+   origin (for example https://music.example.com) and site.base_path for a nested
+   install. With no canonical origin, measurement retains unknown page context.
+3. Check existing catalog mappings with:
+     php scripts/music-song-metadata-v1.php --report
+   A missing metadata schema requires the upgrade; ambiguous mappings stay staged
+   for review instead of being assigned to an uploader automatically.
+
+Upgrade
+4. Install matching code and run the signed-in web upgrader. It installs both
+   metadata and listening schemas after existing workspace/music prerequisites.
+   For a command-line upgrade when those prerequisites already exist:
+     php scripts/music-song-metadata-v1.php --migrate
+     php scripts/music-listening-v1.php --migrate
+5. Review the read-only reports:
+     php scripts/music-song-metadata-v1.php --report
+     php scripts/music-listening-v1.php --report
+   The metadata command exits 2 for mappings needing review. The listening command
+   exits 2 if its schema upgrade is still required. Neither report creates data.
+6. Reload Chat to load its matching player code. Existing legacy clients retain
+   their legacy measurement path; versioned native telemetry fails closed if its
+   schema is missing. Audio playback can continue with unavailable measurement.
+
+Verify
+7. Create and edit a draft as an authorized workspace owner/manager; upload and
+   play a song, pause/resume it, and check that personal history stays account-owned.
+   Confirm foreign-workspace denial and existing favorites/playlists still work.
+8. Check browser network receipts from /api/playback.php: native_listening_v1
+   requests acknowledge stable play/event identities and sequence. A retried event
+   must return its saved receipt without increasing listened time again.
+9. Check the deployed host and intended phones. Automated database/browser checks
+   do not certify the actual host, physical devices or a production backup restore.
+
+Recovery
+Pause writes if recovery is required. Preserve the failed state for diagnosis and
+restore the matching database, uploads and code together. Reverting code alone
+after new writes does not reconstruct the earlier state. Do not drop metadata or
+receipt tables, delete retained audio, or synthesize historical events to recover.
+
+Measurement limits
+ML2A instruments the existing shared Chat/Player native tracker. Uninstrumented
+public-profile/admin audio controls and the existing connected-site protocol do
+not acquire new coverage from this package. Native asset identity is a catalog
+snapshot; the later provider phase establishes version-pinned byte delivery.
+The historical 10-second/80-percent engagement rules are explicitly versioned;
+they do not determine royalties. Unknown duration/attribution remains unknown.
+
+Canonical engineering and acceptance documents are in docs/music-listening/ in
+the source repository. Markdown files are excluded from production deployment ZIPs.

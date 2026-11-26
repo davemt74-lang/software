@@ -2,7 +2,7 @@
 
 Canonical planning entry point for the VP3 music revival, `/music-workspace.php`, song metadata and rights, hosted streaming, and the standalone Stoneward integration.
 
-**Status:** ML0 planning merged in PR #925. ML1 now implements the shared catalog and metadata foundation; see [ML1 implementation and rollout](ML1-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md) for its verified scope and release limits. Streaming-provider, Stoneward import, listening dashboards, earnings and payments remain separate phases.
+**Status:** ML0 planning merged in PR #925. ML1 implements the shared catalog and metadata foundation. ML2A implements native listening sessions, bounded measurement and repeatable event receipts on the existing player; its exact candidate verification is recorded in the implementation PR. See [ML1 implementation and rollout](ML1-IMPLEMENTATION.md), [ML2A implementation](ML2A-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md) for verified scope and release limits. Streaming-provider, Stoneward import, listening dashboards, earnings and payments remain separate phases.
 
 ## Product direction
 
@@ -25,6 +25,7 @@ These user requirements are distinct from engineering recommendations and unreso
 | [Rights and earnings](RIGHTS-AND-EARNINGS.md) | Metadata, readiness, rights/financial distinctions, accounting requirements and financial decision register |
 | [Delivery plan](DELIVERY-PLAN.md) | Ordered phases, ML1 engineering handoff, dependencies, release criteria and nonfinancial decisions |
 | [ML1 implementation](ML1-IMPLEMENTATION.md) | Implemented metadata/API contract, migration, recovery and acceptance evidence |
+| [ML2A implementation](ML2A-IMPLEMENTATION.md) | Native receipt protocol, timing/identity/source boundaries, migration and acceptance scope |
 | [Development status](DEVELOPMENT-STATUS.md) | Current completion state, test evidence, pending verification and next action |
 
 ## First complete integration milestone

@@ -51,6 +51,7 @@ require_once __DIR__.'/ai-usage-accounting-v032.php';
 require_once __DIR__.'/recommendations.php';
 require_once __DIR__.'/player-v76.php';
 require_once __DIR__.'/music-catalog.php';
+require_once __DIR__.'/music-listening-v1.php';
 function agent_brain_archive_and_parse(array $user,int $cid,int $messageId,string $role,string $message,string $mode):int{return 0;}
 if(!table_exists('user_agent_preferences')){
     db()->exec('CREATE TABLE user_agent_preferences(user_id INTEGER, preference_key TEXT, preference_value TEXT);
@@ -70,6 +71,8 @@ if(!agent_connection_youtube_results_ready_v1(db())){
     vp3_youtube_picks_save_v1(db(),1,'ambient',true);
 }
 initiative_media_http_install_v1(db());
+db()->exec('PRAGMA foreign_keys=ON');
+if(!music_listening_v1_schema_ready(db()))music_listening_v1_install(db());
 `);
 const pcm=Buffer.alloc(8000*2*60);
 const wav=Buffer.alloc(44+pcm.length);
@@ -92,7 +95,7 @@ const router=join(temp,'router.php');
 writeFileSync(router,`<?php
 $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
 if($path==='/health'){echo 'ready';return;}
-if(in_array($path,['/chat.js','/chat-youtube-v1.js','/agent-activity-v94.js','/chat-cognitive-presentation-v510.js'],true)){
+if(in_array($path,['/chat.js','/assets/js/music-listening-v1.js','/chat-youtube-v1.js','/agent-activity-v94.js','/chat-cognitive-presentation-v510.js'],true)){
     header('Content-Type: text/javascript');readfile(${JSON.stringify(repo)}.ltrim($path,'/'));return;
 }
 if(str_starts_with($path,'/api/')){require __DIR__.$path;return;}
@@ -243,7 +246,7 @@ echo '<!doctype html><button id="newChatButton">New Chat</button><div id="chatHi
   .'<script>window.STONEFELLOW_CHAT='.json_encode($chat).';window.VP3_COGNITIVE_PRESENTATION_V510='.json_encode($presentation)
   .';window.STONEFELLOW_ACTIVITY={endpoint:"/api/agent-activity-v94.php",csrf:"fixture",surface:"chat"};'
   .'window.VP3_YOUTUBE_PLAYBACK_V1={endpoint:"/playback",connections:"/connections.php",csrf:"fixture"};</script>'
-  .'<script src="/chat-youtube-v1.js"></script><script src="/chat.js"></script><script src="/agent-activity-v94.js"></script><script src="/chat-cognitive-presentation-v510.js"></script>';
+  .'<script src="/chat-youtube-v1.js"></script><script src="/assets/js/music-listening-v1.js"></script><script src="/chat.js"></script><script src="/agent-activity-v94.js"></script><script src="/chat-cognitive-presentation-v510.js"></script>';
 `);
 const php=process.env.VP3_PHP_BINARY||'php';
 let logs='';

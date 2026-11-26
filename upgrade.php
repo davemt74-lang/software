@@ -308,6 +308,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
         && music_song_metadata_v1_schema_ready($schemaConnection)
+        && music_listening_v1_schema_ready($schemaConnection)
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
@@ -611,6 +612,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             artist_shows_v184_ensure_schema();
             artist_music_v185_ensure_schema();
             $musicMetadataReport=music_song_metadata_v1_install($pdo);
+            music_listening_v1_install($pdo);
             if($musicMetadataReport['open_issues']>0)flash('notice','Music metadata installed. '.$musicMetadataReport['open_issues'].' legacy catalog mappings need review; their existing tracks and listening history were preserved.');
             ai_haiku55_upgrade_defaults();
             $complete = vp3_upgrade_complete($pdo);
