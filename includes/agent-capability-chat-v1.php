@@ -356,6 +356,9 @@ function vp3_capability_chat_v1(PDO $pdo,array $user,array $principal,string $qu
     // Identity is resolved by the caller from the authenticated Agent, never UI context.
     $context['user_agent_id']=($principal['kind']??'system')==='user_agent'?max(0,(int)($principal['agent_id']??0)):0;
     $context['knowledge_scope']=$scope;
+    require_once __DIR__.'/agent-operator-followthrough-v1.php';
+    $callFollowthrough=vp3_operator_followthrough_chat_v1($pdo,$user,$principal,$query,$context,$model,$authority);
+    if(!empty($callFollowthrough['handled']))return $callFollowthrough;
     if(($initiative=vp3_initiative_command_v1($query))!==null){
         require_once __DIR__.'/agent-initiative-v1.php';
         return vp3_initiative_chat_v1($pdo,$user,$principal,$context,$initiative,$authority);

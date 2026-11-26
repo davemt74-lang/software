@@ -128,6 +128,7 @@ jobs:
           test -f _deploy/includes/agent-operator-participation-v1.php
           test -f _deploy/includes/agent-operator-objectives-v1.php
           test -f _deploy/includes/agent-operator-question-preparation-v1.php
+          test -f _deploy/includes/agent-operator-followthrough-v1.php
           test -f _deploy/includes/transcription-review-proof-v1.php
           test -f _deploy/phone-workspace-v1.css
           test -f _deploy/phone-voicemail-capture-v1.js

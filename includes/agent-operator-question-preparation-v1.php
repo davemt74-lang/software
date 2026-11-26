@@ -39,6 +39,8 @@ function vp3_operator_question_preparation_v1(PDO $pdo,array $scope,array $line,
                     'call_id'=>$job['call_public_id']];
             }
         }
+        require_once __DIR__.'/agent-operator-followthrough-v1.php';
+        $followthrough=vp3_operator_followthrough_outcomes_v1($pdo,$scope,$now,['contact'=>$contact,'agenda_hash'=>$hash,'line'=>(int)$line['id'],'to'=>$to]);
         // A fresh scope/agenda/grant read fences withdrawn authority without copying prior speech.
         $user=vp3_phone_recording_owner_v1($pdo,$key[0]);
         $fresh=vp3_phone_workspace_scope_v1($pdo,$user,['conversation_id'=>$key[2],'agent_id'=>$key[3]]);
@@ -64,7 +66,7 @@ function vp3_operator_question_preparation_v1(PDO $pdo,array $scope,array $line,
         ksort($findings);
         return ['state'=>'ready','questions'=>$pending,'topics'=>(string)$agenda['topics'],'reviewed_count'=>$reviewed,'pending_count'=>count($pending),'reason'=>$reason,
             'source_url'=>vp3_operator_question_source_url_v1(($pending[0]['source_url']??'')?:$reviewedSource),
-            'fingerprint'=>hash('sha256',json_encode([$hash,$memory,(int)$line['id'],(int)$line['agent_id'],$findings],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))];
+            'followthrough'=>$followthrough,'fingerprint'=>hash('sha256',json_encode([$hash,$memory,(int)$line['id'],(int)$line['agent_id'],$findings,$followthrough],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))];
     }catch(Throwable $error){return $error instanceof VP3PhoneWorkspaceException||in_array((int)$error->getCode(),[403,404,409],true)?array_replace($empty,['state'=>'changed']):$empty;}
 }
 
@@ -75,6 +77,10 @@ function vp3_operator_question_brief_v1(array $preparation,string $objective,boo
     if($spontaneous&&$missed)$parts[]='Follow up on the missed scheduled call. Ask whether this is a good time or whether to arrange another time.';
     if($spontaneous&&$preparation['topics']!=='')$parts[]="Topics to discuss\n".$preparation['topics'];
     $parts[]=$questions?"Pending questions from the owner, in this order\n".implode("\n",$questions):'No saved questions remain pending in the current reviewed evidence.';
+    if(!empty($preparation['followthrough'])){
+        $counts=[];foreach($preparation['followthrough'] as $record){$key=($record['kind']==='agent_task'?'task':'reminder').' '.$record['status'];$counts[$key]=($counts[$key]??0)+1;}
+        $parts[]='Verified owner follow-up records: '.implode('; ',array_map(static fn($key,$count):string=>$key.': '.$count,array_keys($counts),array_values($counts))).'. These are saved record states only. A completed task or reminder occurrence does not supply an answer or prove a real-world result. Do not read private task wording or announce internal status labels to the recipient.';
+    }
     $parts[]='Prefer the pending questions when relevant. Do not repeat other saved questions based only on earlier conversation. A current explicit owner objective or a participant request to revisit an answer can override that preference. A reviewed answer does not establish real-world completion. Do not mention private review labels or internal analysis to the recipient.';
     $result=['objectives'=>implode("\n\n",$parts),'question_preparation'=>$preparation];
     if($spontaneous||trim($objective)===''){

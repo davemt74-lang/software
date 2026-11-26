@@ -200,7 +200,7 @@ function vp3_transcript_chat_v1(PDO $pdo,array $user,array $principal,string $qu
             &&!preg_match('/\b(?:whole|entire|complete|full)\s+(?:transcript(?:ion)?|recording)\b/ui',$query)){
             return vp3_transcript_result_v1('Select the exact passage you want to save, or explicitly ask to keep the whole transcript.','clarify','clarification_required');
         }
-        if(in_array($op,['highlight','review_item','item_action'],true))return vp3_transcript_action_chat_v1($pdo,$user,$principal,$plan,$id,$context);
+        if(in_array($op,['highlight','review_item','item_action'],true))return vp3_transcript_action_chat_v1($pdo,$user,$principal,$plan,$id,array_replace($context,['operator_owner_query'=>$query]));
         if(in_array($op,['read_analysis','read_research','run_analysis','run_research','highlight','review_item','item_action'],true))return vp3_transcript_intelligence_chat_v1($pdo,$user,$principal,$plan,$id);
         if($op==='search'&&trim((string)($plan['query']??''))==='')return vp3_transcript_result_v1('What should I search for in that transcript?','clarify','clarification_required');
         $p=vp3_transcript_read_v1($pdo,$user,$principal,$id,max(1,(int)($plan['page']??1)),(int)($plan['offset']??0),$op==='search'?(string)$plan['query']:'');
