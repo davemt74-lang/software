@@ -75,6 +75,19 @@
   function displayTime(value){const raw=String(value||'');const date=new Date(raw&&!raw.includes('T')?raw.replace(' ','T')+'Z':raw);return Number.isFinite(date.getTime())?date.toLocaleString():'';}
   function displayState(value){return text(value||'unknown').replaceAll('_',' ');}
   function safeUrl(value){if(typeof value!=='string'||!value.trim()||value.length>4096)return '';try{const url=new URL(value,location.href);return url.origin===location.origin&&!url.username&&!url.password&&['http:','https:'].includes(url.protocol)?url.href:'';}catch(_){return '';}}
+  function questionPreparationSummary(receipt){
+    if(receipt?.kind!=='operator_question_preparation_v1'||!Number.isInteger(receipt.pending_count)||!Number.isInteger(receipt.reviewed_count)||receipt.pending_count<0||receipt.reviewed_count<0||receipt.pending_count+receipt.reviewed_count<1||receipt.pending_count+receipt.reviewed_count>12)return '';
+    const reasons={open_question:'An unanswered finding leads this question list',conflicting_question:'An earlier finding needs clarification',answer_needs_review:'An earlier answer still needs review',reviewed_answers_omitted:'Reviewed answers were left out',questions_reviewed:'All saved questions have reviewed answers'};
+    return Object.hasOwn(reasons,receipt.reason)?reasons[receipt.reason]+'. Pending questions: '+receipt.pending_count+'. Reviewed answers omitted: '+receipt.reviewed_count+'.':'';
+  }
+  function renderQuestionPreparation(card,receipt){
+    const summary=questionPreparationSummary(receipt);if(!summary)return;
+    const box=node('section','vp3-phone-processing');box.setAttribute('aria-label','Call question preparation');
+    box.append(node('strong',null,'Question preparation'),node('p','vp3-phone-meta',summary));
+    const link=safeUrl(receipt.source_url);if(link){const path=new URL(link).pathname,base=new URL(config.urlbase||'/',location.href).pathname.replace(/\/$/,'');
+      if([base+'/artist-listening-evidence.php',base+'/artist-listening.php'].includes(path)){const a=node('a','vp3-phone-report','Review earlier call finding');a.href=link;box.append(a);}}
+    card.append(box);
+  }
   function peerContact(peer){return (state?.contacts||[]).find(item=>item.phone_e164===peer&&typeof item.name==='string'&&item.name.trim());}
   function callerContact(info){return positive(info?.contact_id)&&typeof info.contact_name==='string'&&info.contact_name.trim()?{id:Number(info.contact_id),name:info.contact_name,phone_e164:info.peer_e164}:peerContact(info?.peer_e164);}
   function peerName(peer){return peerContact(peer)?.name||peer||'Unknown caller';}
@@ -866,7 +879,7 @@
   }
   function renderCalls(){
     const host=sections.calls;if(!state?.calls.length){host.replaceChildren();listEmpty(host,state?'No recent calls.':'Recent calls are unavailable.');return;}
-    const renderGeneration=generation,contents=[];for(const call of state.calls){if((call.transport_kind==='managed_callback'&&Number(call.conversation_id)===context.conversation_id)||agendaReviewAvailable(call)){contents.push(callCard(call));continue;}const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||callPeerName(call)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);contents.push(row);}replacePhoneContent(host,...contents);
+    const renderGeneration=generation,contents=[];for(const call of state.calls){if((call.transport_kind==='managed_callback'&&Number(call.conversation_id)===context.conversation_id)||agendaReviewAvailable(call)||questionPreparationSummary(call.question_preparation)){contents.push(callCard(call));continue;}const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||callPeerName(call)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);contents.push(row);}replacePhoneContent(host,...contents);
   }
   function voicemailCard(voicemail){
     const renderGeneration=generation;
@@ -1739,7 +1752,7 @@
     if(recording&&safeUrl(recording.audio_url))addDetail('Recording','Available');else if(info.recording_enabled===true)addDetail('Recording','Requested');
     if(recording?.transcript||safeUrl(recording?.transcript_url))addDetail('Transcript','Available');
     if(safeUrl(recording?.report_url))addDetail('Call report','Available');
-    card.append(details);renderCallResearch(card,info,entry,renderGeneration);renderCallCompanion(card,info,renderGeneration);if(recording)appendRecording(card,recording,renderGeneration,true);
+    card.append(details);renderQuestionPreparation(card,info.question_preparation);renderCallResearch(card,info,entry,renderGeneration);renderCallCompanion(card,info,renderGeneration);if(recording)appendRecording(card,recording,renderGeneration,true);
     const actions=node('div','vp3-phone-actions');
     if(contact&&(incoming||outgoing)){
       const emailButton=button('Send Email',async()=>{
@@ -2135,13 +2148,15 @@
       ['Voicemail timeout',state.voicemail_settings?.ring_seconds?state.voicemail_settings.ring_seconds+' seconds':'Unavailable'],
       ['Recording worker',displayState(state.processing_worker?.state||'unknown')]];
     const why={prepared:'Call prepared for dispatch',owner_permission:'Owner permission is off',recipient_permission:'Recipient permission is unavailable',
-      no_reason:'No current reason to call',brainstorm_unavailable:'Private reason review unavailable',already_planned:'Agenda already used',contact_changed:'Contact number changed',route_or_recording_changed:'Line or recording settings changed',
+      no_reason:'No current reason to call',questions_reviewed:'All saved questions already have reviewed answers',question_preparation_changed:'Question evidence or memory permission changed',brainstorm_unavailable:'Private reason review unavailable',already_planned:'Agenda already used',contact_changed:'Contact number changed',route_or_recording_changed:'Line or recording settings changed',
       calling_window:'Outside allowed calling hours',call_frequency:'Call frequency limit reached',phone_busy:'Phone already in use',calendar_conflict:'Calendar is busy',
       chat_unavailable:'Private Chat unavailable',carrier_unavailable:'Carrier route unavailable',access_changed:'Access changed',changed:'Agenda changed',error:'Worker could not verify the decision'};
     const review=state.outreach_review;
     if(review&&Object.hasOwn(why,review.reason)&&typeof review.at==='string'&&Number.isFinite(Date.parse(review.at))){
       pairs.push(['Last spontaneous call review',why[review.reason]+' · '+displayTime(review.at)]);
     }
+    const preparation=state.question_preparation_review,summary=questionPreparationSummary(preparation);
+    if(summary&&Number.isInteger(preparation.prepared_epoch)&&preparation.prepared_epoch>0){pairs.push(['Last call question preparation',summary+' · '+displayTime(new Date(preparation.prepared_epoch*1000).toISOString())]);}
     if(state.schedule_worker)pairs.push(['Scheduled call worker',scheduleWorkerStatus(state.schedule_worker)]);
     for(const trace of (state.operator_trace||[]).slice(0,8)){
       const call=state.calls.find(row=>row.public_id===trace.call_id);

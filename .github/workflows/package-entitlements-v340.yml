@@ -248,6 +248,7 @@ jobs:
           php tests/phone-operator-participation-v1.php
           php tests/phone-operator-objectives-reader-v1.php
           php tests/phone-operator-objectives-v1.php
+          php tests/phone-operator-question-preparation-v1.php
           php tests/phone-caller-contacts-schema-v1.php
           php tests/phone-contact-management-v1.php
           php tests/calendar-recurrence-v1340.php
@@ -298,6 +299,7 @@ jobs:
           node --check phone-operator-participation-v1.js
           php -l includes/agent-operator-participation-v1.php
           php -l includes/agent-operator-objectives-v1.php
+          php -l includes/agent-operator-question-preparation-v1.php
           php -l includes/agent-operator-voice-turns-v1.php
           php -l includes/agent-operator-admission-v1.php
           php -l includes/agent-operator-admission-schema-v1.php
@@ -329,7 +331,7 @@ jobs:
           coverage: none
       - name: Create isolated disposable databases
         run: |
-          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306",getenv("VP3_PHONE_MYSQL_USER"),getenv("VP3_PHONE_MYSQL_PASSWORD")); foreach(["phone_assignment_test","phone_workspace_test","phone_pipeline_test","phone_subscription_test","phone_contacts_test","phone_voicemail_test","phone_participation_test","phone_objectives_test"] as $name){$p->exec("CREATE DATABASE ".$name." CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");}'
+          php -r '$p=new PDO("mysql:host=127.0.0.1;port=3306",getenv("VP3_PHONE_MYSQL_USER"),getenv("VP3_PHONE_MYSQL_PASSWORD")); foreach(["phone_assignment_test","phone_workspace_test","phone_pipeline_test","phone_subscription_test","phone_contacts_test","phone_voicemail_test","phone_participation_test","phone_objectives_test","phone_preparation_test"] as $name){$p->exec("CREATE DATABASE ".$name." CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");}'
       - name: Upgrade historical SMS assignment ownership on MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_assignment_test;charset=utf8mb4
@@ -346,6 +348,10 @@ jobs:
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_objectives_test;charset=utf8mb4
         run: php tests/phone-operator-objectives-v1.php
+      - name: Reviewed questions, consent and late reply fencing on MySQL
+        env:
+          VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_preparation_test;charset=utf8mb4
+        run: php tests/phone-operator-question-preparation-v1.php
       - name: Private recording persistence and speech budget on MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_pipeline_test;charset=utf8mb4
