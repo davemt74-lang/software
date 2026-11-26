@@ -33,7 +33,9 @@ Future Gmail regressions should extend this gate rather than introduce another p
 
 `music-song-metadata-v1.yml` is an intentional, path-filtered feature gate for the shared Music catalog, song metadata and listening integration. Its initial ML1 coverage runs real MySQL migration and transaction acceptance in an empty disposable database, actual HTTP audio/art uploads and repair, and the shared editor in desktop and phone-sized browser viewports. The MySQL DSN is configured explicitly so an absent-DSN `SKIP` cannot stand in for database verification.
 
-Keep the gate separate from Recovery Baseline's broad service/HTTP coverage so the MySQL service and browser setup run automatically only for relevant music, shared Chat, schema, permission and media dependencies. It also supports manual runs. Browser screenshots are review evidence; this workflow does not publish production deployment packages.
+Keep the gate separate from Recovery Baseline's broad service/HTTP coverage so the MySQL service and browser setup run automatically only for relevant music, shared Chat, schema, permission and media dependencies. It runs on matching pull requests and main pushes, and also supports manual runs. Browser screenshots are review evidence; this workflow does not publish production deployment packages.
+
+ML2A extends the same gate with real native listening HTTP authority checks, SQLite and native-prepare MySQL session/receipt transactions, client recovery and browser playback tests. The gate is now named **Music Catalog and Listening** while retaining its existing workflow filename. A missing MySQL DSN or unavailable browser is not a completed verification.
 
 Future Music listening, metadata and provider regressions should extend this same feature gate. ML1 is its initial coverage, not a reason to add a permanent workflow for each later phase or reactivate the archived social/music workflow. Keep the reviewed filename in the consolidation allowlist. The governance check also protects the path filter, configured native MySQL check and desktop/phone browser acceptance from accidental removal or advisory-only execution.
 

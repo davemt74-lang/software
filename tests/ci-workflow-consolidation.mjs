@@ -54,6 +54,10 @@ assert.match(music,/image:\s*mysql:8\.0/,'Music integration gate must retain rea
 assert.match(music,/MUSIC_TEST_MYSQL_DSN:\s*['"]?mysql:/,'Music MySQL acceptance must receive a configured DSN instead of silently skipping');
 assert.match(music,/run:\s*php tests\/music-song-metadata-mysql-v1\.php/,'Music native MySQL migration and transaction checks must remain');
 assert.match(music,/run:\s*node tests\/music-song-metadata-browser-v1\.mjs/,'Music desktop and phone editor acceptance must remain');
+assert.match(music,/push:\s*\n\s+branches:\s*\[main\]/,'Music acceptance must verify relevant merged main changes');
+assert.match(music,/node tests\/music-listening-api-v1\.mjs/,'Native listening must exercise the real HTTP boundary');
+assert.match(music,/run:\s*php tests\/music-listening-mysql-v1\.php/,'Native listening must retain MySQL receipt and transaction acceptance');
+assert.match(music,/run:\s*node tests\/music-listening-browser-v1\.mjs/,'Native playback recovery must run in a browser');
 assert.doesNotMatch(music,/continue-on-error:\s*true/,'Music integration failures must not be downgraded to advisory checks');
 
 for(const name of archived){

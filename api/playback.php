@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require dirname(__DIR__) . '/includes/bootstrap.php';
+require_once dirname(__DIR__) . '/includes/music-listening-v1.php';
 
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
@@ -13,13 +14,17 @@ if (!$pdo || !table_exists('track_play_sessions')) {
     exit;
 }
 
-$raw = (string)file_get_contents('php://input');
-$input = json_decode($raw, true);
-if (!is_array($input)) {
-    $input = $_POST;
+$raw = (string)file_get_contents('php://input', false, null, 0, 32769);
+if (strlen($raw)>32768 || (int)($_SERVER['CONTENT_LENGTH']??0)>32768) {
+    http_response_code(413);echo json_encode(['ok'=>false,'code'=>'payload_too_large','error'=>'This listening request is too large.']);exit;
+}
+$input = json_decode($raw, true, 32);
+if (!is_array($input)) $input = $_POST;
+if (!$input && $raw!=='' && str_contains(strtolower((string)($_SERVER['CONTENT_TYPE']??'')),'application/json')) {
+    http_response_code(422);echo json_encode(['ok'=>false,'code'=>'invalid_request','error'=>'Use a JSON listening request.']);exit;
 }
 
-$csrf = (string)($input['csrf_token'] ?? '');
+$csrf = is_string($input['csrf_token']??null)?$input['csrf_token']:'';
 if ($csrf === '' || !hash_equals(csrf_token(), $csrf)) {
     http_response_code(419);
     echo json_encode(['ok'=>false,'error'=>'Session expired.']);
@@ -67,6 +72,47 @@ function sf_play_session(PDO $pdo, string $token, int $trackId,int $userId,strin
     $stmt->execute([$token, $trackId,$userId,$listenerHash]);
     $row = $stmt->fetch();
     return $row ?: null;
+}
+
+// A typo or a partially upgraded client must never downgrade replay-safe data
+// into the legacy delta accumulator.
+$v1Fields=['listener_user_id','play_id','event_id','seq','cumulative_played_ms','elapsed_ms','position_ms','playback_rate','state','observation_partial'];
+$protocol=$input['protocol']??null;
+if ((array_key_exists('protocol',$input)&&$protocol!==MUSIC_LISTENING_V1_PROTOCOL)
+    || (!array_key_exists('protocol',$input)&&array_intersect($v1Fields,array_keys($input)))) {
+    http_response_code(422);echo json_encode(['ok'=>false,'code'=>'unsupported_protocol','error'=>'Use a supported listening protocol.']);exit;
+}
+if ($protocol===MUSIC_LISTENING_V1_PROTOCOL) {
+    try {
+        // Do not allocate a play until a listener cookie has made a round trip.
+        // A lost first Set-Cookie response can then only lose an initialization
+        // acknowledgement, never create an unrepeatable counted start.
+        $cookie=$_COOKIE['sf_listener']??null;
+        if (!is_string($cookie)||!preg_match('/^[a-f0-9]{64}$/D',$cookie)) {
+            if (($input['action']??null)==='start') {
+                sf_listener_hash();
+                music_listening_v1_error('listener_initialization_required',428,'Initialize the listener cookie before starting measured playback.',['retryable'=>true]);
+            }
+            music_listening_v1_error('listener_unavailable',403,'The listener cookie is unavailable. Start playback again.');
+        }
+        $configured=function_exists('site_config')?(string)site_config('base_url',''):'';
+        $origin=music_listening_v1_origin($configured);
+        // url('/') supplies the actual configured install prefix. No raw Host
+        // header or arbitrary submitted path is promoted to a canonical origin.
+        $basePath=function_exists('url')?url('/'):'/';
+        $context=['listener_hash'=>sf_listener_hash(),'origin'=>$origin!==null?$origin.rtrim($basePath,'/'):'',
+            'referrer'=>(string)($_SERVER['HTTP_REFERER']??''),'user_agent'=>(string)($_SERVER['HTTP_USER_AGENT']??'')];
+        $result=music_listening_v1_handle($pdo,current_user(),$input,$context);
+        echo json_encode($result,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES);
+    } catch (MusicListeningV1Exception $error) {
+        http_response_code($error->httpStatus);
+        echo json_encode(['ok'=>false,'code'=>$error->publicCode,'error'=>$error->getMessage()]+$error->details);
+    } catch (Throwable) {
+        error_log('Native listening request failed before acknowledgement.');
+        http_response_code(503);
+        echo json_encode(['ok'=>false,'code'=>'listening_unavailable','error'=>'Listening evidence is temporarily unavailable. Retry the same request.','retryable'=>true]);
+    }
+    exit;
 }
 
 try {
@@ -198,7 +244,7 @@ try {
         }
 
         $pdo->commit();
-        echo json_encode(['ok'=>true,'session_token'=>$token,'session_id'=>$sessionId]);
+        echo json_encode(['ok'=>true,'session_token'=>$token,'session_id'=>$sessionId,'protocol'=>'legacy_client_delta_v1','metric_version'=>MUSIC_LISTENING_V1_METRIC]);
         exit;
     }
 
@@ -207,13 +253,18 @@ try {
     if (!$session) {
         throw new RuntimeException('Listening session not found.');
     }
+    // A native token cannot be submitted through the old unsequenced protocol.
+    if (music_listening_v1_columns($pdo,'music_listening_sessions_v1')) {
+        $native=$pdo->prepare('SELECT 1 FROM music_listening_sessions_v1 WHERE session_id=?');$native->execute([(int)$session['id']]);
+        if ($native->fetchColumn()) music_listening_v1_error('protocol_required',409,'Use the original listening protocol for this session.');
+    }
 
     $allowedEvents = ['heartbeat','pause','resume','seek','ended','stop'];
     if (!in_array($action, $allowedEvents, true)) {
         throw new RuntimeException('Invalid listening event.');
     }
 
-    if(!empty($session['ended_at'])){$pdo->commit();echo json_encode(['ok'=>true,'closed'=>true]);exit;}
+    if(!empty($session['ended_at'])){$pdo->commit();echo json_encode(['ok'=>true,'closed'=>true,'protocol'=>'legacy_client_delta_v1','metric_version'=>MUSIC_LISTENING_V1_METRIC]);exit;}
     $elapsed=max(0,time()-(int)strtotime((string)$session['last_event_at']));
     $delta=min($delta,(float)$elapsed);
     $newListened = (float)$session['listened_seconds'] + $delta;
@@ -268,9 +319,12 @@ try {
 
     $pdo->commit();
     if($user&&$delta>0)player_history_activity_notify($user,$track,(int)$session['id'],(string)$session['started_at']);
-    echo json_encode(['ok'=>true]);
+    echo json_encode(['ok'=>true,'protocol'=>'legacy_client_delta_v1','metric_version'=>MUSIC_LISTENING_V1_METRIC]);
 } catch (Throwable $e) {
     if($pdo->inTransaction())$pdo->rollBack();
-    http_response_code(400);
-    echo json_encode(['ok'=>false,'error'=>$e->getMessage()]);
+    if ($e instanceof MusicListeningV1Exception) {
+        http_response_code($e->httpStatus);echo json_encode(['ok'=>false,'code'=>$e->publicCode,'error'=>$e->getMessage()]+$e->details);
+    } else {
+        http_response_code(400);echo json_encode(['ok'=>false,'error'=>'This listening request could not be recorded.']);
+    }
 }

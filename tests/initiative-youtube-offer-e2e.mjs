@@ -51,6 +51,7 @@ require_once __DIR__.'/ai-usage-accounting-v032.php';
 require_once __DIR__.'/recommendations.php';
 require_once __DIR__.'/player-v76.php';
 require_once __DIR__.'/music-catalog.php';
+require_once __DIR__.'/music-listening-v1.php';
 function agent_brain_archive_and_parse(array $user,int $cid,int $messageId,string $role,string $message,string $mode):int{return 0;}
 if(!table_exists('user_agent_preferences')){
     db()->exec('CREATE TABLE user_agent_preferences(user_id INTEGER, preference_key TEXT, preference_value TEXT);
@@ -70,6 +71,8 @@ if(!agent_connection_youtube_results_ready_v1(db())){
     vp3_youtube_picks_save_v1(db(),1,'ambient',true);
 }
 initiative_media_http_install_v1(db());
+db()->exec('PRAGMA foreign_keys=ON');
+if(!music_listening_v1_schema_ready(db()))music_listening_v1_install(db());
 `);
 const pcm=Buffer.alloc(8000*2*60);
 const wav=Buffer.alloc(44+pcm.length);
@@ -92,7 +95,7 @@ const router=join(temp,'router.php');
 writeFileSync(router,`<?php
 $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
 if($path==='/health'){echo 'ready';return;}
-if(in_array($path,['/chat.js','/chat-youtube-v1.js','/agent-activity-v94.js','/chat-cognitive-presentation-v510.js'],true)){
+if(in_array($path,['/chat.js','/assets/js/music-listening-v1.js','/chat-youtube-v1.js','/agent-activity-v94.js','/chat-cognitive-presentation-v510.js'],true)){
     header('Content-Type: text/javascript');readfile(${JSON.stringify(repo)}.ltrim($path,'/'));return;
 }
 if(str_starts_with($path,'/api/')){require __DIR__.$path;return;}
@@ -118,6 +121,8 @@ if($path==='/fixture-state'){
         'actions'=>db()->query('SELECT id,run_id,owner_user_id,sequence_no,action_key,capability_key,execution_target,attempt_count,status,result_json FROM agent_workflow_actions ORDER BY id')->fetchAll(),
         'receipts'=>db()->query('SELECT * FROM agent_workflow_receipts ORDER BY id')->fetchAll(),
         'plays'=>db()->query('SELECT id,user_id,track_id,source_context,last_position_seconds FROM track_play_sessions ORDER BY id')->fetchAll(),
+        'native_playback_events'=>db()->query("SELECT id,owner_user_id,run_id,metadata_json FROM agent_workflow_events
+            WHERE event_type='initiative_media_playback_started' AND actor_kind='executor' ORDER BY id")->fetchAll(),
         'messages'=>db()->query('SELECT id,conversation_id,role,message,context_json FROM chat_messages ORDER BY id')->fetchAll(),
         'youtube_attempts'=>(int)db()->query('SELECT COALESCE(SUM(attempts),0) FROM agent_connection_youtube_usage_v1')->fetchColumn(),
         'email_drafts'=>table_exists('agent_connection_email_drafts_v1')
@@ -243,7 +248,7 @@ echo '<!doctype html><button id="newChatButton">New Chat</button><div id="chatHi
   .'<script>window.STONEFELLOW_CHAT='.json_encode($chat).';window.VP3_COGNITIVE_PRESENTATION_V510='.json_encode($presentation)
   .';window.STONEFELLOW_ACTIVITY={endpoint:"/api/agent-activity-v94.php",csrf:"fixture",surface:"chat"};'
   .'window.VP3_YOUTUBE_PLAYBACK_V1={endpoint:"/playback",connections:"/connections.php",csrf:"fixture"};</script>'
-  .'<script src="/chat-youtube-v1.js"></script><script src="/chat.js"></script><script src="/agent-activity-v94.js"></script><script src="/chat-cognitive-presentation-v510.js"></script>';
+  .'<script src="/chat-youtube-v1.js"></script><script src="/assets/js/music-listening-v1.js"></script><script src="/chat.js"></script><script src="/agent-activity-v94.js"></script><script src="/chat-cognitive-presentation-v510.js"></script>';
 `);
 const php=process.env.VP3_PHP_BINARY||'php';
 let logs='';
@@ -479,14 +484,27 @@ try{
   assert.ok(!(await activity(14)).media_report.findings.some(item=>item.title==='PRIVATE FOREIGN TRACK'));
   const playbackRequest=page.waitForRequest(request=>request.url().includes('/api/player-library-v76.php')
     &&request.postDataJSON()?.action==='playback_action');
-  const nativeStarts=[];
+  const nativeStarts=[],nativeStartBodies=[],nativeInitializations=[];
   const recordNativeStart=request=>{
     if(new URL(request.url()).pathname==='/api/playback.php'&&request.method()==='POST'
-      &&request.postDataJSON()?.action==='start')nativeStarts.push(request.postDataJSON());
+      &&request.postDataJSON()?.action==='start'){
+        nativeStarts.push(request.postDataJSON());nativeStartBodies.push(request.postData());
+      }
   };
   page.on('request',recordNativeStart);
+  // Forward the real browser request unchanged. Observe the zero-write boundary
+  // before releasing its real Set-Cookie/428 response to the production tracker.
+  const observeNativeInitialization=async route=>{
+    const response=await route.fetch();
+    if(response.status()===428&&route.request().postDataJSON()?.action==='start'){
+      nativeInitializations.push({response:await response.json(),state:await state()});
+    }
+    await route.fulfill({response});
+  };
+  await page.route(base+'/api/playback.php',observeNativeInitialization);
   const playbackStarted=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/playback.php'
-    &&response.request().method()==='POST'&&response.request().postDataJSON()?.action==='start'
+    &&response.ok()&&response.request().method()==='POST'&&response.request().postDataJSON()?.action==='start'
+    &&response.request().postDataJSON()?.protocol==='native_listening_v1'
     &&response.request().postDataJSON()?.track_id===41);
   const resumed=await post('Yes.');
   assert.equal(resumed.media_playback?.operation,'resume');
@@ -500,12 +518,32 @@ try{
   const startedResponse=await playbackStarted;
   const started=await startedResponse.json();
   assert.ok(startedResponse.ok()&&started.ok,JSON.stringify(started));
+  assert.equal(started.protocol,'native_listening_v1');
+  assert.equal(started.user_id,1,'The accepted offer must belong to the current listener.');
+  assert.equal(nativeInitializations.length,1,'The first native listen must initialize its actual browser cookie.');
+  assert.equal(nativeInitializations[0].response.code,'listener_initialization_required');
+  assert.equal(nativeInitializations[0].response.retryable,true);
+  assert.deepEqual(nativeInitializations[0].state.plays,beforePlay.plays,'Cookie initialization cannot allocate a play.');
+  assert.deepEqual(nativeInitializations[0].state.native_playback_events,beforePlay.native_playback_events,
+    'Cookie initialization cannot complete the accepted offer.');
+  assert.ok(nativeStarts.length>=2,'The browser must retry after its cookie round trip.');
+  assert.equal(new Set(nativeStartBodies).size,1,'Initialization retries must preserve the entire frozen native start.');
+  assert.equal(new Set(nativeStarts.map(request=>request.play_id)).size,1);
+  assert.equal(started.play_id,nativeStarts[0].play_id);
+  assert.equal(nativeStarts[0].listener_user_id,1);
+  assert.deepEqual(nativeStarts[0].media_offer_playback,action,'The retry must preserve the exact accepted private offer.');
   const active=await state();
   assert.deepEqual(active.plays.filter(row=>!beforePlay.plays.some(previous=>previous.id===row.id)).map(row=>({
     id:row.id,user_id:row.user_id,track_id:row.track_id,source_context:row.source_context
   })),[{id:started.session_id,user_id:1,track_id:41,source_context:'agent_chat'}],
   'Acceptance completes exactly one new native playback session before the reload baseline.');
-  assert.equal(nativeStarts.length,1);
+  const acceptedNativeEvents=active.native_playback_events.filter(row=>!beforePlay.native_playback_events.some(previous=>previous.id===row.id));
+  assert.equal(acceptedNativeEvents.length,1,'Exactly one native offer playback event must be committed.');
+  assert.deepEqual([acceptedNativeEvents[0].owner_user_id,acceptedNativeEvents[0].run_id],[1,nativeRun.id]);
+  const nativeEvidence=JSON.parse(acceptedNativeEvents[0].metadata_json);
+  assert.deepEqual([nativeEvidence.message_id,nativeEvidence.track_id,nativeEvidence.session_id],
+    [action.offer_message_id,41,started.session_id]);
+  const startRequestBaseline=nativeStarts.length;
   const otherChat=await page.request.post(base+'/api/player-library-v76.php',{
     data:{action:'playback_action',csrf_token:'fixture',media_playback:{...action,conversation_id:15}}
   });
@@ -513,10 +551,14 @@ try{
   await page.reload({waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>window.STONEFELLOW_CHAT_CONTINUITY_V87?.isReady()&&!window.STONEFELLOW_CHAT_CONTINUITY_V87.isRestoring());
   assert.equal(await page.locator('audio').evaluateAll(elements=>elements.some(audio=>!audio.paused)),false);
-  assert.equal(nativeStarts.length,1,'Reload cannot request another playback session.');
-  assert.deepEqual((await state()).plays.map(row=>row.id),active.plays.map(row=>row.id),
+  assert.equal(nativeStarts.length,startRequestBaseline,'Reload cannot request another playback session.');
+  const afterNativeReload=await state();
+  assert.deepEqual(afterNativeReload.plays.map(row=>row.id),active.plays.map(row=>row.id),
     'Reload cannot start another playback session.');
+  assert.deepEqual(afterNativeReload.native_playback_events,active.native_playback_events,
+    'Reload cannot complete the same native offer twice.');
   page.off('request',recordNativeStart);
+  await page.unroute(base+'/api/playback.php',observeNativeInitialization);
   assert.equal(coordinationRuns(await state(),'media:resume:41').length,1);
   await page.request.post(base+'/fixture-media-revoke');
   console.log('PASS native saved position → Media report and exact shared offer → “yes” resumes the VP3 Player at 0:24 → scope and replay guards');
@@ -1340,7 +1382,10 @@ try{
         assistant_messages:Array.from(document.querySelectorAll('[data-chat-message-role="assistant"]'))
           .map(element=>({id:element.dataset.chatMessageId,text:element.textContent.slice(0,400)})).slice(-20)};
     });
-    const readiness=await (await page.request.get(base+'/fixture-casual-readiness')).json();
+    // Conversation 17 is armed later; probing it during an earlier failure would
+    // manufacture a second authorization error instead of preserving evidence.
+    const readiness=client.conversation_id===17
+      ?await (await page.request.get(base+'/fixture-casual-readiness')).json():null;
     let diagnostics=null;
     if(currentBinding&&client.conversation_id>0){
       const response=await page.request.get(base+'/api/cognitive-presentation-v510.php?action=initiative_diagnostics&agent_id=7&conversation_id='+client.conversation_id,

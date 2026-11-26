@@ -1604,31 +1604,6 @@
     }
   );
 
-  async function playbackApi(payload, beacon = false) {
-    if (!cfg.playbackEndpoint || !cfg.csrf) return null;
-    const body = JSON.stringify({...payload, csrf_token: cfg.csrf});
-
-    if (beacon && navigator.sendBeacon) {
-      if(navigator.sendBeacon(cfg.playbackEndpoint,new Blob([body],{type:'application/json'})))return null;
-    }
-
-    const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),15000);
-    try {
-      const response = await fetch(cfg.playbackEndpoint, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        credentials:'same-origin',
-        keepalive:true,
-        signal:controller.signal,
-        body
-      });
-      return await response.json().catch(() => null);
-    } catch (error) {
-      return null;
-    }finally{clearTimeout(timeout);}
-  }
-
   function escapeHtml(value) {
     return String(value)
       .replaceAll('&','&amp;')
@@ -4090,398 +4065,74 @@
     });
   }
 
-  function audioListenedDelta(audio) {
-    const state = audioState.get(audio);
-    if (!state) return 0;
-
-    const now = performance.now();
-    const delta = !state.wasPlaying
-      ? 0
-      : Math.max(
-          0,
-          Math.min(
-            20,
-            (
-              now -
-              state.lastTick
-            ) /
-            1000
-          )
-        );
-
-    state.lastTick = now;
-    return delta;
-  }
-
-  async function audioStartSession(audio) {
-    const state=audioState.get(audio);
-    if(!state||state.sessionToken||audio.hasAttribute('data-connected-site-playback'))return;
-    if(state.startPromise){await state.startPromise;if(state.sessionToken||audio.paused)return;return audioStartSession(audio);}
-    const generation=state.sessionGeneration;
-    const request=(async()=>{
-      const action=mediaOfferAudioActions.get(audio);
-      const isOffer=action && action.track_id===state.trackId && action.expires_at*1000>Date.now()
-        && action.conversation_id===conversationId && action.owner_user_id===initiativePage.owner && action.agent_id===initiativePage.agent
-        && initiativeIdentityMatchesV1() && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.();
-      const data=await playbackApi({action:'start',track_id:state.trackId,position:Number(audio.currentTime||0),
-        duration:Number(audio.duration||0),source:audio.closest('[data-chat-view="player"]')?'agent_player':'agent_chat',
-        ...(isOffer?{media_offer_playback:action}:{})});
-      if(!data?.ok||!data.session_token)return;
-      mediaOfferAudioActions.delete(audio);
-      if(generation!==state.sessionGeneration){
-        await playbackApi({action:'stop',track_id:state.trackId,session_token:data.session_token,position:Number(audio.currentTime||0),duration:Number(audio.duration||0),delta:0},true);
-        return;
-      }
-      state.sessionToken=data.session_token;
-      window.dispatchEvent(new Event('vp3:playback-history-changed'));
-      if(audio.paused)await audioTrackEvent(audio,'pause',0);
-    })();
-    state.startPromise=request;
-    try{await request;}finally{if(state.startPromise===request)state.startPromise=null;}
-  }
-
-  async function audioTrackEvent(
-    audio,
-    action,
-    delta = 0,
-    beacon = false
-  ) {
-    const state =
-      audioState.get(audio);
-
-    if (!state) {
-      return;
-    }
-    const eventGeneration=state.sessionGeneration;
-    if(!state.sessionToken&&action==='heartbeat'&&!state.wasPlaying&&delta<=0)return;
-
-    if (
-      !state.sessionToken &&
-      [
-        'heartbeat',
-        'resume'
-      ].includes(action)
-    ) {
-      await audioStartSession(
-        audio
-      );
-    }
-
-    if (!state.sessionToken||eventGeneration!==state.sessionGeneration) {
-      return;
-    }
-
-    await playbackApi(
-      {
-        action,
-        track_id:state.trackId,
-        session_token:
-          state.sessionToken,
-        position:Number(
-          audio.currentTime ||
-          0
-        ),
-        duration:Number(
-          audio.duration ||
-          0
-        ),
-        delta:Number(
-          Math.max(
-            0,
-            Math.min(
-              20,
-              delta || 0
-            )
-          )
-        )
-      },
-      beacon
-    );
+  function nativeMusicStartContext(audio, state) {
+    const action = mediaOfferAudioActions.get(audio);
+    const isOffer = action && action.track_id === state.trackId && action.expires_at * 1000 > Date.now()
+      && action.conversation_id === conversationId && action.owner_user_id === initiativePage.owner && action.agent_id === initiativePage.agent
+      && initiativeIdentityMatchesV1() && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.();
+    // The frozen start request keeps this one accepted offer across retries.
+    mediaOfferAudioActions.delete(audio);
+    return {
+      source: audio.closest('[data-chat-view="player"]') ? 'agent_player' : 'agent_chat',
+      source_url: location.origin + location.pathname,
+      ...(isOffer ? {media_offer_playback: action} : {})
+    };
   }
 
   function attachAudioTracking(scope) {
-    const players = [
-      ...scope.querySelectorAll(
-        '.chat-audio-player'
-      )
-    ];
-
+    const players = [...scope.querySelectorAll('.chat-audio-player')];
     players.forEach(audio => {
-      if (
-        audioState.has(audio)
-      ) {
-        return;
-      }
-
-      const state = {
-        trackId:Number(
-          audio.dataset.trackId ||
-          0
-        ),
-        sessionToken:'',
-        startPromise:null,
-        sessionGeneration:0,
-        wasPlaying:false,
-        heartbeatBusy:false,
-        pendingEndDelta:0,
-        lastTick:
-          performance.now(),
-        heartbeat:null,
-        controls:null
-      };
-
-      audioState.set(
-        audio,
-        state
-      );
-
+      if (audioState.has(audio)) return;
+      const state = {trackId: Number(audio.dataset.trackId || 0), controls: null, listening: null};
+      audioState.set(audio, state);
       audio.volume = playerVolume;
       audio.muted = playerVolume <= .001;
       if (!audio.hasAttribute('data-listening-resume-audio') && !audio.hasAttribute('data-media-queue-audio')) decorateAudioPlayer(audio);
 
-      audio.addEventListener(
-        'loadedmetadata',
-        () => {
-          updateInlinePlayer(
-            audio
-          );
-        }
-      );
+      // This is the signed-in listener, not the profile or Agent workspace owner.
+      // The endpoint checks it again, including anonymous/account transitions.
+      const listenerId = Number(cfg.userId || 0), listenerCsrf = String(cfg.csrf || '');
+      state.listening = window.VP3MusicListeningV1?.attach(audio, {
+        trackId: state.trackId, listenerUserId: listenerId, csrf: listenerCsrf, endpoint: cfg.playbackEndpoint,
+        isCurrent: () => Number(window.STONEFELLOW_CHAT?.userId || 0) === listenerId
+          && String(window.STONEFELLOW_CHAT?.csrf || '') === listenerCsrf,
+        startContext: () => nativeMusicStartContext(audio, state),
+        onStart: () => window.dispatchEvent(new Event('vp3:playback-history-changed'))
+      }) || null;
 
-      audio.addEventListener(
-        'durationchange',
-        () => {
-          updateInlinePlayer(
-            audio
-          );
-        }
-      );
-
-      audio.addEventListener(
-        'timeupdate',
-        () => {
-          updateInlinePlayer(
-            audio
-          );
-        }
-      );
-
-      audio.addEventListener(
-        'volumechange',
-        () => {
-          updateInlinePlayer(
-            audio
-          );
-        }
-      );
-
-      audio.addEventListener('playing',()=>{
+      ['loadedmetadata', 'durationchange', 'timeupdate', 'volumechange', 'pause', 'seeked'].forEach(event => {
+        audio.addEventListener(event, () => updateInlinePlayer(audio));
+      });
+      audio.addEventListener('playing', () => {
+        if (!audio.isConnected || audio.paused) return;
+        const connected = connectedSiteAudioStates.get(audio);
+        if (connected && !connected.current()) audio.pause();
+      });
+      audio.addEventListener('play', () => {
         if (!audio.isConnected || audio.paused) return;
         const connected = connectedSiteAudioStates.get(audio);
         if (connected && !connected.current()) { audio.pause(); return; }
-        state.lastTick=performance.now();state.wasPlaying=true;void audioStartSession(audio);
+        pauseOtherAudio(audio);
+        activeAudio = audio;
+        updateInlinePlayer(audio);
+        updateNowPlaying(audio);
       });
-      ['waiting','stalled'].forEach(event=>audio.addEventListener(event,()=>{
-        const delta=audioListenedDelta(audio);state.wasPlaying=false;
-        if(state.sessionToken&&delta>0)audioTrackEvent(audio,'heartbeat',delta);
-      }));
-
-      audio.addEventListener(
-        'play',
-        async () => {
-          if (!audio.isConnected || audio.paused) return;
-          const connected = connectedSiteAudioStates.get(audio);
-          if (connected && !connected.current()) { audio.pause(); return; }
-          const playGeneration=state.sessionGeneration;
-          pauseOtherAudio(
-            audio
-          );
-
-          activeAudio =
-            audio;
-          state.lastTick =
-            performance.now();
-
-          updateInlinePlayer(
-            audio
-          );
-          updateNowPlaying(
-            audio
-          );
-
-          if (audio.hasAttribute('data-connected-site-playback')) return;
-
-          if (state.sessionToken) {
-            await audioTrackEvent(
-              audio,
-              'resume',
-              0
-            );
-          }
-
-          if(playGeneration!==state.sessionGeneration)return;
-          if (!state.heartbeat) {
-            state.heartbeat =
-              setInterval(
-                () => {
-                  if (
-                    !audio.paused &&
-                    !audio.ended &&
-                    !state.heartbeatBusy
-                  ) {
-                    const delta =
-                      audioListenedDelta(
-                        audio
-                      );
-
-                    state.heartbeatBusy=true;
-                    audioTrackEvent(audio,'heartbeat',delta).finally(()=>{state.heartbeatBusy=false;});
-                  }
-                },
-                10000
-              );
-          }
-        }
-      );
-
-      audio.addEventListener(
-        'pause',
-        () => {
-          updateInlinePlayer(
-            audio
-          );
-
-          const finalDelta=audioListenedDelta(audio);state.wasPlaying=false;if(audio.ended)state.pendingEndDelta+=finalDelta;
-          if (
-            !audio.ended &&
-            state.sessionToken
-          ) {
-            const delta=finalDelta;
-
-            audioTrackEvent(
-              audio,
-              'pause',
-              delta
-            );
-          }
-        }
-      );
-
-      audio.addEventListener(
-        'seeking',
-        () => {
-          if (
-            !audio.paused &&
-            state.sessionToken
-          ) {
-            const delta =
-              audioListenedDelta(
-                audio
-              );
-
-            audioTrackEvent(
-              audio,
-              'heartbeat',
-              delta
-            );
-          }
-        }
-      );
-
-      audio.addEventListener(
-        'seeked',
-        () => {
-          if (
-            state.sessionToken
-          ) {
-            audioTrackEvent(
-              audio,
-              'seek',
-              0
-            );
-          }
-
-          state.lastTick =
-            performance.now();
-
-          updateInlinePlayer(
-            audio
-          );
-        }
-      );
-
-      audio.addEventListener(
-        'ended',
-        () => {
-          const delta =
-            audioListenedDelta(audio)+state.pendingEndDelta;
-          state.pendingEndDelta=0;
-
-          audioTrackEvent(
-            audio,
-            'ended',
-            delta
-          );
-
-          state.wasPlaying=false;state.sessionGeneration++;
-          state.sessionToken = '';
-
-          if (state.heartbeat) {
-            clearInterval(
-              state.heartbeat
-            );
-            state.heartbeat = null;
-          }
-
-          updateInlinePlayer(
-            audio
-          );
-
-          if(audio.hasAttribute('data-media-single-play')||audio.hasAttribute('data-media-queue-audio'))return;
-          const {
-            queue,
-            index
-          } = playerQueuePosition(
-            audio
-          );
-          const next =
-            queue[
-              index + 1
-            ];
-
-          if (next) {
-            requestAudioPlay(next);
-          }
-        }
-      );
+      audio.addEventListener('ended', () => {
+        updateInlinePlayer(audio);
+        if (audio.hasAttribute('data-media-single-play') || audio.hasAttribute('data-media-queue-audio')) return;
+        const {queue, index} = playerQueuePosition(audio);
+        const next = queue[index + 1];
+        if (next) requestAudioPlay(next);
+      });
     });
   }
 
-
   function stopAllTrackedAudio(beacon = false) {
     const players = new Set([
-      ...document.querySelectorAll(
-        '.chat-audio-player'
-      ),
+      ...document.querySelectorAll('.chat-audio-player'),
       ...(activeAudio ? [activeAudio] : [])
     ]);
-
-    players.forEach(audio => {
-      const state = audioState.get(audio);
-      if(!state)return;
-      state.sessionGeneration++;
-      if(!state.sessionToken){state.wasPlaying=false;return;}
-
-      const delta = audioListenedDelta(audio);
-      state.wasPlaying=false;
-      audioTrackEvent(audio, 'stop', delta, beacon);
-      state.sessionToken = '';
-
-      if (state.heartbeat) {
-        clearInterval(state.heartbeat);
-        state.heartbeat = null;
-      }
-    });
+    players.forEach(audio => audioState.get(audio)?.listening?.stop(beacon));
   }
 
   nowPlayingToggle?.addEventListener(
@@ -5975,15 +5626,11 @@
       document.querySelectorAll('.chat-audio-player').forEach(audio => {
         const connected = connectedSiteAudioStates.get(audio);
         if (connected && !audio.paused && !audio.seeking) queueConnectedSitePlayback(audio,connected,'progress');
-        const state = audioState.get(audio);
-        if (!state || !state.sessionToken || audio.paused) return;
-        const delta = audioListenedDelta(audio);
-        audioTrackEvent(audio, 'heartbeat', delta, true);
+        audioState.get(audio)?.listening?.flush(true);
       });
     } else {
       document.querySelectorAll('.chat-audio-player').forEach(audio => {
-        const state = audioState.get(audio);
-        if (state) state.lastTick = performance.now();
+        audioState.get(audio)?.listening?.resetClock();
       });
 
       pollAgentActivity(true);
@@ -6050,9 +5697,8 @@
   });
   window.addEventListener('vp3:audio-player-removed',event=>{
     const audio=event.detail,state=audioState.get(audio);if(!state)return;
-    audio.pause();state.sessionGeneration++;state.wasPlaying=false;
-    if(state.sessionToken)void audioTrackEvent(audio,'stop',0,true);state.sessionToken='';
-    clearInterval(state.heartbeat);state.heartbeat=null;
+    audio.pause();
+    state.listening?.stop(true);
     if (activeAudio === audio) {
       activeAudio = null;
       if (nowPlaying) nowPlaying.hidden = true;

@@ -62,6 +62,9 @@ jobs:
             "phone_push_worker_minimum_php": "8.2",
             "phone_push_delivery_default": "off",
             "phone_agent_workspace": "owner-private-v1",
+            "music_catalog_schema": "music-song-metadata-v1-20261126",
+            "music_listening_protocol": "native_listening_v1",
+            "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
             "repository": "${GITHUB_REPOSITORY}",
@@ -81,6 +84,17 @@ jobs:
           EOF
 
           test -s _deploy/VP3_RELEASE.json
+          test -f _deploy/includes/music-song-metadata-v1.php
+          test -f _deploy/includes/music-song-metadata-form-v1.php
+          test -f _deploy/includes/music-listening-v1.php
+          test -f _deploy/api/music-song-metadata-v1.php
+          test -f _deploy/api/playback.php
+          test -f _deploy/assets/js/music-song-metadata-form-v1.js
+          test -f _deploy/assets/css/music-song-metadata-form-v1.css
+          test -f _deploy/assets/js/music-listening-v1.js
+          test -f _deploy/scripts/music-song-metadata-v1.php
+          test -f _deploy/scripts/music-listening-v1.php
+          test -f _deploy/docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php

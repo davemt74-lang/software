@@ -1,6 +1,6 @@
 # VP3 Music Provider and Stoneward Streaming Contract
 
-**Status: PROPOSED — ML0 planning only.** This document defines intended behavior; it does not announce implemented endpoints, deployed integrations, contractual royalty obligations, or completed acceptance. No application change is authorized by this specification alone.
+**Status: external provider/client contract remains PROPOSED.** ML1 implements the song metadata foundation. [ML2A](ML2A-IMPLEMENTATION.md) implements a versioned native measurement path on the existing playback API, with its own stated coverage limits. That native path does not announce the external provider operations below, deployed Stoneward integration, contractual royalty obligations, or completed joint acceptance. No application change is authorized by this specification alone.
 
 Read with [MASTER-SPECIFICATION.md](MASTER-SPECIFICATION.md), [SOURCE-AUDIT.md](SOURCE-AUDIT.md), [DELIVERY-PLAN.md](DELIVERY-PLAN.md), [DEVELOPMENT-STATUS.md](DEVELOPMENT-STATUS.md), and the project [README.md](README.md). Evidence snapshots are VP3 `2b69d47b04bb2bcdd74402189b820eef22ed1235` and Stoneward `253d1267c95ffefbcf3a79173429abbbba0c33fc`; later implementation must recheck current source.
 
