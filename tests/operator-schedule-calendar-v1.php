@@ -75,10 +75,20 @@ require_once dirname(__DIR__).'/includes/agent-operator-dispatch-worker-v1.php';
 $attempt=fn(callable $send)=>vp3_operator_carrier_attempt_v1($pdo,1,$eventId,$callTime,$send,$callTime);
 $unexpected=static function(){throw new LogicException('Unexpected adapter invocation');};
 $noCalls=static function(){throw new LogicException('Unexpected provider call');};
+ddl("CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY AUTOINCREMENT,call_sid VARCHAR(40),step_number INTEGER,owner_user_id INTEGER,agent_id INTEGER,speech_hash TEXT,speech_text TEXT,response_text TEXT,state TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(call_sid,step_number))");
 c(vp3_operator_dispatch_tick_v1($pdo,$noCalls,$callTime)===['submitted'=>0,'uncertain'=>0,'skipped'=>1,'errors'=>0],
     'worker skips a due occurrence after the recipient withdraws');
 c($attempt($unexpected)==='recipient_permission','withdrawal blocks reservation before simulated transport');
 $pdo->exec("UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=1,window_start='00:00',window_end='23:59'");
+$pdo->exec('ALTER TABLE phone_voice_turns_v140 RENAME TO phone_voice_turns_upgrade_fixture');
+try{
+    $sentBeforeUpgrade=0;
+    try{
+        vp3_operator_dispatch_tick_v1($pdo,static function()use(&$sentBeforeUpgrade){++$sentBeforeUpgrade;},$callTime);
+        $missingUpgrade=false;
+    }catch(PDOException){$missingUpgrade=true;}
+    c($missingUpgrade&&$sentBeforeUpgrade===0,'missing speech turn storage blocks dispatch before any provider call');
+}finally{$pdo->exec('ALTER TABLE phone_voice_turns_upgrade_fixture RENAME TO phone_voice_turns_v140');}
 $sent=0;
 $scenario=$argv[1]??'success';
 $worker=vp3_operator_dispatch_tick_v1($pdo,function($request)use(&$sent,$plan,$pdo,$attempt,$unexpected,$scenario){
@@ -105,7 +115,6 @@ c($read()['last_occurrence']['reason']==='carrier_'.$expected,'original private 
 echo "PASS single carrier attempt ($scenario), in-flight exclusion and retry handling\n";
 
 require_once dirname(__DIR__).'/includes/agent-operator-answer-v1.php';
-ddl("CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY AUTOINCREMENT,call_sid TEXT,step_number INTEGER,owner_user_id INTEGER,agent_id INTEGER,speech_hash TEXT,speech_text TEXT,response_text TEXT,state TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(call_sid,step_number))");
 $destination=$plan['fields']['To'];
 $limits=fn(string $to,int $at)=>vp3_operator_admission_history_v1($pdo,$scope,['contact'=>['destination_e164'=>$to]],$callingPolicy,$at);
 c(vp3_operator_preview_request_v1($pdo,$row,$callTime)['reason']==='call_frequency','a fresh dispatch check sees the carrier reservation');
