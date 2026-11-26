@@ -270,11 +270,12 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
     await page.clock.setSystemTime(new Date(sharedClock));await page.clock.fastForward(milliseconds);
     sharedClock=Math.max(sharedClock,await page.evaluate(()=>Date.now()));
   };
-  const expectSignal=async(page,busy,focused=true)=>{
+  const expectSignal=async(page,busy,focused=true,reason=undefined)=>{
     for(let attempt=0;attempt<15;attempt++){
       await advance(page,1001);
       const result=await probe(page);
-      if(result.details.chat_busy===busy&&result.details.chat_focused===focused)return result;
+      if(result.details.chat_busy===busy&&result.details.chat_focused===focused&&
+        (reason===undefined||result.details.chat_busy_reason===reason))return result;
     }
     const actual=await probe(page),client=await page.evaluate(()=>({focused:document.hasFocus(),hidden:document.hidden,
       ready:window.STONEFELLOW_CHAT_CONTINUITY?.isReady?.(),busy:window.STONEFELLOW_CHAT_CONTINUITY?.isBusy?.(),
@@ -383,7 +384,7 @@ echo '<!doctype html><html lang="en"><meta charset="utf-8"><style>[hidden]{displ
     recognizer.stop();
   });
   assert.equal(await first.locator('#chatInput').inputValue(),'A typed draft to preserve');
-  state=await expectSignal(first,true);
+  state=await expectSignal(first,true,true,'typed_draft');
   assert.equal(state.details.chat_busy_reason,'typed_draft');
   await first.locator('#chatInput').fill('');
   await first.waitForFunction(()=>window.recognizers.some(item=>item.active));
