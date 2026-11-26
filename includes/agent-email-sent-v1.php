@@ -204,8 +204,23 @@ function agent_email_sent_open_v1(PDO $pdo, array $user, array $principal, int $
     if ($verified===null) throw new DomainException('This message is no longer in Sent. Refresh the list.',409);
     $message = agent_connection_gmail_read_message_v1($raw,true);
     agent_email_sent_current_v1($pdo,$user,$principal,$scope);
+    $followthrough=null;
+    require_once __DIR__.'/agent-email-followthrough-v1.php';
+    if (agent_email_followthrough_ready_v1($pdo)) {
+        try {
+            $q=$pdo->prepare('SELECT * FROM agent_connection_email_followups_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=?
+                AND connection_id=? AND authorization_key=? AND account_email=? AND sent_message_id=? AND thread_id=? AND sender_after_ms IS NULL LIMIT 2');
+            $q->execute([$scope[0],$scope[1],$scope[2],$scope[3],$scope[4],$scope[6],$item['id'],$item['thread']]);
+            $watches=$q->fetchAll(PDO::FETCH_ASSOC);
+            if (count($watches)===1) {
+                $record=agent_email_followthrough_for_watch_v1($pdo,$watches[0]);
+                if ($record) $followthrough=agent_email_followthrough_public_v1($pdo,$record);
+            }
+        } catch (DomainException|AgentConnectionExceptionV1 $error) { /* Sent remains readable without follow-up access. */ }
+    }
+    agent_email_sent_current_v1($pdo,$user,$principal,$scope);
     return array_diff_key(agent_email_sent_row_v1($verified),['snippet'=>true])
         + ['account_email'=>$scope[6],'mailbox_revision'=>agent_email_sent_revision_v1($scope),
-            'body'=>mb_substr($message['body'],0,8000),'can_reply'=>false]
+            'body'=>mb_substr($message['body'],0,8000),'can_reply'=>false,'followthrough_record'=>$followthrough]
         + (isset($message['display']) ? ['display'=>$message['display']] : []);
 }
