@@ -176,4 +176,32 @@ c(count($book['items'])===1&&$book['items'][0]['editable']===false&&$book['items
 user_calendar_create_local_event_v1300($pdo,user(),['title'=>'Existing Calendar event','date'=>gmdate('Y-m-d',time()+4*86400),'start_time'=>'12:00','duration_minutes'=>30,'timezone'=>'UTC'],'user',null,'fixture-conflict');
 denies(fn()=>schedule_save(schedule_input($id,['mutation_id'=>'fixture-later-conflict-01','time'=>'12:00'])),409,'conflicts are checked on later repeats within the reviewed horizon');
 c(!table_exists('phone_operator_contact_policies_v1')&&(int)$pdo->query('SELECT count(*) FROM phone_browser_calls_v1')->fetchColumn()===0,'manual reminder saves never create Auto Call permission or provider intents');
+// Exercise the real private call card and the phone information exchange on SQLite.
+if(!$mysql){
+    require_once dirname(__DIR__).'/includes/phone-tracking-v1.php';
+    $pdo->exec("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT 'Owner'");
+    $pdo->exec("CREATE TABLE vp3_phone_devices_v1(owner_user_id INTEGER NOT NULL,id CHAR(32) NOT NULL,device_name TEXT,device_status TEXT,expires_at INTEGER,generation INTEGER,PRIMARY KEY(owner_user_id,id))");
+    vp3_phone_communication_install_v1($pdo,'');vp3_phone_information_install_v1($pdo,'');
+    $device=str_repeat('1',32);$profile=str_repeat('2',32);$callId=str_repeat('3',32);$exchange=str_repeat('4',32);
+    $pdo->prepare("INSERT INTO vp3_phone_devices_v1 VALUES(1,?,'Handset','approved',?,1)")->execute([$device,time()+3600]);
+    $pdo->prepare("INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,owner_requests,holder_requests,updated_epoch) VALUES(1,?,?,1,1,1,?)")->execute([$device,$profile,time()]);
+    $contact=detail($id);
+    c($contact['connected_phones'][0]['id']===$device,'contact editor lists only eligible linked devices');
+    $bind=['contact_id'=>$id,'expected_revision'=>$contact['contact']['revision'],'device_id'=>$device];
+    denies(fn()=>action('assign_contact_phone',array_replace($bind,['device_id'=>str_repeat('f',32)])),409,'an unrelated handset cannot be assigned');
+    c(action('assign_contact_phone',$bind)['assigned']&&detail($id)['connected_phone_id']===$device,'verified owner can assign a connected phone');
+    vp3_phone_browser_config_save_v1(['api_key_sid'=>'SK'.str_repeat('a',32),'api_key_secret'=>'fixture-secret-for-browser','twiml_app_sid'=>'AP'.str_repeat('b',32)]);
+    vp3_phone_browser_number_policy_set_v1($pdo,1,true,false);
+    $pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,conversation_id,chat_agent_id,state,created_epoch,updated_epoch) VALUES(?,1,7,1,'+16025550101',?,'inbound',11,0,'answered',?,?)")->execute([$callId,detail($id)['contact']['phone_e164'],time(),time()]);
+    $share=['call_id'=>$callId,'contact_id'=>$id,'device_id'=>$device,'exchange_id'=>$exchange,'message'=>'https://example.test/map'];
+    c(action('share_call_item',$share)['shared']&&action('share_call_item',$share)['shared'],'retry acknowledges the same call share');
+    $card=api('GET',['conversation_id'=>11])['state']['companion_cards'][$callId];
+    c(count($card['items'])===1&&$card['items'][0]['message']===$share['message'],'one call card item is saved across duplicate requests');
+    $d=vp3_phone_row_v1($pdo,1,$device);$p=vp3_phone_communication_row_v1($pdo,$d);
+    c(vp3_phone_information_list_v1($pdo,$d,$p,time())['items'][0]['call_companion'],'the holder sees the same item as call companion content');
+    $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET holder_requests=0');
+    c(api('GET',['conversation_id'=>11])['state']['companion_cards']===[],'withdrawal removes companion access');
+    $pdo->exec("UPDATE phone_browser_calls_v1 SET state='completed'");
+    denies(fn()=>action('share_call_item',$share),409,'ended call cannot share new items');
+}
 echo 'PASS '.$checks.' phone contact management and canonical schedule checks ('.($mysql?'MySQL':'SQLite').")\n";

@@ -95,9 +95,16 @@ function vp3_phone_information_list_v1(PDO $pdo,array $d,array $p,int $now):arra
         AND created_epoch>? ORDER BY created_epoch DESC,exchange_id DESC LIMIT 20',
         [(int)$d['owner_user_id'],$d['id'],$p['profile_id'],$now-VP3_PHONE_INFO_RETENTION_V1])->fetchAll(PDO::FETCH_ASSOC);
     $available=vp3_phone_file_available_v1($pdo);
+    $companion=[];
+    if(function_exists('table_exists')&&table_exists('phone_call_shares_v1')&&$rows){
+        $ids=array_column($rows,'exchange_id');$marks=implode(',',array_fill(0,count($ids),'?'));
+        $shared=vp3_phone_sql_v1($pdo,"SELECT exchange_id FROM phone_call_shares_v1 WHERE owner_user_id=? AND device_id=? AND exchange_id IN ($marks)",[(int)$d['owner_user_id'],$d['id'],...$ids]);
+        $companion=array_fill_keys($shared->fetchAll(PDO::FETCH_COLUMN),true);
+    }
     $items=[];
     foreach($rows as $r){
         $view=vp3_phone_information_view_v1($r,$p,$now);
+        if(isset($companion[$r['exchange_id']]))$view['call_companion']=true;
         $meta=$available?vp3_phone_file_metadata_v1($pdo,vp3_phone_file_scope_v1($r)):null;
         $view['attachment']=vp3_phone_file_view_v1($r,$p,$now,$meta);
         $items[]=$view;

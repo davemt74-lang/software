@@ -16,6 +16,7 @@ require_once __DIR__.'/phone-managed-control-schema-v1.php';
 require_once __DIR__.'/phone-managed-recording-schema-v1.php';
 require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
 require_once __DIR__.'/phone-voicemail-v1.php';
+require_once __DIR__.'/phone-call-companion-v1.php';
 
 final class VP3PhoneWorkspaceException extends RuntimeException
 {
@@ -266,7 +267,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
         }
     }
     return ['numbers'=>$numbers,'contacts'=>$contacts,'favorites'=>array_values(array_filter($contacts,static fn($c)=>$c['favorite'])),'calls'=>$calls,'voicemails'=>$voicemails,
-        'operator_trace'=>$trace,'operator_live'=>$liveCaption,'voicemail_settings'=>$selected>0?vp3_phone_voicemail_settings_v1($pdo,$scope,$selected):['available'=>false],
+        'companion_cards'=>vp3_phone_companion_cards_v1($pdo,$scope,$calls),'operator_trace'=>$trace,'operator_live'=>$liveCaption,'voicemail_settings'=>$selected>0?vp3_phone_voicemail_settings_v1($pdo,$scope,$selected):['available'=>false],
         'auto_call'=>vp3_operator_auto_call_book_v1($pdo,$scope,$selected,$contacts),
         'readiness'=>['ready'=>(bool)$ready['ready'],'reason'=>(string)$ready['reason']],'recording_readiness'=>$recordingReadiness,'contact_write_ready'=>vp3_phone_caller_contacts_schema_ready_v1($pdo),'contact_details_ready'=>vp3_phone_contact_details_schema_ready_v1($pdo),'active_call'=>$active,'selected_number_id'=>$selected,'post_call_policy'=>$policy,
         'processing_worker'=>function_exists('vp3_phone_recording_worker_health_v1')?vp3_phone_recording_worker_health_v1():['state'=>'never_seen']];
@@ -320,6 +321,8 @@ function vp3_phone_workspace_action_v1(PDO $pdo,array $user,array $input): array
         require_once __DIR__.'/phone-managed-control-v1.php';
         return vp3_managed_control_action_v1($pdo,$scope,$input);
     }
+    if($action==='assign_contact_phone')return vp3_phone_companion_assign_v1($pdo,$scope,$input);
+    if($action==='share_call_item')return vp3_phone_companion_share_v1($pdo,$scope,$input);
     if($action==='save_caller_contact')return vp3_phone_caller_contact_save_v1($pdo,$scope,$input);
     if(in_array($action,['phone_contact_detail','save_phone_contact','save_phone_contact_schedule','cancel_phone_contact_schedule'],true)){
         require_once __DIR__.'/phone-contact-management-v1.php';
