@@ -385,7 +385,7 @@
     }
     if(scan?.in_progress)result+='<small>Checking more mailbox changes.</small>';
     const stages={needs_review:'Needs review',awaiting_reply:'Waiting for a reply',reply_received:'Reply received',
-      actioned:'Action verified',followup_due:'Follow-up due',snoozed:'Snoozed',dismissed:'Dismissed',resolved:'Resolved'};
+      actioned:'Action verified',followup_due:'Follow-up review due',snoozed:'Snoozed',dismissed:'Dismissed',resolved:'Resolved'};
     const buttons=(item,decisions)=>current.csrf&&/^[a-f0-9]{64}$/.test(item.id)&&Number.isSafeInteger(item.revision)
       ?decisions.map(([decision,label])=>`<button type="button" data-top-of-mind-email="${decision}" data-matter-id="${item.id}"
         ${gmailUpdating?'disabled':''}>${label}</button>`).join(''):'';
@@ -397,10 +397,29 @@
       const waiting=item.stage==='awaiting_reply'&&typeof item.waiting_for==='string'?`<small>Waiting for ${esc(item.waiting_for)}</small>`:'';
       const mailbox=[item.sent_in_gmail?'Reply sent in Gmail':'',item.mailbox_state==='archived'?'Archived in Gmail':''].filter(Boolean);
       const next=timeLine('Next check',item.next_check_at);
-      const wake=timeLine(item.stage==='snoozed'?'Snoozed until':'Follow-up deadline',item.next_wake_at);
+      const wake=timeLine(item.stage==='snoozed'?'Snoozed until':'Watch until',item.next_wake_at);
+      const tracking=item.response_followthrough;
+      const followthrough=tracking?.agent_id===current.agent&&/^[a-f0-9]{32}$/.test(tracking.followthrough_ref)
+        &&Number.isSafeInteger(tracking.conversation_id)&&tracking.conversation_id>0?tracking:null;
+      const outcome=followthrough?.paused?'Tracking paused':followthrough?.awaiting_new_deadline?'Waiting for a reply; choose a new deadline for another draft'
+        :({waiting:'Waiting for a reply',overdue:'Response overdue',replied:'Reply verified',resolved:'Tracking resolved'}[followthrough?.outcome]||'');
+      const tracked=followthrough&&outcome?timeLine('Response deadline',followthrough.deadline_at)
+        +(followthrough.check?.state==='verified'&&followthrough.check?.result==='no_reply'
+          ?timeLine('No matching reply in the checked thread as of',followthrough.check.checked_at):''):'';
+      const stageLabel=followthrough&&outcome?outcome:stages[item.stage];
+      const watchDetails=followthrough&&outcome?next:waiting+next+wake;
+      let controls=buttons(item,decisions);
+      if(followthrough){
+        const chatUrl=safeUrl(window.STONEFELLOW_CHAT?.chatUrl||window.VP3_ORB_CONFIG?.chatUrl||'/chat.php')||'/chat.php';
+        const manage=new URL(chatUrl,location.origin);
+        manage.search='';manage.searchParams.set('agent',current.agent===0?'system':String(current.agent));
+        manage.searchParams.set('conversation_id',String(followthrough.conversation_id));
+        manage.searchParams.set('gmail_followthrough',followthrough.followthrough_ref);
+        controls=`<a href="${esc(manage.pathname+manage.search)}">Manage follow-up</a>`;
+      }
       const reply=item.reply_result?.agent_id===current.agent?sourceLink(current,item.reply_result,'Read the reply in Chat'):'';
-      return `<li>${esc(item.subject||'(No subject)')} · ${stages[item.stage]}${waiting}${next}${wake}${reply}
-        ${mailbox.length?`<small>${esc(mailbox.join(' · '))}</small>`:''}${buttons(item,decisions)}</li>`;
+      return `<li>${esc(item.subject||'(No subject)')} · ${esc(stageLabel)}${watchDetails}${tracked}${reply}
+        ${mailbox.length?`<small>${esc(mailbox.join(' · '))}</small>`:''}${controls}</li>`;
     };
     const items=Array.isArray(matters?.items)?matters.items.filter(item=>Object.hasOwn(stages,item?.stage)).slice(0,3):[];
     if(items.length){
@@ -950,7 +969,8 @@
     }
   }
   async function updateGmail(current,item,decision){
-    if(gmailUpdating||!current.csrf||!['snooze','dismiss','resolve','reopen'].includes(decision))return;
+    if(gmailUpdating||!current.csrf||item.response_followthrough?.agent_id===current.agent
+      ||!['snooze','dismiss','resolve','reopen'].includes(decision))return;
     const sent=key(current);
     const url=gmailApiUrl(current);
     if(!url)return;

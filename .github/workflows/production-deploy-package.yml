@@ -457,6 +457,13 @@ jobs:
           test -f _deploy/includes/agent-coordination-sources-v1.php
           test -f _deploy/includes/agent-coordination-work-v1.php
           test -f _deploy/includes/agent-coordination-gmail-draft-v1.php
+          test -f _deploy/includes/agent-email-followthrough-v1.php
+          test -f _deploy/includes/agent-email-followthrough-source-v1.php
+          test -f _deploy/includes/agent-email-followthrough-draft-v1.php
+          test -f _deploy/includes/agent-email-followthrough-notice-v1.php
+          test -f _deploy/includes/agent-email-followthrough-status-v1.php
+          test -f _deploy/chat-email-followthrough-v1.js
+          test -f _deploy/chat-email-followthrough-v1.css
           test -f _deploy/includes/agent-initiative-youtube-offer-v1.php
           test -f _deploy/includes/agent-initiative-model-recovery-v1.php
           test -f _deploy/includes/agent-token-balance-notice-v1.php
