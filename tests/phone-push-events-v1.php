@@ -65,7 +65,7 @@ $transport=static function(array $sub,array $vapid,string $payload,array $option
     $payloads[]=json_decode($payload,true,8,JSON_THROW_ON_ERROR);
     return ['state'=>'accepted','code'=>'provider_accepted','http_status'=>201,'retry_after'=>0,'dispatched'=>true];
 };
-vp3_phone_push_delivery_run_v1($pdo,1,'vp3_phone_push_source_current_v1',$transport,$now);
+vp3_phone_push_delivery_run_v1($pdo,1,'vp3_phone_push_source_current_v1',$transport,time());
 ppe_check(array_keys($payloads[0])===['v','event_ref','receipt_token'],'push payload carries only version, opaque reference and display capability');
 $resolved=vp3_phone_device_v1($pdo,$a['token'],'push_resolve',['device_id'=>$id,'event_ref'=>$event['event_ref']]);
 ppe_check($resolved['target']===['tab'=>'chat','request_id'=>$rid]&&$resolved['opened_epoch']>0,'real holder action resolves exact private Chat turn');
@@ -94,7 +94,7 @@ vp3_phone_information_owner_v1($pdo,1,'information_create',$info);
 vp3_phone_information_owner_v1($pdo,1,'information_create',$info);
 $requestEvent=$pdo->query("SELECT * FROM vp3_phone_push_outbox_v1 WHERE source_type='agent_request'")->fetch();
 ppe_check($requestEvent&&$requestEvent['source_id']===$exchange&&(int)$pdo->query("SELECT COUNT(*) FROM vp3_phone_push_outbox_v1 WHERE source_type='agent_request'")->fetchColumn()===1,'canonical request creation queues one exact event');
-vp3_phone_push_delivery_run_v1($pdo,1,'vp3_phone_push_source_current_v1',$transport,$now);
+vp3_phone_push_delivery_run_v1($pdo,1,'vp3_phone_push_source_current_v1',$transport,time());
 $opened=vp3_phone_device_v1($pdo,$a['token'],'push_resolve',['device_id'=>$id,'event_ref'=>$requestEvent['event_ref']]);
 ppe_check($opened['target']===['tab'=>'requests','exchange_id'=>$exchange],'request notification resolves exact exchange');
 vp3_phone_device_v1($pdo,$a['token'],'information_accept',['device_id'=>$id,'generation'=>1,'profile_id'=>$profile,'profile_revision'=>1,'exchange_id'=>$exchange,'version'=>1]);
