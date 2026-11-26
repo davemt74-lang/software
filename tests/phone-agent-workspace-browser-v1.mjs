@@ -212,7 +212,7 @@ try{
   signedIn=true;await page.getByRole('button',{name:'Check sign-in'}).click();await page.getByRole('button',{name:'Open Agent',exact:true}).click();await card(id(1)).waitFor();
   await card(id(1)).getByRole('button',{name:'Review email'}).click();await nativeFrame().getByLabel('Message',{exact:true}).waitFor();
   await nativeFrame().getByRole('button',{name:'Send',exact:true}).scrollIntoViewIfNeeded();await bounds(true);await screenshot('agent-email-phone.png');
-  await nativeFrame().getByRole('button',{name:'Send',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.phone-agent-native-frame')?.contentDocument?.querySelector('.vp3-email-compose')?.textContent.includes('Sent'));
+  await nativeFrame().getByRole('button',{name:'Send',exact:true}).click();await nativeFrame().getByText('Gmail confirmed your email was sent.',{exact:true}).waitFor();
   assert.equal(emailRequests.filter(input=>input.action==='confirm').length,1);assert.equal(emailRequests.at(-2).action,'compose_save','Send saves the exact reviewed content before canonical confirmation.');
   assert.equal(rows[0].needs_action,false);assert.equal(await page.locator('.phone-agent-native-frame').count(),1,'A locally saved/sent source updates without remounting its native view.');
   await wake();await nativeFrame().getByLabel('Subject',{exact:true}).waitFor();await back().click();await card(id(3)).waitFor();
@@ -252,4 +252,14 @@ try{
   assert.equal(await page.locator('#phone-tab-agent').isVisible(),false);assert.equal(await page.locator('.phone-agent-native-frame').count(),0);assert.equal(await agent().locator('article').count(),0);
   assert.equal(await page.getByRole('tab',{name:'Chat',exact:true}).isVisible(),true,'Revoking owner workspace authority preserves the holder Chat surface.');
   assert.deepEqual(errors,[]);console.log('Phone Agent browser: enrollment, privacy, filters, receipts, actual native bridge, dirty Gmail save/send, image, sandboxed canvas, push, scope races and phone/desktop layouts passed.');
+}catch(error){
+  try{
+    await screenshot('agent-failure.png');
+    const view=await page.evaluate(()=>({tab:document.getElementById('phone-location')?.dataset.tab,
+      feedback:document.querySelector('.phone-agent-feedback')?.textContent,
+      nativeStatus:document.querySelector('.phone-agent-native-frame')?.contentDocument?.getElementById('phoneAgentItemStatus')?.textContent,
+      emailNotice:document.querySelector('.phone-agent-native-frame')?.contentDocument?.querySelector('.vp3-email-compose-notice')?.textContent}));
+    console.error('Phone Agent fixture diagnostics:',JSON.stringify({view,pageErrors:errors,emailActions:emailRequests.map(input=>input.action),nativeActions:nativeRequests.map(input=>input.action),workspaceActions:requests.slice(-20).map(input=>input.action)}));
+  }catch{}
+  throw error;
 }finally{await browser.close();}
