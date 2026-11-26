@@ -162,17 +162,23 @@ c(str_contains($answer('answer',$unknown),'event=retry')&&str_contains($answer('
     &&$answer('last',$unknown)===$hangup,'early callbacks wait briefly for the committed receipt and then stop');
 c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer',['To'=>'+16025550189'])===$hangup
     &&$read()['last_occurrence']['reason']==='carrier_submitted','wrong route and out-of-order responses cannot change history');
-foreach(['decline','silence','withdrawn'] as $case){
+foreach(['decline','spoken refusal','ambiguous','negated','mixed','silence','withdrawn'] as $case){
     $pdo->beginTransaction();
     try{
         $prompt=$answer('answer');
-        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'recorded and transcribed')&&str_contains($prompt,'event=confirm')
-            &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'keypad disclosure precedes capture and keeps objectives private');
+        c(str_contains($prompt,'input="dtmf speech"')&&str_contains($prompt,'recorded and transcribed.</Say><Gather')
+            &&str_contains($prompt,'say I agree or press 1')&&str_contains($prompt,'event=confirm')
+            &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'disclosure finishes before verbal or keypad consent');
         c($answer('answer')===$prompt,'answer retry can replay the pending prompt');
         if($case==='withdrawn')$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
-        $digits=match($case){'decline'=>['Digits'=>'2'],'silence'=>[],default=>['Digits'=>'1']};
-        $response=$answer('confirm',$digits);
-        $reason=match($case){'agree'=>'answer_consented','decline'=>'answer_declined','silence'=>'answer_no_input',default=>'answer_permission_changed'};
+        $input=match($case){
+            'decline'=>['Digits'=>'2'], 'spoken refusal'=>['SpeechResult'=>'No.'],
+            'ambiguous'=>['SpeechResult'=>'Hello?'], 'negated'=>['SpeechResult'=>'I agree, actually no.'],
+            'mixed'=>['Digits'=>'1','SpeechResult'=>'No'], 'silence'=>[], 'withdrawn'=>['SpeechResult'=>'I agree'],
+        };
+        $response=$answer('confirm',$input,null,null,$recordCarrier);
+        $reason=match($case){'silence'=>'answer_no_input','withdrawn'=>'answer_permission_changed',default=>'answer_declined'};
+        c($recordStarts===0,'recording stays off for '.$case);
         c($read()['last_occurrence']['reason']===$reason,'original private call history records '.$case);
         c($response===$hangup&&!str_contains($response,'<Record'),'refusal or missing current permission cannot start recording');
         c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer')===$hangup
@@ -181,7 +187,9 @@ foreach(['decline','silence','withdrawn'] as $case){
 }
 echo "PASS signed scheduled answer and recipient consent, refusal, silence, withdrawal and replay\n";
 
-$answer('answer');$consented=$answer('confirm',['Digits'=>'1'],null,null,$recordCarrier);
+$answer('answer');
+$confirmation=getenv('VP3_OPERATOR_TEST_KEYPAD')==='1'?['Digits'=>'1']:['SpeechResult'=>'I agree.'];
+$consented=$answer('confirm',$confirmation,null,null,$recordCarrier);
 c(str_contains($consented,'input="speech"')&&$recordStarts===1,'explicit recipient consent starts recording before speech capture');
 c($answer('confirm',['Digits'=>'1'],null,null,$recordCarrier)===$hangup&&$recordStarts===1,'consent replay cannot start a second recording');
 $pdo->beginTransaction();
