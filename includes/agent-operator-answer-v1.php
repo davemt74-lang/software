@@ -33,7 +33,8 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         vp3_operator_recording_event_v1($pdo,(int)$owner,$sid,$form,$now);
         return $hangup;
     }
-    $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup){
+    $startRecording=false;
+    $response=section12_owner_transaction($pdo,(int)$owner,static function()use($pdo,$owner,$sid,$event,$form,$now,$url,$hangup,&$startRecording){
         $query=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a
             ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id AND a.start_epoch=o.start_epoch
             WHERE a.owner_user_id=? AND a.provider_sid=? AND a.state='submitted' AND o.state='submitted'");
@@ -76,15 +77,24 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
         if(($form['From']??null)!==$current['fields']['From']||($form['To']??null)!==$current['fields']['To'])return $hangup;
         if($event!=='confirm'){
             if($row['reason']==='carrier_submitted')$save('answer_prompted');
-            return '<Response><Gather input="dtmf" numDigits="1" timeout="8" actionOnEmptyResult="true" method="POST" action="'.
-                vp3_phone_browser_xml_v1($url('confirm')).'"><Say>This is the VP3 AI phone agent calling for your scheduled conversation. '.
-                'To agree to speak with the agent and have this conversation recorded and transcribed, press 1. To decline, press any other key or hang up.</Say></Gather><Hangup/></Response>';
+            return '<Response><Say>This is the VP3 AI phone agent calling for '.(isset($current['opening'])?'a check-in':'your scheduled conversation').'. '.
+                'With your permission, this conversation will be recorded and transcribed.</Say>'.
+                '<Gather input="dtmf speech" numDigits="1" speechTimeout="auto" timeout="8" actionOnEmptyResult="true" method="POST" action="'.
+                vp3_phone_browser_xml_v1($url('confirm')).'"><Say>To continue, say I agree or press 1. To decline, say no or hang up.</Say></Gather><Hangup/></Response>';
         }
         $digit=$form['Digits']??'';
-        $save($digit==='1'?'answer_consented':($digit===''?'answer_no_input':'answer_declined'));
-        return $digit==='1'?vp3_operator_conversation_gather_v1('Thank you. How can I help with today’s scheduled conversation?',1):$hangup;
+        $speech=trim($form['SpeechResult']??'');
+        $agreed=($digit==='1' && $speech==='') ||
+            ($digit==='' && preg_match('/^i\s+agree[.!]?$/iD',$speech)===1);
+        if(!$agreed){
+            $save($digit==='' && $speech===''?'answer_no_input':'answer_declined');
+            return $hangup;
+        }
+        $save('answer_consented');
+        $startRecording=true;
+        return vp3_operator_conversation_gather_v1('Thank you. '.($current['opening']??'How can I help with today’s scheduled conversation?'),1);
     });
-    if($event==='confirm'&&($form['Digits']??null)==='1'&&str_contains($response,'input="speech"')){
+    if($startRecording){
         $recording=vp3_operator_recording_start_v1($pdo,(int)$owner,$sid,$now,$recordingCarrier);
         if(($recording['state']??'')!=='started')return $hangup;
     }

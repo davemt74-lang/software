@@ -178,17 +178,23 @@ c(str_contains($answer('answer',$unknown),'event=retry')&&str_contains($answer('
     &&$answer('last',$unknown)===$hangup,'early callbacks wait briefly for the committed receipt and then stop');
 c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer',['To'=>'+16025550189'])===$hangup
     &&$read()['last_occurrence']['reason']==='carrier_submitted','wrong route and out-of-order responses cannot change history');
-foreach(['decline','silence','withdrawn'] as $case){
+foreach(['decline','spoken refusal','ambiguous','negated','mixed','silence','withdrawn'] as $case){
     $pdo->beginTransaction();
     try{
         $prompt=$answer('answer');
-        c(str_contains($prompt,'input="dtmf"')&&str_contains($prompt,'recorded and transcribed')&&str_contains($prompt,'event=confirm')
-            &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'keypad disclosure precedes capture and keeps objectives private');
+        c(str_contains($prompt,'input="dtmf speech"')&&str_contains($prompt,'recorded and transcribed.</Say><Gather')
+            &&str_contains($prompt,'say I agree or press 1')&&str_contains($prompt,'event=confirm')
+            &&!str_contains($prompt,'<Record')&&!str_contains($prompt,$plan['objectives']),'disclosure finishes before verbal or keypad consent');
         c($answer('answer')===$prompt,'answer retry can replay the pending prompt');
         if($case==='withdrawn')$pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET agent_call_consent=0');
-        $digits=match($case){'decline'=>['Digits'=>'2'],'silence'=>[],default=>['Digits'=>'1']};
-        $response=$answer('confirm',$digits);
-        $reason=match($case){'agree'=>'answer_consented','decline'=>'answer_declined','silence'=>'answer_no_input',default=>'answer_permission_changed'};
+        $input=match($case){
+            'decline'=>['Digits'=>'2'], 'spoken refusal'=>['SpeechResult'=>'No.'],
+            'ambiguous'=>['SpeechResult'=>'Hello?'], 'negated'=>['SpeechResult'=>'I agree, actually no.'],
+            'mixed'=>['Digits'=>'1','SpeechResult'=>'No'], 'silence'=>[], 'withdrawn'=>['SpeechResult'=>'I agree'],
+        };
+        $response=$answer('confirm',$input,null,null,$recordCarrier);
+        $reason=match($case){'silence'=>'answer_no_input','withdrawn'=>'answer_permission_changed',default=>'answer_declined'};
+        c($recordStarts===0,'recording stays off for '.$case);
         c($read()['last_occurrence']['reason']===$reason,'original private call history records '.$case);
         c($response===$hangup&&!str_contains($response,'<Record'),'refusal or missing current permission cannot start recording');
         c($answer('confirm',['Digits'=>'1'])===$hangup&&$answer('answer')===$hangup
@@ -197,16 +203,29 @@ foreach(['decline','silence','withdrawn'] as $case){
 }
 echo "PASS signed scheduled answer and recipient consent, refusal, silence, withdrawal and replay\n";
 
-$answer('answer');$consented=$answer('confirm',['Digits'=>'1'],null,null,$recordCarrier);
+$answer('answer');
+$confirmation=getenv('VP3_OPERATOR_TEST_KEYPAD')==='1'?['Digits'=>'1']:['SpeechResult'=>'I agree.'];
+$consented=$answer('confirm',$confirmation,null,null,$recordCarrier);
 c(str_contains($consented,'input="speech"')&&$recordStarts===1,'explicit recipient consent starts recording before speech capture');
 c($answer('confirm',['Digits'=>'1'],null,null,$recordCarrier)===$hangup&&$recordStarts===1,'consent replay cannot start a second recording');
 $pdo->beginTransaction();
 try{
     c(str_contains($consented,'input="speech"')&&str_contains($consented,'event=turn1'),'consent begins a bounded speech turn');
+    $priorStart=$callTime-10*86400-123;$priorSid='CA'.str_repeat('b',32);
+    $pdo->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id)
+        VALUES(1,?,?,?,?,'ended','conversation_completed',?,?,11,0)")
+        ->execute([$eventId,$priorStart,$priorStart+$duration,$assignment['revision'],$priorStart,$id]);
+    $pdo->prepare("INSERT INTO phone_operator_carrier_attempts_v1(owner_user_id,event_id,start_epoch,started_epoch,state,provider_sid,destination_hash)
+        VALUES(1,?,?,?,'submitted',?,?)")
+        ->execute([$eventId,$priorStart,$priorStart,$priorSid,hash('sha256',$destination)]);
+    $pdo->prepare("INSERT INTO phone_voice_turns_v140(call_sid,step_number,owner_user_id,agent_id,speech_hash,speech_text,response_text,state)
+        VALUES(?,1,1,7,?,?,?,'ready')")
+        ->execute([$priorSid,hash('sha256','Previous question'),'Previous question','Previous answer']);
     c($answer('turn5',[])===$hangup&&$read()['last_occurrence']['reason']==='answer_consented',
         'a late or skipped silence callback cannot close the current conversation');
     $generated=0;$model=static function(string $speech,array $history,array $current)use(&$generated,$plan):array{
-        ++$generated;c($speech==='Hello there'&&$history===[]&&$current['objectives']===$plan['objectives'],'model receives only this call speech, history and approved objectives');
+        ++$generated;c($speech==='Hello there'&&$history===[]&&$current['objectives']===$plan['objectives'],
+            'memory-off model receives only this call speech and approved objectives');
         return ['ok'=>true,'answer'=>'Hello. What would you like to cover?'];
     };
     $turn=$answer('turn1',['SpeechResult'=>'Hello there'],null,$model);
@@ -220,6 +239,52 @@ try{
     c(str_contains($answer('turn1',[]),'did not hear')&&$read()['last_occurrence']['reason']==='conversation_silent','speech timeout ends without model work');
 }finally{$pdo->rollBack();}
 echo "PASS objective-scoped scheduled speech turns, replay fencing and voice completion\n";
+
+$pdo->beginTransaction();
+try{
+    $priorStart=$callTime-10*86400-123;$priorSid='CA'.str_repeat('b',32);
+    $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=1,revision=revision+1');
+    $pdo->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id)
+        VALUES(1,?,?,?,?,'ended','conversation_completed',?,?,11,0)")
+        ->execute([$eventId,$priorStart,$priorStart+$duration,$assignment['revision'],$priorStart,$id]);
+    $pdo->prepare("INSERT INTO phone_operator_carrier_attempts_v1(owner_user_id,event_id,start_epoch,started_epoch,state,provider_sid,destination_hash)
+        VALUES(1,?,?,?,'submitted',?,?)")
+        ->execute([$eventId,$priorStart,$priorStart,$priorSid,hash('sha256',$destination)]);
+    $pdo->prepare("INSERT INTO phone_voice_turns_v140(call_sid,step_number,owner_user_id,agent_id,speech_hash,speech_text,response_text,state)
+        VALUES(?,1,1,7,?,?,?,'ready')")
+        ->execute([$priorSid,hash('sha256','Previous question'),'Previous question','Previous answer']);
+    $foreignSid='CA'.str_repeat('9',32);
+    $pdo->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id)
+        VALUES(1,?,?,?,?,'ended','conversation_completed',?,999,12,8)")
+        ->execute([$eventId,$priorStart-1,$priorStart+$duration-1,$assignment['revision'],$priorStart-1]);
+    $pdo->prepare("INSERT INTO phone_operator_carrier_attempts_v1(owner_user_id,event_id,start_epoch,started_epoch,state,provider_sid,destination_hash)
+        VALUES(1,?,?,?,'submitted',?,?)")
+        ->execute([$eventId,$priorStart-1,$priorStart-1,$foreignSid,hash('sha256',$destination)]);
+    $pdo->prepare("INSERT INTO phone_voice_turns_v140(call_sid,step_number,owner_user_id,agent_id,speech_hash,speech_text,response_text,state)
+        VALUES(?,1,1,8,?,?,?,'ready')")
+        ->execute([$foreignSid,hash('sha256','Foreign context'),'Foreign context','Foreign response']);
+    $continuityContext=vp3_operator_conversation_context_v1($pdo,1,$carrierForm['CallSid'],$callTime+1);
+    $continuity=vp3_operator_conversation_memory_v1($pdo,$continuityContext,$callTime+1);
+    c($continuity!==[],'current connected-phone memory grant is verified: '.json_encode($continuityContext));
+    c(vp3_operator_conversation_prior_v1($pdo,$continuity,1,$callTime+1)===[
+        ['role'=>'user','message'=>'Previous question'],['role'=>'assistant','message'=>'Previous answer']],
+        'prior history is scoped before model dispatch');
+    $seen=[];$response=$answer('turn1',['SpeechResult'=>'Continue our work'],null,
+        static function(string $speech,array $history)use($pdo,&$seen):array{
+            $seen=[$speech,$history];
+            $pdo->exec('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=0,revision=revision+1');
+            return ['ok'=>true,'answer'=>'This reply arrived after permission changed.'];
+        });
+    c($seen===['Continue our work',[
+        ['role'=>'user','message'=>'Previous question'],['role'=>'assistant','message'=>'Previous answer']]],
+        'memory-on model receives bounded history only from this contact, Chat and Agent series');
+    $stored=$pdo->prepare('SELECT state,response_text FROM phone_voice_turns_v140 WHERE call_sid=? AND step_number=1');
+    $stored->execute([$carrierForm['CallSid']]);
+    $savedTurn=$stored->fetch(PDO::FETCH_ASSOC);
+    c($response===$hangup&&$savedTurn===['state'=>'withheld','response_text'=>null],
+        'memory revocation while inference runs withholds and discards the generated reply');
+}finally{$pdo->rollBack();}
+echo "PASS permissioned recurring conversation continuity and late memory revocation\n";
 
 foreach(['window_elapsed','consent_withdrawn'] as $change){
     $pdo->beginTransaction();

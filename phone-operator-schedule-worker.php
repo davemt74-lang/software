@@ -22,6 +22,11 @@ try{
     $counts=vp3_operator_occurrences_tick_v1(db(),time());
     if($mode==='dispatch'){
         require_once __DIR__.'/includes/agent-operator-dispatch-worker-v1.php';
+        require_once __DIR__.'/includes/agent-operator-outreach-v1.php';
+        if(vp3_operator_outreach_schema_ready_v1(db())){
+            $counts['outreach']=vp3_operator_outreach_tick_v1(db(),time());
+            $counts['errors']+=$counts['outreach']['errors'];
+        }
         $counts['dispatch']=vp3_operator_dispatch_tick_v1(db(),'vp3_operator_submit_scheduled_v1');
         $counts['errors']+=$counts['dispatch']['errors']+$counts['dispatch']['uncertain'];
     }
