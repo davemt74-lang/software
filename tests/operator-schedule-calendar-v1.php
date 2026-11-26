@@ -112,8 +112,14 @@ if($scenario!=='success')return;
 $carrierForm=['AccountSid'=>vp3_phone_twilio_state_v100()['account_sid'],'CallSid'=>'CA'.str_repeat('c',32),
     'From'=>$plan['fields']['From'],'To'=>$plan['fields']['To']];
 $recordSid='RE'.str_repeat('d',32);$recordStarts=0;
-$recordCarrier=static function(string $method,string $resource,array $fields)use(&$recordStarts,$recordSid,$carrierForm):array{
+$recordCarrier=static function(string $method,string $resource,array $fields)use(&$recordStarts,$recordSid,$carrierForm,$pdo,$callTime):array{
     ++$recordStarts;
+    $extraStarts=0;
+    $overlap=vp3_operator_recording_start_v1($pdo,1,$carrierForm['CallSid'],$callTime+1,
+        static function()use(&$extraStarts){++$extraStarts;});
+    c($overlap['state']==='starting'&&$extraStarts===0,'a second worker observes the recording claim without sending another start');
+    c(vp3_operator_conversation_context_v1($pdo,1,$carrierForm['CallSid'],$callTime+1)===[],
+        'speech capture waits for confirmed recording');
     c($method==='POST'&&str_ends_with($resource,'/Calls/'.$carrierForm['CallSid'].'/Recordings.json')
         &&$fields['RecordingChannels']==='dual'&&$fields['RecordingTrack']==='both'&&$fields['PlayBeep']==='true'
         &&str_contains($fields['RecordingStatusCallback'],'event=recording'),'consent starts one dual-channel recording with an audible notice');

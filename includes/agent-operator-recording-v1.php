@@ -75,10 +75,10 @@ function vp3_operator_recording_start_v1(PDO $pdo,int $owner,string $sid,int $no
             WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND recording_state='none'")
             ->execute([vp3_phone_recording_json_v1($policy),$now,$owner,$attempt['event_id'],$attempt['start_epoch']]);
         $pdo->prepare("UPDATE phone_browser_calls_v1 SET state='answered',updated_epoch=? WHERE id=?")->execute([$now,$call['id']]);
-        return ['state'=>'starting','attempt'=>$attempt,'call'=>$call,'account'=>(string)vp3_phone_twilio_state_v100()['account_sid']];
+        return ['state'=>'starting','claimed'=>true,'account'=>(string)vp3_phone_twilio_state_v100()['account_sid']];
     });
-    if(($snapshot['state']??'')!=='starting')return $snapshot;
-    $carrier??='vp3_phone_twilio_http_v100';$call=$snapshot['call'];$account=$snapshot['account'];$result=null;
+    if(empty($snapshot['claimed']))return $snapshot;
+    $carrier??='vp3_phone_twilio_http_v100';$account=$snapshot['account'];$result=null;
     try{$result=$carrier('POST','/2010-04-01/Accounts/'.$account.'/Calls/'.$sid.'/Recordings.json',[
         'RecordingChannels'=>'dual','RecordingTrack'=>'both','Trim'=>'do-not-trim','PlayBeep'=>'true',
         'RecordingStatusCallback'=>vp3_phone_browser_callback_v1('operator_answer',['event'=>'recording']),
@@ -108,6 +108,7 @@ function vp3_operator_recording_event_v1(PDO $pdo,int $owner,string $sid,array $
         if(!$attempt||!is_string($record)||preg_match('/^RE[a-f0-9]{32}$/iD',$record)!==1
             ||($form['RecordingSource']??null)!=='StartCallRecordingAPI'||!in_array($status,['completed','absent','failed'],true)
             ||($form['CallSid']??null)!==$sid)return ['accepted'=>false];
+        if($status==='completed'&&(($form['RecordingChannels']??null)!=='2'||($form['RecordingTrack']??null)!=='both'))return ['accepted'=>false];
         // A signed terminal callback can beat or recover a lost REST start response.
         if(in_array($attempt['recording_state'],['starting','uncertain'],true)&&$attempt['recording_sid']===null){
             $q=$pdo->prepare('SELECT 1 FROM phone_operator_carrier_attempts_v1 WHERE recording_sid=? AND provider_sid<>?');$q->execute([$record,$sid]);
@@ -120,7 +121,6 @@ function vp3_operator_recording_event_v1(PDO $pdo,int $owner,string $sid,array $
         if(!in_array($attempt['recording_state'],['started','received'],true)||!is_string($attempt['recording_sid'])
             ||!hash_equals($attempt['recording_sid'],$record))return ['accepted'=>false];
         if($attempt['recording_state']==='received')return ['accepted'=>true,'duplicate'=>true];
-        if($status==='completed'&&(($form['RecordingChannels']??null)!=='2'||($form['RecordingTrack']??null)!=='both'))return ['accepted'=>false];
         $q=$pdo->prepare("SELECT * FROM phone_browser_calls_v1 WHERE owner_user_id=? AND provider_call_sid=? AND transport_kind='operator_scheduled'");
         $q->execute([$owner,$sid]);$call=$q->fetch(PDO::FETCH_ASSOC);if(!$call)return ['accepted'=>false];
         $policy=vp3_operator_recording_saved_policy_v1($pdo,$call,$record);
