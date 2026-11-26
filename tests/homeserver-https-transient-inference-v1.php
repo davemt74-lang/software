@@ -10,6 +10,7 @@ final class TransientRelaySQLite extends PDO
     public ?array $metadataFailure=null;
     public mixed $beforeOwnerLock=null;
     public ?array $autoResponse=null;
+    public mixed $afterAutoResponse=null;
 
     public function __construct(){parent::__construct('sqlite::memory:',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);}
     public function exec(string $statement): int|false
@@ -46,6 +47,7 @@ final class TransientRelaySQLite extends PDO
             $session=homeserver_https_v1300_session(1);
             homeserver_https_v1300_poll($session,[]);
             homeserver_https_v1300_poll($session,['results'=>[['request_id'=>$id]+$response]]);
+            if($this->afterAutoResponse!==null){$callback=$this->afterAutoResponse;$this->afterAutoResponse=null;$callback($this);}
         }
         return $committed;
     }
@@ -277,3 +279,41 @@ try{htThrows(fn()=>homeserver_https_v1300_wait_transient($id,1,$session),'timed 
 htCheck(microtime(true)-$start<0.5&&htCount()===0,'transient wait respects remaining inference budget and removes exact expired context');
 
 echo 'HOMESERVER_HTTPS_TRANSIENT_INFERENCE_V1=PASS checks='.$GLOBALS['checks'].PHP_EOL;
+
+
+require_once __DIR__.'/../includes/homeserver-model-inventory-read-v1.php';
+$inventory=['version'=>'vp3.local-model-inventory.v1','provider'=>'ollama','enabled'=>true,
+    'configured_model'=>'local:latest','discovery_state'=>'reported','truncated'=>false,
+    'models'=>[['model'=>'local:latest','routing_eligible'=>true,'execution_verified'=>true]]];
+$pdo=htReset();
+$foreign=homeserver_https_v1300_queue(2,'inference.status',[]);
+$pdo->autoResponse=['ok'=>true,'status'=>200,'payload'=>['model_inventory'=>$inventory,'secret'=>'private']];
+$view=vp3_homeserver_inventory_read_v1(1);
+htCheck($view['state']==='reported'&&$view['configured_model_reported']&&!$view['models'][0]['routing_eligible']
+    &&!array_key_exists('secret',$view)&&htCount()===1&&htRow($foreign)!==null,'inventory consumes only its scoped response and strips untrusted claims');
+$pdo->autoResponse=['ok'=>true,'status'=>200,'payload'=>['model'=>'legacy']];
+htCheck(vp3_homeserver_inventory_read_v1(1)['state']==='unsupported'&&htCount()===1,'legacy inference status is unsupported without fallback');
+$pdo->autoResponse=['ok'=>false,'status'=>503,'payload'=>['detail'=>'PRIVATE_PROVIDER_ERROR']];
+$error=htThrows(fn()=>vp3_homeserver_inventory_read_v1(1),'could not be refreshed');
+htCheck(!str_contains((string)$error,'PRIVATE_PROVIDER_ERROR')&&htCount()===1,'failed inventory response is sanitized and cleaned');
+$pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
+htThrows(fn()=>vp3_homeserver_inventory_read_v1(1),'authorization changed');
+htCheck(htCount()===1,'inactive account cannot queue inventory');
+$pdo->exec('UPDATE users SET is_active=1 WHERE id=1');
+homeserver_https_v1300_revoke(1);
+htThrows(fn()=>vp3_homeserver_inventory_read_v1(1),'pairing is unavailable');
+htCheck(htCount()===1,'revoked pairing cannot queue inventory');
+$pdo=htReset();
+$pdo->denyDelete=true;
+$pdo->autoResponse=['ok'=>true,'status'=>200,'payload'=>['model_inventory'=>$inventory]];
+htThrows(fn()=>vp3_homeserver_inventory_read_v1(1),'could not be refreshed');
+htCheck(htCount()===1,'cleanup failure never returns inventory success');
+$pdo->denyDelete=false;
+$pdo=htReset();
+$pdo->autoResponse=['ok'=>true,'status'=>200,'payload'=>['model_inventory'=>$inventory]];
+$pdo->afterAutoResponse=static function(PDO $db):void{
+    $db->prepare('UPDATE homeserver_https_sessions SET session_token_hash=? WHERE user_id=1')->execute([hash('sha256','replacement')]);
+};
+htThrows(fn()=>vp3_homeserver_inventory_read_v1(1),'pairing is unavailable or changed');
+htCheck(htCount()===0,'session replacement after delivery prevents private inventory release and cleans the old response');
+echo 'HOMESERVER_MODEL_INVENTORY_READ_V1=PASS'.PHP_EOL;

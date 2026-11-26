@@ -15,9 +15,13 @@ function pws_reset(): array
         profile_specialist_fixture_column_v1($pdo,'user_agents',$column,$definition);
     $first=pa3_admit('Could you help me choose a T-shirt size?',0,str_repeat('1',32),0,'b');
     // SQLite admission deliberately uses its wall clock rather than the injected
-    // handoff clock. Age only this fixture message to admit an independent turn.
+    // handoff clock. MySQL admission uses the frozen fixture/database clock. Age
+    // only this fixture message against the clock the service will actually read.
+    $admissionClock=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
+        ?gmdate('Y-m-d H:i:s',time()-5)
+        :pfs_now()->modify('-5 seconds')->format('Y-m-d H:i:s');
     $pdo->prepare("UPDATE profile_agent_messages SET created_at=? WHERE conversation_id=? AND sender_type='visitor'")
-        ->execute([gmdate('Y-m-d H:i:s',time()-5),(int)$first['conversation_id']]);
+        ->execute([$admissionClock,(int)$first['conversation_id']]);
     pfs_advance(3000);
     $second=pa3_admit('Does the second product come in blue?',0,str_repeat('2',32),0,'c');
     $legacy=profile_specialist_fixture_settled_v1($pdo,1,7,83000);
