@@ -59,7 +59,7 @@ function vp3_operator_current_request_v1(PDO $pdo,array $row,int $now,?string $a
     return ['reason'=>'eligible','fields'=>['From'=>$line['phone_e164'],'To'=>$to,'TimeLimit'=>$seconds],
         'objectives'=>$event['description'],'conversation_id'=>(int)$assignment['conversation_id'],
         'agent_id'=>(int)$assignment['agent_id'],'number_id'=>(int)$assignment['number_id'],
-        'chat_agent_id'=>(int)$assignment['chat_agent_id']];
+        'chat_agent_id'=>(int)$assignment['chat_agent_id'],'contact_id'=>$contact];
 }
 
 function vp3_operator_preview_due_v1(PDO $pdo,int $now):array

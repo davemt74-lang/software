@@ -170,4 +170,8 @@ Operator scheduled call occurrences
   worker and the owner and recipient permissions. Remove --dispatch to stop new submissions.
   The recipient hears the recording and transcription disclosure and chooses whether to
   continue. An uncertain carrier receipt counts as an error and retains its reservation.
+  When the connected-phone holder has enabled call memory, the Agent may receive up to
+  four saved turns from earlier calls in the same Calendar series, contact, private Chat
+  and Agent scope. Changing that memory grant while a reply is being generated discards
+  the reply. Disabling memory removes prior turns from later model requests.
   Check the original call history and the carrier log before taking further action.
