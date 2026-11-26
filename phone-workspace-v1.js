@@ -860,9 +860,13 @@
       finally{if(current(g)&&phoneContactDraft===draft){draft.saving=false;render();}}
     });host.append(form);
   }
+  function agendaReviewAvailable(info){
+    return publicId(info?.public_id)&&info.transport_kind!=='managed_callback'&&info.state==='completed'&&
+      state?.operator_objectives_available===true&&context.ready&&Number(info.conversation_id)===context.conversation_id;
+  }
   function renderCalls(){
     const host=sections.calls;if(!state?.calls.length){host.replaceChildren();listEmpty(host,state?'No recent calls.':'Recent calls are unavailable.');return;}
-    const renderGeneration=generation,contents=[];for(const call of state.calls){if(call.transport_kind==='managed_callback'&&Number(call.conversation_id)===context.conversation_id){contents.push(callCard(call));continue;}const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||callPeerName(call)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);contents.push(row);}replacePhoneContent(host,...contents);
+    const renderGeneration=generation,contents=[];for(const call of state.calls){if((call.transport_kind==='managed_callback'&&Number(call.conversation_id)===context.conversation_id)||agendaReviewAvailable(call)){contents.push(callCard(call));continue;}const row=node('article','vp3-phone-row'),details=node('div','vp3-phone-row-copy'),contact=callerContact(call);details.append(node('strong',null,contact?.name||callPeerName(call)));if(contact)details.append(node('span',null,call.peer_e164));details.append(node('span',null,[displayState(localStates.get(call.public_id)||call.state),displayTime(call.created_at)].filter(Boolean).join(' · ')));const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(call.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(call.peer_e164||'');row.append(details,callback);contents.push(row);}replacePhoneContent(host,...contents);
   }
   function voicemailCard(voicemail){
     const renderGeneration=generation;
@@ -1800,7 +1804,7 @@
       const review=button('Review conversation',event=>{if(event.isTrusted)void reviewManagedCall(info,renderGeneration);});
       review.disabled=managedReview?.id===id&&managedReview.busy;review.dataset.phoneFocusKey='managed-review-'+id;actions.append(review);
     }
-    if(!managed&&!readOnlyLegacy&&info.state==='completed'&&state?.operator_objectives_available===true&&context.ready&&Number(info.conversation_id)===context.conversation_id){
+    if(agendaReviewAvailable(info)){
       const review=button('Review call agenda',event=>{if(event.isTrusted)void reviewManagedCall(info,renderGeneration,true);});
       review.disabled=managedReview?.id===id&&managedReview.busy;review.dataset.phoneFocusKey='agenda-review-'+id;actions.append(review);
     }
