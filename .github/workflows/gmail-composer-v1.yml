@@ -26,6 +26,7 @@ on:
       - 'includes/agent-operator-*.php'
       - 'phone-operator-schedule-worker.php'
       - 'tests/fixtures/phone-agent-email-call-*'
+      - 'tests/fixtures/agent-email-preferences-*'
       - 'includes/*gmail*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
@@ -38,6 +39,8 @@ on:
       - 'includes/ai-settings.php'
       - 'includes/agent-tool-json-v1.php'
       - 'includes/agent-initiative-model-v1.php'
+      - 'includes/agent-brain-soul-v1.php'
+      - 'tests/agent-brain-soul-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
       - 'tests/agent-top-of-mind-session-http.mjs'
@@ -73,6 +76,7 @@ on:
       - 'includes/agent-operator-*.php'
       - 'phone-operator-schedule-worker.php'
       - 'tests/fixtures/phone-agent-email-call-*'
+      - 'tests/fixtures/agent-email-preferences-*'
       - 'includes/*gmail*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
@@ -85,6 +89,8 @@ on:
       - 'includes/ai-settings.php'
       - 'includes/agent-tool-json-v1.php'
       - 'includes/agent-initiative-model-v1.php'
+      - 'includes/agent-brain-soul-v1.php'
+      - 'tests/agent-brain-soul-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
       - 'tests/agent-top-of-mind-session-http.mjs'
@@ -142,6 +148,12 @@ jobs:
           php tests/agent-email-composer-v1.php
           php tests/agent-email-attachments-v1.php
           php tests/agent-email-display-v1.php
+      - name: Explicit draft writing preferences, private revisions and publication recovery
+        run: |
+          php tests/agent-brain-soul-v1.php
+          php tests/agent-email-preferences-v1.php
+          php tests/agent-email-preferences-provider-v1.php
+          for file in includes/agent-email-preferences-*.php; do php -l "$file"; done
       - name: Private Phone Agent enrollment, native sources, receipts and background push
         run: |
           for file in tests/phone-agent-workspace-*.php; do php "$file"; done
@@ -179,6 +191,7 @@ jobs:
       VP3_GMAIL_FOLLOWTHROUGH_SCREENSHOT_DIR: artifacts/gmail-followthrough
       VP3_PHONE_AGENT_SCREENSHOT_DIR: artifacts/phone-agent
       VP3_EMAIL_CALLS_SCREENSHOT_DIR: artifacts/email-calls
+      VP3_EMAIL_WRITING_SCREENSHOT_DIR: artifacts/email-writing
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -195,6 +208,10 @@ jobs:
           bash tools/install-ci-chromium.sh
       - name: Popup and canvas compose, image attachments, draft recovery, and send states
         run: node tests/chat-email-composer-browser.mjs
+      - name: Owner-reviewed writing preferences, history, conflicts and dirty navigation
+        run: |
+          node tests/email-writing-preferences-state-v1.mjs
+          node tests/email-writing-preferences-browser-v1.mjs
       - name: Response deadlines, verified outcomes, pause, resolve and follow-up review
         run: node tests/gmail-followthrough-browser.mjs
       - name: Connected Phone Agent native review, dirty navigation, private canvases and push targets

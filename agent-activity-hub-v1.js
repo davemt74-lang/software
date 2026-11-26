@@ -701,6 +701,22 @@
   function populateSpecialistSettings(view,current,key) {
     const settings = cfg.specialistSettings || {};
     const rulesEndpoint = localUrl(cfg.coordinationRulesEndpoint);
+    const email = window.VP3_CHAT_EMAIL_V1,writing = window.VP3EmailWritingPreferencesV1;
+    if (key === 'gmail' && writing?.createClient && writing?.mountSettings && positive(current.cid)
+      && localUrl(email?.endpoint) && String(email.ownerKey) === String(current.owner) && Number(email.agentId) === current.agent && email.csrf) {
+      const content = node('section');view.body.append(content);
+      const shortcut = button('Writing preferences',() => {
+        if (view.writingPreferences) {view.writingPreferences.root.scrollIntoView({block:'start'});return;}
+        const client = writing.createClient({endpoint:email.endpoint,context:{owner_key:String(current.owner),agent_id:current.agent,conversation_id:current.cid,csrf_token:email.csrf},
+          isCurrent:() => specialistSettings === view && signature(scope()) === signature(current) && !accessRejected,
+          onAccessChanged:() => {if (specialistSettings === view) close(false);}});
+        view.writingPreferences = writing.mountSettings({host:content,request:client.request,
+          isCurrent:() => specialistSettings === view && signature(scope()) === signature(current) && !accessRejected});
+        view.cleanups.push(() => {view.writingPreferences?.dispose();client.dispose();});shortcut.hidden = true;
+        view.writingPreferences.root.querySelector('h3')?.focus({preventScroll:true});
+      });
+      shortcut.style.minHeight = '44px';content.append(shortcut);
+    }
     if (key === 'gmail' && localUrl(cfg.emailCallSettingsApi) && window.VP3EmailCallSettingsV1?.mount && !positive(current.cid)) {
       view.body.append(node('p','Open a saved private Chat to set up Email calls.'));
     } else if (key === 'gmail' && localUrl(cfg.emailCallSettingsApi) && window.VP3EmailCallSettingsV1?.mount) {
@@ -764,11 +780,16 @@
     view.body.remove();
   }
 
+  async function requestSpecialistSettingsExit(view = specialistSettings) {
+    const currentHost = host,currentScope = signature(scope());
+    if (view?.writingPreferences && !await view.writingPreferences.requestClose()) return false;
+    if (view?.emailCalls && !await view.emailCalls.requestClose()) return false;
+    return opened && host === currentHost && specialistSettings === view && currentScope === signature(scope());
+  }
+
   async function closeSpecialistSettings() {
-    if (!specialistSettings) return;
-    const view = specialistSettings;
-    if (view.emailCalls && !await view.emailCalls.requestClose()) return;
-    if (specialistSettings !== view) return;
+    if (!specialistSettings) return true;
+    if (!await requestSpecialistSettingsExit()) return false;
     disposeSpecialistSettings();
     delete host.dataset.settings;
     specialistContent.hidden = false;
@@ -781,6 +802,7 @@
     positionSpecialist();
     settingsButton.focus({preventScroll:true});
     void read();
+    return true;
   }
 
   function openSpecialistSettings() {
@@ -1118,15 +1140,29 @@
       }
     }
     if (gmailView && gmailCurrent(gmailView)) {
-      if (specialistSettings) closeSpecialistSettings();
+      if (specialistSettings && !await closeSpecialistSettings()) return false;
       return selectGmailTab(gmailView,'sent',true);
     }
-    if (opened) close(false);
+    if (opened) {
+      if (!await requestSpecialistSettingsExit()) return false;
+      close(false);
+    }
     if (!openSpecialist('gmail',trigger,{label:'Gmail',focusReturn:trigger || document.getElementById('chatInput')})) return false;
     return gmailView ? selectGmailTab(gmailView,'sent',true) : false;
   }
 
-  function openSpecialist(key,trigger,{label,focusReturn,fullReport = false,selection} = {}) {
+  function openSpecialist(key,trigger,options = {}) {
+    if (!scope(true)?.hasChat || typeof key !== 'string' || !specialistKey.test(key)) return false;
+    if (specialistSettings?.writingPreferences || specialistSettings?.emailCalls) {
+      void requestSpecialistSettingsExit().then(allowed => {
+        if (allowed) openSpecialistNow(key,trigger,options);
+      });
+      return true;
+    }
+    return openSpecialistNow(key,trigger,options);
+  }
+
+  function openSpecialistNow(key,trigger,{label,focusReturn,fullReport = false,selection} = {}) {
     if (!scope(true)?.hasChat || typeof key !== 'string' || !specialistKey.test(key)) return false;
     if (opened && specialistMode && selectedSpecialist === key) {
       if (profileView) { if (selection) profileView.select(selection);return true; }
@@ -1193,8 +1229,9 @@
     backButton.hidden = true;
     header.append(heading);
     if (id === 'gmail' && typeof window.VP3EmailComposerV1?.openCompose === 'function') {
-      const compose = button('+',event => {
+      const compose = button('+',async event => {
         if (!event.isTrusted || specialistScope !== signature(scope(true))) return;
+        if (!await requestSpecialistSettingsExit()) return;
         close(false);
         void window.VP3EmailComposerV1.openCompose({surface:'popup'});
       });
@@ -1204,9 +1241,7 @@
       header.append(compose);
     }
     header.append(workspaceButton,backButton,settingsButton,button('Close',async () => {
-      const view = specialistSettings;
-      if (view?.emailCalls && !await view.emailCalls.requestClose()) return;
-      if (specialistSettings === view) close();
+      if (await requestSpecialistSettingsExit()) close();
     }));
     status = node('p','Loading activity…','vp3-agent-activity-status');
     status.setAttribute('role','status');

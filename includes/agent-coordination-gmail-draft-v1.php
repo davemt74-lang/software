@@ -92,6 +92,10 @@ function vp3_coordination_gmail_draft_store_v1(PDO $pdo,array $user,array $goal,
     $insert->execute([$draft['id'],$owner,$agent,$binding['conversation_id'],$goal['followthrough']['reply_message_id'],
         $source['connection_id'],$source['authorization_key'],$draft['from'],$draft['to'],
         ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))]);
+    require_once __DIR__.'/agent-email-preferences-v1.php';
+    agent_email_preferences_capture_generated_v1($pdo,
+        agent_connection_email_chat_draft_v1($pdo,$owner,$agent,(int)$binding['conversation_id'],$draft['id']),
+        'organic:'.$draft['id']);
 }
 
 function vp3_coordination_gmail_draft_action_v1(PDO $pdo,array $user,int $agent,int $conversation,string $id): array

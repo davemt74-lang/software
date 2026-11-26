@@ -161,6 +161,10 @@ function agent_email_followthrough_prepare_v1(PDO $pdo,array $row,array $watch,a
                 VALUES (?,?,?,?,?,?,?,?,?,?,'prepared',0,1)")
                 ->execute([$id,(int)$saved['owner_user_id'],(int)$saved['agent_id'],(int)$saved['conversation_id'],(int)$saved['user_message_id'],
                     (int)$saved['connection_id'],$saved['authorization_key'],$saved['account_email'],$source['to'],ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))]);
+            require_once __DIR__.'/agent-email-preferences-v1.php';
+            agent_email_preferences_capture_generated_v1($pdo,
+                agent_connection_email_chat_draft_v1($pdo,(int)$saved['owner_user_id'],(int)$saved['agent_id'],(int)$saved['conversation_id'],$id),
+                'followthrough:'.$attempt);
             $pdo->prepare("UPDATE agent_email_followthrough_v1 SET generated_draft_id=?,generated_revision=?,draft_attempt_state='ready',
                 draft_attempt_reason=NULL,draft_attempt_lease=NULL,state_version=state_version+1 WHERE id=? AND revision=? AND draft_attempt_key=?")
                 ->execute([$id,(int)$saved['source_revision'],$saved['id'],(int)$saved['revision'],$attempt]);

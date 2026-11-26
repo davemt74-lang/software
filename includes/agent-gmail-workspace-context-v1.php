@@ -59,7 +59,7 @@ function agent_gmail_workspace_connection_v1(PDO $pdo,int $owner): array
             array_flip(['id','authorization_key','client_fingerprint','account_email','status','read_enabled','send_enabled','followups_enabled']))],JSON_THROW_ON_ERROR))];
 }
 
-function agent_gmail_workspace_capabilities_v1(array $connection,bool $drafts,bool $followthrough=false): array
+function agent_gmail_workspace_capabilities_v1(array $connection,bool $drafts,bool $followthrough=false,bool $writingPreferences=false): array
 {
     $permissions = $connection['view']['permissions'] ?? [];
     $send = $connection['send'] && $drafts;
@@ -71,6 +71,10 @@ function agent_gmail_workspace_capabilities_v1(array $connection,bool $drafts,bo
         'save_draft'=>['available'=>$send,'command'=>'Save this draft.','storage'=>'VP3 private Chat drafts'],
         'revise_selected_draft'=>['available'=>$send,'command'=>'Make this draft shorter.',
             'provider_state'=>'Checked on request; uses the saved draft and current owner direction.'],
+        'writing_preferences'=>['available'=>$send && $writingPreferences,'surfaces'=>['gmail_popup','chat_canvas','phone_agent'],
+            'entry'=>'Remember this writing preference after editing and saving an Agent-generated draft.',
+            'scope'=>'Account-wide Email Specialist Soul shared by new emails, replies, organic drafts and follow-ups.',
+            'limits'=>'Only an explicit owner request prepares a suggestion. The owner must review and save it. Ordinary draft saves do not change preferences. Writing preferences provides edit, remove, history and restore controls. Existing drafts and send approvals are unchanged.'],
         'send'=>['available'=>$send,'review'=>'Composer send requires the existing review of the exact current recipient, message and attachments.'],
         'automatic_replies'=>['state'=>'checked_on_request',
             'limits'=>'The separate owner-enabled Auto Send policy can approve exact sender addresses. This context never enables it or authorizes a new automatic send.'],
@@ -302,10 +306,12 @@ function agent_gmail_workspace_context_v1(PDO $pdo,array $user,array $principal,
     $owner=(int)$user['id'];$agent=($principal['kind']??'system')==='user_agent'?(int)$principal['agent_id']:0;
     $connection=agent_gmail_workspace_connection_v1($pdo,$owner);
     require_once __DIR__.'/agent-email-followthrough-v1.php';
+    require_once __DIR__.'/agent-email-preferences-schema-v1.php';
     $out=['contract'=>VP3_GMAIL_WORKSPACE_CONTEXT_V1,'owner_user_id'=>$owner,'agent_id'=>$agent,'conversation_id'=>$conversationId,
         'observed_at'=>gmdate(DATE_ATOM,$now),'state'=>$connection['state'],'mailbox_revision'=>$connection['revision'],
         'read_available'=>$connection['read'],'send_available'=>$connection['send'],'instructions_authority'=>false,'execution_authority'=>false,
-        'capabilities'=>agent_gmail_workspace_capabilities_v1($connection,table_exists('agent_connection_email_drafts_v1'),agent_email_followthrough_ready_v1($pdo)),
+        'capabilities'=>agent_gmail_workspace_capabilities_v1($connection,table_exists('agent_connection_email_drafts_v1'),
+            agent_email_followthrough_ready_v1($pdo),agent_email_preferences_ready_v1($pdo)),
         'coverage'=>['drafts'=>'saved_vp3_drafts_for_selected_agent','sent'=>'verified_vp3_sends_only',
             'mailbox_sent'=>'on_demand_not_loaded','message_bodies'=>'not_loaded','history'=>'bounded_previews','followthrough'=>'saved_owner_deadlines_not_live_mailbox'],
         'drafts'=>['state'=>'unavailable','counts'=>null,'items'=>[]],

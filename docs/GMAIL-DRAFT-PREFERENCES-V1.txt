@@ -1,0 +1,89 @@
+GMAIL DRAFT WRITING PREFERENCES V1
+
+Purpose
+
+Let the account owner turn a correction to a generated Gmail draft into a
+reviewed, reusable Email Specialist writing preference. An ordinary draft Save
+records only that email edit. It never invokes preference inference or changes
+the active writing instructions.
+
+Owner flow
+
+1. Generate a new email, reply, organic reply proposal, or overdue follow-up.
+2. Edit its wording and save the draft.
+3. Select Remember this writing preference to request one suggestion based on
+   the actual saved generated text and the actual saved owner correction.
+4. Review or edit the suggested paragraph, then Save writing preference or
+   Dismiss. Suggestions are never automatically accepted.
+5. Open Writing preferences from Gmail or the composer to inspect/edit/remove
+   instructions, preview older versions, restore a version, or reset defaults.
+
+Scope
+
+Accepted instructions append to the owner's existing Email Specialist Soul.
+This is the same account-wide, versioned private role text consumed by all four
+email writer paths. It is not a separate learning profile. A preference change
+does not rewrite an existing draft or approve a send. Recipient-specific style
+and autonomous preference acceptance are outside this release.
+
+The suggestion model receives bounded before/after subject and body plus the
+current Email Soul, with email text treated as untrusted evidence. Separate
+recipient/contact metadata, attachment bytes, unrelated mail and Chat history
+are not suggestion inputs; the saved text itself can contain personal details.
+The protocol can return no style change. Facts such as prices, dates,
+addresses and promises are not instructions to generalize. The account owner
+must explicitly review any proposed reusable wording.
+
+Persistence and recovery
+
+- Generated captures are created only with successful native draft writes.
+- Owner edit provenance is written in the actual compose_save transaction.
+- Regeneration replaces capture identity and invalidates prior suggestions.
+- A unique capture/edit pair can dispatch at most one suggestion model call.
+  Refreshing, double-clicking, or losing a response does not redispatch it.
+- Suggestion bodies and generated comparisons are encrypted at rest. Reads and
+  writes require current owner/private Chat/Gmail authority. Phone actions also
+  require the exact live native item and connected-device enrollment.
+- Accepted preference publication uses the existing Soul revision lock and
+  immutable history. A durable publishing receipt identifies its exact target
+  version and content hash before a file is published. SQL and filesystem are
+  separate resources; recovery verifies that exact immutable target rather
+  than assuming an ambiguous response means nothing was saved.
+- A changed source, session, grant, or Soul revision requires refresh/review.
+  Existing accepted receipts cannot append again after a later restore.
+
+Deployment
+
+Deploy the complete merged production ZIP and run Database Upgrade. Setup and
+Upgrade install the schema through the existing Connections installer. Runtime
+requests never perform DDL. Existing drafting works before the new metadata is
+installed; preference learning remains unavailable until the upgrade succeeds.
+Drafts created before this release keep their normal editing and sending
+behavior. To learn from one, generate a fresh version and save a wording edit;
+the system does not guess what its original generated wording used to be.
+Preserve config.php, .env, private/ and uploads/ as for every full deployment.
+
+Acceptance score
+
+Baseline before this phase: 2/10. The shared Email Soul and its immutable version
+history already existed. The release reaches 10/10 only when all gates below
+are verified; the score describes this scoped implementation and automated
+acceptance, not subjective live-provider prose quality.
+
+1. One existing Email Soul feeds new mail, replies, organic drafts and follow-ups.
+2. Private version history supports edits/removal, preview, restore and reset.
+3. Eligibility binds a real generated baseline to a real saved owner correction.
+4. Ordinary draft saves do not call a model or change active preferences.
+5. Suggestions are bounded, style-only, explicitly requested and one-shot.
+6. Only explicit owner review of the exact current proposal can publish it.
+7. Current owner/session/private Chat/Gmail/Phone scope fences protect dispatch,
+   publication and private responses, including revocation during slow work.
+8. Stale revisions, repeated requests and interrupted publication recover without
+   duplicating a model call or silently appending a preference twice.
+9. Desktop and connected Phone UI preserve unsaved edits, one surrounding scroll
+   area and usable controls; preference changes leave send/voice review intact.
+10. Native database, provider-boundary, client/browser and cumulative CI checks
+    pass; the merged production package matches its exact Git commit.
+
+Verification deliberately uses fake provider transport and model outputs. It
+does not send real emails, place calls, deliver push messages or buy inference.

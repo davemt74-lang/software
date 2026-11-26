@@ -302,7 +302,12 @@ function agent_email_composer_change_v1(PDO $pdo, array $user, array $principal,
             WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=? AND status=? AND message_enc=? AND recipient=? AND expires_at=?');
         $replace->execute([$encoded,$recipient,$next,$watch,$draft['id'],$owner,$agent,$conversation,$draft['status'],$draft['message_enc'],$draft['recipient'],$draft['expires_at']]);
         if ($replace->rowCount() !== 1) throw new DomainException('This email draft changed. Open the latest saved version.',409);
-        return agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$draft['id']);
+        $saved=agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$draft['id']);
+        if ($input['action']==='compose_save') {
+            require_once __DIR__.'/agent-email-preferences-v1.php';
+            agent_email_preferences_capture_edit_v1($pdo,$draft,$saved);
+        }
+        return $saved;
     });
     return agent_connection_email_chat_public_draft_v1($row,$key,time());
 }

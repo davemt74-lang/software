@@ -67,6 +67,7 @@ jobs:
             "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
+            "gmail_draft_preferences": "owner-reviewed-email-soul-v1",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -485,6 +486,12 @@ jobs:
           test -f _deploy/includes/agent-email-followthrough-status-v1.php
           test -f _deploy/chat-email-followthrough-v1.js
           test -f _deploy/chat-email-followthrough-v1.css
+          test -f _deploy/includes/agent-email-preferences-v1.php
+          test -f _deploy/includes/agent-email-preferences-schema-v1.php
+          test -f _deploy/includes/agent-email-preferences-http-v1.php
+          test -f _deploy/email-writing-preferences-v1.js
+          test -f _deploy/email-writing-preferences-v1.css
+          test -f _deploy/docs/GMAIL-DRAFT-PREFERENCES-V1.txt
           test -f _deploy/includes/agent-initiative-youtube-offer-v1.php
           test -f _deploy/includes/agent-initiative-model-recovery-v1.php
           test -f _deploy/includes/agent-token-balance-notice-v1.php
