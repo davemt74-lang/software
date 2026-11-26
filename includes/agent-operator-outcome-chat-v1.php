@@ -23,6 +23,11 @@ function vp3_operator_outcome_chat_tick_v1(PDO $pdo,int $now,int $limit=40):arra
                 if(!$row)return null;
                 $scope=vp3_phone_workspace_scope_v1($pdo,['id'=>$owner],['conversation_id'=>$row['conversation_id'],'agent_id'=>$row['chat_agent_id']]);
                 $labels=['answer_consented'=>'The recipient agreed to a recorded and transcribed conversation.',
+                    'conversation_completed'=>'The recipient ended the conversation by voice.',
+                    'conversation_silent'=>'The call ended while the agent was waiting for a spoken response.',
+                    'conversation_turn_limit'=>'The conversation reached its eight-turn limit.',
+                    'conversation_model_failed'=>'The agent could not generate a reply and ended the call.',
+                    'conversation_ended'=>'The call ended during the conversation.',
                     'answer_declined'=>'The recipient declined the conversation.','answer_no_input'=>'The recipient gave no keypad response.',
                     'answer_permission_changed'=>'Permission or availability changed before the conversation could start.',
                     'carrier_busy'=>'The recipient’s line was busy.','carrier_failed'=>'The carrier could not connect the call.',

@@ -36,17 +36,18 @@ function vp3_operator_conversation_turn_v1(PDO $pdo,int $owner,string $sid,int $
     $prepared=section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid,$step,$speech,$now){
         $context=vp3_operator_conversation_context_v1($pdo,$owner,$sid,$now,true);if(!$context)return ['kind'=>'hangup'];
         $row=$context['row'];$key=[$owner,$row['event_id'],$row['start_epoch']];
-        if($speech===''||preg_match('/^\s*(?:goodbye|bye|hang up|end call|stop call)[.! ]*$/iu',$speech)){
-            $reason=$speech===''?'conversation_silent':'conversation_completed';
-            $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")->execute([$reason,...$key]);
-            return ['kind'=>'end','reason'=>$reason];
-        }
         $hash=hash('sha256',$speech);$q=$pdo->prepare('SELECT * FROM phone_voice_turns_v140 WHERE call_sid=? ORDER BY step_number DESC LIMIT 1');
         $q->execute([$sid]);$latest=$q->fetch(PDO::FETCH_ASSOC);$last=$latest?(int)$latest['step_number']:0;
         if($step>$last+1||$step<$last)return ['kind'=>'hangup'];
         if($step===$last){
             if(!hash_equals((string)$latest['speech_hash'],$hash)||$latest['state']!=='ready')return ['kind'=>'hangup'];
             return ['kind'=>'ready','reply'=>(string)$latest['response_text']];
+        }
+        if($latest&&$latest['state']!=='ready')return ['kind'=>'hangup'];
+        if($speech===''||preg_match('/^\s*(?:goodbye|bye|hang up|end call|stop call)[.! ]*$/iu',$speech)){
+            $reason=$speech===''?'conversation_silent':'conversation_completed';
+            $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")->execute([$reason,...$key]);
+            return ['kind'=>'end','reason'=>$reason];
         }
         $q=$pdo->prepare("INSERT INTO phone_voice_turns_v140(call_sid,step_number,owner_user_id,agent_id,speech_hash,speech_text,state) VALUES (?,?,?,?,?,?,'processing')");
         $q->execute([$sid,$step,$owner,$context['current']['agent_id'],$hash,$speech]);

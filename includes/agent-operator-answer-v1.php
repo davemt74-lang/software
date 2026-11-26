@@ -44,6 +44,16 @@ function vp3_operator_answer_v1(PDO $pdo,string $event,array $form,string $signa
             $status=$form['CallStatus']??'';
             if(!isset($outcomes[$status]))return $hangup;
             $reason=in_array($row['reason'],['carrier_submitted','answer_prompted'],true)?$outcomes[$status]:$row['reason'];
+            if($reason==='conversation_active'&&$status==='completed'){
+                $turn=$pdo->prepare('SELECT step_number,state FROM phone_voice_turns_v140 WHERE call_sid=? AND owner_user_id=? ORDER BY step_number DESC LIMIT 1');
+                $turn->execute([$sid,$owner]);
+                $last=$turn->fetch(PDO::FETCH_ASSOC);
+                $reason=match(true){
+                    ($last['state']??'')==='failed'=>'conversation_model_failed',
+                    ($last['state']??'')==='ready'&&(int)$last['step_number']===8=>'conversation_turn_limit',
+                    default=>'conversation_ended',
+                };
+            }
             $pdo->prepare("UPDATE phone_operator_occurrences_v1 SET state='ended',reason=? WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND state='submitted'")
                 ->execute([$reason,$owner,$row['event_id'],$row['start_epoch']]);
             if(!empty($row['event_id']))$pdo->prepare("UPDATE phone_browser_calls_v1 SET state=?,ended_epoch=?,updated_epoch=? WHERE owner_user_id=? AND provider_call_sid=? AND transport_kind='operator_scheduled'")

@@ -187,6 +187,8 @@ c($answer('confirm',['Digits'=>'1'],null,null,$recordCarrier)===$hangup&&$record
 $pdo->beginTransaction();
 try{
     c(str_contains($consented,'input="speech"')&&str_contains($consented,'event=turn1'),'consent begins a bounded speech turn');
+    c($answer('turn5',[])===$hangup&&$read()['last_occurrence']['reason']==='answer_consented',
+        'a late or skipped silence callback cannot close the current conversation');
     $generated=0;$model=static function(string $speech,array $history,array $current)use(&$generated,$plan):array{
         ++$generated;c($speech==='Hello there'&&$history===[]&&$current['objectives']===$plan['objectives'],'model receives only this call speech, history and approved objectives');
         return ['ok'=>true,'answer'=>'Hello. What would you like to cover?'];
@@ -202,6 +204,27 @@ try{
     c(str_contains($answer('turn1',[]),'did not hear')&&$read()['last_occurrence']['reason']==='conversation_silent','speech timeout ends without model work');
 }finally{$pdo->rollBack();}
 echo "PASS objective-scoped scheduled speech turns, replay fencing and voice completion\n";
+
+require_once dirname(__DIR__).'/includes/agent-operator-outcome-chat-v1.php';
+foreach(['failed'=>'conversation_model_failed','limit'=>'conversation_turn_limit','ended'=>'conversation_ended'] as $case=>$expectedReason){
+    $pdo->beginTransaction();
+    try{
+        $turns=$case==='limit'?8:1;
+        for($i=1;$i<=$turns;++$i){
+            $answer('turn'.$i,['SpeechResult'=>'Status update'],null,static fn()=>['ok'=>$case!=='failed','answer'=>'Understood.']);
+        }
+        $answer('status',['CallStatus'=>'completed']);
+        c($read()['last_occurrence']['reason']===$expectedReason,'signed completion classifies the last saved turn: '.$case);
+        c(vp3_operator_outcome_chat_tick_v1($pdo,$callTime+3)['delivered']===1,'ended speech outcome reaches the original private Chat');
+        $message=$pdo->query('SELECT message FROM chat_messages WHERE conversation_id=11 ORDER BY id DESC LIMIT 1')->fetchColumn();
+        $expectedLabel=match($case){'failed'=>'could not generate','limit'=>'eight-turn limit',default=>'during the conversation'};
+        c(str_contains($message,$expectedLabel)&&!str_contains($message,'Status update'),'private notice describes the outcome without copying speech');
+        c(!empty(vp3_operator_recording_saved_policy_v1($pdo,['transport_kind'=>'operator_scheduled','owner_user_id'=>1,
+            'provider_call_sid'=>$carrierForm['CallSid'],'public_id'=>$pdo->query('SELECT call_public_id FROM phone_operator_carrier_attempts_v1')->fetchColumn()],$recordSid)['transcribe']),
+            'post-call recording policy still recognizes consent for the saved outcome');
+    }finally{$pdo->rollBack();}
+}
+echo "PASS closed-browser chat and call history for model failure, turn limit and mid-call hangup\n";
 
 foreach(['completed'=>'ended_before_consent','busy'=>'carrier_busy','no-answer'=>'carrier_no_answer','failed'=>'carrier_failed','canceled'=>'carrier_canceled'] as $status=>$reason){
     $pdo->beginTransaction();

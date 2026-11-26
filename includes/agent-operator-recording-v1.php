@@ -45,7 +45,8 @@ function vp3_operator_recording_saved_policy_v1(PDO $pdo,array $call,string $rec
         JOIN phone_operator_occurrences_v1 o ON o.owner_user_id=a.owner_user_id AND o.event_id=a.event_id AND o.start_epoch=a.start_epoch
         WHERE a.owner_user_id=? AND a.provider_sid=? AND a.call_public_id=?");
     $q->execute([(int)$call['owner_user_id'],(string)$call['provider_call_sid'],(string)$call['public_id']]);$row=$q->fetch(PDO::FETCH_ASSOC);
-    $consented=in_array((string)($row['reason']??''),['answer_consented','conversation_active','conversation_completed','conversation_silent'],true);
+    $consented=in_array((string)($row['reason']??''),['answer_consented','conversation_active','conversation_completed','conversation_silent',
+        'conversation_model_failed','conversation_turn_limit','conversation_ended'],true);
     if(!$row||!$consented||(int)$row['recording_started_epoch']<1
         ||!in_array($row['recording_state'],['started','received'],true)||!is_string($row['recording_sid'])
         ||!hash_equals($row['recording_sid'],$record))throw new RuntimeException('Scheduled recording consent or source changed.',403);
