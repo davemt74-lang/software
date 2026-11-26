@@ -14,7 +14,7 @@ try {
     if (!is_string($raw) || strlen($raw)>50000) throw new DomainException('Email review request is too large.',413);
     $input = json_decode($raw,true,8,JSON_THROW_ON_ERROR);
     if (!is_array($input) || array_is_list($input)
-        || array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','draft_id','csrf_token','confirmed','review_token','watch_replies','subject','body','sender','enabled','watchlist_key','instruction','message_id','item_ref'])) {
+        || array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','draft_id','csrf_token','confirmed','review_token','watch_replies','subject','body','sender','enabled','watchlist_key','instruction','message_id','item_ref','request_id','to','attachment_ids'])) {
         throw new DomainException('Choose an email review action.',422);
     }
     $user = current_user();
@@ -89,6 +89,22 @@ try {
     $activeAgent = vp3_agent_chat_resolve_agent_v380($pdo,$user,$agent);
     $principal = vp3_agent_chat_principal_v380($user,$activeAgent);
     session_write_close();
+    if (in_array($input['action'] ?? null,['compose_create','compose_list','compose_save','compose_generate'],true)) {
+        $fields = ['action','owner_key','agent_id','conversation_id','csrf_token'];
+        $fields = [...$fields,...match ($input['action']) {
+            'compose_create'=>['request_id','to','subject','body'],
+            'compose_list'=>[],
+            'compose_save'=>['draft_id','review_token','to','subject','body','attachment_ids'],
+            'compose_generate'=>['draft_id','review_token','instruction'],
+        }];
+        if (array_diff(array_keys($input),$fields)) throw new DomainException('Choose a valid email composer action.',422);
+        if ($input['action'] === 'compose_list') {
+            echo json_encode(['ok'=>true]+agent_email_composer_list_v1($pdo,$user,$principal,$conversation,$key),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+            exit;
+        }
+    } elseif (array_intersect(array_keys($input),['request_id','to','attachment_ids'])) {
+        throw new DomainException('Choose a valid email composer action.',422);
+    }
     if (($input['action']??null) === 'advance_write') ignore_user_abort(true);
     $draft = agent_connection_email_chat_action_v1($pdo,$user,$principal,$conversation,$input,$key);
     echo json_encode(['ok'=>true,'draft'=>$draft], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);

@@ -42,6 +42,7 @@ function curl_exec(object $handle): string
         'phone'=>'Open the + menu in Chat and tap Camera.',
         'invalid'=>'{"topics":[{"theme":"billing","refs":[99]}]}',
         'reply'=>'{"body":"Thanks for the update."}',
+        'compose'=>'{"subject":"A new email","body":"The owner-approved draft text."}',
         'thread'=>'{"category":"opportunity","priority":"normal","state":"open","summary":"The venue proposed a session.","importance_reason":"The venue has a date available.","next_step":"Review the date.","followup_question":"Would that date work?","evidence_ref":1}',
         default=>'{"topics":[{"theme":"scheduling","refs":[1]},{"theme":"billing","refs":[2]}]}',
     };
@@ -260,6 +261,31 @@ $GLOBALS['gmailSummaryScenario'] = 'rejected';
 $rejectedReply = $reply(static fn(): bool=>true);
 check_gmail_summary(empty($rejectedReply['ok']) && count($GLOBALS['gmailSummaryDispatch']) === $callCount+2,
     'a rejected Gmail reply draft makes no retry or fallback request');
+
+$compose = static fn(Closure $guard): array => ai_v100_with_service_context(['service'=>'conversation',
+    'stage'=>'vp3.email-draft.v1','job_key'=>'fixture-compose-'.bin2hex(random_bytes(8))],
+    static fn()=>ai_generate_chat_response('{"owner_instruction":"Write a new email","current_draft":{"subject":"","body":"explicit saved text"}}',
+        [['role'=>'assistant','message'=>'unrelated compose history']], [['title'=>'unrelated compose context']],$owner,'main_ai',
+        ['surface'=>'tool_json','protocol'=>'vp3.email-draft.v1','before_gmail_reply_dispatch'=>$guard]));
+$callCount = count($GLOBALS['gmailSummaryDispatch']);
+$blockedCompose = $compose(static fn(): bool=>false);
+check_gmail_summary(empty($blockedCompose['ok']) && count($GLOBALS['gmailSummaryDispatch'])===$callCount
+    && (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
+    'new-email compose revocation releases reserved usage before any provider call');
+$GLOBALS['gmailSummaryScenario'] = 'compose';
+$composed = $compose(static fn(): bool=>true);
+$composeWire = json_encode(end($GLOBALS['gmailSummaryDispatch'])['payload'],JSON_THROW_ON_ERROR);
+$composeLedger = $pdo->query("SELECT * FROM ai_execution_ledger WHERE service_stage='vp3.email-draft.v1' ORDER BY id DESC LIMIT 1")->fetch();
+check_gmail_summary(!empty($composed['ok']) && $composed['answer']==='{"subject":"A new email","body":"The owner-approved draft text."}'
+    && $composeLedger['service_key']==='conversation' && (int)$composeLedger['is_background']===0
+    && (int)$composeLedger['cloud_tokens_charged']===140 && str_contains($composeWire,'explicit saved text')
+    && !str_contains($composeWire,'unrelated compose history') && !str_contains($composeWire,'unrelated compose context')
+    && !str_contains($composeWire,'private-chat-persona') && count($GLOBALS['gmailSummaryDispatch'])===$callCount+1,
+    'new-email compose uses the real metered isolated broker and only explicit saved draft text');
+$GLOBALS['gmailSummaryScenario'] = 'rejected';
+$rejectedCompose = $compose(static fn(): bool=>true);
+check_gmail_summary(empty($rejectedCompose['ok']) && count($GLOBALS['gmailSummaryDispatch'])===$callCount+2,
+    'a rejected new-email drafting request makes no hidden retry or fallback');
 
 $GLOBALS['gmailSummaryScenario'] = 'thread';
 $callCount = count($GLOBALS['gmailSummaryDispatch']);
