@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-connection-email-chat-v1.php';
 require_once __DIR__.'/agent-email-attachments-v1.php';
+require_once __DIR__.'/agent-email-review-queue-v1.php';
 
-/** Explicitly saved drafts have no retention deadline. Review approvals still expire in ten minutes. */
+/** Saved drafts and versioned organic proposals have no retention deadline; send approvals still expire. */
 function agent_email_composer_live_v1(array $draft, int $now): bool
 {
     return (int)$draft['expires_at'] === 0 || (int)$draft['expires_at'] > $now;
@@ -40,10 +41,21 @@ function agent_email_composer_validate_v1(array $draft, array &$payload): void
 {
     if (isset($payload['composer'])) {
         $saved = $payload['composer'];
-        if (!is_array($saved) || array_keys($saved) !== ['version','saved_at'] || $saved['version'] !== 1
-            || !is_int($saved['saved_at']) || $saved['saved_at'] < 1 || (int)$draft['expires_at'] !== 0) {
+        if (!is_array($saved) || !is_int($saved['saved_at'] ?? null) || $saved['saved_at'] < 1
+            || (int)$draft['expires_at'] !== 0) {
             throw new DomainException('The saved email draft is unavailable.',503);
         }
+        if (($saved['version'] ?? null) === 1) {
+            if (array_keys($saved) !== ['version','saved_at']) throw new DomainException('The saved email draft is unavailable.',503);
+        } elseif (($saved['version'] ?? null) === 2) {
+            if (array_keys($saved) !== ['version','saved_at','created_at','origin','source']
+                || !is_int($saved['created_at']) || $saved['created_at'] < 1 || $saved['created_at'] > $saved['saved_at']
+                || $saved['origin'] !== 'organic_reply' || !isset($payload['reply']) || isset($payload['auto_revision'])
+                || !is_array($saved['source'])) {
+                throw new DomainException('The saved email proposal is unavailable.',503);
+            }
+            agent_email_review_queue_source_metadata_v1($saved['source']);
+        } else throw new DomainException('The saved email lifecycle is unavailable.',503);
     } elseif ((int)$draft['expires_at'] === 0) {
         throw new DomainException('The saved email lifecycle is unavailable.',503);
     }
@@ -66,6 +78,17 @@ function agent_email_composer_public_v1(array $draft, array $payload, array $pub
         && in_array($public['status'],['prepared','write_failed'],true) && !isset($payload['auto_revision']);
     $public['can_send'] = $public['can_edit'] && $public['status'] === 'prepared'
         && agent_email_composer_complete_v1($draft,$payload);
+    $readable = agent_email_review_queue_source_allowed_v1($draft,$payload);
+    if (isset($payload['reply']) && !isset($payload['auto_revision']) && !$readable) {
+        // The read grant may have changed after the base projection's check.
+        // Do not retain that earlier envelope merely because the source button
+        // is now disabled. A revoked read also invalidates any send approval.
+        $public = array_replace($public,['from'=>'','to'=>'','subject'=>'','body'=>'','message_id'=>null,
+            'attachments'=>[],'connection_changed'=>true,'can_edit'=>false,'can_send'=>false]);
+        unset($public['review_token'],$public['watch_review_token'],$public['can_review_latest']);
+    }
+    $public['can_open_source'] = $readable;
+    $public['source'] = agent_email_review_queue_source_public_v1($draft,$payload,$readable);
     return $public;
 }
 
@@ -131,27 +154,9 @@ function agent_email_composer_create_v1(PDO $pdo, array $user, array $principal,
     return agent_connection_email_chat_public_draft_v1($draft,$key,time());
 }
 
-function agent_email_composer_list_v1(PDO $pdo, array $user, array $principal, int $conversation, string $key): array
+function agent_email_composer_list_v1(PDO $pdo, array $user, array $principal, int $conversation, string $key, array $options=[]): array
 {
-    $user = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
-    if (!table_exists('agent_connection_email_drafts_v1')) throw new DomainException('Run Database Upgrade to save Gmail drafts.',503);
-    $summary = agent_connections_summary_v1((int)$user['id']);
-    $connection = $summary['connection'] ?? null;
-    $ready = !empty($summary['provider_ready']) && ($connection['status'] ?? '') === 'connected' && !empty($connection['permissions']['send']);
-    $query = $pdo->prepare("SELECT * FROM agent_connection_email_drafts_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=?
-        AND status NOT IN ('sent','discarded','drafting') AND (expires_at=0 OR expires_at>?) ORDER BY user_message_id DESC LIMIT 50");
-    $query->execute([(int)$user['id'],(int)($principal['agent_id'] ?? 0),$conversation,time()]);
-    $drafts = [];
-    foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $draft) {
-        try {
-            $public = agent_connection_email_chat_public_draft_v1($draft,$key,time());
-            if (!empty($public['connection_changed']) && !empty($public['is_reply'])) continue;
-            $drafts[] = array_intersect_key($public,array_flip(['id','status','from','to','subject','is_reply','saved_at','persistent','can_edit','can_send']))
-                + ['attachment_count'=>count($public['attachments'])];
-        } catch (DomainException $error) { continue; }
-    }
-    usort($drafts,static fn(array $a,array $b): int => strcmp($b['saved_at'] ?? '',$a['saved_at'] ?? ''));
-    return ['drafts'=>$drafts,'from'=>$ready ? $connection['account_email'] : '', 'can_send'=>$ready];
+    return agent_email_review_queue_list_v1($pdo,$user,$principal,$conversation,$key,$options);
 }
 
 /** Save/requeue one exact revision; source-derived reply addresses and subjects cannot be redirected. */
@@ -192,7 +197,8 @@ function agent_email_composer_change_v1(PDO $pdo, array $user, array $principal,
         $payload['write'] = agent_connection_email_chat_write_request_v1($kind,$instruction);
         $next = 'write_queued';
     } else throw new DomainException('Choose a valid email composer action.',422);
-    $payload['composer'] = ['version'=>1,'saved_at'=>time()];
+    // Keep the proposal's original source and creation time when the owner edits it.
+    $payload['composer'] = array_replace($payload['composer'] ?? ['version'=>1],['saved_at'=>time()]);
     $row = agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$principal,$conversation,$draft,$payload,$recipient,$next,$input,$owner,$agent): array {
         agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
         $connection = agent_connections_require_grant_v1($pdo,$owner,(int)$draft['connection_id'],isset($payload['reply'])?'reply':'send',$draft['authorization_key']);

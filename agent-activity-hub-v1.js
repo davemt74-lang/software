@@ -1218,11 +1218,19 @@
       || localUrl(gmailCfg?.connectionsUrl);
     const controls = node('div','','vp3-email-report-controls');
     if (typeof window.VP3EmailComposerV1?.openDrafts === 'function') {
-      controls.append(button('Drafts',event => {
+      const review = button('Needs review',event => {
         if (!event.isTrusted || signature(current) !== signature(scope()) || !visible()) return;
         close(false);
         void window.VP3EmailComposerV1.openDrafts({surface:'popup'});
-      }));
+      });
+      review.dataset.gmailReviewQueue = '';
+      controls.append(review);
+      void window.VP3EmailComposerV1.queueSummary?.().then(counts => {
+        if (!review.isConnected || signature(current) !== signature(scope()) || !visible()
+          || !Number.isSafeInteger(counts?.pending) || counts.pending < 0) return;
+        review.textContent = `Needs review · ${counts.pending} pending`;
+        review.setAttribute('aria-label',`Needs review, ${counts.pending} pending draft${counts.pending === 1 ? '' : 's'}`);
+      });
     }
     const mayAnalyze = monitor && !['disabled','setup_required'].includes(monitor.analysis_state)
       && !['unavailable','restart_required'].includes(monitor.state)
@@ -3483,6 +3491,9 @@
   window.addEventListener('vp3:agent-orb-ready',mount);
   window.addEventListener('vp3:agent-activity-open',event => open(event.detail || {}));
   window.addEventListener('vp3:chat-specialists-changed',renderSpecialists);
+  window.addEventListener('vp3:chat-email-drafts-changed',() => {
+    if (visible() && specialistMode && family(selectedSpecialist) === 'gmail') { stop();void read(); }
+  });
   window.addEventListener('stonefellow:chat-context-changing',() => close(false));
   window.addEventListener('vp3:orb-conversation-changed',() => { if (!window.STONEFELLOW_CHAT) close(false); });
   window.addEventListener('vp3:participant-selection-changed',() => close(false));
