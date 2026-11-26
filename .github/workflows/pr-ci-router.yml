@@ -1,0 +1,168 @@
+name: PR CI Router
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+# Keep only the newest router invocation for a PR.
+concurrency:
+  group: pr-ci-router-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  route:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Cancel superseded PR runs and trim browser-only CI
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const prNumber = pr.number;
+            const currentSha = pr.head.sha;
+            const headRef = pr.head.ref;
+            const currentRunId = Number(context.runId);
+
+            // Give sibling pull_request workflows a brief chance to enqueue so
+            // this router can trim the queue in a single pass.
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+            const changedFiles = await github.paginate(
+              github.rest.pulls.listFiles,
+              { owner, repo, pull_number: prNumber, per_page: 100 },
+              response => Array.isArray(response.data)
+                ? response.data.map(file => file.filename).filter(Boolean)
+                : []
+            );
+
+            // Browser-specific paths are the positive signal for the fast lane.
+            // Shared bootstrap/upgrade files may accompany a Browser Companion
+            // change, but can never qualify a PR for reduced coverage by themselves.
+            const browserSpecificPathPatterns = [
+              /^api\/extension-/,
+              /^api\/browser-share/,
+              /^includes\/extension-device-auth/,
+              /^includes\/browser-share/,
+              /^tests\/extension-device-auth/,
+              /^tests\/browser-share/,
+              /^\.github\/workflows\/extension-device-auth-/,
+              /^\.github\/workflows\/browser-share-/,
+              /^extension-connect\.php$/,
+              /^connected-browsers\.php$/,
+              /^browser-extension\//,
+              /^chrome-extension\//,
+              /^extension\//,
+              /^database\/.*browser/i
+            ];
+            const browserSharedPathPatterns = [
+              /^upgrade\.php$/,
+              /^includes\/bootstrap\.php$/
+            ];
+            const matchesAny = (file, patterns) =>
+              patterns.some(pattern => pattern.test(file));
+            const hasBrowserSpecificChange = changedFiles.some(
+              file => matchesAny(file, browserSpecificPathPatterns)
+            );
+            const browserOnly = hasBrowserSpecificChange && changedFiles.every(
+              file => matchesAny(file, browserSpecificPathPatterns) ||
+                matchesAny(file, browserSharedPathPatterns)
+            );
+
+            const browserRequiredWorkflowPrefixes = [
+              'PR CI Router',
+              'Browser Companion Device Auth',
+              'Browser Share Backend',
+              'Human Messaging',
+              'Team Workspaces',
+              'Agent Chat Boundaries',
+              'Agent Tool Authorization',
+              'Agent Runtime Routing',
+              'Agent Memory Scope',
+              'Knowledge Library',
+              'Knowledge Agent Context',
+              'Public Funnel + Onboarding Continuity',
+              'Recovery Baseline',
+              'Production Deploy Package'
+            ];
+
+            const isRequiredBrowserWorkflow = (name) =>
+              browserRequiredWorkflowPrefixes.some(prefix => name.startsWith(prefix));
+
+            // Avoid Octokit pagination mapper edge cases for the Actions endpoint.
+            // The repo currently has many workflows, so walk the branch runs
+            // explicitly and normalize every page before iterating it.
+            const runs = [];
+            for (let page = 1; page <= 10; page++) {
+              const response = await github.rest.actions.listWorkflowRunsForRepo({
+                owner,
+                repo,
+                branch: headRef,
+                event: 'pull_request',
+                per_page: 100,
+                page
+              });
+              const batch = Array.isArray(response.data?.workflow_runs)
+                ? response.data.workflow_runs.filter(run => run && typeof run === 'object')
+                : [];
+              runs.push(...batch);
+              if (batch.length < 100) break;
+            }
+
+            let cancelledSuperseded = 0;
+            let cancelledUnrelated = 0;
+
+            for (const run of runs) {
+              if (!run || typeof run !== 'object' || !run.id) continue;
+              if (Number(run.id) === currentRunId) continue;
+              if (!['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(run.status)) continue;
+
+              const belongsToPr = Array.isArray(run.pull_requests) &&
+                run.pull_requests.some(item => item && item.number === prNumber);
+              if (!belongsToPr) continue;
+
+              // Always cancel obsolete generations of this PR, regardless of domain.
+              if (run.head_sha !== currentSha) {
+                try {
+                  await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
+                  cancelledSuperseded++;
+                } catch (error) {
+                  core.warning(`Could not cancel superseded run ${run.id} (${run.name}): ${error.message}`);
+                }
+                continue;
+              }
+
+              // Browser-only PRs use a focused regression lane. The allowlist keeps
+              // browser, messaging, permissions, knowledge, baseline, and deploy
+              // contracts while dropping unrelated video/profile/commerce suites.
+              if (browserOnly && !isRequiredBrowserWorkflow(run.name || '')) {
+                try {
+                  await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
+                  cancelledUnrelated++;
+                } catch (error) {
+                  core.warning(`Could not cancel unrelated browser-PR run ${run.id} (${run.name}): ${error.message}`);
+                }
+              }
+            }
+
+            core.summary
+              .addHeading('PR CI routing')
+              .addTable([
+                [{ data: 'Metric', header: true }, { data: 'Value', header: true }],
+                ['PR', `#${prNumber}`],
+                ['Head SHA', currentSha],
+                ['Changed files', String(changedFiles.length)],
+                ['Browser-specific file present', hasBrowserSpecificChange ? 'yes' : 'no'],
+                ['Browser-only fast lane', browserOnly ? 'yes' : 'no'],
+                ['Superseded runs cancelled', String(cancelledSuperseded)],
+                ['Unrelated current-head runs cancelled', String(cancelledUnrelated)]
+              ])
+              .write();
