@@ -49,6 +49,10 @@ function vp3_phone_contact_schedule_book_v1(PDO $pdo,array $scope,int $contact,i
         $a=$pdo->prepare('SELECT event_id,revision,event_revision,enabled,destination_hash FROM phone_operator_scheduled_assignments_v1 WHERE owner_user_id=? AND contact_id=? AND event_id IN (SELECT id FROM user_calendar_events WHERE owner_user_id=? AND status=\'active\')');
         $a->execute([$scope['owner_user_id'],$contact,$scope['owner_user_id']]);
         $assignments=array_column($a->fetchAll(PDO::FETCH_ASSOC),null,'event_id');
+        $latest=$pdo->prepare('SELECT o.event_id,o.start_epoch,o.state,o.reason FROM phone_operator_occurrences_v1 o JOIN phone_operator_scheduled_assignments_v1 a ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id
+            WHERE o.owner_user_id=? AND a.contact_id=? AND o.start_epoch=(SELECT MAX(p.start_epoch) FROM phone_operator_occurrences_v1 p WHERE p.owner_user_id=o.owner_user_id AND p.event_id=o.event_id)');
+        $latest->execute([$scope['owner_user_id'],$contact]);
+        $recent=array_column($latest->fetchAll(PDO::FETCH_ASSOC),null,'event_id');
         $person=vp3_phone_contact_row_v1($pdo,$scope,$contact);
         $destinationHash=hash('sha256',vp3_phone_caller_contacts_e164_v1((string)$person['phone']));
     }
@@ -57,6 +61,7 @@ function vp3_phone_contact_schedule_book_v1(PDO $pdo,array $scope,int $contact,i
         $item=vp3_phone_contact_schedule_public_v1($event,$now);
         if($assignable){
             $a=$assignments[$event['id']]??null;
+            if(isset($recent[$event['id']]))$item['last_occurrence']=$recent[$event['id']];
             $item['assignment_revision']=(int)($a['revision']??0);
             $item['operator_assignment']=empty($a['enabled'])?'off':($a['event_revision']===$item['revision']&&$a['destination_hash']===$destinationHash?'assigned':'review');
         }

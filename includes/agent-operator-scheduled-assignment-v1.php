@@ -5,6 +5,8 @@ function vp3_operator_schedule_assignment_ready_v1(PDO $pdo): bool
 {
     try{
         $pdo->query('SELECT owner_user_id,event_id,contact_id,agent_id,number_id,conversation_id,chat_agent_id,event_revision,destination_hash,line_binding,enabled,revision FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
+        $pdo->query('SELECT next_due_epoch FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
+        $pdo->query('SELECT owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch FROM phone_operator_occurrences_v1 WHERE 1=0');
         return true;
     }catch(PDOException){return false;}
 }
@@ -15,7 +17,19 @@ function vp3_operator_schedule_assignment_install_v1(PDO $pdo,string $suffix): v
         owner_user_id BIGINT NOT NULL,event_id BIGINT NOT NULL,contact_id BIGINT NOT NULL,
         agent_id BIGINT NOT NULL,number_id BIGINT NOT NULL,conversation_id BIGINT NOT NULL,chat_agent_id BIGINT NOT NULL,
         event_revision CHAR(64) NOT NULL,destination_hash CHAR(64) NOT NULL,line_binding CHAR(64) NOT NULL,
-        enabled SMALLINT NOT NULL,revision BIGINT NOT NULL,PRIMARY KEY(owner_user_id,event_id)
+        enabled SMALLINT NOT NULL,revision BIGINT NOT NULL,next_due_epoch BIGINT NOT NULL DEFAULT 0,PRIMARY KEY(owner_user_id,event_id)
+    )".$suffix);
+    require_once __DIR__.'/schema-metadata.php';
+    if(!schema_metadata_column_exists($pdo,'phone_operator_scheduled_assignments_v1','next_due_epoch')){
+        try{$pdo->exec('ALTER TABLE phone_operator_scheduled_assignments_v1 ADD COLUMN next_due_epoch BIGINT NOT NULL DEFAULT 0');}
+        catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_scheduled_assignments_v1','next_due_epoch'))throw $e;}
+        // Historical assignments remain visible and require a fresh owner review to activate their clock.
+        $pdo->exec("UPDATE phone_operator_scheduled_assignments_v1 SET event_revision='',revision=revision+1 WHERE enabled=1");
+    }
+    $pdo->exec("CREATE TABLE IF NOT EXISTS phone_operator_occurrences_v1(
+        owner_user_id BIGINT NOT NULL,event_id BIGINT NOT NULL,start_epoch BIGINT NOT NULL,end_epoch BIGINT NOT NULL,
+        assignment_revision BIGINT NOT NULL,state VARCHAR(16) NOT NULL,reason VARCHAR(48) NOT NULL,observed_epoch BIGINT NOT NULL,
+        PRIMARY KEY(owner_user_id,event_id,start_epoch)
     )".$suffix);
 }
 
@@ -58,6 +72,10 @@ function vp3_operator_schedule_assign_v1(PDO $pdo,array $scope,array $input): ar
         }else{
             $pdo->prepare('INSERT INTO phone_operator_scheduled_assignments_v1(contact_id,agent_id,number_id,conversation_id,chat_agent_id,event_revision,destination_hash,line_binding,owner_user_id,event_id,enabled,revision) VALUES(?,?,?,?,?,?,?,?,?,?,1,1)')->execute([...$values,$owner,$id]);
         }
+        require_once __DIR__.'/agent-operator-occurrences-v1.php';
+        $next=vp3_operator_next_occurrence_v1($event,time());
+        if(!$next)vp3_phone_workspace_error_v1('phone_contact_schedule_invalid',422,'There are no upcoming calls in this schedule.');
+        $pdo->prepare('UPDATE phone_operator_scheduled_assignments_v1 SET next_due_epoch=? WHERE owner_user_id=? AND event_id=?')->execute([$next,$owner,$id]);
         return ['assigned'=>true];
     });
 }
