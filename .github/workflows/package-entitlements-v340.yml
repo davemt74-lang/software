@@ -237,6 +237,7 @@ jobs:
           php tests/phone-subscription-access-v1.php
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
+          php tests/operator-auto-call-migration.php
           php tests/phone-operator-suggestion-evidence.php
           php tests/phone-caller-contacts-schema-v1.php
           php tests/phone-contact-management-v1.php
@@ -285,6 +286,8 @@ jobs:
           node --check phone-voicemail-capture-v1.js
           node --check phone-operator-voice-mixer-v1.js
           php -l includes/agent-operator-voice-turns-v1.php
+          php -l includes/agent-operator-admission-v1.php
+          php -l includes/agent-operator-admission-schema-v1.php
           php -l includes/agent-operator-live-v1.php
           php -l includes/agent-operator-live-schema-v1.php
           node --check chat.js

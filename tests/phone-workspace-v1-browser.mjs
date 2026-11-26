@@ -131,6 +131,24 @@ const server=http.createServer((req,res)=>{
    if(values.action==='bind_call')result={call:{id:8,public_id:values.call_id,peer_e164:'+16025550444',conversation_id:Number(values.conversation_id),agent_id:Number(values.agent_id),state:'ringing'}};
    if(values.action==='favorite'){state.contacts[0].favorite=values.favorite;state.favorites=values.favorite?[state.contacts[0]]:[];}
    if(values.action==='save_recording_policy'){state.post_call_policy={enabled:values.enabled,retain_audio:values.retain_audio,transcribe:values.transcribe,analyze:values.analyze,model_route:'account_cloud',modules:values.modules};result={policy:state.post_call_policy};}
+   if(['operator_admission_preview','save_operator_consent'].includes(values.action)){
+    const p=state.auto_call?.policies.find(item=>item.contact_id===Number(values.contact_id)&&item.number_id===Number(values.number_id));
+    assert.ok(p);assert.equal(p.revision,Number(values.expected_revision));
+    if(!state.fixtureConsent)state.fixtureConsent={revision:0,state:'not_recorded',purpose:''};
+    const consent=state.fixtureConsent;
+    if(values.action==='save_operator_consent'){
+      assert.equal(values.expected_consent_revision,consent.revision);assert.equal(values.expected_destination,p.destination_e164);assert.equal(values.expected_line,p.line_e164);
+      if(values.decision==='attest'){assert.equal(values.recipient_agreement_attested,true);consent.state='owner_attested';consent.purpose=values.purpose;}
+      else if(values.decision==='withdraw')consent.state='withdrawn';
+      else if(values.decision==='clear')consent.state='cleared';
+      consent.revision++;
+    }
+    const gates=['owner_policy','recipient_review','calling_window','daily_limit','minimum_gap','phone_idle','cloud_calendar','recipient_verification','spend_and_dispatch'].map(id=>({id,status:id==='spend_and_dispatch'?'off':id==='recipient_verification'?'unverified':id==='recipient_review'&&consent.state!=='owner_attested'?'blocked':'pass',detail:'Fixture readiness check.'}));
+    result={readiness:{contact_id:p.contact_id,number_id:p.number_id,policy_revision:p.revision,consent_revision:consent.revision,
+      consent_state:consent.state,purpose:consent.purpose,expires_at:consent.state==='owner_attested'?new Date(Date.now()+604800000).toISOString():null,
+      destination_e164:p.destination_e164,line_e164:p.line_e164,can_attest:consent.state!=='withdrawn',can_clear:consent.state==='owner_attested',
+      can_withdraw:consent.state!=='withdrawn',local_checks_pass:consent.state==='owner_attested',checked_at:new Date().toISOString(),execution_enabled:false,gates}};
+   }
    if(values.action==='operator_calendar_preview'){
     const p=state.auto_call?.policies.find(item=>item.contact_id===Number(values.contact_id)&&item.number_id===Number(values.number_id));
     if(!p||!p.enabled||p.revision!==Number(values.expected_revision)){res.statusCode=409;return res.end(JSON.stringify({ok:false,error:'operator_policy_changed',message:'Review current permission.'}));}
@@ -305,6 +323,30 @@ try{
   assert.equal(appointment.contact_id,7);assert.equal(appointment.expected_revision,1);assert.equal(appointment.duration_seconds,600);
   assert.equal(appointment.csrf_token,'fixture-csrf');
   await planEditor.getByRole('button',{name:'Close plan',exact:true}).click();
+  state.operator_admission_available=true;await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  await page.getByRole('button',{name:/^Auto Call readiness for Fixture contact/}).click();
+  const readiness=page.getByRole('region',{name:'Autonomous call readiness',exact:true});
+  await readiness.getByText('Recipient review: Not recorded',{exact:true}).waitFor();
+  assert.equal(await readiness.getByRole('button',{name:'Save recipient agreement review',exact:true}).isDisabled(),true);
+  assert.equal(apiCalls.filter(c=>c.action==='save_operator_consent').length,0,'Readiness preview never writes consent');
+  await readiness.getByLabel('Agreed purpose',{exact:true}).selectOption('appointment');
+  await readiness.getByLabel(/The recipient affirmatively agreed/).check();
+  await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
+  assert.equal(await readiness.getByLabel('Agreed purpose',{exact:true}).inputValue(),'appointment');
+  assert.equal(await readiness.getByLabel(/The recipient affirmatively agreed/).isChecked(),true);
+  await readiness.getByRole('button',{name:'Save recipient agreement review',exact:true}).click();
+  await readiness.getByText('Recipient review: Owner attested',{exact:true}).waitFor();
+  assert.equal(await readiness.getByText('Autonomous execution',{exact:true}).count(),1);
+  const agreement=apiCalls.find(c=>c.action==='save_operator_consent');
+  assert.equal(agreement.expected_revision,1);assert.equal(agreement.expected_consent_revision,0);assert.equal(agreement.purpose,'appointment');assert.equal(agreement.csrf_token,'fixture-csrf');
+  assert.equal(await readiness.getByRole('button',{name:'Save recipient opt-out',exact:true}).isDisabled(),true);
+  await readiness.getByLabel(/The recipient withdrew permission/).check();
+  await readiness.getByRole('button',{name:'Save recipient opt-out',exact:true}).click();
+  await readiness.getByText('Recipient review: Recipient opted out',{exact:true}).waitFor();
+  assert.equal(await readiness.getByRole('button',{name:'Save recipient agreement review',exact:true}).count(),0);
+  assert.equal(apiCalls.filter(c=>c.action==='save_operator_consent').at(-1).decision,'withdraw');
+  assert.equal(await readiness.evaluate(n=>n.scrollWidth<=n.clientWidth+1),true,'Readiness fits compact drawer');
+  await readiness.getByRole('button',{name:'Close readiness',exact:true}).click();
   state.auto_call.policies[0].can_enable=false;state.auto_call.policies[0].state='blocked';state.auto_call.policies[0].reason='Recording approval changed.';
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   await launcher.click();await editor.getByLabel('Allow Agent Auto Call',{exact:true}).uncheck();
