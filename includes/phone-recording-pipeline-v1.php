@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
+require_once __DIR__.'/phone-voicemail-v1.php';
+
 /** Durable Cloud-only phone recordings. Webhooks enqueue; a server worker performs paid work. */
 const VP3_PHONE_RECORDING_PIPELINE_V1='phone-recording-pipeline-v1';
 const VP3_PHONE_RECORDING_MAX_BYTES_V1=26214400;
@@ -18,7 +22,7 @@ function vp3_phone_recording_schema_ready_v1(?PDO $pdo=null): bool
 }
 function vp3_phone_recording_ensure_schema_v1(PDO $pdo): void
 {
-    if($pdo->inTransaction())throw new RuntimeException('Install phone recording storage before a transaction.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new RuntimeException('Install phone recording storage before a transaction.');
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';
     $id=$sqlite?'INTEGER PRIMARY KEY AUTOINCREMENT':'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY';
     $tail=$sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
@@ -45,6 +49,7 @@ function vp3_phone_recording_ensure_schema_v1(PDO $pdo): void
     if($sqlite){$pdo->exec('CREATE INDEX IF NOT EXISTS idx_phone_recording_queue_v1 ON phone_recording_jobs_v1(state,id)');$pdo->exec('CREATE INDEX IF NOT EXISTS idx_phone_recording_owner_v1 ON phone_recording_jobs_v1(owner_user_id,agent_id,id)');}
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_recording_legacy_reads_v1 (owner_user_id BIGINT NOT NULL,recording_id BIGINT NOT NULL,read_epoch BIGINT NOT NULL,PRIMARY KEY(owner_user_id,recording_id))$tail");
     $pdo->exec("CREATE TABLE IF NOT EXISTS phone_recording_speech_budget_v1 (owner_user_id BIGINT NOT NULL,job_id BIGINT NOT NULL,seconds INTEGER NOT NULL,reserved_epoch BIGINT NOT NULL,PRIMARY KEY(owner_user_id,job_id))$tail");
+    vp3_phone_voicemail_install_v1($pdo);
 }
 function vp3_phone_recording_json_v1(array $value): string{return json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE);}
 function vp3_phone_recording_decode_v1(mixed $value): array{$r=is_string($value)?json_decode($value,true):null;return is_array($r)?$r:[];}
@@ -113,26 +118,41 @@ function vp3_phone_recording_call_v1(PDO $pdo,array $job): array
     $q=$pdo->prepare('SELECT * FROM '.$table.' WHERE id=?');$q->execute([(int)$job['call_id']]);$call=$q->fetch(PDO::FETCH_ASSOC);
     if(!$call||(int)$call['owner_user_id']!==(int)$job['owner_user_id']||(int)$call['agent_id']!==(int)$job['agent_id']
         ||(int)$call['phone_number_id']!==(int)$job['phone_number_id']||!hash_equals((string)$call['provider_call_sid'],(string)$job['provider_call_sid']))throw new RuntimeException('The immutable recording call binding changed.',409);
-    $call['source_kind']=$kind;if(!isset($call['public_id']))$call['public_id']='legacy-'.$call['id'];return $call;
+    $call['source_kind']=$kind;if(!isset($call['public_id']))$call['public_id']='legacy-'.$call['id'];
+    if($kind==='legacy'){
+        $q=$pdo->prepare('SELECT conversation_id,chat_agent_id FROM phone_browser_deliveries_v1 WHERE owner_user_id=? AND event_key=?');$q->execute([(int)$job['owner_user_id'],'call:'.$call['public_id']]);$original=$q->fetch(PDO::FETCH_ASSOC);
+        if($original){$call['conversation_id']=(int)$original['conversation_id'];$call['chat_agent_id']=(int)$original['chat_agent_id'];}
+    }
+    return $call;
 }
 function vp3_phone_recording_authorize_v1(PDO $pdo,array $job,bool $paid=false): array
 {
+    $fresh=vp3_phone_recording_row_v1($pdo,(int)$job['id']);
+    if($fresh['state']==='deleted'||vp3_phone_voicemail_deleted_v1($pdo,(string)$job['provider_recording_sid']))throw new RuntimeException('Voice message was deleted.',409);
+    if(($job['lease_token']??'')!==''&&(!hash_equals((string)$fresh['lease_token'],(string)$job['lease_token'])||(int)$fresh['lease_until']<time()))throw new RuntimeException('Recording worker lease changed.',409);
+    if(!hash_equals((string)$fresh['policy_json'],(string)$job['policy_json']))throw new RuntimeException('Recording processing consent changed.',409);
     $user=vp3_phone_recording_owner_v1($pdo,(int)$job['owner_user_id']);$call=vp3_phone_recording_call_v1($pdo,$job);
     $q=$pdo->prepare('SELECT n.owner_user_id,n.agent_id,n.provider,n.voice_enabled,a.is_active FROM phone_cloud_numbers_v100 n JOIN user_agents a ON a.id=n.agent_id AND a.owner_user_id=n.owner_user_id WHERE n.id=?');$q->execute([(int)$job['phone_number_id']]);$number=$q->fetch(PDO::FETCH_ASSOC);
     if(!$number||(int)$number['owner_user_id']!==(int)$job['owner_user_id']||(int)$number['agent_id']!==(int)$job['agent_id']||empty($number['is_active'])||$number['provider']!=='twilio'||empty($number['voice_enabled'])||!vp3_phone_package_v100($pdo,(int)$user['id'])['voice'])throw new RuntimeException('This phone number is no longer assigned to this owner and Agent.',403);
+    if(($call['transport_kind']??'')==='managed_callback'){
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        $original=vp3_managed_recording_saved_policy_v1($pdo,$call,(string)$job['provider_recording_sid']);
+        if($original!==vp3_phone_recording_decode_v1($job['policy_json']))throw new RuntimeException('Managed recording processing consent changed.',409);
+    }
     if($paid){
         $snapshot=vp3_phone_recording_decode_v1($job['policy_json']);
         if((!empty($snapshot['retain_audio'])||!empty($snapshot['transcribe']))&&!has_permission('artist_listening.access',$user))throw new RuntimeException('Saved media permission changed.',403);
         if((!empty($snapshot['transcribe'])||!empty($snapshot['analyze']))&&!subscription_has_entitlement($user,'main_ai.access'))throw new RuntimeException('Post-call processing permission changed.',403);
-        $policy=vp3_phone_recording_policy_v1($pdo,$user,(int)$job['agent_id']);$snapshot=vp3_phone_recording_decode_v1($job['policy_json']);
-        if(!$policy['enabled']||$policy['revision']!==(int)($snapshot['revision']??-1))throw new RuntimeException('Post-call processing preferences changed; no further provider request was sent.',409);
+        $snapshot=vp3_phone_recording_decode_v1($job['policy_json']);
+        if(($snapshot['purpose']??'')==='voicemail')vp3_phone_voicemail_paid_authority_v1($pdo,$job,$snapshot);
+        else{$policy=vp3_phone_recording_policy_v1($pdo,$user,(int)$job['agent_id']);if(!$policy['enabled']||$policy['revision']!==(int)($snapshot['revision']??-1))throw new RuntimeException('Post-call processing preferences changed; no further provider request was sent.',409);}
     }
     return ['user'=>$user,'call'=>$call];
 }
 /** Local commit fences take short row locks; no provider request runs under these locks. */
 function vp3_phone_recording_lock_authority_v1(PDO $pdo,array $job,bool $paid): array
 {
-    if(!$pdo->inTransaction())throw new RuntimeException('Recording commit authority requires a transaction.');
+    if(!vp3_phone_transaction_active_v1($pdo))throw new RuntimeException('Recording commit authority requires a transaction.');
     if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'){
         foreach([['users','id',(int)$job['owner_user_id']],['phone_cloud_numbers_v100','id',(int)$job['phone_number_id']],['user_agents','id',(int)$job['agent_id']]] as [$table,$column,$id]){$q=$pdo->prepare('SELECT '.$column.' FROM '.$table.' WHERE '.$column.'=? FOR UPDATE');$q->execute([$id]);$q->fetchColumn();}
         if($paid){$q=$pdo->prepare('SELECT revision FROM phone_recording_policies_v1 WHERE owner_user_id=? AND agent_id=? FOR UPDATE');$q->execute([(int)$job['owner_user_id'],(int)$job['agent_id']]);$q->fetchColumn();}
@@ -150,30 +170,45 @@ function vp3_phone_recording_receive_v1(PDO $pdo,array $call,array $form): array
     $duration=(string)($form['RecordingDuration']??'0');if(!preg_match('/^\d{1,5}$/D',$duration))throw new RuntimeException('Invalid recording duration.',422);
     $kind=($call['source_kind']??'browser')==='legacy'?'legacy':'browser';$owner=(int)($call['owner_user_id']??0);$agent=(int)($call['agent_id']??0);
     if($owner<1||$agent<1||(int)($call['phone_number_id']??0)<1||(int)($call['id']??0)<1)throw new RuntimeException('Recording owner binding is unavailable.',409);
+    $result=vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$call,$form,$sid,$callSid,$account,$status,$duration,$kind,$owner,$agent){
+    $lock=$pdo->prepare('SELECT id FROM users WHERE id=? AND is_active=1'.vp3_phone_workspace_lock_v1($pdo));$lock->execute([$owner]);if(!$lock->fetchColumn())throw new RuntimeException('Recording owner unavailable.',403);
+    if(vp3_phone_voicemail_deleted_v1($pdo,$sid))return ['accepted'=>true,'queued'=>false,'deleted'=>true];
     $q=$pdo->prepare('SELECT * FROM phone_recording_jobs_v1 WHERE provider_recording_sid=?');$q->execute([$sid]);$existing=$q->fetch(PDO::FETCH_ASSOC);
     if($existing){
         if((int)$existing['owner_user_id']!==$owner||(int)$existing['agent_id']!==$agent||$existing['origin_kind']!==$kind||(int)$existing['call_id']!==(int)$call['id']||!hash_equals($existing['provider_account_sid'],$account))throw new RuntimeException('Recording receipt conflicts with its original call.',409);
-        vp3_phone_recording_announce_v1($pdo,$existing,$call);
         return ['accepted'=>true,'queued'=>false,'duplicate'=>true,'recording'=>vp3_phone_recording_public_v1(vp3_phone_recording_row_v1($pdo,(int)$existing['id']))];
     }
-    $user=vp3_phone_recording_owner_v1($pdo,$owner);$policy=vp3_phone_recording_policy_v1($pdo,$user,$agent);$now=time();
+    $user=vp3_phone_recording_owner_v1($pdo,$owner);$policy=($kind==='legacy'||!empty($call['voicemail_message']))?vp3_phone_voicemail_receipt_policy_v1($pdo,$call):vp3_phone_recording_policy_v1($pdo,$user,$agent);$now=time();
+    $managed=($call['transport_kind']??'')==='managed_callback';
+    if($managed){
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        $original=vp3_managed_recording_saved_policy_v1($pdo,$call,$sid);
+        if($policy!==$original)throw new RuntimeException('Managed recording policy changed.',409);
+        $policy=$original;
+    }
     $public=bin2hex(random_bytes(16));$state=$status==='completed'?'queued':'failed';$seconds=(int)$duration;
     $fields=['public_id','owner_user_id','agent_id','phone_number_id','origin_kind','call_id','call_public_id','provider_call_sid','provider_account_sid','provider_recording_sid','phone_e164','peer_e164','duration_seconds','state','policy_json','conversation_id','error_code','last_error','created_epoch','updated_epoch'];
-    $args=[$public,$owner,$agent,(int)$call['phone_number_id'],$kind,(int)$call['id'],(string)($call['public_id']??('legacy-'.$call['id'])),$callSid,$account,$sid,(string)($call['phone_e164']??$call['called_e164']??''),(string)($call['peer_e164']??$call['caller_e164']??''),$seconds,$state,vp3_phone_recording_json_v1($policy),(int)($call['conversation_id']??0),$state==='failed'?'recording_unavailable':'',$state==='failed'?'The provider did not produce a recording.':'',$now,$now];
+    $args=[$public,$owner,$agent,(int)$call['phone_number_id'],$kind,(int)$call['id'],(string)($call['public_id']??('legacy-'.$call['id'])),$callSid,$account,$sid,(string)($call['phone_e164']??$call['called_e164']??''),$managed?'':(string)($call['peer_e164']??$call['caller_e164']??''),$seconds,$state,vp3_phone_recording_json_v1($policy),(int)($call['conversation_id']??0),$state==='failed'?'recording_unavailable':'',$state==='failed'?'The provider did not produce a recording.':'',$now,$now];
     try{$pdo->prepare('INSERT INTO phone_recording_jobs_v1 ('.implode(',',$fields).') VALUES ('.implode(',',array_fill(0,count($fields),'?')).')')->execute($args);}
     catch(PDOException $error){$q->execute([$sid]);if($q->fetchColumn())return vp3_phone_recording_receive_v1($pdo,$call,$form);throw $error;}
     $id=(int)$pdo->lastInsertId();$job=vp3_phone_recording_row_v1($pdo,$id);
-    vp3_phone_recording_announce_v1($pdo,$job,$call);
     return ['accepted'=>true,'queued'=>$state==='queued','duplicate'=>false,'recording'=>vp3_phone_recording_public_v1(vp3_phone_recording_row_v1($pdo,$id))];
+    });
+    if(isset($result['recording']['id'])){$id=vp3_phone_recording_job_id_v1($result['recording']['id']);vp3_phone_recording_announce_v1($pdo,vp3_phone_recording_row_v1($pdo,$id),$call);$result['recording']=vp3_phone_recording_public_v1(vp3_phone_recording_row_v1($pdo,$id));}
+    return $result;
 }
 function vp3_phone_recording_announce_v1(PDO $pdo,array $job,array $call): void
 {
     if(!function_exists('vp3_phone_workspace_delivery_v1'))return;
-    $call['public_id']=$job['call_public_id'];
+    vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$job,$call){
+    $q=$pdo->prepare('SELECT id FROM users WHERE id=? AND is_active=1'.vp3_phone_workspace_lock_v1($pdo));$q->execute([(int)$job['owner_user_id']]);if(!$q->fetchColumn())return;
+    $job=vp3_phone_recording_row_v1($pdo,(int)$job['id']);if($job['state']==='deleted'||!vp3_phone_voicemail_announce_allowed_v1($pdo,$job))return;
+    $call=vp3_phone_recording_call_v1($pdo,$job);$call['public_id']=$job['call_public_id'];
     $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'voicemail','phone-recording:'.$job['public_id'],
-        $job['state']==='failed'?'The phone recording was unavailable.':'A saved voice message is available.',
+        $job['state']==='failed'?'The phone recording was unavailable.':(vp3_phone_voicemail_job_v1($job)?vp3_phone_voicemail_text_v1($pdo,$job,$call):'A saved voice message is available.'),
         ['voicemail_id'=>'job-'.(int)$job['id'],'status'=>$job['state']]);
     if((int)($delivery['conversation_id']??0)>0)$pdo->prepare('UPDATE phone_recording_jobs_v1 SET conversation_id=? WHERE id=?')->execute([(int)$delivery['conversation_id'],(int)$job['id']]);
+    });
 }
 function vp3_phone_recording_row_v1(PDO $pdo,int $id): array{$q=$pdo->prepare('SELECT * FROM phone_recording_jobs_v1 WHERE id=?');$q->execute([$id]);$r=$q->fetch(PDO::FETCH_ASSOC);if(!$r)throw new RuntimeException('Recording not found.',404);return $r;}
 function vp3_phone_recording_job_id_v1(mixed $id): int
@@ -184,7 +219,9 @@ function vp3_phone_recording_job_id_v1(mixed $id): int
 function vp3_phone_recording_public_v1(array $job): array
 {
     $session=(int)$job['session_id'];$key=(string)$job['recording_key'];
-    return ['id'=>'job-'.(int)$job['id'],'public_id'=>$job['public_id'],'call_id'=>$job['call_public_id'],'state'=>$job['state'],'stage'=>$job['stage'],
+    $voicemail=vp3_phone_voicemail_job_v1($job);if($job['state']==='deleted')return ['id'=>'job-'.(int)$job['id'],'call_id'=>$job['call_public_id'],'kind'=>'voicemail','state'=>'deleted','audio_url'=>'','transcript_url'=>'','report_url'=>'','recording_refs'=>[],'transcript'=>''];
+    return ['id'=>'job-'.(int)$job['id'],'kind'=>$voicemail?'voicemail':'call_recording','can_delete'=>$voicemail,'can_post'=>$voicemail,'can_transcribe'=>$voicemail&&!(int)$job['speech_dispatched']&&!(int)$job['analysis_dispatched']&&!in_array($job['state'],['transcribing','analyzing'],true)&&$job['error_code']!=='recording_unavailable','public_id'=>$job['public_id'],'call_id'=>$job['call_public_id'],'state'=>$job['state'],'stage'=>$job['stage'],
+        'transcription_requested'=>$voicemail&&!empty(vp3_phone_recording_decode_v1($job['policy_json']??'{}')['transcribe']),
         'duration_seconds'=>(int)$job['duration_seconds'],'transcript_session_id'=>$session,'recording_refs'=>$session>0&&$key!==''?[['session_id'=>$session,'key'=>$key]]:[],
         'audio_url'=>$job['error_code']==='recording_unavailable'?'':url('/api/phone-recording-audio-v1.php?id=job-'.(int)$job['id']),'transcript_url'=>$session>0?url('/artist-listening.php?session='.$session):'',
         'report_message_id'=>(int)$job['report_message_id'],'conversation_id'=>(int)$job['conversation_id'],'error_code'=>$job['error_code'],'error'=>$job['last_error'],
@@ -196,12 +233,15 @@ function vp3_phone_recording_public_v1(array $job): array
 function vp3_phone_recording_workspace_v1(PDO $pdo,array $user,int $agentId=0): array
 {
     $user=vp3_phone_recording_owner_v1($pdo,(int)($user['id']??0));
-    $sql='SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=?';$args=[(int)$user['id']];if($agentId>0){$sql.=' AND agent_id=?';$args[]=$agentId;}
+    $sql="SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=? AND state<>'deleted'";$args=[(int)$user['id']];if($agentId>0){$sql.=' AND agent_id=?';$args[]=$agentId;}
     $q=$pdo->prepare($sql.' ORDER BY id DESC LIMIT 50');$q->execute($args);$rows=[];
-    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $job){$row=vp3_phone_recording_public_v1($job);$row['transcript']='';
+    foreach($q->fetchAll(PDO::FETCH_ASSOC) as $job){
+        if(vp3_phone_voicemail_deleted_v1($pdo,(string)$job['provider_recording_sid']))continue;
+        if(!vp3_phone_voicemail_job_v1($job)){try{$v=$pdo->prepare('SELECT id FROM phone_voice_recordings_v130 WHERE provider_recording_sid=? AND owner_user_id=?');$v->execute([$job['provider_recording_sid'],$job['owner_user_id']]);$job['voicemail_message']=(bool)$v->fetchColumn();}catch(PDOException){}}
+        $row=vp3_phone_recording_public_v1($job);$row['transcript']='';
         if((int)$job['session_id']>0){$s=$pdo->prepare('SELECT id FROM artist_transcript_sessions_v172 WHERE id=? AND created_by_user_id=? AND discarded_at IS NULL');$s->execute([(int)$job['session_id'],(int)$user['id']]);
             if(!$s->fetchColumn()){$row['transcript_url']='';$row['report_url']='';$row['audio_url']='';$row['recording_refs']=[];}
-            else{$t=$pdo->prepare("SELECT transcript_text FROM artist_transcript_segments_v172 WHERE session_id=? AND segment_type='transcript' ORDER BY segment_index,id LIMIT 5");$t->execute([(int)$job['session_id']]);$row['transcript']=mb_substr(implode("\n",array_column($t->fetchAll(PDO::FETCH_ASSOC),'transcript_text')),0,8000);}}
+            else{$t=$pdo->prepare("SELECT transcript_text FROM artist_transcript_segments_v172 WHERE session_id=? AND segment_type='transcript' ORDER BY segment_index,id LIMIT 5");$t->execute([(int)$job['session_id']]);$row['transcript']=mb_substr(implode("\n",array_column($t->fetchAll(PDO::FETCH_ASSOC),'transcript_text')),0,8000);if($row['transcript']!=='')$row['can_transcribe']=false;}}
         $rows[]=$row;}
     // Existing saved voicemails remain available without inventing a new paid job.
     try{$pdo->query('SELECT id FROM phone_voice_recordings_v130 WHERE 1=0');$legacy=true;}catch(PDOException){$legacy=false;}
@@ -215,13 +255,13 @@ function vp3_phone_recording_workspace_v1(PDO $pdo,array $user,int $agentId=0): 
 function vp3_phone_recording_legacy_public_v1(array $row): array
 {
     $id=(int)$row['id'];$epoch=strtotime((string)($row['created_at']??''))?:0;
-    return ['id'=>'legacy-'.$id,'call_id'=>'legacy-'.(int)$row['call_id'],'state'=>'ready','stage'=>'ready','peer_e164'=>(string)$row['caller_e164'],'phone_number_id'=>(int)$row['phone_number_id'],'agent_id'=>(int)$row['agent_id'],
+    return ['id'=>'legacy-'.$id,'kind'=>'voicemail','can_delete'=>true,'can_post'=>true,'can_transcribe'=>true,'call_id'=>'legacy-'.(int)$row['call_id'],'state'=>'ready','stage'=>'ready','peer_e164'=>(string)$row['caller_e164'],'phone_number_id'=>(int)$row['phone_number_id'],'agent_id'=>(int)$row['agent_id'],
         'audio_url'=>url('/api/phone-recording-audio-v1.php?id=legacy-'.$id),'transcript'=>'','report_url'=>'','transcript_url'=>'','recording_refs'=>[],'transcript_session_id'=>0,'read'=>(int)($row['read_epoch']??0)>0,'created_at'=>(string)($row['created_at']??''),'created_epoch'=>$epoch,'duration_seconds'=>(int)$row['duration_seconds'],'retry_available'=>false];
 }
 function vp3_phone_recording_legacy_row_v1(PDO $pdo,array $user,int $id,int $agentId=0): array
 {
     $q=$pdo->prepare("SELECT r.*,c.agent_id,c.phone_number_id,c.caller_e164,c.called_e164,c.provider_call_sid FROM phone_voice_recordings_v130 r JOIN phone_voice_calls_v130 c ON c.id=r.call_id AND c.owner_user_id=r.owner_user_id WHERE r.id=? AND r.owner_user_id=? AND r.provider='twilio' AND r.recording_status='completed'");$q->execute([$id,(int)$user['id']]);$row=$q->fetch(PDO::FETCH_ASSOC);
-    if(!$row||($agentId>0&&(int)$row['agent_id']!==$agentId))throw new RuntimeException('Recording not found.',404);return $row;
+    if(!$row||($agentId>0&&(int)$row['agent_id']!==$agentId)||vp3_phone_voicemail_deleted_v1($pdo,(string)$row['provider_recording_sid']))throw new RuntimeException('Recording not found.',404);return $row;
 }
 function vp3_phone_recording_mark_read_v1(PDO $pdo,array $user,string $opaqueId,int $agentId=0): array
 {
@@ -237,12 +277,13 @@ function vp3_phone_recording_mark_read_v1(PDO $pdo,array $user,string $opaqueId,
 }
 function vp3_phone_recording_call_jobs_v1(PDO $pdo,array $user,string $kind,int $callId): array
 {
-    $q=$pdo->prepare('SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=? AND origin_kind=? AND call_id=? ORDER BY id DESC LIMIT 10');$q->execute([(int)$user['id'],$kind,$callId]);return array_map('vp3_phone_recording_public_v1',$q->fetchAll(PDO::FETCH_ASSOC));
+    $q=$pdo->prepare("SELECT * FROM phone_recording_jobs_v1 WHERE owner_user_id=? AND origin_kind=? AND call_id=? AND state<>'deleted' ORDER BY id DESC LIMIT 10");$q->execute([(int)$user['id'],$kind,$callId]);return array_map('vp3_phone_recording_public_v1',$q->fetchAll(PDO::FETCH_ASSOC));
 }
 function vp3_phone_recording_retry_v1(PDO $pdo,array $user,int $id): array
 {
     $job=vp3_phone_recording_row_v1($pdo,$id);if((int)$job['owner_user_id']!==(int)$user['id'])throw new RuntimeException('Recording not found.',404);
-    vp3_phone_recording_authorize_v1($pdo,$job);
+    $authority=vp3_phone_recording_authorize_v1($pdo,$job);
+    if(($authority['call']['transport_kind']??'')==='managed_callback')vp3_phone_recording_authorize_v1($pdo,$job,true);
     if($job['state']!=='failed'||$job['error_code']==='recording_unavailable'||(int)$job['speech_dispatched']||(int)$job['analysis_dispatched'])throw new RuntimeException('This provider attempt needs review before any additional paid work. It will not replay automatically.',409);
     $policy=vp3_phone_recording_policy_v1($pdo,$user,(int)$job['agent_id']);
     $pdo->prepare("UPDATE phone_recording_jobs_v1 SET state='queued',stage='queued',policy_json=?,error_code='',last_error='',lease_token='',lease_until=0,updated_epoch=? WHERE id=? AND state='failed' AND speech_dispatched=0 AND analysis_dispatched=0")->execute([vp3_phone_recording_json_v1($policy),time(),$id]);
@@ -295,7 +336,16 @@ function vp3_phone_recording_checkpoint_v1(PDO $pdo,array $job,array $values): a
     $set=[];$args=[];foreach($values as $key=>$value){if(!in_array($key,$allowed,true))throw new RuntimeException('Invalid recording checkpoint.');$set[]=$key.'=?';$args[]=$value;}
     $set[]='updated_epoch=?';$args[]=time();$args[]=(int)$job['id'];$args[]=(string)$job['lease_token'];$args[]=time();
     $q=$pdo->prepare('UPDATE phone_recording_jobs_v1 SET '.implode(',',$set).' WHERE id=? AND lease_token=? AND lease_until>=?');$q->execute($args);
-    if($q->rowCount()!==1)throw new RuntimeException('Recording worker lease changed.',409);return vp3_phone_recording_row_v1($pdo,(int)$job['id']);
+    if($q->rowCount()!==1){
+        // Native MySQL reports changed rows, so an identical checkpoint in the
+        // same second can legitimately affect zero. Use a current locking read
+        // rather than a transaction snapshot to distinguish it from lost work.
+        $q=$pdo->prepare('SELECT * FROM phone_recording_jobs_v1 WHERE id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$q->execute([(int)$job['id']]);$fresh=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$fresh||$job['lease_token']===''||!hash_equals((string)$job['lease_token'],(string)$fresh['lease_token'])||(int)$fresh['lease_until']<time())throw new RuntimeException('Recording worker lease changed.',409);
+        foreach($values as $key=>$value)if((string)$fresh[$key]!== (string)$value)throw new RuntimeException('Recording worker lease changed.',409);
+        return $fresh;
+    }
+    return vp3_phone_recording_row_v1($pdo,(int)$job['id']);
 }
 function vp3_phone_recording_import_v1(PDO $pdo,array $job,array $user,array $speech,string $path,bool $retain): array
 {
@@ -304,18 +354,35 @@ function vp3_phone_recording_import_v1(PDO $pdo,array $job,array $user,array $sp
     $client='phone-'.substr(hash('sha256',$job['owner_user_id'].':'.$job['agent_id'].':'.$job['provider_recording_sid']),0,40);$now=gmdate('Y-m-d H:i:s');
     $q=$pdo->prepare('SELECT * FROM artist_transcript_sessions_v172 WHERE created_by_user_id=? AND client_session_key=?');$q->execute([(int)$user['id'],$client]);$existing=$q->fetch(PDO::FETCH_ASSOC);
     $contentHash=hash('sha256',vp3_phone_recording_json_v1($segments));
-    if($existing){$meta=vp3_phone_recording_decode_v1($existing['metadata_json']);if($existing['discarded_at']!==null||(int)($meta['phone_recording_v1']['job_id']??0)!==(int)$job['id']||!hash_equals((string)($meta['phone_recording_v1']['import_hash']??''),$contentHash))throw new RuntimeException('A different or removed transcript already exists for this recording.',409);return ['session_id'=>(int)$existing['id'],'recording_key'=>(string)($meta['phone_recording_v1']['recording_key']??''),'transcript_hash'=>(string)($meta['phone_recording_v1']['transcript_hash']??'')];}
+    if($existing){
+        vp3_phone_recording_authorize_v1($pdo,$job,true);$oldMeta=vp3_phone_recording_decode_v1($existing['metadata_json']);
+        if($existing['discarded_at']!==null||(int)($oldMeta['phone_recording_v1']['job_id']??0)!==(int)$job['id'])throw new RuntimeException('A different or removed transcript already exists for this recording.',409);
+        if(hash_equals((string)($oldMeta['phone_recording_v1']['import_hash']??''),$contentHash))return ['session_id'=>(int)$existing['id'],'recording_key'=>(string)($oldMeta['phone_recording_v1']['recording_key']??''),'transcript_hash'=>(string)($oldMeta['phone_recording_v1']['transcript_hash']??'')];
+        $oldKey=(string)($oldMeta['phone_recording_v1']['recording_key']??'');$retained=false;foreach($oldMeta['recordings_v197']??[] as $recording)if(($recording['key']??'')===$oldKey)$retained=true;
+        if(!$retained||!preg_match('/^[a-f0-9]{32}$/D',$oldKey)||!is_file(artist_listening_v197_private_dir($user,(int)$existing['id']).'/'.$oldKey.'.mp3'))throw new RuntimeException('The saved voicemail audio was removed.',409);
+        $q=$pdo->prepare('SELECT COUNT(*) FROM artist_transcript_segments_v172 WHERE session_id=?');$q->execute([(int)$existing['id']]);
+        if(!vp3_phone_voicemail_job_v1($job)||(int)$q->fetchColumn()>0||!hash_equals((string)($oldMeta['phone_recording_v1']['audio_sha256']??''),(string)hash_file('sha256',$path)))throw new RuntimeException('The saved voice message changed. Review it before replacing its transcript.',409);
+    }
     $key=$retain?substr(hash('sha256','phone-audio:'.$job['provider_recording_sid']),0,32):'';$duration=(int)$job['duration_seconds']*1000;
     $origin=['job_id'=>(int)$job['id'],'call_kind'=>$job['origin_kind'],'call_id'=>$job['call_public_id'],'agent_id'=>(int)$job['agent_id'],'import_hash'=>$contentHash,'audio_sha256'=>hash_file('sha256',$path),'recording_key'=>$key];
+    $call=vp3_phone_recording_call_v1($pdo,$job);
+    if(($call['transport_kind']??'')==='managed_callback')$origin['transport_kind']='managed_callback';
     $meta=['source'=>'phone_call_v1','capture_mode'=>'phone_recording_import','audio_retained'=>$retain,'phone_recording_v1'=>$origin];
     $pdo->beginTransaction();$copied='';
     try{
         vp3_phone_recording_lock_authority_v1($pdo,$job,true);
-        $title='Phone call · '.gmdate('Y-m-d H:i',(int)$job['created_epoch']);
-        $pdo->prepare("INSERT INTO artist_transcript_sessions_v172 (owner_user_id,created_by_user_id,conversation_id,client_session_key,title,status,language,metadata_json,duration_ms,started_at,stopped_at,last_activity_at) VALUES (?,?,?,?,?,'draft','en-US',?,?,?,?,?)")->execute([(int)$user['id'],(int)$user['id'],(int)$job['conversation_id']?:null,$client,$title,vp3_phone_recording_json_v1($meta),$duration,$now,$now,$now]);
-        $session=(int)$pdo->lastInsertId();
-        if($retain){$dir=artist_listening_v197_private_dir($user,$session);if(!is_dir($dir)&&!mkdir($dir,0700,true)&&!is_dir($dir))throw new RuntimeException('Recording storage is unavailable.');@chmod($dir,0700);$copied=$dir.'/'.$key.'.mp3';if(!copy($path,$copied))throw new RuntimeException('The recording could not be retained.');@chmod($copied,0600);
-            $meta['recordings_v197']=[['key'=>$key,'file_name'=>$key.'.mp3','mime_type'=>'audio/mpeg','bytes'=>filesize($copied),'duration_ms'=>$duration,'started_ms'=>0,'ended_ms'=>$duration,'created_at'=>gmdate('c')]];
+        $title=(vp3_phone_voicemail_job_v1($job)?'Voicemail · ':'Phone call · ').gmdate('Y-m-d H:i',(int)$job['created_epoch']);
+        if($existing){
+            $q=$pdo->prepare('SELECT metadata_json,discarded_at FROM artist_transcript_sessions_v172 WHERE id=? AND created_by_user_id=?');$q->execute([(int)$existing['id'],(int)$user['id']]);$locked=$q->fetch(PDO::FETCH_ASSOC);
+            $q=$pdo->prepare('SELECT COUNT(*) FROM artist_transcript_segments_v172 WHERE session_id=?');$q->execute([(int)$existing['id']]);
+            if(!$locked||$locked['discarded_at']!==null||(int)$q->fetchColumn()>0||!hash_equals((string)$existing['metadata_json'],(string)$locked['metadata_json']))throw new RuntimeException('The saved voice message changed before transcription finished.',409);
+            $session=(int)$existing['id'];$pdo->prepare('UPDATE artist_transcript_sessions_v172 SET metadata_json=?,last_activity_at=? WHERE id=?')->execute([vp3_phone_recording_json_v1($meta),$now,$session]);
+        }else{
+            $pdo->prepare("INSERT INTO artist_transcript_sessions_v172 (owner_user_id,created_by_user_id,conversation_id,client_session_key,title,status,language,metadata_json,duration_ms,started_at,stopped_at,last_activity_at) VALUES (?,?,?,?,?,'draft','en-US',?,?,?,?,?)")->execute([(int)$user['id'],(int)$user['id'],(int)$job['conversation_id']?:null,$client,$title,vp3_phone_recording_json_v1($meta),$duration,$now,$now,$now]);
+            $session=(int)$pdo->lastInsertId();
+        }
+        if($retain){$dir=artist_listening_v197_private_dir($user,$session);if(!is_dir($dir)&&!mkdir($dir,0700,true)&&!is_dir($dir))throw new RuntimeException('Recording storage is unavailable.');@chmod($dir,0700);$target=$dir.'/'.$key.'.mp3';if(!$existing){$copied=$target;if(!copy($path,$copied))throw new RuntimeException('The recording could not be retained.');@chmod($copied,0600);}
+            $meta['recordings_v197']=[['key'=>$key,'file_name'=>$key.'.mp3','mime_type'=>'audio/mpeg','bytes'=>filesize($target),'duration_ms'=>$duration,'started_ms'=>0,'ended_ms'=>$duration,'created_at'=>gmdate('c')]];
             $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET metadata_json=? WHERE id=?')->execute([vp3_phone_recording_json_v1($meta),$session]);}
         $insert=$pdo->prepare("INSERT INTO artist_transcript_segments_v172 (session_id,client_segment_key,segment_index,segment_type,speaker_label,transcript_text,started_ms,ended_ms,confidence) VALUES (?,?,?,'transcript',?,?,?,?,?)");
         foreach($segments as $index=>$segment){
@@ -324,7 +391,8 @@ function vp3_phone_recording_import_v1(PDO $pdo,array $job,array $user,array $sp
             $insert->execute([$session,substr(hash('sha256',$client.':'.$index.':'.$text),0,40),$index,$speaker,$text,$start,$end,is_numeric($segment['confidence']??null)?max(0,min(1,(float)$segment['confidence'])):null]);}
         $map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,$session));$meta['phone_recording_v1']['transcript_hash']=$map['source_hash'];
         $pdo->prepare('UPDATE artist_transcript_sessions_v172 SET metadata_json=? WHERE id=?')->execute([vp3_phone_recording_json_v1($meta),$session]);
-        $pdo->commit();return ['session_id'=>$session,'recording_key'=>$key,'transcript_hash'=>(string)$map['source_hash']];
+        $import=['session_id'=>$session,'recording_key'=>$key,'transcript_hash'=>(string)$map['source_hash']];vp3_phone_recording_checkpoint_v1($pdo,$job,$import);
+        $pdo->commit();return $import;
     }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();if($copied!=='')@unlink($copied);throw $error;}
 }
 function vp3_phone_recording_report_text_v1(array $analysis,bool $transcribed): string
@@ -352,9 +420,14 @@ function vp3_phone_recording_assert_source_v1(PDO $pdo,array $job): void
 function vp3_phone_recording_deliver_v1(PDO $pdo,array $job,array $call,array $analysis,bool $transcribed): array
 {
     if(!function_exists('vp3_phone_workspace_delivery_v1'))throw new RuntimeException('Phone Chat delivery is unavailable.');
-    $view=vp3_phone_recording_public_v1($job);$text=vp3_phone_recording_report_text_v1($analysis,$transcribed);
+    if(!vp3_phone_voicemail_announce_allowed_v1($pdo,$job))return ['message_id'=>0,'conversation_id'=>(int)$job['conversation_id'],'suppressed'=>true];
+    $view=vp3_phone_recording_public_v1($job);$text=vp3_phone_voicemail_job_v1($job)?vp3_phone_voicemail_text_v1($pdo,$job,$call):vp3_phone_recording_report_text_v1($analysis,$transcribed);
     if((int)$job['session_id']>0)$text.="\n\nTranscript: ".url('/artist-listening.php?session='.(int)$job['session_id']);
-    return vp3_phone_workspace_delivery_v1($pdo,$call,'voicemail','phone-recording-report:'.$job['public_id'],$text,
+    $event='phone-recording-report:'.$job['public_id'];
+    // A newly requested transcript gets one new report even when an earlier
+    // audio-only report exists. Replayed completion uses the same source hash.
+    if(vp3_phone_voicemail_job_v1($job)&&$transcribed)$event.=':'.$job['transcript_hash'];
+    return vp3_phone_workspace_delivery_v1($pdo,$call,'voicemail',$event,$text,
         ['voicemail_id'=>'job-'.(int)$job['id'],'status'=>'ready','recording_refs'=>$view['recording_refs'],'transcript_session_id'=>(int)$job['session_id'],'report'=>['text'=>$text,'review_state'=>'unreviewed','source_hash'=>$job['transcript_hash']]]);
 }
 /** One bounded job; adapters are server-injected test transports, never request input. */
@@ -366,11 +439,11 @@ function vp3_phone_recording_worker_once_v1(PDO $pdo,array $adapters=[]): array
         if(!empty($policy['enabled'])){
             vp3_phone_recording_authorize_v1($pdo,$job,true);
             if(!empty($policy['analyze'])&&!isset($adapters['analyze'])){vp3_phone_recording_stack_v1();vp3_ai_direct_account_route_v1($user);}
-            $job=vp3_phone_recording_checkpoint_v1($pdo,$job,['stage'=>'fetching']);$bytes=vp3_phone_recording_fetch_v1($job,$adapters['fetch']??null);$path=vp3_phone_recording_store_source_v1($job,$bytes);unset($bytes);
+            $job=vp3_phone_recording_checkpoint_v1($pdo,$job,['stage'=>'fetching']);$bytes=vp3_phone_recording_fetch_v1($job,$adapters['fetch']??null);$path=vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$job,$bytes){vp3_phone_recording_lock_authority_v1($pdo,$job,true);return vp3_phone_recording_store_source_v1($job,$bytes);});unset($bytes);
             $job=vp3_phone_recording_checkpoint_v1($pdo,$job,['audio_sha256'=>hash_file('sha256',$path)]);
             vp3_phone_recording_authorize_v1($pdo,$job,true);
             if(empty($policy['transcribe'])&&!empty($policy['retain_audio'])){
-                $import=vp3_phone_recording_import_v1($pdo,$job,$user,['segments'=>[]],$path,true);$job=vp3_phone_recording_checkpoint_v1($pdo,$job,$import);
+                $import=vp3_phone_recording_import_v1($pdo,$job,$user,['segments'=>[]],$path,true);$job=vp3_phone_recording_row_v1($pdo,(int)$job['id']);
             }
             if(!empty($policy['transcribe'])){
                 require_once __DIR__.'/phone-recording-speech-v1.php';
@@ -379,7 +452,7 @@ function vp3_phone_recording_worker_once_v1(PDO $pdo,array $adapters=[]): array
                 $speech=vp3_phone_recording_transcribe_v1($path,(int)$job['duration_seconds'],$user,$adapters['speech']??null);
                 vp3_phone_recording_authorize_v1($pdo,$job,true);
                 $import=vp3_phone_recording_import_v1($pdo,$job,$user,$speech,$path,!empty($policy['retain_audio']));
-                $job=vp3_phone_recording_checkpoint_v1($pdo,$job,$import);$transcribed=true;
+                $job=vp3_phone_recording_row_v1($pdo,(int)$job['id']);$transcribed=true;
                 if(!empty($policy['analyze'])){
                     vp3_phone_recording_authorize_v1($pdo,$job,true);vp3_phone_recording_stack_v1();$modules=vp3_phone_recording_modules_v1((array)$policy['modules']);
                     vp3_phone_recording_assert_source_v1($pdo,$job);
@@ -407,8 +480,8 @@ function vp3_phone_recording_worker_once_v1(PDO $pdo,array $adapters=[]): array
         $pdo->beginTransaction();try{
             $authority=vp3_phone_recording_lock_authority_v1($pdo,$job,!empty($policy['enabled']));
             if($transcribed)vp3_phone_recording_assert_source_v1($pdo,$job);
-            $job=vp3_phone_recording_checkpoint_v1($pdo,$job,['stage'=>'report']);$delivery=vp3_phone_recording_deliver_v1($pdo,$job,$authority['call'],$analysis,$transcribed);
-            if((int)($delivery['message_id']??0)<1)throw new RuntimeException('Phone Chat report was not saved.');
+            $job=vp3_phone_recording_checkpoint_v1($pdo,$job,['stage'=>'report']);$delivery=vp3_phone_voicemail_job_v1($job)&&!$transcribed?['message_id'=>0,'conversation_id'=>(int)$job['conversation_id'],'suppressed'=>true]:vp3_phone_recording_deliver_v1($pdo,$job,$authority['call'],$analysis,$transcribed);
+            if((int)($delivery['message_id']??0)<1&&empty($delivery['suppressed']))throw new RuntimeException('Phone Chat report was not saved.');
             $job=vp3_phone_recording_checkpoint_v1($pdo,$job,['state'=>'ready','stage'=>'ready','report_message_id'=>(int)$delivery['message_id'],'conversation_id'=>(int)$delivery['conversation_id']]);
             $pdo->prepare("UPDATE phone_recording_jobs_v1 SET lease_token='',lease_until=0 WHERE id=? AND lease_token=?")->execute([(int)$job['id'],$job['lease_token']]);$pdo->commit();
         }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw $error;}
@@ -426,7 +499,7 @@ function vp3_phone_recording_worker_once_v1(PDO $pdo,array $adapters=[]): array
 function vp3_phone_recording_reserve_speech_v1(PDO $pdo,array $job): void
 {
     $seconds=(int)$job['duration_seconds'];if($seconds<1||$seconds>3600)throw new RuntimeException('Phone speech processing requires a recording from one second to one hour.',422);
-    if($pdo->inTransaction())throw new RuntimeException('Speech reservation requires its own short transaction.');
+    if(vp3_phone_transaction_active_v1($pdo))throw new RuntimeException('Speech reservation requires its own short transaction.');
     $pdo->beginTransaction();try{
         $q=$pdo->prepare('SELECT id FROM users WHERE id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$q->execute([(int)$job['owner_user_id']]);if(!$q->fetchColumn())throw new RuntimeException('Phone recording access changed.',403);
         $q=$pdo->prepare('SELECT reserved_epoch FROM phone_recording_speech_budget_v1 WHERE owner_user_id=? AND job_id=?');$q->execute([(int)$job['owner_user_id'],(int)$job['id']]);
@@ -440,7 +513,7 @@ function vp3_phone_recording_reserve_speech_v1(PDO $pdo,array $job): void
 }
 function vp3_phone_recording_worker_tick_v1(PDO $pdo,int $limit=1,array $adapters=[]): array
 {
-    $out=['completed'=>0,'failed'=>0,'results'=>[]];for($i=0;$i<max(1,min(3,$limit));$i++){$r=vp3_phone_recording_worker_once_v1($pdo,$adapters);if(($r['reason']??'')==='no_work')break;$out[$r['ok']?'completed':'failed']++;$out['results'][]=$r;}return $out;
+    $out=['completed'=>0,'failed'=>0,'results'=>[]];$cleanup=vp3_phone_voicemail_purge_once_v1($pdo,$adapters['delete']??null);if($cleanup){$out[$cleanup['ok']?'completed':'failed']++;$out['results'][]=$cleanup;}for($i=0;$i<max(1,min(3,$limit));$i++){$r=vp3_phone_recording_worker_once_v1($pdo,$adapters);if(($r['reason']??'')==='no_work')break;$out[$r['ok']?'completed':'failed']++;$out['results'][]=$r;}return $out;
 }
 /** A read-only CLI observation, never evidence that a queued job has completed. */
 function vp3_phone_recording_worker_health_v1(?int $clock=null): array
@@ -464,7 +537,11 @@ function vp3_phone_recording_worker_observe_v1(string $outcome): void
 function vp3_phone_recording_audio_v1(PDO $pdo,array $user,int $id): array
 {
     $user=vp3_phone_recording_owner_v1($pdo,(int)($user['id']??0));$job=vp3_phone_recording_row_v1($pdo,$id);
-    if((int)$job['owner_user_id']!==(int)$user['id'])throw new RuntimeException('Recording not found.',404);vp3_phone_recording_call_v1($pdo,$job);
+    if((int)$job['owner_user_id']!==(int)$user['id']||$job['state']==='deleted'||vp3_phone_voicemail_deleted_v1($pdo,(string)$job['provider_recording_sid']))throw new RuntimeException('Recording not found.',404);$call=vp3_phone_recording_call_v1($pdo,$job);
+    if(($call['transport_kind']??'')==='managed_callback'){
+        require_once __DIR__.'/phone-managed-recording-v1.php';
+        vp3_managed_recording_saved_policy_v1($pdo,$call,(string)$job['provider_recording_sid']);
+    }
     if((int)$job['session_id']>0&&$job['recording_key']!==''){
         require_once __DIR__.'/artist-listening.php';
         $q=$pdo->prepare('SELECT metadata_json,discarded_at FROM artist_transcript_sessions_v172 WHERE id=? AND created_by_user_id=?');$q->execute([(int)$job['session_id'],(int)$user['id']]);$session=$q->fetch(PDO::FETCH_ASSOC);

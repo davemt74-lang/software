@@ -26,8 +26,8 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_operator_consent_reviews_v1','phone_operator_recipient_optouts_v1','phone_operator_voice_turns_v1','phone_operator_live_assist_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
-ddl('CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
+if($mysql)foreach(['phone_voicemail_deletions_v1','phone_voicemail_greeting_tokens_v1','phone_voicemail_receipts_v1','phone_voicemail_settings_v1','phone_native_dialthrough_v1','phone_managed_recording_consent_v1','phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+ddl('CREATE TABLE users(id '.($mysql?'INT UNSIGNED':'INTEGER').' PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
 ddl('CREATE TABLE phone_sms_threads_v110(id INTEGER PRIMARY KEY,phone_number_id INTEGER,owner_user_id INTEGER,agent_id INTEGER,contact_e164 TEXT,UNIQUE(phone_number_id,owner_user_id,agent_id,contact_e164))');
@@ -61,7 +61,33 @@ function status(array $call,string $value,string $hex='c',array $extra=[],bool $
 
 c(!vp3_phone_workspace_schema_ready_v1($pdo),'unreleased tables cannot masquerade as installed');
 vp3_phone_workspace_ensure_schema_v1($pdo);c(vp3_phone_workspace_schema_ready_v1($pdo),'explicit schema installs phone workspace');
+// Reading the existing Phone workspace never installs optional recording tables.
+$pdo->exec("INSERT INTO phone_voice_calls_v130(id,provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,state,created_at) VALUES(90001,'twilio','CA00000000000000000000000000090001',1,1,7,'+16025550999','+16025550101','completed','2026-01-01 01:00:00')");
+$pdo->exec("INSERT INTO phone_voice_recordings_v130(id,call_id,owner_user_id,provider,provider_recording_sid,recording_status,duration_seconds,created_at) VALUES(90001,90001,1,'twilio','RE00000000000000000000000000090001','completed',12,'2026-01-01 01:00:00')");
+$recordingUpgradeReason='Phone recordings need the Cloud database upgrade. Ask an administrator to run upgrade.php, then retry.';
+$unupgraded=api('GET')['state'];
+c(count($unupgraded['numbers'])===2&&count($unupgraded['contacts'])===1&&count($unupgraded['calls'])===1,'missing optional recording storage preserves assigned lines, contacts and call history');
+c($unupgraded['recording_readiness']===['ready'=>false,'reason'=>$recordingUpgradeReason]&&$unupgraded['post_call_policy']===null&&$unupgraded['voicemails']===[],'missing recording storage explicitly reports unavailable recordings instead of a successful empty inbox');
+c(!table_exists('phone_recording_jobs_v1')&&!table_exists('phone_recording_policies_v1'),'Phone state reads do not run the recording migration');
 vp3_phone_recording_ensure_schema_v1($pdo);
+$upgraded=api('GET')['state'];
+c($upgraded['recording_readiness']===['ready'=>true,'reason'=>'']&&is_array($upgraded['post_call_policy'])&&count($upgraded['voicemails'])===1,'explicit recording upgrade restores policy and the existing voicemail');
+foreach(['phone_recording_policies_v1','phone_recording_jobs_v1','phone_recording_legacy_reads_v1','phone_recording_speech_budget_v1'] as $recordingTable){
+    $pdo->exec('DROP TABLE '.$recordingTable);
+    $partial=api('GET')['state'];
+    c($partial['recording_readiness']===['ready'=>false,'reason'=>$recordingUpgradeReason]&&$partial['post_call_policy']===null&&$partial['voicemails']===[],'partial recording upgrade is explicit when '.$recordingTable.' is missing');
+    c($partial['numbers']===$upgraded['numbers']&&$partial['contacts']===$upgraded['contacts']&&$partial['calls']===$upgraded['calls']&&!table_exists($recordingTable),'missing '.$recordingTable.' cannot break other Phone sections or silently recreate storage');
+    vp3_phone_recording_ensure_schema_v1($pdo);
+    c(api('GET')['state']['recording_readiness']['ready'],'replaying the recording installer recovers '.$recordingTable);
+}
+$pdo->exec('ALTER TABLE phone_managed_callback_dispatch_v1 DROP COLUMN pilot_required');
+try{api('GET');throw new LogicException('Missing core upgrade rejection.');}catch(VP3PhoneWorkspaceException $e){c($e->httpStatus===503&&$e->publicCode==='phone_upgrade_required','a missing managed/core migration retains the typed upgrade failure');}
+vp3_phone_workspace_ensure_schema_v1($pdo);
+vp3_phone_recording_ensure_schema_v1($pdo);
+$recovered=api('GET')['state'];
+c($recovered['recording_readiness']['ready']&&$recovered['numbers']===$upgraded['numbers']&&$recovered['calls']===$upgraded['calls']&&count($recovered['voicemails'])===1,'replaying explicit installers restores the complete Phone state without losing history');
+$pdo->exec('DELETE FROM phone_voice_recordings_v130 WHERE id=90001');
+$pdo->exec('DELETE FROM phone_voice_calls_v130 WHERE id=90001');
 c(!vp3_operator_auto_call_schema_ready_v1($pdo),'missing optional Operator migration does not create schema on read');
 c(api('GET')['state']['auto_call']===['available'=>false,'execution_enabled'=>false,'policies'=>[]],'unupgraded Operator preferences do not disable manual phone access');
 denies(fn()=>action('save_auto_call_policy',['contact_id'=>1,'number_id'=>1,'enabled'=>false,'expected_revision'=>0]),503,'Operator preferences require an explicit upgrade');
@@ -219,6 +245,7 @@ c(strpos($incoming,'This call will be recorded')<strpos($incoming,'<Dial'),'inco
 c($in['conversation_id']==11&&$in['agent_id']==9&&$in['chat_agent_id']==0,'incoming assigned Agent and owner MAIN Chat kept separately');
 denies(fn()=>action('bind_call',['call_id'=>$in['public_id'],'agent_id'=>7,'conversation_id'=>12]),404,'named Agent cannot bind another assigned Agent incoming call');
 c(action('bind_call',['call_id'=>$in['public_id']])['call']['public_id']===$in['public_id'],'owner MAIN can bind authorized incoming call');
+denies(fn()=>action('route_incoming',['call_id'=>$in['public_id'],'destination'=>'agent']),409,'an answer claim blocks a competing Agent handoff');
 c(status($in,'no-answer','3')['accepted'],'called leg failure recorded before Dial complete');
 $end=status($in,'no-answer','3',[],true);c($end['fallback']===true,'Dial complete still offers voicemail when terminal child status arrived first');
 c(empty(status($in,'no-answer','3',[],true)['fallback']),'replayed Dial complete cannot offer a second voicemail');
@@ -239,6 +266,29 @@ foreach($rows as $vm){action('mark_voicemail_read',['voicemail_id'=>$vm['id']]);
 c(count(array_filter(api('GET')['state']['voicemails'],fn($r)=>$r['read']))===2,'legacy and job voicemail read state persists');
 c(api('GET',['action'=>'recording_policy','number_id'=>3])['policy']['model_route']==='account_cloud','policy binds selected assigned Agent from MAIN');
 
+// Route the ringing caller through the same signed completion endpoint as Twilio.
+$hadModes=table_exists('phone_voice_modes_v140');$hadTurns=table_exists('phone_voice_turns_v140');
+ddl('CREATE TABLE IF NOT EXISTS phone_voice_modes_v140(phone_number_id INTEGER PRIMARY KEY,owner_user_id INTEGER,agent_id INTEGER,mode VARCHAR(24))');
+ddl('CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY)');
+$pdo->exec('DELETE FROM phone_voice_modes_v140 WHERE phone_number_id=3');
+$sid='CA'.str_repeat('ca',16);
+$pdo->prepare('INSERT INTO phone_voice_calls_v130(provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164) VALUES (?,?,?,?,?,?,?)')->execute(['twilio',$sid,1,3,9,'+16025550888','+16025550103']);
+vp3_phone_browser_incoming_v1($pdo,$route,$sid);
+$hand=vp3_phone_browser_call_by_sid_v1($pdo,$sid);
+$choice=['call_id'=>$hand['public_id'],'destination'=>'agent'];
+denies(fn()=>action('route_incoming',$choice),409,'a line without Agent voice mode cannot handle a transferred call');
+$pdo->exec("INSERT INTO phone_voice_modes_v140 VALUES(3,1,9,'conversation')");
+c(action('route_incoming',$choice)['destination']==='agent'&&action('route_incoming',$choice)['call_id']===$hand['public_id'],'same Agent handoff request is idempotent');
+denies(fn()=>action('route_incoming',array_replace($choice,['destination'=>'voicemail'])),409,'conflicting voicemail choice loses');
+denies(fn()=>action('bind_call',['call_id'=>$hand['public_id']]),409,'second browser cannot answer after Agent selection');
+$endForm=form($sid,['DialCallSid'=>'CA'.str_repeat('cb',16),'DialCallStatus'=>'busy']);
+$_POST=$endForm;$_GET=['call'=>$hand['public_id']];$_SERVER['HTTP_X_TWILIO_SIGNATURE']=signature('complete',$endForm,$hand['public_id']);
+ob_start();vp3_phone_browser_endpoint_v1('complete');$agentXml=ob_get_clean();
+c(str_contains($agentXml,'<Gather')&&str_contains($agentXml,'an AI phone assistant')&&!str_contains($agentXml,'<Record'),'signed handoff opens Agent conversation after the browser declines');
+c(vp3_phone_voice_current_route_v131($pdo,$sid,1800,['conversation_active'])['accepted'],'Agent turn is bound to the original caller');
+$pdo->exec('DELETE FROM phone_voice_modes_v140 WHERE phone_number_id=3');
+if(!$hadModes)$pdo->exec('DROP TABLE phone_voice_modes_v140');
+if(!$hadTurns)$pdo->exec('DROP TABLE phone_voice_turns_v140');
 // Existing inbound routes must announce even when nobody registered a browser Device
 // and the caller hangs up before a recording callback ever arrives.
 $pdo->exec('DELETE FROM phone_browser_presence_v1');$priorMessages=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();$priorBrowser=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
@@ -250,7 +300,7 @@ c($offline['accepted']&&str_contains($offline['twiml'],'<Record'),'offline brows
 c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$priorBrowser,'offline route reuses existing receipt without inventing browser call');
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$priorMessages+1,'call without any recording callback still announces once in Chat');
 $offlineMessage=$pdo->query('SELECT * FROM chat_messages ORDER BY id DESC LIMIT 1')->fetch();$offlineMarker=json_decode($offlineMessage['context_json'],true)['phone_v1'];
-c($offlineMarker===['kind'=>'call','call_id'=>$offlineId]&&str_contains($offlineMessage['message'],'+16025550777')&&str_contains($offlineMessage['message'],'+16025550101'),'offline announcement uses stable receipt reference and observed caller/called numbers');
+c($offlineMarker===['kind'=>'call','call_id'=>$offlineId,'browser_route'=>'no_registered_browser']&&str_contains($offlineMessage['message'],'+16025550777')&&str_contains($offlineMessage['message'],'+16025550101'),'offline announcement uses stable receipt reference and observed caller/called numbers');
 vp3_phone_voice_incoming_v130($pdo,$offlineForm,$offlineSignature,(string)setting('phone_voice_webhook_url_v130'),'carrier-auth-token-fixture',(string)setting('phone_twilio_account_sid'));
 c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$priorMessages+1,'repeated signed offline callback cannot duplicate announcement');
 $legacyCalls=array_values(array_filter(api('GET')['state']['calls'],fn($r)=>$r['public_id']===$offlineId));
@@ -638,13 +688,10 @@ denies(fn()=>$liveApi(array_replace($chunk,['pcm'=>'a']),$liveNow+4),422,'invali
 denies(fn()=>$liveApi(array_replace($chunk,['token'=>str_repeat('0',64)]),$liveNow+4),409,'another browser token cannot dispatch speech');
 denies(fn()=>$liveApi(array_replace($chunk,['seq'=>2]),$liveNow+4),409,'out-of-order caption chunks cannot dispatch');
 denies(fn()=>$liveApi($chunk,$liveNow+1),409,'caption request cannot outrun its bounded audio interval');
-denies(fn()=>$liveApi($chunk+['local_pcm'=>base64_encode($fixturePcm)],$liveNow+4),409,'remote-only consent cannot transmit local audio');
 c($sent===0,'rejected caption inputs do not send paid speech requests');
 $caption=$liveApi($chunk,$liveNow+4);
 c($caption===['call_id'=>$livePublic,'seq'=>1,'text'=>'Fixture remote words <script> are data.','speaker'=>'remote_audio']&&$sent===1,'a current authorized audio chunk returns only a transient caption');
 denies(fn()=>$liveApi($chunk,$liveNow+8),409,'a previously reserved sequence cannot be billed again');
-$deniedModel=static function():never{throw new LogicException('Unapproved model dispatch');};
-denies(fn()=>vp3_operator_live_request_v1($pdo,user(),'POST',['action'=>'suggest','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken,'receipts'=>[]],'csrf-fixture',$speech,$liveNow+5,$deniedModel),409,'caption consent alone does not authorize private model processing');
 $stop=['action'=>'stop','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$livePublic,'token'=>$captionToken];
 $stopDuringSpeech=static function(string $audio)use(&$sent,$liveApi,$stop,$liveNow):string{
     $sent++;$liveApi($stop,$liveNow+8);return 'Late private result';
@@ -679,216 +726,722 @@ vp3_phone_browser_status_v1($pdo,$liveForm3,signature('status',$liveForm3,$live3
 denies(fn()=>$liveApi(array_replace($liveRequest,['call_id'=>$live3]),time()),429,'account speech allowance prevents new caption authorizations');
 $terminalForm3=form($liveChild3,['ParentCallSid'=>$liveParent3,'CallStatus'=>'completed']);vp3_phone_browser_status_v1($pdo,$terminalForm3,signature('status',$terminalForm3,$live3),$live3);
 $terminalForm2=form($liveChild2,['ParentCallSid'=>$liveParent2,'CallStatus'=>'completed']);vp3_phone_browser_status_v1($pdo,$terminalForm2,signature('status',$terminalForm2,$live2),$live2);
-// Independent local/remote capture and model suggestions are separately consented.
-$pdo->prepare('UPDATE phone_operator_live_sessions_v1 SET reserved_seconds=8 WHERE call_id=?')->execute([$liveCallId]);
-$dualPublic=str_repeat('f',31).'7';$dualParent='CA'.str_repeat('f',31).'7';$dualChild='CA'.str_repeat('f',31).'8';
-$insertLive->execute([$dualPublic,$dualParent,time(),time()]);$dualId=(int)$pdo->lastInsertId();
-$dualForm=form($dualChild,['ParentCallSid'=>$dualParent,'CallStatus'=>'in-progress']);
-vp3_phone_browser_status_v1($pdo,$dualForm,signature('status',$dualForm,$dualPublic),$dualPublic);
-$dualNow=time();$dualRequest=array_replace($liveRequest,['call_id'=>$dualPublic,'capture_mode'=>'both','suggestions_attested'=>true]);
-denies(fn()=>$liveApi(array_replace($dualRequest,['capture_mode'=>'all']),$dualNow),422,'unsupported capture modes cannot obtain consent');
-denies(fn()=>$liveApi(array_replace($dualRequest,['suggestions_attested'=>'yes']),$dualNow),422,'suggestion consent must be an explicit boolean');
-$dualGrant=$liveApi($dualRequest,$dualNow);
-c($dualGrant['capture_mode']==='both'&&$dualGrant['suggestions_enabled']===true&&$dualGrant['expires_epoch']===$dualNow+60,'both sides receive explicit consent and a shorter aggregate speech budget');
-$localAudio=str_repeat("\x01\x00",64000);
-$dualChunk=array_replace($chunk,['call_id'=>$dualPublic,'token'=>$dualGrant['token'],'seq'=>1,'local_pcm'=>base64_encode($localAudio)]);
-$audioInputs=[];
-$dualSpeech=static function(string $audio)use(&$audioInputs,$fixturePcm,$localAudio):string{
-    $audioInputs[]=$audio;
-    return $audio===$fixturePcm?'Can we discuss the next step?':($audio===$localAudio?'I will confirm the details.':throw new RuntimeException('Unexpected track'));
-};
-$singleChunk=$dualChunk;unset($singleChunk['local_pcm']);
-denies(fn()=>$liveApi($singleChunk,$dualNow+4,$dualSpeech),409,'a dual authorization cannot silently become a single audio request');
-$dualCaption=$liveApi($dualChunk,$dualNow+4,$dualSpeech);
-c($audioInputs===[$fixturePcm,$localAudio]&&$dualCaption['text']==='Can we discuss the next step?'&&$dualCaption['local_text']==='I will confirm the details.','separate bounded audio sides retain their labels');
-c(count($dualCaption['receipts'])===2&&(int)vp3_operator_live_row_v1($pdo,$dualId)['reserved_seconds']===8,'both sides reserve eight speech seconds and return authenticated evidence');
-$assistRow=vp3_operator_live_assist_row_v1($pdo,$dualId);
-c(!str_contains(json_encode($dualCaption),$assistRow['receipt_secret'])&&!str_contains(json_encode($assistRow),'Can we discuss'),'caption evidence key and transcript text are never exposed from storage');
-$models=0;$modelEvidence=null;
-$model=static function(array $u,array $evidence,callable $guard)use(&$models,&$modelEvidence):string{
-    $guard();$models++;$modelEvidence=$evidence;return 'Which details would you like me to confirm first?';
-};
-$suggest=['action'=>'suggest','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$dualPublic,'token'=>$dualGrant['token'],'receipts'=>$dualCaption['receipts']];
-$suggestApi=static fn(array $input,int $at,callable $adapter):array=>vp3_operator_live_request_v1($pdo,user(),'POST',$input,'csrf-fixture',$dualSpeech,$at,$adapter);
-$forged=$suggest;$forged['receipts'][0]['text']='Altered caller words';
-denies(fn()=>$suggestApi($forged,$dualNow+5,$model),409,'edited transcript receipts never reach a model');
-$wrongSide=$suggest;$wrongSide['receipts'][0]['speaker']='local_audio';
-denies(fn()=>$suggestApi($wrongSide,$dualNow+5,$model),409,'a caller receipt cannot be relabeled as the owner');
-denies(fn()=>$suggestApi(array_replace($suggest,['conversation_id'=>12,'agent_id'=>7]),$dualNow+5,$model),404,'suggestions cannot cross private Chat boundaries');
-c($models===0,'forged evidence and foreign Chat requests never dispatch inference');
-$reply=$suggestApi($suggest,$dualNow+5,$model);
-c($reply['speech_enabled']===false&&$reply['based_on_seq']===1&&$models===1&&$reply['suggestion']==='Which details would you like me to confirm first?','owner request returns a private, non-speaking suggestion');
-c(count($modelEvidence['recent_captions'])===2&&count($modelEvidence['prior_call_metadata'])<=3
-    &&!str_contains(json_encode($modelEvidence),'+16025550999')&&!str_contains(json_encode($modelEvidence),'provider_call_sid'),'inference receives only recent captions and bounded metadata, not contact identifiers');
-denies(fn()=>$suggestApi($suggest,$dualNow+6,$model),429,'model requests are rate limited');
-// Voice is a separately approved, exact suggestion, not a general speech tool.
-$voiceDispatches=0;
-$voiceAudio=static function(string $script)use(&$voiceDispatches):string{
-    $voiceDispatches++;
-    c($script===VP3_OPERATOR_VOICE_PREFIX_V1.'Which details would you like me to confirm first?','the fixed synthetic identity disclosure precedes the reviewed suggestion');
-    return str_repeat("\x01\x00",16000);
-};
-$voiceApi=static fn(array $input,int $at,?callable $adapter=null):array=>vp3_operator_live_request_v1($pdo,user(),'POST',$input,'csrf-fixture',$dualSpeech,$at,$model,$adapter??$voiceAudio);
-$voicePrepare=['action'=>'voice_prepare','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$dualPublic,'token'=>$dualGrant['token'],
-    'source_seq'=>1,'suggestion'=>$reply['suggestion'],'proof'=>$reply['speech_proof'],'voice_consent_attested'=>true];
-c(preg_match('/^[a-f0-9]{64}$/D',$reply['speech_proof'])===1,'private suggestion can be authenticated for an explicitly reviewed voice turn');
-denies(fn()=>$voiceApi(array_replace($voicePrepare,['voice_consent_attested'=>false]),$dualNow+6),422,'caption and model consent do not imply consent to Agent speech');
-denies(fn()=>$voiceApi(array_replace($voicePrepare,['suggestion'=>'Speak arbitrary words instead.']),$dualNow+6),409,'modified suggestion cannot dispatch speech');
-denies(fn()=>$voiceApi(array_replace($voicePrepare,['proof'=>str_repeat('0',64)]),$dualNow+6),409,'forged suggestion proof cannot dispatch speech');
-denies(fn()=>$voiceApi(array_replace($voicePrepare,['agent_id'=>7,'conversation_id'=>12]),$dualNow+6),404,'another Chat cannot synthesize this call suggestion');
-c($voiceDispatches===0,'rejected voice inputs cannot reach paid synthesis');
-$voiceReady=$voiceApi($voicePrepare,$dualNow+6);
-c($voiceDispatches===1&&$voiceReady['state']==='ready'&&$voiceReady['samples']===16000&&$voiceReady['sample_rate']===16000
-    &&strlen(base64_decode($voiceReady['pcm'],true))===32000,'prepared voice is bounded PCM, not permission to play');
-$voiceRow=vp3_operator_voice_row_v1($pdo,$dualId,1);
-c($voiceRow['token_hash']===hash('sha256',$voiceReady['turn_token'])&&!str_contains(json_encode($voiceRow),$voicePrepare['suggestion']),'voice storage keeps only a hashed turn token and metadata');
-denies(fn()=>$voiceApi($voicePrepare,$dualNow+7),409,'uncertain or repeated preparation cannot dispatch twice');
-denies(fn()=>$liveApi(array_replace($dualChunk,['seq'=>2]),$dualNow+8,$dualSpeech),409,'caption dispatch pauses during a reserved voice turn');
-$voiceClaim=['action'=>'voice_claim','csrf_token'=>'csrf-fixture','agent_id'=>0,'conversation_id'=>11,'call_id'=>$dualPublic,'token'=>$dualGrant['token'],
-    'source_seq'=>1,'turn_token'=>$voiceReady['turn_token']];
-denies(fn()=>$voiceApi(array_replace($voiceClaim,['turn_token'=>str_repeat('1',64)]),$dualNow+8),409,'a mismatched turn token cannot claim outbound audio');
-$voicePlay=$voiceApi($voiceClaim,$dualNow+8);
-c($voicePlay['state']==='playing'&&$voicePlay['samples']===16000&&$voicePlay['start_by_epoch']===$dualNow+10,'separate one-use playback claim has a short start deadline');
-denies(fn()=>$voiceApi($voiceClaim,$dualNow+8),409,'the same voice audio cannot be claimed twice');
-$voiceFinish=array_replace($voiceClaim,['action'=>'voice_finish']);
-c($voiceApi($voiceFinish,$dualNow+10)['state']==='closed'&&$voiceApi($voiceFinish,$dualNow+11)['state']==='closed','finishing returns the turn to human control and is idempotent');
-denies(fn()=>$voiceApi($voicePrepare,$dualNow+12),409,'closing a turn does not authorize paid replay');
-$dualCaption2=$liveApi(array_replace($dualChunk,['seq'=>2]),$dualNow+28,$dualSpeech);
-$stopDual=array_replace($stop,['call_id'=>$dualPublic,'token'=>$dualGrant['token']]);
-denies(fn()=>$suggestApi($suggest,$dualNow+29,$model),409,'old caption evidence cannot consume another suggestion');
-$stopDuringSuggestion=static function(array $u,array $evidence,callable $guard)use($liveApi,$stopDual,$dualNow,&$models):string{
-    $guard();$models++;$liveApi($stopDual,$dualNow+29);return 'Late suggestion';
-};
-denies(fn()=>$suggestApi(array_replace($suggest,['receipts'=>$dualCaption2['receipts']]),$dualNow+29,$stopDuringSuggestion),409,'stopping during inference fences the returned suggestion');
-c($models===2&&vp3_operator_live_row_v1($pdo,$dualId)['state']==='closed','revoked suggestions do not restart a session');
-$terminalDual=form($dualChild,['ParentCallSid'=>$dualParent,'CallStatus'=>'completed']);
-vp3_phone_browser_status_v1($pdo,$terminalDual,signature('status',$terminalDual,$dualPublic),$dualPublic);
-$midPublic=str_repeat('f',31).'9';$midParent='CA'.str_repeat('f',31).'9';$midChild='CA'.str_repeat('f',31).'a';
-$insertLive->execute([$midPublic,$midParent,time(),time()]);$midId=(int)$pdo->lastInsertId();
-$midForm=form($midChild,['ParentCallSid'=>$midParent,'CallStatus'=>'in-progress']);
-vp3_phone_browser_status_v1($pdo,$midForm,signature('status',$midForm,$midPublic),$midPublic);
-$midNow=time();$midGrant=$liveApi(array_replace($dualRequest,['call_id'=>$midPublic,'suggestions_attested'=>false]),$midNow);
-$midChunk=array_replace($dualChunk,['call_id'=>$midPublic,'token'=>$midGrant['token']]);
-$midStop=array_replace($stop,['call_id'=>$midPublic,'token'=>$midGrant['token']]);$midDispatches=0;
-$stopMidSide=static function(string $audio)use(&$midDispatches,$liveApi,$midStop,$midNow):string{
-    $midDispatches++;$liveApi($midStop,$midNow+4);return 'Do not return this caption';
-};
-denies(fn()=>$liveApi($midChunk,$midNow+4,$stopMidSide),409,'revocation during the first side prevents dispatch of the second side');
-c($midDispatches===1&&(int)vp3_operator_live_row_v1($pdo,$midId)['reserved_seconds']===8,'dual frame reserves both sides before dispatch and never repeats uncertain speech');
-$terminalMid=form($midChild,['ParentCallSid'=>$midParent,'CallStatus'=>'completed']);
-vp3_phone_browser_status_v1($pdo,$terminalMid,signature('status',$terminalMid,$midPublic),$midPublic);
-// Stop during synthesis must suppress the pending output and spend the attempt.
-$latePublic=str_repeat('f',31).'b';$lateParent='CA'.str_repeat('f',31).'b';$lateChild='CA'.str_repeat('f',31).'c';
-$insertLive->execute([$latePublic,$lateParent,time(),time()]);$lateId=(int)$pdo->lastInsertId();
-$lateForm=form($lateChild,['ParentCallSid'=>$lateParent,'CallStatus'=>'in-progress']);
-vp3_phone_browser_status_v1($pdo,$lateForm,signature('status',$lateForm,$latePublic),$latePublic);
-$lateNow=time();$lateGrant=$liveApi(array_replace($liveRequest,['call_id'=>$latePublic,'suggestions_attested'=>true]),$lateNow);
-$lateCaption=$liveApi(array_replace($chunk,['call_id'=>$latePublic,'token'=>$lateGrant['token']]),$lateNow+4,$dualSpeech);
-$lateSuggestion=$suggestApi(array_replace($suggest,['call_id'=>$latePublic,'token'=>$lateGrant['token'],'receipts'=>$lateCaption['receipts']]),$lateNow+5,$model);
-$latePrepare=array_replace($voicePrepare,['call_id'=>$latePublic,'token'=>$lateGrant['token'],'suggestion'=>$lateSuggestion['suggestion'],'proof'=>$lateSuggestion['speech_proof']]);
-$lateStop=array_replace($stop,['call_id'=>$latePublic,'token'=>$lateGrant['token']]);$latePaid=0;
-$stopDuringVoice=static function(string $script)use(&$latePaid,$liveApi,$lateStop,$lateNow):string{
-    $latePaid++;$liveApi($lateStop,$lateNow+6);return str_repeat("\x01\x00",16000);
-};
-denies(fn()=>$voiceApi($latePrepare,$lateNow+6,$stopDuringVoice),409,'owner takeover during synthesis fences returned audio');
-c($latePaid===1&&vp3_operator_voice_row_v1($pdo,$lateId,1)['state']==='closed','revoked synthesis remains a spent turn and cannot be played');
-$terminalLate=form($lateChild,['ParentCallSid'=>$lateParent,'CallStatus'=>'completed']);
-vp3_phone_browser_status_v1($pdo,$terminalLate,signature('status',$terminalLate,$latePublic),$latePublic);
-c((int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn()===$liveBeforeMessages
-    &&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$liveBeforeJobs,'live assistance does not create another Chat message or recording job');
-// Autonomous calling readiness is review-only and never creates an executable call.
-require_once dirname(__DIR__).'/includes/agent-operator-admission-v1.php';
-$admissionPermission=action('save_auto_call_policy',array_replace($authorization,['expected_revision'=>4]))['policy'];
-c($admissionPermission['state']==='saved'&&$admissionPermission['revision']===5,'owner permission can be reviewed for autonomous calling');
-$admissionInput=['action'=>'operator_admission_preview','agent_id'=>0,'conversation_id'=>11,'contact_id'=>1,'number_id'=>1,'expected_revision'=>5];
-denies(fn()=>api('GET',$admissionInput),503,'readiness requires explicit migration');
-c(!vp3_operator_admission_schema_ready_v1($pdo),'missing readiness storage is not installed at runtime');
-vp3_operator_admission_install_v1($pdo);vp3_operator_admission_install_v1($pdo);
-c(vp3_operator_admission_schema_ready_v1($pdo)&&(int)$pdo->query('SELECT COUNT(*) FROM phone_operator_consent_reviews_v1')->fetchColumn()===0
-    &&(int)$pdo->query('SELECT COUNT(*) FROM phone_operator_recipient_optouts_v1')->fetchColumn()===0,'repeated upgrade grants no recipient consent');
-$admissionBefore=[];
-foreach(['phone_browser_calls_v1','phone_recording_jobs_v1','chat_messages','user_calendar_events'] as $table)
-    $admissionBefore[$table]=(int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn();
-$admission=api('GET',$admissionInput)['readiness'];
-$gateMap=static fn(array $result):array=>array_column($result['gates'],'status','id');
-c($admission['consent_state']==='not_recorded'&&!$admission['execution_enabled']&&$gateMap($admission)['recipient_review']==='blocked',
-    'owner Auto Call switch does not establish recipient agreement');
-c($gateMap($admission)['recipient_verification']==='unverified'&&$gateMap($admission)['spend_and_dispatch']==='off',
-    'independent consent verification and paid execution are not fabricated');
-$consentInput=['contact_id'=>1,'number_id'=>1,'expected_revision'=>5,'expected_consent_revision'=>0,'expected_destination'=>'+16025550999',
-    'expected_line'=>'+16025550101','decision'=>'attest','purpose'=>'follow_up','recipient_agreement_attested'=>true];
-denies(fn()=>api('GET',['action'=>'save_operator_consent']+$consentInput),405,'GET cannot alter consent');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['csrf_token'=>'forged'])),403,'consent review requires CSRF');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['recipient_agreement_attested'=>false])),422,'affirmative attestation is mandatory');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['purpose'=>'marketing'])),422,'unsupported outreach purpose is rejected');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['expected_revision'=>4])),409,'old owner policy revision is rejected');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['expected_destination'=>'+16025550998'])),409,'cannot attest to a substituted destination');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['contact_id'=>2])),404,'foreign contact is not reviewable');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['number_id'=>2])),404,'foreign line is not reviewable');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['agent_id'=>9,'conversation_id'=>13])),404,'different named Agent cannot use this assigned line');
-$attested=action('save_operator_consent',$consentInput)['readiness'];
-c($attested['consent_state']==='owner_attested'&&$attested['consent_revision']===1&&!$attested['execution_enabled']
-    &&$gateMap($attested)['recipient_verification']==='unverified','saved agreement is explicitly owner attested and does not authorize execution');
-denies(fn()=>action('save_operator_consent',$consentInput),409,'stale consent editor cannot overwrite current review');
-$bound=vp3_operator_admission_context_v1($pdo,$policyScope,$admissionInput);
-$row=vp3_operator_consent_row_v1($pdo,$policyScope,$bound);
-$at=(int)$row['attested_epoch'];
-c(vp3_operator_consent_state_v1($row,$bound,false,$at+VP3_OPERATOR_CONSENT_TTL_V1)==='expired','consent review expires after seven days');
-c(vp3_operator_consent_state_v1($row,$bound,false,$at-1)==='review_required','future consent timestamp is not treated as valid');
-$within=(new DateTimeImmutable('2026-11-23 10:00:00',new DateTimeZone('America/Phoenix')))->getTimestamp();
-$closing=(new DateTimeImmutable('2026-11-23 16:55:01',new DateTimeZone('America/Phoenix')))->getTimestamp();
-c(vp3_operator_admission_window_v1($autoSettings,$within)&&!vp3_operator_admission_window_v1($autoSettings,$closing),'entire maximum call duration must fit local calling hours');
-// Deterministic local-day boundary, independent of the CI runner's clock.
-// Explicitly exercise the CASE expression's parameter type on both engines.
-$historyNow=(new DateTimeImmutable('2026-11-24 00:30:00',new DateTimeZone('America/Phoenix')))->getTimestamp();
-$historyDay=$historyNow-1800;$historyBound=$bound;$historyBound['contact']['destination_e164']='+12025550198';
-$pdo->beginTransaction();
-try{
-    $empty=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
-    c($empty===['today'=>0,'last_attempt_epoch'=>0,'within_limit'=>true,'gap_ok'=>true],'no matching outbound attempts is an empty known ledger');
-    $insertAttempt=$pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,provider_call_sid,state,created_epoch,updated_epoch,ended_epoch,intent_consumed_epoch) VALUES(?,?,?,?,?,?,?,?,'completed',?,?,?,?)");
-    $addAttempt=static function(int $index,int $owner,int $agent,int $line,string $direction,?string $provider,int $created,int $consumed)use($insertAttempt,$historyBound):void{
-        $insertAttempt->execute([substr(hash('sha256','operator-admission-fixture:'.$index),0,32),$owner,$agent,$line,'+16025550101',$historyBound['contact']['destination_e164'],$direction,$provider,$created,max($created,$consumed),max($created,$consumed),$consumed]);
-    };
-    $sid=static fn(int $index):string=>'CA'.substr(hash('sha256','operator-admission-fixture:'.$index),0,32);
-    $addAttempt(1,1,7,1,'outbound',$sid(1),$historyDay-60,0);
-    $beforeDay=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
-    c($beforeDay['today']===0&&$beforeDay['within_limit']&&!$beforeDay['gap_ok'],'previous local day is excluded from daily count but retains the minimum gap');
-    $addAttempt(2,1,9,3,'outbound',$sid(2),$historyDay-60,$historyDay);
-    $addAttempt(3,2,8,2,'outbound',$sid(3),$historyNow-10,0);
-    $addAttempt(4,1,7,1,'inbound',$sid(4),$historyNow-10,0);
-    $addAttempt(5,1,7,1,'outbound',null,$historyNow-10,0);
-    $history=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
-    c($history['today']===1&&$history['last_attempt_epoch']===$historyDay&&!$history['within_limit']&&!$history['gap_ok'],
-        'consumed attempt at local midnight across another assigned Agent counts exactly once; foreign, inbound and unsigned rows do not');
-    $addAttempt(6,1,7,1,'outbound',$sid(6),$historyNow+60,0);
-    $future=vp3_operator_admission_history_v1($pdo,$policyScope,$historyBound,$autoSettings,$historyNow);
-    c($future['today']===1&&$future['last_attempt_epoch']===$historyNow+60&&!$future['within_limit']&&!$future['gap_ok'],
-        'future receipt blocks readiness without increasing the already-made daily count');
-}finally{$pdo->rollBack();}
-$pdo->exec("UPDATE phone_recording_policies_v1 SET revision=revision+1 WHERE owner_user_id=1 AND agent_id=7");
-$changed=api('GET',$admissionInput)['readiness'];
-c($changed['consent_state']==='review_required','changed recording policy invalidates consent binding');
-$renewed=action('save_operator_consent',array_replace($consentInput,['expected_consent_revision'=>1]))['readiness'];
-c($renewed['consent_state']==='owner_attested'&&$renewed['consent_revision']===2,'new recording policy requires explicit new attestation');
-$withdraw=action('save_operator_consent',array_replace($consentInput,['decision'=>'withdraw','expected_consent_revision'=>2]))['readiness'];
-c($withdraw['consent_state']==='withdrawn'&&!$withdraw['can_attest']&&!$withdraw['execution_enabled'],'recipient withdrawal blocks destination');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['expected_consent_revision'=>3])),409,'new owner attestation cannot undo recipient opt-out');
-$pdo->exec("UPDATE crm_contacts SET phone='+16025550999' WHERE id=1");
-c(vp3_operator_recipient_opted_out_v1($pdo,1,hash('sha256','+16025550999'))&&!vp3_operator_recipient_opted_out_v1($pdo,2,hash('sha256','+16025550999')),
-    'destination suppression is shared across the owner’s contact aliases and Agents without crossing owners');
-$pdo->prepare("INSERT INTO crm_contacts(public_id,owner_user_id,name,email,email_normalized,phone,status,created_at,updated_at)
-    VALUES(?,1,'Duplicate recipient','alias@example.test','alias@example.test','+16025550999','active','2026-01-01','2026-01-01')")
-    ->execute(['88888888-8888-4888-8888-888888888888']);
-$aliasId=(int)$pdo->lastInsertId();
-$aliasPolicy=action('save_auto_call_policy',array_replace($authorization,['contact_id'=>$aliasId,'expected_revision'=>0]))['policy'];
-$aliasInput=array_replace($admissionInput,['contact_id'=>$aliasId,'expected_revision'=>$aliasPolicy['revision']]);
-$aliasReadiness=api('GET',$aliasInput)['readiness'];
-c($aliasReadiness['consent_state']==='withdrawn'&&!$aliasReadiness['can_attest'],'a newly saved contact alias cannot bypass a recipient opt-out');
-denies(fn()=>action('save_operator_consent',array_replace($consentInput,['contact_id'=>$aliasId,'expected_revision'=>$aliasPolicy['revision'],'expected_consent_revision'=>0])),409,'re-authorizing an alias cannot remove destination suppression');
-
-foreach($admissionBefore as $table=>$count)c((int)$pdo->query('SELECT COUNT(*) FROM '.$table)->fetchColumn()===$count,'readiness and recipient review never create '.$table.' records');
-c(vp3_operator_admission_execution_enabled_v1()===false,'there is no executable autonomous dialing capability');
 $pdo->exec('UPDATE users SET plan=0 WHERE id=1');denies(fn()=>action('save_caller_contact',['call_id'=>$contactCall,'name'=>'Revoked']),403,'revoked phone access prevents contact writes');
 c(vp3_operator_history_v1($pdo,user(),0,11)['coverage']==='unavailable','Operator history cannot bypass revoked phone access');
+
+// Isolated second-account Phone Sync checks, after the existing call assertions.
+$pdo->exec("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NOT NULL DEFAULT 'fixture-password-hash'");
+if(!$mysql)$pdo->exec('PRAGMA foreign_keys=ON');
+$_SESSION=['user_id'=>2,'auth_password_fingerprint'=>hash('sha256','2:fixture-password-hash')];
+$ownerGet=static fn(array $extra=[])=>api('GET',array_replace(['action'=>'owner_phone_settings','conversation_id'=>21,'agent_id'=>0],$extra),2);
+$ownerAct=static fn(string $name,array $extra=[])=>action($name,array_replace(['conversation_id'=>21,'agent_id'=>0],$extra),2);
+denies(fn()=>$ownerGet(),503,'owner phone settings require explicit migration');
+VP3OperatorOwnerPhoneV1::install($pdo);
+c($ownerGet()['owner_phone']['phone_e164']==='','private owner number initially empty');
+denies(fn()=>$ownerGet(['conversation_id'=>11]),403,'owner phone settings cannot read foreign Chat');
+denies(fn()=>$ownerGet(['conversation_id'=>0]),403,'owner phone settings require saved private Chat');
+denies(fn()=>api('POST',['action'=>'save_owner_phone','conversation_id'=>21,'agent_id'=>0,'phone_e164'=>'+16025550100','expected_revision'=>'0'],2),403,'owner phone changes require CSRF');
+$mine=$ownerAct('save_owner_phone',['phone_e164'=>'+1 (602) 555-0100','expected_revision'=>'0'])['owner_phone'];
+c($mine['phone_e164']==='+16025550100'&&$mine['phone_revision']===1&&$mine['revision']===1&&!$mine['execution_enabled'],'Chat saves canonical number, never live authority');
+c(VP3OperatorOwnerPhoneV1::read($pdo,user(2))['phone_e164']===$mine['phone_e164'],'Account and Chat use one private number');
+denies(fn()=>$ownerAct('save_owner_phone',['phone_e164'=>'+16025550108','expected_revision'=>'0']),409,'stale phone form cannot replace newer number');
+$mine=$ownerAct('save_owner_call_preferences',['expected_revision'=>'1','updates_requested'=>true,'hello_requested'=>true])['owner_phone'];
+c($mine['updates_requested']&&$mine['hello_requested']&&!$mine['execution_enabled'],'requested outreach preferences are non-executable');
+c(VP3OperatorOwnerPhoneV1::read($pdo,user(2))['min_gap_minutes']===240,'Chat toggles preserve Account calling limits');
+vp3_phone_browser_number_policy_set_v1($pdo,2,true,true);
+$prepareOwner=static fn(array $extra=[])=>$ownerAct('prepare_owner_test',array_replace(['number_id'=>2,'phone_revision'=>1,'confirmed'=>true],$extra));
+denies(fn()=>$prepareOwner(['confirmed'=>false]),422,'test requires explicit confirmation');
+denies(fn()=>$prepareOwner(['to_number'=>'+16025550109']),422,'test never accepts arbitrary destination');
+denies(fn()=>$prepareOwner(['recording_enabled'=>true]),422,'test recording denied');
+denies(fn()=>$prepareOwner(['phone_revision'=>2]),409,'test rejects stale phone revision');
+denies(fn()=>$prepareOwner(['number_id'=>1]),404,'test cannot use another owner line');
+$test=$prepareOwner();$id=$test['call']['public_id'];$row=readcall($id);
+c($test['call']['owner_test']===true&&$row['peer_e164']==='+16025550100'&&(int)$row['owner_phone_revision']===1&&!(int)$row['recording_enabled'],'test binds exact number revision and recording off');
+c($row['provider_call_sid']===null&&$row['state']==='prepared','test preparation is not carrier send');
+denies(fn()=>$prepareOwner(),429,'duplicate test is rate limited');
+denies(fn()=>$ownerAct('confirm_owner_test',['call_id'=>$id,'phone_revision'=>1,'received'=>true]),409,'unanswered test cannot be confirmed');
+$mine=$ownerAct('save_owner_phone',['phone_e164'=>'+16025550108','expected_revision'=>'2'])['owner_phone'];
+c($mine['phone_revision']===2&&!$mine['updates_requested']&&!$mine['hello_requested']&&$mine['last_test']===null,'number change resets preferences and old test evidence');
+$f=form('CA'.md5('ps2-superseded-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$test['connect_params']['call_intent']]);
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$f,signature('voice',$f)),'<Hangup')&&readcall($id)['state']==='prepared','signed voice callback fences superseded number');
+$ownerAct('cancel_prepared',['call_id'=>$id]);
+denies(fn()=>$prepareOwner(['phone_revision'=>2]),429,'number change does not reset test cooldown');
+$pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=? WHERE public_id=?')->execute([time()-121,$id]);
+$test=$prepareOwner(['phone_revision'=>2]);$id2=$test['call']['public_id'];
+$f=form('CA'.md5('ps2-test-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$test['connect_params']['call_intent']]);
+$xml=vp3_phone_browser_voice_v1($pdo,$f,signature('voice',$f));$row=readcall($id2);
+c(str_contains($xml,'+16025550108')&&str_contains($xml,'timeLimit="60"')&&!str_contains($xml,' record='),'test TwiML limits duration and never records');
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$f,signature('voice',$f)),'<Hangup'),'test carrier intent single use');
+$child=form('CA'.md5('ps2-test-child'),['ParentCallSid'=>$row['provider_call_sid'],'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$child,signature('status',$child,$id2),$id2);
+c($ownerGet()['owner_phone']['last_test']['can_confirm']===true,'signed answer makes receipt confirmation available');
+$scope=vp3_phone_workspace_scope_v1($pdo,user(2),['conversation_id'=>21,'agent_id'=>0]);
+denies(fn()=>vp3_operator_live_call_v1($pdo,$scope,$id2,time()),409,'test call cannot authorize AI captions');
+$received=$ownerAct('confirm_owner_test',['call_id'=>$id2,'phone_revision'=>2,'received'=>true])['owner_phone'];
+c($received['last_test']['received']&&!$received['last_test']['can_confirm']&&!$received['execution_enabled'],'receipt is not identity certification or live grant');
+$stamp=(int)readcall($id2)['owner_test_received_epoch'];
+$ownerAct('confirm_owner_test',['call_id'=>$id2,'phone_revision'=>2,'received'=>true]);
+c((int)readcall($id2)['owner_test_received_epoch']===$stamp,'confirmation idempotent');
+$terminal=form('CA'.md5('ps2-test-child'),['ParentCallSid'=>$row['provider_call_sid'],'CallStatus'=>'completed']);
+vp3_phone_browser_status_v1($pdo,$terminal,signature('status',$terminal,$id2),$id2);
+$mine=$ownerAct('save_owner_phone',['phone_e164'=>'','expected_revision'=>'3'])['owner_phone'];
+c($mine['phone_e164']===''&&$mine['last_test']===null,'remove number clears test projection');
+unset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']);
+denies(fn()=>$ownerGet(),403,'stale browser session cannot read owner phone');
+
+
+// PS4 uses the same canonical browser ledger and signed carrier callbacks.
+// Build a minimal paired-device/thread fixture with the real profile installer.
+require_once dirname(__DIR__).'/includes/phone-communication-profile-v1.php';
+$pdo->exec('CREATE TABLE vp3_phone_devices_v1(id CHAR(32) PRIMARY KEY,owner_user_id '.($mysql?'INT UNSIGNED':'INTEGER').' NOT NULL,device_status VARCHAR(12) NOT NULL,expires_at BIGINT NOT NULL,generation BIGINT NOT NULL DEFAULT 1,UNIQUE(owner_user_id,id))'.($mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':''));
+vp3_phone_communication_install_v1($pdo,$mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':'');
+$pdo->exec('CREATE TABLE vp3_paired_phone_threads_v1(device_id CHAR(32) PRIMARY KEY,owner_user_id INTEGER NOT NULL,agent_id INTEGER NOT NULL,conversation_id INTEGER NOT NULL)');
+$device1=md5('ps4-device-one');$profile1=md5('ps4-profile-one');$device2=md5('ps4-device-two');$profile2=md5('ps4-profile-two');$clock=time();
+$insertDevice=$pdo->prepare("INSERT INTO vp3_phone_devices_v1(id,owner_user_id,device_status,expires_at) VALUES (?,2,'approved',?)");
+$insertDevice->execute([$device1,$clock+3600]);$insertDevice->execute([$device2,$clock+3600]);
+$insertThread=$pdo->prepare('INSERT INTO vp3_paired_phone_threads_v1 VALUES (?,2,0,21)');$insertThread->execute([$device1]);$insertThread->execute([$device2]);
+$zone=gmdate('H:i',$clock)==='23:59'?'America/Phoenix':'UTC';
+$insertProfile=$pdo->prepare("INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,owner_calls,holder_calls,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch) VALUES(2,?,?,1,1,?,1,1,?,'00:00','23:59',2,120,?)");
+$insertProfile->execute([$device1,$profile1,'+16025550135',$zone,$clock]);$insertProfile->execute([$device2,$profile2,'+16025550136',$zone,$clock]);
+$prepareConnected=static fn(array $extra=[])=>$ownerAct('prepare_connected_call',array_replace(['number_id'=>2,'device_id'=>$device1,'profile_id'=>$profile1,'profile_revision'=>1,'phone_revision'=>1,'confirmed'=>true],$extra));
+denies(fn()=>$prepareConnected(['confirmed'=>false]),422,'connected calling requires explicit confirmation');
+denies(fn()=>$prepareConnected(['to_number'=>'+16025550199']),422,'connected calling refuses caller-supplied destination');
+denies(fn()=>$prepareConnected(['recording_enabled'=>false]),422,'connected call has no recording input');
+denies(fn()=>$prepareConnected(['number_id'=>1]),404,'foreign assigned line is rejected');
+denies(fn()=>$prepareConnected(['profile_id'=>$profile2]),409,'cannot mix device and profile');
+denies(fn()=>$prepareConnected(['profile_revision'=>2]),409,'stale profile revision rejected');
+denies(fn()=>$prepareConnected(['phone_revision'=>2]),409,'stale number revision rejected');
+denies(fn()=>$prepareConnected(['conversation_id'=>0]),409,'connected call needs its saved private conversation');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=0 WHERE profile_id=?')->execute([$profile1]);
+denies(fn()=>$prepareConnected(),409,'holder must consent to direct calls');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=1 WHERE profile_id=?')->execute([$profile1]);
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET owner_calls=0 WHERE profile_id=?')->execute([$profile1]);
+denies(fn()=>$prepareConnected(),409,'owner must also grant direct calls');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET owner_calls=1 WHERE profile_id=?')->execute([$profile1]);
+$local=(new DateTimeImmutable('@'.$clock))->setTimezone(new DateTimeZone($zone))->format('H:i');
+[$quietStart,$quietEnd]=$local<'12:00'?['13:00','14:00']:['01:00','02:00'];
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET window_start=?,window_end=? WHERE profile_id=?')->execute([$quietStart,$quietEnd,$profile1]);
+denies(fn()=>$prepareConnected(),409,'quiet hours block reservation');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET window_start='00:00',window_end='23:59' WHERE profile_id=?")->execute([$profile1]);
+$pc=$prepareConnected();$pcid=$pc['call']['public_id'];$row=readcall($pcid);
+c($pc['call']['connected_phone']===true&&$pc['call']['peer_e164']===''&&$pc['call']['peer_masked']==='Ending in 0135'
+    &&$row['peer_e164']==='+16025550135'&&$row['paired_profile_id']===$profile1&&!$row['recording_enabled'],'private destination bound to profile and redacted in response');
+c($row['provider_call_sid']===null,'prepared connected call is not carrier dispatch');
+denies(fn()=>$prepareConnected(),429,'per-profile minimum interval includes reservations');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=0,revision=2 WHERE profile_id=?")->execute([$profile1]);
+$pcform=form('CA'.md5('ps4-denied-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$pc['connect_params']['call_intent']]);
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$pcform,signature('voice',$pcform)),'<Hangup')&&readcall($pcid)['state']==='prepared','carrier cannot dial after holder revokes consent');
+$ownerAct('cancel_prepared',['call_id'=>$pcid]);
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=1,revision=3 WHERE profile_id=?")->execute([$profile1]);
+denies(fn()=>$prepareConnected(['profile_revision'=>3]),429,'consent edits do not reset frequency budget');
+$pc2=$prepareConnected(['device_id'=>$device2,'profile_id'=>$profile2]);$pcid2=$pc2['call']['public_id'];
+$pcform2=form('CA'.md5('ps4-connected-parent'),['From'=>'client:'.vp3_phone_browser_identity_v1(2,0),'call_intent'=>$pc2['connect_params']['call_intent']]);
+$xml2=vp3_phone_browser_voice_v1($pdo,$pcform2,signature('voice',$pcform2));
+c(str_contains($xml2,'+16025550136')&&str_contains($xml2,'timeLimit="180"')&&!str_contains($xml2,' record=')
+    &&str_contains($xml2,'callerId="+16025550102"'),'second profile uses same owned line with bounded no-record call');
+c(str_contains(vp3_phone_browser_voice_v1($pdo,$pcform2,signature('voice',$pcform2)),'<Hangup'),'connected call intent single use');
+$pcrow=readcall($pcid2);$pcchild=form('CA'.md5('ps4-connected-child'),['ParentCallSid'=>$pcrow['provider_call_sid'],'CallStatus'=>'in-progress']);
+vp3_phone_browser_status_v1($pdo,$pcchild,signature('status',$pcchild,$pcid2),$pcid2);
+denies(fn()=>$ownerAct('bind_call',['call_id'=>$pcid2]),404,'connected call cannot be rebound to a different conversation');
+denies(fn()=>vp3_operator_live_call_v1($pdo,$scope,$pcid2,time()),409,'connected reachability call has no AI speech authority');
+denies(fn()=>$ownerAct('save_caller_contact',['call_id'=>$pcid2,'name'=>'Private phone']),403,'contact save cannot expose private destination');
+$pcend=form('CA'.md5('ps4-connected-child'),['ParentCallSid'=>$pcrow['provider_call_sid'],'CallStatus'=>'completed','CallDuration'=>'15']);
+vp3_phone_browser_status_v1($pdo,$pcend,signature('status',$pcend,$pcid2),$pcid2);
+$recent1=vp3_connected_phone_recent_v1($pdo,2,$device1,$profile1);
+$recent2=vp3_connected_phone_recent_v1($pdo,2,$device2,$profile2);
+c(count($recent1)===1&&count($recent2)===1&&$recent1[0]['call_id']===$pcid&&$recent2[0]['call_id']===$pcid2&&$recent2[0]['duration_seconds']===15,'each profile has isolated redacted telephone activity');
+c(vp3_connected_phone_recent_v1($pdo,1,$device2,$profile2)===[],'other account cannot read connected profile call activity');
+$hist=vp3_operator_history_v1($pdo,user(2),0,21);
+$connectedHistory=array_values(array_filter($hist['calls'],fn($call)=>$call['call_id']===$pcid2));
+c(count($connectedHistory)===1&&$connectedHistory[0]['connected_profile_id']===$profile2&&$connectedHistory[0]['peer_e164']===''&&$connectedHistory[0]['peer_masked']==='Ending in 0136','Operator history uses separate masked profile identity');
+
+// PS5E.1: test the actual durable admission on both database engines, no provider I/O.
+require_once dirname(__DIR__).'/includes/phone-managed-callback-v1.php';
+c(vp3_managed_callback_ready_v1($pdo),'managed callback migration is installed by Phone upgrade');
+vp3_managed_callback_install_v1($pdo);
+$managedDevice=md5('ps5e-device');$managedProfile=md5('ps5e-profile');$managedId=md5('ps5e-request-one');
+$insertDevice->execute([$managedDevice,$clock+3600]);
+$insertThread->execute([$managedDevice]);
+$insertProfile->execute([$managedDevice,$managedProfile,'+16025550138',$zone,$clock]);
+$managedArgs=['request_id'=>$managedId,'device_id'=>$managedDevice,'profile_id'=>$managedProfile,
+    'generation'=>1,'profile_revision'=>1,'phone_revision'=>1,'number_id'=>2,'agent_id'=>0,'conversation_id'=>21,
+    'destination_e164'=>'+16025550139','confirmed'=>true];
+$managed=static fn(array $extra=[],int $owner=2,int $at=0)=>vp3_managed_callback_prepare_v1($pdo,user($owner),array_replace($managedArgs,$extra),$at?:$clock);
+$holderResponse=static fn(array $extra=[],string $device='',int $at=0)=>vp3_managed_callback_holder_v1($pdo,2,$device?:$managedDevice,array_replace(['request_id'=>$managedId,'decision'=>'approve','confirmed'=>true,'destination_e164'=>'+16025550139'],$extra),$at?:$clock);
+denies(fn()=>$managed(['confirmed'=>false]),422,'managed request requires explicit owner confirmation');
+denies(fn()=>$managed(['recording_enabled'=>true]),422,'managed admission cannot enable recording');
+denies(fn()=>$managed(['holder_e164'=>'+16025550199']),422,'managed callback refuses caller supplied holder number');
+denies(fn()=>$managed(['number_id'=>1]),404,'managed callback rejects foreign Twilio line');
+denies(fn()=>$managed(['generation'=>2]),409,'managed callback rejects stale pairing generation');
+denies(fn()=>$managed(['profile_revision'=>2]),409,'managed callback rejects stale holder revision');
+denies(fn()=>$managed(['destination_e164'=>'+16025550102']),422,'managed callback cannot dial its own line');
+denies(fn()=>$managed(['destination_e164'=>'+16025550138']),422,'managed callback cannot dial its holder as second leg');
+denies(fn()=>$managed(['destination_e164'=>'+16025550139#123']),422,'managed destination accepts only E.164');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=0 WHERE profile_id=?")->execute([$managedProfile]);
+denies(fn()=>$managed(),409,'managed request requires current holder calling grant');
+$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET holder_calls=1 WHERE profile_id=?")->execute([$managedProfile]);
+$beforeCalls=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$preparedManaged=$managed();
+c($preparedManaged['state']==='pending'&&!isset($preparedManaged['destination_e164'],$preparedManaged['holder_e164'])&&$preparedManaged['recording_enabled']===false,'owner receives only redacted pending reservation');
+c($managed()===$preparedManaged,'exact managed request retry is idempotent');
+denies(fn()=>$managed(['destination_e164'=>'+16025550140']),409,'same request cannot replace target');
+denies(fn()=>$managed(['request_id'=>md5('ps5e-duplicate')]),409,'one outstanding callback per owner');
+$storedManaged=vp3_managed_callback_row_v1($pdo,$managedId);
+c($storedManaged['holder_e164']==='+16025550138'&&$storedManaged['line_e164']==='+16025550102','managed callback binds assigned line and exact saved holder');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock,'https://cloud.example/api/answer','https://cloud.example/api/status'),409,'pending request cannot build carrier command');
+denies(fn()=>$holderResponse([], $device1),404,'another paired phone cannot approve');
+denies(fn()=>$holderResponse(['destination_e164'=>'+16025550140']),422,'holder approves only the exact displayed destination');
+denies(fn()=>$holderResponse(['confirmed'=>false]),422,'holder requires explicit call confirmation');
+$approved=$holderResponse();
+c($approved['state']==='approved'&&$approved['approved_epoch']===$clock&&!isset($approved['destination_e164']),'holder approval stores bounded authority, not a call');
+c($holderResponse()===$approved,'repeated holder approval does not create another effect');
+$storedManaged=vp3_managed_callback_row_v1($pdo,$managedId);
+$plan=vp3_managed_callback_plan_v1($storedManaged,$clock,'https://cloud.example/api/answer','https://cloud.example/api/status');
+c($plan['From']==='+16025550102'&&$plan['To']==='+16025550138'&&$plan['Record']==='false'&&$plan['TimeLimit']===240
+    &&!in_array('+16025550139',$plan,true),'first leg command targets holder only, not destination, and does not record');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock,'http://cloud.example/api/answer','https://cloud.example/api/status'),422,'managed plan requires HTTPS');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock,'https://user@cloud.example/api/answer','https://cloud.example/api/status'),422,'managed plan rejects URL user info');
+denies(fn()=>vp3_managed_callback_plan_v1($storedManaged,$clock+120,'https://cloud.example/api/answer','https://cloud.example/api/status'),409,'expired approval cannot prepare carrier command');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=2 WHERE profile_id=?')->execute([$managedProfile]);
+denies(fn()=>$holderResponse(),409,'changed communication consent invalidates approved callback');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=1 WHERE profile_id=?')->execute([$managedProfile]);
+denies(fn()=>vp3_managed_callback_cancel_v1($pdo,user(1),$managedId,$clock),404,'foreign account cannot cancel request');
+$cancel=vp3_managed_callback_cancel_v1($pdo,user(2),$managedId,$clock);
+c($cancel['state']==='canceled'&&vp3_managed_callback_row_v1($pdo,$managedId)['destination_e164']==='','owner cancellation removes sensitive target');
+denies(fn()=>$holderResponse(),409,'canceled request cannot be approved');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$beforeCalls,'admission and planning do not insert a carrier call or execute dispatch');
+$ageManaged=static function(string $id)use($pdo,$clock):void{$pdo->prepare('UPDATE phone_managed_callback_requests_v1 SET created_epoch=? WHERE public_id=?')->execute([$clock-61,$id]);};
+$ageManaged($managedId);
+$managedId2=md5('ps5e-request-two');
+$managed(['request_id'=>$managedId2]);
+$declined=$holderResponse(['request_id'=>$managedId2,'decision'=>'decline']);
+c($declined['state']==='declined'&&vp3_managed_callback_row_v1($pdo,$managedId2)['holder_e164']==='','holder decline removes stored phone numbers');
+c($holderResponse(['request_id'=>$managedId2,'decision'=>'decline'])===$declined,'repeat decline is safe');
+$ageManaged($managedId2);
+$managedId3=md5('ps5e-request-three');
+$managed(['request_id'=>$managedId3]);
+vp3_managed_callback_revoke_v1($pdo,2,$managedDevice,$clock);
+c(vp3_managed_callback_row_v1($pdo,$managedId3)['state']==='canceled'&&vp3_managed_callback_row_v1($pdo,$managedId3)['destination_e164']==='','withdrawal cancels pending admission and clears destination');
+
+// PS5E.2: run real reservations and signed TwiML events with a synthetic carrier.
+require_once dirname(__DIR__).'/includes/phone-managed-transport-v1.php';
+c(vp3_managed_transport_ready_v1($pdo),'managed transport migration installed');
+vp3_managed_transport_install_v1($pdo);
+$makeManagedTransport=static function(string $tag,string $holder,string $dest)use($pdo,$insertDevice,$insertThread,$insertProfile,$zone,$clock):array{
+    $device=md5('transport-device-'.$tag);$profile=md5('transport-profile-'.$tag);$id=md5('transport-request-'.$tag);
+    $insertDevice->execute([$device,$clock+3600]);$insertThread->execute([$device]);$insertProfile->execute([$device,$profile,$holder,$zone,$clock]);
+    $input=['request_id'=>$id,'device_id'=>$device,'profile_id'=>$profile,'generation'=>1,'profile_revision'=>1,'phone_revision'=>1,
+        'number_id'=>2,'agent_id'=>0,'conversation_id'=>21,'destination_e164'=>$dest,'confirmed'=>true];
+    vp3_managed_callback_prepare_v1($pdo,user(2),$input,$clock);
+    return ['id'=>$id,'device'=>$device,'profile'=>$profile,'holder'=>$holder,'destination'=>$dest];
+};
+$approveManagedTransport=static fn(array $v)=>vp3_managed_callback_holder_v1($pdo,2,$v['device'],['request_id'=>$v['id'],'decision'=>'approve','confirmed'=>true,'destination_e164'=>$v['destination']],$clock);
+$transportEvent=static function(string $event,string $public,string $nonce,array $f)use($pdo,$clock):array{
+    $url=vp3_managed_transport_url_v1($event,$public,$nonce);
+    return vp3_managed_transport_event_v1($pdo,$event,$public,$nonce,$f,vp3_phone_sms_twilio_signature_v110($url,$f,'carrier-auth-token-fixture'),$clock);
+};
+$transportNonce=static function(array $plan):string{parse_str((string)parse_url($plan['Url'],PHP_URL_QUERY),$query);return $query['nonce'];};
+$t1=$makeManagedTransport('first','+16025550141','+16025550142');
+$posts=0;$sent=[];$parent1='CA'.md5('managed-parent-one');
+$carrier=static function(array $plan)use(&$posts,&$sent,$pdo,$parent1):array{
+    c(!$pdo->inTransaction(),'carrier dispatch runs outside DB transaction');$posts++;$sent=$plan;
+    return ['sid'=>$parent1,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$plan['From'],'to'=>$plan['To']];
+};
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$t1['id'],true,$carrier,$clock),503,'managed carrier dispatch defaults disabled');
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$t1['id'],true,$carrier,$clock),409,'unapproved request cannot dispatch');
+$approveManagedTransport($t1);
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$t1['id'],false,$carrier,$clock),403,'dispatch requires explicit owner confirmation');
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(1),$t1['id'],true,$carrier,$clock),404,'foreign owner cannot dispatch approved request');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=2 WHERE profile_id=?')->execute([$t1['profile']]);
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$t1['id'],true,$carrier,$clock),409,'consent revision is checked before dispatch');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=1 WHERE profile_id=?')->execute([$t1['profile']]);
+$out=vp3_managed_transport_dispatch_v1($pdo,user(2),$t1['id'],true,$carrier,$clock);
+$public=$out['call']['public_id'];$nonce=$transportNonce($sent);
+c($posts===1&&$out['dispatch_state']==='submitted'&&readcall($public)['provider_call_sid']===$parent1,'one carrier command binds verified parent SID');
+c($out['call']['transport_kind']==='managed_callback'&&!$out['call']['browser_control']&&!$out['call']['recording_enabled']&&$out['call']['peer_e164']==='','managed call uses canonical redacted ledger without browser media controls');
+c($sent['To']===$t1['holder']&&$sent['From']==='+16025550102'&&!in_array($t1['destination'],$sent,true)&&$sent['Record']==='false','first carrier leg calls holder only, not destination or recorder');
+c(!str_contains(json_encode($out,JSON_THROW_ON_ERROR),$nonce),'internal carrier callback nonce not exposed in owner result');
+$retry=vp3_managed_transport_dispatch_v1($pdo,user(2),$t1['id'],true,$carrier,$clock);
+c($retry['call']['public_id']===$public&&$posts===1,'dispatch retries never place another first leg');
+$parentForm=form($parent1,['From'=>$sent['From'],'To'=>$t1['holder'],'CallStatus'=>'in-progress']);
+bad(fn()=>vp3_managed_transport_event_v1($pdo,'answer',$public,$nonce,$parentForm,'forged',$clock),'unsigned carrier event rejected');
+c(!$transportEvent('answer',$public,str_repeat('f',64),$parentForm)['accepted'],'different callback nonce rejected');
+c(!$transportEvent('answer',$public,$nonce,array_replace($parentForm,['To'=>'+16025550199']))['accepted'],'carrier called leg must match saved holder');
+c(!$transportEvent('answer',$public,$nonce,array_replace($parentForm,['CallSid'=>'CA'.md5('other-parent')]))['accepted'],'wrong bound parent SID rejected');
+c(!$transportEvent('confirm',$public,$nonce,$parentForm+['Digits'=>'1'])['accepted'],'confirm cannot precede signed answer');
+$gather=$transportEvent('answer',$public,$nonce,$parentForm);
+c($gather['accepted']&&str_contains($gather['xml'],'<Gather')&&!str_contains($gather['xml'],'<Dial')&&!str_contains($gather['xml'],$t1['destination']),'answer or voicemail cannot dial destination before keypad consent');
+$bridge=$transportEvent('confirm',$public,$nonce,$parentForm+['Digits'=>'1']);
+c($bridge['accepted']&&str_contains($bridge['xml'],'<Dial callerId="+16025550102"')&&str_contains($bridge['xml'],$t1['destination'])&&str_contains($bridge['xml'],'timeLimit="180"')&&!str_contains($bridge['xml'],' record='),'affirmative keypad consent produces exact bounded unrecorded second leg');
+c(!$transportEvent('confirm',$public,$nonce,$parentForm+['Digits'=>'1'])['accepted'],'duplicate confirm cannot create a second Dial');
+$childSid='CA'.md5('managed-child-one');$childForm=form($childSid,['ParentCallSid'=>$parent1,'From'=>$sent['From'],'To'=>$t1['destination'],'CallStatus'=>'ringing']);
+c(!$transportEvent('child',$public,$nonce,array_replace($childForm,['ParentCallSid'=>'CA'.md5('wrong-parent')]))['accepted'],'foreign child parent binding rejected');
+c(!$transportEvent('child',$public,$nonce,array_replace($childForm,['To'=>'+16025550199']))['accepted'],'wrong child target rejected');
+c($transportEvent('child',$public,$nonce,$childForm)['accepted']&&readcall($public)['state']==='ringing','signed destination ring updates canonical state');
+c(!vp3_phone_browser_status_v1($pdo,$childForm,signature('status',$childForm,$public),$public)['accepted'],'ordinary browser callback cannot mutate managed transport');
+$transportEvent('child',$public,$nonce,array_replace($childForm,['CallStatus'=>'in-progress']));
+$transportEvent('child',$public,$nonce,$childForm);
+c(readcall($public)['state']==='answered','out-of-order ringing cannot regress answered destination');
+$parentDone=array_replace($parentForm,['CallStatus'=>'completed','CallDuration'=>'45']);
+$transportEvent('parent',$public,$nonce,$parentDone);
+c(readcall($public)['state']==='answered','completed parent alone does not prove destination completion');
+$childDone=array_replace($childForm,['CallStatus'=>'completed','CallDuration'=>'31']);
+$transportEvent('child',$public,$nonce,$childDone);
+$finished=readcall($public);
+c($finished['state']==='completed'&&(int)$finished['duration_seconds']===31&&$finished['provider_child_sid']===$childSid,'signed child completion records destination duration and identity');
+c(vp3_managed_callback_row_v1($pdo,$t1['id'])['destination_e164']===''&&vp3_managed_callback_row_v1($pdo,$t1['id'])['holder_e164']==='','terminal callback scrubs temporary routing numbers');
+c($transportEvent('child',$public,$nonce,$childDone)['duplicate']===true,'duplicate terminal event is idempotent');
+
+$t2=$makeManagedTransport('uncertain','+16025550143','+16025550144');$approveManagedTransport($t2);
+$uncertainPosts=0;$uncertainPlan=[];
+$uncertainCarrier=static function(array $plan)use(&$uncertainPosts,&$uncertainPlan):array{$uncertainPosts++;$uncertainPlan=$plan;throw new RuntimeException('Synthetic uncertain carrier response');};
+$unknown=vp3_managed_transport_dispatch_v1($pdo,user(2),$t2['id'],true,$uncertainCarrier,$clock);
+$unknownPublic=$unknown['call']['public_id'];$unknownNonce=$transportNonce($uncertainPlan);
+c($unknown['dispatch_state']==='uncertain'&&!readcall($unknownPublic)['provider_call_sid']&&$uncertainPosts===1,'lost carrier response is uncertain, never assumed failed or retried');
+vp3_managed_transport_dispatch_v1($pdo,user(2),$t2['id'],true,$uncertainCarrier,$clock);
+c($uncertainPosts===1,'uncertain reservation cannot produce another POST');
+$unknownParent='CA'.md5('managed-parent-unknown');$unknownForm=form($unknownParent,['From'=>$uncertainPlan['From'],'To'=>$t2['holder'],'CallStatus'=>'in-progress']);
+c($transportEvent('answer',$unknownPublic,$unknownNonce,$unknownForm)['accepted']&&readcall($unknownPublic)['provider_call_sid']===$unknownParent,'signed answer can recover parent binding after lost REST receipt');
+c(!$transportEvent('confirm',$unknownPublic,$unknownNonce,$unknownForm+['Digits'=>'2'])['accepted'],'nonaffirmative keypad answer hangs up');
+c(!$transportEvent('confirm',$unknownPublic,$unknownNonce,$unknownForm+['Digits'=>'1'])['accepted'],'declined challenge cannot subsequently authorize destination');
+$transportEvent('parent',$unknownPublic,$unknownNonce,array_replace($unknownForm,['CallStatus'=>'completed','CallDuration'=>'10']));
+c(readcall($unknownPublic)['state']==='canceled'&&(int)readcall($unknownPublic)['duration_seconds']===0,'parent-only connection is not a completed destination call');
+
+$t3=$makeManagedTransport('revoked','+16025550145','+16025550146');$approveManagedTransport($t3);
+$revokedPlan=[];$revokedParent='CA'.md5('managed-parent-revoked');
+$revokedCarrier=static function(array $plan)use(&$revokedPlan,$revokedParent):array{$revokedPlan=$plan;return ['sid'=>$revokedParent,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$plan['From'],'to'=>$plan['To']];};
+$revoked=vp3_managed_transport_dispatch_v1($pdo,user(2),$t3['id'],true,$revokedCarrier,$clock);
+$revokedPublic=$revoked['call']['public_id'];$revokedNonce=$transportNonce($revokedPlan);
+$revokedForm=form($revokedParent,['From'=>$revokedPlan['From'],'To'=>$t3['holder'],'CallStatus'=>'in-progress']);
+c($transportEvent('answer',$revokedPublic,$revokedNonce,$revokedForm)['accepted'],'third callback reaches challenge');
+vp3_managed_callback_revoke_v1($pdo,2,$t3['device'],$clock);
+c(!$transportEvent('confirm',$revokedPublic,$revokedNonce,$revokedForm+['Digits'=>'1'])['accepted'],'withdrawal between answer and confirmation prevents destination dial');
+$transportEvent('parent',$revokedPublic,$revokedNonce,array_replace($revokedForm,['CallStatus'=>'completed']));
+c(readcall($revokedPublic)['state']==='canceled'&&vp3_managed_callback_row_v1($pdo,$t3['id'])['destination_e164']==='','signed parent termination resolves revoked unbridged call');
+unset($GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+
+// PS5E.3: the owner/holder review boundaries reuse authenticated, immutable scope.
+require_once dirname(__DIR__).'/includes/phone-managed-ui-v1.php';
+$uiDevice=md5('managed-ui-device');$uiProfile=md5('managed-ui-profile');$uiId=md5('managed-ui-request');
+$insertDevice->execute([$uiDevice,$clock+3600]);$insertThread->execute([$uiDevice]);$insertProfile->execute([$uiDevice,$uiProfile,'+16025550147',$zone,$clock]);
+$uiArgs=['device_id'=>$uiDevice,'generation'=>1,'managed_request_id'=>$uiId,'profile_id'=>$uiProfile,
+    'profile_revision'=>1,'phone_revision'=>1,'number_id'=>2,'destination_e164'=>'+16025550148','confirmed'=>true];
+$uiRaw=vp3_managed_ui_device_v1($pdo,2,$uiDevice);
+$uiView=vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,false);
+c($uiView['available']&&$uiView['dispatch_enabled']===false&&array_column($uiView['lines'],'id')===[2],'map exposes only eligible assigned line, and review-only mode');
+c(vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,true)['lines']===[],'holder does not receive owner line inventory');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(1),'managed_prepare',$uiArgs,$clock),404,'foreign owner cannot prepare managed review');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_dispatch',$uiArgs,$clock),422,'review interface cannot invoke live dispatch');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',$uiArgs+['agent_id'=>1],$clock),422,'client may not supply alternate Chat scope');
+denies(fn()=>vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',$uiArgs+['recording_enabled'=>true],$clock),422,'client may not enable recording');
+$beforeUI=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$uiSaved=vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',$uiArgs,$clock)['managed_callback'];
+c($uiSaved['request']['state']==='pending'&&!isset($uiSaved['request']['destination_e164'])&&$uiSaved['dispatch_enabled']===false,'owner prepares review, not a paid call');
+c((int)vp3_managed_callback_row_v1($pdo,$uiId)['conversation_id']===21,'review derives paired conversation server-side');
+$holderUI=vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,true);
+c($holderUI['request']['destination_e164']==='+16025550148','paired holder sees exact pending target');
+$uiResponse=['device_id'=>$uiDevice,'generation'=>1,'managed_request_id'=>$uiId,'decision'=>'approve','destination_e164'=>'+16025550148','confirmed'=>true];
+denies(fn()=>vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,vp3_managed_ui_device_v1($pdo,2,$device1),$uiResponse,$clock)),403,'holder action cannot use another paired device');
+denies(fn()=>vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,$uiRaw,array_replace($uiResponse,['destination_e164'=>'+16025550149']),$clock)),422,'holder cannot approve another destination');
+$uiApproved=vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,$uiRaw,$uiResponse,$clock))['managed_callback'];
+c($uiApproved['request']['state']==='approved'&&!isset($uiApproved['request']['destination_e164']),'holder approval is reflected without retaining destination in the view');
+$uiCancel=['device_id'=>$uiDevice,'generation'=>1,'managed_request_id'=>$uiId];
+c(vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_cancel',$uiCancel,$clock)['managed_callback']['request']['state']==='canceled','owner can cancel approved review');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$beforeUI,'review UI creates no carrier ledger or billable call');
+$uiId2=md5('managed-ui-request-two');
+$pdo->prepare('UPDATE phone_managed_callback_requests_v1 SET created_epoch=? WHERE public_id=?')->execute([$clock-61,$uiId]);
+vp3_managed_ui_owner_action_v1($pdo,user(2),'managed_prepare',array_replace($uiArgs,['managed_request_id'=>$uiId2]),$clock);
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET revision=2 WHERE profile_id=?')->execute([$uiProfile]);
+c(vp3_managed_ui_projection_v1($pdo,$uiRaw,$clock,true)['request']===null,'stale profile request is not disclosed to handset');
+denies(fn()=>vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_managed_ui_holder_action_v1($pdo,$uiRaw,array_replace($uiResponse,['managed_request_id'=>$uiId2]),$clock)),409,'stale holder consent cannot approve');
+vp3_managed_callback_revoke_v1($pdo,2,$uiDevice,$clock);
+
+// PS5E.4: exercise provider read/stop controls with synthetic, exact SID evidence.
+require_once dirname(__DIR__).'/includes/phone-managed-control-v1.php';
+c(vp3_managed_control_ready_v1($pdo),'managed control migration installed');
+vp3_managed_control_install_v1($pdo);
+$controlScope=vp3_phone_workspace_scope_v1($pdo,user(2),['agent_id'=>0,'conversation_id'=>21]);
+// Earlier revoked-access assertions intentionally disabled owner 1's package.
+// Restore the fixture so cross-account denial tests exercise call ownership.
+$pdo->exec('UPDATE users SET plan=1 WHERE id=1');
+$foreignControlScope=vp3_phone_workspace_scope_v1($pdo,user(1),['agent_id'=>0,'conversation_id'=>11]);
+$carrierAccount=(string)setting('phone_twilio_account_sid');
+$carrierEvidence=static function(string $sid,string $to,string $status,string $duration='',?string $parent=null)use($carrierAccount):array{
+    return ['sid'=>$sid,'account_sid'=>$carrierAccount,'from'=>'+16025550102','to'=>$to,'direction'=>$parent===null?'outbound-api':'outbound-dial',
+        'parent_call_sid'=>$parent,'status'=>$status,'duration'=>$duration];
+};
+$controlDispatch=static function(array $v,string $tag)use($pdo,$clock,$approveManagedTransport,$transportNonce):array{
+    $approveManagedTransport($v);$plan=[];$sid='CA'.md5('control-parent-'.$tag);
+    $carrier=static function(array $fields)use(&$plan,$sid):array{$plan=$fields;return ['sid'=>$sid,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$fields['From'],'to'=>$fields['To']];};
+    $result=vp3_managed_transport_dispatch_v1($pdo,user(2),$v['id'],true,$carrier,$clock);
+    return ['public'=>$result['call']['public_id'],'sid'=>$sid,'nonce'=>$transportNonce($plan)];
+};
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+$t4=$makeManagedTransport('reconcile','+16025550150','+16025550151');$d4=$controlDispatch($t4,'reconcile');
+$p4=$d4['public'];$parent4=$d4['sid'];$nonce4=$d4['nonce'];
+$read4=['action'=>'managed_reconcile','call_id'=>$p4];$end4=['action'=>'managed_end','call_id'=>$p4,'confirmed'=>true];
+$noCarrier=static function():array{throw new LogicException('Unexpected carrier request');};
+denies(fn()=>vp3_managed_control_action_v1($pdo,$foreignControlScope,$read4,$noCarrier,$clock),404,'foreign account cannot reconcile managed carrier call');
+denies(fn()=>vp3_managed_control_action_v1($pdo,array_replace($controlScope,['conversation_id'=>999]),$read4,$noCarrier,$clock),404,'unrelated Chat cannot control managed call');
+denies(fn()=>vp3_managed_control_action_v1($pdo,$controlScope,array_replace($end4,['confirmed'=>false]),$noCarrier,$clock),403,'managed end requires explicit confirmation');
+c(vp3_managed_control_evidence_v1(array_replace($carrierEvidence($parent4,$t4['holder'],'completed','12'),['account_sid'=>'AC'.str_repeat('f',32)]),$carrierAccount,readcall($p4))===null,'wrong carrier account rejected as evidence');
+$readMethods=[];
+$parentRead=static function(string $method,string $resource,array $fields)use(&$readMethods,$carrierEvidence,$parent4,$t4,$pdo):array{
+    c(!$pdo->inTransaction(),'managed control carrier IO is outside transaction');
+    $readMethods[]=$method;c(str_contains($resource,$parent4)&&$fields===[],'carrier read targets exact stored parent SID');
+    return $carrierEvidence($parent4,$t4['holder'],'in-progress');
+};
+$checked=vp3_managed_control_action_v1($pdo,$controlScope,$read4,$parentRead,$clock);
+c($readMethods===['GET']&&$checked['call']['state']==='dialing'&&$checked['call']['managed_control']['read_state']==='parent_answered','parent answered evidence never implies destination answered');
+denies(fn()=>vp3_managed_control_action_v1($pdo,$controlScope,$read4,$noCarrier,$clock+1),429,'carrier status checks are rate limited');
+$parentForm4=form($parent4,['From'=>'+16025550102','To'=>$t4['holder'],'CallStatus'=>'in-progress']);
+c($transportEvent('answer',$p4,$nonce4,$parentForm4)['accepted'],'signed parent answer opens confirmation');
+c($transportEvent('confirm',$p4,$nonce4,$parentForm4+['Digits'=>'1'])['accepted'],'holder confirms second leg');
+$child4='CA'.md5('control-child-reconcile');
+$childForm4=form($child4,['ParentCallSid'=>$parent4,'From'=>'+16025550102','To'=>$t4['destination'],'CallStatus'=>'ringing']);
+c($transportEvent('child',$p4,$nonce4,$childForm4)['accepted'],'signed destination binds child SID');
+$readLegs=[];
+$terminalRead=static function(string $method,string $resource,array $fields)use(&$readLegs,$carrierEvidence,$parent4,$child4,$t4):array{
+    c($method==='GET'&&$fields===[],'reconciliation never mutates carrier');$readLegs[]=$resource;
+    if(str_contains($resource,$parent4))return $carrierEvidence($parent4,$t4['holder'],'completed','44');
+    return $carrierEvidence($child4,$t4['destination'],'completed','27',$parent4);
+};
+$done=vp3_managed_control_action_v1($pdo,$controlScope,$read4,$terminalRead,$clock+11);
+c(count($readLegs)===2&&$done['call']['state']==='completed'&&$done['call']['duration_seconds']===27&&$done['call']['managed_control']['read_state']==='terminal_verified','read-only bound leg evidence resolves lost terminal callback using child duration');
+c(!$done['call']['managed_control']['can_end']&&!$done['call']['managed_control']['can_reconcile'],'terminal call has no further carrier controls');
+$noCalls=0;$unexpected=static function()use(&$noCalls):array{$noCalls++;return [];};
+vp3_managed_control_action_v1($pdo,$controlScope,$end4,$unexpected,$clock+12);
+c($noCalls===0,'terminal call end is idempotent without provider IO');
+
+$t5=$makeManagedTransport('stop-uncertain','+16025550152','+16025550153');$d5=$controlDispatch($t5,'stop-uncertain');
+$p5=$d5['public'];$parent5=$d5['sid'];$nonce5=$d5['nonce'];$end5=['action'=>'managed_end','call_id'=>$p5,'confirmed'=>true];
+$stopMethods=[];
+$stopCarrier=static function(string $method,string $resource,array $fields)use(&$stopMethods,$carrierEvidence,$parent5,$t5,$pdo):array{
+    c(!$pdo->inTransaction()&&str_contains($resource,$parent5),'end action targets bound parent outside DB transaction');
+    $stopMethods[]=$method;
+    if($method==='GET')return $carrierEvidence($parent5,$t5['holder'],'ringing');
+    c($fields===['Status'=>'canceled'],'ringing parent uses cancellation instead of new call');
+    throw new RuntimeException('Synthetic lost end receipt');
+};
+$stopResult=vp3_managed_control_action_v1($pdo,$controlScope,$end5,$stopCarrier,$clock);
+c($stopMethods===['GET','POST']&&$stopResult['call']['managed_control']['end_state']==='uncertain','lost end receipt is not reported as successful');
+c(vp3_managed_callback_row_v1($pdo,$t5['id'])['state']==='revoked','end intent fences destination authorization before carrier IO');
+$parentForm5=form($parent5,['From'=>'+16025550102','To'=>$t5['holder'],'CallStatus'=>'in-progress']);
+c(!$transportEvent('answer',$p5,$nonce5,$parentForm5)['accepted'],'late answer cannot bridge after end intent');
+vp3_managed_control_action_v1($pdo,$controlScope,$end5,$stopCarrier,$clock+1);
+c($stopMethods===['GET','POST'],'uncertain end is never automatically sent twice');
+$stopRead=static fn(string $method,string $resource,array $fields):array=>$carrierEvidence($parent5,$t5['holder'],'no-answer');
+$stopDone=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_reconcile','call_id'=>$p5],$stopRead,$clock+11);
+c($stopDone['call']['state']==='no_answer'&&$stopDone['call']['managed_control']['missed_leg']==='holder','verified unanswered parent is distinct from a missed destination');
+
+// No parent SID: no number/time-based provider lookup. Stop fences even an uncertain first leg.
+$t6=$makeManagedTransport('unbound-stop','+16025550154','+16025550155');$approveManagedTransport($t6);
+$unboundPlan=[];$unboundCarrier=static function(array $fields)use(&$unboundPlan):array{$unboundPlan=$fields;throw new RuntimeException('Synthetic lost dispatch receipt');};
+$unbound=vp3_managed_transport_dispatch_v1($pdo,user(2),$t6['id'],true,$unboundCarrier,$clock);
+$p6=$unbound['call']['public_id'];$nonce6=$transportNonce($unboundPlan);
+$beforeNoCalls=$noCalls;
+$unboundRead=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_reconcile','call_id'=>$p6],$unexpected,$clock);
+c($unboundRead['call']['managed_control']['read_state']==='parent_unbound'&&$noCalls===$beforeNoCalls,'unbound parent cannot be discovered by untrusted number or time');
+$unboundEnd=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_end','call_id'=>$p6,'confirmed'=>true],$unexpected,$clock);
+c($unboundEnd['call']['managed_control']['end_state']==='awaiting_identity'&&$noCalls===$beforeNoCalls,'unbound stop records intent but sends no carrier command');
+$parent6='CA'.md5('control-parent-unbound-stop');
+$parentForm6=form($parent6,['From'=>'+16025550102','To'=>$t6['holder'],'CallStatus'=>'in-progress']);
+c(!$transportEvent('answer',$p6,$nonce6,$parentForm6)['accepted']&&readcall($p6)['provider_call_sid']===$parent6,'late signed callback binds identity but cannot bridge after stop');
+$knownEndMethods=[];
+$knownEnd=static function(string $method,string $resource,array $fields)use(&$knownEndMethods,$carrierEvidence,$parent6,$t6):array{
+    $knownEndMethods[]=$method;return $carrierEvidence($parent6,$t6['holder'],$method==='GET'?'in-progress':'completed',$method==='GET'?'':'8');
+};
+$knownStop=vp3_managed_control_action_v1($pdo,$controlScope,['action'=>'managed_end','call_id'=>$p6,'confirmed'=>true],$knownEnd,$clock+1);
+c($knownEndMethods===['GET','POST']&&$knownStop['call']['state']==='canceled'&&$knownStop['call']['managed_control']['end_state']==='parent_ended','explicit end after signed identity uses one bound carrier stop');
+unset($GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+
+// PS5E.5: real consent and recording receipt domain with synthetic provider commands.
+require_once dirname(__DIR__).'/includes/phone-managed-recording-v1.php';
+c(vp3_managed_recording_ready_v1($pdo),'managed recording consent migration installed');
+vp3_managed_recording_install_v1($pdo);
+vp3_phone_browser_number_policy_set_v1($pdo,2,true,true);
+$recPolicy=vp3_phone_recording_save_policy_v1($pdo,user(2),8,['enabled'=>true,'retain_audio'=>true,'transcribe'=>true,'analyze'=>false]);
+$recordDevice=md5('ps5e5-device');$recordProfile=md5('ps5e5-profile');$recordRequest=md5('ps5e5-request');
+$insertDevice->execute([$recordDevice,$clock+3600]);$insertThread->execute([$recordDevice]);$insertProfile->execute([$recordDevice,$recordProfile,'+16025550156',$zone,$clock]);
+$recArgs=['request_id'=>$recordRequest,'device_id'=>$recordDevice,'profile_id'=>$recordProfile,'generation'=>1,'profile_revision'=>1,'phone_revision'=>1,'number_id'=>2,'agent_id'=>0,'conversation_id'=>21,'destination_e164'=>'+16025550157','confirmed'=>true,'recording_requested'=>true,'recording_policy_revision'=>$recPolicy['revision']];
+$recApprove=['request_id'=>$recordRequest,'decision'=>'approve','confirmed'=>true,'destination_e164'=>'+16025550157','recording_consent'=>true,'recording_consent_revision'=>1];
+$recPrepare=static fn(array $extra=[])=>vp3_managed_callback_prepare_v1($pdo,user(2),array_replace($recArgs,$extra),$clock);
+$recHolder=static fn(array $extra=[])=>vp3_managed_callback_holder_v1($pdo,2,$recordDevice,array_replace($recApprove,$extra),$clock);
+denies(fn()=>$recPrepare(['recording_policy_revision'=>$recPolicy['revision']+1]),409,'owner cannot select a stale processing policy');
+$recView=$recPrepare();
+c($recView['recording']['requested']&&$recView['recording']['transcribe']&&!$recView['recording']['analyze']&&!$recView['recording_enabled'],'recording review snapshots exact owner policy without recording');
+denies(fn()=>$recPrepare(['recording_requested'=>false]),409,'request retry cannot silently remove recording consent');
+denies(fn()=>$recHolder(['recording_consent'=>false]),422,'holder must explicitly accept recording');
+denies(fn()=>$recHolder(['recording_consent_revision'=>2]),422,'holder cannot consent to another revision');
+c($recHolder()['recording']['holder_consented'],'holder accepts exact per-call recording and processing policy');
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+$recordPlan=[];$recParent='CA'.md5('managed-recording-parent');
+$recCarrier=static function(array $fields)use(&$recordPlan,$recParent):array{
+    $recordPlan=$fields;return ['sid'=>$recParent,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$fields['From'],'to'=>$fields['To']];
+};
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$recordRequest,true,$recCarrier,$clock),409,'recording-requested call cannot dispatch with recording capability disabled');
+$GLOBALS['settings']['phone_managed_recording_enabled_v1']='1';
+$pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=? WHERE owner_user_id=2')->execute([$clock-601]);
+$recCall=vp3_managed_transport_dispatch_v1($pdo,user(2),$recordRequest,true,$recCarrier,$clock);
+$recPublic=$recCall['call']['public_id'];$recNonce=$transportNonce($recordPlan);
+c($recordPlan['Record']==='false'&&!$recCall['call']['recording_enabled'],'first call leg never starts a recording');
+$recParentForm=form($recParent,['From'=>'+16025550102','To'=>'+16025550156','CallStatus'=>'in-progress']);
+$notice=$transportEvent('answer',$recPublic,$recNonce,$recParentForm);
+c($notice['accepted']&&str_contains($notice['xml'],'Cloud AI will transcribe')&&!str_contains($notice['xml'],'<Dial'),'holder hears recording and processing disclosure before pressing a key');
+$bridge=$transportEvent('confirm',$recPublic,$recNonce,$recParentForm+['Digits'=>'1']);
+c($bridge['accepted']&&str_contains($bridge['xml'],'record_notice')&&!str_contains($bridge['xml'],' record='),'bridge includes destination consent whisper but no record attribute');
+$recChild='CA'.md5('managed-recording-child');
+$recChildForm=form($recChild,['ParentCallSid'=>$recParent,'From'=>'+16025550102','To'=>'+16025550157','CallStatus'=>'in-progress']);
+$recIO=0;
+$noRecording=static function()use(&$recIO):array{$recIO++;return [];};
+denies(fn()=>vp3_managed_recording_start_v1($pdo,$recPublic,$recNonce,$noRecording,$clock),409,'recording cannot begin without destination consent');
+c($recIO===0,'no provider IO before both parties consent');
+c(!$transportEvent('record_notice',$recPublic,$recNonce,array_replace($recChildForm,['To'=>'+16025550199']))['accepted'],'wrong destination cannot enter recording consent');
+$destNotice=$transportEvent('record_notice',$recPublic,$recNonce,$recChildForm);
+c($destNotice['accepted']&&str_contains($destNotice['xml'],'<Gather')&&!str_contains($destNotice['xml'],'<Record'),'destination hears affirmative consent prompt without recording');
+c($transportEvent('record_consent',$recPublic,$recNonce,$recChildForm+['Digits'=>'1'])['accepted'],'destination affirmative consent binds exact child');
+c(!$transportEvent('record_consent',$recPublic,$recNonce,$recChildForm+['Digits'=>'1'])['accepted'],'recording consent replay cannot create another authorization');
+$transportEvent('child',$recPublic,$recNonce,$recChildForm);
+$recSid='RE'.md5('managed-recording-media');
+$recForm=form($recParent,['RecordingSid'=>$recSid,'RecordingStatus'=>'completed','RecordingSource'=>'StartCallRecordingAPI','RecordingChannels'=>'2','RecordingTrack'=>'both','RecordingDuration'=>'12']);
+c(!$transportEvent('recording',$recPublic,$recNonce,$recForm)['accepted'],'receipt before a recording start claim is rejected');
+$recMethods=[];
+$recTransport=static function(string $method,string $resource,array $fields)use(&$recMethods,$carrierEvidence,$recParent,$recChild,$recSid,$pdo):array{
+    c(!$pdo->inTransaction(),'recording start provider IO runs outside transaction');
+    $recMethods[]=$method;
+    if($method==='GET'){
+        if(str_contains($resource,$recParent))return $carrierEvidence($recParent,'+16025550156','in-progress');
+        return $carrierEvidence($recChild,'+16025550157','in-progress','',$recParent);
+    }
+    c(str_ends_with($resource,'/Calls/'.$recParent.'/Recordings.json')&&$fields['RecordingChannels']==='dual'&&$fields['RecordingTrack']==='both'&&$fields['PlayBeep']==='true','one exact parent dual-channel recording request with audible beep');
+    return ['sid'=>$recSid,'account_sid'=>setting('phone_twilio_account_sid'),'call_sid'=>$recParent,'source'=>'StartCallRecordingAPI','status'=>'in-progress','channels'=>2];
+};
+require_once dirname(__DIR__).'/includes/phone-managed-media-worker-v1.php';
+c(vp3_managed_media_tick_v1($pdo,$recTransport,$clock)['attempted']===0&&$recMethods===[],'automatic recording driver defaults disabled');
+$GLOBALS['settings']['phone_managed_media_driver_enabled_v1']='1';
+$driven=vp3_managed_media_tick_v1($pdo,$recTransport,$clock);
+$started=vp3_managed_recording_view_v1(vp3_managed_recording_row_v1($pdo,$recordRequest));
+c($driven['started']===1&&$driven['attempted']===1,'automatic driver consumes exact consented active call once');
+unset($GLOBALS['settings']['phone_managed_media_driver_enabled_v1']);
+c($started['state']==='started'&&$recMethods===['GET','GET','POST']&&(int)readcall($recPublic)['recording_enabled']===1,'verified consent and both exact active legs permit one recording command');
+denies(fn()=>vp3_managed_recording_start_v1($pdo,$recPublic,$recNonce,$recTransport,$clock),409,'recording start cannot be replayed');
+c($recMethods===['GET','GET','POST'],'no duplicate recording provider mutation');
+c(!$transportEvent('recording',$recPublic,$recNonce,array_replace($recForm,['RecordingSid'=>'RE'.md5('other-recording')]))['accepted'],'different media SID cannot use consented receipt');
+c(!$transportEvent('recording',$recPublic,$recNonce,array_replace($recForm,['RecordingChannels'=>'1']))['accepted'],'wrong recording channel mode rejected');
+c(!vp3_phone_browser_recording_v1($pdo,$recForm,signature('recording',$recForm,$recPublic),$recPublic)['accepted'],'ordinary browser recording endpoint cannot bypass managed consent');
+$saved= $transportEvent('recording',$recPublic,$recNonce,$recForm);
+c($saved['accepted']&&$saved['queued']&&$saved['recording']['peer_e164']==='','signed managed recording enters existing private pipeline with redacted peer');
+$jobId=vp3_phone_recording_job_id_v1($saved['recording']['id']);$job=vp3_phone_recording_row_v1($pdo,$jobId);
+c(vp3_phone_recording_decode_v1($job['policy_json'])===$recPolicy&&$job['call_public_id']===$recPublic,'post-call job preserves exact consented processing policy');
+c($transportEvent('recording',$recPublic,$recNonce,$recForm)['duplicate']===true,'duplicate recording callback is idempotent');
+$transportEvent('child',$recPublic,$recNonce,array_replace($recChildForm,['CallStatus'=>'completed','CallDuration'=>'15']));
+vp3_phone_recording_authorize_v1($pdo,$job,true);
+vp3_phone_recording_save_policy_v1($pdo,user(2),8,['transcribe'=>false]);
+bad(fn()=>vp3_phone_recording_authorize_v1($pdo,$job,true),'changed owner policy cannot broaden consent or run additional paid processing');
+unset($GLOBALS['settings']['phone_managed_recording_enabled_v1'],$GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+
+// PS5E.6: saved report evidence, profile continuity and count-only coordination.
+require_once dirname(__DIR__).'/includes/agent-operator-managed-intelligence-v1.php';
+$intelScope=vp3_phone_workspace_scope_v1($pdo,user(2),['agent_id'=>0,'conversation_id'=>21]);
+$intelScope['principal']=['kind'=>'system'];
+$intelForeign=vp3_phone_workspace_scope_v1($pdo,user(1),['agent_id'=>0,'conversation_id'=>11]);
+$intelClock=time();
+$queuedReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock);
+c($queuedReview['coverage']==='queued'&&$queuedReview['report']===null&&!$queuedReview['execution_enabled'],'queued recording does not invent a report or execution permission');
+denies(fn()=>vp3_managed_intelligence_review_v1($pdo,$intelForeign,$recPublic,$intelClock),404,'managed report cannot cross account');
+denies(fn()=>vp3_managed_intelligence_review_v1($pdo,array_replace($intelScope,['conversation_id'=>999]),$recPublic,$intelClock),404,'managed report cannot cross exact conversation');
+denies(fn()=>api('POST',['action'=>'managed_review','call_id'=>$recPublic,'conversation_id'=>21,'agent_id'=>0,'csrf_token'=>'csrf-fixture'],2),405,'conversation review is read only');
+if($mysql){
+    ddl('CREATE TABLE artist_transcript_sessions_v172(id INTEGER PRIMARY KEY,created_by_user_id INTEGER,metadata_json TEXT,discarded_at DATETIME NULL)');
+    ddl('CREATE TABLE artist_transcript_segments_v172(id INTEGER PRIMARY KEY,session_id INTEGER,segment_type VARCHAR(30),transcript_text TEXT)');
+}
+$intelSession=772;$intelHash=str_repeat('e',64);$intelRevision=str_repeat('f',64);
+$intelMeta=['source'=>'phone_call_v1','phone_recording_v1'=>['job_id'=>$jobId,'call_kind'=>'browser','call_id'=>$recPublic,'agent_id'=>8,'transport_kind'=>'managed_callback']];
+$pdo->prepare('INSERT INTO artist_transcript_sessions_v172 VALUES(?,2,?,NULL)')->execute([$intelSession,json_encode($intelMeta,JSON_THROW_ON_ERROR)]);
+$pdo->prepare("INSERT INTO artist_transcript_segments_v172 VALUES(2,?,'transcript','Fixture private managed speech')")->execute([$intelSession]);
+$reportText="Phone call report\nKey findings\nReview the synthetic proposal.\nActions & follow-ups\nConfirm timing.\nOpen questions\nWhich day?\n";
+$intelDelivery=vp3_phone_workspace_delivery_v1($pdo,readcall($recPublic),'voicemail','phone-recording-report:'.$job['public_id'],$reportText,
+    ['voicemail_id'=>'job-'.$jobId,'report'=>['source_hash'=>$intelHash,'review_state'=>'unreviewed','text'=>$reportText]]);
+$pdo->prepare("UPDATE phone_recording_jobs_v1 SET state='ready',session_id=?,transcript_hash=?,analysis_hash=?,report_message_id=? WHERE id=?")
+    ->execute([$intelSession,$intelHash,str_repeat('a',64),$intelDelivery['message_id'],$jobId]);
+$intelCandidate=['session_id'=>$intelSession,'source_hash'=>$intelHash,'kind'=>'followup','plugin'=>'actions','section'=>'items','item_id'=>'managed:1',
+    'item_revision'=>$intelRevision,'review_state'=>'unreviewed','question'=>'Confirm timing.','next_step'=>'Review the original call.',
+    'source_url'=>'https://untrusted.example/other?page=1'];
+$intelSaved=['session_id'=>$intelSession,'source_hash'=>$intelHash,'fresh'=>true,'page_count'=>2,'research_candidates'=>[
+    $intelCandidate,array_replace($intelCandidate,['plugin'=>'research_brief','item_id'=>'managed:outside-policy']),
+    array_replace($intelCandidate,['item_id'=>'managed:rejected','review_state'=>'rejected']),$intelCandidate]];
+$intelReads=0;$intelReader=static function(int $id)use(&$intelReads,$intelSaved,$intelSession):array{
+    $intelReads++;if($id!==$intelSession)throw new RuntimeException('Wrong managed fixture session');return $intelSaved;
+};
+$noAnalysis=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($noAnalysis['coverage']==='analysis_off'&&$noAnalysis['report']===null&&$noAnalysis['followups']===[],'transcription-only consent does not expose unconsented analysis');
+c(vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader)['reports']===[],'transcription-only managed recording has no proactive analysis candidate');
+// Explicit historical analysis fixture, not a production policy update: the
+// original consent snapshot and its saved job reflect the same authorized modules.
+$intelPolicy=array_replace($recPolicy,['analyze'=>true,'modules'=>['basic','actions','qa','decisions','followup']]);
+$intelPolicyJson=vp3_phone_recording_json_v1($intelPolicy);
+$pdo->prepare('UPDATE phone_managed_recording_consent_v1 SET policy_json=? WHERE request_id=?')->execute([$intelPolicyJson,$recordRequest]);
+$pdo->prepare('UPDATE phone_recording_jobs_v1 SET policy_json=? WHERE id=?')->execute([$intelPolicyJson,$jobId]);
+$intelReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($intelReview['coverage']==='ready'&&$intelReview['report']['historical']&&$intelReview['report']['review_state']==='unreviewed'&&count($intelReview['followups'])===1,'saved managed report and consented canonical follow-up appear in private review');
+c($intelReview['continuity']['state']==='permission_required','ongoing connected-profile context defaults off');
+c(!str_contains(json_encode($intelReview),'Fixture private managed speech')&&!str_contains(json_encode($intelReview),'provider_call_sid')&&!str_contains(json_encode($intelReview),'untrusted.example'),'review exposes no raw transcript, provider ID or foreign evidence URL');
+$beforeIntelReads=$intelReads;
+$intelQueue=vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader);
+c($intelQueue['reports']===[]&&$intelReads===$beforeIntelReads,'no proactive candidate read without current connected memory grant');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=1 WHERE profile_id=?')->execute([$recordProfile]);
+$intelReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($intelReview['continuity']['state']==='available'&&$intelReview['continuity']['calls']===[],'history excludes different connected profile calls');
+$intelQueue=vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader);
+c(count($intelQueue['reports'])===1&&count($intelQueue['reports'][0]['items'])===1,'consented managed report reuses existing Operator followup queue with module filter');
+$staleIntel=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,static fn(int $id):array=>array_replace($intelSaved,['source_hash'=>str_repeat('d',64)]));
+c($staleIntel['coverage']==='stale'&&$staleIntel['report']===null&&$staleIntel['followups']===[],'changed transcript cannot reuse the prior report');
+$managedRow=readcall($recPublic);
+denies(fn()=>vp3_phone_workspace_delivery_v1($pdo,array_replace($managedRow,['conversation_id'=>999]),'voicemail','fixture-managed-wrong-chat','Private report'),409,'managed report cannot fall back to another Chat');
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=0 WHERE profile_id=?')->execute([$recordProfile]);
+c(vp3_operator_followup_queue_v1($pdo,$intelScope,new DateTimeImmutable('@'.$intelClock),['followup:'.$job['public_id']],$intelReader)['reports']===[],'withdrawing memory grant removes proactive followup');
+$pdo->prepare('DELETE FROM phone_browser_deliveries_v1 WHERE owner_user_id=2 AND event_key=?')->execute(['phone-recording-report:'.$job['public_id']]);
+$missingReport=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($missingReport['coverage']==='stale'&&$missingReport['report']===null,'removed report delivery prevents source reuse');
+vp3_managed_recording_revoke_v1($pdo,$recordRequest,$intelClock);
+$revokedReview=vp3_managed_intelligence_review_v1($pdo,$intelScope,$recPublic,$intelClock,$intelReader);
+c($revokedReview['coverage']==='consent_unavailable'&&$revokedReview['report']===null&&$revokedReview['followups']===[],'recording consent withdrawal blocks further managed report review');
+
+
+// PS5E.7: native caller admission, single-use keypad, no carrier or live dial.
+require_once dirname(__DIR__).'/includes/phone-native-dialthrough-v1.php';
+c(vp3_native_dialthrough_ready_v1($pdo),'native dial-through schema installed');
+vp3_native_dialthrough_install_v1($pdo);
+$nativeClock=$clock;
+$nativeNumber=['id'=>2,'owner_user_id'=>2,'agent_id'=>8,'voice_enabled'=>1];
+$nativeLine='+16025550102';
+$makeNative=static function(string $tag,string $holder,string $destination)use($pdo,$insertDevice,$insertThread,$insertProfile,$zone,$nativeClock):array{
+    $device=md5('native-device-'.$tag);$profile=md5('native-profile-'.$tag);$id=md5('native-request-'.$tag);
+    $insertDevice->execute([$device,$nativeClock+3600]);$insertThread->execute([$device]);$insertProfile->execute([$device,$profile,$holder,$zone,$nativeClock]);
+    $args=['request_id'=>$id,'device_id'=>$device,'profile_id'=>$profile,'generation'=>1,'profile_revision'=>1,'phone_revision'=>1,
+        'number_id'=>2,'agent_id'=>0,'conversation_id'=>21,'destination_e164'=>$destination,'confirmed'=>true,'transport'=>'twilio_native'];
+    $review=vp3_managed_callback_prepare_v1($pdo,user(2),$args,$nativeClock);
+    c($review['transport']==='twilio_native'&&$review['native']['can_issue_pin']===false&&!$review['recording_enabled'],'owner prepares native review but cannot issue holder PIN');
+    return ['id'=>$id,'device'=>$device,'profile'=>$profile,'holder'=>$holder,'destination'=>$destination,'args'=>$args];
+};
+$nativeIssue=static function(array $v,array $extra=[])use($pdo,$nativeClock):array{
+    $d=vp3_managed_ui_device_v1($pdo,2,$v['device']);
+    return vp3_phone_workspace_atomic_v1($pdo,fn()=>vp3_native_dialthrough_issue_v1($pdo,$d,array_replace(['device_id'=>$v['device'],'generation'=>1,'managed_request_id'=>$v['id'],'confirmed'=>true],$extra),$nativeClock));
+};
+$nativeApprove=static fn(array $v)=>vp3_managed_callback_holder_v1($pdo,2,$v['device'],['request_id'=>$v['id'],'decision'=>'approve','confirmed'=>true,'destination_e164'=>$v['destination']],$nativeClock);
+$nativeInbound=static fn(string $sid,string $from,int $at=0)=>vp3_native_dialthrough_inbound_v1($pdo,$nativeNumber,$sid,$from,$nativeLine,$at?:$nativeClock);
+$nativeEvent=static function(string $event,string $public,string $nonce,array $form,int $at=0)use($pdo,$nativeClock):array{
+    $url=vp3_managed_transport_url_v1($event,$public,$nonce);
+    return vp3_managed_transport_event_v1($pdo,$event,$public,$nonce,$form,vp3_phone_sms_twilio_signature_v110($url,$form,'carrier-auth-token-fixture'),$at?:$nativeClock);
+};
+$nv=$makeNative('valid','+16025550158','+16025550159');
+denies(fn()=>$nativeIssue($nv),503,'native pilot defaults disabled');
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+$GLOBALS['settings']['phone_native_dialthrough_enabled_v1']='1';
+$nativePilotFor=static function(array $v)use($nativeClock):void{
+    $GLOBALS['settings']['phone_managed_live_pilot_enabled_v1']='1';
+    $GLOBALS['settings']['phone_managed_pilot_scope_v1']=json_encode(['owner_user_id'=>2,'number_id'=>2,'device_id'=>$v['device'],'holder_e164'=>$v['holder'],'destination_e164'=>$v['destination'],'expires_epoch'=>$nativeClock+900],JSON_THROW_ON_ERROR);
+};
+$nativePilotFor($nv);
+denies(fn()=>$nativeIssue($nv),409,'pending owner review cannot issue native code');
+denies(fn()=>vp3_managed_callback_prepare_v1($pdo,user(2),array_replace($nv['args'],['transport'=>'twilio_callback']),$nativeClock),409,'native mode cannot be changed by retry');
+denies(fn()=>vp3_managed_callback_prepare_v1($pdo,user(2),$nv['args']+['recording_requested'=>true],$nativeClock),422,'native pilot refuses recording');
+$nativeApprove($nv);
+denies(fn()=>vp3_managed_transport_dispatch_v1($pdo,user(2),$nv['id'],true,static fn()=>throw new LogicException('No carrier IO'),$nativeClock),409,'native approval cannot be used for callback dispatch');
+denies(fn()=>$nativeIssue($nv,['confirmed'=>false]),422,'code issuance requires holder gesture');
+$beforeNativeCalls=(int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn();
+$ticket=$nativeIssue($nv)['native_dialthrough_ticket'];$pin=$ticket['pin'];
+c(preg_match('/^[0-9]{8}$/D',$pin)===1&&$ticket['line_e164']===$nativeLine&&$ticket['expires_epoch']===$nativeClock+120,'one private eight digit code bound to assigned line and expiry');
+$nativeStored=vp3_native_dialthrough_row_v1($pdo,$nv['id']);
+c($nativeStored['pin_hash']!==$pin&&hash_equals($nativeStored['pin_hash'],vp3_native_dialthrough_digest_v1($nv['id'],$pin)),'only keyed PIN digest retained');
+$nativePoll=vp3_managed_ui_projection_v1($pdo,vp3_managed_ui_device_v1($pdo,2,$nv['device']),$nativeClock,true);
+c(!isset($nativePoll['request']['native']['pin'],$nativePoll['request']['native']['pin_hash'])&&!$nativePoll['request']['native']['can_issue_pin'],'status does not replay secret code');
+denies(fn()=>$nativeIssue($nv),409,'one code issuance per request');
+c($nativeInbound('CA'.md5('ordinary-native'),'+16025550198')===null,'unrelated caller retains ordinary routing');
+$sid='CA'.md5('native-first');$form=form($sid,['From'=>$nv['holder'],'To'=>$nativeLine,'Direction'=>'inbound']);
+$prompt=$nativeInbound($sid,$nv['holder']);
+c($prompt&&$prompt['accepted']&&str_contains($prompt['twiml'],'numDigits="8"')&&!str_contains($prompt['twiml'],'<Dial')&&!str_contains($prompt['twiml'],$nv['destination']),'matching caller ID alone produces only keypad challenge');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===$beforeNativeCalls,'no billable destination call or managed ledger before PIN');
+$nativeNonce=vp3_native_dialthrough_nonce_v1($nv['id'],$sid);
+$pinForm=$form+['Digits'=>$pin];
+bad(fn()=>vp3_managed_transport_event_v1($pdo,'native_pin',$nv['id'],$nativeNonce,$pinForm,'forged',$nativeClock),'forged PIN callback rejected');
+c(!$nativeEvent('native_pin',$nv['id'],$nativeNonce,array_replace($pinForm,['CallSid'=>'CA'.md5('foreign-native')]))['accepted'],'another parent cannot use the code');
+$bridgeNative=$nativeEvent('native_pin',$nv['id'],$nativeNonce,$pinForm);
+c($bridgeNative['accepted']&&str_contains($bridgeNative['xml'],'<Dial callerId="'.$nativeLine.'"')&&str_contains($bridgeNative['xml'],$nv['destination'])&&!str_contains($bridgeNative['xml'],' record='),'signed correct code authorizes exact bounded unrecorded destination');
+$nativeStored=vp3_native_dialthrough_row_v1($pdo,$nv['id']);$nativePublic=$nativeStored['call_public_id'];
+c($nativeStored['state']==='consumed'&&$nativeStored['pin_hash']===null,'successful PIN consumed and erased');
+c(readcall($nativePublic)['provider_call_sid']===$sid&&readcall($nativePublic)['managed_parent_kind']==='native','canonical call ledger binds inbound parent');
+c(!$nativeEvent('native_pin',$nv['id'],$nativeNonce,$pinForm)['accepted'],'signed PIN replay never returns another Dial');
+c(!str_contains($nativeInbound($sid,$nv['holder'])['twiml'],'<Gather'),'inbound replay never falls back to normal voicemail');
+preg_match('/action="([^"]+)"/',$bridgeNative['xml'],$m);parse_str((string)parse_url(html_entity_decode($m[1],ENT_QUOTES|ENT_XML1),PHP_URL_QUERY),$nativeQuery);
+$childNative='CA'.md5('native-child');$childFormNative=form($childNative,['ParentCallSid'=>$sid,'From'=>$nativeLine,'To'=>$nv['destination'],'CallStatus'=>'in-progress']);
+c($nativeEvent('child',$nativePublic,$nativeQuery['nonce'],$childFormNative)['accepted'],'signed native destination child updates shared ledger');
+$nativeParentEvidence=['sid'=>$sid,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$nv['holder'],'to'=>$nativeLine,'direction'=>'inbound','parent_call_sid'=>null,'status'=>'in-progress','duration'=>''];
+c(vp3_managed_control_evidence_v1($nativeParentEvidence,(string)setting('phone_twilio_account_sid'),readcall($nativePublic))['state']==='answered','control evidence validates reversed native parent direction');
+$completeNative=form($sid,['From'=>$nv['holder'],'To'=>$nativeLine,'DialCallSid'=>$childNative,'DialCallStatus'=>'completed','DialCallDuration'=>'22']);
+c($nativeEvent('complete',$nativePublic,$nativeQuery['nonce'],$completeNative)['accepted']&&readcall($nativePublic)['state']==='completed'&&(int)readcall($nativePublic)['duration_seconds']===22,'native completion records destination duration, not parent time');
+$badNative=$makeNative('wrong-pin','+16025550160','+16025550161');$nativePilotFor($badNative);$nativeApprove($badNative);$badTicket=$nativeIssue($badNative)['native_dialthrough_ticket'];
+$badSid='CA'.md5('native-wrong');$nativeInbound($badSid,$badNative['holder']);
+$badNonce=vp3_native_dialthrough_nonce_v1($badNative['id'],$badSid);$badForm=form($badSid,['From'=>$badNative['holder'],'To'=>$nativeLine,'Digits'=>$badTicket['pin']==='00000000'?'11111111':'00000000']);
+c(!$nativeEvent('native_pin',$badNative['id'],$badNonce,$badForm)['accepted'],'incorrect PIN cannot bridge');
+c(vp3_native_dialthrough_row_v1($pdo,$badNative['id'])['pin_hash']===null&&vp3_managed_callback_row_v1($pdo,$badNative['id'])['state']==='canceled','incorrect code consumes request and clears secret');
+c(!$nativeEvent('native_pin',$badNative['id'],$badNonce,array_replace($badForm,['Digits'=>$badTicket['pin']]))['accepted'],'no second attempt after wrong code');
+$revNative=$makeNative('revoked','+16025550162','+16025550163');$nativePilotFor($revNative);$nativeApprove($revNative);$revTicket=$nativeIssue($revNative)['native_dialthrough_ticket'];
+$revSid='CA'.md5('native-revoked');$nativeInbound($revSid,$revNative['holder']);$revNonce=vp3_native_dialthrough_nonce_v1($revNative['id'],$revSid);
+vp3_managed_callback_revoke_v1($pdo,2,$revNative['device'],$nativeClock);
+c(!$nativeEvent('native_pin',$revNative['id'],$revNonce,form($revSid,['From'=>$revNative['holder'],'To'=>$nativeLine,'Digits'=>$revTicket['pin']]))['accepted'],'pairing withdrawal before PIN blocks bridge');
+c(vp3_native_dialthrough_row_v1($pdo,$revNative['id'])['pin_hash']===null,'withdrawal erases PIN digest');
+unset($GLOBALS['settings']['phone_native_dialthrough_enabled_v1'],$GLOBALS['settings']['phone_managed_callback_enabled_v1'],$GLOBALS['settings']['phone_managed_live_pilot_enabled_v1'],$GLOBALS['settings']['phone_managed_pilot_scope_v1']);
+
+
+// PS5E.8: public pilot boundary is narrower than transport test seams.
+$pilot=$makeManagedTransport('supervised-pilot','+16025550164','+16025550165');$approveManagedTransport($pilot);
+$pilotArgs=['device_id'=>$pilot['device'],'generation'=>1,'managed_request_id'=>$pilot['id'],'confirmed'=>true];
+$pilotPosts=0;$pilotPlan=[];$pilotParent='CA'.md5('supervised-pilot-parent');
+$pilotCarrier=static function(array $fields)use(&$pilotPosts,&$pilotPlan,$pilotParent):array{
+    $pilotPosts++;$pilotPlan=$fields;return ['sid'=>$pilotParent,'account_sid'=>setting('phone_twilio_account_sid'),'from'=>$fields['From'],'to'=>$fields['To']];
+};
+$GLOBALS['settings']['phone_managed_callback_enabled_v1']='1';
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs,$clock,$pilotCarrier),403,'base transport flag alone never exposes paid pilot dispatch');
+c($pilotPosts===0,'disabled pilot sends no carrier command');
+denies(fn()=>vp3_managed_pilot_configure_v1($pdo,array_replace(user(2),['denied'=>1]),['number_id'=>2,'device_id'=>$pilot['device'],'destination_e164'=>$pilot['destination'],'minutes'=>15,'confirmed'=>true],$clock),403,'denied administrator cannot configure pilot');
+vp3_managed_pilot_configure_v1($pdo,user(2),['number_id'=>2,'device_id'=>$pilot['device'],'destination_e164'=>$pilot['destination'],'minutes'=>15,'confirmed'=>true],$clock);
+c($pilotPosts===0,'pilot configuration itself is not dispatch');
+$pilotView=vp3_managed_ui_projection_v1($pdo,vp3_managed_ui_device_v1($pdo,2,$pilot['device']),$clock,false);
+c($pilotView['dispatch_enabled']===true&&$pilotView['request']['pilot']['recording_available']===false,'only exact approved unrecorded pilot exposes dispatch');
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),array_replace($pilotArgs,['confirmed'=>false]),$clock,$pilotCarrier),422,'pilot still requires explicit billable action confirmation');
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs+['destination_e164'=>'+16025550199'],$clock,$pilotCarrier),422,'pilot action cannot replace destination');
+denies(fn()=>vp3_managed_ui_pilot_dispatch_v1($pdo,user(1),$pilotArgs,$clock,$pilotCarrier),404,'pilot cannot cross owner accounts');
+$pilotDispatch=vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs,$clock,$pilotCarrier);
+$pilotPublic=$pilotDispatch['call']['public_id'];$pilotNonce=$transportNonce($pilotPlan);
+c($pilotPosts===1&&$pilotDispatch['dispatch_state']==='submitted'&&(int)vp3_managed_transport_row_v1($pdo,$pilotPublic)['pilot_required']===1,'one explicit pilot action reserves and submits the exact call');
+vp3_managed_ui_pilot_dispatch_v1($pdo,user(2),$pilotArgs,$clock,$pilotCarrier);
+c($pilotPosts===1,'pilot replay does not repeat billable POST');
+$pilotForm=form($pilotParent,['From'=>'+16025550102','To'=>$pilot['holder'],'CallStatus'=>'in-progress']);
+c($transportEvent('answer',$pilotPublic,$pilotNonce,$pilotForm)['accepted'],'approved pilot parent reaches confirmation');
+vp3_managed_pilot_disable_v1(user(2));
+c(!$transportEvent('confirm',$pilotPublic,$pilotNonce,$pilotForm+['Digits'=>'1'])['accepted'],'disabling pilot between answer and confirm prevents paid second leg');
+$transportEvent('parent',$pilotPublic,$pilotNonce,array_replace($pilotForm,['CallStatus'=>'completed']));
+c(readcall($pilotPublic)['state']==='canceled','parent-only pilot termination cannot be a completed destination call');
+unset($GLOBALS['settings']['phone_managed_callback_enabled_v1']);
+
+// Existing recorded fixture: simulate lost recording completion state to
+// exercise withdrawal stop independently of the already tested report receipt.
+$pdo->prepare("UPDATE phone_managed_recording_consent_v1 SET start_state='started',stop_state='none',stop_epoch=0 WHERE request_id=?")->execute([$recordRequest]);
+$mediaCalls=[];
+$mediaCarrier=static function(string $method,string $resource,array $fields)use(&$mediaCalls,$recSid,$recParent,$pdo):array{
+    c(!$pdo->inTransaction(),'recording stop IO is outside transaction');$mediaCalls[]=$method;
+    c(str_ends_with($resource,'/Calls/'.$recParent.'/Recordings/'.$recSid.'.json'),'stop addresses exact known recording resource');
+    if($method==='POST')c($fields===['Status'=>'stopped'],'recording stop command cannot start or resume recording');
+    return ['sid'=>$recSid,'account_sid'=>setting('phone_twilio_account_sid'),'call_sid'=>$recParent,'source'=>'StartCallRecordingAPI','track'=>'both','channels'=>2,'status'=>$method==='GET'?'processing':'stopped'];
+};
+$stopped=vp3_managed_media_tick_v1($pdo,$mediaCarrier,$clock);
+c($stopped['stopped']===1&&$mediaCalls===['GET','POST'],'withdrawal driver stops exact recording even when start flag is off');
+vp3_managed_media_tick_v1($pdo,$mediaCarrier,$clock);
+c($mediaCalls===['GET','POST'],'verified stop is not repeated');
+$jobCount=(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn();
+$discard=$transportEvent('recording',$recPublic,$recNonce,$recForm);
+c($discard['accepted']&&$discard['queued']===false&&(int)$pdo->query('SELECT COUNT(*) FROM phone_recording_jobs_v1')->fetchColumn()===$jobCount,'signed terminal receipt after withdrawal closes media without adding a processing job');
+
 echo 'PHONE_BROWSER_WORKSPACE_V1=PASS ('.$checks.' checks)'.PHP_EOL;

@@ -1,0 +1,56 @@
+Phone Sync PS5E.8 — production-readiness and supervised acceptance
+
+Release is NOT a declaration that real carrier audio, recording, or speech
+processing has passed. This build exposes an explicit unrecorded pilot only.
+No deployment step, admin save, holder review, worker observation or automated
+test places a real call by itself.
+
+Admin / Phone & Messaging / Managed calling · supervised acceptance:
+1. Install the released Cloud package and run upgrade.php. Both the connected
+   phone profile and Phone workspace must be current. Existing paired device
+   and active assigned Twilio line must have mutual calling permission.
+2. Verify the Twilio account and assigned line with the existing non-billable
+   readiness checks. Confirm both test participants agree. Save the line ID,
+   approved device ID, agreed E.164 test destination and 15/30/60 minute
+   lifetime. The server derives the owner and holder number. The optional
+   native switch permits only this same temporary scope.
+3. In Phone Tracking prepare a managed review for that destination. The
+   holder approves it. The owner then explicitly clicks Start unrecorded
+   pilot call and confirms carrier charges. Or choose native dial-through
+   and obtain the one-time keypad code on the authenticated holder.
+4. Test exact handset ring/answer, affirmative keypad confirmation, assigned
+   caller ID at destination, two-way audio, busy/no-answer, end-call,
+   missing/duplicate status recovery, cancel, and expiry. Check the canonical
+   ledger and Agent Chat. A successful Twilio HTTP response is not human
+   answer, audio quality or a completed call. Disable pilot when finished.
+   A revoked/expired gate stops authorizing the destination leg; active calls
+   require explicit end or native hangup. No unrestricted launch is enabled.
+
+Media driver: phone-managed-media-worker-v1.php (Cloud PHP CLI only).
+Run once for a bounded observation, or --watch for a short supervised poll
+window (up to 50s, two-second cadence excluding carrier latency). For a
+continuous deployment, arrange an actual server scheduler/supervisor and
+verify its observed cadence. Do not assume shared hosting permits this.
+The existing phone-recording-worker-v1.php remains the post-call job
+processor. Admin Phone displays separate observations; no observation is
+proof of audio or transcription. The media driver start flag defaults OFF.
+This PR deliberately prevents live recorded pilot dispatch. Recorded
+production release remains blocked until actual driver timing, consent
+prompts, audio/channel integrity, stop/revocation, media retention/deletion,
+and post-call worker acceptance have passed.
+
+For later recording acceptance, the separate driver can consume a new,
+consented active call exactly once. It re-derives a secret-bound callback
+nonce, validates both live legs and existing policy, and records one start
+claim. It will not replay an uncertain paid POST. Explicit owner/holder
+withdrawal and active authority loss fence subsequent processing. A stop
+claim uses only the known recording SID and verified parent, account and
+source. A signed terminal receipt after withdrawal does not enqueue
+processing. Unknown identity, missing/uncertain stop or offline worker
+remain unconfirmed; hang up the handset and reconcile before further use.
+Existing retained content is not automatically deleted by withdrawal.
+
+Regression fixtures use only synthetic calls and provider replies. Exact
+branch CI, parent merges, deploy ZIP integrity, live iPhone/Twilio acceptance,
+and real worker observation are independent gates. No score of 10/10 for
+production behavior without evidence. No automatic outreach is enabled.

@@ -47,7 +47,7 @@ function vp3_coding_canvas_private_calendar_v1(PDO $pdo,int $owner,DateTimeImmut
     $to=$now->modify('+30 days')->format('Y-m-d H:i:s');
     $hasRecurrence=column_exists('user_calendar_events','recurrence');
     $recurrenceColumn=$hasRecurrence?'recurrence':"'none' AS recurrence";
-    $distinctAnchor=$hasRecurrence?"AND recurrence<>'weekly'":'';
+    $distinctAnchor=$hasRecurrence?"AND recurrence='none'":'';
     $query=$pdo->prepare("SELECT id,title,start_at_utc,end_at_utc,timezone,all_day,$recurrenceColumn
         FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND start_at_utc<? AND end_at_utc>?
         $distinctAnchor ORDER BY start_at_utc,id LIMIT 41");
@@ -56,11 +56,11 @@ function vp3_coding_canvas_private_calendar_v1(PDO $pdo,int $owner,DateTimeImmut
     $limited=count($events)>40;
     $events=array_slice($events,0,40);
     if($hasRecurrence){
-        $weekly=$pdo->prepare("SELECT id,title,start_at_utc,end_at_utc,timezone,all_day,recurrence
-            FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND recurrence='weekly' AND start_at_utc<?
+        $seriesQuery=$pdo->prepare("SELECT id,title,start_at_utc,end_at_utc,timezone,all_day,recurrence
+            FROM user_calendar_events WHERE owner_user_id=? AND status='active' AND recurrence IN ('daily','weekly') AND start_at_utc<?
             ORDER BY start_at_utc DESC,id DESC LIMIT 41");
-        $weekly->execute([$owner,$to]);
-        $series=$weekly->fetchAll(PDO::FETCH_ASSOC);
+        $seriesQuery->execute([$owner,$to]);
+        $series=$seriesQuery->fetchAll(PDO::FETCH_ASSOC);
         $limited=$limited||count($series)>40;
         foreach(array_slice($series,0,40) as $seriesRow){
             try{
@@ -81,7 +81,7 @@ function vp3_coding_canvas_private_calendar_v1(PDO $pdo,int $owner,DateTimeImmut
         'end_at_utc'=>(string)$event['end_at_utc'],
         'timezone'=>user_calendar_timezone_v1300((string)$event['timezone']),
         'all_day'=>(int)$event['all_day']===1,
-        'recurrence'=>$event['recurrence']==='weekly'?'weekly':'none',
+        'recurrence'=>in_array($event['recurrence'],['daily','weekly'],true)?$event['recurrence']:'none',
     ],array_slice($events,0,40))];
 }
 

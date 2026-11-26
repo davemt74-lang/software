@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { createRequire } from 'node:module';
 import { localPort, preparePhoneSite } from './fixtures/phone-site-v1.mjs';
 import { tmpdir } from 'node:os';
@@ -42,7 +43,7 @@ async function read(response) {
 
 async function ownerApi(context, user, action = 'state', values = {}) {
   const headers = { 'X-VP3-Working-Attention': user.binding };
-  if (['state', 'history', 'places'].includes(action)) {
+  if (['state', 'history', 'places','information_list'].includes(action)) {
     return read(await context.request.get(ownerEndpoint, { headers, params: { action, ...values } }));
   }
   return read(await context.request.post(ownerEndpoint, { headers,
@@ -72,6 +73,21 @@ async function screenshot(page, name) {
 }
 
 try {
+  {
+  const dialerWindow={};
+  runInNewContext(readFileSync(path.join(repo,'phone-remote-dialer-v1.js'),'utf8'),{window:dialerWindow,performance:{now:()=>1000}});
+  const {canAuto,live,numberOK}=dialerWindow.VP3RemoteDialerV1;
+  const d={id:'a'.repeat(32),status:'approved',generation:2,dialer:{revision:1,server_epoch:100,enabled:true,auto_enabled:true,auto_number:'+16025550138',request:{id:'b'.repeat(32),state:'pending',expires_epoch:220,auto_allowed:true,auto_attempted:false,destination:'+16025550138'}}};
+  const active={visible:true,focused:true,mobile:true,clock:1000};
+  assert.equal(canAuto(d,1000,active),true);
+  for(const gate of ['visible','focused','mobile'])assert.equal(canAuto(d,1000,{...active,[gate]:false}),false);
+  assert.equal(canAuto(d,1000,{...active,clock:11000}),false);
+  assert.equal(canAuto({...d,dialer:{...d.dialer,request:{...d.dialer.request,auto_attempted:true}}},1000,active),false);
+  assert.equal(canAuto({...d,dialer:{...d.dialer,auto_number:'+16025550137'}},1000,active),false);
+  assert.equal(live({...d,dialer:{...d.dialer,request:{...d.dialer.request,expires_epoch:100}}},1000,1000),false);
+  assert.equal(numberOK('+16025550138;123'),false);
+  }
+
   const [owner, other] = preparePhoneSite(repo, site, sessions, php);
   const port = await localPort();
   const baseURL = 'http://127.0.0.1:' + port;
@@ -141,7 +157,16 @@ try {
   assert.match(mapHtml, /<a[^>]*data-vp3-nav-key="phone_tracking"[^>]*aria-current="page"/);
   const mobileRoute = await firstGuest.request.get('/phone-location.php');
   assert.equal(mobileRoute.status(), 200);
-  assert.match(await mobileRoute.text(), /id="phone-claim"/);
+  const phoneHTML=await mobileRoute.text();
+  assert.match(phoneHTML, /id="phone-claim"/);
+  assert.match(phoneHTML,/rel="manifest" href="phone-app.webmanifest"/);
+  assert.match(mobileRoute.headers()['content-security-policy'],/manifest-src 'self'; worker-src 'self'/);
+  const manifestResponse=await firstGuest.request.get('/phone-app.webmanifest');
+  assert.equal(manifestResponse.status(),200);
+  const manifest=JSON.parse(await manifestResponse.text());
+  assert.equal(manifest.scope,'./phone-location.php');assert.equal(manifest.start_url,'./phone-location.php');assert.equal(manifest.display,'standalone');
+  for(const icon of manifest.icons){const response=await firstGuest.request.get('/'+icon.src);assert.equal(response.status(),200);const bytes=await response.body();assert.equal(bytes.readUInt32BE(16),Number(icon.sizes.split('x')[0]));assert.equal(bytes.readUInt32BE(20),Number(icon.sizes.split('x')[1]));}
+  const sw=await firstGuest.request.get('/phone-service-worker-v1.js');assert.equal(sw.status(),200);const workerText=await sw.text();assert.ok(!/addEventListener\(['"]fetch|caches\.open|PushManager|pushManager\.subscribe/.test(workerText),'installation worker must not cache or subscribe');
 
   await verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other);
   await apiOwner.request.dispose();
@@ -234,6 +259,8 @@ async function browserJourney(baseURL, owner, other) {
   for (const [context, user] of [[desktop, owner], [outsider, other]]) {
     await context.addCookies([{ name: 'PHPSESSID', value: user.session, url: baseURL }]);
   }
+  await verifyManagedReviewUI(desktop);
+  await verifyInstalledPairing(baseURL,desktop,owner);
   const map = await desktop.newPage();
   const phone = await handset.newPage();
   const errors = [];
@@ -351,6 +378,153 @@ async function browserJourney(baseURL, owner, other) {
   await map.locator('#phone-pending select[name=role]').selectOption('owner');
   await map.locator('#phone-pending [data-action=approve]').click();
   await map.locator('#phone-devices [data-device-id] button[data-focus]').first().click();
+  const communication=map.locator('#phone-communication-profile');
+  await communication.getByRole('button',{name:'Permissions',exact:true}).click();
+  await communication.getByLabel('Allow telephone calls',{exact:true}).check();
+  await communication.getByLabel('Allow information requests',{exact:true}).check();
+  await communication.getByRole('button',{name:'Save permissions',exact:true}).click();
+  await eventually('Map grants did not save',async()=>{
+    const d=check(await ownerApi(desktop,owner),'communication grant').devices.find(d=>d.id===deviceId);
+    return d?.communication?.owner_calls&&d.communication.owner_requests;
+  });
+  const holderForm=phone.locator('#phone-communication-form');
+  await holderForm.getByLabel('My personal phone number',{exact:true}).fill('+16025550129');
+  await holderForm.getByRole('button',{name:'Save communication preferences',exact:true}).click();
+  await eventually('Holder number did not save',async()=>{
+    const d=check(await phoneApi(handset,'status'),'holder communication read').device;
+    return d.communication?.phone_e164==='+16025550129';
+  });
+  await eventually('Holder call consent did not become available',async()=>await holderForm.getByLabel('Allow telephone calls from this Agent',{exact:true}).isEnabled());
+  await holderForm.getByLabel('Allow telephone calls from this Agent',{exact:true}).check();
+  await holderForm.getByLabel('Allow proactive check-ins',{exact:true}).check();
+  await holderForm.getByLabel('Allow information requests',{exact:true}).check();
+  await holderForm.getByRole('button',{name:'Save communication preferences',exact:true}).click();
+  await eventually('Holder consent did not save',async()=>{
+    const d=check(await ownerApi(desktop,owner),'communication consent').devices.find(d=>d.id===deviceId);
+    return d?.communication?.call_permission_saved&&d.communication.proactive_permission_saved&&d.communication.request_permission_saved;
+  });
+  await communication.getByRole('button',{name:'Communication',exact:true}).click();
+  await eventually('Map did not show masked number and both consents',async()=>{
+    const detail=await communication.innerText();return detail.includes('Ending in 0129')&&detail.includes('Both permissions saved');
+  });
+  assert.ok(!(await communication.innerText()).includes('+16025550129'),'map does not expose full phone number');
+  await communication.getByRole('button',{name:'Activity',exact:true}).click();
+  await communication.getByRole('button',{name:'Location history',exact:true}).waitFor();
+  await communication.getByRole('button',{name:'Saved places',exact:true}).waitFor();
+  await communication.getByRole('button',{name:'Communication',exact:true}).click();
+  await screenshot(map,'owner-connected-user-communication');
+  // PS5D: choose a different synthetic destination than the holder's approved automatic number.
+  // Never invoke tel: or a carrier call during automated browser coverage.
+  const dialerSettings=phone.locator('#phone-dialer-settings-host');
+  await dialerSettings.getByLabel('Allow remote call requests',{exact:true}).check();
+  await dialerSettings.getByLabel('Automatically try to open the dialer for my approved number',{exact:true}).check();
+  await dialerSettings.getByLabel('Approved automatic destination (international number)',{exact:true}).fill('+16025550138');
+  await dialerSettings.getByRole('button',{name:'Save dialer permissions',exact:true}).click();
+  await eventually('Dialer opt-in was not saved',async()=>{
+    const d=check(await phoneApi(handset,'status'),'dialer permission').device;
+    return d.dialer?.enabled&&d.dialer.auto_number==='+16025550138';
+  });
+  // PS5E.3: actual map mounts all three modes even without a Twilio assignment.
+  const modes=map.locator('#phone-dialer-owner-host');
+  await modes.getByRole('button',{name:'Twilio managed callback',exact:true}).click();
+  await modes.getByText('Managed callback review',{exact:true}).waitFor();
+  assert.equal(await modes.getByRole('button',{name:'Request managed callback approval',exact:true}).isVisible(),false);
+  const noManaged=check(await ownerApi(desktop,owner),'managed review status without carrier').devices.find(d=>d.id===deviceId);
+  assert.equal(noManaged.managed_callback.dispatch_enabled,false);
+  assert.equal(noManaged.managed_callback.available,false);
+  assert.equal((await ownerApi(desktop,owner,'managed_dispatch',{device_id:deviceId,generation:noManaged.generation})).status,422,'no live managed dispatch action exposed');
+  await modes.getByRole('button',{name:'Browser call',exact:true}).click();
+  await modes.getByText('Browser call to connected user',{exact:true}).waitFor();
+  await modes.getByRole('button',{name:'Personal cellular',exact:true}).click();
+  const dialerMap=map.locator('#phone-dialer-owner-host');
+  await dialerMap.getByLabel('Destination number (international format)',{exact:true}).fill('+16025550137');
+  await dialerMap.getByLabel('Ask this connected phone to open its own dialer',{exact:true}).check();
+  await dialerMap.getByRole('button',{name:'Send call request',exact:true}).click();
+  const dialerAlert=phone.locator('#phone-dialer-alert-host');
+  await dialerAlert.getByText('+16025550137',{exact:true}).waitFor();
+  await dialerAlert.getByRole('button',{name:'Call now',exact:true}).waitFor();
+  const pendingDialer=check(await phoneApi(handset,'status'),'dialer pending').device.dialer.request;
+  assert.equal(pendingDialer.auto_allowed,false);
+  assert.equal(pendingDialer.auto_attempted,false);
+  const mapDialer=check(await ownerApi(desktop,owner),'dialer owner status').devices.find(d=>d.id===deviceId).dialer;
+  assert.ok(mapDialer.request?.state==='pending'&&!('destination' in mapDialer.request)&&!('auto_number' in mapDialer));
+  await dialerAlert.getByRole('button',{name:'Decline',exact:true}).click();
+  await eventually('Dialer decline was not recorded',async()=>check(await phoneApi(handset,'status'),'dialer declined').device.dialer.request?.state==='declined');
+  await dialerSettings.getByLabel('Allow remote call requests',{exact:true}).uncheck();
+  await dialerSettings.getByRole('button',{name:'Save dialer permissions',exact:true}).click();
+  await eventually('Dialer opt-out was not saved',async()=>check(await phoneApi(handset,'status'),'dialer off').device.dialer.enabled===false);
+
+  await communication.getByRole('button',{name:'Information',exact:true}).click();
+  const panel=communication.locator('.phone-information-panel');
+  await panel.getByLabel('Information type',{exact:true}).selectOption('question');
+  await panel.getByLabel('Information message',{exact:true}).fill('What time is best for the private fixture review?');
+  await panel.getByRole('button',{name:'Send to phone',exact:true}).click();
+  await panel.getByText('What time is best for the private fixture review?',{exact:true}).waitFor();
+  const holderInbox=phone.locator('#phone-information');
+  await eventually('Phone did not receive open request count',async()=> (await holderInbox.locator('summary').innerText()).includes('(1 open)'));
+  await holderInbox.locator('summary').click();
+  await holderInbox.getByText('What time is best for the private fixture review?',{exact:true}).waitFor();
+  await holderInbox.getByRole('button',{name:'Accept request',exact:true}).click();
+  await holderInbox.getByLabel('Your response',{exact:true}).fill('Before noon <private fixture>');
+  await holderInbox.getByRole('button',{name:'Send response',exact:true}).click();
+  await holderInbox.getByText('Response: Before noon <private fixture>',{exact:true}).waitFor();
+  await panel.getByRole('button',{name:'Refresh exchange',exact:true}).click();
+  await panel.getByText('Response: Before noon <private fixture>',{exact:true}).waitFor();
+  assert.equal((await ownerApi(outsider,other,'information_list',{device_id:deviceId})).status,404);
+  const ownState=check(await ownerApi(desktop,owner),'count-only map state');
+  assert.ok(!JSON.stringify(ownState).includes('Before noon'),'ordinary map polls do not reveal request body or response');
+  const updates=check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'information Chat receipt').phone_updates;
+  const receipt=updates.find(u=>u.speech.includes('responded to an information request'));
+  assert.ok(receipt&&!JSON.stringify(updates).includes('Before noon'),'Chat receives only a scoped generic receipt, not the private response');
+  assert.ok(!check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'receipt replay').phone_updates.some(u=>u.speech.includes('responded to an information request')));
+  await screenshot(map,'owner-connected-information');
+  // Real browser requests through both existing authenticated endpoints.
+  await panel.getByLabel('Information type',{exact:true}).selectOption('photo_request');
+  await panel.getByLabel('Information message',{exact:true}).fill('Please share the synthetic review photo.');
+  await panel.getByRole('button',{name:'Send to phone',exact:true}).click();
+  await panel.getByText('Please share the synthetic review photo.',{exact:true}).waitFor();
+  const photo=holderInbox.locator('.phone-information-item').filter({hasText:'Please share the synthetic review photo.'});
+  await photo.getByRole('button',{name:'Accept request',exact:true}).click();
+  const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jN5sAAAAASUVORK5CYII=','base64');
+  await photo.getByLabel('Choose attachment',{exact:true}).setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:image});
+  await photo.getByLabel('Share this selected file with the other party.',{exact:true}).check();
+  await photo.getByRole('button',{name:'Share selected file',exact:true}).click();
+  await photo.getByRole('button',{name:'Download file',exact:true}).waitFor();
+  const photoOwner=panel.locator('.phone-information-item').filter({hasText:'Please share the synthetic review photo.'});
+  await photoOwner.getByRole('button',{name:'Download file',exact:true}).waitFor({timeout:25000});
+  const photoDownload=map.waitForEvent('download');
+  await photoOwner.getByRole('button',{name:'Download file',exact:true}).click();
+  const photoResult=await photoDownload;
+  assert.match(photoResult.suggestedFilename(),/^vp3-[a-f0-9]{12}\.png$/);
+  const photoParts=[];for await(const part of await photoResult.createReadStream())photoParts.push(part);
+  assert.deepEqual(Buffer.concat(photoParts),image,'private browser photo download preserves exact bytes');
+  await panel.getByLabel('Information type',{exact:true}).selectOption('file_share');
+  await panel.getByLabel('Information message',{exact:true}).fill('Here is the synthetic document.');
+  const textFile=Buffer.from('Private synthetic document.\n','utf8');
+  await panel.getByLabel('Choose attachment',{exact:true}).setInputFiles({name:'fixture.txt',mimeType:'text/plain',buffer:textFile});
+  await panel.getByLabel('Share this selected file with the other party.',{exact:true}).check();
+  await panel.getByRole('button',{name:'Send to phone',exact:true}).click();
+  const fileHolder=holderInbox.locator('.phone-information-item').filter({hasText:'Here is the synthetic document.'});
+  await fileHolder.getByRole('button',{name:'Download file',exact:true}).waitFor({timeout:25000});
+  const fileDownload=phone.waitForEvent('download');
+  await fileHolder.getByRole('button',{name:'Download file',exact:true}).click();
+  const fileResult=await fileDownload;
+  assert.match(fileResult.suggestedFilename(),/^vp3-[a-f0-9]{12}\.txt$/);
+  const fileParts=[];for await(const part of await fileResult.createReadStream())fileParts.push(part);
+  assert.deepEqual(Buffer.concat(fileParts),textFile,'holder receives exact selected document');
+  await fileHolder.getByRole('button',{name:'Acknowledge file',exact:true}).click();
+  await fileHolder.getByText('Send a file · Acknowledged',{exact:true}).waitFor();
+  // The file journey produces its own two private receipts. Verify and drain them
+  // here so the later two-phone location test sees only its location announcements.
+  const fileReceipts=check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'file exchange Chat receipts').phone_updates;
+  assert.equal(fileReceipts.filter(u=>u.speech.includes('responded to an information request')).length,1,'photo completion has one scoped receipt');
+  assert.equal(fileReceipts.filter(u=>u.speech.includes('acknowledged an update')).length,1,'file acknowledgement has one scoped receipt');
+  assert.equal(fileReceipts.length,2,'only the two file exchange receipts are outstanding');
+  assert.ok(!JSON.stringify(fileReceipts).includes('synthetic review photo')&&!JSON.stringify(fileReceipts).includes('synthetic document'),'file receipts contain no private request bodies or document content');
+  assert.deepEqual(check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'file receipt replay').phone_updates,[]);
+  await screenshot(map,'owner-connected-files');
+  await holderInbox.locator('summary').click();
+  await communication.getByRole('button',{name:'Communication',exact:true}).click();
   await map.locator('#phone-detail [data-action=request_start]').click();
   await eventually('Phone missed start request', async () =>
     check(await phoneApi(handset, 'status'), 'phone read').device.location_state === 'requested');
@@ -361,6 +535,9 @@ async function browserJourney(baseURL, owner, other) {
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
   await verifyPhoneTabs(phone);
   await screenshot(phone, 'phone-before-consent');
+  // The owner request advances the GPS generation; wait for the actual phone UI,
+  // not just the independent HTTP test client, to observe that request.
+  await phone.getByText('The owner requested your location. Tap Start sharing to allow it.',{exact:true}).waitFor();
   await startWithFreshSensorReading(phone, handset, gps);
   device = await requireLiveFix('No real browser geolocation fix reached the owner', gps);
   assert.deepEqual([device.latitude, device.longitude, device.accuracy], [gps.latitude, gps.longitude, gps.accuracy]);
@@ -432,6 +609,9 @@ async function verifyPhoneTabs(phone) {
     assert.ok(position.bottom > 0 && position.top < position.height * .35,
       'The connected phone name should appear near the top of the iPhone viewport: ' + JSON.stringify(position));
   }
+  // The new preference journey deliberately scrolls to controls below the fold.
+  // Reselect Connection and verify that it restores the overview.
+  await connection.click();
   await verifyConnection();
   await screenshot(phone, 'phone-connection-tab');
   await chat.click();
@@ -1045,4 +1225,229 @@ async function verifyLinkedPhoneHistory(desktop, link, linkedId, remainingId, re
   } finally {
     await page.close();
   }
+}
+
+/** Production DOM component with synthetic API responses; no carrier or real phone number. */
+async function verifyManagedReviewUI(context){
+  const page=await context.newPage();
+  try{
+    await page.setViewportSize({width:390,height:844});
+    await page.setContent('<main id="owner"></main><main id="holder"></main>');
+    await page.addScriptTag({content:readFileSync(path.join(repo,'phone-managed-call-ui-v1.js'),'utf8')});
+    await page.addStyleTag({content:readFileSync(path.join(repo,'phone-managed-call-ui-v1.css'),'utf8')});
+    await page.evaluate(()=>{
+      const epoch=Math.floor(Date.now()/1000),device='a'.repeat(32),profile='b'.repeat(32);
+      const p={available:true,dispatch_enabled:false,server_epoch:epoch,reason:'review_only',request:null,lines:[{id:2,phone_e164:'+16025550102',agent_name:'Fixture Agent'}]};
+      const d={id:device,status:'approved',generation:1,communication:{profile_id:profile,revision:1,phone_revision:1,call_permission_saved:true},agent_chat:{conversation_id:21,agent_id:0},managed_callback:p};
+      const holderDevice={...d,managed_callback:{...p,lines:[]}};
+      const calls=[];let saved=null;
+      function refresh(){
+        const redacted=saved?{request_id:saved.request_id,state:saved.state,expires_epoch:epoch+120,...(saved.transport==='twilio_native'?{transport:'twilio_native',native:{state:saved.issued?'issued':'review',enabled:true,can_issue_pin:false}}:{})}:null;
+        d.managed_callback={...p,request:redacted};
+        holderDevice.managed_callback={...p,lines:[],request:redacted?{...redacted,...(saved.state==='pending'?{destination_e164:saved.destination_e164}:{}),...(redacted.native?{native:{...redacted.native,can_issue_pin:saved.state==='approved'&&!saved.issued}}:{})}:null};
+        ownerUI.bind(d,true);holderUI.bind(holderDevice,true);
+      }
+      const ownerUI=window.VP3ManagedCallUIV1.owner({directRoot:document.createElement('div'),openBrowser:()=>{},request:async(action,body)=>{
+        calls.push({action,body});
+        if(action==='managed_prepare')saved={request_id:body.managed_request_id,destination_e164:body.destination_e164,state:'pending',transport:body.transport||'twilio_callback'};
+        if(action==='managed_cancel')saved.state='canceled';
+        refresh();return {managed_callback:d.managed_callback};
+      }});
+      const holderUI=window.VP3ManagedCallUIV1.holder({request:async(action,body)=>{
+        calls.push({action,body});
+        if(action==='native_dialthrough_issue'){saved.issued=true;refresh();return {device:holderDevice,native_dialthrough_ticket:{request_id:saved.request_id,line_e164:'+16025550102',pin:'00412567',server_epoch:epoch,expires_epoch:epoch+120}};}
+        saved.state=body.decision==='approve'?'approved':'declined';refresh();return {device:holderDevice};
+      }});
+      document.getElementById('owner').append(ownerUI.root);
+      document.getElementById('holder').append(holderUI.root);
+      window.managedFixture={calls,ownerUI,holderUI,d,holderDevice,refresh};
+      refresh();
+    });
+    const own=page.locator('#owner'),hold=page.locator('#holder');
+    await own.getByRole('button',{name:'Twilio managed callback',exact:true}).click();
+    const send=own.getByRole('button',{name:'Request managed callback approval',exact:true});
+    await own.getByLabel('Managed destination number (international format)').fill('+16025550148');
+    assert.equal(await send.isEnabled(),false,'confirmation required before preparing');
+    await own.getByRole('checkbox').check();await send.click();
+    await hold.getByText('+16025550148',{exact:true}).waitFor();
+    assert.equal(await hold.getByRole('button',{name:'Approve managed request'}).isEnabled(),false);
+    await hold.getByRole('checkbox').check();await hold.getByRole('button',{name:'Approve managed request'}).click();
+    await own.getByText('Approved — no call has been placed',{exact:true}).waitFor();
+    assert.equal(await hold.getByText('+16025550148',{exact:true}).isVisible(),false,'pending destination removed after approval');
+    await own.getByRole('button',{name:'Cancel managed request'}).click();
+    await own.getByText('Canceled',{exact:true}).waitFor();
+    const sent=await page.evaluate(()=>window.managedFixture.calls);
+    assert.deepEqual(sent.map(x=>x.action),['managed_prepare','managed_respond','managed_cancel']);
+    assert.equal(sent[0].body.device_id,'a'.repeat(32));assert.equal(sent[1].body.destination_e164,'+16025550148');
+    assert.equal(sent[0].body.managed_request_id,sent[1].body.managed_request_id);
+    assert.ok(!JSON.stringify(sent).includes('recording_enabled'));
+    await own.getByLabel('Managed destination number (international format)').fill('+16025550149');
+    await page.evaluate(()=>{const {ownerUI,d,holderUI}=window.managedFixture;ownerUI.bind({...d,id:'c'.repeat(32)},true);holderUI.invalidate();});
+    await own.getByRole('button',{name:'Twilio managed callback',exact:true}).click();
+    assert.equal(await own.getByLabel('Managed destination number (international format)').inputValue(),'','switching devices clears managed destination draft');
+    // The empty parent may have zero layout height. Assert the sensitive child is actually hidden.
+    assert.equal(await hold.locator('.phone-managed-holder').isVisible(),false);
+    assert.equal(await hold.locator('.phone-managed-destination').textContent(),'');
+    // Mount a synthetic existing managed call; controls must not initiate a new call.
+    const mountManagedCall=()=>page.evaluate(()=>{
+      const {ownerUI,d}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,request:{request_id:'d'.repeat(32),state:'dispatch_claimed',expires_epoch:Math.floor(Date.now()/1000)+120,
+        call:{public_id:'e'.repeat(32),state:'ringing',dispatch_state:'bridging',duration_seconds:0,managed_control:{can_reconcile:true,can_end:true,end_state:'none',read_state:'none'}}}};
+      ownerUI.bind(d,true);ownerUI.setMode('managed');
+    });
+    await mountManagedCall();
+    await own.getByRole('button',{name:'Check carrier status',exact:true}).click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_reconcile'));
+    await mountManagedCall();
+    page.once('dialog',dialog=>dialog.accept());
+    await own.getByRole('button',{name:'End managed call',exact:true}).click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_end'));
+    const controlCalls=await page.evaluate(()=>window.managedFixture.calls.slice(3));
+    assert.deepEqual(controlCalls.map(x=>x.action),['managed_reconcile','managed_end']);
+    assert.equal(controlCalls[1].body.call_id,'e'.repeat(32));
+    assert.equal(controlCalls[1].body.confirmed,true);
+    // Native mode uses the same approval form but never auto-opens the OS dialer.
+    await page.evaluate(()=>{const {d,ownerUI,refresh}=window.managedFixture;d.managed_callback={...d.managed_callback,request:null};ownerUI.bind(d,true);ownerUI.setMode('native');});
+    await own.getByLabel('Managed destination number (international format)').fill('+16025550159');
+    await own.getByRole('checkbox').check();await own.getByRole('button',{name:'Request dial-through approval',exact:true}).click();
+    await hold.getByText('+16025550159',{exact:true}).waitFor();
+    await hold.getByRole('checkbox').check();await hold.getByRole('button',{name:'Approve managed request',exact:true}).click();
+    await hold.getByRole('button',{name:'Get one-time dialing code',exact:true}).click();
+    await hold.getByText('00412567',{exact:true}).waitFor();
+    await hold.getByRole('button',{name:'Open native phone dialer',exact:true}).waitFor();
+    assert.equal(await own.getByText('00412567',{exact:true}).count(),0,'PIN never appears in owner view');
+    assert.equal(await hold.getByRole('button',{name:'Get one-time dialing code',exact:true}).isVisible(),false);
+    await page.evaluate(()=>window.managedFixture.holderUI.invalidate());
+    assert.equal(await hold.getByText('00412567',{exact:true}).count(),0,'invalidating holder view removes native PIN');
+    const nativeCalls=await page.evaluate(()=>window.managedFixture.calls.slice(5));
+    assert.deepEqual(nativeCalls.map(x=>x.action),['managed_prepare','managed_respond','native_dialthrough_issue']);
+    assert.equal(nativeCalls[0].body.transport,'twilio_native');assert.equal(nativeCalls[2].body.confirmed,true);
+    // A simulated administrator-approved pilot exposes one explicit billable action only.
+    await page.evaluate(()=>{
+      const {d,ownerUI}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,dispatch_enabled:false,server_epoch:Math.floor(Date.now()/1000),
+        request:{request_id:'f'.repeat(32),state:'approved',transport:'twilio_callback',expires_epoch:Math.floor(Date.now()/1000)+120}};
+      ownerUI.bind(d,true);ownerUI.setMode('managed');
+    });
+    const pilot=own.getByRole('button',{name:'Start unrecorded pilot call',exact:true});
+    assert.equal(await pilot.isVisible(),false);
+    await page.evaluate(()=>{
+      const {d,ownerUI}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,dispatch_enabled:true};ownerUI.bind(d,true);
+    });
+    await pilot.waitFor();
+    page.once('dialog',dialog=>dialog.dismiss());
+    await pilot.click();
+    assert.equal(await page.evaluate(()=>window.managedFixture.calls.some(x=>x.action==='managed_pilot_dispatch')),false,'canceling confirmation sends no paid request');
+    page.once('dialog',dialog=>dialog.accept());
+    await pilot.click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_pilot_dispatch'));
+    const pilotBody=await page.evaluate(()=>window.managedFixture.calls.find(x=>x.action==='managed_pilot_dispatch').body);
+    assert.equal(pilotBody.managed_request_id,'f'.repeat(32));assert.equal(pilotBody.confirmed,true);
+    assert.equal(Object.hasOwn(pilotBody,'destination_e164'),false,'the UI cannot substitute the approved destination');
+    await page.evaluate(()=>{
+      const {d,ownerUI}=window.managedFixture;
+      d.managed_callback={...d.managed_callback,dispatch_enabled:true,request:{request_id:'e'.repeat(32),state:'approved',transport:'twilio_callback',expires_epoch:Math.floor(Date.now()/1000)+120,
+        recording:{requested:true,state:'requested',revision:1}}};
+      ownerUI.bind(d,true);
+    });
+    assert.equal(await pilot.isVisible(),false,'recorded requests cannot use unrecorded pilot');
+    page.once('dialog',dialog=>dialog.accept());
+    await own.getByRole('button',{name:'Withdraw recording consent',exact:true}).click();
+    await page.waitForFunction(()=>window.managedFixture.calls.some(x=>x.action==='managed_recording_withdraw'));
+    console.log('PASS Managed call review, native code and explicit pilot controls without actual carrier traffic.');
+  }finally{await page.close();}
+}
+
+
+/** Real server pairing in a new, isolated installation context. Not physical OS installation. */
+async function verifyInstalledPairing(baseURL,desktop,owner){
+  const installed=await browser.newContext({baseURL,viewport:{width:390,height:844},serviceWorkers:'allow'});
+  const guest=await installed.newPage(),map=await desktop.newPage(),errors=[];
+  guest.on('pageerror',e=>errors.push(e.message));
+  await guest.addInitScript(()=>Object.defineProperty(navigator,'standalone',{configurable:true,value:true}));
+  try{
+    await guest.goto('/phone-location.php');
+    await guest.locator('#phone-setup-guide').click();
+    await guest.getByText('Opened from your installed app.',{exact:true}).waitFor();
+    await guest.locator('#phone-info-back').click();
+    await guest.locator('#phone-pair-entry').waitFor();
+    await guest.waitForFunction(()=>document.getElementById('phone-install-panel').dataset.workerState==='registered');
+    const regs=await guest.evaluate(async()=>Array.from(await navigator.serviceWorker.getRegistrations(),r=>r.scope));
+    assert.deepEqual(regs,[baseURL+'/phone-location.php'],'worker is not installed for main Chat or the whole origin');
+    await map.goto('/phone-tracking.php?agent=system&conversation_id=8');
+    await map.locator('#phone-connect').click();
+    await map.locator('#phone-qr svg').waitFor();
+    await map.locator('#phone-install-code-box summary').click();
+    const code=await map.locator('#phone-install-code').inputValue();
+    assert.match(code,/^[A-Za-z0-9_-]{43}$/);
+    const requests=[];guest.on('request',req=>{requests.push(req.url());});
+    await guest.locator('#phone-pair-code').fill(code);
+    await guest.locator('#phone-pair-continue').click();
+    await guest.locator('#phone-name').fill('Installed phone fixture');
+    await guest.locator('#phone-claim').click();
+    await eventually('manual code must create a pending device',async()=>check(await ownerApi(desktop,owner),'manual pairing').devices.some(d=>d.name==='Installed phone fixture'&&d.status==='pending'));
+    const d=check(await ownerApi(desktop,owner),'manual pending read').devices.find(d=>d.name==='Installed phone fixture');
+    assert.equal(d.location_state,'off');assert.ok(!requests.some(u=>u.includes(code)));
+    assert.equal(await guest.locator('#phone-pair-code').inputValue(),'');
+    assert.equal(await guest.evaluate(secret=>Object.values(sessionStorage).some(v=>v.includes(secret))||Object.values(localStorage).some(v=>v.includes(secret)),code),false,'manual invite never persists in browser storage');
+    const approved=check(await ownerApi(desktop,owner,'approve',{device_id:d.id,generation:d.generation,role:'guest',allow_location:false}),'installed device approval').device;
+    await eventually('installed connection must become approved',async()=>(await phoneApi(installed,'status')).device?.status==='approved');
+    await guest.reload();
+    await guest.waitForFunction(()=>document.getElementById('phone-badge').textContent==='Connected phone');
+    assert.equal((await phoneApi(installed,'status')).device.id,d.id,'same installation keeps the existing authenticated cookie');
+    const reused=await browser.newContext({baseURL});
+    try{assert.equal((await phoneApi(reused,'claim',{invite:code,name:'Replay attempt'})).status,403);}finally{await reused.close();}
+    // Transfer the existing device into an independently authenticated app.
+    const moved=await browser.newContext({baseURL,viewport:{width:390,height:844},serviceWorkers:'allow'});
+    const fresh=await moved.newPage();
+    fresh.on('pageerror',e=>errors.push(e.message));
+    try{
+      const messageId=randomUUID();
+      check(await phoneApi(installed,'chat_send',{device_id:d.id,request_id:messageId,message:'Private handoff fixture'}),'source chat');
+      await guest.getByRole('tab',{name:'Info',exact:true}).click();
+      await guest.locator('#phone-handoff-panel summary').click();
+      await guest.locator('#phone-handoff-offer').waitFor();
+      guest.once('dialog',dialog=>dialog.accept());
+      await guest.locator('#phone-handoff-offer').click();
+      await guest.locator('#phone-handoff-ticket').waitFor();
+      const moveCode=await guest.locator('#phone-handoff-code').inputValue();
+      assert.match(moveCode,/^[A-Za-z0-9_-]{43}$/);
+      await fresh.goto('/phone-location.php');
+      await fresh.locator('#phone-setup-guide').click();
+      await fresh.locator('#phone-handoff-panel summary').click();
+      await fresh.locator('#phone-handoff-entry').fill(moveCode);
+      await fresh.locator('#phone-handoff-claim').click();
+      await fresh.waitForFunction(()=>/^[0-9A-F]{8}$/.test(document.getElementById('phone-handoff-compare').textContent));
+      const comparison=await fresh.locator('#phone-handoff-compare').textContent();
+      assert.equal(await fresh.locator('#phone-handoff-finish').isVisible(),false);
+      assert.equal((await phoneApi(installed,'status')).device.id,d.id,'source remains authorized during review');
+      await map.locator('#phone-review').waitFor();
+      if(!await map.locator('#phone-pairing').isVisible())await map.locator('#phone-review').click();
+      const review=map.locator('#phone-handoff-pending [data-handoff-id]');
+      await review.waitFor();
+      assert.match(await review.innerText(),new RegExp(comparison));
+      map.once('dialog',dialog=>dialog.accept());
+      await review.getByRole('button',{name:'Approve move',exact:true}).click();
+      await eventually('owner must approve exact target',async()=>check(await ownerApi(desktop,owner),'transfer approval').devices.find(v=>v.id===d.id)?.handoff?.state==='approved');
+      await fresh.locator('#phone-handoff-check').click();
+      await fresh.locator('#phone-handoff-finish').waitFor();
+      assert.equal((await phoneApi(installed,'status')).device.id,d.id,'approval alone leaves old session valid');
+      fresh.once('dialog',dialog=>dialog.accept());
+      await fresh.locator('#phone-handoff-finish').click();
+      await fresh.waitForFunction(()=>document.getElementById('phone-badge').textContent==='Connected phone');
+      const newDevice=check(await phoneApi(moved,'status'),'moved device').device;
+      assert.equal(newDevice.id,d.id);assert.ok(newDevice.generation>approved.generation);
+      assert.equal(newDevice.location_state,'off');
+      assert.equal((await phoneApi(installed,'status')).status,403);
+      const history=check(await phoneApi(moved,'chat_status',{device_id:d.id}),'preserved private conversation').turns;
+      assert.ok(history.some(turn=>turn.request_id===messageId&&turn.message==='Private handoff fixture'));
+      assert.equal(await fresh.evaluate(secret=>Object.values(sessionStorage).some(v=>v.includes(secret))||Object.values(localStorage).some(v=>v.includes(secret)),moveCode),false);
+      check(await ownerApi(desktop,owner,'revoke',{device_id:d.id,generation:newDevice.generation}),'revoke moved fixture');
+      assert.equal((await phoneApi(moved,'status')).status,403);
+    }finally{await moved.close();}
+    if(await map.locator('#phone-pair-close').isVisible())await map.locator('#phone-pair-close').click();
+    await eventually('closed invite must be cleared',async()=>await map.locator('#phone-install-code').inputValue()==='');
+    assert.deepEqual(errors,[]);
+  }finally{await installed.close();await map.close();}
 }

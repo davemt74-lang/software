@@ -3372,10 +3372,21 @@
     const validVoicemail=marker.kind==='voicemail'&&validVoiceId
       &&(validCall||validLegacyCall);
     if(!(marker.kind==='call'&&(validCall||validLegacyCall))&&!validVoicemail)return;
+    if(validVoicemail&&marker.status==='deleted'){
+      // Persisted deletion receipts can arrive while this message is already
+      // visible. Remove its transcript and controls without restoring media.
+      marker={kind:'voicemail',call_id:marker.call_id,voicemail_id:marker.voicemail_id,status:'deleted'};
+      element.dataset.phoneWorkspaceCall=marker.call_id;
+      element.dataset.phoneWorkspaceMarker=JSON.stringify(marker);
+      const text=element.querySelector('.message-text');if(text)text.textContent='Voice message deleted.';
+      for(const card of element.querySelectorAll('[data-phone-workspace-card]'))card.remove();
+      return true;
+    }
     element.dataset.phoneWorkspaceCall=marker.call_id;
     element.dataset.phoneWorkspaceMarker=JSON.stringify(marker);
     window.VP3PhoneWorkspaceV1?.bindMessage?.(element,marker);
     window.dispatchEvent(new CustomEvent('vp3:phone-call-message',{detail:{element,marker}}));
+    return true;
   }
   function bindProfileSpeechPa4a(element,marker){
     if(!element||marker?.contract!=='vp3.profile-speech.v1'||!['item_id','revision'].every(key=>Number.isSafeInteger(marker[key])&&marker[key]>0)||
@@ -5345,6 +5356,14 @@
     if(initiativePosts.size&&!initiativeIdentityMatchesV1()){
       clearInitiativeReplyV1(true);recoveryStatus('The account or session changed. Refresh Chat before replying to an Agent update.');return;
     }
+    if(!imageReference&&!initiativeReplyTarget&&!historyParticipant&&!window.VP3ParticipantContinuity?.selectedContext()
+      &&/^(?:please\s+)?(?:call me|test (?:my )?phone(?: number)?|connect my phone|sync my phone|set up my phone)[.!?]*$/i.test(message.trim())
+      &&typeof window.VP3PhoneWorkspaceV1?.openOwnerSetup==='function'){
+      if(inputMode==='voice')stopVoiceRecognition();
+      setChatCanvasView('chat',{newChat:conversationId<1});
+      const opened=await window.VP3PhoneWorkspaceV1.openOwnerSetup();
+      if(opened){input.value='';autoSize();keepDraft('',conversationId);return;}
+    }
     const youtubeAction = window.VP3_CHAT_YOUTUBE_V1?.command(message);
     if (youtubeAction && !initiativeReplyTarget && !window.VP3ParticipantContinuity?.selectedContext()) {
       if (inputMode === 'voice') stopVoiceRecognition();
@@ -6089,13 +6108,34 @@
       &&!window.VP3ParticipantContinuity?.selectedContext?.(),
   });
   window.addEventListener('vp3:chat-context-ready',syncPhoneWorkspaceContextV1);
-  window.addEventListener('vp3:phone-workspace-event',event=>{
+  function handlePhoneWorkspaceEventV1(event){
     const detail=event.detail||{};
-    if(detail.kind!=='incoming'||!contextReady||initialRestorePending||restoringConversation||historyParticipant
-      ||window.VP3ParticipantContinuity?.selectedContext?.()||Number(detail.agent_id)!==Number(cfg.agentId||0)
-      ||Number(detail.conversation_id)!==Number(conversationId||0)||Number(conversationId||0)<1)return;
+    if(!['incoming','outgoing','voicemail','voicemail_deleted'].includes(detail.kind)||!contextReady||initialRestorePending||restoringConversation||historyParticipant
+      ||window.VP3ParticipantContinuity?.selectedContext?.()||!Number.isSafeInteger(detail.agent_id)||detail.agent_id<0
+      ||detail.agent_id!==Number(cfg.agentId||0)||!Number.isSafeInteger(detail.conversation_id)
+      ||detail.conversation_id!==Number(conversationId||0)||detail.conversation_id<1)return;
+    if(detail.kind==='voicemail_deleted'){
+      const ids=detail.redacted_chat_message_ids;
+      if(typeof detail.voicemail_id!=='string'||!/^(?:job|legacy)-[1-9][0-9]{0,14}$/.test(detail.voicemail_id)
+        ||!Array.isArray(ids)||ids.length>100||ids.some(id=>!Number.isSafeInteger(id)||id<1))return;
+      const redacted=new Set(ids);let changed=false;
+      for(const element of thread.querySelectorAll('[data-chat-message-id][data-phone-workspace-marker]')){
+        if(element.dataset.chatMessageRole!=='assistant'||Number(element.dataset.chatConversationId)!==detail.conversation_id
+          ||!redacted.has(Number(element.dataset.chatMessageId)))continue;
+        try{
+          const marker=JSON.parse(element.dataset.phoneWorkspaceMarker);
+          if(marker?.kind!=='voicemail')continue;
+          // A migrated legacy post may use a different voicemail alias. The
+          // server-returned message IDs bind every redacted post to this delete.
+          if(bindPhoneWorkspaceV1(element,{...marker,status:'deleted'}))changed=true;
+        }catch(_){}
+      }
+      if(changed)window.dispatchEvent(new Event('vp3:chat-history-updated'));
+      return;
+    }
     void canonicalChatContinuity.syncConversation(Number(conversationId)).catch(()=>{});
-  });
+  }
+  window.addEventListener('vp3:phone-workspace-event',handlePhoneWorkspaceEventV1);
   window.addEventListener('vp3:phone-workspace-ready',()=>{
     syncPhoneWorkspaceContextV1();
     for(const element of thread.querySelectorAll('[data-phone-workspace-marker]')){

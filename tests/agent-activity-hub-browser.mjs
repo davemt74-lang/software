@@ -59,7 +59,9 @@ await page.route('https://activity.test/api/hub**',async route => {
   }
   if (url.searchParams.get('view') === 'operator') {
     state.sections = [];
-    state.specialists = [{id:'operator',state:'idle',progress:null,conversation_id:cid,detail:'Phone calling is available.'}];
+    const checked=Math.floor(Date.now()/1000);
+    state.specialists = [{id:'operator',state:'idle',progress:null,conversation_id:cid,detail:'Phone calling is available.',
+      operator_worker:{state:'reporting',last_verified_epoch:checked-1,checked_at:checked,fresh_until:checked+24,execution_enabled:false,live_certified:false}}];
     state.operator_history={coverage:'ready',recording_coverage:'ready',calls:[
       {call_id:'a'.repeat(32),contact_id:5,contact_name:'Taylor Caller',peer_e164:'+16025550111',direction:'outbound',state:'completed',created_at:'2026-11-23T10:00:00Z',duration_seconds:90,recording:{state:'ready',transcript_saved:true,report_saved:true}},
       {call_id:'b'.repeat(32),contact_id:5,contact_name:'Taylor Caller',peer_e164:'+16025550112',direction:'inbound',state:'no_answer',created_at:'2026-11-23T09:00:00Z',duration_seconds:0,recording:{state:'none',transcript_saved:false,report_saved:false}},
@@ -260,6 +262,8 @@ try {
   assert.equal(await page.evaluate(()=>window.operatorPhoneOpens),1,'Operator hands off to the canonical Phone workspace');
   await page.locator('[data-chat-specialist="operator"]').click();
   await specialist.getByText('3 recent calls · 2 caller groups',{exact:true}).waitFor();
+  await specialist.getByText('Signed HomeServer report verified',{exact:true}).waitFor();
+  await specialist.getByText('Registration reporting only. Autonomous calls are off; live call readiness is not verified.',{exact:true}).waitFor();
   await specialist.getByText('1 saved transcripts · 1 saved reports',{exact:true}).waitFor();
   await specialist.getByText('Confirm the proposal deadline.',{exact:true}).waitFor();
   await specialist.getByText('AI suggestion · needs review',{exact:true}).waitFor();

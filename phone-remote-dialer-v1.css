@@ -1,0 +1,11 @@
+.phone-dialer-settings form,.phone-dialer-owner form{display:grid;gap:.65rem;min-width:0}
+.phone-dialer-label{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;min-width:0;font-weight:600}
+.phone-dialer-label input[type=checkbox]{width:22px;height:22px;min-height:22px;margin:0;flex:none}
+.phone-dialer-label input[type=tel]{width:100%;min-width:0;order:1;margin:0}
+.phone-dialer-alert{margin:.6rem 0;padding:.7rem .85rem;border:1px solid #9cbeb1;border-radius:.8rem;background:#fff;color:#183d33;overflow-wrap:anywhere}
+.phone-dialer-alert p{margin:.25rem 0 .45rem}
+.phone-dialer-alert strong{font-size:1.05rem}
+.phone-dialer-owner{min-width:0}
+.phone-dialer-owner p,.phone-dialer-settings p{overflow-wrap:anywhere}
+.phone-dialer-owner [role=status],.phone-dialer-settings [role=status]{font-size:.9rem}
+.phone-dialer-owner [hidden],.phone-dialer-settings [hidden],.phone-dialer-alert[hidden]{display:none!important}

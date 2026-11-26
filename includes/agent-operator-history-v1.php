@@ -18,6 +18,11 @@ function vp3_operator_recording_evidence_v1(PDO $pdo,array $user,int $agentId,ar
     try {
         $source=vp3_phone_recording_call_v1($pdo,$job);
         if ((string)$source['public_id']!==(string)$call['public_id']) return null;
+        if(($source['transport_kind']??'')==='managed_callback'){
+            require_once __DIR__.'/phone-managed-recording-v1.php';
+            $policy=vp3_managed_recording_saved_policy_v1($pdo,$source,(string)$job['provider_recording_sid']);
+            if($policy!==vp3_phone_recording_decode_v1($job['policy_json'])||(int)$job['conversation_id']!==(int)$source['conversation_id'])return null;
+        }
     } catch (RuntimeException $error) {return null;}
     $state=(string)$job['state'];
     $out=['state'=>match($state){
@@ -130,7 +135,7 @@ function vp3_operator_history_v1(PDO $pdo,array $user,int $agentId,int $cid): ar
                 'peer_e164'=>preg_match('/^\+[1-9][0-9]{7,14}$/D',$peer)?$peer:'',
                 'direction'=>$call['direction']==='outbound'?'outbound':'inbound','state'=>$call['state'],
                 'created_at'=>$call['created_at'],'duration_seconds'=>max(0,min(86400,(int)$call['duration_seconds'])),
-                'recording'=>$recording];
+                'recording'=>$recording]+(($call['transport_kind']??'')==='managed_callback'?['transport_kind'=>'managed_callback']+(($call['managed_mode']??'')==='twilio_native'?['managed_mode'=>'twilio_native']:[]):[])+(!empty($call['connected_phone'])?['connected_profile_id'=>$call['connected_profile_id'],'peer_masked'=>$call['peer_masked']]:[]);
         }
         return ['coverage'=>'ready','recording_coverage'=>$recordingCoverage,'calls'=>$out];
     } catch (Throwable $error) {return $empty;}

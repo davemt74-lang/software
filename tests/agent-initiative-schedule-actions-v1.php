@@ -107,6 +107,13 @@ schedule_action_check(str_contains($weeklyRef,'@')&&schedule_action_resources([$
 $weeklyCancel=schedule_action_plan('calendar.cancel',['target_ref'=>$weeklyRef],schedule_action_resources([$weeklyRef]));
 $weeklyRetired=schedule_action_apply($weeklyCancel,'schedule-calendar-weekly-cancel');
 schedule_action_check($weeklyRetired['verified']&&$weeklyRetired['effect']['record']['status']==='cancelled','reviewed weekly cancellation changes the explicitly identified whole series');
+$dailyPlan=schedule_action_plan('calendar.create',['event'=>array_merge($event,['recurrence'=>'daily'])]);
+$daily=schedule_action_apply($dailyPlan,'schedule-calendar-daily');$dailyId=$daily['record_id'];$dailyRef=$daily['output_refs'][0]['ref'];
+schedule_action_check(str_contains($dailyRef,'@')&&schedule_action_resources([$dailyRef])['calendar_events'][0]['id']===$dailyId
+    &&$daily['effect']['record']['recurrence']==='daily','daily creation returns a verified exact occurrence of the canonical series');
+$dailyCancel=schedule_action_plan('calendar.cancel',['target_ref'=>$dailyRef],schedule_action_resources([$dailyRef]));
+$dailyRetired=schedule_action_apply($dailyCancel,'schedule-calendar-daily-cancel');
+schedule_action_check($dailyRetired['verified']&&$dailyRetired['effect']['record']['status']==='cancelled','reviewed daily cancellation retires the identified series through the canonical action');
 $rollback=schedule_action_plan('reminder.create',['schedule'=>array_merge($schedule,['title'=>'Rollback follow-up'])]);$beforeCount=(int)$pdo->query('SELECT COUNT(*) FROM agent_reminders_v1')->fetchColumn();
 $pdo->beginTransaction();section12_lock_owner($pdo,1);$rolled=vp3_initiative_schedule_action_apply_v1($pdo,$u,$p,$scheduleBinding,$rollback,'schedule-rollback');
 schedule_action_check($rolled['verified']&&$pdo->inTransaction(),'verified adapter readback leaves commit ownership to broker');$pdo->rollBack();

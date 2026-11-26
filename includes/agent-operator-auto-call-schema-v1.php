@@ -1,12 +1,14 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/agent-operator-admission-schema-v1.php';
+
 // Explicit install/upgrade only. No contact or call is modified during install.
 function vp3_operator_auto_call_schema_ready_v1(PDO $pdo): bool
 {
     try {
         $pdo->query('SELECT owner_user_id,contact_id,contact_public_id,agent_id,number_id,line_e164,provider_sid_hash,destination_e164,enabled,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,max_duration_seconds,revision,created_epoch,updated_epoch FROM phone_operator_contact_policies_v1 WHERE 1=0');
-        return true;
+        return vp3_operator_admission_schema_ready_v1($pdo);
     } catch (PDOException) {return false;}
 }
 
@@ -24,12 +26,14 @@ function vp3_operator_auto_call_ensure_schema_v1(PDO $pdo): void
         revision BIGINT NOT NULL,created_epoch BIGINT NOT NULL,updated_epoch BIGINT NOT NULL,
         PRIMARY KEY(owner_user_id,contact_id,agent_id)
     )".$suffix);
+    vp3_operator_admission_install_v1($pdo);
     if (!vp3_operator_auto_call_schema_ready_v1($pdo)) throw new RuntimeException('Operator contact preferences could not be installed.');
 }
 
 /** An explicit number reassignment invalidates every prior owner grant, even if it returns later. */
 function vp3_operator_auto_call_revoke_line_v1(PDO $pdo,int $numberId): void
 {
+    vp3_operator_admission_install_v1($pdo);
     if (!vp3_operator_auto_call_schema_ready_v1($pdo)) return;
     $pdo->prepare('UPDATE phone_operator_contact_policies_v1 SET enabled=0,revision=revision+1,updated_epoch=? WHERE number_id=? AND enabled=1')
         ->execute([time(),$numberId]);

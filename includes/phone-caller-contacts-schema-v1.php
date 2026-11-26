@@ -29,6 +29,13 @@ function vp3_phone_caller_contacts_schema_ready_v1(PDO $pdo): bool
     }catch(Throwable){return false;}
 }
 
+/** Phone contact notes extend the canonical CRM record, without a second address book. */
+function vp3_phone_contact_details_schema_ready_v1(PDO $pdo): bool
+{
+    if(!vp3_phone_caller_contacts_schema_ready_v1($pdo))return false;
+    try{$pdo->query('SELECT relationship,notes FROM crm_contacts WHERE 1=0');return true;}catch(PDOException){return false;}
+}
+
 /** Positions of structural tokens, excluding quoted SQL and comments. */
 function vp3_phone_caller_contacts_sqlite_tokens_v1(string $sql): array
 {
@@ -135,4 +142,9 @@ function vp3_phone_caller_contacts_ensure_schema_v1(PDO $pdo): void
     }
     $pdo->exec("UPDATE crm_contacts SET email_normalized=NULL WHERE email_normalized=''");
     if(!vp3_phone_caller_contacts_schema_ready_v1($pdo))throw new RuntimeException('Phone contact storage did not finish upgrading.');
+    if(!isset(vp3_phone_caller_contacts_columns_v1($pdo)['notes']))$pdo->exec('ALTER TABLE crm_contacts ADD COLUMN notes TEXT NULL');
+    if(!isset(vp3_phone_caller_contacts_columns_v1($pdo)['relationship']))$pdo->exec("ALTER TABLE crm_contacts ADD COLUMN relationship VARCHAR(80) NOT NULL DEFAULT ''");
+    if(!isset(vp3_phone_caller_contacts_columns_v1($pdo)['connected_phone_id']))$pdo->exec('ALTER TABLE crm_contacts ADD COLUMN connected_phone_id CHAR(32) NULL');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS phone_call_shares_v1(owner_user_id BIGINT NOT NULL,call_id CHAR(32) NOT NULL,contact_id BIGINT NOT NULL,device_id CHAR(32) NOT NULL,exchange_id CHAR(32) NOT NULL,PRIMARY KEY(owner_user_id,exchange_id))'.($sqlite?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'));
+    if(!vp3_phone_contact_details_schema_ready_v1($pdo))throw new RuntimeException('Phone contact details did not finish upgrading.');
 }

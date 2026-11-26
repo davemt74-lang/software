@@ -58,6 +58,9 @@ jobs:
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",
             "cloud_phone_workspace": "twilio-browser-phone-v1",
+            "phone_push_section": "PS5C.4",
+            "phone_push_worker_minimum_php": "8.2",
+            "phone_push_delivery_default": "off",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -78,12 +81,43 @@ jobs:
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php
+          test -f _deploy/includes/phone-contact-management-v1.php
+          test -f _deploy/includes/phone-contact-schedules-v1.php
           test -f _deploy/includes/phone-recording-pipeline-v1.php
+          test -f _deploy/includes/phone-voicemail-v1.php
           test -f _deploy/api/phone-workspace-v1.php
           test -f _deploy/api/phone-recording-audio-v1.php
+          test -f _deploy/api/phone-voicemail-greeting-v1.php
           test -f _deploy/phone-workspace-v1.js
           test -f _deploy/phone-workspace-v1.css
+          test -f _deploy/phone-voicemail-capture-v1.js
           test -f _deploy/phone-recording-worker-v1.php
+          test -f _deploy/phone-app.webmanifest
+          test -f _deploy/phone-service-worker-v1.js
+          test -f _deploy/phone-pwa-v1.js
+          test -f _deploy/phone-handoff-v1.js
+          test -f _deploy/includes/phone-handoff-v1.php
+          test -f _deploy/includes/phone-push-subscriptions-v1.php
+          test -f _deploy/phone-push-subscriptions-v1.js
+          test -f _deploy/phone-service-worker-v1.js
+          test -f _deploy/phone-push-worker-v1.php
+          test -f _deploy/api/phone-push-receipt-v1.php
+          test -f _deploy/includes/phone-push-delivery-v1.php
+          test -f _deploy/includes/phone-transactions-v1.php
+          test -f _deploy/includes/phone-push-events-v1.php
+          test -f _deploy/includes/phone-push-transport-v1.php
+          test -f _deploy/includes/phone-push-vapid-cache-v1.php
+          test -f _deploy/includes/phone-push-worker-v1.php
+          test -f _deploy/vendor/web-push-v1/composer.lock
+          test -f _deploy/vendor/web-push-v1/vendor/autoload.php
+          test -f _deploy/vendor/web-push-v1/MANIFEST.json
+          test -f _deploy/vendor/web-push-v1/THIRD-PARTY-LICENSES.txt
+          test -f _deploy/vendor/web-push-v1/INSTALL.txt
+          test -f _deploy/docs/PHONE-PUSH-DELIVERY-PS5C4.txt
+          test -f _deploy/assets/phone-pwa/icon-180.png
+          test -f _deploy/assets/phone-pwa/icon-192.png
+          test -f _deploy/assets/phone-pwa/icon-512.png
+          python3 -m json.tool _deploy/phone-app.webmanifest >/dev/null
           test -f _deploy/docs/CLOUD-PHONE-WORKSPACE-DEPLOY.txt
           python3 -m json.tool _deploy/VP3_RELEASE.json >/dev/null
           grep -Fq '"commit": "'"${VP3_RELEASE_SHA}"'"' _deploy/VP3_RELEASE.json
@@ -460,7 +494,7 @@ jobs:
           test -f _deploy/upgrade.php
           # Phone Tracking must include both the owner and holder entry points.
           for path in phone-tracking.php phone-location.php phone-tracking-v1.js phone-tracking-archive-v1.js phone-location-v1.js \
-                      api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php \
+                      api/phone-tracking-v1.php api/phone-location-v1.php includes/phone-tracking-v1.php includes/phone-transactions-v1.php \
                       includes/phone-camera-v1.php includes/phone-camera-chat-v1.php includes/phone-camera-http-v1.php includes/phone-camera-map-v1.php \
                       phone-agent-chat-v1.js includes/paired-phone-agent-v1.php includes/paired-phone-agent-model-v1.php \
                       phone-chat-owner-reply-v1.js api/phone-chat-reply-v1.php \

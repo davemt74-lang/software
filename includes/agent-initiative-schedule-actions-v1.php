@@ -27,7 +27,7 @@ function vp3_initiative_schedule_action_catalog_v1(PDO $pdo,array $user,array $p
         'delivery'=>['type'=>'string','enum'=>['chat','notification','both']]],['title','timezone','start_local']);
     $event=$schema(['title'=>$text(190),'description'=>['type'=>'string','maxLength'=>10000],'location'=>['type'=>'string','maxLength'=>500],
         'timezone'=>$text(80),'date'=>$text(10),'start_time'=>$text(5),'end_time'=>$text(5),'end_date'=>$text(10),
-        'all_day'=>['type'=>'boolean'],'recurrence'=>['type'=>'string','enum'=>['none','weekly']],
+        'all_day'=>['type'=>'boolean'],'recurrence'=>['type'=>'string','enum'=>['none','daily','weekly']],
         'agent_notifications'=>['type'=>'boolean']],['title','timezone','date']);
     foreach(['reminder'=>['create','update','complete','snooze','dismiss','cancel','delete'],'calendar'=>['create','update','cancel']] as $family=>$operations){
         try{vp3_initiative_schedule_action_load_v1($pdo,$family);}catch(RuntimeException $e){if($e instanceof PDOException)throw $e;continue;}
@@ -269,7 +269,7 @@ function vp3_initiative_schedule_action_inspect_v1(PDO $pdo,array $user,array $p
         if($row['next_at']!==null||(int)$q->fetchColumn()!==0)throw new RuntimeException('Reminder series cancellation could not be verified.',409);
     }
     $ref=$family==='reminder'?'reminder:'.$id:'calendar:event:'.$id;
-    if($family==='calendar'&&($row['recurrence']??'none')==='weekly')$ref.='@'.user_calendar_validate_utc_v1300($row['start_at_utc'])->format('Ymd\THis\Z');
+    if($family==='calendar'&&in_array($row['recurrence']??'none',['daily','weekly'],true))$ref.='@'.user_calendar_validate_utc_v1300($row['start_at_utc'])->format('Ymd\THis\Z');
     $result['verified']=true;$result['output_refs']=[['ref'=>$ref,'record_id'=>$id,'revision'=>$hash]];$result['source_after']=[];
     foreach($plan['target_refs']??[] as $target){
         $selector=vp3_initiative_office_ref_v1($target);$state=$selector?vp3_initiative_office_state_v1($pdo,$scope,$selector):null;

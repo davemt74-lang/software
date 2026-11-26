@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 /** PH3C: provider-neutral call metadata with signed Twilio voice callbacks. */
+require_once __DIR__.'/phone-voicemail-v1.php';
 
 function vp3_phone_voice_schema_ready_v130(): bool
 {
@@ -90,16 +91,22 @@ function vp3_phone_voice_activate_v130(PDO $pdo,int $numberId): void
         ->execute([$numberId,$ownerId]);
 }
 
-function vp3_phone_voice_twiml_v130(string $agentName,string $callback): string
+function vp3_phone_voice_twiml_v130(string $agentName,string $callback,string $greetingUrl=''): string
 {
     $name=trim(preg_replace('/[^\p{L}\p{N} ._-]/u','', $agentName)??'');
     $name=substr($name,0,60);
     $intro=$name!=='' ? 'You have reached the voicemail for '.$name.'. ' : 'You have reached this voicemail service. ';
-    $message=$intro.'This is an automated answering service. Your message will be recorded. Please leave a message after the tone.';
+    $play='';
+    if($greetingUrl!==''){
+        $base=substr(vp3_phone_voice_validate_url_v130($callback),0,-strlen('phone-voice-inbound-v130.php')).'phone-voicemail-greeting-v1.php?token=';
+        if(!str_starts_with($greetingUrl,$base)||!preg_match('/^[a-f0-9]{64}$/D',substr($greetingUrl,strlen($base))))throw new InvalidArgumentException('Invalid voicemail greeting.');
+        $play='<Play>'.htmlspecialchars($greetingUrl,ENT_XML1|ENT_QUOTES,'UTF-8').'</Play>';
+    }
+    $message=($play===''?$intro.'This is an automated answering service. ':'').'Your message will be recorded. Please leave a message after the tone.';
     $message=htmlspecialchars($message,ENT_XML1|ENT_QUOTES,'UTF-8');
     $action=htmlspecialchars(vp3_phone_voice_sibling_url_v130($callback,'phone-voice-complete-v130.php'),ENT_XML1|ENT_QUOTES,'UTF-8');
     $status=htmlspecialchars(vp3_phone_voice_sibling_url_v130($callback,'phone-voice-recording-v130.php'),ENT_XML1|ENT_QUOTES,'UTF-8');
-    return '<?xml version="1.0" encoding="UTF-8"?><Response><Say language="en-US">'.$message.'</Say>'
+    return '<?xml version="1.0" encoding="UTF-8"?><Response>'.$play.'<Say language="en-US">'.$message.'</Say>'
       .'<Record playBeep="true" maxLength="120" trim="do-not-trim" action="'.$action.'" method="POST" '
       .'recordingStatusCallback="'.$status.'" recordingStatusCallbackMethod="POST" recordingStatusCallbackEvent="completed" /></Response>';
 }
@@ -185,6 +192,12 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     $owner=(int)$number['owner_user_id'];$agent=(int)$number['agent_id'];
     if (!vp3_phone_package_v100($pdo,$owner)['voice']||!vp3_phone_agent_owned_v100($pdo,$owner,$agent))
         return ['accepted'=>false,'reason'=>'account_ineligible'];
+    require_once __DIR__.'/phone-native-dialthrough-schema-v1.php';
+    if(vp3_native_dialthrough_ready_v1($pdo)){
+        require_once __DIR__.'/phone-native-dialthrough-v1.php';
+        $native=vp3_native_dialthrough_inbound_v1($pdo,$number,$callSid,$caller,$to,time());
+        if($native!==null)return $native;
+    }
     $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1 LIMIT 1');
     $q->execute([$agent,$owner]);$agentName=(string)($q->fetchColumn()?:'');
     $pdo->beginTransaction();
@@ -213,14 +226,15 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     }
     $route=vp3_phone_voice_current_route_v131($pdo,$callSid,14400,['voicemail_offered','conversation_active','streaming_active']);
     if (!$route['accepted']) return $route;
+    $browserReason='browser_unavailable';
     if(function_exists('vp3_phone_browser_incoming_v1')&&vp3_phone_workspace_schema_ready_v1($pdo)){
         $browserTwiml=null;
-        try{$browserTwiml=vp3_phone_browser_incoming_v1($pdo,$route,$callSid);}
+        try{$browserTwiml=vp3_phone_browser_incoming_v1($pdo,$route,$callSid,$browserReason);}
         catch(Throwable){error_log('Phone browser incoming projection is temporarily unavailable.');}
         if($browserTwiml!==null)return ['accepted'=>true,'twiml'=>$browserTwiml];
     }
     if(function_exists('vp3_phone_workspace_legacy_incoming_v1')){
-        try{vp3_phone_workspace_legacy_incoming_v1($pdo,$route,$callSid);}
+        try{vp3_phone_workspace_legacy_incoming_v1($pdo,$route,$callSid,$browserReason);}
         catch(Throwable){error_log('Phone incoming Chat projection is temporarily unavailable.');}
     }
     if (function_exists('vp3_phone_stream_route_v150') && vp3_phone_stream_route_v150($pdo,$route)) {
@@ -261,7 +275,7 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
     }
     if ((string)($row['state']??'')==='conversation_active')
         return ['accepted'=>false,'reason'=>'conversation_mode_changed'];
-    return ['accepted'=>true,'twiml'=>vp3_phone_voice_twiml_v130($agentName,$callback)];
+    return ['accepted'=>true,'twiml'=>vp3_phone_voicemail_twiml_v1($pdo,$route,$callSid,$agentName,$callback)];
 }
 
 function vp3_phone_voice_recording_event_v130(PDO $pdo,array $form,string $signature,
@@ -280,6 +294,7 @@ function vp3_phone_voice_recording_event_v130(PDO $pdo,array $form,string $signa
     $duration=(string)($form['RecordingDuration']??'0');
     if (!preg_match('/^[0-9]{1,5}$/D',$duration)) throw new InvalidArgumentException('Invalid recording duration.');
     $seconds=min((int)$duration,3600);
+    if(vp3_phone_voicemail_deleted_v1($pdo,$recordingSid))return ['accepted'=>true,'duplicate'=>true,'deleted'=>true];
     $pdo->beginTransaction();
     try {
         $q=$pdo->prepare('SELECT id,owner_user_id,caller_e164,called_e164 FROM phone_voice_calls_v130
@@ -293,7 +308,7 @@ function vp3_phone_voice_recording_event_v130(PDO $pdo,array $form,string $signa
             if ((int)$existing['call_id']!==(int)$call['id']||(int)$existing['owner_user_id']!==(int)$call['owner_user_id'])
                 throw new RuntimeException('Recording receipt conflicts with original call.');
             // Final states are monotonic: delayed callbacks cannot resurrect a recording.
-            if (in_array((string)$existing['recording_status'],['completed','absent','failed'],true)) {
+            if (in_array((string)$existing['recording_status'],['completed','absent','failed','deleted'],true)) {
                 $pdo->commit();return ['accepted'=>true,'duplicate'=>true];
             }
             $pdo->prepare('UPDATE phone_voice_recordings_v130 SET recording_status=?,duration_seconds=? WHERE id=?')

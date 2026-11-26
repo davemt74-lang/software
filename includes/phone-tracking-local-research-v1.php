@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 /** One private offer can authorize one bounded search. Never replay an uncertain external dispatch. */
 function vp3_phone_local_research_schema_v1(PDO $pdo): void
 {
@@ -63,7 +65,7 @@ function vp3_phone_local_public_query_v1(array $public): string
 
 function vp3_phone_local_launch_v1(PDO $pdo,array $user,array $principal,int $cid,int $offerId,array $public,int $expiresAt=0): void
 {
-    if (!$pdo->inTransaction()) throw new LogicException('Local research must be queued in the private approval transaction.');
+    if (!vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Local research must be queued in the private approval transaction.');
     vp3_phone_local_public_query_v1($public);
     $public = array_replace(array_fill_keys(['area','item','category','open_today','date'],null),$public);
     $uid = (int)$user['id'];
@@ -96,7 +98,7 @@ final class VP3PhoneLocalResearchExpired extends RuntimeException {}
 function vp3_phone_local_research_work_v1(PDO $pdo,array $user,array $principal,int $cid,callable $authority,?array $transport=null): void
 {
     if ($cid<1) return;
-    if ($pdo->inTransaction()) throw new LogicException('Local research provider reads must run outside a transaction.');
+    if (vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Local research provider reads must run outside a transaction.');
     $scope = [(int)$user['id'],(int)($principal['agent_id']??0),$cid];
     $bind = 'owner_user_id=? AND agent_id=? AND conversation_id=?';
     $row = vp3_phone_sql_v1($pdo,"SELECT offer_id,state,public_json,queued_at,expires_at FROM vp3_phone_local_research_v1 WHERE $bind
@@ -144,7 +146,7 @@ function vp3_phone_local_research_work_v1(PDO $pdo,array $user,array $principal,
 /** Runs inside the poll transaction. A rolled-back Chat insert makes the completed result eligible again. */
 function vp3_phone_local_research_results_v1(PDO $pdo,array $user,array $principal,int $cid,?callable $authority=null): array
 {
-    if (!$pdo->inTransaction()) throw new LogicException('Publish research in the private Chat delivery transaction.');
+    if (!vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Publish research in the private Chat delivery transaction.');
     $scope = [(int)$user['id'],(int)($principal['agent_id']??0),$cid];
     $rows = vp3_phone_sql_v1($pdo,"SELECT offer_id,result_json FROM vp3_phone_local_research_v1 WHERE owner_user_id=? AND agent_id=?
         AND conversation_id=? AND state='complete' ORDER BY offer_id LIMIT 4".vp3_phone_lock_v1($pdo),$scope)->fetchAll(PDO::FETCH_ASSOC);

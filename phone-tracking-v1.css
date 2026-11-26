@@ -162,3 +162,32 @@ body.phone-tracking-page.vp3-orb-has-bar {
 #phone-stream-preview[data-state="live"] video { opacity:1; }
 #phone-stream-status { position:relative; max-width:90%; padding:6px 10px; border-radius:5px; color:white; background:#1d282c; text-align:center; font-size:.85rem; }
 #phone-stream-preview[data-state="live"] #phone-stream-status { position:absolute; left:8px; bottom:8px; background:#101719dc; }
+
+/* Connected-user controls share the selected map detail and its existing scroll. */
+.phone-connected-profile{border-top:1px solid var(--line);padding-top:14px;margin-top:14px;min-width:0}
+.phone-profile-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.phone-workspace .phone-profile-tabs button{flex:1 1 auto;min-height:36px;padding:7px 10px;font-size:.85rem}
+.phone-workspace .phone-profile-tabs button[aria-pressed="true"]{background:#eaf3ee;color:var(--teal);border-color:var(--teal)}
+.phone-profile-form{display:grid;gap:10px;margin:10px 0}
+.phone-profile-check{display:flex;align-items:center;gap:8px;line-height:1.4}
+.phone-profile-check input{width:18px;height:18px;flex:none}
+.phone-connected-profile .phone-info dd{overflow-wrap:anywhere;min-width:0}
+
+.phone-connected-calls{margin:10px 0 0;padding:0;list-style:none;font-size:.86rem;color:var(--muted)}
+.phone-connected-calls li{padding:8px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+
+.phone-information-panel{display:grid;gap:10px;min-width:0;margin-block:12px}
+.phone-information-panel label{display:grid;gap:6px;font-weight:600;font-size:.9rem}
+.phone-information-panel :is(textarea,select){font:inherit;color:inherit;background:#fff;border:1px solid #bacdc2;border-radius:8px;padding:9px;min-width:0;width:100%;box-sizing:border-box}
+.phone-information-panel textarea{resize:vertical;min-height:64px}
+.phone-information-compose,.phone-information-items,.phone-information-item form{display:grid;gap:8px}
+.phone-information-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.phone-information-controls button{flex:1 1 auto}
+.phone-information-item{display:grid;gap:6px;padding:12px;border:1px solid #cddbd6;border-radius:10px;min-width:0;overflow-wrap:anywhere}
+.phone-information-item small,.phone-information-empty,.phone-information-status{font-size:.85rem;color:#4e635b}
+.phone-information-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.phone-information-panel [hidden]{display:none!important}
+
+.phone-information-file{display:grid;gap:8px;min-width:0}.phone-information-file input[type=file]{max-width:100%;font:inherit}.phone-information-file .phone-information-confirm{display:flex;gap:8px;align-items:center}.phone-information-confirm input[type=checkbox]{width:20px;height:20px;min-height:20px;flex:none;margin:0}.phone-information-file small{font-size:.8rem;line-height:1.4;color:#4e635b}
+
+#phone-install-code-box{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}#phone-install-code-box summary{cursor:pointer;font-weight:650}#phone-install-code{width:100%;min-width:0;font:inherit;font-family:ui-monospace,monospace;padding:8px;margin:4px 0 8px;border:1px solid var(--line);border-radius:8px}#phone-copy-install-status{overflow-wrap:anywhere}

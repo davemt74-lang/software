@@ -4,6 +4,7 @@ declare(strict_types=1);
 // Operator v1: a private, read-only browser call projection. The Phone workspace
 // remains the authority for call control. No carrier, model, SMS or job dispatch.
 require_once __DIR__.'/phone-browser-v1.php';
+require_once __DIR__.'/agent-operator-worker-status-8a4.php';
 
 function vp3_operator_call_status_v1(PDO $pdo,array $user,int $agentId,int $cid,int $now): ?array
 {
@@ -17,7 +18,18 @@ function vp3_operator_call_status_v1(PDO $pdo,array $user,int $agentId,int $cid,
             static fn(array $number):bool=>$number['voice_enabled']&&$number['browser_enabled']);
         $row=['id'=>'operator','conversation_id'=>$cid,'state'=>$ready?'idle':'blocked','progress'=>null,
             'detail'=>$ready?'Phone calling is available.':'Browser calling is not enabled and configured for this Chat.'];
-        if (!$ready || $cid===0) return $row;
+        // This is an owner-level registration observation, independent of browser
+        // call readiness. Preserve manual calling and signed call state.
+        $worker=vp3_operator_worker_status_8a4($pdo,$scope['owner_user_id'],$now);
+        $withWorker=static function(array $row)use($worker):array{
+            // Preserve the prior exact contract on deployments where disabled.
+            if($worker['state']!=='disabled'){
+                $row['operator_worker']=$worker;
+                $row['detail'].=' '.vp3_operator_worker_detail_8a4($worker);
+            }
+            return $row;
+        };
+        if (!$ready || $cid===0) return $withWorker($row);
 
         // Exact Chat binding, not just the assigned number or owner. The Main
         // Chat can use a named Agent's assigned line, as the Phone UI already does.
@@ -41,11 +53,11 @@ function vp3_operator_call_status_v1(PDO $pdo,array $user,int $agentId,int $cid,
                 'ringing'=>'Carrier last reported a ringing call.',
                 'answered'=>'Carrier last reported an answered call.',
             };
-            return array_replace($row,['state'=>'working','detail'=>$detail.' Open Phone for call controls.',
-                'status_fresh_until'=>gmdate(DATE_ATOM,$updated+300)]);
+            return $withWorker(array_replace($row,['state'=>'working','detail'=>$detail.' Open Phone for call controls.',
+                'status_fresh_until'=>gmdate(DATE_ATOM,$updated+300)]));
         }
-        if ($stale) return array_replace($row,['state'=>'unavailable','detail'=>'Current call status could not be verified. Open Phone to check the call.']);
-        return $row;
+        if ($stale) return $withWorker(array_replace($row,['state'=>'unavailable','detail'=>'Current call status could not be verified. Open Phone to check the call.']));
+        return $withWorker($row);
     } catch (VP3PhoneWorkspaceException $error) {
         return null;
     } catch (Throwable $error) {

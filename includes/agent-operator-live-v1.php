@@ -23,6 +23,7 @@ function vp3_operator_live_call_v1(PDO $pdo,array $scope,string $public,int $now
     if(!$call||($scope['agent_id']>0&&(int)$call['agent_id']!==$scope['agent_id']))
         vp3_phone_workspace_error_v1('operator_live_call_unavailable',404,'This phone call is unavailable.');
     if(!$active)return $call;
+    if((int)($call['owner_phone_revision']??0)>0||(string)($call['paired_profile_id']??'')!=='')vp3_phone_workspace_error_v1('operator_live_test_call',409,'Reachability test calls do not use AI captions.');
     // A browser SDK accept event or an existing carrier recording notice does
     // not prove an answered call or consent to this separate AI processing.
     if($call['state']!=='answered'||$call['ended_epoch']!==null

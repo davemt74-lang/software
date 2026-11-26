@@ -171,6 +171,14 @@ $pdo->exec("INSERT INTO user_calendar_events VALUES(104,1,'Weekly local time','M
 [$dst]=office_evidence($scope,['calendar:event:104@20261106T140000Z']);
 $dstRead=office_read($scope,'calendar.read','calendar:event:104@20261106T140000Z',$dst);
 office_check(str_contains($dstRead['records'][0]['text'],'"start_at_utc":"2026-11-06 14:00:00"')&&str_contains($dstRead['records'][0]['text'],'America/New_York'),'weekly selected read reuses canonical DST-aware expansion instead of assuming UTC plus seven days');
+$pdo->exec("UPDATE user_calendar_events SET recurrence='daily' WHERE id=104");
+$dailyRef='calendar:event:104@20261105T140000Z';
+[$daily]=office_evidence($scope,[$dailyRef]);$dailyRead=office_read($scope,'calendar.read',$dailyRef,$daily);
+office_check(str_contains($dailyRead['records'][0]['text'],'"start_at_utc":"2026-11-05 14:00:00"')
+    &&str_contains($dailyRead['records'][0]['text'],'"recurrence":"daily"'),'daily exact reads preserve the date and wall time across DST without resolving to the old anchor');
+[$dailyAliases]=office_evidence($scope,['calendar:event:104','calendar:event:104@20261105T130000Z']);
+office_check($dailyAliases===[],'daily series reject a plain series alias and the stale pre-DST UTC time');
+$pdo->exec("UPDATE user_calendar_events SET recurrence='weekly' WHERE id=104");
 $pdo->exec('ALTER TABLE user_calendar_events RENAME TO calendar_unavailable');
 [$unavailable,$unavailableCoverage]=office_evidence($scope,['calendar:event:103@20261106T130000Z']);
 office_check($unavailable===[]&&$unavailableCoverage['office_calendar']==='unavailable','missing Calendar storage is unavailable rather than a successful empty read');

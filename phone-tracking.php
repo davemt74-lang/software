@@ -9,7 +9,7 @@ require_permission('account.access');
 $user = current_user();
 header('Cache-Control: private, no-store, max-age=0');
 header('Referrer-Policy: same-origin');
-header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+header('Permissions-Policy: camera=(), microphone=(self), geolocation=()');
 
 $phoneChatParams = [];
 foreach (['agent' => '/^(?:system|0|[1-9][0-9]{0,18})$/D', 'conversation_id' => '/^[1-9][0-9]{0,18}$/D'] as $key => $pattern) {
@@ -36,6 +36,12 @@ $asset = static function (string $path): string {
 <script defer src="<?= e($asset('phone-camera-ice-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-camera-receiver-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-map-camera-v1.js')) ?>"></script>
+<script defer data-voice-capture-scope="<?= (int)$user['id'] ?>" src="<?= e($asset('voice-lease-v122.js')) ?>"></script>
+<script defer src="<?= e($asset('phone-information-ui-v1.js')) ?>"></script>
+<link rel="stylesheet" href="<?= e($asset('phone-remote-dialer-v1.css')) ?>">
+<script defer src="<?= e($asset('phone-remote-dialer-v1.js')) ?>"></script>
+<link rel="stylesheet" href="<?= e($asset('phone-managed-call-ui-v1.css')) ?>">
+<script defer src="<?= e($asset('phone-managed-call-ui-v1.js')) ?>"></script>
 <script defer src="<?= e($asset('phone-tracking-v1.js')) ?>"></script>
 </head>
 <body class="phone-tracking-page">
@@ -74,6 +80,8 @@ require __DIR__.'/includes/member-header.php';
       <div id="phone-devices"></div>
       <article id="phone-detail" aria-label="Phone details" hidden>
         <div id="phone-detail-summary"></div>
+        <section id="phone-communication-profile" class="phone-connected-profile" aria-label="Connected user communication and activity" hidden></section>
+        <div id="phone-dialer-owner-host"></div>
         <form id="phone-preferences" hidden>
           <fieldset>
             <legend>Location settings</legend>
@@ -149,8 +157,17 @@ require __DIR__.'/includes/member-header.php';
       <p>Scan with the phone you want to connect. You’ll review its name and access here.</p>
       <div id="phone-qr"></div><p class="phone-expiry" id="phone-expiry"></p>
       <div class="phone-invite-actions"><a id="phone-join" target="_blank" rel="noopener noreferrer" hidden>Open pairing link</a><button type="button" id="phone-refresh-invite" hidden>Create new code</button></div>
+      <details id="phone-install-code-box" hidden>
+        <summary>Pair an installed VP3 Phone app instead</summary>
+        <p>Open VP3 Phone from the Home Screen and enter this fresh one-use code. Share only with the intended phone holder. You still approve the resulting connection.</p>
+        <label for="phone-install-code">Pairing code</label>
+        <input id="phone-install-code" type="text" readonly autocomplete="off" spellcheck="false" autocapitalize="none">
+        <button type="button" id="phone-copy-install-code">Copy pairing code</button>
+        <p id="phone-copy-install-status" role="status"></p>
+      </details>
     </div>
     <p id="phone-pair-status" role="status"></p>
+    <div id="phone-handoff-pending"></div>
     <div id="phone-pending"></div>
   </dialog>
   <dialog id="phone-street-consent" class="phone-dialog" aria-labelledby="phone-street-title">

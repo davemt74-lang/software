@@ -7,10 +7,13 @@ window.VP3PhoneAgentChat = function (request, apps) {
   const toggle = get('apps-toggle'), menu = get('apps'), notice = get('chat-status');
   const main = get('location');
   const history = get('chat-history'), empty = get('chat-empty'), tabs = get('tabs');
-  const connection = get('connection'), connectionTab = get('tab-connection'), chatTab = get('tab-chat');
+  const connection = get('connection'), info = get('info'), connectionTab = get('tab-connection'), chatTab = get('tab-chat'), infoTab = get('tab-info');
+  const tabItems = [['connection',connectionTab,connection],['chat',chatTab,chat],['info',infoTab,info]];
+  let selectedTab = 'connection';
   let deviceId = null, online = false, generation = 0, nextPoll = 0, polling = false;
   let turns = [], outgoing = null, sending = false, lastTranscript = '';
   let followReplies = true;
+  let notificationRequest = null, focusNotification = false;
 
   function sizeViewport() {
     const viewport = window.visualViewport;
@@ -20,31 +23,42 @@ window.VP3PhoneAgentChat = function (request, apps) {
       main.style.removeProperty('--phone-viewport-height');
     }
   }
-  function selectTab(showChat) {
-    connection.hidden = showChat;
-    chat.hidden = !showChat;
-    if (deviceId) main.dataset.tab = showChat ? 'chat' : 'connection';
+  function selectTab(view) {
+    if(view==='chat'&&!deviceId)view='connection';
+    if(view!=='chat'){notificationRequest=null;focusNotification=false;}
+    selectedTab=view;
+    for(const [key,tab,panel] of tabItems){
+      const active=key===view;panel.hidden=!active;
+      tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;
+    }
+    if(deviceId)main.dataset.tab=view;
     else delete main.dataset.tab;
-    connectionTab.setAttribute('aria-selected',String(!showChat));
-    chatTab.setAttribute('aria-selected',String(showChat));
-    connectionTab.tabIndex = showChat ? -1 : 0;
-    chatTab.tabIndex = showChat ? 0 : -1;
+    form.hidden=view==='info';
+    get('dock-help').hidden=view==='info';
     closeApps();
     sizeViewport();
-    if (showChat) {
-      if (followReplies) history.scrollTop = history.scrollHeight;
-      nextPoll = 0;
-      void refresh();
-    }
+    if(view==='chat'){
+      if(followReplies)history.scrollTop=history.scrollHeight;
+      nextPoll=0;void refresh();
+    }else if(view==='connection')connection.scrollTop=0;
+    else info.scrollTop=0;
   }
-  connectionTab.addEventListener('click', () => selectTab(false));
-  chatTab.addEventListener('click', () => selectTab(true));
-  tabs.addEventListener('keydown', event => {
-    if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+  for(const [key,tab] of tabItems)tab.addEventListener('click',()=>selectTab(key));
+  function openGuide(){
+    selectTab('info');
+    get('info-title').focus({preventScroll:true});
+  }
+  for(const id of ['setup-guide','footer-guide'])get(id).addEventListener('click',openGuide);
+  get('info-back').addEventListener('click',()=>{
+    selectTab('connection');(deviceId?connectionTab:get('setup-guide')).focus({preventScroll:true});
+  });
+  tabs.addEventListener('keydown',event=>{
+    if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
     event.preventDefault();
-    const showChat = event.key === 'End' || (event.key !== 'Home' && event.target === connectionTab);
-    selectTab(showChat);
-    (showChat ? chatTab : connectionTab).focus();
+    let index=tabItems.findIndex(([,tab])=>tab===event.target);
+    if(index<0)index=tabItems.findIndex(([key])=>key===selectedTab);
+    const next=event.key==='Home'?0:event.key==='End'?tabItems.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabItems.length)%tabItems.length;
+    selectTab(tabItems[next][0]);tabItems[next][1].focus();
   });
   history.addEventListener('scroll', () => {
     if (!chat.hidden) followReplies = history.scrollHeight - history.clientHeight - history.scrollTop < 96;
@@ -143,6 +157,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
     for (const [id,row] of existing) if (!retained.has(id)) row.remove();
     empty.hidden = visible.length > 0;
     if (keepBottom) history.scrollTop = history.scrollHeight;
+    if(focusNotification&&notificationRequest&&!chat.hidden){
+      const target=Array.from(transcript.children).find(row=>row.dataset.request===notificationRequest);
+      if(target){target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'center'});focusNotification=false;followReplies=false;}
+    }
   }
   function accept(result) {
     if (!Array.isArray(result.turns)) throw new Error('Missing chat response');
@@ -157,7 +175,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     polling = true;
     nextPoll = Date.now() + (outgoing || turns.some(t => t.state === 'pending' || t.state === 'awaiting_owner') ? 3000 : 12000);
     try {
-      const result = await request('chat_status',{device_id:deviceId});
+      const result = await request('chat_status',{device_id:deviceId,...(notificationRequest?{focus_request_id:notificationRequest}:{})});
       if (generation !== version) return;
       accept(result);
       if (online) status('');
@@ -214,7 +232,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     const id = [hex.slice(0,8),hex.slice(8,12),hex.slice(12,16),hex.slice(16,20),hex.slice(20)].join('-');
     input.value = '';
     void sendTurn({request_id:id,message});
-    if (chat.hidden) selectTab(true);
+    if (chat.hidden) selectTab('chat');
     else closeApps();
   });
   function bind(id,reachable) {
@@ -223,6 +241,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     if (changed) {
       generation++;
       deviceId = id;
+      notificationRequest=null;focusNotification=false;
       turns = [];
       outgoing = null;
       sending = polling = false;
@@ -235,7 +254,9 @@ window.VP3PhoneAgentChat = function (request, apps) {
       if (id) connection.setAttribute('role','tabpanel');
       else connection.removeAttribute('role');
       connection.setAttribute('aria-labelledby',id ? connectionTab.id : 'phone-label');
-      selectTab(false);
+      info.setAttribute('role',id?'tabpanel':'region');info.setAttribute('aria-labelledby',id?infoTab.id:'phone-info-title');
+      get('setup-help').hidden=Boolean(id);
+      selectTab('connection');
       lastTranscript = '';
       status('');
     }
@@ -250,5 +271,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
     void refresh();
   }
   window.addEventListener('pagehide', () => bind(null,false));
-  return {bind};
+  function openNotification(requestId){
+    if(!deviceId||!online||typeof requestId!=='string'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(requestId))return;
+    notificationRequest=requestId;focusNotification=true;lastTranscript='';followReplies=false;
+    selectTab('chat');render();
+  }
+  return {bind,openInfo:openGuide,openConnection:()=>selectTab('connection'),openNotification};
 };

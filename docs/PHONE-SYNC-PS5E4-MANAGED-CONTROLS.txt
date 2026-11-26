@@ -1,0 +1,39 @@
+Phone Sync PS5E.4 — Managed call status and end controls
+
+Scope: existing authenticated owner Phone Tracking and Agent Chat / Phone
+workspace. Existing managed calls have a Check carrier status button and a
+confirmed End managed call button. Live call initiation is NOT exposed.
+Recording, transcription, automated reports, and proactive Agent calls remain off.
+
+The canonical call ledger remains authoritative. A provider read may target
+only the exact bound parent SID and, if known, the signed bound child SID.
+It verifies account, line, holder/destination, direction and parent identity.
+A completed parent is not evidence of a completed destination; the recorded
+duration is the verified child duration. Missed-leg labels distinguish
+unanswered holder from unanswered destination. Unknown SID, missing child,
+malformed receipt and unavailable provider remain explicitly unresolved.
+No lookup by number/time and no inference of human answer.
+
+An owner must explicitly confirm end. The durable stop claim first fences the
+pending bridge. If the parent SID is unbound, it sends no carrier mutation.
+A later signed callback can bind the identity but cannot authorize the bridge.
+After read-only verification, the server may cancel a queued/ringing parent
+or complete an answered parent, at most once per claimed operation.
+Ambiguous stop responses are not retried automatically. The owner can check
+status and the connected holder can hang up natively. Existing assigned line
+and exact private paired Chat scope are revalidated before the mutation.
+A confirmed end of the parent leg alone does not resolve a missing child.
+No database transaction is held during carrier I/O.
+
+Schema upgrade adds the control receipts table. Prior workspace calling still
+works when the new optional control table is absent; managed controls are
+unavailable until upgrade. No user-facing provider SID or callback nonce is
+projected. Regression coverage includes SQLite/MySQL synthetic signed callback
+and carrier reads/mutations, missing identity, duplicate stop, exact scope,
+parent-vs-child terminal evidence, and a synthetic browser controls journey.
+
+Deployment gate: parent PS5E.3 and exact-head CI green. Physical iPhone and
+Twilio acceptance are still required. No real calls or carrier charges during
+development. Unknown/unbound calls may still need a signed carrier receipt
+and manual reconciliation; no guessing, no call retry. Top of Mind, recording
+consent, transcripts and reports are subsequent integrations.

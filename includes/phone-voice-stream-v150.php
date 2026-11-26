@@ -173,5 +173,5 @@ function vp3_phone_stream_complete_v150(PDO $pdo,array $form,string $signature,s
     }
     $pdo->prepare("UPDATE phone_voice_calls_v130 SET state='voicemail_fallback'
       WHERE provider='twilio' AND provider_call_sid=? AND state='streaming_active'")->execute([$parent]);
-    return ['accepted'=>true,'twiml'=>vp3_phone_voice_twiml_v130('', $callback)];
+    return ['accepted'=>true,'twiml'=>vp3_phone_voicemail_twiml_v1($pdo,$route,$parent,'', $callback)];
 }

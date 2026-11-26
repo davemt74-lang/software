@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/phone-transactions-v1.php';
+
 require_once __DIR__.'/phone-tracking-local-offers-v1.php';
 
 /** Store the original task references privately. Titles are read under the current Agent's permissions. */
@@ -121,7 +123,7 @@ function vp3_phone_arrival_answer_v1(string $arrival, ?array $tasks): string
 /** The private Chat poll owns the account lock. A committed turn, its receipt and outbox removal are atomic. */
 function vp3_phone_arrival_deliver_v1(PDO $pdo, array $user, array $principal, array $input, int $cid): array
 {
-    if (!$pdo->inTransaction()) throw new LogicException('Arrival delivery requires the private Chat transaction.');
+    if (!vp3_phone_transaction_active_v1($pdo)) throw new LogicException('Arrival delivery requires the private Chat transaction.');
     $uid = (int)$user['id'];
     $aid = (int)($principal['agent_id'] ?? 0);
     $events = vp3_phone_sql_v1($pdo,'SELECT e.id,e.arrived_at,e.visit_number,r.id AS rule_id,r.visit_number AS current_visit,r.version,r.zone_state,

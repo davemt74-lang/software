@@ -1,0 +1,45 @@
+Phone Sync PS5C.2B — minimal Info and approved installation transfer
+
+Info is a third tab in the existing app; the footer has a compact Click
+here guide link, including before initial pairing. The existing composer
+is preserved on Connection and Chat; the guide hides it and uses one
+scrolling panel. The guide covers Safari Share / Add to Home Screen /
+Open as Web App (where offered), current notification status, and how
+to review Agent messages, calls, camera, location and information requests.
+No push permission is prompted by opening Info. Background notifications
+remain unavailable until the separate subscription and transport release.
+
+If Safari and the Home Screen app already share the valid device cookie,
+do nothing. If they use distinct sessions, the existing holder may use
+Info > Move an existing connection to issue a five-minute one-time move
+code. Stop sharing and end calls first. Copy the code into your own new
+installation, request the move, and tell the owner the comparison code.
+The owner uses the existing Phone Tracking Review requests dialog and
+compares this exact code before approval. The holder checks approval
+and explicitly finishes in the new installation.
+
+The old pairing remains valid until that final step. The owner, original
+holder, new claimant proof, exact device and source generation/profile
+revision must agree. The final transaction rotates the only authenticated
+device cookie and invalidates the former one; the stable device identity,
+paired Chat thread and owner-side history remain. Location stays off,
+camera sessions end, saved phone number and holder communication/memory
+consents reset; pending information/file grants and dialer/managed
+requests are fenced. Older completed private information access may be
+withdrawn by that reset. The holder must reauthorize sharing. Moving
+is not permission to share the app or its history with a different person.
+
+Secrets stay in memory, never in URL or web storage. The server stores
+digests, not raw codes. Claim binds the target proof exactly; approval
+alone does not change authentication. Same-proof finish may recover a
+lost response before expiry; a canceled, expired, revoked or changed
+pairing cannot complete a move. If a code is lost, cancel and request a
+new one, or use a fresh owner-approved pairing. No separate automatic
+migration, sensor, carrier or push command is granted.
+
+Database upgrade creates one optional handoff table. Existing pairing
+routes work without the new table; only move is unavailable until upgrade.
+SQLite/MySQL and real-browser regression fixtures cover authority,
+credential replacement, preservation of the private Chat, consent reset,
+replay, expiry and guide navigation. Physical iOS installation, actual
+Web Push subscription and background delivery still require testing.

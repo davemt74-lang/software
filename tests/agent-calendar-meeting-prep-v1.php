@@ -104,6 +104,8 @@ meeting_prep_check_v1($read()['prior_transcript']===['status'=>'not_linked']
 $pdo->exec("UPDATE video_meetings SET organizer_agent_id=7 WHERE id=7911");
 $pdo->exec("UPDATE user_calendar_events SET recurrence='weekly' WHERE id=7901");
 meeting_prep_check_v1($read()===null&&$replay()['sources']===[],'a weekly Calendar series cannot impersonate a video-meeting occurrence');
+$pdo->exec("UPDATE user_calendar_events SET recurrence='daily' WHERE id=7901");
+meeting_prep_check_v1($read()===null&&$replay()['sources']===[],'a daily Calendar series cannot impersonate a video-meeting occurrence');
 $pdo->exec("UPDATE user_calendar_events SET recurrence='none' WHERE id=7901");
 $GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['viewer_user_id'=>1];
 meeting_prep_check_v1($replay()['sources']===[],'participant scope cannot restore private meeting prep');

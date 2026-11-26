@@ -1,0 +1,44 @@
+Phone Sync PS5D — Remote Dialer & Call Handoff
+
+This Cloud feature hands a number to a currently approved connected phone. It is not
+Twilio calling, a carrier call confirmation, a recording, an SMS, or autonomous
+Agent execution. It uses the existing authenticated phone cookie and owner session.
+
+Holder steps: Connection > Remote dialer > Allow remote call requests. Optionally
+enable automatic opening and explicitly enter ONE approved E.164 destination.
+Save permissions. Off by default. An owner cannot edit this setting.
+
+Owner steps: Phone Tracking > select approved phone > Remote dialer. Enter the
+international number, explicitly confirm the handoff, send. No provider charges
+are incurred by VP3 itself; the holder's carrier may charge if they place a call.
+The request expires after 120 seconds. One outstanding request per phone, one
+per minute per phone and twenty per day per account. Other destinations always
+require a direct holder tap. No contact-list integration or autonomous dispatch.
+
+The foreground holder receives an alert above both the Connection and Chat tabs.
+Only a fresh, visible, focused mobile document can attempt automatic navigation,
+after an atomic one-use server claim for the EXACT approved destination. Browser
+and OS policies still govern external links. Do not infer device unlock, dialer
+opening, connection, answer, or call completion from a browser attempt. The
+manual Call now button remains if the automatic attempt is blocked or declined
+by the OS. A manual click is recorded on a best-effort basis as handoff requested,
+not a successful call. A holder may decline and an owner may cancel before handoff.
+
+An authenticated holder can opt out; changes invalidate outstanding requests.
+Device generation changes fence old requests. Disconnect/revoke/account authority
+loss clears grants and pending destinations. Expired pending numbers are hidden
+on reads, and pruned on subsequent authorized mutation. Terminal states contain
+no destination. The owner map never receives the approved automatic number or
+pending destination. No location, microphone, contact list, camera, or SMS
+permission is added. No background page launch or OS-confirmation bypass.
+
+Deployment: run Cloud upgrade.php; two new tables. No native app required.
+Tests: shared SQLite and MySQL domain cases; foreground eligibility predicates
+in browser suite; real map/handset manual-only request and decline. Synthetic
+numbers only. No real tel: navigation or real calls in automated tests.
+
+Release gate: parent PS5B and exact-head CI green before merge. Physical iPhone
+acceptance still required: enable/disable; matching number while VP3 foreground;
+cancel OS prompt; manual fallback; lock/background; reconnect and multiple tabs.
+PS5C push/deep links, Agent Chat/Top of Mind, Operator integration, Profile Agent
+public phone icon and native Android implementation are separate work.

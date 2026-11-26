@@ -390,7 +390,11 @@ try {
   await panel.getByRole('button',{name:'Test preview'}).click();
   await status.getByText('Preview loaded successfully.',{exact:false}).waitFor();
   assert.equal(await panel.getByRole('button',{name:'Use this version'}).isEnabled(),true);
-  await preview.getByRole('checkbox',{name:'Ready'}).check();
+  const failingCheckbox = preview.getByRole('checkbox',{name:'Ready'});
+  assert.equal(await failingCheckbox.isChecked(),false);
+  // This change deliberately destroys the preview. check() also verifies the
+  // checkbox afterwards, racing the iframe teardown that the test requires.
+  await failingCheckbox.click();
   await status.getByText('Preview failed.',{exact:false}).waitFor();
   assert.equal(await panel.getByRole('button',{name:'Use this version'}).isEnabled(),false,'A runtime error invalidates the healthy preview');
 

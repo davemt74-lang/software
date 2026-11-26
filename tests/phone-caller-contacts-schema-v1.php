@@ -44,6 +44,8 @@ phone_contact_schema_check(!vp3_phone_caller_contacts_schema_ready_v1($pdo),'old
 $definitions=$pdo->query("SELECT type,name,sql FROM sqlite_master WHERE tbl_name='crm_contacts' AND type IN ('index','trigger') AND sql IS NOT NULL ORDER BY type,name")->fetchAll(PDO::FETCH_ASSOC);
 vp3_phone_caller_contacts_ensure_schema_v1($pdo);
 phone_contact_schema_check(vp3_phone_caller_contacts_schema_ready_v1($pdo),'explicit upgrade makes email identity optional');
+phone_contact_schema_check(vp3_phone_contact_details_schema_ready_v1($pdo),'explicit upgrade adds relationship and owner-private notes');
+phone_contact_schema_check($pdo->query('SELECT relationship FROM crm_contacts WHERE id=1')->fetchColumn()===''&&$pdo->query('SELECT notes FROM crm_contacts WHERE id=1')->fetchColumn()===null,'new personal fields leave existing CRM records unchanged');
 phone_contact_schema_check((int)$pdo->query('PRAGMA foreign_keys')->fetchColumn()===1,'foreign-key enforcement remains enabled');
 phone_contact_schema_check((int)$pdo->query('PRAGMA legacy_alter_table')->fetchColumn()===0,'temporary rename compatibility flag is restored');
 phone_contact_schema_check($pdo->query('PRAGMA foreign_key_check')->fetchAll()===[],'foreign-key references survive the table replacement');
